@@ -25,6 +25,7 @@ const employee = {
 
 describe("EffectiveContextPanel", () => {
   it("renders skill/mcp counts, project constitution, env vars and persona memory status", async () => {
+    const onManageCapabilities = vi.fn();
     const screen = await render(
       <EffectiveContextPanel
         employee={employee}
@@ -37,21 +38,9 @@ describe("EffectiveContextPanel", () => {
           missingNames: ["REDIS_URL"],
         }}
         executionInstance={undefined}
-        mcp={{
-          isLoading: false,
-          isError: false,
-          personalCount: 0,
-          inheritedCount: 1,
-          totalCount: 1,
-        }}
-        onManageCapabilities={vi.fn()}
-        skills={{
-          isLoading: false,
-          isError: false,
-          personalCount: 1,
-          inheritedCount: 2,
-          totalCount: 3,
-        }}
+        mcp={{ isLoading: false, isError: false, personalCount: 0, inheritedCount: 1, totalCount: 1 }}
+        onManageCapabilities={onManageCapabilities}
+        skills={{ isLoading: false, isError: false, personalCount: 1, inheritedCount: 2, totalCount: 3 }}
       />,
     );
 
@@ -61,5 +50,12 @@ describe("EffectiveContextPanel", () => {
     await expect.element(screen.getByText("人格记忆：已配置")).toBeVisible();
     await expect.element(screen.getByText("已配置 1")).toBeVisible();
     await expect.element(screen.getByText("REDIS_URL")).toBeVisible();
+
+    // 与头部重复的「状态」行已移除
+    expect(screen.getByText("状态", { exact: true }).query()).toBeNull();
+
+    // 技能入口打开管理抽屉而不是跳全局技能页
+    await screen.getByRole("button", { name: "管理" }).click();
+    expect(onManageCapabilities).toHaveBeenCalledTimes(1);
   });
 });

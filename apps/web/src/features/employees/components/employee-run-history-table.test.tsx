@@ -94,7 +94,10 @@ describe("EmployeeRunHistoryTable", () => {
 
     await expect.element(screen.getByText("数据库迁移脚本校验")).toBeVisible();
     await expect.element(screen.getByText("数据库平台")).toBeVisible();
-    await expect.element(screen.getByText("已完成")).toBeVisible();
+    await expect
+      .element(screen.getByRole("row", { name: /数据库迁移脚本校验/ }).getByText("已完成"))
+      .toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "已完成" })).toBeVisible();
     await expect
       .element(screen.getByRole("row", { name: /数据库迁移脚本校验/ }).getByText("任务", { exact: true }))
       .toBeVisible();

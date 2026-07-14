@@ -45,7 +45,6 @@ export function EffectiveContextPanel({
         <div className="grid grid-cols-2 gap-2 text-sm">
           <InfoItem label="Provider" value={providerDisplayName(employee.provider_type)} />
           <InfoItem label="角色" value={employee.role} />
-          <InfoItem label="状态" value={employee.status} />
           <InfoItem label="工作目录" value={executionInstance?.agent_home_dir ?? "由项目 Runtime 创建"} />
         </div>
       </section>
@@ -58,9 +57,9 @@ export function EffectiveContextPanel({
             </IconTile>
             技能
           </p>
-          <Link className="text-xs text-v3-brand" to="/skills">
-            查看全部
-          </Link>
+          <V3Button onClick={onManageCapabilities} size="sm" variant="ghost">
+            管理
+          </V3Button>
         </div>
         {skills.isLoading ? (
           <p className="text-xs text-v3-ink-3">加载中</p>

@@ -398,7 +398,9 @@ describe("EmployeeDetailView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "停止" }));
 
-    await expect.element(screen.getByText("取消中")).toBeVisible();
+    // Status pill label "取消中" now also renders on the (still-mounted, translated) run
+    // row behind the drawer, so scope the assertion to the open drawer.
+    await expect.element(screen.getByRole("dialog").getByText("取消中")).toBeVisible();
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "GET")).toBeGreaterThanOrEqual(2);
   });
 
@@ -436,7 +438,7 @@ describe("EmployeeDetailView", () => {
     await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
 
     // Drawer closes and runs list is refetched, surfacing the new dispatching run.
-    await expect.element(screen.getByText("dispatching")).toBeVisible();
+    await expect.element(screen.getByText("分派中")).toBeVisible();
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "POST")).toBe(1);
   });
 

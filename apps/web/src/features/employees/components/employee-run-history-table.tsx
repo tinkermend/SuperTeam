@@ -17,6 +17,8 @@ import type {
   DigitalEmployeeRunListResult,
   DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
+import { formatDateTime } from "@/lib/format-time";
+import { runStatusLabel } from "@/lib/status-labels";
 import { Link } from "@tanstack/react-router";
 
 type EmployeeRunHistoryTableProps = {
@@ -141,11 +143,11 @@ export function EmployeeRunHistoryTable({
                   </StatusPill>
                 </V3Td>
                 <V3Td>
-                  <StatusPill tone={runStatusTone[item.status]}>{item.status}</StatusPill>
+                  <StatusPill tone={runStatusTone[item.status]}>{runStatusLabel(item.status)}</StatusPill>
                 </V3Td>
                 <V3Td className="tabular-nums">{item.duration_sec != null ? formatDuration(item.duration_sec) : "--"}</V3Td>
                 <V3Td className="tabular-nums">{item.work_product_count}</V3Td>
-                <V3Td className="text-xs text-v3-ink-3">{item.updated_at ?? item.created_at ?? "-"}</V3Td>
+                <V3Td className="text-xs text-v3-ink-3">{formatRowTime(item)}</V3Td>
               </V3Tr>
             ))}
           </tbody>
@@ -158,6 +160,11 @@ export function EmployeeRunHistoryTable({
 
 function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+function formatRowTime(item: DigitalEmployeeRunListItem) {
+  const value = item.updated_at ?? item.created_at;
+  return value ? formatDateTime(value) : "-";
 }
 
 function formatDuration(seconds: number): string {

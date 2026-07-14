@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Blocks, FileClock, Play, Settings, Trash2 } from "lucide-react";
 import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
 import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
+import { employeeStatusLabel } from "@/lib/status-labels";
 import { EmployeeAvatar } from "../avatar";
 import { providerDisplayName } from "../provider-label";
 
@@ -50,7 +51,9 @@ export function EmployeeDetailHeader({
             <h2 className="truncate text-[22px] font-extrabold tracking-tight text-v3-ink">
               {employee.name}
             </h2>
-            <StatusPill tone={statusTone[employee.status] ?? "mute"}>{employee.status}</StatusPill>
+            <StatusPill tone={statusTone[employee.status] ?? "mute"}>
+              {employeeStatusLabel(employee.status)}
+            </StatusPill>
           </div>
           <p className="mt-1 truncate text-[13px] text-v3-ink-2">
             数字员工身份 · Provider {providerDisplayName(employee.provider_type)} · 生效上下文与历史执行记录
