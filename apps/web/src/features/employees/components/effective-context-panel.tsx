@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { BookOpen, Boxes, KeyRound, Network, ScrollText } from "lucide-react";
 import { IconTile, SoftCard, StatusPill, V3Button } from "@/components/superteam";
 import type { DigitalEmployee, DigitalEmployeeExecutionInstance } from "@/lib/api/employees";
+import { providerDisplayName } from "../provider-label";
 
 type EffectiveContextPanelProps = {
   employee: DigitalEmployee;
@@ -157,16 +158,4 @@ function InfoItem({ label, value }: { label: string; value: string }) {
       <p className="truncate text-sm font-medium text-v3-ink">{value}</p>
     </div>
   );
-}
-
-function providerDisplayName(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
-  const labels: Record<string, string> = {
-    codex: "Codex",
-    opencode: "OpenCode",
-    "open-code": "OpenCode",
-    "claude-code": "Claude Code",
-    claude: "Claude Code",
-  };
-  return labels[normalized] ?? value;
 }

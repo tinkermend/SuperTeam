@@ -54,6 +54,7 @@ import {
 import { listTeams } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
+import { providerDisplayName } from "./provider-label";
 import {
   findTemplateByType,
   firstPreferredEmployeeType,
@@ -1089,7 +1090,7 @@ function CreationPreflightPanel({
           />
           <SummaryItem
             label="Provider 类型"
-            value={draft.provider_type ? providerLabel(draft.provider_type) : `${providers.length} 个候选`}
+            value={draft.provider_type ? providerDisplayName(draft.provider_type) : `${providers.length} 个候选`}
           />
         </div>
       </GlassCard>
@@ -1170,7 +1171,7 @@ function ConfirmCreationStep({
             />
             <InlineSummary
               label="Provider 类型"
-              value={draft.provider_type ? providerLabel(draft.provider_type) : "未选择"}
+              value={draft.provider_type ? providerDisplayName(draft.provider_type) : "未选择"}
             />
             <InlineSummary label="Runtime 节点" value="会在项目运行准备中决定，不在创建时绑定到员工。" />
             <InlineSummary
@@ -1664,10 +1665,10 @@ function ProviderOption({
         onSelectProvider(providerType);
       }}
     >
-      <RadioGroupItem aria-label={providerLabel(providerType)} value={providerType} />
+      <RadioGroupItem aria-label={providerDisplayName(providerType)} value={providerType} />
       <span className="min-w-0 flex-1">
         <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>
-          {providerLabel(providerType)}
+          {providerDisplayName(providerType)}
         </span>
         <span className="mt-1 block text-v3-ink-3">{dispatchPreviewText}</span>
       </span>
@@ -1963,20 +1964,10 @@ const riskLabels: Record<string, string> = {
   critical: "严重",
 };
 
-const providerLabels: Record<string, string> = {
-  codex: "Codex",
-  opencode: "OpenCode",
-  "claude-code": "Claude Code",
-};
-
 const canonicalProviderTypes = ["codex", "opencode", "claude-code"] as const;
 
 function riskLabel(value: string) {
   return riskLabels[value] ?? value;
-}
-
-function providerLabel(value: string) {
-  return providerLabels[value] ?? value;
 }
 
 function normalizeProviderValue(value: string) {

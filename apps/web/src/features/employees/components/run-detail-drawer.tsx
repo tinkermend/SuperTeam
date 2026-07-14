@@ -11,6 +11,8 @@ import {
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
+import { runStatusLabel } from "@/lib/status-labels";
+import { providerDisplayName } from "../provider-label";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>(["queued", "dispatching", "running", "cancelling"]);
 const failedRunStatuses = new Set<DigitalEmployeeRunStatus>(["failed", "cancelled", "timed_out"]);
@@ -67,7 +69,7 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
         <div className="flex flex-col gap-4 px-4 pb-6">
           <div className="grid gap-2 text-sm md:grid-cols-2">
             <SummaryItem label="命令" value={displayedRun.command_id} />
-            <SummaryItem label="Provider" value={displayedRun.provider_type} />
+            <SummaryItem label="Provider" value={providerDisplayName(displayedRun.provider_type)} />
             <SummaryItem label="节点" value={displayedRun.node_id || displayedRun.runtime_node_id} />
             <SummaryItem label="更新时间" value={displayedRun.updated_at ?? displayedRun.created_at ?? "-"} />
           </div>
@@ -160,27 +162,6 @@ function isActiveRun(status: DigitalEmployeeRunStatus) {
 
 function isFailedRun(status: DigitalEmployeeRunStatus) {
   return failedRunStatuses.has(status);
-}
-
-function runStatusLabel(status: DigitalEmployeeRunStatus) {
-  switch (status) {
-    case "queued":
-      return "排队中";
-    case "dispatching":
-      return "调度中";
-    case "running":
-      return "执行中";
-    case "cancelling":
-      return "取消中";
-    case "completed":
-      return "已完成";
-    case "failed":
-      return "失败";
-    case "cancelled":
-      return "已取消";
-    case "timed_out":
-      return "已超时";
-  }
 }
 
 function failureReason(run: DigitalEmployeeRunListItem) {

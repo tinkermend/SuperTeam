@@ -3,6 +3,7 @@ import { ArrowLeft, Blocks, FileClock, Play, Settings, Trash2 } from "lucide-rea
 import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
 import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
 import { EmployeeAvatar } from "../avatar";
+import { providerDisplayName } from "../provider-label";
 
 type EmployeeDetailHeaderProps = {
   employee: DigitalEmployee;
@@ -96,16 +97,4 @@ export function EmployeeDetailHeader({
       </div>
     </div>
   );
-}
-
-function providerDisplayName(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
-  const labels: Record<string, string> = {
-    codex: "Codex",
-    opencode: "OpenCode",
-    "open-code": "OpenCode",
-    "claude-code": "Claude Code",
-    claude: "Claude Code",
-  };
-  return labels[normalized] ?? value;
 }

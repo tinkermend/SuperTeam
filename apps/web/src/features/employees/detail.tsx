@@ -45,6 +45,7 @@ import { EmployeeRunHistoryTable } from "./components/employee-run-history-table
 import { RunDetailDrawer } from "./components/run-detail-drawer";
 import { SchedulingReadinessPanel } from "./components/scheduling-readiness-panel";
 import { StartTaskDrawer } from "./components/start-task-drawer";
+import { providerDisplayName } from "./provider-label";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>([
   "queued",
@@ -542,16 +543,4 @@ function formatConfigSnapshotJson(value: Record<string, unknown>) {
 
 function hasRuntimeState(value: Record<string, unknown>) {
   return Object.values(value).some((item) => item !== undefined && item !== "");
-}
-
-function providerDisplayName(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
-  const labels: Record<string, string> = {
-    codex: "Codex",
-    opencode: "OpenCode",
-    "open-code": "OpenCode",
-    "claude-code": "Claude Code",
-    claude: "Claude Code",
-  };
-  return labels[normalized] ?? value;
 }

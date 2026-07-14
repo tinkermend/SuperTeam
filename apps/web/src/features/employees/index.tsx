@@ -49,6 +49,7 @@ import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { EmployeeAvatar } from "./avatar";
 import { overviewAvatarAsset } from "./avatar-library";
+import { providerDisplayName } from "./provider-label";
 
 const DEFAULT_STATUS_OPTIONS: OverviewFilterOption[] = [
   { value: "active", label: "生效" },
@@ -943,21 +944,8 @@ function runtimeProviderLine(item: DigitalEmployeeOverviewItem) {
   }
 
   const runtime = execution.node_id || execution.runtime_name || "Runtime Agent";
-  const provider = providerLabel(execution.provider_type);
+  const provider = providerDisplayName(execution.provider_type);
   return `${runtime} · ${provider}`;
-}
-
-function providerLabel(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/-/g, "_");
-  const labels: Record<string, string> = {
-    claude_code: "Claude Code",
-    claude: "Claude Code",
-    opencode: "OpenCode",
-    open_code: "OpenCode",
-    codex: "Codex",
-  };
-
-  return labels[normalized] ?? value;
 }
 
 function latestRunCompact(item: DigitalEmployeeOverviewItem) {
