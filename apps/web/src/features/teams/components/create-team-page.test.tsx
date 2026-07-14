@@ -35,7 +35,12 @@ function createTeamPostBody(fetcher: typeof fetch) {
   return JSON.parse(String(postCall?.[1]?.body));
 }
 
-function createFetcher(options: { createStatus?: number } = {}) {
+function createFetcher(
+  options: {
+    createStatus?: number;
+    digitalEmployees?: unknown[];
+  } = {},
+) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -54,10 +59,8 @@ function createFetcher(options: { createStatus?: number } = {}) {
       });
     }
 
-    if (url.pathname === "/api/digital-employees" && method === "GET") {
-      return jsonResponse({
-        items: [],
-      });
+    if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse(options.digitalEmployees ?? []);
     }
 
     if (url.pathname === "/api/v1/teams" && method === "POST") {
@@ -237,6 +240,112 @@ describe("CreateTeamView", () => {
     });
     await expect.poll(() => onCreated.mock.calls.length).toBe(1);
     expect(onCreated.mock.calls[0][1]).toEqual({ goToConstitution: false });
+  });
+
+  it("keeps human owners and digital employees distinct on the team canvas", async () => {
+    const fetcher = createFetcher({
+      digitalEmployees: [
+        {
+          id: "employee-1",
+          name: "事件分析员",
+          role: "安全事件分析",
+          status: "ready",
+        },
+      ],
+    });
+    const screen = await renderView(
+      <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await expect.element(screen.getByLabelText("团队画布")).toBeVisible();
+    await expect.element(screen.getByText("数字员工库")).toBeVisible();
+
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队名称", exact: true }),
+      "安全团队",
+    );
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
+      "security",
+    );
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "搜索平台注册用户" }),
+      "owner",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
+    await userEvent.click(screen.getByRole("button", { name: "加入 事件分析员" }));
+
+    await expect
+      .element(screen.getByRole("button", { name: "移除数字员工 事件分析员" }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("heading", { name: "人类负责人" }))
+      .toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步: 确认并创建" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认并创建" }));
+
+    await expect.poll(() => createTeamPostBody(fetcher)).toEqual({
+      human_owner_user_ids: ["owner-user"],
+      initial_digital_employee_ids: ["employee-1"],
+      metadata: {
+        display: {
+          color_tone: "teal",
+          icon_key: "security",
+        },
+      },
+      name: "安全团队",
+      slug: "security",
+    });
+  });
+
+  it("paginates the digital employee library instead of extending the create page", async () => {
+    const fetcher = createFetcher({
+      digitalEmployees: Array.from({ length: 6 }, (_, index) => ({
+        id: `employee-${index + 1}`,
+        name: `数字员工 ${index + 1}`,
+        role: "执行专员",
+        status: "ready",
+      })),
+    });
+    const screen = await renderView(
+      <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await expect
+      .element(screen.getByRole("button", { name: "加入 数字员工 1" }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "加入 数字员工 6" }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    await expect
+      .element(screen.getByRole("button", { name: "加入 数字员工 6" }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "加入 数字员工 1" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("keeps the wizard actions at the viewport bottom while the configuration scrolls", async () => {
+    const screen = await renderView(
+      <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={createFetcher()} />,
+    );
+
+    const scrollRegion = document.body.querySelector('[data-testid="create-team-scroll-region"]');
+    expect(scrollRegion).toBeTruthy();
+    expect(scrollRegion).toHaveClass("flex-1");
+    expect(scrollRegion).toHaveClass("overflow-y-auto");
+
+    const actions = document.body.querySelector('[data-testid="create-team-actions"]');
+    expect(actions).toBeTruthy();
+    expect(actions).toHaveClass("sticky");
+    expect(actions).toHaveClass("bottom-0");
+    await expect
+      .element(screen.getByRole("button", { name: "下一步: 确认并创建" }))
+      .toBeVisible();
   });
 
   it("surfaces a create error returned by the API", async () => {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-14 12:26：新建团队页数字员工库分页调整为每页展示 5 位；分页回归覆盖第 6 位员工进入下一页。验证：`create-team-page.test.tsx` 8/8。
+- 2026-07-14 12:24：移除新建团队页底部操作栏的半透明底色与背景模糊，操作栏现在直接融入页面极光背景，同时保留顶部边线与按钮层级。验证：`git diff --check`。
+- 2026-07-14 12:21：新建团队页改为受限视口工作区：页头与底部操作栏保持可见，配置画布与确认内容在中间区域滚动；因此无论桌面屏幕高度如何，取消、上一步和下一步/确认创建都固定在内容区底部。验证：`create-team-page.test.tsx` 8/8、串行 Web 测试 696/696、Web typecheck/build；Web 服务重启后 `/teams/new` 返回 200。标准 `verify:web` 的并行测试仍在 `route.fulfill` 内存回收异常处中断；浏览器真实 UI 检查仍受本机浏览器控制运行时初始化 `process` 冲突阻断。
+- 2026-07-14 12:16：新建团队「团队画布」右侧数字员工库固定为 42rem 高度，并改为每页 4 位的本地分页；搜索时自动回到第一页，已选员工仍会从候选项中移除，避免员工多时将下一步与取消操作推到首屏外。验证：`create-team-page.test.tsx` 7/7、串行 Web 测试 695/695、Web typecheck/build；浏览器真实 UI 检查仍受本机浏览器控制运行时初始化 `process` 冲突阻断。
+- 2026-07-14 12:10：新建团队页改为「团队画布」工作面：左侧为团队名片与人类负责人，中部用负责人→数字员工的关系画布呈现已选结构，右侧以实底员工库搜索并加入未归属员工；保留既有两步确认、多人负责人、创建接口与元数据契约。新增回归覆盖负责人和数字员工分别进入画布及 POST 负载。验证：`create-team-page.test.tsx` 6/6、Web typecheck；Web 服务重启后 `/teams/new` 返回 200 并确认 Vite 正在加载新组件。浏览器真实 UI 检查待本机浏览器控制运行时恢复（初始化受 `process` 冲突阻断）。
+
 - 2026-07-13 17:50：新建团队 UI 打磨——数字员工列表改用 `EmployeeAvatar`；向导收敛为两步（配置团队=身份+负责人/数字员工同屏 → 确认并创建），去掉空壳权限步与单独身份页的稀疏布局。验证：`create-team-page.test.tsx`；浏览器 `/teams/new`。
 
 - 2026-07-13 12:33：场景模板注册表 P1（分支 feat/scenario-template-p1，spec 2026-07-13-scenario-template-registry-design.md）：迁移 058 建 `scenario_templates`（5 种子含 generic 兜底）+ `projects.scenario_template_key`；只读 API GET /scenario-templates(+/{key})（authz scenario_template.read）；项目创建绑定 key（注册表校验 active）；规划快照装载模板内容注入 planner prompt（骨架实例化指令），`ValidateRouteDecisionPlan` 强制 plan.template_key == 绑定 key（template_key 首次有消费方）；template_key 经 PlanRevisionPayload 落库并在计划确认卡显示；Web 新增「场景模板」目录页（流程能力组）与项目创建模板下拉。顺手修复：web typecheck 两处预存在破损（workflows fixture 缺 execution_summaries、constitution tab unknown 取长）；五处过期测试断言对齐现实（5a8804fa 侧栏软化样式值、未提交的嵌套日志菜单期望、runtime/trace-panel 卡片数）。验证：verify:contracts/control-plane/runtime-agent 绿；web 679/679 绿（--no-file-parallelism；并行模式存在预existing 的 vitest browser route.fulfill 堆回收崩溃，待另行排查）；真实 E2E（2026-07-13 14:20 回填）：注册表 API/页面 5 种子可见可展开；绑 ops_analysis 项目的规划骨架逐字实例化（produces/required_inputs/depends_on）并全链执行（collect 交付真实 df -h 输出、analyze 经 upstream_results 消费、handoff.verified×2）、payload template_key 落库且计划卡显示；未绑项目回归正常；创建表单下拉列全模板。首轮规划暴露两问题已修（骨架任务必填字段 prompt 加固；置信度阈值用项目级 policy 旋钮）。附带发现调度韧性缺口：CP 重启瞬断命令通道时 DispatchProjectTask 超时放弃、queued 孤儿 attempt 无恢复（项目 12579692，待立项）。

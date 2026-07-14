@@ -6,8 +6,7 @@ import type { TeamOverview } from "@/lib/api/teams";
 import { createTeam } from "@/lib/api/teams";
 import { cn } from "@/lib/utils";
 
-import { CreateTeamStepIdentity } from "./create-team-step-identity";
-import { CreateTeamStepMembers } from "./create-team-step-members";
+import { CreateTeamConfigurationCanvas } from "./create-team-configuration-canvas";
 import { CreateTeamStepReview } from "./create-team-step-review";
 import {
   type CreateTeamDraft,
@@ -97,10 +96,13 @@ export function CreateTeamView({
     createMutation.error instanceof Error ? createMutation.error.message : undefined;
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-5 pb-10">
+    <div
+      className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-4"
+      data-testid="create-team-view"
+    >
       <div
         className={cn(
-          "flex flex-wrap items-center gap-3",
+          "flex shrink-0 flex-wrap items-center gap-3",
           showHeading ? "justify-between" : "justify-start",
         )}
       >
@@ -155,7 +157,10 @@ export function CreateTeamView({
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-5">
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pb-4"
+        data-testid="create-team-scroll-region"
+      >
         {submitError ? (
           <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
             {submitError}
@@ -163,20 +168,13 @@ export function CreateTeamView({
         ) : null}
 
         {currentStep === 1 ? (
-          <>
-            <CreateTeamStepIdentity
-              draft={draft}
-              errors={errors}
-              onChange={setDraft}
-            />
-            <CreateTeamStepMembers
-              apiBaseUrl={apiBaseUrl}
-              draft={draft}
-              errors={errors}
-              fetcher={fetcher}
-              onChange={setDraft}
-            />
-          </>
+          <CreateTeamConfigurationCanvas
+            apiBaseUrl={apiBaseUrl}
+            draft={draft}
+            errors={errors}
+            fetcher={fetcher}
+            onChange={setDraft}
+          />
         ) : null}
 
         {currentStep === 2 ? (
@@ -187,32 +185,36 @@ export function CreateTeamView({
           />
         ) : null}
 
-        <div className="flex items-center justify-end gap-3 border-t pt-5">
-          {onCancel && currentStep === 1 ? (
-            <Button onClick={onCancel} type="button" variant="outline">
-              取消
-            </Button>
-          ) : null}
-          {currentStep > 1 ? (
-            <Button onClick={handlePrev} type="button" variant="outline">
-              上一步
-            </Button>
-          ) : null}
-          {currentStep < STEPS.length ? (
-            <Button onClick={handleNext} type="button">
-              下一步: {STEPS[currentStep].label}
-            </Button>
-          ) : (
-            <Button
-              disabled={createMutation.isPending}
-              onClick={handleSubmit}
-              type="button"
-            >
-              <BadgeCheck data-icon="inline-start" />
-              确认并创建
-            </Button>
-          )}
-        </div>
+      </div>
+
+      <div
+        className="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-3 border-t border-v3-line px-4 py-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)] sm:px-6"
+        data-testid="create-team-actions"
+      >
+        {onCancel && currentStep === 1 ? (
+          <Button onClick={onCancel} type="button" variant="outline">
+            取消
+          </Button>
+        ) : null}
+        {currentStep > 1 ? (
+          <Button onClick={handlePrev} type="button" variant="outline">
+            上一步
+          </Button>
+        ) : null}
+        {currentStep < STEPS.length ? (
+          <Button onClick={handleNext} type="button">
+            下一步: {STEPS[currentStep].label}
+          </Button>
+        ) : (
+          <Button
+            disabled={createMutation.isPending}
+            onClick={handleSubmit}
+            type="button"
+          >
+            <BadgeCheck data-icon="inline-start" />
+            确认并创建
+          </Button>
+        )}
       </div>
     </div>
   );

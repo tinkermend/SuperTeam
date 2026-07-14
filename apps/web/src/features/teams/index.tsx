@@ -52,7 +52,7 @@ export function CreateTeamPage() {
         title="新建团队"
         subtitle="配置团队负责人、成员和初始治理边界。"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main fixed className="min-w-0 overflow-x-hidden py-4">
         <CreateTeamView
           apiBaseUrl={apiBaseUrl}
           showHeading={false}
