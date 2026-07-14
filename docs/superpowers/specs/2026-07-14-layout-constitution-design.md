@@ -56,8 +56,8 @@ canvas 档不设 token，语义即"不限宽"（仅图形/拓扑画布）。消�
 KPI 指标带，取代手写 `sm:grid-cols-2 xl:grid-cols-4`。
 
 - Props：`children`、`className?`、可选 `aria-label`（渲染为 `section`）。
-- 实现：`grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,var(--v3-metric-min)),var(--v3-metric-max)))]`。
-- 行为：卡片宽度被限制在 208–336px 区间，自动换行，左对齐，超宽屏允许尾部留白——KPI 卡在任何分辨率下密度一致，不再被拉成 400px+ 空卡。
+- 实现：`flex flex-wrap gap-3` + 子项 `flex-[1_1_var(--v3-metric-min)] max-w-(--v3-metric-max) min-w-0`。不用 grid `auto-fit`：其列数按 max 轨道宽计算，会在仍有尾部空间时提前换行（实测 1536px 视口出现 3+1 孤行）。
+- 行为：卡片宽度被限制在 208–336px 区间——空间不足先压缩到下限再换行，空间富余到上限即止、尾部留白；KPI 卡在任何分辨率下密度一致，不再被拉成 400px+ 空卡。
 
 两个组件均补单元测试（渲染结构、rail 档位对应的 class、槽位内容）。
 

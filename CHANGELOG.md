@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- 2026-07-14 12:26：新建团队页数字员工库分页调整为每页展示 5 位；分页回归覆盖第 6 位员工进入下一页。验证：`create-team-page.test.tsx` 8/8。
+- 2026-07-14 15:19：布局宪法 P1（分支 feat/layout-constitution，spec 2026-07-14-layout-constitution-design.md）：`theme.css` 新增 `--v3-layout-*`/`--v3-metric-*` 宽度 token（三档：contained 1280 / wide 1680 / canvas 不限）；`Main` 加 `width` 档位属性（默认行为不变，存量 32 处调用零影响）；superteam 新增布局基元 `MasterDetailLayout`（rail 340/420 两档、`@container/master-detail` 容器断点折叠）与 `MetricGrid`（KPI 卡 208–336px 有界，flex-wrap 先压缩后换行——grid auto-fit 按 max 计列数会提前孤行，实测弃用）；`layout-density.md` 升级为可执行规范（宽度档位/断点口径/主从布局/指标带四章），DESIGN.md 概念表登记；试点迁移项目管理页（`Main width="wide"`、主从 420 栅格与 KPI 带换基元、右栏 sticky 改容器变体）。验证：layout/main/projects 单测 54/54 绿；verify:design-system 绿；真实浏览器（admin 登录真实 Control Plane）1280/1536/2000 三视口实测——2000 下内容 1680 居中、双列 1208+420、KPI 336×4、右栏 sticky；1536 下 KPI 307×4 单行；1280 下容器 1008<@5xl 正确落单列；三档均无横向溢出。：新建团队页数字员工库分页调整为每页展示 5 位；分页回归覆盖第 6 位员工进入下一页。验证：`create-team-page.test.tsx` 8/8。
 - 2026-07-14 12:24：移除新建团队页底部操作栏的半透明底色与背景模糊，操作栏现在直接融入页面极光背景，同时保留顶部边线与按钮层级。验证：`git diff --check`。
 - 2026-07-14 12:21：新建团队页改为受限视口工作区：页头与底部操作栏保持可见，配置画布与确认内容在中间区域滚动；因此无论桌面屏幕高度如何，取消、上一步和下一步/确认创建都固定在内容区底部。验证：`create-team-page.test.tsx` 8/8、串行 Web 测试 696/696、Web typecheck/build；Web 服务重启后 `/teams/new` 返回 200。标准 `verify:web` 的并行测试仍在 `route.fulfill` 内存回收异常处中断；浏览器真实 UI 检查仍受本机浏览器控制运行时初始化 `process` 冲突阻断。
 - 2026-07-14 12:16：新建团队「团队画布」右侧数字员工库固定为 42rem 高度，并改为每页 4 位的本地分页；搜索时自动回到第一页，已选员工仍会从候选项中移除，避免员工多时将下一步与取消操作推到首屏外。验证：`create-team-page.test.tsx` 7/7、串行 Web 测试 695/695、Web typecheck/build；浏览器真实 UI 检查仍受本机浏览器控制运行时初始化 `process` 冲突阻断。

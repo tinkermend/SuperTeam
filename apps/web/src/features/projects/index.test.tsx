@@ -1605,7 +1605,10 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
 
     const layout = screen.getByTestId("projects-risk-home-layout").element();
-    expect(layout.className).toContain("xl:grid-cols-[minmax(0,1fr)_420px]");
+    expect(layout.className).toContain("@container/master-detail");
+    expect(layout.firstElementChild?.className).toContain(
+      "@5xl/master-detail:grid-cols-[minmax(0,1fr)_var(--v3-layout-rail-lg)]",
+    );
     expect(
       screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
     ).toBeTruthy();

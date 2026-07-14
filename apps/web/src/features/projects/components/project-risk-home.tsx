@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   IconTile,
+  MetricGrid,
   StatusPill,
   V3Button,
   V3Chip,
@@ -126,10 +127,7 @@ export function ProjectPortfolioSummaryBar({
   ];
 
   return (
-    <section
-      aria-label="项目组合概览（已加载列表）"
-      className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-    >
+    <MetricGrid aria-label="项目组合概览（已加载列表）">
       {items.map((item) => {
         const Icon = item.icon;
         return (
@@ -173,7 +171,7 @@ export function ProjectPortfolioSummaryBar({
           </div>
         );
       })}
-    </section>
+    </MetricGrid>
   );
 }
 
@@ -472,7 +470,7 @@ export function ProjectTriagePanel({
     return (
       <aside
         aria-label="选中项目上下文"
-        className="min-w-0 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm xl:sticky xl:top-4"
+        className="min-w-0 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4"
         data-testid="project-selected-context-panel"
       >
         <V3EmptyState
@@ -492,7 +490,7 @@ export function ProjectTriagePanel({
   return (
     <aside
       aria-label="选中项目上下文"
-      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm xl:sticky xl:top-4"
+      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4"
       data-testid="project-selected-context-panel"
     >
       <div className="flex min-w-0 items-start gap-2.5">
