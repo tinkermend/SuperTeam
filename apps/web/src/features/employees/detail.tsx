@@ -36,7 +36,6 @@ import {
 import { listEmployeeSkills } from "@/lib/api/skills";
 import { getRuntimeOverview } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { ContextInjectionChain } from "./components/context-injection-chain";
 import { EffectiveContextPanel } from "./components/effective-context-panel";
 import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
 import { EmployeeDetailHeader } from "./components/employee-detail-header";
@@ -118,9 +117,8 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     refetchInterval: 5000,
   });
 
-  // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed both the
-  // panel (as computed props) and ContextInjectionChain (real counts). The panel
-  // is now a pure presentational component.
+  // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed the panel
+  // (as computed props). The panel is now a pure presentational component.
   const skillsQuery = useQuery({
     queryKey: ["employee-skills", employeeId],
     queryFn: () => listEmployeeSkills(apiOptions, employeeId),
@@ -329,16 +327,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                 />
               </div>
             </section>
-
-            <ContextInjectionChain
-              envConfiguredCount={configuredEnvCount}
-              envTotalCount={envVarsQuery.data?.length ?? 0}
-              hasPersonaMemory={Boolean(employee.data.persona_memory_markdown?.trim())}
-              inheritedSkillCount={inheritedSkillCount}
-              mcpCount={mcpQuery.data?.length ?? 0}
-              personalSkillCount={personalSkillCount}
-              roleLabel={employee.data.role}
-            />
 
             <EmployeeConfigSnapshotSection
               employee={employee.data}
