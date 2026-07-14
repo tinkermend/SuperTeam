@@ -38,7 +38,7 @@ function createFetcher() {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     if (url.pathname === `/api/v1/digital-employees/${employeeId}/runs/${current.id}/events` && method === "GET") {
-      return jsonResponse([{ event_type: "provider.stdout", sequence_number: 1, payload: { text: "正在执行" } }]);
+      return jsonResponse([{ event_type: "text_delta", sequence_number: 1, payload: { text: "正在执行" } }]);
     }
     if (url.pathname === `/api/v1/digital-employees/${employeeId}/runs/${current.id}/stop` && method === "POST") {
       current = { ...current, status: "cancelling" };
@@ -83,6 +83,7 @@ describe("RunDetailDrawer", () => {
     );
 
     await expect.element(screen.getByText(/正在执行/)).toBeVisible();
+    await expect.element(screen.getByText("更新时间")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "停止" }));
     await expect.element(screen.getByText("取消中")).toBeVisible();
     expect(onStopped).toHaveBeenCalled();
@@ -131,5 +132,28 @@ describe("RunDetailDrawer", () => {
     // "已取消" lookup above is itself proof the stale "取消中" pill label is gone (the pill renders
     // exactly one label). If the bug regressed, this assertion would throw with "unable to find
     // element with text: 已取消".
+  });
+
+  it("renders completed result conclusion as prose with raw JSON collapsed", async () => {
+    const completedRun: DigitalEmployeeRunListItem = {
+      ...runningRun,
+      status: "completed",
+      result: { summary: "已生成验收报告", detail: { files: 3 } },
+    };
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher: createFetcher() }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={completedRun}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText("已生成验收报告")).toBeVisible();
+    await expect.element(screen.getByText("原始结果 JSON")).toBeVisible();
   });
 });

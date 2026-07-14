@@ -187,7 +187,7 @@ function createDetailFetcher({
   employeePayload = employee,
   events = [
     {
-      event_type: "provider.stdout",
+      event_type: "text_delta",
       sequence_number: 1,
       payload: { text: "正在分析需求" },
       provider_session_external_id: "session-ext-1",
@@ -394,7 +394,6 @@ describe("EmployeeDetailView", () => {
 
     // Drawer opens; event stream renders. (Status pill label "执行中" is also used
     // by a filter chip, so we verify drawer contents via event rows instead.)
-    await expect.element(screen.getByText("provider.stdout")).toBeVisible();
     await expect.element(screen.getByText(/正在分析需求/)).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "停止" }));
@@ -627,10 +626,10 @@ describe("EmployeeDetailView", () => {
       runs: [latestRun, previousRun],
       eventsByRunId: {
         "latest-run": [
-          { event_type: "provider.stdout", sequence_number: 1, payload: { text: "最新事件" } },
+          { event_type: "text_delta", sequence_number: 1, payload: { text: "最新事件" } },
         ],
         "previous-run": [
-          { event_type: "provider.stderr", sequence_number: 2, payload: { text: "历史失败事件" } },
+          { event_type: "text_delta", sequence_number: 2, payload: { text: "历史失败事件" } },
         ],
       },
     });

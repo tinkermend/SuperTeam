@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Square } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -7,12 +8,13 @@ import {
   listDigitalEmployeeRunEvents,
   stopDigitalEmployeeRun,
   type DigitalEmployeeRun,
-  type DigitalEmployeeRunEvent,
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
+import { formatDateTime } from "@/lib/format-time";
 import { runStatusLabel } from "@/lib/status-labels";
 import { providerDisplayName } from "../provider-label";
+import { RunEventTimeline } from "./run-event-timeline";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>(["queued", "dispatching", "running", "cancelling"]);
 const failedRunStatuses = new Set<DigitalEmployeeRunStatus>(["failed", "cancelled", "timed_out"]);
@@ -68,10 +70,10 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
         </SheetHeader>
         <div className="flex flex-col gap-4 px-4 pb-6">
           <div className="grid gap-2 text-sm md:grid-cols-2">
-            <SummaryItem label="命令" value={displayedRun.command_id} />
+            <SummaryItem label="命令" mono value={displayedRun.command_id} />
             <SummaryItem label="Provider" value={providerDisplayName(displayedRun.provider_type)} />
-            <SummaryItem label="节点" value={displayedRun.node_id || displayedRun.runtime_node_id} />
-            <SummaryItem label="更新时间" value={displayedRun.updated_at ?? displayedRun.created_at ?? "-"} />
+            <SummaryItem label="节点" mono value={displayedRun.node_id || displayedRun.runtime_node_id} />
+            <SummaryItem label="更新时间" value={formatRunTimestamp(displayedRun)} />
           </div>
           {isFailedRun(displayedRun.status) ? <FailureBlock run={displayedRun} /> : null}
           {displayedRun.status === "completed" ? <ResultBlock run={displayedRun} /> : null}
@@ -95,11 +97,7 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
             {events.isLoading ? <p className="text-sm text-v3-ink-2">事件加载中</p> : null}
             {events.isError ? <p className="text-sm text-destructive">事件加载失败</p> : null}
             {events.data?.length ? (
-              <div className="space-y-2">
-                {events.data.map((event) => (
-                  <RunEventRow event={event} key={`${event.sequence_number}-${event.event_type}`} />
-                ))}
-              </div>
+              <RunEventTimeline events={events.data} limitReached={events.data.length >= 50} />
             ) : !events.isLoading ? (
               <p className="text-sm text-v3-ink-2">暂无事件</p>
             ) : null}
@@ -110,11 +108,13 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
   );
 }
 
-function SummaryItem({ label, value }: { label: string; value: string }) {
+function SummaryItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0 rounded-md border border-v3-line bg-v3-card-soft px-3 py-2">
       <p className="text-xs text-v3-ink-3">{label}</p>
-      <p className="mt-1 truncate text-sm font-medium text-v3-ink">{value}</p>
+      <p className={mono ? "mt-1 truncate font-mono text-xs text-v3-ink" : "mt-1 truncate text-sm font-medium text-v3-ink"}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -134,24 +134,33 @@ function FailureBlock({ run }: { run: DigitalEmployeeRunListItem }) {
 }
 
 function ResultBlock({ run }: { run: DigitalEmployeeRunListItem }) {
+  const [rawOpen, setRawOpen] = useState(false);
+  const conclusion = extractResultText(run.result);
+  const rawJson = compactJson(run.result);
   return (
     <div>
       <p className="text-sm font-medium">结果</p>
-      <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-v3-line bg-v3-card-soft p-3 text-xs">
-        {compactJson(run.result)}
-      </pre>
-    </div>
-  );
-}
-
-function RunEventRow({ event }: { event: DigitalEmployeeRunEvent }) {
-  return (
-    <div className="grid gap-2 rounded-md border border-v3-line px-3 py-2 md:grid-cols-[120px_160px_minmax(0,1fr)]">
-      <p className="text-sm font-medium">#{event.sequence_number}</p>
-      <p className="truncate text-sm">{event.event_type}</p>
-      <pre className="min-w-0 overflow-auto whitespace-pre-wrap break-words text-xs text-v3-ink-2">
-        {compactJson(event.payload)}
-      </pre>
+      {conclusion ? (
+        <p className="mt-2 whitespace-pre-wrap break-words rounded-md border border-v3-line bg-v3-card-soft p-3 text-sm leading-6 text-v3-ink">
+          {conclusion}
+        </p>
+      ) : null}
+      {rawJson && conclusion ? (
+        <details className="mt-2" onToggle={(event) => setRawOpen(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-xs text-v3-ink-3">原始结果 JSON</summary>
+          {rawOpen ? (
+            <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-v3-line bg-v3-card-soft p-3 text-xs">
+              {rawJson}
+            </pre>
+          ) : null}
+        </details>
+      ) : null}
+      {rawJson && !conclusion ? (
+        <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-v3-line bg-v3-card-soft p-3 text-xs">
+          {rawJson}
+        </pre>
+      ) : null}
+      {!rawJson && !conclusion ? <p className="mt-2 text-sm text-v3-ink-2">无结果数据</p> : null}
     </div>
   );
 }
@@ -173,4 +182,21 @@ function compactJson(value: unknown) {
     return "";
   }
   return JSON.stringify(value, null, 2);
+}
+
+function formatRunTimestamp(run: DigitalEmployeeRunListItem) {
+  const value = run.updated_at ?? run.created_at;
+  return value ? formatDateTime(value) : "-";
+}
+
+const RESULT_TEXT_KEYS = ["summary", "conclusion", "text", "message"] as const;
+
+function extractResultText(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const record = result as Record<string, unknown>;
+  for (const key of RESULT_TEXT_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
 }
