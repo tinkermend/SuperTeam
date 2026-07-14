@@ -82,6 +82,7 @@ import {
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
+import { listDigitalEmployees } from "@/lib/api/employees";
 import { getInboxBadge, listInboxItems } from "@/lib/api/inbox";
 import { listRuntimeNodes } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -305,6 +306,23 @@ export function ProjectsView({
     queryFn: () => getInboxBadge(apiOptions),
     placeholderData: keepPreviousData,
   });
+  // 全局数字员工目录：队列「当前处理者」在成员快照缺名时回退到真实员工名而非 id。
+  const digitalEmployeesQuery = useQuery({
+    enabled: !routeProjectId,
+    queryKey: ["digital-employees", "project-dashboard", "name-map"],
+    queryFn: () => listDigitalEmployees(apiOptions),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+  });
+  const employeeNamesById = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const employee of digitalEmployeesQuery.data ?? []) {
+      if (employee.name?.trim()) {
+        names.set(employee.id, employee.name.trim());
+      }
+    }
+    return names;
+  }, [digitalEmployeesQuery.data]);
   const projects = projectsQuery.data ?? [];
   const projectListPageCount = Math.max(1, Math.ceil(projects.length / projectListPageSize));
   const activeProjectListPage = Math.min(projectListPage, projectListPageCount);
@@ -314,6 +332,7 @@ export function ProjectsView({
   );
   const currentPageRiskSignals = useProjectRiskSignals({
     apiOptions,
+    principalNamesById: employeeNamesById,
     projects: pagedProjects,
   });
   const isCurrentPageRiskSettling = pagedProjects.some(

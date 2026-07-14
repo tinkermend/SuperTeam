@@ -73,7 +73,7 @@ describe("MasterDetailLayout", () => {
 });
 
 describe("MetricGrid", () => {
-  it("bounds metric card width with compress-then-wrap flex tracks", async () => {
+  it("fills the row with elastic cards at a constant gap", async () => {
     const screen = await render(
       <MetricGrid aria-label="项目组合概览" data-testid="metric-grid">
         <div>卡片一</div>
@@ -84,11 +84,11 @@ describe("MetricGrid", () => {
     const grid = screen.getByTestId("metric-grid").element() as HTMLElement;
     expect(grid.tagName).toBe("SECTION");
     expect(grid.className).toContain("flex-wrap");
-    expect(grid.className).toContain("[&>*]:max-w-(--v3-metric-max)");
+    expect(grid.className).toContain("gap-3");
     expect(grid.className).toContain("[&>*]:flex-[1_1_var(--v3-metric-min)]");
-    // ≥3 张卡时剩余空间摊进卡间距、两端对齐；1-2 张保持左对齐
-    expect(grid.className).toContain("has-[>:nth-child(3)]:justify-between");
-    expect(getComputedStyle(grid).justifyContent).not.toBe("space-between");
+    // 宽屏由卡片变宽吸收空间：无宽度上限、无间距分布
+    expect(grid.className).not.toContain("max-w-");
+    expect(grid.className).not.toContain("justify-between");
     await expect.element(screen.getByText("卡片一")).toBeInTheDocument();
   });
 });

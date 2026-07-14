@@ -425,6 +425,10 @@ function createProjectFetcher(
         project: created,
       });
     }
+    if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse([]);
+    }
+
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       return jsonResponse({
         items: [

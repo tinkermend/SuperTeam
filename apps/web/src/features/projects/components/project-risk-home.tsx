@@ -289,11 +289,11 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
 
         <V3Table className="min-w-[46rem] table-fixed text-[12px]">
           <colgroup>
-            <col className="w-[30%]" data-column="project" />
-            <col className="w-[26%]" data-column="pending" />
-            <col className="w-[16%]" data-column="handler" />
-            <col className="w-[12%]" data-column="last-run" />
-            <col className="w-[16%]" data-column="action" />
+            <col className="w-[34%]" data-column="project" />
+            <col className="w-[20%]" data-column="pending" />
+            <col className="w-[20%]" data-column="handler" />
+            <col className="w-[13%]" data-column="last-run" />
+            <col className="w-[13%]" data-column="action" />
           </colgroup>
           <thead>
             <tr>
@@ -415,7 +415,10 @@ function ProjectRiskQueueRow({
         </div>
       </V3Td>
       <V3Td className="whitespace-normal px-3 py-2">
-        <div className="flex min-w-0 flex-col gap-1" data-testid="project-queue-pending">
+        <div
+          className="flex min-w-0 flex-col items-start gap-1"
+          data-testid="project-queue-pending"
+        >
           <StatusPill tone={projectRiskLevelTone(summary.level)}>
             {projectRiskLevelLabel(summary)}
           </StatusPill>

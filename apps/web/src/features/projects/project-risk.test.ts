@@ -85,6 +85,43 @@ function evidence(
 }
 
 describe("project risk model", () => {
+  it("resolves handler display names from the principal directory when member snapshots are missing", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      members: [],
+      principalNamesById: new Map([["de-reporter-1", "报告员小王"]]),
+      project: project("project-names"),
+      tasks: [
+        task("project-names", {
+          assigned_digital_employee_id: "de-reporter-1",
+          status: "running",
+        }),
+      ],
+    });
+
+    expect(summary.currentHandler?.label).toBe("报告员小王");
+    expect(summary.currentHandler?.id).toBe("de-reporter-1");
+  });
+
+  it("keeps the raw id as handler label only when no name source knows the principal", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      members: [],
+      principalNamesById: new Map([["someone-else", "其他员工"]]),
+      project: project("project-unknown-handler"),
+      tasks: [
+        task("project-unknown-handler", {
+          assigned_digital_employee_id: "de-unknown-9",
+          status: "running",
+        }),
+      ],
+    });
+
+    expect(summary.currentHandler?.label).toBe("de-unknown-9");
+  });
+
   it("marks pending human decisions as danger and requiring human action", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [decision("project-1", { status_snapshot: "waiting" })],

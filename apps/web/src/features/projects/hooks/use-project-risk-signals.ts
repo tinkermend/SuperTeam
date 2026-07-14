@@ -35,6 +35,8 @@ type UseProjectRiskSignalsInput = {
   apiOptions: ApiClientOptions;
   enabled?: boolean;
   projects: Project[];
+  /** principal_id → 展示名（如全局数字员工目录），成员快照缺失时的名称回退。 */
+  principalNamesById?: ReadonlyMap<string, string>;
 };
 
 export type UseProjectRiskSignalsResult = {
@@ -46,6 +48,7 @@ export function useProjectRiskSignals({
   apiOptions,
   enabled = true,
   projects,
+  principalNamesById,
 }: UseProjectRiskSignalsInput): UseProjectRiskSignalsResult {
   const apiBaseIdentity = apiOptions.baseUrl.replace(/\/+$/, "");
   const fetcherIdentity = apiOptions.fetcher
@@ -95,6 +98,7 @@ export function useProjectRiskSignals({
           evidence: payload.evidence,
           events: [],
           members: payload.members,
+          principalNamesById,
           project,
           tasks: payload.tasks,
         });
@@ -110,7 +114,7 @@ export function useProjectRiskSignals({
       isFetching: queries.some((query) => query.isFetching),
       summaries,
     };
-  }, [projects, queries]);
+  }, [principalNamesById, projects, queries]);
 }
 
 function getFetcherIdentity(fetcher: typeof fetch): string {

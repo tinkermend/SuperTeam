@@ -62,6 +62,8 @@ export type ProjectRiskInput = {
   evidence?: ProjectEvidenceRef[];
   events?: unknown[];
   members?: ProjectMember[];
+  /** principal_id → 展示名，用于成员快照缺失时的名称回退（如全局数字员工目录）。 */
+  principalNamesById?: ReadonlyMap<string, string>;
 };
 
 export type ProjectRiskOptions = {
@@ -249,8 +251,14 @@ export function deriveProjectRiskSummary(
   const level = primaryReason?.level ?? "none";
   const currentTask = selectCurrentTask(input.tasks ?? []);
   const members = input.members ?? [];
-  const currentHandler = selectCurrentHandler(project, currentTask, members);
-  const owner = selectProjectOwner(project, members);
+  const principalNames = input.principalNamesById;
+  const currentHandler = selectCurrentHandler(
+    project,
+    currentTask,
+    members,
+    principalNames,
+  );
+  const owner = selectProjectOwner(project, members, principalNames);
 
   return {
     projectId: project.id,
@@ -492,6 +500,7 @@ function selectCurrentHandler(
   project: Project,
   task: ProjectTask | undefined,
   members: ProjectMember[],
+  principalNames?: ReadonlyMap<string, string>,
 ): ProjectTaskHandler | undefined {
   const assignedDigitalEmployeeId = task?.assigned_digital_employee_id?.trim();
   if (assignedDigitalEmployeeId) {
@@ -499,12 +508,13 @@ function selectCurrentHandler(
       assignedDigitalEmployeeId,
       "digital_employee",
       members,
+      principalNames,
     );
   }
 
   const humanOwnerId = project.human_owner_user_id?.trim();
   if (humanOwnerId && isHumanHandledTask(task)) {
-    return buildTaskHandler(humanOwnerId, "human_user", members);
+    return buildTaskHandler(humanOwnerId, "human_user", members, principalNames);
   }
 
   return undefined;
@@ -513,18 +523,20 @@ function selectCurrentHandler(
 function selectProjectOwner(
   project: Project,
   members: ProjectMember[],
+  principalNames?: ReadonlyMap<string, string>,
 ): ProjectTaskHandler | undefined {
   const humanOwnerId = project.human_owner_user_id?.trim();
   if (!humanOwnerId) {
     return undefined;
   }
-  return buildTaskHandler(humanOwnerId, "human_user", members);
+  return buildTaskHandler(humanOwnerId, "human_user", members, principalNames);
 }
 
 function buildTaskHandler(
   id: string,
   principalType: ProjectPrincipalType,
   members: ProjectMember[],
+  principalNames?: ReadonlyMap<string, string>,
 ): ProjectTaskHandler {
   const member = members.find(
     (item) =>
@@ -532,7 +544,8 @@ function buildTaskHandler(
       item.principal_id === id &&
       item.status !== "removed",
   );
-  const displayName = member?.display_name_snapshot?.trim();
+  const displayName =
+    member?.display_name_snapshot?.trim() || principalNames?.get(id)?.trim();
   return {
     id,
     label: displayName || id,

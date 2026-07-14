@@ -135,20 +135,18 @@ export function MasterDetailLayout({
 }
 
 /**
- * KPI 指标带。卡片宽度被限制在 `--v3-metric-min`～`--v3-metric-max`
- * （208–336px）区间：空间不足时先压缩到下限再换行，任何分辨率下卡片密度一致。
- * 取代手写 `sm:grid-cols-2 xl:grid-cols-4`。
- * 卡片到达宽度上限后，剩余空间摊进卡间距（≥3 张时 justify-between，gap 为
- * 最小间距），使首尾卡与下方内容块两端对齐；1–2 张时保持左对齐，避免两端
- * 分布留出中间大洞。用 flex-wrap 而非 grid auto-fit：auto-fit 的列数按 max
- * 轨道计算，会在还有尾部空间时提前把卡片挤到下一行。
+ * KPI 指标带。卡片弹性填满整行、间距恒定 `gap-3`：空间不足时压缩到
+ * `--v3-metric-min`（208px）下限再换行，宽屏靠卡片变宽而非间距变大吸收
+ * 剩余空间。取代手写 `sm:grid-cols-2 xl:grid-cols-4`。用 flex-wrap 而非
+ * grid auto-fit：auto-fit 的列数按 max 轨道计算，会在还有尾部空间时提前
+ * 把卡片挤到下一行。
  */
 export function MetricGrid({ className, ...props }: ComponentProps<"section">) {
   return (
     <section
       className={cn(
-        "flex min-w-0 flex-wrap gap-3 has-[>:nth-child(3)]:justify-between",
-        "[&>*]:min-w-0 [&>*]:max-w-(--v3-metric-max) [&>*]:flex-[1_1_var(--v3-metric-min)]",
+        "flex min-w-0 flex-wrap gap-3",
+        "[&>*]:min-w-0 [&>*]:flex-[1_1_var(--v3-metric-min)]",
         className,
       )}
       {...props}
