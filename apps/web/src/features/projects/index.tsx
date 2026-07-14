@@ -82,6 +82,7 @@ import {
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
+import { getInboxBadge, listInboxItems } from "@/lib/api/inbox";
 import { listRuntimeNodes } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { Main } from "@/components/layout/main";
@@ -94,6 +95,7 @@ import { ProjectRuntimePlacementPanel } from "./components/project-runtime-place
 import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
 import { ProjectConfigView } from "./components/project-config-page";
+import { ProjectDashboardRail } from "./components/project-dashboard-rail";
 import {
   ProjectPortfolioSummaryBar,
   ProjectRiskQueue,
@@ -288,6 +290,19 @@ export function ProjectsView({
     enabled: !routeProjectId,
     queryKey: ["workflow-instances", "project-home", { limit: 50, offset: 0 }],
     queryFn: () => listWorkflowInstances(apiOptions, { limit: 50, offset: 0 }),
+    placeholderData: keepPreviousData,
+  });
+  const inboxDecisionsQuery = useQuery({
+    enabled: !routeProjectId,
+    queryKey: ["inbox", "project-dashboard", "decisions"],
+    queryFn: () =>
+      listInboxItems(apiOptions, { limit: 8, status: "open", view: "mine" }),
+    placeholderData: keepPreviousData,
+  });
+  const inboxBadgeQuery = useQuery({
+    enabled: !routeProjectId,
+    queryKey: ["inbox", "project-dashboard", "badge"],
+    queryFn: () => getInboxBadge(apiOptions),
     placeholderData: keepPreviousData,
   });
   const projects = projectsQuery.data ?? [];
@@ -897,7 +912,10 @@ export function ProjectsView({
             : "围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环"
         }
       />
-      <Main className="min-w-0 overflow-x-hidden" width="wide">
+      <Main
+        className="min-w-0 overflow-x-hidden"
+        width={routeProjectId ? "wide" : "canvas"}
+      >
         <div className="flex min-w-0 flex-col gap-5">
           {isInitialLoading ? (
             <WorkSurface>
@@ -937,7 +955,10 @@ export function ProjectsView({
               data-testid={routeProjectId ? undefined : "projects-compact-control-surface"}
             >
               {!routeProjectId ? (
-                <ProjectPortfolioSummaryBar portfolioCounts={portfolioCounts} />
+                <ProjectPortfolioSummaryBar
+                  pendingDecisionCount={inboxBadgeQuery.data?.mine_open_count}
+                  portfolioCounts={portfolioCounts}
+                />
               ) : null}
 
               {!routeProjectId ? (
@@ -946,12 +967,24 @@ export function ProjectsView({
                   detail={
                     selectedQueueProject ? (
                       <ProjectTriagePanel
+                        onClose={() => setSelectedQueueProjectId("")}
                         project={selectedQueueProject}
                         summary={selectedQueueSummary}
                       />
-                    ) : undefined
+                    ) : (
+                      <ProjectDashboardRail
+                        decisionItems={inboxDecisionsQuery.data?.items ?? []}
+                        decisionOpenCount={
+                          inboxDecisionsQuery.data?.summary.open_count ?? 0
+                        }
+                        decisionsError={inboxDecisionsQuery.error?.message}
+                        decisionsLoading={inboxDecisionsQuery.isLoading}
+                        workflowInstances={workflowInstancesQuery.data ?? []}
+                      />
+                    )
                   }
                   detailLabel="选中项目上下文"
+                  narrowDetail={selectedQueueProject ? "sheet" : "stack"}
                   onDetailDismiss={() => setSelectedQueueProjectId("")}
                   master={
                     <ProjectRiskQueue

@@ -48,6 +48,11 @@ type MasterDetailLayoutProps = Omit<ComponentProps<"div">, "children"> & {
   detailLabel?: string;
   /** Sheet 模式下用户关闭抽屉时回调（通常用于清除选中态）。 */
   onDetailDismiss?: () => void;
+  /**
+   * 窄容器下 detail 的去处：`sheet`（默认）适合选中对象的按需上下文；
+   * `stack` 适合常驻面板（如驾驶舱右栏），窄容器时堆到主列下方而非弹抽屉。
+   */
+  narrowDetail?: "sheet" | "stack";
 };
 
 /**
@@ -60,6 +65,7 @@ export function MasterDetailLayout({
   rail = "md",
   detailLabel = "详情",
   onDetailDismiss,
+  narrowDetail = "sheet",
   className,
   ...props
 }: MasterDetailLayoutProps) {
@@ -87,7 +93,8 @@ export function MasterDetailLayout({
     return () => observer.disconnect();
   }, [rail]);
 
-  const detailInFlow = Boolean(detail) && isWide;
+  const detailInFlow =
+    Boolean(detail) && (isWide || narrowDetail === "stack");
 
   return (
     <div
@@ -98,13 +105,13 @@ export function MasterDetailLayout({
       <div
         className={cn(
           "grid min-w-0 items-start gap-5",
-          detailInFlow && railGridCols[rail],
+          detailInFlow && isWide && railGridCols[rail],
         )}
       >
         {master}
         {detailInFlow ? detail : null}
       </div>
-      {detail && !isWide ? (
+      {detail && !isWide && narrowDetail === "sheet" ? (
         <Sheet
           open
           onOpenChange={(open) => {

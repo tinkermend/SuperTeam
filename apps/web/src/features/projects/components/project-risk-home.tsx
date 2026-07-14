@@ -11,11 +11,13 @@ import {
   ShieldCheck,
   UserCheck,
   UserRound,
+  X,
 } from "lucide-react";
 import {
   IconTile,
   MetricGrid,
   StatusPill,
+  V3IconButton,
   V3Button,
   V3Chip,
   V3EmptyState,
@@ -114,8 +116,11 @@ const kpiAccentBar: Record<V3Tone, string> = {
  * 保留在下方队列表头与筛选 chip 中，避免把页级计数伪装成全平台真值。
  */
 export function ProjectPortfolioSummaryBar({
+  pendingDecisionCount,
   portfolioCounts,
 }: {
+  /** 跨项目「待我决策」真值（inbox badge mine_open_count）；未传则不渲染该卡。 */
+  pendingDecisionCount?: number;
   portfolioCounts: ProjectPortfolioCounts;
 }) {
   const items = [
@@ -123,6 +128,16 @@ export function ProjectPortfolioSummaryBar({
     { icon: PlayCircle, label: "运行中", tone: "ok" as V3Tone, value: portfolioCounts.running },
     { icon: ShieldCheck, label: "验收中", tone: "info" as V3Tone, value: portfolioCounts.acceptance },
     { icon: AlertTriangle, label: "协调异常", tone: "danger" as V3Tone, value: portfolioCounts.coordinationAnomaly },
+    ...(pendingDecisionCount !== undefined
+      ? [
+          {
+            icon: UserCheck,
+            label: "待我决策",
+            tone: (pendingDecisionCount > 0 ? "warn" : "mute") as V3Tone,
+            value: pendingDecisionCount,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -460,9 +475,12 @@ const REASON_META: Record<
  * 窄容器 Sheet），未选中不保留空态占位栏。
  */
 export function ProjectTriagePanel({
+  onClose,
   project,
   summary,
 }: {
+  /** 关闭选中态（宽容器 in-flow 右栏需要显式返回驾驶舱面板；Sheet 模式有自带关闭钮可不传）。 */
+  onClose?: () => void;
   project: Project;
   summary?: ProjectRiskSummary;
 }) {
@@ -481,6 +499,17 @@ export function ProjectTriagePanel({
         <IconTile tone={projectStatusTone(project.status)} size="sm">
           <FolderKanban />
         </IconTile>
+        {onClose ? (
+          <V3IconButton
+            aria-label="关闭项目待办详情"
+            // Sheet 模式有自带关闭钮且位置重叠，此钮仅 in-flow（master-detail 容器内）显示
+            className="order-last hidden size-7 shrink-0 @5xl/master-detail:inline-grid"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden className="size-3.5" />
+          </V3IconButton>
+        ) : null}
         <div className="min-w-0 flex-1">
           <h3 className="min-w-0 break-words text-sm font-extrabold leading-5 text-v3-ink">
             {project.name}
