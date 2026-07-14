@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-07-14 16:27：数字员工详情页优化（分支 feat/employee-detail-refinement，spec 2026-07-14-employee-detail-page-refinement-design.md）：① 运行详情抽屉事件流改为语义化时间线（新组件 `RunEventTimeline`：中文生命周期节点、连续 text_delta 合并正文、tool_started/completed 按 tool_id 配对为可折叠工具行、孤儿/未知类型回退、每条事件原始 JSON 惰性折叠、50 条截断提示）；② 抽屉「更新时间」本地化格式、「结果」提取结论正文+原始 JSON 折叠、命令/节点等宽；③ 指标条删「Runtime 执行位置」「当前状态」两卡（剩 8 卡），命令通道断开时改为页面顶部警示条；④ 员工状态中文化（头部/运行表接入 status-labels）；⑤ 删除「下次任务会注入的上下文包」流程图;⑥ 生效上下文删重复「状态」行,技能入口由 /skills 改为打开「管理技能与 MCP」抽屉；⑦ 底部快照卡仅留「人格记忆」「预算策略」并改可读排版，删「能力绑定」「运行与缓存状态」JSON 卡；⑧ providerDisplayName 五处副本收敛至 `features/employees/provider-label.ts`,抽屉 runStatusLabel 统一走 lib（dispatching 文案调度中→分派中）。验证：web 串行测试 705/705、typecheck/build 绿（并行模式仍存在预存在的 vitest browser route.fulfill 堆回收崩溃）；真实 E2E（worktree Vite :3100 + 运行中 Control Plane :8081,员工「报告员小王」真实历史运行）：详情页 13 项断言 + 含 WebSearch 工具调用的运行抽屉时间线 5 项断言全过,截图留存;通道警示条正向路径因 dev 数据无绑定执行实例的员工无法真实触发,已验证负向门控（实例 404+通道断开→正确不显示）与信号源真实翻转,正向渲染由集成测试覆盖。
+
 - 2026-07-14 12:26：新建团队页数字员工库分页调整为每页展示 5 位；分页回归覆盖第 6 位员工进入下一页。验证：`create-team-page.test.tsx` 8/8。
 - 2026-07-14 12:24：移除新建团队页底部操作栏的半透明底色与背景模糊，操作栏现在直接融入页面极光背景，同时保留顶部边线与按钮层级。验证：`git diff --check`。
 - 2026-07-14 12:21：新建团队页改为受限视口工作区：页头与底部操作栏保持可见，配置画布与确认内容在中间区域滚动；因此无论桌面屏幕高度如何，取消、上一步和下一步/确认创建都固定在内容区底部。验证：`create-team-page.test.tsx` 8/8、串行 Web 测试 696/696、Web typecheck/build；Web 服务重启后 `/teams/new` 返回 200。标准 `verify:web` 的并行测试仍在 `route.fulfill` 内存回收异常处中断；浏览器真实 UI 检查仍受本机浏览器控制运行时初始化 `process` 冲突阻断。
