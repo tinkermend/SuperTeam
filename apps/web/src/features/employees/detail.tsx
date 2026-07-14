@@ -24,10 +24,10 @@ import {
   getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
   listEmployeeEnvironmentVariables,
+  type BudgetPolicy,
   type DigitalEmployee,
   type DigitalEmployeeDeleteBlockedErrorResponse,
   type DigitalEmployeeDeleteBlocker,
-  type DigitalEmployeeExecutionInstance,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunKind,
   type DigitalEmployeeRunListItem,
@@ -328,10 +328,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
               </div>
             </section>
 
-            <EmployeeConfigSnapshotSection
-              employee={employee.data}
-              executionInstance={instance.data}
-            />
+            <EmployeeConfigSnapshotSection employee={employee.data} />
           </div>
         ) : null}
       </Main>
@@ -487,53 +484,50 @@ function DeleteBlockerItem({ blocker }: { blocker: DigitalEmployeeDeleteBlocker 
   );
 }
 
-function EmployeeConfigSnapshotSection({
-  employee,
-  executionInstance,
-}: {
-  employee: DigitalEmployee;
-  executionInstance?: DigitalEmployeeExecutionInstance;
-}) {
-  const metadata = employee.metadata ?? {};
-  const runtimeState = {
-    effective_config_label: metadata.effective_config_label,
-    effective_config_status: metadata.effective_config_status,
-    execution_instance_status: executionInstance?.status,
-    provider_type: employee.provider_type,
-    runtime_node_id: executionInstance?.runtime_node_id,
-  };
+function EmployeeConfigSnapshotSection({ employee }: { employee: DigitalEmployee }) {
+  const personaMemory = employee.persona_memory_markdown?.trim();
 
   return (
     <section className="grid gap-4 lg:grid-cols-2">
-      <ConfigSnapshotCard label="人格记忆.md" value={employee.persona_memory_markdown || "未设置"} />
-      <ConfigSnapshotCard
-        label="能力绑定"
-        value={formatConfigSnapshotJson(employee.capability_bindings ?? {})}
-      />
-      <ConfigSnapshotCard label="预算策略" value={formatConfigSnapshotJson(employee.budget_policy ?? {})} />
-      <ConfigSnapshotCard
-        label="运行与缓存状态"
-        value={hasRuntimeState(runtimeState) ? formatConfigSnapshotJson(runtimeState) : "暂无运行与缓存状态"}
-      />
+      <SoftCard className="p-4">
+        <div className="text-sm font-semibold text-v3-ink">人格记忆.md</div>
+        {personaMemory ? (
+          <p className="mt-3 whitespace-pre-wrap break-words rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm leading-6 text-v3-ink">
+            {personaMemory}
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-v3-ink-3">未设置</p>
+        )}
+      </SoftCard>
+      <SoftCard className="p-4">
+        <div className="text-sm font-semibold text-v3-ink">预算策略</div>
+        <BudgetPolicyContent budgetPolicy={employee.budget_policy} />
+      </SoftCard>
     </section>
   );
 }
 
-function ConfigSnapshotCard({ label, value }: { label: string; value: string }) {
+function BudgetPolicyContent({ budgetPolicy }: { budgetPolicy?: BudgetPolicy }) {
+  const limit = budgetPolicy?.daily_token_limit;
+  const extraEntries = Object.entries(budgetPolicy ?? {}).filter(([key]) => key !== "daily_token_limit");
+
   return (
-    <SoftCard className="p-4">
-      <div className="text-sm font-semibold text-v3-ink">{label}</div>
-      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-[14px] border border-v3-line bg-v3-card-soft p-3 font-mono text-xs text-v3-ink">
-        {value}
-      </pre>
-    </SoftCard>
+    <div className="mt-3 space-y-2 text-sm">
+      <div className="flex items-center justify-between gap-3 rounded-[14px] border border-v3-line bg-v3-card-soft px-3 py-2">
+        <span className="text-v3-ink-2">每日 Token 上限</span>
+        <span className="font-medium tabular-nums text-v3-ink">
+          {typeof limit === "number" ? limit.toLocaleString("zh-CN") : "未设置"}
+        </span>
+      </div>
+      {extraEntries.map(([key, value]) => (
+        <div
+          className="flex items-center justify-between gap-3 rounded-[14px] border border-v3-line bg-v3-card-soft px-3 py-2"
+          key={key}
+        >
+          <span className="text-v3-ink-2">{key}</span>
+          <span className="break-all font-mono text-xs text-v3-ink">{JSON.stringify(value)}</span>
+        </div>
+      ))}
+    </div>
   );
-}
-
-function formatConfigSnapshotJson(value: Record<string, unknown>) {
-  return JSON.stringify(value, null, 2);
-}
-
-function hasRuntimeState(value: Record<string, unknown>) {
-  return Object.values(value).some((item) => item !== undefined && item !== "");
 }

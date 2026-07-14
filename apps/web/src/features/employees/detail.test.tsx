@@ -404,16 +404,16 @@ describe("EmployeeDetailView", () => {
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "GET")).toBeGreaterThanOrEqual(2);
   });
 
-  it("renders final employee config sections without legacy config copy", async () => {
+  it("renders persona memory and budget policy without raw JSON snapshot cards", async () => {
     const screen = await renderEmployeeDetail();
 
     await expect.element(screen.getByText("人格记忆.md")).toBeVisible();
-    await expect.element(screen.getByText("能力绑定")).toBeVisible();
-    await expect.element(screen.getByText("预算策略")).toBeVisible();
-    await expect.element(screen.getByText("运行与缓存状态")).toBeVisible();
     await expect.element(screen.getByText("# 人格画像\n证据优先")).toBeVisible();
-    await expect.element(screen.getByText(/incident-diagnosis/)).toBeVisible();
-    await expect.element(screen.getByText(/daily_token_limit/)).toBeVisible();
+    await expect.element(screen.getByText("预算策略")).toBeVisible();
+    await expect.element(screen.getByText("每日 Token 上限")).toBeVisible();
+    await expect.element(screen.getByText("12,000")).toBeVisible();
+    expect(screen.getByText("能力绑定").query()).toBeNull();
+    expect(screen.getByText("运行与缓存状态").query()).toBeNull();
     expect(screen.getByText("角色配置").query()).toBeNull();
     expect(screen.getByText("能力与策略").query()).toBeNull();
   });
