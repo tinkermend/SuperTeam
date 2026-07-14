@@ -528,8 +528,22 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 		return run, nil
 	}
 
-	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
 	commandType := standaloneDispatchCommandType(req)
+	// For chat resume dispatch, inject provider_session_id and mode="resume" into
+	// session_policy. This is required because the runtime's payload validation
+	// expects these at session_policy (not metadata).
+	sessionPolicyForPayload := cloneMap(preflight.SessionPolicy)
+	if commandType == "resume_session" {
+		if sessionID, ok := req.Metadata["provider_session_id"].(string); ok && strings.TrimSpace(sessionID) != "" {
+			sessionPolicyForPayload["provider_session_id"] = sessionID
+			sessionPolicyForPayload["mode"] = "resume"
+		}
+	}
+	// Modify preflight to use the updated session_policy before building payload
+	preflightForPayload := preflight
+	preflightForPayload.SessionPolicy = sessionPolicyForPayload
+
+	payload := buildStartSessionPayload(req, objective, prompt, preflightForPayload, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {

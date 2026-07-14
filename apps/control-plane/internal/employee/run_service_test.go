@@ -1078,6 +1078,18 @@ func TestCreateRunChatResumeInjectsProviderSession(t *testing.T) {
 			if dispatcher.commands[0].command.Type != "resume_session" {
 				t.Fatalf("expected a chat resume to dispatch resume_session (not start_session, which would try to create a new provider session with a reused id and fail), got %q", dispatcher.commands[0].command.Type)
 			}
+			// Verify the payload's session_policy carries provider_session_id and mode=="resume"
+			payload := commandPayload(t, dispatcher.commands[0].command)
+			sessionPolicy, ok := payload["session_policy"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected session_policy object in payload, got %#v", payload["session_policy"])
+			}
+			if sessionPolicy["provider_session_id"] != tc.expectedSessionID {
+				t.Fatalf("expected session_policy.provider_session_id=%q, got %#v", tc.expectedSessionID, sessionPolicy["provider_session_id"])
+			}
+			if sessionPolicy["mode"] != "resume" {
+				t.Fatalf("expected session_policy.mode=resume, got %#v", sessionPolicy["mode"])
+			}
 		})
 	}
 }
@@ -1181,6 +1193,20 @@ func TestCreateRunChatResolvesProjectAnchorNodeAndDispatches(t *testing.T) {
 	}
 	if dispatcher.commands[0].command.Type != "start_session" {
 		t.Fatalf("expected a first-message chat run (no resume) to dispatch start_session, got %q", dispatcher.commands[0].command.Type)
+	}
+	// Verify the payload's session_policy for a first-question chat run
+	// has NO provider_session_id and mode is "new" (or unset, defaulting to "new")
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	sessionPolicy, ok := payload["session_policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected session_policy object in payload, got %#v", payload["session_policy"])
+	}
+	if _, hasProviderSessionID := sessionPolicy["provider_session_id"]; hasProviderSessionID {
+		t.Fatalf("expected first-question chat run to have NO provider_session_id in session_policy, got %#v", sessionPolicy["provider_session_id"])
+	}
+	mode, _ := sessionPolicy["mode"].(string)
+	if mode != "" && mode != "new" {
+		t.Fatalf("expected first-question chat run to have mode=new or unset, got %q", mode)
 	}
 }
 
