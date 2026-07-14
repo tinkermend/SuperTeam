@@ -1,6 +1,14 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { FolderOpen, PencilLine, SendHorizontal, Sparkles } from "lucide-react";
+import {
+  FolderOpen,
+  ListChecks,
+  MessagesSquare,
+  PencilLine,
+  RefreshCw,
+  SendHorizontal,
+  Sparkles,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -8,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { GlassCard, V3Segmented } from "@/components/superteam";
+import { GlassCard } from "@/components/superteam";
 import type {
   Project,
   ProjectDemandSourceType,
@@ -20,17 +28,31 @@ import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
 export type LaunchMode = "plan" | "loop" | "chat";
 
-const MODE_OPTIONS: Array<{ label: string; value: LaunchMode }> = [
-  { label: "Plan 任务", value: "plan" },
-  { label: "Loop 任务", value: "loop" },
-  { label: "对话", value: "chat" },
+const MODE_CARDS: Array<{
+  desc: string;
+  icon: ReactNode;
+  label: string;
+  value: LaunchMode;
+}> = [
+  {
+    desc: "遇上游阻塞时暂停，提案报你决策后再补做",
+    icon: <ListChecks aria-hidden />,
+    label: "Plan 任务",
+    value: "plan",
+  },
+  {
+    desc: "遇上游阻塞时自动补做上游任务并重跑下游",
+    icon: <RefreshCw aria-hidden />,
+    label: "Loop 任务",
+    value: "loop",
+  },
+  {
+    desc: "与指定数字员工单次对话，结果不进入项目流转",
+    icon: <MessagesSquare aria-hidden />,
+    label: "对话",
+    value: "chat",
+  },
 ];
-
-const MODE_EXPLAINER: Record<LaunchMode, string> = {
-  plan: "遇上游阻塞时暂停，提案报你决策后再补做",
-  loop: "遇上游阻塞时自动补做上游任务并重跑下游",
-  chat: "与指定数字员工单次对话，结果不进入项目流转",
-};
 
 type TaskLaunchFormProps = {
   chatPanel?: ReactNode;
@@ -130,8 +152,26 @@ export function TaskLaunchForm({
         </p>
       </div>
 
-      <V3Segmented<LaunchMode> options={MODE_OPTIONS} value={mode} onChange={onModeChange} />
-      <p className="tl-sub">{MODE_EXPLAINER[mode]}</p>
+      <div aria-label="任务模式" className="tl-modes" role="radiogroup">
+        {MODE_CARDS.map((card) => (
+          <button
+            aria-checked={mode === card.value}
+            aria-label={card.label}
+            className="tl-mode-card"
+            data-active={mode === card.value || undefined}
+            key={card.value}
+            onClick={() => onModeChange(card.value)}
+            role="radio"
+            type="button"
+          >
+            <span className="tl-mode-head">
+              <span className="tl-mode-icon">{card.icon}</span>
+              <span className="tl-mode-name">{card.label}</span>
+            </span>
+            <span className="tl-mode-desc">{card.desc}</span>
+          </button>
+        ))}
+      </div>
 
       <GlassCard>
         {mode === "chat" ? (

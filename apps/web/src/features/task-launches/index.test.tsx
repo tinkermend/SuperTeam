@@ -747,7 +747,7 @@ async function clickButton(name: string) {
 
 function getButton(name: string) {
   const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
-    (item) => item.textContent === name,
+    (item) => item.textContent === name || item.getAttribute("aria-label") === name,
   );
   if (!button) {
     throw new Error(`Unable to find button: ${name}`);
