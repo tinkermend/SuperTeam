@@ -1072,6 +1072,12 @@ func TestCreateRunChatResumeInjectsProviderSession(t *testing.T) {
 			if metadata["resume_of_run_id"] != prior.ID.String() {
 				t.Fatalf("expected injected resume_of_run_id, got %#v", metadata["resume_of_run_id"])
 			}
+			if len(dispatcher.commands) != 1 {
+				t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+			}
+			if dispatcher.commands[0].command.Type != "resume_session" {
+				t.Fatalf("expected a chat resume to dispatch resume_session (not start_session, which would try to create a new provider session with a reused id and fail), got %q", dispatcher.commands[0].command.Type)
+			}
 		})
 	}
 }
@@ -1172,6 +1178,9 @@ func TestCreateRunChatResolvesProjectAnchorNodeAndDispatches(t *testing.T) {
 	}
 	if len(dispatcher.commands) != 1 || dispatcher.commands[0].nodeID != repo.projectTaskPreflight.NodeID {
 		t.Fatalf("expected dispatch to resolved project anchor node, got %#v", dispatcher.commands)
+	}
+	if dispatcher.commands[0].command.Type != "start_session" {
+		t.Fatalf("expected a first-message chat run (no resume) to dispatch start_session, got %q", dispatcher.commands[0].command.Type)
 	}
 }
 

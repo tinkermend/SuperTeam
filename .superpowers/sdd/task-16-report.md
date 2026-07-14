@@ -293,3 +293,64 @@ ok  	github.com/superteam/control-plane/internal/employee	0.365s
 ```
 
 Commit: `fix(employee): resume chat sessions from provider_session_external_id`
+
+## Fix: resume command type
+
+**Bug.** Chat follow-ups inject the prior turn's live provider session id into
+`req.Metadata["provider_session_id"]` (`run_service.go` CreateRun resume
+validation, ~line 197), but `dispatchStartSession` always dispatched runtime
+command type `"start_session"` regardless. The runtime executor
+(`apps/runtime-agent/src/commands/executor.rs:308-311`, not touched) only sets
+`continue_session=true` for `ResumeSession | SendInput`, so a `start_session`
+carrying an already-used session id made the runtime spawn
+`claude --session-id <id>` as a *create*, and Claude rejected it: "Session ID
+... is already in use."
+
+**Runtime-acceptance evidence (verified before touching Go code).**
+- `apps/runtime-agent/src/controlplane/models.rs:359-377`: manual
+  `Deserialize` for `RuntimeCommandType` maps wire string `"resume_session"` →
+  `RuntimeCommandType::ResumeSession` (alongside `"start_session"` →
+  `StartSession`), so the control plane sending `"resume_session"` parses
+  correctly — not `Unsupported`.
+- `apps/runtime-agent/src/commands/executor.rs:215-218`: `StartSession |
+  ResumeSession | SendInput` all route to the same `handle_input_command`
+  handler — no divergent/skipped path for `ResumeSession`.
+- `apps/runtime-agent/src/commands/executor.rs:308-311`: `continue_session:
+  matches!(command.command_type, RuntimeCommandType::ResumeSession |
+  RuntimeCommandType::SendInput)` — this is the exact switch the fix needs to
+  flip on.
+- `apps/runtime-agent/src/commands/payload.rs:390-394` and
+  `executor.rs:944-951`: `ResumeSession` (like `StartSession`) requires a
+  non-empty session id in the payload — already satisfied, since the chat
+  resume path already injects `provider_session_id`.
+
+Conclusion: `ResumeSession` is wire-parseable and flows through the identical
+session-start handler; safe to switch command type without any runtime-agent
+change.
+
+**Fix (control-plane only).** `apps/control-plane/internal/employee/run_service.go`:
+added `standaloneDispatchCommandType(req)` — returns `"resume_session"` when
+`req.RunKind == RunKindChat` and `req.Metadata["provider_session_id"]` is a
+non-empty string, else `"start_session"`. `dispatchStartSession` now uses this
+for both the command-receipt `CommandType` and the dispatched
+`runtimeCommand(...)` type, replacing the two hardcoded `"start_session"`
+literals.
+
+Scope: gated on `RunKind == RunKindChat`, so `StartProjectTaskRun`'s dispatch
+(task-lineage resume via `FindProviderSessionForTaskRoot`, which also injects
+`provider_session_id` but always dispatches with `RunKind == RunKindTask`) is
+untouched and keeps the same latent bug — noted here, not fixed, per scope.
+
+**Tests (TDD).** Extended `run_service_test.go`:
+- `TestCreateRunChatResumeInjectsProviderSession`: asserts the dispatched
+  command's `Type == "resume_session"` for all non-error cases (RED before
+  the fix: got `"start_session"`; GREEN after).
+- `TestCreateRunChatResolvesProjectAnchorNodeAndDispatches` (first chat
+  message, no resume): asserts `Type == "start_session"` (unaffected).
+- `TestRunServiceCreateRunDispatchesStartSession` (task-kind run): already
+  asserted `"start_session"`, still passes.
+
+`go test ./internal/employee/` (from `apps/control-plane`): PASS, no
+regressions.
+
+Commit: `fix(employee): dispatch chat resumes as resume_session commands`
