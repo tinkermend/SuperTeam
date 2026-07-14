@@ -95,7 +95,7 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 | 玻璃卡（低密度入口/概览/详情面板） | `GlassCard`（唯一实现 `.v3-glass`，取自 `--v3-aurora-*`；内层用 `.v3-glass-inner`、按钮用 `V3Button variant="glass"`；禁用于密集表格/审计/日志） |
 | 概览指标卡（大数字 + 标签） | `V3MetricCard` |
 | 页面宽度档位（contained/wide/canvas） | `Main width`（`@/components/layout/main`，档位规则见 `docs/design-system/layout-density.md`「宽度档位」） |
-| 主从布局（队列 + 右栏） | `MasterDetailLayout`（rail 两档 340/420，容器断点折叠；禁手写 `grid-cols-[…_NNNpx]`） |
+| 主从布局（队列 + 按需详情层） | `MasterDetailLayout`（detail 选中才传入，宽容器 in-flow 右栏 / 窄容器 Sheet；rail 两档 340/420 可压缩；禁手写 `grid-cols-[…_NNNpx]` 与常驻空态右栏） |
 | KPI 指标带（宽度有界的指标卡栅格） | `MetricGrid`（卡片 208–336px 自动换行左对齐） |
 | signature 母题卡（每屏最多一块） | `SignatureCard` |
 | 脆数据面（装密集表格的软壳） | `WorkSurface` |

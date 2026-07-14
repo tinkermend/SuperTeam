@@ -88,6 +88,16 @@ KPI 指标带，取代手写 `sm:grid-cols-2 xl:grid-cols-4`。
 - 真实浏览器（playwright）访问 `/projects`，在 1280 / 1536 / 2000+ 三档视口宽度下确认：wide 档居中生效、KPI 卡宽度有界、主从双列/单列折叠正确、无横向溢出。
 - 多视口自动化门禁（纳入 `verify:web`）为后续期工作，本期不做。
 
+## P1.1 追加（2026-07-14 下午，已批准）：右栏改为按需详情层
+
+用户环境（Codex 内嵌浏览器）反复出现右栏被视口裁剪/右侧大片空白的现象；规范渲染下六档宽度 + 根字号 18px + 侧栏收起 + 窗口拉大均无法复现（fr 栅格数学上不可能超出父容器），判定为环境侧视口异常。但三张问题截图共同暴露一个设计层弱点：**被裁掉/显突兀的始终是常驻 420px 的"未选中"空态占位栏**。参照 Linear/GitHub 的队列+详情模式，把结构上脆弱的"常驻固定宽度右栏"移除：
+
+- `MasterDetailLayout.detail` 改为可选：未选中不传，主列独占全宽（无空轨道、无空态卡）。
+- 选中 + 容器宽（JS ResizeObserver 判定，阈值与 @4xl/@5xl 容器断点同源换算 rem）：详情 in-flow 右栏；选中 + 容器窄：右侧 Sheet 抽屉（`ui/sheet`，sr-only 标题，关闭回调 `onDetailDismiss` 清除选中态）。
+- in-flow 栅格类名仅在详情实际 in-flow 时挂载，避免宽表模板留下空轨道；CSS 容器断点仍作为 JS/CSS 瞬时不一致的守护层。
+- rail 列宽防御性收敛：`minmax(min(100%,16rem),rail)` / `minmax(min(100%,18rem),rail-lg)`。
+- 多视口门禁（原第 6 节延后项提前落地）：projects 页在 1280/1536/1920 断言无横向溢出且右栏完整可见，纳入常规 web 测试。
+
 ## 风险与边界
 
 - `container-type: inline-size` wrapper 会建立包含上下文，若 detail 槽内有 `position: fixed` 相对视口的假设可能受影响；试点页右栏仅 sticky，无此问题。

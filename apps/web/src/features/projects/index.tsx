@@ -944,11 +944,15 @@ export function ProjectsView({
                 <MasterDetailLayout
                   data-testid="projects-risk-home-layout"
                   detail={
-                    <ProjectTriagePanel
-                      project={selectedQueueProject}
-                      summary={selectedQueueSummary}
-                    />
+                    selectedQueueProject ? (
+                      <ProjectTriagePanel
+                        project={selectedQueueProject}
+                        summary={selectedQueueSummary}
+                      />
+                    ) : undefined
                   }
+                  detailLabel="选中项目上下文"
+                  onDetailDismiss={() => setSelectedQueueProjectId("")}
                   master={
                     <ProjectRiskQueue
                       activePage={activeProjectListPage}

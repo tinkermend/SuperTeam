@@ -7,7 +7,6 @@ import {
   Clock3,
   FileWarning,
   FolderKanban,
-  Inbox,
   PlayCircle,
   ShieldCheck,
   UserCheck,
@@ -457,31 +456,16 @@ const REASON_META: Record<
 
 /**
  * 选中项目上下文（主从详情的从属侧）：复用队列已计算的风险摘要，零额外请求。
- * 未选中时给出安静空态；选中后给出主阻塞、逐条待办与直达动作，动作深链到项目详情对应 Tab。
+ * 按需渲染——仅在选中项目时由 MasterDetailLayout 装载（宽容器 in-flow 右栏 /
+ * 窄容器 Sheet），未选中不保留空态占位栏。
  */
 export function ProjectTriagePanel({
   project,
   summary,
 }: {
-  project?: Project;
+  project: Project;
   summary?: ProjectRiskSummary;
 }) {
-  if (!project) {
-    return (
-      <aside
-        aria-label="选中项目上下文"
-        className="min-w-0 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4"
-        data-testid="project-selected-context-panel"
-      >
-        <V3EmptyState
-          description="从左侧队列选择一个项目，这里会显示它的待办、当前处理者和直达动作。"
-          icon={<Inbox />}
-          title="选择项目查看待办"
-        />
-      </aside>
-    );
-  }
-
   const resolvedSummary = summary ?? emptyProjectRiskSummary(project);
   const reasons = resolvedSummary.reasons;
   const ownerLabel =

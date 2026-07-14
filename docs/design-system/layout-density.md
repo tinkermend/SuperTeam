@@ -23,11 +23,12 @@
 - 视口断点（`sm:` / `md:` / `lg:` / `xl:`）仅允许用于 shell 级结构（侧栏、顶栏、命令中心）。原因：带侧栏的应用里视口宽度 ≠ 内容可用宽度，且侧栏展开/收起时视口断点不响应。
 - 存量内容区视口断点属待偿债务，触达时迁移为容器断点。
 
-## 主从布局（队列 + 右栏）
+## 主从布局（队列 + 按需详情层）
 
 - 必须用 `MasterDetailLayout`（`@/components/superteam`），禁止新增手写 `grid-cols-[minmax(0,1fr)_NNNpx]`。
-- 右栏只有两档：`rail="md"`（`--v3-layout-rail`，340px，容器 `@4xl` 展开双列）、`rail="lg"`（`--v3-layout-rail-lg`，420px，容器 `@5xl` 展开双列）。窄容器下右栏落到主列下方单列。
-- 右栏内的 sticky、间距等响应样式用与档位一致的 `@4xl/master-detail:` / `@5xl/master-detail:` 容器变体。
+- **详情层按需渲染**：未选中对象时不传 `detail`，主列独占全宽；禁止常驻"请选择"空态占位栏。选中后，宽容器下详情作为 in-flow 右栏展开，窄容器下自动改为右侧 Sheet 抽屉（组件内置，关闭抽屉经 `onDetailDismiss` 清除选中态）。
+- 右栏只有两档：`rail="md"`（上限 `--v3-layout-rail` 340px，容器 `@4xl` 展开）、`rail="lg"`（上限 `--v3-layout-rail-lg` 420px，容器 `@5xl` 展开）。右栏列宽可压缩（`minmax` 下限 16/18rem），任何环境下不产生横向越界。
+- 右栏内的 sticky、间距等响应样式用与档位一致的 `@4xl/master-detail:` / `@5xl/master-detail:` 容器变体（Sheet 内这些变体不命中，自然失效）。
 - 存量 5 种右栏宽度（280/320/324/340/420）与手写主从栅格属待偿债务，触达时迁移。
 
 ## 指标带（KPI 概览）
