@@ -103,4 +103,33 @@ describe("RunEventTimeline", () => {
     await screen.getByText("原始 JSON").click();
     await expect.element(screen.getByText(/"event_type": "turn_started"/)).toBeVisible();
   });
+
+  it("does not render a blank text row for an empty text_delta", async () => {
+    const screen = await render(
+      <RunEventTimeline
+        events={[
+          event({ event_type: "turn_started", sequence_number: 1 }),
+          event({ event_type: "text_delta", sequence_number: 2, payload: {} }),
+        ]}
+      />,
+    );
+
+    await expect.element(screen.getByText("回合开始")).toBeVisible();
+    // 空 text_delta 不应产出空白正文卡:整个时间线只有 turn_started 一张卡
+    expect(screen.getByText("原始 JSON").elements().length).toBe(1);
+  });
+
+  it("still merges an empty text_delta into a preceding text block without adding a row", async () => {
+    const screen = await render(
+      <RunEventTimeline
+        events={[
+          event({ event_type: "text_delta", sequence_number: 1, payload: { text: "有内容" } }),
+          event({ event_type: "text_delta", sequence_number: 2, payload: {} }),
+        ]}
+      />,
+    );
+
+    await expect.element(screen.getByText("有内容")).toBeVisible();
+    expect(screen.getByText("原始 JSON").elements().length).toBe(1);
+  });
 });

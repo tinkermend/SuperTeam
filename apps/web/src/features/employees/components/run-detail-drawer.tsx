@@ -28,12 +28,16 @@ type RunDetailDrawerProps = {
   onStopped: (run: DigitalEmployeeRun) => void;
 };
 
+const EVENT_DISPLAY_LIMIT = 50;
+
 export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChange, onStopped }: RunDetailDrawerProps) {
   const queryClient = useQueryClient();
+  // 多取一条(51)只用于判断是否真的被截断:恰好 50 条时不该显示「仅显示前 50 条」提示。
   const events = useQuery({
     enabled: Boolean(run?.id) && open,
-    queryKey: ["digital-employee-run-events", employeeId, run?.id, { limit: 50 }],
-    queryFn: () => listDigitalEmployeeRunEvents(apiOptions, employeeId, run?.id ?? "", { limit: 50 }),
+    queryKey: ["digital-employee-run-events", employeeId, run?.id, { limit: EVENT_DISPLAY_LIMIT + 1 }],
+    queryFn: () =>
+      listDigitalEmployeeRunEvents(apiOptions, employeeId, run?.id ?? "", { limit: EVENT_DISPLAY_LIMIT + 1 }),
     refetchInterval: run && isActiveRun(run.status) ? 2500 : false,
   });
   const stopRun = useMutation({
@@ -58,6 +62,8 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
 
   const displayedRun: DigitalEmployeeRunListItem =
     stopRun.data && isActiveRun(run.status) && stopRun.data.id === run.id ? { ...run, ...stopRun.data } : run;
+  const displayedEvents = events.data?.slice(0, EVENT_DISPLAY_LIMIT);
+  const eventsTruncated = (events.data?.length ?? 0) > EVENT_DISPLAY_LIMIT;
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
@@ -76,7 +82,8 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
             <SummaryItem label="更新时间" value={formatRunTimestamp(displayedRun)} />
           </div>
           {isFailedRun(displayedRun.status) ? <FailureBlock run={displayedRun} /> : null}
-          {displayedRun.status === "completed" ? <ResultBlock run={displayedRun} /> : null}
+          {/* key=run.id:切换到另一条运行时重挂载,重置原始 JSON 折叠的展开态 */}
+          {displayedRun.status === "completed" ? <ResultBlock key={displayedRun.id} run={displayedRun} /> : null}
           {isActiveRun(displayedRun.status) ? (
             <V3Button
               disabled={displayedRun.status === "cancelling" || stopRun.isPending}
@@ -92,12 +99,12 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
           <div>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold">事件流</p>
-              {events.data ? <span className="text-xs text-v3-ink-3">{events.data.length} 条</span> : null}
+              {displayedEvents ? <span className="text-xs text-v3-ink-3">{displayedEvents.length} 条</span> : null}
             </div>
             {events.isLoading ? <p className="text-sm text-v3-ink-2">事件加载中</p> : null}
             {events.isError ? <p className="text-sm text-destructive">事件加载失败</p> : null}
-            {events.data?.length ? (
-              <RunEventTimeline events={events.data} limitReached={events.data.length >= 50} />
+            {displayedEvents?.length ? (
+              <RunEventTimeline events={displayedEvents} key={displayedRun.id} limitReached={eventsTruncated} />
             ) : !events.isLoading ? (
               <p className="text-sm text-v3-ink-2">暂无事件</p>
             ) : null}

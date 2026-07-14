@@ -101,7 +101,8 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
         if (last?.kind === "text") {
           last.text += text;
           last.events.push(event);
-        } else {
+        } else if (text) {
+          // 空 text_delta 且无前置正文块时不产出空白卡片。
           items.push({ kind: "text", key: `event-${event.sequence_number}`, text, events: [event] });
         }
         break;
