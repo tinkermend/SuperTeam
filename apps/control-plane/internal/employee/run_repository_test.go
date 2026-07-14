@@ -1278,6 +1278,97 @@ func TestPgRunRepositoryUpsertProviderSessionByExternalIDPersistsProjectTaskRoot
 	})
 }
 
+// TestPgRunRepositoryCreateProviderSessionEventIfAbsentAllowsResumedSequenceReuse
+// reproduces the live 500 seen on resumed chat runs: a resumed run's
+// provider-session event stream restarts sequence numbering at 1 (each
+// command_id has its own sequence space per
+// uq_provider_session_events_command_sequence), but the *original*,
+// pre-resume unique index uq_provider_session_events_sequence
+// (provider_session_id, sequence_number) — added in 001_initial.sql before
+// session resume existed — still treats sequence numbers as globally unique
+// for the whole provider_sessions row. When a resumed run's first event
+// reuses sequence_number=1 against the same provider_sessions row the
+// original run used, the INSERT hits that stale unique index, ON CONFLICT DO
+// NOTHING (no explicit target) swallows it, and the idempotency fallback
+// SELECT (scoped by the *new* command_id) finds nothing — CreateProviderSessionEventIfAbsent
+// then returns pgx.ErrNoRows, which the writeback handler maps to a bare 500.
+func TestPgRunRepositoryCreateProviderSessionEventIfAbsentAllowsResumedSequenceReuse(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "provider_session_event_resume_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+
+	repo := NewPgRunRepository(queries.New(conn))
+	employeeID := uuid.New()
+	executionInstanceID := uuid.New()
+	runtimeNodeID := uuid.New()
+
+	providerSessionUUID, err := repo.UpsertProviderSession(ctx, UpsertProviderSessionRequest{
+		TenantID:            tenantID,
+		ProviderSessionID:   "resumable-session",
+		DigitalEmployeeID:   employeeID,
+		ExecutionInstanceID: executionInstanceID,
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderType:        "claude-code",
+		Status:              "active",
+		Recoverable:         true,
+		LastSequenceNumber:  1,
+	})
+	require.NoError(t, err)
+
+	originalCommandID := "cmd-original"
+	_, err = repo.CreateProviderSessionEventIfAbsent(ctx, CreateProviderSessionEventRecordRequest{
+		TenantID:            tenantID,
+		ProviderSessionUUID: providerSessionUUID,
+		EventType:           "session_started",
+		SequenceNumber:      1,
+		CommandID:           &originalCommandID,
+	})
+	require.NoError(t, err)
+
+	// A resumed run gets a fresh command_id and restarts its own event
+	// sequence at 1 against the *same* provider_sessions row.
+	resumeCommandID := "cmd-resumed"
+	resumedEventID, err := repo.CreateProviderSessionEventIfAbsent(ctx, CreateProviderSessionEventRecordRequest{
+		TenantID:            tenantID,
+		ProviderSessionUUID: providerSessionUUID,
+		EventType:           "session_started",
+		SequenceNumber:      1,
+		CommandID:           &resumeCommandID,
+	})
+	require.NoError(t, err, "resumed run's event writeback must not fail even though sequence_number collides with the original run's event on the same provider session")
+	require.NotEqual(t, uuid.Nil, resumedEventID)
+
+	var storedCommandID string
+	err = conn.QueryRow(ctx, `
+		SELECT command_id FROM provider_session_events
+		WHERE tenant_id = $1 AND provider_session_id = $2 AND id = $3
+	`, tenantID, providerSessionUUID, resumedEventID).Scan(&storedCommandID)
+	require.NoError(t, err)
+	require.Equal(t, resumeCommandID, storedCommandID)
+}
+
 // TestPgRunRepositoryGetRunTaskMetadata exercises the fallback metadata
 // lookup writeback uses when the runtime event itself doesn't carry
 // revision_root_task_id: the metadata the control plane stamped on the task

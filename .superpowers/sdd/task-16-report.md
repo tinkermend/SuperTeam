@@ -354,3 +354,143 @@ untouched and keeps the same latent bug — noted here, not fixed, per scope.
 regressions.
 
 Commit: `fix(employee): dispatch chat resumes as resume_session commands`
+
+## Fix: session_policy resume injection
+
+**Bug (live-verified).** Chat resumes dispatch command type `resume_session`
+with `provider_session_id` in `payload.metadata["provider_session_id"]`, but
+the runtime's payload validation (`apps/runtime-agent/src/commands/payload.rs:
+390-394 + has_provider_session_id():411-417`, NOT modified) only accepts the id
+at `payload.session_policy.provider_session_id` — so every resume fails with
+"provider_session_id is required for resume_session" before the executor's
+dual-source lookup even runs.
+
+**Fix (control-plane only).** `apps/control-plane/internal/employee/run_service.go`:
+in `dispatchStartSession`, after determining the command type:
+- Clone the `preflight.SessionPolicy` map (defensive deep-copy to avoid leaking
+  mutations into shared preflight)
+- If command type is `"resume_session"`, inject:
+  - `provider_session_id` from `req.Metadata["provider_session_id"]`
+  - `mode: "resume"`
+- Pass the modified session_policy to `buildStartSessionPayload`
+- Keep `metadata["provider_session_id"]` as-is (executor also reads it;
+  belt-and-braces pattern)
+
+**Tests (TDD RED → GREEN).** Extended `run_service_test.go`:
+- `TestCreateRunChatResumeInjectsProviderSession`: added assertions to verify
+  the dispatched payload's `session_policy` contains
+  `provider_session_id == <prior session id>` and `mode == "resume"` for all
+  valid resume cases.
+- `TestCreateRunChatResolvesProjectAnchorNodeAndDispatches` (first-question
+  chat, no resume): added assertions to verify the payload's `session_policy`
+  has NO `provider_session_id` and mode is either unset or `"new"`.
+
+**Verification.** Full employee package tests pass:
+
+```
+$ go test ./apps/control-plane/internal/employee/ -v
+=== RUN   TestCreateRunChatResumeInjectsProviderSession
+=== RUN   TestCreateRunChatResumeInjectsProviderSession/prefers_ProviderSessionExternalID_when_set
+--- PASS: ... (0.00s)
+=== RUN   TestCreateRunChatResumeInjectsProviderSession/falls_back_to_ProviderSessionID_when_external_ID_is_blank
+--- PASS: ... (0.00s)
+=== RUN   TestCreateRunChatResumeInjectsProviderSession/uses_ProviderSessionExternalID_over_ProviderSessionID
+--- PASS: ... (0.00s)
+=== RUN   TestCreateRunChatResumeInjectsProviderSession/rejects_when_both_ProviderSessionExternalID_and_ProviderSessionID_are_blank
+--- PASS: ... (0.00s)
+=== RUN   TestCreateRunChatResolvesProjectAnchorNodeAndDispatches
+--- PASS: ... (0.00s)
+...
+PASS
+ok  	github.com/superteam/control-plane/internal/employee	0.161s
+```
+
+Commit: `7fab2925` fix(employee): carry resume session id in session_policy payload
+
+## Fix: resume event writeback 500
+
+**Bug (live-verified).** `POST /api/v1/runtime/commands/{id}/events` returned
+500 for a resumed chat run's very first event (`session_started`, sequence 1),
+which then cascaded into `POST .../fail` with "Record runtime command event
+failed with status 500". Live evidence: run `34a78975-...` (resume of
+`cbadf100-...`, employee `4c78a475-...`), command `cmd-701f33a7-...`.
+
+**Root cause.** `provider_session_events` has TWO unique indexes:
+- `uq_provider_session_events_command_sequence (tenant_id, command_id,
+  sequence_number)` — added later (migration 006), correctly scopes the
+  idempotency guard per command/run.
+- `uq_provider_session_events_sequence (provider_session_id, sequence_number)`
+  — added in 001_initial.sql, **before session resume existed**, treats
+  sequence numbers as globally unique for the whole `provider_sessions` row.
+
+A resumed run reuses the *same* `provider_sessions` row as the run it
+resumes (upserted by external `provider_session_id` in
+`upsertProviderSession`), but gets a fresh `command_id` and — per the runtime
+executor's own per-command counter — restarts its event sequence numbering at
+1. `CreateProviderSessionEventIfAbsent`'s SQL
+(`internal/storage/queries/provider_session.sql`, `-- name:
+CreateProviderSessionEventIfAbsent`) does `INSERT ... ON CONFLICT DO NOTHING`
+with no explicit conflict target, so it silently swallowed the insert on
+hitting the stale global index; the query's idempotency fallback `SELECT`
+(scoped by the *new* command_id) then found zero rows, so
+`CreateProviderSessionEventIfAbsent` returned `pgx.ErrNoRows`. That error is
+unmapped in `PgRunRepository.CreateProviderSessionEventIfAbsent` and in
+`writeRuntimeCommandWritebackError` (`internal/api/handlers/runtime_command_writeback.go`),
+so it fell through to the generic 500 branch — explaining "no error detail in
+access log".
+
+Verified live DB: `provider_sessions` row `9613b7f7-...` (external id
+`c5dac933-...`) already had events for sequence 1-3 + terminal from the
+*original* run's `cmd-fe504769-...`; the resumed run's `cmd-701f33a7-...`
+tried to write its own sequence-1 event against the same row → collision.
+
+**Fix.** New migration
+`internal/storage/migrations/060_provider_session_events_drop_stale_sequence_uniq.sql`:
+`DROP INDEX IF EXISTS uq_provider_session_events_sequence`. The command-scoped
+index already provides the idempotency guarantee the query needs (dedup a
+retried delivery of the same command's event); the older session-global index
+is redundant now that one `provider_sessions` row spans multiple runs/commands
+and actively wrong for resume. No application code changes needed — this is a
+schema-only fix. Updated `atlas.sum` via `atlas migrate hash`.
+
+**Tests (TDD RED → GREEN).** Added
+`TestPgRunRepositoryCreateProviderSessionEventIfAbsentAllowsResumedSequenceReuse`
+in `run_repository_test.go` (Postgres-integration test, isolated schema):
+upserts one provider session, writes its first event under `cmd-original`
+(sequence 1), then writes a *second* event under `cmd-resumed` at the same
+sequence 1 against the same session row.
+- RED (before the migration): `no rows in result set` — reproduced the exact
+  live error deterministically.
+- GREEN (after the migration): succeeds, and the resumed event's row is
+  confirmed to carry the new `command_id` (not silently merged with the
+  original).
+
+Confirmed pre-existing/unrelated: 4 other Postgres-integration tests in this
+package fail identically with and without this migration file present
+(`cannot insert multiple commands into a prepared statement`;
+`null value in column "provider_type"` on `digital_employees`) — verified by
+temporarily moving the migration file aside and re-running; not caused by
+this change.
+
+**Verification.**
+```
+$ TEST_DATABASE_URL=... TEST_REDIS_URL=... go test ./internal/employee/ \
+    -run TestPgRunRepositoryCreateProviderSessionEventIfAbsentAllowsResumedSequenceReuse -v
+--- PASS: TestPgRunRepositoryCreateProviderSessionEventIfAbsentAllowsResumedSequenceReuse (5.34s)
+PASS
+
+$ go test ./internal/employee/...
+ok  	github.com/superteam/control-plane/internal/employee	0.143s
+
+$ go build ./internal/...
+(clean)
+
+$ DEV_URL=<shared dev DB, scratch schema> make -C apps/control-plane migrate-validate
+(exit 0, no output — atlas schema-drift/checksum gate passed)
+```
+Scratch schemas used for both the repository test and `migrate-validate` were
+dropped after use; the shared dev DB's real `superteam` schema was left
+untouched (branch not yet merged/deployed, per repo convention of applying
+migrations only on service restart from `main`).
+
+Commit: `fix(employee): drop stale global sequence uniqueness on resumed provider sessions`

@@ -1,0 +1,18 @@
+-- uq_provider_session_events_sequence (provider_session_id, sequence_number),
+-- added in 001_initial.sql, predates resumable provider sessions. A resumed
+-- run reuses the same provider_sessions row as the run it resumes but gets
+-- its own command_id and restarts its own event sequence numbering at 1
+-- (see 006_digital_employee_run_loop.sql's uq_provider_session_events_command_sequence,
+-- which scopes the idempotency guard to (tenant_id, command_id, sequence_number)).
+-- The stale global-per-session index makes the resumed run's first event
+-- collide with the original run's event of the same sequence number: the
+-- INSERT ... ON CONFLICT DO NOTHING (no explicit target) silently drops the
+-- insert, and the command_id-scoped idempotency fallback SELECT then finds
+-- no matching row for the new command_id, surfacing as a bare 500 on
+-- POST /api/v1/runtime/commands/{id}/events for resumed chat runs.
+--
+-- The command-scoped unique index already provides the idempotency guarantee
+-- CreateProviderSessionEventIfAbsent needs (dedup a retried delivery of the
+-- same command's event), so the older global index is redundant and wrong
+-- now that one provider_sessions row can span multiple runs/commands.
+DROP INDEX IF EXISTS uq_provider_session_events_sequence;
