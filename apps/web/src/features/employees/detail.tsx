@@ -8,7 +8,7 @@ import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
-import { SoftCard, StatusPill } from "@/components/superteam";
+import { MasterDetailLayout, SoftCard, StatusPill } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -239,7 +239,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         title={employee.data?.name ?? "数字员工详情"}
         subtitle="执行实例、运行事件、结果和人工停止。"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         {employee.isLoading ? <p className="text-sm text-v3-ink-2">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">数字员工加载失败</p> : null}
 
@@ -265,68 +265,74 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
               stats={runStats.data}
             />
 
-            <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-              <EmployeeRunHistoryTable
-                employeeId={employeeId}
-                error={runs.error}
-                isError={runs.isError}
-                isLoading={runs.isLoading}
-                onPageChange={setPage}
-                onRetry={() => runs.refetch()}
-                onRowClick={(item) => {
-                  setSelectedRun(item);
-                  setRunDrawerOpen(true);
-                }}
-                onRunKindFilterChange={(runKind) => {
-                  setRunKindFilter(runKind);
-                  setPage(1);
-                }}
-                onStatusFilterChange={(status) => {
-                  setStatusFilter(status);
-                  setPage(1);
-                }}
-                page={page}
-                pageSize={PAGE_SIZE}
-                result={runs.data}
-                runKindFilter={runKindFilter}
-                statusFilter={statusFilter}
-              />
-              <div className="flex flex-col gap-4">
-                <SchedulingReadinessPanel
-                  isError={schedulingReadiness.isError}
-                  isLoading={schedulingReadiness.isLoading}
-                  onRetry={() => schedulingReadiness.refetch()}
-                  readiness={schedulingReadiness.data}
-                />
-                <EffectiveContextPanel
-                  employee={employee.data}
+            <MasterDetailLayout
+              narrowDetail="stack"
+              rail="md"
+              master={
+                <EmployeeRunHistoryTable
                   employeeId={employeeId}
-                  envVars={{
-                    isLoading: envVarsQuery.isLoading,
-                    isError: envVarsQuery.isError,
-                    configuredCount: configuredEnvCount,
-                    totalCount: envVarsQuery.data?.length ?? 0,
-                    missingNames: missingEnvVars.map((item) => item.name),
+                  error={runs.error}
+                  isError={runs.isError}
+                  isLoading={runs.isLoading}
+                  onPageChange={setPage}
+                  onRetry={() => runs.refetch()}
+                  onRowClick={(item) => {
+                    setSelectedRun(item);
+                    setRunDrawerOpen(true);
                   }}
-                  executionInstance={instance.data}
-                  mcp={{
-                    isLoading: mcpQuery.isLoading,
-                    isError: mcpQuery.isError,
-                    personalCount: personalMcpCount,
-                    inheritedCount: inheritedMcpCount,
-                    totalCount: mcpQuery.data?.length ?? 0,
+                  onRunKindFilterChange={(runKind) => {
+                    setRunKindFilter(runKind);
+                    setPage(1);
                   }}
-                  onManageCapabilities={() => setCapabilitiesOpen(true)}
-                  skills={{
-                    isLoading: skillsQuery.isLoading,
-                    isError: skillsQuery.isError,
-                    personalCount: personalSkillCount,
-                    inheritedCount: inheritedSkillCount,
-                    totalCount: skillsQuery.data?.length ?? 0,
+                  onStatusFilterChange={(status) => {
+                    setStatusFilter(status);
+                    setPage(1);
                   }}
+                  page={page}
+                  pageSize={PAGE_SIZE}
+                  result={runs.data}
+                  runKindFilter={runKindFilter}
+                  statusFilter={statusFilter}
                 />
-              </div>
-            </section>
+              }
+              detail={
+                <div className="flex flex-col gap-4">
+                  <SchedulingReadinessPanel
+                    isError={schedulingReadiness.isError}
+                    isLoading={schedulingReadiness.isLoading}
+                    onRetry={() => schedulingReadiness.refetch()}
+                    readiness={schedulingReadiness.data}
+                  />
+                  <EffectiveContextPanel
+                    employee={employee.data}
+                    employeeId={employeeId}
+                    envVars={{
+                      isLoading: envVarsQuery.isLoading,
+                      isError: envVarsQuery.isError,
+                      configuredCount: configuredEnvCount,
+                      totalCount: envVarsQuery.data?.length ?? 0,
+                      missingNames: missingEnvVars.map((item) => item.name),
+                    }}
+                    executionInstance={instance.data}
+                    mcp={{
+                      isLoading: mcpQuery.isLoading,
+                      isError: mcpQuery.isError,
+                      personalCount: personalMcpCount,
+                      inheritedCount: inheritedMcpCount,
+                      totalCount: mcpQuery.data?.length ?? 0,
+                    }}
+                    onManageCapabilities={() => setCapabilitiesOpen(true)}
+                    skills={{
+                      isLoading: skillsQuery.isLoading,
+                      isError: skillsQuery.isError,
+                      personalCount: personalSkillCount,
+                      inheritedCount: inheritedSkillCount,
+                      totalCount: skillsQuery.data?.length ?? 0,
+                    }}
+                  />
+                </div>
+              }
+            />
 
             <EmployeeConfigSnapshotSection employee={employee.data} />
           </div>

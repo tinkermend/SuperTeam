@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   IconTile,
+  MasterDetailLayout,
   SoftCard,
   StatusPill,
   V3Button,
@@ -268,7 +269,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
           </V3Button>
         }
       />
-      <Main>
+      <Main width="wide">
         <div className="flex min-w-0 flex-col gap-5 text-v3-ink">
           {overview.isLoading ? (
             <WorkSurface>
@@ -312,20 +313,26 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                 </div>
 
                 <TabsContent value="overview">
-                  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
-                    <div className="flex min-w-0 flex-col gap-4">
-                      <NodeInventoryPanel nodes={overviewData.nodes} />
-                      <PendingEnrollmentPanel
-                        enrollments={overviewData.pending_enrollments}
-                        onApprove={openApproveDialog}
-                        onReject={openRejectDialog}
-                      />
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-4">
-                      <RecentEventsPanel events={recentEvents} />
-                      <ProviderCapabilityPanel capabilities={overviewData.provider_capabilities} compact />
-                    </div>
-                  </div>
+                  <MasterDetailLayout
+                    narrowDetail="stack"
+                    rail="md"
+                    master={
+                      <div className="flex min-w-0 flex-col gap-4">
+                        <NodeInventoryPanel nodes={overviewData.nodes} />
+                        <PendingEnrollmentPanel
+                          enrollments={overviewData.pending_enrollments}
+                          onApprove={openApproveDialog}
+                          onReject={openRejectDialog}
+                        />
+                      </div>
+                    }
+                    detail={
+                      <div className="flex min-w-0 flex-col gap-4">
+                        <RecentEventsPanel events={recentEvents} />
+                        <ProviderCapabilityPanel capabilities={overviewData.provider_capabilities} compact />
+                      </div>
+                    }
+                  />
                 </TabsContent>
 
                 <TabsContent value="enrollments">

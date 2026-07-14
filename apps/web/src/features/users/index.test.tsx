@@ -11,8 +11,8 @@ vi.mock("@/components/layout/header", () => ({
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children, fluid }: { children: ReactNode; fluid?: boolean }) => (
-    <main data-fluid={fluid ? "true" : "false"}>{children}</main>
+  Main: ({ children, width }: { children: ReactNode; width?: string }) => (
+    <main data-width={width}>{children}</main>
   ),
 }));
 
@@ -360,7 +360,7 @@ describe("Users", () => {
     );
 
     await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
-    await expect.element(screen.getByRole("main")).toHaveAttribute("data-fluid", "true");
+    await expect.element(screen.getByRole("main")).toHaveAttribute("data-width", "wide");
     await expect.element(screen.getByTestId("users-management-layout")).toHaveAttribute("data-layout", "table-governance");
     const governanceTable = screen.getByTestId("users-governance-table");
     await expect.element(governanceTable).toBeInTheDocument();

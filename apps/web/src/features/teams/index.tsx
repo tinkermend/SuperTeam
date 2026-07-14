@@ -52,7 +52,7 @@ export function CreateTeamPage() {
         title="新建团队"
         subtitle="配置团队负责人、成员和初始治理边界。"
       />
-      <Main fixed className="min-w-0 overflow-x-hidden py-4">
+      <Main width="canvas" fixed className="min-w-0 overflow-x-hidden py-4">
         <CreateTeamView
           apiBaseUrl={apiBaseUrl}
           showHeading={false}
@@ -98,7 +98,7 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
         title="团队管理"
         subtitle="团队负责人、治理配置和协作边界。"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <V3Button asChild className="self-start sm:self-auto">
@@ -175,7 +175,7 @@ export function TeamDetailView({
         title={overview.data?.team.name ?? "团队详情"}
         subtitle={overview.data ? `${overview.data.team.slug} / 团队治理和协作边界` : "加载团队详情"}
       />
-      <Main>
+      <Main width="wide">
         {overview.isLoading ? (
           <V3LoadingState label="团队概览加载中" />
         ) : null}

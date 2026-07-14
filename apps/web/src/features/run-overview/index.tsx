@@ -4,7 +4,7 @@ import { useSearch } from "@tanstack/react-router";
 import { Activity, RefreshCw } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
-import { V3Button, V3ErrorState, V3LoadingState } from "@/components/superteam";
+import { MasterDetailLayout, V3Button, V3ErrorState, V3LoadingState } from "@/components/superteam";
 import { getDigitalEmployeeOverview } from "@/lib/api/employees";
 import { listTeamSummaries } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -53,44 +53,50 @@ export function RunOverviewView({ apiBaseUrl, fetcher }: { apiBaseUrl: string; f
         title="运行总览"
         subtitle="按楼层展示团队运行态、数字员工状态和容量占用。"
       />
-      <Main className="min-w-0">
+      <Main width="wide" className="min-w-0">
       {employees.isPending || teams.isPending ? <V3LoadingState label="正在加载运行总览" /> : null}
       {error ? <V3ErrorState title="运行总览加载失败" description={error.message} /> : null}
       {overview ? (
-        <section aria-label="运行总览地图" className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0">
-            <div data-runtime-overview-toolbar className="mb-4 flex flex-wrap items-center gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
-                  全部重点
-                </span>
-                {overview.floors.map((floor) => (
-                  <V3Button
-                    key={floor.floorId}
-                    type="button"
-                    variant={activeFloorId === floor.floorId ? "primary" : "outline"}
-                    onClick={() => setActiveFloorId(floor.floorId)}
-                  >
-                    {floor.label}
-                  </V3Button>
-                ))}
-                <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
-                  异常优先
-                </span>
+        <MasterDetailLayout
+          aria-label="运行总览地图"
+          narrowDetail="stack"
+          rail="md"
+          role="region"
+          master={
+            <div className="min-w-0">
+              <div data-runtime-overview-toolbar className="mb-4 flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
+                    全部重点
+                  </span>
+                  {overview.floors.map((floor) => (
+                    <V3Button
+                      key={floor.floorId}
+                      type="button"
+                      variant={activeFloorId === floor.floorId ? "primary" : "outline"}
+                      onClick={() => setActiveFloorId(floor.floorId)}
+                    >
+                      {floor.label}
+                    </V3Button>
+                  ))}
+                  <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
+                    异常优先
+                  </span>
+                </div>
+                <V3Button type="button" variant="outline" aria-label="刷新运行总览" onClick={handleRefresh}>
+                  <RefreshCw className="size-4" />
+                  刷新
+                </V3Button>
+                <StatusLegend className="ml-auto" />
               </div>
-              <V3Button type="button" variant="outline" aria-label="刷新运行总览" onClick={handleRefresh}>
-                <RefreshCw className="size-4" />
-                刷新
-              </V3Button>
-              <StatusLegend className="ml-auto" />
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-v3-ink-2">
+                <p>当前楼层：{overview.floors.find((floor) => floor.floorId === activeFloorId)?.label}</p>
+              </div>
+              <RuntimeMapStage activeFloorId={activeFloorId} overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} onSelectEmployee={setSelectedEmployeeId} />
             </div>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-v3-ink-2">
-              <p>当前楼层：{overview.floors.find((floor) => floor.floorId === activeFloorId)?.label}</p>
-            </div>
-            <RuntimeMapStage activeFloorId={activeFloorId} overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} onSelectEmployee={setSelectedEmployeeId} />
-          </div>
-          <RuntimeOverviewSidePanel overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} />
-        </section>
+          }
+          detail={<RuntimeOverviewSidePanel overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} />}
+        />
       ) : null}
       </Main>
     </>

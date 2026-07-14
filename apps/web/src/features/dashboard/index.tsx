@@ -57,7 +57,7 @@ export function Dashboard() {
           </StatusPill>
         }
       />
-      <Main className="space-y-6 text-v3-ink">
+      <Main width="wide" className="space-y-6 text-v3-ink">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
           <SignatureCard className="min-h-[14rem]">
             <div className="flex h-full flex-col justify-between gap-8">

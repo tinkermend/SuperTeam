@@ -414,7 +414,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           ) : undefined
         }
       />
-      <Main>
+      <Main width="canvas">
         {teams.isError ? (
           <Alert className="mb-4" variant="destructive">
             <AlertTitle>团队列表加载失败</AlertTitle>

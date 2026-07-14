@@ -27,7 +27,7 @@ export function ProjectManagementShell({
         subtitle={description}
         title={title}
       />
-      <Main>
+      <Main width="wide">
         <div className="flex flex-col gap-5">
           {actions ? (
             <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">

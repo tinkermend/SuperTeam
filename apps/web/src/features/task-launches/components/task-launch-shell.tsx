@@ -23,7 +23,7 @@ export function TaskLaunchShell({
         subtitle={description}
         title={title}
       />
-      <Main className="tl-aurora p-0">
+      <Main width="canvas" className="tl-aurora p-0">
         <div className="tl-stage">{children}</div>
       </Main>
     </>

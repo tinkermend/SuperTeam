@@ -6,7 +6,7 @@ import { checkPermission } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { IconTile, SoftCard, StatusPill, V3Button } from "@/components/superteam";
+import { IconTile, MasterDetailLayout, SoftCard, StatusPill, V3Button } from "@/components/superteam";
 
 type PermissionDiagnosticsProps = {
   apiOptions: ApiClientOptions;
@@ -127,8 +127,11 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <SoftCard className="p-5">
+    <MasterDetailLayout
+      narrowDetail="stack"
+      rail="lg"
+      master={
+        <SoftCard className="p-5">
         <div className="mb-5 flex items-start gap-3">
           <IconTile tone="warn" size="sm">
             <ShieldQuestion />
@@ -199,9 +202,10 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
         </form>
         {formError ? <p className="mt-3 text-sm text-v3-danger">{formError}</p> : null}
         {checkMutation.isError ? <p className="mt-3 text-sm text-v3-danger">权限诊断失败。</p> : null}
-      </SoftCard>
-      <DiagnosticsResult result={checkMutation.data} />
-    </div>
+        </SoftCard>
+      }
+      detail={<DiagnosticsResult result={checkMutation.data} />}
+    />
   );
 }
 

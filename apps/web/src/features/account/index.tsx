@@ -131,7 +131,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
           title="账户设置"
           subtitle="当前控制台账号资料与安全设置。"
         />
-        <Main className="min-w-0 overflow-x-hidden" fluid>
+        <Main width="contained" className="min-w-0 overflow-x-hidden">
           <SoftCard className="p-6 text-sm text-v3-ink-2">未登录</SoftCard>
         </Main>
       </>
@@ -158,7 +158,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
           <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{user.status}</StatusPill>
         }
       />
-      <Main className="min-w-0 overflow-x-hidden" fluid>
+      <Main width="contained" className="min-w-0 overflow-x-hidden">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <SoftCard className="min-w-0 p-6">
             <div className="mb-5 flex items-center gap-3">

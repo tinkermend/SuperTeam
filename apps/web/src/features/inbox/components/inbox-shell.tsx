@@ -139,7 +139,7 @@ export function InboxShell({
         icon={<Inbox />}
         iconTone="brand"
       />
-      <Main fixed className="flex min-h-0 flex-col gap-3 py-4 text-v3-ink">
+      <Main width="wide" fixed className="flex min-h-0 flex-col gap-3 py-4 text-v3-ink">
         {/* 顶部：4 张对等小卡概览 + 视图分段 + 筛选工具条 */}
         <InboxSummaryCards summary={data?.summary} maxWaitMs={maxWaitMs} />
         <InboxToolbar

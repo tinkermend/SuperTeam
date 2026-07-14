@@ -64,7 +64,7 @@ function AuditRoute() {
         title="审计中心"
         subtitle={projectId ? `项目 ${projectId}` : "等待项目上下文"}
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 text-v3-ink">
 
       {!projectId ? (

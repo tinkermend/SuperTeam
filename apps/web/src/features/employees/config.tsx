@@ -208,7 +208,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         title={employee.data?.name ?? "数字员工配置"}
         subtitle="配置员工人格记忆、能力绑定和预算策略"
       />
-      <Main>
+      <Main width="contained">
         {employee.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}
 

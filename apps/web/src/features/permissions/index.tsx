@@ -35,7 +35,7 @@ export function PermissionsCenter({ apiBaseUrl = resolveControlPlaneUrl(), fetch
         title="权限中心"
         subtitle="集中查看授权决策、Runtime 执行范围和成员角色。"
       />
-      <Main fluid className="min-w-0 text-v3-ink">
+      <Main width="wide" className="min-w-0 text-v3-ink">
         <Tabs defaultValue="overview" className="gap-4">
           <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3">
             {tabItems.map((tab) => (

@@ -31,8 +31,8 @@ vi.mock("@/components/layout/header", () => ({
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children, fluid }: { children: ReactNode; fluid?: boolean }) => (
-    <main data-fluid={fluid ? "true" : "false"}>{children}</main>
+  Main: ({ children, width }: { children: ReactNode; width?: string }) => (
+    <main data-width={width}>{children}</main>
   ),
 }));
 
@@ -139,7 +139,7 @@ describe("AccountSettings", () => {
     const screen = await renderAccountSettings(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "账户设置" })).toBeInTheDocument();
-    await expect.element(screen.getByRole("main")).toHaveAttribute("data-fluid", "true");
+    await expect.element(screen.getByRole("main")).toHaveAttribute("data-width", "contained");
     await expect.element(screen.getByText("值班负责人")).toBeInTheDocument();
     await expect.element(screen.getByText("operator@example.com")).toBeInTheDocument();
     await expect.element(screen.getByAltText("值班负责人 的头像")).toBeInTheDocument();

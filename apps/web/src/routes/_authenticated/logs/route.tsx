@@ -26,7 +26,7 @@ function LogsLayout() {
         title="日志管理"
         subtitle="登录审计、操作追溯与平台事件"
       />
-      <Main fluid className="min-w-0 overflow-x-hidden">
+      <Main width="canvas" className="min-w-0 overflow-x-hidden">
         <div className="flex w-full flex-col gap-4 text-v3-ink">
           <nav className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-v3-card p-1.5 shadow-v3 flex">
             {tabItems.map((tab) => (

@@ -115,7 +115,7 @@ export function McpManagementPage() {
         title="MCP 管理"
         subtitle="注册 HTTP/streamable HTTP 能力，绑定到团队或数字员工"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <V3Button

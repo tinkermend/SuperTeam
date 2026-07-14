@@ -157,7 +157,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
         title="技能市场"
         subtitle="发现、查看并治理技能档案与绑定范围"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <V3Button asChild className="h-11 self-start px-5">

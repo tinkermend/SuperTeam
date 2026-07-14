@@ -112,7 +112,7 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
         title="审批中心"
         subtitle="聚合项目决策和审批事项，按状态、风险和项目来源筛选处理。"
       />
-      <Main className="space-y-5 text-v3-ink">
+      <Main width="wide" className="space-y-5 text-v3-ink">
         {data ? (
           <section className="grid gap-4 sm:grid-cols-3">
             <V3MetricCard

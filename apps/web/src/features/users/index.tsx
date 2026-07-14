@@ -13,6 +13,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import {
+  MasterDetailLayout,
   SoftCard,
   StatusPill,
   V3Button,
@@ -207,7 +208,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
         }
         subtitle="管理平台人类用户、账号状态、控制台访问与成员身份；本页只处理账号治理动作。"
       />
-      <Main className="min-w-0 overflow-x-hidden" fluid>
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
           <V3Button onClick={() => handleCreateUserOpenChange(true)} type="button">
             <UserPlus data-icon="inline-start" />
@@ -222,51 +223,54 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
           <UserMetric icon={<KeyRound />} label="成员身份" tone="artifact" value={stats.tenantRoles} />
         </div>
 
-        <div
-          className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_324px]"
+        <MasterDetailLayout
           data-layout="table-governance"
           data-testid="users-management-layout"
-        >
-          <UserGovernanceTable
-            authzMembersByUserId={authzMembersByUserId}
-            density={tableDensity}
-            filters={filters}
-            isError={usersQuery.isError}
-            isLoading={usersQuery.isLoading}
-            isStatusPending={statusMutation.isPending}
-            onDensityChange={setTableDensity}
-            onFiltersChange={setFilters}
-            onResetPassword={(userId) => {
-              setSelectedUserId(userId);
-              setResetPasswordOpen(true);
-            }}
-            onSelectUser={setSelectedUserId}
-            onToggleStatus={(user) =>
-              statusMutation.mutate({
-                status: user.status === "active" ? "disabled" : "active",
-                userId: user.id,
-              })
-            }
-            selectedUserId={selectedUser?.id}
-            users={users}
-          />
-
-          <UserGovernancePreview
-            isStatusPending={statusMutation.isPending}
-            member={selectedMember}
-            onResetPassword={() => setResetPasswordOpen(true)}
-            onToggleStatus={() => {
-              if (!selectedUser) {
-                return;
+          narrowDetail="stack"
+          rail="md"
+          master={
+            <UserGovernanceTable
+              authzMembersByUserId={authzMembersByUserId}
+              density={tableDensity}
+              filters={filters}
+              isError={usersQuery.isError}
+              isLoading={usersQuery.isLoading}
+              isStatusPending={statusMutation.isPending}
+              onDensityChange={setTableDensity}
+              onFiltersChange={setFilters}
+              onResetPassword={(userId) => {
+                setSelectedUserId(userId);
+                setResetPasswordOpen(true);
+              }}
+              onSelectUser={setSelectedUserId}
+              onToggleStatus={(user) =>
+                statusMutation.mutate({
+                  status: user.status === "active" ? "disabled" : "active",
+                  userId: user.id,
+                })
               }
-              statusMutation.mutate({
-                status: selectedUser.status === "active" ? "disabled" : "active",
-                userId: selectedUser.id,
-              });
-            }}
-            user={selectedIdentity}
-          />
-        </div>
+              selectedUserId={selectedUser?.id}
+              users={users}
+            />
+          }
+          detail={
+            <UserGovernancePreview
+              isStatusPending={statusMutation.isPending}
+              member={selectedMember}
+              onResetPassword={() => setResetPasswordOpen(true)}
+              onToggleStatus={() => {
+                if (!selectedUser) {
+                  return;
+                }
+                statusMutation.mutate({
+                  status: selectedUser.status === "active" ? "disabled" : "active",
+                  userId: selectedUser.id,
+                });
+              }}
+              user={selectedIdentity}
+            />
+          }
+        />
 
         {selectedUser ? (
           <ResetPasswordDialog

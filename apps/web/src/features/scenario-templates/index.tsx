@@ -47,7 +47,7 @@ export function ScenarioTemplatesPage() {
         title="场景模板"
         subtitle="沉淀各类场景的分解骨架与交接契约，驱动规划实例化（P1 只读）"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
           <section
             className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"

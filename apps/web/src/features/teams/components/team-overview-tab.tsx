@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Trash2, UserPlus, Bot, Users, Puzzle, TriangleAlert } from "lucide-react";
 import {
+  MasterDetailLayout,
   StatusPill,
   V3Button,
   V3EmptyState,
@@ -46,10 +47,10 @@ type TeamOverviewTabProps = {
 
 export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview, teamId }: TeamOverviewTabProps) {
   const { member_count, digital_employee_count, capability_count, pending_item_count } = overview;
-  
+
   const apiOptions = useMemo(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
   const canAddMember = allowedActions.includes("team.member.add");
-  
+
   const [directAddResetToken, setDirectAddResetToken] = useState(0);
 
   // Queries
@@ -57,7 +58,7 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
     queryKey: ["team-members", teamId],
     queryFn: () => listTeamMembers(apiOptions, teamId),
   });
-  
+
   const digitalEmployeesQuery = useQuery({
     queryKey: ["team-digital-employees", teamId],
     queryFn: () => listDigitalEmployees(apiOptions, { team_id: teamId }),
@@ -233,71 +234,79 @@ function HumanMembersSection({
   removing: boolean;
 }) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <WorkSurface className="min-w-0">
-        <div className="border-b border-v3-line px-5 py-4">
-          <h2 className="text-base font-bold text-v3-ink">人类管理成员</h2>
-          <p className="mt-1 text-[13px] text-v3-ink-2">团队的管理、审批与观察人员。</p>
-        </div>
-        <div>
-          {isLoading ? (
-            <V3LoadingState label="加载人类成员" />
-          ) : members.length === 0 ? (
-            <V3EmptyState title="暂无人类成员" />
-          ) : (
-            <V3Table>
-              <thead>
-                <tr>
-                  <V3Th>成员</V3Th>
-                  <V3Th>角色</V3Th>
-                  <V3Th className="text-right">操作</V3Th>
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((member) => (
-                  <V3Tr key={member.membership_id}>
-                    <V3Td>
-                      <UserIdentity
-                        showSecondary
-                        user={{
-                          id: member.user_id,
-                          username: member.username,
-                          display_name: member.display_name,
-                          email: member.email,
-                          avatar: member.avatar,
-                          status: member.account_status || "active",
-                        }}
-                      />
-                    </V3Td>
-                    <V3Td>
-                      <TeamRoleBadge role={member.role as DirectTeamRole} />
-                    </V3Td>
-                    <V3Td className="text-right">
-                      {member.role === "owner" ? (
-                        <span className="text-xs text-v3-ink-3">—</span>
-                      ) : (
-                        <V3Button
-                          aria-label={`移除 ${member.display_name || member.username}`}
-                          disabled={removing}
-                          onClick={() => onRemove(member.membership_id)}
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Trash2 className="size-4" />
-                          <span className="sr-only">移除</span>
-                        </V3Button>
-                      )}
-                    </V3Td>
-                  </V3Tr>
-                ))}
-              </tbody>
-            </V3Table>
-          )}
-        </div>
-      </WorkSurface>
-      {canAddMember ? <aside className="flex min-w-0 flex-col gap-4">{addPanel}</aside> : null}
-    </div>
+    <MasterDetailLayout
+      narrowDetail="stack"
+      rail="md"
+      master={
+        <WorkSurface className="min-w-0">
+          <div className="border-b border-v3-line px-5 py-4">
+            <h2 className="text-base font-bold text-v3-ink">人类管理成员</h2>
+            <p className="mt-1 text-[13px] text-v3-ink-2">团队的管理、审批与观察人员。</p>
+          </div>
+          <div>
+            {isLoading ? (
+              <V3LoadingState label="加载人类成员" />
+            ) : members.length === 0 ? (
+              <V3EmptyState title="暂无人类成员" />
+            ) : (
+              <V3Table>
+                <thead>
+                  <tr>
+                    <V3Th>成员</V3Th>
+                    <V3Th>角色</V3Th>
+                    <V3Th className="text-right">操作</V3Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((member) => (
+                    <V3Tr key={member.membership_id}>
+                      <V3Td>
+                        <UserIdentity
+                          showSecondary
+                          user={{
+                            id: member.user_id,
+                            username: member.username,
+                            display_name: member.display_name,
+                            email: member.email,
+                            avatar: member.avatar,
+                            status: member.account_status || "active",
+                          }}
+                        />
+                      </V3Td>
+                      <V3Td>
+                        <TeamRoleBadge role={member.role as DirectTeamRole} />
+                      </V3Td>
+                      <V3Td className="text-right">
+                        {member.role === "owner" ? (
+                          <span className="text-xs text-v3-ink-3">—</span>
+                        ) : (
+                          <V3Button
+                            aria-label={`移除 ${member.display_name || member.username}`}
+                            disabled={removing}
+                            onClick={() => onRemove(member.membership_id)}
+                            size="icon"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2 className="size-4" />
+                            <span className="sr-only">移除</span>
+                          </V3Button>
+                        )}
+                      </V3Td>
+                    </V3Tr>
+                  ))}
+                </tbody>
+              </V3Table>
+            )}
+          </div>
+        </WorkSurface>
+      }
+      detail={
+        canAddMember ? (
+          <aside className="flex min-w-0 flex-col gap-4">{addPanel}</aside>
+        ) : undefined
+      }
+    />
   );
 }
 

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   IconTile,
+  MasterDetailLayout,
   SoftCard,
   StatusPill,
   V3Button,
@@ -85,7 +86,7 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
           ) : undefined
         }
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         {skill.isPending ? (
           <WorkSurface>
             <V3LoadingState label="加载技能档案…" />
@@ -174,74 +175,79 @@ function SkillArchiveDetail({ skill }: { skill: Skill }) {
         <V3MetricCard icon={<Wrench />} iconTone="warn" label="运行要求" value={dependencyCount} />
       </section>
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <div className="flex min-w-0 flex-col gap-5">
-          <DetailSection
-            action={
-              <div className="flex items-center gap-2">
-                <V3Button disabled size="sm" type="button">
-                  安装到...
-                </V3Button>
-                <StatusPill tone="mute">即将支持</StatusPill>
-              </div>
-            }
-            icon={<Users />}
-            title="安装范围"
-          >
-            <div className="grid gap-4 lg:grid-cols-2">
-              <BindingList
-                empty="暂无团队安装"
-                icon={<Users />}
-                items={skill.team_bindings.map((binding) => ({
-                  id: binding.team_id,
-                  meta: "团队安装",
-                  name: binding.team_name || binding.team_id,
-                  tone: "info",
-                }))}
-                title="团队安装"
-              />
-              <BindingList
-                empty="暂无数字员工安装"
-                icon={<Bot />}
-                items={skill.agent_bindings.map((binding) => ({
-                  id: binding.agent_id,
-                  meta: [binding.team_name || binding.team_id, binding.status].filter(Boolean).join(" / ") || binding.status,
-                  name: binding.agent_name || binding.agent_id,
-                  tone: "artifact",
-                }))}
-                title="数字员工安装"
-              />
-            </div>
-          </DetailSection>
-
-          <DetailSection icon={<ServerCog />} title="运行要求">
-            <div className="mb-4 rounded-v3-inner bg-v3-card-inner p-3 text-sm text-v3-ink-2">
-              当前仅展示创建者声明的运行要求，不做本地检测或依赖验证。
-            </div>
-            <DependencyGroup label="CLI 工具" items={skill.runtime_dependencies?.tools ?? []} />
-            <DependencyGroup label="环境变量" items={skill.runtime_dependencies?.env ?? []} />
-          </DetailSection>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-5">
-          <DetailSection icon={<PackageCheck />} title="上传与存储信息">
-            <div
-              className="overflow-hidden rounded-v3-inner border border-v3-line bg-v3-card-inner"
-              data-testid="skill-upload-metadata"
+      <MasterDetailLayout
+        narrowDetail="stack"
+        rail="lg"
+        master={
+          <div className="flex min-w-0 flex-col gap-5">
+            <DetailSection
+              action={
+                <div className="flex items-center gap-2">
+                  <V3Button disabled size="sm" type="button">
+                    安装到...
+                  </V3Button>
+                  <StatusPill tone="mute">即将支持</StatusPill>
+                </div>
+              }
+              icon={<Users />}
+              title="安装范围"
             >
-              <DataRow label="Slug" value={skill.slug} mono />
-              <DataRow label="归档包" value={skill.archive_filename} />
-              <DataRow label="对象引用" value={skill.archive_object_ref} mono />
-              <DataRow label="文件大小" value={formatBytes(skill.archive_size_bytes)} />
-              <DataRow label="文件数量" value={`${skill.archive_file_count} 个文件`} />
-              <DataRow label="SHA256" value={skill.archive_checksum_sha256} mono wrap />
-              <DataRow label="创建人" value={skill.created_by_name || skill.created_by} />
-              <DataRow label="创建时间" value={formatDateTime(skill.created_at)} />
-              <DataRow label="更新时间" value={formatDateTime(skill.updated_at)} />
-            </div>
-          </DetailSection>
-        </div>
-      </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <BindingList
+                  empty="暂无团队安装"
+                  icon={<Users />}
+                  items={skill.team_bindings.map((binding) => ({
+                    id: binding.team_id,
+                    meta: "团队安装",
+                    name: binding.team_name || binding.team_id,
+                    tone: "info",
+                  }))}
+                  title="团队安装"
+                />
+                <BindingList
+                  empty="暂无数字员工安装"
+                  icon={<Bot />}
+                  items={skill.agent_bindings.map((binding) => ({
+                    id: binding.agent_id,
+                    meta: [binding.team_name || binding.team_id, binding.status].filter(Boolean).join(" / ") || binding.status,
+                    name: binding.agent_name || binding.agent_id,
+                    tone: "artifact",
+                  }))}
+                  title="数字员工安装"
+                />
+              </div>
+            </DetailSection>
+
+            <DetailSection icon={<ServerCog />} title="运行要求">
+              <div className="mb-4 rounded-v3-inner bg-v3-card-inner p-3 text-sm text-v3-ink-2">
+                当前仅展示创建者声明的运行要求，不做本地检测或依赖验证。
+              </div>
+              <DependencyGroup label="CLI 工具" items={skill.runtime_dependencies?.tools ?? []} />
+              <DependencyGroup label="环境变量" items={skill.runtime_dependencies?.env ?? []} />
+            </DetailSection>
+          </div>
+        }
+        detail={
+          <div className="flex min-w-0 flex-col gap-5">
+            <DetailSection icon={<PackageCheck />} title="上传与存储信息">
+              <div
+                className="overflow-hidden rounded-v3-inner border border-v3-line bg-v3-card-inner"
+                data-testid="skill-upload-metadata"
+              >
+                <DataRow label="Slug" value={skill.slug} mono />
+                <DataRow label="归档包" value={skill.archive_filename} />
+                <DataRow label="对象引用" value={skill.archive_object_ref} mono />
+                <DataRow label="文件大小" value={formatBytes(skill.archive_size_bytes)} />
+                <DataRow label="文件数量" value={`${skill.archive_file_count} 个文件`} />
+                <DataRow label="SHA256" value={skill.archive_checksum_sha256} mono wrap />
+                <DataRow label="创建人" value={skill.created_by_name || skill.created_by} />
+                <DataRow label="创建时间" value={formatDateTime(skill.created_at)} />
+                <DataRow label="更新时间" value={formatDateTime(skill.updated_at)} />
+              </div>
+            </DetailSection>
+          </div>
+        }
+      />
     </div>
   );
 }

@@ -39,7 +39,7 @@ export function UnimplementedPage({ description, icon: Icon, title, tone = "neut
         title={title}
         subtitle={description}
       />
-      <Main>
+      <Main width="contained">
         <SoftCard className="p-6">
           <div className="flex flex-col gap-2">
             <h2 className="text-base font-bold text-v3-ink">功能建设中</h2>

@@ -20,6 +20,7 @@ import {
 import {
   GlassCard,
   IconTile,
+  MasterDetailLayout,
   SignatureCard,
   StatusPill,
   V3Button,
@@ -120,7 +121,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
         title="上传技能"
         subtitle="上传技能包并完善元数据与运行依赖声明，发布后可安装到团队或数字员工。"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-4">
           <PackageStatusBand
             canPublish={canPublish}
@@ -131,8 +132,11 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
             onFileChange={setFile}
           />
 
-          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
-            <GlassCard className="min-w-0">
+          <MasterDetailLayout
+            narrowDetail="stack"
+            rail="lg"
+            master={
+              <GlassCard className="min-w-0">
               <CardContent className="p-0">
                 <section className="p-5">
                   <SectionTitle
@@ -260,10 +264,11 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   </div>
                 </section>
               </CardContent>
-            </GlassCard>
-
-            <aside className="min-w-0">
-              <GlassCard className="sticky top-4">
+              </GlassCard>
+            }
+            detail={
+              <aside className="min-w-0 @5xl/master-detail:sticky @5xl/master-detail:top-4 @5xl/master-detail:max-h-[calc(100svh-2rem)] @5xl/master-detail:overflow-y-auto">
+              <GlassCard>
                 <CardContent className="flex flex-col gap-4 p-5 text-sm">
                   <h2 className="text-base font-semibold tracking-normal">发布摘要</h2>
 
@@ -311,8 +316,9 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   </div>
                 </CardContent>
               </GlassCard>
-            </aside>
-          </div>
+              </aside>
+            }
+          />
         </div>
       </Main>
     </>

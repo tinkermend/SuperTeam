@@ -223,7 +223,7 @@ export function CreateProjectView({
         title="新建项目工作台"
         subtitle="建立项目事实容器，配置负责人、团队、数字员工池与策略预设。"
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <CreateProjectShell
           apiBaseUrl={apiBaseUrl}
           availableTeams={availableProjectTeamScopes}

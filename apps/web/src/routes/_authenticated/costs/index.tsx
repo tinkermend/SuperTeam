@@ -93,7 +93,7 @@ function CostsRoute() {
           />
         }
       />
-      <Main className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
 
       {/* 顶部指标卡 */}

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/collapsible";
 import {
   IconTile,
+  MasterDetailLayout,
   SoftCard,
   StatusPill,
   V3Button,
@@ -359,364 +360,369 @@ export function ProjectOperationalDetail({
             </section>
           ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
-        <section className="grid min-w-0 gap-4">
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<FileText />}
-              title="当前需求"
-              meta={latestDemand ? demandStatusLabel(latestDemand.status) : "暂无需求"}
-            />
-            {latestDemand ? (
-              <div className="grid gap-2 p-4">
-                <DemandTitle demand={latestDemand} />
-                <p className="line-clamp-3 text-sm leading-6 text-v3-ink-2">
-                  {latestDemand.content || "需求内容已记录，等待系统生成下一步计划。"}
-                </p>
-              </div>
-            ) : (
-              <EmptyLine label="暂无提交到项目的需求" />
-            )}
-          </SoftCard>
-
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<GitBranch />}
-              title="计划确认"
-              meta={
-                latestPlanRevision
-                  ? `v${latestPlanRevision.revision_number}`
-                  : "暂无版本"
-              }
-            />
-            {latestPlanRevision ? (
-              <div className="grid gap-4 p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
-                        {statusLabel(latestPlanRevision.status)}
-                      </StatusPill>
-                      {latestPlanRevision.review_required ? (
-                        <StatusPill tone="warn">需人工复核</StatusPill>
-                      ) : (
-                        <StatusPill tone="ok">自动接受</StatusPill>
-                      )}
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-sm text-v3-ink-2">
-                      {planRevisionSummary(latestPlanRevision)}
-                    </p>
-                  </div>
-                  {latestPlanReviewDecision ? (
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <V3Button
-                        aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
-                        size="sm"
-                        type="button"
-                        onClick={() =>
-                          onResolveDecision(latestPlanReviewDecision.id, "approved")
-                        }
-                      >
-                        批准
-                      </V3Button>
-                      <V3Button
-                        aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          onResolveDecision(
-                            latestPlanReviewDecision.id,
-                            "request_changes",
-                          )
-                        }
-                      >
-                        要求修改
-                      </V3Button>
-                      <V3Button
-                        aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          onResolveDecision(latestPlanReviewDecision.id, "rejected")
-                        }
-                      >
-                        拒绝
-                      </V3Button>
-                    </div>
-                  ) : null}
-                </div>
-                {planRevisionTemplateKey(latestPlanRevision) ? (
-                  <RuntimeMeta
-                    label="场景模板"
-                    value={planRevisionTemplateKey(latestPlanRevision)}
-                  />
-                ) : null}
-                <div className="grid gap-3 md:grid-cols-3">
-                  <FactTile
-                    icon={<ClipboardList />}
-                    label="计划任务"
-                    value={`${planRevisionTasks(latestPlanRevision).length} 项`}
-                  />
-                  <FactTile
-                    icon={<Bot />}
-                    label="能力需求"
-                    value={formatShortList(planRevisionCapabilityLabels(latestPlanRevision))}
-                  />
-                  <FactTile
-                    icon={<FileCheck2 />}
-                    label="风险等级"
-                    value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
-                  />
-                </div>
-                <div className="grid gap-3">
-                  <div className="grid gap-2" data-testid="plan-dispatch-order">
-                    <div className="flex items-center gap-2 px-1">
-                      <ClipboardList className="size-4 text-v3-ink-2" />
-                      <h4 className="text-sm font-semibold text-v3-ink">调度顺序</h4>
-                    </div>
-                    <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
-                      {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
-                        (task, index) => (
-                          <div
-                            className="grid gap-2 p-3"
-                            key={`${planRevisionTaskKey(task)}-${index}`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="min-w-0 text-sm font-medium text-v3-ink">
-                                {planRevisionTaskTitle(task)}
-                              </p>
-                              <StatusPill tone="info">第 {index + 1} 步</StatusPill>
-                            </div>
-                            <RuntimeMeta
-                              label="执行员工"
-                              value={planRevisionTaskEmployee(task, servicePool)}
-                            />
-                            <RuntimeMeta
-                              label="选择原因"
-                              value={
-                                stringField(task, "employee_selection_reason") ||
-                                "未说明选择原因"
-                              }
-                            />
-                          </div>
-                        ),
-                      )}
-                      {planRevisionTasks(latestPlanRevision).length === 0 ? (
-                        <EmptyLine label="计划版本尚未包含可展示任务" />
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2" data-testid="plan-acceptance-criteria">
-                    <div className="flex items-center gap-2 px-1">
-                      <FileCheck2 className="size-4 text-v3-ink-2" />
-                      <h4 className="text-sm font-semibold text-v3-ink">验收判据</h4>
-                    </div>
-                    <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
-                      {planRevisionAcceptanceCriteria(latestPlanRevision).map(
-                        (criterion, index) => (
-                          <div
-                            className="grid gap-2 p-3"
-                            key={`${stringField(criterion, "id")}-${index}`}
-                          >
-                            <PlanAcceptanceCriterionStatement
-                              criterionId={
-                                stringField(criterion, "id") || `criterion-${index}`
-                              }
-                              statement={stringField(criterion, "statement")}
-                            />
-                            <RuntimeMeta
-                              label="满足任务"
-                              value={planRevisionCriterionTaskTitles(
-                                criterion,
-                                latestPlanRevision,
-                              ).join("、")}
-                            />
-                          </div>
-                        ),
-                      )}
-                      {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
-                        <EmptyLine label="本计划未声明验收判据" />
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
-            )}
-          </SoftCard>
-
-          {taskGraph && taskGraph.nodes.length > 0 ? null : (
+      <MasterDetailLayout
+        narrowDetail="stack"
+        rail="md"
+        master={
+          <section className="grid min-w-0 gap-4">
             <SoftCard className="overflow-hidden">
               <PanelHeader
-                icon={<ClipboardList />}
-                title="当前执行"
-                meta={`${activeTasks.length} 项`}
+                icon={<FileText />}
+                title="当前需求"
+                meta={latestDemand ? demandStatusLabel(latestDemand.status) : "暂无需求"}
+              />
+              {latestDemand ? (
+                <div className="grid gap-2 p-4">
+                  <DemandTitle demand={latestDemand} />
+                  <p className="line-clamp-3 text-sm leading-6 text-v3-ink-2">
+                    {latestDemand.content || "需求内容已记录，等待系统生成下一步计划。"}
+                  </p>
+                </div>
+              ) : (
+                <EmptyLine label="暂无提交到项目的需求" />
+              )}
+            </SoftCard>
+
+            <SoftCard className="overflow-hidden">
+              <PanelHeader
+                icon={<GitBranch />}
+                title="计划确认"
+                meta={
+                  latestPlanRevision
+                    ? `v${latestPlanRevision.revision_number}`
+                    : "暂无版本"
+                }
+              />
+              {latestPlanRevision ? (
+                <div className="grid gap-4 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
+                          {statusLabel(latestPlanRevision.status)}
+                        </StatusPill>
+                        {latestPlanRevision.review_required ? (
+                          <StatusPill tone="warn">需人工复核</StatusPill>
+                        ) : (
+                          <StatusPill tone="ok">自动接受</StatusPill>
+                        )}
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-sm text-v3-ink-2">
+                        {planRevisionSummary(latestPlanRevision)}
+                      </p>
+                    </div>
+                    {latestPlanReviewDecision ? (
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <V3Button
+                          aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
+                          size="sm"
+                          type="button"
+                          onClick={() =>
+                            onResolveDecision(latestPlanReviewDecision.id, "approved")
+                          }
+                        >
+                          批准
+                        </V3Button>
+                        <V3Button
+                          aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            onResolveDecision(
+                              latestPlanReviewDecision.id,
+                              "request_changes",
+                            )
+                          }
+                        >
+                          要求修改
+                        </V3Button>
+                        <V3Button
+                          aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            onResolveDecision(latestPlanReviewDecision.id, "rejected")
+                          }
+                        >
+                          拒绝
+                        </V3Button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {planRevisionTemplateKey(latestPlanRevision) ? (
+                    <RuntimeMeta
+                      label="场景模板"
+                      value={planRevisionTemplateKey(latestPlanRevision)}
+                    />
+                  ) : null}
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <FactTile
+                      icon={<ClipboardList />}
+                      label="计划任务"
+                      value={`${planRevisionTasks(latestPlanRevision).length} 项`}
+                    />
+                    <FactTile
+                      icon={<Bot />}
+                      label="能力需求"
+                      value={formatShortList(planRevisionCapabilityLabels(latestPlanRevision))}
+                    />
+                    <FactTile
+                      icon={<FileCheck2 />}
+                      label="风险等级"
+                      value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
+                    />
+                  </div>
+                  <div className="grid gap-3">
+                    <div className="grid gap-2" data-testid="plan-dispatch-order">
+                      <div className="flex items-center gap-2 px-1">
+                        <ClipboardList className="size-4 text-v3-ink-2" />
+                        <h4 className="text-sm font-semibold text-v3-ink">调度顺序</h4>
+                      </div>
+                      <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                        {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
+                          (task, index) => (
+                            <div
+                              className="grid gap-2 p-3"
+                              key={`${planRevisionTaskKey(task)}-${index}`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="min-w-0 text-sm font-medium text-v3-ink">
+                                  {planRevisionTaskTitle(task)}
+                                </p>
+                                <StatusPill tone="info">第 {index + 1} 步</StatusPill>
+                              </div>
+                              <RuntimeMeta
+                                label="执行员工"
+                                value={planRevisionTaskEmployee(task, servicePool)}
+                              />
+                              <RuntimeMeta
+                                label="选择原因"
+                                value={
+                                  stringField(task, "employee_selection_reason") ||
+                                  "未说明选择原因"
+                                }
+                              />
+                            </div>
+                          ),
+                        )}
+                        {planRevisionTasks(latestPlanRevision).length === 0 ? (
+                          <EmptyLine label="计划版本尚未包含可展示任务" />
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2" data-testid="plan-acceptance-criteria">
+                      <div className="flex items-center gap-2 px-1">
+                        <FileCheck2 className="size-4 text-v3-ink-2" />
+                        <h4 className="text-sm font-semibold text-v3-ink">验收判据</h4>
+                      </div>
+                      <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                        {planRevisionAcceptanceCriteria(latestPlanRevision).map(
+                          (criterion, index) => (
+                            <div
+                              className="grid gap-2 p-3"
+                              key={`${stringField(criterion, "id")}-${index}`}
+                            >
+                              <PlanAcceptanceCriterionStatement
+                                criterionId={
+                                  stringField(criterion, "id") || `criterion-${index}`
+                                }
+                                statement={stringField(criterion, "statement")}
+                              />
+                              <RuntimeMeta
+                                label="满足任务"
+                                value={planRevisionCriterionTaskTitles(
+                                  criterion,
+                                  latestPlanRevision,
+                                ).join("、")}
+                              />
+                            </div>
+                          ),
+                        )}
+                        {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
+                          <EmptyLine label="本计划未声明验收判据" />
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
+              )}
+            </SoftCard>
+
+            {taskGraph && taskGraph.nodes.length > 0 ? null : (
+              <SoftCard className="overflow-hidden">
+                <PanelHeader
+                  icon={<ClipboardList />}
+                  title="当前执行"
+                  meta={`${activeTasks.length} 项`}
+                />
+                <div className="divide-y divide-v3-line">
+                  {activeTasks.length === 0 ? (
+                    <EmptyLine label="当前没有正在执行的数字员工任务" />
+                  ) : (
+                    [...activeTasks]
+                      .sort((left, right) =>
+                        compareIsoDesc(
+                          left.updated_at ?? left.created_at,
+                          right.updated_at ?? right.created_at,
+                        ),
+                      )
+                      .slice(0, 6)
+                      .map((task) => (
+                      <div className="grid gap-1 p-4" key={task.id}>
+                        <div className="flex items-center justify-between gap-3">
+                          <ProjectTaskLink task={task} />
+                          <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
+                        </div>
+                        <p className="line-clamp-2 text-xs text-v3-ink-2">
+                          {task.summary || "等待系统分派数字员工执行。"}
+                        </p>
+                        {task.updated_at || task.created_at ? (
+                          <p
+                            className="tabular-nums text-[11px] text-v3-ink-3"
+                            title={formatAbsoluteDateTime(task.updated_at ?? task.created_at ?? "")}
+                          >
+                            更新 {formatRelativeTime(task.updated_at ?? task.created_at ?? "")}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </SoftCard>
+            )}
+
+            <SoftCard className="overflow-hidden">
+              <PanelHeader
+                icon={<FileCheck2 />}
+                title="最新结果"
+                meta={latestResult ? "已回写" : "暂无结果"}
+              />
+              {latestResult ? (
+                <div className="grid gap-2 p-4">
+                  <p className="line-clamp-3 text-sm font-medium text-v3-ink">
+                    {latestResult.conclusion}
+                  </p>
+                  {latestResult.recommended_next_action ? (
+                    <p className="line-clamp-2 text-xs text-v3-ink-2">
+                      {latestResult.recommended_next_action}
+                    </p>
+                  ) : null}
+                  <RuntimeMeta label="执行员工" value={latestResult.digital_employee_id} />
+                </div>
+              ) : (
+                <EmptyLine label="数字员工完成任务后会在这里回写结果" />
+              )}
+            </SoftCard>
+
+            <SoftCard className="overflow-hidden">
+              <PanelHeader
+                icon={<UserRound />}
+                title="待负责人处理"
+                meta={`${pendingOwnerActionItems.length} 项`}
               />
               <div className="divide-y divide-v3-line">
-                {activeTasks.length === 0 ? (
-                  <EmptyLine label="当前没有正在执行的数字员工任务" />
+                {pendingOwnerActionItems.length === 0 ? (
+                  <EmptyLine label="当前没有需要项目负责人处理的事项" />
                 ) : (
-                  [...activeTasks]
-                    .sort((left, right) =>
-                      compareIsoDesc(
-                        left.updated_at ?? left.created_at,
-                        right.updated_at ?? right.created_at,
-                      ),
-                    )
-                    .slice(0, 6)
-                    .map((task) => (
-                    <div className="grid gap-1 p-4" key={task.id}>
-                      <div className="flex items-center justify-between gap-3">
-                        <ProjectTaskLink task={task} />
-                        <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
+                  pendingOwnerActionItems.slice(0, 5).map((decision) => (
+                    <div className="grid gap-3 p-4" key={decision.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {decision.title_snapshot}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
+                            {decision.summary_snapshot &&
+                            decision.summary_snapshot !== decision.title_snapshot
+                              ? decision.summary_snapshot
+                              : "等待负责人处理"}
+                          </p>
+                        </div>
+                        <StatusPill tone={decisionTone(decision.status_snapshot)}>
+                          {decisionStatusLabel(decision.status_snapshot)}
+                        </StatusPill>
                       </div>
-                      <p className="line-clamp-2 text-xs text-v3-ink-2">
-                        {task.summary || "等待系统分派数字员工执行。"}
-                      </p>
-                      {task.updated_at || task.created_at ? (
-                        <p
-                          className="tabular-nums text-[11px] text-v3-ink-3"
-                          title={formatAbsoluteDateTime(task.updated_at ?? task.created_at ?? "")}
-                        >
-                          更新 {formatRelativeTime(task.updated_at ?? task.created_at ?? "")}
-                        </p>
-                      ) : null}
+                      <DecisionRequestActions
+                        decision={decision}
+                        onResolveDecision={onResolveDecision}
+                      />
                     </div>
                   ))
                 )}
               </div>
             </SoftCard>
-          )}
 
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<FileCheck2 />}
-              title="最新结果"
-              meta={latestResult ? "已回写" : "暂无结果"}
-            />
-            {latestResult ? (
-              <div className="grid gap-2 p-4">
-                <p className="line-clamp-3 text-sm font-medium text-v3-ink">
-                  {latestResult.conclusion}
-                </p>
-                {latestResult.recommended_next_action ? (
-                  <p className="line-clamp-2 text-xs text-v3-ink-2">
-                    {latestResult.recommended_next_action}
-                  </p>
-                ) : null}
-                <RuntimeMeta label="执行员工" value={latestResult.digital_employee_id} />
-              </div>
-            ) : (
-              <EmptyLine label="数字员工完成任务后会在这里回写结果" />
-            )}
-          </SoftCard>
+            {businessBlocker ? (
+              <SoftCard className="overflow-hidden">
+                <PanelHeader icon={<CircleDot />} title="当前阻塞" meta={businessBlocker.status} />
+                <div className="grid gap-2 p-4">
+                  <p className="text-sm font-semibold text-v3-ink">{businessBlocker.title}</p>
+                  <p className="text-xs leading-5 text-v3-ink-2">{businessBlocker.description}</p>
+                </div>
+              </SoftCard>
+            ) : null}
 
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<UserRound />}
-              title="待负责人处理"
-              meta={`${pendingOwnerActionItems.length} 项`}
-            />
-            <div className="divide-y divide-v3-line">
-              {pendingOwnerActionItems.length === 0 ? (
-                <EmptyLine label="当前没有需要项目负责人处理的事项" />
-              ) : (
-                pendingOwnerActionItems.slice(0, 5).map((decision) => (
-                  <div className="grid gap-3 p-4" key={decision.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {decision.title_snapshot}
-                        </p>
-                        <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
-                          {decision.summary_snapshot &&
-                          decision.summary_snapshot !== decision.title_snapshot
-                            ? decision.summary_snapshot
-                            : "等待负责人处理"}
-                        </p>
-                      </div>
-                      <StatusPill tone={decisionTone(decision.status_snapshot)}>
-                        {decisionStatusLabel(decision.status_snapshot)}
-                      </StatusPill>
-                    </div>
-                    <DecisionRequestActions
-                      decision={decision}
-                      onResolveDecision={onResolveDecision}
-                    />
-                  </div>
-                ))
-              )}
-            </div>
-          </SoftCard>
-
-          {businessBlocker ? (
             <SoftCard className="overflow-hidden">
-              <PanelHeader icon={<CircleDot />} title="当前阻塞" meta={businessBlocker.status} />
-              <div className="grid gap-2 p-4">
-                <p className="text-sm font-semibold text-v3-ink">{businessBlocker.title}</p>
-                <p className="text-xs leading-5 text-v3-ink-2">{businessBlocker.description}</p>
+              <PanelHeader
+                icon={<History />}
+                title="事件流"
+                meta={`${recentEvents.length} 条`}
+              />
+              <div className="divide-y divide-v3-line">
+                {recentEvents.length === 0 ? (
+                  <EmptyLine label="暂无项目事件" />
+                ) : (
+                  recentEvents.slice(0, 8).map((event) => {
+                    const eventDisplay = projectEventDisplay(event);
+                    return (
+                      <div className="flex gap-3 p-4" key={event.id}>
+                        <span className="mt-1 size-2 rounded-full bg-v3-brand" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium">{eventDisplay.title}</p>
+                            <span className="text-xs text-v3-ink-2">
+                              #{event.sequence_number}
+                            </span>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
+                            {eventDisplay.summary}
+                          </p>
+                          {eventDisplay.resource ? (
+                            <p className="mt-1 text-xs text-v3-ink-2">
+                              {eventDisplay.resource}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </SoftCard>
-          ) : null}
-
-          <SoftCard className="overflow-hidden">
-            <PanelHeader
-              icon={<History />}
-              title="事件流"
-              meta={`${recentEvents.length} 条`}
+          </section>
+        }
+        detail={
+          <aside className="grid min-w-0 gap-4">
+            <MemberPanel
+              emptyLabel="当前项目尚未设置项目负责人"
+              icon={<UserRound />}
+              members={projectOwners}
+              title="项目负责人组"
             />
-            <div className="divide-y divide-v3-line">
-              {recentEvents.length === 0 ? (
-                <EmptyLine label="暂无项目事件" />
-              ) : (
-                recentEvents.slice(0, 8).map((event) => {
-                  const eventDisplay = projectEventDisplay(event);
-                  return (
-                    <div className="flex gap-3 p-4" key={event.id}>
-                      <span className="mt-1 size-2 rounded-full bg-v3-brand" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-medium">{eventDisplay.title}</p>
-                          <span className="text-xs text-v3-ink-2">
-                            #{event.sequence_number}
-                          </span>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
-                          {eventDisplay.summary}
-                        </p>
-                        {eventDisplay.resource ? (
-                          <p className="mt-1 text-xs text-v3-ink-2">
-                            {eventDisplay.resource}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </SoftCard>
-        </section>
-
-        <aside className="grid min-w-0 gap-4">
-          <MemberPanel
-            emptyLabel="当前项目尚未设置项目负责人"
-            icon={<UserRound />}
-            members={projectOwners}
-            title="项目负责人组"
-          />
-          <MemberPanel
-            emptyLabel="当前项目服务池为空"
-            icon={<Bot />}
-            members={servicePool}
-            title="项目服务池"
-          />
-        </aside>
-      </div>
+            <MemberPanel
+              emptyLabel="当前项目服务池为空"
+              icon={<Bot />}
+              members={servicePool}
+              title="项目服务池"
+            />
+          </aside>
+        }
+      />
 
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
         <div className="overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
@@ -746,48 +752,55 @@ export function ProjectOperationalDetail({
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
-              <section className="grid min-w-0 gap-4">
-                <DispatchGateSummary
-                  gates={dispatchGates ?? []}
-                  taskTitle={dispatchGateTaskTitle}
-                />
-                <AdvancedRouteDecisions routeDecisions={routeDecisions} />
-                <ProjectExecutionTracePanel
-                  errorMessage={executionTraceErrorMessage}
-                  isError={executionTraceIsError}
-                  isLoading={executionTraceIsLoading}
-                  onRetry={onRetryExecutionTrace}
-                  trace={executionTrace}
-                />
-                <ProjectGovernanceTabs
-                  acceptance={acceptance}
-                  archivePreview={archivePreview}
-                  archiveSnapshots={archiveSnapshots}
-                  artifacts={artifacts}
-                  budgetLedger={budgetLedger}
-                  budgetSummary={budgetSummary}
-                  decisionRequestCount={decisionRequests.length}
-                  demandCount={demands.length}
-                  evidence={evidence}
-                  executionSummaryCount={executionSummaries.length}
-                  onCreateAcceptance={onCreateAcceptance}
-                  onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-                  onCreateEvidence={onCreateEvidence}
-                  onPatchEvidence={onPatchEvidence}
-                  reports={reports}
-                  routeDecisionCount={routeDecisions.length}
-                  taskCount={tasks.length}
-                />
-              </section>
-              <aside className="grid min-w-0 gap-4">
-                <AdvancedCoordinationJobs coordinationJobs={coordinationJobs} />
-                <AdvancedExecutionSummaries executionSummaries={executionSummaries} />
-                <AdvancedTransferRequests transferRequests={transferRequests} />
-                <AdvancedWorkflow project={project} overview={overview} />
-                <AdvancedDemands demands={demands} />
-              </aside>
-            </div>
+            <MasterDetailLayout
+              className="p-4"
+              narrowDetail="stack"
+              rail="md"
+              master={
+                <section className="grid min-w-0 gap-4">
+                  <DispatchGateSummary
+                    gates={dispatchGates ?? []}
+                    taskTitle={dispatchGateTaskTitle}
+                  />
+                  <AdvancedRouteDecisions routeDecisions={routeDecisions} />
+                  <ProjectExecutionTracePanel
+                    errorMessage={executionTraceErrorMessage}
+                    isError={executionTraceIsError}
+                    isLoading={executionTraceIsLoading}
+                    onRetry={onRetryExecutionTrace}
+                    trace={executionTrace}
+                  />
+                  <ProjectGovernanceTabs
+                    acceptance={acceptance}
+                    archivePreview={archivePreview}
+                    archiveSnapshots={archiveSnapshots}
+                    artifacts={artifacts}
+                    budgetLedger={budgetLedger}
+                    budgetSummary={budgetSummary}
+                    decisionRequestCount={decisionRequests.length}
+                    demandCount={demands.length}
+                    evidence={evidence}
+                    executionSummaryCount={executionSummaries.length}
+                    onCreateAcceptance={onCreateAcceptance}
+                    onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+                    onCreateEvidence={onCreateEvidence}
+                    onPatchEvidence={onPatchEvidence}
+                    reports={reports}
+                    routeDecisionCount={routeDecisions.length}
+                    taskCount={tasks.length}
+                  />
+                </section>
+              }
+              detail={
+                <aside className="grid min-w-0 gap-4">
+                  <AdvancedCoordinationJobs coordinationJobs={coordinationJobs} />
+                  <AdvancedExecutionSummaries executionSummaries={executionSummaries} />
+                  <AdvancedTransferRequests transferRequests={transferRequests} />
+                  <AdvancedWorkflow project={project} overview={overview} />
+                  <AdvancedDemands demands={demands} />
+                </aside>
+              }
+            />
           </CollapsibleContent>
         </div>
       </Collapsible>

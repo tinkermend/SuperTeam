@@ -15,6 +15,7 @@ import {
 } from "@/components/layout/shell-page-header";
 import {
   IconTile,
+  MasterDetailLayout,
   SoftCard,
   StatusPill,
   V3Button,
@@ -279,7 +280,7 @@ function TemplateShell({
         subtitle={subtitle}
         title={title}
       />
-      <Main>
+      <Main width="wide">
         <div className="flex flex-col gap-5">
           {actions ? (
             <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
@@ -397,93 +398,98 @@ function TemplateDetailContent({ template }: { template: EmployeeTemplate }) {
   const defaultInjection = templateDefaultInjectionSummary(template);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="flex min-w-0 flex-col gap-4">
-        <SoftCard className="p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <IconTile tone="brand" size="lg">
-                <LayoutTemplate />
-              </IconTile>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-[24px] font-extrabold text-v3-ink">{template.label}</h2>
-                  {template.is_system ? (
-                    <StatusPill tone="info" showDot={false}>
-                      内置
-                    </StatusPill>
-                  ) : null}
+    <MasterDetailLayout
+      narrowDetail="stack"
+      rail="md"
+      master={
+        <div className="flex min-w-0 flex-col gap-4">
+          <SoftCard className="p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <IconTile tone="brand" size="lg">
+                  <LayoutTemplate />
+                </IconTile>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-[24px] font-extrabold text-v3-ink">{template.label}</h2>
+                    {template.is_system ? (
+                      <StatusPill tone="info" showDot={false}>
+                        内置
+                      </StatusPill>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 max-w-2xl text-[13px] text-v3-ink-2">{template.description}</p>
                 </div>
-                <p className="mt-1 max-w-2xl text-[13px] text-v3-ink-2">{template.description}</p>
               </div>
+              <StatusPill tone={templateStatusTone(template)}>{templateStatusLabel(template)}</StatusPill>
             </div>
-            <StatusPill tone={templateStatusTone(template)}>{templateStatusLabel(template)}</StatusPill>
-          </div>
-          <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <DetailFact label="模板标识" value={template.type} monospace />
-            <DetailFact label="默认角色" value={template.default_role} monospace />
-            <DetailFact label="风险等级" value={templateRisk(template)} />
-            <DetailFact label="状态" value={templateStatusLabel(template)} />
-          </dl>
-        </SoftCard>
+            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <DetailFact label="模板标识" value={template.type} monospace />
+              <DetailFact label="默认角色" value={template.default_role} monospace />
+              <DetailFact label="风险等级" value={templateRisk(template)} />
+              <DetailFact label="状态" value={templateStatusLabel(template)} />
+            </dl>
+          </SoftCard>
 
-        <WorkSurface>
-          <div className="border-b border-v3-line px-5 py-4">
-            <h3 className="text-[17px] font-bold text-v3-ink">模板能力</h3>
-            <p className="mt-1 text-[13px] text-v3-ink-2">
-              模板已定义的技能、MCP 与 Provider 能力，不代表默认全部启用。
-            </p>
-          </div>
-          <div className="grid gap-4 p-5 md:grid-cols-3">
-            <CapabilityBlock title="技能" values={capability.skills} />
-            <CapabilityBlock title="MCP" values={capability.mcpServers} />
-            <CapabilityBlock title="Provider" values={capability.providerTypes} />
-          </div>
-        </WorkSurface>
-
-        <WorkSurface>
-          <div className="border-b border-v3-line px-5 py-4">
-            <h3 className="text-[17px] font-bold text-v3-ink">默认注入</h3>
-            <p className="mt-1 text-[13px] text-v3-ink-2">
-              创建时由模板带入的默认能力选择。
-            </p>
-          </div>
-          <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-4">
-            <InjectionCount label="技能" value={defaultInjection.skills.length} />
-            <InjectionCount label="MCP" value={defaultInjection.mcpServers.length} />
-            <InjectionCount label="Provider" value={defaultInjection.providerTypes.length} />
-          </div>
-        </WorkSurface>
-      </div>
-
-      <div className="flex min-w-0 flex-col gap-4">
-        <SoftCard className="p-5">
-          <div className="flex items-start gap-3">
-            <IconTile tone="brand" size="sm">
-              <CheckCircle2 />
-            </IconTile>
-            <div className="min-w-0">
-              <h3 className="text-[17px] font-bold text-v3-ink">继承基线</h3>
+          <WorkSurface>
+            <div className="border-b border-v3-line px-5 py-4">
+              <h3 className="text-[17px] font-bold text-v3-ink">模板能力</h3>
               <p className="mt-1 text-[13px] text-v3-ink-2">
-                模板默认值以此为准；创建时可能叠加团队治理基线。
+                模板已定义的技能、MCP 与 Provider 能力，不代表默认全部启用。
               </p>
             </div>
-          </div>
-        </SoftCard>
+            <div className="grid gap-4 p-5 md:grid-cols-3">
+              <CapabilityBlock title="技能" values={capability.skills} />
+              <CapabilityBlock title="MCP" values={capability.mcpServers} />
+              <CapabilityBlock title="Provider" values={capability.providerTypes} />
+            </div>
+          </WorkSurface>
 
-        <SoftCard className="p-5">
-          <h3 className="text-[17px] font-bold text-v3-ink">创建入口</h3>
-          <p className="mt-1 text-[13px] text-v3-ink-2">
-            使用此模板进入创建向导，模板只负责带入默认画像和能力建议。
-          </p>
-          <V3Button asChild className="mt-4 w-full">
-            <Link to="/employees/new" search={{ template: template.type }}>
-              用此模板创建数字员工
-            </Link>
-          </V3Button>
-        </SoftCard>
-      </div>
-    </div>
+          <WorkSurface>
+            <div className="border-b border-v3-line px-5 py-4">
+              <h3 className="text-[17px] font-bold text-v3-ink">默认注入</h3>
+              <p className="mt-1 text-[13px] text-v3-ink-2">
+                创建时由模板带入的默认能力选择。
+              </p>
+            </div>
+            <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-4">
+              <InjectionCount label="技能" value={defaultInjection.skills.length} />
+              <InjectionCount label="MCP" value={defaultInjection.mcpServers.length} />
+              <InjectionCount label="Provider" value={defaultInjection.providerTypes.length} />
+            </div>
+          </WorkSurface>
+        </div>
+      }
+      detail={
+        <div className="flex min-w-0 flex-col gap-4">
+          <SoftCard className="p-5">
+            <div className="flex items-start gap-3">
+              <IconTile tone="brand" size="sm">
+                <CheckCircle2 />
+              </IconTile>
+              <div className="min-w-0">
+                <h3 className="text-[17px] font-bold text-v3-ink">继承基线</h3>
+                <p className="mt-1 text-[13px] text-v3-ink-2">
+                  模板默认值以此为准；创建时可能叠加团队治理基线。
+                </p>
+              </div>
+            </div>
+          </SoftCard>
+
+          <SoftCard className="p-5">
+            <h3 className="text-[17px] font-bold text-v3-ink">创建入口</h3>
+            <p className="mt-1 text-[13px] text-v3-ink-2">
+              使用此模板进入创建向导，模板只负责带入默认画像和能力建议。
+            </p>
+            <V3Button asChild className="mt-4 w-full">
+              <Link to="/employees/new" search={{ template: template.type }}>
+                用此模板创建数字员工
+              </Link>
+            </V3Button>
+          </SoftCard>
+        </div>
+      }
+    />
   );
 }
 

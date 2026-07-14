@@ -28,6 +28,7 @@ import {
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
+  MasterDetailLayout,
   SoftCard,
   StatusPill,
   V3Button,
@@ -181,7 +182,7 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
         title="数字员工"
         subtitle="业务身份、执行实例和运行状态"
       />
-      <Main>
+      <Main width="wide">
         <div className="flex flex-col gap-5">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <Button variant="outline" asChild>
@@ -201,44 +202,50 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
           {overview.data ? <GalleryTrendStrip overview={overview.data} /> : null}
 
           {overview.data ? (
-            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="flex min-w-0 flex-col gap-4">
-                <GalleryFilterBar
-                  filters={filters}
-                  filterOptions={filterOptions}
-                  onFilterChange={handleFilterChange}
-                  onSearchChange={handleSearchChange}
-                />
-                {items.length === 0 ? (
-                  <SoftCard>
-                    <V3EmptyState title="暂无数字员工" />
-                  </SoftCard>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {items.map((item) => (
-                        <AvatarGalleryCard
-                          key={item.identity_summary.id}
-                          item={item}
-                          selected={selectedItem?.identity_summary.id === item.identity_summary.id}
-                          onSelect={() => setSelectedEmployeeId(item.identity_summary.id)}
-                        />
-                      ))}
+            <MasterDetailLayout
+              narrowDetail="stack"
+              rail="md"
+              master={
+                <div className="flex min-w-0 flex-col gap-4">
+                  <GalleryFilterBar
+                    filters={filters}
+                    filterOptions={filterOptions}
+                    onFilterChange={handleFilterChange}
+                    onSearchChange={handleSearchChange}
+                  />
+                  {items.length === 0 ? (
+                    <SoftCard>
+                      <V3EmptyState title="暂无数字员工" />
+                    </SoftCard>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {items.map((item) => (
+                          <AvatarGalleryCard
+                            key={item.identity_summary.id}
+                            item={item}
+                            selected={selectedItem?.identity_summary.id === item.identity_summary.id}
+                            onSelect={() => setSelectedEmployeeId(item.identity_summary.id)}
+                          />
+                        ))}
+                      </div>
+                      <EmployeeCardPagination
+                        isFetching={overview.isFetching}
+                        pagination={overview.data.pagination}
+                        visibleCount={items.length}
+                        onOffsetChange={handlePageChange}
+                        onPageSizeChange={handlePageSizeChange}
+                      />
                     </div>
-                    <EmployeeCardPagination
-                      isFetching={overview.isFetching}
-                      pagination={overview.data.pagination}
-                      visibleCount={items.length}
-                      onOffsetChange={handlePageChange}
-                      onPageSizeChange={handlePageSizeChange}
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <GalleryRail overview={overview.data} selectedItem={selectedItem} />
-              </div>
-            </div>
+                  )}
+                </div>
+              }
+              detail={
+                <div className="min-w-0">
+                  <GalleryRail overview={overview.data} selectedItem={selectedItem} />
+                </div>
+              }
+            />
           ) : null}
           {overview.isLoading ? (
             <SoftCard>
