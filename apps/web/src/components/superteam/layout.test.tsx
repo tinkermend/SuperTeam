@@ -86,6 +86,9 @@ describe("MetricGrid", () => {
     expect(grid.className).toContain("flex-wrap");
     expect(grid.className).toContain("[&>*]:max-w-(--v3-metric-max)");
     expect(grid.className).toContain("[&>*]:flex-[1_1_var(--v3-metric-min)]");
+    // ≥3 张卡时剩余空间摊进卡间距、两端对齐；1-2 张保持左对齐
+    expect(grid.className).toContain("has-[>:nth-child(3)]:justify-between");
+    expect(getComputedStyle(grid).justifyContent).not.toBe("space-between");
     await expect.element(screen.getByText("卡片一")).toBeInTheDocument();
   });
 });

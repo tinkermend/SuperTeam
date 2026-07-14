@@ -474,7 +474,7 @@ export function ProjectTriagePanel({
   return (
     <aside
       aria-label="选中项目上下文"
-      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4"
+      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4 @5xl/master-detail:max-h-[calc(100svh-2rem)] @5xl/master-detail:overflow-y-auto"
       data-testid="project-selected-context-panel"
     >
       <div className="flex min-w-0 items-start gap-2.5">
@@ -558,7 +558,10 @@ function ProjectTriageReasonRow({
         <Icon />
       </IconTile>
       <div className="min-w-0 flex-1">
-        <p className="min-w-0 break-words text-[12px] font-semibold leading-5 text-v3-ink">
+        <p
+          className="min-w-0 line-clamp-2 break-words text-[12px] font-semibold leading-5 text-v3-ink"
+          title={reason.title}
+        >
           {reason.title}
         </p>
         {reason.detail ? (

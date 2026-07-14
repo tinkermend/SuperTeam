@@ -1637,6 +1637,9 @@ describe("ProjectsView", () => {
         expect(panel.textContent).toContain("客户接入验收");
         expect(panel.textContent).toContain("处理决策");
       });
+      // 右栏受视口高度约束、内部滚动：长待办/证据列表不得把页面撑长。
+      expect(panel.className).toContain("@5xl/master-detail:max-h-[calc(100svh-2rem)]");
+      expect(panel.className).toContain("@5xl/master-detail:overflow-y-auto");
       const decisionAction = Array.from(panel.querySelectorAll("a")).find((anchor) =>
         anchor.textContent?.includes("处理决策"),
       );
