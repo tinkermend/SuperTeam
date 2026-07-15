@@ -156,8 +156,25 @@ type LoadHumanDecisionRouteInput struct {
 }
 
 type HumanDecisionRouteResult struct {
-	Decision   ProjectDecisionSnapshot
-	PlanReview *PlanReviewRoute
+	Decision    ProjectDecisionSnapshot
+	PlanReview  *PlanReviewRoute
+	PlanningGap *PlanningGapRoute
+}
+
+// PlanningGapRoute carries the demand a planning_gap decision is about, resolved
+// from the decision's approval-request context payload, so the coordinator can
+// reopen and replan that demand when the human resolves the decision restaffed.
+type PlanningGapRoute struct {
+	ProjectID uuid.UUID
+	DemandID  uuid.UUID
+}
+
+// ReopenProjectDemandForReplanningInput reopens a failed demand back into
+// planning_pending (the planning_gap → restaffed path) via an activity boundary.
+type ReopenProjectDemandForReplanningInput struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	DemandID  uuid.UUID
 }
 
 type ProjectDecisionSnapshot struct {

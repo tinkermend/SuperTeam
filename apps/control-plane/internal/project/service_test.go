@@ -9652,6 +9652,32 @@ func (r *memoryRepository) GetProjectDemand(ctx context.Context, tenantID, deman
 	return ProjectDemand{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) ReopenProjectDemandForReplanning(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	for i := range r.demands {
+		if r.demands[i].ID == demandID && r.demands[i].TenantID == tenantID {
+			if r.demands[i].Status != ProjectDemandStatusFailed {
+				return ProjectDemand{}, fmt.Errorf("demand %s is not in failed state (current=%s): %w", demandID, r.demands[i].Status, ErrProjectConflict)
+			}
+			r.demands[i].Status = ProjectDemandStatusPlanningPending
+			if _, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+				TenantID:     tenantID,
+				ProjectID:    r.demands[i].ProjectID,
+				EventType:    ProjectEventDemandReplanningReopened,
+				ActorType:    "project_coordinator",
+				ActorID:      "project_coordinator",
+				ResourceType: strPtr("project_demand"),
+				ResourceID:   strPtr(demandID.String()),
+				Summary:      "规划缺口补员后重开需求重新规划",
+				Payload:      map[string]any{"demand_id": demandID.String()},
+			}); err != nil {
+				return ProjectDemand{}, err
+			}
+			return r.demands[i], nil
+		}
+	}
+	return ProjectDemand{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) AdvanceProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID, target ProjectDemandStatus) error {
 	for i := range r.demands {
 		if r.demands[i].ID == demandID && r.demands[i].TenantID == tenantID {

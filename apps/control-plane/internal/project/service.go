@@ -4841,6 +4841,11 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	if req.Decision == PlanReviewDecisionRequestChanges && decision.DecisionType != "plan_review" {
 		return nil, ErrInvalidProject
 	}
+	// restaffed is planning_gap vocabulary only: it means "the pool was
+	// supplemented, reopen and replan". Other decision types must not accept it.
+	if req.Decision == PlanningGapDecisionRestaffed && decision.DecisionType != DecisionTypePlanningGap {
+		return nil, ErrInvalidProject
+	}
 	// A non-empty target_exit_deliverable pins the replan's exit — it must name a
 	// member of the reviewed plan revision's available_exits. The web Select only
 	// ever offers known members, but an authorized plan_review actor can call this
@@ -5659,7 +5664,7 @@ func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, no
 
 func validHumanDecision(decision string) bool {
 	switch decision {
-	case "approved", "rejected", "needs_more_evidence", PlanReviewDecisionRequestChanges:
+	case "approved", "rejected", "needs_more_evidence", PlanReviewDecisionRequestChanges, PlanningGapDecisionRestaffed:
 		return true
 	default:
 		return false

@@ -909,6 +909,111 @@ func TestProjectCoordinatorRejectsDemandWhenReplanHasNoSuitableEmployee(t *testi
 	require.Contains(t, store.rejectDemandInputs[0].Diagnosis, "scored 0.50")
 }
 
+// TestPlanningGapRestaffedTriggersReplan proves the planning_gap decision loop
+// closes: an initial demand whose route cannot be planned terminally rejects
+// (RejectDemandPlanning), and when the human resolves the resulting planning_gap
+// decision with restaffed, the coordinator reopens the demand (failed→planning_pending
+// via the ReopenProjectDemandForReplanning activity) and replans it in place — a
+// second planner call runs and a fresh plan revision review opens, with no
+// signal_failed audit event.
+func TestPlanningGapRestaffedTriggersReplan(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	planningGapDecisionID := uuid.New()
+	restaffedEventID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: projectID,
+			Demand: DemandSnapshot{
+				ID:      demandID,
+				Title:   "补员后重新规划",
+				Content: "负责人补充员工后重开需求",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+			CoordinationPolicy: map[string]any{
+				"require_human_review_for_new_demands": true,
+			},
+		},
+		jobID:              uuid.New(),
+		routeID:            uuid.New(),
+		routeEventID:       uuid.New(),
+		planRevisionID:     uuid.New(),
+		decisionRequestID:  uuid.New(),
+		planRevisionStatus: "pending_review",
+	}
+	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
+		planningGapDecisionID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             planningGapDecisionID,
+				ProjectID:      projectID,
+				DecisionType:   "planning_gap",
+				StatusSnapshot: "restaffed",
+			},
+			PlanningGap: &PlanningGapRoute{ProjectID: projectID, DemandID: demandID},
+		},
+	}
+	// failOn:1 — the initial plan fails structurally (→ RejectDemandPlanning), the
+	// post-restaffed replan (call 2) succeeds.
+	planner := &sequencedPlanner{
+		inner:    HeuristicRoutePlanner{},
+		failOn:   1,
+		failWith: fmt.Errorf("%w: task %q: employee scored 0.40", ErrNoSuitableEmployee, "review"),
+	}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         projectID,
+			DemandID:          demandID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: planningGapDecisionID,
+			Decision:          "restaffed",
+			ResolvedEventID:   restaffedEventID,
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 12*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// Two planner calls: the failed initial plan, then the successful replan.
+	require.Equal(t, int32(2), planner.calls.Load())
+	require.Equal(t, []string{
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"RejectDemandPlanning",
+		"LoadHumanDecisionRoute",
+		"ReopenProjectDemandForReplanning",
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"PersistRouteDecision",
+		"PersistPlanRevision",
+		"RequestPlanRevisionReview",
+	}, store.calls)
+	require.Len(t, store.reopenDemandInputs, 1)
+	require.Equal(t, demandID, store.reopenDemandInputs[0].DemandID)
+	require.Equal(t, projectID, store.reopenDemandInputs[0].ProjectID)
+	require.NotContains(t, store.appendEventTypes, "workflow.signal_failed")
+}
+
 // exitCapturingRoutePlanner wraps another RoutePlanner and records every
 // CoordinationSnapshot it is asked to plan for, so tests can assert what
 // PinnedExitDeliverable looked like on each planning pass (initial vs replan).
@@ -2169,6 +2274,8 @@ type recordingActivityStore struct {
 	finishJobInputs                    []FinishCoordinationJobInput
 	rejectDemandInputs                 []RejectDemandPlanningInput
 	rejectDemandErr                    error
+	reopenDemandInputs                 []ReopenProjectDemandForReplanningInput
+	reopenDemandErr                    error
 	appendEventTypes                   []string
 }
 
@@ -2444,4 +2551,10 @@ func (s *recordingActivityStore) RejectDemandPlanning(ctx context.Context, input
 	s.calls = append(s.calls, "RejectDemandPlanning")
 	s.rejectDemandInputs = append(s.rejectDemandInputs, input)
 	return s.rejectDemandErr
+}
+
+func (s *recordingActivityStore) ReopenProjectDemandForReplanning(ctx context.Context, input ReopenProjectDemandForReplanningInput) error {
+	s.calls = append(s.calls, "ReopenProjectDemandForReplanning")
+	s.reopenDemandInputs = append(s.reopenDemandInputs, input)
+	return s.reopenDemandErr
 }

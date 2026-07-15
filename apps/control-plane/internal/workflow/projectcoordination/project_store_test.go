@@ -194,6 +194,105 @@ func TestRejectDemandPlanningNilGapOmitsField(t *testing.T) {
 	require.False(t, exists)
 }
 
+// TestRejectDemandPlanningCreatesPlanningGapDecision proves the terminal reject
+// opens a human-decision three-piece (approval request + decision.requested event +
+// decision request projection + inbox item) of decision type planning_gap, targeted
+// at the project human owner, carrying the structured gap in the approval context
+// payload; and that it is idempotent — a second reject for the same still-pending
+// demand does not open a duplicate decision.
+func TestRejectDemandPlanningCreatesPlanningGapDecision(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	approvals := &projectStoreApprovalCreator{}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+	gap := &PlanningGap{
+		ConstraintKind:       "role_independence",
+		Roles:                []string{"reviewer", "developer"},
+		RequiredCapabilities: []string{"code_review", "code_implementation"},
+		ActiveExecutorCount:  1,
+		Options:              []string{"restaff", "exempt", "lending"},
+	}
+	diagnosis := "项目员工池无法满足审查独立性约束（需≥2名可调度员工）；请为项目补充员工或换用模板"
+	input := RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: diagnosis, Gap: gap,
+	}
+
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+
+	// Approval request: demand-scoped resource, planning_gap decision type, human owner target.
+	require.Equal(t, "planning_gap", approvals.last.DecisionType)
+	require.Equal(t, ownerID, approvals.last.TargetUserID)
+	require.Equal(t, demandID, approvals.last.ResourceID)
+	require.Equal(t, []any{"restaffed", "rejected"}, approvals.last.Options)
+	require.Equal(t, demandID.String(), approvals.last.ContextPayload["demand_id"])
+	require.Equal(t, diagnosis, approvals.last.ContextPayload["diagnosis"])
+	gapPayload, ok := approvals.last.ContextPayload["gap"].(map[string]any)
+	require.True(t, ok, "expected gap in approval context payload, got %#v", approvals.last.ContextPayload["gap"])
+	require.Equal(t, "role_independence", gapPayload["constraint_kind"])
+
+	// Decision request projection + decision.requested event + inbox item.
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "planning_gap", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, ownerID, repo.decisionRequests[0].TargetUserID)
+	require.Equal(t, "pending", repo.decisionRequests[0].StatusSnapshot)
+	require.True(t, strings.HasPrefix(repo.decisionRequests[0].TitleSnapshot, "规划缺口："))
+	require.NotEmpty(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested))
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, "planning_gap", inbox.upserts[0].DecisionType)
+
+	// Idempotent: a pending planning_gap already exists for this demand → no duplicate.
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+	require.Len(t, repo.decisionRequests, 1)
+	require.Len(t, inbox.upserts, 1)
+	require.Len(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested), 1)
+}
+
+// TestLoadHumanDecisionRouteForPlanningGapResolvesDemand proves the decision route
+// for a planning_gap decision recovers the demand from the approval request's
+// context payload, so the coordinator's restaffed branch knows which demand to
+// reopen and replan.
+func TestLoadHumanDecisionRouteForPlanningGapResolvesDemand(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, &projectStoreApprovalCreator{}, &projectStoreDecisionInboxProjector{})
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，请补员",
+	}))
+	require.Len(t, repo.decisionRequests, 1)
+
+	route, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: repo.decisionRequests[0].ID,
+	})
+	require.NoError(t, err)
+	require.Nil(t, route.PlanReview)
+	require.NotNil(t, route.PlanningGap)
+	require.Equal(t, demandID, route.PlanningGap.DemandID)
+	require.Equal(t, projectID, route.PlanningGap.ProjectID)
+}
+
 func TestRejectDemandPlanningIsIdempotent(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

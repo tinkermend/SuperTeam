@@ -25,6 +25,16 @@ const (
 )
 
 const (
+	// DecisionTypePlanningGap is the human-decision type opened when a demand's
+	// route cannot be planned because the executor pool has a structural gap.
+	DecisionTypePlanningGap = "planning_gap"
+	// PlanningGapDecisionRestaffed resolves a planning_gap decision by declaring
+	// the pool has been supplemented; the coordinator reopens the demand and
+	// replans it. Like request_changes it is decision-type-scoped vocabulary.
+	PlanningGapDecisionRestaffed = "restaffed"
+)
+
+const (
 	PlanDecompositionClaimStatusInFlight  = "in_flight"
 	PlanDecompositionClaimStatusCompleted = "completed"
 	PlanDecompositionClaimStatusFailed    = "failed"

@@ -226,6 +226,7 @@ const (
 	ProjectEventLendingEmployeeSkipped          ProjectEventType = "project.lending.employee_skipped"
 	ProjectEventTaskUpstreamSupplementRejected  ProjectEventType = "project_task.upstream_supplement_rejected"
 	ProjectEventTaskUpstreamSupplementExhausted ProjectEventType = "project_task.upstream_supplement_exhausted"
+	ProjectEventDemandReplanningReopened        ProjectEventType = "demand.replanning_reopened"
 )
 
 type EvidenceVerificationStatus string

@@ -7535,6 +7535,7 @@ components:
             - rejected
             - needs_more_evidence
             - request_changes
+            - restaffed
         comment:
           type: string
         payload:

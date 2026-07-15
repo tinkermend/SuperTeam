@@ -358,6 +358,8 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		}
 		_, err := handlePlanReviewDecision(ctx, input, signal, pending)
 		return err
+	case "planning_gap":
+		return handlePlanningGapDecision(ctx, input, signal, route, projectID)
 	case "task_failure_recovery", "upstream_supplement_review":
 		readyTaskIDs, err := applyFailureRecoveryDecision(ctx, input.TenantID, projectID, signal)
 		if err != nil {
@@ -385,6 +387,44 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		}
 		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "human decision submitted")
 	}
+}
+
+// handlePlanningGapDecision routes a resolved planning_gap decision. On restaffed
+// the executor pool has been supplemented, so the demand is reopened
+// (failed→planning_pending) and replanned in place by re-running the same planning
+// path as a fresh demand submission — a failed replan flows through that path's own
+// terminal reject handling, which may open a new planning_gap decision. Any other
+// resolution (关闭/rejected) is terminal: the decision is already resolved by
+// ResolveDecision and the demand stays failed.
+//
+// Temporal safety: planning_gap decisions are created only by new code, so this
+// switch case (and the activities it drives) is unreachable on any pre-feature
+// history — the decision type is the natural discriminator, no GetVersion fence.
+func handlePlanningGapDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, route HumanDecisionRouteResult, projectID uuid.UUID) error {
+	if route.PlanningGap == nil {
+		return temporal.NewNonRetryableApplicationError("human decision route missing planning gap", "HumanDecisionRouteMissingPlanningGap", project.ErrInvalidProject)
+	}
+	if signal.Decision != project.PlanningGapDecisionRestaffed {
+		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "planning gap decision closed")
+	}
+	demandID := route.PlanningGap.DemandID
+	if err := reopenProjectDemandForReplanning(ctx, input.TenantID, projectID, demandID); err != nil {
+		return err
+	}
+	_, err := handleDemandSubmitted(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID, WorkflowID: input.WorkflowID}, DemandSubmitted{
+		ProjectID:      projectID,
+		DemandID:       demandID,
+		CreatedEventID: signal.ResolvedEventID,
+	})
+	return err
+}
+
+func reopenProjectDemandForReplanning(ctx workflow.Context, tenantID, projectID, demandID uuid.UUID) error {
+	return workflow.ExecuteActivity(ctx, (*Activities).ReopenProjectDemandForReplanning, ReopenProjectDemandForReplanningInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	}).Get(ctx, nil)
 }
 
 func planReviewRouteOutputEventIDs(route PlanReviewRoute, decisionCreatedEventID uuid.UUID) []uuid.UUID {
