@@ -1019,6 +1019,8 @@ type ProjectDemand struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 协调模式:plan=上游阻塞时报人类决策;loop=自动补链。随需求提交,冻结进 plan revision。
 	CoordinationMode string `json:"coordination_mode"`
+	// 需求级场景模板 key；解析顺序：需求显式 > 项目默认 > generic 兜底
+	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
 }
 
 // 项目需求最终总结记录，按 demand 生成 append-only 总结和报告引用。
@@ -2080,6 +2082,26 @@ type ScenarioTemplate struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 模板更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 当前生效版本号，主表 spec 始终镜像该版本内容
+	ActiveVersion int32 `json:"active_version"`
+}
+
+// 场景模板 spec 的不可变版本历史，供审计血缘与计划钉住
+type ScenarioTemplateVersion struct {
+	// 版本记录主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属场景模板 ID
+	TemplateID uuid.UUID `json:"template_id"`
+	// 版本号，从 1 单调递增
+	Version int32 `json:"version"`
+	// 该版本的完整模板 spec JSONB
+	Spec []byte `json:"spec"`
+	// 创建该版本的用户 ID，迁移生成为 NULL
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 版本创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 技能包主表，记录可上传、安装和绑定到数字员工的技能定义

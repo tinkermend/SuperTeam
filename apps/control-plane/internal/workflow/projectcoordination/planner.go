@@ -23,9 +23,10 @@ type CoordinationSnapshot struct {
 
 // ScenarioTemplateSnapshot carries the bound template's content into planning.
 type ScenarioTemplateSnapshot struct {
-	Key  string         `json:"key"`
-	Name string         `json:"name"`
-	Spec map[string]any `json:"spec,omitempty"`
+	Key     string         `json:"key"`
+	Name    string         `json:"name"`
+	Version int            `json:"version,omitempty"`
+	Spec    map[string]any `json:"spec,omitempty"`
 }
 
 type DemandSnapshot struct {

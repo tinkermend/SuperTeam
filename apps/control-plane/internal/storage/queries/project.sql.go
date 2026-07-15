@@ -1059,7 +1059,7 @@ INSERT INTO project_demands (
     $11::varchar,
     $12::uuid,
     $13::varchar
-) RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode
+) RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key
 `
 
 type CreateProjectDemandParams struct {
@@ -1112,6 +1112,7 @@ func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDema
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CoordinationMode,
+		&i.ScenarioTemplateKey,
 	)
 	return i, err
 }
@@ -3005,7 +3006,7 @@ func (q *Queries) GetProjectDeletePreviewCounts(ctx context.Context, arg GetProj
 }
 
 const GetProjectDemand = `-- name: GetProjectDemand :one
-SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode FROM project_demands
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key FROM project_demands
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -3035,6 +3036,7 @@ func (q *Queries) GetProjectDemand(ctx context.Context, arg GetProjectDemandPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CoordinationMode,
+		&i.ScenarioTemplateKey,
 	)
 	return i, err
 }
@@ -4756,7 +4758,7 @@ func (q *Queries) ListProjectDeleteTaskBlockers(ctx context.Context, arg ListPro
 }
 
 const ListProjectDemands = `-- name: ListProjectDemands :many
-SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode FROM project_demands
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key FROM project_demands
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
 ORDER BY created_at DESC
@@ -4801,6 +4803,7 @@ func (q *Queries) ListProjectDemands(ctx context.Context, arg ListProjectDemands
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CoordinationMode,
+			&i.ScenarioTemplateKey,
 		); err != nil {
 			return nil, err
 		}
@@ -8436,7 +8439,7 @@ SET status = $1::varchar,
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode
+RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key
 `
 
 type UpdateProjectDemandStatusParams struct {
@@ -8465,6 +8468,7 @@ func (q *Queries) UpdateProjectDemandStatus(ctx context.Context, arg UpdateProje
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CoordinationMode,
+		&i.ScenarioTemplateKey,
 	)
 	return i, err
 }
