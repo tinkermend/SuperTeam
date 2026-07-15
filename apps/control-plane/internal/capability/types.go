@@ -18,6 +18,7 @@ var (
 	ErrNotFound              = errors.New("capability not found")
 	ErrCredentialKeyMissing  = errors.New("credential encryption key is required")
 	ErrCredentialTypeInvalid = errors.New("invalid credential type")
+	ErrConflict              = errors.New("conflict")
 )
 
 type Credential struct {
@@ -305,6 +306,25 @@ type DeleteTeamMCPBindingRequest struct {
 	TeamID    uuid.UUID
 	UserID    uuid.UUID
 	BindingID uuid.UUID
+}
+
+type ListSkillMCPDependenciesRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+	SkillID  uuid.UUID
+}
+
+type ReplaceSkillMCPDependenciesRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+	SkillID  uuid.UUID
+	Items    []SkillMCPDependencyInput
+}
+
+type ListDependentSkillsRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+	ServerID uuid.UUID
 }
 
 type CreateEmployeeMCPBindingV2Request struct {

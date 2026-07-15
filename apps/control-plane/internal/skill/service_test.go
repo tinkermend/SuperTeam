@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -247,6 +248,40 @@ func TestServiceUploadSkillRejectsZipWithoutSkillMarkdown(t *testing.T) {
 	}
 }
 
+func TestServiceDeleteSkillCleansUpMCPDependencies(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	repo := &serviceTestRepository{
+		getSkillResult: &Skill{ID: skillID, TenantID: tenantID},
+	}
+	service := newTestService(repo)
+
+	if err := service.DeleteSkill(context.Background(), DeleteSkillRequest{TenantID: tenantID, SkillID: skillID}); err != nil {
+		t.Fatalf("delete skill: %v", err)
+	}
+	if !repo.deleteDependenciesCalled {
+		t.Fatal("expected DeleteSkillMCPDependencies to be called after archive cleanup")
+	}
+	if repo.deleteDependenciesTenantID != tenantID || repo.deleteDependenciesSkillID != skillID {
+		t.Fatalf("unexpected dependency cleanup scope: tenant=%s skill=%s", repo.deleteDependenciesTenantID, repo.deleteDependenciesSkillID)
+	}
+}
+
+func TestServiceDeleteSkillWrapsMCPDependencyCleanupFailure(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	repo := &serviceTestRepository{
+		getSkillResult:        &Skill{ID: skillID, TenantID: tenantID},
+		deleteDependenciesErr: errors.New("boom"),
+	}
+	service := newTestService(repo)
+
+	err := service.DeleteSkill(context.Background(), DeleteSkillRequest{TenantID: tenantID, SkillID: skillID})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected wrapped cleanup error, got %v", err)
+	}
+}
+
 func TestServiceListsEffectiveEmployeeSkillsWithTeamInheritedFirst(t *testing.T) {
 	teamSkillID := uuid.New()
 	employeeSkillID := uuid.New()
@@ -367,6 +402,15 @@ type serviceTestRepository struct {
 	boundTeamSkill     *Skill
 	boundEmployeeSkill *Skill
 	effectiveSkills    []EffectiveEmployeeSkill
+
+	getSkillResult *Skill
+	getSkillErr    error
+	deleteSkillErr error
+
+	deleteDependenciesErr      error
+	deleteDependenciesCalled   bool
+	deleteDependenciesTenantID uuid.UUID
+	deleteDependenciesSkillID  uuid.UUID
 }
 
 func (r *serviceTestRepository) ListSkills(context.Context, ListSkillsRequest) ([]*Skill, error) {
@@ -374,7 +418,7 @@ func (r *serviceTestRepository) ListSkills(context.Context, ListSkillsRequest) (
 }
 
 func (r *serviceTestRepository) GetSkill(context.Context, GetSkillRequest) (*Skill, error) {
-	return nil, nil
+	return r.getSkillResult, r.getSkillErr
 }
 
 func (r *serviceTestRepository) UpsertSkillPackage(_ context.Context, req UpsertSkillPackageRequest) (*Skill, error) {
@@ -426,11 +470,18 @@ func (r *serviceTestRepository) ListSkillsForRuntime(context.Context, uuid.UUID,
 }
 
 func (r *serviceTestRepository) DeleteSkill(context.Context, DeleteSkillRequest) error {
-	return nil
+	return r.deleteSkillErr
 }
 
 func (r *serviceTestRepository) IsSkillBoundToEmployeeTeam(context.Context, BindEmployeeSkillRequest) (bool, error) {
 	return false, nil
+}
+
+func (r *serviceTestRepository) DeleteSkillMCPDependencies(_ context.Context, tenantID, skillID uuid.UUID) error {
+	r.deleteDependenciesCalled = true
+	r.deleteDependenciesTenantID = tenantID
+	r.deleteDependenciesSkillID = skillID
+	return r.deleteDependenciesErr
 }
 
 func buildSkillZip(t *testing.T, files map[string]string) []byte {

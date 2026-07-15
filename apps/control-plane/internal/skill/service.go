@@ -30,6 +30,7 @@ type Repository interface {
 	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
 	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]SkillRuntimeRecord, error)
 	IsSkillBoundToEmployeeTeam(ctx context.Context, req BindEmployeeSkillRequest) (bool, error)
+	DeleteSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID) error
 }
 
 type RequiredToolsRepository interface {
@@ -220,6 +221,9 @@ func (s *Service) DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 		if objectKey != "" {
 			_ = s.objectStore.DeleteObject(ctx, objectKey)
 		}
+	}
+	if err := s.repository.DeleteSkillMCPDependencies(ctx, req.TenantID, req.SkillID); err != nil {
+		return fmt.Errorf("cleanup skill mcp dependencies: %w", err)
 	}
 	return nil
 }

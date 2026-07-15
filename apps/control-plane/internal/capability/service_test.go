@@ -340,6 +340,9 @@ type serviceRepo struct {
 	configuredEnvVars   []string
 	createdV2Binding    CreateEmployeeMCPBindingV2Request
 	createdV2BindingHit bool
+
+	definitions     map[uuid.UUID]MCPDefinition
+	dependentSkills map[uuid.UUID][]DependentSkill
 }
 
 func (r *serviceRepo) CreateCredential(_ context.Context, req CreateCredentialStoreRequest) (Credential, error) {
@@ -414,8 +417,14 @@ func (r *serviceRepo) ListMCPServerDefinitions(context.Context, ListMCPServerDef
 	return nil, nil
 }
 
-func (r *serviceRepo) GetMCPServerDefinition(context.Context, uuid.UUID, uuid.UUID) (MCPDefinition, error) {
-	return r.mcpDefinition, nil
+func (r *serviceRepo) GetMCPServerDefinition(_ context.Context, _, serverID uuid.UUID) (MCPDefinition, error) {
+	if def, ok := r.definitions[serverID]; ok {
+		return def, nil
+	}
+	if r.mcpDefinition.ID != uuid.Nil && r.mcpDefinition.ID == serverID {
+		return r.mcpDefinition, nil
+	}
+	return MCPDefinition{}, ErrNotFound
 }
 
 func (r *serviceRepo) DeleteMCPServerDefinition(context.Context, DeleteMCPServerDefinitionRequest) error {
@@ -466,12 +475,71 @@ func (r *serviceRepo) ReplaceSkillMCPDependencies(context.Context, uuid.UUID, uu
 	return nil, nil
 }
 
-func (r *serviceRepo) ListDependentSkills(context.Context, uuid.UUID, uuid.UUID) ([]DependentSkill, error) {
-	return nil, nil
+func (r *serviceRepo) ListDependentSkills(_ context.Context, _, serverID uuid.UUID) ([]DependentSkill, error) {
+	return r.dependentSkills[serverID], nil
 }
 
 func (r *serviceRepo) ListSkillMCPDependenciesForSkills(context.Context, uuid.UUID, []uuid.UUID) ([]SkillMCPDependency, error) {
 	return nil, nil
+}
+
+// seedDefinition registers an in-memory MCP definition and returns its generated ID, for
+// tests that need GetMCPServerDefinition to resolve a real server (e.g. dependency replace
+// validation, delete-protection).
+func (r *serviceRepo) seedDefinition(tenantID uuid.UUID, serverKey string) uuid.UUID {
+	id := uuid.New()
+	if r.definitions == nil {
+		r.definitions = map[uuid.UUID]MCPDefinition{}
+	}
+	r.definitions[id] = MCPDefinition{
+		ID:        id,
+		TenantID:  tenantID,
+		Name:      serverKey,
+		ServerKey: serverKey,
+		Status:    "active",
+	}
+	return id
+}
+
+// seedDependency records a dependent-skill row keyed by server ID, for
+// ListDependentSkills / delete-protection tests.
+func (r *serviceRepo) seedDependency(tenantID, skillID, serverID uuid.UUID) {
+	_ = tenantID
+	if r.dependentSkills == nil {
+		r.dependentSkills = map[uuid.UUID][]DependentSkill{}
+	}
+	r.dependentSkills[serverID] = append(r.dependentSkills[serverID], DependentSkill{
+		SkillID: skillID,
+		Slug:    "dependent-skill",
+		Name:    "Dependent Skill",
+	})
+}
+
+func TestServiceReplaceSkillMCPDependenciesValidatesServerExists(t *testing.T) {
+	repo := &serviceRepo{}
+	svc := NewService(repo, nil)
+	tenantID, userID, skillID := uuid.New(), uuid.New(), uuid.New()
+	_, err := svc.ReplaceSkillMCPDependencies(context.Background(), ReplaceSkillMCPDependenciesRequest{
+		TenantID: tenantID, UserID: userID, SkillID: skillID,
+		Items: []SkillMCPDependencyInput{{MCPServerID: uuid.New()}},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for unknown mcp server, got %v", err)
+	}
+}
+
+func TestServiceDeleteMCPServerDefinitionBlockedByDependentSkills(t *testing.T) {
+	repo := &serviceRepo{}
+	svc := NewService(repo, nil)
+	tenantID, userID := uuid.New(), uuid.New()
+	serverID := repo.seedDefinition(tenantID, "github-mcp")
+	repo.seedDependency(tenantID, uuid.New(), serverID)
+	err := svc.DeleteMCPServerDefinition(context.Background(), DeleteMCPServerDefinitionRequest{
+		TenantID: tenantID, UserID: userID, ServerID: serverID,
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict when skills depend on server, got %v", err)
+	}
 }
 
 func TestServiceCreateMCPServerDefinitionValidatesHTTPOnlyAndEnvVars(t *testing.T) {

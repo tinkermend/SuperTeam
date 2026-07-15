@@ -2,6 +2,7 @@ package capability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -283,7 +284,80 @@ func (s *Service) DeleteMCPServerDefinition(ctx context.Context, req DeleteMCPSe
 	if req.ServerID == uuid.Nil {
 		return fmt.Errorf("%w: server_id is required", ErrInvalidInput)
 	}
+	dependents, err := s.repository.ListDependentSkills(ctx, req.TenantID, req.ServerID)
+	if err != nil {
+		return err
+	}
+	if len(dependents) > 0 {
+		slugs := make([]string, 0, len(dependents))
+		for _, d := range dependents {
+			slugs = append(slugs, d.Slug)
+		}
+		return fmt.Errorf("%w: mcp server is required by skills: %s", ErrConflict, strings.Join(slugs, ", "))
+	}
 	return s.repository.DeleteMCPServerDefinition(ctx, req)
+}
+
+// ListSkillMCPDependencies returns the MCP registry dependencies declared for a skill.
+func (s *Service) ListSkillMCPDependencies(ctx context.Context, req ListSkillMCPDependenciesRequest) ([]SkillMCPDependency, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.SkillID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, user_id and skill_id are required", ErrInvalidInput)
+	}
+	return s.repository.ListSkillMCPDependencies(ctx, req.TenantID, req.SkillID)
+}
+
+// ReplaceSkillMCPDependencies declaratively sets a skill's MCP registry dependencies after
+// validating each referenced server exists and there are no duplicate references.
+func (s *Service) ReplaceSkillMCPDependencies(ctx context.Context, req ReplaceSkillMCPDependenciesRequest) ([]SkillMCPDependency, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.SkillID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, user_id and skill_id are required", ErrInvalidInput)
+	}
+	seen := map[uuid.UUID]struct{}{}
+	for _, item := range req.Items {
+		if item.MCPServerID == uuid.Nil {
+			return nil, fmt.Errorf("%w: mcp_server_id is required", ErrInvalidInput)
+		}
+		if _, dup := seen[item.MCPServerID]; dup {
+			return nil, fmt.Errorf("%w: duplicate mcp_server_id %s", ErrInvalidInput, item.MCPServerID)
+		}
+		seen[item.MCPServerID] = struct{}{}
+		if _, err := s.repository.GetMCPServerDefinition(ctx, req.TenantID, item.MCPServerID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: mcp server %s not found", ErrInvalidInput, item.MCPServerID)
+			}
+			return nil, err
+		}
+	}
+	return s.repository.ReplaceSkillMCPDependencies(ctx, req.TenantID, req.SkillID, req.Items)
+}
+
+// ListDependentSkills reverse-looks-up active skills that depend on an MCP registry server.
+func (s *Service) ListDependentSkills(ctx context.Context, req ListDependentSkillsRequest) ([]DependentSkill, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.ServerID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, user_id and server_id are required", ErrInvalidInput)
+	}
+	return s.repository.ListDependentSkills(ctx, req.TenantID, req.ServerID)
+}
+
+// ListSkillMCPDependenciesForRuntime skips user validation: it serves the run-service
+// dispatch gate, mirroring ListEffectiveMCPConfigForRuntime.
+func (s *Service) ListSkillMCPDependenciesForRuntime(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListSkillMCPDependenciesForSkills(ctx, tenantID, skillIDs)
 }
 
 // CreateTeamMCPBinding binds a registered MCP to a team. The MCP must exist and be active.

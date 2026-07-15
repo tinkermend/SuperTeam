@@ -186,6 +186,16 @@ func (r *PgRepository) DeleteSkill(ctx context.Context, req DeleteSkillRequest) 
 	return tx.Commit(ctx)
 }
 
+func (r *PgRepository) DeleteSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID) error {
+	if r == nil || r.q == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	return r.q.DeleteSkillMCPDependenciesForSkill(ctx, queries.DeleteSkillMCPDependenciesForSkillParams{
+		TenantID: tenantID,
+		SkillID:  skillID,
+	})
+}
+
 func (r *PgRepository) IsSkillBoundToEmployeeTeam(ctx context.Context, req BindEmployeeSkillRequest) (bool, error) {
 	if r == nil || r.db == nil {
 		return false, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
