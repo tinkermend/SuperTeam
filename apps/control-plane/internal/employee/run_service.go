@@ -59,16 +59,24 @@ type RuntimeMCPLister interface {
 	ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeMCPServerPayload, error)
 }
 
+// SkillMCPDependencyLister resolves the MCP dependencies declared by a set of skills.
+// It is validation-only: dispatch gating checks these dependencies against the
+// already-resolved, env-satisfied effective MCP set — it never grants an MCP server.
+type SkillMCPDependencyLister interface {
+	ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependencyRecord, error)
+}
+
 type DigitalEmployeeRunService struct {
-	repository          DigitalEmployeeRunRepository
-	dispatcher          RuntimeCommandDispatcher
-	audit               AuditLogger
-	skillLister         RuntimeSkillLister
-	capabilityLister    RuntimeCapabilityLister
-	envLister           RuntimeEnvironmentLister
-	mcpLister           RuntimeMCPLister
-	nodeResolver        ProjectTaskNodeResolver
-	chatAnchorValidator ChatAnchorProjectValidator
+	repository               DigitalEmployeeRunRepository
+	dispatcher               RuntimeCommandDispatcher
+	audit                    AuditLogger
+	skillLister              RuntimeSkillLister
+	capabilityLister         RuntimeCapabilityLister
+	envLister                RuntimeEnvironmentLister
+	mcpLister                RuntimeMCPLister
+	skillMCPDependencyLister SkillMCPDependencyLister
+	nodeResolver             ProjectTaskNodeResolver
+	chatAnchorValidator      ChatAnchorProjectValidator
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {
@@ -99,6 +107,10 @@ func (s *DigitalEmployeeRunService) SetEnvironmentLister(l RuntimeEnvironmentLis
 
 func (s *DigitalEmployeeRunService) SetMCPLister(l RuntimeMCPLister) {
 	s.mcpLister = l
+}
+
+func (s *DigitalEmployeeRunService) SetSkillMCPDependencyLister(l SkillMCPDependencyLister) {
+	s.skillMCPDependencyLister = l
 }
 
 // SetProjectTaskNodeResolver injects the three-layer runtime node resolver used
@@ -686,7 +698,44 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 	if err := validateRuntimeSkillDependencies(deps.runtimeSkills, availableTools, availableEnv, len(capabilities) > 0); err != nil {
 		return deps, err
 	}
+	if err := s.validateSkillMCPDependencies(ctx, tenantID, deps); err != nil {
+		return deps, err
+	}
 	return deps, nil
+}
+
+// validateSkillMCPDependencies enforces "dependency validates, never grants": every MCP
+// dependency of a loaded skill must already be present in the env-satisfied effective
+// MCP set (deps.runtimeMCP). Missing => dispatch is blocked with a structured reason.
+func (s *DigitalEmployeeRunService) validateSkillMCPDependencies(ctx context.Context, tenantID uuid.UUID, deps startSessionDependencies) error {
+	if s.skillMCPDependencyLister == nil || len(deps.runtimeSkills) == 0 {
+		return nil
+	}
+	skillIDs := make([]uuid.UUID, 0, len(deps.runtimeSkills))
+	slugByID := make(map[uuid.UUID]string, len(deps.runtimeSkills))
+	for _, runtimeSkill := range deps.runtimeSkills {
+		skillIDs = append(skillIDs, runtimeSkill.ID)
+		slugByID[runtimeSkill.ID] = runtimeSkill.Slug
+	}
+	records, err := s.skillMCPDependencyLister.ListSkillMCPDependenciesForSkills(ctx, tenantID, skillIDs)
+	if err != nil {
+		return fmt.Errorf("list skill mcp dependencies: %w", err)
+	}
+	available := make(map[string]struct{}, len(deps.runtimeMCP))
+	for _, server := range deps.runtimeMCP {
+		available[server.ServerID] = struct{}{}
+	}
+	var messages []string
+	for _, record := range records {
+		if _, ok := available[record.MCPServerID]; ok {
+			continue
+		}
+		messages = append(messages, fmt.Sprintf("技能 %s 依赖 MCP %s：未绑定或缺环境变量", slugByID[record.SkillID], record.ServerKey))
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: skill_mcp_dependencies_not_satisfied: %s", ErrInvalidInput, strings.Join(messages, "; "))
 }
 
 func validateRuntimeSkillDependencies(runtimeSkills []skill.SkillRuntimeRecord, availableTools, availableEnv map[string]struct{}, nodeReportedAnyCapability bool) error {

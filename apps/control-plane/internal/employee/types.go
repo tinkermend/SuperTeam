@@ -345,6 +345,14 @@ type RuntimeMCPServerPayload struct {
 	PermissionScope  map[string]any
 }
 
+// SkillMCPDependencyRecord is the run-service projection of a skill's MCP dependency.
+// MCPServerID is a string to compare directly against RuntimeMCPServerPayload.ServerID.
+type SkillMCPDependencyRecord struct {
+	SkillID     uuid.UUID
+	MCPServerID string
+	ServerKey   string
+}
+
 type ListWorkspaceFilesRequest struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID
