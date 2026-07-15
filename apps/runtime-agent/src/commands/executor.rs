@@ -367,6 +367,7 @@ impl RuntimeCommandExecutor {
                 let _ = self.runs.finish_failed(&run_id, message.clone()).await;
                 let _ = writeback.fail(message).await;
                 self.registry.record_run_finished(&run_id);
+                rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
                 return Ok(RuntimeCommandOutcome {
                     command_id: payload.command_id,
                     accepted: true,
@@ -391,6 +392,7 @@ impl RuntimeCommandExecutor {
                     writeback.fail(message).await?;
                 }
                 self.registry.record_run_finished(&run_id);
+                rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
                 return Ok(RuntimeCommandOutcome {
                     command_id: payload.command_id,
                     accepted: true,
@@ -421,6 +423,7 @@ impl RuntimeCommandExecutor {
                 writeback.fail(message).await?;
             }
             self.registry.record_run_finished(&run_id);
+            rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
             return Ok(RuntimeCommandOutcome {
                 command_id: payload.command_id,
                 accepted: true,
@@ -641,19 +644,10 @@ impl RuntimeCommandExecutor {
             }
         }
 
-        if !payload.mcp_servers.is_empty() {
-            if let Err(error) = crate::mcp_config::materialize_mcp_config(
-                &PathBuf::from(&payload.agent_home_dir),
-                &payload.provider_type,
-                &payload.mcp_servers,
-            ) {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_provisioning_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        }
+        // MCP home config is session-scoped since the skill-mcp-dependency spec
+        // (2026-07-15): it is injected by ensure_command_instance at session start and
+        // rolled back at session end. Provisioning no longer materializes it; the
+        // payload field is accepted and ignored for backward compatibility.
 
         if let Some(control_plane) = &self.control_plane {
             control_plane
@@ -996,6 +990,14 @@ impl RuntimeCommandExecutor {
                 self.recorded_error(command_id, anyhow::anyhow!("agent_home_dir is required"))
             })?;
         let agent_home_dir = PathBuf::from(agent_home_dir_text);
+
+        if let Err(error) = crate::mcp_config::inject_session_mcp_config(
+            &agent_home_dir,
+            &payload.provider_type,
+            &payload.mcp_servers,
+        ) {
+            return Err(self.recorded_error(command_id, error));
+        }
 
         let provider_home = provider_home_kind(&payload.provider_type)
             .map_err(|error| self.recorded_error(command_id, error))?;
@@ -2793,6 +2795,23 @@ fn project_task_attempt_idempotency_key(
     format!("project-task-attempt:{attempt_id}:{action}:{command_id}")
 }
 
+/// Best-effort rollback of the session-scoped home-dir MCP injection made by
+/// `ensure_command_instance`. Failure to roll back must never override the
+/// run's actual outcome, so it is logged (this crate has no tracing/log setup)
+/// and swallowed; a residual manifest is defensively rolled back by the next
+/// session's `inject_session_mcp_config` call.
+fn rollback_session_mcp_config_best_effort(run_id: &str, agent_home_dir: Option<&Path>) {
+    if let Some(agent_home) = agent_home_dir {
+        if let Err(error) = crate::mcp_config::rollback_session_mcp_config(agent_home) {
+            eprintln!(
+                "mcp session rollback failed for run {} at {}: {error:#}",
+                run_id,
+                agent_home.display()
+            );
+        }
+    }
+}
+
 async fn drain_provider_events(
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
@@ -2872,6 +2891,15 @@ async fn drain_provider_events(
     if let Some(stop) = &heartbeat_stop {
         stop.cancel();
     }
+    // Session-scoped home-dir MCP rollback: this is the common success/failure
+    // sink for a run's provider event stream, so it is the right place to undo
+    // the injection made by ensure_command_instance at session start.
+    // handle_stop_command deliberately does not roll back directly: cancel_run
+    // makes the provider event stream end, which drives execution back here.
+    // If the process restarts before this point runs (e.g. stop after a crash),
+    // the residual manifest is rolled back defensively by the next session's
+    // inject_session_mcp_config call.
+    rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
     // Finalize before the terminal writeback so the attempt row and the raw
     // transcript pointer land in the same call.
     finalize_raw_log(&raw_sink, writeback.as_ref()).await;
