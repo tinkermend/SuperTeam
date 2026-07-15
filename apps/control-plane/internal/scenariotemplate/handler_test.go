@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,29 @@ func (s *stubService) List(_ context.Context, _ uuid.UUID) ([]ScenarioTemplate, 
 func (s *stubService) GetByKey(_ context.Context, _ uuid.UUID, key string) (ScenarioTemplate, error) {
 	for _, template := range s.templates {
 		if template.Key == key {
+			return template, nil
+		}
+	}
+	return ScenarioTemplate{}, ErrScenarioTemplateNotFound
+}
+
+func (s *stubService) Create(_ context.Context, req CreateScenarioTemplateRequest) (ScenarioTemplate, error) {
+	template := ScenarioTemplate{Key: req.Key, Name: req.Name, Description: req.Description, Spec: req.Spec, Status: "active", ActiveVersion: 1}
+	s.templates = append(s.templates, template)
+	return template, nil
+}
+
+func (s *stubService) CreateVersion(_ context.Context, req CreateScenarioTemplateVersionRequest) (ScenarioTemplate, error) {
+	return ScenarioTemplate{Key: req.Key, Spec: req.Spec, Status: "active", ActiveVersion: 2}, nil
+}
+
+func (s *stubService) ListVersions(_ context.Context, _ uuid.UUID, _ string) ([]ScenarioTemplateVersion, error) {
+	return nil, nil
+}
+
+func (s *stubService) Patch(_ context.Context, req PatchScenarioTemplateRequest) (ScenarioTemplate, error) {
+	for _, template := range s.templates {
+		if template.Key == req.Key {
 			return template, nil
 		}
 	}
@@ -119,5 +143,86 @@ func TestListScenarioTemplatesForbiddenWithoutAuthz(t *testing.T) {
 
 	if resp.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", resp.Code)
+	}
+}
+
+func TestCreateScenarioTemplateForbiddenWithoutManageAuthz(t *testing.T) {
+	handler := NewHandler(&stubService{})
+	authorizer := &stubAuthorizer{allowed: false}
+	handler.SetAuthorizer(authorizer)
+
+	body := `{"template_key":"ops_review","name":"运维评审","spec":{}}`
+	req := identityRequest(httptest.NewRequest(http.MethodPost, "/api/v1/scenario-templates", strings.NewReader(body)), uuid.New(), uuid.New())
+	resp := httptest.NewRecorder()
+	handler.CreateScenarioTemplate(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionScenarioTemplateManage {
+		t.Fatalf("unexpected authz checks: %#v", authorizer.checks)
+	}
+}
+
+func TestCreateScenarioTemplateVersionForbiddenWithoutManageAuthz(t *testing.T) {
+	handler := NewHandler(&stubService{})
+	authorizer := &stubAuthorizer{allowed: false}
+	handler.SetAuthorizer(authorizer)
+
+	body := `{"spec":{}}`
+	req := identityRequest(httptest.NewRequest(http.MethodPost, "/api/v1/scenario-templates/ops_review/versions", strings.NewReader(body)), uuid.New(), uuid.New())
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("templateKey", "ops_review")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	resp := httptest.NewRecorder()
+	handler.CreateScenarioTemplateVersion(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionScenarioTemplateManage {
+		t.Fatalf("unexpected authz checks: %#v", authorizer.checks)
+	}
+}
+
+func TestPatchScenarioTemplateForbiddenWithoutManageAuthz(t *testing.T) {
+	handler := NewHandler(&stubService{})
+	authorizer := &stubAuthorizer{allowed: false}
+	handler.SetAuthorizer(authorizer)
+
+	body := `{"status":"disabled"}`
+	req := identityRequest(httptest.NewRequest(http.MethodPatch, "/api/v1/scenario-templates/ops_review", strings.NewReader(body)), uuid.New(), uuid.New())
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("templateKey", "ops_review")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	resp := httptest.NewRecorder()
+	handler.PatchScenarioTemplate(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionScenarioTemplateManage {
+		t.Fatalf("unexpected authz checks: %#v", authorizer.checks)
+	}
+}
+
+func TestCreateScenarioTemplateSuccess(t *testing.T) {
+	handler := NewHandler(&stubService{})
+	handler.SetAuthorizer(&stubAuthorizer{allowed: true})
+
+	body := `{"template_key":"ops_review","name":"运维评审","description":"desc","spec":{"spec_version":2,"roles":[]}}`
+	req := identityRequest(httptest.NewRequest(http.MethodPost, "/api/v1/scenario-templates", strings.NewReader(body)), uuid.New(), uuid.New())
+	resp := httptest.NewRecorder()
+	handler.CreateScenarioTemplate(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out["template_key"] != "ops_review" {
+		t.Fatalf("unexpected body: %#v", out)
 	}
 }

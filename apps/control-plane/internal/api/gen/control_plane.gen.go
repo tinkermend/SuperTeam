@@ -888,6 +888,24 @@ func (e MCPTransport) Valid() bool {
 	}
 }
 
+// Defines values for PatchScenarioTemplateRequestStatus.
+const (
+	PatchScenarioTemplateRequestStatusActive   PatchScenarioTemplateRequestStatus = "active"
+	PatchScenarioTemplateRequestStatusDisabled PatchScenarioTemplateRequestStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the PatchScenarioTemplateRequestStatus enum.
+func (e PatchScenarioTemplateRequestStatus) Valid() bool {
+	switch e {
+	case PatchScenarioTemplateRequestStatusActive:
+		return true
+	case PatchScenarioTemplateRequestStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectAcceptanceRecordStatus.
 const (
 	ProjectAcceptanceRecordStatusAccepted          ProjectAcceptanceRecordStatus = "accepted"
@@ -2102,19 +2120,19 @@ func (e ListInboxItemsParamsItemType) Valid() bool {
 
 // Defines values for ListTeamsParamsStatus.
 const (
-	ListTeamsParamsStatusActive   ListTeamsParamsStatus = "active"
-	ListTeamsParamsStatusArchived ListTeamsParamsStatus = "archived"
-	ListTeamsParamsStatusDisabled ListTeamsParamsStatus = "disabled"
+	Active   ListTeamsParamsStatus = "active"
+	Archived ListTeamsParamsStatus = "archived"
+	Disabled ListTeamsParamsStatus = "disabled"
 )
 
 // Valid indicates whether the value is a known member of the ListTeamsParamsStatus enum.
 func (e ListTeamsParamsStatus) Valid() bool {
 	switch e {
-	case ListTeamsParamsStatusActive:
+	case Active:
 		return true
-	case ListTeamsParamsStatusArchived:
+	case Archived:
 		return true
-	case ListTeamsParamsStatusDisabled:
+	case Disabled:
 		return true
 	default:
 		return false
@@ -2426,6 +2444,19 @@ type CreateProviderSessionRequest struct {
 	ProviderType        string                  `json:"provider_type"`
 	Recoverable         *bool                   `json:"recoverable,omitempty"`
 	RuntimeNodeId       openapi_types.UUID      `json:"runtime_node_id"`
+}
+
+// CreateScenarioTemplateRequest defines model for CreateScenarioTemplateRequest.
+type CreateScenarioTemplateRequest struct {
+	Description *string                `json:"description,omitempty"`
+	Name        string                 `json:"name"`
+	Spec        map[string]interface{} `json:"spec"`
+	TemplateKey string                 `json:"template_key"`
+}
+
+// CreateScenarioTemplateVersionRequest defines model for CreateScenarioTemplateVersionRequest.
+type CreateScenarioTemplateVersionRequest struct {
+	Spec map[string]interface{} `json:"spec"`
 }
 
 // CreateTaskRequest defines model for CreateTaskRequest.
@@ -3415,6 +3446,16 @@ type PatchProjectEvidenceRequest struct {
 	Metadata           *map[string]interface{}           `json:"metadata,omitempty"`
 	VerificationStatus ProjectEvidenceVerificationStatus `json:"verification_status"`
 }
+
+// PatchScenarioTemplateRequest defines model for PatchScenarioTemplateRequest.
+type PatchScenarioTemplateRequest struct {
+	Description *string                             `json:"description,omitempty"`
+	Name        *string                             `json:"name,omitempty"`
+	Status      *PatchScenarioTemplateRequestStatus `json:"status,omitempty"`
+}
+
+// PatchScenarioTemplateRequestStatus defines model for PatchScenarioTemplateRequest.Status.
+type PatchScenarioTemplateRequestStatus string
 
 // Project defines model for Project.
 type Project struct {
@@ -4652,15 +4693,25 @@ type RuntimeSession struct {
 
 // ScenarioTemplate defines model for ScenarioTemplate.
 type ScenarioTemplate struct {
-	CreatedAt   time.Time              `json:"created_at"`
-	Description string                 `json:"description"`
-	Id          openapi_types.UUID     `json:"id"`
-	Name        string                 `json:"name"`
-	Spec        map[string]interface{} `json:"spec"`
-	Status      string                 `json:"status"`
-	TemplateKey string                 `json:"template_key"`
-	TenantId    openapi_types.UUID     `json:"tenant_id"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ActiveVersion int                    `json:"active_version"`
+	CreatedAt     time.Time              `json:"created_at"`
+	Description   string                 `json:"description"`
+	Id            openapi_types.UUID     `json:"id"`
+	Name          string                 `json:"name"`
+	Spec          map[string]interface{} `json:"spec"`
+	Status        string                 `json:"status"`
+	TemplateKey   string                 `json:"template_key"`
+	TenantId      openapi_types.UUID     `json:"tenant_id"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+}
+
+// ScenarioTemplateVersion defines model for ScenarioTemplateVersion.
+type ScenarioTemplateVersion struct {
+	CreatedAt  time.Time              `json:"created_at"`
+	Id         openapi_types.UUID     `json:"id"`
+	Spec       map[string]interface{} `json:"spec"`
+	TemplateId openapi_types.UUID     `json:"template_id"`
+	Version    int                    `json:"version"`
 }
 
 // SchedulingReadinessCapabilities defines model for SchedulingReadinessCapabilities.
@@ -5927,6 +5978,15 @@ type FailRuntimeTaskJSONRequestBody = FailTaskRequest
 // UpdateRuntimeTaskStatusJSONRequestBody defines body for UpdateRuntimeTaskStatus for application/json ContentType.
 type UpdateRuntimeTaskStatusJSONRequestBody = UpdateTaskStatusRequest
 
+// CreateScenarioTemplateJSONRequestBody defines body for CreateScenarioTemplate for application/json ContentType.
+type CreateScenarioTemplateJSONRequestBody = CreateScenarioTemplateRequest
+
+// PatchScenarioTemplateJSONRequestBody defines body for PatchScenarioTemplate for application/json ContentType.
+type PatchScenarioTemplateJSONRequestBody = PatchScenarioTemplateRequest
+
+// CreateScenarioTemplateVersionJSONRequestBody defines body for CreateScenarioTemplateVersion for application/json ContentType.
+type CreateScenarioTemplateVersionJSONRequestBody = CreateScenarioTemplateVersionRequest
+
 // UploadSkillMultipartRequestBody defines body for UploadSkill for multipart/form-data ContentType.
 type UploadSkillMultipartRequestBody = UploadSkillRequest
 
@@ -6853,9 +6913,21 @@ type ServerInterface interface {
 	// List tenant scenario templates (read-only registry)
 	// (GET /api/v1/scenario-templates)
 	ListScenarioTemplates(w http.ResponseWriter, r *http.Request)
+	// Create a tenant scenario template (v1 = main row + version row 1)
+	// (POST /api/v1/scenario-templates)
+	CreateScenarioTemplate(w http.ResponseWriter, r *http.Request)
 	// Get one scenario template by key
 	// (GET /api/v1/scenario-templates/{templateKey})
 	GetScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string)
+	// Update a scenario template's status (active/disabled) and/or name/description
+	// (PATCH /api/v1/scenario-templates/{templateKey})
+	PatchScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string)
+	// List a scenario template's spec version history (newest first)
+	// (GET /api/v1/scenario-templates/{templateKey}/versions)
+	ListScenarioTemplateVersions(w http.ResponseWriter, r *http.Request, templateKey string)
+	// Bump a scenario template to a new spec version (mirrored onto the main row)
+	// (POST /api/v1/scenario-templates/{templateKey}/versions)
+	CreateScenarioTemplateVersion(w http.ResponseWriter, r *http.Request, templateKey string)
 	// List skills with files and bindings
 	// (GET /api/v1/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request, params ListSkillsParams)
@@ -7843,9 +7915,33 @@ func (_ Unimplemented) ListScenarioTemplates(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Create a tenant scenario template (v1 = main row + version row 1)
+// (POST /api/v1/scenario-templates)
+func (_ Unimplemented) CreateScenarioTemplate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get one scenario template by key
 // (GET /api/v1/scenario-templates/{templateKey})
 func (_ Unimplemented) GetScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update a scenario template's status (active/disabled) and/or name/description
+// (PATCH /api/v1/scenario-templates/{templateKey})
+func (_ Unimplemented) PatchScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List a scenario template's spec version history (newest first)
+// (GET /api/v1/scenario-templates/{templateKey}/versions)
+func (_ Unimplemented) ListScenarioTemplateVersions(w http.ResponseWriter, r *http.Request, templateKey string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Bump a scenario template to a new spec version (mirrored onto the main row)
+// (POST /api/v1/scenario-templates/{templateKey}/versions)
+func (_ Unimplemented) CreateScenarioTemplateVersion(w http.ResponseWriter, r *http.Request, templateKey string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -13418,6 +13514,20 @@ func (siw *ServerInterfaceWrapper) ListScenarioTemplates(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// CreateScenarioTemplate operation middleware
+func (siw *ServerInterfaceWrapper) CreateScenarioTemplate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateScenarioTemplate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetScenarioTemplate operation middleware
 func (siw *ServerInterfaceWrapper) GetScenarioTemplate(w http.ResponseWriter, r *http.Request) {
 
@@ -13435,6 +13545,84 @@ func (siw *ServerInterfaceWrapper) GetScenarioTemplate(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetScenarioTemplate(w, r, templateKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchScenarioTemplate operation middleware
+func (siw *ServerInterfaceWrapper) PatchScenarioTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateKey" -------------
+	var templateKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateKey", chi.URLParam(r, "templateKey"), &templateKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchScenarioTemplate(w, r, templateKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListScenarioTemplateVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListScenarioTemplateVersions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateKey" -------------
+	var templateKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateKey", chi.URLParam(r, "templateKey"), &templateKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListScenarioTemplateVersions(w, r, templateKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateScenarioTemplateVersion operation middleware
+func (siw *ServerInterfaceWrapper) CreateScenarioTemplateVersion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateKey" -------------
+	var templateKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateKey", chi.URLParam(r, "templateKey"), &templateKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateScenarioTemplateVersion(w, r, templateKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15638,7 +15826,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/scenario-templates", wrapper.ListScenarioTemplates)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/scenario-templates", wrapper.CreateScenarioTemplate)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/scenario-templates/{templateKey}", wrapper.GetScenarioTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/scenario-templates/{templateKey}", wrapper.PatchScenarioTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/scenario-templates/{templateKey}/versions", wrapper.ListScenarioTemplateVersions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/scenario-templates/{templateKey}/versions", wrapper.CreateScenarioTemplateVersion)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/skills", wrapper.ListSkills)

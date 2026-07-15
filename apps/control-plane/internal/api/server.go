@@ -454,9 +454,14 @@ func (s *Server) registerRoutes() {
 		if s.scenarioTemplateHandler != nil {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
-				// Scenario template registry (migration 058), read-only in P1.
+				// Scenario template registry (migration 058); write endpoints
+				// (migration 061 version history) require scenario_template.manage.
 				r.Get("/scenario-templates", s.scenarioTemplateHandler.ListScenarioTemplates)
+				r.Post("/scenario-templates", s.scenarioTemplateHandler.CreateScenarioTemplate)
 				r.Get("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.GetScenarioTemplate)
+				r.Patch("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.PatchScenarioTemplate)
+				r.Post("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.CreateScenarioTemplateVersion)
+				r.Get("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.ListScenarioTemplateVersions)
 			})
 		}
 
