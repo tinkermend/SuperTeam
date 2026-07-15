@@ -7451,6 +7451,7 @@ components:
             - approved
             - rejected
             - needs_more_evidence
+            - request_changes
         comment:
           type: string
         payload:

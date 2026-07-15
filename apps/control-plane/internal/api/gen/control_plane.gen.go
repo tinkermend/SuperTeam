@@ -1337,6 +1337,7 @@ const (
 	ResolveProjectDecisionRequestDecisionApproved          ResolveProjectDecisionRequestDecision = "approved"
 	ResolveProjectDecisionRequestDecisionNeedsMoreEvidence ResolveProjectDecisionRequestDecision = "needs_more_evidence"
 	ResolveProjectDecisionRequestDecisionRejected          ResolveProjectDecisionRequestDecision = "rejected"
+	ResolveProjectDecisionRequestDecisionRequestChanges    ResolveProjectDecisionRequestDecision = "request_changes"
 )
 
 // Valid indicates whether the value is a known member of the ResolveProjectDecisionRequestDecision enum.
@@ -1347,6 +1348,8 @@ func (e ResolveProjectDecisionRequestDecision) Valid() bool {
 	case ResolveProjectDecisionRequestDecisionNeedsMoreEvidence:
 		return true
 	case ResolveProjectDecisionRequestDecisionRejected:
+		return true
+	case ResolveProjectDecisionRequestDecisionRequestChanges:
 		return true
 	default:
 		return false

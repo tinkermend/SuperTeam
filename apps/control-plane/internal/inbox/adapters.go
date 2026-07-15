@@ -190,6 +190,11 @@ func statusFromApproval(status approval.ApprovalStatus) Status {
 }
 
 func statusFromDecisionSnapshot(status string) Status {
+	// Plan-review request_changes resolves the decision request (the replan
+	// opens a fresh one), so the inbox item must not stay open.
+	if status == project.PlanReviewDecisionRequestChanges {
+		return StatusResolved
+	}
 	switch approval.ApprovalStatus(status) {
 	case approval.ApprovalStatusPending:
 		return StatusOpen

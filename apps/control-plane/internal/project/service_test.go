@@ -7453,6 +7453,111 @@ func TestResolveDecisionThreadsTargetExitDeliverableToSignal(t *testing.T) {
 	}
 }
 
+func TestResolveDecisionAcceptsRequestChangesForPlanReview(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              PlanReviewDecisionRequestChanges,
+		Comment:               "改选出口",
+		TargetExitDeliverable: "branch_ref",
+	})
+	if err != nil {
+		t.Fatalf("resolve decision with request_changes: %v", err)
+	}
+	if resolved.StatusSnapshot != PlanReviewDecisionRequestChanges {
+		t.Fatalf("expected request_changes projection, got %s", resolved.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != PlanReviewDecisionRequestChanges {
+		t.Fatalf("expected approval resolver to receive request_changes untouched, got count=%d last=%#v", approvals.calls, approvals.last)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.Decision != PlanReviewDecisionRequestChanges {
+		t.Fatalf("expected decision signal with request_changes untouched, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+	if coordinator.lastDecision.TargetExitDeliverable != "branch_ref" {
+		t.Fatalf("expected target exit deliverable threaded, got %q", coordinator.lastDecision.TargetExitDeliverable)
+	}
+}
+
+func TestResolveDecisionRejectsUnknownDecisionValue(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:             decisionID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TargetUserID:   actorID,
+		DecisionType:   "plan_review",
+		TitleSnapshot:  "确认项目计划版本",
+		StatusSnapshot: "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "definitely_not_a_decision",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for unknown decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects for invalid decision, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+}
+
 func TestMemoryRepositoryDecisionRequestCarriesPlanRevisionID(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

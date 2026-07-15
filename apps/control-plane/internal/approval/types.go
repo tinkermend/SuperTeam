@@ -30,6 +30,10 @@ const (
 	ApprovalDecisionApproved          ApprovalDecision = "approved"
 	ApprovalDecisionRejected          ApprovalDecision = "rejected"
 	ApprovalDecisionNeedsMoreEvidence ApprovalDecision = "needs_more_evidence"
+	// ApprovalDecisionRequestChanges records a plan-review "request changes"
+	// resolution; the approval request itself closes as rejected because the
+	// reviewed plan revision is superseded and a new review will be opened.
+	ApprovalDecisionRequestChanges ApprovalDecision = "request_changes"
 )
 
 type ApprovalRequest struct {

@@ -5598,7 +5598,7 @@ func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, no
 
 func validHumanDecision(decision string) bool {
 	switch decision {
-	case "approved", "rejected", "needs_more_evidence":
+	case "approved", "rejected", "needs_more_evidence", PlanReviewDecisionRequestChanges:
 		return true
 	default:
 		return false
