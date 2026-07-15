@@ -478,4 +478,13 @@ if !validation.Acceptable {
 
 ## 实施记录
 
-（实施时追加：收敛闸门轮数与样本、E2E 逐条结果、偏差与遗留。）
+### Task 10 收敛闸门（2026-07-15，真实 deepseek planner）
+
+**判决点 PASS**：双员工项目（b4226c24）审查合入需求 → **1 轮**收敛至 pending_review（0 拒绝），payload 含 template_key/template_version=2/exit_deliverable=review_verdict/available_exits 全量；规划延迟 25–56s。
+
+- 判据①（只出分支）：PASS，1 轮，exit=branch_ref，仅 develop 任务无 review。
+- 判据②（单员工合入，防自旋）：首验 **FAIL**——暴露三缺陷：ErrNoSuitableEmployee 可重试（Temporal 白烧 3 次 LLM）、需求永久卡 planning_pending 无诊断、低置信检查掩蔽结构缺口出路文案。修复 `a9a4b8a9`（不可重试哨兵 + 需求终局 failed + coordination.blocked 诊断事件 + 结构缺口文案优先）后**复验 PASS**：恰 1 次 LLM 调用即终局（demand d3d93f00），failed 状态与"补充员工"诊断事件全链落库，项目页显示失败徽标；0 signal_failed。
+- 判据③（批准→派发）：PASS，任务经 dispatch gate 真实执行于 local-dev-node/claude-code（attempt 86b1eab5 succeeded）。
+- 修复后 happy-path 回归：PASS（1 轮 pending_review，四眼选角正确，rev abfbf825）。
+
+**遗留（预存在，非本分支引入）：** ① `/workflows/{demandId}` 详情页被无过滤 limit=50 的 workflow-instances feed 重定向逻辑挡住，failed 无任务需求排序垫底进不了首页 → WorkflowBlockingBanner 虽经数据层+组件层验证会逐字渲染诊断，但用户经 UI 导航不可达——**建议 web 侧独立立项**；② `replanAfterPlanReviewChanges` 路径结构缺口仍走 generic signal_failed（低频：需 pending_review 后池收缩才触发），已标记跟进；③ planner_provider/planner_model 列全库未回填（既有债）；④ 执行实例直插 DB 的旧 E2E workaround 失效（runtime 现绑项目）。
