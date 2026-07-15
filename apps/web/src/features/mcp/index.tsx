@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Network, Plus, Trash2, KeyRound } from "lucide-react";
+import { CheckCircle2, KeyRound, Network, Plus, Trash2 } from "lucide-react";
 import {
+  MetricGrid,
   StatusPill,
   V3Button,
   V3EmptyState,
@@ -15,61 +16,32 @@ import {
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { ApiRequestError } from "@/lib/api/client";
 import {
-  createMcpServerDefinition,
   deleteMcpServerDefinition,
   listMcpServerDefinitions,
   listMcpServerDependentSkills,
-  type CreateMcpServerDefinitionInput,
   type McpServerDefinition,
 } from "@/lib/api/capabilities";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { RegisterMcpDialog } from "./register-dialog";
 
 type MetricTone = V3Tone;
-
-const EMPTY_FORM: CreateMcpServerDefinitionInput = {
-  name: "",
-  server_key: "",
-  description: "",
-  transport: "streamable_http",
-  url: "",
-  auth_strategy: "none",
-  required_env_vars: [],
-  risk_level: "medium",
-};
 
 export function McpManagementPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<CreateMcpServerDefinitionInput>(EMPTY_FORM);
-  const [requiredEnvInput, setRequiredEnvInput] = useState("");
-  const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<McpServerDefinition | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const definitions = useQuery({
     queryKey: ["mcp-server-definitions"],
     queryFn: () => listMcpServerDefinitions({ baseUrl: apiBaseUrl }),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (input: CreateMcpServerDefinitionInput) =>
-      createMcpServerDefinition({ baseUrl: apiBaseUrl }, input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["mcp-server-definitions"] });
-      setShowCreate(false);
-      setForm(EMPTY_FORM);
-      setRequiredEnvInput("");
-      setFormError(null);
-    },
-    onError: (error: unknown) => {
-      setFormError(error instanceof Error ? error.message : "创建 MCP 失败");
-    },
   });
 
   const deleteMutation = useMutation({
@@ -101,29 +73,26 @@ export function McpManagementPage() {
     const active = rows.filter((row) => row.status === "active").length;
     const requiresEnv = rows.filter((row) => row.required_env_vars.length > 0).length;
     return [
-      { label: "MCP 总数", value: rows.length, iconTone: "info" as MetricTone },
-      { label: "活跃 MCP", value: active, iconTone: "ok" as MetricTone },
-      { label: "需要环境变量", value: requiresEnv, iconTone: "warn" as MetricTone },
+      {
+        label: "MCP 总数",
+        value: rows.length,
+        iconTone: "info" as MetricTone,
+        icon: <Network />,
+      },
+      {
+        label: "活跃 MCP",
+        value: active,
+        iconTone: "ok" as MetricTone,
+        icon: <CheckCircle2 />,
+      },
+      {
+        label: "需要环境变量",
+        value: requiresEnv,
+        iconTone: "warn" as MetricTone,
+        icon: <KeyRound />,
+      },
     ];
   }, [rows]);
-
-  const addRequiredEnv = () => {
-    const name = requiredEnvInput.trim();
-    if (!name || form.required_env_vars?.includes(name)) {
-      setRequiredEnvInput("");
-      return;
-    }
-    setForm((prev) => ({
-      ...prev,
-      required_env_vars: [...(prev.required_env_vars ?? []), name],
-    }));
-    setRequiredEnvInput("");
-  };
-
-  const submitCreate = (event: React.FormEvent) => {
-    event.preventDefault();
-    createMutation.mutate(form);
-  };
 
   const isInitialLoading = definitions.isPending && rows.length === 0;
   const isBlockingError = definitions.isError && rows.length === 0;
@@ -135,190 +104,32 @@ export function McpManagementPage() {
         iconTone="brand"
         title="MCP 管理"
         subtitle="注册 HTTP/streamable HTTP 能力，绑定到团队或数字员工"
+        actions={
+          <V3Button className="h-10 px-4" onClick={() => setShowCreate(true)}>
+            <Plus data-icon="inline-start" />
+            注册 MCP
+          </V3Button>
+        }
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
-          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-            <V3Button
-              className="h-11 self-start px-5"
-              onClick={() => setShowCreate((value) => !value)}
-            >
-              <Plus data-icon="inline-start" />
-              注册 MCP
-            </V3Button>
-          </div>
-
-          <section
-            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-            aria-label="MCP 指标"
-          >
+          <MetricGrid aria-label="MCP 指标">
             {metrics.map((metric) => (
               <V3MetricCard
                 key={metric.label}
                 label={metric.label}
                 value={metric.value}
+                icon={metric.icon}
                 iconTone={metric.iconTone}
               />
             ))}
-          </section>
-
-          {showCreate ? (
-            <WorkSurface className="min-w-0">
-              <form className="flex flex-col gap-4" onSubmit={submitCreate}>
-                <h2 className="text-base font-semibold">注册新 MCP</h2>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">名称</span>
-                    <input
-                      className="h-10 rounded-md border bg-background px-3"
-                      value={form.name}
-                      onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                      required
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">server_key（[A-Za-z0-9_-]）</span>
-                    <input
-                      className="h-10 rounded-md border bg-background px-3 font-mono"
-                      value={form.server_key}
-                      onChange={(event) =>
-                        setForm((prev) => ({ ...prev, server_key: event.target.value }))
-                      }
-                      required
-                      pattern="[A-Za-z0-9_-]+"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">URL</span>
-                    <input
-                      className="h-10 rounded-md border bg-background px-3 font-mono"
-                      value={form.url}
-                      onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
-                      required
-                      type="url"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">传输方式</span>
-                    <select
-                      className="h-10 rounded-md border bg-background px-3"
-                      value={form.transport}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          transport: event.target.value as CreateMcpServerDefinitionInput["transport"],
-                        }))
-                      }
-                    >
-                      <option value="streamable_http">streamable_http</option>
-                      <option value="http">http</option>
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">鉴权方式</span>
-                    <select
-                      className="h-10 rounded-md border bg-background px-3"
-                      value={form.auth_strategy}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          auth_strategy:
-                            event.target.value as CreateMcpServerDefinitionInput["auth_strategy"],
-                        }))
-                      }
-                    >
-                      <option value="none">none</option>
-                      <option value="bearer_env">bearer_env</option>
-                      <option value="headers_env">headers_env</option>
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">风险等级</span>
-                    <select
-                      className="h-10 rounded-md border bg-background px-3"
-                      value={form.risk_level}
-                      onChange={(event) =>
-                        setForm((prev) => ({ ...prev, risk_level: event.target.value }))
-                      }
-                    >
-                      <option value="low">low</option>
-                      <option value="medium">medium</option>
-                      <option value="high">high</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="flex flex-col gap-2 text-sm">
-                  <span className="text-muted-foreground">必需环境变量</span>
-                  <div className="flex flex-wrap gap-2">
-                    {(form.required_env_vars ?? []).map((name) => (
-                      <span
-                        key={name}
-                        className="inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-1 font-mono text-xs"
-                      >
-                        <KeyRound className="size-3" />
-                        {name}
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-foreground"
-                          onClick={() =>
-                            setForm((prev) => ({
-                              ...prev,
-                              required_env_vars: (prev.required_env_vars ?? []).filter(
-                                (value) => value !== name,
-                              ),
-                            }))
-                          }
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      className="h-10 flex-1 rounded-md border bg-background px-3 font-mono"
-                      placeholder="例如 GITHUB_TOKEN"
-                      aria-label="必需环境变量输入"
-                      value={requiredEnvInput}
-                      onChange={(event) => setRequiredEnvInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          addRequiredEnv();
-                        }
-                      }}
-                    />
-                    <V3Button type="button" variant="outline" onClick={addRequiredEnv}>
-                      添加
-                    </V3Button>
-                  </div>
-                </div>
-                {formError ? (
-                  <p className="text-sm text-destructive">{formError}</p>
-                ) : null}
-                <div className="flex gap-2">
-                  <V3Button type="submit" disabled={createMutation.isPending}>
-                    {createMutation.isPending ? "创建中…" : "创建"}
-                  </V3Button>
-                  <V3Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setShowCreate(false);
-                      setForm(EMPTY_FORM);
-                      setRequiredEnvInput("");
-                      setFormError(null);
-                    }}
-                  >
-                    取消
-                  </V3Button>
-                </div>
-              </form>
-            </WorkSurface>
-          ) : null}
+          </MetricGrid>
 
           {deleteError ? (
-            <p className="text-sm text-destructive">{deleteError}</p>
+            <Alert variant="destructive">
+              <AlertTitle>删除失败</AlertTitle>
+              <AlertDescription>{deleteError}</AlertDescription>
+            </Alert>
           ) : null}
 
           <WorkSurface className="min-w-0">
@@ -336,14 +147,13 @@ export function McpManagementPage() {
               <V3Table>
                 <thead>
                   <tr>
-                    <V3Th>名称</V3Th>
-                    <V3Th>server_key</V3Th>
+                    <V3Th>名称 / server_key</V3Th>
                     <V3Th>URL</V3Th>
-                    <V3Th>传输</V3Th>
-                    <V3Th>鉴权</V3Th>
+                    <V3Th className="w-32">传输</V3Th>
+                    <V3Th className="w-28">鉴权</V3Th>
                     <V3Th>必需环境变量</V3Th>
-                    <V3Th>状态</V3Th>
-                    <V3Th aria-label="操作" />
+                    <V3Th className="w-24">状态</V3Th>
+                    <V3Th className="w-14" aria-label="操作" />
                   </tr>
                 </thead>
                 <tbody>
@@ -363,6 +173,12 @@ export function McpManagementPage() {
           </WorkSurface>
         </div>
       </Main>
+
+      <RegisterMcpDialog
+        apiBaseUrl={apiBaseUrl}
+        open={showCreate}
+        onOpenChange={setShowCreate}
+      />
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -403,8 +219,14 @@ function McpDefinitionRow({
   const tone: V3Tone = row.status === "active" ? "ok" : "mute";
   return (
     <V3Tr>
-      <V3Td className="font-medium">{row.name}</V3Td>
-      <V3Td className="font-mono text-xs">{row.server_key}</V3Td>
+      <V3Td>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate font-medium">{row.name}</span>
+          <span className="truncate font-mono text-xs text-muted-foreground">
+            {row.server_key}
+          </span>
+        </div>
+      </V3Td>
       <V3Td className="max-w-[24rem] truncate font-mono text-xs" title={row.url}>
         {row.url}
       </V3Td>

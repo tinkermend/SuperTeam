@@ -78,7 +78,7 @@ describe("MCP management page", () => {
     await expect.element(screen.getByText("GITHUB_TOKEN")).toBeVisible();
   });
 
-  it("submits a new MCP definition with server_key, transport, url and required env vars", async () => {
+  it("submits a new MCP definition through the register dialog", async () => {
     vi.mocked(listMcpServerDefinitions).mockResolvedValue([]);
     vi.mocked(createMcpServerDefinition).mockResolvedValue({
       ...githubDefinition,
@@ -90,12 +90,17 @@ describe("MCP management page", () => {
 
     await user.click(screen.getByRole("button", { name: "注册 MCP" }));
 
-    await user.fill(screen.getByLabelText("名称"), "GitHub MCP");
+    await expect
+      .element(screen.getByRole("dialog", { name: "注册新 MCP" }))
+      .toBeVisible();
+
+    await user.fill(screen.getByLabelText(/^名称/), "GitHub MCP");
+    await user.fill(screen.getByLabelText(/^server_key/), "github");
+    await user.fill(screen.getByLabelText(/^URL/), "https://api.githubcopilot.com/mcp/");
     await user.fill(
-      screen.getByLabelText("server_key（[A-Za-z0-9_-]）"),
-      "github",
+      screen.getByLabelText(/^描述/),
+      "GitHub 代码托管能力",
     );
-    await user.fill(screen.getByLabelText("URL"), "https://api.githubcopilot.com/mcp/");
     await user.fill(
       screen.getByLabelText("必需环境变量输入"),
       "GITHUB_TOKEN",
@@ -109,12 +114,19 @@ describe("MCP management page", () => {
         expect.objectContaining({
           name: "GitHub MCP",
           server_key: "github",
+          description: "GitHub 代码托管能力",
           transport: "streamable_http",
           url: "https://api.githubcopilot.com/mcp/",
           auth_strategy: "none",
           required_env_vars: ["GITHUB_TOKEN"],
         }),
       );
+    });
+
+    await vi.waitFor(async () => {
+      await expect
+        .element(screen.getByRole("dialog", { name: "注册新 MCP" }))
+        .not.toBeInTheDocument();
     });
   });
 
