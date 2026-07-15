@@ -300,4 +300,10 @@ type PlanningGap struct {
 
 ## 实施记录
 
-（实施时追加。）
+### Task 9 补员闭环闸门（2026-07-16，真实链路）
+
+**GATE PASS——强形态**：单员工 software_delivery 项目"合入"需求一轮终局（demand de90301c）→ inbox planning_gap 三动作 + 直链缺口面板 → 一键补员从 standard_code_reviewer 实例化「审查员-csjw」（7a9a3fde）→ 成员追加 → restaffed → 需求重开原地重规划 → rev1 审查角色绑定**新员工** → 批准 → develop 完成后审查任务**真实派发至新员工执行完成**（attempt 4d2845c9 running→run_completed，claude-code 会话完整工具流）。新员工就绪事实全绿（scheduling-readiness ready、placement ready、命令通道连通、无阻断项）。豁免路径 PASS（记录 800ace9e 落库、同员工身兼两角、确认卡豁免注记、真实派发）。孤儿探针（取消变体）零副作用。全程零 TMPRL1100/WorkflowExecutionFailed。
+
+**闸门顺带小修（9d5dc83f）**：阻塞面板按需求状态 failed 门控（重开后不再残留陈旧诊断）；inbox 动作标签服务端优先（"关闭"不再被前端覆盖为"驳回"）。
+
+**新暴露待立项**：员工写回 deliverables.value 为 object 时 400 → attempt 永滞 running（handoff 契约类型宽容缺失，调度韧性家族第 4 例）；重复派发 project conflict 终局拒绝（既有家族）。
