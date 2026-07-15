@@ -180,11 +180,20 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
-		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok &&
+			workflow.GetVersion(ctx, "initial-planning-terminal-reject", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
 			// Terminal, non-retryable planning failure: the executor pool cannot
 			// satisfy the demand. Route it to the demand rejection/diagnosis surface
 			// instead of letting the error fall through to the generic signal_failed
 			// audit event, which is invisible to a human.
+			//
+			// Version-fenced: histories recorded before this reject branch existed
+			// let the error propagate (DefaultVersion), where the coordinator's
+			// survive-handler-error loop recorded a workflow.signal_failed event.
+			// Replaying those on the new code without the fence would schedule
+			// RejectDemandPlanning where the history has AppendProjectEvent — a
+			// nondeterministic command divergence. DefaultVersion preserves the old
+			// raw-error path so existing histories replay deterministically.
 			return nil, rejectDemandPlanning(ctx, input, signal, job.ID, diagnosis, []uuid.UUID{signal.CreatedEventID})
 		}
 		return nil, err
@@ -439,13 +448,23 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 	snapshot.PinnedExitDeliverable = strings.TrimSpace(signal.TargetExitDeliverable)
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
-		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok &&
+			workflow.GetVersion(ctx, "replan-terminal-reject", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
 			// Terminal, non-retryable replan failure (e.g. the reselected exit
 			// pulls in a stage the pool cannot staff): route the demand to the
 			// rejection/diagnosis surface — same treatment as the initial
 			// handleDemandSubmitted path — instead of letting the error fall
 			// through to the generic signal_failed audit event, which strands
 			// the demand in planning_pending with no human-visible diagnosis.
+			//
+			// Version-fenced: an in-flight coordinator whose history recorded this
+			// replan failure under the old code took the raw-error path, where the
+			// survive-handler-error loop wrote a workflow.signal_failed
+			// AppendProjectEvent. Replaying that history on the new code without the
+			// fence schedules RejectDemandPlanning at the position the history has
+			// AppendProjectEvent, panicking with TMPRL1100 nondeterministic
+			// workflow. DefaultVersion keeps the old path so existing histories
+			// replay cleanly; only new executions take the reject branch.
 			return nil, rejectDemandPlanningByID(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, diagnosis, outputEventIDs)
 		}
 		return nil, err
