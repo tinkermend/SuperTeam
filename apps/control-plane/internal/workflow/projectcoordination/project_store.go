@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -368,22 +367,42 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 	if demand.Content != nil {
 		content = *demand.Content
 	}
+	demandTemplateKey := ""
+	if demand.ScenarioTemplateKey != nil {
+		demandTemplateKey = strings.TrimSpace(*demand.ScenarioTemplateKey)
+	}
+	// Resolution order: demand-level key wins when present, then the project's
+	// bound key, then nil (generic fallback). Whichever source is chosen is
+	// tracked so a resolution failure event can attribute its origin.
+	key := ""
+	source := ""
+	if demandTemplateKey != "" {
+		key = demandTemplateKey
+		source = "demand"
+	} else if projectRecord.ScenarioTemplateKey != nil {
+		if projectKey := strings.TrimSpace(*projectRecord.ScenarioTemplateKey); projectKey != "" {
+			key = projectKey
+			source = "project"
+		}
+	}
 	var scenarioTemplate *ScenarioTemplateSnapshot
-	if s.scenarioTemplates != nil && projectRecord.ScenarioTemplateKey != nil {
-		if key := strings.TrimSpace(*projectRecord.ScenarioTemplateKey); key != "" {
-			template, templateErr := s.scenarioTemplates.GetScenarioTemplateSnapshot(ctx, input.TenantID, key)
-			if templateErr != nil {
-				// A stale binding degrades to the generic fallback (nil) rather
-				// than blocking planning; the defect stays visible in the log.
-				log.Printf("scenario template %q unresolved for project %s: %v", key, input.ProjectID, templateErr)
-			} else {
-				scenarioTemplate = &template
-			}
+	if s.scenarioTemplates != nil && key != "" {
+		template, templateErr := s.scenarioTemplates.GetScenarioTemplateSnapshot(ctx, input.TenantID, key)
+		if templateErr != nil {
+			// A stale or unresolvable binding degrades to the generic fallback
+			// (nil) rather than blocking planning; the defect is recorded as a
+			// project event instead of only a log line.
+			_, _ = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventScenarioTemplateResolutionFailed, key, "场景模板解析失败，回落 generic", map[string]any{
+				"requested_key": key,
+				"source":        source,
+			}))
+		} else {
+			scenarioTemplate = &template
 		}
 	}
 	return CoordinationSnapshot{
 		ProjectID:           projectRecord.ID,
-		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content},
+		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
 		DigitalEmployeePool: pool,
 		CoordinationPolicy:  projectRecord.CoordinationPolicy,
 		ScenarioTemplate:    scenarioTemplate,
@@ -479,11 +498,14 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 	}
 	payload := BuildPlanRevisionPayload(input.Decision)
 	validation := ValidatePlanRevisionPayload(payload)
-	status := project.PlanRevisionStatusAccepted
+	// Plan-mode demands always require human confirmation (spec: plan 模式计划确认全量强制);
+	// only autonomous modes (loop/chat) keep the conditional-Accepted auto-dispatch path,
+	// pending the future Loop-envelope spec taking over their governance.
+	status := project.PlanRevisionStatusPendingReview
 	if !validation.Acceptable {
 		status = project.PlanRevisionStatusValidationFailed
-	} else if validation.ReviewRequired || input.Decision.RequiresHumanReview {
-		status = project.PlanRevisionStatusPendingReview
+	} else if isAutonomousCoordinationMode(input.CoordinationMode) && !validation.ReviewRequired && !input.Decision.RequiresHumanReview {
+		status = project.PlanRevisionStatusAccepted
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventWorkflowSignaled, input.CoordinationJobID.String(), "计划版本已生成", map[string]any{
 		"demand_id":        input.DemandID.String(),
@@ -544,6 +566,15 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 		ReviewRequired:  revision.ReviewRequired,
 		CreatedEventID:  event.ID,
 	}, nil
+}
+
+// isAutonomousCoordinationMode reports whether mode is one of the autonomous
+// coordination modes (loop today; chat once it lands) that are still allowed
+// to auto-dispatch an accepted plan without human confirmation. Plan mode
+// (empty or "plan") is never autonomous.
+func isAutonomousCoordinationMode(mode string) bool {
+	mode = strings.TrimSpace(mode)
+	return mode == project.CoordinationModeLoop || mode == "chat"
 }
 
 func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {
@@ -3171,6 +3202,54 @@ func (s *ProjectStore) FinishCoordinationJob(ctx context.Context, input FinishCo
 		OutputEventIDs: outputEventIDs,
 	})
 	return err
+}
+
+// noSuitableEmployeeReasonCode / RecommendedAction back the human-visible diagnosis
+// surfaced when planning terminates with the ErrNoSuitableEmployee family. The
+// recommended action always names the three ways out, so a human sees them even if
+// the diagnosis message itself is a raw (non-structural) confidence-score text.
+const (
+	noSuitableEmployeeReasonCode        = "no_suitable_employee"
+	noSuitableEmployeeRecommendedAction = "为项目补充可调度员工、改选更浅的出口交付物，或改用更贴合的场景模板"
+)
+
+// RejectDemandPlanning terminally rejects a demand whose route the planner could
+// not resolve (ErrNoSuitableEmployee family). It advances the demand to the failed
+// terminal state (so it no longer sits in planning_pending forever) and records the
+// diagnosis on a demand-scoped coordination.blocked event — which the web renders as
+// a WorkflowBlockingBanner (message + recommended_action) on the demand detail once
+// the demand's task graph is empty. Idempotent: demand advance is forward-only and
+// the event is deduplicated per demand.
+func (s *ProjectStore) RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error {
+	if s.repository == nil {
+		return ErrActivityStoreRequired
+	}
+	diagnosis := strings.TrimSpace(input.Diagnosis)
+	if diagnosis == "" {
+		diagnosis = "项目员工池无法满足需求的执行约束，规划已终止并转交人类负责人；" + noSuitableEmployeeRecommendedAction
+	}
+	if err := s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID, project.ProjectDemandStatusFailed); err != nil {
+		return err
+	}
+	if _, err := s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventCoordinationBlocked,
+		"demand_planning_rejected:"+input.DemandID.String(), diagnosis, map[string]any{
+			"demand_id":          input.DemandID.String(),
+			"reason_code":        noSuitableEmployeeReasonCode,
+			"recommended_action": noSuitableEmployeeRecommendedAction,
+		}); err != nil {
+		return err
+	}
+	if input.CoordinationJobID != uuid.Nil {
+		if err := s.FinishCoordinationJob(ctx, FinishCoordinationJobInput{
+			TenantID:       input.TenantID,
+			JobID:          input.CoordinationJobID,
+			Status:         "blocked",
+			OutputEventIDs: input.OutputEventIDs,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func coordinatorEvent(tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID, summary string, payload map[string]any) project.AppendProjectEventRequest {

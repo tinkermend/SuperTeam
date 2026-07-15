@@ -89,11 +89,12 @@ func (c *SignalClient) SignalEmployeeTransferRequested(ctx context.Context, sign
 
 func (c *SignalClient) SignalHumanDecisionSubmitted(ctx context.Context, signal project.HumanDecisionSubmittedSignal) error {
 	return c.signal(ctx, signal.TenantID, signal.WorkflowID, signal.ProjectID, SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
-		ApprovalRequestID: signal.ApprovalRequestID,
-		DecisionRequestID: signal.DecisionRequestID,
-		Decision:          signal.Decision,
-		Payload:           signal.Payload,
-		ResolvedEventID:   signal.ResolvedEventID,
+		ApprovalRequestID:     signal.ApprovalRequestID,
+		DecisionRequestID:     signal.DecisionRequestID,
+		Decision:              signal.Decision,
+		Payload:               signal.Payload,
+		ResolvedEventID:       signal.ResolvedEventID,
+		TargetExitDeliverable: signal.TargetExitDeliverable,
 	})
 }
 

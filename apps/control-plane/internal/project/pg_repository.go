@@ -731,17 +731,18 @@ func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjec
 		return ProjectDemand{}, err
 	}
 	row, err := r.q.CreateProjectDemand(ctx, queries.CreateProjectDemandParams{
-		TenantID:          req.TenantID,
-		ProjectID:         req.ProjectID,
-		SubmittedByUserID: req.SubmittedByUserID,
-		Title:             req.Title,
-		Content:           textOrNull(req.Content),
-		SourceType:        string(req.SourceType),
-		SourceRefs:        sourceRefs,
-		Attachments:       attachments,
-		Status:            string(status),
-		CreatedEventID:    nullUUID(createdEventID),
-		CoordinationMode:  req.CoordinationMode,
+		TenantID:            req.TenantID,
+		ProjectID:           req.ProjectID,
+		SubmittedByUserID:   req.SubmittedByUserID,
+		Title:               req.Title,
+		Content:             textOrNull(req.Content),
+		SourceType:          string(req.SourceType),
+		SourceRefs:          sourceRefs,
+		Attachments:         attachments,
+		Status:              string(status),
+		CreatedEventID:      nullUUID(createdEventID),
+		CoordinationMode:    req.CoordinationMode,
+		ScenarioTemplateKey: textFromStringPtr(req.ScenarioTemplateKey),
 	})
 	if err != nil {
 		return ProjectDemand{}, err
@@ -5954,21 +5955,22 @@ func demandFromRecord(row queries.ProjectDemand) (ProjectDemand, error) {
 		}
 	}
 	return ProjectDemand{
-		ID:                 row.ID,
-		TenantID:           row.TenantID,
-		ProjectID:          row.ProjectID,
-		SubmittedByUserID:  row.SubmittedByUserID,
-		Title:              row.Title,
-		Content:            ptrText(row.Content),
-		SourceType:         DemandSourceType(row.SourceType),
-		SourceRefs:         sourceRefs,
-		Attachments:        attachments,
-		ReviewerPreference: preference,
-		Status:             ProjectDemandStatus(row.Status),
-		CreatedEventID:     ptrUUID(row.CreatedEventID),
-		CreatedAt:          row.CreatedAt.Time,
-		UpdatedAt:          row.UpdatedAt.Time,
-		CoordinationMode:   row.CoordinationMode,
+		ID:                  row.ID,
+		TenantID:            row.TenantID,
+		ProjectID:           row.ProjectID,
+		SubmittedByUserID:   row.SubmittedByUserID,
+		Title:               row.Title,
+		Content:             ptrText(row.Content),
+		SourceType:          DemandSourceType(row.SourceType),
+		SourceRefs:          sourceRefs,
+		Attachments:         attachments,
+		ReviewerPreference:  preference,
+		Status:              ProjectDemandStatus(row.Status),
+		CreatedEventID:      ptrUUID(row.CreatedEventID),
+		CreatedAt:           row.CreatedAt.Time,
+		UpdatedAt:           row.UpdatedAt.Time,
+		CoordinationMode:    row.CoordinationMode,
+		ScenarioTemplateKey: ptrText(row.ScenarioTemplateKey),
 	}, nil
 }
 

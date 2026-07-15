@@ -1,4 +1,4 @@
-h1:qZ3RJcsoAgrWPwD5pcbkaZUtwFqoamS3DZuvZydl9yg=
+h1:qxrCFCnjWOlaZkhmB/ODiPOV7PY9LW7JbsYYlRnvW14=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -58,4 +58,5 @@ h1:qZ3RJcsoAgrWPwD5pcbkaZUtwFqoamS3DZuvZydl9yg=
 058_scenario_templates.sql h1:aJpIF7V500n/0thY22Ho9QtlGHH3eNyJg6fGdCxYAGg=
 059_task_hub_tri_mode.sql h1:5W6MzKTRaBiLF3vm97uXIUvwidkTwNE97PSPcOoW1yY=
 060_provider_session_events_drop_stale_sequence_uniq.sql h1:LbS77l1Pglb7hMec5CKAjsoptauskqB1xctX0BvhuUw=
-062_skill_mcp_dependencies.sql h1:NtDpPpdOl7l8x3Z8SZG2gYvMXLDKl6+q6cL1aSHzoCU=
+061_scenario_template_versions_and_demand_binding.sql h1:5CCizlDnb73IKd1qQU1dLdauTJzrAFBN7JOg5m6xxlY=
+062_skill_mcp_dependencies.sql h1:2vzH/ZxA00ZPG3MJbBI86GWJo54RuzBNCenOsGJf4k4=

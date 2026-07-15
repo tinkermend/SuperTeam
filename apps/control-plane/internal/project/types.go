@@ -173,11 +173,12 @@ const (
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
 
-	ProjectEventRuntimePlacementUpdated    ProjectEventType = "project.runtime_placement.updated"
-	ProjectEventRuntimePlacementReleased   ProjectEventType = "project.runtime_placement.released"
-	ProjectEventCoordinationBlocked        ProjectEventType = "coordination.blocked"
-	ProjectEventWorkflowCoordinationFailed ProjectEventType = "workflow.coordination_failed"
-	ProjectEventTaskDispatchBlocked        ProjectEventType = "project_task.dispatch_blocked"
+	ProjectEventRuntimePlacementUpdated          ProjectEventType = "project.runtime_placement.updated"
+	ProjectEventRuntimePlacementReleased         ProjectEventType = "project.runtime_placement.released"
+	ProjectEventCoordinationBlocked              ProjectEventType = "coordination.blocked"
+	ProjectEventScenarioTemplateResolutionFailed ProjectEventType = "scenario_template.resolution_failed"
+	ProjectEventWorkflowCoordinationFailed       ProjectEventType = "workflow.coordination_failed"
+	ProjectEventTaskDispatchBlocked              ProjectEventType = "project_task.dispatch_blocked"
 
 	ProjectEventWorkflowSignaled                ProjectEventType = "workflow.signaled"
 	ProjectEventCoordinationJobCreated          ProjectEventType = "coordination_job.created"
@@ -1218,6 +1219,10 @@ type ProjectDemand struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	CoordinationMode   string
+	// ScenarioTemplateKey binds this demand to a scenario template,
+	// overriding the project's default; nil falls back to the project's
+	// ScenarioTemplateKey (and ultimately the generic fallback).
+	ScenarioTemplateKey *string
 }
 
 type DemandLaunchDetail struct {
@@ -1470,6 +1475,9 @@ type SubmitProjectDemandRequest struct {
 	ReviewerUserID          *uuid.UUID
 	ReviewerSelectionReason ReviewerSelectionReason
 	CoordinationMode        string
+	// ScenarioTemplateKey binds this demand to a scenario template; nil
+	// means fall back to the project's default (and generic beyond that).
+	ScenarioTemplateKey *string
 }
 
 type CreateEvidenceRefServiceRequest struct {
@@ -1529,6 +1537,10 @@ type ResolveDecisionRequest struct {
 	Decision          string
 	Comment           string
 	Payload           map[string]any
+	// TargetExitDeliverable is the human's replacement exit deliverable choice;
+	// only meaningful when Decision is request_changes. It pins the replan's
+	// exit via CoordinationSnapshot.PinnedExitDeliverable.
+	TargetExitDeliverable string
 }
 
 type CompleteProjectTaskRequest struct {

@@ -4493,6 +4493,101 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	}
 }
 
+func TestSubmitDemandRejectsUnknownScenarioTemplateKey(t *testing.T) {
+	newFixture := func(t *testing.T) (*Service, *memoryRepository, uuid.UUID, uuid.UUID, uuid.UUID) {
+		t.Helper()
+		repo := newMemoryRepository()
+		service, err := NewService(repo)
+		if err != nil {
+			t.Fatalf("new service: %v", err)
+		}
+		tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+		projectID := uuid.New()
+		ownerID := uuid.New()
+		repo.projects[projectID] = Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Name:             "需求级模板键验证",
+			Status:           ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		}
+		seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+		service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{bindings: map[string]ScenarioTemplateBinding{
+			"ops_analysis": {Key: "ops_analysis", Name: "运维分析", Status: "active"},
+			"retired":      {Key: "retired", Name: "退役", Status: "disabled"},
+		}})
+		return service, repo, tenantID, projectID, ownerID
+	}
+
+	t.Run("unknown key rejected", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		key := "nope"
+		_, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证未知模板键被拒绝",
+			SourceType:          DemandSourceManual,
+			ScenarioTemplateKey: &key,
+		})
+		if !errors.Is(err, ErrInvalidProject) {
+			t.Fatalf("expected ErrInvalidProject, got %v", err)
+		}
+	})
+
+	t.Run("disabled key rejected", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		key := "retired"
+		_, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证禁用模板键被拒绝",
+			SourceType:          DemandSourceManual,
+			ScenarioTemplateKey: &key,
+		})
+		if !errors.Is(err, ErrInvalidProject) {
+			t.Fatalf("expected ErrInvalidProject, got %v", err)
+		}
+	})
+
+	t.Run("active key accepted and persisted", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		key := " ops_analysis "
+		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证有效模板键落库",
+			SourceType:          DemandSourceManual,
+			ScenarioTemplateKey: &key,
+		})
+		if err != nil {
+			t.Fatalf("submit demand: %v", err)
+		}
+		if demand.ScenarioTemplateKey == nil || *demand.ScenarioTemplateKey != "ops_analysis" {
+			t.Fatalf("expected trimmed bound key, got %#v", demand.ScenarioTemplateKey)
+		}
+	})
+
+	t.Run("no key keeps today's behavior", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			SubmittedByUserID: ownerID,
+			Title:             "验证缺省模板键",
+			SourceType:        DemandSourceManual,
+		})
+		if err != nil {
+			t.Fatalf("submit demand: %v", err)
+		}
+		if demand.ScenarioTemplateKey != nil {
+			t.Fatalf("expected nil key, got %#v", demand.ScenarioTemplateKey)
+		}
+	})
+}
+
 func TestSubmitDemandCoordinationMode(t *testing.T) {
 	newFixture := func() (*memoryRepository, *fakeCoordinatorSignalClient, *Service, uuid.UUID, uuid.UUID) {
 		repo := newMemoryRepository()
@@ -7305,6 +7400,368 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	}
 }
 
+func TestResolveDecisionThreadsTargetExitDeliverableToSignal(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              "rejected",
+		Comment:               "改选出口",
+		TargetExitDeliverable: "  branch_ref  ",
+	})
+	if err != nil {
+		t.Fatalf("resolve decision: %v", err)
+	}
+	if coordinator.decisionSignals != 1 {
+		t.Fatalf("expected decision signal, got count=%d", coordinator.decisionSignals)
+	}
+	if coordinator.lastDecision.TargetExitDeliverable != "branch_ref" {
+		t.Fatalf("expected target exit deliverable to be threaded and trimmed, got %q", coordinator.lastDecision.TargetExitDeliverable)
+	}
+}
+
+func TestResolveDecisionAcceptsRequestChangesForPlanReview(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	planRevisionID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.planRevisions = append(repo.planRevisions, PlanRevision{
+		ID:        planRevisionID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Status:    PlanRevisionStatusPendingReview,
+		Payload: map[string]any{
+			"available_exits": []any{
+				map[string]any{"deliverable": "review_verdict", "label": "审查通过"},
+				map[string]any{"deliverable": "branch_ref", "label": "分支就绪"},
+			},
+		},
+	})
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		PlanRevisionID:    &planRevisionID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              PlanReviewDecisionRequestChanges,
+		Comment:               "改选出口",
+		TargetExitDeliverable: "branch_ref",
+	})
+	if err != nil {
+		t.Fatalf("resolve decision with request_changes: %v", err)
+	}
+	if resolved.StatusSnapshot != PlanReviewDecisionRequestChanges {
+		t.Fatalf("expected request_changes projection, got %s", resolved.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != PlanReviewDecisionRequestChanges {
+		t.Fatalf("expected approval resolver to receive request_changes untouched, got count=%d last=%#v", approvals.calls, approvals.last)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.Decision != PlanReviewDecisionRequestChanges {
+		t.Fatalf("expected decision signal with request_changes untouched, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+	if coordinator.lastDecision.TargetExitDeliverable != "branch_ref" {
+		t.Fatalf("expected target exit deliverable threaded, got %q", coordinator.lastDecision.TargetExitDeliverable)
+	}
+}
+
+func TestResolveDecisionRejectsRequestChangesForNonPlanReview(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "project_acceptance",
+		TitleSnapshot:     "项目验收确认",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanReviewDecisionRequestChanges,
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for request_changes on non-plan_review decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
+func s_findDecisionForTest(repo *memoryRepository, tenantID, projectID, decisionID uuid.UUID) (DecisionRequest, error) {
+	decisions, err := repo.ListDecisionRequests(context.Background(), tenantID, projectID, 100, 0)
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	for _, d := range decisions {
+		if d.ID == decisionID {
+			return d, nil
+		}
+	}
+	return DecisionRequest{}, errors.New("decision not found")
+}
+
+func TestResolveDecisionRejectsUnknownTargetExitDeliverable(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	planRevisionID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.planRevisions = append(repo.planRevisions, PlanRevision{
+		ID:        planRevisionID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Status:    PlanRevisionStatusPendingReview,
+		Payload: map[string]any{
+			"available_exits": []any{
+				map[string]any{"deliverable": "review_verdict", "label": "审查通过"},
+				map[string]any{"deliverable": "branch_ref", "label": "分支就绪"},
+			},
+		},
+	})
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		PlanRevisionID:    &planRevisionID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              PlanReviewDecisionRequestChanges,
+		Comment:               "改选出口",
+		TargetExitDeliverable: "not_a_real_exit",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for target_exit_deliverable not in available_exits, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects for bogus target_exit_deliverable, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
+func TestResolveDecisionRejectsTargetExitDeliverableForUnboundPlanRevision(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	// No PlanRevisionID linkage on the decision — legacy/unbound plan review.
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              PlanReviewDecisionRequestChanges,
+		Comment:               "改选出口",
+		TargetExitDeliverable: "branch_ref",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for target_exit_deliverable on unbound plan revision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects for unbound plan revision, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+}
+
+func TestResolveDecisionRejectsUnknownDecisionValue(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:             decisionID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TargetUserID:   actorID,
+		DecisionType:   "plan_review",
+		TitleSnapshot:  "确认项目计划版本",
+		StatusSnapshot: "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "definitely_not_a_decision",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for unknown decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects for invalid decision, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+}
+
 func TestMemoryRepositoryDecisionRequestCarriesPlanRevisionID(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -8434,6 +8891,7 @@ type memoryRepository struct {
 	projectRuntimePlacements         map[uuid.UUID]ProjectRuntimePlacement
 	transferRequests                 []TransferRequest
 	decisionRequests                 []DecisionRequest
+	planRevisions                    []PlanRevision
 	contextUpdates                   []ProjectTaskAttemptContextUpdate
 	evidenceRefs                     []ProjectEvidenceRef
 	artifactRefs                     []ProjectArtifactRef
@@ -9139,19 +9597,20 @@ func (r *memoryRepository) ListProjectEvents(ctx context.Context, tenantID, proj
 
 func (r *memoryRepository) CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error) {
 	demand := ProjectDemand{
-		ID:                 uuid.New(),
-		TenantID:           req.TenantID,
-		ProjectID:          req.ProjectID,
-		SubmittedByUserID:  req.SubmittedByUserID,
-		Title:              req.Title,
-		Content:            strPtrOrNil(req.Content),
-		SourceType:         req.SourceType,
-		SourceRefs:         req.SourceRefs,
-		Attachments:        req.Attachments,
-		ReviewerPreference: reviewerPreferenceFromSourceRefs(req.SourceRefs),
-		Status:             status,
-		CreatedEventID:     createdEventID,
-		CoordinationMode:   req.CoordinationMode,
+		ID:                  uuid.New(),
+		TenantID:            req.TenantID,
+		ProjectID:           req.ProjectID,
+		SubmittedByUserID:   req.SubmittedByUserID,
+		Title:               req.Title,
+		Content:             strPtrOrNil(req.Content),
+		SourceType:          req.SourceType,
+		SourceRefs:          req.SourceRefs,
+		Attachments:         req.Attachments,
+		ReviewerPreference:  reviewerPreferenceFromSourceRefs(req.SourceRefs),
+		Status:              status,
+		CreatedEventID:      createdEventID,
+		CoordinationMode:    req.CoordinationMode,
+		ScenarioTemplateKey: req.ScenarioTemplateKey,
 	}
 	r.demands = append(r.demands, demand)
 	return demand, nil
@@ -9341,6 +9800,11 @@ func (r *memoryRepository) CreatePlanRevision(ctx context.Context, req CreatePla
 }
 
 func (r *memoryRepository) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (PlanRevision, error) {
+	for _, revision := range r.planRevisions {
+		if revision.ID == revisionID && revision.TenantID == tenantID && revision.ProjectID == projectID {
+			return revision, nil
+		}
+	}
 	return PlanRevision{}, ErrProjectNotFound
 }
 

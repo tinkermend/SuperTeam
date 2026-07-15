@@ -478,4 +478,26 @@ if !validation.Acceptable {
 
 ## 实施记录
 
-（实施时追加：收敛闸门轮数与样本、E2E 逐条结果、偏差与遗留。）
+### Task 10 收敛闸门（2026-07-15，真实 deepseek planner）
+
+**判决点 PASS**：双员工项目（b4226c24）审查合入需求 → **1 轮**收敛至 pending_review（0 拒绝），payload 含 template_key/template_version=2/exit_deliverable=review_verdict/available_exits 全量；规划延迟 25–56s。
+
+- 判据①（只出分支）：PASS，1 轮，exit=branch_ref，仅 develop 任务无 review。
+- 判据②（单员工合入，防自旋）：首验 **FAIL**——暴露三缺陷：ErrNoSuitableEmployee 可重试（Temporal 白烧 3 次 LLM）、需求永久卡 planning_pending 无诊断、低置信检查掩蔽结构缺口出路文案。修复 `a9a4b8a9`（不可重试哨兵 + 需求终局 failed + coordination.blocked 诊断事件 + 结构缺口文案优先）后**复验 PASS**：恰 1 次 LLM 调用即终局（demand d3d93f00），failed 状态与"补充员工"诊断事件全链落库，项目页显示失败徽标；0 signal_failed。
+- 判据③（批准→派发）：PASS，任务经 dispatch gate 真实执行于 local-dev-node/claude-code（attempt 86b1eab5 succeeded）。
+- 修复后 happy-path 回归：PASS（1 轮 pending_review，四眼选角正确，rev abfbf825）。
+
+**遗留（预存在，非本分支引入）：** ① `/workflows/{demandId}` 详情页被无过滤 limit=50 的 workflow-instances feed 重定向逻辑挡住，failed 无任务需求排序垫底进不了首页 → WorkflowBlockingBanner 虽经数据层+组件层验证会逐字渲染诊断，但用户经 UI 导航不可达——**建议 web 侧独立立项**；② ~~replan 路径缺口~~（已在 Task 13 修复 a310259a）；③ planner_provider/planner_model 列全库未回填（既有债）；④ 执行实例直插 DB 的旧 E2E workaround 失效（runtime 现绑项目）。
+
+### Task 13 收尾（2026-07-15，真实链路四场景 + 三轮缺陷修复）
+
+**四场景 E2E 全 PASS**：需求级覆盖（research_report@v2 覆盖项目默认，骨架逐字）、改选出口回灌（resolve 200→重规划钉住 branch_ref 单 develop 任务→再等确认）、generic 回归（无模板正常规划→批准→真实执行 completed）、确认卡渲染（key@v2 / 交付出口 / human_gate 约束说明块，截图存证于 `.superpowers/sdd/task13-evidence/`）。
+
+**E2E 揪出并修复三缺陷**：
+- 缺陷①（4fb58cdf）：无模板需求 payload 带 planner 幻觉出口字段 → 服务端 nil-template 剥离 + web 按 template_version 门控模板/出口行。
+- 缺陷②（a310259a）：改选出口触发的 replan 终局失败仍卡 planning_pending 老路 → replan 路径接入 RejectDemandPlanning 驳回通道。
+- 缺陷③（3e963833 加围栏 → **91e492cc 撤围栏**）：Temporal 非确定性事故的完整弧线——分支中途多次部署使 dev 存量 workflow 历史录入未围栏 reject 命令，事后加 GetVersion 围栏反而使重放分叉、协调线程 WorkflowExecutionFailed 死亡；根因定论：**错误类型（typed NoSuitableEmployee ApplicationError vs 旧 untyped wrapError）本身就是重放判别器，事后围栏有害**。撤围栏 + 新增**真实历史 WorkflowReplayer 回归测试**（testdata 收录真实导出 history，一条历史钉住三个时代）+ 判别器守卫 + reject 活动失败不击穿 survive 门守卫。运维恢复实测：审批点击经 SignalWithStart 拉起新 run 自愈，两条搁浅需求 CLI 补发信号后全部 pending_review，零 TMPRL1100 零 workflow 死亡。生产升级不受此影响（纯 main 历史走判别器旧路径，replay 测试为证）。
+
+**新暴露的平台缺口（待立项，调度韧性家族追加）**：coordinator workflow 死亡期间零告警（coordination_status 恒 registered）、无自动重拉（恢复依赖人为信号触发）；一次 `ProjectTaskDispatchTerminal: project conflict` 终局派发拒绝被 survive 语义掩盖（根因未查）。**建议**：真实历史 replay 测试纳入 CI 门禁（第一块砖已落），workflow 改动必附 replay 证据。
+
+**门禁**：verify:control-plane 过；web 测试串行 726 全绿（并行失败为已知预存在 vitest flake）+ typecheck + build 过。

@@ -82,6 +82,70 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+func TestRejectDemandPlanningAdvancesDemandAndSurfacesDiagnosis(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "通过审查合入",
+			Status:    project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+	diagnosis := "项目员工池无法满足审查独立性约束（需≥2名可调度员工）；可改选更浅出口、为项目补充员工、或换用模板"
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		Diagnosis:         diagnosis,
+	})
+
+	require.NoError(t, err)
+	// Demand must leave planning_pending for a terminal state a human sees ("失败").
+	require.Equal(t, project.ProjectDemandStatusFailed, repo.demand.Status)
+	// The diagnosis surfaces as a demand-scoped coordination.blocked event, which the
+	// web renders as a WorkflowBlockingBanner (message + recommended_action) when the
+	// task graph is empty.
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	require.Equal(t, demandID.String(), blocked[0].Payload["demand_id"])
+	require.Equal(t, "no_suitable_employee", blocked[0].Payload["reason_code"])
+	require.NotNil(t, blocked[0].Summary)
+	require.Contains(t, *blocked[0].Summary, "补充员工")
+	require.NotEmpty(t, blocked[0].Payload["recommended_action"])
+}
+
+func TestRejectDemandPlanningIsIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+	input := RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，为项目补充员工",
+	}
+
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+
+	require.Len(t, eventsByType(repo.events, project.ProjectEventCoordinationBlocked), 1)
+}
+
 func TestLoadProjectCoordinationSnapshotRecordsBlockedEventWhenNoPlannableDigitalEmployee(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -828,6 +892,100 @@ func TestPersistPlanRevisionCoordinationModeNilWhenDemandUnreadable(t *testing.T
 	require.Len(t, repo.planRevisions, 1)
 	require.Nil(t, repo.planRevisions[0].CoordinationMode)
 	_ = result
+}
+
+func TestPersistPlanRevisionPlanModeAlwaysPendingReview(t *testing.T) {
+	// Plan-mode demands must always land in PendingReview for human confirmation,
+	// even when validation is clean and no explicit human review was requested.
+	// Empty coordination_mode (legacy/unset) is treated the same as explicit "plan".
+	for _, mode := range []string{"", project.CoordinationModePlan} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			demandID := uuid.New()
+			jobID := uuid.New()
+			routeID := uuid.New()
+			employeeID := uuid.New()
+			ownerID := uuid.New()
+			repo := &projectStoreMemoryRepository{}
+			repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+			store := NewProjectStore(repo)
+
+			result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          demandID,
+				CoordinationJobID: jobID,
+				RouteDecisionID:   routeID,
+				CoordinationMode:  mode,
+				Decision: RouteDecisionPlan{
+					Reason: "plan 模式全量待复核",
+					Tasks: []PlannedTask{
+						{
+							Key:                     "inspect",
+							Title:                   "检查",
+							Summary:                 "检查输入",
+							TaskKind:                "analysis",
+							SelectedEmployeeID:      employeeID,
+							EmployeeSelectionReason: "具备分析能力",
+							RequiredCapabilities:    []string{"codebase.analysis"},
+							MatchedCapabilities:     []string{"codebase.analysis"},
+							ExpectedOutputs:         []string{"结论"},
+							HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
+						},
+					},
+				},
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
+		})
+	}
+}
+
+func TestPersistPlanRevisionLoopModeKeepsAccepted(t *testing.T) {
+	// Autonomous modes (loop today, chat once it lands) keep the current
+	// conditional-Accepted semantics; this is a temporary carve-out until the
+	// Loop-envelope spec takes over governance of the autonomous path.
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	store := NewProjectStore(repo)
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		CoordinationMode:  project.CoordinationModeLoop,
+		Decision: RouteDecisionPlan{
+			Reason: "loop 模式暂保自动派发",
+			Tasks: []PlannedTask{
+				{
+					Key:                     "inspect",
+					Title:                   "检查",
+					Summary:                 "检查输入",
+					TaskKind:                "analysis",
+					SelectedEmployeeID:      employeeID,
+					EmployeeSelectionReason: "具备分析能力",
+					RequiredCapabilities:    []string{"codebase.analysis"},
+					MatchedCapabilities:     []string{"codebase.analysis"},
+					ExpectedOutputs:         []string{"结论"},
+					HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusAccepted, result.Status)
 }
 
 func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
@@ -6810,5 +6968,86 @@ func TestLoadProjectCoordinationSnapshotDegradesOnUnresolvedTemplate(t *testing.
 	}
 	if snapshot.ScenarioTemplate != nil {
 		t.Fatalf("expected generic fallback (nil), got %#v", snapshot.ScenarioTemplate)
+	}
+}
+
+func TestLoadSnapshotPrefersDemandTemplateKey(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	projectKey := "software_delivery"
+	demandKey := "research_report"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+			ScenarioTemplateKey: &projectKey,
+		},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析",
+			ScenarioTemplateKey: &demandKey,
+		},
+	}
+	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{templates: map[string]ScenarioTemplateSnapshot{
+		"software_delivery": {Key: "software_delivery", Name: "软件交付"},
+		"research_report":   {Key: "research_report", Name: "调研报告"},
+	}})
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+	})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if snapshot.ScenarioTemplate == nil || snapshot.ScenarioTemplate.Key != "research_report" {
+		t.Fatalf("expected demand-level template to win, got %#v", snapshot.ScenarioTemplate)
+	}
+	if snapshot.Demand.ScenarioTemplateKey != "research_report" {
+		t.Fatalf("expected DemandSnapshot.ScenarioTemplateKey to carry demand key, got %q", snapshot.Demand.ScenarioTemplateKey)
+	}
+}
+
+func TestLoadSnapshotResolutionFailureEmitsProjectEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	demandKey := "ghost_template"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+		},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析",
+			ScenarioTemplateKey: &demandKey,
+		},
+	}
+	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{})
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+	})
+	if err != nil {
+		t.Fatalf("load snapshot must not fail on resolution failure: %v", err)
+	}
+	if snapshot.ScenarioTemplate != nil {
+		t.Fatalf("expected generic fallback (nil), got %#v", snapshot.ScenarioTemplate)
+	}
+	var found *project.ProjectEvent
+	for i := range repo.events {
+		if repo.events[i].EventType == project.ProjectEventScenarioTemplateResolutionFailed {
+			found = &repo.events[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected scenario_template.resolution_failed event, got events %#v", repo.events)
+	}
+	if found.ActorID != demandKey {
+		t.Fatalf("expected event actor_id to be requested key %q, got %q", demandKey, found.ActorID)
+	}
+	if found.Payload["requested_key"] != demandKey {
+		t.Fatalf("expected payload requested_key=%q, got %#v", demandKey, found.Payload)
+	}
+	if found.Payload["source"] != "demand" {
+		t.Fatalf("expected payload source=demand, got %#v", found.Payload)
 	}
 }

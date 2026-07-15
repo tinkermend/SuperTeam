@@ -12,7 +12,7 @@ import (
 )
 
 const GetScenarioTemplateByKey = `-- name: GetScenarioTemplateByKey :one
-SELECT id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at FROM scenario_templates
+SELECT id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at, active_version FROM scenario_templates
 WHERE tenant_id = $1::uuid
   AND template_key = $2::text
   AND deleted_at IS NULL
@@ -38,12 +38,13 @@ func (q *Queries) GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioT
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ActiveVersion,
 	)
 	return i, err
 }
 
 const ListScenarioTemplates = `-- name: ListScenarioTemplates :many
-SELECT id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at FROM scenario_templates
+SELECT id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at, active_version FROM scenario_templates
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
 ORDER BY created_at ASC, template_key ASC
@@ -70,6 +71,7 @@ func (q *Queries) ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID)
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ActiveVersion,
 		); err != nil {
 			return nil, err
 		}

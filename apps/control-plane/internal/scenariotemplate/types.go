@@ -16,15 +16,16 @@ import (
 var ErrScenarioTemplateNotFound = errors.New("scenario template not found")
 
 type ScenarioTemplate struct {
-	ID          uuid.UUID
-	TenantID    uuid.UUID
-	Key         string
-	Name        string
-	Description string
-	Spec        map[string]any
-	Status      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID            uuid.UUID
+	TenantID      uuid.UUID
+	Key           string
+	Name          string
+	Description   string
+	Spec          map[string]any
+	Status        string
+	ActiveVersion int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type Repository interface {

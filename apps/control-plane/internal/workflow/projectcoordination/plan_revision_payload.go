@@ -14,6 +14,10 @@ var defaultFinalSummaryRequiredSections = []string{"conclusion", "evidence", "ri
 type PlanRevisionPayload struct {
 	Summary                string                           `json:"summary"`
 	TemplateKey            string                           `json:"template_key,omitempty"`
+	TemplateVersion        int                              `json:"template_version,omitempty"`
+	ExitDeliverable        string                           `json:"exit_deliverable,omitempty"`
+	AvailableExits         []PlanExitOption                 `json:"available_exits,omitempty"`
+	ConstraintNotes        []PlanConstraintNote             `json:"constraint_notes,omitempty"`
 	Assumptions            []string                         `json:"assumptions"`
 	RiskAssessment         PlanRevisionRiskAssessment       `json:"risk_assessment"`
 	HumanReview            PlanRevisionHumanReview          `json:"human_review"`
@@ -135,6 +139,10 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 	return PlanRevisionPayload{
 		Summary:                plan.Reason,
 		TemplateKey:            plan.TemplateKey,
+		TemplateVersion:        plan.TemplateVersion,
+		ExitDeliverable:        plan.ExitDeliverable,
+		AvailableExits:         plan.AvailableExits,
+		ConstraintNotes:        plan.ConstraintNotes,
 		Assumptions:            []string{},
 		RiskAssessment:         riskAssessment,
 		HumanReview:            humanReview,
@@ -284,8 +292,13 @@ func PlanRevisionPayloadToPlannedTasks(payload PlanRevisionPayload) []PlannedTas
 
 func canonicalPlanRevisionPayload(payload PlanRevisionPayload) PlanRevisionPayload {
 	canonical := PlanRevisionPayload{
-		Summary:     payload.Summary,
-		TemplateKey: payload.TemplateKey,
+		Summary:         payload.Summary,
+		TemplateKey:     payload.TemplateKey,
+		TemplateVersion: payload.TemplateVersion,
+		ExitDeliverable: payload.ExitDeliverable,
+		// AvailableExits and ConstraintNotes are server-authored annotations, not
+		// planner decisions: they must not perturb the plan fingerprint, so they are
+		// deliberately excluded from the canonical form below.
 		Assumptions: sortedPlanRevisionStrings(payload.Assumptions),
 		RiskAssessment: PlanRevisionRiskAssessment{
 			HighestRiskLevel: payload.RiskAssessment.HighestRiskLevel,

@@ -52,14 +52,15 @@ func scenarioTemplateFromRow(row queries.ScenarioTemplate) ScenarioTemplate {
 		_ = json.Unmarshal(row.Spec, &spec)
 	}
 	return ScenarioTemplate{
-		ID:          row.ID,
-		TenantID:    row.TenantID,
-		Key:         row.TemplateKey,
-		Name:        row.Name,
-		Description: row.Description,
-		Spec:        spec,
-		Status:      row.Status,
-		CreatedAt:   row.CreatedAt.Time,
-		UpdatedAt:   row.UpdatedAt.Time,
+		ID:            row.ID,
+		TenantID:      row.TenantID,
+		Key:           row.TemplateKey,
+		Name:          row.Name,
+		Description:   row.Description,
+		Spec:          spec,
+		Status:        row.Status,
+		ActiveVersion: int(row.ActiveVersion),
+		CreatedAt:     row.CreatedAt.Time,
+		UpdatedAt:     row.UpdatedAt.Time,
 	}
 }

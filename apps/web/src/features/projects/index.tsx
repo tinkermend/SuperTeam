@@ -680,12 +680,19 @@ export function ProjectsView({
   });
 
   const resolveDecisionMutation = useMutation({
-    mutationFn: (input: { decisionId: string; decision: string }) =>
+    mutationFn: (input: {
+      decisionId: string;
+      decision: string;
+      targetExitDeliverable?: string;
+    }) =>
       resolveProjectDecision(
         apiOptions,
         effectiveProjectId as string,
         input.decisionId,
-        { decision: input.decision },
+        {
+          decision: input.decision,
+          target_exit_deliverable: input.targetExitDeliverable,
+        },
       ),
     onSuccess: async (decisionRequest) => {
       const projectId = decisionRequest.project_id || effectiveProjectId;
@@ -1091,9 +1098,13 @@ export function ProjectsView({
                     onRetryExecutionTrace={() => {
                       void executionTraceQuery.refetch();
                     }}
-                    onResolveDecision={(decisionId, decision) => {
+                    onResolveDecision={(decisionId, decision, targetExitDeliverable) => {
                       if (effectiveProjectId) {
-                        resolveDecisionMutation.mutate({ decisionId, decision });
+                        resolveDecisionMutation.mutate({
+                          decisionId,
+                          decision,
+                          targetExitDeliverable,
+                        });
                       }
                     }}
                     onSubmitDemand={() => setDemandOpen(true)}

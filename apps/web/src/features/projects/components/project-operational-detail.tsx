@@ -21,6 +21,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   IconTile,
   MasterDetailLayout,
@@ -111,7 +119,11 @@ type ProjectOperationalDetailProps = {
     verificationStatus: ProjectEvidenceVerificationStatus,
   ) => void;
   onRetryExecutionTrace?: () => void;
-  onResolveDecision: (decisionId: string, decision: string) => void;
+  onResolveDecision: (
+    decisionId: string,
+    decision: string,
+    targetExitDeliverable?: string,
+  ) => void;
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
   planRevisions: ProjectPlanRevision[];
@@ -179,10 +191,19 @@ export function ProjectOperationalDetail({
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ProjectOperationalTab>(initialTab);
+  const [selectedExitDeliverable, setSelectedExitDeliverable] = useState("");
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab, focusDecisionId]);
+
+  const latestPlanRevision = selectLatestPlanRevision(planRevisions);
+  // A newer plan revision invalidates any exit choice picked against a prior
+  // revision's available_exits — reset it so a stale selection can't be
+  // submitted against the new revision (see request_changes flow below).
+  useEffect(() => {
+    setSelectedExitDeliverable("");
+  }, [latestPlanRevision?.id]);
 
   if (!project) {
     return (
@@ -208,7 +229,6 @@ export function ProjectOperationalDetail({
   const activeTasks = overview?.active_tasks?.length ? overview.active_tasks : tasks;
   const recentEvents = overview?.recent_events?.length ? overview.recent_events : events;
   const currentPhase = overview?.status_summary.current_phase || project.status;
-  const latestPlanRevision = selectLatestPlanRevision(planRevisions);
   const latestPlanReviewDecision = decisionRequests.find(
     (decision) =>
       decision.decision_type === "plan_review" &&
@@ -412,49 +432,96 @@ export function ProjectOperationalDetail({
                       </p>
                     </div>
                     {latestPlanReviewDecision ? (
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        <V3Button
-                          aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
-                          size="sm"
-                          type="button"
-                          onClick={() =>
-                            onResolveDecision(latestPlanReviewDecision.id, "approved")
-                          }
-                        >
-                          批准
-                        </V3Button>
-                        <V3Button
-                          aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                          onClick={() =>
-                            onResolveDecision(
-                              latestPlanReviewDecision.id,
-                              "request_changes",
-                            )
-                          }
-                        >
-                          要求修改
-                        </V3Button>
-                        <V3Button
-                          aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                          onClick={() =>
-                            onResolveDecision(latestPlanReviewDecision.id, "rejected")
-                          }
-                        >
-                          拒绝
-                        </V3Button>
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        {planRevisionAvailableExits(latestPlanRevision).length > 1 ? (
+                          <div className="flex items-center gap-2">
+                            <Label
+                              className="shrink-0 text-xs text-v3-ink-2"
+                              htmlFor="plan-review-target-exit"
+                            >
+                              改选交付出口
+                            </Label>
+                            <Select
+                              value={
+                                selectedExitDeliverable ||
+                                planRevisionExitDeliverable(latestPlanRevision)
+                              }
+                              onValueChange={setSelectedExitDeliverable}
+                            >
+                              <SelectTrigger
+                                className="h-8 w-[220px] text-xs"
+                                id="plan-review-target-exit"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {planRevisionAvailableExits(latestPlanRevision).map(
+                                  (exit) => (
+                                    <SelectItem key={exit.deliverable} value={exit.deliverable}>
+                                      {exit.label}
+                                    </SelectItem>
+                                  ),
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          <V3Button
+                            aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
+                            size="sm"
+                            type="button"
+                            onClick={() =>
+                              onResolveDecision(latestPlanReviewDecision.id, "approved")
+                            }
+                          >
+                            批准
+                          </V3Button>
+                          <V3Button
+                            aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              onResolveDecision(
+                                latestPlanReviewDecision.id,
+                                "request_changes",
+                                planRevisionAvailableExits(latestPlanRevision).length > 1
+                                  ? selectedExitDeliverable ||
+                                      planRevisionExitDeliverable(latestPlanRevision)
+                                  : undefined,
+                              )
+                            }
+                          >
+                            要求修改
+                          </V3Button>
+                          <V3Button
+                            aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              onResolveDecision(latestPlanReviewDecision.id, "rejected")
+                            }
+                          >
+                            拒绝
+                          </V3Button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
-                  {planRevisionTemplateKey(latestPlanRevision) ? (
+                  {planRevisionHasBoundTemplate(latestPlanRevision) &&
+                  planRevisionTemplateKey(latestPlanRevision) ? (
                     <RuntimeMeta
                       label="场景模板"
                       value={planRevisionTemplateKey(latestPlanRevision)}
+                    />
+                  ) : null}
+                  {planRevisionHasBoundTemplate(latestPlanRevision) &&
+                  planRevisionExitLabel(latestPlanRevision) ? (
+                    <RuntimeMeta
+                      label="交付出口"
+                      value={planRevisionExitLabel(latestPlanRevision)}
                     />
                   ) : null}
                   <div className="grid gap-3 md:grid-cols-3">
@@ -546,6 +613,32 @@ export function ProjectOperationalDetail({
                         ) : null}
                       </div>
                     </div>
+
+                    {planRevisionConstraintNotes(latestPlanRevision).length > 0 ? (
+                      <div className="grid gap-2" data-testid="plan-constraint-notes">
+                        <div className="flex items-center gap-2 px-1">
+                          <FileCheck2 className="size-4 text-v3-ink-2" />
+                          <h4 className="text-sm font-semibold text-v3-ink">约束说明</h4>
+                        </div>
+                        <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                          {planRevisionConstraintNotes(latestPlanRevision).map(
+                            (note, index) => (
+                              <div
+                                className="flex items-start gap-2 p-3"
+                                key={`${note.kind}-${index}`}
+                              >
+                                <StatusPill tone={constraintNoteTone(note.kind)}>
+                                  {constraintNoteKindLabel(note.kind)}
+                                </StatusPill>
+                                <p className="min-w-0 flex-1 text-xs text-v3-ink-2">
+                                  {note.message}
+                                </p>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -2122,7 +2215,98 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
+// planRevisionHasBoundTemplate reports whether the plan was generated against a
+// real, bound scenario template. template_version is the authoritative binding
+// marker: server governance stamps it only for bound plans and strips it for
+// unbound/generic demands, so a planner-hallucinated template_key without a
+// version never renders the 场景模板/交付出口 rows.
+function planRevisionHasBoundTemplate(revision: ProjectPlanRevision): boolean {
+  return typeof revision.payload?.["template_version"] === "number";
+}
+
 function planRevisionTemplateKey(revision: ProjectPlanRevision): string {
-  const value = revision.payload?.["template_key"];
+  const key = revision.payload?.["template_key"];
+  if (typeof key !== "string" || !key) {
+    return "";
+  }
+  const version = revision.payload?.["template_version"];
+  return typeof version === "number" ? `${key}@v${version}` : key;
+}
+
+function planRevisionExitDeliverable(revision: ProjectPlanRevision): string {
+  const value = revision.payload?.["exit_deliverable"];
   return typeof value === "string" ? value : "";
+}
+
+function planRevisionAvailableExits(
+  revision: ProjectPlanRevision,
+): { deliverable: string; label: string }[] {
+  const value = revision.payload?.["available_exits"];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const deliverable = stringField(record, "deliverable");
+      if (!deliverable) {
+        return null;
+      }
+      const label = stringField(record, "label");
+      return { deliverable, label: label || deliverable };
+    })
+    .filter((item): item is { deliverable: string; label: string } => item !== null);
+}
+
+function planRevisionExitLabel(revision: ProjectPlanRevision): string {
+  const deliverable = planRevisionExitDeliverable(revision);
+  if (!deliverable) {
+    return "";
+  }
+  const match = planRevisionAvailableExits(revision).find(
+    (exit) => exit.deliverable === deliverable,
+  );
+  return match?.label || deliverable;
+}
+
+function planRevisionConstraintNotes(
+  revision: ProjectPlanRevision,
+): { kind: string; message: string }[] {
+  const value = revision.payload?.["constraint_notes"];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const message = stringField(record, "message");
+      if (!message) {
+        return null;
+      }
+      return { kind: stringField(record, "kind") || "constraint", message };
+    })
+    .filter((item): item is { kind: string; message: string } => item !== null);
+}
+
+function constraintNoteKindLabel(kind: string): string {
+  if (kind === "human_gate") {
+    return "强制人工审批";
+  }
+  if (kind === "collapse") {
+    return "角色合并";
+  }
+  return "约束";
+}
+
+function constraintNoteTone(kind: string): V3Tone {
+  if (kind === "human_gate") {
+    return "warn";
+  }
+  return "mute";
 }

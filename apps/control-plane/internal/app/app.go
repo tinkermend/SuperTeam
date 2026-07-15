@@ -824,5 +824,5 @@ func (a scenarioTemplateSourceAdapter) GetScenarioTemplateSnapshot(ctx context.C
 	if template.Status != "active" {
 		return projectcoordination.ScenarioTemplateSnapshot{}, fmt.Errorf("scenario template %q is %s", key, template.Status)
 	}
-	return projectcoordination.ScenarioTemplateSnapshot{Key: template.Key, Name: template.Name, Spec: template.Spec}, nil
+	return projectcoordination.ScenarioTemplateSnapshot{Key: template.Key, Name: template.Name, Version: template.ActiveVersion, Spec: template.Spec}, nil
 }

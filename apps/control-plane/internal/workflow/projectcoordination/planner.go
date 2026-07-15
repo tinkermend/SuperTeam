@@ -19,19 +19,28 @@ type CoordinationSnapshot struct {
 	// the planner prompt. nil means unbound (generic fallback): the planner
 	// behaves exactly as before templates existed.
 	ScenarioTemplate *ScenarioTemplateSnapshot
+	// PinnedExitDeliverable, when set, forces the planner to use this exact
+	// exit_deliverable instead of choosing one itself. Consumed by Task 11's
+	// revision-loop re-planning; this task only carries the field.
+	PinnedExitDeliverable string `json:"pinned_exit_deliverable,omitempty"`
 }
 
 // ScenarioTemplateSnapshot carries the bound template's content into planning.
 type ScenarioTemplateSnapshot struct {
-	Key  string         `json:"key"`
-	Name string         `json:"name"`
-	Spec map[string]any `json:"spec,omitempty"`
+	Key     string         `json:"key"`
+	Name    string         `json:"name"`
+	Version int            `json:"version,omitempty"`
+	Spec    map[string]any `json:"spec,omitempty"`
 }
 
 type DemandSnapshot struct {
-	ID      uuid.UUID
-	Title   string
-	Content string
+	ID                  uuid.UUID
+	Title               string
+	Content             string
+	ScenarioTemplateKey string `json:"scenario_template_key,omitempty"`
+	// CoordinationMode is the demand's coordination_mode ("plan", "loop", ...),
+	// carried through to gate the plan-confirmation status in PersistPlanRevision.
+	CoordinationMode string `json:"coordination_mode,omitempty"`
 }
 
 type ProjectMemberSnapshot struct {
@@ -58,6 +67,32 @@ type RouteDecisionPlan struct {
 	PlannerMetadata        map[string]any
 	PlanAcceptanceCriteria []PlanAcceptanceCriterion
 	Tasks                  []PlannedTask
+	// ExitDeliverable is the produces key of the scenario_template exit the planner
+	// chose to satisfy the demand — see Task 7/8 for selection and validation.
+	ExitDeliverable string
+	// TemplateVersion is the scenario_template.version the plan was generated against.
+	TemplateVersion int
+	// AvailableExits mirrors scenario_template.spec.exits at plan time, for human
+	// review context.
+	AvailableExits []PlanExitOption
+	// ConstraintNotes are server-authored annotations surfaced alongside the plan
+	// (e.g. forced human gates); they do not affect the plan fingerprint.
+	ConstraintNotes []PlanConstraintNote
+}
+
+// PlanExitOption is one scenario_template exit choice, carried into the plan for
+// human review context.
+type PlanExitOption struct {
+	Deliverable string `json:"deliverable"`
+	Label       string `json:"label"`
+}
+
+// PlanConstraintNote is a server-authored annotation attached to a plan (e.g. a
+// forced human-approval gate). It is informational only and excluded from the
+// plan fingerprint — see canonicalPlanRevisionPayload.
+type PlanConstraintNote struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
 }
 
 type PlannedTask struct {

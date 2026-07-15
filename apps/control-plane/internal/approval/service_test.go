@@ -154,6 +154,53 @@ func TestApprovalServiceProjectsCreatedAndResolvedRequests(t *testing.T) {
 	}
 }
 
+func TestApprovalServiceResolvesRequestChangesDecision(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	targetUserID := uuid.New()
+	request, err := service.CreateRequest(context.Background(), CreateRequestInput{
+		TenantID:      tenantID,
+		ResourceType:  "project_plan_revision",
+		ResourceID:    uuid.New(),
+		RequesterType: "project_coordinator",
+		TargetUserID:  targetUserID,
+		DecisionType:  "plan_review",
+		Title:         "确认项目计划版本",
+		Options:       []any{"approved", "rejected", "request_changes", "cancelled"},
+	})
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	decision, err := service.ResolveRequest(context.Background(), ResolveRequestInput{
+		TenantID:          tenantID,
+		ApprovalRequestID: request.ID,
+		DecidedByUserID:   targetUserID,
+		Decision:          ApprovalDecisionRequestChanges,
+		Comment:           "改选交付出口后重新规划",
+	})
+	if err != nil {
+		t.Fatalf("resolve request with request_changes: %v", err)
+	}
+	if decision.Decision != ApprovalDecisionRequestChanges {
+		t.Fatalf("expected request_changes decision record, got %s", decision.Decision)
+	}
+	resolved, err := service.GetRequest(context.Background(), tenantID, request.ID)
+	if err != nil {
+		t.Fatalf("get resolved request: %v", err)
+	}
+	if resolved.Status != ApprovalStatusRejected {
+		t.Fatalf("expected request_changes to close the approval as rejected, got %s", resolved.Status)
+	}
+	if resolved.ResolvedAt == nil {
+		t.Fatal("expected resolved timestamp")
+	}
+}
+
 func TestApprovalServiceRejectsInvalidAndDuplicateResolution(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
