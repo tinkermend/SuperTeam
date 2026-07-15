@@ -341,3 +341,34 @@ type DeleteEmployeeMCPBindingV2Request struct {
 	UserID            uuid.UUID
 	BindingID         uuid.UUID
 }
+
+// RuntimeSkillRef is a minimal skill reference (id + slug) surfaced by the skill module for
+// runtime-facing consumers that only need identity, not the full skill record.
+type RuntimeSkillRef struct {
+	ID   uuid.UUID
+	Slug string
+}
+
+type EvaluateEmployeeSkillMCPDependenciesRequest struct {
+	TenantID          uuid.UUID
+	UserID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+}
+
+// EmployeeSkillMCPDependencyStatus groups the MCP dependency satisfaction status for one skill
+// bound to a digital employee, for the employee panel data source.
+type EmployeeSkillMCPDependencyStatus struct {
+	SkillID      uuid.UUID
+	SkillSlug    string
+	Dependencies []EmployeeSkillMCPDependencyItem
+}
+
+// EmployeeSkillMCPDependencyItem is one skill -> MCP dependency evaluated against the
+// employee's actual bindings and configured env vars.
+type EmployeeSkillMCPDependencyItem struct {
+	MCPServerID    uuid.UUID
+	ServerKey      string
+	ServerName     string
+	Status         string // satisfied | missing_binding | blocked_missing_env
+	MissingEnvVars []string
+}

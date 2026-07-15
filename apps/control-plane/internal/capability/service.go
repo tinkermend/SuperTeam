@@ -50,13 +50,27 @@ type Repository interface {
 	ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error)
 }
 
+// EmployeeRuntimeSkillLister resolves the runtime-effective skill set for a digital employee.
+// It is satisfied by an adapter over the skill module (see app.go) so this package does not
+// import skill directly.
+type EmployeeRuntimeSkillLister interface {
+	ListEmployeeRuntimeSkillRefs(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeSkillRef, error)
+}
+
 type Service struct {
-	repository Repository
-	sealer     CredentialSealer
+	repository                 Repository
+	sealer                     CredentialSealer
+	employeeRuntimeSkillLister EmployeeRuntimeSkillLister
 }
 
 func NewService(repository Repository, sealer CredentialSealer) *Service {
 	return &Service{repository: repository, sealer: sealer}
+}
+
+// SetEmployeeRuntimeSkillLister wires the skill-module adapter used by
+// EvaluateEmployeeSkillMCPDependencies. Optional: if unset, that method returns an empty result.
+func (s *Service) SetEmployeeRuntimeSkillLister(l EmployeeRuntimeSkillLister) {
+	s.employeeRuntimeSkillLister = l
 }
 
 func (s *Service) CreateCredential(ctx context.Context, req CreateCredentialRequest) (Credential, error) {
@@ -515,6 +529,84 @@ func (s *Service) ListEffectiveMCPConfigForRuntime(ctx context.Context, tenantID
 		TenantID:          tenantID,
 		DigitalEmployeeID: digitalEmployeeID,
 	})
+}
+
+// EvaluateEmployeeSkillMCPDependencies is the employee panel data source: for each skill
+// runtime-effective on the employee, it resolves that skill's declared MCP dependencies and
+// classifies each against the employee's actual bindings as satisfied, missing_binding (no
+// binding at all) or blocked_missing_env (bound but required env vars are not configured).
+func (s *Service) EvaluateEmployeeSkillMCPDependencies(ctx context.Context, req EvaluateEmployeeSkillMCPDependenciesRequest) ([]EmployeeSkillMCPDependencyStatus, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, user_id and employee_id are required", ErrInvalidInput)
+	}
+	if s.employeeRuntimeSkillLister == nil {
+		return nil, nil
+	}
+	refs, err := s.employeeRuntimeSkillLister.ListEmployeeRuntimeSkillRefs(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	skillIDs := make([]uuid.UUID, 0, len(refs))
+	for _, ref := range refs {
+		skillIDs = append(skillIDs, ref.ID)
+	}
+	deps, err := s.repository.ListSkillMCPDependenciesForSkills(ctx, req.TenantID, skillIDs)
+	if err != nil {
+		return nil, err
+	}
+	// ListEffectiveMCPConfigForRuntime resolves the same query as the console effective-config
+	// path (ListEffectiveMCPBindingsV2): every bound server is returned, annotated with
+	// MissingEnvVars rather than excluded. Confirmed against its implementation and against
+	// runtimeMCPListerAdapter in app.go, which does its own post-hoc filtering on MissingEnvVars
+	// before building the Runtime payload — so blocked bindings are not dropped here.
+	effective, err := s.ListEffectiveMCPConfigForRuntime(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	missingEnvByServer := map[uuid.UUID][]string{}
+	boundServers := map[uuid.UUID]struct{}{}
+	for _, server := range effective {
+		boundServers[server.ServerID] = struct{}{}
+		if len(server.MissingEnvVars) > 0 {
+			missingEnvByServer[server.ServerID] = server.MissingEnvVars
+		}
+	}
+	bySkill := map[uuid.UUID]*EmployeeSkillMCPDependencyStatus{}
+	ordered := make([]*EmployeeSkillMCPDependencyStatus, 0, len(refs))
+	for _, ref := range refs {
+		status := &EmployeeSkillMCPDependencyStatus{SkillID: ref.ID, SkillSlug: ref.Slug}
+		bySkill[ref.ID] = status
+		ordered = append(ordered, status)
+	}
+	for _, dep := range deps {
+		item := EmployeeSkillMCPDependencyItem{
+			MCPServerID:    dep.MCPServerID,
+			ServerKey:      dep.ServerKey,
+			ServerName:     dep.ServerName,
+			Status:         "satisfied",
+			MissingEnvVars: []string{},
+		}
+		if _, bound := boundServers[dep.MCPServerID]; !bound {
+			item.Status = "missing_binding"
+		} else if missing, blocked := missingEnvByServer[dep.MCPServerID]; blocked {
+			item.Status = "blocked_missing_env"
+			item.MissingEnvVars = missing
+		}
+		if status, ok := bySkill[dep.SkillID]; ok {
+			status.Dependencies = append(status.Dependencies, item)
+		}
+	}
+	out := make([]EmployeeSkillMCPDependencyStatus, 0, len(ordered))
+	for _, status := range ordered {
+		out = append(out, *status)
+	}
+	return out, nil
 }
 
 func (s *Service) requireActiveMCPDefinition(ctx context.Context, tenantID, serverID uuid.UUID) (MCPDefinition, error) {

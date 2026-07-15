@@ -39,6 +39,7 @@ type HandlerService interface {
 	ListSkillMCPDependencies(ctx context.Context, req ListSkillMCPDependenciesRequest) ([]SkillMCPDependency, error)
 	ReplaceSkillMCPDependencies(ctx context.Context, req ReplaceSkillMCPDependenciesRequest) ([]SkillMCPDependency, error)
 	ListDependentSkills(ctx context.Context, req ListDependentSkillsRequest) ([]DependentSkill, error)
+	EvaluateEmployeeSkillMCPDependencies(ctx context.Context, req EvaluateEmployeeSkillMCPDependenciesRequest) ([]EmployeeSkillMCPDependencyStatus, error)
 }
 
 type HTTPHandler struct {
@@ -639,6 +640,36 @@ func (h *HTTPHandler) ListDependentSkills(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, dependentSkillResponses(skills))
 }
 
+// ListEmployeeSkillMCPDependencyStatus is the employee panel data source: per-skill MCP
+// dependency satisfaction status (satisfied | missing_binding | blocked_missing_env) for the
+// skills runtime-effective on a digital employee. Read-only; gated by the same registry-read
+// action as the other MCP registry list endpoints.
+func (h *HTTPHandler) ListEmployeeSkillMCPDependencyStatus(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := uuidParam(w, r, "employeeId", "invalid employee id")
+	if !ok {
+		return
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionMCPRegistryRead, authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()}, "employee skill mcp dependency status read", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	statuses, err := service.EvaluateEmployeeSkillMCPDependencies(r.Context(), EvaluateEmployeeSkillMCPDependenciesRequest{
+		TenantID:          tenantID,
+		UserID:            userID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, employeeSkillMCPDependencyStatusResponses(statuses))
+}
+
 func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "capability service is not configured", http.StatusServiceUnavailable)
@@ -990,6 +1021,46 @@ func dependentSkillResponses(skills []DependentSkill) []dependentSkillResponse {
 	out := make([]dependentSkillResponse, 0, len(skills))
 	for _, s := range skills {
 		out = append(out, dependentSkillResponse{SkillID: s.SkillID.String(), Slug: s.Slug, Name: s.Name})
+	}
+	return out
+}
+
+type employeeSkillMCPDependencyItemResponse struct {
+	MCPServerID    string   `json:"mcp_server_id"`
+	ServerKey      string   `json:"server_key"`
+	ServerName     string   `json:"server_name"`
+	Status         string   `json:"status"`
+	MissingEnvVars []string `json:"missing_env_vars"`
+}
+
+type employeeSkillMCPDependencyStatusResponse struct {
+	SkillID      string                                   `json:"skill_id"`
+	SkillSlug    string                                   `json:"skill_slug"`
+	Dependencies []employeeSkillMCPDependencyItemResponse `json:"dependencies"`
+}
+
+func employeeSkillMCPDependencyStatusResponses(statuses []EmployeeSkillMCPDependencyStatus) []employeeSkillMCPDependencyStatusResponse {
+	out := make([]employeeSkillMCPDependencyStatusResponse, 0, len(statuses))
+	for _, status := range statuses {
+		deps := make([]employeeSkillMCPDependencyItemResponse, 0, len(status.Dependencies))
+		for _, dep := range status.Dependencies {
+			missingEnvVars := dep.MissingEnvVars
+			if missingEnvVars == nil {
+				missingEnvVars = []string{}
+			}
+			deps = append(deps, employeeSkillMCPDependencyItemResponse{
+				MCPServerID:    dep.MCPServerID.String(),
+				ServerKey:      dep.ServerKey,
+				ServerName:     dep.ServerName,
+				Status:         dep.Status,
+				MissingEnvVars: missingEnvVars,
+			})
+		}
+		out = append(out, employeeSkillMCPDependencyStatusResponse{
+			SkillID:      status.SkillID.String(),
+			SkillSlug:    status.SkillSlug,
+			Dependencies: deps,
+		})
 	}
 	return out
 }

@@ -341,8 +341,10 @@ type serviceRepo struct {
 	createdV2Binding    CreateEmployeeMCPBindingV2Request
 	createdV2BindingHit bool
 
-	definitions     map[uuid.UUID]MCPDefinition
-	dependentSkills map[uuid.UUID][]DependentSkill
+	definitions          map[uuid.UUID]MCPDefinition
+	dependentSkills      map[uuid.UUID][]DependentSkill
+	skillMCPDependencies map[uuid.UUID][]SkillMCPDependency // keyed by skill ID
+	effectiveByEmployee  map[uuid.UUID][]EffectiveMCPServer // keyed by digital employee ID
 }
 
 func (r *serviceRepo) CreateCredential(_ context.Context, req CreateCredentialStoreRequest) (Credential, error) {
@@ -459,8 +461,8 @@ func (r *serviceRepo) DeleteEmployeeMCPBindingV2(context.Context, DeleteEmployee
 	return nil
 }
 
-func (r *serviceRepo) ListEffectiveMCPBindingsV2(context.Context, EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
-	return nil, nil
+func (r *serviceRepo) ListEffectiveMCPBindingsV2(_ context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
+	return r.effectiveByEmployee[req.DigitalEmployeeID], nil
 }
 
 func (r *serviceRepo) ListConfiguredEmployeeEnvVarNames(context.Context, uuid.UUID, uuid.UUID) ([]string, error) {
@@ -479,8 +481,12 @@ func (r *serviceRepo) ListDependentSkills(_ context.Context, _, serverID uuid.UU
 	return r.dependentSkills[serverID], nil
 }
 
-func (r *serviceRepo) ListSkillMCPDependenciesForSkills(context.Context, uuid.UUID, []uuid.UUID) ([]SkillMCPDependency, error) {
-	return nil, nil
+func (r *serviceRepo) ListSkillMCPDependenciesForSkills(_ context.Context, _ uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error) {
+	var out []SkillMCPDependency
+	for _, skillID := range skillIDs {
+		out = append(out, r.skillMCPDependencies[skillID]...)
+	}
+	return out, nil
 }
 
 // seedDefinition registers an in-memory MCP definition and returns its generated ID, for
@@ -502,9 +508,11 @@ func (r *serviceRepo) seedDefinition(tenantID uuid.UUID, serverKey string) uuid.
 }
 
 // seedDependency records a dependent-skill row keyed by server ID, for
-// ListDependentSkills / delete-protection tests.
+// ListDependentSkills / delete-protection tests. It also records the corresponding
+// SkillMCPDependency (keyed by skill ID, enriched from any definition seeded via
+// seedDefinition) for ListSkillMCPDependenciesForSkills / EvaluateEmployeeSkillMCPDependencies
+// tests.
 func (r *serviceRepo) seedDependency(tenantID, skillID, serverID uuid.UUID) {
-	_ = tenantID
 	if r.dependentSkills == nil {
 		r.dependentSkills = map[uuid.UUID][]DependentSkill{}
 	}
@@ -513,6 +521,40 @@ func (r *serviceRepo) seedDependency(tenantID, skillID, serverID uuid.UUID) {
 		Slug:    "dependent-skill",
 		Name:    "Dependent Skill",
 	})
+	def := r.definitions[serverID]
+	if r.skillMCPDependencies == nil {
+		r.skillMCPDependencies = map[uuid.UUID][]SkillMCPDependency{}
+	}
+	r.skillMCPDependencies[skillID] = append(r.skillMCPDependencies[skillID], SkillMCPDependency{
+		ID:          uuid.New(),
+		TenantID:    tenantID,
+		SkillID:     skillID,
+		MCPServerID: serverID,
+		ServerKey:   def.ServerKey,
+		ServerName:  def.Name,
+	})
+}
+
+// seedEffective records an effective (bound) MCP server for an employee, for
+// EvaluateEmployeeSkillMCPDependencies tests. A non-empty missingEnvVars marks the binding
+// blocked_missing_env.
+func (r *serviceRepo) seedEffective(employeeID, serverID uuid.UUID, missingEnvVars []string) {
+	if r.effectiveByEmployee == nil {
+		r.effectiveByEmployee = map[uuid.UUID][]EffectiveMCPServer{}
+	}
+	r.effectiveByEmployee[employeeID] = append(r.effectiveByEmployee[employeeID], EffectiveMCPServer{
+		ServerID:       serverID,
+		MissingEnvVars: missingEnvVars,
+	})
+}
+
+type fakeRuntimeSkillLister struct {
+	refs []RuntimeSkillRef
+	err  error
+}
+
+func (f fakeRuntimeSkillLister) ListEmployeeRuntimeSkillRefs(context.Context, uuid.UUID, uuid.UUID) ([]RuntimeSkillRef, error) {
+	return f.refs, f.err
 }
 
 func TestServiceReplaceSkillMCPDependenciesValidatesServerExists(t *testing.T) {
@@ -623,5 +665,75 @@ func TestServiceCreateEmployeeMCPBindingV2RejectsDisabledMCP(t *testing.T) {
 	}
 	if repo.createdV2BindingHit {
 		t.Fatalf("disabled mcp must not create a binding")
+	}
+}
+
+func TestServiceEvaluatesEmployeeSkillMCPDependencyStatus(t *testing.T) {
+	repo := &serviceRepo{}
+	svc := NewService(repo, nil)
+	tenantID, userID, employeeID, skillID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	boundServer := repo.seedDefinition(tenantID, "bound-mcp") // 已绑定且 env 满足
+	envBlocked := repo.seedDefinition(tenantID, "env-mcp")    // 已绑定但缺 env（fake effective 返回 MissingEnvVars）
+	unbound := repo.seedDefinition(tenantID, "unbound-mcp")   // 未绑定
+	repo.seedDependency(tenantID, skillID, boundServer)
+	repo.seedDependency(tenantID, skillID, envBlocked)
+	repo.seedDependency(tenantID, skillID, unbound)
+	repo.seedEffective(employeeID, boundServer, nil)
+	repo.seedEffective(employeeID, envBlocked, []string{"GH_TOKEN"})
+	svc.SetEmployeeRuntimeSkillLister(fakeRuntimeSkillLister{refs: []RuntimeSkillRef{{ID: skillID, Slug: "deploy-helper"}}})
+
+	statuses, err := svc.EvaluateEmployeeSkillMCPDependencies(context.Background(), EvaluateEmployeeSkillMCPDependenciesRequest{TenantID: tenantID, UserID: userID, DigitalEmployeeID: employeeID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(statuses) != 1 || len(statuses[0].Dependencies) != 3 {
+		t.Fatalf("expected 1 skill with 3 dependencies, got %+v", statuses)
+	}
+	if statuses[0].SkillID != skillID || statuses[0].SkillSlug != "deploy-helper" {
+		t.Fatalf("unexpected skill identity: %+v", statuses[0])
+	}
+	byKey := map[string]string{}
+	missingEnvByKey := map[string][]string{}
+	for _, dep := range statuses[0].Dependencies {
+		byKey[dep.ServerKey] = dep.Status
+		missingEnvByKey[dep.ServerKey] = dep.MissingEnvVars
+	}
+	if byKey["bound-mcp"] != "satisfied" || byKey["env-mcp"] != "blocked_missing_env" || byKey["unbound-mcp"] != "missing_binding" {
+		t.Fatalf("unexpected statuses: %v", byKey)
+	}
+	if len(missingEnvByKey["bound-mcp"]) != 0 || len(missingEnvByKey["unbound-mcp"]) != 0 {
+		t.Fatalf("missing_env_vars must be empty outside blocked_missing_env: %v", missingEnvByKey)
+	}
+	if len(missingEnvByKey["env-mcp"]) != 1 || missingEnvByKey["env-mcp"][0] != "GH_TOKEN" {
+		t.Fatalf("expected missing_env_vars [GH_TOKEN] for env-mcp, got %v", missingEnvByKey["env-mcp"])
+	}
+}
+
+func TestServiceEvaluateEmployeeSkillMCPDependenciesReturnsEmptyWhenListerUnset(t *testing.T) {
+	repo := &serviceRepo{}
+	svc := NewService(repo, nil)
+	tenantID, userID, employeeID := uuid.New(), uuid.New(), uuid.New()
+
+	statuses, err := svc.EvaluateEmployeeSkillMCPDependencies(context.Background(), EvaluateEmployeeSkillMCPDependenciesRequest{TenantID: tenantID, UserID: userID, DigitalEmployeeID: employeeID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Fatalf("expected empty result when no lister is wired, got %+v", statuses)
+	}
+}
+
+func TestServiceEvaluateEmployeeSkillMCPDependenciesReturnsEmptyWhenEmployeeHasNoSkills(t *testing.T) {
+	repo := &serviceRepo{}
+	svc := NewService(repo, nil)
+	svc.SetEmployeeRuntimeSkillLister(fakeRuntimeSkillLister{refs: nil})
+	tenantID, userID, employeeID := uuid.New(), uuid.New(), uuid.New()
+
+	statuses, err := svc.EvaluateEmployeeSkillMCPDependencies(context.Background(), EvaluateEmployeeSkillMCPDependenciesRequest{TenantID: tenantID, UserID: userID, DigitalEmployeeID: employeeID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Fatalf("expected empty result when employee has no runtime skills, got %+v", statuses)
 	}
 }

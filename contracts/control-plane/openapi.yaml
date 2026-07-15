@@ -2468,6 +2468,23 @@ paths:
                   $ref: "#/components/schemas/EffectiveMCPConfigServer"
         "403":
           $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/skill-mcp-dependency-status:
+    get:
+      operationId: listEmployeeSkillMCPDependencyStatus
+      summary: List per-skill MCP dependency satisfaction status for a digital employee
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Skill MCP dependency status list, grouped by skill
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeSkillMCPDependencyStatus"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/overview:
     get:
       operationId: getTeamOverview
@@ -9358,6 +9375,48 @@ components:
           type: string
         status:
           type: string
+    EmployeeSkillMCPDependencyItem:
+      type: object
+      required:
+        - mcp_server_id
+        - server_key
+        - server_name
+        - status
+        - missing_env_vars
+      properties:
+        mcp_server_id:
+          type: string
+          format: uuid
+        server_key:
+          type: string
+        server_name:
+          type: string
+        status:
+          type: string
+          enum:
+            - satisfied
+            - missing_binding
+            - blocked_missing_env
+        missing_env_vars:
+          type: array
+          items:
+            type: string
+    EmployeeSkillMCPDependencyStatus:
+      type: object
+      required:
+        - skill_id
+        - skill_slug
+        - dependencies
+      properties:
+        skill_id:
+          type: string
+          format: uuid
+        skill_slug:
+          type: string
+        dependencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmployeeSkillMCPDependencyItem"
     UploadSkillRequest:
       type: object
       required:

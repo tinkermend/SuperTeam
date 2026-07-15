@@ -265,6 +265,9 @@ type handlerService struct {
 	listSkillDependenciesReq  ListSkillMCPDependenciesRequest
 	replaceSkillDependencyReq ReplaceSkillMCPDependenciesRequest
 	listDependentSkillsReq    ListDependentSkillsRequest
+
+	employeeSkillMCPDependencyStatuses []EmployeeSkillMCPDependencyStatus
+	evaluateEmployeeSkillMCPDepsReq    EvaluateEmployeeSkillMCPDependenciesRequest
 }
 
 func (s *handlerService) CreateCredential(_ context.Context, req CreateCredentialRequest) (Credential, error) {
@@ -371,6 +374,11 @@ func (s *handlerService) ReplaceSkillMCPDependencies(_ context.Context, req Repl
 func (s *handlerService) ListDependentSkills(_ context.Context, req ListDependentSkillsRequest) ([]DependentSkill, error) {
 	s.listDependentSkillsReq = req
 	return s.dependentSkills, s.err
+}
+
+func (s *handlerService) EvaluateEmployeeSkillMCPDependencies(_ context.Context, req EvaluateEmployeeSkillMCPDependenciesRequest) ([]EmployeeSkillMCPDependencyStatus, error) {
+	s.evaluateEmployeeSkillMCPDepsReq = req
+	return s.employeeSkillMCPDependencyStatuses, s.err
 }
 
 type handlerAuthorizer struct {
@@ -651,6 +659,75 @@ func TestHandlerListDependentSkillsReturnsRecordsWithReadAction(t *testing.T) {
 	}
 	if got["name"] != "Search Helper" {
 		t.Fatalf("unexpected name: %#v", got)
+	}
+}
+
+func TestHandlerListEmployeeSkillMCPDependencyStatusReturnsRecordsWithReadAction(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	employeeID := uuid.New()
+	skillID := uuid.New()
+	serverID := uuid.New()
+	service := &handlerService{
+		employeeSkillMCPDependencyStatuses: []EmployeeSkillMCPDependencyStatus{
+			{
+				SkillID:   skillID,
+				SkillSlug: "deploy-helper",
+				Dependencies: []EmployeeSkillMCPDependencyItem{
+					{
+						MCPServerID:    serverID,
+						ServerKey:      "github-mcp",
+						ServerName:     "GitHub MCP",
+						Status:         "missing_binding",
+						MissingEnvVars: []string{},
+					},
+				},
+			},
+		},
+	}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	req := requestWithConsoleIdentity(
+		requestWithChiParams(httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/skill-mcp-dependency-status", nil), map[string]string{"employeeId": employeeID.String()}),
+		tenantID,
+		userID,
+	)
+	resp := httptest.NewRecorder()
+	handler.ListEmployeeSkillMCPDependencyStatus(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionMCPRegistryRead || authorizer.checks[0].Resource.Type != authz.ResourceTenant || authorizer.checks[0].Resource.ID != tenantID.String() {
+		t.Fatalf("expected one tenant-scoped mcp_registry.read check, got %#v", authorizer.checks)
+	}
+	if service.evaluateEmployeeSkillMCPDepsReq.TenantID != tenantID || service.evaluateEmployeeSkillMCPDepsReq.UserID != userID || service.evaluateEmployeeSkillMCPDepsReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected evaluate request: %#v", service.evaluateEmployeeSkillMCPDepsReq)
+	}
+
+	var response []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response) != 1 {
+		t.Fatalf("expected one skill status, got %#v", response)
+	}
+	got := response[0]
+	if got["skill_id"] != skillID.String() || got["skill_slug"] != "deploy-helper" {
+		t.Fatalf("unexpected skill status: %#v", got)
+	}
+	deps, ok := got["dependencies"].([]any)
+	if !ok || len(deps) != 1 {
+		t.Fatalf("expected one dependency, got %#v", got)
+	}
+	dep := deps[0].(map[string]any)
+	if dep["mcp_server_id"] != serverID.String() || dep["server_key"] != "github-mcp" || dep["server_name"] != "GitHub MCP" || dep["status"] != "missing_binding" {
+		t.Fatalf("unexpected dependency: %#v", dep)
+	}
+	if missingEnvVars, ok := dep["missing_env_vars"].([]any); !ok || len(missingEnvVars) != 0 {
+		t.Fatalf("expected empty missing_env_vars, got %#v", dep["missing_env_vars"])
 	}
 }
 

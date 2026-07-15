@@ -438,6 +438,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.ListEmployeeMCPBindingsV2)
 				r.Delete("/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBindingV2)
 				r.Get("/digital-employees/{employeeId}/effective-mcp-config", s.capabilityHandler.ListEffectiveMCPConfig)
+				r.Get("/digital-employees/{employeeId}/skill-mcp-dependency-status", s.capabilityHandler.ListEmployeeSkillMCPDependencyStatus)
 			})
 		}
 

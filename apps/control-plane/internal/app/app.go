@@ -153,6 +153,28 @@ func (a skillMCPDependencyListerAdapter) ListSkillMCPDependenciesForSkills(ctx c
 	return out, nil
 }
 
+// employeeRuntimeSkillListerAdapter bridges the skill module's runtime-effective skill lookup
+// to the capability service's EmployeeRuntimeSkillLister, used by
+// EvaluateEmployeeSkillMCPDependencies (employee panel data source).
+type employeeRuntimeSkillListerAdapter struct {
+	skills *skill.Service
+}
+
+func (a employeeRuntimeSkillListerAdapter) ListEmployeeRuntimeSkillRefs(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]capability.RuntimeSkillRef, error) {
+	if a.skills == nil {
+		return nil, nil
+	}
+	records, err := a.skills.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]capability.RuntimeSkillRef, 0, len(records))
+	for _, record := range records {
+		refs = append(refs, capability.RuntimeSkillRef{ID: record.ID, Slug: record.Slug})
+	}
+	return refs, nil
+}
+
 func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req employee.RuntimeEventRecordRequest) error {
 	if a.runtimeService == nil {
 		return nil
@@ -590,6 +612,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 	runService.SetSkillMCPDependencyLister(skillMCPDependencyListerAdapter{capability: capabilityService})
+	capabilityService.SetEmployeeRuntimeSkillLister(employeeRuntimeSkillListerAdapter{skills: skillService})
 
 	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
 	if err != nil {
