@@ -243,7 +243,7 @@ Run: 同 Step 2。Expected: PASS。
 - [ ] **Step 2: 失败** → **Step 3: 实现**。:287 的骨架指令行替换为（一整行英文 prompt，保持既有风格）：
 
 ```
-"When the snapshot contains scenario_template, first choose exit_deliverable: exactly one deliverable name from scenario_template.spec.exits that best matches how far the demand asks to go (if snapshot.pinned_exit_deliverable is set, you MUST use it verbatim). Then instantiate ONLY the skeleton steps in the dependency-ancestor closure of the step producing that deliverable: one task per included step in order, honoring depends_on edges, seeding each task's produces from that step's produces_defaults (names verbatim) and its input_requirements.required_inputs from required_inputs_defaults; use the matching spec.roles required_capabilities as capability annotations and fold the spec.default_acceptance_criteria whose applies_from_exit is at or before your chosen exit into plan_acceptance_criteria. You may add tasks the demand genuinely needs beyond the skeleton, but never drop an included skeleton step or rename its produces names. Every skeleton-derived task is still a full task object: include ALL required task fields exactly as for any other task.",
+"When the snapshot contains scenario_template, first choose exit_deliverable: exactly one deliverable name from scenario_template.spec.exits that best matches how far the demand asks to go — prefer the SHALLOWEST exit that satisfies the demand; never go deeper than the demand explicitly requires (if snapshot.pinned_exit_deliverable is set, you MUST use it verbatim). Then instantiate ONLY the skeleton steps in the dependency-ancestor closure of the step producing that deliverable: one task per included step in order, honoring depends_on edges, seeding each task's produces from that step's produces_defaults (names verbatim) and its input_requirements.required_inputs from required_inputs_defaults; use the matching spec.roles required_capabilities as capability annotations and fold the spec.default_acceptance_criteria whose applies_from_exit is at or before your chosen exit into plan_acceptance_criteria. You may add tasks the demand genuinely needs beyond the skeleton, but never drop an included skeleton step or rename its produces names. Every skeleton-derived task is still a full task object: include ALL required task fields exactly as for any other task.",
 ```
 
 → **Step 4: 通过**（`go test ./internal/workflow/projectcoordination/ -count=1`）→ **Step 5: Commit** — `feat(planner): exit_deliverable 贯通 plan/prompt/payload`
@@ -360,13 +360,16 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
   1. `TestGovernanceRoleIndependenceViolation` — exit=review_verdict，develop 与 review 任务同为员工 A → `ErrInvalidRouteDecision`，message 含 `role_independence` 与两角色名。
   2. `TestGovernanceRoleIndependencePassesWithTwoEmployees` — review 归员工 B → NoError。
   3. `TestGovernanceRoleIndependenceNotTriggeredBelowExit` — exit=branch_ref（review 不在剪枝集）→ 同员工 NoError（`when.exit_at_or_beyond` 未命中）。
+  3b. `TestGovernanceRoleIndependenceStructuralGapEscalates` — 池内仅 1 名活跃 executor、exit=review_verdict → 返回 `ErrNoSuitableEmployee` 家族错误（**不是** `ErrInvalidRouteDecision`），message 含"补充员工"出路提示——防单员工项目重规划自旋。
   4. `TestGovernanceHumanGateForcesApproval` — exit=release_record、全链任务 → release 步骤任务 `RequiresHumanApproval==true`（即使 planner 置 false），`ConstraintNotes` 含 `{Kind:"human_gate"}`。
   5. `TestGovernanceCollapseNoteAnnotates` — developer 与 tester 同员工（collapse_rules 命中）→ NoError 但 `plan.RequiresHumanReview==true` 且 notes 含 `{Kind:"collapse"}`、message 含两角色标题。
   6. `TestGovernancePopulatesVersionAndExits` — 执行后 `plan.TemplateVersion==snapshot.ScenarioTemplate.Version`、`AvailableExits` 与 spec.Exits 等长同序。
 - [ ] **Step 2: 失败** → **Step 3: 实现**要点：
   - 条件判定 `exitCondMet(spec, cond SpecConstraintWhen, exit string) bool`：cond 空 → true；否则 `spec.ExitIndex(exit) >= spec.ExitIndex(cond.ExitAtOrBeyond)`（exit 未知时按 true 处理，宁严勿漏）。
   - 角色→员工映射：对剪枝集内每个 step，用第一条 produces_defaults 名经 `producedBy` 找任务 → `SelectedEmployeeID`；一个角色可能对应多 step，聚成 `map[roleKey]map[uuid.UUID]bool`。
-  - `role_independence`：两角色员工集合有交集 → `invalidRouteDecision("constraint role_independence violated: roles %v share employee %s", c.Roles, id)`。
+  - `role_independence`：两角色员工集合有交集时**必须区分两种失败**（防单员工项目陷入必死重规划自旋——真实用户第一天就会踩到）：
+    - 池内活跃 executor ≥2（planner 本可以换人）→ `invalidRouteDecision("constraint role_independence violated: roles %v share employee %s", c.Roles, id)`（回灌重规划）；
+    - 池内活跃 executor 不足以让两角色独立（结构性缺口，重规划无解）→ 返回 `ErrNoSuitableEmployee` 家族错误（沿用 graph_validation.go:68-70 置信度不足的同一"非 plan 缺陷"通道，终止转人类），message 必须带可行出路：`"项目员工池无法满足审查独立性约束（需≥2名可调度员工）；可改选更浅出口、为项目补充员工、或换用模板"`。
   - `stage_required`：目标 step 不在剪枝集或无对应任务 → 违反（剪枝通常已保证祖先，本约束防出口序声明与依赖图不一致的模板数据）。
   - `human_gate`：target step 的任务 `RequiresHumanApproval=true` + note（message 格式：`发布任务已强制人类审批：由 human_gate@<key> v<version> 触发`）。
   - collapse：**服务端生成**标注（不要求 planner 自报——比 spec §3.4-3 的"缺标注拒绝"更强且不可遗漏，实现处注释说明此偏差），note.Kind="collapse"，`plan.RequiresHumanReview=true`。
@@ -417,7 +420,7 @@ if !validation.Acceptable {
 - [ ] **Step 3: 测量收敛（判决点）**：`psql "$DATABASE_URL"` 查 route decisions / plan revisions（或 `curl -s --cookie <会话> http://localhost:8080/api/v1/projects/{projectId}/plan-revisions | jq '.[].status'`）。统计从需求提交到出现 `pending_review` 版本之间被 `ErrInvalidRouteDecision` 家族拒绝的规划轮数（control-plane 日志 `rg "invalid route decision" logs/`）。
   - **通过标准**：≤2 轮内产出通过全部新校验（骨架遵循+约束+出口）的 pending_review 计划，payload 含 `template_key/template_version/exit_deliverable/available_exits`。
   - **失败处置**：>2 轮或死循环 → **停止后续任务**，记录失败样本（planner 原始输出+拒绝理由），回到 spec 评审"放宽校验 or 加固 prompt or 引入结构化重试反馈"，不得带病推进 Task 11/12。
-- [ ] **Step 4: 顺手验证三条判据**：① 同需求换措辞"只出分支不用合入" → 计划 exit=branch_ref 且无 review 任务；② 单员工项目提"合入"需求 → 规划期被 role_independence 拒绝（当前无补员出路，确认拒绝理由结构化可读即可，缺口报告 UI 是 P2b）；③ 批准 pending_review 计划 → 正常派发执行。
+- [ ] **Step 4: 顺手验证三条判据**：① 同需求换措辞"只出分支不用合入" → 计划 exit=branch_ref 且无 review 任务；② 单员工项目提"合入"需求 → **一轮内终止**走 `ErrNoSuitableEmployee` 通道转人类（在需求驳回诊断处可读、含出路提示；绝不进入重规划自旋——psql/日志确认 route decision 只有一轮）；③ 批准 pending_review 计划 → 正常派发执行。
 - [ ] **Step 5: 记录**：把轮数、样本、三条判据结果写进本文件"实施记录"节并 commit — `docs(plan): P2a 收敛闸门 E2E 记录`
 
 ---
