@@ -200,6 +200,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 		CoordinationJobID: job.ID,
 		RouteDecisionID:   route.ID,
 		Decision:          decision,
+		CoordinationMode:  snapshot.Demand.CoordinationMode,
 	}).Get(ctx, &planRevision); err != nil {
 		return nil, err
 	}
@@ -454,6 +455,7 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 		Decision:          decision,
 		SupersedeOpen:     true,
 		SupersedeReason:   supersedeReason,
+		CoordinationMode:  snapshot.Demand.CoordinationMode,
 	}).Get(ctx, &planRevision); err != nil {
 		return nil, err
 	}

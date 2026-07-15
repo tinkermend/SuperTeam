@@ -402,7 +402,7 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 	}
 	return CoordinationSnapshot{
 		ProjectID:           projectRecord.ID,
-		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey},
+		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
 		DigitalEmployeePool: pool,
 		CoordinationPolicy:  projectRecord.CoordinationPolicy,
 		ScenarioTemplate:    scenarioTemplate,
@@ -498,11 +498,14 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 	}
 	payload := BuildPlanRevisionPayload(input.Decision)
 	validation := ValidatePlanRevisionPayload(payload)
-	status := project.PlanRevisionStatusAccepted
+	// Plan-mode demands always require human confirmation (spec: plan 模式计划确认全量强制);
+	// only autonomous modes (loop/chat) keep the conditional-Accepted auto-dispatch path,
+	// pending the future Loop-envelope spec taking over their governance.
+	status := project.PlanRevisionStatusPendingReview
 	if !validation.Acceptable {
 		status = project.PlanRevisionStatusValidationFailed
-	} else if validation.ReviewRequired || input.Decision.RequiresHumanReview {
-		status = project.PlanRevisionStatusPendingReview
+	} else if isAutonomousCoordinationMode(input.CoordinationMode) && !validation.ReviewRequired && !input.Decision.RequiresHumanReview {
+		status = project.PlanRevisionStatusAccepted
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventWorkflowSignaled, input.CoordinationJobID.String(), "计划版本已生成", map[string]any{
 		"demand_id":        input.DemandID.String(),
@@ -563,6 +566,15 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 		ReviewRequired:  revision.ReviewRequired,
 		CreatedEventID:  event.ID,
 	}, nil
+}
+
+// isAutonomousCoordinationMode reports whether mode is one of the autonomous
+// coordination modes (loop today; chat once it lands) that are still allowed
+// to auto-dispatch an accepted plan without human confirmation. Plan mode
+// (empty or "plan") is never autonomous.
+func isAutonomousCoordinationMode(mode string) bool {
+	mode = strings.TrimSpace(mode)
+	return mode == project.CoordinationModeLoop || mode == "chat"
 }
 
 func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {

@@ -38,6 +38,9 @@ type DemandSnapshot struct {
 	Title               string
 	Content             string
 	ScenarioTemplateKey string `json:"scenario_template_key,omitempty"`
+	// CoordinationMode is the demand's coordination_mode ("plan", "loop", ...),
+	// carried through to gate the plan-confirmation status in PersistPlanRevision.
+	CoordinationMode string `json:"coordination_mode,omitempty"`
 }
 
 type ProjectMemberSnapshot struct {

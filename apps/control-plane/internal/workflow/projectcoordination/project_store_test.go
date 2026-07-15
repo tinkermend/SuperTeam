@@ -830,6 +830,100 @@ func TestPersistPlanRevisionCoordinationModeNilWhenDemandUnreadable(t *testing.T
 	_ = result
 }
 
+func TestPersistPlanRevisionPlanModeAlwaysPendingReview(t *testing.T) {
+	// Plan-mode demands must always land in PendingReview for human confirmation,
+	// even when validation is clean and no explicit human review was requested.
+	// Empty coordination_mode (legacy/unset) is treated the same as explicit "plan".
+	for _, mode := range []string{"", project.CoordinationModePlan} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			demandID := uuid.New()
+			jobID := uuid.New()
+			routeID := uuid.New()
+			employeeID := uuid.New()
+			ownerID := uuid.New()
+			repo := &projectStoreMemoryRepository{}
+			repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+			store := NewProjectStore(repo)
+
+			result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				DemandID:          demandID,
+				CoordinationJobID: jobID,
+				RouteDecisionID:   routeID,
+				CoordinationMode:  mode,
+				Decision: RouteDecisionPlan{
+					Reason: "plan 模式全量待复核",
+					Tasks: []PlannedTask{
+						{
+							Key:                     "inspect",
+							Title:                   "检查",
+							Summary:                 "检查输入",
+							TaskKind:                "analysis",
+							SelectedEmployeeID:      employeeID,
+							EmployeeSelectionReason: "具备分析能力",
+							RequiredCapabilities:    []string{"codebase.analysis"},
+							MatchedCapabilities:     []string{"codebase.analysis"},
+							ExpectedOutputs:         []string{"结论"},
+							HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
+						},
+					},
+				},
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
+		})
+	}
+}
+
+func TestPersistPlanRevisionLoopModeKeepsAccepted(t *testing.T) {
+	// Autonomous modes (loop today, chat once it lands) keep the current
+	// conditional-Accepted semantics; this is a temporary carve-out until the
+	// Loop-envelope spec takes over governance of the autonomous path.
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	store := NewProjectStore(repo)
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		CoordinationMode:  project.CoordinationModeLoop,
+		Decision: RouteDecisionPlan{
+			Reason: "loop 模式暂保自动派发",
+			Tasks: []PlannedTask{
+				{
+					Key:                     "inspect",
+					Title:                   "检查",
+					Summary:                 "检查输入",
+					TaskKind:                "analysis",
+					SelectedEmployeeID:      employeeID,
+					EmployeeSelectionReason: "具备分析能力",
+					RequiredCapabilities:    []string{"codebase.analysis"},
+					MatchedCapabilities:     []string{"codebase.analysis"},
+					ExpectedOutputs:         []string{"结论"},
+					HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusAccepted, result.Status)
+}
+
 func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

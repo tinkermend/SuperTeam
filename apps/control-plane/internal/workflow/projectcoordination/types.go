@@ -105,6 +105,11 @@ type PersistPlanRevisionInput struct {
 	Decision          RouteDecisionPlan
 	SupersedeOpen     bool
 	SupersedeReason   *string
+	// CoordinationMode gates the plan-confirmation status: plan-mode demands
+	// (empty/"plan") always land in PendingReview; only autonomous modes
+	// (loop/chat) keep the conditional-Accepted auto-dispatch path. Sourced
+	// from snapshot.Demand.CoordinationMode at the workflow call site.
+	CoordinationMode string
 }
 
 type PlanRevisionResult struct {
