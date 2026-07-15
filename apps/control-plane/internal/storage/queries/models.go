@@ -2186,6 +2186,15 @@ type SkillInstallation struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type SkillMcpDependency struct {
+	ID          uuid.UUID          `json:"id"`
+	TenantID    uuid.UUID          `json:"tenant_id"`
+	SkillID     uuid.UUID          `json:"skill_id"`
+	McpServerID uuid.UUID          `json:"mcp_server_id"`
+	Note        string             `json:"note"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 // 任务主表
 type Task struct {
 	// 任务主键 UUID
