@@ -1044,6 +1044,24 @@ func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerGetDemandLaunchDetailNotFoundReturns404(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	demandID := uuid.New()
+	service := &handlerTestService{launchDetailErr: ErrProjectNotFound}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/launch-detail", nil)
+	req = withProjectRouteParams(req, map[string]string{"demandId": demandID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetDemandLaunchDetail(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected missing demand launch detail to return 404, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -1926,6 +1944,7 @@ type handlerTestService struct {
 	launchDetailTenantID              uuid.UUID
 	launchDetailDemandID              uuid.UUID
 	launchDetailProjectID             uuid.UUID
+	launchDetailErr                   error
 	taskGraph                         ProjectTaskGraph
 	taskGraphReq                      GetProjectTaskGraphRequest
 	taskGraphCalls                    int
@@ -2160,6 +2179,9 @@ func (s *handlerTestService) ListDecisionRequests(ctx context.Context, tenantID,
 func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
 	s.launchDetailTenantID = tenantID
 	s.launchDetailDemandID = demandID
+	if s.launchDetailErr != nil {
+		return nil, s.launchDetailErr
+	}
 	projectID := s.launchDetailProjectID
 	if projectID == uuid.Nil {
 		projectID = uuid.New()

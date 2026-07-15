@@ -830,7 +830,7 @@ func (r *PgRepository) GetLatestProjectConfigRevision(ctx context.Context, tenan
 func (r *PgRepository) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
 	row, err := r.q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
 	if err != nil {
-		return ProjectDemand{}, err
+		return ProjectDemand{}, projectRepositoryError(err)
 	}
 	return demandFromRecord(row)
 }
