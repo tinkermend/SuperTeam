@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -20,7 +20,11 @@ import {
 } from "@/components/ui/select";
 import { V3Button } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
-import { createDigitalEmployee, listDigitalEmployeeAvatarAssets } from "@/lib/api/employees";
+import {
+  createDigitalEmployee,
+  listDigitalEmployeeAvatarAssets,
+  type DigitalEmployee,
+} from "@/lib/api/employees";
 import { listEmployeeTemplates, type EmployeeTemplate } from "@/lib/api/employee-templates";
 import {
   listProjectMembers,
@@ -63,6 +67,11 @@ export function StaffGapDialog({
   const [name, setName] = useState("");
   const [providerType, setProviderType] = useState(DEFAULT_PROVIDER_TYPE);
   const [error, setError] = useState("");
+  // 重试幂等锚点：createDigitalEmployee 成功后立即记录已创建员工，链条中段
+  // （成员 PUT / resolve）失败后用户重试时跳过创建、从成员步续跑，避免重复建员。
+  // 对话框关闭或整链成功后清空。用 ref 而非 state：mutationFn 内同步写入即生效，
+  // 不依赖 React 渲染周期。
+  const createdEmployeeRef = useRef<DigitalEmployee | null>(null);
 
   const templatesQuery = useQuery({
     enabled: open,
@@ -85,6 +94,7 @@ export function StaffGapDialog({
     if (!open) {
       setError("");
       setTemplateType("");
+      createdEmployeeRef.current = null;
       return;
     }
     setName(`审查员-${randomSuffix()}`);
@@ -105,38 +115,50 @@ export function StaffGapDialog({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!selectedTemplate) {
-        throw new Error("请选择补员模板");
+      // Step 1: 创建员工——重试时若上次已创建成功则复用，绝不重复创建。
+      let employee = createdEmployeeRef.current;
+      if (!employee) {
+        if (!selectedTemplate) {
+          throw new Error("请选择补员模板");
+        }
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+          throw new Error("请输入员工名称");
+        }
+        const avatarAssetId = avatarAssetsQuery.data?.[0]?.id;
+        if (!avatarAssetId) {
+          throw new Error("暂无可用头像资源，无法创建数字员工");
+        }
+        employee = await createDigitalEmployee(apiOptions, {
+          avatar_asset_id: avatarAssetId,
+          capability_bindings: selectedTemplate.capability_bindings,
+          employee_type: selectedTemplate.type,
+          name: trimmedName,
+          persona_memory_markdown: selectedTemplate.persona_memory_markdown,
+          provider_type: providerType,
+          role: selectedTemplate.default_role,
+        });
+        createdEmployeeRef.current = employee;
       }
-      const trimmedName = name.trim();
-      if (!trimmedName) {
-        throw new Error("请输入员工名称");
-      }
-      const avatarAssetId = avatarAssetsQuery.data?.[0]?.id;
-      if (!avatarAssetId) {
-        throw new Error("暂无可用头像资源，无法创建数字员工");
-      }
-      const employee = await createDigitalEmployee(apiOptions, {
-        avatar_asset_id: avatarAssetId,
-        capability_bindings: selectedTemplate.capability_bindings,
-        employee_type: selectedTemplate.type,
-        name: trimmedName,
-        persona_memory_markdown: selectedTemplate.persona_memory_markdown,
-        provider_type: providerType,
-        role: selectedTemplate.default_role,
-      });
+      // Step 2: 追加进项目成员（读改写）——若上次重试已写入成功则跳过，追加本身幂等。
       const existingMembers = await listProjectMembers(apiOptions, projectId);
-      const nextMembers: ProjectMemberInput[] = [
-        ...existingMembers.map(toMemberInput),
-        {
-          display_name_snapshot: employee.name,
-          principal_id: employee.id,
-          principal_type: "digital_employee",
-          project_role: "executor",
-          settings: {},
-        },
-      ];
-      await replaceProjectMembers(apiOptions, projectId, nextMembers);
+      const alreadyMember = existingMembers.some(
+        (member) => member.principal_id === employee.id,
+      );
+      if (!alreadyMember) {
+        const nextMembers: ProjectMemberInput[] = [
+          ...existingMembers.map(toMemberInput),
+          {
+            display_name_snapshot: employee.name,
+            principal_id: employee.id,
+            principal_type: "digital_employee",
+            project_role: "executor",
+            settings: {},
+          },
+        ];
+        await replaceProjectMembers(apiOptions, projectId, nextMembers);
+      }
+      // Step 3: resolve planning_gap 决策为 restaffed，触发需求重开+重规划。
       await resolveProjectDecision(apiOptions, projectId, decisionRequestId, {
         decision: "restaffed",
       });
@@ -148,6 +170,7 @@ export function StaffGapDialog({
     onSuccess: async (employee) => {
       toast.success(`已创建数字员工「${employee.name}」，重新规划已触发`);
       setError("");
+      createdEmployeeRef.current = null;
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["workflow-task-graph"] }),
         queryClient.invalidateQueries({ queryKey: ["workflow-detail"] }),

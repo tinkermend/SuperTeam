@@ -236,7 +236,11 @@ function WorkflowGapPanel({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <V3Button onClick={() => setStaffDialogOpen(true)} variant="primary">
+          <V3Button
+            disabled={!decisionRequestId}
+            onClick={() => setStaffDialogOpen(true)}
+            variant="primary"
+          >
             从标准模板补员
           </V3Button>
           <V3Button

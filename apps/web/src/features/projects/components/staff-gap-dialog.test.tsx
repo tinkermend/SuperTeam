@@ -228,6 +228,80 @@ describe("StaffGapDialog", () => {
     expect(onStaffed).toHaveBeenCalled();
   });
 
+  it("retries after a mid-chain members-PUT failure without creating a second employee", async () => {
+    vi.mocked(listEmployeeTemplates).mockResolvedValue([codeReviewerTemplate, testerTemplate]);
+    vi.mocked(listDigitalEmployeeAvatarAssets).mockResolvedValue([avatarAsset]);
+    vi.mocked(createDigitalEmployee).mockResolvedValue(createdEmployee);
+    vi.mocked(listProjectMembers).mockResolvedValue([existingMember]);
+    vi.mocked(replaceProjectMembers)
+      .mockRejectedValueOnce(new Error("members PUT 网络失败"))
+      .mockResolvedValueOnce([existingMember]);
+    vi.mocked(resolveProjectDecision).mockResolvedValue(resolvedDecision);
+    const onOpenChange = vi.fn();
+
+    const screen = await renderDialog({ onOpenChange });
+    await expect.element(screen.getByText("标准代码审查员")).toBeVisible();
+
+    // 第一次提交：创建成功、成员 PUT 失败，链条中断，弹窗保持打开并显示错误。
+    await userEvent.click(screen.getByRole("button", { name: "创建并补员" }));
+    await expect.element(screen.getByText("members PUT 网络失败")).toBeVisible();
+    expect(resolveProjectDecision).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    // 重试：跳过创建（不重复建员），从成员步续跑到 resolve。
+    await userEvent.click(screen.getByRole("button", { name: "创建并补员" }));
+    await vi.waitFor(() => {
+      expect(resolveProjectDecision).toHaveBeenCalledWith(
+        { baseUrl: "http://control-plane.local" },
+        "project-1",
+        "decision-1",
+        expect.objectContaining({ decision: "restaffed" }),
+      );
+    });
+
+    expect(createDigitalEmployee).toHaveBeenCalledTimes(1);
+    expect(replaceProjectMembers).toHaveBeenCalledTimes(2);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("skips the members write on retry when the employee already joined, resuming at resolve", async () => {
+    vi.mocked(listEmployeeTemplates).mockResolvedValue([codeReviewerTemplate, testerTemplate]);
+    vi.mocked(listDigitalEmployeeAvatarAssets).mockResolvedValue([avatarAsset]);
+    vi.mocked(createDigitalEmployee).mockResolvedValue(createdEmployee);
+    // 第一次读到旧成员列表；重试时成员列表已含新员工（上次 PUT 实际已生效，仅 resolve 失败）。
+    const joinedMember: ProjectMember = {
+      ...existingMember,
+      id: "member-new",
+      principal_id: createdEmployee.id,
+      principal_type: "digital_employee",
+      project_role: "executor",
+    };
+    vi.mocked(listProjectMembers)
+      .mockResolvedValueOnce([existingMember])
+      .mockResolvedValueOnce([existingMember, joinedMember]);
+    vi.mocked(replaceProjectMembers).mockResolvedValue([existingMember, joinedMember]);
+    vi.mocked(resolveProjectDecision)
+      .mockRejectedValueOnce(new Error("resolve 网络失败"))
+      .mockResolvedValueOnce(resolvedDecision);
+    const onOpenChange = vi.fn();
+
+    const screen = await renderDialog({ onOpenChange });
+    await expect.element(screen.getByText("标准代码审查员")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "创建并补员" }));
+    await expect.element(screen.getByText("resolve 网络失败")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "创建并补员" }));
+    await vi.waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    expect(createDigitalEmployee).toHaveBeenCalledTimes(1);
+    // 重试读到员工已在列表 → 不再重复写成员。
+    expect(replaceProjectMembers).toHaveBeenCalledTimes(1);
+    expect(resolveProjectDecision).toHaveBeenCalledTimes(2);
+  });
+
   it("does not call any api when cancelled", async () => {
     vi.mocked(listEmployeeTemplates).mockResolvedValue([codeReviewerTemplate, testerTemplate]);
     vi.mocked(listDigitalEmployeeAvatarAssets).mockResolvedValue([avatarAsset]);

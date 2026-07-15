@@ -658,6 +658,23 @@ describe("WorkflowView", () => {
       .toHaveAttribute("href", "/projects/project-1/config");
   });
 
+  it("disables both staffing and exempt actions when the fact carries no decision id", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([], {
+          blocking_facts: [makeGapBlockingFact({ decision_request_id: undefined })],
+        }),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-gap-panel")).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "从标准模板补员" }))
+      .toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "豁免并重规划" })).toBeDisabled();
+    await expect.element(screen.getByRole("link", { name: "发起借调" })).toBeVisible();
+  });
+
   it("does not render the gap panel when the blocking fact carries no structural gap", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
