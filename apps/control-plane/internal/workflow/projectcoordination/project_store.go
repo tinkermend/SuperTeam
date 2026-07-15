@@ -3245,8 +3245,13 @@ func (s *ProjectStore) FinishCoordinationJob(ctx context.Context, input FinishCo
 
 // noSuitableEmployeeReasonCode / RecommendedAction back the human-visible diagnosis
 // surfaced when planning terminates with the ErrNoSuitableEmployee family. The
-// recommended action always names the three ways out, so a human sees them even if
-// the diagnosis message itself is a raw (non-structural) confidence-score text.
+// recommended action always names the three ways out as a structured event field
+// (reason_code/recommended_action), independent of Diagnosis's free-text content.
+// Today Diagnosis is always structuralGapError's noSuitableEmployeeStructuralGapMessage
+// (EnforceScenarioTemplateGovernance's role_independence structural-gap escalation,
+// the only production source of ErrNoSuitableEmployee) — which already names the
+// same ways out in prose — but RecommendedAction guarantees the UI always has them
+// in structured form regardless of that message's wording.
 const (
 	noSuitableEmployeeReasonCode        = "no_suitable_employee"
 	noSuitableEmployeeRecommendedAction = "为项目补充可调度员工、改选更浅的出口交付物，或改用更贴合的场景模板"

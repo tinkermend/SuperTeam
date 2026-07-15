@@ -204,9 +204,13 @@ func stepTask(step scenariotemplate.SpecSkeletonStep, producedBy map[string]stri
 // pool cannot possibly make the two roles independent (fewer than 2 active
 // executors), rejecting-and-replanning would just have the planner reselect
 // the same sole employee forever; this is a structural pool gap, not a plan
-// defect, so it escalates through the ErrNoSuitableEmployee family straight
-// to a human instead (see graph_validation.go's confidence-threshold
-// handling for the same "non-plan-defect" channel).
+// defect, so it escalates straight to a human via newStructuralGapError,
+// carrying an actionable PlanningGap (roles/capabilities/ways-out) instead of
+// a raw diagnosis. This is the only production channel that raises
+// ErrNoSuitableEmployee: ValidateRouteDecisionPlan no longer gates on planner
+// self-reported confidence — see graph_validation.go's selectionScoreThreshold
+// for the server-computed gate that replaced it (a low score degrades the
+// plan via a low_feasibility note instead of rejecting it).
 func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmployees map[string]map[uuid.UUID]bool, roleCapabilities map[string][]string, activeExecutorCount int) error {
 	for i := 0; i < len(constraint.Roles); i++ {
 		for j := i + 1; j < len(constraint.Roles); j++ {

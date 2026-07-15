@@ -141,8 +141,12 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 		}
 		if err != nil {
 			if errors.Is(err, ErrNoSuitableEmployee) {
-				// Prefer the actionable structural-gap message (ways-out hints) over a
-				// raw confidence-score text when the failure is really a pool gap.
+				// err here always originates from EnforceScenarioTemplateGovernance's
+				// role_independence structural-gap escalation (the only production
+				// source of ErrNoSuitableEmployee — see enforceRoleIndependence).
+				// structuralGapForPlan recovers the same actionable, details-carrying
+				// gap error (ways-out hints: restaff/exempt/lending) for this plan so
+				// the caller gets a PlanningGap it can attach, not just err's message.
 				if gap := structuralGapForPlan(snapshot, plan); gap != nil {
 					return RouteDecisionPlan{}, gap
 				}
