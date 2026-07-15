@@ -762,6 +762,24 @@ run_action() {
     local service
 
     case "$action" in
+        start|stop|restart|status)
+            ;;
+        *)
+            log_error "unknown action: $action"
+            usage >&2
+            return 1
+            ;;
+    esac
+
+    # 先校验目标服务，非法参数直接以非零码失败。
+    # 下面的循环用进程替换 < <(services_for_target ...) 读取服务列表，
+    # 而进程替换的退出码在 set -e 下不会被观察到——没有这道校验，
+    # 拼错的服务名会打印错误却仍以 exit 0 结束，掩盖调用方（CI / restart <service>）的失误。
+    if ! services_for_target "$target" >/dev/null; then
+        return 1
+    fi
+
+    case "$action" in
         start)
             while IFS= read -r service; do
                 start_service "$service"
@@ -784,11 +802,6 @@ run_action() {
             while IFS= read -r service; do
                 status_service "$service"
             done < <(services_for_target "$target")
-            ;;
-        *)
-            log_error "unknown action: $action"
-            usage >&2
-            return 1
             ;;
     esac
 }

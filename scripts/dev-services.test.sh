@@ -126,3 +126,32 @@ assert_contains "$TMP_DIR/status-openfga-running.out" "openfga: running"
 run_script stop openfga >"$TMP_DIR/stop-openfga.out"
 run_script status openfga >"$TMP_DIR/status-openfga-stopped.out"
 assert_contains "$TMP_DIR/status-openfga-stopped.out" "openfga: stopped"
+
+# 非法服务参数必须以非零码失败，而不是静默 exit 0。
+if run_script status bogus-service >"$TMP_DIR/status-unknown.out" 2>&1; then
+    echo "expected 'status bogus-service' to exit non-zero" >&2
+    cat "$TMP_DIR/status-unknown.out" >&2
+    exit 1
+fi
+assert_contains "$TMP_DIR/status-unknown.out" "unknown service: bogus-service"
+
+# start/restart/stop 同样要拒绝非法服务名。
+if run_script restart bogus-service >"$TMP_DIR/restart-unknown.out" 2>&1; then
+    echo "expected 'restart bogus-service' to exit non-zero" >&2
+    cat "$TMP_DIR/restart-unknown.out" >&2
+    exit 1
+fi
+assert_contains "$TMP_DIR/restart-unknown.out" "unknown service: bogus-service"
+
+# 非法动作必须以非零码失败。
+if run_script frobnicate all >"$TMP_DIR/action-unknown.out" 2>&1; then
+    echo "expected unknown action to exit non-zero" >&2
+    cat "$TMP_DIR/action-unknown.out" >&2
+    exit 1
+fi
+assert_contains "$TMP_DIR/action-unknown.out" "unknown action: frobnicate"
+
+# 合法参数仍须以零码成功（回归保护，避免校验误伤正常路径）。
+run_script status all >"$TMP_DIR/status-all.out"
+
+echo "dev-services.test.sh: all assertions passed"
