@@ -8,21 +8,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
+use serde::{Deserialize, Serialize};
 
 use crate::commands::payload::RuntimeMCPServerPayload;
 use crate::workspace_files::atomic_write;
 
-/// materialize_mcp_config writes provider config for the given servers and returns the files
-/// written. An empty server list still validates the provider type but writes nothing.
-pub fn materialize_mcp_config(
-    agent_home_dir: &Path,
-    provider_type: &str,
-    servers: &[RuntimeMCPServerPayload],
-) -> Result<Vec<PathBuf>> {
-    for server in servers {
-        validate_server(server)?;
-    }
-
+/// home_mcp_config_target resolves the provider's home-dir MCP config path and defends against
+/// the target ever landing outside the agent home directory.
+fn home_mcp_config_target(agent_home_dir: &Path, provider_type: &str) -> Result<PathBuf> {
     let target = match provider_type {
         "codex" => agent_home_dir.join(".codex").join("config.toml"),
         "claude-code" => agent_home_dir.join(".mcp.json"),
@@ -38,6 +31,22 @@ pub fn materialize_mcp_config(
             target.display()
         );
     }
+
+    Ok(target)
+}
+
+/// materialize_mcp_config writes provider config for the given servers and returns the files
+/// written. An empty server list still validates the provider type but writes nothing.
+pub fn materialize_mcp_config(
+    agent_home_dir: &Path,
+    provider_type: &str,
+    servers: &[RuntimeMCPServerPayload],
+) -> Result<Vec<PathBuf>> {
+    for server in servers {
+        validate_server(server)?;
+    }
+
+    let target = home_mcp_config_target(agent_home_dir, provider_type)?;
 
     if servers.is_empty() {
         return Ok(Vec::new());
@@ -57,6 +66,104 @@ pub fn materialize_mcp_config(
 
     atomic_write(&target, content.as_bytes())?;
     Ok(vec![target])
+}
+
+// ----------------------------------------------------------------------------
+// Session-scoped injection + rollback (manifest-backed)
+// ----------------------------------------------------------------------------
+
+const SESSION_MANIFEST_DIR: &str = ".superteam";
+const SESSION_MANIFEST_FILE: &str = "mcp-session-manifest.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct McpSessionManifest {
+    entries: Vec<McpManifestEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct McpManifestEntry {
+    path: PathBuf,
+    existed: bool,
+    #[serde(default)]
+    previous_content: Option<String>,
+}
+
+pub fn manifest_path(agent_home_dir: &Path) -> PathBuf {
+    agent_home_dir
+        .join(SESSION_MANIFEST_DIR)
+        .join(SESSION_MANIFEST_FILE)
+}
+
+/// Session-scoped home-dir MCP injection: roll back any residual manifest first
+/// (crash fallback), snapshot the target file, persist the manifest, then materialize.
+/// The manifest is written BEFORE the config: if materialization fails midway the
+/// next session still restores the pre-session state.
+pub fn inject_session_mcp_config(
+    agent_home_dir: &Path,
+    provider_type: &str,
+    servers: &[RuntimeMCPServerPayload],
+) -> Result<Vec<PathBuf>> {
+    rollback_session_mcp_config(agent_home_dir)
+        .with_context(|| "rollback residual mcp session manifest before injecting")?;
+    if servers.is_empty() {
+        return Ok(Vec::new());
+    }
+    let target = home_mcp_config_target(agent_home_dir, provider_type)?;
+    let existed = target.exists();
+    let previous_content = if existed {
+        Some(
+            fs::read_to_string(&target)
+                .with_context(|| format!("snapshot existing mcp config {}", target.display()))?,
+        )
+    } else {
+        None
+    };
+    let manifest = McpSessionManifest {
+        entries: vec![McpManifestEntry {
+            path: target.clone(),
+            existed,
+            previous_content,
+        }],
+    };
+    let mpath = manifest_path(agent_home_dir);
+    if let Some(parent) = mpath.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create manifest dir {}", parent.display()))?;
+    }
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
+    atomic_write(&mpath, &manifest_bytes)?;
+    materialize_mcp_config(agent_home_dir, provider_type, servers)
+}
+
+/// Restores every file recorded in the session manifest (previous content for files
+/// that existed, deletion for files the injection created), then removes the manifest.
+/// No manifest means nothing was injected: no-op.
+pub fn rollback_session_mcp_config(agent_home_dir: &Path) -> Result<()> {
+    let mpath = manifest_path(agent_home_dir);
+    if !mpath.exists() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&mpath)
+        .with_context(|| format!("read mcp session manifest {}", mpath.display()))?;
+    let manifest: McpSessionManifest = serde_json::from_str(&raw)
+        .with_context(|| format!("parse mcp session manifest {}", mpath.display()))?;
+    for entry in &manifest.entries {
+        if entry.existed {
+            if let Some(content) = &entry.previous_content {
+                if let Some(parent) = entry.path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                atomic_write(&entry.path, content.as_bytes())?;
+            }
+        } else if entry.path.exists() {
+            fs::remove_file(&entry.path).with_context(|| {
+                format!("remove injected mcp config {}", entry.path.display())
+            })?;
+        }
+    }
+    fs::remove_file(&mpath)
+        .with_context(|| format!("remove mcp session manifest {}", mpath.display()))?;
+    Ok(())
 }
 
 /// materialize_task_mcp_config writes task-level MCP projection files under
@@ -474,5 +581,63 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("unsupported provider_type"));
+    }
+
+    #[test]
+    fn inject_records_manifest_and_rollback_restores_prior_codex_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex_dir = dir.path().join(".codex");
+        std::fs::create_dir_all(&codex_dir).unwrap();
+        std::fs::write(codex_dir.join("config.toml"), "theme = \"dark\"\n").unwrap();
+
+        let written = inject_session_mcp_config(dir.path(), "codex", &[github_server()]).unwrap();
+        assert_eq!(written.len(), 1);
+        let injected = std::fs::read_to_string(&written[0]).unwrap();
+        assert!(injected.contains("[mcp_servers.github]"));
+        assert!(injected.contains("theme"));
+        assert!(manifest_path(dir.path()).exists());
+
+        rollback_session_mcp_config(dir.path()).unwrap();
+        let restored = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
+        assert_eq!(restored, "theme = \"dark\"\n");
+        assert!(!manifest_path(dir.path()).exists());
+    }
+
+    #[test]
+    fn rollback_deletes_file_created_by_injection() {
+        let dir = tempfile::tempdir().unwrap();
+        inject_session_mcp_config(dir.path(), "claude-code", &[github_server()]).unwrap();
+        assert!(dir.path().join(".mcp.json").exists());
+        rollback_session_mcp_config(dir.path()).unwrap();
+        assert!(!dir.path().join(".mcp.json").exists());
+    }
+
+    #[test]
+    fn inject_rolls_back_residual_manifest_before_injecting() {
+        let dir = tempfile::tempdir().unwrap();
+        // 第一次注入后不回滚，模拟异常退出残留
+        inject_session_mcp_config(dir.path(), "claude-code", &[github_server()]).unwrap();
+        // 第二次注入应先回滚残留（.mcp.json 删除）再重新注入
+        let written = inject_session_mcp_config(dir.path(), "claude-code", &[github_server()]).unwrap();
+        assert_eq!(written.len(), 1);
+        let manifest_raw = std::fs::read_to_string(manifest_path(dir.path())).unwrap();
+        // 残留回滚后重拍快照：本次快照必须记录"文件不存在"，而不是把上次注入内容当原值
+        assert!(manifest_raw.contains("\"existed\": false") || manifest_raw.contains("\"existed\":false"));
+    }
+
+    #[test]
+    fn rollback_without_manifest_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        rollback_session_mcp_config(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn inject_with_empty_servers_clears_residual_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        inject_session_mcp_config(dir.path(), "opencode", &[github_server()]).unwrap();
+        let written = inject_session_mcp_config(dir.path(), "opencode", &[]).unwrap();
+        assert!(written.is_empty());
+        assert!(!manifest_path(dir.path()).exists());
+        assert!(!dir.path().join("opencode.json").exists());
     }
 }
