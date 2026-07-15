@@ -47,7 +47,7 @@ CREATE TABLE skill_mcp_dependencies (
 -- 索引：按 skill 查依赖、按 mcp_server 反查技能
 ```
 
-- `ON DELETE RESTRICT`：有技能依赖时禁止删除 MCP 定义，后端把约束错误转成明确的 409/400 提示。
+- `ON DELETE RESTRICT`：保护硬删除路径的参照完整性。注意 `mcp_servers` 与 `skills` 的删除都是**软删除**（`deleted_at`），外键不会触发——删除保护必须在应用层实现：删 MCP 定义前查依赖它的活跃技能，存在则拒绝（409）；删技能时应用层同步硬删其依赖行。
 - 遵循 `DATABASE_DESIGN.md`（UUID-first、租户列、索引规范）；更新 `atlas.sum` 并 `make -C apps/control-plane migrate-validate`。
 
 ## 2. Control Plane 后端
@@ -62,23 +62,26 @@ Authz 复用现有 `mcp_registry.read/manage` 与技能相关 action，不新增
 
 ### 装载校验链路（只校验不授权）
 
-`run_service` 构建 start-session payload 处：
+`run_service.prepareStartSessionDependencies` 已存在技能依赖闸门 `validateRuntimeSkillDependencies`（校验 tools/env，缺失即阻断派发）。MCP 依赖校验挂进同一环节：
 
-1. 取本次将为员工装载的技能集合（现有技能装载来源）。
-2. 查 `skill_mcp_dependencies` 得到依赖的 MCP 集合。
-3. 对照现有 effective MCP config（员工/团队绑定 ∪ env-satisfied 过滤后的结果）。
-4. 任一依赖不在生效集合中 → 任务置 blocked，结构化原因：`技能 {slug} 依赖 MCP {server_key}：未绑定 / 缺环境变量 {VAR}`。
+1. 取本次将装载的 runtime 技能集合（既有 `ListSkillsForRuntime`）。
+2. 经新增 lister 查 `skill_mcp_dependencies` 得到依赖 MCP 集合。
+3. 对照 `deps.runtimeMCP`（既有 mcpLister 产出，已做绑定 ∪ env-satisfied 过滤）。
+4. 任一依赖缺失 → 阻断派发，结构化原因：`技能 {slug} 依赖 MCP {server_key}：未绑定或缺环境变量`，走既有 blocked 呈现链路。
 5. 全部满足 → 正常派发，payload 不因依赖而扩集（授权源不变）。
 
-## 3. Runtime 自动卸载（注入清单 + 回滚）
+Console 侧同步：`ListEffectiveEmployeeSkills` 的 `runtime_dependency_status` 增加 `missing_mcp` 字段，供员工面板警示。
 
-`apps/runtime-agent/src/mcp_config.rs` + `commands/executor.rs`：
+## 3. Runtime 自动卸载（会话作用域化 + 注入清单回滚）
 
-- **写入时**生成注入清单 manifest（JSON，存 `agent_home/.superteam/`，按 session 命名）：每个 provider 配置文件路径、本次注入的 entry key、`added`（新增）或 `overwritten`（含原值备份）。
-- **会话结束**（executor 完成/失败/取消所有退出路径）：按 manifest 逆操作——`added` 删除、`overwritten` 还原原值；完成后删除 manifest。用户/项目自有配置零触碰。
-- **异常退出兜底**：会话启动注入前若发现残留 manifest，先执行回滚再注入，保证幂等。
+**关键事实修正**：现状家目录 MCP 配置在 ProvisionInstance（实例开通）一次性写入，会话不写家目录。若仅在会话结束回滚，会删掉开通时配置且后续会话不再拥有 MCP。已与人类确认改为**会话作用域**：
+
+- **注入时机前移到会话开始**：`ensure_command_instance` 解析出 agent_home 后，按会话 payload 的 `mcp_servers`（即当前生效绑定）执行家目录物化；ProvisionInstance 不再写 MCP 配置。绑定变更下次会话自动生效。
+- **注入清单 manifest**（JSON，存 `agent_home/.superteam/`）：写入前记录每个目标配置文件的整文件快照（存在与否 + 原内容）。因 codex/opencode 合并是整键替换，无法从结果反推，必须写前快照。
+- **会话结束回滚**：run 收尾共同路径（`drain_provider_events` 成功/失败收尾）+ StopSession 取消路径 + 早期失败路径，按 manifest 还原快照/删除新建文件，然后删 manifest。用户自有配置零触碰（快照整文件还原）。
+- **异常退出兜底**：会话开始注入前发现残留 manifest 先回滚再注入，幂等。控制平面保证同一员工同时仅一个活跃 run（有测试背书），无并发竞态。
 - 任务 workspace 路径 `materialize_task_mcp_config` 维持现状（随 worktree 消亡即卸载）。
-- 三种 provider 配置格式（`.mcp.json` / `config.toml` / `opencode.json`）的回滚均需单测覆盖。
+- 三种 provider 配置格式（`.mcp.json` / `config.toml` / `opencode.json`）的注入/回滚/残留兜底均需单测覆盖。
 
 ## 4. 前端 UI（含样式布局）
 
