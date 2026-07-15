@@ -7581,6 +7581,194 @@ func TestResolveDecisionRejectsRequestChangesForNonPlanReview(t *testing.T) {
 	}
 }
 
+// TestResolveDecisionAcceptsRestaffedForPlanningGap drives the real ResolveDecision
+// chain for a planning_gap decision's happy path: restaffed resolves the approval
+// untouched and signals the coordinator with the restaffed vocabulary and the
+// correct decision id (the coordinator then reopens+replans the demand recorded in
+// the approval request's ContextPayload demand_id).
+func TestResolveDecisionAcceptsRestaffedForPlanningGap(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      DecisionTypePlanningGap,
+		TitleSnapshot:     "规划缺口：项目员工池无法满足审查独立性约束",
+		StatusSnapshot:    "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanningGapDecisionRestaffed,
+		Comment:           "已补充员工",
+		Payload:           map[string]any{"demand_id": demandID.String()},
+	})
+	if err != nil {
+		t.Fatalf("resolve decision with restaffed: %v", err)
+	}
+	if resolved.StatusSnapshot != PlanningGapDecisionRestaffed {
+		t.Fatalf("expected restaffed projection, got %s", resolved.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != PlanningGapDecisionRestaffed {
+		t.Fatalf("expected approval resolver to receive restaffed untouched, got count=%d last=%#v", approvals.calls, approvals.last)
+	}
+	if approvals.last.ApprovalRequestID != approvalID {
+		t.Fatalf("expected approval %s resolved, got %s", approvalID, approvals.last.ApprovalRequestID)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.Decision != PlanningGapDecisionRestaffed {
+		t.Fatalf("expected decision signal with restaffed untouched, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+	if coordinator.lastDecision.DecisionRequestID != decisionID {
+		t.Fatalf("expected signal to carry decision %s, got %s", decisionID, coordinator.lastDecision.DecisionRequestID)
+	}
+}
+
+// TestResolveDecisionRejectsRestaffedForNonPlanningGap proves restaffed is
+// planning_gap vocabulary only: any other pending decision type must reject it as
+// ErrInvalidProject with zero side effects (no approval call, no coordinator
+// signal) and stay pending. Mirrors the request_changes narrowing test above.
+func TestResolveDecisionRejectsRestaffedForNonPlanningGap(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	planRevisionID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		PlanRevisionID:    &planRevisionID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanningGapDecisionRestaffed,
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for restaffed on non-planning_gap decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
+// TestResolveDecisionRejectsGenericVocabularyForPlanningGap proves planning_gap's
+// vocabulary is closed in both directions: the generic approved (and by the same
+// gate needs_more_evidence) is not meaningful on a planning gap — only restaffed
+// and rejected are — so it rejects as ErrInvalidProject with zero side effects.
+func TestResolveDecisionRejectsGenericVocabularyForPlanningGap(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      DecisionTypePlanningGap,
+		TitleSnapshot:     "规划缺口：项目员工池无法满足审查独立性约束",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for approved on planning_gap decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
 func s_findDecisionForTest(repo *memoryRepository, tenantID, projectID, decisionID uuid.UUID) (DecisionRequest, error) {
 	decisions, err := repo.ListDecisionRequests(context.Background(), tenantID, projectID, 100, 0)
 	if err != nil {

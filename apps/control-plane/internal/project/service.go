@@ -4846,6 +4846,14 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	if req.Decision == PlanningGapDecisionRestaffed && decision.DecisionType != DecisionTypePlanningGap {
 		return nil, ErrInvalidProject
 	}
+	// The inverse also holds: a planning_gap decision's vocabulary is closed to
+	// restaffed (reopen+replan) and rejected (关闭). The generic approved /
+	// needs_more_evidence have no planning_gap semantics and would strand the
+	// decision in an unactionable snapshot, so they are invalid input here.
+	if decision.DecisionType == DecisionTypePlanningGap &&
+		req.Decision != PlanningGapDecisionRestaffed && req.Decision != "rejected" {
+		return nil, ErrInvalidProject
+	}
 	// A non-empty target_exit_deliverable pins the replan's exit — it must name a
 	// member of the reviewed plan revision's available_exits. The web Select only
 	// ever offers known members, but an authorized plan_review actor can call this
