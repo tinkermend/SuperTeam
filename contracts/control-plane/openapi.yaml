@@ -7456,6 +7456,9 @@ components:
         payload:
           type: object
           additionalProperties: true
+        target_exit_deliverable:
+          type: string
+          description: 人类改选的交付出口；仅 request_changes 时有意义，重规划将钉住该出口
     CompleteProjectTaskRequest:
       type: object
       required:

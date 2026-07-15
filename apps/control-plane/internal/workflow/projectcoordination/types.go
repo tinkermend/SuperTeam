@@ -70,6 +70,10 @@ type HumanDecisionSubmitted struct {
 	Decision          string
 	Payload           map[string]any
 	ResolvedEventID   uuid.UUID
+	// TargetExitDeliverable carries the human's replacement exit deliverable
+	// choice when Decision is request_changes. It pins the replan's exit via
+	// CoordinationSnapshot.PinnedExitDeliverable; empty means no override.
+	TargetExitDeliverable string `json:"target_exit_deliverable,omitempty"`
 }
 
 type ShutdownSignal struct{}

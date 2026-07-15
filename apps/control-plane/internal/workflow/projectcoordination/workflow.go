@@ -436,6 +436,7 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 	}).Get(ctx, &snapshot); err != nil {
 		return nil, err
 	}
+	snapshot.PinnedExitDeliverable = strings.TrimSpace(signal.TargetExitDeliverable)
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
 		return nil, err

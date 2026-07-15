@@ -4312,6 +4312,9 @@ type ResolveProjectDecisionRequest struct {
 	Comment  *string                               `json:"comment,omitempty"`
 	Decision ResolveProjectDecisionRequestDecision `json:"decision"`
 	Payload  *map[string]interface{}               `json:"payload,omitempty"`
+
+	// TargetExitDeliverable 人类改选的交付出口；仅 request_changes 时有意义，重规划将钉住该出口
+	TargetExitDeliverable *string `json:"target_exit_deliverable,omitempty"`
 }
 
 // ResolveProjectDecisionRequestDecision defines model for ResolveProjectDecisionRequest.Decision.

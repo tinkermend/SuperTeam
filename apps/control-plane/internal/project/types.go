@@ -1537,6 +1537,10 @@ type ResolveDecisionRequest struct {
 	Decision          string
 	Comment           string
 	Payload           map[string]any
+	// TargetExitDeliverable is the human's replacement exit deliverable choice;
+	// only meaningful when Decision is request_changes. It pins the replan's
+	// exit via CoordinationSnapshot.PinnedExitDeliverable.
+	TargetExitDeliverable string
 }
 
 type CompleteProjectTaskRequest struct {

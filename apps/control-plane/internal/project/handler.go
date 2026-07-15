@@ -852,13 +852,14 @@ func (h *HTTPHandler) ResolveDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	decision, err := service.ResolveDecision(r.Context(), ResolveDecisionRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		DecisionRequestID: decisionID,
-		DecidedByUserID:   actorID,
-		Decision:          body.Decision,
-		Comment:           body.Comment,
-		Payload:           body.Payload,
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              body.Decision,
+		Comment:               body.Comment,
+		Payload:               body.Payload,
+		TargetExitDeliverable: body.TargetExitDeliverable,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1846,9 +1847,10 @@ type submitDemandBody struct {
 }
 
 type resolveDecisionBody struct {
-	Decision string         `json:"decision"`
-	Comment  string         `json:"comment"`
-	Payload  map[string]any `json:"payload"`
+	Decision              string         `json:"decision"`
+	Comment               string         `json:"comment"`
+	Payload               map[string]any `json:"payload"`
+	TargetExitDeliverable string         `json:"target_exit_deliverable,omitempty"`
 }
 
 type ProjectTaskAttemptRuntimeBody struct {

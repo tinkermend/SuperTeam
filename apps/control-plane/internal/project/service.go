@@ -4823,6 +4823,7 @@ func (s *Service) RequestProjectTaskTransfer(ctx context.Context, req RequestPro
 func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {
 	req.Decision = strings.TrimSpace(req.Decision)
 	req.Comment = strings.TrimSpace(req.Comment)
+	req.TargetExitDeliverable = strings.TrimSpace(req.TargetExitDeliverable)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.DecisionRequestID == uuid.Nil || req.DecidedByUserID == uuid.Nil || !validHumanDecision(req.Decision) {
 		return nil, ErrInvalidProject
 	}
@@ -4888,14 +4889,15 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	if err := s.coordinator.SignalHumanDecisionSubmitted(ctx, HumanDecisionSubmittedSignal{
-		TenantID:          req.TenantID,
-		ProjectID:         req.ProjectID,
-		ApprovalRequestID: decision.ApprovalRequestID,
-		DecisionRequestID: req.DecisionRequestID,
-		Decision:          req.Decision,
-		Payload:           mapOrEmptyAny(req.Payload),
-		ResolvedEventID:   event.ID,
-		WorkflowID:        projectRecord.CoordinationWorkflowID,
+		TenantID:              req.TenantID,
+		ProjectID:             req.ProjectID,
+		ApprovalRequestID:     decision.ApprovalRequestID,
+		DecisionRequestID:     req.DecisionRequestID,
+		Decision:              req.Decision,
+		Payload:               mapOrEmptyAny(req.Payload),
+		ResolvedEventID:       event.ID,
+		WorkflowID:            projectRecord.CoordinationWorkflowID,
+		TargetExitDeliverable: req.TargetExitDeliverable,
 	}); err != nil {
 		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, req.ProjectID, "HumanDecisionSubmitted", "failed", err, map[string]any{
 			"approval_request_id": decision.ApprovalRequestID.String(),

@@ -7400,6 +7400,59 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	}
 }
 
+func TestResolveDecisionThreadsTargetExitDeliverableToSignal(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              "rejected",
+		Comment:               "改选出口",
+		TargetExitDeliverable: "  branch_ref  ",
+	})
+	if err != nil {
+		t.Fatalf("resolve decision: %v", err)
+	}
+	if coordinator.decisionSignals != 1 {
+		t.Fatalf("expected decision signal, got count=%d", coordinator.decisionSignals)
+	}
+	if coordinator.lastDecision.TargetExitDeliverable != "branch_ref" {
+		t.Fatalf("expected target exit deliverable to be threaded and trimmed, got %q", coordinator.lastDecision.TargetExitDeliverable)
+	}
+}
+
 func TestMemoryRepositoryDecisionRequestCarriesPlanRevisionID(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

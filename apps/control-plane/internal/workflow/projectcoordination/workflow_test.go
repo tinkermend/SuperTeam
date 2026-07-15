@@ -682,6 +682,153 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 	}, store.finishJobInputs[0].OutputEventIDs)
 }
 
+// exitCapturingRoutePlanner wraps another RoutePlanner and records every
+// CoordinationSnapshot it is asked to plan for, so tests can assert what
+// PinnedExitDeliverable looked like on each planning pass (initial vs replan).
+type exitCapturingRoutePlanner struct {
+	inner     RoutePlanner
+	snapshots []CoordinationSnapshot
+}
+
+func (p *exitCapturingRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	p.snapshots = append(p.snapshots, snapshot)
+	return p.inner.Plan(ctx, snapshot)
+}
+
+func TestReplanAfterExitOverridePinsExit(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	decisionRequestID := uuid.New()
+	secondDecisionRequestID := uuid.New()
+	planRevisionID := uuid.New()
+	secondPlanRevisionID := uuid.New()
+	initialRouteEventID := uuid.New()
+	initialPlanEventID := uuid.New()
+	requestChangesEventID := uuid.New()
+	replanRouteEventID := uuid.New()
+	replanPlanEventID := uuid.New()
+	finalResolvedEventID := uuid.New()
+	readyTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "调整发布计划",
+				Content: "负责人改选出口后重新规划",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+			CoordinationPolicy: map[string]any{
+				"require_human_review_for_new_demands": true,
+			},
+		},
+		jobID:                        uuid.New(),
+		routeID:                      uuid.New(),
+		routeEventID:                 initialRouteEventID,
+		planRevisionID:               planRevisionID,
+		taskID:                       uuid.New(),
+		decisionRequestID:            decisionRequestID,
+		planRevisionIDs:              []uuid.UUID{planRevisionID, secondPlanRevisionID},
+		planRevisionIDsForRoute:      []uuid.UUID{planRevisionID, secondPlanRevisionID},
+		routeEventIDs:                []uuid.UUID{initialRouteEventID, replanRouteEventID},
+		planEventIDs:                 []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		routeEventIDsForRoute:        []uuid.UUID{initialRouteEventID, replanRouteEventID},
+		planEventIDsForRoute:         []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		planResolvedEventIDsForRoute: []uuid.UUID{requestChangesEventID},
+		dispatchableTaskIDBatches: [][]uuid.UUID{
+			{readyTaskID},
+		},
+		dispatchEvent: uuid.New(),
+	}
+	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
+		decisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             decisionRequestID,
+				ProjectID:      store.snapshot.ProjectID,
+				DecisionType:   "plan_review",
+				StatusSnapshot: "resolved",
+			},
+			PlanReview: &PlanReviewRoute{
+				ProjectID:         store.snapshot.ProjectID,
+				DemandID:          store.snapshot.Demand.ID,
+				CoordinationJobID: store.jobID,
+				RouteDecisionID:   store.routeID,
+				PlanRevisionID:    planRevisionID,
+				PlanFingerprint:   "fingerprint",
+				Payload:           PlanRevisionPayload{Summary: "original plan"},
+				RouteEventID:      initialRouteEventID,
+			},
+		},
+		secondDecisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             secondDecisionRequestID,
+				ProjectID:      store.snapshot.ProjectID,
+				DecisionType:   "plan_review",
+				StatusSnapshot: "resolved",
+				CreatedEventID: replanPlanEventID,
+			},
+			PlanReview: &PlanReviewRoute{
+				ProjectID:         store.snapshot.ProjectID,
+				DemandID:          store.snapshot.Demand.ID,
+				CoordinationJobID: store.jobID,
+				RouteDecisionID:   store.routeID,
+				PlanRevisionID:    secondPlanRevisionID,
+				PlanFingerprint:   "fingerprint",
+				Payload:           PlanRevisionPayload{Summary: "replanned plan"},
+				RouteEventID:      replanRouteEventID,
+				PlanEventID:       replanPlanEventID,
+			},
+		},
+	}
+	planner := &exitCapturingRoutePlanner{inner: HeuristicRoutePlanner{}}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID:     uuid.New(),
+			DecisionRequestID:     decisionRequestID,
+			Decision:              project.PlanReviewDecisionRequestChanges,
+			Payload:               map[string]any{"comment": "改选交付出口"},
+			TargetExitDeliverable: "branch_ref",
+			ResolvedEventID:       requestChangesEventID,
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: secondDecisionRequestID,
+			Decision:          project.PlanReviewDecisionAccept,
+			ResolvedEventID:   finalResolvedEventID,
+		})
+	}, 8*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 15*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Len(t, planner.snapshots, 2, "expected an initial plan pass and a replan pass")
+	require.Equal(t, "", planner.snapshots[0].PinnedExitDeliverable, "initial plan must not carry a pin")
+	require.Equal(t, "branch_ref", planner.snapshots[1].PinnedExitDeliverable, "replan snapshot must carry the human's chosen exit as a pin")
+}
+
 func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
