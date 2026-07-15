@@ -104,15 +104,16 @@ export function McpManagementPage() {
         iconTone="brand"
         title="MCP 管理"
         subtitle="注册 HTTP/streamable HTTP 能力，绑定到团队或数字员工"
-        actions={
-          <V3Button className="h-10 px-4" onClick={() => setShowCreate(true)}>
-            <Plus data-icon="inline-start" />
-            注册 MCP
-          </V3Button>
-        }
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <V3Button className="h-11 self-start px-5" onClick={() => setShowCreate(true)}>
+              <Plus data-icon="inline-start" />
+              注册 MCP
+            </V3Button>
+          </div>
+
           <MetricGrid aria-label="MCP 指标">
             {metrics.map((metric) => (
               <V3MetricCard
