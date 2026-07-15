@@ -180,7 +180,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
-		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+		if diagnosis, gap, ok := noSuitableEmployeeDiagnosis(err); ok {
 			// Terminal, non-retryable planning failure: the executor pool cannot
 			// satisfy the demand. Route it to the demand rejection/diagnosis surface
 			// instead of letting the error fall through to the generic signal_failed
@@ -197,8 +197,11 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 			// recorded RejectDemandPlanning carry no version marker, so replay
 			// returns DefaultVersion, diverges from the recorded command, and
 			// kills the coordinator (this bricked project-coordinator:b4226c24
-			// on 2026-07-15; see replay_test.go).
-			return nil, rejectDemandPlanning(ctx, input, signal, job.ID, diagnosis, []uuid.UUID{signal.CreatedEventID})
+			// on 2026-07-15; see replay_test.go). gap threads through unfenced for
+			// the same reason: it is nil on any history whose recorded
+			// ApplicationError predates the Details attachment, and non-nil is only
+			// ever reached alongside this same reject branch.
+			return nil, rejectDemandPlanning(ctx, input, signal, job.ID, diagnosis, gap, []uuid.UUID{signal.CreatedEventID})
 		}
 		return nil, err
 	}
@@ -452,7 +455,7 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 	snapshot.PinnedExitDeliverable = strings.TrimSpace(signal.TargetExitDeliverable)
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
-		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+		if diagnosis, gap, ok := noSuitableEmployeeDiagnosis(err); ok {
 			// Terminal, non-retryable replan failure (e.g. the reselected exit
 			// pulls in a stage the pool cannot staff): route the demand to the
 			// rejection/diagnosis surface — same treatment as the initial
@@ -468,8 +471,9 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 			// replay_test.go pins this against the real exported history. The one
 			// history recorded in the gap where the typed error existed but this
 			// branch did not (project-coordinator:b4226c24) is unreplayable by any
-			// code version and was remediated operationally.
-			return nil, rejectDemandPlanningByID(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, diagnosis, outputEventIDs)
+			// code version and was remediated operationally. gap is nil-safe for
+			// the same reason (see handleDemandSubmitted's matching comment).
+			return nil, rejectDemandPlanningByID(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, diagnosis, gap, outputEventIDs)
 		}
 		return nil, err
 	}
@@ -953,13 +957,30 @@ func scheduleDispatchRetry(ctx workflow.Context, tenantID, projectID, taskID uui
 // noSuitableEmployeeDiagnosis reports whether err is the terminal, non-retryable
 // ErrNoSuitableEmployee escalation stamped by the PlanDemandRoute activity, and if
 // so returns the human-readable diagnosis (the planner's reason with its structural
-// ways-out hint) to surface on the demand.
-func noSuitableEmployeeDiagnosis(err error) (string, bool) {
+// ways-out hint) to surface on the demand, plus the structured PlanningGap when the
+// ApplicationError carries one as a Details value (wrapNoSuitableEmployeeError in
+// activities.go attaches it only for the structural role_independence gap channel).
+//
+// The gap is nil whenever Details is absent — including on old histories recorded
+// before this field existed, where the replayed ApplicationError has no Details at
+// all. That absence is itself the discriminator between old and new: no GetVersion
+// fence is needed because appErr.HasDetails() is a deterministic decode of data
+// already present in the recorded history event, not a live side effect (same
+// reasoning as appErr.Message() below, which this function already replayed
+// unfenced).
+func noSuitableEmployeeDiagnosis(err error) (string, *PlanningGap, bool) {
 	var appErr *temporal.ApplicationError
 	if errors.As(err, &appErr) && appErr.Type() == errTypeNoSuitableEmployee {
-		return humanizeNoSuitableEmployeeDiagnosis(appErr.Message()), true
+		var gap *PlanningGap
+		if appErr.HasDetails() {
+			var decoded PlanningGap
+			if detailsErr := appErr.Details(&decoded); detailsErr == nil {
+				gap = &decoded
+			}
+		}
+		return humanizeNoSuitableEmployeeDiagnosis(appErr.Message()), gap, true
 	}
-	return "", false
+	return "", nil, false
 }
 
 // humanizeNoSuitableEmployeeDiagnosis strips the ErrNoSuitableEmployee sentinel
@@ -971,17 +992,18 @@ func humanizeNoSuitableEmployeeDiagnosis(message string) string {
 	return strings.TrimSpace(trimmed)
 }
 
-func rejectDemandPlanning(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted, jobID uuid.UUID, diagnosis string, outputEventIDs []uuid.UUID) error {
-	return rejectDemandPlanningByID(ctx, input.TenantID, signal.ProjectID, signal.DemandID, jobID, diagnosis, outputEventIDs)
+func rejectDemandPlanning(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted, jobID uuid.UUID, diagnosis string, gap *PlanningGap, outputEventIDs []uuid.UUID) error {
+	return rejectDemandPlanningByID(ctx, input.TenantID, signal.ProjectID, signal.DemandID, jobID, diagnosis, gap, outputEventIDs)
 }
 
-func rejectDemandPlanningByID(ctx workflow.Context, tenantID, projectID, demandID, jobID uuid.UUID, diagnosis string, outputEventIDs []uuid.UUID) error {
+func rejectDemandPlanningByID(ctx workflow.Context, tenantID, projectID, demandID, jobID uuid.UUID, diagnosis string, gap *PlanningGap, outputEventIDs []uuid.UUID) error {
 	return workflow.ExecuteActivity(ctx, (*Activities).RejectDemandPlanning, RejectDemandPlanningInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DemandID:          demandID,
 		CoordinationJobID: jobID,
 		Diagnosis:         diagnosis,
+		Gap:               gap,
 		OutputEventIDs:    outputEventIDs,
 	}).Get(ctx, nil)
 }

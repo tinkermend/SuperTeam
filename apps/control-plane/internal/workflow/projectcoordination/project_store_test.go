@@ -123,6 +123,77 @@ func TestRejectDemandPlanningAdvancesDemandAndSurfacesDiagnosis(t *testing.T) {
 	require.NotEmpty(t, blocked[0].Payload["recommended_action"])
 }
 
+// TestRejectDemandPlanningPersistsGapPayload proves RejectDemandPlanningInput.Gap
+// threads through to the coordination.blocked event payload as a "gap" map, so the
+// web (and future automation) can act on structured fields instead of re-parsing
+// the diagnosis prose.
+func TestRejectDemandPlanningPersistsGapPayload(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+	gap := &PlanningGap{
+		ConstraintKind:       "role_independence",
+		Roles:                []string{"reviewer", "developer"},
+		RequiredCapabilities: []string{"code_review", "code_implementation"},
+		ActiveExecutorCount:  1,
+		Options:              []string{"restaff", "exempt", "lending"},
+	}
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，为项目补充员工", Gap: gap,
+	})
+
+	require.NoError(t, err)
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	gapPayload, ok := blocked[0].Payload["gap"].(map[string]any)
+	require.True(t, ok, "expected gap payload map, got %#v", blocked[0].Payload["gap"])
+	require.Equal(t, "role_independence", gapPayload["constraint_kind"])
+	require.Equal(t, []string{"reviewer", "developer"}, gapPayload["roles"])
+	require.Equal(t, []string{"code_review", "code_implementation"}, gapPayload["required_capabilities"])
+	require.Equal(t, 1, gapPayload["active_executor_count"])
+	require.Equal(t, []string{"restaff", "exempt", "lending"}, gapPayload["options"])
+}
+
+// TestRejectDemandPlanningNilGapOmitsField proves a nil Gap (every
+// no-suitable-employee diagnosis outside the structural role_independence channel,
+// and every replay of a history recorded before PlanningGap existed) leaves the
+// coordination.blocked payload exactly as before this feature — no "gap" key at
+// all, not a null value.
+func TestRejectDemandPlanningNilGapOmitsField(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "无结构缺口",
+	})
+
+	require.NoError(t, err)
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	_, exists := blocked[0].Payload["gap"]
+	require.False(t, exists)
+}
+
 func TestRejectDemandPlanningIsIdempotent(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

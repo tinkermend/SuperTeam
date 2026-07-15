@@ -3231,12 +3231,26 @@ func (s *ProjectStore) RejectDemandPlanning(ctx context.Context, input RejectDem
 	if err := s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID, project.ProjectDemandStatusFailed); err != nil {
 		return err
 	}
+	payload := map[string]any{
+		"demand_id":          input.DemandID.String(),
+		"reason_code":        noSuitableEmployeeReasonCode,
+		"recommended_action": noSuitableEmployeeRecommendedAction,
+	}
+	if input.Gap != nil {
+		// Structured gap, present only for the structural role_independence
+		// channel (nil on any other no-suitable-employee diagnosis, and on
+		// replays of histories recorded before PlanningGap existed) — see
+		// noSuitableEmployeeDiagnosis in workflow.go.
+		payload["gap"] = map[string]any{
+			"constraint_kind":       input.Gap.ConstraintKind,
+			"roles":                 input.Gap.Roles,
+			"required_capabilities": input.Gap.RequiredCapabilities,
+			"active_executor_count": input.Gap.ActiveExecutorCount,
+			"options":               input.Gap.Options,
+		}
+	}
 	if _, err := s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventCoordinationBlocked,
-		"demand_planning_rejected:"+input.DemandID.String(), diagnosis, map[string]any{
-			"demand_id":          input.DemandID.String(),
-			"reason_code":        noSuitableEmployeeReasonCode,
-			"recommended_action": noSuitableEmployeeRecommendedAction,
-		}); err != nil {
+		"demand_planning_rejected:"+input.DemandID.String(), diagnosis, payload); err != nil {
 		return err
 	}
 	if input.CoordinationJobID != uuid.Nil {
