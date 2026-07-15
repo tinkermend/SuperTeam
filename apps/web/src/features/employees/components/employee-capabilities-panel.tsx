@@ -143,6 +143,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
+        queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
     },
   });
@@ -158,6 +159,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
+        queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
     },
   });
@@ -169,9 +171,12 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       setSelectedServerId("");
       setCredentialEnvVar("");
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["employee-mcp-bindings", employeeId] }),
-        queryClient.invalidateQueries({ queryKey: ["effective-mcp-servers", employeeId] }),
+        // Pre-existing bug: these keys did not match the useQuery keys actually used
+        // above (employee-mcp-bindings-v2 / effective-mcp-config), so this mutation never
+        // invalidated those caches. Fixed alongside the dependency-status invalidation.
+        queryClient.invalidateQueries({ queryKey: ["employee-mcp-bindings-v2", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["effective-mcp-config", employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
     },
   });
@@ -180,9 +185,10 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
     mutationFn: (serverId: string) => deleteEmployeeMcpBindingV2(apiOptions, employeeId, serverId),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["employee-mcp-bindings", employeeId] }),
-        queryClient.invalidateQueries({ queryKey: ["effective-mcp-servers", employeeId] }),
+        // Pre-existing bug: see createMcpMutation above.
+        queryClient.invalidateQueries({ queryKey: ["employee-mcp-bindings-v2", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["effective-mcp-config", employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
     },
   });
@@ -196,6 +202,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       setReplacementValues((current) => ({ ...current, [input.name]: "" }));
       await queryClient.invalidateQueries({ queryKey: ["employee-environment-variables", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] });
+      await queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] });
     },
   });
   const deleteEnvMutation = useMutation({
@@ -208,6 +215,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       });
       await queryClient.invalidateQueries({ queryKey: ["employee-environment-variables", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] });
+      await queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] });
     },
   });
 

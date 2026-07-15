@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
+import { userEvent } from "vitest/browser";
 import { EmployeeCapabilitiesPanel } from "./employee-capabilities-panel";
+import type { McpServerDefinition } from "@/lib/api/capabilities";
 
 const employeeId = "emp-1";
 
@@ -162,5 +164,82 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
     );
     await expect.element(screen.getByText("Deploy Helper", { exact: true })).toBeVisible();
     expect(screen.getByText(/任务派发将被阻断/).query()).toBeNull();
+  });
+
+  test("binding the missing MCP server invalidates dependency status and the warning disappears", async () => {
+    // Regression test for the invalidate-key bugs fixed alongside this test: createMcpMutation
+    // must invalidate ["skill-mcp-dependency-status", employeeId] (and the correctly-keyed
+    // employee-mcp-bindings-v2 / effective-mcp-config caches) so the warning clears without a
+    // manual page reload. The dependency-status endpoint is stateful here: it reports
+    // missing_binding until the bind POST lands, then satisfied — simulating what the real
+    // server would report once the binding exists.
+    const definition = {
+      id: "srv-1",
+      tenant_id: "tenant-1",
+      name: "GitHub MCP",
+      server_key: "github-mcp",
+      description: "GitHub 集成",
+      transport: "streamable_http",
+      url: "https://github.example.com/mcp",
+      auth_strategy: "bearer_env",
+      required_env_vars: [],
+      optional_env_vars: [],
+      tool_allowlist: [],
+      risk_level: "low",
+      status: "active",
+    } satisfies McpServerDefinition;
+
+    let bound = false;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.pathname.endsWith("/mcp-bindings-v2") && method === "POST") {
+        bound = true;
+        return jsonResponse({
+          id: "binding-1",
+          mcp_server_id: definition.id,
+          server_key: definition.server_key,
+          server_name: definition.name,
+          status: "active",
+          missing_env_vars: [],
+        });
+      }
+      if (url.pathname.endsWith("/skill-mcp-dependency-status")) {
+        return jsonResponse([
+          {
+            skill_id: "skill-1",
+            skill_slug: "deploy-helper",
+            dependencies: [
+              {
+                mcp_server_id: definition.id,
+                server_key: definition.server_key,
+                server_name: definition.name,
+                status: bound ? "satisfied" : "missing_binding",
+                missing_env_vars: [],
+              },
+            ],
+          },
+        ]);
+      }
+      if (url.pathname.endsWith("/mcp-servers")) return jsonResponse([definition]);
+      if (url.pathname.endsWith(`/digital-employees/${employeeId}/skills`)) {
+        return jsonResponse([baseSkillEntry]);
+      }
+      return jsonResponse([]);
+    }) as unknown as typeof fetch;
+
+    const screen = await render(
+      withClient(<EmployeeCapabilitiesPanel apiOptions={{ baseUrl: "http://cp", fetcher }} employeeId={employeeId} />),
+    );
+
+    await expect.element(screen.getByText("缺 MCP github-mcp")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
+    await userEvent.click(screen.getByRole("option", { name: /github-mcp/ }));
+    await screen.getByRole("button", { name: "绑定个人 MCP" }).click();
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("缺 MCP github-mcp").query()).toBeNull();
+    });
   });
 });
