@@ -130,7 +130,16 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 		ApplyTaskTypeDefaults(&plan)
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
 		ApplyPlanningProfileScores(snapshot, &plan)
-		if err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}); err != nil {
+		err = ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+		if err == nil {
+			// Template governance (role independence, mandatory stages, human
+			// gates, collapse annotations) runs immediately after every
+			// successful ValidateRouteDecisionPlan, on the same error path —
+			// a governance violation is handled exactly like a validation
+			// failure below.
+			err = EnforceScenarioTemplateGovernance(snapshot, &plan)
+		}
+		if err != nil {
 			if errors.Is(err, ErrNoSuitableEmployee) {
 				return RouteDecisionPlan{}, err
 			}
@@ -142,7 +151,11 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 				repaired := synthesizeRequiredReviewPlan(snapshot, pool, plan)
 				ApplyTaskTypeDefaults(&repaired)
 				ApplyPlanningProfileScores(snapshot, &repaired)
-				if repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
+				repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12})
+				if repairErr == nil {
+					repairErr = EnforceScenarioTemplateGovernance(snapshot, &repaired)
+				}
+				if repairErr == nil {
 					return repaired, nil
 				}
 			}
