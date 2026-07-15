@@ -15,12 +15,15 @@ import {
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
+import { ApiRequestError } from "@/lib/api/client";
 import {
   createMcpServerDefinition,
   deleteMcpServerDefinition,
   listMcpServerDefinitions,
+  listMcpServerDependentSkills,
   type CreateMcpServerDefinitionInput,
   type McpServerDefinition,
 } from "@/lib/api/capabilities";
@@ -46,6 +49,8 @@ export function McpManagementPage() {
   const [form, setForm] = useState<CreateMcpServerDefinitionInput>(EMPTY_FORM);
   const [requiredEnvInput, setRequiredEnvInput] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<McpServerDefinition | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const definitions = useQuery({
     queryKey: ["mcp-server-definitions"],
@@ -72,7 +77,23 @@ export function McpManagementPage() {
       deleteMcpServerDefinition({ baseUrl: apiBaseUrl }, serverId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["mcp-server-definitions"] });
+      setDeleteError(null);
     },
+    onError: (error: unknown) => {
+      setDeleteError(
+        error instanceof ApiRequestError && error.detail
+          ? error.detail
+          : error instanceof Error
+            ? error.message
+            : "删除 MCP 失败",
+      );
+    },
+  });
+
+  const dependentSkills = useQuery({
+    queryKey: ["mcp-dependent-skills", pendingDelete?.id],
+    queryFn: () => listMcpServerDependentSkills({ baseUrl: apiBaseUrl }, pendingDelete!.id),
+    enabled: pendingDelete !== null,
   });
 
   const rows = definitions.data ?? [];
@@ -296,6 +317,10 @@ export function McpManagementPage() {
             </WorkSurface>
           ) : null}
 
+          {deleteError ? (
+            <p className="text-sm text-destructive">{deleteError}</p>
+          ) : null}
+
           <WorkSurface className="min-w-0">
             {isInitialLoading ? (
               <V3LoadingState label="加载 MCP 定义…" />
@@ -326,8 +351,10 @@ export function McpManagementPage() {
                     <McpDefinitionRow
                       key={row.id}
                       row={row}
-                      onDelete={() => deleteMutation.mutate(row.id)}
-                      deleting={deleteMutation.isPending}
+                      onDelete={() => {
+                        setDeleteError(null);
+                        setPendingDelete(row);
+                      }}
                     />
                   ))}
                 </tbody>
@@ -336,6 +363,32 @@ export function McpManagementPage() {
           </WorkSurface>
         </div>
       </Main>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title={`删除 MCP 定义 ${pendingDelete?.name ?? ""}`}
+        desc={
+          dependentSkills.data && dependentSkills.data.length > 0
+            ? `该定义被 ${dependentSkills.data.length} 个技能依赖（${dependentSkills.data
+                .map((skill) => skill.slug)
+                .join("、")}），删除将被服务端拒绝。请先在技能详情页移除依赖。`
+            : "删除后员工绑定与任务装载将不再包含该定义。此操作不可撤销。"
+        }
+        confirmText="删除"
+        destructive
+        disabled={dependentSkills.isLoading || (dependentSkills.data?.length ?? 0) > 0}
+        isLoading={deleteMutation.isPending}
+        handleConfirm={() => {
+          if (pendingDelete) {
+            deleteMutation.mutate(pendingDelete.id, {
+              onSettled: () => setPendingDelete(null),
+            });
+          }
+        }}
+      />
     </>
   );
 }
@@ -343,11 +396,9 @@ export function McpManagementPage() {
 function McpDefinitionRow({
   row,
   onDelete,
-  deleting,
 }: {
   row: McpServerDefinition;
   onDelete: () => void;
-  deleting: boolean;
 }) {
   const tone: V3Tone = row.status === "active" ? "ok" : "mute";
   return (
@@ -380,7 +431,12 @@ function McpDefinitionRow({
         <StatusPill tone={tone}>{row.status}</StatusPill>
       </V3Td>
       <V3Td>
-        <V3Button variant="ghost" size="sm" onClick={onDelete} disabled={deleting}>
+        <V3Button
+          variant="ghost"
+          size="sm"
+          aria-label={`删除 ${row.name}`}
+          onClick={onDelete}
+        >
           <Trash2 />
         </V3Button>
       </V3Td>
