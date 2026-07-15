@@ -4096,11 +4096,24 @@ type ProjectTaskGraph struct {
 // ProjectTaskGraphBlockingFact defines model for ProjectTaskGraphBlockingFact.
 type ProjectTaskGraphBlockingFact struct {
 	CreatedAt         time.Time `json:"created_at"`
-	Message           string    `json:"message"`
-	ReasonCode        string    `json:"reason_code"`
-	RecommendedAction string    `json:"recommended_action"`
-	ResourceId        string    `json:"resource_id"`
-	ResourceType      string    `json:"resource_type"`
+	DecisionRequestId *string   `json:"decision_request_id,omitempty"`
+
+	// Gap Structural staffing gap that terminated a demand's planning (e.g. a role_independence constraint the project's executor pool cannot satisfy). Present only when the coordination.blocked event carries a structured gap.
+	Gap               *ProjectTaskGraphBlockingFactGap `json:"gap,omitempty"`
+	Message           string                           `json:"message"`
+	ReasonCode        string                           `json:"reason_code"`
+	RecommendedAction string                           `json:"recommended_action"`
+	ResourceId        string                           `json:"resource_id"`
+	ResourceType      string                           `json:"resource_type"`
+}
+
+// ProjectTaskGraphBlockingFactGap Structural staffing gap that terminated a demand's planning (e.g. a role_independence constraint the project's executor pool cannot satisfy). Present only when the coordination.blocked event carries a structured gap.
+type ProjectTaskGraphBlockingFactGap struct {
+	ActiveExecutorCount  int32    `json:"active_executor_count"`
+	ConstraintKind       string   `json:"constraint_kind"`
+	Options              []string `json:"options"`
+	RequiredCapabilities []string `json:"required_capabilities"`
+	Roles                []string `json:"roles"`
 }
 
 // ProjectTaskGraphEdge defines model for ProjectTaskGraphEdge.

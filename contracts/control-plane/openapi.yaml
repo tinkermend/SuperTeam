@@ -5787,6 +5787,40 @@ components:
         created_at:
           type: string
           format: date-time
+        gap:
+          $ref: "#/components/schemas/ProjectTaskGraphBlockingFactGap"
+        decision_request_id:
+          type: string
+    ProjectTaskGraphBlockingFactGap:
+      type: object
+      description: >-
+        Structural staffing gap that terminated a demand's planning (e.g. a
+        role_independence constraint the project's executor pool cannot satisfy).
+        Present only when the coordination.blocked event carries a structured gap.
+      required:
+        - constraint_kind
+        - roles
+        - required_capabilities
+        - active_executor_count
+        - options
+      properties:
+        constraint_kind:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        required_capabilities:
+          type: array
+          items:
+            type: string
+        active_executor_count:
+          type: integer
+          format: int32
+        options:
+          type: array
+          items:
+            type: string
     ProjectTaskGraphNode:
       type: object
       required:

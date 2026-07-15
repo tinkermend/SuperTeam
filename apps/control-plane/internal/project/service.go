@@ -2020,13 +2020,67 @@ func projectTaskGraphBlockingFactFromEvent(event ProjectEvent) ProjectTaskGraphB
 	if reasonCode == "" {
 		reasonCode = "coordination_blocked"
 	}
-	return ProjectTaskGraphBlockingFact{
+	fact := ProjectTaskGraphBlockingFact{
 		ReasonCode:        reasonCode,
 		Message:           message,
 		ResourceType:      resourceType,
 		ResourceID:        resourceID,
 		RecommendedAction: stringPayload(event.Payload, "recommended_action"),
 		CreatedAt:         event.CreatedAt,
+		DecisionRequestID: stringPayload(event.Payload, "decision_request_id"),
+	}
+	if gapPayload := mapFromPayload(event.Payload, "gap"); len(gapPayload) > 0 {
+		fact.Gap = &ProjectTaskGraphBlockingFactGap{
+			ConstraintKind:       stringPayload(gapPayload, "constraint_kind"),
+			Roles:                stringSlicePayload(gapPayload, "roles"),
+			RequiredCapabilities: stringSlicePayload(gapPayload, "required_capabilities"),
+			ActiveExecutorCount:  intPayload(gapPayload, "active_executor_count"),
+			Options:              stringSlicePayload(gapPayload, "options"),
+		}
+	}
+	return fact
+}
+
+// stringSlicePayload extracts a []string from a decoded JSON payload map, accepting
+// both []string (set directly by Go callers in tests) and []any of strings (the
+// shape after a jsonb column round trip). Non-string entries and blank strings are
+// dropped; a missing/wrong-typed key returns nil (not an error).
+func stringSlicePayload(payload map[string]any, key string) []string {
+	switch raw := payload[key].(type) {
+	case []string:
+		values := make([]string, 0, len(raw))
+		for _, value := range raw {
+			if strings.TrimSpace(value) != "" {
+				values = append(values, value)
+			}
+		}
+		return values
+	case []any:
+		values := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if value, ok := item.(string); ok && strings.TrimSpace(value) != "" {
+				values = append(values, value)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
+}
+
+// intPayload extracts an int from a decoded JSON payload map. Numeric payload
+// values decode as float64 after a jsonb round trip, but Go test callers may set
+// int/int64 directly; both are accepted. A missing/wrong-typed key returns 0.
+func intPayload(payload map[string]any, key string) int {
+	switch value := payload[key].(type) {
+	case float64:
+		return int(value)
+	case int:
+		return value
+	case int64:
+		return int(value)
+	default:
+		return 0
 	}
 }
 

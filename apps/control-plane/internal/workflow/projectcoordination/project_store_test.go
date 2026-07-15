@@ -258,6 +258,66 @@ func TestRejectDemandPlanningCreatesPlanningGapDecision(t *testing.T) {
 	require.Len(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested), 1)
 }
 
+// TestRejectDemandPlanningPersistsDecisionRequestIDOnBlockedEvent proves the
+// coordination.blocked event payload carries decision_request_id alongside gap, so
+// the web's task-graph blocking-fact path (which returns no decision_requests when
+// the task graph has no nodes yet) can still resolve the demand's pending
+// planning_gap decision without a separate lookup.
+func TestRejectDemandPlanningPersistsDecisionRequestIDOnBlockedEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, &projectStoreApprovalCreator{}, &projectStoreDecisionInboxProjector{})
+	gap := &PlanningGap{ConstraintKind: "role_independence", Roles: []string{"reviewer", "developer"}, ActiveExecutorCount: 1, Options: []string{"restaff", "exempt", "lending"}}
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，为项目补充员工", Gap: gap,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, repo.decisionRequests, 1)
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	require.Equal(t, repo.decisionRequests[0].ID.String(), blocked[0].Payload["decision_request_id"])
+}
+
+// TestRejectDemandPlanningWithoutApprovalsOmitsDecisionRequestID proves the
+// bare-repository callers (no approval sink wired, e.g. tests that only assert the
+// blocked event) never get a "decision_request_id" key — there is no decision to
+// reference.
+func TestRejectDemandPlanningWithoutApprovalsOmitsDecisionRequestID(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "无结构缺口",
+	}))
+
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	_, exists := blocked[0].Payload["decision_request_id"]
+	require.False(t, exists)
+}
+
 // TestLoadHumanDecisionRouteForPlanningGapResolvesDemand proves the decision route
 // for a planning_gap decision recovers the demand from the approval request's
 // context payload, so the coordinator's restaffed branch knows which demand to
@@ -6565,6 +6625,33 @@ func (r *projectStoreMemoryRepository) UpdateProjectTaskStatus(ctx context.Conte
 		return task, nil
 	}
 	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+// ListDemandLaunchDecisionRequests mirrors the real repository's coordination-job/task
+// membership filter closely enough for findPlanningGapDecisionID's idempotent-retry
+// lookup: it never needs precise pagination or task-id matching in tests, only
+// "does a decision exist for this coordination job".
+func (r *projectStoreMemoryRepository) ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]project.DecisionRequest, error) {
+	jobSet := make(map[uuid.UUID]bool, len(coordinationJobIDs))
+	for _, id := range coordinationJobIDs {
+		jobSet[id] = true
+	}
+	taskSet := make(map[uuid.UUID]bool, len(projectTaskIDs))
+	for _, id := range projectTaskIDs {
+		taskSet[id] = true
+	}
+	matches := make([]project.DecisionRequest, 0)
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID {
+			continue
+		}
+		jobMatch := decision.CoordinationJobID != nil && jobSet[*decision.CoordinationJobID]
+		taskMatch := decision.ProjectTaskID != nil && taskSet[*decision.ProjectTaskID]
+		if jobMatch || taskMatch {
+			matches = append(matches, decision)
+		}
+	}
+	return matches, nil
 }
 
 func (r *projectStoreMemoryRepository) FinishCoordinationJob(ctx context.Context, req project.FinishCoordinationJobRequest) (project.CoordinationJob, error) {

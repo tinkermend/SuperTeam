@@ -265,6 +265,51 @@ describe("ProjectOperationalDetail", () => {
     );
   });
 
+  it("shows a diagnosis line and gap deep link for a failed demand", async () => {
+    const failedDemands: ProjectDemand[] = [
+      { ...demands[0], status: "failed" },
+    ];
+    const screen = await renderDetail({
+      demands: failedDemands,
+      taskGraph: {
+        blocking_facts: [
+          {
+            created_at: "2026-07-10T08:00:00Z",
+            message: "项目员工池无法满足审查独立性约束（需≥2名可调度员工）",
+            reason_code: "no_suitable_employee",
+            recommended_action: "为项目补充可调度员工或换用模板",
+          },
+        ],
+        decision_requests: [],
+        edges: [],
+        employees: [],
+        execution_summaries: [],
+        nodes: [],
+        recent_events: [],
+        runs: [],
+      },
+    });
+
+    await expect
+      .element(screen.getByText("项目员工池无法满足审查独立性约束（需≥2名可调度员工）"))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("下一步：为项目补充可调度员工或换用模板"))
+      .toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "查看缺口处理 →" })).toHaveAttribute(
+      "href",
+      "/workflows/demand-1",
+    );
+  });
+
+  it("does not show a diagnosis line for a non-failed demand", async () => {
+    const screen = await renderDetail();
+
+    await expect
+      .element(screen.getByRole("link", { name: "查看缺口处理 →" }))
+      .not.toBeInTheDocument();
+  });
+
   it("opens approval tab from query focus and highlights the decision", async () => {
     const onResolveDecision = vi.fn();
     const screen = await renderDetail({

@@ -621,6 +621,112 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByRole("button", { name: "blocking-runtime_placement_missing" })).toBeVisible();
   });
 
+  function makeGapBlockingFact(overrides: Partial<import("@/lib/api/projects").ProjectTaskGraphBlockingFact> = {}) {
+    return {
+      decision_request_id: "decision-gap-1",
+      gap: {
+        active_executor_count: 1,
+        constraint_kind: "role_independence",
+        options: ["restaff", "exempt", "lending"],
+        required_capabilities: ["code_review"],
+        roles: ["reviewer", "developer"],
+      },
+      message: "项目员工池无法满足审查独立性约束（需≥2名可调度员工）",
+      reason_code: "no_suitable_employee",
+      recommended_action: "为项目补充可调度员工或换用模板",
+      ...overrides,
+    };
+  }
+
+  it("renders a staffing gap panel with three actions when the blocking fact carries a structural gap", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-gap-panel")).toBeVisible();
+    await expect.element(screen.getByText("规划缺口：审查独立性约束")).toBeVisible();
+    await expect
+      .element(screen.getByText("涉及角色：reviewer、developer · 当前可调度员工 1 名"))
+      .toBeVisible();
+    await expect.element(screen.getByText("所需能力：code_review")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "从标准模板补员" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "豁免并重规划" })).toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "发起借调" }))
+      .toHaveAttribute("href", "/projects/project-1/config");
+  });
+
+  it("does not render the gap panel when the blocking fact carries no structural gap", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([], {
+          blocking_facts: [
+            {
+              message: "项目还没有可用执行位置",
+              reason_code: "runtime_placement_missing",
+              recommended_action: "先选择 Runtime 节点或创建执行位置",
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect.element(screen.getByText("协调已阻塞：项目还没有可用执行位置")).toBeVisible();
+    await expect.element(screen.getByTestId("workflow-gap-panel")).not.toBeInTheDocument();
+  });
+
+  it("does not render the gap panel when there is no blocking fact at all", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([makeGraphNode("task-1", "主机操作系统健康检查", "running")]),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+    await expect.element(screen.getByTestId("workflow-gap-panel")).not.toBeInTheDocument();
+  });
+
+  it("resolves the planning_gap decision as exempted after confirming the consequences", async () => {
+    const baseFetcher = createWorkflowFetcher({
+      graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
+    });
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (
+        url.pathname === "/api/v1/projects/project-1/decisions/decision-gap-1/resolve" &&
+        init?.method === "POST"
+      ) {
+        return jsonResponse({
+          approval_request_id: "approval-1",
+          decision_type: "planning_gap",
+          id: "decision-gap-1",
+          project_id: "project-1",
+          status_snapshot: "rejected",
+          target_user_id: "owner-1",
+          tenant_id: "tenant-1",
+          title_snapshot: "规划缺口",
+        });
+      }
+      return baseFetcher(input, init);
+    }) as unknown as typeof fetch;
+
+    const screen = await renderWorkflowView({ fetcher });
+
+    await userEvent.click(screen.getByRole("button", { name: "豁免并重规划" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认豁免" }));
+
+    await vi.waitFor(() => {
+      const resolveCall = (fetcher as unknown as { mock: { calls: [RequestInfo | URL, RequestInit?][] } }).mock.calls.find(
+        ([reqInput]) => String(reqInput).includes("/decisions/decision-gap-1/resolve"),
+      );
+      expect(resolveCall).toBeTruthy();
+      const [, init] = resolveCall!;
+      expect(JSON.parse(String(init?.body))).toMatchObject({ decision: "exempted" });
+    });
+  });
+
   it("surfaces dispatch gate replan blockers even when task graph nodes exist", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({

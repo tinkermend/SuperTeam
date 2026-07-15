@@ -3270,6 +3270,21 @@ func (s *ProjectStore) RejectDemandPlanning(ctx context.Context, input RejectDem
 	if err := s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID, project.ProjectDemandStatusFailed); err != nil {
 		return err
 	}
+	// Open a human-decision item so the demand's diagnosis becomes actionable in
+	// the owner's inbox (已补员→reopen+replan, or 关闭). Only when an approval sink
+	// is wired (production path); the bare-repository callers that just assert the
+	// blocked event skip this. Resolved before the blocked event payload is built so
+	// the event can carry decision_request_id — the web's task-graph blocking-fact
+	// path (empty nodes) has no other way to recover the pending planning_gap
+	// decision id for its resolve action.
+	var decisionRequestID uuid.UUID
+	if s.approvals != nil {
+		id, err := s.ensurePlanningGapDecision(ctx, input, diagnosis)
+		if err != nil {
+			return err
+		}
+		decisionRequestID = id
+	}
 	payload := map[string]any{
 		"demand_id":          input.DemandID.String(),
 		"reason_code":        noSuitableEmployeeReasonCode,
@@ -3288,18 +3303,12 @@ func (s *ProjectStore) RejectDemandPlanning(ctx context.Context, input RejectDem
 			"options":               input.Gap.Options,
 		}
 	}
+	if decisionRequestID != uuid.Nil {
+		payload["decision_request_id"] = decisionRequestID.String()
+	}
 	if _, err := s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventCoordinationBlocked,
 		"demand_planning_rejected:"+input.DemandID.String(), diagnosis, payload); err != nil {
 		return err
-	}
-	// Open a human-decision item so the demand's diagnosis becomes actionable in
-	// the owner's inbox (已补员→reopen+replan, or 关闭). Only when an approval sink
-	// is wired (production path); the bare-repository callers that just assert the
-	// blocked event skip this.
-	if s.approvals != nil {
-		if err := s.ensurePlanningGapDecision(ctx, input, diagnosis); err != nil {
-			return err
-		}
 	}
 	if input.CoordinationJobID != uuid.Nil {
 		if err := s.FinishCoordinationJob(ctx, FinishCoordinationJobInput{
@@ -3327,18 +3336,21 @@ const (
 // + decision.requested event + decision request projection + inbox item) for a
 // terminally-rejected demand, mirroring RequestPlanRevisionReview. It is idempotent
 // per demand: if a pending planning_gap approval already exists for the demand
-// (e.g. an activity retry re-ran RejectDemandPlanning), it creates nothing.
-func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input RejectDemandPlanningInput, diagnosis string) error {
+// (e.g. an activity retry re-ran RejectDemandPlanning), it creates nothing and
+// instead best-effort resolves the existing decision's id (needed only on the rare
+// retry where the earlier attempt created the decision but crashed before the
+// coordination.blocked event carrying decision_request_id was appended).
+func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input RejectDemandPlanningInput, diagnosis string) (uuid.UUID, error) {
 	existing, err := s.approvals.GetRequestByResource(ctx, input.TenantID, planningGapResourceType, input.DemandID)
 	if err != nil && !errors.Is(err, approval.ErrApprovalNotFound) {
-		return err
+		return uuid.Nil, err
 	}
 	if existing != nil {
-		return nil
+		return s.findPlanningGapDecisionID(ctx, input.TenantID, input.ProjectID, input.CoordinationJobID, existing.ID), nil
 	}
 	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	targetUserID := projectRecord.HumanOwnerUserID
 	contextPayload := map[string]any{
@@ -3363,7 +3375,7 @@ func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input Reje
 		ContextPayload: contextPayload,
 	})
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.DemandID.String(), "规划缺口需要人类补员决策", map[string]any{
 		"approval_request_id": approvalRequest.ID.String(),
@@ -3372,7 +3384,7 @@ func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input Reje
 		"decision_type":       planningGapDecisionType,
 	}))
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	coordinationJobID := input.CoordinationJobID
 	var coordinationJobPtr *uuid.UUID
@@ -3393,14 +3405,38 @@ func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input Reje
 		CreatedEventID:    &event.ID,
 	})
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
-			return err
+			return uuid.Nil, err
 		}
 	}
-	return nil
+	return decision.ID, nil
+}
+
+// findPlanningGapDecisionID best-effort recovers the ProjectDecisionRequest id for an
+// already-existing planning_gap approval request, using only the ListDemandLaunchDecisionRequests
+// repository method available on ProjectStore's project.Repository (no interface/query
+// addition required). It matches by coordination job id, then filters by approval request
+// id — coordinationJobID is the retry's own job id, which is the same job id the earlier
+// (partially-failed) attempt used to create the decision. Returns uuid.Nil (not an error)
+// on any lookup miss or failure: the decision_request_id passthrough is a best-effort
+// enhancement, never a blocker for the reject flow itself.
+func (s *ProjectStore) findPlanningGapDecisionID(ctx context.Context, tenantID, projectID, coordinationJobID, approvalRequestID uuid.UUID) uuid.UUID {
+	if coordinationJobID == uuid.Nil {
+		return uuid.Nil
+	}
+	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, tenantID, projectID, []uuid.UUID{coordinationJobID}, nil, 50)
+	if err != nil {
+		return uuid.Nil
+	}
+	for _, decision := range decisions {
+		if decision.ApprovalRequestID == approvalRequestID {
+			return decision.ID
+		}
+	}
+	return uuid.Nil
 }
 
 func planningGapPayload(gap *PlanningGap) map[string]any {
