@@ -503,13 +503,15 @@ export function ProjectOperationalDetail({
                       </div>
                     ) : null}
                   </div>
-                  {planRevisionTemplateKey(latestPlanRevision) ? (
+                  {planRevisionHasBoundTemplate(latestPlanRevision) &&
+                  planRevisionTemplateKey(latestPlanRevision) ? (
                     <RuntimeMeta
                       label="场景模板"
                       value={planRevisionTemplateKey(latestPlanRevision)}
                     />
                   ) : null}
-                  {planRevisionExitLabel(latestPlanRevision) ? (
+                  {planRevisionHasBoundTemplate(latestPlanRevision) &&
+                  planRevisionExitLabel(latestPlanRevision) ? (
                     <RuntimeMeta
                       label="交付出口"
                       value={planRevisionExitLabel(latestPlanRevision)}
@@ -2204,6 +2206,15 @@ function formatDateTime(value?: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+// planRevisionHasBoundTemplate reports whether the plan was generated against a
+// real, bound scenario template. template_version is the authoritative binding
+// marker: server governance stamps it only for bound plans and strips it for
+// unbound/generic demands, so a planner-hallucinated template_key without a
+// version never renders the 场景模板/交付出口 rows.
+function planRevisionHasBoundTemplate(revision: ProjectPlanRevision): boolean {
+  return typeof revision.payload?.["template_version"] === "number";
 }
 
 function planRevisionTemplateKey(revision: ProjectPlanRevision): string {

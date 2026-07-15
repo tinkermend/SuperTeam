@@ -415,6 +415,38 @@ func TestGovernancePopulatesVersionAndExits(t *testing.T) {
 	}
 }
 
+// TestGovernanceUnboundStripsHallucinatedTemplateLineage: an unbound/generic
+// demand (nil ScenarioTemplate) has no template, so any template lineage the
+// planner echoed back — exit_deliverable, available_exits, constraint_notes,
+// template_version — is hallucinated and must be stripped before the payload
+// reaches the confirmation card. TemplateKey is deliberately left intact: it is
+// a pre-existing planner label consumed by plan fingerprints, not a binding
+// marker.
+func TestGovernanceUnboundStripsHallucinatedTemplateLineage(t *testing.T) {
+	develop := planTaskWithIO("analyze", nil, []string{"risk_report"}, nil)
+	develop.SelectedEmployeeID = uuid.New()
+	plan := RouteDecisionPlan{
+		Reason:          "unbound demand with hallucinated lineage",
+		TemplateKey:     "tech_risk_analysis",
+		TemplateVersion: 7,
+		ExitDeliverable: "risk_report",
+		AvailableExits:  []PlanExitOption{{Deliverable: "risk_report", Label: "风险报告"}},
+		ConstraintNotes: []PlanConstraintNote{{Kind: "human_gate", Message: "幻觉约束"}},
+		Tasks:           []PlannedTask{develop},
+	}
+	snapshot := CoordinationSnapshot{DigitalEmployeePool: activeExecutorPool(uuid.New())}
+
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+
+	require.NoError(t, err)
+	require.Equal(t, "", plan.ExitDeliverable)
+	require.Empty(t, plan.AvailableExits)
+	require.Empty(t, plan.ConstraintNotes)
+	require.Equal(t, 0, plan.TemplateVersion)
+	// TemplateKey is a pre-existing planner label used in fingerprints; keep as-is.
+	require.Equal(t, "tech_risk_analysis", plan.TemplateKey)
+}
+
 // --- ValidateRouteDecisionPlan integration coverage (template-governance-adjacent) ---
 
 func TestValidateRouteDecisionPlanRejectsPinnedExitMismatch(t *testing.T) {

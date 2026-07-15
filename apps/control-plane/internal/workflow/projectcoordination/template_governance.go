@@ -219,7 +219,20 @@ func structuralGapForPlan(snapshot CoordinationSnapshot, plan RouteDecisionPlan)
 // loop-mode plans, since neither RouteDecisionPlan nor CoordinationSnapshot
 // carries a "mode" the evaluator branches on.
 func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *RouteDecisionPlan) error {
-	if plan == nil || snapshot.ScenarioTemplate == nil {
+	if plan == nil {
+		return nil
+	}
+	if snapshot.ScenarioTemplate == nil {
+		// Unbound/generic demand: there is no template, so any template lineage
+		// the planner echoed back is hallucinated and must not reach the
+		// confirmation card. Strip the binding markers — exit_deliverable,
+		// available_exits, constraint_notes, template_version. TemplateKey is
+		// deliberately left intact: it is a pre-existing planner label consumed
+		// by plan fingerprints, not a template-binding marker.
+		plan.ExitDeliverable = ""
+		plan.AvailableExits = nil
+		plan.ConstraintNotes = nil
+		plan.TemplateVersion = 0
 		return nil
 	}
 	spec, err := scenariotemplate.ParseSpec(snapshot.ScenarioTemplate.Spec)

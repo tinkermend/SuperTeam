@@ -352,18 +352,24 @@ describe("ProjectOperationalDetail", () => {
       .toBeVisible();
   });
 
-  it("falls back to a bare template key when template_version is absent", async () => {
-    const legacyRevision: ProjectPlanRevision = {
+  it("hides template and exit rows for an unbound demand carrying only a hallucinated template_key", async () => {
+    const unboundRevision: ProjectPlanRevision = {
       ...planRevisions[0],
       payload: {
         ...planRevisions[0].payload,
-        template_key: "software_delivery",
+        // Planner echoed a template lineage for a template-less demand; without a
+        // template_version binding marker, neither the 场景模板 nor 交付出口 row
+        // may render.
+        exit_deliverable: "risk_report",
+        template_key: "tech_risk_analysis",
       },
     };
-    const screen = await renderDetail({ planRevisions: [legacyRevision] });
+    const screen = await renderDetail({ planRevisions: [unboundRevision] });
 
-    await expect.element(screen.getByText("software_delivery")).toBeVisible();
-    await expect.element(screen.getByText("software_delivery@v")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("调度顺序")).toBeVisible();
+    await expect.element(screen.getByText("tech_risk_analysis")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("risk_report")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("交付出口")).not.toBeInTheDocument();
   });
 
   it("submits the selected target exit deliverable alongside request_changes", async () => {
