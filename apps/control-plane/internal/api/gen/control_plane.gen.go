@@ -2460,6 +2460,13 @@ type DecideTeamMemberRoleRequest struct {
 	DecisionReason *string `json:"decision_reason,omitempty"`
 }
 
+// DependentSkill defines model for DependentSkill.
+type DependentSkill struct {
+	Name    string             `json:"name"`
+	SkillId openapi_types.UUID `json:"skill_id"`
+	Slug    string             `json:"slug"`
+}
+
 // DigitalEmployee defines model for DigitalEmployee.
 type DigitalEmployee struct {
 	AllowedActions        *[]string               `json:"allowed_actions,omitempty"`
@@ -4295,6 +4302,14 @@ type ReplaceProjectMembersRequest struct {
 	Members []ProjectMemberInput `json:"members"`
 }
 
+// ReplaceSkillMCPDependenciesRequest defines model for ReplaceSkillMCPDependenciesRequest.
+type ReplaceSkillMCPDependenciesRequest struct {
+	Items []struct {
+		McpServerId openapi_types.UUID `json:"mcp_server_id"`
+		Note        *string            `json:"note,omitempty"`
+	} `json:"items"`
+}
+
 // RequestProjectTaskTransferRequest defines model for RequestProjectTaskTransferRequest.
 type RequestProjectTaskTransferRequest struct {
 	DigitalEmployeeId           openapi_types.UUID    `json:"digital_employee_id"`
@@ -4702,6 +4717,20 @@ type SkillInstallationProviderType string
 
 // SkillInstallationTargetScope defines model for SkillInstallation.TargetScope.
 type SkillInstallationTargetScope string
+
+// SkillMCPDependency defines model for SkillMCPDependency.
+type SkillMCPDependency struct {
+	AuthStrategy MCPAuthStrategy    `json:"auth_strategy"`
+	CreatedAt    time.Time          `json:"created_at"`
+	Id           openapi_types.UUID `json:"id"`
+	McpServerId  openapi_types.UUID `json:"mcp_server_id"`
+	Note         string             `json:"note"`
+	RiskLevel    string             `json:"risk_level"`
+	ServerKey    string             `json:"server_key"`
+	ServerName   string             `json:"server_name"`
+	ServerStatus string             `json:"server_status"`
+	SkillId      openapi_types.UUID `json:"skill_id"`
+}
 
 // SkillRuntimeDependencies defines model for SkillRuntimeDependencies.
 type SkillRuntimeDependencies struct {
@@ -5833,6 +5862,9 @@ type UploadSkillMultipartRequestBody = UploadSkillRequest
 // InstallSkillJSONRequestBody defines body for InstallSkill for application/json ContentType.
 type InstallSkillJSONRequestBody = InstallSkillRequest
 
+// ReplaceSkillMCPDependenciesJSONRequestBody defines body for ReplaceSkillMCPDependencies for application/json ContentType.
+type ReplaceSkillMCPDependenciesJSONRequestBody = ReplaceSkillMCPDependenciesRequest
+
 // CreateTaskJSONRequestBody defines body for CreateTask for application/json ContentType.
 type CreateTaskJSONRequestBody = CreateTaskRequest
 
@@ -6480,6 +6512,9 @@ type ServerInterface interface {
 	// Delete a tenant MCP HTTP capability definition
 	// (DELETE /api/v1/mcp-servers/{serverId})
 	DeleteMCPServerDefinition(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// List active skills depending on an MCP server definition
+	// (GET /api/v1/mcp-servers/{serverId}/dependent-skills)
+	ListMCPServerDependentSkills(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// Get project demand launch detail
 	// (GET /api/v1/project-demands/{demandId}/launch-detail)
 	GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -6765,6 +6800,12 @@ type ServerInterface interface {
 	// List skill installation records
 	// (GET /api/v1/skills/{skillId}/installations)
 	ListSkillInstallations(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// List MCP dependencies declared by a skill
+	// (GET /api/v1/skills/{skillId}/mcp-dependencies)
+	ListSkillMCPDependencies(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// Declaratively replace the MCP dependencies of a skill
+	// (PUT /api/v1/skills/{skillId}/mcp-dependencies)
+	ReplaceSkillMCPDependencies(w http.ResponseWriter, r *http.Request, skillId SkillId)
 	// List tasks
 	// (GET /api/v1/tasks)
 	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
@@ -7185,6 +7226,12 @@ func (_ Unimplemented) CreateMCPServerDefinition(w http.ResponseWriter, r *http.
 // Delete a tenant MCP HTTP capability definition
 // (DELETE /api/v1/mcp-servers/{serverId})
 func (_ Unimplemented) DeleteMCPServerDefinition(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List active skills depending on an MCP server definition
+// (GET /api/v1/mcp-servers/{serverId}/dependent-skills)
+func (_ Unimplemented) ListMCPServerDependentSkills(w http.ResponseWriter, r *http.Request, serverId ServerId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7755,6 +7802,18 @@ func (_ Unimplemented) InstallSkill(w http.ResponseWriter, r *http.Request, skil
 // List skill installation records
 // (GET /api/v1/skills/{skillId}/installations)
 func (_ Unimplemented) ListSkillInstallations(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List MCP dependencies declared by a skill
+// (GET /api/v1/skills/{skillId}/mcp-dependencies)
+func (_ Unimplemented) ListSkillMCPDependencies(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Declaratively replace the MCP dependencies of a skill
+// (PUT /api/v1/skills/{skillId}/mcp-dependencies)
+func (_ Unimplemented) ReplaceSkillMCPDependencies(w http.ResponseWriter, r *http.Request, skillId SkillId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9724,6 +9783,32 @@ func (siw *ServerInterfaceWrapper) DeleteMCPServerDefinition(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteMCPServerDefinition(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMCPServerDependentSkills operation middleware
+func (siw *ServerInterfaceWrapper) ListMCPServerDependentSkills(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", chi.URLParam(r, "serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMCPServerDependentSkills(w, r, serverId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13404,6 +13489,58 @@ func (siw *ServerInterfaceWrapper) ListSkillInstallations(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// ListSkillMCPDependencies operation middleware
+func (siw *ServerInterfaceWrapper) ListSkillMCPDependencies(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSkillMCPDependencies(w, r, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceSkillMCPDependencies operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceSkillMCPDependencies(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceSkillMCPDependencies(w, r, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTasks operation middleware
 func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
 
@@ -15125,6 +15262,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Delete(options.BaseURL+"/api/v1/mcp-servers/{serverId}", wrapper.DeleteMCPServerDefinition)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/mcp-servers/{serverId}/dependent-skills", wrapper.ListMCPServerDependentSkills)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/launch-detail", wrapper.GetProjectDemandLaunchDetail)
 	})
 	r.Group(func(r chi.Router) {
@@ -15408,6 +15548,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/skills/{skillId}/installations", wrapper.ListSkillInstallations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/skills/{skillId}/mcp-dependencies", wrapper.ListSkillMCPDependencies)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/skills/{skillId}/mcp-dependencies", wrapper.ReplaceSkillMCPDependencies)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tasks", wrapper.ListTasks)

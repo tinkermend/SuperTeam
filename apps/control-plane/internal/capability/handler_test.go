@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -256,6 +258,12 @@ type handlerService struct {
 	createTeamBindingReq       CreateTeamMCPBindingRequest
 	createEmployeeBindingV2Req CreateEmployeeMCPBindingV2Request
 	effectiveConfigReq         EmployeeScopedRequest
+
+	skillMCPDependencies      []SkillMCPDependency
+	dependentSkills           []DependentSkill
+	listSkillDependenciesReq  ListSkillMCPDependenciesRequest
+	replaceSkillDependencyReq ReplaceSkillMCPDependenciesRequest
+	listDependentSkillsReq    ListDependentSkillsRequest
 }
 
 func (s *handlerService) CreateCredential(_ context.Context, req CreateCredentialRequest) (Credential, error) {
@@ -349,6 +357,21 @@ func (s *handlerService) ListEffectiveMCPConfig(_ context.Context, req EmployeeS
 	return s.effectiveServers, s.err
 }
 
+func (s *handlerService) ListSkillMCPDependencies(_ context.Context, req ListSkillMCPDependenciesRequest) ([]SkillMCPDependency, error) {
+	s.listSkillDependenciesReq = req
+	return s.skillMCPDependencies, s.err
+}
+
+func (s *handlerService) ReplaceSkillMCPDependencies(_ context.Context, req ReplaceSkillMCPDependenciesRequest) ([]SkillMCPDependency, error) {
+	s.replaceSkillDependencyReq = req
+	return s.skillMCPDependencies, s.err
+}
+
+func (s *handlerService) ListDependentSkills(_ context.Context, req ListDependentSkillsRequest) ([]DependentSkill, error) {
+	s.listDependentSkillsReq = req
+	return s.dependentSkills, s.err
+}
+
 type handlerAuthorizer struct {
 	allowed bool
 	checks  []authz.CheckRequest
@@ -378,4 +401,48 @@ func requestWithChiParams(req *http.Request, params map[string]string) *http.Req
 		routeCtx.URLParams.Add(key, value)
 	}
 	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+}
+
+func TestHandlerReplaceSkillMCPDependenciesUsesManageAction(t *testing.T) {
+	service := &handlerService{}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	skillID := uuid.New()
+	body := strings.NewReader(`{"items":[{"mcp_server_id":"` + uuid.New().String() + `","note":"api"}]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/skills/"+skillID.String()+"/mcp-dependencies", body)
+	req = requestWithConsoleIdentity(req, uuid.New(), uuid.New())
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("skillId", skillID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	resp := httptest.NewRecorder()
+	handler.ReplaceSkillMCPDependencies(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if authorizer.checks[0].Action != authz.ActionMCPRegistryManage {
+		t.Fatalf("expected manage action, got %s", authorizer.checks[0].Action)
+	}
+}
+
+func TestHandlerDeleteMCPServerDefinitionConflictMapsTo409(t *testing.T) {
+	service := &handlerService{err: fmt.Errorf("%w: mcp server is required by skills: a", ErrConflict)}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	serverID := uuid.New()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/mcp-servers/"+serverID.String(), nil)
+	req = requestWithConsoleIdentity(req, uuid.New(), uuid.New())
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("serverId", serverID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	resp := httptest.NewRecorder()
+	handler.DeleteMCPServerDefinition(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", resp.Code)
+	}
 }

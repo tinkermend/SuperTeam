@@ -2269,6 +2269,72 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/skills/{skillId}/mcp-dependencies:
+    get:
+      operationId: listSkillMCPDependencies
+      summary: List MCP dependencies declared by a skill
+      parameters:
+        - $ref: "#/components/parameters/SkillId"
+      responses:
+        "200":
+          description: Skill MCP dependencies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SkillMCPDependency"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: replaceSkillMCPDependencies
+      summary: Declaratively replace the MCP dependencies of a skill
+      parameters:
+        - $ref: "#/components/parameters/SkillId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceSkillMCPDependenciesRequest"
+      responses:
+        "200":
+          description: Replaced skill MCP dependencies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SkillMCPDependency"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/mcp-servers/{serverId}/dependent-skills:
+    get:
+      operationId: listMCPServerDependentSkills
+      summary: List active skills depending on an MCP server definition
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      responses:
+        "200":
+          description: Dependent skills
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DependentSkill"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/mcp-bindings:
     get:
       operationId: listTeamMCPBindings
@@ -9070,6 +9136,75 @@ components:
         updated_at:
           type: string
           format: date-time
+    SkillMCPDependency:
+      type: object
+      required:
+        - id
+        - skill_id
+        - mcp_server_id
+        - note
+        - server_key
+        - server_name
+        - auth_strategy
+        - risk_level
+        - server_status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        skill_id:
+          type: string
+          format: uuid
+        mcp_server_id:
+          type: string
+          format: uuid
+        note:
+          type: string
+        server_key:
+          type: string
+        server_name:
+          type: string
+        auth_strategy:
+          $ref: "#/components/schemas/MCPAuthStrategy"
+        risk_level:
+          type: string
+        server_status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ReplaceSkillMCPDependenciesRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - mcp_server_id
+            properties:
+              mcp_server_id:
+                type: string
+                format: uuid
+              note:
+                type: string
+    DependentSkill:
+      type: object
+      required:
+        - skill_id
+        - slug
+        - name
+      properties:
+        skill_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
     CreateMCPServerDefinitionRequest:
       type: object
       required:
