@@ -223,6 +223,28 @@ type AuthUser struct {
 	AvatarAssetID pgtype.Text `json:"avatar_asset_id"`
 }
 
+// 租户级能力词汇注册表：场景模板角色 required_capabilities 与员工能力声明共享的键，插行即扩展，不建代码枚举
+type CapabilityVocabulary struct {
+	// 能力词汇主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 能力词汇所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 能力键稳定标识（如 code_review），租户内未删除时唯一
+	VocabKey string `json:"vocab_key"`
+	// 能力键显示名（中文）
+	Title string `json:"title"`
+	// 能力键含义说明
+	Description string `json:"description"`
+	// 能力键状态：active/disabled
+	Status string `json:"status"`
+	// 能力词汇软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 能力词汇创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 能力词汇更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 数字员工业务身份表
 type DigitalEmployee struct {
 	// 数字员工主键 UUID
@@ -1021,6 +1043,28 @@ type ProjectDemand struct {
 	CoordinationMode string `json:"coordination_mode"`
 	// 需求级场景模板 key；解析顺序：需求显式 > 项目默认 > generic 兜底
 	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
+}
+
+// 治理约束豁免记录：人类负责人对单个需求豁免某条模板约束的决策留痕，重规划治理评估器消费
+type ProjectDemandConstraintExemption struct {
+	// 豁免记录主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 豁免记录所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 豁免所属项目 ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 被豁免约束所属的需求 ID
+	DemandID uuid.UUID `json:"demand_id"`
+	// 被豁免的约束种类（如 role_independence、stage_required）
+	ConstraintKind string `json:"constraint_kind"`
+	// 豁免涉及的角色 key 列表
+	Roles []byte `json:"roles"`
+	// 批准豁免的人类负责人用户 ID
+	GrantedByUserID uuid.UUID `json:"granted_by_user_id"`
+	// 关联的人类决策请求 ID，可空
+	DecisionRequestID uuid.NullUUID `json:"decision_request_id"`
+	// 豁免记录创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 项目需求最终总结记录，按 demand 生成 append-only 总结和报告引用。

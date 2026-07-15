@@ -8,7 +8,8 @@ import (
 )
 
 type Service struct {
-	repository Repository
+	repository           Repository
+	vocabularyRepository VocabularyRepository
 }
 
 func NewService(repository Repository) *Service {

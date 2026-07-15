@@ -606,6 +606,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
 	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
+	scenarioTemplateService.SetVocabularyRepository(scenariotemplate.NewPgVocabularyRepository(q))
 	projectService.SetScenarioTemplateResolver(scenarioTemplateResolverAdapter{service: scenarioTemplateService})
 	if coordinationStore != nil {
 		coordinationStore.WithScenarioTemplateSource(scenarioTemplateSourceAdapter{service: scenarioTemplateService})
