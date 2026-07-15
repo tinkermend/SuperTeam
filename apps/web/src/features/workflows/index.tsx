@@ -5,7 +5,7 @@ import { WorkflowDetail } from "./components/workflow-detail";
 import { WorkflowRiverView } from "./components/workflow-river-view";
 import { WorkflowShell } from "./components/workflow-shell";
 import { SoftCard, StatusPill } from "@/components/superteam";
-import type { ApiClientOptions } from "@/lib/api/client";
+import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   getProjectDemandLaunchDetail,
   getProjectTaskGraph,
@@ -39,28 +39,14 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     refetchInterval: 5000,
   });
   const instances = listQuery.data ?? [];
-  const routeSelected = demandId
+  // 直链可达性：selectedDemandId 直接取路由参数，不再要求该 demand 出现在首页 50 条列表里，
+  // 否则失败需求排在河道底部时，直链会被下面的兜底重定向劫持到别的需求。
+  const selectedDemandId = demandId;
+  // 列表命中的 instance 仅用于详情头部展示（状态/进度 pill），不参与是否能看到详情的判断。
+  const listMatchedInstance = demandId
     ? instances.find((instance) => instance.demand_id === demandId)
     : undefined;
-  const selected = routeSelected;
-  const selectedDemandId = selected?.demand_id;
   const fallbackDemandId = instances[0]?.demand_id;
-
-  useEffect(() => {
-    if (!demandId || !fallbackDemandId || !listQuery.isSuccess) {
-      return;
-    }
-
-    if (routeSelected) {
-      return;
-    }
-
-    void navigate({
-      params: { demandId: fallbackDemandId },
-      replace: true,
-      to: "/workflows/$demandId",
-    });
-  }, [demandId, fallbackDemandId, listQuery.isSuccess, navigate, routeSelected]);
 
   const detailQuery = useQuery({
     enabled: Boolean(selectedDemandId),
@@ -71,6 +57,28 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
   });
   const currentDetail =
     detailQuery.data?.demand.id === selectedDemandId ? detailQuery.data : undefined;
+  const detailNotFound =
+    detailQuery.isError &&
+    detailQuery.error instanceof ApiRequestError &&
+    detailQuery.error.status === 404;
+
+  useEffect(() => {
+    // 仅当按 id 拉取详情真的 404（需求不存在/不可见）时才兜底重定向到列表第一条；
+    // 不能仅凭 demandId 不在首页列表命中就重定向，否则直链会被劫持。
+    if (!demandId || !fallbackDemandId || !listQuery.isSuccess) {
+      return;
+    }
+
+    if (!detailNotFound) {
+      return;
+    }
+
+    void navigate({
+      params: { demandId: fallbackDemandId },
+      replace: true,
+      to: "/workflows/$demandId",
+    });
+  }, [demandId, detailNotFound, fallbackDemandId, listQuery.isSuccess, navigate]);
 
   const graphQuery = useQuery({
     enabled: Boolean(currentDetail?.project.id && selectedDemandId),
@@ -121,8 +129,8 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
       <WorkflowDetail
         detail={currentDetail}
         graph={currentGraph}
-        instance={selected}
-        isError={listQuery.isError || detailQuery.isError || graphQuery.isError}
+        instance={listMatchedInstance}
+        isError={listQuery.isError || (detailQuery.isError && !detailNotFound) || graphQuery.isError}
       />
     </WorkflowShell>
   );

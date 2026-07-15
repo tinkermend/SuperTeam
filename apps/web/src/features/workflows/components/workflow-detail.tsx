@@ -67,7 +67,7 @@ export function WorkflowDetail({
     );
   }
 
-  if (!detail || !instance) {
+  if (!detail) {
     return (
       <SoftCard>
         <V3LoadingState label="正在加载流程详情" />
@@ -163,7 +163,7 @@ function DemandSummaryBar({
   instance,
 }: {
   detail: ProjectDemandLaunchDetail;
-  instance: WorkflowInstanceSummary;
+  instance?: WorkflowInstanceSummary;
 }) {
   return (
     <div className="border-b border-v3-line bg-v3-card px-4 py-3">
@@ -184,22 +184,29 @@ function DemandSummaryBar({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2 @lg/workflow-graph:justify-end">
-          <StatusPill tone={workflowStatusTone(instance.status)}>
-            {workflowStatusLabel(instance.status)}
-          </StatusPill>
-          <StatusPill showDot={false} tone="mute">
-            已完成 {instance.progress.completed_nodes}/{instance.progress.total_nodes}
-          </StatusPill>
-          {instance.progress.running_nodes > 0 ? (
-            <StatusPill tone="info">运行中 {instance.progress.running_nodes}</StatusPill>
-          ) : null}
-          {instance.progress.waiting_human_nodes > 0 ? (
-            <StatusPill tone="warn">
-              等待人工 {instance.progress.waiting_human_nodes}
-            </StatusPill>
-          ) : null}
-          {instance.progress.blocked_nodes > 0 ? (
-            <StatusPill tone="danger">阻塞 {instance.progress.blocked_nodes}</StatusPill>
+          {/* instance 来自首页 50 条流程实例列表的命中，直链访问不在该页范围内的需求时
+              (例如已排到河道末尾的失败需求) 拿不到这份进度快照；由 launch-detail 已经
+              提供的需求/项目信息渲染详情主体，这里的状态/进度 pill 没有真实数据时不伪造。 */}
+          {instance ? (
+            <>
+              <StatusPill tone={workflowStatusTone(instance.status)}>
+                {workflowStatusLabel(instance.status)}
+              </StatusPill>
+              <StatusPill showDot={false} tone="mute">
+                已完成 {instance.progress.completed_nodes}/{instance.progress.total_nodes}
+              </StatusPill>
+              {instance.progress.running_nodes > 0 ? (
+                <StatusPill tone="info">运行中 {instance.progress.running_nodes}</StatusPill>
+              ) : null}
+              {instance.progress.waiting_human_nodes > 0 ? (
+                <StatusPill tone="warn">
+                  等待人工 {instance.progress.waiting_human_nodes}
+                </StatusPill>
+              ) : null}
+              {instance.progress.blocked_nodes > 0 ? (
+                <StatusPill tone="danger">阻塞 {instance.progress.blocked_nodes}</StatusPill>
+              ) : null}
+            </>
           ) : null}
           <V3Button asChild size="sm" variant="outline">
             <Link params={{ projectId: detail.project.id }} to="/projects/$projectId">

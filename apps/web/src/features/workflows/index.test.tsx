@@ -906,4 +906,89 @@ describe("WorkflowView", () => {
       "http://control-plane.local/api/v1/project-demands/demand-running/launch-detail",
     );
   });
+
+  it("renders the by-id demand detail directly when it is absent from the first list page, without redirecting", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+
+      if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
+        return jsonResponse([
+          makeWorkflowInstance("demand-running"),
+          makeWorkflowInstance("demand-pr", {
+            demand_id: "demand-pr",
+            project_name: "代码审查项目",
+            status: "running",
+            status_reason: "",
+            title: "PR 审查",
+          }),
+        ]);
+      }
+
+      if (
+        url.pathname === "/api/v1/project-demands/demand-off-page/launch-detail" &&
+        method === "GET"
+      ) {
+        return jsonResponse(
+          makeLaunchDetail("demand-off-page", {
+            demand: {
+              ...makeLaunchDetail("demand-off-page").demand,
+              title: "失败告警需求",
+            },
+          }),
+        );
+      }
+
+      if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
+        return jsonResponse(
+          makeGraph([
+            makeGraphNode("task-off-page", "离线巡检任务", "failed", {
+              demand_id: "demand-off-page",
+            }),
+          ]),
+        );
+      }
+
+      if (url.pathname === "/api/v1/projects/project-1/events" && method === "GET") {
+        return jsonResponse([]);
+      }
+
+      return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await renderWorkflowView({ demandId: "demand-off-page", fetcher });
+
+    await expect.element(screen.getByText("失败告警需求").first()).toBeVisible();
+    await expect.element(screen.getByText("离线巡检任务")).toBeVisible();
+
+    await vi.waitFor(() => {
+      expect(requestedUrls(fetcher)).toContain(
+        "http://control-plane.local/api/v1/project-demands/demand-off-page/launch-detail",
+      );
+    });
+
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("redirects to the first instance only after the by-id demand detail genuinely 404s", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createWorkflowFetcher();
+
+    await renderWorkflowView({ demandId: "missing-demand", fetcher });
+
+    await vi.waitFor(() => {
+      expect(requestedUrls(fetcher)).toContain(
+        "http://control-plane.local/api/v1/project-demands/missing-demand/launch-detail",
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        params: { demandId: "demand-running" },
+        replace: true,
+        to: "/workflows/$demandId",
+      });
+    });
+  });
 });
