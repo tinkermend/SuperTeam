@@ -5978,6 +5978,9 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/ReviewerPreference"
+        scenario_template_key:
+          type: string
+          description: 需求级场景模板 key；缺省回落项目默认
     ProjectDemandLaunchDetail:
       type: object
       required:
@@ -7350,6 +7353,9 @@ components:
             - plan
             - loop
           default: plan
+        scenario_template_key:
+          type: string
+          description: 需求级场景模板 key；缺省回落项目默认
     CreateProjectEvidenceRequest:
       type: object
       required:
@@ -7445,11 +7451,15 @@ components:
             - approved
             - rejected
             - needs_more_evidence
+            - request_changes
         comment:
           type: string
         payload:
           type: object
           additionalProperties: true
+        target_exit_deliverable:
+          type: string
+          description: 人类改选的交付出口；仅 request_changes 时有意义，重规划将钉住该出口
     CompleteProjectTaskRequest:
       type: object
       required:

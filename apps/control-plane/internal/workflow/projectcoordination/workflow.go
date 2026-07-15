@@ -2,6 +2,8 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -178,6 +180,26 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+			// Terminal, non-retryable planning failure: the executor pool cannot
+			// satisfy the demand. Route it to the demand rejection/diagnosis surface
+			// instead of letting the error fall through to the generic signal_failed
+			// audit event, which is invisible to a human.
+			//
+			// Deliberately NOT version-fenced. Replay determinism across the
+			// introduction of this branch is guaranteed by the error type itself:
+			// the typed non-retryable NoSuitableEmployee ApplicationError only
+			// exists in histories recorded by code that also had this reject
+			// branch (both shipped in the same commit); older histories carry
+			// untyped retryable planner errors, which fail the type check above
+			// and fall through to the old raw-error path. A retroactive
+			// GetVersion fence here is actively harmful: histories that already
+			// recorded RejectDemandPlanning carry no version marker, so replay
+			// returns DefaultVersion, diverges from the recorded command, and
+			// kills the coordinator (this bricked project-coordinator:b4226c24
+			// on 2026-07-15; see replay_test.go).
+			return nil, rejectDemandPlanning(ctx, input, signal, job.ID, diagnosis, []uuid.UUID{signal.CreatedEventID})
+		}
 		return nil, err
 	}
 
@@ -200,6 +222,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 		CoordinationJobID: job.ID,
 		RouteDecisionID:   route.ID,
 		Decision:          decision,
+		CoordinationMode:  snapshot.Demand.CoordinationMode,
 	}).Get(ctx, &planRevision); err != nil {
 		return nil, err
 	}
@@ -426,8 +449,28 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 	}).Get(ctx, &snapshot); err != nil {
 		return nil, err
 	}
+	snapshot.PinnedExitDeliverable = strings.TrimSpace(signal.TargetExitDeliverable)
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+			// Terminal, non-retryable replan failure (e.g. the reselected exit
+			// pulls in a stage the pool cannot staff): route the demand to the
+			// rejection/diagnosis surface — same treatment as the initial
+			// handleDemandSubmitted path — instead of letting the error fall
+			// through to the generic signal_failed audit event, which strands
+			// the demand in planning_pending with no human-visible diagnosis.
+			//
+			// Deliberately NOT version-fenced (see the matching comment in
+			// handleDemandSubmitted). Unfenced executions of this branch already
+			// wrote RejectDemandPlanning into live histories with no version
+			// marker (project-coordinator:9bb61e95, 2026-07-15 18:02); a
+			// retroactive fence replays DefaultVersion there and diverges —
+			// replay_test.go pins this against the real exported history. The one
+			// history recorded in the gap where the typed error existed but this
+			// branch did not (project-coordinator:b4226c24) is unreplayable by any
+			// code version and was remediated operationally.
+			return nil, rejectDemandPlanningByID(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, diagnosis, outputEventIDs)
+		}
 		return nil, err
 	}
 	var routeDecision RouteDecisionResult
@@ -454,6 +497,7 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 		Decision:          decision,
 		SupersedeOpen:     true,
 		SupersedeReason:   supersedeReason,
+		CoordinationMode:  snapshot.Demand.CoordinationMode,
 	}).Get(ctx, &planRevision); err != nil {
 		return nil, err
 	}
@@ -904,6 +948,42 @@ func scheduleDispatchRetry(ctx workflow.Context, tenantID, projectID, taskID uui
 			workflow.GetLogger(gctx).Error("retry dispatch failed", "task_id", taskID.String(), "error", err.Error())
 		}
 	})
+}
+
+// noSuitableEmployeeDiagnosis reports whether err is the terminal, non-retryable
+// ErrNoSuitableEmployee escalation stamped by the PlanDemandRoute activity, and if
+// so returns the human-readable diagnosis (the planner's reason with its structural
+// ways-out hint) to surface on the demand.
+func noSuitableEmployeeDiagnosis(err error) (string, bool) {
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) && appErr.Type() == errTypeNoSuitableEmployee {
+		return humanizeNoSuitableEmployeeDiagnosis(appErr.Message()), true
+	}
+	return "", false
+}
+
+// humanizeNoSuitableEmployeeDiagnosis strips the ErrNoSuitableEmployee sentinel
+// prefix ("no suitable employee: ") so the surfaced diagnosis reads as a plain
+// message rather than an error chain.
+func humanizeNoSuitableEmployeeDiagnosis(message string) string {
+	trimmed := strings.TrimSpace(message)
+	trimmed = strings.TrimPrefix(trimmed, ErrNoSuitableEmployee.Error()+": ")
+	return strings.TrimSpace(trimmed)
+}
+
+func rejectDemandPlanning(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted, jobID uuid.UUID, diagnosis string, outputEventIDs []uuid.UUID) error {
+	return rejectDemandPlanningByID(ctx, input.TenantID, signal.ProjectID, signal.DemandID, jobID, diagnosis, outputEventIDs)
+}
+
+func rejectDemandPlanningByID(ctx workflow.Context, tenantID, projectID, demandID, jobID uuid.UUID, diagnosis string, outputEventIDs []uuid.UUID) error {
+	return workflow.ExecuteActivity(ctx, (*Activities).RejectDemandPlanning, RejectDemandPlanningInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		Diagnosis:         diagnosis,
+		OutputEventIDs:    outputEventIDs,
+	}).Get(ctx, nil)
 }
 
 func finishCoordinationJob(ctx workflow.Context, tenantID, jobID uuid.UUID, status string, outputEventIDs []uuid.UUID) error {

@@ -111,7 +111,7 @@ func (s *Service) ResolveRequest(ctx context.Context, input ResolveRequestInput)
 
 func validDecision(decision ApprovalDecision) bool {
 	switch decision {
-	case ApprovalDecisionApproved, ApprovalDecisionRejected, ApprovalDecisionNeedsMoreEvidence:
+	case ApprovalDecisionApproved, ApprovalDecisionRejected, ApprovalDecisionNeedsMoreEvidence, ApprovalDecisionRequestChanges:
 		return true
 	default:
 		return false

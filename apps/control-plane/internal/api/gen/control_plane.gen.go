@@ -1337,6 +1337,7 @@ const (
 	ResolveProjectDecisionRequestDecisionApproved          ResolveProjectDecisionRequestDecision = "approved"
 	ResolveProjectDecisionRequestDecisionNeedsMoreEvidence ResolveProjectDecisionRequestDecision = "needs_more_evidence"
 	ResolveProjectDecisionRequestDecisionRejected          ResolveProjectDecisionRequestDecision = "rejected"
+	ResolveProjectDecisionRequestDecisionRequestChanges    ResolveProjectDecisionRequestDecision = "request_changes"
 )
 
 // Valid indicates whether the value is a known member of the ResolveProjectDecisionRequestDecision enum.
@@ -1347,6 +1348,8 @@ func (e ResolveProjectDecisionRequestDecision) Valid() bool {
 	case ResolveProjectDecisionRequestDecisionNeedsMoreEvidence:
 		return true
 	case ResolveProjectDecisionRequestDecisionRejected:
+		return true
+	case ResolveProjectDecisionRequestDecisionRequestChanges:
 		return true
 	default:
 		return false
@@ -3597,18 +3600,21 @@ type ProjectDeleteWarnings struct {
 
 // ProjectDemand defines model for ProjectDemand.
 type ProjectDemand struct {
-	Attachments       []interface{}           `json:"attachments"`
-	Content           *string                 `json:"content,omitempty"`
-	CreatedEventId    *openapi_types.UUID     `json:"created_event_id,omitempty"`
-	Id                openapi_types.UUID      `json:"id"`
-	ProjectId         openapi_types.UUID      `json:"project_id"`
-	Reviewer          *ReviewerPreference     `json:"reviewer"`
-	SourceRefs        map[string]interface{}  `json:"source_refs"`
-	SourceType        ProjectDemandSourceType `json:"source_type"`
-	Status            ProjectDemandStatus     `json:"status"`
-	SubmittedByUserId openapi_types.UUID      `json:"submitted_by_user_id"`
-	TenantId          openapi_types.UUID      `json:"tenant_id"`
-	Title             string                  `json:"title"`
+	Attachments    []interface{}       `json:"attachments"`
+	Content        *string             `json:"content,omitempty"`
+	CreatedEventId *openapi_types.UUID `json:"created_event_id,omitempty"`
+	Id             openapi_types.UUID  `json:"id"`
+	ProjectId      openapi_types.UUID  `json:"project_id"`
+	Reviewer       *ReviewerPreference `json:"reviewer"`
+
+	// ScenarioTemplateKey 需求级场景模板 key；缺省回落项目默认
+	ScenarioTemplateKey *string                 `json:"scenario_template_key,omitempty"`
+	SourceRefs          map[string]interface{}  `json:"source_refs"`
+	SourceType          ProjectDemandSourceType `json:"source_type"`
+	Status              ProjectDemandStatus     `json:"status"`
+	SubmittedByUserId   openapi_types.UUID      `json:"submitted_by_user_id"`
+	TenantId            openapi_types.UUID      `json:"tenant_id"`
+	Title               string                  `json:"title"`
 }
 
 // ProjectDemandLaunchDetail defines model for ProjectDemandLaunchDetail.
@@ -4309,6 +4315,9 @@ type ResolveProjectDecisionRequest struct {
 	Comment  *string                               `json:"comment,omitempty"`
 	Decision ResolveProjectDecisionRequestDecision `json:"decision"`
 	Payload  *map[string]interface{}               `json:"payload,omitempty"`
+
+	// TargetExitDeliverable 人类改选的交付出口；仅 request_changes 时有意义，重规划将钉住该出口
+	TargetExitDeliverable *string `json:"target_exit_deliverable,omitempty"`
 }
 
 // ResolveProjectDecisionRequestDecision defines model for ResolveProjectDecisionRequest.Decision.
@@ -4730,9 +4739,12 @@ type SubmitProjectDemandRequest struct {
 	CoordinationMode        *SubmitProjectDemandRequestCoordinationMode        `json:"coordination_mode,omitempty"`
 	ReviewerSelectionReason *SubmitProjectDemandRequestReviewerSelectionReason `json:"reviewer_selection_reason,omitempty"`
 	ReviewerUserId          *openapi_types.UUID                                `json:"reviewer_user_id,omitempty"`
-	SourceRefs              *map[string]interface{}                            `json:"source_refs,omitempty"`
-	SourceType              *ProjectDemandSourceType                           `json:"source_type,omitempty"`
-	Title                   string                                             `json:"title"`
+
+	// ScenarioTemplateKey 需求级场景模板 key；缺省回落项目默认
+	ScenarioTemplateKey *string                  `json:"scenario_template_key,omitempty"`
+	SourceRefs          *map[string]interface{}  `json:"source_refs,omitempty"`
+	SourceType          *ProjectDemandSourceType `json:"source_type,omitempty"`
+	Title               string                   `json:"title"`
 }
 
 // SubmitProjectDemandRequestCoordinationMode defines model for SubmitProjectDemandRequest.CoordinationMode.

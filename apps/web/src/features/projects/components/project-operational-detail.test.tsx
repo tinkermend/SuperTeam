@@ -192,10 +192,10 @@ const planRevisions: ProjectPlanRevision[] = [
   },
 ];
 
-function renderDetail(
+function detailElement(
   props: Partial<React.ComponentProps<typeof ProjectOperationalDetail>> = {},
 ) {
-  return render(
+  return (
     <ProjectOperationalDetail
       acceptance={undefined}
       archivePreview={undefined}
@@ -226,8 +226,14 @@ function renderDetail(
       tasks={overview.active_tasks as ProjectTask[]}
       transferRequests={[]}
       {...props}
-    />,
+    />
   );
+}
+
+function renderDetail(
+  props: Partial<React.ComponentProps<typeof ProjectOperationalDetail>> = {},
+) {
+  return render(detailElement(props));
 }
 
 describe("ProjectOperationalDetail", () => {
@@ -316,6 +322,187 @@ describe("ProjectOperationalDetail", () => {
     await expect
       .element(acceptanceCriteria.getByText("复核接入证据"))
       .toBeVisible();
+  });
+
+  it("shows template version, exit deliverable label and constraint notes from plan payload", async () => {
+    const templatedRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      payload: {
+        ...planRevisions[0].payload,
+        available_exits: [
+          { deliverable: "review_verdict", label: "审查通过并合入" },
+          { deliverable: "release_notes", label: "发布说明就绪" },
+        ],
+        constraint_notes: [
+          {
+            kind: "human_gate",
+            message:
+              "发布任务已强制人类审批：由 human_gate@software_delivery v2 触发",
+          },
+        ],
+        exit_deliverable: "review_verdict",
+        template_key: "software_delivery",
+        template_version: 2,
+      },
+    };
+    const screen = await renderDetail({ planRevisions: [templatedRevision] });
+
+    await expect.element(screen.getByText("software_delivery@v2")).toBeVisible();
+    await expect.element(screen.getByText("审查通过并合入")).toBeVisible();
+    await expect
+      .element(
+        screen.getByText(
+          "发布任务已强制人类审批：由 human_gate@software_delivery v2 触发",
+        ),
+      )
+      .toBeVisible();
+  });
+
+  it("hides template and exit rows for an unbound demand carrying only a hallucinated template_key", async () => {
+    const unboundRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      payload: {
+        ...planRevisions[0].payload,
+        // Planner echoed a template lineage for a template-less demand; without a
+        // template_version binding marker, neither the 场景模板 nor 交付出口 row
+        // may render.
+        exit_deliverable: "risk_report",
+        template_key: "tech_risk_analysis",
+      },
+    };
+    const screen = await renderDetail({ planRevisions: [unboundRevision] });
+
+    await expect.element(screen.getByText("调度顺序")).toBeVisible();
+    await expect.element(screen.getByText("tech_risk_analysis")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("risk_report")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("交付出口")).not.toBeInTheDocument();
+  });
+
+  it("submits the selected target exit deliverable alongside request_changes", async () => {
+    const onResolveDecision = vi.fn();
+    const templatedRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      coordination_job_id: "coordination-job-1",
+      payload: {
+        ...planRevisions[0].payload,
+        available_exits: [
+          { deliverable: "review_verdict", label: "审查通过并合入" },
+          { deliverable: "release_notes", label: "发布说明就绪" },
+        ],
+        exit_deliverable: "review_verdict",
+        template_key: "software_delivery",
+        template_version: 2,
+      },
+    };
+    const planReviewDecision: ProjectDecisionRequest = {
+      approval_request_id: "approval-2",
+      coordination_job_id: "coordination-job-1",
+      decision_type: "plan_review",
+      id: "decision-plan-review-1",
+      project_id: "project-1",
+      status_snapshot: "pending",
+      summary_snapshot: "确认计划版本 v1",
+      target_user_id: "human-owner-1",
+      tenant_id: "tenant-1",
+      title_snapshot: "确认计划版本 v1",
+    };
+    const screen = await renderDetail({
+      decisionRequests: [planReviewDecision],
+      onResolveDecision,
+      planRevisions: [templatedRevision],
+    });
+
+    await userEvent.click(screen.getByRole("combobox", { name: "改选交付出口" }));
+    await userEvent.click(screen.getByRole("option", { name: "发布说明就绪" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "要求修改计划版本 v1" }),
+    );
+
+    expect(onResolveDecision).toHaveBeenCalledWith(
+      "decision-plan-review-1",
+      "request_changes",
+      "release_notes",
+    );
+  });
+
+  it("resets the selected target exit deliverable when a newer plan revision replaces it", async () => {
+    const onResolveDecision = vi.fn();
+    const revisionA: ProjectPlanRevision = {
+      ...planRevisions[0],
+      coordination_job_id: "coordination-job-1",
+      id: "plan-revision-a",
+      payload: {
+        ...planRevisions[0].payload,
+        available_exits: [
+          { deliverable: "review_verdict", label: "审查通过并合入" },
+          { deliverable: "release_notes", label: "发布说明就绪" },
+        ],
+        exit_deliverable: "review_verdict",
+        template_key: "software_delivery",
+        template_version: 2,
+      },
+      revision_number: 1,
+    };
+    const revisionB: ProjectPlanRevision = {
+      ...revisionA,
+      id: "plan-revision-b",
+      payload: {
+        ...revisionA.payload,
+        available_exits: [
+          { deliverable: "review_verdict", label: "审查通过并合入" },
+          { deliverable: "hotfix_notes", label: "补丁说明就绪" },
+        ],
+        exit_deliverable: "review_verdict",
+      },
+      revision_number: 2,
+    };
+    const planReviewDecision: ProjectDecisionRequest = {
+      approval_request_id: "approval-2",
+      coordination_job_id: "coordination-job-1",
+      decision_type: "plan_review",
+      id: "decision-plan-review-1",
+      project_id: "project-1",
+      status_snapshot: "pending",
+      summary_snapshot: "确认计划版本",
+      target_user_id: "human-owner-1",
+      tenant_id: "tenant-1",
+      title_snapshot: "确认计划版本",
+    };
+    const screen = await render(
+      detailElement({
+        decisionRequests: [planReviewDecision],
+        onResolveDecision,
+        planRevisions: [revisionA],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "改选交付出口" }));
+    await userEvent.click(screen.getByRole("option", { name: "发布说明就绪" }));
+    await expect
+      .element(screen.getByRole("combobox", { name: "改选交付出口" }))
+      .toHaveTextContent("发布说明就绪");
+
+    // 计划修订到 v2:v1 挑选的出口在新修订里已不是同一个候选,必须重置,
+    // 否则会带着 stale 选择提交给新修订。
+    await screen.rerender(
+      detailElement({
+        decisionRequests: [planReviewDecision],
+        onResolveDecision,
+        planRevisions: [revisionB],
+      }),
+    );
+
+    await expect
+      .element(screen.getByRole("combobox", { name: "改选交付出口" }))
+      .toHaveTextContent("审查通过并合入");
+    await userEvent.click(
+      screen.getByRole("button", { name: "要求修改计划版本 v2" }),
+    );
+    expect(onResolveDecision).toHaveBeenCalledWith(
+      "decision-plan-review-1",
+      "request_changes",
+      "review_verdict",
+    );
   });
 
   it("orders tasks using blocked_by_keys when depends_on is absent", async () => {

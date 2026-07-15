@@ -223,6 +223,41 @@ func TestDecisionProjectorAdapterResolvesProjectDecision(t *testing.T) {
 	}
 }
 
+func TestDecisionProjectorAdapterResolvesRequestChangesDecision(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewDecisionProjectorAdapter(service)
+	resolvedAt := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	decision := project.DecisionRequest{
+		ID:                uuid.New(),
+		TenantID:          uuid.New(),
+		ProjectID:         uuid.New(),
+		ApprovalRequestID: uuid.New(),
+		TargetUserID:      uuid.New(),
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "request_changes",
+		CreatedAt:         resolvedAt.Add(-time.Hour),
+		UpdatedAt:         resolvedAt,
+		ResolvedAt:        &resolvedAt,
+	}
+
+	if err := adapter.ResolveProjectDecisionRequest(context.Background(), decision); err != nil {
+		t.Fatalf("resolve project decision: %v", err)
+	}
+	itemID := repo.itemsBySource[sourceKey(decision.TenantID, SourceTypeProjectDecisionRequest, decision.ID)]
+	item, err := repo.GetItem(context.Background(), decision.TenantID, itemID)
+	if err != nil {
+		t.Fatalf("get projected item: %v", err)
+	}
+	if item.Status != StatusResolved {
+		t.Fatalf("expected request_changes decision to resolve inbox item, got status=%s", item.Status)
+	}
+}
+
 func TestApprovalActionAdapterResolvesApproval(t *testing.T) {
 	repo := &approvalActionRepository{}
 	service, err := approval.NewService(repo)

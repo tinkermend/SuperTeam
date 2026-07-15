@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,10 +19,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { listScenarioTemplates } from "@/lib/api/scenario-templates";
+import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import type {
   ProjectDemandSourceType,
   SubmitProjectDemandInput,
 } from "@/lib/api/projects";
+
+const NO_TEMPLATE_VALUE = "__none__";
 
 type SubmitDemandDialogProps = {
   isSubmitting?: boolean;
@@ -54,7 +59,17 @@ export function SubmitDemandDialog({
     useState<ProjectDemandSourceType>("manual");
   const [sourceRefs, setSourceRefs] = useState("{}");
   const [attachments, setAttachments] = useState("");
+  const [scenarioTemplateKey, setScenarioTemplateKey] = useState("");
   const [error, setError] = useState("");
+
+  const apiBaseUrl = resolveControlPlaneUrl();
+  const templates = useQuery({
+    queryKey: ["scenario-templates"],
+    queryFn: () => listScenarioTemplates({ baseUrl: apiBaseUrl }),
+  });
+  const templateOptions = (templates.data ?? []).filter(
+    (template) => template.status === "active",
+  );
 
   useEffect(() => {
     if (!open) {
@@ -63,6 +78,7 @@ export function SubmitDemandDialog({
       setSourceType("manual");
       setSourceRefs("{}");
       setAttachments("");
+      setScenarioTemplateKey("");
       setError("");
     }
   }, [open]);
@@ -92,6 +108,7 @@ export function SubmitDemandDialog({
         .map((item) => item.trim())
         .filter(Boolean),
       content: content.trim() || undefined,
+      scenario_template_key: scenarioTemplateKey || undefined,
       source_refs: refs,
       source_type: sourceType,
       title: title.trim(),
@@ -156,6 +173,26 @@ export function SubmitDemandDialog({
               onChange={(event) => setAttachments(event.target.value)}
               placeholder="每行一个附件或对象存储引用"
             />
+          </Field>
+          <Field label="场景模板">
+            <Select
+              value={scenarioTemplateKey || NO_TEMPLATE_VALUE}
+              onValueChange={(value) =>
+                setScenarioTemplateKey(value === NO_TEMPLATE_VALUE ? "" : value)
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="不绑定（通用）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_TEMPLATE_VALUE}>不绑定（通用）</SelectItem>
+                {templateOptions.map((template) => (
+                  <SelectItem key={template.template_key} value={template.template_key}>
+                    {template.name}（{template.template_key}）
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           {error || submitError ? (
             <p className="text-sm text-destructive">{error || submitError}</p>

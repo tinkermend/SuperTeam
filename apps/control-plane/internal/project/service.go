@@ -1736,6 +1736,21 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if req.SourceType == "" {
 		req.SourceType = DemandSourceManual
 	}
+	if req.ScenarioTemplateKey != nil {
+		key := strings.TrimSpace(*req.ScenarioTemplateKey)
+		if key == "" {
+			req.ScenarioTemplateKey = nil
+		} else if s.scenarioTemplates != nil {
+			binding, err := s.scenarioTemplates.ResolveScenarioTemplate(ctx, req.TenantID, key)
+			if err != nil {
+				return nil, fmt.Errorf("scenario template %q: %w", key, ErrInvalidProject)
+			}
+			if binding.Status != "active" {
+				return nil, fmt.Errorf("scenario template %q is %s: %w", key, binding.Status, ErrInvalidProject)
+			}
+			req.ScenarioTemplateKey = &key
+		}
+	}
 	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -4808,6 +4823,7 @@ func (s *Service) RequestProjectTaskTransfer(ctx context.Context, req RequestPro
 func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {
 	req.Decision = strings.TrimSpace(req.Decision)
 	req.Comment = strings.TrimSpace(req.Comment)
+	req.TargetExitDeliverable = strings.TrimSpace(req.TargetExitDeliverable)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.DecisionRequestID == uuid.Nil || req.DecidedByUserID == uuid.Nil || !validHumanDecision(req.Decision) {
 		return nil, ErrInvalidProject
 	}
@@ -4818,6 +4834,23 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	decision, err := s.findDecisionRequest(ctx, req.TenantID, req.ProjectID, req.DecisionRequestID)
 	if err != nil {
 		return nil, err
+	}
+	// request_changes is plan-review vocabulary only: it means "supersede this
+	// plan revision and replan". Other decision types (e.g. project_acceptance)
+	// must not coerce it into a rejected resolution.
+	if req.Decision == PlanReviewDecisionRequestChanges && decision.DecisionType != "plan_review" {
+		return nil, ErrInvalidProject
+	}
+	// A non-empty target_exit_deliverable pins the replan's exit — it must name a
+	// member of the reviewed plan revision's available_exits. The web Select only
+	// ever offers known members, but an authorized plan_review actor can call this
+	// endpoint directly; an unvalidated value would reach the coordinator's replan
+	// pin verbatim, burn MaxAttempts real planner calls on an unresolvable
+	// validation error, and strand the demand in planning_pending untyped.
+	if req.Decision == PlanReviewDecisionRequestChanges && req.TargetExitDeliverable != "" {
+		if err := s.validateTargetExitDeliverable(ctx, req.TenantID, req.ProjectID, decision, req.TargetExitDeliverable); err != nil {
+			return nil, err
+		}
 	}
 	if decision.StatusSnapshot != "pending" {
 		if decision.StatusSnapshot == req.Decision {
@@ -4873,14 +4906,15 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	if err := s.coordinator.SignalHumanDecisionSubmitted(ctx, HumanDecisionSubmittedSignal{
-		TenantID:          req.TenantID,
-		ProjectID:         req.ProjectID,
-		ApprovalRequestID: decision.ApprovalRequestID,
-		DecisionRequestID: req.DecisionRequestID,
-		Decision:          req.Decision,
-		Payload:           mapOrEmptyAny(req.Payload),
-		ResolvedEventID:   event.ID,
-		WorkflowID:        projectRecord.CoordinationWorkflowID,
+		TenantID:              req.TenantID,
+		ProjectID:             req.ProjectID,
+		ApprovalRequestID:     decision.ApprovalRequestID,
+		DecisionRequestID:     req.DecisionRequestID,
+		Decision:              req.Decision,
+		Payload:               mapOrEmptyAny(req.Payload),
+		ResolvedEventID:       event.ID,
+		WorkflowID:            projectRecord.CoordinationWorkflowID,
+		TargetExitDeliverable: req.TargetExitDeliverable,
 	}); err != nil {
 		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, req.ProjectID, "HumanDecisionSubmitted", "failed", err, map[string]any{
 			"approval_request_id": decision.ApprovalRequestID.String(),
@@ -4892,6 +4926,50 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	return &resolved, nil
+}
+
+// validateTargetExitDeliverable rejects a target_exit_deliverable that is not a
+// member of the reviewed plan revision's available_exits (payload.available_exits).
+// An unbound/legacy plan revision (no available_exits, or the decision predates
+// PlanRevisionID linkage) also rejects any non-empty target — there is nothing to
+// validate membership against.
+func (s *Service) validateTargetExitDeliverable(ctx context.Context, tenantID, projectID uuid.UUID, decision DecisionRequest, target string) error {
+	if decision.PlanRevisionID == nil {
+		return fmt.Errorf("改选出口不在该计划的可选出口中: %w", ErrInvalidProject)
+	}
+	revision, err := s.repository.GetPlanRevision(ctx, tenantID, projectID, *decision.PlanRevisionID)
+	if err != nil {
+		if errors.Is(err, ErrProjectNotFound) {
+			return fmt.Errorf("改选出口不在该计划的可选出口中: %w", ErrInvalidProject)
+		}
+		return err
+	}
+	for _, deliverable := range planRevisionAvailableExitDeliverables(revision.Payload) {
+		if deliverable == target {
+			return nil
+		}
+	}
+	return fmt.Errorf("改选出口不在该计划的可选出口中: %w", ErrInvalidProject)
+}
+
+// planRevisionAvailableExitDeliverables extracts the deliverable keys from a plan
+// revision payload's available_exits (see PlanRevisionPayload.AvailableExits /
+// PlanExitOption in projectcoordination), as decoded from stored JSON.
+func planRevisionAvailableExitDeliverables(payload map[string]any) []string {
+	raw, _ := payload["available_exits"].([]any)
+	deliverables := make([]string, 0, len(raw))
+	for _, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		deliverable, _ := entry["deliverable"].(string)
+		deliverable = strings.TrimSpace(deliverable)
+		if deliverable != "" {
+			deliverables = append(deliverables, deliverable)
+		}
+	}
+	return deliverables
 }
 
 func (s *Service) resolveProjectTaskAcceptanceDecision(ctx context.Context, decision DecisionRequest, req ResolveDecisionRequest) error {
@@ -5581,7 +5659,7 @@ func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, no
 
 func validHumanDecision(decision string) bool {
 	switch decision {
-	case "approved", "rejected", "needs_more_evidence":
+	case "approved", "rejected", "needs_more_evidence", PlanReviewDecisionRequestChanges:
 		return true
 	default:
 		return false

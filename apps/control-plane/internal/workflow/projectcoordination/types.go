@@ -70,6 +70,10 @@ type HumanDecisionSubmitted struct {
 	Decision          string
 	Payload           map[string]any
 	ResolvedEventID   uuid.UUID
+	// TargetExitDeliverable carries the human's replacement exit deliverable
+	// choice when Decision is request_changes. It pins the replan's exit via
+	// CoordinationSnapshot.PinnedExitDeliverable; empty means no override.
+	TargetExitDeliverable string `json:"target_exit_deliverable,omitempty"`
 }
 
 type ShutdownSignal struct{}
@@ -105,6 +109,11 @@ type PersistPlanRevisionInput struct {
 	Decision          RouteDecisionPlan
 	SupersedeOpen     bool
 	SupersedeReason   *string
+	// CoordinationMode gates the plan-confirmation status: plan-mode demands
+	// (empty/"plan") always land in PendingReview; only autonomous modes
+	// (loop/chat) keep the conditional-Accepted auto-dispatch path. Sourced
+	// from snapshot.Demand.CoordinationMode at the workflow call site.
+	CoordinationMode string
 }
 
 type PlanRevisionResult struct {
@@ -431,6 +440,19 @@ type FinishCoordinationJobInput struct {
 	JobID          uuid.UUID
 	Status         string
 	OutputEventIDs []uuid.UUID
+}
+
+// RejectDemandPlanningInput terminally rejects a demand whose route could not be
+// planned (the ErrNoSuitableEmployee family). It moves the demand out of
+// planning_pending into a human-visible terminal state and records the diagnosis
+// on a demand-scoped coordination.blocked event.
+type RejectDemandPlanningInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	CoordinationJobID uuid.UUID
+	Diagnosis         string
+	OutputEventIDs    []uuid.UUID
 }
 
 type CoordinationJobResult struct {

@@ -3,6 +3,7 @@ package projectcoordination
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -103,6 +104,159 @@ func TestProjectCoordinatorSurvivesHandlerActivityFailure(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	// The failed handler is recorded as an audit event, then the workflow keeps looping.
 	require.Equal(t, []string{"CreateCoordinationJob", "AppendProjectEvent"}, store.calls)
+}
+
+// A terminal ErrNoSuitableEmployee planning failure must route the demand to the
+// rejection/diagnosis surface (RejectDemandPlanning) exactly once — not spin the
+// planner 3× (fix: 不可重试) and not fall through to the generic signal_failed audit
+// event (fix: 需求驳回诊断可见). The diagnosis carried to the surface is the planner's
+// human-readable reason with its ways-out hint.
+func TestProjectCoordinatorRejectsDemandWhenNoSuitableEmployee(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: projectID,
+			Demand:    DemandSnapshot{ID: demandID, Title: "通过审查合入"},
+		},
+		jobID: uuid.New(),
+	}
+	planner := &errPlanner{err: fmt.Errorf("%w: 项目员工池无法满足审查独立性约束（需≥2名可调度员工）；可改选更浅出口、为项目补充员工、或换用模板", ErrNoSuitableEmployee)}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:      projectID,
+			DemandID:       demandID,
+			CreatedEventID: uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// One planner call only: the family error is non-retryable.
+	require.Equal(t, int32(1), planner.calls.Load())
+	require.Equal(t, []string{
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"RejectDemandPlanning",
+	}, store.calls)
+	require.Len(t, store.rejectDemandInputs, 1)
+	require.Equal(t, demandID, store.rejectDemandInputs[0].DemandID)
+	require.Contains(t, store.rejectDemandInputs[0].Diagnosis, "补充员工")
+}
+
+// TestProjectCoordinatorUntypedPlannerErrorTakesLegacySignalFailedPath pins the
+// replay-compatibility discriminator for the terminal-reject branches: only the
+// typed non-retryable NoSuitableEmployee ApplicationError routes to
+// RejectDemandPlanning. An UNTYPED planner error — which is the only kind old
+// (pre-reject-branch) histories can contain in their recorded
+// ActivityTaskFailed events — must keep falling through to the legacy path
+// (error escapes the handler, the survive-handler-error loop records
+// workflow.signal_failed). This error-type check, not a GetVersion fence, is
+// what keeps old histories replaying deterministically; see replay_test.go for
+// the real-history pin.
+func TestProjectCoordinatorUntypedPlannerErrorTakesLegacySignalFailedPath(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: projectID,
+			Demand:    DemandSnapshot{ID: demandID, Title: "通过审查合入"},
+		},
+		jobID: uuid.New(),
+	}
+	// Plain wrapped error, NOT the typed non-retryable family error: this is
+	// what pre-a9a4b8a9 histories carry (e.g. "wrapError" failures).
+	planner := &errPlanner{err: errors.New("no suitable employee: task \"review\": employee scored 0.30")}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:      projectID,
+			DemandID:       demandID,
+			CreatedEventID: uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// Legacy path: the untyped error escapes the handler and the coordinator's
+	// survive-handler-error loop records workflow.signal_failed via
+	// AppendProjectEvent — the demand is NOT routed through RejectDemandPlanning.
+	require.Contains(t, store.appendEventTypes, "workflow.signal_failed")
+	require.Empty(t, store.rejectDemandInputs)
+	require.NotContains(t, store.calls, "RejectDemandPlanning")
+}
+
+// TestProjectCoordinatorSurvivesRejectDemandPlanningFailure pins that a failure
+// of the RejectDemandPlanning activity itself (e.g. a DB outage while marking
+// the demand failed) degrades to the survive-handler-error audit path instead
+// of killing the long-lived coordinator: the workflow must stay alive, record
+// workflow.signal_failed, and keep processing subsequent signals.
+func TestProjectCoordinatorSurvivesRejectDemandPlanningFailure(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: projectID,
+			Demand:    DemandSnapshot{ID: demandID, Title: "通过审查合入"},
+		},
+		jobID:           uuid.New(),
+		rejectDemandErr: errors.New("store unavailable"),
+	}
+	planner := &errPlanner{err: fmt.Errorf("%w: 项目员工池无法满足审查独立性约束", ErrNoSuitableEmployee)}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:      projectID,
+			DemandID:       demandID,
+			CreatedEventID: uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	// The reject-activity failure must NOT terminate the coordinator: the
+	// shutdown signal is still processed and the workflow returns cleanly.
+	require.NoError(t, env.GetWorkflowError())
+	// The reject path was attempted (and retried per policy)...
+	require.Contains(t, store.calls, "RejectDemandPlanning")
+	// ...and its exhaustion degraded to the signal_failed audit event.
+	require.Contains(t, store.appendEventTypes, "workflow.signal_failed")
 }
 
 func TestProjectCoordinatorDispatchesRootReadyReasonForRootTasks(t *testing.T) {
@@ -628,6 +782,278 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 		replanPlanEventID,
 		finalResolvedEventID,
 	}, store.finishJobInputs[0].OutputEventIDs)
+}
+
+// TestProjectCoordinatorRejectsDemandWhenReplanHasNoSuitableEmployee mirrors
+// TestProjectCoordinatorRejectsDemandWhenNoSuitableEmployee for the replan path:
+// an exit-reselect request_changes triggers a replan whose planner returns a
+// terminal ErrNoSuitableEmployee. That failure must route through the demand
+// rejection/diagnosis surface (RejectDemandPlanning) exactly once — not fall
+// through to the generic signal_failed audit event, which is invisible to a
+// human.
+func TestProjectCoordinatorRejectsDemandWhenReplanHasNoSuitableEmployee(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	decisionRequestID := uuid.New()
+	planRevisionID := uuid.New()
+	initialRouteEventID := uuid.New()
+	initialPlanEventID := uuid.New()
+	requestChangesEventID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "改选发布出口",
+				Content: "负责人改选到 release_record 后重新规划",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+			CoordinationPolicy: map[string]any{
+				"require_human_review_for_new_demands": true,
+			},
+		},
+		jobID:                   uuid.New(),
+		routeID:                 uuid.New(),
+		routeEventID:            initialRouteEventID,
+		planRevisionID:          planRevisionID,
+		taskID:                  uuid.New(),
+		decisionRequestID:       decisionRequestID,
+		planRevisionIDs:         []uuid.UUID{planRevisionID},
+		planRevisionIDsForRoute: []uuid.UUID{planRevisionID},
+		routeEventIDs:           []uuid.UUID{initialRouteEventID},
+		planEventIDs:            []uuid.UUID{initialPlanEventID},
+		routeEventIDsForRoute:   []uuid.UUID{initialRouteEventID},
+		planEventIDsForRoute:    []uuid.UUID{initialPlanEventID},
+	}
+	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
+		decisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             decisionRequestID,
+				ProjectID:      store.snapshot.ProjectID,
+				DecisionType:   "plan_review",
+				StatusSnapshot: "resolved",
+			},
+			PlanReview: &PlanReviewRoute{
+				ProjectID:         store.snapshot.ProjectID,
+				DemandID:          store.snapshot.Demand.ID,
+				CoordinationJobID: store.jobID,
+				RouteDecisionID:   store.routeID,
+				PlanRevisionID:    planRevisionID,
+				PlanFingerprint:   "fingerprint",
+				Payload:           PlanRevisionPayload{Summary: "original plan"},
+				RouteEventID:      initialRouteEventID,
+			},
+		},
+	}
+	planner := &sequencedPlanner{
+		inner:    HeuristicRoutePlanner{},
+		failOn:   2,
+		failWith: fmt.Errorf("%w: task %q: employee scored 0.50", ErrNoSuitableEmployee, "test"),
+	}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID:     uuid.New(),
+			DecisionRequestID:     decisionRequestID,
+			Decision:              project.PlanReviewDecisionRequestChanges,
+			TargetExitDeliverable: "release_record",
+			Payload:               map[string]any{"comment": "改选到发布出口"},
+			ResolvedEventID:       requestChangesEventID,
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 12*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// Two planner calls only: the initial plan, then the replan whose family
+	// error is non-retryable.
+	require.Equal(t, int32(2), planner.calls.Load())
+	require.Equal(t, []string{
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"PersistRouteDecision",
+		"PersistPlanRevision",
+		"RequestPlanRevisionReview",
+		"LoadHumanDecisionRoute",
+		"ResolvePlanRevisionReview",
+		"AppendProjectEvent",
+		"LoadProjectCoordinationSnapshot",
+		"RejectDemandPlanning",
+	}, store.calls)
+	// The terminal replan failure never falls through to the generic
+	// signal_failed audit event.
+	require.NotContains(t, store.appendEventTypes, "workflow.signal_failed")
+	require.Len(t, store.rejectDemandInputs, 1)
+	require.Equal(t, store.snapshot.Demand.ID, store.rejectDemandInputs[0].DemandID)
+	require.Equal(t, store.jobID, store.rejectDemandInputs[0].CoordinationJobID)
+	require.Contains(t, store.rejectDemandInputs[0].Diagnosis, "scored 0.50")
+}
+
+// exitCapturingRoutePlanner wraps another RoutePlanner and records every
+// CoordinationSnapshot it is asked to plan for, so tests can assert what
+// PinnedExitDeliverable looked like on each planning pass (initial vs replan).
+type exitCapturingRoutePlanner struct {
+	inner     RoutePlanner
+	snapshots []CoordinationSnapshot
+}
+
+func (p *exitCapturingRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	p.snapshots = append(p.snapshots, snapshot)
+	return p.inner.Plan(ctx, snapshot)
+}
+
+func TestReplanAfterExitOverridePinsExit(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	decisionRequestID := uuid.New()
+	secondDecisionRequestID := uuid.New()
+	planRevisionID := uuid.New()
+	secondPlanRevisionID := uuid.New()
+	initialRouteEventID := uuid.New()
+	initialPlanEventID := uuid.New()
+	requestChangesEventID := uuid.New()
+	replanRouteEventID := uuid.New()
+	replanPlanEventID := uuid.New()
+	finalResolvedEventID := uuid.New()
+	readyTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "调整发布计划",
+				Content: "负责人改选出口后重新规划",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+			CoordinationPolicy: map[string]any{
+				"require_human_review_for_new_demands": true,
+			},
+		},
+		jobID:                        uuid.New(),
+		routeID:                      uuid.New(),
+		routeEventID:                 initialRouteEventID,
+		planRevisionID:               planRevisionID,
+		taskID:                       uuid.New(),
+		decisionRequestID:            decisionRequestID,
+		planRevisionIDs:              []uuid.UUID{planRevisionID, secondPlanRevisionID},
+		planRevisionIDsForRoute:      []uuid.UUID{planRevisionID, secondPlanRevisionID},
+		routeEventIDs:                []uuid.UUID{initialRouteEventID, replanRouteEventID},
+		planEventIDs:                 []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		routeEventIDsForRoute:        []uuid.UUID{initialRouteEventID, replanRouteEventID},
+		planEventIDsForRoute:         []uuid.UUID{initialPlanEventID, replanPlanEventID},
+		planResolvedEventIDsForRoute: []uuid.UUID{requestChangesEventID},
+		dispatchableTaskIDBatches: [][]uuid.UUID{
+			{readyTaskID},
+		},
+		dispatchEvent: uuid.New(),
+	}
+	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
+		decisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             decisionRequestID,
+				ProjectID:      store.snapshot.ProjectID,
+				DecisionType:   "plan_review",
+				StatusSnapshot: "resolved",
+			},
+			PlanReview: &PlanReviewRoute{
+				ProjectID:         store.snapshot.ProjectID,
+				DemandID:          store.snapshot.Demand.ID,
+				CoordinationJobID: store.jobID,
+				RouteDecisionID:   store.routeID,
+				PlanRevisionID:    planRevisionID,
+				PlanFingerprint:   "fingerprint",
+				Payload:           PlanRevisionPayload{Summary: "original plan"},
+				RouteEventID:      initialRouteEventID,
+			},
+		},
+		secondDecisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             secondDecisionRequestID,
+				ProjectID:      store.snapshot.ProjectID,
+				DecisionType:   "plan_review",
+				StatusSnapshot: "resolved",
+				CreatedEventID: replanPlanEventID,
+			},
+			PlanReview: &PlanReviewRoute{
+				ProjectID:         store.snapshot.ProjectID,
+				DemandID:          store.snapshot.Demand.ID,
+				CoordinationJobID: store.jobID,
+				RouteDecisionID:   store.routeID,
+				PlanRevisionID:    secondPlanRevisionID,
+				PlanFingerprint:   "fingerprint",
+				Payload:           PlanRevisionPayload{Summary: "replanned plan"},
+				RouteEventID:      replanRouteEventID,
+				PlanEventID:       replanPlanEventID,
+			},
+		},
+	}
+	planner := &exitCapturingRoutePlanner{inner: HeuristicRoutePlanner{}}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID:     uuid.New(),
+			DecisionRequestID:     decisionRequestID,
+			Decision:              project.PlanReviewDecisionRequestChanges,
+			Payload:               map[string]any{"comment": "改选交付出口"},
+			TargetExitDeliverable: "branch_ref",
+			ResolvedEventID:       requestChangesEventID,
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: secondDecisionRequestID,
+			Decision:          project.PlanReviewDecisionAccept,
+			ResolvedEventID:   finalResolvedEventID,
+		})
+	}, 8*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 15*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Len(t, planner.snapshots, 2, "expected an initial plan pass and a replan pass")
+	require.Equal(t, "", planner.snapshots[0].PinnedExitDeliverable, "initial plan must not carry a pin")
+	require.Equal(t, "branch_ref", planner.snapshots[1].PinnedExitDeliverable, "replan snapshot must carry the human's chosen exit as a pin")
 }
 
 func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *testing.T) {
@@ -1741,6 +2167,9 @@ type recordingActivityStore struct {
 	resolvePlanReviewInputs            []ResolvePlanRevisionReviewInput
 	decomposePlanInputs                []DecomposeAcceptedPlanRevisionInput
 	finishJobInputs                    []FinishCoordinationJobInput
+	rejectDemandInputs                 []RejectDemandPlanningInput
+	rejectDemandErr                    error
+	appendEventTypes                   []string
 }
 
 type rawDispatchWorkflowActivities struct {
@@ -1981,6 +2410,7 @@ func (s *recordingActivityStore) ApplyPreDispatchGateDecision(ctx context.Contex
 
 func (s *recordingActivityStore) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {
 	s.calls = append(s.calls, "AppendProjectEvent")
+	s.appendEventTypes = append(s.appendEventTypes, input.EventType)
 	return ProjectEventResult{ID: s.dispatchEvent}, nil
 }
 
@@ -2008,4 +2438,10 @@ func (s *recordingActivityStore) FinishCoordinationJob(ctx context.Context, inpu
 	s.calls = append(s.calls, "FinishCoordinationJob")
 	s.finishJobInputs = append(s.finishJobInputs, input)
 	return nil
+}
+
+func (s *recordingActivityStore) RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error {
+	s.calls = append(s.calls, "RejectDemandPlanning")
+	s.rejectDemandInputs = append(s.rejectDemandInputs, input)
+	return s.rejectDemandErr
 }

@@ -115,14 +115,15 @@ type EmployeeTransferRequestedSignal struct {
 }
 
 type HumanDecisionSubmittedSignal struct {
-	TenantID          uuid.UUID
-	ProjectID         uuid.UUID
-	ApprovalRequestID uuid.UUID
-	DecisionRequestID uuid.UUID
-	Decision          string
-	Payload           map[string]any
-	ResolvedEventID   uuid.UUID
-	WorkflowID        string
+	TenantID              uuid.UUID
+	ProjectID             uuid.UUID
+	ApprovalRequestID     uuid.UUID
+	DecisionRequestID     uuid.UUID
+	Decision              string
+	Payload               map[string]any
+	ResolvedEventID       uuid.UUID
+	WorkflowID            string
+	TargetExitDeliverable string
 }
 
 type TerminateProjectCoordinatorSignal struct {
