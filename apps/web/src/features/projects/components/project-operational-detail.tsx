@@ -197,6 +197,14 @@ export function ProjectOperationalDetail({
     setActiveTab(initialTab);
   }, [initialTab, focusDecisionId]);
 
+  const latestPlanRevision = selectLatestPlanRevision(planRevisions);
+  // A newer plan revision invalidates any exit choice picked against a prior
+  // revision's available_exits — reset it so a stale selection can't be
+  // submitted against the new revision (see request_changes flow below).
+  useEffect(() => {
+    setSelectedExitDeliverable("");
+  }, [latestPlanRevision?.id]);
+
   if (!project) {
     return (
       <SoftCard className="flex min-h-[460px] items-center justify-center p-8 text-sm text-v3-ink-2">
@@ -221,7 +229,6 @@ export function ProjectOperationalDetail({
   const activeTasks = overview?.active_tasks?.length ? overview.active_tasks : tasks;
   const recentEvents = overview?.recent_events?.length ? overview.recent_events : events;
   const currentPhase = overview?.status_summary.current_phase || project.status;
-  const latestPlanRevision = selectLatestPlanRevision(planRevisions);
   const latestPlanReviewDecision = decisionRequests.find(
     (decision) =>
       decision.decision_type === "plan_review" &&

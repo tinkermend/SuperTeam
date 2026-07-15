@@ -4841,6 +4841,17 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	if req.Decision == PlanReviewDecisionRequestChanges && decision.DecisionType != "plan_review" {
 		return nil, ErrInvalidProject
 	}
+	// A non-empty target_exit_deliverable pins the replan's exit — it must name a
+	// member of the reviewed plan revision's available_exits. The web Select only
+	// ever offers known members, but an authorized plan_review actor can call this
+	// endpoint directly; an unvalidated value would reach the coordinator's replan
+	// pin verbatim, burn MaxAttempts real planner calls on an unresolvable
+	// validation error, and strand the demand in planning_pending untyped.
+	if req.Decision == PlanReviewDecisionRequestChanges && req.TargetExitDeliverable != "" {
+		if err := s.validateTargetExitDeliverable(ctx, req.TenantID, req.ProjectID, decision, req.TargetExitDeliverable); err != nil {
+			return nil, err
+		}
+	}
 	if decision.StatusSnapshot != "pending" {
 		if decision.StatusSnapshot == req.Decision {
 			if err := s.resolveProjectTaskAcceptanceDecision(ctx, decision, req); err != nil {
@@ -4915,6 +4926,50 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	return &resolved, nil
+}
+
+// validateTargetExitDeliverable rejects a target_exit_deliverable that is not a
+// member of the reviewed plan revision's available_exits (payload.available_exits).
+// An unbound/legacy plan revision (no available_exits, or the decision predates
+// PlanRevisionID linkage) also rejects any non-empty target — there is nothing to
+// validate membership against.
+func (s *Service) validateTargetExitDeliverable(ctx context.Context, tenantID, projectID uuid.UUID, decision DecisionRequest, target string) error {
+	if decision.PlanRevisionID == nil {
+		return fmt.Errorf("改选出口不在该计划的可选出口中: %w", ErrInvalidProject)
+	}
+	revision, err := s.repository.GetPlanRevision(ctx, tenantID, projectID, *decision.PlanRevisionID)
+	if err != nil {
+		if errors.Is(err, ErrProjectNotFound) {
+			return fmt.Errorf("改选出口不在该计划的可选出口中: %w", ErrInvalidProject)
+		}
+		return err
+	}
+	for _, deliverable := range planRevisionAvailableExitDeliverables(revision.Payload) {
+		if deliverable == target {
+			return nil
+		}
+	}
+	return fmt.Errorf("改选出口不在该计划的可选出口中: %w", ErrInvalidProject)
+}
+
+// planRevisionAvailableExitDeliverables extracts the deliverable keys from a plan
+// revision payload's available_exits (see PlanRevisionPayload.AvailableExits /
+// PlanExitOption in projectcoordination), as decoded from stored JSON.
+func planRevisionAvailableExitDeliverables(payload map[string]any) []string {
+	raw, _ := payload["available_exits"].([]any)
+	deliverables := make([]string, 0, len(raw))
+	for _, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		deliverable, _ := entry["deliverable"].(string)
+		deliverable = strings.TrimSpace(deliverable)
+		if deliverable != "" {
+			deliverables = append(deliverables, deliverable)
+		}
+	}
+	return deliverables
 }
 
 func (s *Service) resolveProjectTaskAcceptanceDecision(ctx context.Context, decision DecisionRequest, req ResolveDecisionRequest) error {

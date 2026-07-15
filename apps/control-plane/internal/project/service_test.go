@@ -7466,6 +7466,7 @@ func TestResolveDecisionAcceptsRequestChangesForPlanReview(t *testing.T) {
 	decisionID := uuid.New()
 	approvalID := uuid.New()
 	actorID := uuid.New()
+	planRevisionID := uuid.New()
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
@@ -7475,11 +7476,24 @@ func TestResolveDecisionAcceptsRequestChangesForPlanReview(t *testing.T) {
 		HumanOwnerUserID:       actorID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 	}
+	repo.planRevisions = append(repo.planRevisions, PlanRevision{
+		ID:        planRevisionID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Status:    PlanRevisionStatusPendingReview,
+		Payload: map[string]any{
+			"available_exits": []any{
+				map[string]any{"deliverable": "review_verdict", "label": "审查通过"},
+				map[string]any{"deliverable": "branch_ref", "label": "分支就绪"},
+			},
+		},
+	})
 	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
 		ID:                decisionID,
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		ApprovalRequestID: approvalID,
+		PlanRevisionID:    &planRevisionID,
 		TargetUserID:      actorID,
 		DecisionType:      "plan_review",
 		TitleSnapshot:     "确认项目计划版本",
@@ -7578,6 +7592,128 @@ func s_findDecisionForTest(repo *memoryRepository, tenantID, projectID, decision
 		}
 	}
 	return DecisionRequest{}, errors.New("decision not found")
+}
+
+func TestResolveDecisionRejectsUnknownTargetExitDeliverable(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	planRevisionID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.planRevisions = append(repo.planRevisions, PlanRevision{
+		ID:        planRevisionID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Status:    PlanRevisionStatusPendingReview,
+		Payload: map[string]any{
+			"available_exits": []any{
+				map[string]any{"deliverable": "review_verdict", "label": "审查通过"},
+				map[string]any{"deliverable": "branch_ref", "label": "分支就绪"},
+			},
+		},
+	})
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		PlanRevisionID:    &planRevisionID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              PlanReviewDecisionRequestChanges,
+		Comment:               "改选出口",
+		TargetExitDeliverable: "not_a_real_exit",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for target_exit_deliverable not in available_exits, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects for bogus target_exit_deliverable, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
+func TestResolveDecisionRejectsTargetExitDeliverableForUnboundPlanRevision(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	// No PlanRevisionID linkage on the decision — legacy/unbound plan review.
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		DecisionRequestID:     decisionID,
+		DecidedByUserID:       actorID,
+		Decision:              PlanReviewDecisionRequestChanges,
+		Comment:               "改选出口",
+		TargetExitDeliverable: "branch_ref",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for target_exit_deliverable on unbound plan revision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects for unbound plan revision, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
 }
 
 func TestResolveDecisionRejectsUnknownDecisionValue(t *testing.T) {
@@ -8755,6 +8891,7 @@ type memoryRepository struct {
 	projectRuntimePlacements         map[uuid.UUID]ProjectRuntimePlacement
 	transferRequests                 []TransferRequest
 	decisionRequests                 []DecisionRequest
+	planRevisions                    []PlanRevision
 	contextUpdates                   []ProjectTaskAttemptContextUpdate
 	evidenceRefs                     []ProjectEvidenceRef
 	artifactRefs                     []ProjectArtifactRef
@@ -9663,6 +9800,11 @@ func (r *memoryRepository) CreatePlanRevision(ctx context.Context, req CreatePla
 }
 
 func (r *memoryRepository) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (PlanRevision, error) {
+	for _, revision := range r.planRevisions {
+		if revision.ID == revisionID && revision.TenantID == tenantID && revision.ProjectID == projectID {
+			return revision, nil
+		}
+	}
 	return PlanRevision{}, ErrProjectNotFound
 }
 
