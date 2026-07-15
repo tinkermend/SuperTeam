@@ -890,6 +890,7 @@ export type SubmitProjectDemandInput = {
   reviewer_user_id?: string;
   reviewer_selection_reason?: ReviewerSelectionReason;
   coordination_mode?: ProjectCoordinationMode;
+  scenario_template_key?: string;
 };
 
 export type CreateProjectEvidenceInput = {
@@ -1398,7 +1399,12 @@ export function resolveProjectDecision(
   options: ApiClientOptions,
   projectId: string,
   decisionId: string,
-  input: { decision: string; comment?: string; payload?: Record<string, unknown> },
+  input: {
+    decision: string;
+    comment?: string;
+    payload?: Record<string, unknown>;
+    target_exit_deliverable?: string;
+  },
 ): Promise<ProjectDecisionRequest> {
   return postJson<ProjectDecisionRequest>(
     options,

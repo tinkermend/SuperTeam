@@ -318,6 +318,101 @@ describe("ProjectOperationalDetail", () => {
       .toBeVisible();
   });
 
+  it("shows template version, exit deliverable label and constraint notes from plan payload", async () => {
+    const templatedRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      payload: {
+        ...planRevisions[0].payload,
+        available_exits: [
+          { deliverable: "review_verdict", label: "审查通过并合入" },
+          { deliverable: "release_notes", label: "发布说明就绪" },
+        ],
+        constraint_notes: [
+          {
+            kind: "human_gate",
+            message:
+              "发布任务已强制人类审批：由 human_gate@software_delivery v2 触发",
+          },
+        ],
+        exit_deliverable: "review_verdict",
+        template_key: "software_delivery",
+        template_version: 2,
+      },
+    };
+    const screen = await renderDetail({ planRevisions: [templatedRevision] });
+
+    await expect.element(screen.getByText("software_delivery@v2")).toBeVisible();
+    await expect.element(screen.getByText("审查通过并合入")).toBeVisible();
+    await expect
+      .element(
+        screen.getByText(
+          "发布任务已强制人类审批：由 human_gate@software_delivery v2 触发",
+        ),
+      )
+      .toBeVisible();
+  });
+
+  it("falls back to a bare template key when template_version is absent", async () => {
+    const legacyRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      payload: {
+        ...planRevisions[0].payload,
+        template_key: "software_delivery",
+      },
+    };
+    const screen = await renderDetail({ planRevisions: [legacyRevision] });
+
+    await expect.element(screen.getByText("software_delivery")).toBeVisible();
+    await expect.element(screen.getByText("software_delivery@v")).not.toBeInTheDocument();
+  });
+
+  it("submits the selected target exit deliverable alongside request_changes", async () => {
+    const onResolveDecision = vi.fn();
+    const templatedRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      coordination_job_id: "coordination-job-1",
+      payload: {
+        ...planRevisions[0].payload,
+        available_exits: [
+          { deliverable: "review_verdict", label: "审查通过并合入" },
+          { deliverable: "release_notes", label: "发布说明就绪" },
+        ],
+        exit_deliverable: "review_verdict",
+        template_key: "software_delivery",
+        template_version: 2,
+      },
+    };
+    const planReviewDecision: ProjectDecisionRequest = {
+      approval_request_id: "approval-2",
+      coordination_job_id: "coordination-job-1",
+      decision_type: "plan_review",
+      id: "decision-plan-review-1",
+      project_id: "project-1",
+      status_snapshot: "pending",
+      summary_snapshot: "确认计划版本 v1",
+      target_user_id: "human-owner-1",
+      tenant_id: "tenant-1",
+      title_snapshot: "确认计划版本 v1",
+    };
+    const screen = await renderDetail({
+      decisionRequests: [planReviewDecision],
+      onResolveDecision,
+      planRevisions: [templatedRevision],
+    });
+
+    await userEvent.click(screen.getByRole("combobox", { name: "改选交付出口" }));
+    await userEvent.click(screen.getByRole("option", { name: "发布说明就绪" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "要求修改计划版本 v1" }),
+    );
+
+    expect(onResolveDecision).toHaveBeenCalledWith(
+      "decision-plan-review-1",
+      "request_changes",
+      "release_notes",
+    );
+  });
+
   it("orders tasks using blocked_by_keys when depends_on is absent", async () => {
     const blockedByKeysRevision: ProjectPlanRevision = {
       ...planRevisions[0],
