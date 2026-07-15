@@ -180,20 +180,24 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
-		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok &&
-			workflow.GetVersion(ctx, "initial-planning-terminal-reject", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
 			// Terminal, non-retryable planning failure: the executor pool cannot
 			// satisfy the demand. Route it to the demand rejection/diagnosis surface
 			// instead of letting the error fall through to the generic signal_failed
 			// audit event, which is invisible to a human.
 			//
-			// Version-fenced: histories recorded before this reject branch existed
-			// let the error propagate (DefaultVersion), where the coordinator's
-			// survive-handler-error loop recorded a workflow.signal_failed event.
-			// Replaying those on the new code without the fence would schedule
-			// RejectDemandPlanning where the history has AppendProjectEvent — a
-			// nondeterministic command divergence. DefaultVersion preserves the old
-			// raw-error path so existing histories replay deterministically.
+			// Deliberately NOT version-fenced. Replay determinism across the
+			// introduction of this branch is guaranteed by the error type itself:
+			// the typed non-retryable NoSuitableEmployee ApplicationError only
+			// exists in histories recorded by code that also had this reject
+			// branch (both shipped in the same commit); older histories carry
+			// untyped retryable planner errors, which fail the type check above
+			// and fall through to the old raw-error path. A retroactive
+			// GetVersion fence here is actively harmful: histories that already
+			// recorded RejectDemandPlanning carry no version marker, so replay
+			// returns DefaultVersion, diverges from the recorded command, and
+			// kills the coordinator (this bricked project-coordinator:b4226c24
+			// on 2026-07-15; see replay_test.go).
 			return nil, rejectDemandPlanning(ctx, input, signal, job.ID, diagnosis, []uuid.UUID{signal.CreatedEventID})
 		}
 		return nil, err
@@ -448,8 +452,7 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 	snapshot.PinnedExitDeliverable = strings.TrimSpace(signal.TargetExitDeliverable)
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
-		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok &&
-			workflow.GetVersion(ctx, "replan-terminal-reject", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
 			// Terminal, non-retryable replan failure (e.g. the reselected exit
 			// pulls in a stage the pool cannot staff): route the demand to the
 			// rejection/diagnosis surface — same treatment as the initial
@@ -457,14 +460,15 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 			// through to the generic signal_failed audit event, which strands
 			// the demand in planning_pending with no human-visible diagnosis.
 			//
-			// Version-fenced: an in-flight coordinator whose history recorded this
-			// replan failure under the old code took the raw-error path, where the
-			// survive-handler-error loop wrote a workflow.signal_failed
-			// AppendProjectEvent. Replaying that history on the new code without the
-			// fence schedules RejectDemandPlanning at the position the history has
-			// AppendProjectEvent, panicking with TMPRL1100 nondeterministic
-			// workflow. DefaultVersion keeps the old path so existing histories
-			// replay cleanly; only new executions take the reject branch.
+			// Deliberately NOT version-fenced (see the matching comment in
+			// handleDemandSubmitted). Unfenced executions of this branch already
+			// wrote RejectDemandPlanning into live histories with no version
+			// marker (project-coordinator:9bb61e95, 2026-07-15 18:02); a
+			// retroactive fence replays DefaultVersion there and diverges —
+			// replay_test.go pins this against the real exported history. The one
+			// history recorded in the gap where the typed error existed but this
+			// branch did not (project-coordinator:b4226c24) is unreplayable by any
+			// code version and was remediated operationally.
 			return nil, rejectDemandPlanningByID(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, diagnosis, outputEventIDs)
 		}
 		return nil, err
