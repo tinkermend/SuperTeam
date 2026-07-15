@@ -61,3 +61,9 @@ SELECT * FROM scenario_template_versions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND template_id = sqlc.arg('template_id')::uuid
 ORDER BY version DESC;
+
+-- name: GetScenarioTemplateMaxVersion :one
+SELECT COALESCE(MAX(version), 0)::int AS max_version
+FROM scenario_template_versions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND template_id = sqlc.arg('template_id')::uuid;

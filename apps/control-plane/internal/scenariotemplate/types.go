@@ -19,9 +19,10 @@ var (
 	// specs (ParseSpec failures) and specs referencing capability vocabulary
 	// keys that are not registered/active for the tenant.
 	ErrInvalidInput = errors.New("invalid scenario template input")
-	// ErrConflict is returned when a template_key already exists (active)
-	// for the tenant.
-	ErrConflict = errors.New("scenario template key already exists")
+	// ErrConflict is returned when a unique constraint is violated: a
+	// template_key already existing (active) for the tenant, or a version
+	// number already taken by a concurrent bump.
+	ErrConflict = errors.New("scenario template conflict")
 )
 
 type ScenarioTemplate struct {
@@ -88,6 +89,12 @@ type Repository interface {
 	GetScenarioTemplateByKey(ctx context.Context, tenantID uuid.UUID, key string) (ScenarioTemplate, error)
 	CreateScenarioTemplate(ctx context.Context, params CreateScenarioTemplateParams) (ScenarioTemplate, error)
 	CreateScenarioTemplateVersion(ctx context.Context, params CreateScenarioTemplateVersionParams) (ScenarioTemplateVersion, error)
+	// GetScenarioTemplateMaxVersion returns MAX(version) in the version
+	// table (0 if none). Version bumps derive from this — not from the main
+	// row's active_version — so a crash between version-insert and
+	// mirror-update self-heals on the next bump instead of wedging on a
+	// unique violation.
+	GetScenarioTemplateMaxVersion(ctx context.Context, tenantID, templateID uuid.UUID) (int, error)
 	UpdateScenarioTemplateActiveSpec(ctx context.Context, params UpdateScenarioTemplateActiveSpecParams) (ScenarioTemplate, error)
 	UpdateScenarioTemplateStatus(ctx context.Context, params UpdateScenarioTemplateStatusParams) (ScenarioTemplate, error)
 	ListScenarioTemplateVersions(ctx context.Context, tenantID, templateID uuid.UUID) ([]ScenarioTemplateVersion, error)

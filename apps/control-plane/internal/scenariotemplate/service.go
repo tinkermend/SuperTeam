@@ -166,7 +166,17 @@ func (s *Service) CreateVersion(ctx context.Context, req CreateScenarioTemplateV
 		return ScenarioTemplate{}, err
 	}
 
-	nextVersion := existing.ActiveVersion + 1
+	// Derive from the version table's MAX, not the main row's active_version:
+	// if a previous bump crashed between version-insert and mirror-update,
+	// active_version is stale and active_version+1 would collide with the
+	// orphan row forever. MAX+1 makes recovery from that partial write
+	// automatic. A residual duplicate (two bumps racing this read) is caught
+	// by the version table's unique constraint and surfaces as ErrConflict.
+	maxVersion, err := s.repository.GetScenarioTemplateMaxVersion(ctx, req.TenantID, existing.ID)
+	if err != nil {
+		return ScenarioTemplate{}, err
+	}
+	nextVersion := maxVersion + 1
 	createdBy := actorPtr(req.ActorUserID)
 
 	if _, err := s.repository.CreateScenarioTemplateVersion(ctx, CreateScenarioTemplateVersionParams{
@@ -271,10 +281,19 @@ func (s *Service) Patch(ctx context.Context, req PatchScenarioTemplateRequest) (
 		return ScenarioTemplate{}, err
 	}
 
-	s.recordAudit(ctx, req.TenantID, updated.Key, "status", req.ActorUserID, map[string]any{
-		"template_key": updated.Key,
-		"status":       status,
-	})
+	// Details carry the old→new diff for keys that actually changed, e.g.
+	// {"status": ["active", "disabled"]}.
+	details := map[string]any{"template_key": updated.Key}
+	if status != existing.Status {
+		details["status"] = []string{existing.Status, status}
+	}
+	if name != existing.Name {
+		details["name"] = []string{existing.Name, name}
+	}
+	if description != existing.Description {
+		details["description"] = []string{existing.Description, description}
+	}
+	s.recordAudit(ctx, req.TenantID, updated.Key, "status", req.ActorUserID, details)
 
 	return updated, nil
 }

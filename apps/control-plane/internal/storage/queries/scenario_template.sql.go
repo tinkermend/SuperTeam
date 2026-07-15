@@ -137,6 +137,25 @@ func (q *Queries) GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioT
 	return i, err
 }
 
+const GetScenarioTemplateMaxVersion = `-- name: GetScenarioTemplateMaxVersion :one
+SELECT COALESCE(MAX(version), 0)::int AS max_version
+FROM scenario_template_versions
+WHERE tenant_id = $1::uuid
+  AND template_id = $2::uuid
+`
+
+type GetScenarioTemplateMaxVersionParams struct {
+	TenantID   uuid.UUID `json:"tenant_id"`
+	TemplateID uuid.UUID `json:"template_id"`
+}
+
+func (q *Queries) GetScenarioTemplateMaxVersion(ctx context.Context, arg GetScenarioTemplateMaxVersionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, GetScenarioTemplateMaxVersion, arg.TenantID, arg.TemplateID)
+	var max_version int32
+	err := row.Scan(&max_version)
+	return max_version, err
+}
+
 const ListScenarioTemplateVersions = `-- name: ListScenarioTemplateVersions :many
 SELECT id, tenant_id, template_id, version, spec, created_by, created_at FROM scenario_template_versions
 WHERE tenant_id = $1::uuid

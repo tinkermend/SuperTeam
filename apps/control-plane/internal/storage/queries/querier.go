@@ -277,6 +277,7 @@ type Querier interface {
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioTemplateByKeyParams) (ScenarioTemplate, error)
+	GetScenarioTemplateMaxVersion(ctx context.Context, arg GetScenarioTemplateMaxVersionParams) (int32, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)
 	GetTask(ctx context.Context, arg GetTaskParams) (Task, error)
 	GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error)

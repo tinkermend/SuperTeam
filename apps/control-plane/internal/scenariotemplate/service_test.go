@@ -18,6 +18,10 @@ import (
 type fakeRepository struct {
 	templates map[string]ScenarioTemplate
 	versions  map[uuid.UUID][]ScenarioTemplateVersion
+	// maxVersionOverride, when set for a template, makes
+	// GetScenarioTemplateMaxVersion report a stale MAX — used to simulate a
+	// concurrent bump racing past the service's derivation.
+	maxVersionOverride map[uuid.UUID]int
 }
 
 func newFakeRepository() *fakeRepository {
@@ -25,6 +29,19 @@ func newFakeRepository() *fakeRepository {
 		templates: map[string]ScenarioTemplate{},
 		versions:  map[uuid.UUID][]ScenarioTemplateVersion{},
 	}
+}
+
+func (f *fakeRepository) GetScenarioTemplateMaxVersion(_ context.Context, _ uuid.UUID, templateID uuid.UUID) (int, error) {
+	if override, ok := f.maxVersionOverride[templateID]; ok {
+		return override, nil
+	}
+	max := 0
+	for _, version := range f.versions[templateID] {
+		if version.Version > max {
+			max = version.Version
+		}
+	}
+	return max, nil
 }
 
 func (f *fakeRepository) ListScenarioTemplates(_ context.Context, _ uuid.UUID) ([]ScenarioTemplate, error) {
@@ -64,6 +81,13 @@ func (f *fakeRepository) CreateScenarioTemplate(_ context.Context, params Create
 }
 
 func (f *fakeRepository) CreateScenarioTemplateVersion(_ context.Context, params CreateScenarioTemplateVersionParams) (ScenarioTemplateVersion, error) {
+	for _, existing := range f.versions[params.TemplateID] {
+		if existing.Version == params.Version {
+			// Mirrors the pg layer's 23505-on-uq_scenario_template_versions
+			// mapping (pg_repository.go mapConstraintError).
+			return ScenarioTemplateVersion{}, ErrConflict
+		}
+	}
 	version := ScenarioTemplateVersion{
 		ID:         uuid.New(),
 		TenantID:   params.TenantID,
@@ -303,6 +327,96 @@ func TestCreateVersionBumpsActiveAndMirrorsSpec(t *testing.T) {
 	}
 }
 
+func TestCreateVersionRecoversFromPartialWrite(t *testing.T) {
+	// Simulates a crash between version-insert and mirror-update: the version
+	// table already holds a row ahead of the main row's active_version. The
+	// next bump must derive from MAX(version)+1, not active_version+1, so
+	// recovery is automatic instead of a permanent unique-violation wedge.
+	repo := newFakeRepository()
+	svc := NewService(repo)
+
+	tenantID := uuid.New()
+	created, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+		Name:     "运维评审",
+		Spec:     goodSpec(""),
+	})
+	if err != nil {
+		t.Fatalf("setup create failed: %v", err)
+	}
+
+	// Orphan version row 2 without the mirror update (main stays at v1).
+	if _, err := repo.CreateScenarioTemplateVersion(context.Background(), CreateScenarioTemplateVersionParams{
+		TenantID:   tenantID,
+		TemplateID: created.ID,
+		Version:    2,
+		Spec:       goodSpec(""),
+	}); err != nil {
+		t.Fatalf("setup orphan version failed: %v", err)
+	}
+	if repo.templates["ops_review"].ActiveVersion != 1 {
+		t.Fatalf("setup expected main row still at v1, got %d", repo.templates["ops_review"].ActiveVersion)
+	}
+
+	updated, err := svc.CreateVersion(context.Background(), CreateScenarioTemplateVersionRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+		Spec:     goodSpec(""),
+	})
+	if err != nil {
+		t.Fatalf("expected bump to recover past the orphan row, got %v", err)
+	}
+	if updated.ActiveVersion != 3 {
+		t.Fatalf("expected active_version 3 (MAX(2)+1), got %d", updated.ActiveVersion)
+	}
+	versions := repo.versions[created.ID]
+	if len(versions) != 3 || versions[2].Version != 3 {
+		t.Fatalf("expected version rows [1,2,3], got %#v", versions)
+	}
+}
+
+func TestCreateVersionUniqueViolationMapsToConflict(t *testing.T) {
+	// A residual duplicate (e.g. two concurrent bumps racing past MAX+1
+	// derivation) must surface as ErrConflict (409), not a raw 500. The fake
+	// repo returns ErrConflict on a duplicate version, mirroring the pg
+	// layer's mapConstraintError on 23505.
+	repo := newFakeRepository()
+	svc := NewService(repo)
+
+	tenantID := uuid.New()
+	created, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+		Name:     "运维评审",
+		Spec:     goodSpec(""),
+	})
+	if err != nil {
+		t.Fatalf("setup create failed: %v", err)
+	}
+
+	// Force the next derived version (MAX+1 = 2) to already exist while
+	// keeping MAX itself stale from the service's perspective.
+	repo.maxVersionOverride = map[uuid.UUID]int{created.ID: 1}
+	if _, err := repo.CreateScenarioTemplateVersion(context.Background(), CreateScenarioTemplateVersionParams{
+		TenantID:   tenantID,
+		TemplateID: created.ID,
+		Version:    2,
+		Spec:       goodSpec(""),
+	}); err != nil {
+		t.Fatalf("setup racing version failed: %v", err)
+	}
+
+	_, err = svc.CreateVersion(context.Background(), CreateScenarioTemplateVersionRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+		Spec:     goodSpec(""),
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict on duplicate version, got %v", err)
+	}
+}
+
 func TestPatchStatusDisabled(t *testing.T) {
 	repo := newFakeRepository()
 	svc := NewService(repo)
@@ -347,8 +461,20 @@ func TestPatchStatusDisabled(t *testing.T) {
 	if len(auditRecorder.events) != 2 {
 		t.Fatalf("expected 2 audit events (create + status), got %d", len(auditRecorder.events))
 	}
-	if auditRecorder.events[1].Action != "status" {
-		t.Fatalf("expected second audit event action=status, got %#v", auditRecorder.events[1])
+	patchEvent := auditRecorder.events[1]
+	if patchEvent.Action != "status" {
+		t.Fatalf("expected second audit event action=status, got %#v", patchEvent)
+	}
+	// Details must carry the old→new diff for keys that actually changed.
+	statusDiff, ok := patchEvent.Details["status"].([]string)
+	if !ok || len(statusDiff) != 2 || statusDiff[0] != "active" || statusDiff[1] != "disabled" {
+		t.Fatalf(`expected Details["status"] = ["active","disabled"], got %#v`, patchEvent.Details)
+	}
+	if _, ok := patchEvent.Details["name"]; ok {
+		t.Fatalf("expected unchanged name to be absent from Details diff, got %#v", patchEvent.Details)
+	}
+	if _, ok := patchEvent.Details["description"]; ok {
+		t.Fatalf("expected unchanged description to be absent from Details diff, got %#v", patchEvent.Details)
 	}
 }
 

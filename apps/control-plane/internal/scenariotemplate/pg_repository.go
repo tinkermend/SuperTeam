@@ -78,9 +78,22 @@ func (r *PgRepository) CreateScenarioTemplateVersion(ctx context.Context, params
 		CreatedBy:  nullUUIDFromPtr(params.CreatedBy),
 	})
 	if err != nil {
-		return ScenarioTemplateVersion{}, err
+		// A 23505 on uq_scenario_template_versions_template_version means a
+		// concurrent bump won the race for this version number → 409.
+		return ScenarioTemplateVersion{}, mapConstraintError(err)
 	}
 	return scenarioTemplateVersionFromRow(row), nil
+}
+
+func (r *PgRepository) GetScenarioTemplateMaxVersion(ctx context.Context, tenantID, templateID uuid.UUID) (int, error) {
+	max, err := r.q.GetScenarioTemplateMaxVersion(ctx, queries.GetScenarioTemplateMaxVersionParams{
+		TenantID:   tenantID,
+		TemplateID: templateID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int(max), nil
 }
 
 func (r *PgRepository) UpdateScenarioTemplateActiveSpec(ctx context.Context, params UpdateScenarioTemplateActiveSpecParams) (ScenarioTemplate, error) {
@@ -166,13 +179,15 @@ func uuidPtrFromNull(value uuid.NullUUID) *uuid.UUID {
 	return &copied
 }
 
-// mapConstraintError maps a Postgres unique-violation on
-// uq_scenario_templates_tenant_key_active to ErrConflict. The service layer
-// already pre-checks for an existing key; this is a race-condition backstop.
+// mapConstraintError maps a Postgres unique-violation (23505) to ErrConflict:
+// uq_scenario_templates_tenant_key_active on template create,
+// uq_scenario_template_versions_template_version on version bump. The service
+// layer pre-checks both (key lookup / MAX(version)+1 derivation); this is the
+// race-condition backstop that turns a residual duplicate into 409, not 500.
 func mapConstraintError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return fmt.Errorf("%w: template key already exists", ErrConflict)
+		return fmt.Errorf("%w: unique constraint violation (%s)", ErrConflict, pgErr.ConstraintName)
 	}
 	return err
 }
