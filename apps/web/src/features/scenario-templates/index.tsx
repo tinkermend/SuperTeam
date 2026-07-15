@@ -23,6 +23,7 @@ import {
   listScenarioTemplates,
   patchScenarioTemplate,
   scenarioTemplateAcceptanceCriteria,
+  scenarioTemplateExits,
   scenarioTemplateRoles,
   scenarioTemplateSkeleton,
   type ScenarioTemplate,
@@ -224,10 +225,34 @@ function ScenarioTemplateRow({
   const roles = scenarioTemplateRoles(row);
   const skeleton = scenarioTemplateSkeleton(row);
   const criteria = scenarioTemplateAcceptanceCriteria(row);
+  const exits = scenarioTemplateExits(row);
   const skeletonChain = skeleton
     .map((step) => step.step ?? "")
     .filter(Boolean)
     .join(" → ");
+
+  const renderCriterion = (criterion: typeof criteria[0]) => {
+    if (typeof criterion === "string") {
+      return criterion;
+    }
+    if (
+      typeof criterion === "object" &&
+      criterion !== null &&
+      "statement" in criterion
+    ) {
+      const statement = criterion.statement;
+      if (criterion.applies_from_exit) {
+        const exit = exits.find((e) => e.deliverable === criterion.applies_from_exit);
+        const exitLabel = exit?.label;
+        if (exitLabel) {
+          return `${statement}（出口 ≥ ${exitLabel}）`;
+        }
+        return `${statement}（出口 ≥ ${criterion.applies_from_exit}）`;
+      }
+      return statement;
+    }
+    return null;
+  };
 
   const versions = useQuery({
     queryKey: ["scenario-template-versions", row.template_key],
@@ -322,7 +347,15 @@ function ScenarioTemplateRow({
                   {criteria.length === 0 ? (
                     <li className="text-v3-ink-2">无</li>
                   ) : (
-                    criteria.map((criterion) => <li key={criterion}>{criterion}</li>)
+                    criteria
+                      .map((criterion, idx) => ({
+                        key: typeof criterion === "string" ? criterion : `criterion-${idx}`,
+                        rendered: renderCriterion(criterion),
+                      }))
+                      .filter((item) => item.rendered !== null)
+                      .map((item) => (
+                        <li key={item.key}>{item.rendered}</li>
+                      ))
                   )}
                 </ul>
               </div>

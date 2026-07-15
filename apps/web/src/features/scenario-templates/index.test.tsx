@@ -64,6 +64,37 @@ const softwareDelivery = {
   updated_at: "2026-07-13T00:00:00Z",
 } satisfies ScenarioTemplate;
 
+const softwareDeliveryV2 = {
+  id: "00000000-0000-0000-0000-000000000402",
+  tenant_id: "00000000-0000-0000-0000-000000000001",
+  template_key: "software_delivery_v2",
+  name: "软件开发 v2",
+  description: "带出口的软件交付场景",
+  spec: {
+    spec_version: 2,
+    roles: [
+      { key: "developer", title: "开发" },
+      { key: "reviewer", title: "审查", independent_from: ["developer"] },
+    ],
+    skeleton: [
+      { step: "develop", role: "developer" },
+      { step: "review", role: "reviewer", depends_on: ["develop"] },
+    ],
+    exits: [
+      { deliverable: "branch_ref", label: "交付分支（不合入）" },
+      { deliverable: "review_verdict", label: "审查通过并合入" },
+    ],
+    default_acceptance_criteria: [
+      { statement: "变更以 branch+commit 交付", applies_from_exit: "branch_ref" },
+      { statement: "通过独立审查", applies_from_exit: "review_verdict" },
+    ],
+  },
+  status: "active",
+  active_version: 2,
+  created_at: "2026-07-14T00:00:00Z",
+  updated_at: "2026-07-14T00:00:00Z",
+} satisfies ScenarioTemplate;
+
 const versions: ScenarioTemplateVersion[] = [
   {
     id: "ver-2",
@@ -258,5 +289,23 @@ describe("ScenarioTemplatesPage", () => {
     await expect.element(screen.getByText("v2")).toBeVisible();
     await expect.element(screen.getByText("v1")).toBeVisible();
     await expect.element(screen.getByText("当前版本")).toBeVisible();
+  });
+
+  it("renders v2 object-type acceptance criteria with exit labels when expanded", async () => {
+    vi.mocked(listScenarioTemplates).mockResolvedValue([softwareDeliveryV2]);
+    vi.mocked(listScenarioTemplateVersions).mockResolvedValue([]);
+
+    const user = userEvent.setup();
+    const screen = await renderPage();
+
+    await user.click(screen.getByText("software_delivery_v2"));
+
+    // Criteria should be visible and properly formatted
+    await expect
+      .element(screen.getByText(/变更以 branch\+commit 交付（出口 ≥ 交付分支（不合入））/))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText(/通过独立审查（出口 ≥ 审查通过并合入）/))
+      .toBeVisible();
   });
 });

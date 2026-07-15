@@ -134,11 +134,39 @@ export function scenarioTemplateSkeleton(
     : [];
 }
 
+export type AcceptanceCriterion =
+  | string
+  | { statement: string; applies_from_exit?: string };
+
 export function scenarioTemplateAcceptanceCriteria(
   template: ScenarioTemplate,
-): string[] {
+): AcceptanceCriterion[] {
   const criteria = template.spec["default_acceptance_criteria"];
   return Array.isArray(criteria)
-    ? criteria.filter((item): item is string => typeof item === "string")
+    ? criteria.filter(
+        (item): item is AcceptanceCriterion =>
+          typeof item === "string" ||
+          (typeof item === "object" &&
+            item !== null &&
+            "statement" in item &&
+            typeof item.statement === "string"),
+      )
+    : [];
+}
+
+export function scenarioTemplateExits(
+  template: ScenarioTemplate,
+): Array<{ deliverable: string; label: string }> {
+  const exits = template.spec["exits"];
+  return Array.isArray(exits)
+    ? exits.filter(
+        (item): item is { deliverable: string; label: string } =>
+          typeof item === "object" &&
+          item !== null &&
+          "deliverable" in item &&
+          "label" in item &&
+          typeof item.deliverable === "string" &&
+          typeof item.label === "string",
+      )
     : [];
 }
