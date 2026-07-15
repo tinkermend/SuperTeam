@@ -126,10 +126,16 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     );
   }
 
+  // coordination.blocked 横幅 + 缺口面板只在需求当前处于 failed（终态阻塞）时才有意义：
+  // 需求 reopen 重新规划后会先回到 planning_pending 等非终态，但 task-graph 的
+  // blocking_facts 可能还没随重规划刷新掉（图仍是空图 + 旧 fact），此时继续渲染红色
+  // 阻塞条会误导人类负责人以为需求仍卡死。demand.status 是需求当前状态的权威来源。
+  const showBlockingUi = currentDetail?.demand.status === "failed";
+
   return (
     <WorkflowShell>
-      <WorkflowBlockingBanner graph={currentGraph} />
-      {currentDetail && selectedDemandId ? (
+      {showBlockingUi ? <WorkflowBlockingBanner graph={currentGraph} /> : null}
+      {showBlockingUi && currentDetail && selectedDemandId ? (
         <WorkflowGapPanel
           apiOptions={apiOptions}
           graph={currentGraph}
