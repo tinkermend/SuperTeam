@@ -277,3 +277,48 @@ func TestCanonicalPlanFingerprintStableWithoutTemplateKey(t *testing.T) {
 	require.NotContains(t, string(encoded), "template_key")
 	require.NotEmpty(t, fingerprint)
 }
+
+func TestBuildPlanRevisionPayloadCarriesExitAndVersion(t *testing.T) {
+	plan := RouteDecisionPlan{
+		Reason:          "exit driven",
+		ExitDeliverable: "review_verdict",
+		TemplateVersion: 2,
+		AvailableExits: []PlanExitOption{
+			{Deliverable: "branch_ref", Label: "交付分支（不合入）"},
+		},
+		ConstraintNotes: []PlanConstraintNote{
+			{Kind: "human_gate", Message: "发布任务已强制人类审批"},
+		},
+	}
+	payload := BuildPlanRevisionPayload(plan)
+	require.Equal(t, "review_verdict", payload.ExitDeliverable)
+	require.Equal(t, 2, payload.TemplateVersion)
+	require.Equal(t, plan.AvailableExits, payload.AvailableExits)
+	require.Equal(t, plan.ConstraintNotes, payload.ConstraintNotes)
+
+	encoded, err := json.Marshal(payload)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"exit_deliverable":"review_verdict"`)
+	require.Contains(t, string(encoded), `"template_version":2`)
+	require.Contains(t, string(encoded), `"available_exits":[{"deliverable":"branch_ref","label":"交付分支（不合入）"}]`)
+	require.Contains(t, string(encoded), `"constraint_notes":[{"kind":"human_gate","message":"发布任务已强制人类审批"}]`)
+}
+
+func TestCanonicalPlanFingerprintIgnoresConstraintNotes(t *testing.T) {
+	basePlan := RouteDecisionPlan{
+		Reason:          "exit driven",
+		ExitDeliverable: "review_verdict",
+		TemplateVersion: 2,
+	}
+	planWithNotesA := basePlan
+	planWithNotesA.ConstraintNotes = []PlanConstraintNote{{Kind: "human_gate", Message: "发布任务已强制人类审批"}}
+	planWithNotesB := basePlan
+	planWithNotesB.ConstraintNotes = []PlanConstraintNote{{Kind: "budget", Message: "预算上限 500"}}
+
+	fingerprintA, err := CanonicalPlanFingerprint(BuildPlanRevisionPayload(planWithNotesA))
+	require.NoError(t, err)
+	fingerprintB, err := CanonicalPlanFingerprint(BuildPlanRevisionPayload(planWithNotesB))
+	require.NoError(t, err)
+
+	require.Equal(t, fingerprintA, fingerprintB)
+}
