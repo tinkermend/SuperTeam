@@ -4835,6 +4835,12 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	if err != nil {
 		return nil, err
 	}
+	// request_changes is plan-review vocabulary only: it means "supersede this
+	// plan revision and replan". Other decision types (e.g. project_acceptance)
+	// must not coerce it into a rejected resolution.
+	if req.Decision == PlanReviewDecisionRequestChanges && decision.DecisionType != "plan_review" {
+		return nil, ErrInvalidProject
+	}
 	if decision.StatusSnapshot != "pending" {
 		if decision.StatusSnapshot == req.Decision {
 			if err := s.resolveProjectTaskAcceptanceDecision(ctx, decision, req); err != nil {

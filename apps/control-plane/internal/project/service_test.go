@@ -7512,6 +7512,74 @@ func TestResolveDecisionAcceptsRequestChangesForPlanReview(t *testing.T) {
 	}
 }
 
+func TestResolveDecisionRejectsRequestChangesForNonPlanReview(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "project_acceptance",
+		TitleSnapshot:     "项目验收确认",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanReviewDecisionRequestChanges,
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for request_changes on non-plan_review decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
+func s_findDecisionForTest(repo *memoryRepository, tenantID, projectID, decisionID uuid.UUID) (DecisionRequest, error) {
+	decisions, err := repo.ListDecisionRequests(context.Background(), tenantID, projectID, 100, 0)
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	for _, d := range decisions {
+		if d.ID == decisionID {
+			return d, nil
+		}
+	}
+	return DecisionRequest{}, errors.New("decision not found")
+}
+
 func TestResolveDecisionRejectsUnknownDecisionValue(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
