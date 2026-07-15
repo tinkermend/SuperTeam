@@ -1,10 +1,11 @@
 import { Fragment, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, LayoutTemplate } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, LayoutTemplate, Plus } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   StatusPill,
+  V3Button,
   V3EmptyState,
   V3ErrorState,
   V3LoadingState,
@@ -15,8 +16,12 @@ import {
   V3Tr,
   WorkSurface,
 } from "@/components/superteam";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ApiRequestError } from "@/lib/api/client";
 import {
+  listScenarioTemplateVersions,
   listScenarioTemplates,
+  patchScenarioTemplate,
   scenarioTemplateAcceptanceCriteria,
   scenarioTemplateRoles,
   scenarioTemplateSkeleton,
@@ -24,20 +29,47 @@ import {
 } from "@/lib/api/scenario-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { formatRelativeTime } from "@/lib/format-time";
+import { CreateScenarioTemplateDialog } from "./create-dialog";
+import { CreateScenarioTemplateVersionDialog } from "./version-dialog";
 
 export function ScenarioTemplatesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
+  const queryClient = useQueryClient();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [versionEditRow, setVersionEditRow] = useState<ScenarioTemplate | null>(null);
+  const [statusToggleRow, setStatusToggleRow] = useState<ScenarioTemplate | null>(null);
+  const [statusToggleError, setStatusToggleError] = useState<string | null>(null);
 
   const templates = useQuery({
     queryKey: ["scenario-templates"],
     queryFn: () => listScenarioTemplates({ baseUrl: apiBaseUrl }),
   });
 
+  const patchMutation = useMutation({
+    mutationFn: (input: { key: string; status: "active" | "disabled" }) =>
+      patchScenarioTemplate({ baseUrl: apiBaseUrl }, input.key, { status: input.status }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scenario-templates"] });
+      setStatusToggleError(null);
+      setStatusToggleRow(null);
+    },
+    onError: (error: unknown) => {
+      setStatusToggleError(
+        error instanceof ApiRequestError && error.detail
+          ? error.detail
+          : error instanceof Error
+            ? error.message
+            : "更新状态失败",
+      );
+    },
+  });
+
   const rows = templates.data ?? [];
   const isInitialLoading = templates.isPending && rows.length === 0;
   const isBlockingError = templates.isError && rows.length === 0;
   const activeCount = rows.filter((row) => row.status === "active").length;
+  const nextStatus = statusToggleRow?.status === "active" ? "disabled" : "active";
 
   return (
     <>
@@ -45,10 +77,17 @@ export function ScenarioTemplatesPage() {
         icon={<LayoutTemplate />}
         iconTone="brand"
         title="场景模板"
-        subtitle="沉淀各类场景的分解骨架与交接契约，驱动规划实例化（P1 只读）"
+        subtitle="沉淀各类场景的分解骨架与交接契约，驱动规划实例化"
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <V3Button className="h-11 self-start px-5" onClick={() => setShowCreate(true)}>
+              <Plus data-icon="inline-start" />
+              新建模板
+            </V3Button>
+          </div>
+
           <section
             className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
             aria-label="场景模板指标"
@@ -66,7 +105,7 @@ export function ScenarioTemplatesPage() {
               <V3EmptyState
                 icon={<LayoutTemplate />}
                 title="还没有场景模板"
-                description="场景模板由种子数据或后续管理入口注册；项目创建时可绑定其一驱动规划。"
+                description="新建一个场景模板，或依赖种子数据；项目创建时可绑定其一驱动规划。"
               />
             ) : (
               <V3Table>
@@ -79,12 +118,14 @@ export function ScenarioTemplatesPage() {
                     <V3Th>骨架步骤</V3Th>
                     <V3Th>状态</V3Th>
                     <V3Th>更新</V3Th>
+                    <V3Th aria-label="操作" />
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
                     <ScenarioTemplateRow
                       key={row.id}
+                      apiBaseUrl={apiBaseUrl}
                       row={row}
                       expanded={expandedKey === row.template_key}
                       onToggle={() =>
@@ -92,6 +133,11 @@ export function ScenarioTemplatesPage() {
                           current === row.template_key ? null : row.template_key,
                         )
                       }
+                      onRequestVersion={() => setVersionEditRow(row)}
+                      onRequestStatusToggle={() => {
+                        setStatusToggleError(null);
+                        setStatusToggleRow(row);
+                      }}
                     />
                   ))}
                 </tbody>
@@ -100,18 +146,80 @@ export function ScenarioTemplatesPage() {
           </WorkSurface>
         </div>
       </Main>
+
+      <CreateScenarioTemplateDialog
+        apiBaseUrl={apiBaseUrl}
+        open={showCreate}
+        onOpenChange={setShowCreate}
+      />
+
+      <CreateScenarioTemplateVersionDialog
+        apiBaseUrl={apiBaseUrl}
+        template={versionEditRow}
+        onOpenChange={(open) => {
+          if (!open) setVersionEditRow(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={statusToggleRow !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setStatusToggleRow(null);
+            setStatusToggleError(null);
+          }
+        }}
+        title={
+          nextStatus === "disabled"
+            ? `停用 ${statusToggleRow?.template_key ?? ""}`
+            : `启用 ${statusToggleRow?.template_key ?? ""}`
+        }
+        desc={
+          nextStatus === "disabled" ? (
+            <div className="flex flex-col gap-2">
+              <p>
+                停用后新规划请求将回落到通用（generic）行为，不再匹配该场景模板的分解骨架与验收判据。已实例化的项目不受影响。
+              </p>
+              {statusToggleError ? (
+                <p className="text-v3-danger">{statusToggleError}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p>启用后新规划请求将重新匹配该场景模板的分解骨架与验收判据。</p>
+              {statusToggleError ? (
+                <p className="text-v3-danger">{statusToggleError}</p>
+              ) : null}
+            </div>
+          )
+        }
+        confirmText={nextStatus === "disabled" ? "确认停用" : "确认启用"}
+        destructive={nextStatus === "disabled"}
+        isLoading={patchMutation.isPending}
+        handleConfirm={() => {
+          if (statusToggleRow) {
+            patchMutation.mutate({ key: statusToggleRow.template_key, status: nextStatus });
+          }
+        }}
+      />
     </>
   );
 }
 
 function ScenarioTemplateRow({
+  apiBaseUrl,
   row,
   expanded,
   onToggle,
+  onRequestVersion,
+  onRequestStatusToggle,
 }: {
+  apiBaseUrl: string;
   row: ScenarioTemplate;
   expanded: boolean;
   onToggle: () => void;
+  onRequestVersion: () => void;
+  onRequestStatusToggle: () => void;
 }) {
   const roles = scenarioTemplateRoles(row);
   const skeleton = scenarioTemplateSkeleton(row);
@@ -120,6 +228,13 @@ function ScenarioTemplateRow({
     .map((step) => step.step ?? "")
     .filter(Boolean)
     .join(" → ");
+
+  const versions = useQuery({
+    queryKey: ["scenario-template-versions", row.template_key],
+    queryFn: () =>
+      listScenarioTemplateVersions({ baseUrl: apiBaseUrl }, row.template_key),
+    enabled: expanded,
+  });
 
   return (
     <Fragment>
@@ -148,10 +263,28 @@ function ScenarioTemplateRow({
         <V3Td className="text-xs text-v3-ink-2 tabular-nums">
           {formatRelativeTime(row.updated_at)}
         </V3Td>
+        <V3Td>
+          <div className="flex justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+            <V3Button
+              variant="outline"
+              size="sm"
+              onClick={onRequestVersion}
+            >
+              升版
+            </V3Button>
+            <V3Button
+              variant={row.status === "active" ? "outline" : "primary"}
+              size="sm"
+              onClick={onRequestStatusToggle}
+            >
+              {row.status === "active" ? "停用" : "启用"}
+            </V3Button>
+          </div>
+        </V3Td>
       </V3Tr>
       {expanded ? (
         <tr>
-          <td colSpan={7} className="bg-v3-card-soft px-4 py-3">
+          <td colSpan={8} className="bg-v3-card-soft px-4 py-3">
             <div className="grid gap-3 text-sm md:grid-cols-3">
               <div>
                 <p className="text-xs font-semibold text-v3-ink-2">角色</p>
@@ -193,6 +326,35 @@ function ScenarioTemplateRow({
                   )}
                 </ul>
               </div>
+            </div>
+            <div className="mt-4 border-t border-v3-line pt-3">
+              <p className="text-xs font-semibold text-v3-ink-2">版本历史</p>
+              {versions.isPending ? (
+                <p className="mt-1 text-xs text-v3-ink-2">加载版本历史…</p>
+              ) : versions.isError ? (
+                <p className="mt-1 text-xs text-v3-danger">无法加载版本历史</p>
+              ) : (versions.data ?? []).length === 0 ? (
+                <p className="mt-1 text-xs text-v3-ink-2">暂无版本记录</p>
+              ) : (
+                <ul className="mt-1 flex flex-col gap-1">
+                  {(versions.data ?? []).map((version) => (
+                    <li
+                      key={version.id}
+                      className="flex items-center gap-2 text-xs text-v3-ink-2"
+                    >
+                      <span className="font-mono font-medium text-v3-ink">
+                        v{version.version}
+                      </span>
+                      <span className="tabular-nums">
+                        {formatRelativeTime(version.created_at)}
+                      </span>
+                      {version.version === row.active_version ? (
+                        <StatusPill tone="ok">当前版本</StatusPill>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </td>
         </tr>
