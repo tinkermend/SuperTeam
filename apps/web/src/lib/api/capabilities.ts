@@ -395,3 +395,51 @@ export function listEffectiveMcpConfig(
     "effective mcp config",
   );
 }
+
+// ----------------------------------------------------------------------------
+// Skill MCP dependency queries
+// ----------------------------------------------------------------------------
+
+export interface DependentSkill {
+  skill_id: string;
+  slug: string;
+  name: string;
+}
+
+export function listMcpServerDependentSkills(
+  options: ApiClientOptions,
+  serverId: string,
+): Promise<DependentSkill[]> {
+  const encodedServerId = encodePathSegment(serverId);
+  return getJson<DependentSkill[]>(
+    options,
+    `/api/v1/mcp-servers/${encodedServerId}/dependent-skills`,
+    "mcp server dependent skills",
+  );
+}
+
+export interface EmployeeSkillMcpDependencyItem {
+  mcp_server_id: string;
+  server_key: string;
+  server_name: string;
+  status: "satisfied" | "missing_binding" | "blocked_missing_env";
+  missing_env_vars: string[];
+}
+
+export interface EmployeeSkillMcpDependencyStatus {
+  skill_id: string;
+  skill_slug: string;
+  dependencies: EmployeeSkillMcpDependencyItem[];
+}
+
+export function listEmployeeSkillMcpDependencyStatus(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<EmployeeSkillMcpDependencyStatus[]> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  return getJson<EmployeeSkillMcpDependencyStatus[]>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/skill-mcp-dependency-status`,
+    "employee skill mcp dependency status",
+  );
+}

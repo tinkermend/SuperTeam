@@ -1,5 +1,5 @@
 import { ApiRequestError, type ApiClientOptions } from "./client";
-import { buildApiUrl, parseJson } from "./client";
+import { buildApiUrl, parseJson, getJson, putJson } from "./client";
 
 export type SkillTeamBinding = {
   team_id: string;
@@ -417,4 +417,45 @@ export async function unbindEmployeeSkill(
   if (!response.ok) {
     await parseJson<unknown>(response, "unbind employee skill");
   }
+}
+
+// ----------------------------------------------------------------------------
+// Skill MCP dependency management
+// ----------------------------------------------------------------------------
+
+export interface SkillMcpDependency {
+  id: string;
+  skill_id: string;
+  mcp_server_id: string;
+  note: string;
+  server_key: string;
+  server_name: string;
+  auth_strategy: string;
+  risk_level: string;
+  server_status: string;
+  created_at: string;
+}
+
+export function listSkillMcpDependencies(
+  options: ApiClientOptions,
+  skillId: string,
+): Promise<SkillMcpDependency[]> {
+  return getJson<SkillMcpDependency[]>(
+    options,
+    `/api/v1/skills/${encodeURIComponent(skillId)}/mcp-dependencies`,
+    "skill mcp dependencies",
+  );
+}
+
+export function replaceSkillMcpDependencies(
+  options: ApiClientOptions,
+  skillId: string,
+  input: { items: Array<{ mcp_server_id: string; note?: string }> },
+): Promise<SkillMcpDependency[]> {
+  return putJson<SkillMcpDependency[]>(
+    options,
+    `/api/v1/skills/${encodeURIComponent(skillId)}/mcp-dependencies`,
+    input,
+    "replace skill mcp dependencies",
+  );
 }
