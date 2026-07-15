@@ -345,6 +345,7 @@ type serviceRepo struct {
 	dependentSkills      map[uuid.UUID][]DependentSkill
 	skillMCPDependencies map[uuid.UUID][]SkillMCPDependency // keyed by skill ID
 	effectiveByEmployee  map[uuid.UUID][]EffectiveMCPServer // keyed by digital employee ID
+	existingSkills       map[uuid.UUID]bool                 // keyed by skill ID, for SkillExistsForTenant
 }
 
 func (r *serviceRepo) CreateCredential(_ context.Context, req CreateCredentialStoreRequest) (Credential, error) {
@@ -469,6 +470,10 @@ func (r *serviceRepo) ListConfiguredEmployeeEnvVarNames(context.Context, uuid.UU
 	return r.configuredEnvVars, nil
 }
 
+func (r *serviceRepo) SkillExistsForTenant(_ context.Context, _, skillID uuid.UUID) (bool, error) {
+	return r.existingSkills[skillID], nil
+}
+
 func (r *serviceRepo) ListSkillMCPDependencies(context.Context, uuid.UUID, uuid.UUID) ([]SkillMCPDependency, error) {
 	return nil, nil
 }
@@ -535,6 +540,15 @@ func (r *serviceRepo) seedDependency(tenantID, skillID, serverID uuid.UUID) {
 	})
 }
 
+// seedSkill marks a skill ID as existing for the tenant, for SkillExistsForTenant tests
+// gating ReplaceSkillMCPDependencies / ListSkillMCPDependencies.
+func (r *serviceRepo) seedSkill(skillID uuid.UUID) {
+	if r.existingSkills == nil {
+		r.existingSkills = map[uuid.UUID]bool{}
+	}
+	r.existingSkills[skillID] = true
+}
+
 // seedEffective records an effective (bound) MCP server for an employee, for
 // EvaluateEmployeeSkillMCPDependencies tests. A non-empty missingEnvVars marks the binding
 // blocked_missing_env.
@@ -561,12 +575,38 @@ func TestServiceReplaceSkillMCPDependenciesValidatesServerExists(t *testing.T) {
 	repo := &serviceRepo{}
 	svc := NewService(repo, nil)
 	tenantID, userID, skillID := uuid.New(), uuid.New(), uuid.New()
+	repo.seedSkill(skillID)
 	_, err := svc.ReplaceSkillMCPDependencies(context.Background(), ReplaceSkillMCPDependenciesRequest{
 		TenantID: tenantID, UserID: userID, SkillID: skillID,
 		Items: []SkillMCPDependencyInput{{MCPServerID: uuid.New()}},
 	})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput for unknown mcp server, got %v", err)
+	}
+}
+
+func TestServiceReplaceSkillMCPDependenciesReturnsNotFoundForUnknownSkill(t *testing.T) {
+	repo := &serviceRepo{}
+	svc := NewService(repo, nil)
+	tenantID, userID, skillID := uuid.New(), uuid.New(), uuid.New()
+	_, err := svc.ReplaceSkillMCPDependencies(context.Background(), ReplaceSkillMCPDependenciesRequest{
+		TenantID: tenantID, UserID: userID, SkillID: skillID,
+		Items: []SkillMCPDependencyInput{{MCPServerID: uuid.New()}},
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown skill, got %v", err)
+	}
+}
+
+func TestServiceListSkillMCPDependenciesReturnsNotFoundForUnknownSkill(t *testing.T) {
+	repo := &serviceRepo{}
+	svc := NewService(repo, nil)
+	tenantID, userID, skillID := uuid.New(), uuid.New(), uuid.New()
+	_, err := svc.ListSkillMCPDependencies(context.Background(), ListSkillMCPDependenciesRequest{
+		TenantID: tenantID, UserID: userID, SkillID: skillID,
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown skill, got %v", err)
 	}
 }
 

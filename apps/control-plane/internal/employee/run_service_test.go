@@ -2668,3 +2668,46 @@ func TestRunServiceDispatchesWhenSkillMCPDependencySatisfied(t *testing.T) {
 		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
 	}
 }
+
+// TestRunServiceBlocksDispatchForFanOutWhenOnlyOneOfTwoSkillsSatisfied covers the
+// multi-skill fan-out case: two loaded skills each depend on a distinct MCP server, and
+// only one server is env-satisfied and bound. The dispatch gate must report the specific
+// unsatisfied skill/server pair, must not mention the satisfied pair, and must not dispatch.
+func TestRunServiceBlocksDispatchForFanOutWhenOnlyOneOfTwoSkillsSatisfied(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	satisfiedSkillID := uuid.New()
+	missingSkillID := uuid.New()
+	service.SetSkillLister(&fakeRuntimeSkillLister{records: []skill.SkillRuntimeRecord{
+		{ID: satisfiedSkillID, Slug: "skill-satisfied"},
+		{ID: missingSkillID, Slug: "skill-missing"},
+	}})
+	// Only the satisfied skill's server is env-satisfied and bound.
+	service.SetMCPLister(&fakeRuntimeMCPLister{records: []RuntimeMCPServerPayload{{
+		ServerID:  "srv-satisfied",
+		ServerKey: "server-a-satisfied",
+	}}})
+	service.SetSkillMCPDependencyLister(&fakeSkillMCPDependencyLister{records: []SkillMCPDependencyRecord{
+		{SkillID: satisfiedSkillID, MCPServerID: "srv-satisfied", ServerKey: "server-a-satisfied"},
+		{SkillID: missingSkillID, MCPServerID: "srv-missing", ServerKey: "server-b-missing"},
+	}})
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err == nil {
+		t.Fatalf("expected error when one of two skills has an unsatisfied mcp dependency, got nil")
+	}
+	if !strings.Contains(err.Error(), "skill-missing") || !strings.Contains(err.Error(), "server-b-missing") {
+		t.Fatalf("expected error to mention unsatisfied skill/server, got %v", err)
+	}
+	if strings.Contains(err.Error(), "skill-satisfied") || strings.Contains(err.Error(), "server-a-satisfied") {
+		t.Fatalf("expected error not to mention the satisfied skill/server, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected fan-out with one unsatisfied dependency not to dispatch, got %#v", dispatcher.commands)
+	}
+}

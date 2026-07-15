@@ -54,7 +54,7 @@ func (q *Queries) InsertSkillMCPDependency(ctx context.Context, arg InsertSkillM
 const ListDependentSkillsForMCPServer = `-- name: ListDependentSkillsForMCPServer :many
 SELECT d.skill_id, s.slug, s.name
 FROM skill_mcp_dependencies d
-JOIN skills s ON s.id = d.skill_id AND s.deleted_at IS NULL
+JOIN skills s ON s.id = d.skill_id AND s.deleted_at IS NULL AND s.tenant_id = d.tenant_id
 WHERE d.tenant_id = $1::uuid
   AND d.mcp_server_id = $2::uuid
 ORDER BY s.slug ASC
@@ -96,7 +96,7 @@ SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
        m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
        m.status AS server_status
 FROM skill_mcp_dependencies d
-JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL
+JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = $1::uuid
   AND d.skill_id = $2::uuid
 ORDER BY m.server_key ASC
@@ -158,7 +158,7 @@ SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
        m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
        m.status AS server_status
 FROM skill_mcp_dependencies d
-JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL
+JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = $1::uuid
   AND d.skill_id = ANY($2::uuid[])
 ORDER BY d.skill_id, m.server_key ASC
@@ -213,4 +213,25 @@ func (q *Queries) ListSkillMCPDependenciesForSkills(ctx context.Context, arg Lis
 		return nil, err
 	}
 	return items, nil
+}
+
+const SkillExistsForTenant = `-- name: SkillExistsForTenant :one
+SELECT EXISTS(
+    SELECT 1 FROM skills
+    WHERE tenant_id = $1::uuid
+      AND id = $2::uuid
+      AND deleted_at IS NULL
+) AS exists
+`
+
+type SkillExistsForTenantParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SkillExistsForTenant(ctx context.Context, arg SkillExistsForTenantParams) (bool, error) {
+	row := q.db.QueryRow(ctx, SkillExistsForTenant, arg.TenantID, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

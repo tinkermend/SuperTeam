@@ -3,7 +3,7 @@ SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
        m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
        m.status AS server_status
 FROM skill_mcp_dependencies d
-JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL
+JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
   AND d.skill_id = sqlc.arg('skill_id')::uuid
 ORDER BY m.server_key ASC;
@@ -21,7 +21,7 @@ VALUES (sqlc.arg('tenant_id')::uuid, sqlc.arg('skill_id')::uuid,
 -- name: ListDependentSkillsForMCPServer :many
 SELECT d.skill_id, s.slug, s.name
 FROM skill_mcp_dependencies d
-JOIN skills s ON s.id = d.skill_id AND s.deleted_at IS NULL
+JOIN skills s ON s.id = d.skill_id AND s.deleted_at IS NULL AND s.tenant_id = d.tenant_id
 WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
   AND d.mcp_server_id = sqlc.arg('mcp_server_id')::uuid
 ORDER BY s.slug ASC;
@@ -31,7 +31,15 @@ SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
        m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
        m.status AS server_status
 FROM skill_mcp_dependencies d
-JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL
+JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
   AND d.skill_id = ANY(sqlc.arg('skill_ids')::uuid[])
 ORDER BY d.skill_id, m.server_key ASC;
+
+-- name: SkillExistsForTenant :one
+SELECT EXISTS(
+    SELECT 1 FROM skills
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND id = sqlc.arg('id')::uuid
+      AND deleted_at IS NULL
+) AS exists;

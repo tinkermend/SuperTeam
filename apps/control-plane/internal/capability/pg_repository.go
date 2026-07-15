@@ -514,6 +514,13 @@ func textFromString(value string) pgtype.Text {
 	return pgtype.Text{String: trimmed, Valid: true}
 }
 
+func (r *PgRepository) SkillExistsForTenant(ctx context.Context, tenantID, skillID uuid.UUID) (bool, error) {
+	if err := r.requireQueries(); err != nil {
+		return false, err
+	}
+	return r.q.SkillExistsForTenant(ctx, queries.SkillExistsForTenantParams{TenantID: tenantID, ID: skillID})
+}
+
 func (r *PgRepository) ListSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID) ([]SkillMCPDependency, error) {
 	if err := r.requireQueries(); err != nil {
 		return nil, err

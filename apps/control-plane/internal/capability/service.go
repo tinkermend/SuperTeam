@@ -44,6 +44,7 @@ type Repository interface {
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]string, error)
 
 	// Skill <-> MCP registry dependency declarations (migration 062).
+	SkillExistsForTenant(ctx context.Context, tenantID, skillID uuid.UUID) (bool, error)
 	ListSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID) ([]SkillMCPDependency, error)
 	ReplaceSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID, items []SkillMCPDependencyInput) ([]SkillMCPDependency, error)
 	ListDependentSkills(ctx context.Context, tenantID, serverID uuid.UUID) ([]DependentSkill, error)
@@ -320,6 +321,13 @@ func (s *Service) ListSkillMCPDependencies(ctx context.Context, req ListSkillMCP
 	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.SkillID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id, user_id and skill_id are required", ErrInvalidInput)
 	}
+	exists, err := s.repository.SkillExistsForTenant(ctx, req.TenantID, req.SkillID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("%w: skill %s not found", ErrNotFound, req.SkillID)
+	}
 	return s.repository.ListSkillMCPDependencies(ctx, req.TenantID, req.SkillID)
 }
 
@@ -331,6 +339,13 @@ func (s *Service) ReplaceSkillMCPDependencies(ctx context.Context, req ReplaceSk
 	}
 	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.SkillID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id, user_id and skill_id are required", ErrInvalidInput)
+	}
+	exists, err := s.repository.SkillExistsForTenant(ctx, req.TenantID, req.SkillID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("%w: skill %s not found", ErrNotFound, req.SkillID)
 	}
 	seen := map[uuid.UUID]struct{}{}
 	for _, item := range req.Items {
