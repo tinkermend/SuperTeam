@@ -105,10 +105,10 @@ pub fn inject_session_mcp_config(
 ) -> Result<Vec<PathBuf>> {
     rollback_session_mcp_config(agent_home_dir)
         .with_context(|| "rollback residual mcp session manifest before injecting")?;
+    let target = home_mcp_config_target(agent_home_dir, provider_type)?;
     if servers.is_empty() {
         return Ok(Vec::new());
     }
-    let target = home_mcp_config_target(agent_home_dir, provider_type)?;
     let existed = target.exists();
     let previous_content = if existed {
         Some(
@@ -639,5 +639,12 @@ mod tests {
         assert!(written.is_empty());
         assert!(!manifest_path(dir.path()).exists());
         assert!(!dir.path().join("opencode.json").exists());
+    }
+
+    #[test]
+    fn inject_rejects_unknown_provider_even_with_empty_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = inject_session_mcp_config(dir.path(), "bogus-provider", &[]).unwrap_err();
+        assert!(error.to_string().contains("unsupported provider_type"));
     }
 }
