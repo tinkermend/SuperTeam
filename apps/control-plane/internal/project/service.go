@@ -2044,7 +2044,10 @@ func projectTaskGraphBlockingFactFromEvent(event ProjectEvent) ProjectTaskGraphB
 // stringSlicePayload extracts a []string from a decoded JSON payload map, accepting
 // both []string (set directly by Go callers in tests) and []any of strings (the
 // shape after a jsonb column round trip). Non-string entries and blank strings are
-// dropped; a missing/wrong-typed key returns nil (not an error).
+// dropped. A missing/wrong-typed key returns an empty (non-nil) slice — not nil —
+// so a Gap's Roles/RequiredCapabilities/Options always JSON-marshal as "[]", never
+// "null", keeping the web's `gap.roles.join(...)`-style access safe without an
+// extra null check.
 func stringSlicePayload(payload map[string]any, key string) []string {
 	switch raw := payload[key].(type) {
 	case []string:
@@ -2064,7 +2067,7 @@ func stringSlicePayload(payload map[string]any, key string) []string {
 		}
 		return values
 	default:
-		return nil
+		return []string{}
 	}
 }
 

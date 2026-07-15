@@ -1402,6 +1402,67 @@ func TestGetProjectTaskGraphReturnsGapAndDecisionRequestIDInBlockingFact(t *test
 	}
 }
 
+// TestGetProjectTaskGraphGapFieldsDefaultToEmptyArraysNotNull proves a gap payload
+// missing individual array keys (roles/required_capabilities/options) still
+// JSON-marshals those fields as "[]", never "null" — the web accesses them with
+// `gap.roles.join(...)`/`.length` without a null guard, so a stray null would crash.
+func TestGetProjectTaskGraphGapFieldsDefaultToEmptyArraysNotNull(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph:            ProjectTaskGraph{Nodes: []ProjectTaskGraphNode{}},
+	}
+	eventSummary := "规划终止"
+	repo.events = append(repo.events, ProjectEvent{
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		SequenceNumber: 1,
+		EventType:      ProjectEventCoordinationBlocked,
+		ActorType:      "project_coordinator",
+		ActorID:        demandID.String(),
+		ResourceType:   strPtr("project_demand"),
+		ResourceID:     strPtr(demandID.String()),
+		Summary:        &eventSummary,
+		Payload: map[string]any{
+			"demand_id":   demandID.String(),
+			"reason_code": "no_suitable_employee",
+			"gap": map[string]any{
+				"constraint_kind": "role_independence",
+			},
+		},
+		CreatedAt: time.Now(),
+	})
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph?demand_id="+demandID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskGraph(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task graph 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	if !strings.Contains(body, `"roles":[]`) {
+		t.Fatalf("expected gap.roles to serialize as [] not null, got body: %s", body)
+	}
+	if !strings.Contains(body, `"required_capabilities":[]`) {
+		t.Fatalf("expected gap.required_capabilities to serialize as [] not null, got body: %s", body)
+	}
+	if !strings.Contains(body, `"options":[]`) {
+		t.Fatalf("expected gap.options to serialize as [] not null, got body: %s", body)
+	}
+}
+
 // TestGetProjectTaskGraphOmitsGapWhenAbsent proves a blocking fact without a "gap"
 // payload key (the common non-structural no-suitable-employee diagnosis, and every
 // pre-existing blocking event type) renders no gap field at all — not a null/empty
