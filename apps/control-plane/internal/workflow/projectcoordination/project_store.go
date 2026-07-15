@@ -3204,6 +3204,54 @@ func (s *ProjectStore) FinishCoordinationJob(ctx context.Context, input FinishCo
 	return err
 }
 
+// noSuitableEmployeeReasonCode / RecommendedAction back the human-visible diagnosis
+// surfaced when planning terminates with the ErrNoSuitableEmployee family. The
+// recommended action always names the three ways out, so a human sees them even if
+// the diagnosis message itself is a raw (non-structural) confidence-score text.
+const (
+	noSuitableEmployeeReasonCode        = "no_suitable_employee"
+	noSuitableEmployeeRecommendedAction = "为项目补充可调度员工、改选更浅的出口交付物，或改用更贴合的场景模板"
+)
+
+// RejectDemandPlanning terminally rejects a demand whose route the planner could
+// not resolve (ErrNoSuitableEmployee family). It advances the demand to the failed
+// terminal state (so it no longer sits in planning_pending forever) and records the
+// diagnosis on a demand-scoped coordination.blocked event — which the web renders as
+// a WorkflowBlockingBanner (message + recommended_action) on the demand detail once
+// the demand's task graph is empty. Idempotent: demand advance is forward-only and
+// the event is deduplicated per demand.
+func (s *ProjectStore) RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error {
+	if s.repository == nil {
+		return ErrActivityStoreRequired
+	}
+	diagnosis := strings.TrimSpace(input.Diagnosis)
+	if diagnosis == "" {
+		diagnosis = "项目员工池无法满足需求的执行约束，规划已终止并转交人类负责人；" + noSuitableEmployeeRecommendedAction
+	}
+	if err := s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID, project.ProjectDemandStatusFailed); err != nil {
+		return err
+	}
+	if _, err := s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventCoordinationBlocked,
+		"demand_planning_rejected:"+input.DemandID.String(), diagnosis, map[string]any{
+			"demand_id":          input.DemandID.String(),
+			"reason_code":        noSuitableEmployeeReasonCode,
+			"recommended_action": noSuitableEmployeeRecommendedAction,
+		}); err != nil {
+		return err
+	}
+	if input.CoordinationJobID != uuid.Nil {
+		if err := s.FinishCoordinationJob(ctx, FinishCoordinationJobInput{
+			TenantID:       input.TenantID,
+			JobID:          input.CoordinationJobID,
+			Status:         "blocked",
+			OutputEventIDs: input.OutputEventIDs,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func coordinatorEvent(tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID, summary string, payload map[string]any) project.AppendProjectEventRequest {
 	if actorID == "" {
 		actorID = "project_coordinator"

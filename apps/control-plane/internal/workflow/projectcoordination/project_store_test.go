@@ -82,6 +82,70 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+func TestRejectDemandPlanningAdvancesDemandAndSurfacesDiagnosis(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "通过审查合入",
+			Status:    project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+	diagnosis := "项目员工池无法满足审查独立性约束（需≥2名可调度员工）；可改选更浅出口、为项目补充员工、或换用模板"
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		Diagnosis:         diagnosis,
+	})
+
+	require.NoError(t, err)
+	// Demand must leave planning_pending for a terminal state a human sees ("失败").
+	require.Equal(t, project.ProjectDemandStatusFailed, repo.demand.Status)
+	// The diagnosis surfaces as a demand-scoped coordination.blocked event, which the
+	// web renders as a WorkflowBlockingBanner (message + recommended_action) when the
+	// task graph is empty.
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	require.Equal(t, demandID.String(), blocked[0].Payload["demand_id"])
+	require.Equal(t, "no_suitable_employee", blocked[0].Payload["reason_code"])
+	require.NotNil(t, blocked[0].Summary)
+	require.Contains(t, *blocked[0].Summary, "补充员工")
+	require.NotEmpty(t, blocked[0].Payload["recommended_action"])
+}
+
+func TestRejectDemandPlanningIsIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+	input := RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，为项目补充员工",
+	}
+
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+
+	require.Len(t, eventsByType(repo.events, project.ProjectEventCoordinationBlocked), 1)
+}
+
 func TestLoadProjectCoordinationSnapshotRecordsBlockedEventWhenNoPlannableDigitalEmployee(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

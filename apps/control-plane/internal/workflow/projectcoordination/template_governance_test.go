@@ -243,6 +243,85 @@ func TestGovernanceRoleIndependenceStructuralGapEscalates(t *testing.T) {
 	require.Contains(t, err.Error(), "补充员工")
 }
 
+// structuralGapForPlan preference (fix: 结构缺口出路提示优先)
+//
+// When ValidateRouteDecisionPlan returns a low-confidence ErrNoSuitableEmployee
+// (the planner honestly scored the sole employee low for the review role), the
+// raw score text ("scored 0.30") is useless to a human. structuralGapForPlan must
+// detect that this is really a pool structural gap (template bound, chosen exit
+// keeps role_independence in force, <2 active executors) and prefer the actionable
+// message carrying the ways-out hints (补充员工/改浅出口/换模板).
+
+func TestStructuralGapForPlanReturnsActionableMessageForSingleExecutorMerge(t *testing.T) {
+	employeeA := uuid.New()
+	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
+	develop.SelectedEmployeeID = employeeA
+	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
+	review.SelectedEmployeeID = employeeA
+	plan := RouteDecisionPlan{
+		Reason:          "single executor merge",
+		TemplateKey:     "software_delivery",
+		ExitDeliverable: "review_verdict",
+		Tasks:           []PlannedTask{develop, review},
+	}
+	snapshot := CoordinationSnapshot{
+		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
+		DigitalEmployeePool: activeExecutorPool(employeeA),
+	}
+
+	err := structuralGapForPlan(snapshot, plan)
+
+	require.ErrorIs(t, err, ErrNoSuitableEmployee)
+	require.NotErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Contains(t, err.Error(), "补充员工")
+	require.Contains(t, err.Error(), "改选更浅出口")
+	require.Contains(t, err.Error(), "换用模板")
+}
+
+func TestStructuralGapForPlanNilWhenTwoExecutors(t *testing.T) {
+	employeeA := uuid.New()
+	employeeB := uuid.New()
+	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
+	review.SelectedEmployeeID = employeeA
+	plan := RouteDecisionPlan{
+		Reason:          "two executors available",
+		TemplateKey:     "software_delivery",
+		ExitDeliverable: "review_verdict",
+		Tasks:           []PlannedTask{review},
+	}
+	snapshot := CoordinationSnapshot{
+		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
+		DigitalEmployeePool: activeExecutorPool(employeeA, employeeB),
+	}
+
+	require.NoError(t, structuralGapForPlan(snapshot, plan))
+}
+
+func TestStructuralGapForPlanNilBelowIndependenceExit(t *testing.T) {
+	employeeA := uuid.New()
+	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
+	develop.SelectedEmployeeID = employeeA
+	plan := RouteDecisionPlan{
+		Reason:          "branch only, no review independence in force",
+		TemplateKey:     "software_delivery",
+		ExitDeliverable: "branch_ref",
+		Tasks:           []PlannedTask{develop},
+	}
+	snapshot := CoordinationSnapshot{
+		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
+		DigitalEmployeePool: activeExecutorPool(employeeA),
+	}
+
+	require.NoError(t, structuralGapForPlan(snapshot, plan))
+}
+
+func TestStructuralGapForPlanNilWhenTemplateUnbound(t *testing.T) {
+	plan := validGraphPlan(uuid.New())
+	snapshot := CoordinationSnapshot{DigitalEmployeePool: activeExecutorPool(uuid.New())}
+
+	require.NoError(t, structuralGapForPlan(snapshot, plan))
+}
+
 func TestGovernanceHumanGateForcesApproval(t *testing.T) {
 	employeeA := uuid.New()
 	employeeB := uuid.New()

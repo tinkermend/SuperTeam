@@ -159,6 +159,41 @@ func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmp
 	return nil
 }
 
+// structuralGapForPlan returns the actionable ErrNoSuitableEmployee-family error
+// (noSuitableEmployeeStructuralGapMessage) when a plan's failure is really a pool
+// structural gap the planner cannot re-plan around, else nil. The gap holds when:
+// the project is bound to a scenario template with a skeleton, the plan's chosen
+// exit keeps a role_independence constraint in force, and the active executor pool
+// has fewer than 2 members (so no assignment could ever make the two roles
+// independent).
+//
+// It is called when ValidateRouteDecisionPlan has already returned an
+// ErrNoSuitableEmployee error (an honest low-confidence selection for the review
+// role): both are the same terminal family, but this message tells the human how to
+// get out (补充员工/改浅出口/换模板) instead of surfacing a raw "scored 0.30".
+func structuralGapForPlan(snapshot CoordinationSnapshot, plan RouteDecisionPlan) error {
+	if snapshot.ScenarioTemplate == nil {
+		return nil
+	}
+	spec, err := scenariotemplate.ParseSpec(snapshot.ScenarioTemplate.Spec)
+	if err != nil || len(spec.Skeleton) == 0 {
+		return nil
+	}
+	if len(activeExecutorIDs(snapshot.DigitalEmployeePool)) >= 2 {
+		return nil
+	}
+	for _, constraint := range spec.Constraints {
+		if constraint.Kind != "role_independence" || len(constraint.Roles) < 2 {
+			continue
+		}
+		if !exitCondMet(spec, constraint.When, plan.ExitDeliverable) {
+			continue
+		}
+		return fmt.Errorf("%w: %s", ErrNoSuitableEmployee, noSuitableEmployeeStructuralGapMessage)
+	}
+	return nil
+}
+
 // EnforceScenarioTemplateGovernance applies a bound scenario template's
 // constraints and collapse rules to a plan that has already passed
 // ValidateRouteDecisionPlan. It must be called immediately after every

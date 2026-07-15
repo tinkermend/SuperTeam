@@ -141,6 +141,11 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 		}
 		if err != nil {
 			if errors.Is(err, ErrNoSuitableEmployee) {
+				// Prefer the actionable structural-gap message (ways-out hints) over a
+				// raw confidence-score text when the failure is really a pool gap.
+				if gap := structuralGapForPlan(snapshot, plan); gap != nil {
+					return RouteDecisionPlan{}, gap
+				}
 				return RouteDecisionPlan{}, err
 			}
 			if contextErr := terminalContextError(ctx); contextErr != nil {
@@ -157,6 +162,12 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 				}
 				if repairErr == nil {
 					return repaired, nil
+				}
+				if errors.Is(repairErr, ErrNoSuitableEmployee) {
+					if gap := structuralGapForPlan(snapshot, repaired); gap != nil {
+						return RouteDecisionPlan{}, gap
+					}
+					return RouteDecisionPlan{}, repairErr
 				}
 			}
 			lastErr = fmt.Errorf("%w; raw planner response: %s", err, plannerContentExcerpt(content))

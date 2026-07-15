@@ -2,6 +2,8 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -178,6 +180,13 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+			// Terminal, non-retryable planning failure: the executor pool cannot
+			// satisfy the demand. Route it to the demand rejection/diagnosis surface
+			// instead of letting the error fall through to the generic signal_failed
+			// audit event, which is invisible to a human.
+			return nil, rejectDemandPlanning(ctx, input, signal, job.ID, diagnosis, []uuid.UUID{signal.CreatedEventID})
+		}
 		return nil, err
 	}
 
@@ -906,6 +915,38 @@ func scheduleDispatchRetry(ctx workflow.Context, tenantID, projectID, taskID uui
 			workflow.GetLogger(gctx).Error("retry dispatch failed", "task_id", taskID.String(), "error", err.Error())
 		}
 	})
+}
+
+// noSuitableEmployeeDiagnosis reports whether err is the terminal, non-retryable
+// ErrNoSuitableEmployee escalation stamped by the PlanDemandRoute activity, and if
+// so returns the human-readable diagnosis (the planner's reason with its structural
+// ways-out hint) to surface on the demand.
+func noSuitableEmployeeDiagnosis(err error) (string, bool) {
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) && appErr.Type() == errTypeNoSuitableEmployee {
+		return humanizeNoSuitableEmployeeDiagnosis(appErr.Message()), true
+	}
+	return "", false
+}
+
+// humanizeNoSuitableEmployeeDiagnosis strips the ErrNoSuitableEmployee sentinel
+// prefix ("no suitable employee: ") so the surfaced diagnosis reads as a plain
+// message rather than an error chain.
+func humanizeNoSuitableEmployeeDiagnosis(message string) string {
+	trimmed := strings.TrimSpace(message)
+	trimmed = strings.TrimPrefix(trimmed, ErrNoSuitableEmployee.Error()+": ")
+	return strings.TrimSpace(trimmed)
+}
+
+func rejectDemandPlanning(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted, jobID uuid.UUID, diagnosis string, outputEventIDs []uuid.UUID) error {
+	return workflow.ExecuteActivity(ctx, (*Activities).RejectDemandPlanning, RejectDemandPlanningInput{
+		TenantID:          input.TenantID,
+		ProjectID:         signal.ProjectID,
+		DemandID:          signal.DemandID,
+		CoordinationJobID: jobID,
+		Diagnosis:         diagnosis,
+		OutputEventIDs:    outputEventIDs,
+	}).Get(ctx, nil)
 }
 
 func finishCoordinationJob(ctx workflow.Context, tenantID, jobID uuid.UUID, status string, outputEventIDs []uuid.UUID) error {

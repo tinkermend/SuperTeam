@@ -3,6 +3,7 @@ package projectcoordination
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -103,6 +104,57 @@ func TestProjectCoordinatorSurvivesHandlerActivityFailure(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	// The failed handler is recorded as an audit event, then the workflow keeps looping.
 	require.Equal(t, []string{"CreateCoordinationJob", "AppendProjectEvent"}, store.calls)
+}
+
+// A terminal ErrNoSuitableEmployee planning failure must route the demand to the
+// rejection/diagnosis surface (RejectDemandPlanning) exactly once — not spin the
+// planner 3× (fix: 不可重试) and not fall through to the generic signal_failed audit
+// event (fix: 需求驳回诊断可见). The diagnosis carried to the surface is the planner's
+// human-readable reason with its ways-out hint.
+func TestProjectCoordinatorRejectsDemandWhenNoSuitableEmployee(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: projectID,
+			Demand:    DemandSnapshot{ID: demandID, Title: "通过审查合入"},
+		},
+		jobID: uuid.New(),
+	}
+	planner := &errPlanner{err: fmt.Errorf("%w: 项目员工池无法满足审查独立性约束（需≥2名可调度员工）；可改选更浅出口、为项目补充员工、或换用模板", ErrNoSuitableEmployee)}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:      projectID,
+			DemandID:       demandID,
+			CreatedEventID: uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// One planner call only: the family error is non-retryable.
+	require.Equal(t, int32(1), planner.calls.Load())
+	require.Equal(t, []string{
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"RejectDemandPlanning",
+	}, store.calls)
+	require.Len(t, store.rejectDemandInputs, 1)
+	require.Equal(t, demandID, store.rejectDemandInputs[0].DemandID)
+	require.Contains(t, store.rejectDemandInputs[0].Diagnosis, "补充员工")
 }
 
 func TestProjectCoordinatorDispatchesRootReadyReasonForRootTasks(t *testing.T) {
@@ -1741,6 +1793,7 @@ type recordingActivityStore struct {
 	resolvePlanReviewInputs            []ResolvePlanRevisionReviewInput
 	decomposePlanInputs                []DecomposeAcceptedPlanRevisionInput
 	finishJobInputs                    []FinishCoordinationJobInput
+	rejectDemandInputs                 []RejectDemandPlanningInput
 }
 
 type rawDispatchWorkflowActivities struct {
@@ -2007,5 +2060,11 @@ func (s *recordingActivityStore) RecoverTaskDispatchFailure(ctx context.Context,
 func (s *recordingActivityStore) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {
 	s.calls = append(s.calls, "FinishCoordinationJob")
 	s.finishJobInputs = append(s.finishJobInputs, input)
+	return nil
+}
+
+func (s *recordingActivityStore) RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error {
+	s.calls = append(s.calls, "RejectDemandPlanning")
+	s.rejectDemandInputs = append(s.rejectDemandInputs, input)
 	return nil
 }

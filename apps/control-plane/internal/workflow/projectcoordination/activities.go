@@ -12,6 +12,11 @@ var ErrActivityStoreRequired = errors.New("project coordination activity store i
 
 var ErrRoutePlannerRequired = errors.New("project coordination route planner is required")
 
+// errTypeNoSuitableEmployee is the temporal ApplicationError Type stamped on a
+// terminal ErrNoSuitableEmployee planning failure. The workflow matches on this
+// Type to route the demand to its rejection/diagnosis surface instead of retrying.
+const errTypeNoSuitableEmployee = "NoSuitableEmployee"
+
 type Activities struct {
 	store   ActivityStore
 	planner RoutePlanner
@@ -37,6 +42,7 @@ type ActivityStore interface {
 	ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error)
 	ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
+	RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
 	RecoverTaskDispatchFailure(ctx context.Context, input RecoverTaskDispatchFailureInput) (RecoverTaskDispatchFailureResult, error)
 	FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error
@@ -68,7 +74,25 @@ func (a *Activities) PlanDemandRoute(ctx context.Context, snapshot CoordinationS
 	if a.planner == nil {
 		return RouteDecisionPlan{}, ErrRoutePlannerRequired
 	}
-	return a.planner.Plan(ctx, snapshot)
+	decision, err := a.planner.Plan(ctx, snapshot)
+	if err != nil && errors.Is(err, ErrNoSuitableEmployee) {
+		// A no-suitable-employee failure is structural: the executor pool cannot
+		// satisfy the plan and re-planning would reselect the same pool forever.
+		// Every retry is a fresh, real reasoning-model call that cannot change the
+		// outcome, so mark it non-retryable — Temporal escalates immediately
+		// instead of burning MaximumAttempts planner calls. err.Error() carries the
+		// human-readable diagnosis (with fix 3's structural ways-out hints) for the
+		// workflow to surface on the demand.
+		return RouteDecisionPlan{}, temporal.NewNonRetryableApplicationError(err.Error(), errTypeNoSuitableEmployee, err)
+	}
+	return decision, err
+}
+
+func (a *Activities) RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error {
+	if a.store == nil {
+		return ErrActivityStoreRequired
+	}
+	return a.store.RejectDemandPlanning(ctx, input)
 }
 
 func (a *Activities) PersistRouteDecision(ctx context.Context, input PersistRouteDecisionInput) (RouteDecisionResult, error) {
