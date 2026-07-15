@@ -236,6 +236,35 @@ func (s EffectiveMCPServer) BindingStatus() string {
 	return MCPBindingStatusActive
 }
 
+// SkillMCPDependency declares that a skill requires an MCP registry definition
+// at load time. Validation-only: it never grants the MCP to an employee.
+type SkillMCPDependency struct {
+	ID           uuid.UUID
+	TenantID     uuid.UUID
+	SkillID      uuid.UUID
+	MCPServerID  uuid.UUID
+	Note         string
+	CreatedAt    time.Time
+	ServerKey    string
+	ServerName   string
+	AuthStrategy MCPAuthStrategy
+	RiskLevel    string
+	ServerStatus string
+}
+
+// DependentSkill is a reverse lookup row: an active skill depending on an MCP definition.
+type DependentSkill struct {
+	SkillID uuid.UUID
+	Slug    string
+	Name    string
+}
+
+// SkillMCPDependencyInput is one desired dependency in a declarative replace.
+type SkillMCPDependencyInput struct {
+	MCPServerID uuid.UUID
+	Note        string
+}
+
 type CreateMCPServerDefinitionRequest struct {
 	TenantID           uuid.UUID
 	UserID             uuid.UUID

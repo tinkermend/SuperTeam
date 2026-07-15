@@ -458,6 +458,22 @@ func (r *serviceRepo) ListConfiguredEmployeeEnvVarNames(context.Context, uuid.UU
 	return r.configuredEnvVars, nil
 }
 
+func (r *serviceRepo) ListSkillMCPDependencies(context.Context, uuid.UUID, uuid.UUID) ([]SkillMCPDependency, error) {
+	return nil, nil
+}
+
+func (r *serviceRepo) ReplaceSkillMCPDependencies(context.Context, uuid.UUID, uuid.UUID, []SkillMCPDependencyInput) ([]SkillMCPDependency, error) {
+	return nil, nil
+}
+
+func (r *serviceRepo) ListDependentSkills(context.Context, uuid.UUID, uuid.UUID) ([]DependentSkill, error) {
+	return nil, nil
+}
+
+func (r *serviceRepo) ListSkillMCPDependenciesForSkills(context.Context, uuid.UUID, []uuid.UUID) ([]SkillMCPDependency, error) {
+	return nil, nil
+}
+
 func TestServiceCreateMCPServerDefinitionValidatesHTTPOnlyAndEnvVars(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()
