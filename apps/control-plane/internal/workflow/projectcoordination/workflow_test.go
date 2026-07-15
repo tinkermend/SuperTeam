@@ -682,6 +682,131 @@ func TestProjectCoordinatorReplansAfterPlanReviewRequestChanges(t *testing.T) {
 	}, store.finishJobInputs[0].OutputEventIDs)
 }
 
+// TestProjectCoordinatorRejectsDemandWhenReplanHasNoSuitableEmployee mirrors
+// TestProjectCoordinatorRejectsDemandWhenNoSuitableEmployee for the replan path:
+// an exit-reselect request_changes triggers a replan whose planner returns a
+// terminal ErrNoSuitableEmployee. That failure must route through the demand
+// rejection/diagnosis surface (RejectDemandPlanning) exactly once — not fall
+// through to the generic signal_failed audit event, which is invisible to a
+// human.
+func TestProjectCoordinatorRejectsDemandWhenReplanHasNoSuitableEmployee(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	decisionRequestID := uuid.New()
+	planRevisionID := uuid.New()
+	initialRouteEventID := uuid.New()
+	initialPlanEventID := uuid.New()
+	requestChangesEventID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "改选发布出口",
+				Content: "负责人改选到 release_record 后重新规划",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+			CoordinationPolicy: map[string]any{
+				"require_human_review_for_new_demands": true,
+			},
+		},
+		jobID:                   uuid.New(),
+		routeID:                 uuid.New(),
+		routeEventID:            initialRouteEventID,
+		planRevisionID:          planRevisionID,
+		taskID:                  uuid.New(),
+		decisionRequestID:       decisionRequestID,
+		planRevisionIDs:         []uuid.UUID{planRevisionID},
+		planRevisionIDsForRoute: []uuid.UUID{planRevisionID},
+		routeEventIDs:           []uuid.UUID{initialRouteEventID},
+		planEventIDs:            []uuid.UUID{initialPlanEventID},
+		routeEventIDsForRoute:   []uuid.UUID{initialRouteEventID},
+		planEventIDsForRoute:    []uuid.UUID{initialPlanEventID},
+	}
+	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
+		decisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             decisionRequestID,
+				ProjectID:      store.snapshot.ProjectID,
+				DecisionType:   "plan_review",
+				StatusSnapshot: "resolved",
+			},
+			PlanReview: &PlanReviewRoute{
+				ProjectID:         store.snapshot.ProjectID,
+				DemandID:          store.snapshot.Demand.ID,
+				CoordinationJobID: store.jobID,
+				RouteDecisionID:   store.routeID,
+				PlanRevisionID:    planRevisionID,
+				PlanFingerprint:   "fingerprint",
+				Payload:           PlanRevisionPayload{Summary: "original plan"},
+				RouteEventID:      initialRouteEventID,
+			},
+		},
+	}
+	planner := &sequencedPlanner{
+		inner:    HeuristicRoutePlanner{},
+		failOn:   2,
+		failWith: fmt.Errorf("%w: task %q: employee scored 0.50", ErrNoSuitableEmployee, "test"),
+	}
+	activities := NewActivities(store, planner)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID:     uuid.New(),
+			DecisionRequestID:     decisionRequestID,
+			Decision:              project.PlanReviewDecisionRequestChanges,
+			TargetExitDeliverable: "release_record",
+			Payload:               map[string]any{"comment": "改选到发布出口"},
+			ResolvedEventID:       requestChangesEventID,
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 12*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// Two planner calls only: the initial plan, then the replan whose family
+	// error is non-retryable.
+	require.Equal(t, int32(2), planner.calls.Load())
+	require.Equal(t, []string{
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"PersistRouteDecision",
+		"PersistPlanRevision",
+		"RequestPlanRevisionReview",
+		"LoadHumanDecisionRoute",
+		"ResolvePlanRevisionReview",
+		"AppendProjectEvent",
+		"LoadProjectCoordinationSnapshot",
+		"RejectDemandPlanning",
+	}, store.calls)
+	// The terminal replan failure never falls through to the generic
+	// signal_failed audit event.
+	require.NotContains(t, store.appendEventTypes, "workflow.signal_failed")
+	require.Len(t, store.rejectDemandInputs, 1)
+	require.Equal(t, store.snapshot.Demand.ID, store.rejectDemandInputs[0].DemandID)
+	require.Equal(t, store.jobID, store.rejectDemandInputs[0].CoordinationJobID)
+	require.Contains(t, store.rejectDemandInputs[0].Diagnosis, "scored 0.50")
+}
+
 // exitCapturingRoutePlanner wraps another RoutePlanner and records every
 // CoordinationSnapshot it is asked to plan for, so tests can assert what
 // PinnedExitDeliverable looked like on each planning pass (initial vs replan).
@@ -1941,6 +2066,7 @@ type recordingActivityStore struct {
 	decomposePlanInputs                []DecomposeAcceptedPlanRevisionInput
 	finishJobInputs                    []FinishCoordinationJobInput
 	rejectDemandInputs                 []RejectDemandPlanningInput
+	appendEventTypes                   []string
 }
 
 type rawDispatchWorkflowActivities struct {
@@ -2181,6 +2307,7 @@ func (s *recordingActivityStore) ApplyPreDispatchGateDecision(ctx context.Contex
 
 func (s *recordingActivityStore) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {
 	s.calls = append(s.calls, "AppendProjectEvent")
+	s.appendEventTypes = append(s.appendEventTypes, input.EventType)
 	return ProjectEventResult{ID: s.dispatchEvent}, nil
 }
 

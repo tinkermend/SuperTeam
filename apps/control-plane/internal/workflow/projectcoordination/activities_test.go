@@ -25,6 +25,23 @@ func (p *errPlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (R
 	return p.plan, p.err
 }
 
+// sequencedPlanner returns a fixed error on the Nth (1-indexed) planning call and
+// delegates to inner on every other call. It is used to drive a first plan that
+// succeeds and a later replan that fails terminally.
+type sequencedPlanner struct {
+	inner    RoutePlanner
+	failOn   int
+	failWith error
+	calls    atomic.Int32
+}
+
+func (p *sequencedPlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	if int(p.calls.Add(1)) == p.failOn {
+		return RouteDecisionPlan{}, p.failWith
+	}
+	return p.inner.Plan(ctx, snapshot)
+}
+
 func TestPlanDemandRouteMarksNoSuitableEmployeeNonRetryable(t *testing.T) {
 	planErr := fmt.Errorf("%w: task %q: employee scored 0.30", ErrNoSuitableEmployee, "review")
 	activities := NewActivities(nil, &errPlanner{err: planErr})

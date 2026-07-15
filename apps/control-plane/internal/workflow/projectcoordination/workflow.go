@@ -439,6 +439,15 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 	snapshot.PinnedExitDeliverable = strings.TrimSpace(signal.TargetExitDeliverable)
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
+		if diagnosis, ok := noSuitableEmployeeDiagnosis(err); ok {
+			// Terminal, non-retryable replan failure (e.g. the reselected exit
+			// pulls in a stage the pool cannot staff): route the demand to the
+			// rejection/diagnosis surface — same treatment as the initial
+			// handleDemandSubmitted path — instead of letting the error fall
+			// through to the generic signal_failed audit event, which strands
+			// the demand in planning_pending with no human-visible diagnosis.
+			return nil, rejectDemandPlanningByID(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, diagnosis, outputEventIDs)
+		}
 		return nil, err
 	}
 	var routeDecision RouteDecisionResult
@@ -940,10 +949,14 @@ func humanizeNoSuitableEmployeeDiagnosis(message string) string {
 }
 
 func rejectDemandPlanning(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted, jobID uuid.UUID, diagnosis string, outputEventIDs []uuid.UUID) error {
+	return rejectDemandPlanningByID(ctx, input.TenantID, signal.ProjectID, signal.DemandID, jobID, diagnosis, outputEventIDs)
+}
+
+func rejectDemandPlanningByID(ctx workflow.Context, tenantID, projectID, demandID, jobID uuid.UUID, diagnosis string, outputEventIDs []uuid.UUID) error {
 	return workflow.ExecuteActivity(ctx, (*Activities).RejectDemandPlanning, RejectDemandPlanningInput{
-		TenantID:          input.TenantID,
-		ProjectID:         signal.ProjectID,
-		DemandID:          signal.DemandID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
 		CoordinationJobID: jobID,
 		Diagnosis:         diagnosis,
 		OutputEventIDs:    outputEventIDs,
