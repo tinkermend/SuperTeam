@@ -412,6 +412,10 @@ func (s *routeCapabilityService) ListDependentSkills(ctx context.Context, req ca
 	return s.dependentSkills, nil
 }
 
+func (s *routeCapabilityService) EvaluateEmployeeSkillMCPDependencies(ctx context.Context, req capability.EvaluateEmployeeSkillMCPDependenciesRequest) ([]capability.EmployeeSkillMCPDependencyStatus, error) {
+	return nil, nil
+}
+
 func TestTeamRoutesRequireConsoleAuth(t *testing.T) {
 	service := &routeTeamService{}
 	server := NewServer(
