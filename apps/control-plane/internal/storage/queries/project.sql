@@ -691,7 +691,8 @@ INSERT INTO project_demands (
     risk_level,
     status,
     created_event_id,
-    coordination_mode
+    coordination_mode,
+    scenario_template_key
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_id')::uuid,
@@ -705,7 +706,8 @@ INSERT INTO project_demands (
     sqlc.narg('risk_level')::varchar,
     sqlc.arg('status')::varchar,
     sqlc.narg('created_event_id')::uuid,
-    sqlc.arg('coordination_mode')::varchar
+    sqlc.arg('coordination_mode')::varchar,
+    sqlc.narg('scenario_template_key')::text
 ) RETURNING *;
 
 -- name: ListProjectDemands :many

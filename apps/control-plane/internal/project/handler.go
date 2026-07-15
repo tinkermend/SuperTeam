@@ -674,6 +674,7 @@ func (h *HTTPHandler) SubmitDemand(w http.ResponseWriter, r *http.Request) {
 		ReviewerUserID:          req.ReviewerUserID,
 		ReviewerSelectionReason: req.ReviewerSelectionReason,
 		CoordinationMode:        req.CoordinationMode,
+		ScenarioTemplateKey:     req.ScenarioTemplateKey,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1841,6 +1842,7 @@ type submitDemandBody struct {
 	ReviewerUserID          *uuid.UUID              `json:"reviewer_user_id"`
 	ReviewerSelectionReason ReviewerSelectionReason `json:"reviewer_selection_reason"`
 	CoordinationMode        string                  `json:"coordination_mode"`
+	ScenarioTemplateKey     *string                 `json:"scenario_template_key"`
 }
 
 type resolveDecisionBody struct {
@@ -2511,19 +2513,20 @@ type projectEventResponse struct {
 }
 
 type projectDemandResponse struct {
-	ID                string                      `json:"id"`
-	TenantID          string                      `json:"tenant_id"`
-	ProjectID         string                      `json:"project_id"`
-	SubmittedByUserID string                      `json:"submitted_by_user_id"`
-	Title             string                      `json:"title"`
-	Content           *string                     `json:"content,omitempty"`
-	SourceType        DemandSourceType            `json:"source_type"`
-	SourceRefs        map[string]any              `json:"source_refs"`
-	Attachments       []any                       `json:"attachments"`
-	Status            ProjectDemandStatus         `json:"status"`
-	CreatedEventID    *string                     `json:"created_event_id,omitempty"`
-	Reviewer          *reviewerPreferenceResponse `json:"reviewer"`
-	CoordinationMode  string                      `json:"coordination_mode"`
+	ID                  string                      `json:"id"`
+	TenantID            string                      `json:"tenant_id"`
+	ProjectID           string                      `json:"project_id"`
+	SubmittedByUserID   string                      `json:"submitted_by_user_id"`
+	Title               string                      `json:"title"`
+	Content             *string                     `json:"content,omitempty"`
+	SourceType          DemandSourceType            `json:"source_type"`
+	SourceRefs          map[string]any              `json:"source_refs"`
+	Attachments         []any                       `json:"attachments"`
+	Status              ProjectDemandStatus         `json:"status"`
+	CreatedEventID      *string                     `json:"created_event_id,omitempty"`
+	Reviewer            *reviewerPreferenceResponse `json:"reviewer"`
+	CoordinationMode    string                      `json:"coordination_mode"`
+	ScenarioTemplateKey *string                     `json:"scenario_template_key,omitempty"`
 }
 
 type demandLaunchDetailResponse struct {
@@ -3481,19 +3484,20 @@ func demandResponses(demands []ProjectDemand) []projectDemandResponse {
 
 func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 	return projectDemandResponse{
-		ID:                demand.ID.String(),
-		TenantID:          demand.TenantID.String(),
-		ProjectID:         demand.ProjectID.String(),
-		SubmittedByUserID: demand.SubmittedByUserID.String(),
-		Title:             demand.Title,
-		Content:           demand.Content,
-		SourceType:        demand.SourceType,
-		SourceRefs:        mapOrEmpty(demand.SourceRefs),
-		Attachments:       sliceOrEmpty(demand.Attachments),
-		Status:            demand.Status,
-		CreatedEventID:    stringPtr(demand.CreatedEventID),
-		Reviewer:          reviewerPreferenceResponseFromDomain(demand.ReviewerPreference),
-		CoordinationMode:  demand.CoordinationMode,
+		ID:                  demand.ID.String(),
+		TenantID:            demand.TenantID.String(),
+		ProjectID:           demand.ProjectID.String(),
+		SubmittedByUserID:   demand.SubmittedByUserID.String(),
+		Title:               demand.Title,
+		Content:             demand.Content,
+		SourceType:          demand.SourceType,
+		SourceRefs:          mapOrEmpty(demand.SourceRefs),
+		Attachments:         sliceOrEmpty(demand.Attachments),
+		Status:              demand.Status,
+		CreatedEventID:      stringPtr(demand.CreatedEventID),
+		Reviewer:            reviewerPreferenceResponseFromDomain(demand.ReviewerPreference),
+		CoordinationMode:    demand.CoordinationMode,
+		ScenarioTemplateKey: demand.ScenarioTemplateKey,
 	}
 }
 

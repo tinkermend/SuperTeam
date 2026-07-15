@@ -4493,6 +4493,101 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	}
 }
 
+func TestSubmitDemandRejectsUnknownScenarioTemplateKey(t *testing.T) {
+	newFixture := func(t *testing.T) (*Service, *memoryRepository, uuid.UUID, uuid.UUID, uuid.UUID) {
+		t.Helper()
+		repo := newMemoryRepository()
+		service, err := NewService(repo)
+		if err != nil {
+			t.Fatalf("new service: %v", err)
+		}
+		tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+		projectID := uuid.New()
+		ownerID := uuid.New()
+		repo.projects[projectID] = Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Name:             "需求级模板键验证",
+			Status:           ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		}
+		seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+		service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{bindings: map[string]ScenarioTemplateBinding{
+			"ops_analysis": {Key: "ops_analysis", Name: "运维分析", Status: "active"},
+			"retired":      {Key: "retired", Name: "退役", Status: "disabled"},
+		}})
+		return service, repo, tenantID, projectID, ownerID
+	}
+
+	t.Run("unknown key rejected", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		key := "nope"
+		_, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证未知模板键被拒绝",
+			SourceType:          DemandSourceManual,
+			ScenarioTemplateKey: &key,
+		})
+		if !errors.Is(err, ErrInvalidProject) {
+			t.Fatalf("expected ErrInvalidProject, got %v", err)
+		}
+	})
+
+	t.Run("disabled key rejected", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		key := "retired"
+		_, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证禁用模板键被拒绝",
+			SourceType:          DemandSourceManual,
+			ScenarioTemplateKey: &key,
+		})
+		if !errors.Is(err, ErrInvalidProject) {
+			t.Fatalf("expected ErrInvalidProject, got %v", err)
+		}
+	})
+
+	t.Run("active key accepted and persisted", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		key := " ops_analysis "
+		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证有效模板键落库",
+			SourceType:          DemandSourceManual,
+			ScenarioTemplateKey: &key,
+		})
+		if err != nil {
+			t.Fatalf("submit demand: %v", err)
+		}
+		if demand.ScenarioTemplateKey == nil || *demand.ScenarioTemplateKey != "ops_analysis" {
+			t.Fatalf("expected trimmed bound key, got %#v", demand.ScenarioTemplateKey)
+		}
+	})
+
+	t.Run("no key keeps today's behavior", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			SubmittedByUserID: ownerID,
+			Title:             "验证缺省模板键",
+			SourceType:        DemandSourceManual,
+		})
+		if err != nil {
+			t.Fatalf("submit demand: %v", err)
+		}
+		if demand.ScenarioTemplateKey != nil {
+			t.Fatalf("expected nil key, got %#v", demand.ScenarioTemplateKey)
+		}
+	})
+}
+
 func TestSubmitDemandCoordinationMode(t *testing.T) {
 	newFixture := func() (*memoryRepository, *fakeCoordinatorSignalClient, *Service, uuid.UUID, uuid.UUID) {
 		repo := newMemoryRepository()
@@ -9139,19 +9234,20 @@ func (r *memoryRepository) ListProjectEvents(ctx context.Context, tenantID, proj
 
 func (r *memoryRepository) CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error) {
 	demand := ProjectDemand{
-		ID:                 uuid.New(),
-		TenantID:           req.TenantID,
-		ProjectID:          req.ProjectID,
-		SubmittedByUserID:  req.SubmittedByUserID,
-		Title:              req.Title,
-		Content:            strPtrOrNil(req.Content),
-		SourceType:         req.SourceType,
-		SourceRefs:         req.SourceRefs,
-		Attachments:        req.Attachments,
-		ReviewerPreference: reviewerPreferenceFromSourceRefs(req.SourceRefs),
-		Status:             status,
-		CreatedEventID:     createdEventID,
-		CoordinationMode:   req.CoordinationMode,
+		ID:                  uuid.New(),
+		TenantID:            req.TenantID,
+		ProjectID:           req.ProjectID,
+		SubmittedByUserID:   req.SubmittedByUserID,
+		Title:               req.Title,
+		Content:             strPtrOrNil(req.Content),
+		SourceType:          req.SourceType,
+		SourceRefs:          req.SourceRefs,
+		Attachments:         req.Attachments,
+		ReviewerPreference:  reviewerPreferenceFromSourceRefs(req.SourceRefs),
+		Status:              status,
+		CreatedEventID:      createdEventID,
+		CoordinationMode:    req.CoordinationMode,
+		ScenarioTemplateKey: req.ScenarioTemplateKey,
 	}
 	r.demands = append(r.demands, demand)
 	return demand, nil

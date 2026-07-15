@@ -1736,6 +1736,21 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if req.SourceType == "" {
 		req.SourceType = DemandSourceManual
 	}
+	if req.ScenarioTemplateKey != nil {
+		key := strings.TrimSpace(*req.ScenarioTemplateKey)
+		if key == "" {
+			req.ScenarioTemplateKey = nil
+		} else if s.scenarioTemplates != nil {
+			binding, err := s.scenarioTemplates.ResolveScenarioTemplate(ctx, req.TenantID, key)
+			if err != nil {
+				return nil, fmt.Errorf("scenario template %q: %w", key, ErrInvalidProject)
+			}
+			if binding.Status != "active" {
+				return nil, fmt.Errorf("scenario template %q is %s: %w", key, binding.Status, ErrInvalidProject)
+			}
+			req.ScenarioTemplateKey = &key
+		}
+	}
 	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
 	if err != nil {
 		return nil, err

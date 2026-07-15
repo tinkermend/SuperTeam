@@ -1218,6 +1218,10 @@ type ProjectDemand struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	CoordinationMode   string
+	// ScenarioTemplateKey binds this demand to a scenario template,
+	// overriding the project's default; nil falls back to the project's
+	// ScenarioTemplateKey (and ultimately the generic fallback).
+	ScenarioTemplateKey *string
 }
 
 type DemandLaunchDetail struct {
@@ -1470,6 +1474,9 @@ type SubmitProjectDemandRequest struct {
 	ReviewerUserID          *uuid.UUID
 	ReviewerSelectionReason ReviewerSelectionReason
 	CoordinationMode        string
+	// ScenarioTemplateKey binds this demand to a scenario template; nil
+	// means fall back to the project's default (and generic beyond that).
+	ScenarioTemplateKey *string
 }
 
 type CreateEvidenceRefServiceRequest struct {

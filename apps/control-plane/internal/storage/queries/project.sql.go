@@ -1044,7 +1044,8 @@ INSERT INTO project_demands (
     risk_level,
     status,
     created_event_id,
-    coordination_mode
+    coordination_mode,
+    scenario_template_key
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -1058,24 +1059,26 @@ INSERT INTO project_demands (
     $10::varchar,
     $11::varchar,
     $12::uuid,
-    $13::varchar
+    $13::varchar,
+    $14::text
 ) RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key
 `
 
 type CreateProjectDemandParams struct {
-	TenantID          uuid.UUID     `json:"tenant_id"`
-	ProjectID         uuid.UUID     `json:"project_id"`
-	SubmittedByUserID uuid.UUID     `json:"submitted_by_user_id"`
-	Title             string        `json:"title"`
-	Content           pgtype.Text   `json:"content"`
-	SourceType        string        `json:"source_type"`
-	SourceRefs        []byte        `json:"source_refs"`
-	Attachments       []byte        `json:"attachments"`
-	Priority          pgtype.Text   `json:"priority"`
-	RiskLevel         pgtype.Text   `json:"risk_level"`
-	Status            string        `json:"status"`
-	CreatedEventID    uuid.NullUUID `json:"created_event_id"`
-	CoordinationMode  string        `json:"coordination_mode"`
+	TenantID            uuid.UUID     `json:"tenant_id"`
+	ProjectID           uuid.UUID     `json:"project_id"`
+	SubmittedByUserID   uuid.UUID     `json:"submitted_by_user_id"`
+	Title               string        `json:"title"`
+	Content             pgtype.Text   `json:"content"`
+	SourceType          string        `json:"source_type"`
+	SourceRefs          []byte        `json:"source_refs"`
+	Attachments         []byte        `json:"attachments"`
+	Priority            pgtype.Text   `json:"priority"`
+	RiskLevel           pgtype.Text   `json:"risk_level"`
+	Status              string        `json:"status"`
+	CreatedEventID      uuid.NullUUID `json:"created_event_id"`
+	CoordinationMode    string        `json:"coordination_mode"`
+	ScenarioTemplateKey pgtype.Text   `json:"scenario_template_key"`
 }
 
 func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDemandParams) (ProjectDemand, error) {
@@ -1093,6 +1096,7 @@ func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDema
 		arg.Status,
 		arg.CreatedEventID,
 		arg.CoordinationMode,
+		arg.ScenarioTemplateKey,
 	)
 	var i ProjectDemand
 	err := row.Scan(
