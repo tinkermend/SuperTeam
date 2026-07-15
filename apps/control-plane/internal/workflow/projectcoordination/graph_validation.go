@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 )
 
 type GraphValidationPolicy struct {
@@ -59,6 +61,18 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 	if snapshot.ScenarioTemplate != nil && strings.TrimSpace(snapshot.ScenarioTemplate.Key) != "" &&
 		plan.TemplateKey != snapshot.ScenarioTemplate.Key {
 		return invalidRouteDecision("plan template_key %q does not match the bound scenario template %q", plan.TemplateKey, snapshot.ScenarioTemplate.Key)
+	}
+	if snapshot.ScenarioTemplate != nil {
+		spec, err := scenariotemplate.ParseSpec(snapshot.ScenarioTemplate.Spec)
+		if err != nil {
+			return invalidRouteDecision("scenario template spec unparsable: %v", err)
+		}
+		if err := validateSkeletonAdherence(spec, plan); err != nil {
+			return err
+		}
+		if snapshot.PinnedExitDeliverable != "" && plan.ExitDeliverable != snapshot.PinnedExitDeliverable {
+			return invalidRouteDecision("plan exit %q does not honor human-pinned exit %q", plan.ExitDeliverable, snapshot.PinnedExitDeliverable)
+		}
 	}
 	profiles := planningProfilesByEmployeeID(snapshot.DigitalEmployeePool)
 	for _, task := range plan.Tasks {
