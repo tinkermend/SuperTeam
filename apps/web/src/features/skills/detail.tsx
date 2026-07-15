@@ -1,13 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Blocks,
   Bot,
   CalendarClock,
   FileArchive,
   Fingerprint,
+  Network,
   PackageCheck,
   ServerCog,
   ShieldCheck,
+  Trash2,
   UserRound,
   Users,
   Wrench,
@@ -25,12 +28,26 @@ import {
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
-import { getSkill, type Skill } from "@/lib/api/skills";
+import { listMcpServerDefinitions } from "@/lib/api/capabilities";
+import {
+  getSkill,
+  listSkillMcpDependencies,
+  replaceSkillMcpDependencies,
+  type Skill,
+} from "@/lib/api/skills";
 
 type SkillDetailViewProps = {
   apiBaseUrl: string;
@@ -99,14 +116,24 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
             />
           </WorkSurface>
         ) : (
-          <SkillArchiveDetail skill={skill.data} />
+          <SkillArchiveDetail apiBaseUrl={apiBaseUrl} fetcher={fetcher} skill={skill.data} skillId={skillId} />
         )}
       </Main>
     </>
   );
 }
 
-function SkillArchiveDetail({ skill }: { skill: Skill }) {
+function SkillArchiveDetail({
+  apiBaseUrl,
+  fetcher,
+  skill,
+  skillId,
+}: {
+  apiBaseUrl: string;
+  fetcher?: typeof fetch;
+  skill: Skill;
+  skillId: string;
+}) {
   const risk = normalizeRisk(skill.risk_level);
   const dependencyCount =
     (skill.runtime_dependencies?.tools?.length ?? 0) + (skill.runtime_dependencies?.env?.length ?? 0);
@@ -218,6 +245,8 @@ function SkillArchiveDetail({ skill }: { skill: Skill }) {
               </div>
             </DetailSection>
 
+            <SkillMcpDependenciesSection apiBaseUrl={apiBaseUrl} fetcher={fetcher} skillId={skillId} />
+
             <DetailSection icon={<ServerCog />} title="运行要求">
               <div className="mb-4 rounded-v3-inner bg-v3-card-inner p-3 text-sm text-v3-ink-2">
                 当前仅展示创建者声明的运行要求，不做本地检测或依赖验证。
@@ -249,6 +278,126 @@ function SkillArchiveDetail({ skill }: { skill: Skill }) {
         }
       />
     </div>
+  );
+}
+
+function SkillMcpDependenciesSection({
+  apiBaseUrl,
+  fetcher,
+  skillId,
+}: {
+  apiBaseUrl: string;
+  fetcher?: typeof globalThis.fetch;
+  skillId: string;
+}) {
+  const queryClient = useQueryClient();
+  const options = { baseUrl: apiBaseUrl, fetcher };
+  const dependencies = useQuery({
+    queryKey: ["skill-mcp-dependencies", skillId],
+    queryFn: () => listSkillMcpDependencies(options, skillId),
+  });
+  const registry = useQuery({
+    queryKey: ["mcp-server-definitions"],
+    queryFn: () => listMcpServerDefinitions(options),
+  });
+  const [selectedServerId, setSelectedServerId] = useState("");
+  const replaceMutation = useMutation({
+    mutationFn: (items: Array<{ mcp_server_id: string }>) =>
+      replaceSkillMcpDependencies(options, skillId, { items }),
+    onSuccess: () => {
+      setSelectedServerId("");
+      void queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependencies", skillId] });
+    },
+  });
+
+  const current = dependencies.data ?? [];
+  const candidates = (registry.data ?? []).filter(
+    (definition) => !current.some((dep) => dep.mcp_server_id === definition.id),
+  );
+
+  return (
+    <DetailSection
+      icon={<Network />}
+      title="依赖 MCP"
+      action={
+        <div className="flex items-center gap-2">
+          <Select value={selectedServerId} onValueChange={setSelectedServerId}>
+            <SelectTrigger aria-label="从注册表选择 MCP" className="w-52" size="sm">
+              <SelectValue placeholder="从注册表选择..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {candidates.map((definition) => (
+                  <SelectItem key={definition.id} value={definition.id}>
+                    {definition.name}（{definition.server_key}）
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <V3Button
+            size="sm"
+            disabled={!selectedServerId || replaceMutation.isPending}
+            onClick={() =>
+              replaceMutation.mutate([
+                ...current.map((dep) => ({ mcp_server_id: dep.mcp_server_id })),
+                { mcp_server_id: selectedServerId },
+              ])
+            }
+          >
+            添加依赖
+          </V3Button>
+        </div>
+      }
+    >
+      {current.length === 0 ? (
+        <V3EmptyState
+          title="未声明依赖"
+          description="依赖只做装载校验：员工执行任务时若未绑定所依赖的 MCP（或缺环境变量），派发会被阻断等待人工处理；依赖不会自动为员工开通能力。"
+        />
+      ) : (
+        <>
+          <ul className="flex flex-col gap-2">
+            {current.map((dep) => (
+              <li
+                className="flex items-center justify-between gap-3 rounded-v3-inner border border-v3-line bg-v3-card-inner px-3 py-2"
+                key={dep.id}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-v3-ink">{dep.server_name}</p>
+                  <p className="truncate font-mono text-xs text-v3-ink-3">
+                    {dep.server_key} · {dep.auth_strategy} · {dep.risk_level}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusPill tone={dep.server_status === "active" ? "ok" : "warn"}>
+                    {dep.server_status}
+                  </StatusPill>
+                  <V3Button
+                    aria-label={`移除依赖 ${dep.server_key}`}
+                    variant="ghost"
+                    size="sm"
+                    disabled={replaceMutation.isPending}
+                    onClick={() =>
+                      replaceMutation.mutate(
+                        current
+                          .filter((item) => item.id !== dep.id)
+                          .map((item) => ({ mcp_server_id: item.mcp_server_id })),
+                      )
+                    }
+                  >
+                    <Trash2 />
+                  </V3Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-v3-ink-3">
+            依赖只做装载校验：员工执行任务时若未绑定所依赖的 MCP（或缺环境变量），派发会被阻断等待人工处理；依赖不会自动为员工开通能力。
+          </p>
+        </>
+      )}
+    </DetailSection>
   );
 }
 
