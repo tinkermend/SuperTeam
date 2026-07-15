@@ -32,8 +32,10 @@ import {
   deleteEmployeeMcpBindingV2,
   listEffectiveMcpConfig,
   listEmployeeMcpBindingsV2,
+  listEmployeeSkillMcpDependencyStatus,
   listMcpServerDefinitions,
   type EffectiveMcpServer,
+  type EmployeeSkillMcpDependencyItem,
   type McpBinding,
   type McpServerDefinition,
 } from "@/lib/api/capabilities";
@@ -95,6 +97,25 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
     queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
     placeholderData: keepPreviousData,
   });
+  // Skill-level MCP dependency preflight (Task 6): flags skills whose declared MCP
+  // dependencies are not yet bound or are blocked on missing env vars, so the operator
+  // sees the exact skill row that will fail dispatch.
+  const skillMcpDependencyStatus = useQuery({
+    queryKey: ["skill-mcp-dependency-status", employeeId],
+    queryFn: () => listEmployeeSkillMcpDependencyStatus(apiOptions, employeeId),
+    placeholderData: keepPreviousData,
+  });
+
+  const unsatisfiedMcpDepsBySkillId = useMemo(() => {
+    const map = new Map<string, EmployeeSkillMcpDependencyItem[]>();
+    for (const status of skillMcpDependencyStatus.data ?? []) {
+      const unsatisfied = status.dependencies.filter((dep) => dep.status !== "satisfied");
+      if (unsatisfied.length > 0) {
+        map.set(status.skill_id, unsatisfied);
+      }
+    }
+    return map;
+  }, [skillMcpDependencyStatus.data]);
 
   const installedSkillIds = useMemo(
     () => new Set((employeeSkills.data ?? []).map((entry) => entry.skill.id)),
@@ -246,6 +267,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
                   key={`${entry.source_scope}-${entry.skill.id}`}
                   onRemove={() => unbindSkillMutation.mutate(entry.skill.id)}
                   pending={unbindSkillMutation.isPending}
+                  unsatisfiedMcpDeps={unsatisfiedMcpDepsBySkillId.get(entry.skill.id) ?? []}
                 />
               ))}
             </div>
@@ -422,10 +444,12 @@ function EmployeeSkillRow({
   entry,
   onRemove,
   pending,
+  unsatisfiedMcpDeps,
 }: {
   entry: EffectiveEmployeeSkill;
   onRemove: () => void;
   pending: boolean;
+  unsatisfiedMcpDeps: EmployeeSkillMcpDependencyItem[];
 }) {
   const isReadOnly = entry.read_only || entry.inherited || entry.source_scope !== "employee";
   return (
@@ -447,8 +471,25 @@ function EmployeeSkillRow({
             {skillLoadStatePills(entry).map((status) => (
               <StatusPill key={status.label} tone={status.tone}>{status.label}</StatusPill>
             ))}
+            {unsatisfiedMcpDeps.map((dep) => (
+              <StatusPill key={dep.mcp_server_id} tone="warn">
+                {`缺 MCP ${dep.server_key}`}
+              </StatusPill>
+            ))}
           </div>
           <p className="truncate text-xs text-muted-foreground">{entry.skill.description}</p>
+          {unsatisfiedMcpDeps.length > 0 ? (
+            <p className="text-xs text-destructive">
+              {unsatisfiedMcpDeps
+                .map((dep) =>
+                  dep.status === "missing_binding"
+                    ? `依赖 MCP ${dep.server_key} 未绑定`
+                    : `依赖 MCP ${dep.server_key} 缺环境变量 ${dep.missing_env_vars.join(", ")}`,
+                )
+                .join("；")}
+              ，任务派发将被阻断。请在右侧"个人 MCP"绑定或补齐环境变量。
+            </p>
+          ) : null}
         </div>
       </div>
       <Button
