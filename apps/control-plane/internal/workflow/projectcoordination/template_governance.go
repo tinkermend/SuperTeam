@@ -222,17 +222,28 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 	if plan == nil {
 		return nil
 	}
-	if snapshot.ScenarioTemplate == nil {
+	unbound := snapshot.ScenarioTemplate == nil
+	if unbound {
 		// Unbound/generic demand: there is no template, so any template lineage
 		// the planner echoed back is hallucinated and must not reach the
 		// confirmation card. Strip the binding markers — exit_deliverable,
-		// available_exits, constraint_notes, template_version. TemplateKey is
-		// deliberately left intact: it is a pre-existing planner label consumed
-		// by plan fingerprints, not a template-binding marker.
+		// available_exits, constraint_notes, template_version — before this
+		// function's own low-feasibility notes (below) are appended.
+		// TemplateKey is deliberately left intact: it is a pre-existing planner
+		// label consumed by plan fingerprints, not a template-binding marker.
 		plan.ExitDeliverable = ""
 		plan.AvailableExits = nil
 		plan.ConstraintNotes = nil
 		plan.TemplateVersion = 0
+	}
+
+	// Feasibility degrade is template-independent: even an unbound/generic
+	// plan can carry a task whose server-computed SelectionScore is low, and a
+	// human still needs to see that. Runs before the unbound early-return so
+	// unbound plans get the note too.
+	appendLowFeasibilityNotes(snapshot, plan)
+
+	if unbound {
 		return nil
 	}
 	spec, err := scenariotemplate.ParseSpec(snapshot.ScenarioTemplate.Spec)
@@ -356,6 +367,34 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 	}
 
 	return nil
+}
+
+// appendLowFeasibilityNotes flags every task whose server-computed
+// SelectionScore falls below the coordination-policy threshold
+// (selectionScoreThreshold): a low_feasibility ConstraintNote naming the
+// score, the threshold, and (when present) the missing capabilities, plus
+// plan.RequiresHumanReview=true. This is a degrade, not a rejection — the
+// plan still proceeds; a human reviews the honest, server-verified fact
+// instead of the plan being rejected-and-replanned (which would just cause
+// the planner to reselect the same weak candidate again). Called from
+// EnforceScenarioTemplateGovernance for both templated and unbound plans.
+func appendLowFeasibilityNotes(snapshot CoordinationSnapshot, plan *RouteDecisionPlan) {
+	threshold := selectionScoreThreshold(snapshot.CoordinationPolicy)
+	for i := range plan.Tasks {
+		task := &plan.Tasks[i]
+		if float64(task.SelectionScore) >= threshold {
+			continue
+		}
+		message := fmt.Sprintf("任务 %s 选角事实性评分 %d 低于阈值 %d", task.Key, task.SelectionScore, int(threshold))
+		if len(task.MissingCapabilities) > 0 {
+			message += fmt.Sprintf("：缺失 %s", strings.Join(task.MissingCapabilities, "、"))
+		}
+		plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
+			Kind:    "low_feasibility",
+			Message: message,
+		})
+		plan.RequiresHumanReview = true
+	}
 }
 
 func roleTitleOrKey(titles map[string]string, key string) string {

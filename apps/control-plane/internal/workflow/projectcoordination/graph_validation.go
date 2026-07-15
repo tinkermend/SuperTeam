@@ -18,7 +18,20 @@ type GraphValidationPolicy struct {
 // defaultSelectionConfidenceThreshold is the fallback floor. The real knob is
 // projects.coordination_policy.selection_confidence_threshold, not an ops
 // constant.
+//
+// SelectionConfidence is the planner LLM's own self-reported belief in its
+// selection. It is retained on PlannedTask/the plan payload as reference
+// context for humans, but it no longer gates ValidateRouteDecisionPlan — see
+// selectionScoreThreshold for the server-computed gate that replaced it.
 const defaultSelectionConfidenceThreshold = 0.7
+
+// defaultSelectionScoreThreshold is the fallback floor for task.SelectionScore
+// (the server-computed 0-100 fact, written by ApplyPlanningProfileScores from
+// the digital employee's real capabilities/runtime/load — not the planner's
+// self-report). The real knob is
+// projects.coordination_policy.selection_score_threshold, not an ops constant.
+// 能力维恒 40 分，低于 40 意味着角色/运行时/负载全线偏弱。
+const defaultSelectionScoreThreshold = 40
 
 // ErrNoSuitableEmployee means the planner could not find an employee it believed
 // fit the task. The demand goes back to the human with the planner's reasons; it
@@ -50,6 +63,29 @@ func selectionConfidenceThreshold(policy map[string]any) float64 {
 	return defaultSelectionConfidenceThreshold
 }
 
+// selectionScoreThreshold reads the server-computed-score gate floor from
+// projects.coordination_policy.selection_score_threshold (falling back to
+// defaultSelectionScoreThreshold). Unlike selectionConfidenceThreshold's
+// (0,1] range, a score threshold is a point on the 0-100 SelectionScore
+// scale.
+func selectionScoreThreshold(policy map[string]any) float64 {
+	raw, ok := policy["selection_score_threshold"]
+	if !ok {
+		return defaultSelectionScoreThreshold
+	}
+	switch value := raw.(type) {
+	case float64:
+		if value >= 0 && value <= 100 {
+			return value
+		}
+	case json.Number:
+		if parsed, err := value.Float64(); err == nil && parsed >= 0 && parsed <= 100 {
+			return parsed
+		}
+	}
+	return defaultSelectionScoreThreshold
+}
+
 func ValidateRouteDecision(decision RouteDecisionPlan, poolIDs []uuid.UUID) error {
 	return ValidateRouteDecisionGraph(decision, poolIDs, GraphValidationPolicy{})
 }
@@ -79,9 +115,13 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 		if strings.TrimSpace(task.EmployeeSelectionReason) == "" {
 			return invalidRouteDecision("task %q: employee_selection_reason is empty", task.Key)
 		}
-		if task.SelectionConfidence < selectionConfidenceThreshold(snapshot.CoordinationPolicy) {
-			return fmt.Errorf("%w: task %q: employee %s scored %.2f", ErrNoSuitableEmployee, task.Key, task.SelectedEmployeeID, task.SelectionConfidence)
-		}
+		// NOTE: task.SelectionConfidence (the planner LLM's self-reported belief)
+		// is deliberately NOT gated here. The server-computed task.SelectionScore
+		// (written by ApplyPlanningProfileScores, called before this function at
+		// every production call site) is the factual signal; a low score
+		// degrades the plan via EnforceScenarioTemplateGovernance's
+		// low_feasibility note + RequiresHumanReview instead of rejecting the
+		// plan outright — see selectionScoreThreshold.
 		if hasInvalidRequirementString(task.RequiredCapabilities) ||
 			hasInvalidRequirementString(task.MatchedCapabilities) ||
 			hasInvalidRequirementString(task.MissingCapabilities) ||

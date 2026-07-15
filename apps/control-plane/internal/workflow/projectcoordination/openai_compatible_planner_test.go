@@ -158,7 +158,18 @@ func TestOpenAICompatibleRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHuma
 	require.Equal(t, int32(1), client.calls.Load())
 }
 
-func TestOpenAICompatibleRoutePlannerDoesNotRepairLowConfidenceSelection(t *testing.T) {
+// TestOpenAICompatibleRoutePlannerAcceptsLowLLMConfidenceWhenServerScoreIsHigh
+// was formerly named ...DoesNotRepairLowConfidenceSelection and asserted that
+// a low task.SelectionConfidence (the planner LLM's self-report) terminated
+// planning with ErrNoSuitableEmployee, bypassing the required-review repair
+// path (proving a genuinely low-confidence pick is surfaced honestly, not
+// silently patched over). Task 3 of scenario-template P2b (事实性可行性三档)
+// removed that LLM-confidence gate: the server-computed SelectionScore (real
+// capability/runtime/load facts, not the LLM's self-report) now governs. This
+// fixture's employee has an exact "execution" capability match, so the
+// server score is high despite the LLM's own low confidence — planning must
+// now succeed, demonstrating SelectionConfidence is reference-only.
+func TestOpenAICompatibleRoutePlannerAcceptsLowLLMConfidenceWhenServerScoreIsHigh(t *testing.T) {
 	employeeID := uuid.New()
 	client := &countingChatCompletionClient{content: fmt.Sprintf(`{
 		"reason":"weak executor match",
@@ -177,7 +188,7 @@ func TestOpenAICompatibleRoutePlannerDoesNotRepairLowConfidenceSelection(t *test
 		MaxAttempts: 1,
 	}, client)
 
-	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
 			openAITestExecutorMember(employeeID),
@@ -185,8 +196,9 @@ func TestOpenAICompatibleRoutePlannerDoesNotRepairLowConfidenceSelection(t *test
 		CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
 	})
 
-	require.ErrorIs(t, err, ErrNoSuitableEmployee)
+	require.NoError(t, err)
 	require.Equal(t, int32(1), client.calls.Load())
+	require.NotZero(t, plan.Tasks[0].SelectionScore)
 }
 
 // When a template-bound project has a single active executor and the demand needs

@@ -425,6 +425,10 @@ func TestGovernancePopulatesVersionAndExits(t *testing.T) {
 func TestGovernanceUnboundStripsHallucinatedTemplateLineage(t *testing.T) {
 	develop := planTaskWithIO("analyze", nil, []string{"risk_report"}, nil)
 	develop.SelectedEmployeeID = uuid.New()
+	// High enough to stay clear of the low_feasibility degrade note (Task 3 of
+	// scenario-template P2b) — this test is about stripping hallucinated
+	// template lineage, not about the score gate.
+	develop.SelectionScore = 100
 	plan := RouteDecisionPlan{
 		Reason:          "unbound demand with hallucinated lineage",
 		TemplateKey:     "tech_risk_analysis",
@@ -445,6 +449,85 @@ func TestGovernanceUnboundStripsHallucinatedTemplateLineage(t *testing.T) {
 	require.Equal(t, 0, plan.TemplateVersion)
 	// TemplateKey is a pre-existing planner label used in fingerprints; keep as-is.
 	require.Equal(t, "tech_risk_analysis", plan.TemplateKey)
+}
+
+// --- Low-feasibility score degrade (Task 3 of scenario-template P2b: 事实性可行性三档) ---
+
+// TestGovernanceLowFeasibilityScoreAddsDegradeNote: a task whose
+// server-computed SelectionScore is below the default threshold (40) gets a
+// low_feasibility ConstraintNote naming the score, threshold, and missing
+// capabilities, and forces plan.RequiresHumanReview — without rejecting the
+// plan. Runs on an unbound plan to prove the degrade is template-independent.
+func TestGovernanceLowFeasibilityScoreAddsDegradeNote(t *testing.T) {
+	employeeID := uuid.New()
+	task := planTaskWithIO("analyze", nil, []string{"risk_report"}, nil)
+	task.SelectedEmployeeID = employeeID
+	task.SelectionScore = 25
+	task.MissingCapabilities = []string{"database.write"}
+	plan := RouteDecisionPlan{
+		Reason: "low feasibility",
+		Tasks:  []PlannedTask{task},
+	}
+	snapshot := CoordinationSnapshot{DigitalEmployeePool: activeExecutorPool(employeeID)}
+
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+
+	require.NoError(t, err)
+	require.True(t, plan.RequiresHumanReview)
+	note := constraintNoteWithKind(plan.ConstraintNotes, "low_feasibility")
+	require.NotNil(t, note)
+	require.Contains(t, note.Message, "analyze")
+	require.Contains(t, note.Message, "25")
+	require.Contains(t, note.Message, "40")
+	require.Contains(t, note.Message, "database.write")
+}
+
+// TestGovernanceHighScoreNoNote: a task whose SelectionScore clears the
+// threshold gets no low_feasibility note and RequiresHumanReview stays false.
+func TestGovernanceHighScoreNoNote(t *testing.T) {
+	employeeID := uuid.New()
+	task := planTaskWithIO("analyze", nil, []string{"risk_report"}, nil)
+	task.SelectedEmployeeID = employeeID
+	task.SelectionScore = 85
+	plan := RouteDecisionPlan{
+		Reason: "high feasibility",
+		Tasks:  []PlannedTask{task},
+	}
+	snapshot := CoordinationSnapshot{DigitalEmployeePool: activeExecutorPool(employeeID)}
+
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+
+	require.NoError(t, err)
+	require.False(t, plan.RequiresHumanReview)
+	require.Nil(t, constraintNoteWithKind(plan.ConstraintNotes, "low_feasibility"))
+}
+
+// TestSelectionScoreThresholdPolicyOverride: a project's coordination_policy
+// can raise the score floor above the 40-point default, so a task that would
+// otherwise clear the default (55) still degrades under the stricter (60)
+// project policy.
+func TestSelectionScoreThresholdPolicyOverride(t *testing.T) {
+	employeeID := uuid.New()
+	task := planTaskWithIO("analyze", nil, []string{"risk_report"}, nil)
+	task.SelectedEmployeeID = employeeID
+	task.SelectionScore = 55
+	plan := RouteDecisionPlan{
+		Reason: "policy override",
+		Tasks:  []PlannedTask{task},
+	}
+	snapshot := CoordinationSnapshot{
+		DigitalEmployeePool: activeExecutorPool(employeeID),
+		CoordinationPolicy:  map[string]any{"selection_score_threshold": 60.0},
+	}
+
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+
+	require.NoError(t, err)
+	require.True(t, plan.RequiresHumanReview)
+	note := constraintNoteWithKind(plan.ConstraintNotes, "low_feasibility")
+	require.NotNil(t, note)
+	require.Contains(t, note.Message, "55")
+	require.Contains(t, note.Message, "60")
 }
 
 // --- ValidateRouteDecisionPlan integration coverage (template-governance-adjacent) ---

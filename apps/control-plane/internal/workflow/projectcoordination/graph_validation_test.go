@@ -343,6 +343,13 @@ func TestValidateRouteDecisionPlanAcceptsEmptyRequiredCapabilities(t *testing.T)
 	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}))
 }
 
+// TestValidateRouteDecisionPlanRejectsLowConfidence formerly asserted that a
+// low task.SelectionConfidence alone (the planner LLM's self-report) tripped
+// ErrNoSuitableEmployee. That gate is gone — see
+// TestValidatePlanNoLongerGatesOnLLMConfidence — so a low LLM confidence with
+// no other defect now passes validation; the server-computed SelectionScore,
+// not the LLM's self-report, is what governs (via
+// EnforceScenarioTemplateGovernance's low_feasibility degrade).
 func TestValidateRouteDecisionPlanRejectsLowConfidence(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
@@ -352,7 +359,24 @@ func TestValidateRouteDecisionPlanRejectsLowConfidence(t *testing.T) {
 
 	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
 
-	require.ErrorIs(t, err, ErrNoSuitableEmployee)
+	require.NoError(t, err)
+}
+
+// TestValidatePlanNoLongerGatesOnLLMConfidence is the direct assertion that
+// SelectionConfidence is reference-only: a plan with a very low LLM
+// self-report but a high server-computed SelectionScore passes validation
+// outright — task 3 of scenario-template P2b (事实性可行性三档).
+func TestValidatePlanNoLongerGatesOnLLMConfidence(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := validationSnapshotWithProfile(employeeID)
+	plan := validEvidenceGraphPlan(employeeID)
+	plan.Tasks[0].EmployeeSelectionReason = "closest match, but weak"
+	plan.Tasks[0].SelectionConfidence = 0.2
+	plan.Tasks[0].SelectionScore = 85
+
+	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
+
+	require.NoError(t, err)
 }
 
 func TestValidateRouteDecisionPlanAcceptsConfidenceAtThreshold(t *testing.T) {
