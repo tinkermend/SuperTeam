@@ -1074,6 +1074,10 @@ impl RuntimeCommandExecutor {
         let registry = self.registry.clone();
         let failure_writeback = writeback.clone();
         let failure_raw_sink = raw_sink.clone();
+        // Kept out of `spec` (which is moved into drain_provider_events) so the
+        // Err branch below can still roll back the session MCP injection when
+        // the drain bails out early via `?` before reaching its tail hook.
+        let rollback_home = spec.agent_home_dir.clone();
         tokio::spawn(async move {
             let result = drain_provider_events(
                 runs.clone(),
@@ -1090,6 +1094,12 @@ impl RuntimeCommandExecutor {
             .await;
 
             if let Err(error) = result {
+                // drain_provider_events bailed out before its tail rollback hook
+                // (stream item error or a record/writeback `?`): roll back the
+                // session MCP injection here as the backstop. If the tail hook
+                // already ran, this is a safe no-op (rollback without a manifest
+                // does nothing), so no dedup logic is needed.
+                rollback_session_mcp_config_best_effort(&run_id, rollback_home.as_deref());
                 if !run_is_cancelled(&runs, &run_id).await {
                     let message = error.to_string();
                     let _ = runs.finish_failed(&run_id, message.clone()).await;
@@ -2896,9 +2906,12 @@ async fn drain_provider_events(
     // the injection made by ensure_command_instance at session start.
     // handle_stop_command deliberately does not roll back directly: cancel_run
     // makes the provider event stream end, which drives execution back here.
-    // If the process restarts before this point runs (e.g. stop after a crash),
-    // the residual manifest is rolled back defensively by the next session's
-    // inject_session_mcp_config call.
+    // Early `?` exits above (stream item error, record/writeback failures) skip
+    // this hook; spawn_provider_event_drain's Err branch backstops those with
+    // the same rollback (idempotent no-op when this hook already ran).
+    // If the process restarts before either point runs (e.g. stop after a
+    // crash), the residual manifest is rolled back defensively by the next
+    // session's inject_session_mcp_config call.
     rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
     // Finalize before the terminal writeback so the attempt row and the raw
     // transcript pointer land in the same call.
