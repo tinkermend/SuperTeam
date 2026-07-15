@@ -1,5 +1,5 @@
 import { Activity } from 'lucide-react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-react'
 import {
   SidebarGroup,
@@ -12,6 +12,12 @@ import {
 import '@/styles/index.css'
 
 describe('sidebar menu sizing', () => {
+  beforeEach(() => {
+    // 断言的是明亮主题的绝对色值；共享 document 可能残留其它测试文件切换的
+    // dark class（浏览器模式串行跑时同页复用），先归位到默认明亮态。
+    document.documentElement.classList.remove('light', 'dark')
+  })
+
   it('uses readable 15px labels and a 40px menu row for expanded navigation', async () => {
     await render(
       <SidebarProvider>
