@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
+import { userEvent } from "vitest/browser";
 import { SkillDetailView } from "@/features/skills/detail";
 import type { McpServerDefinition } from "@/lib/api/capabilities";
 import type { Skill, SkillMcpDependency } from "@/lib/api/skills";
@@ -85,6 +86,22 @@ const mcpServerDefinitionFixture = {
   url: "https://slack.example.com/mcp",
   auth_strategy: "bearer_env",
   required_env_vars: ["SLACK_TOKEN"],
+  optional_env_vars: [],
+  tool_allowlist: [],
+  risk_level: "low",
+  status: "active",
+} satisfies McpServerDefinition;
+
+const githubServerDefinitionFixture = {
+  id: "srv-1",
+  tenant_id: "tenant-1",
+  name: "GitHub MCP",
+  server_key: "github-mcp",
+  description: "GitHub 集成",
+  transport: "streamable_http",
+  url: "https://github.example.com/mcp",
+  auth_strategy: "bearer_env",
+  required_env_vars: ["GH_TOKEN"],
   optional_env_vars: [],
   tool_allowlist: [],
   risk_level: "low",
@@ -257,6 +274,39 @@ describe("SkillDetailView", () => {
         `http://control-plane.local/api/v1/skills/${skillFixture.id}/mcp-dependencies`,
         expect.objectContaining({
           body: JSON.stringify({ items: [] }),
+          method: "PUT",
+        }),
+      );
+    });
+  });
+
+  it("adds a dependency with a full-set PUT and excludes already-dependent servers from candidates", async () => {
+    const fetcher = createSkillFetcher({
+      dependencies: [dependencyFixture],
+      mcpServerDefinitions: [githubServerDefinitionFixture, mcpServerDefinitionFixture],
+    });
+    const screen = await renderSkillDetail(fetcher);
+
+    await expect.element(screen.getByText("github-mcp")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("combobox", { name: "从注册表选择 MCP" }));
+
+    await expect.element(screen.getByRole("option", { name: /slack-mcp/ })).toBeInTheDocument();
+    await expect.element(screen.getByRole("option", { name: /github-mcp/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("option", { name: /slack-mcp/ }));
+    await screen.getByRole("button", { name: "添加依赖" }).click();
+
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith(
+        `http://control-plane.local/api/v1/skills/${skillFixture.id}/mcp-dependencies`,
+        expect.objectContaining({
+          body: JSON.stringify({
+            items: [
+              { mcp_server_id: dependencyFixture.mcp_server_id },
+              { mcp_server_id: mcpServerDefinitionFixture.id },
+            ],
+          }),
           method: "PUT",
         }),
       );
