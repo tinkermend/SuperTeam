@@ -23,6 +23,20 @@ type CoordinationSnapshot struct {
 	// exit_deliverable instead of choosing one itself. Consumed by Task 11's
 	// revision-loop re-planning; this task only carries the field.
 	PinnedExitDeliverable string `json:"pinned_exit_deliverable,omitempty"`
+	// DemandConstraintExemptions carries the demand's first-class governance
+	// exemptions (project_demand_constraint_exemptions, loaded by
+	// LoadProjectCoordinationSnapshot), so EnforceScenarioTemplateGovernance can
+	// skip an exempted constraint instead of rejecting the plan.
+	DemandConstraintExemptions []DemandConstraintExemption `json:"demand_constraint_exemptions,omitempty"`
+}
+
+// DemandConstraintExemption is the coordination snapshot's local projection of
+// project.DemandConstraintExemption — just enough for the governance evaluator to
+// match an exemption to a violated constraint (kind + roles), independent of the
+// persistence-layer record's id/grantor/audit fields.
+type DemandConstraintExemption struct {
+	ConstraintKind string   `json:"constraint_kind"`
+	Roles          []string `json:"roles,omitempty"`
 }
 
 // ScenarioTemplateSnapshot carries the bound template's content into planning.

@@ -1362,6 +1362,27 @@ type ProjectArchivePreview struct {
 	EstimatedObjectRefs []any
 }
 
+// DemandConstraintExemption is a first-class human decision record: a
+// human_owner exempting a single demand from a bound scenario template's
+// governance constraint (e.g. role_independence) instead of restaffing the
+// project pool. Persisted by Service.ResolveDecision when a planning_gap
+// decision is resolved "exempted" (constraint_kind/roles read from the
+// decision's own approval-request ContextPayload gap), and consumed by
+// LoadProjectCoordinationSnapshot + EnforceScenarioTemplateGovernance to skip
+// the exempted constraint on replan. Scoped to a single demand; the
+// (tenant_id, demand_id, constraint_kind) uniqueness makes creation idempotent.
+type DemandConstraintExemption struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	ConstraintKind    string
+	Roles             []string
+	GrantedByUserID   uuid.UUID
+	DecisionRequestID *uuid.UUID
+	CreatedAt         time.Time
+}
+
 type ProjectArchiveSnapshot struct {
 	ID                   uuid.UUID
 	TenantID             uuid.UUID

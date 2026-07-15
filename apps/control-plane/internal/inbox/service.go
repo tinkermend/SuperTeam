@@ -321,6 +321,7 @@ func DecisionActions(decisionType string) []Action {
 	if decisionType == "planning_gap" {
 		return []Action{
 			{Key: "restaffed", Label: "已补员，重新规划", Tone: "positive", Metadata: map[string]any{"decision": "restaffed"}},
+			{Key: "exempted", Label: "豁免约束并重规划", Tone: "positive", Metadata: map[string]any{"decision": "exempted"}},
 			{Key: "rejected", Label: "关闭", Tone: "destructive", Metadata: map[string]any{"decision": "rejected"}},
 		}
 	}

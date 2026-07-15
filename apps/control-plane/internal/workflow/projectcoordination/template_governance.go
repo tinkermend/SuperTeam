@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -225,6 +226,45 @@ func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmp
 	return nil
 }
 
+// demandConstraintExempted reports whether snapshot's first-class exemptions
+// (project_demand_constraint_exemptions, loaded per-demand by
+// LoadProjectCoordinationSnapshot) cover the given role_independence constraint,
+// and — when they do — the roles to name in the resulting exemption note. The
+// match rule is deliberately simple: same ConstraintKind, and either the
+// exemption carries no explicit Roles (a blanket exemption for that kind on this
+// demand) or its Roles set is exactly the constraint's Roles set (order-
+// independent; sorted-slice equality, no partial/superset matching).
+func demandConstraintExempted(exemptions []DemandConstraintExemption, constraint scenariotemplate.SpecConstraint) (bool, []string) {
+	for _, exemption := range exemptions {
+		if exemption.ConstraintKind != constraint.Kind {
+			continue
+		}
+		if len(exemption.Roles) == 0 || roleSetsEqual(exemption.Roles, constraint.Roles) {
+			return true, constraint.Roles
+		}
+	}
+	return false, nil
+}
+
+// roleSetsEqual reports whether a and b contain the same role keys, ignoring
+// order (each is sorted into a fresh copy before comparing; neither input slice
+// is mutated).
+func roleSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sortedA := append([]string(nil), a...)
+	sortedB := append([]string(nil), b...)
+	sort.Strings(sortedA)
+	sort.Strings(sortedB)
+	for i := range sortedA {
+		if sortedA[i] != sortedB[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // structuralGapForPlan returns the actionable ErrNoSuitableEmployee-family error
 // (noSuitableEmployeeStructuralGapMessage) when a plan's failure is really a pool
 // structural gap the planner cannot re-plan around, else nil. The gap holds when:
@@ -381,6 +421,13 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 		}
 		switch constraint.Kind {
 		case "role_independence":
+			if exempted, roles := demandConstraintExempted(snapshot.DemandConstraintExemptions, constraint); exempted {
+				plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
+					Kind:    "exemption",
+					Message: fmt.Sprintf("约束 role_independence 已由人类负责人豁免（角色：%s）", strings.Join(roles, "、")),
+				})
+				continue
+			}
 			if err := enforceRoleIndependence(constraint, roleEmployees, roleCapabilities, activeExecutorCount); err != nil {
 				return err
 			}

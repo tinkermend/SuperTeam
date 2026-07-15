@@ -259,10 +259,10 @@ func TestDecisionProjectorAdapterResolvesRequestChangesDecision(t *testing.T) {
 }
 
 // TestUpsertPlanningGapDecisionUsesCustomActions proves the decision projector
-// gives a planning_gap decision item its own action vocabulary — 已补员/关闭 —
+// gives a planning_gap decision item its own action vocabulary — 已补员/豁免/关闭 —
 // instead of the generic approved/rejected/needs_more_evidence default. The web
 // inbox-shell renders item.actions dynamically, so this is the sole source of the
-// two buttons a human sees on a 规划缺口 item.
+// three buttons a human sees on a 规划缺口 item.
 func TestUpsertPlanningGapDecisionUsesCustomActions(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -296,16 +296,59 @@ func TestUpsertPlanningGapDecisionUsesCustomActions(t *testing.T) {
 	for _, action := range item.Actions {
 		keys = append(keys, action.Key)
 	}
-	if len(keys) != 2 || keys[0] != "restaffed" || keys[1] != "rejected" {
-		t.Fatalf("expected [restaffed rejected] actions, got %#v", keys)
+	if len(keys) != 3 || keys[0] != "restaffed" || keys[1] != "exempted" || keys[2] != "rejected" {
+		t.Fatalf("expected [restaffed exempted rejected] actions, got %#v", keys)
 	}
 	restaffed, ok := findAction(item.Actions, "restaffed")
 	if !ok || restaffed.Label != "已补员，重新规划" {
 		t.Fatalf("expected restaffed action labelled 已补员，重新规划, got %#v", restaffed)
 	}
+	exempted, ok := findAction(item.Actions, "exempted")
+	if !ok || exempted.Label != "豁免约束并重规划" {
+		t.Fatalf("expected exempted action labelled 豁免约束并重规划, got %#v", exempted)
+	}
 	closeAction, ok := findAction(item.Actions, "rejected")
 	if !ok || closeAction.Label != "关闭" {
 		t.Fatalf("expected rejected action labelled 关闭, got %#v", closeAction)
+	}
+}
+
+// TestUpsertPlanningGapExemptedResolvesInboxItem proves a planning_gap decision
+// resolved with exempted closes its inbox item exactly like restaffed — the
+// exemption record is persisted and the demand is reopened + replanned, so
+// nothing is left open here.
+func TestUpsertPlanningGapExemptedResolvesInboxItem(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewDecisionProjectorAdapter(service)
+	resolvedAt := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	decision := project.DecisionRequest{
+		ID:                uuid.New(),
+		TenantID:          uuid.New(),
+		ProjectID:         uuid.New(),
+		ApprovalRequestID: uuid.New(),
+		TargetUserID:      uuid.New(),
+		DecisionType:      "planning_gap",
+		TitleSnapshot:     "规划缺口：豁免约束后重开",
+		StatusSnapshot:    "exempted",
+		CreatedAt:         resolvedAt.Add(-time.Hour),
+		UpdatedAt:         resolvedAt,
+		ResolvedAt:        &resolvedAt,
+	}
+
+	if err := adapter.ResolveProjectDecisionRequest(context.Background(), decision); err != nil {
+		t.Fatalf("resolve planning_gap decision: %v", err)
+	}
+	itemID := repo.itemsBySource[sourceKey(decision.TenantID, SourceTypeProjectDecisionRequest, decision.ID)]
+	item, err := repo.GetItem(context.Background(), decision.TenantID, itemID)
+	if err != nil {
+		t.Fatalf("get projected item: %v", err)
+	}
+	if item.Status != StatusResolved {
+		t.Fatalf("expected exempted decision to resolve inbox item, got status=%s", item.Status)
 	}
 }
 

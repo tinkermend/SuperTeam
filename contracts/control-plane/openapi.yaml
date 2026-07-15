@@ -7536,6 +7536,7 @@ components:
             - needs_more_evidence
             - request_changes
             - restaffed
+            - exempted
         comment:
           type: string
         payload:

@@ -32,6 +32,12 @@ const (
 	// the pool has been supplemented; the coordinator reopens the demand and
 	// replans it. Like request_changes it is decision-type-scoped vocabulary.
 	PlanningGapDecisionRestaffed = "restaffed"
+	// PlanningGapDecisionExempted resolves a planning_gap decision by declaring
+	// the violated constraint (constraint_kind/roles read from the decision's own
+	// recorded gap) waived for this demand only; a DemandConstraintExemption
+	// record is persisted and the coordinator reopens the demand and replans it,
+	// exactly like restaffed, with the exempted constraint skipped this time.
+	PlanningGapDecisionExempted = "exempted"
 )
 
 const (

@@ -1356,6 +1356,7 @@ func (e ProjectTaskAttestationStatus) Valid() bool {
 // Defines values for ResolveProjectDecisionRequestDecision.
 const (
 	ResolveProjectDecisionRequestDecisionApproved          ResolveProjectDecisionRequestDecision = "approved"
+	ResolveProjectDecisionRequestDecisionExempted          ResolveProjectDecisionRequestDecision = "exempted"
 	ResolveProjectDecisionRequestDecisionNeedsMoreEvidence ResolveProjectDecisionRequestDecision = "needs_more_evidence"
 	ResolveProjectDecisionRequestDecisionRejected          ResolveProjectDecisionRequestDecision = "rejected"
 	ResolveProjectDecisionRequestDecisionRequestChanges    ResolveProjectDecisionRequestDecision = "request_changes"
@@ -1366,6 +1367,8 @@ const (
 func (e ResolveProjectDecisionRequestDecision) Valid() bool {
 	switch e {
 	case ResolveProjectDecisionRequestDecisionApproved:
+		return true
+	case ResolveProjectDecisionRequestDecisionExempted:
 		return true
 	case ResolveProjectDecisionRequestDecisionNeedsMoreEvidence:
 		return true

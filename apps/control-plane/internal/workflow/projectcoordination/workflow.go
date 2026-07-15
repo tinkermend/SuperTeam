@@ -390,21 +390,26 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 }
 
 // handlePlanningGapDecision routes a resolved planning_gap decision. On restaffed
-// the executor pool has been supplemented, so the demand is reopened
-// (failed→planning_pending) and replanned in place by re-running the same planning
-// path as a fresh demand submission — a failed replan flows through that path's own
-// terminal reject handling, which may open a new planning_gap decision. Any other
-// resolution (关闭/rejected) is terminal: the decision is already resolved by
-// ResolveDecision and the demand stays failed.
+// or exempted the demand is unblocked — either the executor pool was supplemented,
+// or the violated constraint was waived for this demand (a DemandConstraintExemption
+// record is already persisted by Service.ResolveDecision before this signal fires)
+// — so either way the demand is reopened (failed→planning_pending) and replanned in
+// place by re-running the same planning path as a fresh demand submission — a
+// failed replan flows through that path's own terminal reject handling, which may
+// open a new planning_gap decision. Any other resolution (关闭/rejected) is
+// terminal: the decision is already resolved by ResolveDecision and the demand
+// stays failed.
 //
 // Temporal safety: planning_gap decisions are created only by new code, so this
 // switch case (and the activities it drives) is unreachable on any pre-feature
 // history — the decision type is the natural discriminator, no GetVersion fence.
+// exempted is likewise new-code-only (same decision type), so it needs no fence
+// either.
 func handlePlanningGapDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, route HumanDecisionRouteResult, projectID uuid.UUID) error {
 	if route.PlanningGap == nil {
 		return temporal.NewNonRetryableApplicationError("human decision route missing planning gap", "HumanDecisionRouteMissingPlanningGap", project.ErrInvalidProject)
 	}
-	if signal.Decision != project.PlanningGapDecisionRestaffed {
+	if signal.Decision != project.PlanningGapDecisionRestaffed && signal.Decision != project.PlanningGapDecisionExempted {
 		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "planning gap decision closed")
 	}
 	demandID := route.PlanningGap.DemandID

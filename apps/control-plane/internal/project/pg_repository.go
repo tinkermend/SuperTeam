@@ -5184,6 +5184,53 @@ func (r *PgRepository) GetBudgetSummary(ctx context.Context, tenantID, projectID
 	return budgetSummaryFromRecord(row), nil
 }
 
+// CreateDemandConstraintExemption persists a DemandConstraintExemption. The
+// underlying INSERT is ON CONFLICT (tenant_id, demand_id, constraint_kind) DO
+// NOTHING, so a repeat call for an already-exempted demand+kind (e.g. a retried
+// ResolveDecision after a coordinator-signal failure) returns pgx.ErrNoRows from
+// the RETURNING clause, which this treats as a no-op rather than an error.
+func (r *PgRepository) CreateDemandConstraintExemption(ctx context.Context, req CreateDemandConstraintExemptionRequest) error {
+	roles, err := jsonbStringSlice(req.Roles, "roles")
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateDemandConstraintExemption(ctx, queries.CreateDemandConstraintExemptionParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		ConstraintKind:    req.ConstraintKind,
+		Roles:             roles,
+		GrantedByUserID:   req.GrantedByUserID,
+		DecisionRequestID: nullUUID(req.DecisionRequestID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *PgRepository) ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]DemandConstraintExemption, error) {
+	rows, err := r.q.ListDemandConstraintExemptionsByDemand(ctx, queries.ListDemandConstraintExemptionsByDemandParams{
+		TenantID: tenantID,
+		DemandID: demandID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DemandConstraintExemption, 0, len(rows))
+	for _, row := range rows {
+		exemption, err := demandConstraintExemptionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, exemption)
+	}
+	return result, nil
+}
+
 func (r *PgRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
 	return r.createAcceptanceRecordWithQueries(ctx, r.q, req)
 }
@@ -6485,6 +6532,24 @@ func budgetSummaryFromRecord(row queries.GetProjectBudgetSummaryRow) ProjectBudg
 		ActualCost:      actualCost,
 		LedgerCount:     row.LedgerCount,
 	}
+}
+
+func demandConstraintExemptionFromRecord(row queries.ProjectDemandConstraintExemption) (DemandConstraintExemption, error) {
+	roles, err := stringSliceFromJSON(row.Roles)
+	if err != nil {
+		return DemandConstraintExemption{}, fmt.Errorf("roles: %w", err)
+	}
+	return DemandConstraintExemption{
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		DemandID:          row.DemandID,
+		ConstraintKind:    row.ConstraintKind,
+		Roles:             roles,
+		GrantedByUserID:   row.GrantedByUserID,
+		DecisionRequestID: ptrUUID(row.DecisionRequestID),
+		CreatedAt:         row.CreatedAt.Time,
+	}, nil
 }
 
 func acceptanceRecordFromRecord(row queries.ProjectAcceptanceRecord) (ProjectAcceptanceRecord, error) {

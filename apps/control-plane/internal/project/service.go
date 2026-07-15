@@ -75,6 +75,11 @@ type DigitalEmployeePlanningProfileSourceRecord struct {
 
 type ApprovalResolver interface {
 	ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error
+	// GetRequestContextPayload returns the approval request's ContextPayload as
+	// recorded at creation time — used by ResolveDecision to read decision-type
+	// vocabulary (e.g. a planning_gap decision's structured gap) that must come
+	// from the original record, not from the resolving caller's payload.
+	GetRequestContextPayload(ctx context.Context, tenantID, approvalRequestID uuid.UUID) (map[string]any, error)
 }
 
 type DigitalEmployeeIdentity struct {
@@ -4841,17 +4846,18 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	if req.Decision == PlanReviewDecisionRequestChanges && decision.DecisionType != "plan_review" {
 		return nil, ErrInvalidProject
 	}
-	// restaffed is planning_gap vocabulary only: it means "the pool was
-	// supplemented, reopen and replan". Other decision types must not accept it.
-	if req.Decision == PlanningGapDecisionRestaffed && decision.DecisionType != DecisionTypePlanningGap {
+	// restaffed and exempted are planning_gap vocabulary only: they mean "the
+	// pool was supplemented" / "the constraint was waived for this demand" —
+	// either way, reopen and replan. Other decision types must not accept them.
+	if (req.Decision == PlanningGapDecisionRestaffed || req.Decision == PlanningGapDecisionExempted) && decision.DecisionType != DecisionTypePlanningGap {
 		return nil, ErrInvalidProject
 	}
 	// The inverse also holds: a planning_gap decision's vocabulary is closed to
-	// restaffed (reopen+replan) and rejected (关闭). The generic approved /
+	// restaffed/exempted (reopen+replan) and rejected (关闭). The generic approved /
 	// needs_more_evidence have no planning_gap semantics and would strand the
 	// decision in an unactionable snapshot, so they are invalid input here.
 	if decision.DecisionType == DecisionTypePlanningGap &&
-		req.Decision != PlanningGapDecisionRestaffed && req.Decision != "rejected" {
+		req.Decision != PlanningGapDecisionRestaffed && req.Decision != PlanningGapDecisionExempted && req.Decision != "rejected" {
 		return nil, ErrInvalidProject
 	}
 	// A non-empty target_exit_deliverable pins the replan's exit — it must name a
@@ -4873,6 +4879,16 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 			return &decision, nil
 		}
 		return nil, ErrInvalidProject
+	}
+	// exempted persists a first-class DemandConstraintExemption record before any
+	// approval/signal side effect — the constraint_kind/roles come from the
+	// decision's own recorded gap (ContextPayload), never from the resolving
+	// caller's payload, so a human exempts what the system actually diagnosed.
+	// Missing/corrupt gap data leaves zero side effects (ErrInvalidProject).
+	if req.Decision == PlanningGapDecisionExempted {
+		if err := s.createPlanningGapExemption(ctx, req, decision); err != nil {
+			return nil, err
+		}
 	}
 	if s.approvals != nil && decision.ApprovalRequestID != uuid.Nil {
 		if err := s.approvals.ResolveApproval(ctx, ResolveApprovalRequest{
@@ -4939,6 +4955,77 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	return &resolved, nil
+}
+
+// createPlanningGapExemption persists the DemandConstraintExemption for a
+// planning_gap decision resolved "exempted". It reads demand_id and the
+// structured gap (constraint_kind/roles) from the approval request's
+// ContextPayload — the record ensurePlanningGapDecision wrote when the gap was
+// first detected — never from req.Payload: a human exempts what the system
+// actually diagnosed, not an arbitrary claim typed into the resolve call. If the
+// approval resolver is unset, or the payload carries no demand_id or no
+// structured gap (e.g. a legacy/non-structural no-suitable-employee diagnosis
+// that predates PlanningGap, or any other planning_gap channel with nothing to
+// exempt), this returns ErrInvalidProject with zero side effects — the caller
+// (ResolveDecision) must not have run any approval/event/signal writes yet.
+func (s *Service) createPlanningGapExemption(ctx context.Context, req ResolveDecisionRequest, decision DecisionRequest) error {
+	if s.approvals == nil {
+		return ErrInvalidProject
+	}
+	contextPayload, err := s.approvals.GetRequestContextPayload(ctx, req.TenantID, decision.ApprovalRequestID)
+	if err != nil {
+		return err
+	}
+	demandID, constraintKind, roles, ok := parsePlanningGapExemptionContext(contextPayload)
+	if !ok {
+		return ErrInvalidProject
+	}
+	decisionRequestID := req.DecisionRequestID
+	return s.repository.CreateDemandConstraintExemption(ctx, CreateDemandConstraintExemptionRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          demandID,
+		ConstraintKind:    constraintKind,
+		Roles:             roles,
+		GrantedByUserID:   req.DecidedByUserID,
+		DecisionRequestID: &decisionRequestID,
+	})
+}
+
+// parsePlanningGapExemptionContext extracts demand_id and the structured gap's
+// constraint_kind/roles from a planning_gap approval request's ContextPayload
+// (shaped by planningGapPayload in workflow/projectcoordination/project_store.go:
+// {"demand_id": "...", "diagnosis": "...", "gap": {"constraint_kind": "...",
+// "roles": [...], ...}}). ok is false when demand_id is missing/unparseable, or
+// when "gap" is absent, not an object, or carries a blank constraint_kind — there
+// is nothing to exempt.
+func parsePlanningGapExemptionContext(payload map[string]any) (demandID uuid.UUID, constraintKind string, roles []string, ok bool) {
+	demandIDRaw, _ := payload["demand_id"].(string)
+	demandID, err := uuid.Parse(strings.TrimSpace(demandIDRaw))
+	if err != nil {
+		return uuid.Nil, "", nil, false
+	}
+	gapRaw, exists := payload["gap"]
+	if !exists {
+		return uuid.Nil, "", nil, false
+	}
+	gapMap, isMap := gapRaw.(map[string]any)
+	if !isMap {
+		return uuid.Nil, "", nil, false
+	}
+	kind, _ := gapMap["constraint_kind"].(string)
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return uuid.Nil, "", nil, false
+	}
+	rolesRaw, _ := gapMap["roles"].([]any)
+	parsedRoles := make([]string, 0, len(rolesRaw))
+	for _, entry := range rolesRaw {
+		if role, isString := entry.(string); isString && strings.TrimSpace(role) != "" {
+			parsedRoles = append(parsedRoles, role)
+		}
+	}
+	return demandID, kind, parsedRoles, true
 }
 
 // validateTargetExitDeliverable rejects a target_exit_deliverable that is not a
@@ -5672,7 +5759,7 @@ func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, no
 
 func validHumanDecision(decision string) bool {
 	switch decision {
-	case "approved", "rejected", "needs_more_evidence", PlanReviewDecisionRequestChanges, PlanningGapDecisionRestaffed:
+	case "approved", "rejected", "needs_more_evidence", PlanReviewDecisionRequestChanges, PlanningGapDecisionRestaffed, PlanningGapDecisionExempted:
 		return true
 	default:
 		return false

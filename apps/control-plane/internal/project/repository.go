@@ -115,6 +115,8 @@ type Repository interface {
 	CreateBudgetLedgerEntry(ctx context.Context, req CreateBudgetLedgerEntryRequest) (ProjectBudgetLedgerEntry, error)
 	ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error)
 	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error)
+	CreateDemandConstraintExemption(ctx context.Context, req CreateDemandConstraintExemptionRequest) error
+	ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]DemandConstraintExemption, error)
 	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
 	CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error)
 	GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error)
@@ -576,6 +578,19 @@ type ResolveDecisionRequestRepositoryRequest struct {
 	ID              uuid.UUID
 	StatusSnapshot  string
 	ResolvedEventID *uuid.UUID
+}
+
+// CreateDemandConstraintExemptionRequest persists a DemandConstraintExemption.
+// The (tenant_id, demand_id, constraint_kind) unique constraint makes this
+// idempotent: a repeat call for an already-exempted demand+kind is a no-op.
+type CreateDemandConstraintExemptionRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	ConstraintKind    string
+	Roles             []string
+	GrantedByUserID   uuid.UUID
+	DecisionRequestID *uuid.UUID
 }
 
 type CreateEvidenceRefRequest struct {

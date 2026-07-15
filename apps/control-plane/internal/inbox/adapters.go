@@ -195,9 +195,9 @@ func statusFromDecisionSnapshot(status string) Status {
 	if status == project.PlanReviewDecisionRequestChanges {
 		return StatusResolved
 	}
-	// planning_gap restaffed likewise resolves the decision — the demand is
-	// reopened and a fresh planning cycle (with its own review) begins.
-	if status == project.PlanningGapDecisionRestaffed {
+	// planning_gap restaffed/exempted likewise resolve the decision — the demand
+	// is reopened and a fresh planning cycle (with its own review) begins.
+	if status == project.PlanningGapDecisionRestaffed || status == project.PlanningGapDecisionExempted {
 		return StatusResolved
 	}
 	switch approval.ApprovalStatus(status) {

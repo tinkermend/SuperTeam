@@ -39,6 +39,11 @@ const (
 	// default) because the demand is reopened and a fresh planning cycle — with
 	// its own review — begins.
 	ApprovalDecisionRestaffed ApprovalDecision = "restaffed"
+	// ApprovalDecisionExempted records a planning_gap "豁免约束并重规划"
+	// resolution; like restaffed, the approval request closes as rejected
+	// (statusFromDecision default) because the demand is reopened and a fresh
+	// planning cycle begins — this time with the exempted constraint skipped.
+	ApprovalDecisionExempted ApprovalDecision = "exempted"
 )
 
 type ApprovalRequest struct {

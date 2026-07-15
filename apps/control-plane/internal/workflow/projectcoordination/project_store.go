@@ -400,12 +400,24 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 			scenarioTemplate = &template
 		}
 	}
+	exemptions, err := s.repository.ListDemandConstraintExemptions(ctx, input.TenantID, input.DemandID)
+	if err != nil {
+		return CoordinationSnapshot{}, err
+	}
+	demandExemptions := make([]DemandConstraintExemption, 0, len(exemptions))
+	for _, exemption := range exemptions {
+		demandExemptions = append(demandExemptions, DemandConstraintExemption{
+			ConstraintKind: exemption.ConstraintKind,
+			Roles:          exemption.Roles,
+		})
+	}
 	return CoordinationSnapshot{
-		ProjectID:           projectRecord.ID,
-		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
-		DigitalEmployeePool: pool,
-		CoordinationPolicy:  projectRecord.CoordinationPolicy,
-		ScenarioTemplate:    scenarioTemplate,
+		ProjectID:                  projectRecord.ID,
+		Demand:                     DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
+		DigitalEmployeePool:        pool,
+		CoordinationPolicy:         projectRecord.CoordinationPolicy,
+		ScenarioTemplate:           scenarioTemplate,
+		DemandConstraintExemptions: demandExemptions,
 	}, nil
 }
 
@@ -3347,7 +3359,7 @@ func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input Reje
 		Title:          title,
 		Summary:        diagnosis,
 		RiskLevel:      "high",
-		Options:        []any{"restaffed", "rejected"},
+		Options:        []any{"restaffed", "exempted", "rejected"},
 		ContextPayload: contextPayload,
 	})
 	if err != nil {

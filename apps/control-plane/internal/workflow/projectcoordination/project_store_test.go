@@ -234,7 +234,7 @@ func TestRejectDemandPlanningCreatesPlanningGapDecision(t *testing.T) {
 	require.Equal(t, "planning_gap", approvals.last.DecisionType)
 	require.Equal(t, ownerID, approvals.last.TargetUserID)
 	require.Equal(t, demandID, approvals.last.ResourceID)
-	require.Equal(t, []any{"restaffed", "rejected"}, approvals.last.Options)
+	require.Equal(t, []any{"restaffed", "exempted", "rejected"}, approvals.last.Options)
 	require.Equal(t, demandID.String(), approvals.last.ContextPayload["demand_id"])
 	require.Equal(t, diagnosis, approvals.last.ContextPayload["diagnosis"])
 	gapPayload, ok := approvals.last.ContextPayload["gap"].(map[string]any)
@@ -5233,8 +5233,39 @@ type projectStoreMemoryRepository struct {
 	acceptanceReady   bool
 	acceptanceRecords []project.ProjectAcceptanceRecord
 
+	demandConstraintExemptions []project.DemandConstraintExemption
+
 	getProjectCalls       int
 	getProjectDemandCalls int
+}
+
+// CreateDemandConstraintExemption and ListDemandConstraintExemptions override the
+// embedded (nil) project.Repository so LoadProjectCoordinationSnapshot's
+// unconditional per-demand exemption load doesn't nil-panic in the many existing
+// fixtures that never populate demandConstraintExemptions — nil-safe empty by
+// default, mirroring the real repository's ListDemandConstraintExemptions
+// returning [] for a demand with no exemptions.
+func (r *projectStoreMemoryRepository) CreateDemandConstraintExemption(ctx context.Context, req project.CreateDemandConstraintExemptionRequest) error {
+	r.demandConstraintExemptions = append(r.demandConstraintExemptions, project.DemandConstraintExemption{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		ConstraintKind:    req.ConstraintKind,
+		Roles:             req.Roles,
+		GrantedByUserID:   req.GrantedByUserID,
+		DecisionRequestID: req.DecisionRequestID,
+	})
+	return nil
+}
+
+func (r *projectStoreMemoryRepository) ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]project.DemandConstraintExemption, error) {
+	result := make([]project.DemandConstraintExemption, 0)
+	for _, exemption := range r.demandConstraintExemptions {
+		if exemption.TenantID == tenantID && exemption.DemandID == demandID {
+			result = append(result, exemption)
+		}
+	}
+	return result, nil
 }
 
 type projectTaskStatusUpdateRecord struct {
