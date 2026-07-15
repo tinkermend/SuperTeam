@@ -173,11 +173,12 @@ const (
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
 
-	ProjectEventRuntimePlacementUpdated    ProjectEventType = "project.runtime_placement.updated"
-	ProjectEventRuntimePlacementReleased   ProjectEventType = "project.runtime_placement.released"
-	ProjectEventCoordinationBlocked        ProjectEventType = "coordination.blocked"
-	ProjectEventWorkflowCoordinationFailed ProjectEventType = "workflow.coordination_failed"
-	ProjectEventTaskDispatchBlocked        ProjectEventType = "project_task.dispatch_blocked"
+	ProjectEventRuntimePlacementUpdated          ProjectEventType = "project.runtime_placement.updated"
+	ProjectEventRuntimePlacementReleased         ProjectEventType = "project.runtime_placement.released"
+	ProjectEventCoordinationBlocked              ProjectEventType = "coordination.blocked"
+	ProjectEventScenarioTemplateResolutionFailed ProjectEventType = "scenario_template.resolution_failed"
+	ProjectEventWorkflowCoordinationFailed       ProjectEventType = "workflow.coordination_failed"
+	ProjectEventTaskDispatchBlocked              ProjectEventType = "project_task.dispatch_blocked"
 
 	ProjectEventWorkflowSignaled                ProjectEventType = "workflow.signaled"
 	ProjectEventCoordinationJobCreated          ProjectEventType = "coordination_job.created"

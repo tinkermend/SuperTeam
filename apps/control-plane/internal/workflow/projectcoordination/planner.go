@@ -30,9 +30,10 @@ type ScenarioTemplateSnapshot struct {
 }
 
 type DemandSnapshot struct {
-	ID      uuid.UUID
-	Title   string
-	Content string
+	ID                  uuid.UUID
+	Title               string
+	Content             string
+	ScenarioTemplateKey string `json:"scenario_template_key,omitempty"`
 }
 
 type ProjectMemberSnapshot struct {

@@ -6812,3 +6812,84 @@ func TestLoadProjectCoordinationSnapshotDegradesOnUnresolvedTemplate(t *testing.
 		t.Fatalf("expected generic fallback (nil), got %#v", snapshot.ScenarioTemplate)
 	}
 }
+
+func TestLoadSnapshotPrefersDemandTemplateKey(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	projectKey := "software_delivery"
+	demandKey := "research_report"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+			ScenarioTemplateKey: &projectKey,
+		},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析",
+			ScenarioTemplateKey: &demandKey,
+		},
+	}
+	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{templates: map[string]ScenarioTemplateSnapshot{
+		"software_delivery": {Key: "software_delivery", Name: "软件交付"},
+		"research_report":   {Key: "research_report", Name: "调研报告"},
+	}})
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+	})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if snapshot.ScenarioTemplate == nil || snapshot.ScenarioTemplate.Key != "research_report" {
+		t.Fatalf("expected demand-level template to win, got %#v", snapshot.ScenarioTemplate)
+	}
+	if snapshot.Demand.ScenarioTemplateKey != "research_report" {
+		t.Fatalf("expected DemandSnapshot.ScenarioTemplateKey to carry demand key, got %q", snapshot.Demand.ScenarioTemplateKey)
+	}
+}
+
+func TestLoadSnapshotResolutionFailureEmitsProjectEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	demandKey := "ghost_template"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+		},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析",
+			ScenarioTemplateKey: &demandKey,
+		},
+	}
+	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{})
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+	})
+	if err != nil {
+		t.Fatalf("load snapshot must not fail on resolution failure: %v", err)
+	}
+	if snapshot.ScenarioTemplate != nil {
+		t.Fatalf("expected generic fallback (nil), got %#v", snapshot.ScenarioTemplate)
+	}
+	var found *project.ProjectEvent
+	for i := range repo.events {
+		if repo.events[i].EventType == project.ProjectEventScenarioTemplateResolutionFailed {
+			found = &repo.events[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected scenario_template.resolution_failed event, got events %#v", repo.events)
+	}
+	if found.ActorID != demandKey {
+		t.Fatalf("expected event actor_id to be requested key %q, got %q", demandKey, found.ActorID)
+	}
+	if found.Payload["requested_key"] != demandKey {
+		t.Fatalf("expected payload requested_key=%q, got %#v", demandKey, found.Payload)
+	}
+	if found.Payload["source"] != "demand" {
+		t.Fatalf("expected payload source=demand, got %#v", found.Payload)
+	}
+}

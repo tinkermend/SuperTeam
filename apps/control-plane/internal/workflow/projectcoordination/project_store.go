@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -368,22 +367,42 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 	if demand.Content != nil {
 		content = *demand.Content
 	}
+	demandTemplateKey := ""
+	if demand.ScenarioTemplateKey != nil {
+		demandTemplateKey = strings.TrimSpace(*demand.ScenarioTemplateKey)
+	}
+	// Resolution order: demand-level key wins when present, then the project's
+	// bound key, then nil (generic fallback). Whichever source is chosen is
+	// tracked so a resolution failure event can attribute its origin.
+	key := ""
+	source := ""
+	if demandTemplateKey != "" {
+		key = demandTemplateKey
+		source = "demand"
+	} else if projectRecord.ScenarioTemplateKey != nil {
+		if projectKey := strings.TrimSpace(*projectRecord.ScenarioTemplateKey); projectKey != "" {
+			key = projectKey
+			source = "project"
+		}
+	}
 	var scenarioTemplate *ScenarioTemplateSnapshot
-	if s.scenarioTemplates != nil && projectRecord.ScenarioTemplateKey != nil {
-		if key := strings.TrimSpace(*projectRecord.ScenarioTemplateKey); key != "" {
-			template, templateErr := s.scenarioTemplates.GetScenarioTemplateSnapshot(ctx, input.TenantID, key)
-			if templateErr != nil {
-				// A stale binding degrades to the generic fallback (nil) rather
-				// than blocking planning; the defect stays visible in the log.
-				log.Printf("scenario template %q unresolved for project %s: %v", key, input.ProjectID, templateErr)
-			} else {
-				scenarioTemplate = &template
-			}
+	if s.scenarioTemplates != nil && key != "" {
+		template, templateErr := s.scenarioTemplates.GetScenarioTemplateSnapshot(ctx, input.TenantID, key)
+		if templateErr != nil {
+			// A stale or unresolvable binding degrades to the generic fallback
+			// (nil) rather than blocking planning; the defect is recorded as a
+			// project event instead of only a log line.
+			_, _ = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventScenarioTemplateResolutionFailed, key, "场景模板解析失败，回落 generic", map[string]any{
+				"requested_key": key,
+				"source":        source,
+			}))
+		} else {
+			scenarioTemplate = &template
 		}
 	}
 	return CoordinationSnapshot{
 		ProjectID:           projectRecord.ID,
-		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content},
+		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey},
 		DigitalEmployeePool: pool,
 		CoordinationPolicy:  projectRecord.CoordinationPolicy,
 		ScenarioTemplate:    scenarioTemplate,
