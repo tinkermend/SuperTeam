@@ -980,10 +980,10 @@ func TestCreateRunChatResumeValidation(t *testing.T) {
 
 func TestCreateRunChatResumeInjectsProviderSession(t *testing.T) {
 	testCases := []struct {
-		name                   string
-		setupPrior             func(*DigitalEmployeeRun)
-		expectError            bool
-		expectedSessionID      string
+		name              string
+		setupPrior        func(*DigitalEmployeeRun)
+		expectError       bool
+		expectedSessionID string
 	}{
 		{
 			name: "prefers ProviderSessionExternalID when set",
@@ -2572,4 +2572,142 @@ func cloneRun(run *DigitalEmployeeRun) *DigitalEmployeeRun {
 	}
 	copied := *run
 	return &copied
+}
+
+// fakeRuntimeSkillLister is a standalone RuntimeSkillLister fake (independent of
+// fakeRunServiceRepository) used by tests that only need to inject runtime skills
+// without wiring capability/env listers.
+type fakeRuntimeSkillLister struct {
+	records []skill.SkillRuntimeRecord
+}
+
+func (f *fakeRuntimeSkillLister) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]skill.SkillRuntimeRecord, error) {
+	return f.records, nil
+}
+
+// fakeRuntimeMCPLister is a standalone RuntimeMCPLister fake used to project a fixed
+// set of env-satisfied MCP servers into prepareStartSessionDependencies.
+type fakeRuntimeMCPLister struct {
+	records []RuntimeMCPServerPayload
+}
+
+func (f *fakeRuntimeMCPLister) ListRuntimeMCPServersForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]RuntimeMCPServerPayload, error) {
+	return f.records, nil
+}
+
+type fakeSkillMCPDependencyLister struct {
+	records []SkillMCPDependencyRecord
+}
+
+func (f *fakeSkillMCPDependencyLister) ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependencyRecord, error) {
+	return f.records, nil
+}
+
+func TestRunServiceBlocksDispatchWhenSkillMCPDependencyMissing(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	skillID := uuid.New()
+	service.SetSkillLister(&fakeRuntimeSkillLister{records: []skill.SkillRuntimeRecord{{
+		ID:   skillID,
+		Slug: "deploy-helper",
+	}}})
+	// mcpLister returns no servers at all: the skill's MCP dependency (server-a /
+	// github-mcp) is not bound to the employee (or is bound but env-unsatisfied,
+	// which the upstream RuntimeMCPLister already excludes upstream).
+	service.SetMCPLister(&fakeRuntimeMCPLister{})
+	service.SetSkillMCPDependencyLister(&fakeSkillMCPDependencyLister{records: []SkillMCPDependencyRecord{
+		{SkillID: skillID, MCPServerID: "srv-1", ServerKey: "github-mcp"},
+	}})
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err == nil {
+		t.Fatalf("expected error for missing skill mcp dependency, got nil")
+	}
+	if !strings.Contains(err.Error(), "skill_mcp_dependencies_not_satisfied") {
+		t.Fatalf("expected skill_mcp_dependencies_not_satisfied in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "github-mcp") {
+		t.Fatalf("expected error to mention server_key github-mcp, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected missing skill mcp dependency not to dispatch, got %#v", dispatcher.commands)
+	}
+}
+
+func TestRunServiceDispatchesWhenSkillMCPDependencySatisfied(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	skillID := uuid.New()
+	service.SetSkillLister(&fakeRuntimeSkillLister{records: []skill.SkillRuntimeRecord{{
+		ID:   skillID,
+		Slug: "deploy-helper",
+	}}})
+	service.SetMCPLister(&fakeRuntimeMCPLister{records: []RuntimeMCPServerPayload{{
+		ServerID:  "srv-1",
+		ServerKey: "github-mcp",
+	}}})
+	service.SetSkillMCPDependencyLister(&fakeSkillMCPDependencyLister{records: []SkillMCPDependencyRecord{
+		{SkillID: skillID, MCPServerID: "srv-1", ServerKey: "github-mcp"},
+	}})
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err != nil {
+		t.Fatalf("expected dispatch to succeed when skill mcp dependency satisfied, got error: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+}
+
+// TestRunServiceBlocksDispatchForFanOutWhenOnlyOneOfTwoSkillsSatisfied covers the
+// multi-skill fan-out case: two loaded skills each depend on a distinct MCP server, and
+// only one server is env-satisfied and bound. The dispatch gate must report the specific
+// unsatisfied skill/server pair, must not mention the satisfied pair, and must not dispatch.
+func TestRunServiceBlocksDispatchForFanOutWhenOnlyOneOfTwoSkillsSatisfied(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	satisfiedSkillID := uuid.New()
+	missingSkillID := uuid.New()
+	service.SetSkillLister(&fakeRuntimeSkillLister{records: []skill.SkillRuntimeRecord{
+		{ID: satisfiedSkillID, Slug: "skill-satisfied"},
+		{ID: missingSkillID, Slug: "skill-missing"},
+	}})
+	// Only the satisfied skill's server is env-satisfied and bound.
+	service.SetMCPLister(&fakeRuntimeMCPLister{records: []RuntimeMCPServerPayload{{
+		ServerID:  "srv-satisfied",
+		ServerKey: "server-a-satisfied",
+	}}})
+	service.SetSkillMCPDependencyLister(&fakeSkillMCPDependencyLister{records: []SkillMCPDependencyRecord{
+		{SkillID: satisfiedSkillID, MCPServerID: "srv-satisfied", ServerKey: "server-a-satisfied"},
+		{SkillID: missingSkillID, MCPServerID: "srv-missing", ServerKey: "server-b-missing"},
+	}})
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err == nil {
+		t.Fatalf("expected error when one of two skills has an unsatisfied mcp dependency, got nil")
+	}
+	if !strings.Contains(err.Error(), "skill-missing") || !strings.Contains(err.Error(), "server-b-missing") {
+		t.Fatalf("expected error to mention unsatisfied skill/server, got %v", err)
+	}
+	if strings.Contains(err.Error(), "skill-satisfied") || strings.Contains(err.Error(), "server-a-satisfied") {
+		t.Fatalf("expected error not to mention the satisfied skill/server, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected fan-out with one unsatisfied dependency not to dispatch, got %#v", dispatcher.commands)
+	}
 }

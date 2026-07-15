@@ -6,7 +6,9 @@ import { userEvent } from "vitest/browser";
 import { McpManagementPage } from "@/features/mcp";
 import {
   createMcpServerDefinition,
+  deleteMcpServerDefinition,
   listMcpServerDefinitions,
+  listMcpServerDependentSkills,
   type McpServerDefinition,
 } from "@/lib/api/capabilities";
 
@@ -34,6 +36,7 @@ vi.mock("@/lib/api/capabilities", () => ({
   listMcpServerDefinitions: vi.fn(),
   createMcpServerDefinition: vi.fn(),
   deleteMcpServerDefinition: vi.fn(),
+  listMcpServerDependentSkills: vi.fn(),
 }));
 
 const githubDefinition = {
@@ -121,5 +124,45 @@ describe("MCP management page", () => {
     const screen = await withClient(<McpManagementPage />);
 
     await expect.element(screen.getByText("还没有注册 MCP")).toBeVisible();
+  });
+
+  it("delete asks for confirmation and blocks it while skills still depend on the definition", async () => {
+    vi.mocked(listMcpServerDefinitions).mockResolvedValue([githubDefinition]);
+    vi.mocked(listMcpServerDependentSkills).mockResolvedValue([
+      { skill_id: "skill-1", slug: "deploy-helper", name: "部署助手" },
+    ]);
+
+    const user = userEvent.setup();
+    const screen = await withClient(<McpManagementPage />);
+
+    await user.click(screen.getByRole("button", { name: "删除 GitHub MCP" }));
+
+    await expect.element(screen.getByText(/deploy-helper/)).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "删除" }))
+      .toBeDisabled();
+
+    expect(deleteMcpServerDefinition).not.toHaveBeenCalled();
+  });
+
+  it("deletes the definition once confirmed when no skill depends on it", async () => {
+    vi.mocked(listMcpServerDefinitions).mockResolvedValue([githubDefinition]);
+    vi.mocked(listMcpServerDependentSkills).mockResolvedValue([]);
+    vi.mocked(deleteMcpServerDefinition).mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    const screen = await withClient(<McpManagementPage />);
+
+    await user.click(screen.getByRole("button", { name: "删除 GitHub MCP" }));
+
+    await expect.element(screen.getByText(/不可撤销/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "删除" }));
+
+    await vi.waitFor(() => {
+      expect(deleteMcpServerDefinition).toHaveBeenCalledWith(
+        expect.anything(),
+        githubDefinition.id,
+      );
+    });
   });
 });

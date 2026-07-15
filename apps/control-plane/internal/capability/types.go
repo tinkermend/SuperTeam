@@ -18,6 +18,7 @@ var (
 	ErrNotFound              = errors.New("capability not found")
 	ErrCredentialKeyMissing  = errors.New("credential encryption key is required")
 	ErrCredentialTypeInvalid = errors.New("invalid credential type")
+	ErrConflict              = errors.New("conflict")
 )
 
 type Credential struct {
@@ -236,6 +237,35 @@ func (s EffectiveMCPServer) BindingStatus() string {
 	return MCPBindingStatusActive
 }
 
+// SkillMCPDependency declares that a skill requires an MCP registry definition
+// at load time. Validation-only: it never grants the MCP to an employee.
+type SkillMCPDependency struct {
+	ID           uuid.UUID
+	TenantID     uuid.UUID
+	SkillID      uuid.UUID
+	MCPServerID  uuid.UUID
+	Note         string
+	CreatedAt    time.Time
+	ServerKey    string
+	ServerName   string
+	AuthStrategy MCPAuthStrategy
+	RiskLevel    string
+	ServerStatus string
+}
+
+// DependentSkill is a reverse lookup row: an active skill depending on an MCP definition.
+type DependentSkill struct {
+	SkillID uuid.UUID
+	Slug    string
+	Name    string
+}
+
+// SkillMCPDependencyInput is one desired dependency in a declarative replace.
+type SkillMCPDependencyInput struct {
+	MCPServerID uuid.UUID
+	Note        string
+}
+
 type CreateMCPServerDefinitionRequest struct {
 	TenantID           uuid.UUID
 	UserID             uuid.UUID
@@ -278,6 +308,25 @@ type DeleteTeamMCPBindingRequest struct {
 	BindingID uuid.UUID
 }
 
+type ListSkillMCPDependenciesRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+	SkillID  uuid.UUID
+}
+
+type ReplaceSkillMCPDependenciesRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+	SkillID  uuid.UUID
+	Items    []SkillMCPDependencyInput
+}
+
+type ListDependentSkillsRequest struct {
+	TenantID uuid.UUID
+	UserID   uuid.UUID
+	ServerID uuid.UUID
+}
+
 type CreateEmployeeMCPBindingV2Request struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID
@@ -291,4 +340,35 @@ type DeleteEmployeeMCPBindingV2Request struct {
 	DigitalEmployeeID uuid.UUID
 	UserID            uuid.UUID
 	BindingID         uuid.UUID
+}
+
+// RuntimeSkillRef is a minimal skill reference (id + slug) surfaced by the skill module for
+// runtime-facing consumers that only need identity, not the full skill record.
+type RuntimeSkillRef struct {
+	ID   uuid.UUID
+	Slug string
+}
+
+type EvaluateEmployeeSkillMCPDependenciesRequest struct {
+	TenantID          uuid.UUID
+	UserID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+}
+
+// EmployeeSkillMCPDependencyStatus groups the MCP dependency satisfaction status for one skill
+// bound to a digital employee, for the employee panel data source.
+type EmployeeSkillMCPDependencyStatus struct {
+	SkillID      uuid.UUID
+	SkillSlug    string
+	Dependencies []EmployeeSkillMCPDependencyItem
+}
+
+// EmployeeSkillMCPDependencyItem is one skill -> MCP dependency evaluated against the
+// employee's actual bindings and configured env vars.
+type EmployeeSkillMCPDependencyItem struct {
+	MCPServerID    uuid.UUID
+	ServerKey      string
+	ServerName     string
+	Status         string // satisfied | missing_binding | blocked_missing_env
+	MissingEnvVars []string
 }

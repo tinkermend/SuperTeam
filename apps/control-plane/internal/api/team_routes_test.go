@@ -298,6 +298,12 @@ type routeCapabilityService struct {
 	createTeamBindingReq       capability.CreateTeamMCPBindingRequest
 	createEmployeeBindingV2Req capability.CreateEmployeeMCPBindingV2Request
 	effectiveConfigReq         capability.EmployeeScopedRequest
+
+	skillMCPDependencies      []capability.SkillMCPDependency
+	dependentSkills           []capability.DependentSkill
+	listSkillDependenciesReq  capability.ListSkillMCPDependenciesRequest
+	replaceSkillDependencyReq capability.ReplaceSkillMCPDependenciesRequest
+	listDependentSkillsReq    capability.ListDependentSkillsRequest
 }
 
 func (s *routeCapabilityService) CreateCredential(ctx context.Context, req capability.CreateCredentialRequest) (capability.Credential, error) {
@@ -389,6 +395,25 @@ func (s *routeCapabilityService) DeleteEmployeeMCPBindingV2(context.Context, cap
 func (s *routeCapabilityService) ListEffectiveMCPConfig(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.EffectiveMCPServer, error) {
 	s.effectiveConfigReq = req
 	return s.effectiveServers, nil
+}
+
+func (s *routeCapabilityService) ListSkillMCPDependencies(ctx context.Context, req capability.ListSkillMCPDependenciesRequest) ([]capability.SkillMCPDependency, error) {
+	s.listSkillDependenciesReq = req
+	return s.skillMCPDependencies, nil
+}
+
+func (s *routeCapabilityService) ReplaceSkillMCPDependencies(ctx context.Context, req capability.ReplaceSkillMCPDependenciesRequest) ([]capability.SkillMCPDependency, error) {
+	s.replaceSkillDependencyReq = req
+	return s.skillMCPDependencies, nil
+}
+
+func (s *routeCapabilityService) ListDependentSkills(ctx context.Context, req capability.ListDependentSkillsRequest) ([]capability.DependentSkill, error) {
+	s.listDependentSkillsReq = req
+	return s.dependentSkills, nil
+}
+
+func (s *routeCapabilityService) EvaluateEmployeeSkillMCPDependencies(ctx context.Context, req capability.EvaluateEmployeeSkillMCPDependenciesRequest) ([]capability.EmployeeSkillMCPDependencyStatus, error) {
+	return nil, nil
 }
 
 func TestTeamRoutesRequireConsoleAuth(t *testing.T) {

@@ -514,6 +514,90 @@ func textFromString(value string) pgtype.Text {
 	return pgtype.Text{String: trimmed, Valid: true}
 }
 
+func (r *PgRepository) SkillExistsForTenant(ctx context.Context, tenantID, skillID uuid.UUID) (bool, error) {
+	if err := r.requireQueries(); err != nil {
+		return false, err
+	}
+	return r.q.SkillExistsForTenant(ctx, queries.SkillExistsForTenantParams{TenantID: tenantID, ID: skillID})
+}
+
+func (r *PgRepository) ListSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID) ([]SkillMCPDependency, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListSkillMCPDependencies(ctx, queries.ListSkillMCPDependenciesParams{TenantID: tenantID, SkillID: skillID})
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]SkillMCPDependency, 0, len(rows))
+	for _, row := range rows {
+		deps = append(deps, skillMCPDependencyFromRow(row.ID, row.TenantID, row.SkillID, row.McpServerID, row.Note, timeFromTimestamptz(row.CreatedAt), row.ServerKey, row.ServerName, row.AuthStrategy, row.RiskLevel, row.ServerStatus))
+	}
+	return deps, nil
+}
+
+// ReplaceSkillMCPDependencies is delete-then-insert without a transaction (PgRepository
+// only wraps *queries.Queries). Partial failure leaves the skill with fewer declared
+// dependencies, which fails closed: the dispatch gate blocks on missing bindings, never
+// silently grants.
+func (r *PgRepository) ReplaceSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID, items []SkillMCPDependencyInput) ([]SkillMCPDependency, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	if err := r.q.DeleteSkillMCPDependenciesForSkill(ctx, queries.DeleteSkillMCPDependenciesForSkillParams{TenantID: tenantID, SkillID: skillID}); err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if err := r.q.InsertSkillMCPDependency(ctx, queries.InsertSkillMCPDependencyParams{
+			TenantID: tenantID, SkillID: skillID, McpServerID: item.MCPServerID, Note: item.Note,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return r.ListSkillMCPDependencies(ctx, tenantID, skillID)
+}
+
+func (r *PgRepository) ListDependentSkills(ctx context.Context, tenantID, serverID uuid.UUID) ([]DependentSkill, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListDependentSkillsForMCPServer(ctx, queries.ListDependentSkillsForMCPServerParams{TenantID: tenantID, McpServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DependentSkill, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, DependentSkill{SkillID: row.SkillID, Slug: row.Slug, Name: row.Name})
+	}
+	return out, nil
+}
+
+func (r *PgRepository) ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	if len(skillIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.q.ListSkillMCPDependenciesForSkills(ctx, queries.ListSkillMCPDependenciesForSkillsParams{TenantID: tenantID, SkillIds: skillIDs})
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]SkillMCPDependency, 0, len(rows))
+	for _, row := range rows {
+		deps = append(deps, skillMCPDependencyFromRow(row.ID, row.TenantID, row.SkillID, row.McpServerID, row.Note, timeFromTimestamptz(row.CreatedAt), row.ServerKey, row.ServerName, row.AuthStrategy, row.RiskLevel, row.ServerStatus))
+	}
+	return deps, nil
+}
+
+func skillMCPDependencyFromRow(id, tenantID, skillID, serverID uuid.UUID, note string, createdAt time.Time, serverKey, serverName, authStrategy, riskLevel, serverStatus string) SkillMCPDependency {
+	return SkillMCPDependency{
+		ID: id, TenantID: tenantID, SkillID: skillID, MCPServerID: serverID,
+		Note: note, CreatedAt: createdAt, ServerKey: serverKey, ServerName: serverName,
+		AuthStrategy: MCPAuthStrategy(authStrategy), RiskLevel: riskLevel, ServerStatus: serverStatus,
+	}
+}
+
 func (r *PgRepository) requireQueries() error {
 	if r == nil || r.q == nil {
 		return fmt.Errorf("%w: postgres queries are required", ErrInvalidInput)

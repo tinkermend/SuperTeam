@@ -396,6 +396,9 @@ func (r *serviceInstallRepository) ListSkillsForRuntime(context.Context, uuid.UU
 func (r *serviceInstallRepository) IsSkillBoundToEmployeeTeam(context.Context, BindEmployeeSkillRequest) (bool, error) {
 	return false, nil
 }
+func (r *serviceInstallRepository) DeleteSkillMCPDependencies(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
 func (r *serviceInstallRepository) ListSkillInstallations(_ context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error) {
 	r.listInstallationsReq = req
 	return r.installations, nil

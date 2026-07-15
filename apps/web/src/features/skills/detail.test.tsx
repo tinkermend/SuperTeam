@@ -2,8 +2,10 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
+import { userEvent } from "vitest/browser";
 import { SkillDetailView } from "@/features/skills/detail";
-import type { Skill } from "@/lib/api/skills";
+import type { McpServerDefinition } from "@/lib/api/capabilities";
+import type { Skill, SkillMcpDependency } from "@/lib/api/skills";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -61,6 +63,51 @@ const skillFixture = {
   runtime_dependencies: { tools: ["gh", "kubectl"], env: ["GH_TOKEN"] },
 } satisfies Skill;
 
+const dependencyFixture = {
+  id: "dep-1",
+  skill_id: skillFixture.id,
+  mcp_server_id: "srv-1",
+  note: "",
+  server_key: "github-mcp",
+  server_name: "GitHub MCP",
+  auth_strategy: "bearer_env",
+  risk_level: "low",
+  server_status: "active",
+  created_at: "2026-07-15T00:00:00Z",
+} satisfies SkillMcpDependency;
+
+const mcpServerDefinitionFixture = {
+  id: "srv-2",
+  tenant_id: "tenant-1",
+  name: "Slack MCP",
+  server_key: "slack-mcp",
+  description: "Slack 集成",
+  transport: "streamable_http",
+  url: "https://slack.example.com/mcp",
+  auth_strategy: "bearer_env",
+  required_env_vars: ["SLACK_TOKEN"],
+  optional_env_vars: [],
+  tool_allowlist: [],
+  risk_level: "low",
+  status: "active",
+} satisfies McpServerDefinition;
+
+const githubServerDefinitionFixture = {
+  id: "srv-1",
+  tenant_id: "tenant-1",
+  name: "GitHub MCP",
+  server_key: "github-mcp",
+  description: "GitHub 集成",
+  transport: "streamable_http",
+  url: "https://github.example.com/mcp",
+  auth_strategy: "bearer_env",
+  required_env_vars: ["GH_TOKEN"],
+  optional_env_vars: [],
+  tool_allowlist: [],
+  risk_level: "low",
+  status: "active",
+} satisfies McpServerDefinition;
+
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -71,11 +118,47 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, status });
 }
 
-function createSkillFetcher(skill: Skill = skillFixture) {
-  return vi.fn(async (input: RequestInfo | URL) => {
+function createSkillFetcher({
+  skill = skillFixture,
+  dependencies = [] as SkillMcpDependency[],
+  mcpServerDefinitions = [] as McpServerDefinition[],
+}: {
+  skill?: Skill;
+  dependencies?: SkillMcpDependency[];
+  mcpServerDefinitions?: McpServerDefinition[];
+} = {}) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname === `/api/v1/skills/${skill.id}`) {
       return jsonResponse(skill);
+    }
+    if (url.pathname === `/api/v1/skills/${skill.id}/mcp-dependencies`) {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as {
+          items: Array<{ mcp_server_id: string; note?: string }>;
+        };
+        const replaced = body.items.map((item, index) => {
+          const existing = dependencies.find((dep) => dep.mcp_server_id === item.mcp_server_id);
+          const definition = mcpServerDefinitions.find((def) => def.id === item.mcp_server_id);
+          return {
+            id: existing?.id ?? `dep-new-${index}`,
+            skill_id: skill.id,
+            mcp_server_id: item.mcp_server_id,
+            note: item.note ?? "",
+            server_key: existing?.server_key ?? definition?.server_key ?? "unknown",
+            server_name: existing?.server_name ?? definition?.name ?? "unknown",
+            auth_strategy: existing?.auth_strategy ?? definition?.auth_strategy ?? "none",
+            risk_level: existing?.risk_level ?? definition?.risk_level ?? "low",
+            server_status: existing?.server_status ?? definition?.status ?? "active",
+            created_at: existing?.created_at ?? "2026-07-15T00:00:00Z",
+          } satisfies SkillMcpDependency;
+        });
+        return jsonResponse(replaced);
+      }
+      return jsonResponse(dependencies);
+    }
+    if (url.pathname === "/api/v1/mcp-servers") {
+      return jsonResponse(mcpServerDefinitions);
     }
     return jsonResponse({ error: `unhandled ${url.pathname}` }, 500);
   });
@@ -160,5 +243,73 @@ describe("SkillDetailView", () => {
     const backLink = screen.getByRole("link", { name: "返回技能市场" });
     await expect.element(backLink).toHaveAttribute("href", "/skills");
     await expect.element(backLink).toHaveAttribute("data-router-link", "true");
+  });
+
+  it("renders skill mcp dependencies section", async () => {
+    const fetcher = createSkillFetcher({
+      dependencies: [dependencyFixture],
+      mcpServerDefinitions: [mcpServerDefinitionFixture],
+    });
+    const screen = await renderSkillDetail(fetcher);
+
+    await expect.element(screen.getByRole("heading", { name: "依赖 MCP" })).toBeVisible();
+    await expect.element(screen.getByText("github-mcp")).toBeVisible();
+    await expect.element(screen.getByText("GitHub MCP")).toBeVisible();
+    await expect.element(screen.getByText(/bearer_env/)).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "移除依赖 github-mcp" })).toBeVisible();
+  });
+
+  it("replaces dependencies when removing one", async () => {
+    const fetcher = createSkillFetcher({
+      dependencies: [dependencyFixture],
+      mcpServerDefinitions: [mcpServerDefinitionFixture],
+    });
+    const screen = await renderSkillDetail(fetcher);
+
+    await expect.element(screen.getByText("github-mcp")).toBeVisible();
+    await screen.getByRole("button", { name: "移除依赖 github-mcp" }).click();
+
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith(
+        `http://control-plane.local/api/v1/skills/${skillFixture.id}/mcp-dependencies`,
+        expect.objectContaining({
+          body: JSON.stringify({ items: [] }),
+          method: "PUT",
+        }),
+      );
+    });
+  });
+
+  it("adds a dependency with a full-set PUT and excludes already-dependent servers from candidates", async () => {
+    const fetcher = createSkillFetcher({
+      dependencies: [dependencyFixture],
+      mcpServerDefinitions: [githubServerDefinitionFixture, mcpServerDefinitionFixture],
+    });
+    const screen = await renderSkillDetail(fetcher);
+
+    await expect.element(screen.getByText("github-mcp")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("combobox", { name: "从注册表选择 MCP" }));
+
+    await expect.element(screen.getByRole("option", { name: /slack-mcp/ })).toBeInTheDocument();
+    await expect.element(screen.getByRole("option", { name: /github-mcp/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("option", { name: /slack-mcp/ }));
+    await screen.getByRole("button", { name: "添加依赖" }).click();
+
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith(
+        `http://control-plane.local/api/v1/skills/${skillFixture.id}/mcp-dependencies`,
+        expect.objectContaining({
+          body: JSON.stringify({
+            items: [
+              { mcp_server_id: dependencyFixture.mcp_server_id },
+              { mcp_server_id: mcpServerDefinitionFixture.id },
+            ],
+          }),
+          method: "PUT",
+        }),
+      );
+    });
   });
 });

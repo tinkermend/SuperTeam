@@ -295,6 +295,18 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
+        // ensure_command_instance above has already injected the session MCP config into
+        // agent_home_dir; every failure exit from here until the run is actually started
+        // (and the drain/attach paths below take over rollback duty) must roll it back
+        // best-effort rather than leaving a stale injected config behind.
+        let session_policy_value = serde_json::to_value(&payload.session_policy).map_err(|error| {
+            rollback_session_mcp_config_best_effort(
+                &payload.command_id,
+                Some(command_workspace.agent_home_dir.as_path()),
+            );
+            self.recorded_error(&payload.command_id, error.into())
+        })?;
+
         let spec = RunSpec {
             provider_kind: payload.provider_kind().to_string(),
             workspace_path: command_workspace.workspace_path,
@@ -320,8 +332,7 @@ impl RuntimeCommandExecutor {
                 digital_employee_id: payload.digital_employee_id.clone(),
                 execution_instance_id: payload.execution_instance_id.clone(),
                 provider_type: payload.provider_type.clone(),
-                session_policy: serde_json::to_value(&payload.session_policy)
-                    .map_err(|error| self.recorded_error(&payload.command_id, error.into()))?,
+                session_policy: session_policy_value,
                 context_refs: payload.context_refs.clone(),
                 artifact_refs: payload.artifact_refs.clone(),
                 metadata: payload.metadata.clone(),
@@ -334,6 +345,10 @@ impl RuntimeCommandExecutor {
                 let error = self.recorded_error(&payload.command_id, error);
                 self.write_command_failure(&payload.command_id, error.to_string())
                     .await?;
+                rollback_session_mcp_config_best_effort(
+                    &payload.command_id,
+                    spec.agent_home_dir.as_deref(),
+                );
                 return Err(error);
             }
         };
@@ -367,6 +382,7 @@ impl RuntimeCommandExecutor {
                 let _ = self.runs.finish_failed(&run_id, message.clone()).await;
                 let _ = writeback.fail(message).await;
                 self.registry.record_run_finished(&run_id);
+                rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
                 return Ok(RuntimeCommandOutcome {
                     command_id: payload.command_id,
                     accepted: true,
@@ -391,6 +407,7 @@ impl RuntimeCommandExecutor {
                     writeback.fail(message).await?;
                 }
                 self.registry.record_run_finished(&run_id);
+                rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
                 return Ok(RuntimeCommandOutcome {
                     command_id: payload.command_id,
                     accepted: true,
@@ -421,6 +438,7 @@ impl RuntimeCommandExecutor {
                 writeback.fail(message).await?;
             }
             self.registry.record_run_finished(&run_id);
+            rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
             return Ok(RuntimeCommandOutcome {
                 command_id: payload.command_id,
                 accepted: true,
@@ -641,19 +659,10 @@ impl RuntimeCommandExecutor {
             }
         }
 
-        if !payload.mcp_servers.is_empty() {
-            if let Err(error) = crate::mcp_config::materialize_mcp_config(
-                &PathBuf::from(&payload.agent_home_dir),
-                &payload.provider_type,
-                &payload.mcp_servers,
-            ) {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_provisioning_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        }
+        // MCP home config is session-scoped since the skill-mcp-dependency spec
+        // (2026-07-15): it is injected by ensure_command_instance at session start and
+        // rolled back at session end. Provisioning no longer materializes it; the
+        // payload field is accepted and ignored for backward compatibility.
 
         if let Some(control_plane) = &self.control_plane {
             control_plane
@@ -997,54 +1006,69 @@ impl RuntimeCommandExecutor {
             })?;
         let agent_home_dir = PathBuf::from(agent_home_dir_text);
 
-        let provider_home = provider_home_kind(&payload.provider_type)
-            .map_err(|error| self.recorded_error(command_id, error))?;
-        materialize_workspace(WorkspaceMaterializationPlan {
-            agent_home_dir: agent_home_dir.clone(),
-            provider_home,
-            files: payload.workspace_files.clone(),
-        })
-        .map_err(|error| self.recorded_error(command_id, error))?;
-
-        let project_workspace = payload.project_workspace();
-        let capability_manifest_version = project_workspace.capability_manifest_version.clone();
-        let provider_auth_mode = project_workspace.provider_auth_mode.clone();
-        let resolved = crate::project_workspace::resolve_project_workspace(
-            crate::project_workspace::ProjectWorkspaceRequest {
-                base_dir: self.config.workspace.base_dir.clone(),
-                project_id: project_workspace.project_id,
-                project_task_id: project_workspace.project_task_id,
-                attempt_id: project_workspace.project_task_attempt_id,
-                workspace_mode: project_workspace
-                    .workspace_mode
-                    .unwrap_or_else(|| "none".to_string()),
-                project_git: project_workspace.project_git,
-                base_ref: project_workspace.base_ref,
-            },
-        )
-        .map_err(|error| self.recorded_error(command_id, error))?;
-
-        let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
-            &resolved.workspace_path,
+        if let Err(error) = crate::mcp_config::inject_session_mcp_config(
+            &agent_home_dir,
             &payload.provider_type,
             &payload.mcp_servers,
-        )
-        .map_err(|error| self.recorded_error(command_id, error))?;
+        ) {
+            return Err(self.recorded_error(command_id, error));
+        }
 
-        crate::project_workspace::link_provider_skills(
-            &agent_home_dir,
-            &resolved.workspace_path,
-            &payload.provider_type,
-        )
-        .map_err(|error| self.recorded_error(command_id, error))?;
+        // Everything below runs after the session MCP injection above has already
+        // written the home-dir config. Any early return from here on must roll the
+        // injection back best-effort, so the fallible steps are collected into this
+        // closure and the single call site below handles rollback + error wrapping
+        // uniformly instead of repeating it at every `?`.
+        let post_inject: anyhow::Result<CommandWorkspace> = (|| {
+            let provider_home = provider_home_kind(&payload.provider_type)?;
+            materialize_workspace(WorkspaceMaterializationPlan {
+                agent_home_dir: agent_home_dir.clone(),
+                provider_home,
+                files: payload.workspace_files.clone(),
+            })?;
 
-        Ok(CommandWorkspace {
-            workspace_path: resolved.workspace_path,
-            employee_capability_dir: agent_home_dir.clone(),
-            agent_home_dir,
-            capability_manifest_version,
-            provider_auth_mode,
-            mcp_config_path,
+            let project_workspace = payload.project_workspace();
+            let capability_manifest_version = project_workspace.capability_manifest_version.clone();
+            let provider_auth_mode = project_workspace.provider_auth_mode.clone();
+            let resolved = crate::project_workspace::resolve_project_workspace(
+                crate::project_workspace::ProjectWorkspaceRequest {
+                    base_dir: self.config.workspace.base_dir.clone(),
+                    project_id: project_workspace.project_id,
+                    project_task_id: project_workspace.project_task_id,
+                    attempt_id: project_workspace.project_task_attempt_id,
+                    workspace_mode: project_workspace
+                        .workspace_mode
+                        .unwrap_or_else(|| "none".to_string()),
+                    project_git: project_workspace.project_git,
+                    base_ref: project_workspace.base_ref,
+                },
+            )?;
+
+            let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
+                &resolved.workspace_path,
+                &payload.provider_type,
+                &payload.mcp_servers,
+            )?;
+
+            crate::project_workspace::link_provider_skills(
+                &agent_home_dir,
+                &resolved.workspace_path,
+                &payload.provider_type,
+            )?;
+
+            Ok(CommandWorkspace {
+                workspace_path: resolved.workspace_path,
+                employee_capability_dir: agent_home_dir.clone(),
+                agent_home_dir: agent_home_dir.clone(),
+                capability_manifest_version,
+                provider_auth_mode,
+                mcp_config_path,
+            })
+        })();
+
+        post_inject.map_err(|error| {
+            rollback_session_mcp_config_best_effort(command_id, Some(agent_home_dir.as_path()));
+            self.recorded_error(command_id, error)
         })
     }
 
@@ -1072,6 +1096,10 @@ impl RuntimeCommandExecutor {
         let registry = self.registry.clone();
         let failure_writeback = writeback.clone();
         let failure_raw_sink = raw_sink.clone();
+        // Kept out of `spec` (which is moved into drain_provider_events) so the
+        // Err branch below can still roll back the session MCP injection when
+        // the drain bails out early via `?` before reaching its tail hook.
+        let rollback_home = spec.agent_home_dir.clone();
         tokio::spawn(async move {
             let result = drain_provider_events(
                 runs.clone(),
@@ -1088,6 +1116,12 @@ impl RuntimeCommandExecutor {
             .await;
 
             if let Err(error) = result {
+                // drain_provider_events bailed out before its tail rollback hook
+                // (stream item error or a record/writeback `?`): roll back the
+                // session MCP injection here as the backstop. If the tail hook
+                // already ran, this is a safe no-op (rollback without a manifest
+                // does nothing), so no dedup logic is needed.
+                rollback_session_mcp_config_best_effort(&run_id, rollback_home.as_deref());
                 if !run_is_cancelled(&runs, &run_id).await {
                     let message = error.to_string();
                     let _ = runs.finish_failed(&run_id, message.clone()).await;
@@ -2793,6 +2827,23 @@ fn project_task_attempt_idempotency_key(
     format!("project-task-attempt:{attempt_id}:{action}:{command_id}")
 }
 
+/// Best-effort rollback of the session-scoped home-dir MCP injection made by
+/// `ensure_command_instance`. Failure to roll back must never override the
+/// run's actual outcome, so it is logged (this crate has no tracing/log setup)
+/// and swallowed; a residual manifest is defensively rolled back by the next
+/// session's `inject_session_mcp_config` call.
+fn rollback_session_mcp_config_best_effort(run_id: &str, agent_home_dir: Option<&Path>) {
+    if let Some(agent_home) = agent_home_dir {
+        if let Err(error) = crate::mcp_config::rollback_session_mcp_config(agent_home) {
+            eprintln!(
+                "mcp session rollback failed for run {} at {}: {error:#}",
+                run_id,
+                agent_home.display()
+            );
+        }
+    }
+}
+
 async fn drain_provider_events(
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
@@ -2872,6 +2923,18 @@ async fn drain_provider_events(
     if let Some(stop) = &heartbeat_stop {
         stop.cancel();
     }
+    // Session-scoped home-dir MCP rollback: this is the common success/failure
+    // sink for a run's provider event stream, so it is the right place to undo
+    // the injection made by ensure_command_instance at session start.
+    // handle_stop_command deliberately does not roll back directly: cancel_run
+    // makes the provider event stream end, which drives execution back here.
+    // Early `?` exits above (stream item error, record/writeback failures) skip
+    // this hook; spawn_provider_event_drain's Err branch backstops those with
+    // the same rollback (idempotent no-op when this hook already ran).
+    // If the process restarts before either point runs (e.g. stop after a
+    // crash), the residual manifest is rolled back defensively by the next
+    // session's inject_session_mcp_config call.
+    rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
     // Finalize before the terminal writeback so the attempt row and the raw
     // transcript pointer land in the same call.
     finalize_raw_log(&raw_sink, writeback.as_ref()).await;

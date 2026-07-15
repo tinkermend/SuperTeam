@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -256,6 +259,15 @@ type handlerService struct {
 	createTeamBindingReq       CreateTeamMCPBindingRequest
 	createEmployeeBindingV2Req CreateEmployeeMCPBindingV2Request
 	effectiveConfigReq         EmployeeScopedRequest
+
+	skillMCPDependencies      []SkillMCPDependency
+	dependentSkills           []DependentSkill
+	listSkillDependenciesReq  ListSkillMCPDependenciesRequest
+	replaceSkillDependencyReq ReplaceSkillMCPDependenciesRequest
+	listDependentSkillsReq    ListDependentSkillsRequest
+
+	employeeSkillMCPDependencyStatuses []EmployeeSkillMCPDependencyStatus
+	evaluateEmployeeSkillMCPDepsReq    EvaluateEmployeeSkillMCPDependenciesRequest
 }
 
 func (s *handlerService) CreateCredential(_ context.Context, req CreateCredentialRequest) (Credential, error) {
@@ -349,6 +361,26 @@ func (s *handlerService) ListEffectiveMCPConfig(_ context.Context, req EmployeeS
 	return s.effectiveServers, s.err
 }
 
+func (s *handlerService) ListSkillMCPDependencies(_ context.Context, req ListSkillMCPDependenciesRequest) ([]SkillMCPDependency, error) {
+	s.listSkillDependenciesReq = req
+	return s.skillMCPDependencies, s.err
+}
+
+func (s *handlerService) ReplaceSkillMCPDependencies(_ context.Context, req ReplaceSkillMCPDependenciesRequest) ([]SkillMCPDependency, error) {
+	s.replaceSkillDependencyReq = req
+	return s.skillMCPDependencies, s.err
+}
+
+func (s *handlerService) ListDependentSkills(_ context.Context, req ListDependentSkillsRequest) ([]DependentSkill, error) {
+	s.listDependentSkillsReq = req
+	return s.dependentSkills, s.err
+}
+
+func (s *handlerService) EvaluateEmployeeSkillMCPDependencies(_ context.Context, req EvaluateEmployeeSkillMCPDependenciesRequest) ([]EmployeeSkillMCPDependencyStatus, error) {
+	s.evaluateEmployeeSkillMCPDepsReq = req
+	return s.employeeSkillMCPDependencyStatuses, s.err
+}
+
 type handlerAuthorizer struct {
 	allowed bool
 	checks  []authz.CheckRequest
@@ -378,4 +410,343 @@ func requestWithChiParams(req *http.Request, params map[string]string) *http.Req
 		routeCtx.URLParams.Add(key, value)
 	}
 	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+}
+
+func TestHandlerReplaceSkillMCPDependenciesUsesManageAction(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	skillID := uuid.New()
+	depServerID := uuid.New()
+	depID := uuid.New()
+	service := &handlerService{
+		skillMCPDependencies: []SkillMCPDependency{
+			{
+				ID:           depID,
+				TenantID:     tenantID,
+				SkillID:      skillID,
+				MCPServerID:  depServerID,
+				Note:         "api",
+				ServerKey:    "ops-mcp",
+				ServerName:   "Ops MCP",
+				AuthStrategy: MCPAuthStrategy("bearer"),
+				RiskLevel:    "low",
+				ServerStatus: "active",
+			},
+		},
+	}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	body := strings.NewReader(`{"items":[{"mcp_server_id":"` + depServerID.String() + `","note":"api"}]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/skills/"+skillID.String()+"/mcp-dependencies", body)
+	req = requestWithConsoleIdentity(req, tenantID, userID)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("skillId", skillID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	resp := httptest.NewRecorder()
+	handler.ReplaceSkillMCPDependencies(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if authorizer.checks[0].Action != authz.ActionMCPRegistryManage {
+		t.Fatalf("expected manage action, got %s", authorizer.checks[0].Action)
+	}
+
+	if service.replaceSkillDependencyReq.TenantID != tenantID || service.replaceSkillDependencyReq.UserID != userID || service.replaceSkillDependencyReq.SkillID != skillID {
+		t.Fatalf("unexpected replace request identity: %#v", service.replaceSkillDependencyReq)
+	}
+	if len(service.replaceSkillDependencyReq.Items) != 1 {
+		t.Fatalf("expected one parsed item, got %#v", service.replaceSkillDependencyReq.Items)
+	}
+	if service.replaceSkillDependencyReq.Items[0].MCPServerID != depServerID || service.replaceSkillDependencyReq.Items[0].Note != "api" {
+		t.Fatalf("expected note to round-trip with parsed server id, got %#v", service.replaceSkillDependencyReq.Items[0])
+	}
+
+	var response []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response) != 1 {
+		t.Fatalf("expected one dependency in response, got %#v", response)
+	}
+	got := response[0]
+	if got["id"] != depID.String() || got["skill_id"] != skillID.String() || got["mcp_server_id"] != depServerID.String() ||
+		got["note"] != "api" || got["server_key"] != "ops-mcp" || got["server_name"] != "Ops MCP" ||
+		got["auth_strategy"] != "bearer" || got["risk_level"] != "low" || got["server_status"] != "active" {
+		t.Fatalf("unexpected replace response fields: %#v", got)
+	}
+}
+
+func TestHandlerReplaceSkillMCPDependenciesInvalidJSONReturns400(t *testing.T) {
+	service := &handlerService{}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	skillID := uuid.New()
+	body := strings.NewReader(`{"items":[`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/skills/"+skillID.String()+"/mcp-dependencies", body)
+	req = requestWithConsoleIdentity(req, uuid.New(), uuid.New())
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("skillId", skillID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	resp := httptest.NewRecorder()
+	handler.ReplaceSkillMCPDependencies(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid json body, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestHandlerReplaceSkillMCPDependenciesInvalidServerIDReturns400(t *testing.T) {
+	service := &handlerService{}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	skillID := uuid.New()
+	body := strings.NewReader(`{"items":[{"mcp_server_id":"not-a-uuid","note":"api"}]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/skills/"+skillID.String()+"/mcp-dependencies", body)
+	req = requestWithConsoleIdentity(req, uuid.New(), uuid.New())
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("skillId", skillID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	resp := httptest.NewRecorder()
+	handler.ReplaceSkillMCPDependencies(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid mcp_server_id, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestHandlerListSkillMCPDependenciesReturnsRecordsWithReadAction(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	skillID := uuid.New()
+	depServerID := uuid.New()
+	depID := uuid.New()
+	createdAt := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	service := &handlerService{
+		skillMCPDependencies: []SkillMCPDependency{
+			{
+				ID:           depID,
+				TenantID:     tenantID,
+				SkillID:      skillID,
+				MCPServerID:  depServerID,
+				Note:         "needed for search",
+				CreatedAt:    createdAt,
+				ServerKey:    "ops-mcp",
+				ServerName:   "Ops MCP",
+				AuthStrategy: MCPAuthStrategy("bearer"),
+				RiskLevel:    "medium",
+				ServerStatus: "active",
+			},
+		},
+	}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	req := requestWithConsoleIdentity(
+		requestWithChiParams(httptest.NewRequest(http.MethodGet, "/api/v1/skills/"+skillID.String()+"/mcp-dependencies", nil), map[string]string{"skillId": skillID.String()}),
+		tenantID,
+		userID,
+	)
+	resp := httptest.NewRecorder()
+	handler.ListSkillMCPDependencies(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionMCPRegistryRead {
+		t.Fatalf("expected one read action check, got %#v", authorizer.checks)
+	}
+	if service.listSkillDependenciesReq.TenantID != tenantID || service.listSkillDependenciesReq.UserID != userID || service.listSkillDependenciesReq.SkillID != skillID {
+		t.Fatalf("unexpected list skill dependencies request: %#v", service.listSkillDependenciesReq)
+	}
+
+	var response []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response) != 1 {
+		t.Fatalf("expected one dependency, got %#v", response)
+	}
+	got := response[0]
+	if got["id"] != depID.String() {
+		t.Fatalf("unexpected id: %#v", got)
+	}
+	if got["skill_id"] != skillID.String() {
+		t.Fatalf("unexpected skill_id: %#v", got)
+	}
+	if got["mcp_server_id"] != depServerID.String() {
+		t.Fatalf("unexpected mcp_server_id: %#v", got)
+	}
+	if got["note"] != "needed for search" {
+		t.Fatalf("unexpected note: %#v", got)
+	}
+	if got["server_key"] != "ops-mcp" {
+		t.Fatalf("unexpected server_key: %#v", got)
+	}
+	if got["server_name"] != "Ops MCP" {
+		t.Fatalf("unexpected server_name: %#v", got)
+	}
+	if got["auth_strategy"] != "bearer" {
+		t.Fatalf("unexpected auth_strategy: %#v", got)
+	}
+	if got["risk_level"] != "medium" {
+		t.Fatalf("unexpected risk_level: %#v", got)
+	}
+	if got["server_status"] != "active" {
+		t.Fatalf("unexpected server_status: %#v", got)
+	}
+	if got["created_at"] != createdAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected created_at: %#v", got)
+	}
+}
+
+func TestHandlerListDependentSkillsReturnsRecordsWithReadAction(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	serverID := uuid.New()
+	dependentSkillID := uuid.New()
+	service := &handlerService{
+		dependentSkills: []DependentSkill{
+			{
+				SkillID: dependentSkillID,
+				Slug:    "search-helper",
+				Name:    "Search Helper",
+			},
+		},
+	}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	req := requestWithConsoleIdentity(
+		requestWithChiParams(httptest.NewRequest(http.MethodGet, "/api/v1/mcp-servers/"+serverID.String()+"/dependent-skills", nil), map[string]string{"serverId": serverID.String()}),
+		tenantID,
+		userID,
+	)
+	resp := httptest.NewRecorder()
+	handler.ListDependentSkills(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionMCPRegistryRead {
+		t.Fatalf("expected one read action check, got %#v", authorizer.checks)
+	}
+	if service.listDependentSkillsReq.TenantID != tenantID || service.listDependentSkillsReq.UserID != userID || service.listDependentSkillsReq.ServerID != serverID {
+		t.Fatalf("unexpected list dependent skills request: %#v", service.listDependentSkillsReq)
+	}
+
+	var response []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response) != 1 {
+		t.Fatalf("expected one dependent skill, got %#v", response)
+	}
+	got := response[0]
+	if got["skill_id"] != dependentSkillID.String() {
+		t.Fatalf("unexpected skill_id: %#v", got)
+	}
+	if got["slug"] != "search-helper" {
+		t.Fatalf("unexpected slug: %#v", got)
+	}
+	if got["name"] != "Search Helper" {
+		t.Fatalf("unexpected name: %#v", got)
+	}
+}
+
+func TestHandlerListEmployeeSkillMCPDependencyStatusReturnsRecordsWithReadAction(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	employeeID := uuid.New()
+	skillID := uuid.New()
+	serverID := uuid.New()
+	service := &handlerService{
+		employeeSkillMCPDependencyStatuses: []EmployeeSkillMCPDependencyStatus{
+			{
+				SkillID:   skillID,
+				SkillSlug: "deploy-helper",
+				Dependencies: []EmployeeSkillMCPDependencyItem{
+					{
+						MCPServerID:    serverID,
+						ServerKey:      "github-mcp",
+						ServerName:     "GitHub MCP",
+						Status:         "missing_binding",
+						MissingEnvVars: []string{},
+					},
+				},
+			},
+		},
+	}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	req := requestWithConsoleIdentity(
+		requestWithChiParams(httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/skill-mcp-dependency-status", nil), map[string]string{"employeeId": employeeID.String()}),
+		tenantID,
+		userID,
+	)
+	resp := httptest.NewRecorder()
+	handler.ListEmployeeSkillMCPDependencyStatus(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionMCPRegistryRead || authorizer.checks[0].Resource.Type != authz.ResourceTenant || authorizer.checks[0].Resource.ID != tenantID.String() {
+		t.Fatalf("expected one tenant-scoped mcp_registry.read check, got %#v", authorizer.checks)
+	}
+	if service.evaluateEmployeeSkillMCPDepsReq.TenantID != tenantID || service.evaluateEmployeeSkillMCPDepsReq.UserID != userID || service.evaluateEmployeeSkillMCPDepsReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected evaluate request: %#v", service.evaluateEmployeeSkillMCPDepsReq)
+	}
+
+	var response []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response) != 1 {
+		t.Fatalf("expected one skill status, got %#v", response)
+	}
+	got := response[0]
+	if got["skill_id"] != skillID.String() || got["skill_slug"] != "deploy-helper" {
+		t.Fatalf("unexpected skill status: %#v", got)
+	}
+	deps, ok := got["dependencies"].([]any)
+	if !ok || len(deps) != 1 {
+		t.Fatalf("expected one dependency, got %#v", got)
+	}
+	dep := deps[0].(map[string]any)
+	if dep["mcp_server_id"] != serverID.String() || dep["server_key"] != "github-mcp" || dep["server_name"] != "GitHub MCP" || dep["status"] != "missing_binding" {
+		t.Fatalf("unexpected dependency: %#v", dep)
+	}
+	if missingEnvVars, ok := dep["missing_env_vars"].([]any); !ok || len(missingEnvVars) != 0 {
+		t.Fatalf("expected empty missing_env_vars, got %#v", dep["missing_env_vars"])
+	}
+}
+
+func TestHandlerDeleteMCPServerDefinitionConflictMapsTo409(t *testing.T) {
+	service := &handlerService{err: fmt.Errorf("%w: mcp server is required by skills: a", ErrConflict)}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+
+	serverID := uuid.New()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/mcp-servers/"+serverID.String(), nil)
+	req = requestWithConsoleIdentity(req, uuid.New(), uuid.New())
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("serverId", serverID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	resp := httptest.NewRecorder()
+	handler.DeleteMCPServerDefinition(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", resp.Code)
+	}
 }

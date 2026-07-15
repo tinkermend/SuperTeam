@@ -428,6 +428,9 @@ func (s *Server) registerRoutes() {
 				r.Get("/mcp-servers", s.capabilityHandler.ListMCPServerDefinitions)
 				r.Post("/mcp-servers", s.capabilityHandler.CreateMCPServerDefinition)
 				r.Delete("/mcp-servers/{serverId}", s.capabilityHandler.DeleteMCPServerDefinition)
+				r.Get("/skills/{skillId}/mcp-dependencies", s.capabilityHandler.ListSkillMCPDependencies)
+				r.Put("/skills/{skillId}/mcp-dependencies", s.capabilityHandler.ReplaceSkillMCPDependencies)
+				r.Get("/mcp-servers/{serverId}/dependent-skills", s.capabilityHandler.ListDependentSkills)
 				r.Post("/teams/{teamId}/mcp-bindings", s.capabilityHandler.CreateTeamMCPBinding)
 				r.Get("/teams/{teamId}/mcp-bindings", s.capabilityHandler.ListTeamMCPBindings)
 				r.Delete("/teams/{teamId}/mcp-bindings/{bindingId}", s.capabilityHandler.DeleteTeamMCPBinding)
@@ -435,6 +438,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.ListEmployeeMCPBindingsV2)
 				r.Delete("/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBindingV2)
 				r.Get("/digital-employees/{employeeId}/effective-mcp-config", s.capabilityHandler.ListEffectiveMCPConfig)
+				r.Get("/digital-employees/{employeeId}/skill-mcp-dependency-status", s.capabilityHandler.ListEmployeeSkillMCPDependencyStatus)
 			})
 		}
 

@@ -3427,3 +3427,77 @@ printf '%s\n' '{"type":"result","result":"should not run"}'
         Some(error.to_string().as_str())
     );
 }
+
+#[tokio::test]
+async fn stream_error_drain_early_exit_still_rolls_back_session_mcp_config() {
+    let temp = TempDir::new().expect("tempdir");
+    let home = prepare_employee_home(&temp);
+    let captured_mcp = temp.path().join("captured-mcp.json");
+    // The fake CLI copies the injected home MCP config while the session is
+    // live (proving the injection happened), then exits nonzero. The nonzero
+    // exit surfaces as an Err item on the provider event stream, so
+    // drain_provider_events bails via `?` before its tail rollback hook —
+    // this exercises spawn_provider_event_drain's Err-branch backstop.
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-stream-error-mcp",
+        &format!(
+            r#"#!/usr/bin/env bash
+cp {mcp_config} {captured}
+printf '%s\n' '{{"type":"system","session_id":"session-stream-error-mcp"}}'
+exit 1
+"#,
+            mcp_config = home.join(".mcp.json").display(),
+            captured = captured_mcp.display(),
+        ),
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-stream-error-mcp-rollback",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("trigger an infra-level stream failure"),
+        None,
+    );
+    command.payload["mcp_servers"] = json!([{
+        "server_id": "88888888-8888-4888-8888-888888888888",
+        "server_key": "github",
+        "transport": "streamable_http",
+        "url": "https://api.githubcopilot.com/mcp/"
+    }]);
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("start_session accepted");
+    let run_id = outcome.run_id.expect("run id");
+    let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Failed).await;
+    assert!(
+        snapshot
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("claude exited")),
+        "expected provider exit failure, got {:?}",
+        snapshot.error
+    );
+
+    let captured = fs::read_to_string(&captured_mcp)
+        .expect("provider must have seen the injected home mcp config");
+    assert!(
+        captured.contains("github"),
+        "injected mcp config should list the server, got: {captured}"
+    );
+
+    // finish_failed runs after the backstop rollback in the same task, so once
+    // the run is Failed the session MCP config and its manifest must be gone.
+    assert!(
+        !home.join(".mcp.json").exists(),
+        "session mcp config must be rolled back after an infra-failure drain"
+    );
+    assert!(
+        !superteam_runtime_agent::mcp_config::manifest_path(&home).exists(),
+        "session mcp manifest must be removed after rollback"
+    );
+}

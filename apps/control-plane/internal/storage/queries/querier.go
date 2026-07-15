@@ -151,6 +151,7 @@ type Querier interface {
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
+	DeleteSkillMCPDependenciesForSkill(ctx context.Context, arg DeleteSkillMCPDependenciesForSkillParams) error
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
@@ -290,6 +291,7 @@ type Querier interface {
 	GetUserCredential(ctx context.Context, arg GetUserCredentialParams) (UserCredential, error)
 	IncrementPromptTemplateUseCount(ctx context.Context, arg IncrementPromptTemplateUseCountParams) error
 	InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error)
+	InsertSkillMCPDependency(ctx context.Context, arg InsertSkillMCPDependencyParams) error
 	LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error)
 	LinkProjectTaskDispatchGateAttempt(ctx context.Context, arg LinkProjectTaskDispatchGateAttemptParams) (ProjectTaskDispatchGateResult, error)
 	LinkProjectTaskDispatchGateDecisionRequest(ctx context.Context, arg LinkProjectTaskDispatchGateDecisionRequestParams) (ProjectTaskDispatchGateResult, error)
@@ -311,6 +313,7 @@ type Querier interface {
 	ListDemandLaunchProjectEvents(ctx context.Context, arg ListDemandLaunchProjectEventsParams) ([]ProjectEvent, error)
 	ListDemandLaunchProjectTasks(ctx context.Context, arg ListDemandLaunchProjectTasksParams) ([]ProjectTask, error)
 	ListDemandLaunchRouteDecisions(ctx context.Context, arg ListDemandLaunchRouteDecisionsParams) ([]ProjectRouteDecision, error)
+	ListDependentSkillsForMCPServer(ctx context.Context, arg ListDependentSkillsForMCPServerParams) ([]ListDependentSkillsForMCPServerRow, error)
 	ListDependentsOfTask(ctx context.Context, arg ListDependentsOfTaskParams) ([]uuid.UUID, error)
 	ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error)
 	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
@@ -395,6 +398,8 @@ type Querier interface {
 	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderOptionsForTeamLessCreateRow, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
+	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
+	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)
@@ -457,6 +462,7 @@ type Querier interface {
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)
 	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
+	SkillExistsForTenant(ctx context.Context, arg SkillExistsForTenantParams) (bool, error)
 	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams) ([]SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow, error)
 	SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
