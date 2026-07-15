@@ -295,6 +295,18 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
+        // ensure_command_instance above has already injected the session MCP config into
+        // agent_home_dir; every failure exit from here until the run is actually started
+        // (and the drain/attach paths below take over rollback duty) must roll it back
+        // best-effort rather than leaving a stale injected config behind.
+        let session_policy_value = serde_json::to_value(&payload.session_policy).map_err(|error| {
+            rollback_session_mcp_config_best_effort(
+                &payload.command_id,
+                Some(command_workspace.agent_home_dir.as_path()),
+            );
+            self.recorded_error(&payload.command_id, error.into())
+        })?;
+
         let spec = RunSpec {
             provider_kind: payload.provider_kind().to_string(),
             workspace_path: command_workspace.workspace_path,
@@ -320,8 +332,7 @@ impl RuntimeCommandExecutor {
                 digital_employee_id: payload.digital_employee_id.clone(),
                 execution_instance_id: payload.execution_instance_id.clone(),
                 provider_type: payload.provider_type.clone(),
-                session_policy: serde_json::to_value(&payload.session_policy)
-                    .map_err(|error| self.recorded_error(&payload.command_id, error.into()))?,
+                session_policy: session_policy_value,
                 context_refs: payload.context_refs.clone(),
                 artifact_refs: payload.artifact_refs.clone(),
                 metadata: payload.metadata.clone(),
@@ -334,6 +345,10 @@ impl RuntimeCommandExecutor {
                 let error = self.recorded_error(&payload.command_id, error);
                 self.write_command_failure(&payload.command_id, error.to_string())
                     .await?;
+                rollback_session_mcp_config_best_effort(
+                    &payload.command_id,
+                    spec.agent_home_dir.as_deref(),
+                );
                 return Err(error);
             }
         };
@@ -999,54 +1014,61 @@ impl RuntimeCommandExecutor {
             return Err(self.recorded_error(command_id, error));
         }
 
-        let provider_home = provider_home_kind(&payload.provider_type)
-            .map_err(|error| self.recorded_error(command_id, error))?;
-        materialize_workspace(WorkspaceMaterializationPlan {
-            agent_home_dir: agent_home_dir.clone(),
-            provider_home,
-            files: payload.workspace_files.clone(),
-        })
-        .map_err(|error| self.recorded_error(command_id, error))?;
+        // Everything below runs after the session MCP injection above has already
+        // written the home-dir config. Any early return from here on must roll the
+        // injection back best-effort, so the fallible steps are collected into this
+        // closure and the single call site below handles rollback + error wrapping
+        // uniformly instead of repeating it at every `?`.
+        let post_inject: anyhow::Result<CommandWorkspace> = (|| {
+            let provider_home = provider_home_kind(&payload.provider_type)?;
+            materialize_workspace(WorkspaceMaterializationPlan {
+                agent_home_dir: agent_home_dir.clone(),
+                provider_home,
+                files: payload.workspace_files.clone(),
+            })?;
 
-        let project_workspace = payload.project_workspace();
-        let capability_manifest_version = project_workspace.capability_manifest_version.clone();
-        let provider_auth_mode = project_workspace.provider_auth_mode.clone();
-        let resolved = crate::project_workspace::resolve_project_workspace(
-            crate::project_workspace::ProjectWorkspaceRequest {
-                base_dir: self.config.workspace.base_dir.clone(),
-                project_id: project_workspace.project_id,
-                project_task_id: project_workspace.project_task_id,
-                attempt_id: project_workspace.project_task_attempt_id,
-                workspace_mode: project_workspace
-                    .workspace_mode
-                    .unwrap_or_else(|| "none".to_string()),
-                project_git: project_workspace.project_git,
-                base_ref: project_workspace.base_ref,
-            },
-        )
-        .map_err(|error| self.recorded_error(command_id, error))?;
+            let project_workspace = payload.project_workspace();
+            let capability_manifest_version = project_workspace.capability_manifest_version.clone();
+            let provider_auth_mode = project_workspace.provider_auth_mode.clone();
+            let resolved = crate::project_workspace::resolve_project_workspace(
+                crate::project_workspace::ProjectWorkspaceRequest {
+                    base_dir: self.config.workspace.base_dir.clone(),
+                    project_id: project_workspace.project_id,
+                    project_task_id: project_workspace.project_task_id,
+                    attempt_id: project_workspace.project_task_attempt_id,
+                    workspace_mode: project_workspace
+                        .workspace_mode
+                        .unwrap_or_else(|| "none".to_string()),
+                    project_git: project_workspace.project_git,
+                    base_ref: project_workspace.base_ref,
+                },
+            )?;
 
-        let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
-            &resolved.workspace_path,
-            &payload.provider_type,
-            &payload.mcp_servers,
-        )
-        .map_err(|error| self.recorded_error(command_id, error))?;
+            let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
+                &resolved.workspace_path,
+                &payload.provider_type,
+                &payload.mcp_servers,
+            )?;
 
-        crate::project_workspace::link_provider_skills(
-            &agent_home_dir,
-            &resolved.workspace_path,
-            &payload.provider_type,
-        )
-        .map_err(|error| self.recorded_error(command_id, error))?;
+            crate::project_workspace::link_provider_skills(
+                &agent_home_dir,
+                &resolved.workspace_path,
+                &payload.provider_type,
+            )?;
 
-        Ok(CommandWorkspace {
-            workspace_path: resolved.workspace_path,
-            employee_capability_dir: agent_home_dir.clone(),
-            agent_home_dir,
-            capability_manifest_version,
-            provider_auth_mode,
-            mcp_config_path,
+            Ok(CommandWorkspace {
+                workspace_path: resolved.workspace_path,
+                employee_capability_dir: agent_home_dir.clone(),
+                agent_home_dir: agent_home_dir.clone(),
+                capability_manifest_version,
+                provider_auth_mode,
+                mcp_config_path,
+            })
+        })();
+
+        post_inject.map_err(|error| {
+            rollback_session_mcp_config_best_effort(command_id, Some(agent_home_dir.as_path()));
+            self.recorded_error(command_id, error)
         })
     }
 
