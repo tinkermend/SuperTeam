@@ -1404,6 +1404,28 @@ type DemandAcceptanceCriterion struct {
 	CreatedAt          time.Time
 }
 
+// DemandCriterionVerdict is one judgment against a demand_acceptance_criteria
+// row: verdict "satisfied"/"unsatisfied", who judged it (judge_type
+// "executor"/"human"), and the evidence behind it. Executor-sourced verdicts
+// carry ProjectTaskID (one row per task per criterion, via
+// uq_demand_verdicts_task); human sign-off verdicts leave it nil (one global
+// row per criterion, via uq_demand_verdicts_human). See migration 064.
+type DemandCriterionVerdict struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	Verdict        string
+	JudgeType      string
+	JudgeID        uuid.UUID
+	Reason         string
+	EvidenceRefs   []string
+	ProjectTaskID  *uuid.UUID
+	CreatedAt      time.Time
+}
+
 type ProjectArchiveSnapshot struct {
 	ID                   uuid.UUID
 	TenantID             uuid.UUID

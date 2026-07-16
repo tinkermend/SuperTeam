@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -2922,6 +2923,9 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		return nil, ErrInvalidProjectEvidence
 	}
 	recordReq := projectTaskAttemptResultRecordRequest(task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, *resultContract, validation)
+	if err := s.projectDemandCriterionVerdicts(ctx, task, *resultContract); err != nil {
+		return nil, err
+	}
 	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
 	if err != nil {
 		return nil, err
@@ -3088,16 +3092,185 @@ func (s *Service) validateTaskResultContractForAttempt(ctx context.Context, task
 	if !validation.Valid {
 		return validation, nil
 	}
-	errors, err := s.validateRuntimeAttestationRefs(ctx, task, runtimeReq, contract)
+	var validationErrors []TaskResultValidationError
+	runtimeErrors, err := s.validateRuntimeAttestationRefs(ctx, task, runtimeReq, contract)
 	if err != nil {
 		return validation, err
 	}
-	if len(errors) > 0 {
+	validationErrors = append(validationErrors, runtimeErrors...)
+
+	acceptanceErrors, err := s.validateAcceptanceCriterionAttestation(ctx, task, contract)
+	if err != nil {
+		return validation, err
+	}
+	validationErrors = append(validationErrors, acceptanceErrors...)
+
+	if len(validationErrors) > 0 {
 		validation.Valid = false
 		validation.Decision = TaskResultDecisionValidationFailed
-		validation.Errors = append(validation.Errors, errors...)
+		validation.Errors = append(validation.Errors, validationErrors...)
 	}
 	return validation, nil
+}
+
+// demandAcceptanceCriteriaSnapshot reads the plan-level acceptance criteria
+// snapshot (Task 4's demand_acceptance_criteria) for the task's own demand and
+// accepted plan revision. Tasks predating the snapshot rollout (or whose
+// demand/plan-revision linkage is unset) have no rows: callers must treat that
+// as "skip entirely", not "no criteria required" — see demandLegacyGuard note
+// on validateAcceptanceCriterionAttestation and projectDemandCriterionVerdicts.
+func (s *Service) demandAcceptanceCriteriaSnapshot(ctx context.Context, task ProjectTask) ([]DemandAcceptanceCriterion, error) {
+	if task.DemandID == nil || task.AcceptedPlanRevisionID == nil {
+		return nil, nil
+	}
+	return s.repository.ListDemandAcceptanceCriteria(ctx, task.TenantID, *task.DemandID, *task.AcceptedPlanRevisionID)
+}
+
+// matchAcceptanceResultToSnapshotCriterion resolves which of the employee's
+// self-reported AcceptanceResults judges a given snapshot criterion. Matching
+// resolution (Task 4 review, binding): criterion_id equality first — the
+// contract gate that requires an AcceptanceResult per requiredAcceptanceCriteria
+// keys on statement text (see stringsFromCriterionMap), so an employee may
+// legitimately echo only the statement and never populate CriterionID. Falling
+// back to matchesCriterion's statement/id/name candidate set against the
+// criterion's Statement covers that case.
+func matchAcceptanceResultToSnapshotCriterion(results []TaskResultAcceptanceResult, criterion DemandAcceptanceCriterion) (TaskResultAcceptanceResult, bool) {
+	for _, result := range results {
+		if strings.TrimSpace(result.CriterionID) != "" && result.CriterionID == criterion.CriterionID {
+			return result, true
+		}
+	}
+	for _, result := range results {
+		if matchesCriterion(result, criterion.Statement) {
+			return result, true
+		}
+	}
+	return TaskResultAcceptanceResult{}, false
+}
+
+const (
+	demandAcceptanceVerificationMethodAutomatedTest = "automated_test"
+	demandAcceptanceVerificationMethodHumanJudgment = "human_judgment"
+)
+
+// validateAcceptanceCriterionAttestation tightens automated_test criteria: a
+// self-reported acceptance result that claims passed/human_overridden against
+// a snapshot automated_test criterion must carry machine-checked proof (an
+// "attestation:"-prefixed evidence ref), not just the employee's word. Skips
+// entirely when the task has no criteria snapshot (legacy plans / demands not
+// decomposed under Task 4) so pre-existing behavior is untouched byte-for-byte.
+func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, task ProjectTask, contract TaskResultContract) ([]TaskResultValidationError, error) {
+	if contract.Status != TaskResultStatusCompleted {
+		return nil, nil
+	}
+	snapshot, err := s.demandAcceptanceCriteriaSnapshot(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	if len(snapshot) == 0 {
+		return nil, nil
+	}
+	var errs []TaskResultValidationError
+	for _, criterion := range snapshot {
+		if criterion.VerificationMethod != demandAcceptanceVerificationMethodAutomatedTest {
+			continue
+		}
+		result, ok := matchAcceptanceResultToSnapshotCriterion(contract.AcceptanceResults, criterion)
+		if !ok {
+			continue
+		}
+		if result.Status != TaskResultCriterionStatusPassed && result.Status != TaskResultCriterionStatusHumanOverridden {
+			continue
+		}
+		attested := false
+		for _, ref := range result.EvidenceRefs {
+			if stringRefIsAttestation(ref) {
+				attested = true
+				break
+			}
+		}
+		if !attested {
+			errs = append(errs, "acceptance_result_attestation_required:"+criterion.CriterionID)
+		}
+	}
+	return errs, nil
+}
+
+// demandCriterionVerdictValueFromResultStatus maps an employee's self-reported
+// criterion status to the verdict table's satisfied/unsatisfied vocabulary.
+// needs_human/not_applicable are left for a human sign-off pass (not this
+// executor projection) and are intentionally not projected.
+func demandCriterionVerdictValueFromResultStatus(status TaskResultCriterionStatus) (string, bool) {
+	switch status {
+	case TaskResultCriterionStatusPassed, TaskResultCriterionStatusHumanOverridden:
+		return "satisfied", true
+	case TaskResultCriterionStatusFailed:
+		return "unsatisfied", true
+	default:
+		return "", false
+	}
+}
+
+// projectDemandCriterionVerdicts writes one demand_criterion_verdicts row per
+// snapshot criterion the employee's AcceptanceResults judged, on the same
+// completed-and-validated path that records the task result. automated_test
+// criteria project verbatim (verdict + evidence_refs). human_judgment
+// criteria are a human sign-off matter (later task): an employee self-report
+// against one is intentionally not projected, only logged. Criteria with no
+// matching result, or whose result status is needs_human/not_applicable,
+// are left unprojected — a later attempt or a human may still resolve them.
+// No-ops entirely when the task has no criteria snapshot (legacy guard, mirrors
+// validateAcceptanceCriterionAttestation).
+func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task ProjectTask, contract TaskResultContract) error {
+	if contract.Status != TaskResultStatusCompleted || task.AssignedDigitalEmployeeID == nil {
+		return nil
+	}
+	snapshot, err := s.demandAcceptanceCriteriaSnapshot(ctx, task)
+	if err != nil {
+		return err
+	}
+	if len(snapshot) == 0 {
+		return nil
+	}
+	for _, criterion := range snapshot {
+		result, ok := matchAcceptanceResultToSnapshotCriterion(contract.AcceptanceResults, criterion)
+		if !ok {
+			continue
+		}
+		if criterion.VerificationMethod == demandAcceptanceVerificationMethodHumanJudgment {
+			slog.Default().Warn("demand acceptance criterion self-reported by executor: ignored, awaiting human sign-off",
+				"project_task_id", task.ID,
+				"demand_id", criterion.DemandID,
+				"plan_revision_id", criterion.PlanRevisionID,
+				"criterion_id", criterion.CriterionID,
+			)
+			continue
+		}
+		verdictValue, ok := demandCriterionVerdictValueFromResultStatus(result.Status)
+		if !ok {
+			continue
+		}
+		reason := strings.TrimSpace(result.Summary)
+		if reason == "" {
+			reason = strings.TrimSpace(result.HumanAcceptedReason)
+		}
+		if err := s.repository.CreateDemandCriterionVerdict(ctx, CreateDemandCriterionVerdictRequest{
+			TenantID:       task.TenantID,
+			ProjectID:      task.ProjectID,
+			DemandID:       criterion.DemandID,
+			PlanRevisionID: criterion.PlanRevisionID,
+			CriterionID:    criterion.CriterionID,
+			Verdict:        verdictValue,
+			JudgeType:      "executor",
+			JudgeID:        *task.AssignedDigitalEmployeeID,
+			Reason:         reason,
+			EvidenceRefs:   result.EvidenceRefs,
+			ProjectTaskID:  &task.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) validateRuntimeAttestationRefs(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) ([]TaskResultValidationError, error) {

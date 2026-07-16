@@ -63,6 +63,68 @@ func (q *Queries) CreateDemandAcceptanceCriterion(ctx context.Context, arg Creat
 	return err
 }
 
+const CreateDemandCriterionVerdict = `-- name: CreateDemandCriterionVerdict :exec
+INSERT INTO demand_criterion_verdicts (
+    tenant_id,
+    project_id,
+    demand_id,
+    plan_revision_id,
+    criterion_id,
+    verdict,
+    judge_type,
+    judge_id,
+    reason,
+    evidence_refs,
+    project_task_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::text,
+    $6::varchar,
+    $7::varchar,
+    $8::uuid,
+    $9::text,
+    COALESCE($10::jsonb, '[]'::jsonb),
+    $11::uuid
+)
+ON CONFLICT (tenant_id, demand_id, plan_revision_id, criterion_id, project_task_id)
+    WHERE project_task_id IS NOT NULL
+    DO NOTHING
+`
+
+type CreateDemandCriterionVerdictParams struct {
+	TenantID       uuid.UUID     `json:"tenant_id"`
+	ProjectID      uuid.UUID     `json:"project_id"`
+	DemandID       uuid.UUID     `json:"demand_id"`
+	PlanRevisionID uuid.UUID     `json:"plan_revision_id"`
+	CriterionID    string        `json:"criterion_id"`
+	Verdict        string        `json:"verdict"`
+	JudgeType      string        `json:"judge_type"`
+	JudgeID        uuid.UUID     `json:"judge_id"`
+	Reason         string        `json:"reason"`
+	EvidenceRefs   []byte        `json:"evidence_refs"`
+	ProjectTaskID  uuid.NullUUID `json:"project_task_id"`
+}
+
+func (q *Queries) CreateDemandCriterionVerdict(ctx context.Context, arg CreateDemandCriterionVerdictParams) error {
+	_, err := q.db.Exec(ctx, CreateDemandCriterionVerdict,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.PlanRevisionID,
+		arg.CriterionID,
+		arg.Verdict,
+		arg.JudgeType,
+		arg.JudgeID,
+		arg.Reason,
+		arg.EvidenceRefs,
+		arg.ProjectTaskID,
+	)
+	return err
+}
+
 const ListDemandAcceptanceCriteria = `-- name: ListDemandAcceptanceCriteria :many
 SELECT id, tenant_id, project_id, demand_id, plan_revision_id, criterion_id, statement, verification_method, severity, satisfied_by, created_at FROM demand_acceptance_criteria
 WHERE tenant_id = $1::uuid
@@ -97,6 +159,54 @@ func (q *Queries) ListDemandAcceptanceCriteria(ctx context.Context, arg ListDema
 			&i.VerificationMethod,
 			&i.Severity,
 			&i.SatisfiedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDemandCriterionVerdicts = `-- name: ListDemandCriterionVerdicts :many
+SELECT id, tenant_id, project_id, demand_id, plan_revision_id, criterion_id, verdict, judge_type, judge_id, reason, evidence_refs, project_task_id, created_at FROM demand_criterion_verdicts
+WHERE tenant_id = $1::uuid
+  AND demand_id = $2::uuid
+  AND plan_revision_id = $3::uuid
+ORDER BY created_at ASC
+`
+
+type ListDemandCriterionVerdictsParams struct {
+	TenantID       uuid.UUID `json:"tenant_id"`
+	DemandID       uuid.UUID `json:"demand_id"`
+	PlanRevisionID uuid.UUID `json:"plan_revision_id"`
+}
+
+func (q *Queries) ListDemandCriterionVerdicts(ctx context.Context, arg ListDemandCriterionVerdictsParams) ([]DemandCriterionVerdict, error) {
+	rows, err := q.db.Query(ctx, ListDemandCriterionVerdicts, arg.TenantID, arg.DemandID, arg.PlanRevisionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DemandCriterionVerdict{}
+	for rows.Next() {
+		var i DemandCriterionVerdict
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.PlanRevisionID,
+			&i.CriterionID,
+			&i.Verdict,
+			&i.JudgeType,
+			&i.JudgeID,
+			&i.Reason,
+			&i.EvidenceRefs,
+			&i.ProjectTaskID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

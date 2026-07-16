@@ -5285,6 +5285,49 @@ func (r *PgRepository) ListDemandAcceptanceCriteria(ctx context.Context, tenantI
 	return result, nil
 }
 
+// CreateDemandCriterionVerdict records one judgment against a snapshotted
+// acceptance criterion. ON CONFLICT DO NOTHING against the partial unique for
+// the executor-projection path (project_task_id set); see migration 064.
+func (r *PgRepository) CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error {
+	evidenceRefs, err := jsonbStringSlice(req.EvidenceRefs, "evidence_refs")
+	if err != nil {
+		return err
+	}
+	return r.q.CreateDemandCriterionVerdict(ctx, queries.CreateDemandCriterionVerdictParams{
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      req.JudgeType,
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   evidenceRefs,
+		ProjectTaskID:  nullUUID(req.ProjectTaskID),
+	})
+}
+
+func (r *PgRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
+	rows, err := r.q.ListDemandCriterionVerdicts(ctx, queries.ListDemandCriterionVerdictsParams{
+		TenantID:       tenantID,
+		DemandID:       demandID,
+		PlanRevisionID: planRevisionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DemandCriterionVerdict, 0, len(rows))
+	for _, row := range rows {
+		verdict, err := demandCriterionVerdictFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, verdict)
+	}
+	return result, nil
+}
+
 func (r *PgRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
 	return r.createAcceptanceRecordWithQueries(ctx, r.q, req)
 }
@@ -6623,6 +6666,28 @@ func demandAcceptanceCriterionFromRecord(row queries.DemandAcceptanceCriterium) 
 		Severity:           row.Severity,
 		SatisfiedBy:        satisfiedBy,
 		CreatedAt:          row.CreatedAt.Time,
+	}, nil
+}
+
+func demandCriterionVerdictFromRecord(row queries.DemandCriterionVerdict) (DemandCriterionVerdict, error) {
+	evidenceRefs, err := stringSliceFromJSON(row.EvidenceRefs)
+	if err != nil {
+		return DemandCriterionVerdict{}, fmt.Errorf("evidence_refs: %w", err)
+	}
+	return DemandCriterionVerdict{
+		ID:             row.ID,
+		TenantID:       row.TenantID,
+		ProjectID:      row.ProjectID,
+		DemandID:       row.DemandID,
+		PlanRevisionID: row.PlanRevisionID,
+		CriterionID:    row.CriterionID,
+		Verdict:        row.Verdict,
+		JudgeType:      row.JudgeType,
+		JudgeID:        row.JudgeID,
+		Reason:         row.Reason,
+		EvidenceRefs:   evidenceRefs,
+		ProjectTaskID:  ptrUUID(row.ProjectTaskID),
+		CreatedAt:      row.CreatedAt.Time,
 	}, nil
 }
 

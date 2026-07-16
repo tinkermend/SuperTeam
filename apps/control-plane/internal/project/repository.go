@@ -119,6 +119,8 @@ type Repository interface {
 	ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]DemandConstraintExemption, error)
 	CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error
 	ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error)
+	CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error
+	ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error)
 	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
 	CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error)
 	GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error)
@@ -610,6 +612,26 @@ type CreateDemandAcceptanceCriterionRequest struct {
 	VerificationMethod string
 	Severity           string
 	SatisfiedBy        []string
+}
+
+// CreateDemandCriterionVerdictRequest records one judgment against a
+// demand_acceptance_criteria row. ProjectTaskID set (executor projection)
+// dedupes against uq_demand_verdicts_task (one row per task per criterion);
+// left nil (human sign-off, added by a later task) dedupes against
+// uq_demand_verdicts_human (one global row per criterion). Both indexes are
+// partial uniques so ON CONFLICT DO NOTHING makes either path idempotent.
+type CreateDemandCriterionVerdictRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	Verdict        string
+	JudgeType      string
+	JudgeID        uuid.UUID
+	Reason         string
+	EvidenceRefs   []string
+	ProjectTaskID  *uuid.UUID
 }
 
 type CreateEvidenceRefRequest struct {

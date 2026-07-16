@@ -69,6 +69,7 @@ type Querier interface {
 	CreateCaptchaChallenge(ctx context.Context, arg CreateCaptchaChallengeParams) (AuthCaptchaChallenge, error)
 	CreateDemandAcceptanceCriterion(ctx context.Context, arg CreateDemandAcceptanceCriterionParams) error
 	CreateDemandConstraintExemption(ctx context.Context, arg CreateDemandConstraintExemptionParams) (ProjectDemandConstraintExemption, error)
+	CreateDemandCriterionVerdict(ctx context.Context, arg CreateDemandCriterionVerdictParams) error
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (CreateDigitalEmployeeConfigRevisionRow, error)
 	CreateDigitalEmployeeMCPBinding(ctx context.Context, arg CreateDigitalEmployeeMCPBindingParams) (DigitalEmployeeMcpBinding, error)
@@ -317,6 +318,7 @@ type Querier interface {
 	ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error)
 	ListDemandAcceptanceCriteria(ctx context.Context, arg ListDemandAcceptanceCriteriaParams) ([]DemandAcceptanceCriterium, error)
 	ListDemandConstraintExemptionsByDemand(ctx context.Context, arg ListDemandConstraintExemptionsByDemandParams) ([]ProjectDemandConstraintExemption, error)
+	ListDemandCriterionVerdicts(ctx context.Context, arg ListDemandCriterionVerdictsParams) ([]DemandCriterionVerdict, error)
 	ListDemandLaunchCoordinationJobs(ctx context.Context, arg ListDemandLaunchCoordinationJobsParams) ([]ProjectCoordinationJob, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, arg ListDemandLaunchDecisionRequestsParams) ([]ProjectDecisionRequest, error)
 	ListDemandLaunchProjectEvents(ctx context.Context, arg ListDemandLaunchProjectEventsParams) ([]ProjectEvent, error)

@@ -2184,6 +2184,281 @@ func TestSubmitProjectTaskAttemptResultCompletedAcceptsOwnedRuntimeAttestationRe
 	require.Equal(t, "accepted", result.ValidationStatus)
 }
 
+// demandCriterionSnapshotFixture appends one demand_acceptance_criteria
+// snapshot row (Task 4) scoped to the fixture's tenant/project and the given
+// demand/plan-revision, and links the fixture's task to that demand/revision
+// so demandAcceptanceCriteriaSnapshot can find it.
+func demandCriterionSnapshotFixture(repo *projectTaskResultMemoryRepository, fixture projectTaskAttemptServiceFixture, demandID, planRevisionID uuid.UUID, criterionID, statement, verificationMethod string) {
+	repo.tasks[0].DemandID = &demandID
+	repo.tasks[0].AcceptedPlanRevisionID = &planRevisionID
+	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+		TenantID:           fixture.tenantID,
+		ProjectID:          fixture.projectID,
+		DemandID:           demandID,
+		PlanRevisionID:     planRevisionID,
+		CriterionID:        criterionID,
+		Statement:          statement,
+		VerificationMethod: verificationMethod,
+		Severity:           "blocking",
+	})
+}
+
+func TestRecordResultProjectsCriterionVerdicts(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	employeeID := *repo.tasks[0].AssignedDigitalEmployeeID
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-projection"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID:  "c1",
+					Status:       TaskResultCriterionStatusPassed,
+					EvidenceRefs: []string{attestationRef},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	verdict := verdicts[0]
+	require.Equal(t, "c1", verdict.CriterionID)
+	require.Equal(t, "satisfied", verdict.Verdict)
+	require.Equal(t, "executor", verdict.JudgeType)
+	require.Equal(t, employeeID, verdict.JudgeID)
+	require.NotNil(t, verdict.ProjectTaskID)
+	require.Equal(t, fixture.taskID, *verdict.ProjectTaskID)
+	require.Equal(t, []string{attestationRef}, verdict.EvidenceRefs)
+}
+
+// TestRecordResultProjectsCriterionVerdictsStatementOnlyMatch covers the
+// matching resolution from Task 4's review: the contract gate that requires
+// an AcceptanceResult per requiredAcceptanceCriteria keys on statement text
+// (stringsFromCriterionMap), so an employee may legitimately echo only the
+// statement and never populate CriterionID. Projection must still resolve
+// that result against the right snapshot criterion via the statement fallback.
+func TestRecordResultProjectsCriterionVerdictsStatementOnlyMatch(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-statement-match"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					// No CriterionID: employee echoed the statement only.
+					Criterion:    "结论可复核",
+					Status:       TaskResultCriterionStatusPassed,
+					EvidenceRefs: []string{attestationRef},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	require.Equal(t, "c1", verdicts[0].CriterionID)
+	require.Equal(t, "satisfied", verdicts[0].Verdict)
+}
+
+func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
+	t.Run("missing attestation ref rejects with error code", func(t *testing.T) {
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+
+		summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-missing-attestation"),
+			ResultContract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "完成分析",
+				AcceptanceResults: []TaskResultAcceptanceResult{
+					{
+						CriterionID:  "c1",
+						Status:       TaskResultCriterionStatusPassed,
+						EvidenceRefs: []string{"artifact:report"},
+					},
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+		require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+		result := requireSingleProjectTaskResult(t, repo, fixture)
+		require.Equal(t, TaskResultDecisionValidationFailed, result.Decision)
+		require.Equal(t, "rejected", result.ValidationStatus)
+		require.Contains(t, result.ValidationErrors, "acceptance_result_attestation_required:c1")
+
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Empty(t, verdicts)
+	})
+
+	t.Run("attestation ref present passes and projects", func(t *testing.T) {
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+		attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+
+		summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-with-attestation"),
+			ResultContract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "完成分析",
+				AcceptanceResults: []TaskResultAcceptanceResult{
+					{
+						CriterionID:  "c1",
+						Status:       TaskResultCriterionStatusPassed,
+						EvidenceRefs: []string{attestationRef},
+					},
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+		require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+		result := requireSingleProjectTaskResult(t, repo, fixture)
+		require.Equal(t, TaskResultDecisionCompleteAccepted, result.Decision)
+		require.Equal(t, "accepted", result.ValidationStatus)
+
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Len(t, verdicts, 1)
+		require.Equal(t, "satisfied", verdicts[0].Verdict)
+	})
+}
+
+func TestHumanJudgmentSelfReportIgnored(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c2", "业务判断达标", "human_judgment")
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-human-judgment-self-report"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID: "c2",
+					Status:      TaskResultCriterionStatusPassed,
+					// No attestation ref: human_judgment is never tightened,
+					// and a self-report against it must not be projected.
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Empty(t, verdicts)
+}
+
+// TestProjectionSkippedWithoutSnapshot is the legacy guard: a task whose
+// demand was never decomposed under Task 4 (no demand_acceptance_criteria
+// rows, here modeled by leaving DemandID/AcceptedPlanRevisionID unset,
+// mirroring pre-rollout data) must see byte-identical behavior to before this
+// task — no attestation tightening, no verdict projection — even though the
+// AcceptanceResult below would have failed tightening had a snapshot existed.
+func TestProjectionSkippedWithoutSnapshot(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	require.Nil(t, repo.tasks[0].DemandID)
+	require.Nil(t, repo.tasks[0].AcceptedPlanRevisionID)
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-no-snapshot"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID: "c1",
+					Status:      TaskResultCriterionStatusPassed,
+					// No attestation ref: would fail tightening if any
+					// snapshot criterion existed, but none does.
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, result.Decision)
+	require.Equal(t, "accepted", result.ValidationStatus)
+	require.Empty(t, repo.demandCriterionVerdicts)
+}
+
+func TestStringRefIsAttestation(t *testing.T) {
+	cases := []struct {
+		name string
+		ref  string
+		want bool
+	}{
+		{"attestation prefix", "attestation:project-task-attempt:x:cmd-1", true},
+		{"attestation prefix with leading/trailing whitespace", "  attestation:cmd-1  ", true},
+		{"no prefix", "artifact:report", false},
+		{"empty", "", false},
+		{"prefix without colon", "attestationcmd-1", false},
+		{"case mismatch is not normalized", "ATTESTATION:cmd-1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, stringRefIsAttestation(tc.ref))
+		})
+	}
+}
+
 func TestSubmitProjectTaskAttemptResultRevisionNeededWaitsForHumanAndKeepsLatestResult(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -9255,6 +9530,8 @@ type memoryRepository struct {
 	archiveSnapshots                 []ProjectArchiveSnapshot
 	demandConstraintExemptions       []DemandConstraintExemption
 	demandAcceptanceCriteria         []DemandAcceptanceCriterion
+	demandCriterionVerdicts          []DemandCriterionVerdict
+	createDemandCriterionVerdictErr  error
 	projectTeamScopes                map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
 	lastListProjects                 ListProjectsRequest
 	lastTasksLimit                   int32
@@ -9349,6 +9626,51 @@ func (r *memoryRepository) ListDemandAcceptanceCriteria(ctx context.Context, ten
 	for _, criterion := range r.demandAcceptanceCriteria {
 		if criterion.TenantID == tenantID && criterion.DemandID == demandID && criterion.PlanRevisionID == planRevisionID {
 			result = append(result, criterion)
+		}
+	}
+	return result, nil
+}
+
+// CreateDemandCriterionVerdict mirrors PgRepository's partial-unique ON
+// CONFLICT DO NOTHING idempotency for the executor-projection path
+// (project_task_id set): a repeat write for the same
+// tenant/demand/plan_revision/criterion/task is a no-op, not a duplicate row.
+func (r *memoryRepository) CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error {
+	if r.createDemandCriterionVerdictErr != nil {
+		return r.createDemandCriterionVerdictErr
+	}
+	if req.ProjectTaskID != nil {
+		for _, existing := range r.demandCriterionVerdicts {
+			if existing.TenantID == req.TenantID && existing.DemandID == req.DemandID &&
+				existing.PlanRevisionID == req.PlanRevisionID && existing.CriterionID == req.CriterionID &&
+				existing.ProjectTaskID != nil && *existing.ProjectTaskID == *req.ProjectTaskID {
+				return nil
+			}
+		}
+	}
+	r.demandCriterionVerdicts = append(r.demandCriterionVerdicts, DemandCriterionVerdict{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      req.JudgeType,
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   append([]string(nil), req.EvidenceRefs...),
+		ProjectTaskID:  req.ProjectTaskID,
+		CreatedAt:      time.Now().UTC(),
+	})
+	return nil
+}
+
+func (r *memoryRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
+	result := make([]DemandCriterionVerdict, 0)
+	for _, verdict := range r.demandCriterionVerdicts {
+		if verdict.TenantID == tenantID && verdict.DemandID == demandID && verdict.PlanRevisionID == planRevisionID {
+			result = append(result, verdict)
 		}
 	}
 	return result, nil
