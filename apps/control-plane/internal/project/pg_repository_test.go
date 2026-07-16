@@ -676,6 +676,16 @@ func createCompletedDemandTaskFixture(t *testing.T, repo Repository, tenantID, p
 
 func createBlockingCriterionFixture(t *testing.T, repo Repository, tenantID, projectID, demandID, revisionID uuid.UUID, criterionID string) {
 	t.Helper()
+	createBlockingCriterionFixtureWithMethod(t, repo, tenantID, projectID, demandID, revisionID, criterionID, "human_judgment", "人类确认核心链路可用")
+}
+
+// createBlockingCriterionFixtureWithMethod is the parameterized form of
+// createBlockingCriterionFixture, letting convergence-gate tests snapshot a
+// blocking criterion under an arbitrary verification_method (e.g.
+// automated_test for the low-risk/no-human-touchpoint gate tests, or
+// human_judgment for the executor-cannot-self-satisfy escape tests).
+func createBlockingCriterionFixtureWithMethod(t *testing.T, repo Repository, tenantID, projectID, demandID, revisionID uuid.UUID, criterionID, verificationMethod, statement string) {
+	t.Helper()
 	require.NoError(t, repo.CreateDemandAcceptanceCriteria(context.Background(), []CreateDemandAcceptanceCriterionRequest{
 		{
 			TenantID:           tenantID,
@@ -683,8 +693,8 @@ func createBlockingCriterionFixture(t *testing.T, repo Repository, tenantID, pro
 			DemandID:           demandID,
 			PlanRevisionID:     revisionID,
 			CriterionID:        criterionID,
-			Statement:          "人类确认核心链路可用",
-			VerificationMethod: "human_judgment",
+			Statement:          statement,
+			VerificationMethod: verificationMethod,
 			Severity:           "blocking",
 		},
 	}))
@@ -847,6 +857,98 @@ func TestCountUnsatisfiedBlockingCriteriaSkipsNonBlocking(t *testing.T) {
 	count, err := pgRepo.CountUnsatisfiedBlockingCriteria(ctx, tenantID, demandID, revisionID)
 	require.NoError(t, err)
 	require.Equal(t, 0, count)
+}
+
+// TestLowRiskDemandCompletesWithoutHumanHold pins the autonomy-posture
+// default-flip's emergent consequence (Task 1: the human_judgment fallback
+// criterion is no longer unconditionally injected): a demand whose plan
+// revision snapshot carries only an automated_test blocking criterion, with
+// an execution-grounded executor "satisfied" verdict (the attestation-backed
+// projection path — see Service.projectDemandCriterionVerdicts) and its sole
+// task completed, must recompute straight to completed. It must NOT hold at
+// acceptance_pending, and it must NOT have opened a demand_acceptance
+// decision — there is no human criterion to gate on, so this is a genuine
+// zero-human-touchpoint closure, not an artifact of a missing check.
+func TestLowRiskDemandCompletesWithoutHumanHold(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+	createBlockingCriterionFixtureWithMethod(t, repo, tenantID, projectID, demandID, revisionID, "ci-green", "automated_test", "CI 全绿")
+	createCriterionVerdictFixture(t, repo, tenantID, projectID, demandID, revisionID, "ci-green", "satisfied", "executor")
+	createCompletedDemandTaskFixture(t, repo, tenantID, projectID, demandID, revisionID)
+
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusCompleted, demand.Status)
+
+	_, err = repo.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, tenantID, projectID, revisionID)
+	require.ErrorIs(t, err, ErrProjectNotFound, "no human criterion means no demand_acceptance decision should ever have been opened")
+}
+
+// TestHumanCriterionStillHolds is the intent-layer regression guard: even
+// when every automated_test criterion on the snapshot is satisfied, a
+// blocking human_judgment criterion with no sign-off still holds the demand
+// at acceptance_pending. The low-risk auto-release in
+// TestLowRiskDemandCompletesWithoutHumanHold must not generalize into
+// "satisfied automated criteria always release" — the human criterion, when
+// present, remains authoritative regardless of what the automated criteria
+// say.
+func TestHumanCriterionStillHolds(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+	createBlockingCriterionFixtureWithMethod(t, repo, tenantID, projectID, demandID, revisionID, "ci-green", "automated_test", "CI 全绿")
+	createCriterionVerdictFixture(t, repo, tenantID, projectID, demandID, revisionID, "ci-green", "satisfied", "executor")
+	createBlockingCriterionFixture(t, repo, tenantID, projectID, demandID, revisionID, "human_final_confirmation")
+	createCompletedDemandTaskFixture(t, repo, tenantID, projectID, demandID, revisionID)
+
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusAcceptancePending, demand.Status)
+}
+
+// TestNotApplicableDoesNotEscapeHighRiskOversight closes the escape flagged
+// in Task 1's review: demandCriterionVerdictNotApplicable releases the gate
+// for the criterion it targets (see criterionEffectiveVerdict), justified
+// because a human_judgment criterion an executor cannot self-satisfy is
+// injected onto every high-risk-classified demand's snapshot
+// (projectcoordination.ensureHumanJudgmentCriterion, gated by
+// planTouchesHighRisk — constitutional, never policy-exemptable) and
+// Service.SignDemandCriterionVerdict is the only path that can produce a
+// human-judge verdict, is gated to human_judgment criteria, and rejects
+// not_applicable outright. This test proves the bound holds at the gate
+// layer: on a snapshot standing in for that high-risk case (one
+// automated_test blocking criterion the executor self-N/As, plus one
+// human_judgment blocking criterion standing in for the injected fallback),
+// the demand still holds at acceptance_pending — an executor cannot N/A its
+// way past the human criterion it never got to touch.
+func TestNotApplicableDoesNotEscapeHighRiskOversight(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+	createBlockingCriterionFixtureWithMethod(t, repo, tenantID, projectID, demandID, revisionID, "ci-green", "automated_test", "CI 全绿")
+	createCriterionVerdictFixture(t, repo, tenantID, projectID, demandID, revisionID, "ci-green", "not_applicable", "executor")
+	createBlockingCriterionFixture(t, repo, tenantID, projectID, demandID, revisionID, "human_final_confirmation")
+	createCompletedDemandTaskFixture(t, repo, tenantID, projectID, demandID, revisionID)
+
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusAcceptancePending, demand.Status)
+
+	criteria, err := repo.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
+	require.NoError(t, err)
+	verdicts, err := repo.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+	require.NoError(t, err)
+	require.Equal(t, []string{"human_final_confirmation"}, ResolveUnsatisfiedBlockingCriteria(criteria, verdicts))
 }
 
 // insertVerdictWithExplicitIDTaskAndTimestamp inserts one verdict row with a
