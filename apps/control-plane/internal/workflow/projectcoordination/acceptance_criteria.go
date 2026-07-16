@@ -36,10 +36,16 @@ const (
 )
 
 // acceptanceHumanJudgmentExemptPolicyKey, when true in
-// projects.coordination_policy, exempts a plan from the fallback human-judgment
-// criterion injection (e.g. fully automated pipelines with no human owner
-// sign-off step).
+// projects.coordination_policy, exempts a plan from the *policy/template*
+// triggered fallback human-judgment criterion injection. It does NOT exempt
+// the high-risk trigger (see planTouchesHighRisk) — that one is constitutional
+// and cannot be waived by policy.
 const acceptanceHumanJudgmentExemptPolicyKey = "acceptance_human_judgment_exempt"
+
+// requireHumanAcceptancePolicyKey, when true in projects.coordination_policy,
+// opts a plan back into the fallback human-judgment criterion even when it is
+// not high-risk. Default (key absent/false) is autonomy: no injection.
+const requireHumanAcceptancePolicyKey = "require_human_acceptance"
 
 // ambiguousCriterionMinRuneLength: a statement trimmed shorter than this is too
 // terse to be a judgeable assertion.
@@ -73,15 +79,24 @@ func normalizeCriterionDefaults(criterion *PlanAcceptanceCriterion) {
 }
 
 // ensureHumanJudgmentCriterion injects the fallback human_judgment criterion
-// when the plan has none of its own and the coordination policy does not
-// exempt it. Call after normalizeCriterionDefaults has run over every existing
+// only when injection is warranted. Autonomy is the default posture: an
+// ordinary, non-high-risk plan under an empty/permissive policy gets NO
+// fallback criterion. Injection happens when:
+//
+//  1. planTouchesHighRisk(plan) — ALWAYS, constitutional, not exemptable by
+//     policy; OR
+//  2. (requireHumanAcceptance(policy) OR a template-declared human checkpoint
+//     — TODO(Task 4): read the selected exit's human_checkpoint declaration
+//     from template_governance once it lands) AND NOT
+//     acceptanceHumanJudgmentExempt(policy).
+//
+// A planner-authored human_judgment criterion already present always
+// suppresses the fallback (never double-inject), regardless of which trigger
+// fired. Call after normalizeCriterionDefaults has run over every existing
 // criterion, so this only has to compare against the normalized
 // VerificationMethod value.
 func ensureHumanJudgmentCriterion(plan *RouteDecisionPlan, policy map[string]any) {
 	if plan == nil {
-		return
-	}
-	if acceptanceHumanJudgmentExempt(policy) {
 		return
 	}
 	for _, criterion := range plan.PlanAcceptanceCriteria {
@@ -89,6 +104,13 @@ func ensureHumanJudgmentCriterion(plan *RouteDecisionPlan, policy map[string]any
 			return
 		}
 	}
+
+	highRisk := planTouchesHighRisk(plan)
+	policyOrTemplateTriggered := requireHumanAcceptance(policy) && !acceptanceHumanJudgmentExempt(policy)
+	if !highRisk && !policyOrTemplateTriggered {
+		return
+	}
+
 	plan.PlanAcceptanceCriteria = append(plan.PlanAcceptanceCriteria, PlanAcceptanceCriterion{
 		ID:                 fallbackHumanJudgmentCriterionID,
 		Statement:          fallbackHumanJudgmentCriterionStatement,
@@ -97,6 +119,9 @@ func ensureHumanJudgmentCriterion(plan *RouteDecisionPlan, policy map[string]any
 	})
 }
 
+// acceptanceHumanJudgmentExempt reads the legacy exemption key. It only
+// suppresses the requireHumanAcceptance/template-checkpoint trigger — never
+// the high-risk trigger, which is constitutional and unwaivable by policy.
 func acceptanceHumanJudgmentExempt(policy map[string]any) bool {
 	raw, ok := policy[acceptanceHumanJudgmentExemptPolicyKey]
 	if !ok {
@@ -104,6 +129,39 @@ func acceptanceHumanJudgmentExempt(policy map[string]any) bool {
 	}
 	exempt, ok := raw.(bool)
 	return ok && exempt
+}
+
+// requireHumanAcceptance reads the require_human_acceptance policy key.
+// Default (key absent or not a bool true) is false — autonomy.
+func requireHumanAcceptance(policy map[string]any) bool {
+	raw, ok := policy[requireHumanAcceptancePolicyKey]
+	if !ok {
+		return false
+	}
+	required, ok := raw.(bool)
+	return ok && required
+}
+
+// planTouchesHighRisk reports whether the plan carries any high-risk signal:
+// plan-level RequiresHumanReview, any task's RequiresHumanApproval, or any
+// task's RiskLevel classifying as high (see isHighRiskLevel). This trigger is
+// constitutional — it is never exemptable by policy.
+func planTouchesHighRisk(plan *RouteDecisionPlan) bool {
+	if plan == nil {
+		return false
+	}
+	if plan.RequiresHumanReview {
+		return true
+	}
+	for _, task := range plan.Tasks {
+		if task.RequiresHumanApproval {
+			return true
+		}
+		if isHighRiskLevel(task.RiskLevel) {
+			return true
+		}
+	}
+	return false
 }
 
 // markAmbiguousCriteria flags (but never rejects) criteria whose statement is
