@@ -9041,6 +9041,9 @@ func TestSignDemandCriterionVerdictCompletesDemandWhenAllBlockingSatisfied(t *te
 	if completedEvent.Payload["demand_id"] != f.demandID.String() {
 		t.Fatalf("unexpected completed event payload: %#v", completedEvent.Payload)
 	}
+	// Fix B: this was the project's only demand, now terminal → project acceptance
+	// review opened rather than the project being left stuck running.
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
 }
 
 func TestSignDemandCriterionVerdictRejectsWithStructuredEvent(t *testing.T) {
@@ -9084,6 +9087,13 @@ func TestSignDemandCriterionVerdictRejectsWithStructuredEvent(t *testing.T) {
 	if rejectedEvent.Payload["criterion_id"] != "c1" || rejectedEvent.Payload["statement"] != "会被驳回的判据" || rejectedEvent.Payload["reason"] != "证据不足" {
 		t.Fatalf("unexpected rejected event payload: %#v", rejectedEvent.Payload)
 	}
+	// Fix C: demand_id present for consumer symmetry with the completed event.
+	if rejectedEvent.Payload["demand_id"] != f.demandID.String() {
+		t.Fatalf("expected demand_id in rejected event payload, got %#v", rejectedEvent.Payload)
+	}
+	// Fix B: this was the project's only demand, now terminal → project acceptance
+	// review opened (project running→acceptance, project_acceptance decision created).
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
 }
 
 func TestSignDemandCriterionVerdictRejectsUnauthorizedSigner(t *testing.T) {
@@ -9233,6 +9243,193 @@ func TestSignDemandCriterionVerdictRequiresAcceptancePendingStatus(t *testing.T)
 	if !errors.Is(err, ErrProjectConflict) {
 		t.Fatalf("expected conflict for non acceptance_pending demand, got %v", err)
 	}
+}
+
+// assertProjectAcceptanceReviewOpened verifies Fix B: when the last demand of a
+// (running) project converges terminal, the service opens the project acceptance
+// review — project transitions running→acceptance and a pending project_acceptance
+// decision exists.
+func assertProjectAcceptanceReviewOpened(t *testing.T, repo *memoryRepository, approvals *fakeApprovalResolver, projectID uuid.UUID) {
+	t.Helper()
+	if repo.projects[projectID].Status != ProjectStatusAcceptance {
+		t.Fatalf("expected project status acceptance, got %s", repo.projects[projectID].Status)
+	}
+	if approvals.createCalls != 1 || approvals.lastCreate.DecisionType != "project_acceptance" {
+		t.Fatalf("expected one project_acceptance approval created, got calls=%d last=%#v", approvals.createCalls, approvals.lastCreate)
+	}
+	found := false
+	for _, d := range repo.decisionRequests {
+		if d.ProjectID == projectID && d.DecisionType == "project_acceptance" && d.StatusSnapshot == "pending" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a pending project_acceptance decision for project %s", projectID)
+	}
+}
+
+// TestSignDemandCriterionVerdictHealsPartialFailureToTerminal covers Fix A: a
+// prior attempt wrote the verdict but died before advancing/resolving, leaving
+// the demand stuck acceptance_pending with its decision still pending. Re-signing
+// the same value must re-run convergence and heal to completed — not early-return
+// with the demand still stuck.
+func TestSignDemandCriterionVerdictHealsPartialFailureToTerminal(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+	// Simulate the partial-failure state: the verdict row exists (a prior attempt
+	// wrote it) but the demand is still acceptance_pending and the decision still
+	// pending (that attempt died before advance/resolve).
+	if err := repo.CreateDemandCriterionVerdict(context.Background(), CreateDemandCriterionVerdictRequest{
+		TenantID:       f.tenantID,
+		ProjectID:      f.projectID,
+		DemandID:       f.demandID,
+		PlanRevisionID: f.revisionID,
+		CriterionID:    "c1",
+		Verdict:        "satisfied",
+		JudgeType:      "human",
+		JudgeID:        f.ownerID,
+	}); err != nil {
+		t.Fatalf("seed partial verdict: %v", err)
+	}
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("re-sign to heal: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected healed demand completed, got %s", result.DemandStatus)
+	}
+	if demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID); demand.Status != ProjectDemandStatusCompleted {
+		t.Fatalf("expected repository demand healed to completed, got %s", demand.Status)
+	}
+	decision, _ := repo.GetDecisionRequest(context.Background(), f.tenantID, f.projectID, f.decisionID)
+	if decision.StatusSnapshot != "approved" {
+		t.Fatalf("expected decision resolved approved on heal, got %s", decision.StatusSnapshot)
+	}
+	// No duplicate verdict row despite the re-sign.
+	if count := countHumanVerdicts(repo.demandCriterionVerdicts, "c1"); count != 1 {
+		t.Fatalf("expected exactly one human verdict for c1, got %d", count)
+	}
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
+}
+
+// TestSignDemandCriterionVerdictReconcilesAlreadyCompletedDemand covers Fix A's
+// other partial-failure shape: a prior attempt advanced the demand to completed
+// but died before resolving the decision. A retry (or a late duplicate sign)
+// finds the demand terminal and must reconcile — resolve the still-pending
+// decision to match — rather than 409-ing on the acceptance_pending precondition.
+func TestSignDemandCriterionVerdictReconcilesAlreadyCompletedDemand(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+	// Verdict written + demand already advanced to completed, but decision left pending.
+	if err := repo.CreateDemandCriterionVerdict(context.Background(), CreateDemandCriterionVerdictRequest{
+		TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+		CriterionID: "c1", Verdict: "satisfied", JudgeType: "human", JudgeID: f.ownerID,
+	}); err != nil {
+		t.Fatalf("seed verdict: %v", err)
+	}
+	for i := range repo.demands {
+		if repo.demands[i].ID == f.demandID {
+			repo.demands[i].Status = ProjectDemandStatusCompleted
+		}
+	}
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("reconcile completed demand: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected completed, got %s", result.DemandStatus)
+	}
+	decision, _ := repo.GetDecisionRequest(context.Background(), f.tenantID, f.projectID, f.decisionID)
+	if decision.StatusSnapshot != "approved" {
+		t.Fatalf("expected pending decision reconciled to approved, got %s", decision.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != "approved" {
+		t.Fatalf("expected approval reconciled approved, got calls=%d last=%#v", approvals.calls, approvals.last)
+	}
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
+}
+
+// TestSignDemandCriterionVerdictDoesNotOpenReviewWhileOtherDemandsRemain covers
+// the Fix B guard: signing one demand terminal must NOT open the project
+// acceptance review while a sibling demand is still non-terminal.
+func TestSignDemandCriterionVerdictDoesNotOpenReviewWhileOtherDemandsRemain(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+	// A sibling demand in the same project is still executing.
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID:        uuid.New(),
+		TenantID:  f.tenantID,
+		ProjectID: f.projectID,
+		Title:     "并行需求",
+		Status:    ProjectDemandStatusExecuting,
+	})
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("sign criterion: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected this demand completed, got %s", result.DemandStatus)
+	}
+	if repo.projects[f.projectID].Status != ProjectStatusRunning {
+		t.Fatalf("expected project to stay running while sibling demand executes, got %s", repo.projects[f.projectID].Status)
+	}
+	if approvals.createCalls != 0 {
+		t.Fatalf("expected no project_acceptance review opened, got %d create calls", approvals.createCalls)
+	}
+}
+
+func countHumanVerdicts(verdicts []DemandCriterionVerdict, criterionID string) int {
+	count := 0
+	for _, v := range verdicts {
+		if v.CriterionID == criterionID && v.JudgeType == "human" && v.ProjectTaskID == nil {
+			count++
+		}
+	}
+	return count
 }
 
 func TestUpdateConfigRejectsArchivedProject(t *testing.T) {
@@ -13640,6 +13837,11 @@ type fakeApprovalResolver struct {
 	contextPayloads    map[uuid.UUID]map[string]any
 	contextPayloadErr  error
 	contextPayloadCall int
+
+	createCalls   int
+	lastCreate    CreateApprovalRequestInput
+	lastCreatedID uuid.UUID
+	createErr     error
 }
 
 func (f *fakeApprovalResolver) ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error {
@@ -13654,6 +13856,17 @@ func (f *fakeApprovalResolver) GetRequestContextPayload(ctx context.Context, ten
 		return nil, f.contextPayloadErr
 	}
 	return f.contextPayloads[approvalRequestID], nil
+}
+
+func (f *fakeApprovalResolver) CreateRequest(ctx context.Context, req CreateApprovalRequestInput) (uuid.UUID, error) {
+	f.createCalls++
+	f.lastCreate = req
+	if f.createErr != nil {
+		return uuid.Nil, f.createErr
+	}
+	id := uuid.New()
+	f.lastCreatedID = id
+	return id, nil
 }
 
 type fakeDecisionInboxProjector struct {
