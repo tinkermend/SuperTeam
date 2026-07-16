@@ -94,6 +94,36 @@ func TestBuildPlanRevisionPayloadCanonicalFingerprintStableAndDefaults(t *testin
 	require.Contains(t, payload.HumanReview.Reasons, "task_requires_human_approval:write_tests")
 }
 
+func TestCanonicalPlanFingerprintSensitiveToCriterionMethod(t *testing.T) {
+	employeeID := uuid.New()
+	basePlan := func(method string) RouteDecisionPlan {
+		return RouteDecisionPlan{
+			Reason: "criterion method sensitivity",
+			PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+				{ID: "ac1", Statement: "登录失败返回 401", SatisfiedBy: []string{"a"}, VerificationMethod: method, Severity: CriterionSeverityBlocking},
+			},
+			Tasks: []PlannedTask{
+				{
+					Key:                     "a",
+					Title:                   "a",
+					Summary:                 "a",
+					SelectedEmployeeID:      employeeID,
+					EmployeeSelectionReason: "only one",
+					ExpectedOutputs:         []string{"execution_summary"},
+					Produces:                []string{"execution_summary"},
+				},
+			},
+		}
+	}
+
+	automatedFingerprint, err := CanonicalPlanFingerprint(BuildPlanRevisionPayload(basePlan(VerificationMethodAutomatedTest)))
+	require.NoError(t, err)
+	humanFingerprint, err := CanonicalPlanFingerprint(BuildPlanRevisionPayload(basePlan(VerificationMethodHumanJudgment)))
+	require.NoError(t, err)
+
+	require.NotEqual(t, automatedFingerprint, humanFingerprint)
+}
+
 func TestValidatePlanRevisionPayloadRejectsDuplicateKeyDanglingDependencyAndCycle(t *testing.T) {
 	employeeID := uuid.New()
 	t.Run("duplicate key and dangling dependency", func(t *testing.T) {

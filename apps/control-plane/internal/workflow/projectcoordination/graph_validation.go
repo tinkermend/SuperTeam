@@ -263,7 +263,13 @@ func ValidateRouteDecisionGraph(plan RouteDecisionPlan, poolIDs []uuid.UUID, pol
 		taskKeys[task.Key] = struct{}{}
 	}
 	for _, criterion := range plan.PlanAcceptanceCriteria {
-		if len(criterion.SatisfiedBy) == 0 {
+		// A human_judgment criterion (e.g. the ensureHumanJudgmentCriterion
+		// fallback) is a business/intent judgment the human owner makes
+		// directly; it is not required to be backed by any task's produces.
+		// Every other criterion (including a not-yet-normalized empty method,
+		// which normalizeCriterionDefaults treats as automated_test) still
+		// needs at least one satisfier.
+		if criterion.VerificationMethod != VerificationMethodHumanJudgment && len(criterion.SatisfiedBy) == 0 {
 			return invalidRouteDecision("acceptance_criterion_has_no_satisfier: plan acceptance criterion %q has no satisfied_by task; a criterion must be backed by at least one task", criterion.ID)
 		}
 		for _, satisfier := range criterion.SatisfiedBy {
@@ -271,6 +277,9 @@ func ValidateRouteDecisionGraph(plan RouteDecisionPlan, poolIDs []uuid.UUID, pol
 				return invalidRouteDecision("satisfied_by_task_not_found: plan acceptance criterion %q satisfied_by %q is not a task in this plan", criterion.ID, satisfier)
 			}
 		}
+	}
+	if err := validateAcceptanceCriteriaSemantics(plan); err != nil {
+		return err
 	}
 	return nil
 }
