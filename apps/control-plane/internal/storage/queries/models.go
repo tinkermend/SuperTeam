@@ -261,9 +261,9 @@ type DemandAcceptanceCriterium struct {
 	CriterionID string `json:"criterion_id"`
 	// 判据的自然语言陈述：什么算做对了
 	Statement string `json:"statement"`
-	// 判据的验证方式（如 test、review、manual_check）
+	// 判据的验证方式：automated_test | human_judgment
 	VerificationMethod string `json:"verification_method"`
-	// 判据严重度（如 blocking、advisory）
+	// 判据严重度：blocking | non_blocking
 	Severity string `json:"severity"`
 	// 判据关联的满足来源列表（如任务/证据指针），JSONB 数组
 	SatisfiedBy []byte `json:"satisfied_by"`
@@ -285,7 +285,7 @@ type DemandCriterionVerdict struct {
 	PlanRevisionID uuid.UUID `json:"plan_revision_id"`
 	// 被判定的判据 ID，对应 demand_acceptance_criteria.criterion_id
 	CriterionID string `json:"criterion_id"`
-	// 判定结论：satisfied | unsatisfied
+	// 判定结论：satisfied | unsatisfied | not_applicable（not_applicable 仅由 executor 对 automated_test 判据投影，非阻断，仍需人类兜底判据签署）
 	Verdict string `json:"verdict"`
 	// 判定来源类型：executor | human
 	JudgeType string `json:"judge_type"`

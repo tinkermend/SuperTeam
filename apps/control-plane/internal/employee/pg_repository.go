@@ -1099,6 +1099,27 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 		operationalStates = append(operationalStates, overviewOperationalStateFromFactsRow(row))
 	}
 
+	// operational_status 是 Go 状态机的计算态，无法直接下推 SQL：
+	// 在已按同组过滤条件取回的 operational facts 上裁决状态，把命中员工 ID 集合作为 items 查询的过滤条件。
+	var operationalFilterIDs []uuid.UUID
+	operationalFilterActive := len(req.OperationalStatus) > 0
+	if operationalFilterActive {
+		wanted := make(map[DigitalEmployeeOperationalStatus]bool, len(req.OperationalStatus))
+		for _, status := range req.OperationalStatus {
+			wanted[status] = true
+		}
+		operationalFilterIDs = make([]uuid.UUID, 0, len(operationalFactRows))
+		for index, row := range operationalFactRows {
+			if wanted[operationalStates[index].Status] {
+				operationalFilterIDs = append(operationalFilterIDs, row.ID)
+			}
+		}
+		if len(operationalFilterIDs) == 0 {
+			// ANY(空数组) 与 NULL（不过滤）语义不同：显式传入不可能命中的哨兵，确保零结果。
+			operationalFilterIDs = []uuid.UUID{uuid.Nil}
+		}
+	}
+
 	itemRows, err := r.q.ListDigitalEmployeeOverviewItems(ctx, queries.ListDigitalEmployeeOverviewItemsParams{
 		TenantID:        req.TenantID,
 		Q:               summaryParams.Q,
@@ -1110,6 +1131,7 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 		RiskLevel:       summaryParams.RiskLevel,
 		ExecutionStatus: summaryParams.ExecutionStatus,
 		RunStatus:       summaryParams.RunStatus,
+		EmployeeIds:     operationalFilterIDs,
 		Limit:           req.Limit,
 		Offset:          req.Offset,
 	})
@@ -1154,9 +1176,61 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 		Pagination: OverviewPagination{
 			Limit:      req.Limit,
 			Offset:     req.Offset,
-			TotalCount: summary.TotalCount,
+			TotalCount: overviewTotalCount(summary.TotalCount, operationalFilterActive, operationalFilterIDs),
 		},
 	}, nil
+}
+
+func overviewTotalCount(unfilteredTotal int32, operationalFilterActive bool, operationalFilterIDs []uuid.UUID) int32 {
+	if !operationalFilterActive {
+		return unfilteredTotal
+	}
+	if len(operationalFilterIDs) == 1 && operationalFilterIDs[0] == uuid.Nil {
+		return 0
+	}
+	return int32(len(operationalFilterIDs))
+}
+
+func (r *PgRepository) GetDigitalEmployeeActivity(ctx context.Context, req GetDigitalEmployeeActivityRequest) ([]DigitalEmployeeActivityItem, error) {
+	params := queries.ListDigitalEmployeeActivityParams{
+		TenantID: req.TenantID,
+		Limit:    req.Limit,
+	}
+	if req.SinceCreatedAt != nil {
+		params.SinceCreatedAt = pgtype.Timestamptz{Time: *req.SinceCreatedAt, Valid: true}
+	}
+	if req.SinceID != nil {
+		params.SinceID = uuid.NullUUID{UUID: *req.SinceID, Valid: true}
+	}
+	rows, err := r.q.ListDigitalEmployeeActivity(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]DigitalEmployeeActivityItem, 0, len(rows))
+	for _, row := range rows {
+		label, status := ActivityEventPresentation(row.EventType)
+		var projectID *uuid.UUID
+		if row.ProjectID != uuid.Nil {
+			id := row.ProjectID
+			projectID = &id
+		}
+		items = append(items, DigitalEmployeeActivityItem{
+			EventID:             row.EventID,
+			EventType:           row.EventType,
+			Label:               label,
+			Status:              status,
+			OccurredAt:          timePtrFromPgTimestamptz(row.OccurredAt),
+			RunID:               row.RunID,
+			TaskID:              row.TaskID,
+			TaskTitle:           row.TaskTitle,
+			DigitalEmployeeID:   row.DigitalEmployeeID,
+			DigitalEmployeeName: row.DigitalEmployeeName,
+			TeamID:              uuidPtrFromNullUUID(row.TeamID),
+			ProjectID:           projectID,
+			ProjectName:         row.ProjectName,
+		})
+	}
+	return items, nil
 }
 
 // AreRuntimeReady reports which of the given digital employees are runtime-ready,
@@ -1325,6 +1399,10 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow, labe
 		WorkbenchStatus:  workbenchStatus,
 		OperationalState: operationalState,
 		RecentEvents:     recentEvents,
+		ProjectSummary: DigitalEmployeeProjectSummary{
+			ProjectCount: row.ProjectCount,
+			Projects:     projectLinksFromJSON(row.ProjectsJson),
+		},
 	}
 }
 
@@ -1694,8 +1772,7 @@ func recentEventsFromJSON(raw []byte) []DigitalEmployeeRecentEventSummary {
 		return []DigitalEmployeeRecentEventSummary{}
 	}
 	var payload []struct {
-		Label      string     `json:"label"`
-		Status     string     `json:"status"`
+		EventType  string     `json:"event_type"`
 		OccurredAt *time.Time `json:"occurred_at"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
@@ -1703,13 +1780,47 @@ func recentEventsFromJSON(raw []byte) []DigitalEmployeeRecentEventSummary {
 	}
 	events := make([]DigitalEmployeeRecentEventSummary, 0, len(payload))
 	for _, item := range payload {
+		label, status := ActivityEventPresentation(item.EventType)
 		events = append(events, DigitalEmployeeRecentEventSummary{
-			Label:      item.Label,
-			Status:     item.Status,
+			Label:      label,
+			Status:     status,
 			OccurredAt: item.OccurredAt,
 		})
 	}
 	return events
+}
+
+func projectLinksFromJSON(raw []byte) []DigitalEmployeeProjectLinkSummary {
+	if len(raw) == 0 {
+		return []DigitalEmployeeProjectLinkSummary{}
+	}
+	var payload []struct {
+		ProjectID        uuid.UUID  `json:"project_id"`
+		Name             string     `json:"name"`
+		Status           string     `json:"status"`
+		IsMember         bool       `json:"is_member"`
+		ActiveTaskCount  int32      `json:"active_task_count"`
+		WorkingTaskCount int32      `json:"working_task_count"`
+		TotalTaskCount   int32      `json:"total_task_count"`
+		LastActivityAt   *time.Time `json:"last_activity_at"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return []DigitalEmployeeProjectLinkSummary{}
+	}
+	links := make([]DigitalEmployeeProjectLinkSummary, 0, len(payload))
+	for _, item := range payload {
+		links = append(links, DigitalEmployeeProjectLinkSummary{
+			ProjectID:        item.ProjectID,
+			Name:             item.Name,
+			Status:           item.Status,
+			IsMember:         item.IsMember,
+			ActiveTaskCount:  item.ActiveTaskCount,
+			WorkingTaskCount: item.WorkingTaskCount,
+			TotalTaskCount:   item.TotalTaskCount,
+			LastActivityAt:   item.LastActivityAt,
+		})
+	}
+	return links
 }
 
 func textFromOptionalString(value string) pgtype.Text {

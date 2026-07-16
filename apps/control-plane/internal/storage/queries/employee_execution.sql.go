@@ -1729,6 +1729,116 @@ func (q *Queries) GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, a
 	return i, err
 }
 
+const ListDigitalEmployeeActivity = `-- name: ListDigitalEmployeeActivity :many
+SELECT
+    te.id AS event_id,
+    te.event_type,
+    te.created_at AS occurred_at,
+    tr.id AS run_id,
+    tr.task_id,
+    COALESCE(t.title, '')::text AS task_title,
+    de.id AS digital_employee_id,
+    de.name AS digital_employee_name,
+    de.team_id,
+    COALESCE(ptp.project_id, '00000000-0000-0000-0000-000000000000'::uuid) AS project_id,
+    COALESCE(p.name, '')::text AS project_name
+FROM task_events te
+JOIN task_runs tr
+  ON tr.id = te.run_id
+ AND tr.tenant_id = te.tenant_id
+JOIN digital_employees de
+  ON de.id = tr.digital_employee_id
+ AND de.tenant_id = tr.tenant_id
+ AND de.deleted_at IS NULL
+JOIN tasks t
+  ON t.id = tr.task_id
+ AND t.tenant_id = tr.tenant_id
+ AND t.deleted_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT project_tasks.project_id
+    FROM project_tasks
+    WHERE project_tasks.tenant_id = tr.tenant_id
+      AND project_tasks.digital_employee_run_id = tr.id
+    ORDER BY project_tasks.updated_at DESC
+    LIMIT 1
+) ptp ON TRUE
+LEFT JOIN projects p
+  ON p.id = ptp.project_id
+ AND p.tenant_id = te.tenant_id
+ AND p.archived_at IS NULL
+WHERE te.tenant_id = $1::uuid
+  AND te.run_id IS NOT NULL
+  AND (
+      $2::timestamptz IS NULL
+      OR (te.created_at, te.id) > (
+          $2::timestamptz,
+          COALESCE($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+      )
+  )
+ORDER BY te.created_at DESC, te.id DESC
+LIMIT $4::integer
+`
+
+type ListDigitalEmployeeActivityParams struct {
+	TenantID       uuid.UUID          `json:"tenant_id"`
+	SinceCreatedAt pgtype.Timestamptz `json:"since_created_at"`
+	SinceID        uuid.NullUUID      `json:"since_id"`
+	Limit          int32              `json:"limit"`
+}
+
+type ListDigitalEmployeeActivityRow struct {
+	EventID             uuid.UUID          `json:"event_id"`
+	EventType           string             `json:"event_type"`
+	OccurredAt          pgtype.Timestamptz `json:"occurred_at"`
+	RunID               uuid.UUID          `json:"run_id"`
+	TaskID              uuid.UUID          `json:"task_id"`
+	TaskTitle           string             `json:"task_title"`
+	DigitalEmployeeID   uuid.UUID          `json:"digital_employee_id"`
+	DigitalEmployeeName string             `json:"digital_employee_name"`
+	TeamID              uuid.NullUUID      `json:"team_id"`
+	ProjectID           uuid.UUID          `json:"project_id"`
+	ProjectName         string             `json:"project_name"`
+}
+
+// 跨员工运行动态流：task_events 按时间倒序，游标 (created_at, id) 支持增量拉取（since 之后的新事件）。
+// 事件类型到中文标签/状态的映射在 Go 层（employee.ActivityEventPresentation）统一处理。
+func (q *Queries) ListDigitalEmployeeActivity(ctx context.Context, arg ListDigitalEmployeeActivityParams) ([]ListDigitalEmployeeActivityRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeActivity,
+		arg.TenantID,
+		arg.SinceCreatedAt,
+		arg.SinceID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeActivityRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeActivityRow
+		if err := rows.Scan(
+			&i.EventID,
+			&i.EventType,
+			&i.OccurredAt,
+			&i.RunID,
+			&i.TaskID,
+			&i.TaskTitle,
+			&i.DigitalEmployeeID,
+			&i.DigitalEmployeeName,
+			&i.TeamID,
+			&i.ProjectID,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListDigitalEmployeeDeleteProjectTaskBlockers = `-- name: ListDigitalEmployeeDeleteProjectTaskBlockers :many
 SELECT
     'project_task'::text AS blocker_type,
@@ -2079,8 +2189,9 @@ WITH overview_args AS (
         NULLIF(BTRIM($8::text), '') AS risk_level,
         NULLIF(BTRIM($9::text), '') AS execution_status,
         NULLIF(BTRIM($10::text), '') AS run_status,
-        $11::integer AS limit_value,
-        $12::integer AS offset_value
+        $11::uuid[] AS employee_ids,
+        $12::integer AS limit_value,
+        $13::integer AS offset_value
 ),
 provider_capabilities AS (
     SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
@@ -2401,6 +2512,8 @@ filtered_rows AS (
       AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
       AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
       AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
+      -- operational_status 过滤：计算态由 Go 状态机在 operational facts 上裁决后，以命中 ID 集合下推。
+      AND (args.employee_ids IS NULL OR overview_rows.id = ANY(args.employee_ids))
 ),
 paged_rows AS (
     SELECT id, tenant_id, team_id, team_name, owner_user_id, owner_display_name, employee_type, name, role, description, status, risk_level, metadata, execution_instance_id, execution_status, runtime_node_id, node_id, runtime_name, runtime_status, runtime_disabled_at, runtime_archived_at, provider_type, provider_available, provider_status, health_status, agent_home_dir_available, latest_run_id, latest_run_task_id, latest_run_status, latest_run_title, latest_run_started_at, latest_run_finished_at, latest_run_updated_at, latest_run_duration_sec, latest_run_token_usage, latest_run_error_message, latest_run_error_family, latest_run_error_code, effective_config_id, governance_status, daily_token_limit_text, team_revision_number, employee_revision_number, skills_count, mcp_servers_count, constitution_ref, today_budget_usage_tokens, budget_usage_tokens_30d, budget_run_count_30d, operational_has_employee_scoped_human_blocker, operational_has_project_acceptance_blocker, operational_has_queued_work, operational_has_working_task, operational_has_active_work, operational_has_task_failure, created_at, updated_at
@@ -2415,8 +2528,7 @@ recent_events AS (
         ranked.digital_employee_id,
         jsonb_agg(
             jsonb_build_object(
-                'label', ranked.event_label,
-                'status', ranked.event_status,
+                'event_type', ranked.event_type,
                 'occurred_at', ranked.occurred_at
             )
             ORDER BY ranked.occurred_at DESC NULLS LAST, ranked.sequence_number DESC
@@ -2426,17 +2538,8 @@ recent_events AS (
             pr.tenant_id,
             pr.id AS digital_employee_id,
             te.sequence_number,
-            CASE
-                WHEN te.event_type = 'run_dispatched' THEN '命令已下发'
-                WHEN te.event_type ILIKE '%provider%' THEN 'Provider 输出中'
-                WHEN te.event_type ILIKE '%complete%' THEN '等待结果回写'
-                ELSE te.event_type
-            END AS event_label,
-            CASE
-                WHEN te.event_type ILIKE '%fail%' THEN 'failed'
-                WHEN te.event_type ILIKE '%complete%' THEN 'completed'
-                ELSE 'running'
-            END AS event_status,
+            -- 事件类型到中文标签/状态的映射收敛在 Go 层（employee.ActivityEventPresentation），SQL 只透传原始 event_type。
+            te.event_type,
             COALESCE(te.created_at, tr.updated_at, tr.created_at) AS occurred_at,
             ROW_NUMBER() OVER (
                 PARTITION BY pr.tenant_id, pr.id
@@ -2456,6 +2559,85 @@ recent_events AS (
     ) ranked
     WHERE ranked.row_number <= 3
     GROUP BY ranked.tenant_id, ranked.digital_employee_id
+),
+employee_project_links AS (
+    SELECT
+        pr.tenant_id,
+        pr.id AS digital_employee_id,
+        pm.project_id,
+        TRUE AS is_member
+    FROM paged_rows pr
+    JOIN project_members pm
+      ON pm.tenant_id = pr.tenant_id
+     AND pm.principal_type = 'digital_employee'
+     AND pm.principal_id = pr.id
+     AND pm.status = 'active'
+    UNION
+    SELECT
+        pr.tenant_id,
+        pr.id AS digital_employee_id,
+        pt.project_id,
+        FALSE AS is_member
+    FROM paged_rows pr
+    JOIN project_tasks pt
+      ON pt.tenant_id = pr.tenant_id
+     AND pt.assigned_digital_employee_id = pr.id
+),
+employee_project_stats AS (
+    SELECT
+        links.tenant_id,
+        links.digital_employee_id,
+        links.project_id,
+        BOOL_OR(links.is_member) AS is_member,
+        p.name AS project_name,
+        p.status AS project_status,
+        COUNT(DISTINCT pt.id) FILTER (
+            WHERE pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+        )::integer AS active_task_count,
+        COUNT(DISTINCT pt.id) FILTER (
+            WHERE pt.status IN ('running', 'in_progress')
+        )::integer AS working_task_count,
+        COUNT(DISTINCT pt.id)::integer AS total_task_count,
+        GREATEST(MAX(pt.updated_at), MAX(p.updated_at)) AS last_activity_at
+    FROM employee_project_links links
+    JOIN projects p
+      ON p.id = links.project_id
+     AND p.tenant_id = links.tenant_id
+     AND p.archived_at IS NULL
+    LEFT JOIN project_tasks pt
+      ON pt.tenant_id = links.tenant_id
+     AND pt.project_id = links.project_id
+     AND pt.assigned_digital_employee_id = links.digital_employee_id
+    GROUP BY links.tenant_id, links.digital_employee_id, links.project_id, p.name, p.status
+),
+employee_projects AS (
+    SELECT
+        s.tenant_id,
+        s.digital_employee_id,
+        COUNT(*)::integer AS project_count,
+        jsonb_agg(
+            jsonb_build_object(
+                'project_id', s.project_id,
+                'name', s.project_name,
+                'status', s.project_status,
+                'is_member', s.is_member,
+                'active_task_count', s.active_task_count,
+                'working_task_count', s.working_task_count,
+                'total_task_count', s.total_task_count,
+                'last_activity_at', s.last_activity_at
+            )
+            ORDER BY s.last_activity_at DESC NULLS LAST, s.project_id
+        ) FILTER (WHERE s.row_number <= 5) AS projects_json
+    FROM (
+        SELECT
+            employee_project_stats.tenant_id, employee_project_stats.digital_employee_id, employee_project_stats.project_id, employee_project_stats.is_member, employee_project_stats.project_name, employee_project_stats.project_status, employee_project_stats.active_task_count, employee_project_stats.working_task_count, employee_project_stats.total_task_count, employee_project_stats.last_activity_at,
+            ROW_NUMBER() OVER (
+                PARTITION BY employee_project_stats.tenant_id, employee_project_stats.digital_employee_id
+                ORDER BY employee_project_stats.last_activity_at DESC NULLS LAST, employee_project_stats.project_id
+            ) AS row_number
+        FROM employee_project_stats
+    ) s
+    GROUP BY s.tenant_id, s.digital_employee_id
 )
 SELECT
     pr.id,
@@ -2513,11 +2695,16 @@ SELECT
     pr.operational_has_working_task,
     pr.operational_has_active_work,
     pr.operational_has_task_failure,
-    COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json
+    COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json,
+    COALESCE(ep.project_count, 0)::integer AS project_count,
+    COALESCE(ep.projects_json, '[]'::jsonb) AS projects_json
 FROM paged_rows pr
 LEFT JOIN recent_events re
   ON re.tenant_id = pr.tenant_id
  AND re.digital_employee_id = pr.id
+LEFT JOIN employee_projects ep
+  ON ep.tenant_id = pr.tenant_id
+ AND ep.digital_employee_id = pr.id
 ORDER BY pr.created_at DESC, pr.id
 `
 
@@ -2532,6 +2719,7 @@ type ListDigitalEmployeeOverviewItemsParams struct {
 	RiskLevel       pgtype.Text   `json:"risk_level"`
 	ExecutionStatus pgtype.Text   `json:"execution_status"`
 	RunStatus       pgtype.Text   `json:"run_status"`
+	EmployeeIds     []uuid.UUID   `json:"employee_ids"`
 	Limit           int32         `json:"limit"`
 	Offset          int32         `json:"offset"`
 }
@@ -2593,6 +2781,8 @@ type ListDigitalEmployeeOverviewItemsRow struct {
 	OperationalHasActiveWork                 bool               `json:"operational_has_active_work"`
 	OperationalHasTaskFailure                bool               `json:"operational_has_task_failure"`
 	RecentEventsJson                         []byte             `json:"recent_events_json"`
+	ProjectCount                             int32              `json:"project_count"`
+	ProjectsJson                             []byte             `json:"projects_json"`
 }
 
 func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error) {
@@ -2607,6 +2797,7 @@ func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg List
 		arg.RiskLevel,
 		arg.ExecutionStatus,
 		arg.RunStatus,
+		arg.EmployeeIds,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -2674,6 +2865,8 @@ func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg List
 			&i.OperationalHasActiveWork,
 			&i.OperationalHasTaskFailure,
 			&i.RecentEventsJson,
+			&i.ProjectCount,
+			&i.ProjectsJson,
 		); err != nil {
 			return nil, err
 		}

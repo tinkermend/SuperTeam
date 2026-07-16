@@ -330,6 +330,9 @@ type Querier interface {
 	ListDemandLaunchRouteDecisions(ctx context.Context, arg ListDemandLaunchRouteDecisionsParams) ([]ProjectRouteDecision, error)
 	ListDependentSkillsForMCPServer(ctx context.Context, arg ListDependentSkillsForMCPServerParams) ([]ListDependentSkillsForMCPServerRow, error)
 	ListDependentsOfTask(ctx context.Context, arg ListDependentsOfTaskParams) ([]uuid.UUID, error)
+	// 跨员工运行动态流：task_events 按时间倒序，游标 (created_at, id) 支持增量拉取（since 之后的新事件）。
+	// 事件类型到中文标签/状态的映射在 Go 层（employee.ActivityEventPresentation）统一处理。
+	ListDigitalEmployeeActivity(ctx context.Context, arg ListDigitalEmployeeActivityParams) ([]ListDigitalEmployeeActivityRow, error)
 	ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error)
 	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
 	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)

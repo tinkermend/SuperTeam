@@ -6,6 +6,7 @@ import type {
 import type { TeamListItem } from "@/lib/api/teams";
 import { overviewAvatarAsset } from "@/features/employees/avatar-library";
 import {
+  type RuntimeOverviewActivityItem,
   type RuntimeOverviewDTO,
   type RuntimeOverviewEmployee,
   type RuntimeOverviewFloor,
@@ -68,12 +69,17 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
   });
   const capacityUsed = overviewTeams.reduce((sum, team) => sum + team.capacityUsed, 0);
   const capacityTotal = overviewTeams.reduce((sum, team) => sum + team.capacity, 0);
+  const linkedProjectIds = new Set(
+    input.employees.items.flatMap((item) => item.project_summary.projects.map((project) => project.project_id)),
+  );
+  const todayTokensTotal = input.employees.items.reduce((sum, item) => sum + item.budget_summary.usage_tokens_today, 0);
 
   return {
     activeFloorId: input.activeFloorId,
     employees: overviewEmployees,
     floors: enrichFloorSummaries(floors, overviewTeams),
     generatedAt: input.generatedAt,
+    recentActivity: buildRecentActivity(input.employees.items),
     selectedEmployeeId: overviewEmployees[0]?.employeeId,
     summary: {
       teamCount: activeTeams.length,
@@ -92,9 +98,31 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
         input.employees.summary.operational_status_counts.unavailable ?? countEmployees(overviewEmployees, "unavailable"),
       errorCount: input.employees.summary.operational_status_counts.error ?? countEmployees(overviewEmployees, "error"),
       cumulativeTaskCount: input.employees.items.filter((item) => item.latest_run_summary).length,
+      linkedProjectCount: linkedProjectIds.size,
+      todayTokensTotal,
     },
     teams: overviewTeams,
   };
+}
+
+function buildRecentActivity(items: DigitalEmployeeOverviewItem[]): RuntimeOverviewActivityItem[] {
+  return items
+    .flatMap((item) =>
+      item.recent_events.map((event) => ({
+        employeeId: item.identity_summary.id,
+        employeeName: item.identity_summary.name,
+        teamId: item.identity_summary.team_id ?? "unassigned",
+        label: event.label,
+        status: event.status,
+        occurredAt: event.occurred_at,
+      })),
+    )
+    .sort((a, b) => {
+      if (!a.occurredAt) return 1;
+      if (!b.occurredAt) return -1;
+      return b.occurredAt.localeCompare(a.occurredAt);
+    })
+    .slice(0, 8);
 }
 
 function distributeTeamsByFloor(
@@ -158,6 +186,9 @@ function employeePresenceFromItem(item: DigitalEmployeeOverviewItem, floorId: Ru
       fallbackLabel: item.identity_summary.name.slice(0, 1),
     },
     status: item.operational_state.status,
+    statusReasons: item.operational_state.reasons.map((reason) => reason.message),
+    statusSince: statusSinceFromItem(item),
+    latestRunErrorMessage: latestRun?.error_message || undefined,
     currentTask: latestRun
       ? {
           taskId: latestRun.task_id,
@@ -174,6 +205,17 @@ function employeePresenceFromItem(item: DigitalEmployeeOverviewItem, floorId: Ru
       status: event.status,
       occurredAt: event.occurred_at,
     })),
+    projects: item.project_summary.projects.map((project) => ({
+      projectId: project.project_id,
+      name: project.name,
+      status: project.status,
+      isMember: project.is_member,
+      activeTaskCount: project.active_task_count,
+      workingTaskCount: project.working_task_count,
+      totalTaskCount: project.total_task_count,
+      lastActivityAt: project.last_activity_at,
+    })),
+    projectCount: item.project_summary.project_count,
     artifacts: [],
     usage: {
       taskTokens: latestRun?.token_usage,
@@ -181,6 +223,21 @@ function employeePresenceFromItem(item: DigitalEmployeeOverviewItem, floorId: Ru
       dailyTokenLimit: item.budget_summary.daily_token_limit ?? undefined,
     },
   };
+}
+
+// 状态起始时间近似：working 用运行开始时间；其余状态没有精确的状态迁移时间戳，
+// 用"最近一次活动"（事件/运行结束/更新时间的最大值）近似。
+function statusSinceFromItem(item: DigitalEmployeeOverviewItem): string | undefined {
+  const run = item.latest_run_summary;
+  if (item.operational_state.status === "working" && run?.started_at) return run.started_at;
+  const candidates = [
+    ...item.recent_events.map((event) => event.occurred_at),
+    run?.finished_at,
+    run?.updated_at,
+    run?.started_at,
+  ].filter((value): value is string => Boolean(value));
+  if (candidates.length === 0) return undefined;
+  return candidates.sort()[candidates.length - 1];
 }
 
 function enrichFloorSummaries(floors: RuntimeOverviewFloor[], teams: RuntimeOverviewTeam[]): RuntimeOverviewFloor[] {

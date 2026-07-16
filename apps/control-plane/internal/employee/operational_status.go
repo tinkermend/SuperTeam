@@ -12,6 +12,20 @@ const (
 	DigitalEmployeeOperationalStatusNeedsConfiguration DigitalEmployeeOperationalStatus = "needs_configuration"
 )
 
+func (s DigitalEmployeeOperationalStatus) IsValid() bool {
+	switch s {
+	case DigitalEmployeeOperationalStatusWorking,
+		DigitalEmployeeOperationalStatusIdle,
+		DigitalEmployeeOperationalStatusQueued,
+		DigitalEmployeeOperationalStatusWaitingHuman,
+		DigitalEmployeeOperationalStatusError,
+		DigitalEmployeeOperationalStatusUnavailable,
+		DigitalEmployeeOperationalStatusNeedsConfiguration:
+		return true
+	}
+	return false
+}
+
 type DigitalEmployeeOperationalReason struct {
 	Code    string
 	Message string

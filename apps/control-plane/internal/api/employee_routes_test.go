@@ -1855,6 +1855,10 @@ func (s *routeEmployeeService) ListDigitalEmployees(ctx context.Context, req emp
 	}}, nil
 }
 
+func (s *routeEmployeeService) GetActivity(ctx context.Context, req employee.GetDigitalEmployeeActivityRequest) (*employee.DigitalEmployeeActivity, error) {
+	return &employee.DigitalEmployeeActivity{Items: []employee.DigitalEmployeeActivityItem{}}, nil
+}
+
 func (s *routeEmployeeService) GetOverview(ctx context.Context, req employee.GetDigitalEmployeeOverviewRequest) (*employee.DigitalEmployeeOverview, error) {
 	s.overviewReq = req
 	if s.overviewErr != nil {

@@ -69,6 +69,29 @@ func (s *Service) GetOverview(ctx context.Context, req GetDigitalEmployeeOvervie
 	return overview, nil
 }
 
+// GetActivity 返回跨员工运行动态流（时间倒序）。NextSince 指向最新事件，
+// 供客户端下次以 since 增量拉取；无新事件时由 handler 回显请求游标。
+func (s *Service) GetActivity(ctx context.Context, req GetDigitalEmployeeActivityRequest) (*DigitalEmployeeActivity, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.Limit <= 0 {
+		req.Limit = 20
+	}
+	if req.Limit > 100 {
+		req.Limit = 100
+	}
+	items, err := s.repository.GetDigitalEmployeeActivity(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("get digital employee activity: %w", err)
+	}
+	activity := &DigitalEmployeeActivity{Items: items}
+	if len(items) > 0 && items[0].OccurredAt != nil {
+		activity.NextSince = encodeActivityCursor(*items[0].OccurredAt, items[0].EventID)
+	}
+	return activity, nil
+}
+
 func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

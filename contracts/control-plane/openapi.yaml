@@ -3088,6 +3088,52 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DigitalEmployeeAvatarAsset"
+  /api/v1/digital-employees/activity:
+    get:
+      operationId: getDigitalEmployeeActivity
+      summary: Get cross-employee runtime activity feed
+      description: 跨员工运行动态流（task_events 时间倒序）；since 传上次响应的 next_since 游标可增量拉取新事件。
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Digital employee activity feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeActivity"
+        "400":
+          description: Invalid cursor or limit
+  /api/v1/digital-employees/activity/stream:
+    get:
+      operationId: streamDigitalEmployeeActivity
+      summary: Stream cross-employee runtime activity via SSE
+      description: Server-Sent Events 流：服务端以秒级轮询增量推送新事件（event:activity，data 为 DigitalEmployeeActivityItem JSON），定期发送注释行保活。
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SSE stream of activity events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Invalid cursor
   /api/v1/digital-employees/overview:
     get:
       operationId: getDigitalEmployeeOverview
@@ -3096,6 +3142,12 @@ paths:
         - name: q
           in: query
           required: false
+          schema:
+            type: string
+        - name: operational_status
+          in: query
+          required: false
+          description: 按计算态运行状态过滤，逗号分隔多值（working,error,waiting_human,queued,idle,unavailable,needs_configuration）
           schema:
             type: string
         - name: team_id
@@ -9983,6 +10035,7 @@ components:
         - workbench_status
         - operational_state
         - recent_events
+        - project_summary
       properties:
         identity_summary:
           $ref: "#/components/schemas/DigitalEmployeeIdentitySummary"
@@ -10004,6 +10057,117 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DigitalEmployeeRecentEventSummary"
+        project_summary:
+          $ref: "#/components/schemas/DigitalEmployeeProjectSummary"
+    DigitalEmployeeActivity:
+      type: object
+      required:
+        - items
+        - next_since
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeActivityItem"
+        next_since:
+          type: string
+          description: 下次增量拉取用的游标；无新事件时回显请求游标
+    DigitalEmployeeActivityItem:
+      type: object
+      required:
+        - event_id
+        - event_type
+        - label
+        - status
+        - run_id
+        - task_id
+        - task_title
+        - digital_employee_id
+        - digital_employee_name
+        - project_name
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        label:
+          type: string
+          description: 事件类型的中文标签（服务端统一映射）
+        status:
+          type: string
+          description: running / completed / failed / cancelled
+        occurred_at:
+          type: string
+          format: date-time
+        run_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        task_title:
+          type: string
+        digital_employee_id:
+          type: string
+          format: uuid
+        digital_employee_name:
+          type: string
+        team_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+    DigitalEmployeeProjectSummary:
+      type: object
+      description: 数字员工的项目关联情况（活跃成员身份或任务分派均算关联）
+      required:
+        - project_count
+        - projects
+      properties:
+        project_count:
+          type: integer
+          format: int32
+        projects:
+          type: array
+          description: 按最近活动排序的关联项目，最多返回 5 个
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeProjectLinkSummary"
+    DigitalEmployeeProjectLinkSummary:
+      type: object
+      required:
+        - project_id
+        - name
+        - status
+        - is_member
+        - active_task_count
+        - working_task_count
+        - total_task_count
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+        is_member:
+          type: boolean
+        active_task_count:
+          type: integer
+          format: int32
+        working_task_count:
+          type: integer
+          format: int32
+        total_task_count:
+          type: integer
+          format: int32
+        last_activity_at:
+          type: string
+          format: date-time
     DigitalEmployeeWorkbenchStatus:
       type: string
       enum:

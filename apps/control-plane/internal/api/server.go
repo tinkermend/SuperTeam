@@ -248,6 +248,8 @@ func (s *Server) registerRoutes() {
 				r.Post("/digital-employees", s.employeeHandler.CreateDigitalEmployee)
 				r.Get("/digital-employees/create-options", s.employeeHandler.GetCreateOptions)
 				r.Get("/digital-employees/overview", s.employeeHandler.GetOverview)
+				r.Get("/digital-employees/activity", s.employeeHandler.GetActivity)
+				r.Get("/digital-employees/activity/stream", s.employeeHandler.StreamActivity)
 				r.Get("/digital-employees/{employeeId}", s.employeeHandler.GetDigitalEmployee)
 				r.Delete("/digital-employees/{employeeId}", s.employeeHandler.DeleteDigitalEmployee)
 				r.Get("/digital-employees/{employeeId}/scheduling-readiness", s.employeeHandler.GetSchedulingReadiness)

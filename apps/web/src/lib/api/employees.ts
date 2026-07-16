@@ -362,6 +362,43 @@ export type DigitalEmployeeRecentEventSummary = {
   occurred_at?: string;
 };
 
+export type DigitalEmployeeProjectLinkSummary = {
+  project_id: string;
+  name: string;
+  status: string;
+  is_member: boolean;
+  active_task_count: number;
+  working_task_count: number;
+  total_task_count: number;
+  last_activity_at?: string;
+};
+
+export type DigitalEmployeeProjectSummary = {
+  project_count: number;
+  projects: DigitalEmployeeProjectLinkSummary[];
+};
+
+export type DigitalEmployeeActivityItem = {
+  event_id: string;
+  event_type: string;
+  label: string;
+  status: string;
+  occurred_at?: string;
+  run_id: string;
+  task_id: string;
+  task_title: string;
+  digital_employee_id: string;
+  digital_employee_name: string;
+  team_id?: string;
+  project_id?: string;
+  project_name: string;
+};
+
+export type DigitalEmployeeActivity = {
+  items: DigitalEmployeeActivityItem[];
+  next_since: string;
+};
+
 export type OverviewFilterOption = {
   value: string;
   label: string;
@@ -408,6 +445,7 @@ export type DigitalEmployeeOverviewItem = {
   workbench_status: DigitalEmployeeWorkbenchStatus;
   operational_state: DigitalEmployeeOperationalState;
   recent_events: DigitalEmployeeRecentEventSummary[];
+  project_summary: DigitalEmployeeProjectSummary;
   identity_summary: {
     id: string;
     tenant_id: string;
@@ -636,6 +674,21 @@ export async function getDigitalEmployeeOverview(
     options,
     `/api/v1/digital-employees/overview${query ? `?${query}` : ""}`,
     "digital employee overview",
+  );
+}
+
+export async function getDigitalEmployeeActivity(
+  options: ApiClientOptions,
+  params: { since?: string; limit?: number } = {},
+): Promise<DigitalEmployeeActivity> {
+  const searchParams = new URLSearchParams();
+  if (params.since) searchParams.set("since", params.since);
+  if (params.limit !== undefined) searchParams.set("limit", String(params.limit));
+  const query = searchParams.toString();
+  return getJson<DigitalEmployeeActivity>(
+    options,
+    `/api/v1/digital-employees/activity${query ? `?${query}` : ""}`,
+    "digital employee activity",
   );
 }
 

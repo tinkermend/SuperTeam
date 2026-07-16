@@ -210,6 +210,21 @@ describe("digital employee API", () => {
               occurred_at: "2026-06-07T10:01:00Z",
             },
           ],
+          project_summary: {
+            project_count: 1,
+            projects: [
+              {
+                project_id: "project-1",
+                name: "需求梳理项目",
+                status: "active",
+                is_member: true,
+                active_task_count: 1,
+                working_task_count: 1,
+                total_task_count: 2,
+                last_activity_at: "2026-06-07T10:01:00Z",
+              },
+            ],
+          },
         },
       ],
       filters: {
@@ -268,6 +283,8 @@ describe("digital employee API", () => {
     });
     expect(overview.items[0].recent_events[0].label).toBe("命令已下发");
     expect(overview.items[0].budget_summary.daily_token_limit).toBe(10000);
+    expect(overview.items[0].project_summary.project_count).toBe(1);
+    expect(overview.items[0].project_summary.projects[0].name).toBe("需求梳理项目");
   });
 
   it("gets digital employee create options with encoded team id", async () => {
