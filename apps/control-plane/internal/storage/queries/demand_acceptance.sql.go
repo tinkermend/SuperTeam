@@ -176,7 +176,7 @@ SELECT id, tenant_id, project_id, demand_id, plan_revision_id, criterion_id, ver
 WHERE tenant_id = $1::uuid
   AND demand_id = $2::uuid
   AND plan_revision_id = $3::uuid
-ORDER BY created_at ASC
+ORDER BY created_at ASC, id ASC
 `
 
 type ListDemandCriterionVerdictsParams struct {
@@ -185,6 +185,9 @@ type ListDemandCriterionVerdictsParams struct {
 	PlanRevisionID uuid.UUID `json:"plan_revision_id"`
 }
 
+// id 次键让排序全序化：收敛闸的"最新人类判定优先"用切片顺序（最后一条覆盖）实现，
+// created_at 相等时若无次键则两条对立人类判定可任意翻转计数——(created_at, id) 使
+// "最后一条人类判定"成为确定函数（同刻取更大 id）。
 func (q *Queries) ListDemandCriterionVerdicts(ctx context.Context, arg ListDemandCriterionVerdictsParams) ([]DemandCriterionVerdict, error) {
 	rows, err := q.db.Query(ctx, ListDemandCriterionVerdicts, arg.TenantID, arg.DemandID, arg.PlanRevisionID)
 	if err != nil {

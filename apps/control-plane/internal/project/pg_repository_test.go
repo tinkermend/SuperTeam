@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -846,6 +847,80 @@ func TestCountUnsatisfiedBlockingCriteriaSkipsNonBlocking(t *testing.T) {
 	count, err := pgRepo.CountUnsatisfiedBlockingCriteria(ctx, tenantID, demandID, revisionID)
 	require.NoError(t, err)
 	require.Equal(t, 0, count)
+}
+
+// insertVerdictWithExplicitIDTaskAndTimestamp inserts one verdict row with a
+// caller-chosen id, project_task_id and created_at, bypassing the repository
+// (which defaults id/created_at) so ordering tests can force rows to share
+// created_at while differing only by id.
+func insertVerdictWithExplicitIDTaskAndTimestamp(t *testing.T, pool *pgxpool.Pool, id, tenantID, projectID, demandID, revisionID, projectTaskID uuid.UUID, criterionID, verdict, judgeType string, createdAt time.Time) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO demand_criterion_verdicts
+			(id, tenant_id, project_id, demand_id, plan_revision_id, criterion_id, verdict, judge_type, judge_id, project_task_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		id, tenantID, projectID, demandID, revisionID, criterionID, verdict, judgeType, uuid.New(), projectTaskID, createdAt)
+	require.NoError(t, err)
+}
+
+// TestListDemandCriterionVerdictsOrdersByIDOnTiedCreatedAt locks the id
+// secondary sort key: ListDemandCriterionVerdicts returns rows in
+// (created_at ASC, id ASC) order, so verdicts sharing a created_at come back
+// in a total, deterministic order rather than physical-insertion order. The
+// convergence gate's resolver (ResolveUnsatisfiedBlockingCriteria) applies
+// "latest human wins" by overwriting in slice order, so this ordering is what
+// makes that tiebreak a deterministic function of (created_at, id) — the
+// uq_demand_verdicts_human index today caps humans at one row per criterion
+// (so the count is already index-deterministic for the human case), but this
+// pins the ordering the resolver's last-wins contract depends on, independent
+// of that index. Uses two executor verdicts (distinct project_task_id, allowed
+// to coexist by uq_demand_verdicts_task) sharing a created_at, and asserts the
+// returned id order is identical regardless of physical insertion order.
+func TestListDemandCriterionVerdictsOrdersByIDOnTiedCreatedAt(t *testing.T) {
+	sharedCreatedAt := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+
+	// physicalOrder selects which of the two ids is inserted first, to prove
+	// the returned order is driven by the ORDER BY, not physical heap order.
+	for _, physicalHigherFirst := range []bool{false, true} {
+		name := "lower-inserted-first"
+		if physicalHigherFirst {
+			name = "higher-inserted-first"
+		}
+		t.Run(name, func(t *testing.T) {
+			repo, tenantID := newProjectRepositoryTestStore(t)
+			pgRepo := repo.(*PgRepository)
+			pool := pgRepo.db.(*pgxpool.Pool)
+			ctx := context.Background()
+			projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+			createBlockingCriterionFixture(t, repo, tenantID, projectID, demandID, revisionID, "core-flow-signoff")
+
+			// Fresh ids each run (PK is global; the shared dev DB retains prior
+			// runs' rows), ordered by byte comparison to match Postgres uuid
+			// ordering so we know which id must come back first.
+			lowerID, higherID := uuid.New(), uuid.New()
+			if bytes.Compare(lowerID[:], higherID[:]) > 0 {
+				lowerID, higherID = higherID, lowerID
+			}
+			first, last := lowerID, higherID
+			if physicalHigherFirst {
+				first, last = higherID, lowerID
+			}
+			// One task per verdict row (distinct project_task_id keeps
+			// uq_demand_verdicts_task happy); ids drive the tiebreak.
+			taskByID := map[uuid.UUID]uuid.UUID{lowerID: uuid.New(), higherID: uuid.New()}
+			verdictByID := map[uuid.UUID]string{lowerID: "satisfied", higherID: "unsatisfied"}
+			insertVerdictWithExplicitIDTaskAndTimestamp(t, pool, first, tenantID, projectID, demandID, revisionID, taskByID[first], "core-flow-signoff", verdictByID[first], "executor", sharedCreatedAt)
+			insertVerdictWithExplicitIDTaskAndTimestamp(t, pool, last, tenantID, projectID, demandID, revisionID, taskByID[last], "core-flow-signoff", verdictByID[last], "executor", sharedCreatedAt)
+
+			verdicts, err := pgRepo.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+			require.NoError(t, err)
+			require.Len(t, verdicts, 2)
+			// Deterministic (created_at, id) order: lower id first, always,
+			// regardless of physical insertion order.
+			require.Equal(t, lowerID, verdicts[0].ID)
+			require.Equal(t, higherID, verdicts[1].ID)
+		})
+	}
 }
 
 func TestProjectTaskResultPaginationDefaultsCapsAndNormalizesOffset(t *testing.T) {
