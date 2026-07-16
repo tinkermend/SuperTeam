@@ -1229,9 +1229,10 @@ func TestPersistPlanRevisionCoordinationModeNilWhenDemandUnreadable(t *testing.T
 	_ = result
 }
 
-func TestPersistPlanRevisionPlanModeAlwaysPendingReview(t *testing.T) {
-	// Plan-mode demands must always land in PendingReview for human confirmation,
-	// even when validation is clean and no explicit human review was requested.
+func TestPersistPlanRevisionPlanModeNoExitsConservativePendingReview(t *testing.T) {
+	// Plan-mode demands with no declared scenario-template exits (legacy/generic
+	// plans) must still land in PendingReview: unknown exit depth is the
+	// conservative fallback and is never auto-dispatched (see Task 2 brief).
 	// Empty coordination_mode (legacy/unset) is treated the same as explicit "plan".
 	for _, mode := range []string{"", project.CoordinationModePlan} {
 		t.Run("mode="+mode, func(t *testing.T) {
@@ -1321,6 +1322,220 @@ func TestPersistPlanRevisionLoopModeKeepsAccepted(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, project.PlanRevisionStatusAccepted, result.Status)
+}
+
+// planExitDepthTestTasks returns a minimal single-task PlannedTask slice
+// shared by the exit-depth confirmation tests below, so each test only has to
+// vary the signal under test (exit choice, risk, acceptance criteria).
+func planExitDepthTestTasks(employeeID uuid.UUID) []PlannedTask {
+	return []PlannedTask{
+		{
+			Key:                     "inspect",
+			Title:                   "检查",
+			Summary:                 "检查输入",
+			TaskKind:                "analysis",
+			SelectedEmployeeID:      employeeID,
+			EmployeeSelectionReason: "具备分析能力",
+			RequiredCapabilities:    []string{"codebase.analysis"},
+			MatchedCapabilities:     []string{"codebase.analysis"},
+			ExpectedOutputs:         []string{"结论"},
+			HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
+		},
+	}
+}
+
+func TestShallowExitPlanModeAutoDispatches(t *testing.T) {
+	// Plan mode, chosen exit is the shallowest declared exit (index 0 of a
+	// multi-exit template), no high-risk signal, no human_judgment criterion:
+	// the plan may auto-dispatch (Accepted) instead of holding for confirmation.
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	store := NewProjectStore(repo)
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		CoordinationMode:  project.CoordinationModePlan,
+		Decision: RouteDecisionPlan{
+			Reason:          "浅出口自动派发",
+			ExitDeliverable: "branch_ref",
+			AvailableExits: []PlanExitOption{
+				{Deliverable: "branch_ref", Label: "分支"},
+				{Deliverable: "review_verdict", Label: "评审结论"},
+				{Deliverable: "release_record", Label: "发布记录"},
+			},
+			Tasks: planExitDepthTestTasks(employeeID),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusAccepted, result.Status)
+}
+
+func TestDeepExitPlanModeHoldsForConfirm(t *testing.T) {
+	// Same shape as the shallow-exit case, but the chosen exit is the deepest
+	// declared exit (last index) — must hold for human confirmation.
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	store := NewProjectStore(repo)
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		CoordinationMode:  project.CoordinationModePlan,
+		Decision: RouteDecisionPlan{
+			Reason:          "深出口待复核",
+			ExitDeliverable: "release_record",
+			AvailableExits: []PlanExitOption{
+				{Deliverable: "branch_ref", Label: "分支"},
+				{Deliverable: "review_verdict", Label: "评审结论"},
+				{Deliverable: "release_record", Label: "发布记录"},
+			},
+			Tasks: planExitDepthTestTasks(employeeID),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
+}
+
+func TestHighRiskAlwaysHolds(t *testing.T) {
+	// Shallow exit, but the plan touches a constitutional high-risk signal
+	// (task.RequiresHumanApproval): must hold regardless of exit depth.
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	store := NewProjectStore(repo)
+
+	tasks := planExitDepthTestTasks(employeeID)
+	tasks[0].RequiresHumanApproval = true
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		CoordinationMode:  project.CoordinationModePlan,
+		Decision: RouteDecisionPlan{
+			Reason:          "高风险浅出口仍待复核",
+			ExitDeliverable: "branch_ref",
+			AvailableExits: []PlanExitOption{
+				{Deliverable: "branch_ref", Label: "分支"},
+				{Deliverable: "review_verdict", Label: "评审结论"},
+				{Deliverable: "release_record", Label: "发布记录"},
+			},
+			Tasks: tasks,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
+}
+
+func TestHumanCriterionPresentHolds(t *testing.T) {
+	// Shallow exit, no high-risk task signal, but the plan carries a
+	// human_judgment acceptance criterion (e.g. Task 1's policy/high-risk
+	// injection, or a planner-authored one) — must hold for confirmation.
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	store := NewProjectStore(repo)
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		CoordinationMode:  project.CoordinationModePlan,
+		Decision: RouteDecisionPlan{
+			Reason:          "存在人类判据仍待复核",
+			ExitDeliverable: "branch_ref",
+			AvailableExits: []PlanExitOption{
+				{Deliverable: "branch_ref", Label: "分支"},
+				{Deliverable: "review_verdict", Label: "评审结论"},
+				{Deliverable: "release_record", Label: "发布记录"},
+			},
+			PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+				{
+					ID:                 "human_final_confirmation",
+					Statement:          "人类负责人确认交付符合需求意图",
+					VerificationMethod: VerificationMethodHumanJudgment,
+					Severity:           CriterionSeverityBlocking,
+				},
+			},
+			Tasks: planExitDepthTestTasks(employeeID),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
+}
+
+func TestNoTemplateExitsConservativePendingReview(t *testing.T) {
+	// No template bound / no declared exits (ExitDeliverable and AvailableExits
+	// both empty): exit depth is unknown, so the conservative fallback holds
+	// for confirmation — preserves existing plan-mode behavior for
+	// template-less plans.
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
+	store := NewProjectStore(repo)
+
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		CoordinationMode:  project.CoordinationModePlan,
+		Decision: RouteDecisionPlan{
+			Reason: "无模板出口信息保守待复核",
+			Tasks:  planExitDepthTestTasks(employeeID),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
 }
 
 func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {

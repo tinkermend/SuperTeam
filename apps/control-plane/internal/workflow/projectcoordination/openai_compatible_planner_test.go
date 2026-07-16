@@ -49,6 +49,70 @@ func TestOpenAICompatibleRoutePlannerParsesJSONGraph(t *testing.T) {
 	require.Equal(t, []string{"execution_summary"}, plan.Tasks[0].Produces)
 }
 
+// TestGovernanceDerivedHighRiskInjectsHumanCriterion proves the demand-acceptance
+// gate's Link-1 timing fix: the fallback human_judgment criterion is injected
+// even when a plan is LOW-risk at decode time but pushed HIGH-risk only by a
+// post-decode flag setter. Here the LLM emits requires_human_review:false with a
+// medium-risk task, so the pre-validation injection inside
+// applyAcceptanceCriteriaDefaults (which runs right after decode, before any
+// flag setter) finds no high-risk signal and injects nothing. The coordination
+// policy require_human_review_for_new_demands then flips
+// RequiresHumanReview/RequiresHumanApproval on AFTER decode
+// (applyRequiredHumanReviewPolicy) — the same class of post-decode escalation as
+// ApplyPlanningProfileScores hard-failures and EnforceScenarioTemplateGovernance
+// human_gates. Before the fix the returned plan carried NO human_judgment
+// criterion, leaving the demand with only plan-time/predispatch oversight and
+// never acceptance-time. The post-governance re-run of ensureHumanJudgmentCriterion
+// closes that gap: the plan must now carry the injected human_final_confirmation
+// blocking criterion (validation-exempt: human_judgment + empty satisfied_by),
+// which the executor cannot self-satisfy, so the convergence gate holds.
+func TestGovernanceDerivedHighRiskInjectsHumanCriterion(t *testing.T) {
+	employeeID := uuid.New()
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 1,
+	}, fakeChatCompletionClient{content: fmt.Sprintf(`{
+		"reason":"low risk at decode",
+		"requires_human_review":false,
+		"tasks":[
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"selection_confidence":0.9,"stage_index":0,"expected_outputs":["execution_summary"],"produces":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
+		],
+		"budget_estimate":{"mode":"planner"},
+		"template_key":"default",
+		"planner_metadata":{"provider":"openai-compatible"}
+	}`, employeeID.String())})
+
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			openAITestExecutorMember(employeeID),
+		},
+		CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
+	})
+
+	require.NoError(t, err)
+	// Sanity: the plan was indeed flipped high-risk only post-decode.
+	require.True(t, plan.RequiresHumanReview, "policy must flip RequiresHumanReview post-decode")
+	require.True(t, planTouchesHighRisk(&plan), "plan must be high-risk after post-decode flags")
+
+	// Link 1: a blocking human_judgment criterion is present in the returned
+	// plan (and therefore in the payload snapshot DecomposeAcceptedPlanRevision
+	// writes).
+	var human *PlanAcceptanceCriterion
+	for i := range plan.PlanAcceptanceCriteria {
+		if plan.PlanAcceptanceCriteria[i].VerificationMethod == VerificationMethodHumanJudgment {
+			human = &plan.PlanAcceptanceCriteria[i]
+			break
+		}
+	}
+	require.NotNil(t, human, "post-decode high-risk plan must carry an injected human_judgment criterion")
+	require.Equal(t, fallbackHumanJudgmentCriterionID, human.ID)
+	require.Equal(t, CriterionSeverityBlocking, human.Severity)
+	require.Empty(t, human.SatisfiedBy, "injected human criterion is validation-exempt: no satisfied_by")
+}
+
 func TestOpenAICompatibleRoutePlannerUnavailableConfigDoesNotCallClient(t *testing.T) {
 	for _, tc := range []struct {
 		name string
