@@ -96,7 +96,7 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 		Summary:                 stringValue(decision.SummarySnapshot),
 		RiskLevel:               stringValue(decision.RiskLevelSnapshot),
 		Status:                  statusFromDecisionSnapshot(decision.StatusSnapshot),
-		Actions:                 DefaultActions(ItemTypeProjectDecision),
+		Actions:                 DecisionActions(decision.DecisionType),
 		DeepLink: map[string]any{
 			"route":  "/projects/" + decision.ProjectID.String(),
 			"anchor": decision.ID.String(),
@@ -193,6 +193,11 @@ func statusFromDecisionSnapshot(status string) Status {
 	// Plan-review request_changes resolves the decision request (the replan
 	// opens a fresh one), so the inbox item must not stay open.
 	if status == project.PlanReviewDecisionRequestChanges {
+		return StatusResolved
+	}
+	// planning_gap restaffed/exempted likewise resolve the decision — the demand
+	// is reopened and a fresh planning cycle (with its own review) begins.
+	if status == project.PlanningGapDecisionRestaffed || status == project.PlanningGapDecisionExempted {
 		return StatusResolved
 	}
 	switch approval.ApprovalStatus(status) {

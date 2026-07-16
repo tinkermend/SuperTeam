@@ -2241,12 +2241,22 @@ type projectTaskGraphStageSummaryResponse struct {
 }
 
 type projectTaskGraphBlockingFactResponse struct {
-	ReasonCode        string `json:"reason_code"`
-	Message           string `json:"message"`
-	ResourceType      string `json:"resource_type"`
-	ResourceID        string `json:"resource_id"`
-	RecommendedAction string `json:"recommended_action"`
-	CreatedAt         string `json:"created_at"`
+	ReasonCode        string                                   `json:"reason_code"`
+	Message           string                                   `json:"message"`
+	ResourceType      string                                   `json:"resource_type"`
+	ResourceID        string                                   `json:"resource_id"`
+	RecommendedAction string                                   `json:"recommended_action"`
+	CreatedAt         string                                   `json:"created_at"`
+	Gap               *projectTaskGraphBlockingFactGapResponse `json:"gap,omitempty"`
+	DecisionRequestID string                                   `json:"decision_request_id,omitempty"`
+}
+
+type projectTaskGraphBlockingFactGapResponse struct {
+	ConstraintKind       string   `json:"constraint_kind"`
+	Roles                []string `json:"roles"`
+	RequiredCapabilities []string `json:"required_capabilities"`
+	ActiveExecutorCount  int      `json:"active_executor_count"`
+	Options              []string `json:"options"`
 }
 
 type projectTaskGraphEdgeResponse struct {
@@ -3006,14 +3016,25 @@ func taskGraphStageSummaryResponses(items []ProjectTaskGraphStageSummary) []proj
 func taskGraphBlockingFactResponses(items []ProjectTaskGraphBlockingFact) []projectTaskGraphBlockingFactResponse {
 	responses := make([]projectTaskGraphBlockingFactResponse, 0, len(items))
 	for _, item := range items {
-		responses = append(responses, projectTaskGraphBlockingFactResponse{
+		response := projectTaskGraphBlockingFactResponse{
 			ReasonCode:        item.ReasonCode,
 			Message:           item.Message,
 			ResourceType:      item.ResourceType,
 			ResourceID:        item.ResourceID,
 			RecommendedAction: item.RecommendedAction,
 			CreatedAt:         item.CreatedAt.Format(time.RFC3339),
-		})
+			DecisionRequestID: item.DecisionRequestID,
+		}
+		if item.Gap != nil {
+			response.Gap = &projectTaskGraphBlockingFactGapResponse{
+				ConstraintKind:       item.Gap.ConstraintKind,
+				Roles:                item.Gap.Roles,
+				RequiredCapabilities: item.Gap.RequiredCapabilities,
+				ActiveExecutorCount:  item.Gap.ActiveExecutorCount,
+				Options:              item.Gap.Options,
+			}
+		}
+		responses = append(responses, response)
 	}
 	return responses
 }

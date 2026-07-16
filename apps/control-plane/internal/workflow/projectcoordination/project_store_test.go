@@ -123,6 +123,236 @@ func TestRejectDemandPlanningAdvancesDemandAndSurfacesDiagnosis(t *testing.T) {
 	require.NotEmpty(t, blocked[0].Payload["recommended_action"])
 }
 
+// TestRejectDemandPlanningPersistsGapPayload proves RejectDemandPlanningInput.Gap
+// threads through to the coordination.blocked event payload as a "gap" map, so the
+// web (and future automation) can act on structured fields instead of re-parsing
+// the diagnosis prose.
+func TestRejectDemandPlanningPersistsGapPayload(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+	gap := &PlanningGap{
+		ConstraintKind:       "role_independence",
+		Roles:                []string{"reviewer", "developer"},
+		RequiredCapabilities: []string{"code_review", "code_implementation"},
+		ActiveExecutorCount:  1,
+		Options:              []string{"restaff", "exempt", "lending"},
+	}
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，为项目补充员工", Gap: gap,
+	})
+
+	require.NoError(t, err)
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	gapPayload, ok := blocked[0].Payload["gap"].(map[string]any)
+	require.True(t, ok, "expected gap payload map, got %#v", blocked[0].Payload["gap"])
+	require.Equal(t, "role_independence", gapPayload["constraint_kind"])
+	require.Equal(t, []string{"reviewer", "developer"}, gapPayload["roles"])
+	require.Equal(t, []string{"code_review", "code_implementation"}, gapPayload["required_capabilities"])
+	require.Equal(t, 1, gapPayload["active_executor_count"])
+	require.Equal(t, []string{"restaff", "exempt", "lending"}, gapPayload["options"])
+}
+
+// TestRejectDemandPlanningNilGapOmitsField proves a nil Gap (every
+// no-suitable-employee diagnosis outside the structural role_independence channel,
+// and every replay of a history recorded before PlanningGap existed) leaves the
+// coordination.blocked payload exactly as before this feature — no "gap" key at
+// all, not a null value.
+func TestRejectDemandPlanningNilGapOmitsField(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "无结构缺口",
+	})
+
+	require.NoError(t, err)
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	_, exists := blocked[0].Payload["gap"]
+	require.False(t, exists)
+}
+
+// TestRejectDemandPlanningCreatesPlanningGapDecision proves the terminal reject
+// opens a human-decision three-piece (approval request + decision.requested event +
+// decision request projection + inbox item) of decision type planning_gap, targeted
+// at the project human owner, carrying the structured gap in the approval context
+// payload; and that it is idempotent — a second reject for the same still-pending
+// demand does not open a duplicate decision.
+func TestRejectDemandPlanningCreatesPlanningGapDecision(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	approvals := &projectStoreApprovalCreator{}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+	gap := &PlanningGap{
+		ConstraintKind:       "role_independence",
+		Roles:                []string{"reviewer", "developer"},
+		RequiredCapabilities: []string{"code_review", "code_implementation"},
+		ActiveExecutorCount:  1,
+		Options:              []string{"restaff", "exempt", "lending"},
+	}
+	diagnosis := "项目员工池无法满足审查独立性约束（需≥2名可调度员工）；请为项目补充员工或换用模板"
+	input := RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: diagnosis, Gap: gap,
+	}
+
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+
+	// Approval request: demand-scoped resource, planning_gap decision type, human owner target.
+	require.Equal(t, "planning_gap", approvals.last.DecisionType)
+	require.Equal(t, ownerID, approvals.last.TargetUserID)
+	require.Equal(t, demandID, approvals.last.ResourceID)
+	require.Equal(t, []any{"restaffed", "exempted", "rejected"}, approvals.last.Options)
+	require.Equal(t, demandID.String(), approvals.last.ContextPayload["demand_id"])
+	require.Equal(t, diagnosis, approvals.last.ContextPayload["diagnosis"])
+	gapPayload, ok := approvals.last.ContextPayload["gap"].(map[string]any)
+	require.True(t, ok, "expected gap in approval context payload, got %#v", approvals.last.ContextPayload["gap"])
+	require.Equal(t, "role_independence", gapPayload["constraint_kind"])
+
+	// Decision request projection + decision.requested event + inbox item.
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "planning_gap", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, ownerID, repo.decisionRequests[0].TargetUserID)
+	require.Equal(t, "pending", repo.decisionRequests[0].StatusSnapshot)
+	require.True(t, strings.HasPrefix(repo.decisionRequests[0].TitleSnapshot, "规划缺口："))
+	require.NotEmpty(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested))
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, "planning_gap", inbox.upserts[0].DecisionType)
+
+	// Idempotent: a pending planning_gap already exists for this demand → no duplicate.
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), input))
+	require.Len(t, repo.decisionRequests, 1)
+	require.Len(t, inbox.upserts, 1)
+	require.Len(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested), 1)
+}
+
+// TestRejectDemandPlanningPersistsDecisionRequestIDOnBlockedEvent proves the
+// coordination.blocked event payload carries decision_request_id alongside gap, so
+// the web's task-graph blocking-fact path (which returns no decision_requests when
+// the task graph has no nodes yet) can still resolve the demand's pending
+// planning_gap decision without a separate lookup.
+func TestRejectDemandPlanningPersistsDecisionRequestIDOnBlockedEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, &projectStoreApprovalCreator{}, &projectStoreDecisionInboxProjector{})
+	gap := &PlanningGap{ConstraintKind: "role_independence", Roles: []string{"reviewer", "developer"}, ActiveExecutorCount: 1, Options: []string{"restaff", "exempt", "lending"}}
+
+	err := store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，为项目补充员工", Gap: gap,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, repo.decisionRequests, 1)
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	require.Equal(t, repo.decisionRequests[0].ID.String(), blocked[0].Payload["decision_request_id"])
+}
+
+// TestRejectDemandPlanningWithoutApprovalsOmitsDecisionRequestID proves the
+// bare-repository callers (no approval sink wired, e.g. tests that only assert the
+// blocked event) never get a "decision_request_id" key — there is no decision to
+// reference.
+func TestRejectDemandPlanningWithoutApprovalsOmitsDecisionRequestID(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStore(repo)
+
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "无结构缺口",
+	}))
+
+	blocked := eventsByType(repo.events, project.ProjectEventCoordinationBlocked)
+	require.Len(t, blocked, 1)
+	_, exists := blocked[0].Payload["decision_request_id"]
+	require.False(t, exists)
+}
+
+// TestLoadHumanDecisionRouteForPlanningGapResolvesDemand proves the decision route
+// for a planning_gap decision recovers the demand from the approval request's
+// context payload, so the coordinator's restaffed branch knows which demand to
+// reopen and replan.
+func TestLoadHumanDecisionRouteForPlanningGapResolvesDemand(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "合入",
+			Status: project.ProjectDemandStatusPlanningPending,
+		},
+	}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, &projectStoreApprovalCreator{}, &projectStoreDecisionInboxProjector{})
+	require.NoError(t, store.RejectDemandPlanning(context.Background(), RejectDemandPlanningInput{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+		CoordinationJobID: uuid.New(), Diagnosis: "结构性缺口，请补员",
+	}))
+	require.Len(t, repo.decisionRequests, 1)
+
+	route, err := store.LoadHumanDecisionRoute(context.Background(), LoadHumanDecisionRouteInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: repo.decisionRequests[0].ID,
+	})
+	require.NoError(t, err)
+	require.Nil(t, route.PlanReview)
+	require.NotNil(t, route.PlanningGap)
+	require.Equal(t, demandID, route.PlanningGap.DemandID)
+	require.Equal(t, projectID, route.PlanningGap.ProjectID)
+}
+
 func TestRejectDemandPlanningIsIdempotent(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -5063,8 +5293,39 @@ type projectStoreMemoryRepository struct {
 	acceptanceReady   bool
 	acceptanceRecords []project.ProjectAcceptanceRecord
 
+	demandConstraintExemptions []project.DemandConstraintExemption
+
 	getProjectCalls       int
 	getProjectDemandCalls int
+}
+
+// CreateDemandConstraintExemption and ListDemandConstraintExemptions override the
+// embedded (nil) project.Repository so LoadProjectCoordinationSnapshot's
+// unconditional per-demand exemption load doesn't nil-panic in the many existing
+// fixtures that never populate demandConstraintExemptions — nil-safe empty by
+// default, mirroring the real repository's ListDemandConstraintExemptions
+// returning [] for a demand with no exemptions.
+func (r *projectStoreMemoryRepository) CreateDemandConstraintExemption(ctx context.Context, req project.CreateDemandConstraintExemptionRequest) error {
+	r.demandConstraintExemptions = append(r.demandConstraintExemptions, project.DemandConstraintExemption{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		ConstraintKind:    req.ConstraintKind,
+		Roles:             req.Roles,
+		GrantedByUserID:   req.GrantedByUserID,
+		DecisionRequestID: req.DecisionRequestID,
+	})
+	return nil
+}
+
+func (r *projectStoreMemoryRepository) ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]project.DemandConstraintExemption, error) {
+	result := make([]project.DemandConstraintExemption, 0)
+	for _, exemption := range r.demandConstraintExemptions {
+		if exemption.TenantID == tenantID && exemption.DemandID == demandID {
+			result = append(result, exemption)
+		}
+	}
+	return result, nil
 }
 
 type projectTaskStatusUpdateRecord struct {
@@ -6364,6 +6625,33 @@ func (r *projectStoreMemoryRepository) UpdateProjectTaskStatus(ctx context.Conte
 		return task, nil
 	}
 	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+// ListDemandLaunchDecisionRequests mirrors the real repository's coordination-job/task
+// membership filter closely enough for findPlanningGapDecisionID's idempotent-retry
+// lookup: it never needs precise pagination or task-id matching in tests, only
+// "does a decision exist for this coordination job".
+func (r *projectStoreMemoryRepository) ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]project.DecisionRequest, error) {
+	jobSet := make(map[uuid.UUID]bool, len(coordinationJobIDs))
+	for _, id := range coordinationJobIDs {
+		jobSet[id] = true
+	}
+	taskSet := make(map[uuid.UUID]bool, len(projectTaskIDs))
+	for _, id := range projectTaskIDs {
+		taskSet[id] = true
+	}
+	matches := make([]project.DecisionRequest, 0)
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID {
+			continue
+		}
+		jobMatch := decision.CoordinationJobID != nil && jobSet[*decision.CoordinationJobID]
+		taskMatch := decision.ProjectTaskID != nil && taskSet[*decision.ProjectTaskID]
+		if jobMatch || taskMatch {
+			matches = append(matches, decision)
+		}
+	}
+	return matches, nil
 }
 
 func (r *projectStoreMemoryRepository) FinishCoordinationJob(ctx context.Context, req project.FinishCoordinationJobRequest) (project.CoordinationJob, error) {

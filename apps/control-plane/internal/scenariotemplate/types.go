@@ -13,7 +13,17 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrScenarioTemplateNotFound = errors.New("scenario template not found")
+var (
+	ErrScenarioTemplateNotFound = errors.New("scenario template not found")
+	// ErrInvalidInput covers missing required fields, structurally invalid
+	// specs (ParseSpec failures) and specs referencing capability vocabulary
+	// keys that are not registered/active for the tenant.
+	ErrInvalidInput = errors.New("invalid scenario template input")
+	// ErrConflict is returned when a unique constraint is violated: a
+	// template_key already existing (active) for the tenant, or a version
+	// number already taken by a concurrent bump.
+	ErrConflict = errors.New("scenario template conflict")
+)
 
 type ScenarioTemplate struct {
 	ID            uuid.UUID
@@ -28,7 +38,64 @@ type ScenarioTemplate struct {
 	UpdatedAt     time.Time
 }
 
+// ScenarioTemplateVersion is one immutable spec snapshot in a template's
+// version history (scenario_template_versions). The main ScenarioTemplate
+// row's Spec/ActiveVersion always mirror the version whose Version equals
+// ActiveVersion.
+type ScenarioTemplateVersion struct {
+	ID         uuid.UUID
+	TenantID   uuid.UUID
+	TemplateID uuid.UUID
+	Version    int
+	Spec       map[string]any
+	CreatedBy  *uuid.UUID
+	CreatedAt  time.Time
+}
+
+type CreateScenarioTemplateParams struct {
+	TenantID    uuid.UUID
+	Key         string
+	Name        string
+	Description string
+	Spec        map[string]any
+	CreatedBy   *uuid.UUID
+}
+
+type CreateScenarioTemplateVersionParams struct {
+	TenantID   uuid.UUID
+	TemplateID uuid.UUID
+	Version    int
+	Spec       map[string]any
+	CreatedBy  *uuid.UUID
+}
+
+type UpdateScenarioTemplateActiveSpecParams struct {
+	TenantID      uuid.UUID
+	TemplateID    uuid.UUID
+	Spec          map[string]any
+	ActiveVersion int
+}
+
+type UpdateScenarioTemplateStatusParams struct {
+	TenantID    uuid.UUID
+	TemplateID  uuid.UUID
+	Status      string
+	Name        string
+	Description string
+}
+
 type Repository interface {
 	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
 	GetScenarioTemplateByKey(ctx context.Context, tenantID uuid.UUID, key string) (ScenarioTemplate, error)
+	CreateScenarioTemplate(ctx context.Context, params CreateScenarioTemplateParams) (ScenarioTemplate, error)
+	CreateScenarioTemplateVersion(ctx context.Context, params CreateScenarioTemplateVersionParams) (ScenarioTemplateVersion, error)
+	// GetScenarioTemplateMaxVersion returns MAX(version) in the version
+	// table (0 if none). Version bumps derive from this — not from the main
+	// row's active_version — so a crash between version-insert and
+	// mirror-update self-heals on the next bump instead of wedging on a
+	// unique violation.
+	GetScenarioTemplateMaxVersion(ctx context.Context, tenantID, templateID uuid.UUID) (int, error)
+	UpdateScenarioTemplateActiveSpec(ctx context.Context, params UpdateScenarioTemplateActiveSpecParams) (ScenarioTemplate, error)
+	UpdateScenarioTemplateStatus(ctx context.Context, params UpdateScenarioTemplateStatusParams) (ScenarioTemplate, error)
+	ListScenarioTemplateVersions(ctx context.Context, tenantID, templateID uuid.UUID) ([]ScenarioTemplateVersion, error)
 }

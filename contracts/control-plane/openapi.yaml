@@ -2200,6 +2200,28 @@ paths:
                   $ref: "#/components/schemas/ScenarioTemplate"
         "403":
           $ref: "#/components/responses/Error"
+    post:
+      operationId: createScenarioTemplate
+      summary: Create a tenant scenario template (v1 = main row + version row 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScenarioTemplateRequest"
+      responses:
+        "201":
+          description: Scenario template created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioTemplate"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/scenario-templates/{templateKey}:
     get:
       operationId: getScenarioTemplate
@@ -2217,6 +2239,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ScenarioTemplate"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: patchScenarioTemplate
+      summary: Update a scenario template's status (active/disabled) and/or name/description
+      parameters:
+        - name: templateKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchScenarioTemplateRequest"
+      responses:
+        "200":
+          description: Scenario template updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioTemplate"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/scenario-templates/{templateKey}/versions:
+    get:
+      operationId: listScenarioTemplateVersions
+      summary: List a scenario template's spec version history (newest first)
+      parameters:
+        - name: templateKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scenario template version history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScenarioTemplateVersion"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createScenarioTemplateVersion
+      summary: Bump a scenario template to a new spec version (mirrored onto the main row)
+      parameters:
+        - name: templateKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScenarioTemplateVersionRequest"
+      responses:
+        "201":
+          description: Scenario template version created and mirrored onto the active spec
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioTemplate"
+        "400":
+          $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
         "404":
@@ -5787,6 +5888,40 @@ components:
         created_at:
           type: string
           format: date-time
+        gap:
+          $ref: "#/components/schemas/ProjectTaskGraphBlockingFactGap"
+        decision_request_id:
+          type: string
+    ProjectTaskGraphBlockingFactGap:
+      type: object
+      description: >-
+        Structural staffing gap that terminated a demand's planning (e.g. a
+        role_independence constraint the project's executor pool cannot satisfy).
+        Present only when the coordination.blocked event carries a structured gap.
+      required:
+        - constraint_kind
+        - roles
+        - required_capabilities
+        - active_executor_count
+        - options
+      properties:
+        constraint_kind:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        required_capabilities:
+          type: array
+          items:
+            type: string
+        active_executor_count:
+          type: integer
+          format: int32
+        options:
+          type: array
+          items:
+            type: string
     ProjectTaskGraphNode:
       type: object
       required:
@@ -7535,6 +7670,8 @@ components:
             - rejected
             - needs_more_evidence
             - request_changes
+            - restaffed
+            - exempted
         comment:
           type: string
         payload:
@@ -9081,7 +9218,7 @@ components:
         - headers_env
     ScenarioTemplate:
       type: object
-      required: [id, tenant_id, template_key, name, description, spec, status, created_at, updated_at]
+      required: [id, tenant_id, template_key, name, description, spec, status, active_version, created_at, updated_at]
       properties:
         id:
           type: string
@@ -9100,12 +9237,62 @@ components:
           additionalProperties: true
         status:
           type: string
+        active_version:
+          type: integer
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    ScenarioTemplateVersion:
+      type: object
+      required: [id, template_id, version, spec, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        spec:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    CreateScenarioTemplateRequest:
+      type: object
+      required: [template_key, name, spec]
+      properties:
+        template_key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+    CreateScenarioTemplateVersionRequest:
+      type: object
+      required: [spec]
+      properties:
+        spec:
+          type: object
+          additionalProperties: true
+    PatchScenarioTemplateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+        name:
+          type: string
+        description:
+          type: string
     MCPServerDefinition:
       type: object
       required:

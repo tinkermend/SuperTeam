@@ -1044,6 +1044,24 @@ func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerGetDemandLaunchDetailNotFoundReturns404(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	demandID := uuid.New()
+	service := &handlerTestService{launchDetailErr: ErrProjectNotFound}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/launch-detail", nil)
+	req = withProjectRouteParams(req, map[string]string{"demandId": demandID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetDemandLaunchDetail(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected missing demand launch detail to return 404, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -1285,6 +1303,228 @@ func TestGetProjectTaskGraphReturnsBlockingFactWhenCoordinationBlocked(t *testin
 	}
 	if fact["recommended_action"] != "bind_runtime" || fact["resource_id"] != demandID.String() {
 		t.Fatalf("unexpected blocking fact response: %#v", fact)
+	}
+}
+
+// TestGetProjectTaskGraphReturnsGapAndDecisionRequestIDInBlockingFact proves the
+// coordination.blocked event's structured "gap" and "decision_request_id" payload
+// fields (Task 4/RejectDemandPlanning passthrough) survive the domain/response
+// round trip into the task-graph blocking fact, so the web can render a staffing
+// gap panel with three actions (补员/豁免/借调) without re-parsing prose.
+func TestGetProjectTaskGraphReturnsGapAndDecisionRequestIDInBlockingFact(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	decisionRequestID := uuid.New()
+	createdAt := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes: []ProjectTaskGraphNode{},
+		},
+	}
+	eventSummary := "规划终止：项目员工池无法满足审查独立性约束"
+	repo.events = append(repo.events, ProjectEvent{
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		SequenceNumber: 1,
+		EventType:      ProjectEventCoordinationBlocked,
+		ActorType:      "project_coordinator",
+		ActorID:        demandID.String(),
+		ResourceType:   strPtr("project_demand"),
+		ResourceID:     strPtr(demandID.String()),
+		Summary:        &eventSummary,
+		Payload: map[string]any{
+			"demand_id":           demandID.String(),
+			"reason_code":         "no_suitable_employee",
+			"recommended_action":  "为项目补充可调度员工、改选更浅的出口交付物，或改用更贴合的场景模板",
+			"decision_request_id": decisionRequestID.String(),
+			"gap": map[string]any{
+				"constraint_kind":       "role_independence",
+				"roles":                 []any{"reviewer", "developer"},
+				"required_capabilities": []any{"code_review"},
+				"active_executor_count": float64(1),
+				"options":               []any{"restaff", "exempt", "lending"},
+			},
+		},
+		CreatedAt: createdAt,
+	})
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph?demand_id="+demandID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskGraph(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task graph 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode task graph response: %v", err)
+	}
+	facts := body["blocking_facts"].([]any)
+	if len(facts) != 1 {
+		t.Fatalf("expected one blocking fact, got %#v", body)
+	}
+	fact := facts[0].(map[string]any)
+	if fact["decision_request_id"] != decisionRequestID.String() {
+		t.Fatalf("expected decision_request_id passthrough, got %#v", fact)
+	}
+	gap, ok := fact["gap"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected gap object in blocking fact, got %#v", fact)
+	}
+	if gap["constraint_kind"] != "role_independence" {
+		t.Fatalf("unexpected gap.constraint_kind: %#v", gap)
+	}
+	roles, ok := gap["roles"].([]any)
+	if !ok || len(roles) != 2 || roles[0] != "reviewer" || roles[1] != "developer" {
+		t.Fatalf("unexpected gap.roles: %#v", gap["roles"])
+	}
+	requiredCapabilities, ok := gap["required_capabilities"].([]any)
+	if !ok || len(requiredCapabilities) != 1 || requiredCapabilities[0] != "code_review" {
+		t.Fatalf("unexpected gap.required_capabilities: %#v", gap["required_capabilities"])
+	}
+	if gap["active_executor_count"] != float64(1) {
+		t.Fatalf("unexpected gap.active_executor_count: %#v", gap["active_executor_count"])
+	}
+	options, ok := gap["options"].([]any)
+	if !ok || len(options) != 3 {
+		t.Fatalf("unexpected gap.options: %#v", gap["options"])
+	}
+}
+
+// TestGetProjectTaskGraphGapFieldsDefaultToEmptyArraysNotNull proves a gap payload
+// missing individual array keys (roles/required_capabilities/options) still
+// JSON-marshals those fields as "[]", never "null" — the web accesses them with
+// `gap.roles.join(...)`/`.length` without a null guard, so a stray null would crash.
+func TestGetProjectTaskGraphGapFieldsDefaultToEmptyArraysNotNull(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph:            ProjectTaskGraph{Nodes: []ProjectTaskGraphNode{}},
+	}
+	eventSummary := "规划终止"
+	repo.events = append(repo.events, ProjectEvent{
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		SequenceNumber: 1,
+		EventType:      ProjectEventCoordinationBlocked,
+		ActorType:      "project_coordinator",
+		ActorID:        demandID.String(),
+		ResourceType:   strPtr("project_demand"),
+		ResourceID:     strPtr(demandID.String()),
+		Summary:        &eventSummary,
+		Payload: map[string]any{
+			"demand_id":   demandID.String(),
+			"reason_code": "no_suitable_employee",
+			"gap": map[string]any{
+				"constraint_kind": "role_independence",
+			},
+		},
+		CreatedAt: time.Now(),
+	})
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph?demand_id="+demandID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskGraph(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task graph 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	if !strings.Contains(body, `"roles":[]`) {
+		t.Fatalf("expected gap.roles to serialize as [] not null, got body: %s", body)
+	}
+	if !strings.Contains(body, `"required_capabilities":[]`) {
+		t.Fatalf("expected gap.required_capabilities to serialize as [] not null, got body: %s", body)
+	}
+	if !strings.Contains(body, `"options":[]`) {
+		t.Fatalf("expected gap.options to serialize as [] not null, got body: %s", body)
+	}
+}
+
+// TestGetProjectTaskGraphOmitsGapWhenAbsent proves a blocking fact without a "gap"
+// payload key (the common non-structural no-suitable-employee diagnosis, and every
+// pre-existing blocking event type) renders no gap field at all — not a null/empty
+// object — so the web's `fact.gap` presence check stays a reliable gate for the
+// staffing panel.
+func TestGetProjectTaskGraphOmitsGapWhenAbsent(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	createdAt := time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC)
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes: []ProjectTaskGraphNode{},
+		},
+	}
+	eventSummary := "运行时占位缺失"
+	repo.events = append(repo.events, ProjectEvent{
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		SequenceNumber: 1,
+		EventType:      ProjectEventCoordinationBlocked,
+		ActorType:      "project_coordinator",
+		ActorID:        demandID.String(),
+		ResourceType:   strPtr("project_demand"),
+		ResourceID:     strPtr(demandID.String()),
+		Summary:        &eventSummary,
+		Payload: map[string]any{
+			"demand_id":          demandID.String(),
+			"reason_code":        "runtime_placement_missing",
+			"recommended_action": "bind_runtime",
+		},
+		CreatedAt: createdAt,
+	})
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph?demand_id="+demandID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskGraph(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task graph 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode task graph response: %v", err)
+	}
+	facts := body["blocking_facts"].([]any)
+	fact := facts[0].(map[string]any)
+	if _, exists := fact["gap"]; exists {
+		t.Fatalf("expected no gap key when payload carries none, got %#v", fact)
+	}
+	if _, exists := fact["decision_request_id"]; exists {
+		t.Fatalf("expected no decision_request_id key when payload carries none, got %#v", fact)
 	}
 }
 
@@ -1926,6 +2166,7 @@ type handlerTestService struct {
 	launchDetailTenantID              uuid.UUID
 	launchDetailDemandID              uuid.UUID
 	launchDetailProjectID             uuid.UUID
+	launchDetailErr                   error
 	taskGraph                         ProjectTaskGraph
 	taskGraphReq                      GetProjectTaskGraphRequest
 	taskGraphCalls                    int
@@ -2160,6 +2401,9 @@ func (s *handlerTestService) ListDecisionRequests(ctx context.Context, tenantID,
 func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
 	s.launchDetailTenantID = tenantID
 	s.launchDetailDemandID = demandID
+	if s.launchDetailErr != nil {
+		return nil, s.launchDetailErr
+	}
 	projectID := s.launchDetailProjectID
 	if projectID == uuid.Nil {
 		projectID = uuid.New()

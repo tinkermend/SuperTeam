@@ -73,6 +73,7 @@ import type {
   ProjectStatus,
   ProjectTask,
   ProjectTaskGraph,
+  ProjectTaskGraphBlockingFact,
   ProjectTransferRequest,
 } from "@/lib/api/projects";
 import {
@@ -397,6 +398,12 @@ export function ProjectOperationalDetail({
                   <p className="line-clamp-3 text-sm leading-6 text-v3-ink-2">
                     {latestDemand.content || "需求内容已记录，等待系统生成下一步计划。"}
                   </p>
+                  {latestDemand.status === "failed" ? (
+                    <DemandFailureDiagnosis
+                      demandId={latestDemand.id}
+                      fact={taskGraph?.blocking_facts?.[0]}
+                    />
+                  ) : null}
                 </div>
               ) : (
                 <EmptyLine label="暂无提交到项目的需求" />
@@ -1385,6 +1392,37 @@ function DemandTitle({ demand }: { demand: ProjectDemand }) {
     >
       {demand.title}
     </Link>
+  );
+}
+
+/**
+ * 失败需求的诊断摘要行：读取该需求 taskGraph 的第一条 blocking fact（已按 latestDemand.id
+ * 取数，见调用方），给出诊断原因/下一步建议，并深链到 /workflows/{demandId} 的缺口处理面板
+ * （规划缺口面板——补员/豁免/借调三个动作都在那）。没有 blocking fact 时仍给出深链，不留死胡同。
+ */
+function DemandFailureDiagnosis({
+  demandId,
+  fact,
+}: {
+  demandId: string;
+  fact?: ProjectTaskGraphBlockingFact;
+}) {
+  return (
+    <div className="grid gap-1 rounded-[14px] border border-v3-danger/25 bg-v3-danger/5 p-3">
+      <p className="text-xs leading-5 text-v3-ink-2">
+        {fact?.message ?? "规划已终止，需要人工处理。"}
+      </p>
+      {fact?.recommended_action ? (
+        <p className="text-xs leading-5 text-v3-ink-2">下一步：{fact.recommended_action}</p>
+      ) : null}
+      <Link
+        className="text-xs font-semibold text-v3-brand-deep hover:text-v3-brand"
+        params={{ demandId }}
+        to="/workflows/$demandId"
+      >
+        查看缺口处理 →
+      </Link>
+    </div>
   );
 }
 

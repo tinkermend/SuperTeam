@@ -830,7 +830,7 @@ func (r *PgRepository) GetLatestProjectConfigRevision(ctx context.Context, tenan
 func (r *PgRepository) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
 	row, err := r.q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
 	if err != nil {
-		return ProjectDemand{}, err
+		return ProjectDemand{}, projectRepositoryError(err)
 	}
 	return demandFromRecord(row)
 }
@@ -4707,6 +4707,51 @@ func (r *PgRepository) AdvanceProjectDemandStatus(ctx context.Context, tenantID,
 	return err
 }
 
+// ReopenProjectDemandForReplanning moves a failed demand back into
+// planning_pending so the coordinator can replan it after the executor pool has
+// been supplemented (the planning_gap → restaffed path). It is a deliberate
+// exception to the forward-only rank guard AdvanceProjectDemandStatus enforces —
+// failed → planning_pending is a backward transition — so it lives in its own
+// method rather than weakening that guard. Only a currently-failed demand may be
+// reopened; any other status returns ErrProjectConflict. The transition and its
+// demand.replanning_reopened audit event are written atomically.
+func (r *PgRepository) ReopenProjectDemandForReplanning(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	return withProjectQueries(ctx, r, "reopen project demand for replanning", func(q *queries.Queries) (ProjectDemand, error) {
+		current, err := q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
+		if err != nil {
+			return ProjectDemand{}, err
+		}
+		if ProjectDemandStatus(current.Status) != ProjectDemandStatusFailed {
+			return ProjectDemand{}, fmt.Errorf("demand %s is not in failed state (current=%s): %w", demandID, current.Status, ErrProjectConflict)
+		}
+		if err := q.LockProjectEventSequence(ctx, queries.LockProjectEventSequenceParams{TenantID: tenantID, ProjectID: current.ProjectID}); err != nil {
+			return ProjectDemand{}, err
+		}
+		updated, err := q.UpdateProjectDemandStatus(ctx, queries.UpdateProjectDemandStatusParams{
+			Status:   string(ProjectDemandStatusPlanningPending),
+			TenantID: tenantID,
+			ID:       demandID,
+		})
+		if err != nil {
+			return ProjectDemand{}, err
+		}
+		if _, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     tenantID,
+			ProjectID:    current.ProjectID,
+			EventType:    ProjectEventDemandReplanningReopened,
+			ActorType:    "project_coordinator",
+			ActorID:      "project_coordinator",
+			ResourceType: strPtr("project_demand"),
+			ResourceID:   strPtr(demandID.String()),
+			Summary:      "规划缺口补员后重开需求重新规划",
+			Payload:      map[string]any{"demand_id": demandID.String()},
+		}); err != nil {
+			return ProjectDemand{}, err
+		}
+		return demandFromRecord(updated)
+	})
+}
+
 func (r *PgRepository) RequestProjectTaskTransferWriteback(ctx context.Context, req RequestProjectTaskTransferWritebackRequest) (ProjectTaskTransferWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task transfer writeback", func(q *queries.Queries) (ProjectTaskTransferWritebackResult, error) {
 		if _, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ID, "waiting_human", nil, req.AllowedCurrentStatuses); err != nil {
@@ -5137,6 +5182,53 @@ func (r *PgRepository) GetBudgetSummary(ctx context.Context, tenantID, projectID
 		return ProjectBudgetSummary{}, err
 	}
 	return budgetSummaryFromRecord(row), nil
+}
+
+// CreateDemandConstraintExemption persists a DemandConstraintExemption. The
+// underlying INSERT is ON CONFLICT (tenant_id, demand_id, constraint_kind) DO
+// NOTHING, so a repeat call for an already-exempted demand+kind (e.g. a retried
+// ResolveDecision after a coordinator-signal failure) returns pgx.ErrNoRows from
+// the RETURNING clause, which this treats as a no-op rather than an error.
+func (r *PgRepository) CreateDemandConstraintExemption(ctx context.Context, req CreateDemandConstraintExemptionRequest) error {
+	roles, err := jsonbStringSlice(req.Roles, "roles")
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateDemandConstraintExemption(ctx, queries.CreateDemandConstraintExemptionParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		ConstraintKind:    req.ConstraintKind,
+		Roles:             roles,
+		GrantedByUserID:   req.GrantedByUserID,
+		DecisionRequestID: nullUUID(req.DecisionRequestID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *PgRepository) ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]DemandConstraintExemption, error) {
+	rows, err := r.q.ListDemandConstraintExemptionsByDemand(ctx, queries.ListDemandConstraintExemptionsByDemandParams{
+		TenantID: tenantID,
+		DemandID: demandID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DemandConstraintExemption, 0, len(rows))
+	for _, row := range rows {
+		exemption, err := demandConstraintExemptionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, exemption)
+	}
+	return result, nil
 }
 
 func (r *PgRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
@@ -6440,6 +6532,24 @@ func budgetSummaryFromRecord(row queries.GetProjectBudgetSummaryRow) ProjectBudg
 		ActualCost:      actualCost,
 		LedgerCount:     row.LedgerCount,
 	}
+}
+
+func demandConstraintExemptionFromRecord(row queries.ProjectDemandConstraintExemption) (DemandConstraintExemption, error) {
+	roles, err := stringSliceFromJSON(row.Roles)
+	if err != nil {
+		return DemandConstraintExemption{}, fmt.Errorf("roles: %w", err)
+	}
+	return DemandConstraintExemption{
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		DemandID:          row.DemandID,
+		ConstraintKind:    row.ConstraintKind,
+		Roles:             roles,
+		GrantedByUserID:   row.GrantedByUserID,
+		DecisionRequestID: ptrUUID(row.DecisionRequestID),
+		CreatedAt:         row.CreatedAt.Time,
+	}, nil
 }
 
 func acceptanceRecordFromRecord(row queries.ProjectAcceptanceRecord) (ProjectAcceptanceRecord, error) {

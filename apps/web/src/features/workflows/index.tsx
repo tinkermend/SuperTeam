@@ -1,16 +1,20 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { WorkflowDetail } from "./components/workflow-detail";
 import { WorkflowRiverView } from "./components/workflow-river-view";
 import { WorkflowShell } from "./components/workflow-shell";
-import { SoftCard, StatusPill } from "@/components/superteam";
-import type { ApiClientOptions } from "@/lib/api/client";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { IconTile, SoftCard, StatusPill, V3Button } from "@/components/superteam";
+import { StaffGapDialog } from "@/features/projects/components/staff-gap-dialog";
+import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   getProjectDemandLaunchDetail,
   getProjectTaskGraph,
   listProjectEvents,
   listWorkflowInstances,
+  resolveProjectDecision,
   type ProjectEvent,
   type ProjectTaskGraph,
 } from "@/lib/api/projects";
@@ -39,28 +43,14 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     refetchInterval: 5000,
   });
   const instances = listQuery.data ?? [];
-  const routeSelected = demandId
+  // 直链可达性：selectedDemandId 直接取路由参数，不再要求该 demand 出现在首页 50 条列表里，
+  // 否则失败需求排在河道底部时，直链会被下面的兜底重定向劫持到别的需求。
+  const selectedDemandId = demandId;
+  // 列表命中的 instance 仅用于详情头部展示（状态/进度 pill），不参与是否能看到详情的判断。
+  const listMatchedInstance = demandId
     ? instances.find((instance) => instance.demand_id === demandId)
     : undefined;
-  const selected = routeSelected;
-  const selectedDemandId = selected?.demand_id;
   const fallbackDemandId = instances[0]?.demand_id;
-
-  useEffect(() => {
-    if (!demandId || !fallbackDemandId || !listQuery.isSuccess) {
-      return;
-    }
-
-    if (routeSelected) {
-      return;
-    }
-
-    void navigate({
-      params: { demandId: fallbackDemandId },
-      replace: true,
-      to: "/workflows/$demandId",
-    });
-  }, [demandId, fallbackDemandId, listQuery.isSuccess, navigate, routeSelected]);
 
   const detailQuery = useQuery({
     enabled: Boolean(selectedDemandId),
@@ -71,6 +61,28 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
   });
   const currentDetail =
     detailQuery.data?.demand.id === selectedDemandId ? detailQuery.data : undefined;
+  const detailNotFound =
+    detailQuery.isError &&
+    detailQuery.error instanceof ApiRequestError &&
+    detailQuery.error.status === 404;
+
+  useEffect(() => {
+    // 仅当按 id 拉取详情真的 404（需求不存在/不可见）时才兜底重定向到列表第一条；
+    // 不能仅凭 demandId 不在首页列表命中就重定向，否则直链会被劫持。
+    if (!demandId || !fallbackDemandId || !listQuery.isSuccess) {
+      return;
+    }
+
+    if (!detailNotFound) {
+      return;
+    }
+
+    void navigate({
+      params: { demandId: fallbackDemandId },
+      replace: true,
+      to: "/workflows/$demandId",
+    });
+  }, [demandId, detailNotFound, fallbackDemandId, listQuery.isSuccess, navigate]);
 
   const graphQuery = useQuery({
     enabled: Boolean(currentDetail?.project.id && selectedDemandId),
@@ -114,15 +126,28 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     );
   }
 
+  // coordination.blocked 横幅 + 缺口面板只在需求当前处于 failed（终态阻塞）时才有意义：
+  // 需求 reopen 重新规划后会先回到 planning_pending 等非终态，但 task-graph 的
+  // blocking_facts 可能还没随重规划刷新掉（图仍是空图 + 旧 fact），此时继续渲染红色
+  // 阻塞条会误导人类负责人以为需求仍卡死。demand.status 是需求当前状态的权威来源。
+  const showBlockingUi = currentDetail?.demand.status === "failed";
+
   return (
     <WorkflowShell>
-      <WorkflowBlockingBanner graph={currentGraph} />
+      {showBlockingUi ? <WorkflowBlockingBanner graph={currentGraph} /> : null}
+      {showBlockingUi && currentDetail && selectedDemandId ? (
+        <WorkflowGapPanel
+          apiOptions={apiOptions}
+          graph={currentGraph}
+          projectId={currentDetail.project.id}
+        />
+      ) : null}
       <WorkflowDispatchBlockerBanner event={dispatchBlocker} />
       <WorkflowDetail
         detail={currentDetail}
         graph={currentGraph}
-        instance={selected}
-        isError={listQuery.isError || detailQuery.isError || graphQuery.isError}
+        instance={listMatchedInstance}
+        isError={listQuery.isError || (detailQuery.isError && !detailNotFound) || graphQuery.isError}
       />
     </WorkflowShell>
   );
@@ -147,6 +172,138 @@ function WorkflowBlockingBanner({ graph }: { graph: ProjectTaskGraph | undefined
       </div>
     </SoftCard>
   );
+}
+
+/**
+ * 规划缺口面板：coordination.blocked 事件携带结构化 gap（RejectDemandPlanning →
+ * 任务 4-6 的 planning_gap 决策通道）时，在阻塞横幅下方给出三条处置动作——一键补员、
+ * 豁免约束重规划、发起借调（仅链接）。没有 gap 就不渲染面板（非结构性诊断没有可执行
+ * 的结构化处置项）。
+ */
+function WorkflowGapPanel({
+  apiOptions,
+  graph,
+  projectId,
+}: {
+  apiOptions: ApiClientOptions;
+  graph: ProjectTaskGraph | undefined;
+  projectId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [staffDialogOpen, setStaffDialogOpen] = useState(false);
+  const [exemptDialogOpen, setExemptDialogOpen] = useState(false);
+  const fact = graph?.blocking_facts[0];
+  const gap = fact?.gap;
+  const decisionRequestId = fact?.decision_request_id;
+
+  const exemptMutation = useMutation({
+    mutationFn: () => {
+      if (!decisionRequestId) {
+        throw new Error("缺少决策 ID，无法豁免");
+      }
+      return resolveProjectDecision(apiOptions, projectId, decisionRequestId, {
+        decision: "exempted",
+      });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : "豁免失败");
+    },
+    onSuccess: async () => {
+      toast.success("已豁免约束，重新规划已触发");
+      setExemptDialogOpen(false);
+      await invalidateWorkflowGapQueries(queryClient);
+    },
+  });
+
+  if (!gap) return null;
+
+  return (
+    <SoftCard className="mb-4 p-4" data-testid="workflow-gap-panel">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start gap-3">
+          <IconTile tone="warn">
+            <span aria-hidden className="text-sm font-bold">
+              缺
+            </span>
+          </IconTile>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-v3-ink">
+              规划缺口：{gapConstraintLabel(gap.constraint_kind)}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-v3-ink-2">
+              涉及角色：{gap.roles.length > 0 ? gap.roles.join("、") : "—"} · 当前可调度员工{" "}
+              {gap.active_executor_count} 名
+            </p>
+            {gap.required_capabilities.length > 0 ? (
+              <p className="text-xs leading-5 text-v3-ink-2">
+                所需能力：{gap.required_capabilities.join("、")}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <V3Button
+            disabled={!decisionRequestId}
+            onClick={() => setStaffDialogOpen(true)}
+            variant="primary"
+          >
+            从标准模板补员
+          </V3Button>
+          <V3Button
+            disabled={!decisionRequestId}
+            onClick={() => setExemptDialogOpen(true)}
+            variant="outline"
+          >
+            豁免并重规划
+          </V3Button>
+          <V3Button asChild variant="ghost">
+            <Link params={{ projectId }} to="/projects/$projectId/config">
+              发起借调
+            </Link>
+          </V3Button>
+        </div>
+      </div>
+      {decisionRequestId ? (
+        <StaffGapDialog
+          apiOptions={apiOptions}
+          decisionRequestId={decisionRequestId}
+          gap={gap}
+          onOpenChange={setStaffDialogOpen}
+          onStaffed={() => {
+            void invalidateWorkflowGapQueries(queryClient);
+          }}
+          open={staffDialogOpen}
+          projectId={projectId}
+        />
+      ) : null}
+      <ConfirmDialog
+        cancelBtnText="取消"
+        confirmText="确认豁免"
+        desc="豁免后，审查独立性等约束将对该需求不再生效，同一数字员工可能身兼多个角色（如既实现又审查）。该操作会记录为人类负责人的一等决策，并立即触发重新规划。"
+        destructive
+        handleConfirm={() => exemptMutation.mutate()}
+        isLoading={exemptMutation.isPending}
+        onOpenChange={setExemptDialogOpen}
+        open={exemptDialogOpen}
+        title="豁免约束并重新规划"
+      />
+    </SoftCard>
+  );
+}
+
+function invalidateWorkflowGapQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+): Promise<unknown> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["workflow-task-graph"] }),
+    queryClient.invalidateQueries({ queryKey: ["workflow-detail"] }),
+    queryClient.invalidateQueries({ queryKey: ["workflow-project-events"] }),
+  ]);
+}
+
+function gapConstraintLabel(constraintKind: string): string {
+  if (constraintKind === "role_independence") return "审查独立性约束";
+  return constraintKind || "结构性约束";
 }
 
 function WorkflowDispatchBlockerBanner({ event }: { event: ProjectEvent | undefined }) {

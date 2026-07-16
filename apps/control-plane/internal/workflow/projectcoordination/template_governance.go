@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -14,6 +15,72 @@ import (
 // active executor pool is too small to make the two roles independent — see
 // EnforceScenarioTemplateGovernance.
 const noSuitableEmployeeStructuralGapMessage = "项目员工池无法满足审查独立性约束（需≥2名可调度员工）；可改选更浅出口、为项目补充员工、或换用模板"
+
+// structuralGapError wraps ErrNoSuitableEmployee with the actionable PlanningGap a
+// human needs to resolve a structural pool gap (补充员工/改浅出口/换模板), so the
+// terminal activities.go wrapping (wrapNoSuitableEmployeeError) can attach the gap
+// to the ApplicationError's Details without any caller having to reconstruct it
+// from CoordinationSnapshot after the fact — the knowledge (constraint kind, roles,
+// required capabilities, pool size) only exists here, at the point of detection.
+// Unwrap returns ErrNoSuitableEmployee so errors.Is(err, ErrNoSuitableEmployee)
+// keeps working unchanged for every existing caller.
+type structuralGapError struct {
+	msg string
+	gap PlanningGap
+}
+
+func (e *structuralGapError) Error() string { return e.msg }
+func (e *structuralGapError) Unwrap() error { return ErrNoSuitableEmployee }
+
+// roleCapabilitiesFromSpec indexes a template spec's declared roles by key, for
+// looking up the required_capabilities a PlanningGap should report for the roles
+// named by a violated constraint.
+func roleCapabilitiesFromSpec(spec scenariotemplate.SpecV2) map[string][]string {
+	capabilities := make(map[string][]string, len(spec.Roles))
+	for _, role := range spec.Roles {
+		capabilities[role.Key] = role.RequiredCapabilities
+	}
+	return capabilities
+}
+
+// buildRoleIndependenceGap constructs the PlanningGap for a role_independence
+// structural escalation: RequiredCapabilities is the order-preserving union (no
+// duplicates) of constraint.Roles' declared required_capabilities. Options is
+// always the fixed three-way-out set — restaff (补充员工), exempt (改选更浅出口),
+// lending (换用模板/借调) — regardless of which constraint triggered the gap.
+func buildRoleIndependenceGap(constraint scenariotemplate.SpecConstraint, roleCapabilities map[string][]string, activeExecutorCount int) PlanningGap {
+	var capabilities []string
+	seen := make(map[string]bool, len(constraint.Roles))
+	for _, role := range constraint.Roles {
+		for _, capability := range roleCapabilities[role] {
+			if seen[capability] {
+				continue
+			}
+			seen[capability] = true
+			capabilities = append(capabilities, capability)
+		}
+	}
+	return PlanningGap{
+		ConstraintKind:       constraint.Kind,
+		Roles:                append([]string(nil), constraint.Roles...),
+		RequiredCapabilities: capabilities,
+		ActiveExecutorCount:  activeExecutorCount,
+		Options:              []string{"restaff", "exempt", "lending"},
+	}
+}
+
+// newStructuralGapError builds the structuralGapError shared by
+// enforceRoleIndependence and structuralGapForPlan: same fixed diagnosis message
+// (noSuitableEmployeeStructuralGapMessage, prefixed exactly as the historical
+// fmt.Errorf("%w: %s", ErrNoSuitableEmployee, ...) formatted it, so
+// humanizeNoSuitableEmployeeDiagnosis in workflow.go keeps stripping the same
+// prefix), carrying the constraint's PlanningGap.
+func newStructuralGapError(constraint scenariotemplate.SpecConstraint, roleCapabilities map[string][]string, activeExecutorCount int) error {
+	return &structuralGapError{
+		msg: ErrNoSuitableEmployee.Error() + ": " + noSuitableEmployeeStructuralGapMessage,
+		gap: buildRoleIndependenceGap(constraint, roleCapabilities, activeExecutorCount),
+	}
+}
 
 // pruneSkeletonForExit returns the subset of spec.Skeleton reachable via
 // depends_on from the step that produces exitDeliverable, preserving the
@@ -137,10 +204,14 @@ func stepTask(step scenariotemplate.SpecSkeletonStep, producedBy map[string]stri
 // pool cannot possibly make the two roles independent (fewer than 2 active
 // executors), rejecting-and-replanning would just have the planner reselect
 // the same sole employee forever; this is a structural pool gap, not a plan
-// defect, so it escalates through the ErrNoSuitableEmployee family straight
-// to a human instead (see graph_validation.go's confidence-threshold
-// handling for the same "non-plan-defect" channel).
-func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmployees map[string]map[uuid.UUID]bool, activeExecutorCount int) error {
+// defect, so it escalates straight to a human via newStructuralGapError,
+// carrying an actionable PlanningGap (roles/capabilities/ways-out) instead of
+// a raw diagnosis. This is the only production channel that raises
+// ErrNoSuitableEmployee: ValidateRouteDecisionPlan no longer gates on planner
+// self-reported confidence — see graph_validation.go's selectionScoreThreshold
+// for the server-computed gate that replaced it (a low score degrades the
+// plan via a low_feasibility note instead of rejecting it).
+func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmployees map[string]map[uuid.UUID]bool, roleCapabilities map[string][]string, activeExecutorCount int) error {
 	for i := 0; i < len(constraint.Roles); i++ {
 		for j := i + 1; j < len(constraint.Roles); j++ {
 			left := roleEmployees[constraint.Roles[i]]
@@ -152,11 +223,50 @@ func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmp
 				if activeExecutorCount >= 2 {
 					return invalidRouteDecision("constraint role_independence violated: roles %v share employee %s", constraint.Roles, id)
 				}
-				return fmt.Errorf("%w: %s", ErrNoSuitableEmployee, noSuitableEmployeeStructuralGapMessage)
+				return newStructuralGapError(constraint, roleCapabilities, activeExecutorCount)
 			}
 		}
 	}
 	return nil
+}
+
+// demandConstraintExempted reports whether snapshot's first-class exemptions
+// (project_demand_constraint_exemptions, loaded per-demand by
+// LoadProjectCoordinationSnapshot) cover the given role_independence constraint,
+// and — when they do — the roles to name in the resulting exemption note. The
+// match rule is deliberately simple: same ConstraintKind, and either the
+// exemption carries no explicit Roles (a blanket exemption for that kind on this
+// demand) or its Roles set is exactly the constraint's Roles set (order-
+// independent; sorted-slice equality, no partial/superset matching).
+func demandConstraintExempted(exemptions []DemandConstraintExemption, constraint scenariotemplate.SpecConstraint) (bool, []string) {
+	for _, exemption := range exemptions {
+		if exemption.ConstraintKind != constraint.Kind {
+			continue
+		}
+		if len(exemption.Roles) == 0 || roleSetsEqual(exemption.Roles, constraint.Roles) {
+			return true, constraint.Roles
+		}
+	}
+	return false, nil
+}
+
+// roleSetsEqual reports whether a and b contain the same role keys, ignoring
+// order (each is sorted into a fresh copy before comparing; neither input slice
+// is mutated).
+func roleSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sortedA := append([]string(nil), a...)
+	sortedB := append([]string(nil), b...)
+	sort.Strings(sortedA)
+	sort.Strings(sortedB)
+	for i := range sortedA {
+		if sortedA[i] != sortedB[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // structuralGapForPlan returns the actionable ErrNoSuitableEmployee-family error
@@ -179,9 +289,11 @@ func structuralGapForPlan(snapshot CoordinationSnapshot, plan RouteDecisionPlan)
 	if err != nil || len(spec.Skeleton) == 0 {
 		return nil
 	}
-	if len(activeExecutorIDs(snapshot.DigitalEmployeePool)) >= 2 {
+	activeExecutorCount := len(activeExecutorIDs(snapshot.DigitalEmployeePool))
+	if activeExecutorCount >= 2 {
 		return nil
 	}
+	roleCapabilities := roleCapabilitiesFromSpec(spec)
 	for _, constraint := range spec.Constraints {
 		if constraint.Kind != "role_independence" || len(constraint.Roles) < 2 {
 			continue
@@ -189,7 +301,7 @@ func structuralGapForPlan(snapshot CoordinationSnapshot, plan RouteDecisionPlan)
 		if !exitCondMet(spec, constraint.When, plan.ExitDeliverable) {
 			continue
 		}
-		return fmt.Errorf("%w: %s", ErrNoSuitableEmployee, noSuitableEmployeeStructuralGapMessage)
+		return newStructuralGapError(constraint, roleCapabilities, activeExecutorCount)
 	}
 	return nil
 }
@@ -288,6 +400,7 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 	for _, role := range spec.Roles {
 		roleTitle[role.Key] = role.Title
 	}
+	roleCapabilities := roleCapabilitiesFromSpec(spec)
 
 	// A role may span multiple steps within the pruned skeleton (e.g.
 	// "developer" both develops and releases); union all employees observed
@@ -312,7 +425,14 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 		}
 		switch constraint.Kind {
 		case "role_independence":
-			if err := enforceRoleIndependence(constraint, roleEmployees, activeExecutorCount); err != nil {
+			if exempted, roles := demandConstraintExempted(snapshot.DemandConstraintExemptions, constraint); exempted {
+				plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
+					Kind:    "exemption",
+					Message: fmt.Sprintf("约束 role_independence 已由人类负责人豁免（角色：%s）", strings.Join(roles, "、")),
+				})
+				continue
+			}
+			if err := enforceRoleIndependence(constraint, roleEmployees, roleCapabilities, activeExecutorCount); err != nil {
 				return err
 			}
 		case "stage_required":

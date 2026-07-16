@@ -11,6 +11,100 @@ import (
 	"github.com/google/uuid"
 )
 
+const CreateScenarioTemplate = `-- name: CreateScenarioTemplate :one
+INSERT INTO scenario_templates (
+    tenant_id, template_key, name, description, spec, status, active_version, created_by
+) VALUES (
+    $1::uuid,
+    $2::text,
+    $3::text,
+    COALESCE($4::text, ''),
+    $5::jsonb,
+    'active',
+    1,
+    $6::uuid
+)
+RETURNING id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at, active_version
+`
+
+type CreateScenarioTemplateParams struct {
+	TenantID    uuid.UUID     `json:"tenant_id"`
+	TemplateKey string        `json:"template_key"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Spec        []byte        `json:"spec"`
+	CreatedBy   uuid.NullUUID `json:"created_by"`
+}
+
+func (q *Queries) CreateScenarioTemplate(ctx context.Context, arg CreateScenarioTemplateParams) (ScenarioTemplate, error) {
+	row := q.db.QueryRow(ctx, CreateScenarioTemplate,
+		arg.TenantID,
+		arg.TemplateKey,
+		arg.Name,
+		arg.Description,
+		arg.Spec,
+		arg.CreatedBy,
+	)
+	var i ScenarioTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TemplateKey,
+		&i.Name,
+		&i.Description,
+		&i.Spec,
+		&i.Status,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ActiveVersion,
+	)
+	return i, err
+}
+
+const CreateScenarioTemplateVersion = `-- name: CreateScenarioTemplateVersion :one
+INSERT INTO scenario_template_versions (
+    tenant_id, template_id, version, spec, created_by
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::int,
+    $4::jsonb,
+    $5::uuid
+)
+RETURNING id, tenant_id, template_id, version, spec, created_by, created_at
+`
+
+type CreateScenarioTemplateVersionParams struct {
+	TenantID   uuid.UUID     `json:"tenant_id"`
+	TemplateID uuid.UUID     `json:"template_id"`
+	Version    int32         `json:"version"`
+	Spec       []byte        `json:"spec"`
+	CreatedBy  uuid.NullUUID `json:"created_by"`
+}
+
+func (q *Queries) CreateScenarioTemplateVersion(ctx context.Context, arg CreateScenarioTemplateVersionParams) (ScenarioTemplateVersion, error) {
+	row := q.db.QueryRow(ctx, CreateScenarioTemplateVersion,
+		arg.TenantID,
+		arg.TemplateID,
+		arg.Version,
+		arg.Spec,
+		arg.CreatedBy,
+	)
+	var i ScenarioTemplateVersion
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TemplateID,
+		&i.Version,
+		&i.Spec,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const GetScenarioTemplateByKey = `-- name: GetScenarioTemplateByKey :one
 SELECT id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at, active_version FROM scenario_templates
 WHERE tenant_id = $1::uuid
@@ -41,6 +135,65 @@ func (q *Queries) GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioT
 		&i.ActiveVersion,
 	)
 	return i, err
+}
+
+const GetScenarioTemplateMaxVersion = `-- name: GetScenarioTemplateMaxVersion :one
+SELECT COALESCE(MAX(version), 0)::int AS max_version
+FROM scenario_template_versions
+WHERE tenant_id = $1::uuid
+  AND template_id = $2::uuid
+`
+
+type GetScenarioTemplateMaxVersionParams struct {
+	TenantID   uuid.UUID `json:"tenant_id"`
+	TemplateID uuid.UUID `json:"template_id"`
+}
+
+func (q *Queries) GetScenarioTemplateMaxVersion(ctx context.Context, arg GetScenarioTemplateMaxVersionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, GetScenarioTemplateMaxVersion, arg.TenantID, arg.TemplateID)
+	var max_version int32
+	err := row.Scan(&max_version)
+	return max_version, err
+}
+
+const ListScenarioTemplateVersions = `-- name: ListScenarioTemplateVersions :many
+SELECT id, tenant_id, template_id, version, spec, created_by, created_at FROM scenario_template_versions
+WHERE tenant_id = $1::uuid
+  AND template_id = $2::uuid
+ORDER BY version DESC
+`
+
+type ListScenarioTemplateVersionsParams struct {
+	TenantID   uuid.UUID `json:"tenant_id"`
+	TemplateID uuid.UUID `json:"template_id"`
+}
+
+func (q *Queries) ListScenarioTemplateVersions(ctx context.Context, arg ListScenarioTemplateVersionsParams) ([]ScenarioTemplateVersion, error) {
+	rows, err := q.db.Query(ctx, ListScenarioTemplateVersions, arg.TenantID, arg.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScenarioTemplateVersion{}
+	for rows.Next() {
+		var i ScenarioTemplateVersion
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TemplateID,
+			&i.Version,
+			&i.Spec,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListScenarioTemplates = `-- name: ListScenarioTemplates :many
@@ -81,4 +234,91 @@ func (q *Queries) ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID)
 		return nil, err
 	}
 	return items, nil
+}
+
+const UpdateScenarioTemplateActiveSpec = `-- name: UpdateScenarioTemplateActiveSpec :one
+UPDATE scenario_templates
+SET spec = $1::jsonb,
+    active_version = $2::int
+WHERE tenant_id = $3::uuid
+  AND id = $4::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at, active_version
+`
+
+type UpdateScenarioTemplateActiveSpecParams struct {
+	Spec          []byte    `json:"spec"`
+	ActiveVersion int32     `json:"active_version"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ID            uuid.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateScenarioTemplateActiveSpec(ctx context.Context, arg UpdateScenarioTemplateActiveSpecParams) (ScenarioTemplate, error) {
+	row := q.db.QueryRow(ctx, UpdateScenarioTemplateActiveSpec,
+		arg.Spec,
+		arg.ActiveVersion,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ScenarioTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TemplateKey,
+		&i.Name,
+		&i.Description,
+		&i.Spec,
+		&i.Status,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ActiveVersion,
+	)
+	return i, err
+}
+
+const UpdateScenarioTemplateStatus = `-- name: UpdateScenarioTemplateStatus :one
+UPDATE scenario_templates
+SET status = $1::varchar,
+    name = $2::text,
+    description = $3::text
+WHERE tenant_id = $4::uuid
+  AND id = $5::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at, active_version
+`
+
+type UpdateScenarioTemplateStatusParams struct {
+	Status      string    `json:"status"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+	ID          uuid.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateScenarioTemplateStatus(ctx context.Context, arg UpdateScenarioTemplateStatusParams) (ScenarioTemplate, error) {
+	row := q.db.QueryRow(ctx, UpdateScenarioTemplateStatus,
+		arg.Status,
+		arg.Name,
+		arg.Description,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ScenarioTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TemplateKey,
+		&i.Name,
+		&i.Description,
+		&i.Spec,
+		&i.Status,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ActiveVersion,
+	)
+	return i, err
 }

@@ -4002,6 +4002,11 @@ func TestPgRepositoryMapsGovernanceNoRowsToDomainNotFound(t *testing.T) {
 	if !errors.Is(err, ErrProjectNotFound) {
 		t.Fatalf("expected missing config revision to map to not found, got %v", err)
 	}
+	// launch-detail 直链回退依赖该映射：demand 不存在必须是 404 语义而非裸 pgx.ErrNoRows（会被 handler 映成 500）。
+	_, err = repo.GetProjectDemand(ctx, tenantID, uuid.New())
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing demand to map to not found, got %v", err)
+	}
 }
 
 func TestGetDecisionRequestWrapsNoRowsAsErrProjectNotFound(t *testing.T) {

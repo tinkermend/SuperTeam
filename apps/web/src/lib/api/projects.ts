@@ -74,6 +74,10 @@ export type ProjectDemandStatus =
   | "submitted"
   | "recorded"
   | "planning_pending"
+  | "planned"
+  | "executing"
+  | "completed"
+  | "failed"
   | "cancelled";
 export type WorkflowInstanceStatus =
   | "planning"
@@ -279,6 +283,14 @@ export type ProjectTaskGraphStageSummary = {
   blocked_nodes: number;
 };
 
+export type ProjectTaskGraphBlockingFactGap = {
+  constraint_kind: string;
+  roles: string[];
+  required_capabilities: string[];
+  active_executor_count: number;
+  options: string[];
+};
+
 export type ProjectTaskGraphBlockingFact = {
   reason_code: string;
   message: string;
@@ -286,6 +298,8 @@ export type ProjectTaskGraphBlockingFact = {
   resource_id?: string;
   recommended_action?: string;
   created_at?: string;
+  gap?: ProjectTaskGraphBlockingFactGap;
+  decision_request_id?: string;
 };
 
 export type ProjectTaskGraph = {

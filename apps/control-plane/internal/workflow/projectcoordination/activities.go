@@ -43,6 +43,7 @@ type ActivityStore interface {
 	ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
 	RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error
+	ReopenProjectDemandForReplanning(ctx context.Context, input ReopenProjectDemandForReplanningInput) error
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
 	RecoverTaskDispatchFailure(ctx context.Context, input RecoverTaskDispatchFailureInput) (RecoverTaskDispatchFailureResult, error)
 	FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error
@@ -83,9 +84,30 @@ func (a *Activities) PlanDemandRoute(ctx context.Context, snapshot CoordinationS
 		// instead of burning MaximumAttempts planner calls. err.Error() carries the
 		// human-readable diagnosis (with fix 3's structural ways-out hints) for the
 		// workflow to surface on the demand.
-		return RouteDecisionPlan{}, temporal.NewNonRetryableApplicationError(err.Error(), errTypeNoSuitableEmployee, err)
+		return RouteDecisionPlan{}, wrapNoSuitableEmployeeError(err)
 	}
 	return decision, err
+}
+
+// wrapNoSuitableEmployeeError stamps the terminal, non-retryable ApplicationError
+// on an ErrNoSuitableEmployee-family planning failure. When err originates from
+// governance's structural-gap channel (a *structuralGapError, from
+// enforceRoleIndependence/structuralGapForPlan in template_governance.go), the
+// PlanningGap it carries is attached as an ApplicationError detail so the workflow
+// (noSuitableEmployeeDiagnosis) and, downstream, project_store.RejectDemandPlanning
+// can act on structured gap data instead of only free-text diagnosis. err must
+// satisfy errors.Is(err, ErrNoSuitableEmployee); the only call site already guards
+// on that. Extracted from PlanDemandRoute so tests can exercise
+// governance-error → wrap → detail-extraction without a live Temporal test
+// environment: the SDK's ApplicationError detail values round-trip in-process by
+// reflection (ErrorDetailsValues.Get), no data converter or workflow environment
+// required.
+func wrapNoSuitableEmployeeError(err error) error {
+	var gapErr *structuralGapError
+	if errors.As(err, &gapErr) {
+		return temporal.NewNonRetryableApplicationError(err.Error(), errTypeNoSuitableEmployee, err, gapErr.gap)
+	}
+	return temporal.NewNonRetryableApplicationError(err.Error(), errTypeNoSuitableEmployee, err)
 }
 
 func (a *Activities) RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error {
@@ -93,6 +115,13 @@ func (a *Activities) RejectDemandPlanning(ctx context.Context, input RejectDeman
 		return ErrActivityStoreRequired
 	}
 	return a.store.RejectDemandPlanning(ctx, input)
+}
+
+func (a *Activities) ReopenProjectDemandForReplanning(ctx context.Context, input ReopenProjectDemandForReplanningInput) error {
+	if a.store == nil {
+		return ErrActivityStoreRequired
+	}
+	return a.store.ReopenProjectDemandForReplanning(ctx, input)
 }
 
 func (a *Activities) PersistRouteDecision(ctx context.Context, input PersistRouteDecisionInput) (RouteDecisionResult, error) {

@@ -400,12 +400,24 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 			scenarioTemplate = &template
 		}
 	}
+	exemptions, err := s.repository.ListDemandConstraintExemptions(ctx, input.TenantID, input.DemandID)
+	if err != nil {
+		return CoordinationSnapshot{}, err
+	}
+	demandExemptions := make([]DemandConstraintExemption, 0, len(exemptions))
+	for _, exemption := range exemptions {
+		demandExemptions = append(demandExemptions, DemandConstraintExemption{
+			ConstraintKind: exemption.ConstraintKind,
+			Roles:          exemption.Roles,
+		})
+	}
 	return CoordinationSnapshot{
-		ProjectID:           projectRecord.ID,
-		Demand:              DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
-		DigitalEmployeePool: pool,
-		CoordinationPolicy:  projectRecord.CoordinationPolicy,
-		ScenarioTemplate:    scenarioTemplate,
+		ProjectID:                  projectRecord.ID,
+		Demand:                     DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
+		DigitalEmployeePool:        pool,
+		CoordinationPolicy:         projectRecord.CoordinationPolicy,
+		ScenarioTemplate:           scenarioTemplate,
+		DemandConstraintExemptions: demandExemptions,
 	}, nil
 }
 
@@ -1277,6 +1289,25 @@ func (s *ProjectStore) loadUpstreamSupplementReviewContext(ctx context.Context, 
 	return sourceTaskID, stringsFromAny(approvalRequest.ContextPayload["missing_inputs"]), nil
 }
 
+// planningGapDemandID resolves the demand a planning_gap decision is about from
+// its approval request's context payload (recorded by ensurePlanningGapDecision).
+// GetRequest is used (by ID, no pending-status filter) because by resolve time the
+// approval request is already resolved.
+func (s *ProjectStore) planningGapDemandID(ctx context.Context, tenantID uuid.UUID, decision project.DecisionRequest) (uuid.UUID, error) {
+	if s.approvals == nil {
+		return uuid.Nil, ErrActivityStoreRequired
+	}
+	approvalRequest, err := s.approvals.GetRequest(ctx, tenantID, decision.ApprovalRequestID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	demandID, err := uuid.Parse(stringFromAny(approvalRequest.ContextPayload["demand_id"]))
+	if err != nil {
+		return uuid.Nil, project.ErrInvalidProject
+	}
+	return demandID, nil
+}
+
 func (s *ProjectStore) appendUpstreamSupplementAuditEvent(ctx context.Context, tenantID, projectID, taskID, decisionRequestID uuid.UUID, eventType project.ProjectEventType, summary string) error {
 	_, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, eventType, taskID.String(), summary, map[string]any{
 		"project_task_id":     taskID.String(),
@@ -1365,6 +1396,14 @@ func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHum
 			DispatchGateResultID: uuidValue(decision.DispatchGateResultID),
 			CreatedEventID:       uuidValue(decision.CreatedEventID),
 		},
+	}
+	if decision.DecisionType == planningGapDecisionType {
+		demandID, err := s.planningGapDemandID(ctx, input.TenantID, decision)
+		if err != nil {
+			return HumanDecisionRouteResult{}, err
+		}
+		result.PlanningGap = &PlanningGapRoute{ProjectID: decision.ProjectID, DemandID: demandID}
+		return result, nil
 	}
 	if decision.DecisionType != "plan_review" {
 		return result, nil
@@ -3206,8 +3245,13 @@ func (s *ProjectStore) FinishCoordinationJob(ctx context.Context, input FinishCo
 
 // noSuitableEmployeeReasonCode / RecommendedAction back the human-visible diagnosis
 // surfaced when planning terminates with the ErrNoSuitableEmployee family. The
-// recommended action always names the three ways out, so a human sees them even if
-// the diagnosis message itself is a raw (non-structural) confidence-score text.
+// recommended action always names the three ways out as a structured event field
+// (reason_code/recommended_action), independent of Diagnosis's free-text content.
+// Today Diagnosis is always structuralGapError's noSuitableEmployeeStructuralGapMessage
+// (EnforceScenarioTemplateGovernance's role_independence structural-gap escalation,
+// the only production source of ErrNoSuitableEmployee) — which already names the
+// same ways out in prose — but RecommendedAction guarantees the UI always has them
+// in structured form regardless of that message's wording.
 const (
 	noSuitableEmployeeReasonCode        = "no_suitable_employee"
 	noSuitableEmployeeRecommendedAction = "为项目补充可调度员工、改选更浅的出口交付物，或改用更贴合的场景模板"
@@ -3231,12 +3275,44 @@ func (s *ProjectStore) RejectDemandPlanning(ctx context.Context, input RejectDem
 	if err := s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID, project.ProjectDemandStatusFailed); err != nil {
 		return err
 	}
+	// Open a human-decision item so the demand's diagnosis becomes actionable in
+	// the owner's inbox (已补员→reopen+replan, or 关闭). Only when an approval sink
+	// is wired (production path); the bare-repository callers that just assert the
+	// blocked event skip this. Resolved before the blocked event payload is built so
+	// the event can carry decision_request_id — the web's task-graph blocking-fact
+	// path (empty nodes) has no other way to recover the pending planning_gap
+	// decision id for its resolve action.
+	var decisionRequestID uuid.UUID
+	if s.approvals != nil {
+		id, err := s.ensurePlanningGapDecision(ctx, input, diagnosis)
+		if err != nil {
+			return err
+		}
+		decisionRequestID = id
+	}
+	payload := map[string]any{
+		"demand_id":          input.DemandID.String(),
+		"reason_code":        noSuitableEmployeeReasonCode,
+		"recommended_action": noSuitableEmployeeRecommendedAction,
+	}
+	if input.Gap != nil {
+		// Structured gap, present only for the structural role_independence
+		// channel (nil on any other no-suitable-employee diagnosis, and on
+		// replays of histories recorded before PlanningGap existed) — see
+		// noSuitableEmployeeDiagnosis in workflow.go.
+		payload["gap"] = map[string]any{
+			"constraint_kind":       input.Gap.ConstraintKind,
+			"roles":                 input.Gap.Roles,
+			"required_capabilities": input.Gap.RequiredCapabilities,
+			"active_executor_count": input.Gap.ActiveExecutorCount,
+			"options":               input.Gap.Options,
+		}
+	}
+	if decisionRequestID != uuid.Nil {
+		payload["decision_request_id"] = decisionRequestID.String()
+	}
 	if _, err := s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventCoordinationBlocked,
-		"demand_planning_rejected:"+input.DemandID.String(), diagnosis, map[string]any{
-			"demand_id":          input.DemandID.String(),
-			"reason_code":        noSuitableEmployeeReasonCode,
-			"recommended_action": noSuitableEmployeeRecommendedAction,
-		}); err != nil {
+		"demand_planning_rejected:"+input.DemandID.String(), diagnosis, payload); err != nil {
 		return err
 	}
 	if input.CoordinationJobID != uuid.Nil {
@@ -3250,6 +3326,154 @@ func (s *ProjectStore) RejectDemandPlanning(ctx context.Context, input RejectDem
 		}
 	}
 	return nil
+}
+
+const (
+	planningGapDecisionType = "planning_gap"
+	// planningGapResourceType scopes the planning_gap approval request to its
+	// demand (ResourceID = demand ID), giving the reject path demand-scoped,
+	// pending-only idempotency via GetRequestByResource and letting the decision
+	// route resolve the demand back from the approval request.
+	planningGapResourceType = "project_demand_planning_gap"
+)
+
+// ensurePlanningGapDecision opens the human-decision three-piece (approval request
+// + decision.requested event + decision request projection + inbox item) for a
+// terminally-rejected demand, mirroring RequestPlanRevisionReview. It is idempotent
+// per demand: if a pending planning_gap approval already exists for the demand
+// (e.g. an activity retry re-ran RejectDemandPlanning), it creates nothing and
+// instead best-effort resolves the existing decision's id (needed only on the rare
+// retry where the earlier attempt created the decision but crashed before the
+// coordination.blocked event carrying decision_request_id was appended).
+func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input RejectDemandPlanningInput, diagnosis string) (uuid.UUID, error) {
+	existing, err := s.approvals.GetRequestByResource(ctx, input.TenantID, planningGapResourceType, input.DemandID)
+	if err != nil && !errors.Is(err, approval.ErrApprovalNotFound) {
+		return uuid.Nil, err
+	}
+	if existing != nil {
+		return s.findPlanningGapDecisionID(ctx, input.TenantID, input.ProjectID, input.CoordinationJobID, existing.ID), nil
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	targetUserID := projectRecord.HumanOwnerUserID
+	contextPayload := map[string]any{
+		"demand_id": input.DemandID.String(),
+		"diagnosis": diagnosis,
+	}
+	if input.Gap != nil {
+		contextPayload["gap"] = planningGapPayload(input.Gap)
+	}
+	title := planningGapTitle(diagnosis)
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       input.TenantID,
+		ResourceType:   planningGapResourceType,
+		ResourceID:     input.DemandID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   targetUserID,
+		DecisionType:   planningGapDecisionType,
+		Title:          title,
+		Summary:        diagnosis,
+		RiskLevel:      "high",
+		Options:        []any{"restaffed", "exempted", "rejected"},
+		ContextPayload: contextPayload,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.DemandID.String(), "规划缺口需要人类补员决策", map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"demand_id":           input.DemandID.String(),
+		"target_user_id":      targetUserID.String(),
+		"decision_type":       planningGapDecisionType,
+	}))
+	if err != nil {
+		return uuid.Nil, err
+	}
+	coordinationJobID := input.CoordinationJobID
+	var coordinationJobPtr *uuid.UUID
+	if coordinationJobID != uuid.Nil {
+		coordinationJobPtr = &coordinationJobID
+	}
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ApprovalRequestID: approvalRequest.ID,
+		CoordinationJobID: coordinationJobPtr,
+		TargetUserID:      targetUserID,
+		DecisionType:      planningGapDecisionType,
+		TitleSnapshot:     title,
+		SummarySnapshot:   diagnosis,
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	return decision.ID, nil
+}
+
+// findPlanningGapDecisionID best-effort recovers the ProjectDecisionRequest id for an
+// already-existing planning_gap approval request, using only the ListDemandLaunchDecisionRequests
+// repository method available on ProjectStore's project.Repository (no interface/query
+// addition required). It matches by coordination job id, then filters by approval request
+// id — coordinationJobID is the retry's own job id, which is the same job id the earlier
+// (partially-failed) attempt used to create the decision. Returns uuid.Nil (not an error)
+// on any lookup miss or failure: the decision_request_id passthrough is a best-effort
+// enhancement, never a blocker for the reject flow itself.
+func (s *ProjectStore) findPlanningGapDecisionID(ctx context.Context, tenantID, projectID, coordinationJobID, approvalRequestID uuid.UUID) uuid.UUID {
+	if coordinationJobID == uuid.Nil {
+		return uuid.Nil
+	}
+	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, tenantID, projectID, []uuid.UUID{coordinationJobID}, nil, 50)
+	if err != nil {
+		return uuid.Nil
+	}
+	for _, decision := range decisions {
+		if decision.ApprovalRequestID == approvalRequestID {
+			return decision.ID
+		}
+	}
+	return uuid.Nil
+}
+
+func planningGapPayload(gap *PlanningGap) map[string]any {
+	return map[string]any{
+		"constraint_kind":       gap.ConstraintKind,
+		"roles":                 gap.Roles,
+		"required_capabilities": gap.RequiredCapabilities,
+		"active_executor_count": gap.ActiveExecutorCount,
+		"options":               gap.Options,
+	}
+}
+
+// planningGapTitle builds the decision title "规划缺口：<诊断前80字>", truncating on
+// a rune boundary so multi-byte diagnosis text is never split mid-character.
+func planningGapTitle(diagnosis string) string {
+	const maxRunes = 80
+	runes := []rune(strings.TrimSpace(diagnosis))
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	return "规划缺口：" + string(runes)
+}
+
+// ReopenProjectDemandForReplanning moves a failed demand back to planning_pending
+// (the planning_gap → restaffed path) and records the reopen audit event, so the
+// coordinator can replan it. Only a currently-failed demand reopens.
+func (s *ProjectStore) ReopenProjectDemandForReplanning(ctx context.Context, input ReopenProjectDemandForReplanningInput) error {
+	if s.repository == nil {
+		return ErrActivityStoreRequired
+	}
+	_, err := s.repository.ReopenProjectDemandForReplanning(ctx, input.TenantID, input.DemandID)
+	return err
 }
 
 func coordinatorEvent(tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID, summary string, payload map[string]any) project.AppendProjectEventRequest {

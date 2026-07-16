@@ -167,6 +167,75 @@ func TestGovernanceRoleIndependenceViolation(t *testing.T) {
 	require.Contains(t, err.Error(), "developer")
 }
 
+// TestGovernanceSkipsExemptedRoleIndependence proves a DemandConstraintExemption
+// carried on the snapshot (a human negotiator's first-class豁免决策, loaded from
+// project_demand_constraint_exemptions) causes the matching role_independence
+// constraint to be skipped instead of rejected — even though the same
+// employeeA-fills-both-roles setup would otherwise violate it (see
+// TestGovernanceRoleIndependenceViolation) — and that the skip is made visible via
+// an "exemption" PlanConstraintNote.
+func TestGovernanceSkipsExemptedRoleIndependence(t *testing.T) {
+	employeeA := uuid.New()
+	employeeB := uuid.New()
+	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
+	develop.SelectedEmployeeID = employeeA
+	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
+	review.SelectedEmployeeID = employeeA
+	plan := RouteDecisionPlan{
+		Reason:          "role independence exempted",
+		TemplateKey:     "software_delivery",
+		ExitDeliverable: "review_verdict",
+		Tasks:           []PlannedTask{develop, review},
+	}
+	snapshot := CoordinationSnapshot{
+		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
+		DigitalEmployeePool: activeExecutorPool(employeeA, employeeB),
+		DemandConstraintExemptions: []DemandConstraintExemption{
+			{ConstraintKind: "role_independence", Roles: []string{"reviewer", "developer"}},
+		},
+	}
+
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+
+	require.NoError(t, err)
+	note := constraintNoteWithKind(plan.ConstraintNotes, "exemption")
+	require.NotNil(t, note, "expected an exemption constraint note, got %#v", plan.ConstraintNotes)
+	require.Contains(t, note.Message, "role_independence")
+}
+
+// TestGovernanceExemptionScopedByKind proves an exemption only covers its own
+// recorded ConstraintKind: an exemption granted for a different constraint kind
+// (e.g. stage_required) must not suppress a role_independence violation on the
+// same roles — the demand-scoped exemption table is per constraint_kind, not a
+// blanket "ignore this demand's governance" switch.
+func TestGovernanceExemptionScopedByKind(t *testing.T) {
+	employeeA := uuid.New()
+	employeeB := uuid.New()
+	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
+	develop.SelectedEmployeeID = employeeA
+	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
+	review.SelectedEmployeeID = employeeA
+	plan := RouteDecisionPlan{
+		Reason:          "role independence violation despite unrelated exemption",
+		TemplateKey:     "software_delivery",
+		ExitDeliverable: "review_verdict",
+		Tasks:           []PlannedTask{develop, review},
+	}
+	snapshot := CoordinationSnapshot{
+		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
+		DigitalEmployeePool: activeExecutorPool(employeeA, employeeB),
+		DemandConstraintExemptions: []DemandConstraintExemption{
+			{ConstraintKind: "stage_required", Roles: []string{"reviewer", "developer"}},
+		},
+	}
+
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Contains(t, err.Error(), "role_independence")
+	require.Nil(t, constraintNoteWithKind(plan.ConstraintNotes, "exemption"))
+}
+
 func TestGovernanceRoleIndependencePassesWithTwoEmployees(t *testing.T) {
 	employeeA := uuid.New()
 	employeeB := uuid.New()

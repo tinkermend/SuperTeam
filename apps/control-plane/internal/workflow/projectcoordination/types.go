@@ -156,8 +156,25 @@ type LoadHumanDecisionRouteInput struct {
 }
 
 type HumanDecisionRouteResult struct {
-	Decision   ProjectDecisionSnapshot
-	PlanReview *PlanReviewRoute
+	Decision    ProjectDecisionSnapshot
+	PlanReview  *PlanReviewRoute
+	PlanningGap *PlanningGapRoute
+}
+
+// PlanningGapRoute carries the demand a planning_gap decision is about, resolved
+// from the decision's approval-request context payload, so the coordinator can
+// reopen and replan that demand when the human resolves the decision restaffed.
+type PlanningGapRoute struct {
+	ProjectID uuid.UUID
+	DemandID  uuid.UUID
+}
+
+// ReopenProjectDemandForReplanningInput reopens a failed demand back into
+// planning_pending (the planning_gap → restaffed path) via an activity boundary.
+type ReopenProjectDemandForReplanningInput struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	DemandID  uuid.UUID
 }
 
 type ProjectDecisionSnapshot struct {
@@ -442,6 +459,26 @@ type FinishCoordinationJobInput struct {
 	OutputEventIDs []uuid.UUID
 }
 
+// PlanningGap is the structured, machine-actionable form of a structural
+// no-suitable-employee rejection: the free-text Diagnosis message tells a human
+// what happened, PlanningGap tells downstream surfaces (web, future automation)
+// exactly which constraint failed and what the three ways out are, without
+// having to re-parse the diagnosis prose. It originates where the knowledge
+// lives — governance's enforceRoleIndependence/structuralGapForPlan
+// (template_governance.go) — travels as a temporal ApplicationError detail
+// across the PlanDemandRoute activity boundary, and is threaded through
+// RejectDemandPlanningInput.Gap into the coordination.blocked event payload
+// (project_store.go). Absent (nil) on any diagnosis that is not a structural
+// role_independence gap, and on replays of histories recorded before this field
+// existed — see noSuitableEmployeeDiagnosis in workflow.go.
+type PlanningGap struct {
+	ConstraintKind       string   `json:"constraint_kind"`                 // e.g. role_independence
+	Roles                []string `json:"roles,omitempty"`                 // [reviewer developer]
+	RequiredCapabilities []string `json:"required_capabilities,omitempty"` // union of the constrained roles' required_capabilities
+	ActiveExecutorCount  int      `json:"active_executor_count"`
+	Options              []string `json:"options"` // [restaff exempt lending]
+}
+
 // RejectDemandPlanningInput terminally rejects a demand whose route could not be
 // planned (the ErrNoSuitableEmployee family). It moves the demand out of
 // planning_pending into a human-visible terminal state and records the diagnosis
@@ -452,6 +489,7 @@ type RejectDemandPlanningInput struct {
 	DemandID          uuid.UUID
 	CoordinationJobID uuid.UUID
 	Diagnosis         string
+	Gap               *PlanningGap `json:"gap,omitempty"`
 	OutputEventIDs    []uuid.UUID
 }
 

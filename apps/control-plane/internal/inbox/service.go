@@ -311,6 +311,23 @@ func DefaultActions(itemType ItemType) []Action {
 	return actions
 }
 
+// DecisionActions returns the inbox action vocabulary for a project-decision item
+// of the given decision type. Most decision types use the generic
+// approved/rejected/needs_more_evidence set; a planning_gap decision instead gets
+// 已补员/关闭 so the human can reopen-and-replan or close the gap. The web
+// inbox-shell renders item.actions dynamically, so this is the sole source of the
+// buttons shown per decision type.
+func DecisionActions(decisionType string) []Action {
+	if decisionType == "planning_gap" {
+		return []Action{
+			{Key: "restaffed", Label: "已补员，重新规划", Tone: "positive", Metadata: map[string]any{"decision": "restaffed"}},
+			{Key: "exempted", Label: "豁免约束并重规划", Tone: "positive", Metadata: map[string]any{"decision": "exempted"}},
+			{Key: "rejected", Label: "关闭", Tone: "destructive", Metadata: map[string]any{"decision": "rejected"}},
+		}
+	}
+	return DefaultActions(ItemTypeProjectDecision)
+}
+
 func findAction(actions []Action, action string) (Action, bool) {
 	for _, candidate := range actions {
 		if strings.TrimSpace(candidate.Key) == action {

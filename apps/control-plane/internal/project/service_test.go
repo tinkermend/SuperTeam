@@ -7581,6 +7581,360 @@ func TestResolveDecisionRejectsRequestChangesForNonPlanReview(t *testing.T) {
 	}
 }
 
+// TestResolveDecisionAcceptsRestaffedForPlanningGap drives the real ResolveDecision
+// chain for a planning_gap decision's happy path: restaffed resolves the approval
+// untouched and signals the coordinator with the restaffed vocabulary and the
+// correct decision id (the coordinator then reopens+replans the demand recorded in
+// the approval request's ContextPayload demand_id).
+func TestResolveDecisionAcceptsRestaffedForPlanningGap(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      DecisionTypePlanningGap,
+		TitleSnapshot:     "规划缺口：项目员工池无法满足审查独立性约束",
+		StatusSnapshot:    "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanningGapDecisionRestaffed,
+		Comment:           "已补充员工",
+		Payload:           map[string]any{"demand_id": demandID.String()},
+	})
+	if err != nil {
+		t.Fatalf("resolve decision with restaffed: %v", err)
+	}
+	if resolved.StatusSnapshot != PlanningGapDecisionRestaffed {
+		t.Fatalf("expected restaffed projection, got %s", resolved.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != PlanningGapDecisionRestaffed {
+		t.Fatalf("expected approval resolver to receive restaffed untouched, got count=%d last=%#v", approvals.calls, approvals.last)
+	}
+	if approvals.last.ApprovalRequestID != approvalID {
+		t.Fatalf("expected approval %s resolved, got %s", approvalID, approvals.last.ApprovalRequestID)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.Decision != PlanningGapDecisionRestaffed {
+		t.Fatalf("expected decision signal with restaffed untouched, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+	if coordinator.lastDecision.DecisionRequestID != decisionID {
+		t.Fatalf("expected signal to carry decision %s, got %s", decisionID, coordinator.lastDecision.DecisionRequestID)
+	}
+}
+
+// TestResolveDecisionRejectsRestaffedForNonPlanningGap proves restaffed is
+// planning_gap vocabulary only: any other pending decision type must reject it as
+// ErrInvalidProject with zero side effects (no approval call, no coordinator
+// signal) and stay pending. Mirrors the request_changes narrowing test above.
+func TestResolveDecisionRejectsRestaffedForNonPlanningGap(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	planRevisionID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		PlanRevisionID:    &planRevisionID,
+		TargetUserID:      actorID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanningGapDecisionRestaffed,
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for restaffed on non-planning_gap decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
+// TestResolveDecisionRejectsGenericVocabularyForPlanningGap proves planning_gap's
+// vocabulary is closed in both directions: the generic approved (and by the same
+// gate needs_more_evidence) is not meaningful on a planning gap — only restaffed
+// and rejected are — so it rejects as ErrInvalidProject with zero side effects.
+func TestResolveDecisionRejectsGenericVocabularyForPlanningGap(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      DecisionTypePlanningGap,
+		TitleSnapshot:     "规划缺口：项目员工池无法满足审查独立性约束",
+		StatusSnapshot:    "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for approved on planning_gap decision, got %v", err)
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
+// TestResolveExemptedCreatesExemptionRecord drives the real ResolveDecision chain
+// for a planning_gap decision resolved "exempted": the constraint_kind/roles are
+// read from the approval request's ContextPayload gap (recorded at detection time,
+// not supplied by the resolving caller), a first-class exemption record is
+// persisted before the approval/signal side effects, and the demand is reopened +
+// replanned exactly like restaffed (same coordinator signal, same decision
+// vocabulary carried through).
+func TestResolveExemptedCreatesExemptionRecord(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      DecisionTypePlanningGap,
+		TitleSnapshot:     "规划缺口：项目员工池无法满足审查独立性约束",
+		StatusSnapshot:    "pending",
+	})
+	approvals.contextPayloads = map[uuid.UUID]map[string]any{
+		approvalID: {
+			"demand_id": demandID.String(),
+			"diagnosis": "项目员工池无法满足审查独立性约束",
+			"gap": map[string]any{
+				"constraint_kind": "role_independence",
+				"roles":           []any{"reviewer", "developer"},
+			},
+		},
+	}
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanningGapDecisionExempted,
+		Comment:           "改选更浅出口，豁免独立性约束",
+	})
+	if err != nil {
+		t.Fatalf("resolve decision with exempted: %v", err)
+	}
+	if resolved.StatusSnapshot != PlanningGapDecisionExempted {
+		t.Fatalf("expected exempted projection, got %s", resolved.StatusSnapshot)
+	}
+	if len(repo.demandConstraintExemptions) != 1 {
+		t.Fatalf("expected 1 exemption record, got %d", len(repo.demandConstraintExemptions))
+	}
+	exemption := repo.demandConstraintExemptions[0]
+	if exemption.TenantID != tenantID || exemption.ProjectID != projectID || exemption.DemandID != demandID {
+		t.Fatalf("unexpected exemption scope: %#v", exemption)
+	}
+	if exemption.ConstraintKind != "role_independence" {
+		t.Fatalf("expected constraint_kind role_independence, got %s", exemption.ConstraintKind)
+	}
+	if len(exemption.Roles) != 2 || exemption.Roles[0] != "reviewer" || exemption.Roles[1] != "developer" {
+		t.Fatalf("expected roles [reviewer developer], got %#v", exemption.Roles)
+	}
+	if exemption.GrantedByUserID != actorID {
+		t.Fatalf("expected granted_by %s, got %s", actorID, exemption.GrantedByUserID)
+	}
+	if exemption.DecisionRequestID == nil || *exemption.DecisionRequestID != decisionID {
+		t.Fatalf("expected decision_request_id %s, got %#v", decisionID, exemption.DecisionRequestID)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != PlanningGapDecisionExempted {
+		t.Fatalf("expected approval resolver to receive exempted, got count=%d last=%#v", approvals.calls, approvals.last)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.Decision != PlanningGapDecisionExempted {
+		t.Fatalf("expected decision signal with exempted, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+	if coordinator.lastDecision.DecisionRequestID != decisionID {
+		t.Fatalf("expected signal to carry decision %s, got %s", decisionID, coordinator.lastDecision.DecisionRequestID)
+	}
+}
+
+// TestResolveExemptedRejectsMissingGapPayload proves exempted cannot be resolved
+// on a planning_gap decision whose approval request carries no structured gap
+// (e.g. a legacy or non-structural no-suitable-employee diagnosis) — there is
+// nothing to exempt. It must fail ErrInvalidProject with zero side effects: no
+// exemption record, no approval resolve, no coordinator signal, decision stays
+// pending.
+func TestResolveExemptedRejectsMissingGapPayload(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      DecisionTypePlanningGap,
+		TitleSnapshot:     "规划缺口：无适合员工",
+		StatusSnapshot:    "pending",
+	})
+	approvals.contextPayloads = map[uuid.UUID]map[string]any{
+		approvalID: {
+			"demand_id": demandID.String(),
+			"diagnosis": "项目没有可参与规划的数字员工",
+		},
+	}
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          PlanningGapDecisionExempted,
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected ErrInvalidProject for exempted with missing gap payload, got %v", err)
+	}
+	if len(repo.demandConstraintExemptions) != 0 {
+		t.Fatalf("expected no exemption record, got %d", len(repo.demandConstraintExemptions))
+	}
+	if coordinator.decisionSignals != 0 || approvals.calls != 0 {
+		t.Fatalf("expected no side effects, got signals=%d approvals=%d", coordinator.decisionSignals, approvals.calls)
+	}
+	stored, err := s_findDecisionForTest(repo, tenantID, projectID, decisionID)
+	if err != nil {
+		t.Fatalf("reload decision: %v", err)
+	}
+	if stored.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", stored.StatusSnapshot)
+	}
+}
+
 func s_findDecisionForTest(repo *memoryRepository, tenantID, projectID, decisionID uuid.UUID) (DecisionRequest, error) {
 	decisions, err := repo.ListDecisionRequests(context.Background(), tenantID, projectID, 100, 0)
 	if err != nil {
@@ -8899,6 +9253,7 @@ type memoryRepository struct {
 	budgetLedger                     []ProjectBudgetLedgerEntry
 	acceptanceRecords                []ProjectAcceptanceRecord
 	archiveSnapshots                 []ProjectArchiveSnapshot
+	demandConstraintExemptions       []DemandConstraintExemption
 	projectTeamScopes                map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
 	lastListProjects                 ListProjectsRequest
 	lastTasksLimit                   int32
@@ -8926,6 +9281,36 @@ type memoryRepository struct {
 	deleteCascadeResult           ProjectDeleteCascadeResult
 	deleteAuditEvents             []ProjectDeleteAuditEventParams
 	deleteAuditEventErr           error
+}
+
+func (r *memoryRepository) CreateDemandConstraintExemption(ctx context.Context, req CreateDemandConstraintExemptionRequest) error {
+	for _, existing := range r.demandConstraintExemptions {
+		if existing.TenantID == req.TenantID && existing.DemandID == req.DemandID && existing.ConstraintKind == req.ConstraintKind {
+			return nil // idempotent: mirrors the UNIQUE(tenant_id, demand_id, constraint_kind) ON CONFLICT DO NOTHING
+		}
+	}
+	r.demandConstraintExemptions = append(r.demandConstraintExemptions, DemandConstraintExemption{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		ConstraintKind:    req.ConstraintKind,
+		Roles:             req.Roles,
+		GrantedByUserID:   req.GrantedByUserID,
+		DecisionRequestID: req.DecisionRequestID,
+		CreatedAt:         time.Now().UTC(),
+	})
+	return nil
+}
+
+func (r *memoryRepository) ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]DemandConstraintExemption, error) {
+	result := make([]DemandConstraintExemption, 0)
+	for _, exemption := range r.demandConstraintExemptions {
+		if exemption.TenantID == tenantID && exemption.DemandID == demandID {
+			result = append(result, exemption)
+		}
+	}
+	return result, nil
 }
 
 func (r *memoryRepository) GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
@@ -9647,6 +10032,32 @@ func (r *memoryRepository) GetProjectDemand(ctx context.Context, tenantID, deman
 	for _, demand := range r.demands {
 		if demand.ID == demandID && demand.TenantID == tenantID {
 			return demand, nil
+		}
+	}
+	return ProjectDemand{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ReopenProjectDemandForReplanning(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	for i := range r.demands {
+		if r.demands[i].ID == demandID && r.demands[i].TenantID == tenantID {
+			if r.demands[i].Status != ProjectDemandStatusFailed {
+				return ProjectDemand{}, fmt.Errorf("demand %s is not in failed state (current=%s): %w", demandID, r.demands[i].Status, ErrProjectConflict)
+			}
+			r.demands[i].Status = ProjectDemandStatusPlanningPending
+			if _, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+				TenantID:     tenantID,
+				ProjectID:    r.demands[i].ProjectID,
+				EventType:    ProjectEventDemandReplanningReopened,
+				ActorType:    "project_coordinator",
+				ActorID:      "project_coordinator",
+				ResourceType: strPtr("project_demand"),
+				ResourceID:   strPtr(demandID.String()),
+				Summary:      "规划缺口补员后重开需求重新规划",
+				Payload:      map[string]any{"demand_id": demandID.String()},
+			}); err != nil {
+				return ProjectDemand{}, err
+			}
+			return r.demands[i], nil
 		}
 	}
 	return ProjectDemand{}, ErrProjectNotFound
@@ -12343,12 +12754,27 @@ func (f *fakeCoordinatorSignalClient) TerminateProjectCoordinator(ctx context.Co
 type fakeApprovalResolver struct {
 	calls int
 	last  ResolveApprovalRequest
+
+	// contextPayloads backs GetRequestContextPayload, keyed by approval request
+	// ID — mirrors the approval request's ContextPayload as ResolveDecision would
+	// read it back (e.g. the planning_gap decision's structured gap).
+	contextPayloads    map[uuid.UUID]map[string]any
+	contextPayloadErr  error
+	contextPayloadCall int
 }
 
 func (f *fakeApprovalResolver) ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error {
 	f.calls++
 	f.last = req
 	return nil
+}
+
+func (f *fakeApprovalResolver) GetRequestContextPayload(ctx context.Context, tenantID, approvalRequestID uuid.UUID) (map[string]any, error) {
+	f.contextPayloadCall++
+	if f.contextPayloadErr != nil {
+		return nil, f.contextPayloadErr
+	}
+	return f.contextPayloads[approvalRequestID], nil
 }
 
 type fakeDecisionInboxProjector struct {

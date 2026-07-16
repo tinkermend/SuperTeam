@@ -304,6 +304,7 @@ function makeProjectEvent(
 }
 
 function createWorkflowFetcher({
+  demandStatus = "planning_pending",
   events = [],
   graph = makeGraph(),
   graphsByDemandId,
@@ -325,6 +326,7 @@ function createWorkflowFetcher({
     }),
   ],
 }: {
+  demandStatus?: ProjectDemandLaunchDetail["demand"]["status"];
   events?: ProjectEvent[];
   graph?: ProjectTaskGraph;
   graphsByDemandId?: Record<string, ProjectTaskGraph>;
@@ -342,7 +344,11 @@ function createWorkflowFetcher({
       url.pathname === "/api/v1/project-demands/demand-running/launch-detail" &&
       method === "GET"
     ) {
-      return jsonResponse(makeLaunchDetail("demand-running"));
+      return jsonResponse(
+        makeLaunchDetail("demand-running", {
+          demand: { ...makeLaunchDetail("demand-running").demand, status: demandStatus },
+        }),
+      );
     }
 
     if (
@@ -603,6 +609,7 @@ describe("WorkflowView", () => {
   it("renders coordination blocking facts above the graph canvas", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
+        demandStatus: "failed",
         graph: makeGraph([], {
           blocking_facts: [
             {
@@ -619,6 +626,155 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("下一步：先选择 Runtime 节点或创建执行位置")).toBeVisible();
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "blocking-runtime_placement_missing" })).toBeVisible();
+  });
+
+  it("hides the blocking banner and gap panel once the demand has moved past failed (reopened + replanning)", async () => {
+    // 复现 task-9 E2E 异常③：豁免/补员决议后需求重开进入 planning_pending，
+    // task-graph 的 blocking_facts 还没随重规划刷新掉（仍是旧的空图 + gap fact），
+    // 此时红色阻塞条 + 缺口面板必须消失，只有需求真正终态 failed 才继续展示。
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        demandStatus: "planning_pending",
+        graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
+      }),
+    });
+
+    await expect.element(screen.getByRole("heading", { name: "支付成功率下降" })).toBeVisible();
+    // 顶部的红色阻塞横幅（完整句子含 message）与缺口面板必须消失——这两个是
+    // task-9 报告里"UI 陈旧态"异常的具体元素；demand 尚未终态 failed 时不应出现。
+    expect(
+      screen.getByText("协调已阻塞：项目员工池无法满足审查独立性约束（需≥2名可调度员工）").query(),
+    ).toBeNull();
+    expect(screen.getByTestId("workflow-gap-panel").query()).toBeNull();
+    expect(screen.getByRole("button", { name: "从标准模板补员" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "豁免并重规划" }).query()).toBeNull();
+  });
+
+  function makeGapBlockingFact(overrides: Partial<import("@/lib/api/projects").ProjectTaskGraphBlockingFact> = {}) {
+    return {
+      decision_request_id: "decision-gap-1",
+      gap: {
+        active_executor_count: 1,
+        constraint_kind: "role_independence",
+        options: ["restaff", "exempt", "lending"],
+        required_capabilities: ["code_review"],
+        roles: ["reviewer", "developer"],
+      },
+      message: "项目员工池无法满足审查独立性约束（需≥2名可调度员工）",
+      reason_code: "no_suitable_employee",
+      recommended_action: "为项目补充可调度员工或换用模板",
+      ...overrides,
+    };
+  }
+
+  it("renders a staffing gap panel with three actions when the blocking fact carries a structural gap", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        demandStatus: "failed",
+        graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-gap-panel")).toBeVisible();
+    await expect.element(screen.getByText("规划缺口：审查独立性约束")).toBeVisible();
+    await expect
+      .element(screen.getByText("涉及角色：reviewer、developer · 当前可调度员工 1 名"))
+      .toBeVisible();
+    await expect.element(screen.getByText("所需能力：code_review")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "从标准模板补员" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "豁免并重规划" })).toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "发起借调" }))
+      .toHaveAttribute("href", "/projects/project-1/config");
+  });
+
+  it("disables both staffing and exempt actions when the fact carries no decision id", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        demandStatus: "failed",
+        graph: makeGraph([], {
+          blocking_facts: [makeGapBlockingFact({ decision_request_id: undefined })],
+        }),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-gap-panel")).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "从标准模板补员" }))
+      .toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "豁免并重规划" })).toBeDisabled();
+    await expect.element(screen.getByRole("link", { name: "发起借调" })).toBeVisible();
+  });
+
+  it("does not render the gap panel when the blocking fact carries no structural gap", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        demandStatus: "failed",
+        graph: makeGraph([], {
+          blocking_facts: [
+            {
+              message: "项目还没有可用执行位置",
+              reason_code: "runtime_placement_missing",
+              recommended_action: "先选择 Runtime 节点或创建执行位置",
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect.element(screen.getByText("协调已阻塞：项目还没有可用执行位置")).toBeVisible();
+    await expect.element(screen.getByTestId("workflow-gap-panel")).not.toBeInTheDocument();
+  });
+
+  it("does not render the gap panel when there is no blocking fact at all", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([makeGraphNode("task-1", "主机操作系统健康检查", "running")]),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+    await expect.element(screen.getByTestId("workflow-gap-panel")).not.toBeInTheDocument();
+  });
+
+  it("resolves the planning_gap decision as exempted after confirming the consequences", async () => {
+    const baseFetcher = createWorkflowFetcher({
+      demandStatus: "failed",
+      graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
+    });
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (
+        url.pathname === "/api/v1/projects/project-1/decisions/decision-gap-1/resolve" &&
+        init?.method === "POST"
+      ) {
+        return jsonResponse({
+          approval_request_id: "approval-1",
+          decision_type: "planning_gap",
+          id: "decision-gap-1",
+          project_id: "project-1",
+          status_snapshot: "rejected",
+          target_user_id: "owner-1",
+          tenant_id: "tenant-1",
+          title_snapshot: "规划缺口",
+        });
+      }
+      return baseFetcher(input, init);
+    }) as unknown as typeof fetch;
+
+    const screen = await renderWorkflowView({ fetcher });
+
+    await userEvent.click(screen.getByRole("button", { name: "豁免并重规划" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认豁免" }));
+
+    await vi.waitFor(() => {
+      const resolveCall = (fetcher as unknown as { mock: { calls: [RequestInfo | URL, RequestInit?][] } }).mock.calls.find(
+        ([reqInput]) => String(reqInput).includes("/decisions/decision-gap-1/resolve"),
+      );
+      expect(resolveCall).toBeTruthy();
+      const [, init] = resolveCall!;
+      expect(JSON.parse(String(init?.body))).toMatchObject({ decision: "exempted" });
+    });
   });
 
   it("surfaces dispatch gate replan blockers even when task graph nodes exist", async () => {
@@ -683,7 +839,11 @@ describe("WorkflowView", () => {
         url.pathname === "/api/v1/project-demands/demand-running/launch-detail" &&
         method === "GET"
       ) {
-        return jsonResponse(makeLaunchDetail("demand-running"));
+        return jsonResponse(
+          makeLaunchDetail("demand-running", {
+            demand: { ...makeLaunchDetail("demand-running").demand, status: "failed" },
+          }),
+        );
       }
 
       if (
@@ -905,5 +1065,90 @@ describe("WorkflowView", () => {
     expect(requestedUrls(fetcher)).not.toContain(
       "http://control-plane.local/api/v1/project-demands/demand-running/launch-detail",
     );
+  });
+
+  it("renders the by-id demand detail directly when it is absent from the first list page, without redirecting", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+
+      if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
+        return jsonResponse([
+          makeWorkflowInstance("demand-running"),
+          makeWorkflowInstance("demand-pr", {
+            demand_id: "demand-pr",
+            project_name: "代码审查项目",
+            status: "running",
+            status_reason: "",
+            title: "PR 审查",
+          }),
+        ]);
+      }
+
+      if (
+        url.pathname === "/api/v1/project-demands/demand-off-page/launch-detail" &&
+        method === "GET"
+      ) {
+        return jsonResponse(
+          makeLaunchDetail("demand-off-page", {
+            demand: {
+              ...makeLaunchDetail("demand-off-page").demand,
+              title: "失败告警需求",
+            },
+          }),
+        );
+      }
+
+      if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
+        return jsonResponse(
+          makeGraph([
+            makeGraphNode("task-off-page", "离线巡检任务", "failed", {
+              demand_id: "demand-off-page",
+            }),
+          ]),
+        );
+      }
+
+      if (url.pathname === "/api/v1/projects/project-1/events" && method === "GET") {
+        return jsonResponse([]);
+      }
+
+      return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await renderWorkflowView({ demandId: "demand-off-page", fetcher });
+
+    await expect.element(screen.getByText("失败告警需求").first()).toBeVisible();
+    await expect.element(screen.getByText("离线巡检任务")).toBeVisible();
+
+    await vi.waitFor(() => {
+      expect(requestedUrls(fetcher)).toContain(
+        "http://control-plane.local/api/v1/project-demands/demand-off-page/launch-detail",
+      );
+    });
+
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("redirects to the first instance only after the by-id demand detail genuinely 404s", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createWorkflowFetcher();
+
+    await renderWorkflowView({ demandId: "missing-demand", fetcher });
+
+    await vi.waitFor(() => {
+      expect(requestedUrls(fetcher)).toContain(
+        "http://control-plane.local/api/v1/project-demands/missing-demand/launch-detail",
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        params: { demandId: "demand-running" },
+        replace: true,
+        to: "/workflows/$demandId",
+      });
+    });
   });
 });

@@ -86,4 +86,24 @@ type ProjectTaskGraphBlockingFact struct {
 	ResourceID        string
 	RecommendedAction string
 	CreatedAt         time.Time
+	// Gap is the structured staffing gap (RejectDemandPlanning's PlanningGap,
+	// projectcoordination package) carried by a coordination.blocked event's "gap"
+	// payload key. Nil for any non-structural diagnosis or event predating the
+	// planning_gap decision flow — see projectTaskGraphBlockingFactFromEvent.
+	Gap *ProjectTaskGraphBlockingFactGap
+	// DecisionRequestID is the pending planning_gap DecisionRequest's id, carried by
+	// the same blocked event's "decision_request_id" payload key (RejectDemandPlanning).
+	// Empty when the event predates that field or no approval sink was wired.
+	DecisionRequestID string
+}
+
+// ProjectTaskGraphBlockingFactGap mirrors projectcoordination.PlanningGap's shape
+// for the web: the structural constraint a demand's route could not satisfy, plus
+// the pool state and resolution options a human sees to act on it.
+type ProjectTaskGraphBlockingFactGap struct {
+	ConstraintKind       string
+	Roles                []string
+	RequiredCapabilities []string
+	ActiveExecutorCount  int
+	Options              []string
 }

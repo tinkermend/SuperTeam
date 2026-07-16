@@ -300,4 +300,18 @@ type PlanningGap struct {
 
 ## 实施记录
 
-（实施时追加。）
+### Task 9 补员闭环闸门（2026-07-16，真实链路）
+
+**GATE PASS——强形态**：单员工 software_delivery 项目"合入"需求一轮终局（demand de90301c）→ inbox planning_gap 三动作 + 直链缺口面板 → 一键补员从 standard_code_reviewer 实例化「审查员-csjw」（7a9a3fde）→ 成员追加 → restaffed → 需求重开原地重规划 → rev1 审查角色绑定**新员工** → 批准 → develop 完成后审查任务**真实派发至新员工执行完成**（attempt 4d2845c9 running→run_completed，claude-code 会话完整工具流）。新员工就绪事实全绿（scheduling-readiness ready、placement ready、命令通道连通、无阻断项）。豁免路径 PASS（记录 800ace9e 落库、同员工身兼两角、确认卡豁免注记、真实派发）。孤儿探针（取消变体）零副作用。全程零 TMPRL1100/WorkflowExecutionFailed。
+
+**闸门顺带小修（9d5dc83f）**：阻塞面板按需求状态 failed 门控（重开后不再残留陈旧诊断）；inbox 动作标签服务端优先（"关闭"不再被前端覆盖为"驳回"）。
+
+**新暴露待立项**：员工写回 deliverables.value 为 object 时 400 → attempt 永滞 running（handoff 契约类型宽容缺失，调度韧性家族第 4 例）；重复派发 project conflict 终局拒绝（既有家族）。
+
+### Task 12 收尾（2026-07-16）
+
+**管理链路 E2E 六场景全 PASS**：管理页真实建模板（词汇 400 点名 `ghost_skill` → 修正后 v1 → 行内升版 v2 → 版本历史含 active 徽标，模板 e3612d9a）；新模板驱动规划（确认卡 code_audit_t12@v2）；升版隔离（升 v3 后 pending 计划钉 v2、新需求用 v3——psql 证）；状态 toggle（disabled → generic 回落 + resolution_failed 事件落库）；software_delivery 回归正常；日志零 panic。顺带小修：模板页 v2 对象形判据渲染（28e0fcda，原显示"无"）。
+
+**门禁**：verify:control-plane 绿、web 串行 760 全绿 + typecheck + build。
+
+**遗留（记录不修）**：generic 回落计划 payload 保留 planner 幻觉 template_key（P1 标签/指纹稳定语义的有意决定，归因债——清空需评估指纹影响）；`/acceptance` 404 console 噪音（预存在）。
