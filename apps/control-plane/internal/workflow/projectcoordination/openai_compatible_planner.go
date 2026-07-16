@@ -228,6 +228,20 @@ func plannerRequestTimeout(timeout time.Duration) time.Duration {
 	return timeout
 }
 
+// NewOpenAICompatibleChatCompletionClient builds an OpenAI-compatible chat
+// completion client for adversarial-review judges, reusing the same HTTP path as
+// the route planner. It is the wiring seam Task 4 (internal/app) uses to give the
+// coordination Activities a real LLM judge:
+//
+//	judge := projectcoordination.NewOpenAICompatibleChatCompletionClient(baseURL, apiKey, timeout)
+//	projectcoordination.WithJudgeClient(coordinationActivities, judge)
+//
+// The N adversarial judges are N calls to this SAME client (same model) with
+// different lens system prompts — perspective diversity, not model independence.
+func NewOpenAICompatibleChatCompletionClient(baseURL, apiKey string, requestTimeout ...time.Duration) chatCompletionClient {
+	return newOpenAICompatibleHTTPChatCompletionClient(baseURL, apiKey, requestTimeout...)
+}
+
 type openAICompatibleHTTPChatCompletionClient struct {
 	baseURL    string
 	apiKey     string

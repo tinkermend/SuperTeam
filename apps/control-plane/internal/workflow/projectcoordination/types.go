@@ -523,3 +523,54 @@ type ProjectEventResult struct {
 type DecisionRequestResult struct {
 	ID uuid.UUID
 }
+
+// --- Adversarial AI review (autonomy posture Phase B) ---
+
+// RunAdversarialReviewInput carries everything the pure judge engine needs to
+// decide one adversarial_review acceptance criterion. It is DB-free by
+// construction: Task 4's caller assembles the reviewed task's evidence (via
+// collectUpstreamResults / the task result contract) and populates the budget
+// verdict, so the engine never touches the store. JudgeCountPolicy is the raw
+// projects.coordination_policy.adversarial_review_judges value (0 = unset →
+// default 3, hard cap 7). BudgetExhausted is populated by Task 4 from
+// (*ProjectStore).revisionBudgetExhausted for the reviewed task.
+type RunAdversarialReviewInput struct {
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	CriterionID      string
+	ReviewedTaskID   uuid.UUID
+	Assertion        string   // the criterion's decidable assertion text
+	EvidenceSummary  string   // reviewed task's result summary
+	Deliverables     []string // reviewed task's declared deliverables
+	EvidenceRefs     []string // reviewed task's evidence references
+	JudgeCountPolicy int      // coordination_policy.adversarial_review_judges (0 = default)
+	BudgetExhausted  bool     // Task 4 populates from revisionBudgetExhausted
+	Model            string   // model id for judge calls (optional passthrough)
+}
+
+// AdversarialLens is one adversarial perspective: a stable key plus a
+// refute-not-confirm system prompt.
+type AdversarialLens struct {
+	Key          string
+	SystemPrompt string
+}
+
+// AdversarialJudgement is one judge's structured verdict on the criterion.
+// Verdict is "refuted" | "accepted".
+type AdversarialJudgement struct {
+	Lens    string
+	Verdict string
+	Reason  string
+}
+
+// AdversarialReviewResult aggregates the N judges. Aggregate is
+// "satisfied" (minority or no refute) | "unsatisfied" (majority refute) |
+// "escalate_human" (budget exhausted; Task 4 turns this into a tier-3 hold).
+type AdversarialReviewResult struct {
+	CriterionID    string
+	ReviewedTaskID uuid.UUID
+	Judgements     []AdversarialJudgement
+	Aggregate      string
+	RefutedCount   int
+	JudgeCount     int
+}

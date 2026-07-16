@@ -12,14 +12,19 @@ var ErrActivityStoreRequired = errors.New("project coordination activity store i
 
 var ErrRoutePlannerRequired = errors.New("project coordination route planner is required")
 
+// ErrJudgeClientRequired is returned by RunAdversarialReview when no judge chat
+// client has been wired (mirrors ErrRoutePlannerRequired's nil-dep contract).
+var ErrJudgeClientRequired = errors.New("project coordination adversarial judge client is required")
+
 // errTypeNoSuitableEmployee is the temporal ApplicationError Type stamped on a
 // terminal ErrNoSuitableEmployee planning failure. The workflow matches on this
 // Type to route the demand to its rejection/diagnosis surface instead of retrying.
 const errTypeNoSuitableEmployee = "NoSuitableEmployee"
 
 type Activities struct {
-	store   ActivityStore
-	planner RoutePlanner
+	store       ActivityStore
+	planner     RoutePlanner
+	judgeClient chatCompletionClient
 }
 
 type ActivityStore interface {
@@ -55,6 +60,53 @@ func NewActivities(store ActivityStore, planner ...RoutePlanner) *Activities {
 		selected = planner[0]
 	}
 	return &Activities{store: store, planner: selected}
+}
+
+// WithJudgeClient wires the adversarial-review judge chat client (the same
+// chatCompletionClient seam the route planner uses). It is an optional,
+// nil-tolerant wiring seam — mirroring NewActivities' variadic planner — so the
+// many existing Activities constructions that predate adversarial review need no
+// changes; only RunAdversarialReview requires it, and it errors clearly
+// (ErrJudgeClientRequired) when it is missing. Returns a for chaining.
+//
+// It is deliberately a package-level function, NOT a method on Activities:
+// worker.go registers the whole Activities struct with Temporal
+// (w.RegisterActivity(activities)), which reflects over every EXPORTED METHOD and
+// requires each to have a valid activity signature ((T, error) / error). An
+// exported WithJudgeClient method returning *Activities would fail that
+// registration. A package-level function is invisible to that reflection while
+// still callable from the cross-package wiring in internal/app.
+func WithJudgeClient(a *Activities, client chatCompletionClient) *Activities {
+	if a != nil {
+		a.judgeClient = client
+	}
+	return a
+}
+
+// RunAdversarialReview decides one adversarial_review acceptance criterion by
+// running N refute-style LLM judges (default 3, hard cap 7) and taking a
+// majority-refute vote. Cost guardrail: when the reviewed task's revision/cost
+// budget is already exhausted (Task 4 populates input.BudgetExhausted from
+// (*ProjectStore).revisionBudgetExhausted), it short-circuits to an
+// escalate_human result WITHOUT calling any judge, so Task 4 can route the
+// criterion to a human tier-3 hold instead of burning more model spend. The
+// engine itself (runAdversarialReview) is DB-free; this method only resolves the
+// judge count, applies the budget guardrail, and delegates.
+func (a *Activities) RunAdversarialReview(ctx context.Context, input RunAdversarialReviewInput) (AdversarialReviewResult, error) {
+	if a.judgeClient == nil {
+		return AdversarialReviewResult{}, ErrJudgeClientRequired
+	}
+	if input.BudgetExhausted {
+		return AdversarialReviewResult{
+			CriterionID:    input.CriterionID,
+			ReviewedTaskID: input.ReviewedTaskID,
+			Aggregate:      AdversarialAggregateEscalateHuman,
+			RefutedCount:   0,
+			JudgeCount:     0,
+		}, nil
+	}
+	lenses := resolveAdversarialLenses(resolveJudgeCount(input.JudgeCountPolicy))
+	return runAdversarialReview(ctx, a.judgeClient, lenses, input)
 }
 
 func (a *Activities) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
