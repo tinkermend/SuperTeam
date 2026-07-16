@@ -152,3 +152,15 @@ evidence_refs JSONB, project_task_id*, created_at
 | 交接闭环（07-13，已落地） | acceptance_results/deliverables 契约是 verdict 投影的数据源 |
 
 > 一句话：P2 让计划"按对的方式生成"，本文让完成"有人类锚定的定义"——判据经人批、verdict 可查询、人类判的归人类、收敛有闸、血缘可点。
+
+## 10. P1 实现记录与 Phase 2 跟进（2026-07-16 落地）
+
+P1 全量实现并合入（10 任务，全链血缘 E2E 闸门 PASS：需求真实 HOLD 在 acceptance_pending，automated 判据绿灯挂服务端核实的真实 attestation，签署完成/驳回双径全通）。E2E 与终审揪出并修的关键设计缺陷：
+- **attestation 必须服务端核实**：guard 原设计要求员工把 attestation 引用自报进 acceptance_results 不可行（runtime 在 writeback 时才铸造、员工不可知）；改为服务端核实该 attempt 确有 succeeded 的 project_task_attestations 行并自动附引用。
+- **not_applicable 破除死锁**：执行员工对注入的 automated 判据返回 not_applicable（合法契约值）曾致需求永卡 acceptance_pending（无 verdict、任务不失败、人类无法签自动判据）；改为投影成非阻断 `not_applicable` verdict，闸门放行，强制兜底人类判据仍是背板。
+
+**Phase 2 跟进（本次记录，未做）：**
+1. **豁免项目 N/A 硬化**：`acceptance_human_judgment_exempt` 项目若自撰 automated 判据，执行员工可全部 N/A 化 → 无 attestation 无人审自动接受（等价意图层前基线，豁免即弃权；但自撰判据的期望被绕过）。硬化方向：无人类背板时 N/A automated 判据仍要求 attestation，或显式声明豁免=全信执行侧自报。
+2. **N/A 理由透传背板**：非豁免下人类签兜底判据时，面板未展示执行员工 N/A 某自动判据的理由（存于 verdict.reason，未进读模型）——弱化（不破坏）背板知情。
+3. verdict 枚举 `not_applicable` 补进 openapi（本次因 openapi 被并发会话占用未改，手写路径不 gate 运行时无影响）；迁移 065 待 migrate-validate（仅注释零风险）。
+4. 判据复用沉淀（Phase 3）；review/external_check 判定者路由（Phase 2 原定）；项目级验收引用 demand 判据汇总（Phase 2 原定）。
