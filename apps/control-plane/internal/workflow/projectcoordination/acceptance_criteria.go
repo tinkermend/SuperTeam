@@ -157,11 +157,28 @@ func planTouchesHighRisk(plan *RouteDecisionPlan) bool {
 		if task.RequiresHumanApproval {
 			return true
 		}
-		if isHighRiskLevel(task.RiskLevel) {
+		if isConstitutionalHighRiskLevel(task.RiskLevel) {
 			return true
 		}
 	}
 	return false
+}
+
+// isConstitutionalHighRiskLevel classifies a free-form risk_level label as
+// high-risk for the constitutional (unwaivable) injection trigger. risk_level
+// is free-form LLM output, so the set must include the Chinese labels that
+// appear elsewhere in the system — it deliberately mirrors project package's
+// highRiskLevel (task_result_contract.go), NOT the narrower isHighRiskLevel
+// (high/critical only) used for the plan-revision risk *summary*. Kept local to
+// projectcoordination to avoid cross-importing the project package solely for
+// this check.
+func isConstitutionalHighRiskLevel(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "high", "critical", "高", "高风险", "严重":
+		return true
+	default:
+		return false
+	}
 }
 
 // markAmbiguousCriteria flags (but never rejects) criteria whose statement is

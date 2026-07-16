@@ -107,6 +107,31 @@ func TestPolicyInjectionExemptable(t *testing.T) {
 	require.Len(t, plan.PlanAcceptanceCriteria, 1, "exemption should suppress the policy-driven trigger")
 }
 
+// TestHighRiskInjectedForChineseRiskLabel: risk_level is free-form LLM output
+// and Chinese high-risk labels are anticipated. A benign plan (empty policy, no
+// RequiresHumanReview/Approval) whose sole risk signal is a task RiskLevel in
+// the Chinese-inclusive high set must still inject the fallback — otherwise
+// high-risk work escapes human oversight (constitutional under-injection).
+func TestHighRiskInjectedForChineseRiskLabel(t *testing.T) {
+	for _, label := range []string{"严重", "高风险", "高", "high", "critical"} {
+		t.Run(label, func(t *testing.T) {
+			plan := &RouteDecisionPlan{
+				Tasks: []PlannedTask{
+					{Key: "t1", RiskLevel: label},
+				},
+				PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+					{ID: "ac1", Statement: "登录失败返回 401", VerificationMethod: VerificationMethodAutomatedTest, SatisfiedBy: []string{"a"}},
+				},
+			}
+
+			ensureHumanJudgmentCriterion(plan, nil)
+
+			require.Len(t, plan.PlanAcceptanceCriteria, 2, "risk_level %q must trigger high-risk injection", label)
+			require.Equal(t, "human_final_confirmation", plan.PlanAcceptanceCriteria[1].ID)
+		})
+	}
+}
+
 // TestPlannerAuthoredHumanCriterionSuppressesFallback: a planner-authored
 // human_judgment criterion still suppresses the fallback, even when the plan
 // is high-risk (no double-injection).
