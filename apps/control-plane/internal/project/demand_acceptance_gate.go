@@ -33,13 +33,17 @@ const (
 	// The bound holds for high-risk work: every high-risk-classified demand
 	// (projectcoordination.planTouchesHighRisk — constitutional, never
 	// policy-exemptable) gets a human_judgment blocking criterion injected
-	// onto its snapshot (projectcoordination.ensureHumanJudgmentCriterion),
-	// and an executor cannot self-satisfy or self-N/A that criterion (see
-	// above). So an executor N/A-ing every automated_test criterion on a
-	// high-risk demand still leaves the injected human criterion unresolved,
-	// holding the gate at acceptance_pending. See
-	// TestNotApplicableDoesNotEscapeHighRiskOversight (pg_repository_test.go)
-	// for the pinned proof at this layer.
+	// onto its snapshot (projectcoordination.ensureHumanJudgmentCriterion,
+	// re-run in the planner AFTER every high-risk flag is final — so a plan
+	// pushed high-risk only by governance or scoring still carries it, not
+	// just plans high-risk at decode time), and an executor cannot
+	// self-satisfy or self-N/A that criterion (see above). So an executor
+	// N/A-ing every automated_test criterion on a high-risk demand still
+	// leaves the injected human criterion unresolved, holding the gate at
+	// acceptance_pending. See TestNotApplicableDoesNotEscapeHighRiskOversight
+	// (pg_repository_test.go) for the pinned gate-layer proof, and
+	// TestGovernanceDerivedHighRiskInjectsHumanCriterion
+	// (openai_compatible_planner_test.go) for the injection-timing proof.
 	demandCriterionVerdictNotApplicable = "not_applicable"
 	demandCriterionJudgeTypeHuman       = "human"
 	// demandCriterionVerificationMethodHumanJudgment mirrors

@@ -167,6 +167,12 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 					repairErr = EnforceScenarioTemplateGovernance(snapshot, &repaired)
 				}
 				if repairErr == nil {
+					// Same post-governance re-injection as the primary path: the
+					// synthesized required-review plan may be pushed high-risk by
+					// ApplyPlanningProfileScores or EnforceScenarioTemplateGovernance
+					// after its own pre-validation injection at line ~162.
+					// Idempotent + validation-exempt (see primary path).
+					ensureHumanJudgmentCriterion(&repaired, snapshot.CoordinationPolicy)
 					return repaired, nil
 				}
 				if errors.Is(repairErr, ErrNoSuitableEmployee) {
@@ -179,6 +185,23 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			lastErr = fmt.Errorf("%w; raw planner response: %s", err, plannerContentExcerpt(content))
 			continue
 		}
+		// Re-run the fallback human-judgment injection now that every high-risk
+		// flag is final. applyRequiredHumanReviewPolicy, ApplyPlanningProfileScores
+		// (hard-failure escalation), and EnforceScenarioTemplateGovernance
+		// (human_gate / degrade) all set RequiresHumanReview/RequiresHumanApproval
+		// AFTER the pre-validation injection inside applyAcceptanceCriteriaDefaults
+		// (line ~130) has already decided. Without this re-run, a plan that is
+		// low-risk at decode but pushed high-risk by governance or scoring would be
+		// snapshotted with NO human_judgment criterion, losing acceptance-time
+		// oversight. ensureHumanJudgmentCriterion is idempotent (a plan already
+		// carrying a human_judgment criterion is untouched, no double-inject), and
+		// the injected criterion is validation-exempt (human_judgment + empty
+		// satisfied_by — see validateAcceptanceCriteriaSemantics), so running it
+		// after ValidateRouteDecisionPlan needs no re-validation. This is what makes
+		// the demand-acceptance gate's Link-1 guarantee literally true: every
+		// high-risk plan carries the injected human criterion the executor cannot
+		// self-satisfy.
+		ensureHumanJudgmentCriterion(&plan, snapshot.CoordinationPolicy)
 		return plan, nil
 	}
 	if lastErr == nil {
