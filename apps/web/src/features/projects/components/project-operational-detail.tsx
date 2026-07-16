@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
+  AlertTriangle,
   Archive,
   Bot,
   Trash2,
@@ -594,26 +595,68 @@ export function ProjectOperationalDetail({
                       </div>
                       <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
                         {planRevisionAcceptanceCriteria(latestPlanRevision).map(
-                          (criterion, index) => (
-                            <div
-                              className="grid gap-2 p-3"
-                              key={`${stringField(criterion, "id")}-${index}`}
-                            >
-                              <PlanAcceptanceCriterionStatement
-                                criterionId={
-                                  stringField(criterion, "id") || `criterion-${index}`
-                                }
-                                statement={stringField(criterion, "statement")}
-                              />
-                              <RuntimeMeta
-                                label="满足任务"
-                                value={planRevisionCriterionTaskTitles(
-                                  criterion,
-                                  latestPlanRevision,
-                                ).join("、")}
-                              />
-                            </div>
-                          ),
+                          (criterion, index) => {
+                            const criterionId =
+                              stringField(criterion, "id") || `criterion-${index}`;
+                            const method =
+                              planAcceptanceCriterionVerificationMethod(criterion);
+                            const severity = planAcceptanceCriterionSeverity(criterion);
+                            const isAmbiguous =
+                              planAcceptanceCriterionAmbiguityFlag(criterion);
+                            const evidenceHint =
+                              planAcceptanceCriterionEvidenceHint(criterion);
+
+                            return (
+                              <div className="grid gap-2 p-3" key={`${criterionId}-${index}`}>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <StatusPill
+                                    data-testid={`plan-acceptance-criterion-method-${criterionId}`}
+                                    showDot={false}
+                                    tone={method === "human_judgment" ? "info" : "mute"}
+                                  >
+                                    {method === "human_judgment" ? "人类判定" : "自动验证"}
+                                  </StatusPill>
+                                  {severity === "non_blocking" ? (
+                                    <StatusPill
+                                      data-testid={`plan-acceptance-criterion-severity-${criterionId}`}
+                                      showDot={false}
+                                      tone="mute"
+                                    >
+                                      非阻断
+                                    </StatusPill>
+                                  ) : null}
+                                </div>
+                                <PlanAcceptanceCriterionStatement
+                                  criterionId={criterionId}
+                                  statement={stringField(criterion, "statement")}
+                                />
+                                {isAmbiguous ? (
+                                  <p
+                                    className="flex items-center gap-1.5 text-xs font-medium text-v3-warn-text"
+                                    data-testid={`plan-acceptance-criterion-ambiguity-${criterionId}`}
+                                  >
+                                    <AlertTriangle className="size-3.5 shrink-0" />
+                                    断言可能不可判定，请改写后再批准
+                                  </p>
+                                ) : null}
+                                {evidenceHint ? (
+                                  <p
+                                    className="text-xs text-v3-ink-3"
+                                    data-testid={`plan-acceptance-criterion-evidence-hint-${criterionId}`}
+                                  >
+                                    证据提示：{evidenceHint}
+                                  </p>
+                                ) : null}
+                                <RuntimeMeta
+                                  label="满足任务"
+                                  value={planRevisionCriterionSatisfiedLabel(
+                                    criterion,
+                                    latestPlanRevision,
+                                  )}
+                                />
+                              </div>
+                            );
+                          },
                         )}
                         {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
                           <EmptyLine label="本计划未声明验收判据" />
@@ -2042,6 +2085,41 @@ function planRevisionCriterionTaskTitles(
   return stringArrayField(criterion, "satisfied_by").map(
     (taskKey) => taskTitlesByKey.get(taskKey) ?? taskKey,
   );
+}
+
+function planAcceptanceCriterionVerificationMethod(
+  criterion: Record<string, unknown>,
+): "automated_test" | "human_judgment" {
+  return stringField(criterion, "verification_method") === "human_judgment"
+    ? "human_judgment"
+    : "automated_test";
+}
+
+function planAcceptanceCriterionSeverity(
+  criterion: Record<string, unknown>,
+): "blocking" | "non_blocking" {
+  return stringField(criterion, "severity") === "non_blocking" ? "non_blocking" : "blocking";
+}
+
+function planAcceptanceCriterionAmbiguityFlag(criterion: Record<string, unknown>): boolean {
+  return criterion.ambiguity_flag === true;
+}
+
+function planAcceptanceCriterionEvidenceHint(criterion: Record<string, unknown>): string {
+  return stringField(criterion, "evidence_hint");
+}
+
+function planRevisionCriterionSatisfiedLabel(
+  criterion: Record<string, unknown>,
+  revision: ProjectPlanRevision,
+): string {
+  const titles = planRevisionCriterionTaskTitles(criterion, revision);
+  if (titles.length > 0) {
+    return titles.join("、");
+  }
+  return planAcceptanceCriterionVerificationMethod(criterion) === "human_judgment"
+    ? "需求级人类判定"
+    : "";
 }
 
 function planRevisionCapabilityLabels(revision: ProjectPlanRevision) {

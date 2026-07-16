@@ -369,6 +369,114 @@ describe("ProjectOperationalDetail", () => {
       .toBeVisible();
   });
 
+  it("defaults to automated-verification badge and no ambiguity warning for legacy criteria payload", async () => {
+    const screen = await renderDetail({ planRevisions });
+
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-method-evidence_complete']",
+      )?.textContent,
+    ).toContain("自动验证");
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-severity-evidence_complete']",
+      ),
+    ).toBeNull();
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-ambiguity-evidence_complete']",
+      ),
+    ).toBeNull();
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-evidence-hint-evidence_complete']",
+      ),
+    ).toBeNull();
+  });
+
+  it("shows verification method, severity, ambiguity and evidence hint badges from criterion payload", async () => {
+    const semanticCriteriaRevision: ProjectPlanRevision = {
+      ...planRevisions[0],
+      payload: {
+        ...planRevisions[0].payload,
+        plan_acceptance_criteria: [
+          {
+            id: "automated_check",
+            satisfied_by: ["collect-evidence"],
+            statement: "自动化测试用例全部通过。",
+            verification_method: "automated_test",
+          },
+          {
+            id: "human_review",
+            satisfied_by: [],
+            statement: "负责人确认交付满足业务预期。",
+            verification_method: "human_judgment",
+          },
+          {
+            id: "non_blocking_check",
+            satisfied_by: ["review-evidence"],
+            severity: "non_blocking",
+            statement: "补充材料齐全（非阻断）。",
+          },
+          {
+            ambiguity_flag: true,
+            evidence_hint: "上传验收报告截图作为证据。",
+            id: "ambiguous_check",
+            satisfied_by: ["review-evidence"],
+            statement: "系统表现良好。",
+          },
+        ],
+      },
+    };
+    const screen = await renderDetail({ planRevisions: [semanticCriteriaRevision] });
+
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-method-automated_check']",
+      )?.textContent,
+    ).toContain("自动验证");
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-method-human_review']",
+      )?.textContent,
+    ).toContain("人类判定");
+
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-severity-non_blocking_check']",
+      )?.textContent,
+    ).toContain("非阻断");
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-severity-automated_check']",
+      ),
+    ).toBeNull();
+
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-ambiguity-ambiguous_check']",
+      )?.textContent,
+    ).toContain("断言可能不可判定，请改写后再批准");
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-ambiguity-automated_check']",
+      ),
+    ).toBeNull();
+
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-evidence-hint-ambiguous_check']",
+      )?.textContent,
+    ).toContain("上传验收报告截图作为证据。");
+    expect(
+      screen.container.querySelector(
+        "[data-testid='plan-acceptance-criterion-evidence-hint-automated_check']",
+      ),
+    ).toBeNull();
+
+    await expect.element(screen.getByText("需求级人类判定")).toBeVisible();
+  });
+
   it("shows template version, exit deliverable label and constraint notes from plan payload", async () => {
     const templatedRevision: ProjectPlanRevision = {
       ...planRevisions[0],
