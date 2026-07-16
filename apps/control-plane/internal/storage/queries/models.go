@@ -271,7 +271,35 @@ type DemandAcceptanceCriterium struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-// 逐条判据判定记录：executor 投影（按 project_task_id 各自一条）+ 人类签署（project_task_id 为空，全局一条）两来源
+// 对抗判官逐判官明细：一条 adversarial_review 判据由 N 个独立视角（lens）判官各自出一行判定，供聚合、血缘与审计使用，不替代 demand_criterion_verdicts 的聚合行
+type DemandAdversarialJudgement struct {
+	// 判官明细记录主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 判官明细所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 判官明细所属项目 ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 判官明细所属需求 ID
+	DemandID uuid.UUID `json:"demand_id"`
+	// 判官明细所属的计划修订版本 ID
+	PlanRevisionID uuid.UUID `json:"plan_revision_id"`
+	// 被评审的判据 ID，对应 demand_acceptance_criteria.criterion_id
+	CriterionID string `json:"criterion_id"`
+	// 被该判官评审的执行任务 ID
+	ReviewedTaskID uuid.UUID `json:"reviewed_task_id"`
+	// 判官评审视角：correctness | security | reproducibility 等，随策略可扩展，应用层校验
+	Lens string `json:"lens"`
+	// 判官判定结论：refuted（证伪）| accepted（未能证伪）
+	Verdict string `json:"verdict"`
+	// 判官判定理由说明，可为空字符串
+	Reason string `json:"reason"`
+	// 判官判定引用的证据指针列表，JSONB 数组
+	EvidenceRefs []byte `json:"evidence_refs"`
+	// 判官明细记录创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 逐条判据判定记录：executor 投影（按 project_task_id 各自一条）+ 人类签署（project_task_id 为空，全局一条）+ 对抗评审聚合（project_task_id 为空，全局一条）三来源
 type DemandCriterionVerdict struct {
 	// 判定记录主键 UUID
 	ID uuid.UUID `json:"id"`
@@ -287,7 +315,7 @@ type DemandCriterionVerdict struct {
 	CriterionID string `json:"criterion_id"`
 	// 判定结论：satisfied | unsatisfied | not_applicable（not_applicable 仅由 executor 对 automated_test 判据投影，非阻断，仍需人类兜底判据签署）
 	Verdict string `json:"verdict"`
-	// 判定来源类型：executor | human
+	// 判定来源类型：executor | human | adversarial
 	JudgeType string `json:"judge_type"`
 	// 判定人/执行者 ID（人类用户 ID 或数字员工 ID）
 	JudgeID uuid.UUID `json:"judge_id"`

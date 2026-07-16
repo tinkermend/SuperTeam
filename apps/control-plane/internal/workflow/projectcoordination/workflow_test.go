@@ -1228,6 +1228,7 @@ func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *tes
 		"FinishCoordinationJob",
 		"AppendProjectEvent",
 		"InspectTaskResultDecision",
+		"PrepareAdversarialReview",
 		"ResolveReadyDownstream",
 		"DispatchProjectTask",
 	}, store.calls)
@@ -2544,6 +2545,21 @@ func (s *recordingActivityStore) RecoverTaskDispatchFailure(ctx context.Context,
 func (s *recordingActivityStore) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {
 	s.calls = append(s.calls, "FinishCoordinationJob")
 	s.finishJobInputs = append(s.finishJobInputs, input)
+	return nil
+}
+
+// PrepareAdversarialReview / PersistAdversarialOutcome let the recording store
+// satisfy adversarialReviewStore so the AdversarialReviewForTask trigger (fenced
+// into handleEmployeeTaskCompleted) resolves to "not reviewed" for the existing
+// completion-path tests, which carry no adversarial_review criteria. Tests that
+// exercise the trigger use a dedicated fake (see adversarial_trigger_test.go).
+func (s *recordingActivityStore) PrepareAdversarialReview(ctx context.Context, input PrepareAdversarialReviewInput) (AdversarialReviewPlan, error) {
+	s.calls = append(s.calls, "PrepareAdversarialReview")
+	return AdversarialReviewPlan{Reviewed: false}, nil
+}
+
+func (s *recordingActivityStore) PersistAdversarialOutcome(ctx context.Context, input PersistAdversarialOutcomeInput) error {
+	s.calls = append(s.calls, "PersistAdversarialOutcome")
 	return nil
 }
 

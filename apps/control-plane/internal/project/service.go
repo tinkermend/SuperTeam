@@ -3539,6 +3539,19 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 			)
 			continue
 		}
+		if criterion.VerificationMethod == demandCriterionVerificationMethodAdversarialReview {
+			// adversarial_review criteria are decided by the adversarial judge
+			// engine (aggregate row, judge_type=adversarial), never by executor
+			// self-report — projecting an executor verdict here would let a task
+			// self-satisfy a criterion the judges must decide. Skip; only log.
+			slog.Default().Warn("demand acceptance criterion self-reported by executor: ignored, awaiting adversarial review",
+				"project_task_id", task.ID,
+				"demand_id", criterion.DemandID,
+				"plan_revision_id", criterion.PlanRevisionID,
+				"criterion_id", criterion.CriterionID,
+			)
+			continue
+		}
 		verdictValue, ok := demandCriterionVerdictValueFromResultStatus(result.Status)
 		if !ok {
 			continue

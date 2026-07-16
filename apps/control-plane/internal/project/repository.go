@@ -133,6 +133,8 @@ type Repository interface {
 	CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error
 	ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error)
 	CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error
+	CreateAdversarialVerdict(ctx context.Context, req CreateAdversarialVerdictRequest) error
+	CreateAdversarialJudgements(ctx context.Context, reqs []CreateAdversarialJudgementRequest) error
 	ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error)
 	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
 	CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error)
@@ -645,6 +647,44 @@ type CreateDemandCriterionVerdictRequest struct {
 	Reason         string
 	EvidenceRefs   []string
 	ProjectTaskID  *uuid.UUID
+}
+
+// CreateAdversarialVerdictRequest records the aggregate outcome of an
+// adversarial_review criterion: one global row per criterion (judge_type
+// "adversarial", project_task_id nil) written by the adversarial judge engine
+// (autonomy posture Phase B). Verdict is the engine aggregate — "satisfied",
+// "unsatisfied", or "escalate_human" (budget exhausted). It dedupes against
+// uq_demand_verdicts_adversarial (partial unique: project_task_id IS NULL AND
+// judge_type='adversarial'), so a task retry re-running the judges upserts the
+// same row. JudgeID is uuid.Nil — an adversarial verdict has no human/employee
+// judge; the lens detail lives in demand_adversarial_judgements.
+type CreateAdversarialVerdictRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	Verdict        string
+	JudgeID        uuid.UUID
+	Reason         string
+	EvidenceRefs   []string
+}
+
+// CreateAdversarialJudgementRequest is one judge's per-lens verdict detail row
+// for an adversarial_review criterion (demand_adversarial_judgements). It
+// dedupes against uq_adversarial_judgement (one row per lens per criterion), so
+// a task retry upserts each lens row.
+type CreateAdversarialJudgementRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	ReviewedTaskID uuid.UUID
+	Lens           string
+	Verdict        string
+	Reason         string
+	EvidenceRefs   []string
 }
 
 type CreateEvidenceRefRequest struct {

@@ -83,6 +83,7 @@ const (
 // so callers can surface provenance without re-scanning.
 func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID string) (verdict string, judgeType string, evidenceRefs []string, hasVerdict bool) {
 	var human *DemandCriterionVerdict
+	var adversarial *DemandCriterionVerdict
 	var executorSatisfied *DemandCriterionVerdict
 	var executorNotApplicable *DemandCriterionVerdict
 	var executorAny *DemandCriterionVerdict
@@ -93,6 +94,13 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 		}
 		if v.JudgeType == demandCriterionJudgeTypeHuman {
 			human = v // last human verdict wins (arrives in created_at,id order)
+			continue
+		}
+		if v.JudgeType == demandCriterionJudgeTypeAdversarial {
+			// The adversarial aggregate row (one global row per criterion,
+			// project_task_id NULL) is NOT an executor verdict — catch it here
+			// before the executor accumulators so it is never miscounted as one.
+			adversarial = v
 			continue
 		}
 		if executorAny == nil {
@@ -108,6 +116,12 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 	switch {
 	case human != nil:
 		return human.Verdict, demandCriterionJudgeTypeHuman, human.EvidenceRefs, true
+	case adversarial != nil:
+		// An adversarial_review criterion's effective verdict is its adversarial
+		// aggregate verdict (satisfied | unsatisfied | escalate_human). A human
+		// verdict still overrides it (handled above); the executor never decides
+		// an adversarial_review criterion.
+		return adversarial.Verdict, demandCriterionJudgeTypeAdversarial, adversarial.EvidenceRefs, true
 	case executorSatisfied != nil:
 		return demandCriterionVerdictSatisfied, demandCriterionJudgeTypeExecutor, executorSatisfied.EvidenceRefs, true
 	case executorNotApplicable != nil:
@@ -147,7 +161,24 @@ func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, ve
 		if c.Severity != demandAcceptanceCriterionSeverityBlocking {
 			continue
 		}
-		verdict, _, _, hasVerdict := criterionEffectiveVerdict(verdicts, c.CriterionID)
+		verdict, judgeType, _, hasVerdict := criterionEffectiveVerdict(verdicts, c.CriterionID)
+		if c.VerificationMethod == demandCriterionVerificationMethodAdversarialReview {
+			// An adversarial_review criterion is released ONLY by its adversarial
+			// aggregate verdict (satisfied) or by a human override (satisfied). It
+			// holds when: no verdict yet (review not run / in progress), the
+			// adversarial aggregate is unsatisfied or escalate_human (budget
+			// exhausted), or an engine error left it verdict-less. A stray
+			// executor self-report must never release it — treat any non-human,
+			// non-adversarial winning verdict as unresolved. This is the
+			// escalate_human / engine-error hold: a review that cannot conclude
+			// never lets the demand through, keeping the human tier-3 path owner.
+			if !hasVerdict ||
+				(judgeType != demandCriterionJudgeTypeHuman && judgeType != demandCriterionJudgeTypeAdversarial) ||
+				verdict != demandCriterionVerdictSatisfied {
+				pending = append(pending, c.CriterionID)
+			}
+			continue
+		}
 		if !hasVerdict || (verdict != demandCriterionVerdictSatisfied && verdict != demandCriterionVerdictNotApplicable) {
 			pending = append(pending, c.CriterionID)
 		}

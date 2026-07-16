@@ -569,6 +569,14 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			WithDigitalEmployeePlanningProfiles(digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}).
 			WithPreDispatchGateReaders(gateAdapter, gateAdapter)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
+		// Wire the adversarial-review judge client (same OpenAI-compatible seam as
+		// the route planner) and the judge model id, so RunAdversarialReview /
+		// AdversarialReviewForTask can decide adversarial_review criteria.
+		coordinationActivities = projectcoordination.WithJudgeClient(
+			coordinationActivities,
+			projectcoordination.NewOpenAICompatibleChatCompletionClient(cfg.Planner.BaseURL, cfg.Planner.APIKey),
+			cfg.Planner.Model,
+		)
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
 	projectService, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(

@@ -18,6 +18,14 @@ type scriptedChatCompletionClient struct {
 	calls     int
 	systems   []string
 	users     []string
+	models    []string
+}
+
+func (c *scriptedChatCompletionClient) lastModel() string {
+	if len(c.models) == 0 {
+		return ""
+	}
+	return c.models[len(c.models)-1]
 }
 
 type scriptedResponse struct {
@@ -29,6 +37,7 @@ func (c *scriptedChatCompletionClient) CreateChatCompletion(ctx context.Context,
 	_ = ctx
 	c.systems = append(c.systems, req.System)
 	c.users = append(c.users, req.User)
+	c.models = append(c.models, req.Model)
 	idx := c.calls
 	c.calls++
 	if idx >= len(c.responses) {

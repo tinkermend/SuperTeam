@@ -669,6 +669,44 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	if decision.Decision != "" && decision.Decision != string(project.TaskResultDecisionCompleteAccepted) {
 		return taskCompletionPending{}, nil
 	}
+	// Adversarial-review trigger (autonomy posture Phase B). GetVersion fence
+	// from birth: this issues a NEW Activity command absent from old histories,
+	// so it is NOT a "naturally unreachable" decode — it must be fenced. On old
+	// histories GetVersion returns DefaultVersion (no marker written), taking the
+	// original direct path straight to resolveReadyDownstream — replay-safe (see
+	// TestReplayRealCoordinatorHistory). The legacy branch
+	// (handleEmployeeTaskCompletedLegacy) is deliberately NOT fenced/triggered:
+	// legacy plans predate the adversarial_review method, so they never carry
+	// such criteria.
+	if workflow.GetVersion(ctx, "adversarial-review-trigger", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		var review AdversarialReviewForTaskResult
+		reviewErr := workflow.ExecuteActivity(ctx, (*Activities).AdversarialReviewForTask, AdversarialReviewForTaskInput{
+			TenantID:        input.TenantID,
+			ProjectID:       input.ProjectID,
+			CompletedTaskID: signal.ProjectTaskID,
+		}).Get(ctx, &review)
+		if reviewErr != nil {
+			// Spec author requirement: a review that cannot complete (LLM
+			// transport failure after retries exhaust) must NEVER auto-pass. Hold
+			// the demand — do NOT unlock downstream. The blocking adversarial
+			// criterion stays verdict-less, so the convergence gate holds it for
+			// the human tier-3 path. Swallow the error (return pending) so the
+			// workflow task does not fail-and-retry into a hot loop.
+			workflow.GetLogger(ctx).Error("adversarial review failed; holding demand for human escalation",
+				"completed_task_id", signal.ProjectTaskID.String(), "error", reviewErr.Error())
+			return taskCompletionPending{}, nil
+		}
+		if review.Reviewed && (!review.AllSatisfied || review.AnyEscalated) {
+			// Adversarial criterion unsatisfied (majority refute) or escalate_human
+			// (budget exhausted). The verdict is now persisted, so the convergence
+			// gate holds the demand; do NOT unlock downstream, and let the
+			// acceptance/human tier-3 machinery own it.
+			workflow.GetLogger(ctx).Info("adversarial review held demand",
+				"completed_task_id", signal.ProjectTaskID.String(),
+				"all_satisfied", review.AllSatisfied, "any_escalated", review.AnyEscalated)
+			return taskCompletionPending{}, nil
+		}
+	}
 	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
 	if err != nil {
 		return taskCompletionPending{}, err

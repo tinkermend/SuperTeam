@@ -5391,6 +5391,55 @@ func (r *PgRepository) CreateDemandCriterionVerdict(ctx context.Context, req Cre
 	})
 }
 
+// CreateAdversarialVerdict upserts the aggregate row (judge_type=adversarial,
+// project_task_id NULL) for one adversarial_review criterion. ON CONFLICT
+// against uq_demand_verdicts_adversarial overwrites verdict/reason so a task
+// retry re-running the judges is idempotent (see migration 068).
+func (r *PgRepository) CreateAdversarialVerdict(ctx context.Context, req CreateAdversarialVerdictRequest) error {
+	evidenceRefs, err := jsonbStringSlice(req.EvidenceRefs, "evidence_refs")
+	if err != nil {
+		return err
+	}
+	return r.q.CreateAdversarialVerdict(ctx, queries.CreateAdversarialVerdictParams{
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   evidenceRefs,
+	})
+}
+
+// CreateAdversarialJudgements upserts the per-lens detail rows for one
+// adversarial_review criterion, one row per lens. Each row dedupes against
+// uq_adversarial_judgement so a task retry overwrites the same lens rows.
+func (r *PgRepository) CreateAdversarialJudgements(ctx context.Context, reqs []CreateAdversarialJudgementRequest) error {
+	for _, req := range reqs {
+		evidenceRefs, err := jsonbStringSlice(req.EvidenceRefs, "evidence_refs")
+		if err != nil {
+			return err
+		}
+		if err := r.q.CreateAdversarialJudgement(ctx, queries.CreateAdversarialJudgementParams{
+			TenantID:       req.TenantID,
+			ProjectID:      req.ProjectID,
+			DemandID:       req.DemandID,
+			PlanRevisionID: req.PlanRevisionID,
+			CriterionID:    req.CriterionID,
+			ReviewedTaskID: req.ReviewedTaskID,
+			Lens:           req.Lens,
+			Verdict:        req.Verdict,
+			Reason:         req.Reason,
+			EvidenceRefs:   evidenceRefs,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *PgRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
 	rows, err := r.q.ListDemandCriterionVerdicts(ctx, queries.ListDemandCriterionVerdictsParams{
 		TenantID:       tenantID,

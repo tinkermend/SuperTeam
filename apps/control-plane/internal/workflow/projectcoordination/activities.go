@@ -25,6 +25,7 @@ type Activities struct {
 	store       ActivityStore
 	planner     RoutePlanner
 	judgeClient chatCompletionClient
+	judgeModel  string
 }
 
 type ActivityStore interface {
@@ -76,9 +77,15 @@ func NewActivities(store ActivityStore, planner ...RoutePlanner) *Activities {
 // exported WithJudgeClient method returning *Activities would fail that
 // registration. A package-level function is invisible to that reflection while
 // still callable from the cross-package wiring in internal/app.
-func WithJudgeClient(a *Activities, client chatCompletionClient) *Activities {
+// The optional model argument sets the judge model id passed through to each
+// judge call (RunAdversarialReviewInput.Model). It is variadic so existing
+// two-argument callers (tests that only need the client) are unaffected.
+func WithJudgeClient(a *Activities, client chatCompletionClient, model ...string) *Activities {
 	if a != nil {
 		a.judgeClient = client
+		if len(model) > 0 {
+			a.judgeModel = model[0]
+		}
 	}
 	return a
 }
