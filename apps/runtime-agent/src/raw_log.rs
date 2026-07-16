@@ -74,28 +74,82 @@ pub trait RawLogUploader: Send + Sync {
     async fn put(&self, key: &str, body: Vec<u8>) -> Result<()>;
 }
 
-pub struct S3RawLogUploader {
-    client: aws_sdk_s3::Client,
-    bucket: String,
+/// Uploads raw segments through control-plane-issued presigned URLs.
+///
+/// The runtime holds no object-store credentials (证据地基 spec §8 修订 1):
+/// each PUT first exchanges (attempt_id, part/manifest) for a short-lived URL,
+/// then sends the bytes straight to object storage. Both steps sit inside the
+/// caller's bounded retry, so an expired URL is simply re-requested.
+pub struct PresignRawLogUploader {
+    control_plane: crate::controlplane::client::ControlPlaneClient,
+    http: reqwest::Client,
+    attempt_id: String,
 }
 
-impl S3RawLogUploader {
-    pub fn new(client: aws_sdk_s3::Client, bucket: String) -> Self {
-        Self { client, bucket }
+impl PresignRawLogUploader {
+    pub fn new(
+        control_plane: crate::controlplane::client::ControlPlaneClient,
+        attempt_id: String,
+    ) -> Self {
+        Self {
+            control_plane,
+            http: reqwest::Client::new(),
+            attempt_id,
+        }
     }
 }
 
+/// Splits a raw-log object key into the presign request shape. The Writer
+/// derives keys as `{prefix}raw.part-NNNN.jsonl` / `{prefix}manifest.json`;
+/// the control plane re-derives the same key server-side from the attempt.
+fn classify_raw_key(key: &str) -> Result<(&'static str, Option<i32>, &'static str)> {
+    let basename = key.rsplit('/').next().unwrap_or(key);
+    if basename == "manifest.json" {
+        return Ok(("manifest", None, "application/json"));
+    }
+    if let Some(rest) = basename.strip_prefix("raw.part-") {
+        if let Some(index) = rest.strip_suffix(".jsonl") {
+            let index: i32 = index
+                .parse()
+                .with_context(|| format!("invalid raw segment index in key {key}"))?;
+            return Ok(("part", Some(index), "application/x-ndjson"));
+        }
+    }
+    anyhow::bail!("unrecognized raw log object key: {key}")
+}
+
 #[async_trait]
-impl RawLogUploader for S3RawLogUploader {
+impl RawLogUploader for PresignRawLogUploader {
     async fn put(&self, key: &str, body: Vec<u8>) -> Result<()> {
-        self.client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .body(body.into())
+        let (object, part_index, content_type) = classify_raw_key(key)?;
+        let presigned = self
+            .control_plane
+            .presign_raw_log_upload(&crate::controlplane::models::PresignRawLogUploadRequest {
+                attempt_id: self.attempt_id.clone(),
+                object: object.to_string(),
+                part_index,
+                size_bytes: body.len() as i64,
+            })
+            .await
+            .with_context(|| format!("failed to presign raw log upload for {key}"))?;
+        let upload_url = presigned
+            .upload_url
+            .context("presign response carries no upload_url")?;
+        let response = self
+            .http
+            .put(&upload_url)
+            // The URL is signed over this exact Content-Type; it must match
+            // what the control plane put into the presign input.
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body)
             .send()
             .await
             .with_context(|| format!("failed to upload raw log segment {key}"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let detail = response.text().await.unwrap_or_default();
+            anyhow::bail!("raw log segment {key} upload rejected: {status} {detail}");
+        }
         Ok(())
     }
 }

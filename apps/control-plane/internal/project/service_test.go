@@ -13849,8 +13849,19 @@ func (r *governanceMemoryRepository) CreateArtifactRef(ctx context.Context, req 
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 	}
+	artifact.AttemptID = req.AttemptID
+	artifact.DigitalEmployeeID = req.DigitalEmployeeID
 	r.artifactRefs = append(r.artifactRefs, artifact)
 	return artifact, nil
+}
+
+func (r *governanceMemoryRepository) GetArtifactRef(ctx context.Context, tenantID, artifactRefID uuid.UUID) (ProjectArtifactRef, error) {
+	for _, artifact := range r.artifactRefs {
+		if artifact.ID == artifactRefID && artifact.TenantID == tenantID {
+			return artifact, nil
+		}
+	}
+	return ProjectArtifactRef{}, ErrProjectNotFound
 }
 
 func (r *governanceMemoryRepository) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {

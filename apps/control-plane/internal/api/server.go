@@ -320,6 +320,7 @@ func (s *Server) registerRoutes() {
 				r.Post("/projects/{projectId}/evidence", s.projectHandler.CreateEvidence)
 				r.Patch("/projects/{projectId}/evidence/{evidenceId}", s.projectHandler.PatchEvidence)
 				r.Get("/projects/{projectId}/artifacts", s.projectHandler.ListArtifacts)
+				r.Get("/artifacts/{artifactRefId}/content", s.projectHandler.GetArtifactContent)
 				r.Get("/projects/{projectId}/reports", s.projectHandler.ListReports)
 				r.Get("/projects/{projectId}/budget-ledger", s.projectHandler.ListBudgetLedger)
 				r.Get("/projects/{projectId}/budget-summary", s.projectHandler.GetBudgetSummary)
@@ -508,6 +509,8 @@ func (s *Server) registerRoutes() {
 				}
 				if s.projectHandler != nil {
 					r.Post("/project-task-attestations", s.projectHandler.CreateProjectTaskAttestation)
+					r.Post("/artifacts/presign", s.projectHandler.PresignRuntimeArtifact)
+					r.Post("/raw-logs/presign", s.projectHandler.PresignRuntimeRawLog)
 					r.Route("/project-task-attempts/{attemptId}", func(r chi.Router) {
 						r.Post("/started", s.projectHandler.StartProjectTaskAttempt)
 						r.Post("/lease", s.projectHandler.RenewProjectTaskAttemptLease)
@@ -517,6 +520,9 @@ func (s *Server) registerRoutes() {
 						r.Post("/fail", s.projectHandler.FailProjectTaskAttempt)
 						r.Post("/wait-human", s.projectHandler.WaitHumanProjectTaskAttempt)
 					})
+				}
+				if s.skillHandler != nil {
+					r.Post("/skills/presign", s.skillHandler.PresignRuntimeSkillArchive)
 				}
 				r.Get("/ws", s.runtimeHandler.WebSocket)
 			})

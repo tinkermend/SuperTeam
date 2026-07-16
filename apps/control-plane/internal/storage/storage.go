@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -68,6 +70,7 @@ func NewClients(ctx context.Context, cfg Config) (*Clients, error) {
 		postgres.Close()
 		return nil, err
 	}
+	objectStore.SetPresigner(s3.NewPresignClient(s3Client))
 
 	clients := &Clients{
 		Postgres:    postgres,
@@ -141,9 +144,25 @@ type S3API interface {
 	DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
 
+// S3Presigner is the subset of *s3.PresignClient the object store needs; kept
+// as an interface so tests can fake URL signing without AWS machinery.
+type S3Presigner interface {
+	PresignPutObject(ctx context.Context, input *s3.PutObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+	PresignGetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+}
+
 type S3ObjectStore struct {
-	client S3API
-	bucket string
+	client    S3API
+	presigner S3Presigner
+	bucket    string
+}
+
+// ObjectStat is the existence/size answer used by evidence materialization to
+// confirm a runtime-uploaded object really landed before writing DB rows.
+type ObjectStat struct {
+	Exists      bool
+	SizeBytes   int64
+	ContentType string
 }
 
 type PutObjectOptions struct {
@@ -252,6 +271,90 @@ func (s *S3ObjectStore) Exists(ctx context.Context, key string) (bool, error) {
 	}
 
 	return false, fmt.Errorf("head object %q: %w", key, err)
+}
+
+// SetPresigner attaches URL-presigning capability; without it Presign* fail.
+func (s *S3ObjectStore) SetPresigner(presigner S3Presigner) {
+	s.presigner = presigner
+}
+
+// StatObject returns existence and size without fetching the body. A missing
+// object is (Exists=false, nil error); other failures are errors.
+func (s *S3ObjectStore) StatObject(ctx context.Context, key string) (ObjectStat, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ObjectStat{}, errors.New("object key is required")
+	}
+
+	output, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "NotFound", "NoSuchKey", "404":
+				return ObjectStat{}, nil
+			}
+		}
+		return ObjectStat{}, fmt.Errorf("head object %q: %w", key, err)
+	}
+
+	stat := ObjectStat{Exists: true, ContentType: aws.ToString(output.ContentType)}
+	if output.ContentLength != nil {
+		stat.SizeBytes = *output.ContentLength
+	}
+	return stat, nil
+}
+
+// PresignPut signs a direct-upload URL for key. Callers own key derivation and
+// tenant scoping; this layer only signs within the configured bucket.
+func (s *S3ObjectStore) PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (string, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", errors.New("object key is required")
+	}
+	if s.presigner == nil {
+		return "", errors.New("object store presigner is not configured")
+	}
+
+	input := &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}
+	if strings.TrimSpace(contentType) != "" {
+		input.ContentType = aws.String(contentType)
+	}
+	request, err := s.presigner.PresignPutObject(ctx, input, func(o *s3.PresignOptions) {
+		o.Expires = ttl
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign put %q: %w", key, err)
+	}
+	return request.URL, nil
+}
+
+// PresignGet signs a direct-download URL for key.
+func (s *S3ObjectStore) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", errors.New("object key is required")
+	}
+	if s.presigner == nil {
+		return "", errors.New("object store presigner is not configured")
+	}
+
+	request, err := s.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}, func(o *s3.PresignOptions) {
+		o.Expires = ttl
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign get %q: %w", key, err)
+	}
+	return request.URL, nil
 }
 
 func (s *S3ObjectStore) DeleteObject(ctx context.Context, key string) error {

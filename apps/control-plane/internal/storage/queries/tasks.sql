@@ -148,30 +148,6 @@ INSERT INTO task_runs (
     sqlc.arg('status')::varchar
 ) RETURNING *;
 
--- name: CreateTaskArtifact :one
-INSERT INTO task_artifacts (
-    tenant_id,
-    task_id,
-    run_id,
-    artifact_type,
-    name,
-    storage_url
-) VALUES (
-    COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
-    sqlc.arg('task_id')::uuid,
-    sqlc.narg('run_id')::uuid,
-    sqlc.arg('artifact_type')::varchar,
-    sqlc.arg('name')::varchar,
-    sqlc.arg('storage_url')::text
-) RETURNING *;
-
--- name: ListTaskArtifacts :many
-SELECT * FROM task_artifacts
-WHERE task_id = sqlc.arg('task_id')::uuid
-  AND deleted_at IS NULL
-  AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-ORDER BY created_at DESC;
-
 -- name: ListPendingTasks :many
 SELECT * FROM tasks
 WHERE tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
@@ -206,18 +182,6 @@ SET status = 'cancelled',
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 RETURNING *;
-
--- name: GetTaskArtifact :one
-SELECT * FROM task_artifacts
-WHERE id = sqlc.arg('id')::uuid
-  AND deleted_at IS NULL
-  AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid);
-
--- name: DeleteTaskArtifact :exec
-UPDATE task_artifacts
-SET deleted_at = COALESCE(deleted_at, NOW())
-WHERE id = sqlc.arg('id')::uuid
-  AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid);
 
 -- name: GetTaskRun :one
 SELECT * FROM task_runs

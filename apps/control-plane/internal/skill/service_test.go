@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/storage"
@@ -31,6 +32,10 @@ func (m *mockObjectStore) PutObject(_ context.Context, key string, body io.Reade
 func (m *mockObjectStore) DeleteObject(_ context.Context, key string) error {
 	m.deleteKey = key
 	return nil
+}
+
+func (m *mockObjectStore) PresignGet(_ context.Context, key string, _ time.Duration) (string, error) {
+	return "https://mock-object-store.local/" + key + "?signed=1", nil
 }
 
 func newTestService(repo *serviceTestRepository) *Service {

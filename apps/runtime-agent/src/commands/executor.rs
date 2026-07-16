@@ -57,6 +57,17 @@ struct RuntimeCommandWritebackSink {
     /// Set once the raw transcript has been finalized, so every terminal
     /// writeback (complete, fail, wait_human) carries the same pointer.
     raw_log: Arc<std::sync::Mutex<Option<crate::raw_log::RawLogSummary>>>,
+    /// Inputs for artifact collection at completion (证据地基 spec §4.1);
+    /// None on sinks that never complete (e.g. the stop-command failure sink).
+    artifact_collection: Option<ArtifactCollectionContext>,
+}
+
+/// What the sink needs to collect the attempt's artifacts when it completes.
+#[derive(Clone)]
+struct ArtifactCollectionContext {
+    raw_log_path: PathBuf,
+    workspace_path: Option<PathBuf>,
+    environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,8 +170,6 @@ pub struct RuntimeCommandExecutor {
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
     control_plane: Option<ControlPlaneClient>,
-    s3_client: Option<aws_sdk_s3::Client>,
-    s3_bucket: Option<String>,
 }
 
 impl RuntimeCommandExecutor {
@@ -171,8 +180,7 @@ impl RuntimeCommandExecutor {
         project_task: &Option<ProjectTaskWritebackContext>,
     ) -> Arc<dyn crate::raw_log::RawLineSink> {
         build_raw_sink_inner(
-            self.s3_client.as_ref(),
-            self.s3_bucket.as_deref(),
+            self.control_plane.as_ref(),
             self.runs.run_dir(run_id),
             tenant_id,
             project_task.as_ref().map(|task| task.attempt_id.as_str()),
@@ -180,14 +188,11 @@ impl RuntimeCommandExecutor {
     }
 
     pub fn new(config: RuntimeConfig) -> Self {
-        let (s3_client, s3_bucket) = create_s3_client(&config);
         Self {
             runs: RuntimeRunStore::new(config.runs.log_dir.clone()),
             registry: RuntimeCommandRegistry::default(),
             config,
             control_plane: None,
-            s3_client,
-            s3_bucket,
         }
     }
 
@@ -375,6 +380,11 @@ impl RuntimeCommandExecutor {
                 project_task: project_task.clone(),
                 usage_tokens: Arc::new(AtomicI64::new(0)),
                 raw_log: Arc::new(std::sync::Mutex::new(None)),
+                artifact_collection: Some(ArtifactCollectionContext {
+                    raw_log_path: self.runs.run_dir(&run_id).join("raw.jsonl"),
+                    workspace_path: Some(spec.workspace_path.clone()),
+                    environment: spec.environment.clone(),
+                }),
             });
         if let Some(writeback) = &writeback {
             if let Err(error) = writeback.start_project_task().await {
@@ -525,6 +535,7 @@ impl RuntimeCommandExecutor {
                     project_task,
                     usage_tokens: Arc::new(AtomicI64::new(0)),
                     raw_log: Arc::new(std::sync::Mutex::new(None)),
+                    artifact_collection: None,
                 }
                 .fail_project_task("operator cancelled")
                 .await?;
@@ -630,12 +641,13 @@ impl RuntimeCommandExecutor {
         }
 
         if !payload.skills.is_empty() {
-            if let (Some(s3_client), Some(bucket)) = (&self.s3_client, &self.s3_bucket) {
+            if let Some(control_plane_client) = &self.control_plane {
+                let fetcher =
+                    crate::skills::PresignSkillArchiveFetcher::new(control_plane_client.clone());
                 if let Err(error) = materialize_skills(
                     &PathBuf::from(&payload.agent_home_dir),
                     &payload.skills,
-                    s3_client,
-                    bucket,
+                    &fetcher,
                 )
                 .await
                 {
@@ -649,7 +661,7 @@ impl RuntimeCommandExecutor {
                 let error = self.recorded_error(
                     &command.id,
                     anyhow::anyhow!(
-                        "skills require S3 configuration but s3 client is not configured"
+                        "skills require a control plane client for presigned downloads"
                     ),
                 );
                 let message = error.to_string();
@@ -774,23 +786,21 @@ impl RuntimeCommandExecutor {
             return Err(error);
         }
 
-        let (s3_client, bucket) = match (&self.s3_client, &self.s3_bucket) {
-            (Some(s3_client), Some(bucket)) => (s3_client, bucket),
-            _ => {
-                let error = self.recorded_error(
-                    &command.id,
-                    anyhow::anyhow!(
-                        "install_skills requires S3 configuration but s3 client is not configured"
-                    ),
-                );
-                let message = error.to_string();
-                self.write_install_skills_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
+        let Some(control_plane_client) = &self.control_plane else {
+            let error = self.recorded_error(
+                &command.id,
+                anyhow::anyhow!(
+                    "install_skills requires a control plane client for presigned downloads"
+                ),
+            );
+            let message = error.to_string();
+            self.write_install_skills_failure(&command.id, message)
+                .await?;
+            return Err(error);
         };
+        let fetcher = crate::skills::PresignSkillArchiveFetcher::new(control_plane_client.clone());
 
-        let installed = match install_skill_targets(payload, s3_client, bucket).await {
+        let installed = match install_skill_targets(payload, &fetcher).await {
             Ok(installed) => installed,
             Err(error) => {
                 let error = self.recorded_error(&command.id, error);
@@ -1157,24 +1167,23 @@ fn materialize_persona_memory(
 
 /// Builds the raw transcript sink for a run.
 ///
-/// Falls back to a no-op sink when object storage is unconfigured or the run is
-/// not backed by a project task attempt: without an attempt there is nowhere to
-/// hang the resulting pointer, and without a bucket there is nowhere to put the
-/// bytes.
+/// Falls back to a no-op sink when there is no control plane client (nowhere
+/// to presign uploads) or the run is not backed by a project task attempt
+/// (nowhere to hang the resulting pointer). Uploads go through presigned URLs
+/// issued per segment — the runtime holds no object-store credentials.
 fn build_raw_sink_inner(
-    s3_client: Option<&aws_sdk_s3::Client>,
-    s3_bucket: Option<&str>,
+    control_plane: Option<&ControlPlaneClient>,
     local_dir: std::path::PathBuf,
     tenant_id: Option<&str>,
     attempt_id: Option<&str>,
 ) -> Arc<dyn crate::raw_log::RawLineSink> {
-    let (Some(client), Some(bucket), Some(attempt_id)) = (s3_client, s3_bucket, attempt_id) else {
+    let (Some(control_plane), Some(attempt_id)) = (control_plane, attempt_id) else {
         return Arc::new(crate::raw_log::NoopRawSink);
     };
     let tenant_id = tenant_id.unwrap_or("unknown-tenant");
-    let uploader = Arc::new(crate::raw_log::S3RawLogUploader::new(
-        client.clone(),
-        bucket.to_string(),
+    let uploader = Arc::new(crate::raw_log::PresignRawLogUploader::new(
+        control_plane.clone(),
+        attempt_id.to_string(),
     ));
     Arc::new(crate::raw_log::SegmentedRawLogSink::new(
         uploader,
@@ -1182,32 +1191,6 @@ fn build_raw_sink_inner(
         format!("runs/{tenant_id}/{attempt_id}/"),
         attempt_id.to_string(),
     ))
-}
-
-fn create_s3_client(config: &RuntimeConfig) -> (Option<aws_sdk_s3::Client>, Option<String>) {
-    match &config.s3 {
-        Some(s3) => {
-            let creds = aws_sdk_s3::config::Credentials::new(
-                &s3.access_key_id,
-                &s3.secret_access_key,
-                None,
-                None,
-                "static",
-            );
-            let s3_config = aws_sdk_s3::Config::builder()
-                .region(aws_sdk_s3::config::Region::new(s3.region.clone()))
-                .credentials_provider(creds)
-                .endpoint_url(&s3.endpoint)
-                .force_path_style(s3.force_path_style)
-                .behavior_version_latest()
-                .build();
-            (
-                Some(aws_sdk_s3::Client::from_conf(s3_config)),
-                Some(s3.bucket.clone()),
-            )
-        }
-        None => (None, None),
-    }
 }
 
 fn spawn_project_task_budget_heartbeat(
@@ -1544,6 +1527,16 @@ impl RuntimeCommandWritebackSink {
         summary: Option<String>,
         provider_session_id: Option<String>,
     ) -> anyhow::Result<()> {
+        // 模型自述(conclusion)在离开执行机前统一脱敏(证据地基 §8 修订 7②):
+        // 它下游流向 run_completed 事件、conclusion.md 工件、attempt.completed /
+        // summary.created ledger 行与 execution_summaries.conclusion,任何一处
+        // 明文都等于把模型复述的密钥端上 Web。raw transcript 不经此路径,保持原样。
+        let summary = summary.map(|value| match &self.artifact_collection {
+            Some(context) => {
+                crate::redaction::redact_with_environment(&value, &context.environment)
+            }
+            None => crate::redaction::redact(&value),
+        });
         let total_tokens = self.usage_tokens.load(Ordering::Relaxed);
         self.client
             .complete_runtime_command(
@@ -1568,6 +1561,10 @@ impl RuntimeCommandWritebackSink {
                     .wait_human_project_task_attempt(&project_task.attempt_id, &writeback)
                     .await
             } else {
+                // 采集+上传发生在 complete writeback 之前(证据地基 spec §3.4):
+                // 控制平面收到 result 时对象已在存储中,可在同一事务里物化。
+                // 上传失败 → 整个 completion 失败,任务不得声称拥有从未落库的证据。
+                let collected_refs = self.collect_and_upload_artifacts(summary.as_deref()).await?;
                 let mut writeback = project_task_complete_writeback(
                     project_task,
                     &self.command_id,
@@ -1575,6 +1572,7 @@ impl RuntimeCommandWritebackSink {
                     provider_session_id.as_deref(),
                 );
                 writeback.raw_log = raw_log;
+                merge_collected_artifact_refs(&mut writeback, collected_refs);
                 self.client
                     .complete_project_task_attempt(&project_task.attempt_id, &writeback)
                     .await
@@ -1587,6 +1585,27 @@ impl RuntimeCommandWritebackSink {
             }
         }
         Ok(())
+    }
+
+    /// Collects the attempt's artifacts and uploads them through presigned
+    /// URLs. No-op (empty refs) when the sink has no collection context.
+    async fn collect_and_upload_artifacts(
+        &self,
+        conclusion: Option<&str>,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        let Some(context) = &self.artifact_collection else {
+            return Ok(Vec::new());
+        };
+        let artifacts = crate::artifacts::collect_artifacts(
+            &crate::artifacts::ArtifactCollectionInputs {
+                raw_log_path: context.raw_log_path.clone(),
+                workspace_path: context.workspace_path.clone(),
+                conclusion,
+                environment: &context.environment,
+            },
+        )
+        .await;
+        crate::artifacts::upload_artifacts(&self.client, artifacts).await
     }
 
     async fn fail_project_task(&self, error_message: &str) -> anyhow::Result<()> {
@@ -1615,6 +1634,27 @@ impl RuntimeCommandWritebackSink {
     }
 }
 
+/// Prepends the runtime-collected artifact refs to the writeback — both the
+/// top-level `artifact_refs` (the /complete handler path) and the result
+/// contract's (the /result path). 采集结果优先于 provider 自报(spec §4.1.1);
+/// self-reported bare refs stay behind them as metadata-only entries.
+fn merge_collected_artifact_refs(
+    writeback: &mut ProjectTaskCompleteWriteback,
+    collected: Vec<serde_json::Value>,
+) {
+    if collected.is_empty() {
+        return;
+    }
+    let mut merged = collected.clone();
+    merged.append(&mut writeback.artifact_refs);
+    writeback.artifact_refs = merged;
+    if let Some(contract) = writeback.result_contract.as_mut() {
+        let mut merged = collected;
+        merged.append(&mut contract.artifact_refs);
+        contract.artifact_refs = merged;
+    }
+}
+
 fn runtime_event_writeback(
     record: &RunEventRecord,
     provider_session_id: Option<&str>,
@@ -1636,7 +1676,15 @@ fn runtime_event_writeback(
         ProviderEvent::TurnStarted => ("turn_started".to_string(), HashMap::new()),
         ProviderEvent::TextDelta { text } => {
             let mut payload = HashMap::new();
-            payload.insert("text".to_string(), serde_json::Value::String(text.clone()));
+            // 模型 prose 同样脱敏(证据地基 §8 修订 7②):模型复述的密钥此前
+            // 经 text_delta 明文直达 Web「最新结果」。raw 保持原样不受影响。
+            payload.insert(
+                "text".to_string(),
+                serde_json::Value::String(crate::redaction::redact_with_environment(
+                    text,
+                    environment,
+                )),
+            );
             ("text_delta".to_string(), payload)
         }
         ProviderEvent::ToolStarted {
@@ -1694,7 +1742,10 @@ fn runtime_event_writeback(
             if let Some(summary) = summary {
                 payload.insert(
                     "summary".to_string(),
-                    serde_json::Value::String(summary.clone()),
+                    serde_json::Value::String(crate::redaction::redact_with_environment(
+                        summary,
+                        environment,
+                    )),
                 );
             }
             ("turn_completed".to_string(), payload)
@@ -1703,7 +1754,10 @@ fn runtime_event_writeback(
             let mut payload = HashMap::new();
             payload.insert(
                 "message".to_string(),
-                serde_json::Value::String(message.clone()),
+                serde_json::Value::String(crate::redaction::redact_with_environment(
+                    message,
+                    environment,
+                )),
             );
             ("turn_error".to_string(), payload)
         }
@@ -1977,6 +2031,7 @@ fn project_task_start_writeback(
             "start",
             command_id,
         ),
+        command_id: command_id.to_string(),
         provider_session_id: provider_session_id.map(ToString::to_string),
     }
 }

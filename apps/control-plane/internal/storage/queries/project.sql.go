@@ -8208,12 +8208,18 @@ UPDATE project_task_attempts
 SET status = 'running',
     runtime_node_id = $1::uuid,
     provider_session_id = COALESCE($2::varchar, provider_session_id),
+    digital_employee_run_id = COALESCE(
+        digital_employee_run_id,
+        (SELECT tr.id FROM task_runs tr
+          WHERE tr.tenant_id = $3::uuid
+            AND tr.command_id = NULLIF($4::varchar, ''))
+    ),
     started_at = COALESCE(started_at, NOW()),
     renewed_at = NOW(),
     updated_at = NOW()
 WHERE tenant_id = $3::uuid
-  AND id = $4::uuid
-  AND lease_token = $5::varchar
+  AND id = $5::uuid
+  AND lease_token = $6::varchar
   AND status = 'queued'
 RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
 `
@@ -8222,15 +8228,21 @@ type StartProjectTaskAttemptParams struct {
 	RuntimeNodeID     uuid.UUID   `json:"runtime_node_id"`
 	ProviderSessionID pgtype.Text `json:"provider_session_id"`
 	TenantID          uuid.UUID   `json:"tenant_id"`
+	CommandID         pgtype.Text `json:"command_id"`
 	ID                uuid.UUID   `json:"id"`
 	LeaseToken        string      `json:"lease_token"`
 }
 
+// digital_employee_run_id 回填:dispatch 冲突路径可能留下 NULL 的 run 关联
+// (命令已送达但派发簿记失败),导致 provider 事件按 run_id 关联不到 attempt
+// 而静默不进 ledger(07-13 记档缺陷)。runtime 在 started 回写带 command_id,
+// 此处按 task_runs.command_id(全局唯一)补上缺失的关联。
 func (q *Queries) StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error) {
 	row := q.db.QueryRow(ctx, StartProjectTaskAttempt,
 		arg.RuntimeNodeID,
 		arg.ProviderSessionID,
 		arg.TenantID,
+		arg.CommandID,
 		arg.ID,
 		arg.LeaseToken,
 	)

@@ -1,4 +1,4 @@
-import { FileArchive, FileText } from "lucide-react";
+import { Download, FileArchive, FileText } from "lucide-react";
 import {
   IconTile,
   SoftCard,
@@ -12,6 +12,8 @@ import {
   type V3Tone,
 } from "@/components/superteam";
 import type { ProjectArtifactRef, ProjectReportRef } from "@/lib/api/projects";
+import { buildApiUrl } from "@/lib/api/client";
+import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { statusLabel } from "@/lib/status-labels";
 
 type ProjectArtifactReportPanelProps = {
@@ -57,12 +59,13 @@ export function ProjectArtifactReportPanel({
               <V3Th>类型</V3Th>
               <V3Th>保留状态</V3Th>
               <V3Th className="min-w-[220px]">Object Ref</V3Th>
+              <V3Th>内容</V3Th>
             </tr>
           </thead>
           <tbody>
             {artifacts.length === 0 ? (
               <V3Tr>
-                <V3Td colSpan={4}>
+                <V3Td colSpan={5}>
                   <V3EmptyState title="暂无工件引用" />
                 </V3Td>
               </V3Tr>
@@ -84,6 +87,22 @@ export function ProjectArtifactReportPanel({
                     <span className="block truncate font-mono text-xs text-v3-ink">
                       {artifact.object_ref}
                     </span>
+                  </V3Td>
+                  <V3Td>
+                    {isRetrievableArtifact(artifact) ? (
+                      // 下载走 302 → presigned GET,属外部下载场景,原生 <a> 合规。
+                      <a
+                        className="inline-flex items-center gap-1 text-xs font-medium text-v3-brand hover:underline"
+                        href={artifactContentHref(artifact.id)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <Download aria-hidden className="size-3.5" />
+                        下载
+                      </a>
+                    ) : (
+                      <span className="text-xs text-v3-ink-2">不可取回</span>
+                    )}
                   </V3Td>
                 </V3Tr>
               ))
@@ -147,6 +166,18 @@ export function ProjectArtifactReportPanel({
         </V3Table>
       </WorkSurface>
     </div>
+  );
+}
+
+/** 只有 runtime 采集上传的内容寻址对象可经平台取回;自报/外部引用无内容。 */
+function isRetrievableArtifact(artifact: ProjectArtifactRef): boolean {
+  return artifact.object_ref.startsWith("artifacts/");
+}
+
+function artifactContentHref(artifactId: string): string {
+  return buildApiUrl(
+    resolveControlPlaneUrl(),
+    `/api/v1/artifacts/${encodeURIComponent(artifactId)}/content`,
   );
 }
 

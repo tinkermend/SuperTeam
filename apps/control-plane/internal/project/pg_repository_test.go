@@ -4872,6 +4872,10 @@ func (r *memoryRepository) CreateArtifactRef(ctx context.Context, req CreateArti
 	return ProjectArtifactRef{}, nil
 }
 
+func (r *memoryRepository) GetArtifactRef(ctx context.Context, tenantID, artifactRefID uuid.UUID) (ProjectArtifactRef, error) {
+	return ProjectArtifactRef{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
 	return nil, nil
 }

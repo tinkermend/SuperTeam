@@ -1480,10 +1480,20 @@ ORDER BY pta.lease_expires_at ASC
 LIMIT sqlc.arg('limit')::integer;
 
 -- name: StartProjectTaskAttempt :one
+-- digital_employee_run_id 回填:dispatch 冲突路径可能留下 NULL 的 run 关联
+-- (命令已送达但派发簿记失败),导致 provider 事件按 run_id 关联不到 attempt
+-- 而静默不进 ledger(07-13 记档缺陷)。runtime 在 started 回写带 command_id,
+-- 此处按 task_runs.command_id(全局唯一)补上缺失的关联。
 UPDATE project_task_attempts
 SET status = 'running',
     runtime_node_id = sqlc.arg('runtime_node_id')::uuid,
     provider_session_id = COALESCE(sqlc.narg('provider_session_id')::varchar, provider_session_id),
+    digital_employee_run_id = COALESCE(
+        digital_employee_run_id,
+        (SELECT tr.id FROM task_runs tr
+          WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+            AND tr.command_id = NULLIF(sqlc.narg('command_id')::varchar, ''))
+    ),
     started_at = COALESCE(started_at, NOW()),
     renewed_at = NOW(),
     updated_at = NOW()

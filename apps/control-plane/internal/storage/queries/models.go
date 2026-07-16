@@ -925,6 +925,10 @@ type ProjectArtifactRef struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 工件引用更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 产出该 artifact 的 project_task_attempt;项目级/人工上传的 artifact 为 NULL。无 FK,attempt 生命周期独立。
+	AttemptID uuid.NullUUID `json:"attempt_id"`
+	// 产出者数字员工;与 attempt_id 同源的反范式冗余,便于验收界面按员工过滤。
+	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
 }
 
 // 项目预算流水表，记录协调、执行和外部能力调用的预算估算与实际消耗
@@ -2363,34 +2367,6 @@ type Task struct {
 	ResumeOfRunID uuid.NullUUID `json:"resume_of_run_id"`
 	// chat 会话根 id(根 run 的 task_runs.id);首轮为 NULL(有效值=自身 run id),追问轮继承前序有效值。仅 chat run 使用,无 FK。
 	ChatThreadID uuid.NullUUID `json:"chat_thread_id"`
-}
-
-// 任务工件表
-type TaskArtifact struct {
-	// 任务工件主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 所属任务 ID
-	TaskID uuid.UUID `json:"task_id"`
-	// 所属任务运行 ID
-	RunID uuid.NullUUID `json:"run_id"`
-	// 工件类型
-	ArtifactType string `json:"artifact_type"`
-	// 工件名称
-	Name string `json:"name"`
-	// 工件存储地址
-	StorageUrl string `json:"storage_url"`
-	// 工件大小字节数
-	SizeBytes pgtype.Int8 `json:"size_bytes"`
-	// 工件扩展元数据
-	Metadata []byte `json:"metadata"`
-	// 工件归档时间
-	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
-	// 工件软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 工件创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 任务事件流表

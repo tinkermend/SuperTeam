@@ -459,60 +459,6 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 	return i, err
 }
 
-const CreateTaskArtifact = `-- name: CreateTaskArtifact :one
-INSERT INTO task_artifacts (
-    tenant_id,
-    task_id,
-    run_id,
-    artifact_type,
-    name,
-    storage_url
-) VALUES (
-    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
-    $2::uuid,
-    $3::uuid,
-    $4::varchar,
-    $5::varchar,
-    $6::text
-) RETURNING id, tenant_id, task_id, run_id, artifact_type, name, storage_url, size_bytes, metadata, archived_at, deleted_at, created_at
-`
-
-type CreateTaskArtifactParams struct {
-	TenantID     uuid.NullUUID `json:"tenant_id"`
-	TaskID       uuid.UUID     `json:"task_id"`
-	RunID        uuid.NullUUID `json:"run_id"`
-	ArtifactType string        `json:"artifact_type"`
-	Name         string        `json:"name"`
-	StorageUrl   string        `json:"storage_url"`
-}
-
-func (q *Queries) CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifactParams) (TaskArtifact, error) {
-	row := q.db.QueryRow(ctx, CreateTaskArtifact,
-		arg.TenantID,
-		arg.TaskID,
-		arg.RunID,
-		arg.ArtifactType,
-		arg.Name,
-		arg.StorageUrl,
-	)
-	var i TaskArtifact
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.TaskID,
-		&i.RunID,
-		&i.ArtifactType,
-		&i.Name,
-		&i.StorageUrl,
-		&i.SizeBytes,
-		&i.Metadata,
-		&i.ArchivedAt,
-		&i.DeletedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const CreateTaskEvent = `-- name: CreateTaskEvent :one
 INSERT INTO task_events (
     tenant_id,
@@ -793,23 +739,6 @@ type DeleteTaskParams struct {
 
 func (q *Queries) DeleteTask(ctx context.Context, arg DeleteTaskParams) error {
 	_, err := q.db.Exec(ctx, DeleteTask, arg.ID, arg.TenantID)
-	return err
-}
-
-const DeleteTaskArtifact = `-- name: DeleteTaskArtifact :exec
-UPDATE task_artifacts
-SET deleted_at = COALESCE(deleted_at, NOW())
-WHERE id = $1::uuid
-  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-`
-
-type DeleteTaskArtifactParams struct {
-	ID       uuid.UUID     `json:"id"`
-	TenantID uuid.NullUUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error {
-	_, err := q.db.Exec(ctx, DeleteTaskArtifact, arg.ID, arg.TenantID)
 	return err
 }
 
@@ -1208,38 +1137,6 @@ func (q *Queries) GetTask(ctx context.Context, arg GetTaskParams) (Task, error) 
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
-	)
-	return i, err
-}
-
-const GetTaskArtifact = `-- name: GetTaskArtifact :one
-SELECT id, tenant_id, task_id, run_id, artifact_type, name, storage_url, size_bytes, metadata, archived_at, deleted_at, created_at FROM task_artifacts
-WHERE id = $1::uuid
-  AND deleted_at IS NULL
-  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-`
-
-type GetTaskArtifactParams struct {
-	ID       uuid.UUID     `json:"id"`
-	TenantID uuid.NullUUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error) {
-	row := q.db.QueryRow(ctx, GetTaskArtifact, arg.ID, arg.TenantID)
-	var i TaskArtifact
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.TaskID,
-		&i.RunID,
-		&i.ArtifactType,
-		&i.Name,
-		&i.StorageUrl,
-		&i.SizeBytes,
-		&i.Metadata,
-		&i.ArchivedAt,
-		&i.DeletedAt,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1703,52 +1600,6 @@ func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksPara
 			&i.RunKind,
 			&i.ResumeOfRunID,
 			&i.ChatThreadID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const ListTaskArtifacts = `-- name: ListTaskArtifacts :many
-SELECT id, tenant_id, task_id, run_id, artifact_type, name, storage_url, size_bytes, metadata, archived_at, deleted_at, created_at FROM task_artifacts
-WHERE task_id = $1::uuid
-  AND deleted_at IS NULL
-  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-ORDER BY created_at DESC
-`
-
-type ListTaskArtifactsParams struct {
-	TaskID   uuid.UUID     `json:"task_id"`
-	TenantID uuid.NullUUID `json:"tenant_id"`
-}
-
-func (q *Queries) ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error) {
-	rows, err := q.db.Query(ctx, ListTaskArtifacts, arg.TaskID, arg.TenantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TaskArtifact{}
-	for rows.Next() {
-		var i TaskArtifact
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.TaskID,
-			&i.RunID,
-			&i.ArtifactType,
-			&i.Name,
-			&i.StorageUrl,
-			&i.SizeBytes,
-			&i.Metadata,
-			&i.ArchivedAt,
-			&i.DeletedAt,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

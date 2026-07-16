@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/storage"
@@ -44,6 +45,9 @@ type SkillInstallationsRepository interface {
 type ObjectStore interface {
 	PutObject(ctx context.Context, key string, body io.Reader, options storage.PutObjectOptions) (storage.ObjectRef, error)
 	DeleteObject(ctx context.Context, key string) error
+	// PresignGet 为 runtime 的 skill 归档直取签发短时 URL(证据地基 spec §8
+	// 修订 1:runtime 零对象存储凭证);完整性由归档 sha256 复核保证。
+	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
 type Installer interface {
@@ -226,6 +230,37 @@ func (s *Service) DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 		return fmt.Errorf("cleanup skill mcp dependencies: %w", err)
 	}
 	return nil
+}
+
+const archiveDownloadPresignTTL = 15 * time.Minute
+
+// PresignArchiveDownload 为 runtime 即将物化的 skill 归档签发短时 GET URL。
+// key 必须落在调用方租户的 skills/ 前缀内——这是跨租户读取的唯一闸门;
+// runtime 侧随后按 archive_checksum_sha256 复核字节完整性。
+func (s *Service) PresignArchiveDownload(ctx context.Context, tenantID uuid.UUID, archiveObjectRef string) (string, time.Time, error) {
+	if s == nil || s.objectStore == nil {
+		return "", time.Time{}, fmt.Errorf("%w: skill object store is not configured", ErrInvalidInput)
+	}
+	if tenantID == uuid.Nil {
+		return "", time.Time{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	ref := strings.TrimSpace(archiveObjectRef)
+	if ref == "" {
+		return "", time.Time{}, fmt.Errorf("%w: archive_object_ref is required", ErrInvalidInput)
+	}
+	key := ref
+	if strings.HasPrefix(ref, "s3://") {
+		key = extractObjectKeyFromURI(ref)
+	}
+	expectedPrefix := fmt.Sprintf("skills/%s/", tenantID)
+	if !strings.HasPrefix(key, expectedPrefix) {
+		return "", time.Time{}, fmt.Errorf("%w: archive_object_ref is outside the tenant's skills prefix", ErrInvalidInput)
+	}
+	url, err := s.objectStore.PresignGet(ctx, key, archiveDownloadPresignTTL)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("presign skill archive get: %w", err)
+	}
+	return url, time.Now().Add(archiveDownloadPresignTTL), nil
 }
 
 func extractObjectKeyFromURI(uri string) string {

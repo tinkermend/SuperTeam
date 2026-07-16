@@ -361,6 +361,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectTaskAttestation"
+  /api/v1/runtime/artifacts/presign:
+    post:
+      operationId: presignRuntimeArtifactUpload
+      summary: Presign a direct upload URL for a content-addressed artifact
+      description: >-
+        Runtime holds no object-store credentials; the control plane derives
+        object_key = artifacts/{tenant}/sha256/{hex} from the authenticated
+        runtime identity and signs a short-lived PUT URL. already_exists=true
+        means the content is already stored and upload must be skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresignRuntimeArtifactRequest"
+      responses:
+        "200":
+          description: Presigned upload target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresignUploadResponse"
+  /api/v1/runtime/skills/presign:
+    post:
+      operationId: presignRuntimeSkillArchiveDownload
+      summary: Presign a direct download URL for a skill archive
+      description: >-
+        Replaces runtime-held object-store credentials for skill installs.
+        The referenced object key must sit under the authenticated tenant's
+        skills/ prefix; integrity is verified runtime-side against the
+        archive's sha256 checksum.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - archive_object_ref
+              properties:
+                archive_object_ref:
+                  type: string
+      responses:
+        "200":
+          description: Presigned download target
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - download_url
+                properties:
+                  download_url:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+  /api/v1/runtime/raw-logs/presign:
+    post:
+      operationId: presignRuntimeRawLogUpload
+      summary: Presign a direct upload URL for a raw transcript segment or manifest
+      description: >-
+        Replaces runtime-held object-store credentials for raw transcript
+        uploads. The attempt must belong to the authenticated runtime's tenant;
+        object_key is derived server-side as
+        runs/{tenant}/{attempt}/raw.part-NNNN.jsonl or manifest.json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresignRuntimeRawLogRequest"
+      responses:
+        "200":
+          description: Presigned upload target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresignUploadResponse"
   /api/v1/runtime/project-task-attempts/{attemptId}/started:
     post:
       operationId: startProjectTaskAttempt
@@ -1676,6 +1755,32 @@ paths:
                 items:
                   $ref: "#/components/schemas/ProjectArtifactRef"
         "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/artifacts/{artifactRefId}/content:
+    get:
+      operationId: getArtifactContent
+      summary: Retrieve an artifact's raw content via presigned redirect
+      description: >-
+        Validates the caller's read access to the artifact's project, then 302
+        redirects to a short-lived presigned GET URL. Bytes never pass through
+        the control plane. Only retrievable for runtime-uploaded
+        content-addressed artifacts (object_ref under the tenant's artifacts/
+        prefix).
+      parameters:
+        - name: artifactRefId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "302":
+          description: Redirect to presigned download URL
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
@@ -6445,6 +6550,14 @@ components:
         project_task_id:
           type: string
           format: uuid
+        attempt_id:
+          type: string
+          format: uuid
+          description: Producing project task attempt (execution lineage); absent for manual/project-level artifacts.
+        digital_employee_id:
+          type: string
+          format: uuid
+          description: Producing digital employee (execution lineage).
         artifact_id:
           type: string
           format: uuid
@@ -8145,6 +8258,11 @@ components:
     StartProjectTaskAttemptRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
+        - type: object
+          properties:
+            command_id:
+              type: string
+              description: Runtime command executing this attempt; used to backfill a missing digital_employee_run_id linkage left by dispatch-conflict bookkeeping failures.
     RenewProjectTaskAttemptLeaseRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
@@ -8295,6 +8413,75 @@ components:
           type: string
         summary:
           type: string
+        name:
+          type: string
+          description: Human-readable artifact file name (raw.jsonl / changes.diff / conclusion.md).
+        sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: Content hash of the uploaded (redacted) bytes; presence marks the ref as a runtime-uploaded, content-addressed artifact.
+        size_bytes:
+          type: integer
+          format: int64
+        content_type:
+          type: string
+        truncated:
+          type: boolean
+          description: True when the collected file exceeded the single-file cap and was truncated before upload.
+        is_evidence:
+          type: boolean
+          description: True for tool-produced content (execution_transcript/diff/declared); false for digital-employee self reports (conclusion). Bare string refs default to false.
+    PresignRuntimeArtifactRequest:
+      type: object
+      required:
+        - sha256
+        - size_bytes
+      properties:
+        sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        size_bytes:
+          type: integer
+          format: int64
+        content_type:
+          type: string
+    PresignRuntimeRawLogRequest:
+      type: object
+      required:
+        - attempt_id
+        - object
+      properties:
+        attempt_id:
+          type: string
+          format: uuid
+        object:
+          type: string
+          enum:
+            - part
+            - manifest
+        part_index:
+          type: integer
+          format: int32
+          description: Required when object=part; segment ordinal within the attempt.
+        size_bytes:
+          type: integer
+          format: int64
+    PresignUploadResponse:
+      type: object
+      required:
+        - object_key
+        - already_exists
+      properties:
+        object_key:
+          type: string
+        upload_url:
+          type: string
+          description: Absent when already_exists=true.
+        expires_at:
+          type: string
+          format: date-time
+        already_exists:
+          type: boolean
     SubmitProjectTaskAttemptResultRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"

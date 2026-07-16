@@ -1,6 +1,6 @@
 # 证据地基：Artifact 采集、去重与可取回
 
-- 状态：待评审
+- 状态：已评审,实施中(2026-07-16 修订,见 §8)
 - 日期：2026-07-09
 - 范围：让「证据」在 SuperTeam 里真正成立——数字员工的产出物被采集、内容寻址存储、可通过平台 API 取回，并与 evidence 读模型接上。
 - 不在范围：acceptance criterion、verification 判据、人类待办自动生成、验收就绪判据。见文末「后续 spec」。
@@ -374,3 +374,16 @@ Auth: console user
 3. **哈希完整性 attestation**：4.2 中 presigned PUT 无法强制字节与声明的 sha256 一致。后续引入服务端异步校验或 `x-amz-checksum-sha256` 强校验。
 
 事实依据：`project_task_results` 20 条记录中 `contract_payload.verifications` 一条都没有；52 个 `project_tasks` 的 `handoff_contract.required_outputs` 全为 NULL。`TaskResultVerification` 类型与校验函数在 Go 侧已定义（`task_result_contract.go:140`），从未被填充。
+
+## 8. 实施修订（2026-07-16,开工前核实现状后定案）
+
+本 spec 写于 07-09;transcript capture(07-13)与 intent P1(07-16)先后落地,现状与 §1 诊断有实质漂移。以下修订经人类负责人拍板或按最新事实定案:
+
+1. **presign 一步到位(人类拍板)**:不止 artifact 走 presign——**raw 分段上传与 skills 归档下载一并迁移**,runtime 侧彻底移除对象存储凭证(`aws_sdk_s3` 依赖与 `S3Section` 配置整体删除)。transcript spec §3.5 的"runtime 持全 bucket 凭证"已知风险(执行机被攻破=全租户 raw 泄露+skill 包投毒)就此消除,其 §3.5.4 重评审触发条件不再适用。raw 的 presign 端点为 `POST /api/v1/runtime/raw-logs/presign`(attempt 归属校验,key 派生 `runs/{tenant}/{attempt}/raw.part-NNNN.jsonl|manifest.json`,tenant 取自 runtime 身份);skills 由控制平面在派发 InstallSkills/物化命令时于 payload 内嵌 presigned GET URL。
+2. **物化事务落在 attempt writeback**:07-09 写作时假定任务级 writeback;现状 attempt 级 writeback(`completeProjectTaskAttemptWritebackWithQueries` 及 result 变体)才持有 `attempt_id`/`digital_employee_id` 上下文,物化合一落在这两条事务内。任务级 `CompleteProjectTaskWriteback` 不物化证据。
+3. **execution_transcript artifact = 脱敏副本,raw 保持原样**:transcript spec 已决策 raw 明文上传(证据完整性,§3.4 威胁模型);本 spec 的 transcript artifact 是**面向人类取回**的第二份对象——本地 raw.jsonl 缓冲经 §4.1.1 脱敏后计算 sha256 再上传。两份对象职责不同,不视为重复:raw 是平台侧原始事实源(控制平面读取时重算 sha256 比对),artifact 是可安全交给 console 用户的副本。
+4. **迁移号定为 068**;`task_artifacts` 删表同时清除 `tasks.sql` 中 4 个零调用的死查询(CreateTaskArtifact/ListTaskArtifacts/GetTaskArtifact/DeleteTaskArtifact)。存量 `project_evidence_refs` 空串行实测 28 行(非 07-09 的 16 行),照常回填 `submitted`。
+5. **declared 类型本期不产出**:`handoff_contract` 全仓无 `artifact_globs` 字段(§4.1 已预告"只消费不生成");字段缺失即跳过,不造字段。
+6. **双写现状修正**:事务内路径只写 evidence(空 status),artifact 只有事务外一份——合一后两者都进事务。
+7. **顺带修复两个记档缺陷**(与证据链同域):① dispatch conflict 致 attempt `digital_employee_run_id` NULL → provider 事件静默不进 ledger(`CreateProviderSessionEventLedgerEvent` 按 run_id 关联),补 provider_session 回落关联;② 模型 prose(text_delta/summary)不脱敏直达 Web,ledger 写回前套用与 excerpt 相同的脱敏。
+8. **attestation 关系澄清**:intent P1 的 `attestation:` 前缀 ref 进 `demand_criterion_verdicts`,与本 spec 的 `project_evidence_refs` 是两条互补链路,互不替代;后续判据 spec 把 automated verification 的证据指针指向本 spec 取回的 transcript 时,两链在 criterion 层汇合。

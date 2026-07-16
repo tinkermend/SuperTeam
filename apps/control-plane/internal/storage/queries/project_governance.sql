@@ -53,10 +53,15 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 RETURNING *;
 
 -- name: CreateProjectArtifactRef :one
+-- attempt 内幂等:同一 attempt 的 result 重复提交命中部分唯一索引
+-- uq_project_artifact_refs_attempt_checksum 时原行返回;attempt_id 为 NULL
+-- 的人工/项目级 artifact 不参与该索引,保持普通插入语义。
 INSERT INTO project_artifact_refs (
     tenant_id,
     project_id,
     project_task_id,
+    attempt_id,
+    digital_employee_id,
     artifact_id,
     artifact_type,
     title,
@@ -72,6 +77,8 @@ INSERT INTO project_artifact_refs (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_id')::uuid,
     sqlc.narg('project_task_id')::uuid,
+    sqlc.narg('attempt_id')::uuid,
+    sqlc.narg('digital_employee_id')::uuid,
     sqlc.narg('artifact_id')::uuid,
     sqlc.arg('artifact_type')::varchar,
     sqlc.arg('title')::varchar,
@@ -83,7 +90,16 @@ INSERT INTO project_artifact_refs (
     sqlc.narg('retention_hold_id')::uuid,
     COALESCE(sqlc.narg('metadata')::jsonb, '{}'::jsonb),
     sqlc.narg('created_event_id')::uuid
-) RETURNING *;
+)
+ON CONFLICT (tenant_id, project_task_id, attempt_id, checksum)
+    WHERE attempt_id IS NOT NULL AND project_task_id IS NOT NULL
+    DO UPDATE SET updated_at = NOW()
+RETURNING *;
+
+-- name: GetProjectArtifactRef :one
+SELECT * FROM project_artifact_refs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
 
 -- name: ListProjectArtifactRefs :many
 SELECT * FROM project_artifact_refs

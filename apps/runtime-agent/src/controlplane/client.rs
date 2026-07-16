@@ -8,12 +8,13 @@ use crate::runtime_auth::{
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
-    ProjectTaskAttestationWriteback, ProjectTaskBudgetHeartbeatResponse,
-    ProjectTaskBudgetHeartbeatWriteback, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
-    ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RegisterNodeRequest,
-    RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
-    RuntimeCapabilityResponse, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
-    RuntimeSessionResponse,
+    PresignArtifactUploadRequest, PresignDownloadResponse, PresignRawLogUploadRequest,
+    PresignSkillArchiveDownloadRequest, PresignUploadResponse, ProjectTaskAttestationWriteback,
+    ProjectTaskBudgetHeartbeatResponse, ProjectTaskBudgetHeartbeatWriteback,
+    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskStartWriteback,
+    ProjectTaskWaitHumanWriteback, RegisterNodeRequest, RegisterNodeResponse,
+    RuntimeCapabilitiesRequest, RuntimeCapabilityInput, RuntimeCapabilityResponse,
+    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse,
 };
 
 #[derive(Clone)]
@@ -583,6 +584,87 @@ impl ControlPlaneClient {
             .json::<ProjectTaskBudgetHeartbeatResponse>()
             .await
             .context("Failed to parse project task budget heartbeat response")
+    }
+
+    /// 换取 content-addressed artifact 的直传 URL(runtime 不持对象存储凭证)。
+    pub async fn presign_artifact_upload(
+        &self,
+        request_body: &PresignArtifactUploadRequest,
+    ) -> Result<PresignUploadResponse> {
+        self.presign_post(
+            &format!("{}/api/v1/runtime/artifacts/presign", self.base_url),
+            request_body,
+            "Presign artifact upload",
+        )
+        .await
+    }
+
+    /// 换取 raw transcript 分段/清单的直传 URL。
+    pub async fn presign_raw_log_upload(
+        &self,
+        request_body: &PresignRawLogUploadRequest,
+    ) -> Result<PresignUploadResponse> {
+        self.presign_post(
+            &format!("{}/api/v1/runtime/raw-logs/presign", self.base_url),
+            request_body,
+            "Presign raw log upload",
+        )
+        .await
+    }
+
+    /// 换取 skill 归档的直取 URL(下载完整性由归档 sha256 校验保证)。
+    pub async fn presign_skill_archive_download(
+        &self,
+        request_body: &PresignSkillArchiveDownloadRequest,
+    ) -> Result<PresignDownloadResponse> {
+        let url = format!("{}/api/v1/runtime/skills/presign", self.base_url);
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
+        let response = request
+            .json(request_body)
+            .send()
+            .await
+            .context("Failed to presign skill archive download")?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(self
+                .runtime_error(
+                    "Presign skill archive download",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
+        }
+        response
+            .json::<PresignDownloadResponse>()
+            .await
+            .context("Failed to parse presign download response")
+    }
+
+    async fn presign_post<T: serde::Serialize + ?Sized>(
+        &self,
+        url: &str,
+        request_body: &T,
+        operation: &'static str,
+    ) -> Result<PresignUploadResponse> {
+        let (request, auth) = self.runtime_request(Method::POST, url, false).await?;
+        let response = request
+            .json(request_body)
+            .send()
+            .await
+            .with_context(|| format!("{operation} request failed"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(self
+                .runtime_error(operation, status, body, Some(auth.generation))
+                .await);
+        }
+        response
+            .json::<PresignUploadResponse>()
+            .await
+            .context("Failed to parse presign upload response")
     }
 
     fn enroll_hello_url(&self) -> String {
