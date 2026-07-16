@@ -3674,10 +3674,20 @@ func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenan
 	if err != nil {
 		return DecisionRequestResult{}, err
 	}
+	// plan_revision_id must land on the decision COLUMN, not only in the
+	// approval ContextPayload: the sign endpoint resolves the pending
+	// demand_acceptance decision via GetPendingDemandAcceptanceDecisionByPlanRevision
+	// (WHERE plan_revision_id = current effective revision). A NULL column makes
+	// sign-off/completion/rejection unreachable (404).
+	var planRevisionPtr *uuid.UUID
+	if revisionID != uuid.Nil {
+		planRevisionPtr = &revisionID
+	}
 	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		ApprovalRequestID: approvalRequest.ID,
+		PlanRevisionID:    planRevisionPtr,
 		TargetUserID:      targetUserID,
 		DecisionType:      demandAcceptanceDecisionType,
 		TitleSnapshot:     title,

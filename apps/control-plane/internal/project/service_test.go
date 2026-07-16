@@ -2229,7 +2229,11 @@ func TestRecordResultProjectsCriterionVerdicts(t *testing.T) {
 	demandID := uuid.New()
 	planRevisionID := uuid.New()
 	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+	// The runtime minted a real succeeded attestation for THIS attempt at
+	// writeback (the employee never sees it and cannot echo it into the
+	// acceptance_result). The server verifies its existence and attaches its ref.
 	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, employeeID))
 
 	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-projection"),
@@ -2238,9 +2242,9 @@ func TestRecordResultProjectsCriterionVerdicts(t *testing.T) {
 			Summary: "完成分析",
 			AcceptanceResults: []TaskResultAcceptanceResult{
 				{
-					CriterionID:  "c1",
-					Status:       TaskResultCriterionStatusPassed,
-					EvidenceRefs: []string{attestationRef},
+					CriterionID: "c1",
+					Status:      TaskResultCriterionStatusPassed,
+					// No self-reported attestation ref: the employee can't know it.
 				},
 			},
 		},
@@ -2260,6 +2264,7 @@ func TestRecordResultProjectsCriterionVerdicts(t *testing.T) {
 	require.Equal(t, employeeID, verdict.JudgeID)
 	require.NotNil(t, verdict.ProjectTaskID)
 	require.Equal(t, fixture.taskID, *verdict.ProjectTaskID)
+	// The server attached the real attestation ref it verified for the attempt.
 	require.Equal(t, []string{attestationRef}, verdict.EvidenceRefs)
 }
 
@@ -2278,6 +2283,7 @@ func TestRecordResultProjectsCriterionVerdictsStatementOnlyMatch(t *testing.T) {
 	planRevisionID := uuid.New()
 	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
 	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
 
 	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-statement-match"),
@@ -2287,9 +2293,8 @@ func TestRecordResultProjectsCriterionVerdictsStatementOnlyMatch(t *testing.T) {
 			AcceptanceResults: []TaskResultAcceptanceResult{
 				{
 					// No CriterionID: employee echoed the statement only.
-					Criterion:    "结论可复核",
-					Status:       TaskResultCriterionStatusPassed,
-					EvidenceRefs: []string{attestationRef},
+					Criterion: "结论可复核",
+					Status:    TaskResultCriterionStatusPassed,
 				},
 			},
 		},
@@ -2334,7 +2339,9 @@ func TestProjectionScopedBySatisfiedBy(t *testing.T) {
 		Severity:           "blocking",
 		SatisfiedBy:        []string{"task-b"},
 	})
+	// A real runtime attestation backs this attempt (server-verified, not echoed).
 	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
 
 	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-satisfied-by-scoping"),
@@ -2343,10 +2350,10 @@ func TestProjectionScopedBySatisfiedBy(t *testing.T) {
 			Summary: "完成分析",
 			AcceptanceResults: []TaskResultAcceptanceResult{
 				{
-					// Own criterion, judged normally with attestation proof.
-					CriterionID:  "c-a",
-					Status:       TaskResultCriterionStatusPassed,
-					EvidenceRefs: []string{attestationRef},
+					// Own criterion, judged normally; server verifies the attempt's
+					// real attestation.
+					CriterionID: "c-a",
+					Status:      TaskResultCriterionStatusPassed,
 				},
 				{
 					// Statement echo that textually matches FOREIGN criterion
@@ -2375,7 +2382,7 @@ func TestProjectionScopedBySatisfiedBy(t *testing.T) {
 }
 
 func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
-	t.Run("missing attestation ref rejects with error code", func(t *testing.T) {
+	t.Run("no attestation anywhere rejects with error code", func(t *testing.T) {
 		repo := newProjectTaskResultMemoryRepository()
 		service, err := NewService(repo)
 		require.NoError(t, err)
@@ -2384,6 +2391,8 @@ func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
 		planRevisionID := uuid.New()
 		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
 
+		// No attestation record exists for the attempt and verification[] carries
+		// none: a green light not backed by any real execution record.
 		summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
 			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-missing-attestation"),
 			ResultContract: TaskResultContract{
@@ -2412,7 +2421,46 @@ func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
 		require.Empty(t, verdicts)
 	})
 
-	t.Run("attestation ref present passes and projects", func(t *testing.T) {
+	t.Run("employee-forged attestation ref without a real record still rejects", func(t *testing.T) {
+		// Anti-forgery: the employee CANNOT satisfy the gate by self-reporting an
+		// attestation-shaped string in acceptance_results — only a real
+		// server-side attestation record (or verification[] backed by one) counts.
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+		forgedRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+
+		_, err = service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-forged-attestation"),
+			ResultContract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "完成分析",
+				AcceptanceResults: []TaskResultAcceptanceResult{
+					{
+						CriterionID:  "c1",
+						Status:       TaskResultCriterionStatusPassed,
+						EvidenceRefs: []string{forgedRef}, // self-reported, no backing record
+					},
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+		result := requireSingleProjectTaskResult(t, repo, fixture)
+		require.Equal(t, "rejected", result.ValidationStatus)
+		require.Contains(t, result.ValidationErrors, "acceptance_result_attestation_required:c1")
+
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Empty(t, verdicts)
+	})
+
+	t.Run("real attestation record for the attempt passes and projects with attached ref", func(t *testing.T) {
 		repo := newProjectTaskResultMemoryRepository()
 		service, err := NewService(repo)
 		require.NoError(t, err)
@@ -2421,6 +2469,7 @@ func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
 		planRevisionID := uuid.New()
 		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
 		attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+		repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
 
 		summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
 			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-with-attestation"),
@@ -2429,9 +2478,8 @@ func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
 				Summary: "完成分析",
 				AcceptanceResults: []TaskResultAcceptanceResult{
 					{
-						CriterionID:  "c1",
-						Status:       TaskResultCriterionStatusPassed,
-						EvidenceRefs: []string{attestationRef},
+						CriterionID: "c1",
+						Status:      TaskResultCriterionStatusPassed,
 					},
 				},
 			},
@@ -2448,6 +2496,46 @@ func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, verdicts, 1)
 		require.Equal(t, "satisfied", verdicts[0].Verdict)
+		require.Equal(t, []string{attestationRef}, verdicts[0].EvidenceRefs)
+	})
+
+	t.Run("verification[] attestation ref backed by a record passes and attaches that ref", func(t *testing.T) {
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+		attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":provider_terminal:cmd-1"
+		repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
+
+		contract := TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{CriterionID: "c1", Status: TaskResultCriterionStatusPassed},
+			},
+			Verification: []TaskResultVerification{{
+				Type:         "command",
+				Status:       TaskResultVerificationStatusPassed,
+				Summary:      "命令通过",
+				EvidenceRefs: []TaskResultRef{{Kind: "attestation", Ref: attestationRef}},
+			}},
+		}
+
+		_, err = service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-verification-attestation"),
+			ResultContract:                   contract,
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Len(t, verdicts, 1)
+		require.Equal(t, "satisfied", verdicts[0].Verdict)
+		require.Equal(t, []string{attestationRef}, verdicts[0].EvidenceRefs)
 	})
 }
 
@@ -9047,6 +9135,62 @@ func TestListDemandAcceptanceCriteriaDetailResolvesEffectiveVerdictsAndSummaries
 	if len(got3.EvidenceRefs) != 1 || got3.EvidenceRefs[0] != "attestation:executor-c3" {
 		t.Fatalf("expected c3 evidence_refs from executor verdict, got %#v", got3.EvidenceRefs)
 	}
+}
+
+// TestListDemandAcceptanceCriteriaDetailResolvesTaskSummariesByPlannedKey proves
+// the real-chain identity of satisfied_by: Task 4 decomposition stores each
+// satisfying task's planned_task_key (e.g. "develop"), NOT its UUID. The panel
+// must map planned_task_key → task UUID for the demand's tasks, then surface
+// that task's real conclusion (anti-rubber-stamp evidence) — otherwise the
+// "查看满足任务产出" panel is永远空.
+func TestListDemandAcceptanceCriteriaDetailResolvesTaskSummariesByPlannedKey(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	plannedKey := "develop"
+	c1 := DemandAcceptanceCriterion{
+		CriterionID:        "c1",
+		Statement:          "变更以 branch+commit 交付",
+		VerificationMethod: "automated_test",
+		Severity:           demandAcceptanceCriterionSeverityBlocking,
+		SatisfiedBy:        []string{plannedKey}, // planned_task_key, not a UUID
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{c1})
+
+	// The demand's real task carries the planned key and a real UUID.
+	taskID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:             taskID,
+		TenantID:       f.tenantID,
+		ProjectID:      f.projectID,
+		DemandID:       &f.demandID,
+		PlannedTaskKey: &plannedKey,
+		Title:          "开发任务",
+		Status:         ProjectTaskStatusCompleted,
+		UpdatedAt:      time.Now().UTC(),
+	})
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:            uuid.New(),
+		TenantID:      f.tenantID,
+		ProjectID:     f.projectID,
+		ProjectTaskID: taskID,
+		Conclusion:    "已按 branch+commit 交付并通过验证",
+		CreatedAt:     time.Now().UTC(),
+	})
+
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(context.Background(), f.tenantID, f.demandID)
+	if err != nil {
+		t.Fatalf("list acceptance criteria: %v", err)
+	}
+	require.Len(t, detail.Criteria, 1)
+	got := detail.Criteria[0]
+	require.Len(t, got.TaskSummaries, 1)
+	require.Equal(t, taskID.String(), got.TaskSummaries[0].TaskID)
+	require.Equal(t, "已按 branch+commit 交付并通过验证", got.TaskSummaries[0].Summary)
 }
 
 func TestListDemandAcceptanceCriteriaDetailReturnsEmptyWhenNoOpenRevision(t *testing.T) {

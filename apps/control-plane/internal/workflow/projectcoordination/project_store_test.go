@@ -427,6 +427,12 @@ func TestEnsureDemandAcceptanceDecisionCreatesThreePieceAndIsIdempotent(t *testi
 	require.Equal(t, "demand_acceptance", repo.decisionRequests[0].DecisionType)
 	require.Equal(t, ownerID, repo.decisionRequests[0].TargetUserID)
 	require.Equal(t, "pending", repo.decisionRequests[0].StatusSnapshot)
+	// The decision row must carry plan_revision_id on the COLUMN (not just in
+	// the approval ContextPayload): the sign endpoint looks up the pending
+	// demand_acceptance decision by (demand, plan_revision) via that column, so
+	// a NULL here makes sign-off/completion/rejection unreachable (404).
+	require.NotNil(t, repo.decisionRequests[0].PlanRevisionID)
+	require.Equal(t, revisionID, *repo.decisionRequests[0].PlanRevisionID)
 	require.NotEmpty(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested))
 	require.Len(t, inbox.upserts, 1)
 	require.Equal(t, "demand_acceptance", inbox.upserts[0].DecisionType)

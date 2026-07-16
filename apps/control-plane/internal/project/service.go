@@ -2011,14 +2011,50 @@ func (s *Service) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenant
 		return nil, err
 	}
 
+	// satisfied_by stores each satisfying task's planned_task_key (Task 4
+	// decompose-time identity — e.g. "develop"), NOT a task UUID. Map keys to
+	// the demand's real task UUIDs so task_summaries can surface each task's
+	// conclusion (anti-rubber-stamp evidence); a direct UUID parse is kept as a
+	// fallback for any legacy/tooling row that stored a UUID.
+	demandTasks, err := s.repository.ListDemandLaunchProjectTasks(ctx, tenantID, demand.ProjectID, demandID, 500)
+	if err != nil {
+		return nil, err
+	}
+	taskIDByPlannedKey := make(map[string]uuid.UUID, len(demandTasks))
+	for _, t := range demandTasks {
+		if t.PlannedTaskKey == nil {
+			continue
+		}
+		key := strings.TrimSpace(*t.PlannedTaskKey)
+		if key == "" {
+			continue
+		}
+		if _, exists := taskIDByPlannedKey[key]; !exists {
+			taskIDByPlannedKey[key] = t.ID
+		}
+	}
+	resolveSatisfiedByTaskID := func(raw string) (uuid.UUID, bool) {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return uuid.Nil, false
+		}
+		if id, ok := taskIDByPlannedKey[trimmed]; ok {
+			return id, true
+		}
+		if id, parseErr := uuid.Parse(trimmed); parseErr == nil {
+			return id, true
+		}
+		return uuid.Nil, false
+	}
+
 	// Gather the union of satisfied_by task IDs and fetch each one's latest
 	// result conclusion in a single batched read.
 	taskIDSet := make(map[uuid.UUID]struct{})
 	taskIDs := make([]uuid.UUID, 0)
 	for _, c := range criteria {
 		for _, raw := range c.SatisfiedBy {
-			taskID, parseErr := uuid.Parse(strings.TrimSpace(raw))
-			if parseErr != nil {
+			taskID, ok := resolveSatisfiedByTaskID(raw)
+			if !ok {
 				continue
 			}
 			if _, seen := taskIDSet[taskID]; seen {
@@ -2065,13 +2101,15 @@ func (s *Service) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenant
 		for _, raw := range c.SatisfiedBy {
 			taskRef := strings.TrimSpace(raw)
 			summaryText := ""
-			if taskID, parseErr := uuid.Parse(taskRef); parseErr == nil {
+			taskIDText := taskRef
+			if taskID, ok := resolveSatisfiedByTaskID(raw); ok {
+				taskIDText = taskID.String()
 				if summary, ok := latestSummaryByTask[taskID]; ok {
 					summaryText = summary.Conclusion
 				}
 			}
 			detail.TaskSummaries = append(detail.TaskSummaries, DemandCriterionTaskSummary{
-				TaskID:  taskRef,
+				TaskID:  taskIDText,
 				Summary: summaryText,
 			})
 		}
@@ -3053,7 +3091,7 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		return nil, ErrInvalidProjectEvidence
 	}
 	recordReq := projectTaskAttemptResultRecordRequest(task, req.ProjectTaskAttemptRuntimeRequest, nil, nil, *resultContract, validation)
-	if err := s.projectDemandCriterionVerdicts(ctx, task, *resultContract); err != nil {
+	if err := s.projectDemandCriterionVerdicts(ctx, task, req.ProjectTaskAttemptRuntimeRequest, *resultContract); err != nil {
 		return nil, err
 	}
 	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
@@ -3229,7 +3267,7 @@ func (s *Service) validateTaskResultContractForAttempt(ctx context.Context, task
 	}
 	validationErrors = append(validationErrors, runtimeErrors...)
 
-	acceptanceErrors, err := s.validateAcceptanceCriterionAttestation(ctx, task, contract)
+	acceptanceErrors, err := s.validateAcceptanceCriterionAttestation(ctx, task, runtimeReq, contract)
 	if err != nil {
 		return validation, err
 	}
@@ -3315,13 +3353,19 @@ const (
 	demandAcceptanceVerificationMethodHumanJudgment = "human_judgment"
 )
 
-// validateAcceptanceCriterionAttestation tightens automated_test criteria: a
-// self-reported acceptance result that claims passed/human_overridden against
-// a snapshot automated_test criterion must carry machine-checked proof (an
-// "attestation:"-prefixed evidence ref), not just the employee's word. Skips
-// entirely when the task has no criteria snapshot (legacy plans / demands not
-// decomposed under Task 4) so pre-existing behavior is untouched byte-for-byte.
-func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, task ProjectTask, contract TaskResultContract) ([]TaskResultValidationError, error) {
+// validateAcceptanceCriterionAttestation tightens automated_test criteria:
+// "绿灯必须挂真实执行记录". Correctness of this gate does NOT rely on the
+// employee self-reporting an attestation ref — the runtime mints the real
+// attestation (command/exit-code/hash) at writeback into the result
+// verification[] array and project_task_attestations, and the employee never
+// sees it and cannot echo it into acceptance_results. So the SERVER verifies a
+// real runtime attestation EXISTS for this attempt (via runtimeVerified
+// AttestationRefsForAttempt). A passed/human_overridden automated_test result
+// with NO such attestation anywhere is the genuinely-unbacked green-light and is
+// rejected. Skips entirely when the task has no criteria snapshot (legacy plans
+// / demands not decomposed under Task 4) so pre-existing behavior is untouched
+// byte-for-byte.
+func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) ([]TaskResultValidationError, error) {
 	if contract.Status != TaskResultStatusCompleted {
 		return nil, nil
 	}
@@ -3332,8 +3376,11 @@ func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, ta
 	if len(snapshot) == 0 {
 		return nil, nil
 	}
-	var errs []TaskResultValidationError
-	for _, criterion := range criteriaSatisfiedByTask(snapshot, task) {
+	scoped := criteriaSatisfiedByTask(snapshot, task)
+	// Collect the automated_test criteria this task claims green so we only pay
+	// for the attestation lookup when one is actually in play.
+	var claimed []DemandAcceptanceCriterion
+	for _, criterion := range scoped {
 		if criterion.VerificationMethod != demandAcceptanceVerificationMethodAutomatedTest {
 			continue
 		}
@@ -3344,18 +3391,92 @@ func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, ta
 		if result.Status != TaskResultCriterionStatusPassed && result.Status != TaskResultCriterionStatusHumanOverridden {
 			continue
 		}
-		attested := false
-		for _, ref := range result.EvidenceRefs {
-			if stringRefIsAttestation(ref) {
-				attested = true
-				break
-			}
-		}
-		if !attested {
-			errs = append(errs, "acceptance_result_attestation_required:"+criterion.CriterionID)
-		}
+		claimed = append(claimed, criterion)
+	}
+	if len(claimed) == 0 {
+		return nil, nil
+	}
+	serverRefs, err := s.runtimeVerifiedAttestationRefsForAttempt(ctx, task, runtimeReq, contract)
+	if err != nil {
+		return nil, err
+	}
+	if len(serverRefs) > 0 {
+		return nil, nil
+	}
+	var errs []TaskResultValidationError
+	for _, criterion := range claimed {
+		errs = append(errs, "acceptance_result_attestation_required:"+criterion.CriterionID)
 	}
 	return errs, nil
+}
+
+// runtimeVerifiedAttestationRefsForAttempt returns the attestation refs the
+// SERVER can independently vouch for this attempt: refs the runtime minted into
+// the result verification[] array whose backing record is a succeeded
+// ProjectTaskAttestation for THIS attempt, or — when verification[] carries none
+// — refs derived directly from succeeded attestation records the runtime wrote
+// for this attempt. The employee never sees these refs (they are minted from
+// attempt_id+command_id at writeback), so they cannot be forged into
+// acceptance_results; their existence is what proves a real execution backed the
+// green light. Empty result means no attestation exists for the attempt at all.
+func (s *Service) runtimeVerifiedAttestationRefsForAttempt(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) ([]string, error) {
+	attestations, err := s.repository.ListProjectTaskAttestations(ctx, runtimeReq.TenantID, task.ProjectID, runtimeReq.ProjectTaskID, 1000, 0)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]string, 0)
+	seen := map[string]struct{}{}
+	add := func(ref string) {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			return
+		}
+		if _, ok := seen[ref]; ok {
+			return
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+	// Prefer the runtime-minted refs echoed into verification[] whose backing
+	// record is a succeeded attestation for this attempt (authoritative, and it
+	// keeps the exact ref string the runtime produced for lineage display).
+	for _, ref := range runtimeAttestationRefsFromVerifications(contract.Verification) {
+		key, parsedAttempt, hasAttempt := parseRuntimeAttestationRef(ref)
+		if hasAttempt && parsedAttempt != runtimeReq.AttemptID {
+			continue
+		}
+		att, ok := findRuntimeAttestationForRef(attestations, key)
+		if !ok || att.AttemptID != runtimeReq.AttemptID || att.Status != ProjectTaskAttestationStatusSucceeded {
+			continue
+		}
+		add(ref)
+	}
+	if len(refs) > 0 {
+		return refs, nil
+	}
+	// Fall back to the attestations table directly: any succeeded attestation
+	// minted for this attempt proves a real execution backed the result.
+	for _, att := range attestations {
+		if att.AttemptID != runtimeReq.AttemptID || att.Status != ProjectTaskAttestationStatusSucceeded {
+			continue
+		}
+		add(attestationRecordRef(att))
+	}
+	return refs, nil
+}
+
+// attestationRecordRef derives a stable, traceable evidence ref from a
+// runtime-minted attestation record (its idempotency key carries the
+// attempt/command identity; the row UUID is the last-resort anchor).
+func attestationRecordRef(att ProjectTaskAttestation) string {
+	key := strings.TrimSpace(att.IdempotencyKey)
+	if key == "" {
+		key = att.ID.String()
+	}
+	if strings.HasPrefix(key, "attestation:") {
+		return key
+	}
+	return "attestation:" + key
 }
 
 // demandCriterionVerdictValueFromResultStatus maps an employee's self-reported
@@ -3375,15 +3496,18 @@ func demandCriterionVerdictValueFromResultStatus(status TaskResultCriterionStatu
 
 // projectDemandCriterionVerdicts writes one demand_criterion_verdicts row per
 // snapshot criterion the employee's AcceptanceResults judged, on the same
-// completed-and-validated path that records the task result. automated_test
-// criteria project verbatim (verdict + evidence_refs). human_judgment
-// criteria are a human sign-off matter (later task): an employee self-report
-// against one is intentionally not projected, only logged. Criteria with no
-// matching result, or whose result status is needs_human/not_applicable,
-// are left unprojected — a later attempt or a human may still resolve them.
-// No-ops entirely when the task has no criteria snapshot (legacy guard, mirrors
-// validateAcceptanceCriterionAttestation).
-func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task ProjectTask, contract TaskResultContract) error {
+// completed-and-validated path that records the task result. For a satisfied
+// automated_test criterion the SERVER-known runtime attestation ref (from the
+// result verification[] array or project_task_attestations for this attempt) is
+// attached to the verdict's evidence_refs automatically — so the lineage panel
+// shows a real, traceable attestation ref even though the employee never echoed
+// it. human_judgment criteria are a human sign-off matter (later task): an
+// employee self-report against one is intentionally not projected, only logged.
+// Criteria with no matching result, or whose result status is
+// needs_human/not_applicable, are left unprojected — a later attempt or a human
+// may still resolve them. No-ops entirely when the task has no criteria snapshot
+// (legacy guard, mirrors validateAcceptanceCriterionAttestation).
+func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) error {
 	if contract.Status != TaskResultStatusCompleted || task.AssignedDigitalEmployeeID == nil {
 		return nil
 	}
@@ -3394,6 +3518,8 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 	if len(snapshot) == 0 {
 		return nil
 	}
+	var serverAttestationRefs []string
+	serverAttestationRefsLoaded := false
 	for _, criterion := range criteriaSatisfiedByTask(snapshot, task) {
 		result, ok := matchAcceptanceResultToSnapshotCriterion(contract.AcceptanceResults, criterion)
 		if !ok {
@@ -3416,6 +3542,20 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 		if reason == "" {
 			reason = strings.TrimSpace(result.HumanAcceptedReason)
 		}
+		evidenceRefs := result.EvidenceRefs
+		// A satisfied automated_test verdict carries the server-verified
+		// attestation ref (validation already guaranteed one exists for this
+		// attempt), attaching real execution lineage the employee couldn't echo.
+		if criterion.VerificationMethod == demandAcceptanceVerificationMethodAutomatedTest && verdictValue == "satisfied" {
+			if !serverAttestationRefsLoaded {
+				serverAttestationRefs, err = s.runtimeVerifiedAttestationRefsForAttempt(ctx, task, runtimeReq, contract)
+				if err != nil {
+					return err
+				}
+				serverAttestationRefsLoaded = true
+			}
+			evidenceRefs = mergeStringRefs(result.EvidenceRefs, serverAttestationRefs)
+		}
 		if err := s.repository.CreateDemandCriterionVerdict(ctx, CreateDemandCriterionVerdictRequest{
 			TenantID:       task.TenantID,
 			ProjectID:      task.ProjectID,
@@ -3426,13 +3566,34 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 			JudgeType:      "executor",
 			JudgeID:        *task.AssignedDigitalEmployeeID,
 			Reason:         reason,
-			EvidenceRefs:   result.EvidenceRefs,
+			EvidenceRefs:   evidenceRefs,
 			ProjectTaskID:  &task.ID,
 		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// mergeStringRefs returns the union of two ref slices preserving order
+// (base first, then additions), de-duplicated by trimmed value.
+func mergeStringRefs(base, extra []string) []string {
+	merged := make([]string, 0, len(base)+len(extra))
+	seen := map[string]struct{}{}
+	for _, group := range [][]string{base, extra} {
+		for _, ref := range group {
+			trimmed := strings.TrimSpace(ref)
+			if trimmed == "" {
+				continue
+			}
+			if _, ok := seen[trimmed]; ok {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			merged = append(merged, trimmed)
+		}
+	}
+	return merged
 }
 
 func (s *Service) validateRuntimeAttestationRefs(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) ([]TaskResultValidationError, error) {
