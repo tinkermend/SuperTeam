@@ -5756,7 +5756,15 @@ func (s *Service) SignDemandCriterionVerdict(ctx context.Context, req SignDemand
 		return nil, ErrProjectDecisionForbidden
 	}
 	criterion := findDemandAcceptanceCriterion(criteria, req.CriterionID)
-	if criterion == nil || criterion.Severity != demandAcceptanceCriterionSeverityBlocking || criterion.VerificationMethod != demandCriterionVerificationMethodHumanJudgment {
+	// Tier-3 human override (spec §2): a blocking criterion is human-signable when its
+	// method is human_judgment OR adversarial_review. Allowing adversarial_review here lets
+	// the human goalkeeper override the tier-2 adversarial judges — criterionEffectiveVerdict
+	// already gives a human verdict precedence over the adversarial aggregate — so a held
+	// adversarial verdict (unsatisfied, or escalate_human on budget exhaustion / engine error)
+	// is resolvable instead of a dead end. Any other method (e.g. automated_test) stays unsignable.
+	if criterion == nil || criterion.Severity != demandAcceptanceCriterionSeverityBlocking ||
+		(criterion.VerificationMethod != demandCriterionVerificationMethodHumanJudgment &&
+			criterion.VerificationMethod != demandCriterionVerificationMethodAdversarialReview) {
 		return nil, ErrInvalidProject
 	}
 	if existing := findHumanCriterionVerdict(verdicts, req.CriterionID); existing != nil {
