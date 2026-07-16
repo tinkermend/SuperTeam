@@ -2654,6 +2654,35 @@ type DigitalEmployee struct {
 	UpdatedAt             *time.Time              `json:"updated_at,omitempty"`
 }
 
+// DigitalEmployeeActivity defines model for DigitalEmployeeActivity.
+type DigitalEmployeeActivity struct {
+	Items []DigitalEmployeeActivityItem `json:"items"`
+
+	// NextSince 下次增量拉取用的游标；无新事件时回显请求游标
+	NextSince string `json:"next_since"`
+}
+
+// DigitalEmployeeActivityItem defines model for DigitalEmployeeActivityItem.
+type DigitalEmployeeActivityItem struct {
+	DigitalEmployeeId   openapi_types.UUID `json:"digital_employee_id"`
+	DigitalEmployeeName string             `json:"digital_employee_name"`
+	EventId             openapi_types.UUID `json:"event_id"`
+	EventType           string             `json:"event_type"`
+
+	// Label 事件类型的中文标签（服务端统一映射）
+	Label       string              `json:"label"`
+	OccurredAt  *time.Time          `json:"occurred_at,omitempty"`
+	ProjectId   *openapi_types.UUID `json:"project_id,omitempty"`
+	ProjectName string              `json:"project_name"`
+	RunId       openapi_types.UUID  `json:"run_id"`
+
+	// Status running / completed / failed / cancelled
+	Status    string              `json:"status"`
+	TaskId    openapi_types.UUID  `json:"task_id"`
+	TaskTitle string              `json:"task_title"`
+	TeamId    *openapi_types.UUID `json:"team_id,omitempty"`
+}
+
 // DigitalEmployeeAvatarAsset defines model for DigitalEmployeeAvatarAsset.
 type DigitalEmployeeAvatarAsset struct {
 	AgeRange     string `json:"age_range"`
@@ -2908,14 +2937,17 @@ type DigitalEmployeeOverviewFilters struct {
 
 // DigitalEmployeeOverviewItem defines model for DigitalEmployeeOverviewItem.
 type DigitalEmployeeOverviewItem struct {
-	BudgetSummary     DigitalEmployeeBudgetSummary        `json:"budget_summary"`
-	ExecutionSummary  DigitalEmployeeExecutionSummary     `json:"execution_summary"`
-	GovernanceSummary DigitalEmployeeGovernanceSummary    `json:"governance_summary"`
-	IdentitySummary   DigitalEmployeeIdentitySummary      `json:"identity_summary"`
-	LatestRunSummary  *DigitalEmployeeLatestRunSummary    `json:"latest_run_summary,omitempty"`
-	OperationalState  DigitalEmployeeOperationalState     `json:"operational_state"`
-	RecentEvents      []DigitalEmployeeRecentEventSummary `json:"recent_events"`
-	WorkbenchStatus   DigitalEmployeeWorkbenchStatus      `json:"workbench_status"`
+	BudgetSummary     DigitalEmployeeBudgetSummary     `json:"budget_summary"`
+	ExecutionSummary  DigitalEmployeeExecutionSummary  `json:"execution_summary"`
+	GovernanceSummary DigitalEmployeeGovernanceSummary `json:"governance_summary"`
+	IdentitySummary   DigitalEmployeeIdentitySummary   `json:"identity_summary"`
+	LatestRunSummary  *DigitalEmployeeLatestRunSummary `json:"latest_run_summary,omitempty"`
+	OperationalState  DigitalEmployeeOperationalState  `json:"operational_state"`
+
+	// ProjectSummary 数字员工的项目关联情况（活跃成员身份或任务分派均算关联）
+	ProjectSummary  DigitalEmployeeProjectSummary       `json:"project_summary"`
+	RecentEvents    []DigitalEmployeeRecentEventSummary `json:"recent_events"`
+	WorkbenchStatus DigitalEmployeeWorkbenchStatus      `json:"workbench_status"`
 }
 
 // DigitalEmployeeOverviewQueueSummary defines model for DigitalEmployeeOverviewQueueSummary.
@@ -2950,6 +2982,26 @@ type DigitalEmployeePolicyDefaults struct {
 	PermissionPolicy map[string]interface{} `json:"permission_policy"`
 	SessionPolicy    map[string]interface{} `json:"session_policy"`
 	WorkspacePolicy  map[string]interface{} `json:"workspace_policy"`
+}
+
+// DigitalEmployeeProjectLinkSummary defines model for DigitalEmployeeProjectLinkSummary.
+type DigitalEmployeeProjectLinkSummary struct {
+	ActiveTaskCount  int32              `json:"active_task_count"`
+	IsMember         bool               `json:"is_member"`
+	LastActivityAt   *time.Time         `json:"last_activity_at,omitempty"`
+	Name             string             `json:"name"`
+	ProjectId        openapi_types.UUID `json:"project_id"`
+	Status           string             `json:"status"`
+	TotalTaskCount   int32              `json:"total_task_count"`
+	WorkingTaskCount int32              `json:"working_task_count"`
+}
+
+// DigitalEmployeeProjectSummary 数字员工的项目关联情况（活跃成员身份或任务分派均算关联）
+type DigitalEmployeeProjectSummary struct {
+	ProjectCount int32 `json:"project_count"`
+
+	// Projects 按最近活动排序的关联项目，最多返回 5 个
+	Projects []DigitalEmployeeProjectLinkSummary `json:"projects"`
 }
 
 // DigitalEmployeeRecentEventSummary defines model for DigitalEmployeeRecentEventSummary.
@@ -5576,6 +5628,17 @@ type ListDigitalEmployeesParams struct {
 // ListDigitalEmployeesParamsAssignment defines parameters for ListDigitalEmployees.
 type ListDigitalEmployeesParamsAssignment string
 
+// GetDigitalEmployeeActivityParams defines parameters for GetDigitalEmployeeActivity.
+type GetDigitalEmployeeActivityParams struct {
+	Since *string `form:"since,omitempty" json:"since,omitempty"`
+	Limit *int32  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// StreamDigitalEmployeeActivityParams defines parameters for StreamDigitalEmployeeActivity.
+type StreamDigitalEmployeeActivityParams struct {
+	Since *string `form:"since,omitempty" json:"since,omitempty"`
+}
+
 // GetDigitalEmployeeCreateOptionsParams defines parameters for GetDigitalEmployeeCreateOptions.
 type GetDigitalEmployeeCreateOptionsParams struct {
 	// TeamId Team ID; omit for team-less (tenant-level) digital employees.
@@ -5584,17 +5647,20 @@ type GetDigitalEmployeeCreateOptionsParams struct {
 
 // GetDigitalEmployeeOverviewParams defines parameters for GetDigitalEmployeeOverview.
 type GetDigitalEmployeeOverviewParams struct {
-	Q               *string                                 `form:"q,omitempty" json:"q,omitempty"`
-	TeamId          *openapi_types.UUID                     `form:"team_id,omitempty" json:"team_id,omitempty"`
-	Status          *DigitalEmployeeStatus                  `form:"status,omitempty" json:"status,omitempty"`
-	EmployeeType    *string                                 `form:"employee_type,omitempty" json:"employee_type,omitempty"`
-	ProviderType    *string                                 `form:"provider_type,omitempty" json:"provider_type,omitempty"`
-	RuntimeNodeId   *openapi_types.UUID                     `form:"runtime_node_id,omitempty" json:"runtime_node_id,omitempty"`
-	RiskLevel       *string                                 `form:"risk_level,omitempty" json:"risk_level,omitempty"`
-	ExecutionStatus *DigitalEmployeeOverviewExecutionStatus `form:"execution_status,omitempty" json:"execution_status,omitempty"`
-	RunStatus       *DigitalEmployeeOverviewRunStatus       `form:"run_status,omitempty" json:"run_status,omitempty"`
-	Limit           *Limit                                  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset          *Offset                                 `form:"offset,omitempty" json:"offset,omitempty"`
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// OperationalStatus 按计算态运行状态过滤，逗号分隔多值（working,error,waiting_human,queued,idle,unavailable,needs_configuration）
+	OperationalStatus *string                                 `form:"operational_status,omitempty" json:"operational_status,omitempty"`
+	TeamId            *openapi_types.UUID                     `form:"team_id,omitempty" json:"team_id,omitempty"`
+	Status            *DigitalEmployeeStatus                  `form:"status,omitempty" json:"status,omitempty"`
+	EmployeeType      *string                                 `form:"employee_type,omitempty" json:"employee_type,omitempty"`
+	ProviderType      *string                                 `form:"provider_type,omitempty" json:"provider_type,omitempty"`
+	RuntimeNodeId     *openapi_types.UUID                     `form:"runtime_node_id,omitempty" json:"runtime_node_id,omitempty"`
+	RiskLevel         *string                                 `form:"risk_level,omitempty" json:"risk_level,omitempty"`
+	ExecutionStatus   *DigitalEmployeeOverviewExecutionStatus `form:"execution_status,omitempty" json:"execution_status,omitempty"`
+	RunStatus         *DigitalEmployeeOverviewRunStatus       `form:"run_status,omitempty" json:"run_status,omitempty"`
+	Limit             *Limit                                  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset            *Offset                                 `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListProviderSessionsForDigitalEmployeeParams defines parameters for ListProviderSessionsForDigitalEmployee.
@@ -6658,6 +6724,12 @@ type ServerInterface interface {
 	// Create a ready digital employee
 	// (POST /api/v1/digital-employees)
 	CreateDigitalEmployee(w http.ResponseWriter, r *http.Request)
+	// Get cross-employee runtime activity feed
+	// (GET /api/v1/digital-employees/activity)
+	GetDigitalEmployeeActivity(w http.ResponseWriter, r *http.Request, params GetDigitalEmployeeActivityParams)
+	// Stream cross-employee runtime activity via SSE
+	// (GET /api/v1/digital-employees/activity/stream)
+	StreamDigitalEmployeeActivity(w http.ResponseWriter, r *http.Request, params StreamDigitalEmployeeActivityParams)
 	// Get digital employee create options
 	// (GET /api/v1/digital-employees/create-options)
 	GetDigitalEmployeeCreateOptions(w http.ResponseWriter, r *http.Request, params GetDigitalEmployeeCreateOptionsParams)
@@ -7282,6 +7354,18 @@ func (_ Unimplemented) ListDigitalEmployees(w http.ResponseWriter, r *http.Reque
 // Create a ready digital employee
 // (POST /api/v1/digital-employees)
 func (_ Unimplemented) CreateDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get cross-employee runtime activity feed
+// (GET /api/v1/digital-employees/activity)
+func (_ Unimplemented) GetDigitalEmployeeActivity(w http.ResponseWriter, r *http.Request, params GetDigitalEmployeeActivityParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Stream cross-employee runtime activity via SSE
+// (GET /api/v1/digital-employees/activity/stream)
+func (_ Unimplemented) StreamDigitalEmployeeActivity(w http.ResponseWriter, r *http.Request, params StreamDigitalEmployeeActivityParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8720,6 +8804,85 @@ func (siw *ServerInterfaceWrapper) CreateDigitalEmployee(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// GetDigitalEmployeeActivity operation middleware
+func (siw *ServerInterfaceWrapper) GetDigitalEmployeeActivity(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDigitalEmployeeActivityParams
+
+	// ------------- Optional query parameter "since" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "since", r.URL.Query(), &params.Since, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "since"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "since", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDigitalEmployeeActivity(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamDigitalEmployeeActivity operation middleware
+func (siw *ServerInterfaceWrapper) StreamDigitalEmployeeActivity(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StreamDigitalEmployeeActivityParams
+
+	// ------------- Optional query parameter "since" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "since", r.URL.Query(), &params.Since, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "since"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "since", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamDigitalEmployeeActivity(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetDigitalEmployeeCreateOptions operation middleware
 func (siw *ServerInterfaceWrapper) GetDigitalEmployeeCreateOptions(w http.ResponseWriter, r *http.Request) {
 
@@ -8771,6 +8934,19 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployeeOverview(w http.ResponseWri
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "operational_status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "operational_status", r.URL.Query(), &params.OperationalStatus, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "operational_status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operational_status", Err: err})
 		}
 		return
 	}
@@ -15639,6 +15815,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees", wrapper.CreateDigitalEmployee)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/activity", wrapper.GetDigitalEmployeeActivity)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/activity/stream", wrapper.StreamDigitalEmployeeActivity)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/create-options", wrapper.GetDigitalEmployeeCreateOptions)

@@ -656,8 +656,11 @@ type GetDigitalEmployeeOverviewRequest struct {
 	RiskLevel       string
 	ExecutionStatus OverviewExecutionStatus
 	RunStatus       OverviewRunStatus
-	Offset          int32
-	Limit           int32
+	// OperationalStatus 按计算态运行状态过滤（如轮播只拉非空闲员工）。
+	// 状态在 operational facts 上由 Go 状态机裁决后回填为 ID 过滤条件，非 SQL 直接判定。
+	OperationalStatus []DigitalEmployeeOperationalStatus
+	Offset            int32
+	Limit             int32
 }
 
 type DigitalEmployeeOverview struct {
@@ -697,6 +700,25 @@ type DigitalEmployeeOverviewItem struct {
 	WorkbenchStatus   WorkbenchStatus
 	OperationalState  DigitalEmployeeOperationalState
 	RecentEvents      []DigitalEmployeeRecentEventSummary
+	ProjectSummary    DigitalEmployeeProjectSummary
+}
+
+// DigitalEmployeeProjectSummary 描述数字员工与项目的关联情况：
+// 活跃成员身份（project_members）或任务分派（project_tasks）都算关联。
+type DigitalEmployeeProjectSummary struct {
+	ProjectCount int32
+	Projects     []DigitalEmployeeProjectLinkSummary
+}
+
+type DigitalEmployeeProjectLinkSummary struct {
+	ProjectID        uuid.UUID
+	Name             string
+	Status           string
+	IsMember         bool
+	ActiveTaskCount  int32
+	WorkingTaskCount int32
+	TotalTaskCount   int32
+	LastActivityAt   *time.Time
 }
 
 type DigitalEmployeeIdentitySummary struct {

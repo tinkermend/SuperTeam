@@ -763,6 +763,6 @@ func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {
 		OperationalHasWorkingTask:                false,
 		OperationalHasActiveWork:                 false,
 		OperationalHasTaskFailure:                false,
-		RecentEventsJson:                         []byte(`[{"label":"命令已下发","status":"running","occurred_at":"2026-06-08T01:00:00Z"},{"label":"Provider 输出中","status":"running","occurred_at":"2026-06-08T00:59:00Z"}]`),
+		RecentEventsJson:                         []byte(`[{"event_type":"run_dispatched","occurred_at":"2026-06-08T01:00:00Z"},{"event_type":"text_delta","occurred_at":"2026-06-08T00:59:00Z"}]`),
 	}
 }

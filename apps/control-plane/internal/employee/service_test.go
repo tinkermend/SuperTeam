@@ -2073,6 +2073,8 @@ type memoryRepository struct {
 	createdConfigRevision     CreateConfigRevisionParams
 	digitalEmployeeOverview   *DigitalEmployeeOverview
 	lastOverviewRequest       GetDigitalEmployeeOverviewRequest
+	digitalEmployeeActivity   []DigitalEmployeeActivityItem
+	lastActivityRequest       GetDigitalEmployeeActivityRequest
 	deleteBlockers            []DigitalEmployeeDeleteBlocker
 	deleteCascadeResult       DigitalEmployeeDeleteCascadeResult
 	deleteCascadeCount        int
@@ -2356,6 +2358,11 @@ func (r *memoryRepository) SoftDeleteDigitalEmployeeCascade(_ context.Context, p
 func (r *memoryRepository) CreateDigitalEmployeeDeleteAuditEvent(_ context.Context, params DigitalEmployeeDeleteAuditEventParams) error {
 	r.deleteAuditEvents = append(r.deleteAuditEvents, params)
 	return nil
+}
+
+func (r *memoryRepository) GetDigitalEmployeeActivity(_ context.Context, req GetDigitalEmployeeActivityRequest) ([]DigitalEmployeeActivityItem, error) {
+	r.lastActivityRequest = req
+	return r.digitalEmployeeActivity, nil
 }
 
 func (r *memoryRepository) GetDigitalEmployeeOverview(_ context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {

@@ -17,6 +17,19 @@ export type RuntimeOverviewSummary = {
   unavailableCount: number;
   errorCount: number;
   cumulativeTaskCount: number;
+  linkedProjectCount: number;
+  todayTokensTotal: number;
+};
+
+export type RuntimeOverviewActivityItem = {
+  employeeId: string;
+  employeeName: string;
+  teamId: string;
+  label: string;
+  status: string;
+  occurredAt?: string;
+  taskTitle?: string;
+  projectName?: string;
 };
 
 export type RuntimeOverviewSeat = {
@@ -77,6 +90,17 @@ export type RuntimeOverviewTeam = {
   overCapacity: boolean;
 };
 
+export type RuntimeOverviewEmployeeProject = {
+  projectId: string;
+  name: string;
+  status: string;
+  isMember: boolean;
+  activeTaskCount: number;
+  workingTaskCount: number;
+  totalTaskCount: number;
+  lastActivityAt?: string;
+};
+
 export type RuntimeOverviewEmployee = {
   employeeId: string;
   teamId: string;
@@ -90,6 +114,11 @@ export type RuntimeOverviewEmployee = {
     fallbackLabel?: string;
   };
   status: DigitalEmployeeOperationalStatus;
+  // 状态原因（如"等待人工确认后继续执行"/"Provider 执行失败或不可用"），供运行快照卡解释当前状态。
+  statusReasons: string[];
+  // 当前状态的近似起始时间：working 取运行开始时间，其余取最近一次活动时间。
+  statusSince?: string;
+  latestRunErrorMessage?: string;
   currentTask?: {
     taskId: string;
     title: string;
@@ -101,6 +130,8 @@ export type RuntimeOverviewEmployee = {
     sessionId?: string;
   };
   recentEvents: Array<{ label: string; status: string; occurredAt?: string }>;
+  projects: RuntimeOverviewEmployeeProject[];
+  projectCount: number;
   artifacts: Array<{ id: string; name: string; sizeLabel?: string; status?: string }>;
   usage?: {
     taskTokens?: number;
@@ -116,5 +147,6 @@ export type RuntimeOverviewDTO = {
   floors: RuntimeOverviewFloor[];
   teams: RuntimeOverviewTeam[];
   employees: RuntimeOverviewEmployee[];
+  recentActivity: RuntimeOverviewActivityItem[];
   selectedEmployeeId?: string;
 };

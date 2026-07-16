@@ -1,5 +1,40 @@
-import type { DigitalEmployeeOverview } from "@/lib/api/employees";
+import type { DigitalEmployeeActivity, DigitalEmployeeOverview } from "@/lib/api/employees";
 import type { TeamListItem } from "@/lib/api/teams";
+
+export const digitalEmployeeActivityFixture: DigitalEmployeeActivity = {
+  items: [
+    {
+      event_id: "evt-1",
+      event_type: "run_completed",
+      label: "运行完成",
+      status: "completed",
+      occurred_at: "2026-07-05T10:05:00Z",
+      run_id: "emp-ops-1-run",
+      task_id: "emp-ops-1-task",
+      task_title: "排查线上告警并生成修复计划",
+      digital_employee_id: "emp-ops-1",
+      digital_employee_name: "高秀英",
+      team_id: "team-ops",
+      project_id: "emp-ops-1-project",
+      project_name: "运维团队交付项目",
+    },
+    {
+      event_id: "evt-2",
+      event_type: "tool_started",
+      label: "开始调用工具",
+      status: "running",
+      occurred_at: "2026-07-05T10:04:00Z",
+      run_id: "emp-dev-1-run",
+      task_id: "emp-dev-1-task",
+      task_title: "实现运行态组件",
+      digital_employee_id: "emp-dev-1",
+      digital_employee_name: "陆一鸣",
+      team_id: "team-dev",
+      project_name: "",
+    },
+  ],
+  next_since: "2026-07-05T10:05:00Z|evt-1",
+};
 
 export const teamListFixture: TeamListItem[] = [
   {
@@ -124,7 +159,11 @@ function employee(
       agent_home_dir_available: true,
     },
     workbench_status: "ready",
-    operational_state: { status, reasons: [], can_dispatch: status !== "waiting_human" },
+    operational_state: {
+      status,
+      reasons: status === "waiting_human" ? [{ code: "approval_blocked", message: "等待人工确认后继续执行" }] : [],
+      can_dispatch: status !== "waiting_human",
+    },
     recent_events: [{ label: title ? "已领取任务" : "暂无任务", status, occurred_at: "2026-07-05T10:00:00Z" }],
     latest_run_summary: title
       ? {
@@ -150,5 +189,22 @@ function employee(
       daily_token_limit: 10000,
       limit_exceeded: false,
     },
+    project_summary: title
+      ? {
+          project_count: 1,
+          projects: [
+            {
+              project_id: `${id}-project`,
+              name: `${teamName}交付项目`,
+              status: "active",
+              is_member: true,
+              active_task_count: status === "working" ? 2 : 1,
+              working_task_count: status === "working" ? 1 : 0,
+              total_task_count: 3,
+              last_activity_at: "2026-07-05T10:00:00Z",
+            },
+          ],
+        }
+      : { project_count: 0, projects: [] },
   };
 }

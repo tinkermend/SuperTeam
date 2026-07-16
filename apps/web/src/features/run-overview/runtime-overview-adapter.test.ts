@@ -152,6 +152,33 @@ function employee(
       usage_tokens_today: 128,
       limit_exceeded: false,
     },
+    project_summary: title
+      ? {
+          project_count: 2,
+          projects: [
+            {
+              project_id: `${id}-project`,
+              name: `${teamName}项目`,
+              status: "active",
+              is_member: true,
+              active_task_count: 2,
+              working_task_count: 1,
+              total_task_count: 4,
+              last_activity_at: "2026-07-05T09:30:00Z",
+            },
+            {
+              project_id: "project-shared",
+              name: "共享项目",
+              status: "active",
+              is_member: false,
+              active_task_count: 1,
+              working_task_count: 0,
+              total_task_count: 1,
+              last_activity_at: "2026-07-04T09:30:00Z",
+            },
+          ],
+        }
+      : { project_count: 0, projects: [] },
   };
 }
 
@@ -168,6 +195,18 @@ describe("buildRuntimeOverview", () => {
     expect(overview.summary.capacityTotal).toBe(7);
     expect(overview.summary.workingCount).toBe(2);
     expect(overview.floors).toHaveLength(3);
+    expect(overview.summary.todayTokensTotal).toBe(5 * 128);
+    // emp-1 / emp-2 / emp-4 / emp-5 带任务：各自专属项目 4 个 + 共享项目 1 个（去重）。
+    expect(overview.summary.linkedProjectCount).toBe(5);
+    const emp1 = overview.employees.find((item) => item.employeeId === "emp-1");
+    expect(emp1?.projectCount).toBe(2);
+    expect(emp1?.projects.map((project) => project.projectId)).toEqual(["emp-1-project", "project-shared"]);
+    expect(emp1?.statusReasons).toEqual([]);
+    // 无 started_at 时回退到最近活动时间（recent_events）。
+    expect(emp1?.statusSince).toBe("2026-07-05T10:00:00Z");
+    expect(emp1?.latestRunErrorMessage).toBeUndefined();
+    expect(overview.recentActivity[0]?.employeeName).toBeTruthy();
+    expect(overview.recentActivity.length).toBeGreaterThan(0);
     expect(overview.teams.find((team) => team.teamId === "team-ops")?.employeeCount).toBe(2);
     expect(overview.teams.find((team) => team.teamId === "team-ops")?.overCapacity).toBe(false);
     expect(overview.teams.find((team) => team.teamId === "team-dev")?.capacity).toBe(3);

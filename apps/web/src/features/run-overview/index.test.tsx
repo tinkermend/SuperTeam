@@ -55,7 +55,7 @@ vi.mock("@/components/layout/shell-page-header", () => ({
 }));
 
 import { RunOverviewView } from "@/features/run-overview";
-import { digitalEmployeeOverviewFixture, teamListFixture } from "./runtime-overview-fixtures";
+import { digitalEmployeeActivityFixture, digitalEmployeeOverviewFixture, teamListFixture } from "./runtime-overview-fixtures";
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -64,13 +64,16 @@ function jsonResponse(body: unknown) {
   });
 }
 
-function createFetcher() {
+function createFetcher({ withActivity = true }: { withActivity?: boolean } = {}) {
   const requests: Array<{ pathname: string; search: string }> = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     requests.push({ pathname: url.pathname, search: url.search });
     if (url.pathname === "/api/v1/digital-employees/overview") {
       return jsonResponse(digitalEmployeeOverviewFixture);
+    }
+    if (url.pathname === "/api/v1/digital-employees/activity" && withActivity) {
+      return jsonResponse(digitalEmployeeActivityFixture);
     }
     if (url.pathname === "/api/v1/teams") {
       return jsonResponse(teamListFixture);
@@ -142,7 +145,9 @@ describe("RunOverviewView", () => {
 
     await expect.element(screen.getByRole("button", { name: "1层" })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "2层" }));
-    await expect.element(screen.getByText("当前楼层：2层")).toBeVisible();
+    await expect.poll(() => screen.container.querySelector("[data-runtime-map-scene]")?.getAttribute("data-runtime-map-scene")).toBe("floor-2");
+    // 楼层信息只由按钮选中态表达，不再有"当前楼层"文案行。
+    expect(screen.container.textContent).not.toContain("当前楼层");
     expect(requests.filter((request) => request.pathname === "/api/v1/digital-employees/overview").length).toBe(1);
   });
 
@@ -214,7 +219,7 @@ describe("RunOverviewView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /高秀英/ }));
     await expect.element(screen.getByRole("heading", { name: "高秀英" })).toBeVisible();
-    await expect.element(screen.getByText("排查线上告警并生成修复计划")).toBeVisible();
+    await expect.element(screen.getByText("排查线上告警并生成修复计划", { exact: true })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "表格视图" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("table", { name: "运行总览表格" })).not.toBeInTheDocument();
   });
@@ -242,6 +247,177 @@ describe("RunOverviewView", () => {
       "href",
       "/runtime?node=local-dev-node",
     );
+  });
+
+  it("differentiates live avatar status with halo animation only for active states", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByLabelText("运行总览地图画布")).toBeVisible();
+    const workingButton = screen.container.querySelector<HTMLElement>("button[data-employee-id='emp-ops-1']");
+    expect(workingButton?.getAttribute("data-employee-status")).toBe("working");
+    expect(workingButton?.querySelector("[data-status-halo]")).not.toBeNull();
+    expect(workingButton?.querySelector("[data-status-halo]")?.className).toContain("animate-ping");
+    const idleButton = screen.container.querySelector<HTMLElement>("button[data-employee-id='emp-dev-2']");
+    expect(idleButton?.getAttribute("data-employee-status")).toBe("idle");
+    expect(idleButton?.querySelector("[data-status-halo]")).toBeNull();
+    const waitingButton = screen.container.querySelector<HTMLElement>("button[data-employee-id='emp-ops-2']");
+    expect(waitingButton?.querySelector("[data-status-halo]")?.className).toContain("animate-pulse");
+  });
+
+  it("shows the current task's project deep link and the linked project count", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-ops-1" });
+
+    await expect.element(screen.getByText("所属项目")).toBeVisible();
+    await expect.element(screen.getByText("运维团队交付项目")).toBeVisible();
+    const projectLink = screen.container.querySelector("[data-employee-current-project] a");
+    expect(projectLink?.getAttribute("href")).toBe("/projects/emp-ops-1-project");
+    await expect.element(screen.getByText("关联 1 个项目")).toBeVisible();
+  });
+
+  it("explains the current status with duration and reasons in the snapshot card", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-ops-2" });
+
+    await expect.element(screen.getByRole("heading", { name: "罗明" })).toBeVisible();
+    const statusBlock = screen.container.querySelector<HTMLElement>("[data-employee-status-block]");
+    expect(statusBlock).not.toBeNull();
+    expect(statusBlock?.textContent).toContain("待确认");
+    expect(statusBlock?.textContent).toContain("已等待");
+    await expect.element(screen.getByText("等待人工确认后继续执行")).toBeVisible();
+  });
+
+  it("hides project affordances for employees without linked projects", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-dev-2" });
+
+    await expect.element(screen.getByRole("heading", { name: "沈嘉" })).toBeVisible();
+    expect(screen.container.querySelector("[data-employee-current-project]")).toBeNull();
+    expect(screen.container.querySelector("[data-employee-project-count]")).toBeNull();
+    await expect.element(screen.getByText("暂无进行中的任务")).toBeVisible();
+  });
+
+  it("surfaces company-wide project count, today token usage and latest activity", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("关联项目", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("今日消耗 tokens")).toBeVisible();
+    await expect.element(screen.getByText("最新动态")).toBeVisible();
+    // 动态流来自 activity 端点：服务端映射标签 + 任务标题。
+    await expect.element(screen.getByText("运行完成 · 排查线上告警并生成修复计划")).toBeVisible();
+    const activityItems = screen.container.querySelectorAll("[data-runtime-recent-activity] li");
+    expect(activityItems.length).toBe(2);
+  });
+
+  it("refreshes activity and overview queries when the SSE stream pushes an event", async () => {
+    const { fetcher, requests } = createFetcher();
+    const listeners: Record<string, () => void> = {};
+    const fakeSource = {
+      addEventListener: (type: string, listener: () => void) => {
+        listeners[type] = listener;
+      },
+      removeEventListener: () => {},
+      close: () => {},
+    } as unknown as EventSource;
+    const streamUrls: string[] = [];
+    routerSearch = {};
+    const screen = await render(
+      <QueryClientProvider client={queryClient()}>
+        <RunOverviewView
+          apiBaseUrl="http://control-plane.local"
+          fetcher={fetcher}
+          eventSourceFactory={(url) => {
+            streamUrls.push(url);
+            return fakeSource;
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    // 等两个查询都完成渲染（概况卡 + 动态流内容），再触发推送，确保 invalidate 不会与在途首查询去重。
+    await expect.element(screen.getByText("运行概况")).toBeVisible();
+    await expect.element(screen.getByText("运行完成 · 排查线上告警并生成修复计划")).toBeVisible();
+    expect(streamUrls).toEqual(["http://control-plane.local/api/v1/digital-employees/activity/stream"]);
+    const overviewRequests = () =>
+      requests.filter((request) => request.pathname === "/api/v1/digital-employees/overview").length;
+    const activityRequests = () =>
+      requests.filter((request) => request.pathname === "/api/v1/digital-employees/activity").length;
+    const overviewBefore = overviewRequests();
+    const activityBefore = activityRequests();
+
+    listeners["activity"]?.();
+    await expect.poll(() => overviewRequests()).toBeGreaterThan(overviewBefore);
+    await expect.poll(() => activityRequests()).toBeGreaterThan(activityBefore);
+  });
+
+  it("falls back to overview-derived activity when the activity endpoint is unavailable", async () => {
+    const { fetcher } = createFetcher({ withActivity: false });
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("最新动态")).toBeVisible();
+    const activityItems = screen.container.querySelectorAll("[data-runtime-recent-activity] li");
+    expect(activityItems.length).toBeGreaterThan(0);
+    expect(activityItems.length).toBeLessThanOrEqual(5);
+  });
+
+  it("always places the employee card below the map instead of the rail", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-ops-1" });
+
+    await expect.element(screen.getByRole("heading", { name: "高秀英" })).toBeVisible();
+    const card = screen.container.querySelector<HTMLElement>("[data-employee-detail-card]");
+    expect(card).not.toBeNull();
+    expect(screen.container.querySelectorAll("[data-employee-detail-card]").length).toBe(1);
+    // 卡片必须位于地图所在 master 列内（填补地图下方空间），而不是右栏。
+    const mapStage = screen.container.querySelector("[aria-label='运行总览地图画布']");
+    expect(card?.parentElement?.parentElement?.contains(mapStage)).toBe(true);
+    // 当前任务所属项目深链在卡内仍完整可用。
+    expect(card?.querySelector("[data-employee-current-project] a")?.getAttribute("href")).toBe("/projects/emp-ops-1-project");
+  });
+
+  it("declares container-width driven column steps on the employee card grid", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-ops-1" });
+
+    await expect.element(screen.getByRole("heading", { name: "高秀英" })).toBeVisible();
+    const card = screen.container.querySelector<HTMLElement>("[data-employee-detail-card]");
+    // 卡片自身是容器查询锚点，内部网格按卡宽升列：窄单列 → 中两列 → 宽三列。
+    expect(card?.className).toContain("@container");
+    const grid = card?.firstElementChild as HTMLElement;
+    expect(grid.className).toContain("grid-cols-1");
+    expect(grid.className).toContain("@xl:grid-cols-2");
+    expect(grid.className).toContain("@5xl:grid-cols-3");
+  });
+
+  it("auto-focuses the most urgent active employee and pauses the carousel on avatar click", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    // 默认无交互：焦点轮播启动，队列 = 非空闲员工（待确认 > 工作中），焦点为最紧迫的罗明。
+    await expect.element(screen.getByText(/焦点轮播 1 \/ 3/)).toBeVisible();
+    // 轮播指示器位于顶部工具栏右侧。
+    expect(screen.container.querySelector("[data-runtime-overview-toolbar] [data-runtime-carousel-indicator]")).not.toBeNull();
+    await expect.element(screen.getByRole("heading", { name: "罗明" })).toBeVisible();
+
+    // 点击头像 = 交互暂停，选中对象切换为用户点击的员工。
+    await userEvent.click(screen.getByRole("button", { name: /高秀英/ }));
+    await expect.element(screen.getByText("轮播已暂停 · 稍后自动恢复")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "高秀英" })).toBeVisible();
+
+    // 手动恢复按钮回到轮播焦点。
+    await userEvent.click(screen.getByRole("button", { name: "恢复轮播" }));
+    await expect.element(screen.getByText(/焦点轮播/)).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "罗明" })).toBeVisible();
+  });
+
+  it("starts paused when opened with an employee deep link", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { employee: "emp-dev-2" });
+
+    await expect.element(screen.getByText("轮播已暂停 · 稍后自动恢复")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "沈嘉" })).toBeVisible();
   });
 
   it("lets employee query changes override the previous local selection", async () => {

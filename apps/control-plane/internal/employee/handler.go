@@ -20,6 +20,7 @@ type HandlerService interface {
 	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
 	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
+	GetActivity(ctx context.Context, req GetDigitalEmployeeActivityRequest) (*DigitalEmployeeActivity, error)
 	ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableSummary, error)
 	UpsertEnvironmentVariable(ctx context.Context, req UpsertEnvironmentVariableRequest) (EnvironmentVariableSummary, error)
 	DeleteEnvironmentVariable(ctx context.Context, req DeleteEnvironmentVariableRequest) error
@@ -42,7 +43,12 @@ type HTTPHandler struct {
 	service    HandlerService
 	runService RunHandlerService
 	authorizer authz.Authorizer
+	// SSE 服务端增量轮询间隔；测试可调小。零值用默认 2s。
+	activityStreamInterval time.Duration
 }
+
+const defaultActivityStreamInterval = 2 * time.Second
+const activityStreamKeepaliveEvery = 8 // 每 N 个空轮询发一次注释行保活（2s 间隔 ≈ 16s 一次）
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
@@ -130,6 +136,131 @@ func (h *HTTPHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, overviewResponseFromDomain(overview))
+}
+
+func (h *HTTPHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee activity read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	req := GetDigitalEmployeeActivityRequest{TenantID: tenantID}
+	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil || limit <= 0 {
+			http.Error(w, "limit must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		req.Limit = int32(limit)
+	}
+	sinceCursor := r.URL.Query().Get("since")
+	sinceCreatedAt, sinceID, cursorErr := decodeActivityCursor(sinceCursor)
+	if cursorErr != nil {
+		http.Error(w, "invalid since cursor", http.StatusBadRequest)
+		return
+	}
+	req.SinceCreatedAt = sinceCreatedAt
+	req.SinceID = sinceID
+	activity, err := service.GetActivity(r.Context(), req)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	if activity.NextSince == "" {
+		activity.NextSince = strings.TrimSpace(sinceCursor)
+	}
+	writeJSON(w, http.StatusOK, activityResponseFromDomain(activity))
+}
+
+// StreamActivity 以 SSE 推送跨员工运行动态：服务端按短间隔用游标增量查询，把新事件按时间正序
+// 逐条写为 `event: activity` 帧；空轮询期间定期发注释行保活。数据面复用 GetActivity 同一查询。
+func (h *HTTPHandler) StreamActivity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee activity stream")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	flusher, canFlush := w.(http.Flusher)
+	if !canFlush {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	sinceCursor := strings.TrimSpace(r.URL.Query().Get("since"))
+	sinceCreatedAt, sinceID, cursorErr := decodeActivityCursor(sinceCursor)
+	if cursorErr != nil {
+		http.Error(w, "invalid since cursor", http.StatusBadRequest)
+		return
+	}
+	if sinceCreatedAt == nil {
+		// 未带游标时从"现在"开始推送，不回放历史。
+		now := time.Now().UTC()
+		nilID := uuid.Nil
+		sinceCreatedAt, sinceID = &now, &nilID
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	interval := h.activityStreamInterval
+	if interval <= 0 {
+		interval = defaultActivityStreamInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	idleTicks := 0
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		}
+		activity, err := service.GetActivity(r.Context(), GetDigitalEmployeeActivityRequest{
+			TenantID:       tenantID,
+			SinceCreatedAt: sinceCreatedAt,
+			SinceID:        sinceID,
+			Limit:          100,
+		})
+		if err != nil {
+			// 查询失败（含连接被取消）即结束流，客户端 EventSource 会自动重连。
+			return
+		}
+		if len(activity.Items) == 0 {
+			idleTicks++
+			if idleTicks >= activityStreamKeepaliveEvery {
+				idleTicks = 0
+				if _, writeErr := w.Write([]byte(": keepalive\n\n")); writeErr != nil {
+					return
+				}
+				flusher.Flush()
+			}
+			continue
+		}
+		idleTicks = 0
+		// 查询返回时间倒序；推送按时间正序，客户端按到达顺序追加。
+		for index := len(activity.Items) - 1; index >= 0; index-- {
+			payload, marshalErr := json.Marshal(activityItemResponseFromDomain(activity.Items[index]))
+			if marshalErr != nil {
+				continue
+			}
+			if _, writeErr := w.Write([]byte("event: activity\ndata: " + string(payload) + "\n\n")); writeErr != nil {
+				return
+			}
+		}
+		flusher.Flush()
+		if nextAt, nextID, decodeErr := decodeActivityCursor(activity.NextSince); decodeErr == nil && nextAt != nil {
+			sinceCreatedAt, sinceID = nextAt, nextID
+		}
+	}
 }
 
 func (h *HTTPHandler) GetCreateOptions(w http.ResponseWriter, r *http.Request) {
@@ -602,6 +733,19 @@ func overviewRequestFromQuery(tenantID uuid.UUID, r *http.Request) (GetDigitalEm
 	if !req.RunStatus.IsValid() {
 		return GetDigitalEmployeeOverviewRequest{}, "invalid run_status"
 	}
+	// operational_status 支持逗号分隔多值（如 working,error,waiting_human,queued）。
+	if rawOperational := strings.TrimSpace(query.Get("operational_status")); rawOperational != "" {
+		for _, part := range strings.Split(rawOperational, ",") {
+			status := DigitalEmployeeOperationalStatus(strings.TrimSpace(part))
+			if status == "" {
+				continue
+			}
+			if !status.IsValid() {
+				return GetDigitalEmployeeOverviewRequest{}, "invalid operational_status"
+			}
+			req.OperationalStatus = append(req.OperationalStatus, status)
+		}
+	}
 	if rawTeamID := strings.TrimSpace(query.Get("team_id")); rawTeamID != "" {
 		teamID, err := uuid.Parse(rawTeamID)
 		if err != nil || teamID == uuid.Nil {
@@ -779,6 +923,70 @@ type digitalEmployeeOverviewItemResponse struct {
 	WorkbenchStatus   WorkbenchStatus                             `json:"workbench_status"`
 	OperationalState  digitalEmployeeOperationalStateResponse     `json:"operational_state"`
 	RecentEvents      []digitalEmployeeRecentEventSummaryResponse `json:"recent_events"`
+	ProjectSummary    digitalEmployeeProjectSummaryResponse       `json:"project_summary"`
+}
+
+type digitalEmployeeActivityResponse struct {
+	Items     []digitalEmployeeActivityItemResponse `json:"items"`
+	NextSince string                                `json:"next_since"`
+}
+
+type digitalEmployeeActivityItemResponse struct {
+	EventID             string  `json:"event_id"`
+	EventType           string  `json:"event_type"`
+	Label               string  `json:"label"`
+	Status              string  `json:"status"`
+	OccurredAt          *string `json:"occurred_at,omitempty"`
+	RunID               string  `json:"run_id"`
+	TaskID              string  `json:"task_id"`
+	TaskTitle           string  `json:"task_title"`
+	DigitalEmployeeID   string  `json:"digital_employee_id"`
+	DigitalEmployeeName string  `json:"digital_employee_name"`
+	TeamID              *string `json:"team_id,omitempty"`
+	ProjectID           *string `json:"project_id,omitempty"`
+	ProjectName         string  `json:"project_name"`
+}
+
+func activityItemResponseFromDomain(item DigitalEmployeeActivityItem) digitalEmployeeActivityItemResponse {
+	return digitalEmployeeActivityItemResponse{
+		EventID:             item.EventID.String(),
+		EventType:           item.EventType,
+		Label:               item.Label,
+		Status:              item.Status,
+		OccurredAt:          timeStringPtr(item.OccurredAt),
+		RunID:               item.RunID.String(),
+		TaskID:              item.TaskID.String(),
+		TaskTitle:           item.TaskTitle,
+		DigitalEmployeeID:   item.DigitalEmployeeID.String(),
+		DigitalEmployeeName: item.DigitalEmployeeName,
+		TeamID:              uuidStringPtr(item.TeamID),
+		ProjectID:           uuidStringPtr(item.ProjectID),
+		ProjectName:         item.ProjectName,
+	}
+}
+
+func activityResponseFromDomain(activity *DigitalEmployeeActivity) digitalEmployeeActivityResponse {
+	items := make([]digitalEmployeeActivityItemResponse, 0, len(activity.Items))
+	for _, item := range activity.Items {
+		items = append(items, activityItemResponseFromDomain(item))
+	}
+	return digitalEmployeeActivityResponse{Items: items, NextSince: activity.NextSince}
+}
+
+type digitalEmployeeProjectSummaryResponse struct {
+	ProjectCount int32                                       `json:"project_count"`
+	Projects     []digitalEmployeeProjectLinkSummaryResponse `json:"projects"`
+}
+
+type digitalEmployeeProjectLinkSummaryResponse struct {
+	ProjectID        string  `json:"project_id"`
+	Name             string  `json:"name"`
+	Status           string  `json:"status"`
+	IsMember         bool    `json:"is_member"`
+	ActiveTaskCount  int32   `json:"active_task_count"`
+	WorkingTaskCount int32   `json:"working_task_count"`
+	TotalTaskCount   int32   `json:"total_task_count"`
+	LastActivityAt   *string `json:"last_activity_at,omitempty"`
 }
 
 type digitalEmployeeOperationalReasonResponse struct {
@@ -1274,9 +1482,30 @@ func overviewItemResponses(items []DigitalEmployeeOverviewItem) []digitalEmploye
 			WorkbenchStatus:   item.WorkbenchStatus,
 			OperationalState:  operationalStateResponseFromDomain(item.OperationalState),
 			RecentEvents:      recentEventSummaryResponses(item.RecentEvents),
+			ProjectSummary:    projectSummaryResponseFromDomain(item.ProjectSummary),
 		})
 	}
 	return responses
+}
+
+func projectSummaryResponseFromDomain(summary DigitalEmployeeProjectSummary) digitalEmployeeProjectSummaryResponse {
+	projects := make([]digitalEmployeeProjectLinkSummaryResponse, 0, len(summary.Projects))
+	for _, project := range summary.Projects {
+		projects = append(projects, digitalEmployeeProjectLinkSummaryResponse{
+			ProjectID:        project.ProjectID.String(),
+			Name:             project.Name,
+			Status:           project.Status,
+			IsMember:         project.IsMember,
+			ActiveTaskCount:  project.ActiveTaskCount,
+			WorkingTaskCount: project.WorkingTaskCount,
+			TotalTaskCount:   project.TotalTaskCount,
+			LastActivityAt:   timeStringPtr(project.LastActivityAt),
+		})
+	}
+	return digitalEmployeeProjectSummaryResponse{
+		ProjectCount: summary.ProjectCount,
+		Projects:     projects,
+	}
 }
 
 func operationalStatusCountsResponseFromDomain(counts map[DigitalEmployeeOperationalStatus]int32) map[string]int32 {

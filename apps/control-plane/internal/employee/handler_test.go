@@ -24,6 +24,10 @@ type fakeTemplateHandlerService struct {
 	template  EmployeeTemplateRecord
 	err       error
 
+	activityBatches     [][]DigitalEmployeeActivityItem
+	activityCall        int
+	lastActivityRequest GetDigitalEmployeeActivityRequest
+
 	listTenantID uuid.UUID
 
 	getTenantID   uuid.UUID
@@ -58,6 +62,20 @@ func (s *fakeTemplateHandlerService) DeleteDigitalEmployee(ctx context.Context, 
 
 func (s *fakeTemplateHandlerService) GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
 	return nil, nil
+}
+
+func (s *fakeTemplateHandlerService) GetActivity(ctx context.Context, req GetDigitalEmployeeActivityRequest) (*DigitalEmployeeActivity, error) {
+	s.lastActivityRequest = req
+	if s.activityCall < len(s.activityBatches) {
+		batch := s.activityBatches[s.activityCall]
+		s.activityCall++
+		activity := &DigitalEmployeeActivity{Items: batch}
+		if len(batch) > 0 && batch[0].OccurredAt != nil {
+			activity.NextSince = encodeActivityCursor(*batch[0].OccurredAt, batch[0].EventID)
+		}
+		return activity, nil
+	}
+	return &DigitalEmployeeActivity{Items: []DigitalEmployeeActivityItem{}}, nil
 }
 
 func (s *fakeTemplateHandlerService) ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableSummary, error) {
