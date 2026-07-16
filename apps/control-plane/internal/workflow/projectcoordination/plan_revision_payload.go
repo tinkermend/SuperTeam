@@ -50,6 +50,22 @@ type PlanAcceptanceCriterion struct {
 	ID          string   `json:"id"`
 	Statement   string   `json:"statement"`
 	SatisfiedBy []string `json:"satisfied_by"`
+	// VerificationMethod names how this criterion is judged: automated_test
+	// (decidable by command/test evidence, SatisfiedBy required) or
+	// human_judgment (business/intent judgment, SatisfiedBy may be empty). See
+	// acceptance_criteria.go's knownVerificationMethods registry. Readers must
+	// treat an empty value as automated_test (normalizeCriterionDefaults'
+	// default), since planner output predating this field omits it.
+	VerificationMethod string `json:"verification_method,omitempty"`
+	// Severity is blocking (default, readers must treat empty as blocking) or
+	// non_blocking.
+	Severity string `json:"severity,omitempty"`
+	// EvidenceHint is an optional planner-authored pointer to what evidence
+	// would satisfy this criterion.
+	EvidenceHint string `json:"evidence_hint,omitempty"`
+	// AmbiguityFlag is server-computed by markAmbiguousCriteria; it flags a
+	// statement as too vague to judge without rejecting the plan.
+	AmbiguityFlag bool `json:"ambiguity_flag,omitempty"`
 }
 
 type PlanRevisionTask struct {
@@ -308,7 +324,8 @@ func canonicalPlanRevisionPayload(payload PlanRevisionPayload) PlanRevisionPaylo
 			Required: payload.HumanReview.Required,
 			Reasons:  sortedPlanRevisionStrings(payload.HumanReview.Reasons),
 		},
-		Tasks: make([]PlanRevisionTask, 0, len(payload.Tasks)),
+		Tasks:                  make([]PlanRevisionTask, 0, len(payload.Tasks)),
+		PlanAcceptanceCriteria: canonicalPlanAcceptanceCriteria(payload.PlanAcceptanceCriteria),
 		FinalSummaryContract: PlanRevisionFinalSummaryContract{
 			RequiredSections: sortedPlanRevisionStrings(payload.FinalSummaryContract.RequiredSections),
 		},
@@ -318,6 +335,40 @@ func canonicalPlanRevisionPayload(payload PlanRevisionPayload) PlanRevisionPaylo
 	}
 	sortPlanRevisionTasks(canonical.Tasks)
 	return canonical
+}
+
+// canonicalPlanAcceptanceCriteria copies plan-level acceptance criteria into a
+// deterministic, order-independent form (sorted by ID, SatisfiedBy sorted) so
+// CanonicalPlanFingerprint is sensitive to every criterion field a human
+// reviewer approved, including verification_method and severity, without
+// being perturbed by planner output ordering.
+func canonicalPlanAcceptanceCriteria(criteria []PlanAcceptanceCriterion) []PlanAcceptanceCriterion {
+	canonical := make([]PlanAcceptanceCriterion, 0, len(criteria))
+	for _, criterion := range criteria {
+		canonical = append(canonical, PlanAcceptanceCriterion{
+			ID:                 criterion.ID,
+			Statement:          criterion.Statement,
+			SatisfiedBy:        sortedPlanRevisionStrings(criterion.SatisfiedBy),
+			VerificationMethod: criterion.VerificationMethod,
+			Severity:           criterion.Severity,
+			EvidenceHint:       criterion.EvidenceHint,
+			AmbiguityFlag:      criterion.AmbiguityFlag,
+		})
+	}
+	sortPlanAcceptanceCriteria(canonical)
+	return canonical
+}
+
+func sortPlanAcceptanceCriteria(criteria []PlanAcceptanceCriterion) {
+	for i := 1; i < len(criteria); i++ {
+		current := criteria[i]
+		j := i - 1
+		for j >= 0 && current.ID < criteria[j].ID {
+			criteria[j+1] = criteria[j]
+			j--
+		}
+		criteria[j+1] = current
+	}
 }
 
 func canonicalPlanRevisionTask(task PlanRevisionTask) PlanRevisionTask {

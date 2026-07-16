@@ -37,6 +37,10 @@ var (
 	// ErrInvalidCoordinationMode means a demand's coordination_mode is neither
 	// empty nor one of the known modes (plan, loop).
 	ErrInvalidCoordinationMode = errors.New("invalid coordination_mode")
+	// ErrProjectDecisionForbidden means the caller signing a demand_acceptance
+	// criterion verdict is neither the decision's TargetUserID nor the
+	// project's human_owner. See Service.SignDemandCriterionVerdict.
+	ErrProjectDecisionForbidden = errors.New("project decision forbidden")
 )
 
 const ProjectDeleteBlockedCode = "project_delete_blocked"
@@ -227,6 +231,19 @@ const (
 	ProjectEventTaskUpstreamSupplementRejected  ProjectEventType = "project_task.upstream_supplement_rejected"
 	ProjectEventTaskUpstreamSupplementExhausted ProjectEventType = "project_task.upstream_supplement_exhausted"
 	ProjectEventDemandReplanningReopened        ProjectEventType = "demand.replanning_reopened"
+	// ProjectEventDemandAcceptanceCompleted is appended when the last
+	// unsigned blocking human_judgment acceptance criterion for a demand is
+	// signed satisfied, converging the demand_acceptance decision to
+	// approved and the demand to completed. See
+	// Service.SignDemandCriterionVerdict.
+	ProjectEventDemandAcceptanceCompleted ProjectEventType = "demand.acceptance_completed"
+	// ProjectEventDemandAcceptanceRejected is appended when a human signs a
+	// blocking acceptance criterion unsatisfied, immediately failing the
+	// demand_acceptance decision and the demand — remaining unsigned
+	// criteria are no longer required. Payload carries {criterion_id,
+	// statement, reason} structured for outer-loop rework. See
+	// Service.SignDemandCriterionVerdict.
+	ProjectEventDemandAcceptanceRejected ProjectEventType = "demand.acceptance_rejected"
 )
 
 type EvidenceVerificationStatus string
@@ -257,21 +274,36 @@ const (
 	ProjectDemandStatusPlanningPending ProjectDemandStatus = "planning_pending"
 	ProjectDemandStatusPlanned         ProjectDemandStatus = "planned"
 	ProjectDemandStatusExecuting       ProjectDemandStatus = "executing"
-	ProjectDemandStatusCompleted       ProjectDemandStatus = "completed"
-	ProjectDemandStatusFailed          ProjectDemandStatus = "failed"
-	ProjectDemandStatusCancelled       ProjectDemandStatus = "cancelled"
+	// ProjectDemandStatusAcceptancePending is the convergence gate's hold state:
+	// every project task under the demand has reached a terminal state and none
+	// failed, but at least one blocking acceptance criterion for the demand's
+	// current plan revision still lacks a satisfied verdict (see
+	// PgRepository.recomputeProjectDemandStatusWithQueries and
+	// CountUnsatisfiedBlockingCriteria). A human must sign off the remaining
+	// criteria (demand_acceptance decision) before the demand can advance to
+	// completed. Ranked below the terminal group so AreAllProjectDemandsTerminal
+	// / project-level acceptance correctly wait for it.
+	ProjectDemandStatusAcceptancePending ProjectDemandStatus = "acceptance_pending"
+	ProjectDemandStatusCompleted         ProjectDemandStatus = "completed"
+	ProjectDemandStatusFailed            ProjectDemandStatus = "failed"
+	ProjectDemandStatusCancelled         ProjectDemandStatus = "cancelled"
 )
 
 // projectDemandStatusRank orders demand lifecycle states so status can only be
 // advanced forward. Terminal states share the highest rank; intake states share 0.
+// acceptance_pending sits between executing and the terminal group: reachable
+// from executing, and itself able to advance to completed or failed (a human
+// rejecting acceptance fails the demand), but never back to executing.
 func projectDemandStatusRank(status ProjectDemandStatus) int {
 	switch status {
 	case ProjectDemandStatusPlanned:
 		return 1
 	case ProjectDemandStatusExecuting:
 		return 2
-	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+	case ProjectDemandStatusAcceptancePending:
 		return 3
+	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+		return 4
 	default:
 		// submitted / recorded / planning_pending and any unknown intake state
 		return 0
@@ -1381,6 +1413,112 @@ type DemandConstraintExemption struct {
 	GrantedByUserID   uuid.UUID
 	DecisionRequestID *uuid.UUID
 	CreatedAt         time.Time
+}
+
+// DemandAcceptanceCriterion is a plan-level acceptance criterion snapshotted
+// into demand_acceptance_criteria when its plan revision is decomposed into
+// tasks. It fixes the judged criteria for that plan revision so the
+// convergence gate, lineage and human sign-off all read a table instead of
+// re-parsing the plan revision payload JSONB. See migration 064 and
+// projectcoordination.PlanAcceptanceCriterion (the payload-side type this is
+// snapshotted from, post normalizeCriterionDefaults).
+type DemandAcceptanceCriterion struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	PlanRevisionID     uuid.UUID
+	CriterionID        string
+	Statement          string
+	VerificationMethod string
+	Severity           string
+	SatisfiedBy        []string
+	CreatedAt          time.Time
+}
+
+// DemandCriterionVerdict is one judgment against a demand_acceptance_criteria
+// row: verdict "satisfied"/"unsatisfied", who judged it (judge_type
+// "executor"/"human"), and the evidence behind it. Executor-sourced verdicts
+// carry ProjectTaskID (one row per task per criterion, via
+// uq_demand_verdicts_task); human sign-off verdicts leave it nil (one global
+// row per criterion, via uq_demand_verdicts_human). See migration 064.
+type DemandCriterionVerdict struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	Verdict        string
+	JudgeType      string
+	JudgeID        uuid.UUID
+	Reason         string
+	EvidenceRefs   []string
+	ProjectTaskID  *uuid.UUID
+	CreatedAt      time.Time
+}
+
+// DemandCriterionTaskSummary is one satisfied_by task's latest result
+// conclusion, surfaced beside its criterion so the human sees what was
+// produced before signing (anti-rubber-stamp). Summary is empty when the
+// task has no execution summary yet.
+type DemandCriterionTaskSummary struct {
+	TaskID  string
+	Summary string
+}
+
+// DemandAcceptanceCriterionDetail is one snapshotted acceptance criterion
+// enriched for the acceptance panel: its EFFECTIVE verdict resolved under the
+// demand-acceptance precedence rule (human over executor), the judge type
+// behind that verdict, its evidence refs, and the result summaries of the
+// tasks that satisfied it. Verdict/JudgeType are nil when no verdict exists.
+type DemandAcceptanceCriterionDetail struct {
+	CriterionID        string
+	Statement          string
+	VerificationMethod string
+	Severity           string
+	SatisfiedBy        []string
+	Verdict            *string
+	JudgeType          *string
+	EvidenceRefs       []string
+	TaskSummaries      []DemandCriterionTaskSummary
+}
+
+// DemandAcceptanceCriteriaDetail is the acceptance panel read model: the
+// demand's current status plus its snapshotted criteria (snapshot order) with
+// resolved verdicts and evidence. Criteria is empty for legacy demands with no
+// open plan revision snapshot.
+type DemandAcceptanceCriteriaDetail struct {
+	DemandID     uuid.UUID
+	DemandStatus ProjectDemandStatus
+	Criteria     []DemandAcceptanceCriterionDetail
+}
+
+// SignDemandCriterionVerdictRequest is one human sign-off against a
+// snapshotted blocking human_judgment acceptance criterion for a demand
+// currently at acceptance_pending. See Service.SignDemandCriterionVerdict.
+type SignDemandCriterionVerdictRequest struct {
+	TenantID    uuid.UUID
+	DemandID    uuid.UUID
+	ActorUserID uuid.UUID
+	CriterionID string
+	Verdict     string
+	Reason      string
+}
+
+// SignDemandCriterionVerdictResult reports the demand's status after a
+// criterion sign-off, plus sign-off progress across the demand's blocking
+// human_judgment criteria (Total/Signed/Remaining) — meaningful only while
+// DemandStatus is still acceptance_pending; once completed or failed the
+// counts reflect the final tally.
+type SignDemandCriterionVerdictResult struct {
+	DemandID     uuid.UUID
+	DemandStatus ProjectDemandStatus
+	CriterionID  string
+	Verdict      string
+	Signed       int32
+	Total        int32
+	Remaining    int32
 }
 
 type ProjectArchiveSnapshot struct {

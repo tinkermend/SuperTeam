@@ -76,6 +76,7 @@ export type ProjectDemandStatus =
   | "planning_pending"
   | "planned"
   | "executing"
+  | "acceptance_pending"
   | "completed"
   | "failed"
   | "cancelled";
@@ -1346,6 +1347,69 @@ export function getProjectDemandLaunchDetail(
     options,
     `/api/v1/project-demands/${encodeURIComponent(demandId)}/launch-detail`,
     "project demand launch detail",
+  );
+}
+
+export type DemandCriterionTaskSummary = {
+  task_id: string;
+  summary: string;
+};
+
+export type DemandAcceptanceCriterionDetail = {
+  criterion_id: string;
+  statement: string;
+  verification_method: string;
+  severity: string;
+  satisfied_by: string[];
+  verdict: "satisfied" | "unsatisfied" | "not_applicable" | null;
+  judge_type: "human" | "executor" | null;
+  evidence_refs: string[];
+  task_summaries: DemandCriterionTaskSummary[];
+};
+
+export type DemandAcceptanceCriteriaDetail = {
+  demand_id: string;
+  demand_status: string;
+  criteria: DemandAcceptanceCriterionDetail[];
+};
+
+export function getDemandAcceptanceCriteria(
+  options: ApiClientOptions,
+  demandId: string,
+): Promise<DemandAcceptanceCriteriaDetail> {
+  return getJson<DemandAcceptanceCriteriaDetail>(
+    options,
+    `/api/v1/project-demands/${encodeURIComponent(demandId)}/acceptance-criteria`,
+    "demand acceptance criteria",
+  );
+}
+
+export type SignDemandCriterionVerdictInput = {
+  criterion_id: string;
+  verdict: "satisfied" | "unsatisfied";
+  reason?: string;
+};
+
+export type SignDemandCriterionVerdictResult = {
+  demand_id: string;
+  demand_status: string;
+  criterion_id: string;
+  verdict: string;
+  signed: number;
+  total: number;
+  remaining: number;
+};
+
+export function signDemandCriterionVerdict(
+  options: ApiClientOptions,
+  demandId: string,
+  input: SignDemandCriterionVerdictInput,
+): Promise<SignDemandCriterionVerdictResult> {
+  return postJson<SignDemandCriterionVerdictResult>(
+    options,
+    `/api/v1/project-demands/${encodeURIComponent(demandId)}/criterion-verdicts`,
+    input,
+    "sign demand criterion verdict",
   );
 }
 

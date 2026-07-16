@@ -630,6 +630,16 @@ func matchesCriterion(result TaskResultAcceptanceResult, criterion string) bool 
 	return false
 }
 
+// stringRefIsAttestation reports whether an acceptance-result evidence ref
+// (a plain string, unlike the structured TaskResultRef checked by
+// taskResultRefIsAttestation) points at a runtime attestation. Used to tighten
+// automated_test acceptance results: a passed/human_overridden verdict against
+// a snapshot automated_test criterion must carry at least one such ref, or the
+// employee is merely self-reporting without machine-checked proof.
+func stringRefIsAttestation(ref string) bool {
+	return strings.HasPrefix(strings.TrimSpace(ref), "attestation:")
+}
+
 func mapTaskResultDecision(task ProjectTask, result TaskResultContract) TaskResultDecision {
 	switch result.Status {
 	case TaskResultStatusCompleted:

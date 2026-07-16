@@ -222,6 +222,42 @@ func (e CredentialType) Valid() bool {
 	}
 }
 
+// Defines values for DemandAcceptanceCriterionDetailJudgeType.
+const (
+	Executor DemandAcceptanceCriterionDetailJudgeType = "executor"
+	Human    DemandAcceptanceCriterionDetailJudgeType = "human"
+)
+
+// Valid indicates whether the value is a known member of the DemandAcceptanceCriterionDetailJudgeType enum.
+func (e DemandAcceptanceCriterionDetailJudgeType) Valid() bool {
+	switch e {
+	case Executor:
+		return true
+	case Human:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DemandAcceptanceCriterionDetailVerdict.
+const (
+	DemandAcceptanceCriterionDetailVerdictSatisfied   DemandAcceptanceCriterionDetailVerdict = "satisfied"
+	DemandAcceptanceCriterionDetailVerdictUnsatisfied DemandAcceptanceCriterionDetailVerdict = "unsatisfied"
+)
+
+// Valid indicates whether the value is a known member of the DemandAcceptanceCriterionDetailVerdict enum.
+func (e DemandAcceptanceCriterionDetailVerdict) Valid() bool {
+	switch e {
+	case DemandAcceptanceCriterionDetailVerdictSatisfied:
+		return true
+	case DemandAcceptanceCriterionDetailVerdictUnsatisfied:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DigitalEmployeeConfigRevisionStatus.
 const (
 	DigitalEmployeeConfigRevisionStatusActive   DigitalEmployeeConfigRevisionStatus = "active"
@@ -611,19 +647,19 @@ func (e EffectiveEmployeeSkillSourceScope) Valid() bool {
 
 // Defines values for EmployeeSkillMCPDependencyItemStatus.
 const (
-	BlockedMissingEnv EmployeeSkillMCPDependencyItemStatus = "blocked_missing_env"
-	MissingBinding    EmployeeSkillMCPDependencyItemStatus = "missing_binding"
-	Satisfied         EmployeeSkillMCPDependencyItemStatus = "satisfied"
+	EmployeeSkillMCPDependencyItemStatusBlockedMissingEnv EmployeeSkillMCPDependencyItemStatus = "blocked_missing_env"
+	EmployeeSkillMCPDependencyItemStatusMissingBinding    EmployeeSkillMCPDependencyItemStatus = "missing_binding"
+	EmployeeSkillMCPDependencyItemStatusSatisfied         EmployeeSkillMCPDependencyItemStatus = "satisfied"
 )
 
 // Valid indicates whether the value is a known member of the EmployeeSkillMCPDependencyItemStatus enum.
 func (e EmployeeSkillMCPDependencyItemStatus) Valid() bool {
 	switch e {
-	case BlockedMissingEnv:
+	case EmployeeSkillMCPDependencyItemStatusBlockedMissingEnv:
 		return true
-	case MissingBinding:
+	case EmployeeSkillMCPDependencyItemStatusMissingBinding:
 		return true
-	case Satisfied:
+	case EmployeeSkillMCPDependencyItemStatusSatisfied:
 		return true
 	default:
 		return false
@@ -1623,6 +1659,24 @@ func (e SetEmployeeTemplateStatusRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for SignDemandCriterionVerdictRequestVerdict.
+const (
+	Satisfied   SignDemandCriterionVerdictRequestVerdict = "satisfied"
+	Unsatisfied SignDemandCriterionVerdictRequestVerdict = "unsatisfied"
+)
+
+// Valid indicates whether the value is a known member of the SignDemandCriterionVerdictRequestVerdict enum.
+func (e SignDemandCriterionVerdictRequestVerdict) Valid() bool {
+	switch e {
+	case Satisfied:
+		return true
+	case Unsatisfied:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SkillInstallationProviderType.
 const (
 	ClaudeCode SkillInstallationProviderType = "claude-code"
@@ -2519,6 +2573,51 @@ type DecideTeamLendingRequest struct {
 // DecideTeamMemberRoleRequest defines model for DecideTeamMemberRoleRequest.
 type DecideTeamMemberRoleRequest struct {
 	DecisionReason *string `json:"decision_reason,omitempty"`
+}
+
+// DemandAcceptanceCriteriaDetail defines model for DemandAcceptanceCriteriaDetail.
+type DemandAcceptanceCriteriaDetail struct {
+	Criteria []DemandAcceptanceCriterionDetail `json:"criteria"`
+	DemandId openapi_types.UUID                `json:"demand_id"`
+
+	// DemandStatus 需求当前状态；acceptance_pending 时人判判据可签署
+	DemandStatus string `json:"demand_status"`
+}
+
+// DemandAcceptanceCriterionDetail defines model for DemandAcceptanceCriterionDetail.
+type DemandAcceptanceCriterionDetail struct {
+	CriterionId  string   `json:"criterion_id"`
+	EvidenceRefs []string `json:"evidence_refs"`
+
+	// JudgeType 生效判定的来源；无判定时为 null
+	JudgeType   *DemandAcceptanceCriterionDetailJudgeType `json:"judge_type"`
+	SatisfiedBy []string                                  `json:"satisfied_by"`
+
+	// Severity blocking / non_blocking
+	Severity      string                       `json:"severity"`
+	Statement     string                       `json:"statement"`
+	TaskSummaries []DemandCriterionTaskSummary `json:"task_summaries"`
+
+	// Verdict 生效判定（人类优先于执行者）；无任何判定时为 null
+	Verdict *DemandAcceptanceCriterionDetailVerdict `json:"verdict"`
+
+	// VerificationMethod 验证方式，如 human_judgment / automated_test
+	VerificationMethod string `json:"verification_method"`
+}
+
+// DemandAcceptanceCriterionDetailJudgeType 生效判定的来源；无判定时为 null
+type DemandAcceptanceCriterionDetailJudgeType string
+
+// DemandAcceptanceCriterionDetailVerdict 生效判定（人类优先于执行者）；无任何判定时为 null
+type DemandAcceptanceCriterionDetailVerdict string
+
+// DemandCriterionTaskSummary defines model for DemandCriterionTaskSummary.
+type DemandCriterionTaskSummary struct {
+	// Summary 该任务最新执行结论；无执行摘要时为空字符串
+	Summary string `json:"summary"`
+
+	// TaskId 满足该判据的项目任务 ID（快照 satisfied_by 中的原始值）
+	TaskId string `json:"task_id"`
 }
 
 // DependentSkill defines model for DependentSkill.
@@ -4759,6 +4858,30 @@ type SetEmployeeTemplateStatusRequest struct {
 // SetEmployeeTemplateStatusRequestStatus defines model for SetEmployeeTemplateStatusRequest.Status.
 type SetEmployeeTemplateStatusRequestStatus string
 
+// SignDemandCriterionVerdictRequest defines model for SignDemandCriterionVerdictRequest.
+type SignDemandCriterionVerdictRequest struct {
+	// CriterionId 需求当前计划修订版本快照中的判据 ID（demand_acceptance_criteria.criterion_id）
+	CriterionId string                                   `json:"criterion_id"`
+	Reason      *string                                  `json:"reason,omitempty"`
+	Verdict     SignDemandCriterionVerdictRequestVerdict `json:"verdict"`
+}
+
+// SignDemandCriterionVerdictRequestVerdict defines model for SignDemandCriterionVerdictRequest.Verdict.
+type SignDemandCriterionVerdictRequestVerdict string
+
+// SignDemandCriterionVerdictResult defines model for SignDemandCriterionVerdictResult.
+type SignDemandCriterionVerdictResult struct {
+	CriterionId string             `json:"criterion_id"`
+	DemandId    openapi_types.UUID `json:"demand_id"`
+
+	// DemandStatus 签署后的需求状态：仍为 acceptance_pending（进度）或已收敛为 completed / failed
+	DemandStatus string `json:"demand_status"`
+	Remaining    int32  `json:"remaining"`
+	Signed       int32  `json:"signed"`
+	Total        int32  `json:"total"`
+	Verdict      string `json:"verdict"`
+}
+
 // Skill defines model for Skill.
 type Skill struct {
 	AgentBindings         []SkillAgentBinding `json:"agent_bindings"`
@@ -5867,6 +5990,9 @@ type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
 // CreateMCPServerDefinitionJSONRequestBody defines body for CreateMCPServerDefinition for application/json ContentType.
 type CreateMCPServerDefinitionJSONRequestBody = CreateMCPServerDefinitionRequest
 
+// SignDemandCriterionVerdictJSONRequestBody defines body for SignDemandCriterionVerdict for application/json ContentType.
+type SignDemandCriterionVerdictJSONRequestBody = SignDemandCriterionVerdictRequest
+
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
 
@@ -6649,6 +6775,12 @@ type ServerInterface interface {
 	// List active skills depending on an MCP server definition
 	// (GET /api/v1/mcp-servers/{serverId}/dependent-skills)
 	ListMCPServerDependentSkills(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// List a demand's snapshotted acceptance criteria with resolved verdicts and evidence
+	// (GET /api/v1/project-demands/{demandId}/acceptance-criteria)
+	ListDemandAcceptanceCriteria(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
+	// Sign a human verdict against a demand's blocking human_judgment acceptance criterion
+	// (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
+	SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
 	// Get project demand launch detail
 	// (GET /api/v1/project-demands/{demandId}/launch-detail)
 	GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -7384,6 +7516,18 @@ func (_ Unimplemented) DeleteMCPServerDefinition(w http.ResponseWriter, r *http.
 // List active skills depending on an MCP server definition
 // (GET /api/v1/mcp-servers/{serverId}/dependent-skills)
 func (_ Unimplemented) ListMCPServerDependentSkills(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List a demand's snapshotted acceptance criteria with resolved verdicts and evidence
+// (GET /api/v1/project-demands/{demandId}/acceptance-criteria)
+func (_ Unimplemented) ListDemandAcceptanceCriteria(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Sign a human verdict against a demand's blocking human_judgment acceptance criterion
+// (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
+func (_ Unimplemented) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10011,6 +10155,58 @@ func (siw *ServerInterfaceWrapper) ListMCPServerDependentSkills(w http.ResponseW
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListMCPServerDependentSkills(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDemandAcceptanceCriteria operation middleware
+func (siw *ServerInterfaceWrapper) ListDemandAcceptanceCriteria(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "demandId" -------------
+	var demandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "demandId", chi.URLParam(r, "demandId"), &demandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demandId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDemandAcceptanceCriteria(w, r, demandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SignDemandCriterionVerdict operation middleware
+func (siw *ServerInterfaceWrapper) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "demandId" -------------
+	var demandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "demandId", chi.URLParam(r, "demandId"), &demandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demandId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SignDemandCriterionVerdict(w, r, demandId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15560,6 +15756,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/mcp-servers/{serverId}/dependent-skills", wrapper.ListMCPServerDependentSkills)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/acceptance-criteria", wrapper.ListDemandAcceptanceCriteria)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/project-demands/{demandId}/criterion-verdicts", wrapper.SignDemandCriterionVerdict)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/launch-detail", wrapper.GetProjectDemandLaunchDetail)

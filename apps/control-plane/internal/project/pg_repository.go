@@ -4692,10 +4692,78 @@ func (r *PgRepository) recomputeProjectDemandStatusWithQueries(ctx context.Conte
 		if counts.Failed > 0 {
 			target = ProjectDemandStatusFailed
 		} else {
-			target = ProjectDemandStatusCompleted
+			target, err = r.gatedCompletionStatus(ctx, tenantID, projectID, demandID)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return r.advanceProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID, target)
+}
+
+// gatedCompletionStatus is the acceptance-criteria convergence gate: a demand
+// whose tasks have all finished cleanly completes immediately UNLESS its
+// current (open) plan revision has a snapshotted blocking acceptance
+// criterion that still lacks a satisfied verdict, in which case it holds at
+// acceptance_pending for human sign-off instead. Demands with no open plan
+// revision — legacy demands that predate the acceptance-criteria snapshot
+// rollout, or any demand whose CurrentEffectivePlanRevisionID resolves to
+// uuid.Nil — complete exactly as they did before the gate existed; a plan
+// revision with zero snapshotted criteria (e.g. the planner emitted none)
+// resolves to zero unsatisfied and also completes. See
+// TestRecomputeLegacyDemandWithoutSnapshotCompletes,
+// TestRecomputeHoldsAtAcceptancePendingWhenBlockingUnsigned and
+// TestRecomputeCompletesWhenAllBlockingSatisfied.
+func (r *PgRepository) gatedCompletionStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandStatus, error) {
+	revisions, err := r.ListPlanRevisionsForDemand(ctx, tenantID, projectID, demandID)
+	if err != nil {
+		return "", err
+	}
+	revisionID := CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return ProjectDemandStatusCompleted, nil
+	}
+	unsatisfied, err := r.CountUnsatisfiedBlockingCriteria(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return "", err
+	}
+	if unsatisfied > 0 {
+		return ProjectDemandStatusAcceptancePending, nil
+	}
+	return ProjectDemandStatusCompleted, nil
+}
+
+// CountUnsatisfiedBlockingCriteria reports how many blocking acceptance
+// criteria for a demand's plan revision lack a satisfied effective verdict —
+// the convergence gate's hold/release signal (gatedCompletionStatus above).
+// See ResolveUnsatisfiedBlockingCriteria for the human-precedence resolution
+// rule applied to determine each criterion's effective verdict.
+func (r *PgRepository) CountUnsatisfiedBlockingCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) (int, error) {
+	criteria, err := r.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, planRevisionID)
+	if err != nil {
+		return 0, err
+	}
+	if len(criteria) == 0 {
+		return 0, nil
+	}
+	verdicts, err := r.ListDemandCriterionVerdicts(ctx, tenantID, demandID, planRevisionID)
+	if err != nil {
+		return 0, err
+	}
+	return len(ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)), nil
+}
+
+// RecomputeProjectDemandStatus recomputes and (forward-only) advances a
+// demand's lifecycle status from outside a shared writeback transaction —
+// the same derivation recomputeProjectDemandStatusWithQueries applies inline
+// during project-task writebacks, exposed standalone for tests and any
+// future caller that needs to force a recompute without a task event driving
+// it.
+func (r *PgRepository) RecomputeProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error {
+	_, err := withProjectQueries(ctx, r, "recompute project demand status", func(q *queries.Queries) (struct{}, error) {
+		return struct{}{}, r.recomputeProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID)
+	})
+	return err
 }
 
 // AdvanceProjectDemandStatus advances a demand's lifecycle status from outside a
@@ -4862,6 +4930,21 @@ func (r *PgRepository) GetDecisionRequestByApprovalAndTask(ctx context.Context, 
 		ProjectID:         projectID,
 		ApprovalRequestID: approvalRequestID,
 		ProjectTaskID:     projectTaskID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
+func (r *PgRepository) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, queries.GetPendingDemandAcceptanceDecisionByPlanRevisionParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		PlanRevisionID: planRevisionID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -5227,6 +5310,103 @@ func (r *PgRepository) ListDemandConstraintExemptions(ctx context.Context, tenan
 			return nil, err
 		}
 		result = append(result, exemption)
+	}
+	return result, nil
+}
+
+// CreateDemandAcceptanceCriteria snapshots a batch of plan-level acceptance
+// criteria (typically an entire plan revision's worth) in one transaction.
+// Each insert is ON CONFLICT (tenant_id, demand_id, plan_revision_id,
+// criterion_id) DO NOTHING, so a repeat call (e.g. a replayed decompose) is a
+// no-op rather than an error.
+func (r *PgRepository) CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error {
+	if len(reqs) == 0 {
+		return nil
+	}
+	_, err := withProjectQueries(ctx, r, "demand acceptance criteria snapshot", func(q *queries.Queries) (struct{}, error) {
+		for _, req := range reqs {
+			satisfiedBy, err := jsonbStringSlice(req.SatisfiedBy, "satisfied_by")
+			if err != nil {
+				return struct{}{}, err
+			}
+			if err := q.CreateDemandAcceptanceCriterion(ctx, queries.CreateDemandAcceptanceCriterionParams{
+				TenantID:           req.TenantID,
+				ProjectID:          req.ProjectID,
+				DemandID:           req.DemandID,
+				PlanRevisionID:     req.PlanRevisionID,
+				CriterionID:        req.CriterionID,
+				Statement:          req.Statement,
+				VerificationMethod: req.VerificationMethod,
+				Severity:           req.Severity,
+				SatisfiedBy:        satisfiedBy,
+			}); err != nil {
+				return struct{}{}, err
+			}
+		}
+		return struct{}{}, nil
+	})
+	return err
+}
+
+func (r *PgRepository) ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error) {
+	rows, err := r.q.ListDemandAcceptanceCriteria(ctx, queries.ListDemandAcceptanceCriteriaParams{
+		TenantID:       tenantID,
+		DemandID:       demandID,
+		PlanRevisionID: planRevisionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DemandAcceptanceCriterion, 0, len(rows))
+	for _, row := range rows {
+		criterion, err := demandAcceptanceCriterionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, criterion)
+	}
+	return result, nil
+}
+
+// CreateDemandCriterionVerdict records one judgment against a snapshotted
+// acceptance criterion. ON CONFLICT DO NOTHING against the partial unique for
+// the executor-projection path (project_task_id set); see migration 064.
+func (r *PgRepository) CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error {
+	evidenceRefs, err := jsonbStringSlice(req.EvidenceRefs, "evidence_refs")
+	if err != nil {
+		return err
+	}
+	return r.q.CreateDemandCriterionVerdict(ctx, queries.CreateDemandCriterionVerdictParams{
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      req.JudgeType,
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   evidenceRefs,
+		ProjectTaskID:  nullUUID(req.ProjectTaskID),
+	})
+}
+
+func (r *PgRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
+	rows, err := r.q.ListDemandCriterionVerdicts(ctx, queries.ListDemandCriterionVerdictsParams{
+		TenantID:       tenantID,
+		DemandID:       demandID,
+		PlanRevisionID: planRevisionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DemandCriterionVerdict, 0, len(rows))
+	for _, row := range rows {
+		verdict, err := demandCriterionVerdictFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, verdict)
 	}
 	return result, nil
 }
@@ -6549,6 +6729,48 @@ func demandConstraintExemptionFromRecord(row queries.ProjectDemandConstraintExem
 		GrantedByUserID:   row.GrantedByUserID,
 		DecisionRequestID: ptrUUID(row.DecisionRequestID),
 		CreatedAt:         row.CreatedAt.Time,
+	}, nil
+}
+
+func demandAcceptanceCriterionFromRecord(row queries.DemandAcceptanceCriterium) (DemandAcceptanceCriterion, error) {
+	satisfiedBy, err := stringSliceFromJSON(row.SatisfiedBy)
+	if err != nil {
+		return DemandAcceptanceCriterion{}, fmt.Errorf("satisfied_by: %w", err)
+	}
+	return DemandAcceptanceCriterion{
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		ProjectID:          row.ProjectID,
+		DemandID:           row.DemandID,
+		PlanRevisionID:     row.PlanRevisionID,
+		CriterionID:        row.CriterionID,
+		Statement:          row.Statement,
+		VerificationMethod: row.VerificationMethod,
+		Severity:           row.Severity,
+		SatisfiedBy:        satisfiedBy,
+		CreatedAt:          row.CreatedAt.Time,
+	}, nil
+}
+
+func demandCriterionVerdictFromRecord(row queries.DemandCriterionVerdict) (DemandCriterionVerdict, error) {
+	evidenceRefs, err := stringSliceFromJSON(row.EvidenceRefs)
+	if err != nil {
+		return DemandCriterionVerdict{}, fmt.Errorf("evidence_refs: %w", err)
+	}
+	return DemandCriterionVerdict{
+		ID:             row.ID,
+		TenantID:       row.TenantID,
+		ProjectID:      row.ProjectID,
+		DemandID:       row.DemandID,
+		PlanRevisionID: row.PlanRevisionID,
+		CriterionID:    row.CriterionID,
+		Verdict:        row.Verdict,
+		JudgeType:      row.JudgeType,
+		JudgeID:        row.JudgeID,
+		Reason:         row.Reason,
+		EvidenceRefs:   evidenceRefs,
+		ProjectTaskID:  ptrUUID(row.ProjectTaskID),
+		CreatedAt:      row.CreatedAt.Time,
 	}, nil
 }
 

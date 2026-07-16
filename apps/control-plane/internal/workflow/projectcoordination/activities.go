@@ -268,3 +268,30 @@ func (a *Activities) FinishCoordinationJob(ctx context.Context, input FinishCoor
 	}
 	return a.store.FinishCoordinationJob(ctx, input)
 }
+
+// demandAcceptanceDecisionEnsurer is an optional ActivityStore capability
+// (type-asserted, not part of the ActivityStore interface — mirrors
+// taskResultDecisionInspector/revisionTaskCreator/upstreamSupplementTaskCreator
+// in workflow.go) so the many existing ActivityStore test doubles that predate
+// the demand-acceptance convergence gate need no changes. *ProjectStore
+// implements it directly (see project_store.go).
+type demandAcceptanceDecisionEnsurer interface {
+	EnsureDemandAcceptanceDecisionForTask(ctx context.Context, input EnsureDemandAcceptanceDecisionForTaskInput) (DecisionRequestResult, error)
+}
+
+// EnsureDemandAcceptanceDecisionForTask probes whether the task's demand just
+// converged to acceptance_pending and, if so, opens the demand_acceptance
+// decision. Deliberately soft: an ActivityStore that doesn't implement
+// demandAcceptanceDecisionEnsurer (a.store == nil, or a test double scoped to
+// unrelated behavior) yields a no-op zero result rather than
+// ErrActivityStoreRequired — unlike this file's other wrappers, opening this
+// decision is an orthogonal add-on to task-completion routing, not a
+// precondition for it, so a store that hasn't opted in must never fail the
+// signal handler that's calling this as an extra step.
+func (a *Activities) EnsureDemandAcceptanceDecisionForTask(ctx context.Context, input EnsureDemandAcceptanceDecisionForTaskInput) (DecisionRequestResult, error) {
+	store, ok := a.store.(demandAcceptanceDecisionEnsurer)
+	if a.store == nil || !ok {
+		return DecisionRequestResult{}, nil
+	}
+	return store.EnsureDemandAcceptanceDecisionForTask(ctx, input)
+}

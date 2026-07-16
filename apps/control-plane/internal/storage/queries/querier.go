@@ -67,7 +67,9 @@ type Querier interface {
 	CreateArtifactRetentionHold(ctx context.Context, arg CreateArtifactRetentionHoldParams) (ArtifactRetentionHold, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
 	CreateCaptchaChallenge(ctx context.Context, arg CreateCaptchaChallengeParams) (AuthCaptchaChallenge, error)
+	CreateDemandAcceptanceCriterion(ctx context.Context, arg CreateDemandAcceptanceCriterionParams) error
 	CreateDemandConstraintExemption(ctx context.Context, arg CreateDemandConstraintExemptionParams) (ProjectDemandConstraintExemption, error)
+	CreateDemandCriterionVerdict(ctx context.Context, arg CreateDemandCriterionVerdictParams) error
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (CreateDigitalEmployeeConfigRevisionRow, error)
 	CreateDigitalEmployeeMCPBinding(ctx context.Context, arg CreateDigitalEmployeeMCPBindingParams) (DigitalEmployeeMcpBinding, error)
@@ -212,6 +214,7 @@ type Querier interface {
 	GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDefinitionParams) (McpServer, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeConfigRevisionNumberParams) (int32, error)
 	GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error)
+	GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, arg GetPendingDemandAcceptanceDecisionByPlanRevisionParams) (ProjectDecisionRequest, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
 	GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzFactsParams) (GetProjectAuthzFactsRow, error)
 	GetProjectBudgetSummary(ctx context.Context, arg GetProjectBudgetSummaryParams) (GetProjectBudgetSummaryRow, error)
@@ -314,7 +317,12 @@ type Querier interface {
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error)
 	ListCurrentDigitalEmployeeWorkspaceFiles(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesRow, error)
 	ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error)
+	ListDemandAcceptanceCriteria(ctx context.Context, arg ListDemandAcceptanceCriteriaParams) ([]DemandAcceptanceCriterium, error)
 	ListDemandConstraintExemptionsByDemand(ctx context.Context, arg ListDemandConstraintExemptionsByDemandParams) ([]ProjectDemandConstraintExemption, error)
+	// id 次键让排序全序化：收敛闸的"最新人类判定优先"用切片顺序（最后一条覆盖）实现，
+	// created_at 相等时若无次键则两条对立人类判定可任意翻转计数——(created_at, id) 使
+	// "最后一条人类判定"成为确定函数（同刻取更大 id）。
+	ListDemandCriterionVerdicts(ctx context.Context, arg ListDemandCriterionVerdictsParams) ([]DemandCriterionVerdict, error)
 	ListDemandLaunchCoordinationJobs(ctx context.Context, arg ListDemandLaunchCoordinationJobsParams) ([]ProjectCoordinationJob, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, arg ListDemandLaunchDecisionRequestsParams) ([]ProjectDecisionRequest, error)
 	ListDemandLaunchProjectEvents(ctx context.Context, arg ListDemandLaunchProjectEventsParams) ([]ProjectEvent, error)

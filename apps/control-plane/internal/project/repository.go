@@ -84,6 +84,12 @@ type Repository interface {
 	UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error)
 	BindProjectTaskRun(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error)
 	AdvanceProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID, target ProjectDemandStatus) error
+	// RecomputeProjectDemandStatus re-derives a demand's lifecycle status
+	// (task-completion + acceptance-criteria convergence gate) and advances it
+	// forward if warranted. See PgRepository.RecomputeProjectDemandStatus and
+	// Service.SignDemandCriterionVerdict, its first caller outside a
+	// task-writeback transaction.
+	RecomputeProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error
 	ReopenProjectDemandForReplanning(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error)
 	ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (bool, error)
 	AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error)
@@ -98,6 +104,13 @@ type Repository interface {
 	CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error)
 	GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error)
 	GetDecisionRequestByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error)
+	// GetPendingDemandAcceptanceDecisionByPlanRevision finds the pending
+	// demand_acceptance decision for a demand's current effective plan
+	// revision — the decision ensureDemandAcceptanceDecision opened when the
+	// demand converged to acceptance_pending. Returns ErrProjectNotFound when
+	// none is pending (mapped to 404 by Service.SignDemandCriterionVerdict's
+	// caller).
+	GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error)
 	ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error)
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]DecisionRequest, error)
@@ -117,6 +130,10 @@ type Repository interface {
 	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error)
 	CreateDemandConstraintExemption(ctx context.Context, req CreateDemandConstraintExemptionRequest) error
 	ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]DemandConstraintExemption, error)
+	CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error
+	ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error)
+	CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error
+	ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error)
 	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
 	CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error)
 	GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error)
@@ -591,6 +608,43 @@ type CreateDemandConstraintExemptionRequest struct {
 	Roles             []string
 	GrantedByUserID   uuid.UUID
 	DecisionRequestID *uuid.UUID
+}
+
+// CreateDemandAcceptanceCriterionRequest snapshots one plan-level acceptance
+// criterion into demand_acceptance_criteria. The
+// (tenant_id, demand_id, plan_revision_id, criterion_id) unique constraint
+// makes a batch of these idempotent: re-decomposing the same plan revision
+// (e.g. a replayed Temporal activity) re-inserts the same rows as no-ops.
+type CreateDemandAcceptanceCriterionRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	PlanRevisionID     uuid.UUID
+	CriterionID        string
+	Statement          string
+	VerificationMethod string
+	Severity           string
+	SatisfiedBy        []string
+}
+
+// CreateDemandCriterionVerdictRequest records one judgment against a
+// demand_acceptance_criteria row. ProjectTaskID set (executor projection)
+// dedupes against uq_demand_verdicts_task (one row per task per criterion);
+// left nil (human sign-off, added by a later task) dedupes against
+// uq_demand_verdicts_human (one global row per criterion). Both indexes are
+// partial uniques so ON CONFLICT DO NOTHING makes either path idempotent.
+type CreateDemandCriterionVerdictRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	Verdict        string
+	JudgeType      string
+	JudgeID        uuid.UUID
+	Reason         string
+	EvidenceRefs   []string
+	ProjectTaskID  *uuid.UUID
 }
 
 type CreateEvidenceRefRequest struct {

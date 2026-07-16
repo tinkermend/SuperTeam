@@ -2184,6 +2184,572 @@ func TestSubmitProjectTaskAttemptResultCompletedAcceptsOwnedRuntimeAttestationRe
 	require.Equal(t, "accepted", result.ValidationStatus)
 }
 
+// demandCriterionSnapshotTaskKey is the planned task key demandCriterion
+// SnapshotFixture assigns to the fixture task and names in each criterion's
+// SatisfiedBy, mirroring real Task-4 decomposition data where automated_test
+// criteria always name their satisfying tasks and every decomposed task
+// carries its planned key.
+const demandCriterionSnapshotTaskKey = "task-under-test"
+
+// demandCriterionSnapshotFixture appends one demand_acceptance_criteria
+// snapshot row (Task 4) scoped to the fixture's tenant/project and the given
+// demand/plan-revision, links the fixture's task to that demand/revision so
+// demandAcceptanceCriteriaSnapshot can find it, and puts the task's planned
+// key into the criterion's SatisfiedBy (automated_test only — human_judgment
+// criteria have empty SatisfiedBy in real data, planner never assigns them a
+// satisfying task).
+func demandCriterionSnapshotFixture(repo *projectTaskResultMemoryRepository, fixture projectTaskAttemptServiceFixture, demandID, planRevisionID uuid.UUID, criterionID, statement, verificationMethod string) {
+	taskKey := demandCriterionSnapshotTaskKey
+	repo.tasks[0].DemandID = &demandID
+	repo.tasks[0].AcceptedPlanRevisionID = &planRevisionID
+	repo.tasks[0].PlannedTaskKey = &taskKey
+	var satisfiedBy []string
+	if verificationMethod == "automated_test" {
+		satisfiedBy = []string{taskKey}
+	}
+	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+		TenantID:           fixture.tenantID,
+		ProjectID:          fixture.projectID,
+		DemandID:           demandID,
+		PlanRevisionID:     planRevisionID,
+		CriterionID:        criterionID,
+		Statement:          statement,
+		VerificationMethod: verificationMethod,
+		Severity:           "blocking",
+		SatisfiedBy:        satisfiedBy,
+	})
+}
+
+func TestRecordResultProjectsCriterionVerdicts(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	employeeID := *repo.tasks[0].AssignedDigitalEmployeeID
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+	// The runtime minted a real succeeded attestation for THIS attempt at
+	// writeback (the employee never sees it and cannot echo it into the
+	// acceptance_result). The server verifies its existence and attaches its ref.
+	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, employeeID))
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-projection"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID: "c1",
+					Status:      TaskResultCriterionStatusPassed,
+					// No self-reported attestation ref: the employee can't know it.
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	verdict := verdicts[0]
+	require.Equal(t, "c1", verdict.CriterionID)
+	require.Equal(t, "satisfied", verdict.Verdict)
+	require.Equal(t, "executor", verdict.JudgeType)
+	require.Equal(t, employeeID, verdict.JudgeID)
+	require.NotNil(t, verdict.ProjectTaskID)
+	require.Equal(t, fixture.taskID, *verdict.ProjectTaskID)
+	// The server attached the real attestation ref it verified for the attempt.
+	require.Equal(t, []string{attestationRef}, verdict.EvidenceRefs)
+}
+
+// TestRecordResultProjectsCriterionVerdictsStatementOnlyMatch covers the
+// matching resolution from Task 4's review: the contract gate that requires
+// an AcceptanceResult per requiredAcceptanceCriteria keys on statement text
+// (stringsFromCriterionMap), so an employee may legitimately echo only the
+// statement and never populate CriterionID. Projection must still resolve
+// that result against the right snapshot criterion via the statement fallback.
+func TestRecordResultProjectsCriterionVerdictsStatementOnlyMatch(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-statement-match"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					// No CriterionID: employee echoed the statement only.
+					Criterion: "结论可复核",
+					Status:    TaskResultCriterionStatusPassed,
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	require.Equal(t, "c1", verdicts[0].CriterionID)
+	require.Equal(t, "satisfied", verdicts[0].Verdict)
+}
+
+// TestProjectionScopedBySatisfiedBy is the cross-task collision guard: both
+// projection and attestation tightening must only consider snapshot criteria
+// whose SatisfiedBy names THIS task's planned key. Criterion-b belongs to a
+// different task (task-b) and shares statement text with the employee's
+// statement-echo result; without scoping, the statement fallback would match
+// it — rejecting this task for task-b's missing attestation and/or projecting
+// a verdict task-b never earned.
+func TestProjectionScopedBySatisfiedBy(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	// Own criterion: satisfied_by this task's planned key (set by the fixture).
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c-a", "结论可复核（本任务）", "automated_test")
+	// Foreign criterion: similar statement, satisfied_by a DIFFERENT task.
+	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+		TenantID:           fixture.tenantID,
+		ProjectID:          fixture.projectID,
+		DemandID:           demandID,
+		PlanRevisionID:     planRevisionID,
+		CriterionID:        "c-b",
+		Statement:          "结论可复核",
+		VerificationMethod: "automated_test",
+		Severity:           "blocking",
+		SatisfiedBy:        []string{"task-b"},
+	})
+	// A real runtime attestation backs this attempt (server-verified, not echoed).
+	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+	repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-satisfied-by-scoping"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					// Own criterion, judged normally; server verifies the attempt's
+					// real attestation.
+					CriterionID: "c-a",
+					Status:      TaskResultCriterionStatusPassed,
+				},
+				{
+					// Statement echo that textually matches FOREIGN criterion
+					// c-b, with no attestation ref: must neither trip
+					// tightening for c-b nor project a verdict onto it.
+					Criterion: "结论可复核",
+					Status:    TaskResultCriterionStatusPassed,
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, result.Decision)
+	require.Equal(t, "accepted", result.ValidationStatus)
+	require.NotContains(t, result.ValidationErrors, "acceptance_result_attestation_required:c-b")
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	require.Equal(t, "c-a", verdicts[0].CriterionID)
+	require.Equal(t, "satisfied", verdicts[0].Verdict)
+}
+
+func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
+	t.Run("no attestation anywhere rejects with error code", func(t *testing.T) {
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+
+		// No attestation record exists for the attempt and verification[] carries
+		// none: a green light not backed by any real execution record.
+		summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-missing-attestation"),
+			ResultContract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "完成分析",
+				AcceptanceResults: []TaskResultAcceptanceResult{
+					{
+						CriterionID:  "c1",
+						Status:       TaskResultCriterionStatusPassed,
+						EvidenceRefs: []string{"artifact:report"},
+					},
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+		require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+		result := requireSingleProjectTaskResult(t, repo, fixture)
+		require.Equal(t, TaskResultDecisionValidationFailed, result.Decision)
+		require.Equal(t, "rejected", result.ValidationStatus)
+		require.Contains(t, result.ValidationErrors, "acceptance_result_attestation_required:c1")
+
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Empty(t, verdicts)
+	})
+
+	t.Run("employee-forged attestation ref without a real record still rejects", func(t *testing.T) {
+		// Anti-forgery: the employee CANNOT satisfy the gate by self-reporting an
+		// attestation-shaped string in acceptance_results — only a real
+		// server-side attestation record (or verification[] backed by one) counts.
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+		forgedRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+
+		_, err = service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-forged-attestation"),
+			ResultContract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "完成分析",
+				AcceptanceResults: []TaskResultAcceptanceResult{
+					{
+						CriterionID:  "c1",
+						Status:       TaskResultCriterionStatusPassed,
+						EvidenceRefs: []string{forgedRef}, // self-reported, no backing record
+					},
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+		result := requireSingleProjectTaskResult(t, repo, fixture)
+		require.Equal(t, "rejected", result.ValidationStatus)
+		require.Contains(t, result.ValidationErrors, "acceptance_result_attestation_required:c1")
+
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Empty(t, verdicts)
+	})
+
+	t.Run("real attestation record for the attempt passes and projects with attached ref", func(t *testing.T) {
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+		attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+		repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
+
+		summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-with-attestation"),
+			ResultContract: TaskResultContract{
+				Status:  TaskResultStatusCompleted,
+				Summary: "完成分析",
+				AcceptanceResults: []TaskResultAcceptanceResult{
+					{
+						CriterionID: "c1",
+						Status:      TaskResultCriterionStatusPassed,
+					},
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+		require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+		result := requireSingleProjectTaskResult(t, repo, fixture)
+		require.Equal(t, TaskResultDecisionCompleteAccepted, result.Decision)
+		require.Equal(t, "accepted", result.ValidationStatus)
+
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Len(t, verdicts, 1)
+		require.Equal(t, "satisfied", verdicts[0].Verdict)
+		require.Equal(t, []string{attestationRef}, verdicts[0].EvidenceRefs)
+	})
+
+	t.Run("verification[] attestation ref backed by a record passes and attaches that ref", func(t *testing.T) {
+		repo := newProjectTaskResultMemoryRepository()
+		service, err := NewService(repo)
+		require.NoError(t, err)
+		fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+		demandID := uuid.New()
+		planRevisionID := uuid.New()
+		demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c1", "结论可复核", "automated_test")
+		attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":provider_terminal:cmd-1"
+		repo.projectTaskAttestations = append(repo.projectTaskAttestations, projectTaskAttestationForFixture(fixture, fixture.attemptID, attestationRef, *repo.tasks[0].AssignedDigitalEmployeeID))
+
+		contract := TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{CriterionID: "c1", Status: TaskResultCriterionStatusPassed},
+			},
+			Verification: []TaskResultVerification{{
+				Type:         "command",
+				Status:       TaskResultVerificationStatusPassed,
+				Summary:      "命令通过",
+				EvidenceRefs: []TaskResultRef{{Kind: "attestation", Ref: attestationRef}},
+			}},
+		}
+
+		_, err = service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+			ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-verdict-verification-attestation"),
+			ResultContract:                   contract,
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+		verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+		require.NoError(t, err)
+		require.Len(t, verdicts, 1)
+		require.Equal(t, "satisfied", verdicts[0].Verdict)
+		require.Equal(t, []string{attestationRef}, verdicts[0].EvidenceRefs)
+	})
+}
+
+func TestHumanJudgmentSelfReportIgnored(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c2", "业务判断达标", "human_judgment")
+	// Put this task into the human_judgment criterion's SatisfiedBy (planner
+	// permits it: "satisfied_by may be empty" for human_judgment, i.e. it is
+	// optional, not forbidden). This keeps the criterion inside
+	// criteriaSatisfiedByTask's scope so the test exercises the actual
+	// human_judgment ignore branch, not the SatisfiedBy scoping filter.
+	repo.demandAcceptanceCriteria[len(repo.demandAcceptanceCriteria)-1].SatisfiedBy = []string{demandCriterionSnapshotTaskKey}
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-human-judgment-self-report"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID: "c2",
+					Status:      TaskResultCriterionStatusPassed,
+					// No attestation ref: human_judgment is never tightened,
+					// and a self-report against it must not be projected.
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Empty(t, verdicts)
+}
+
+// TestProjectionSkippedWithoutSnapshot is the legacy guard: a task whose
+// demand was never decomposed under Task 4 (no demand_acceptance_criteria
+// rows, here modeled by leaving DemandID/AcceptedPlanRevisionID unset,
+// mirroring pre-rollout data) must see byte-identical behavior to before this
+// task — no attestation tightening, no verdict projection — even though the
+// AcceptanceResult below would have failed tightening had a snapshot existed.
+func TestProjectionSkippedWithoutSnapshot(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	require.Nil(t, repo.tasks[0].DemandID)
+	require.Nil(t, repo.tasks[0].AcceptedPlanRevisionID)
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-no-snapshot"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID: "c1",
+					Status:      TaskResultCriterionStatusPassed,
+					// No attestation ref: would fail tightening if any
+					// snapshot criterion existed, but none does.
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, result.Decision)
+	require.Equal(t, "accepted", result.ValidationStatus)
+	require.Empty(t, repo.demandCriterionVerdicts)
+}
+
+// TestNotApplicableAutomatedCriterionDoesNotDeadlock is the regression guard
+// for the convergence-gate deadlock: an executor returning a contract-valid
+// not_applicable acceptance result (with the required human reason + evidence)
+// for an injected automated_test blocking criterion must PROJECT a verdict —
+// now with the third verdict value not_applicable — so the gate treats that
+// criterion as released rather than counting a verdict-less blocking criterion
+// as permanently unsatisfied. The mandatory human_judgment fallback remains the
+// only pending criterion, so the demand can still complete once the human signs
+// it — no permanent stuck.
+func TestNotApplicableAutomatedCriterionDoesNotDeadlock(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	employeeID := *repo.tasks[0].AssignedDigitalEmployeeID
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	// Injected automated_test blocking criterion the executor judges N/A.
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "auto-check", "自动测试通过", "automated_test")
+	// The mandatory human_judgment fallback backstop ("人类负责人确认交付符合需求意图").
+	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+		TenantID:           fixture.tenantID,
+		ProjectID:          fixture.projectID,
+		DemandID:           demandID,
+		PlanRevisionID:     planRevisionID,
+		CriterionID:        "human-fallback",
+		Statement:          "人类负责人确认交付符合需求意图",
+		VerificationMethod: "human_judgment",
+		Severity:           "blocking",
+	})
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-not-applicable-no-deadlock"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID:         "auto-check",
+					Status:              TaskResultCriterionStatusNotApplicable,
+					HumanAcceptedReason: "该自动检查不适用于本次交付范围",
+					EvidenceRefs:        []string{"artifact:na-rationale"},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	// The task completes cleanly — not_applicable is not attestation-gated.
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, "accepted", result.ValidationStatus)
+
+	// The not_applicable verdict is now PROJECTED (previously dropped, which is
+	// what stranded the gate).
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	require.Equal(t, "auto-check", verdicts[0].CriterionID)
+	require.Equal(t, "not_applicable", verdicts[0].Verdict)
+	require.Equal(t, "executor", verdicts[0].JudgeType)
+	require.Equal(t, employeeID, verdicts[0].JudgeID)
+	require.Equal(t, "该自动检查不适用于本次交付范围", verdicts[0].Reason)
+
+	// Gate: the not_applicable automated criterion is released; only the unsigned
+	// human_judgment fallback remains pending. The demand is NOT deadlocked.
+	criteria, err := repo.ListDemandAcceptanceCriteria(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	pending := ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)
+	require.Equal(t, []string{"human-fallback"}, pending)
+}
+
+// TestResolveUnsatisfiedBlockingCriteriaReleasesNotApplicable pins the gate
+// resolver matrix for the third verdict value: satisfied and not_applicable
+// both RELEASE a blocking criterion; unsatisfied and no-verdict both BLOCK; and
+// a human verdict still overrides an executor not_applicable in both directions.
+func TestResolveUnsatisfiedBlockingCriteriaReleasesNotApplicable(t *testing.T) {
+	criteria := []DemandAcceptanceCriterion{{CriterionID: "a", Severity: "blocking"}}
+	verdict := func(v, judge string) []DemandCriterionVerdict {
+		return []DemandCriterionVerdict{{CriterionID: "a", Verdict: v, JudgeType: judge}}
+	}
+	cases := []struct {
+		name     string
+		verdicts []DemandCriterionVerdict
+		released bool
+	}{
+		{"executor satisfied releases", verdict("satisfied", "executor"), true},
+		{"executor not_applicable releases", verdict("not_applicable", "executor"), true},
+		{"executor unsatisfied blocks", verdict("unsatisfied", "executor"), false},
+		{"no verdict blocks", nil, false},
+		{"human satisfied overrides executor not_applicable (released)", []DemandCriterionVerdict{
+			{CriterionID: "a", Verdict: "not_applicable", JudgeType: "executor"},
+			{CriterionID: "a", Verdict: "satisfied", JudgeType: "human"},
+		}, true},
+		{"human unsatisfied overrides executor not_applicable (blocks)", []DemandCriterionVerdict{
+			{CriterionID: "a", Verdict: "not_applicable", JudgeType: "executor"},
+			{CriterionID: "a", Verdict: "unsatisfied", JudgeType: "human"},
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pending := ResolveUnsatisfiedBlockingCriteria(criteria, tc.verdicts)
+			if tc.released {
+				require.Empty(t, pending)
+			} else {
+				require.Equal(t, []string{"a"}, pending)
+			}
+		})
+	}
+}
+
+func TestStringRefIsAttestation(t *testing.T) {
+	cases := []struct {
+		name string
+		ref  string
+		want bool
+	}{
+		{"attestation prefix", "attestation:project-task-attempt:x:cmd-1", true},
+		{"attestation prefix with leading/trailing whitespace", "  attestation:cmd-1  ", true},
+		{"no prefix", "artifact:report", false},
+		{"empty", "", false},
+		{"prefix without colon", "attestationcmd-1", false},
+		{"case mismatch is not normalized", "ATTESTATION:cmd-1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, stringRefIsAttestation(tc.ref))
+		})
+	}
+}
+
 func TestSubmitProjectTaskAttemptResultRevisionNeededWaitsForHumanAndKeepsLatestResult(t *testing.T) {
 	repo := newProjectTaskResultMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -8501,6 +9067,753 @@ func TestResolveDecisionFindsDecisionBeyondFirstPage(t *testing.T) {
 	}
 }
 
+// demandAcceptanceSignFixture wires a demand parked at acceptance_pending
+// with a snapshotted plan revision, a pending demand_acceptance decision
+// (TargetUserID == ownerID == the project's human_owner) and the given
+// criterion snapshot — everything Service.SignDemandCriterionVerdict's
+// preconditions expect. Returned IDs let each test seed additional verdicts
+// or diverge a single field (actor, demand status, criterion method) to
+// exercise one precondition at a time.
+type demandAcceptanceSignFixture struct {
+	tenantID   uuid.UUID
+	projectID  uuid.UUID
+	demandID   uuid.UUID
+	revisionID uuid.UUID
+	ownerID    uuid.UUID
+	decisionID uuid.UUID
+	approvalID uuid.UUID
+}
+
+func setupDemandAcceptanceSignFixture(repo *memoryRepository, criteria []DemandAcceptanceCriterion) demandAcceptanceSignFixture {
+	f := demandAcceptanceSignFixture{
+		tenantID:   uuid.New(),
+		projectID:  uuid.New(),
+		demandID:   uuid.New(),
+		revisionID: uuid.New(),
+		ownerID:    uuid.New(),
+		decisionID: uuid.New(),
+		approvalID: uuid.New(),
+	}
+	repo.projects[f.projectID] = Project{
+		ID:               f.projectID,
+		TenantID:         f.tenantID,
+		Name:             "验收项目",
+		Goal:             "目标",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: f.ownerID,
+	}
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID:                f.demandID,
+		TenantID:          f.tenantID,
+		ProjectID:         f.projectID,
+		SubmittedByUserID: f.ownerID,
+		Title:             "需要验收的需求",
+		SourceType:        DemandSourceManual,
+		Status:            ProjectDemandStatusAcceptancePending,
+	})
+	repo.planRevisions = append(repo.planRevisions, PlanRevision{
+		ID:             f.revisionID,
+		TenantID:       f.tenantID,
+		ProjectID:      f.projectID,
+		DemandID:       f.demandID,
+		RevisionNumber: 1,
+		Status:         PlanRevisionStatusAccepted,
+	})
+	revisionID := f.revisionID
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                f.decisionID,
+		TenantID:          f.tenantID,
+		ProjectID:         f.projectID,
+		ApprovalRequestID: f.approvalID,
+		PlanRevisionID:    &revisionID,
+		TargetUserID:      f.ownerID,
+		DecisionType:      DecisionTypeDemandAcceptance,
+		TitleSnapshot:     "需求验收：需要验收的需求",
+		StatusSnapshot:    "pending",
+	})
+	for i := range criteria {
+		criteria[i].TenantID = f.tenantID
+		criteria[i].ProjectID = f.projectID
+		criteria[i].DemandID = f.demandID
+		criteria[i].PlanRevisionID = f.revisionID
+	}
+	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, criteria...)
+	return f
+}
+
+func blockingHumanJudgmentCriterion(criterionID, statement string) DemandAcceptanceCriterion {
+	return DemandAcceptanceCriterion{
+		CriterionID:        criterionID,
+		Statement:          statement,
+		VerificationMethod: demandCriterionVerificationMethodHumanJudgment,
+		Severity:           demandAcceptanceCriterionSeverityBlocking,
+	}
+}
+
+func TestListDemandAcceptanceCriteriaDetailResolvesEffectiveVerdictsAndSummaries(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	taskID := uuid.New()
+	c1 := blockingHumanJudgmentCriterion("c1", "第一条判据")
+	c1.SatisfiedBy = []string{taskID.String()}
+	c2 := blockingHumanJudgmentCriterion("c2", "第二条判据")
+	c3 := DemandAcceptanceCriterion{
+		CriterionID:        "c3",
+		Statement:          "自动判据",
+		VerificationMethod: "automated_test",
+		Severity:           demandAcceptanceCriterionSeverityBlocking,
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{c1, c2, c3})
+
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:            uuid.New(),
+		TenantID:      f.tenantID,
+		ProjectID:     f.projectID,
+		ProjectTaskID: taskID,
+		Conclusion:    "已交付并通过测试",
+		CreatedAt:     time.Now().UTC(),
+	})
+
+	execTaskC1 := uuid.New()
+	execTaskC3 := uuid.New()
+	repo.demandCriterionVerdicts = append(repo.demandCriterionVerdicts,
+		// c1 executor satisfied — must be overridden by the later human verdict.
+		DemandCriterionVerdict{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+			CriterionID: "c1", Verdict: "satisfied", JudgeType: "executor", ProjectTaskID: &execTaskC1,
+			EvidenceRefs: []string{"attestation:executor-c1"},
+		},
+		// c1 human unsatisfied — precedence over executor.
+		DemandCriterionVerdict{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+			CriterionID: "c1", Verdict: "unsatisfied", JudgeType: "human", JudgeID: f.ownerID, Reason: "未达标",
+		},
+		// c3 executor satisfied — no human verdict, executor stands.
+		DemandCriterionVerdict{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+			CriterionID: "c3", Verdict: "satisfied", JudgeType: "executor", ProjectTaskID: &execTaskC3,
+			EvidenceRefs: []string{"attestation:executor-c3"},
+		},
+	)
+
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(context.Background(), f.tenantID, f.demandID)
+	if err != nil {
+		t.Fatalf("list acceptance criteria: %v", err)
+	}
+	if detail.DemandStatus != ProjectDemandStatusAcceptancePending {
+		t.Fatalf("expected demand_status acceptance_pending, got %s", detail.DemandStatus)
+	}
+	if len(detail.Criteria) != 3 {
+		t.Fatalf("expected 3 criteria in snapshot order, got %d", len(detail.Criteria))
+	}
+
+	// c1: human unsatisfied overrides executor satisfied; task_summaries resolved.
+	got1 := detail.Criteria[0]
+	if got1.CriterionID != "c1" {
+		t.Fatalf("expected first criterion c1, got %s", got1.CriterionID)
+	}
+	if got1.Verdict == nil || *got1.Verdict != "unsatisfied" {
+		t.Fatalf("expected c1 effective verdict unsatisfied, got %v", got1.Verdict)
+	}
+	if got1.JudgeType == nil || *got1.JudgeType != "human" {
+		t.Fatalf("expected c1 judge_type human, got %v", got1.JudgeType)
+	}
+	if len(got1.TaskSummaries) != 1 || got1.TaskSummaries[0].TaskID != taskID.String() || got1.TaskSummaries[0].Summary != "已交付并通过测试" {
+		t.Fatalf("expected c1 task_summaries to resolve latest conclusion, got %#v", got1.TaskSummaries)
+	}
+
+	// c2: no verdict at all → nil verdict/judge, empty task summaries.
+	got2 := detail.Criteria[1]
+	if got2.Verdict != nil || got2.JudgeType != nil {
+		t.Fatalf("expected c2 unresolved verdict/judge, got verdict=%v judge=%v", got2.Verdict, got2.JudgeType)
+	}
+	if len(got2.TaskSummaries) != 0 {
+		t.Fatalf("expected c2 no task summaries, got %#v", got2.TaskSummaries)
+	}
+
+	// c3: executor satisfied stands; evidence surfaced.
+	got3 := detail.Criteria[2]
+	if got3.Verdict == nil || *got3.Verdict != "satisfied" {
+		t.Fatalf("expected c3 effective verdict satisfied, got %v", got3.Verdict)
+	}
+	if got3.JudgeType == nil || *got3.JudgeType != "executor" {
+		t.Fatalf("expected c3 judge_type executor, got %v", got3.JudgeType)
+	}
+	if len(got3.EvidenceRefs) != 1 || got3.EvidenceRefs[0] != "attestation:executor-c3" {
+		t.Fatalf("expected c3 evidence_refs from executor verdict, got %#v", got3.EvidenceRefs)
+	}
+}
+
+// TestListDemandAcceptanceCriteriaDetailResolvesTaskSummariesByPlannedKey proves
+// the real-chain identity of satisfied_by: Task 4 decomposition stores each
+// satisfying task's planned_task_key (e.g. "develop"), NOT its UUID. The panel
+// must map planned_task_key → task UUID for the demand's tasks, then surface
+// that task's real conclusion (anti-rubber-stamp evidence) — otherwise the
+// "查看满足任务产出" panel is永远空.
+func TestListDemandAcceptanceCriteriaDetailResolvesTaskSummariesByPlannedKey(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	plannedKey := "develop"
+	c1 := DemandAcceptanceCriterion{
+		CriterionID:        "c1",
+		Statement:          "变更以 branch+commit 交付",
+		VerificationMethod: "automated_test",
+		Severity:           demandAcceptanceCriterionSeverityBlocking,
+		SatisfiedBy:        []string{plannedKey}, // planned_task_key, not a UUID
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{c1})
+
+	// The demand's real task carries the planned key and a real UUID.
+	taskID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:             taskID,
+		TenantID:       f.tenantID,
+		ProjectID:      f.projectID,
+		DemandID:       &f.demandID,
+		PlannedTaskKey: &plannedKey,
+		Title:          "开发任务",
+		Status:         ProjectTaskStatusCompleted,
+		UpdatedAt:      time.Now().UTC(),
+	})
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:            uuid.New(),
+		TenantID:      f.tenantID,
+		ProjectID:     f.projectID,
+		ProjectTaskID: taskID,
+		Conclusion:    "已按 branch+commit 交付并通过验证",
+		CreatedAt:     time.Now().UTC(),
+	})
+
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(context.Background(), f.tenantID, f.demandID)
+	if err != nil {
+		t.Fatalf("list acceptance criteria: %v", err)
+	}
+	require.Len(t, detail.Criteria, 1)
+	got := detail.Criteria[0]
+	require.Len(t, got.TaskSummaries, 1)
+	require.Equal(t, taskID.String(), got.TaskSummaries[0].TaskID)
+	require.Equal(t, "已按 branch+commit 交付并通过验证", got.TaskSummaries[0].Summary)
+}
+
+func TestListDemandAcceptanceCriteriaDetailReturnsEmptyWhenNoOpenRevision(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning, HumanOwnerUserID: uuid.New()}
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: ProjectDemandStatusExecuting,
+	})
+
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(context.Background(), tenantID, demandID)
+	if err != nil {
+		t.Fatalf("list acceptance criteria: %v", err)
+	}
+	if detail.DemandStatus != ProjectDemandStatusExecuting {
+		t.Fatalf("expected demand_status executing, got %s", detail.DemandStatus)
+	}
+	if len(detail.Criteria) != 0 {
+		t.Fatalf("expected no criteria for legacy demand without open revision, got %d", len(detail.Criteria))
+	}
+}
+
+func TestSignDemandCriterionVerdictReturnsProgressWhenCriteriaRemain(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "第一条判据"),
+		blockingHumanJudgmentCriterion("c2", "第二条判据"),
+	})
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+		Reason:      "已核实",
+	})
+	if err != nil {
+		t.Fatalf("sign criterion: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusAcceptancePending {
+		t.Fatalf("expected demand to stay acceptance_pending, got %s", result.DemandStatus)
+	}
+	if result.Signed != 1 || result.Total != 2 || result.Remaining != 1 {
+		t.Fatalf("expected progress 1/2 remaining 1, got signed=%d total=%d remaining=%d", result.Signed, result.Total, result.Remaining)
+	}
+	if len(repo.demandCriterionVerdicts) != 1 {
+		t.Fatalf("expected one verdict row, got %d", len(repo.demandCriterionVerdicts))
+	}
+	demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID)
+	if demand.Status != ProjectDemandStatusAcceptancePending {
+		t.Fatalf("expected repository demand to stay acceptance_pending, got %s", demand.Status)
+	}
+	decision, _ := repo.GetDecisionRequest(context.Background(), f.tenantID, f.projectID, f.decisionID)
+	if decision.StatusSnapshot != "pending" {
+		t.Fatalf("expected decision to stay pending, got %s", decision.StatusSnapshot)
+	}
+	if approvals.calls != 0 {
+		t.Fatalf("expected no approval resolution while criteria remain, got %d calls", approvals.calls)
+	}
+}
+
+func TestSignDemandCriterionVerdictCompletesDemandWhenAllBlockingSatisfied(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("sign criterion: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected demand completed, got %s", result.DemandStatus)
+	}
+	if result.Signed != 1 || result.Total != 1 || result.Remaining != 0 {
+		t.Fatalf("expected progress 1/1 remaining 0, got signed=%d total=%d remaining=%d", result.Signed, result.Total, result.Remaining)
+	}
+	demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID)
+	if demand.Status != ProjectDemandStatusCompleted {
+		t.Fatalf("expected repository demand completed, got %s", demand.Status)
+	}
+	if approvals.calls != 1 || approvals.last.ApprovalRequestID != f.approvalID || approvals.last.Decision != "approved" {
+		t.Fatalf("expected approval resolved approved, got calls=%d last=%#v", approvals.calls, approvals.last)
+	}
+	decision, _ := repo.GetDecisionRequest(context.Background(), f.tenantID, f.projectID, f.decisionID)
+	if decision.StatusSnapshot != "approved" {
+		t.Fatalf("expected decision resolved approved, got %s", decision.StatusSnapshot)
+	}
+	if len(inbox.resolutions) != 1 {
+		t.Fatalf("expected inbox resolution, got %d", len(inbox.resolutions))
+	}
+	completedEvent := lastProjectEventOfType(t, repo.events, ProjectEventDemandAcceptanceCompleted)
+	if completedEvent.Payload["demand_id"] != f.demandID.String() {
+		t.Fatalf("unexpected completed event payload: %#v", completedEvent.Payload)
+	}
+	// Fix B: this was the project's only demand, now terminal → project acceptance
+	// review opened rather than the project being left stuck running.
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
+}
+
+func TestSignDemandCriterionVerdictRejectsWithStructuredEvent(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "会被驳回的判据"),
+		blockingHumanJudgmentCriterion("c2", "尚未签署的判据"),
+	})
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "unsatisfied",
+		Reason:      "证据不足",
+	})
+	if err != nil {
+		t.Fatalf("sign criterion: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusFailed {
+		t.Fatalf("expected demand failed, got %s", result.DemandStatus)
+	}
+	demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID)
+	if demand.Status != ProjectDemandStatusFailed {
+		t.Fatalf("expected repository demand failed even with c2 unsigned, got %s", demand.Status)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != "rejected" {
+		t.Fatalf("expected approval resolved rejected, got calls=%d last=%#v", approvals.calls, approvals.last)
+	}
+	decision, _ := repo.GetDecisionRequest(context.Background(), f.tenantID, f.projectID, f.decisionID)
+	if decision.StatusSnapshot != "rejected" {
+		t.Fatalf("expected decision resolved rejected, got %s", decision.StatusSnapshot)
+	}
+	rejectedEvent := lastProjectEventOfType(t, repo.events, ProjectEventDemandAcceptanceRejected)
+	if rejectedEvent.Payload["criterion_id"] != "c1" || rejectedEvent.Payload["statement"] != "会被驳回的判据" || rejectedEvent.Payload["reason"] != "证据不足" {
+		t.Fatalf("unexpected rejected event payload: %#v", rejectedEvent.Payload)
+	}
+	// Fix C: demand_id present for consumer symmetry with the completed event.
+	if rejectedEvent.Payload["demand_id"] != f.demandID.String() {
+		t.Fatalf("expected demand_id in rejected event payload, got %#v", rejectedEvent.Payload)
+	}
+	// Fix B: this was the project's only demand, now terminal → project acceptance
+	// review opened (project running→acceptance, project_acceptance decision created).
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
+}
+
+func TestSignDemandCriterionVerdictRejectsUnauthorizedSigner(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "判据"),
+	})
+
+	_, err = service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: uuid.New(), // neither the decision's target user nor the project owner
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if !errors.Is(err, ErrProjectDecisionForbidden) {
+		t.Fatalf("expected forbidden error, got %v", err)
+	}
+	if len(repo.demandCriterionVerdicts) != 0 {
+		t.Fatalf("expected no verdict written for unauthorized signer, got %d", len(repo.demandCriterionVerdicts))
+	}
+}
+
+func TestSignDemandCriterionVerdictRejectsNonHumanJudgmentCriterion(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		{CriterionID: "c1", Statement: "自动化判据", VerificationMethod: "automated_test", Severity: demandAcceptanceCriterionSeverityBlocking},
+	})
+
+	_, err = service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected invalid project error for non human_judgment criterion, got %v", err)
+	}
+}
+
+func TestSignDemandCriterionVerdictDuplicateSameValueIsIdempotent(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "第一条判据"),
+		blockingHumanJudgmentCriterion("c2", "第二条判据"),
+	})
+	signReq := SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+		Reason:      "已核实",
+	}
+	if _, err := service.SignDemandCriterionVerdict(context.Background(), signReq); err != nil {
+		t.Fatalf("first sign: %v", err)
+	}
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), signReq)
+	if err != nil {
+		t.Fatalf("expected idempotent replay to succeed, got %v", err)
+	}
+	if result.Signed != 1 || result.Total != 2 || result.Remaining != 1 {
+		t.Fatalf("expected unchanged progress 1/2, got signed=%d total=%d remaining=%d", result.Signed, result.Total, result.Remaining)
+	}
+	if len(repo.demandCriterionVerdicts) != 1 {
+		t.Fatalf("expected no duplicate verdict row, got %d", len(repo.demandCriterionVerdicts))
+	}
+}
+
+func TestSignDemandCriterionVerdictDuplicateDifferentValueConflicts(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "第一条判据"),
+		blockingHumanJudgmentCriterion("c2", "第二条判据"),
+	})
+	if _, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	}); err != nil {
+		t.Fatalf("first sign: %v", err)
+	}
+
+	_, err = service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "unsatisfied",
+	})
+	if !errors.Is(err, ErrProjectConflict) {
+		t.Fatalf("expected conflict for re-judgement, got %v", err)
+	}
+	if len(repo.demandCriterionVerdicts) != 1 {
+		t.Fatalf("expected the original verdict row to be untouched, got %d", len(repo.demandCriterionVerdicts))
+	}
+	demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID)
+	if demand.Status != ProjectDemandStatusAcceptancePending {
+		t.Fatalf("expected demand to stay acceptance_pending after rejected re-judgement, got %s", demand.Status)
+	}
+}
+
+func TestSignDemandCriterionVerdictRequiresAcceptancePendingStatus(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "判据"),
+	})
+	for i := range repo.demands {
+		if repo.demands[i].ID == f.demandID {
+			repo.demands[i].Status = ProjectDemandStatusExecuting
+		}
+	}
+
+	_, err = service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if !errors.Is(err, ErrProjectConflict) {
+		t.Fatalf("expected conflict for non acceptance_pending demand, got %v", err)
+	}
+}
+
+// assertProjectAcceptanceReviewOpened verifies Fix B: when the last demand of a
+// (running) project converges terminal, the service opens the project acceptance
+// review — project transitions running→acceptance and a pending project_acceptance
+// decision exists.
+func assertProjectAcceptanceReviewOpened(t *testing.T, repo *memoryRepository, approvals *fakeApprovalResolver, projectID uuid.UUID) {
+	t.Helper()
+	if repo.projects[projectID].Status != ProjectStatusAcceptance {
+		t.Fatalf("expected project status acceptance, got %s", repo.projects[projectID].Status)
+	}
+	if approvals.createCalls != 1 || approvals.lastCreate.DecisionType != "project_acceptance" {
+		t.Fatalf("expected one project_acceptance approval created, got calls=%d last=%#v", approvals.createCalls, approvals.lastCreate)
+	}
+	found := false
+	for _, d := range repo.decisionRequests {
+		if d.ProjectID == projectID && d.DecisionType == "project_acceptance" && d.StatusSnapshot == "pending" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a pending project_acceptance decision for project %s", projectID)
+	}
+}
+
+// TestSignDemandCriterionVerdictHealsPartialFailureToTerminal covers Fix A: a
+// prior attempt wrote the verdict but died before advancing/resolving, leaving
+// the demand stuck acceptance_pending with its decision still pending. Re-signing
+// the same value must re-run convergence and heal to completed — not early-return
+// with the demand still stuck.
+func TestSignDemandCriterionVerdictHealsPartialFailureToTerminal(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+	// Simulate the partial-failure state: the verdict row exists (a prior attempt
+	// wrote it) but the demand is still acceptance_pending and the decision still
+	// pending (that attempt died before advance/resolve).
+	if err := repo.CreateDemandCriterionVerdict(context.Background(), CreateDemandCriterionVerdictRequest{
+		TenantID:       f.tenantID,
+		ProjectID:      f.projectID,
+		DemandID:       f.demandID,
+		PlanRevisionID: f.revisionID,
+		CriterionID:    "c1",
+		Verdict:        "satisfied",
+		JudgeType:      "human",
+		JudgeID:        f.ownerID,
+	}); err != nil {
+		t.Fatalf("seed partial verdict: %v", err)
+	}
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("re-sign to heal: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected healed demand completed, got %s", result.DemandStatus)
+	}
+	if demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID); demand.Status != ProjectDemandStatusCompleted {
+		t.Fatalf("expected repository demand healed to completed, got %s", demand.Status)
+	}
+	decision, _ := repo.GetDecisionRequest(context.Background(), f.tenantID, f.projectID, f.decisionID)
+	if decision.StatusSnapshot != "approved" {
+		t.Fatalf("expected decision resolved approved on heal, got %s", decision.StatusSnapshot)
+	}
+	// No duplicate verdict row despite the re-sign.
+	if count := countHumanVerdicts(repo.demandCriterionVerdicts, "c1"); count != 1 {
+		t.Fatalf("expected exactly one human verdict for c1, got %d", count)
+	}
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
+}
+
+// TestSignDemandCriterionVerdictReconcilesAlreadyCompletedDemand covers Fix A's
+// other partial-failure shape: a prior attempt advanced the demand to completed
+// but died before resolving the decision. A retry (or a late duplicate sign)
+// finds the demand terminal and must reconcile — resolve the still-pending
+// decision to match — rather than 409-ing on the acceptance_pending precondition.
+func TestSignDemandCriterionVerdictReconcilesAlreadyCompletedDemand(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+	// Verdict written + demand already advanced to completed, but decision left pending.
+	if err := repo.CreateDemandCriterionVerdict(context.Background(), CreateDemandCriterionVerdictRequest{
+		TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+		CriterionID: "c1", Verdict: "satisfied", JudgeType: "human", JudgeID: f.ownerID,
+	}); err != nil {
+		t.Fatalf("seed verdict: %v", err)
+	}
+	for i := range repo.demands {
+		if repo.demands[i].ID == f.demandID {
+			repo.demands[i].Status = ProjectDemandStatusCompleted
+		}
+	}
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("reconcile completed demand: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected completed, got %s", result.DemandStatus)
+	}
+	decision, _ := repo.GetDecisionRequest(context.Background(), f.tenantID, f.projectID, f.decisionID)
+	if decision.StatusSnapshot != "approved" {
+		t.Fatalf("expected pending decision reconciled to approved, got %s", decision.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.Decision != "approved" {
+		t.Fatalf("expected approval reconciled approved, got calls=%d last=%#v", approvals.calls, approvals.last)
+	}
+	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
+}
+
+// TestSignDemandCriterionVerdictDoesNotOpenReviewWhileOtherDemandsRemain covers
+// the Fix B guard: signing one demand terminal must NOT open the project
+// acceptance review while a sibling demand is still non-terminal.
+func TestSignDemandCriterionVerdictDoesNotOpenReviewWhileOtherDemandsRemain(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+	// A sibling demand in the same project is still executing.
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID:        uuid.New(),
+		TenantID:  f.tenantID,
+		ProjectID: f.projectID,
+		Title:     "并行需求",
+		Status:    ProjectDemandStatusExecuting,
+	})
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: f.ownerID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("sign criterion: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected this demand completed, got %s", result.DemandStatus)
+	}
+	if repo.projects[f.projectID].Status != ProjectStatusRunning {
+		t.Fatalf("expected project to stay running while sibling demand executes, got %s", repo.projects[f.projectID].Status)
+	}
+	if approvals.createCalls != 0 {
+		t.Fatalf("expected no project_acceptance review opened, got %d create calls", approvals.createCalls)
+	}
+}
+
+func countHumanVerdicts(verdicts []DemandCriterionVerdict, criterionID string) int {
+	count := 0
+	for _, v := range verdicts {
+		if v.CriterionID == criterionID && v.JudgeType == "human" && v.ProjectTaskID == nil {
+			count++
+		}
+	}
+	return count
+}
+
 func TestUpdateConfigRejectsArchivedProject(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -9254,6 +10567,9 @@ type memoryRepository struct {
 	acceptanceRecords                []ProjectAcceptanceRecord
 	archiveSnapshots                 []ProjectArchiveSnapshot
 	demandConstraintExemptions       []DemandConstraintExemption
+	demandAcceptanceCriteria         []DemandAcceptanceCriterion
+	demandCriterionVerdicts          []DemandCriterionVerdict
+	createDemandCriterionVerdictErr  error
 	projectTeamScopes                map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
 	lastListProjects                 ListProjectsRequest
 	lastTasksLimit                   int32
@@ -9308,6 +10624,91 @@ func (r *memoryRepository) ListDemandConstraintExemptions(ctx context.Context, t
 	for _, exemption := range r.demandConstraintExemptions {
 		if exemption.TenantID == tenantID && exemption.DemandID == demandID {
 			result = append(result, exemption)
+		}
+	}
+	return result, nil
+}
+
+func (r *memoryRepository) CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error {
+	for _, req := range reqs {
+		exists := false
+		for _, existing := range r.demandAcceptanceCriteria {
+			if existing.TenantID == req.TenantID && existing.DemandID == req.DemandID &&
+				existing.PlanRevisionID == req.PlanRevisionID && existing.CriterionID == req.CriterionID {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue // idempotent: mirrors UNIQUE(tenant_id, demand_id, plan_revision_id, criterion_id) ON CONFLICT DO NOTHING
+		}
+		r.demandAcceptanceCriteria = append(r.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+			ID:                 uuid.New(),
+			TenantID:           req.TenantID,
+			ProjectID:          req.ProjectID,
+			DemandID:           req.DemandID,
+			PlanRevisionID:     req.PlanRevisionID,
+			CriterionID:        req.CriterionID,
+			Statement:          req.Statement,
+			VerificationMethod: req.VerificationMethod,
+			Severity:           req.Severity,
+			SatisfiedBy:        append([]string(nil), req.SatisfiedBy...),
+			CreatedAt:          time.Now().UTC(),
+		})
+	}
+	return nil
+}
+
+func (r *memoryRepository) ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error) {
+	result := make([]DemandAcceptanceCriterion, 0)
+	for _, criterion := range r.demandAcceptanceCriteria {
+		if criterion.TenantID == tenantID && criterion.DemandID == demandID && criterion.PlanRevisionID == planRevisionID {
+			result = append(result, criterion)
+		}
+	}
+	return result, nil
+}
+
+// CreateDemandCriterionVerdict mirrors PgRepository's partial-unique ON
+// CONFLICT DO NOTHING idempotency for the executor-projection path
+// (project_task_id set): a repeat write for the same
+// tenant/demand/plan_revision/criterion/task is a no-op, not a duplicate row.
+func (r *memoryRepository) CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error {
+	if r.createDemandCriterionVerdictErr != nil {
+		return r.createDemandCriterionVerdictErr
+	}
+	if req.ProjectTaskID != nil {
+		for _, existing := range r.demandCriterionVerdicts {
+			if existing.TenantID == req.TenantID && existing.DemandID == req.DemandID &&
+				existing.PlanRevisionID == req.PlanRevisionID && existing.CriterionID == req.CriterionID &&
+				existing.ProjectTaskID != nil && *existing.ProjectTaskID == *req.ProjectTaskID {
+				return nil
+			}
+		}
+	}
+	r.demandCriterionVerdicts = append(r.demandCriterionVerdicts, DemandCriterionVerdict{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      req.JudgeType,
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   append([]string(nil), req.EvidenceRefs...),
+		ProjectTaskID:  req.ProjectTaskID,
+		CreatedAt:      time.Now().UTC(),
+	})
+	return nil
+}
+
+func (r *memoryRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
+	result := make([]DemandCriterionVerdict, 0)
+	for _, verdict := range r.demandCriterionVerdicts {
+		if verdict.TenantID == tenantID && verdict.DemandID == demandID && verdict.PlanRevisionID == planRevisionID {
+			result = append(result, verdict)
 		}
 	}
 	return result, nil
@@ -10224,7 +11625,13 @@ func (r *memoryRepository) ListPlanRevisions(ctx context.Context, req ListPlanRe
 }
 
 func (r *memoryRepository) ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error) {
-	return []PlanRevision{}, nil
+	result := make([]PlanRevision, 0)
+	for _, revision := range r.planRevisions {
+		if revision.TenantID == tenantID && revision.ProjectID == projectID && revision.DemandID == demandID {
+			result = append(result, revision)
+		}
+	}
+	return result, nil
 }
 
 func (r *memoryRepository) AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error) {
@@ -12115,6 +13522,57 @@ func (r *memoryRepository) GetDecisionRequestByPlanRevision(ctx context.Context,
 	return DecisionRequest{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error) {
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID &&
+			decision.ProjectID == projectID &&
+			decision.PlanRevisionID != nil &&
+			*decision.PlanRevisionID == planRevisionID &&
+			decision.DecisionType == DecisionTypeDemandAcceptance &&
+			decision.StatusSnapshot == "pending" {
+			return decision, nil
+		}
+	}
+	return DecisionRequest{}, ErrProjectNotFound
+}
+
+// RecomputeProjectDemandStatus is a test-scoped fake of
+// PgRepository.RecomputeProjectDemandStatus, deliberately narrower: it only
+// models the acceptance-criteria convergence gate's acceptance_pending →
+// completed transition (Service.SignDemandCriterionVerdict's only caller in
+// this package never invokes it from any other demand status, since that's
+// a precondition it already checked). It does not replicate the real
+// repository's task-status-count preamble.
+func (r *memoryRepository) RecomputeProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error {
+	demand, err := r.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return err
+	}
+	if demand.Status != ProjectDemandStatusAcceptancePending {
+		return nil
+	}
+	revisions, err := r.ListPlanRevisionsForDemand(ctx, tenantID, projectID, demandID)
+	if err != nil {
+		return err
+	}
+	revisionID := CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return r.AdvanceProjectDemandStatus(ctx, tenantID, projectID, demandID, ProjectDemandStatusCompleted)
+	}
+	criteria, err := r.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return err
+	}
+	verdicts, err := r.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return err
+	}
+	if len(ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)) == 0 {
+		return r.AdvanceProjectDemandStatus(ctx, tenantID, projectID, demandID, ProjectDemandStatusCompleted)
+	}
+	return nil
+}
+
 func (r *memoryRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
 	for index, decision := range r.decisionRequests {
 		if decision.ID == req.ID && decision.TenantID == req.TenantID && decision.ProjectID == req.ProjectID {
@@ -12761,6 +14219,11 @@ type fakeApprovalResolver struct {
 	contextPayloads    map[uuid.UUID]map[string]any
 	contextPayloadErr  error
 	contextPayloadCall int
+
+	createCalls   int
+	lastCreate    CreateApprovalRequestInput
+	lastCreatedID uuid.UUID
+	createErr     error
 }
 
 func (f *fakeApprovalResolver) ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error {
@@ -12775,6 +14238,17 @@ func (f *fakeApprovalResolver) GetRequestContextPayload(ctx context.Context, ten
 		return nil, f.contextPayloadErr
 	}
 	return f.contextPayloads[approvalRequestID], nil
+}
+
+func (f *fakeApprovalResolver) CreateRequest(ctx context.Context, req CreateApprovalRequestInput) (uuid.UUID, error) {
+	f.createCalls++
+	f.lastCreate = req
+	if f.createErr != nil {
+		return uuid.Nil, f.createErr
+	}
+	id := uuid.New()
+	f.lastCreatedID = id
+	return id, nil
 }
 
 type fakeDecisionInboxProjector struct {

@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { CriteriaPanel } from "./components/criteria-panel";
 import { WorkflowDetail } from "./components/workflow-detail";
 import { WorkflowRiverView } from "./components/workflow-river-view";
 import { WorkflowShell } from "./components/workflow-shell";
@@ -143,6 +144,13 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
         />
       ) : null}
       <WorkflowDispatchBlockerBanner event={dispatchBlocker} />
+      {currentDetail && selectedDemandId ? (
+        <CriteriaPanel
+          apiBaseUrl={apiBaseUrl}
+          apiOptions={apiOptions}
+          demandId={selectedDemandId}
+        />
+      ) : null}
       <WorkflowDetail
         detail={currentDetail}
         graph={currentGraph}

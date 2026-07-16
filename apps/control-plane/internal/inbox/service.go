@@ -318,12 +318,19 @@ func DefaultActions(itemType ItemType) []Action {
 // inbox-shell renders item.actions dynamically, so this is the sole source of the
 // buttons shown per decision type.
 func DecisionActions(decisionType string) []Action {
-	if decisionType == "planning_gap" {
+	switch decisionType {
+	case "planning_gap":
 		return []Action{
 			{Key: "restaffed", Label: "已补员，重新规划", Tone: "positive", Metadata: map[string]any{"decision": "restaffed"}},
 			{Key: "exempted", Label: "豁免约束并重规划", Tone: "positive", Metadata: map[string]any{"decision": "exempted"}},
 			{Key: "rejected", Label: "关闭", Tone: "destructive", Metadata: map[string]any{"decision": "rejected"}},
 		}
+	case "demand_acceptance":
+		// demand_acceptance items are a pure deep-link: signing individual
+		// acceptance criteria is a per-criterion action that happens in the
+		// demand detail UI, not a single inbox quick-action, so no buttons are
+		// rendered here.
+		return []Action{}
 	}
 	return DefaultActions(ItemTypeProjectDecision)
 }

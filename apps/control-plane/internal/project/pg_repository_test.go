@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -634,6 +635,292 @@ func TestPgRepositoryCreateProjectDemandSummaryIsIdempotent(t *testing.T) {
 	require.Equal(t, first.ID, latest.ID)
 	require.Equal(t, true, latest.SummaryPayload["accepted"])
 	require.Equal(t, []any{"persist-result"}, latest.SummaryPayload["tasks"])
+}
+
+// demandAcceptanceGateFixture creates a project + demand (status executing) +
+// an open (decomposed) plan revision, and returns everything the convergence
+// gate tests need to attach criteria/verdicts/tasks against.
+func demandAcceptanceGateFixture(t *testing.T, repo Repository, tenantID uuid.UUID) (projectID, demandID, revisionID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	projectID = createProjectFixture(t, repo, tenantID)
+	demandID = createDemandFixtureWithStatusAndSourceRefs(t, repo, tenantID, projectID, ProjectDemandStatusExecuting, nil)
+	revision, err := repo.CreatePlanRevision(ctx, CreatePlanRevisionRequest{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		DemandID:        demandID,
+		Status:          PlanRevisionStatusDecomposed,
+		Payload:         map[string]any{"mode": "test"},
+		PlanFingerprint: "fp-" + demandID.String(),
+	})
+	require.NoError(t, err)
+	return projectID, demandID, revision.ID
+}
+
+// createCompletedDemandTaskFixture creates a single completed project task
+// tied to demandID/revisionID, so CountProjectTaskStatusesByDemand sees
+// Active==0, Failed==0 and the recompute reaches the convergence gate.
+func createCompletedDemandTaskFixture(t *testing.T, repo Repository, tenantID, projectID, demandID, revisionID uuid.UUID) {
+	t.Helper()
+	_, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		DemandID:               &demandID,
+		Title:                  "验收判据收敛闸任务",
+		Status:                 ProjectTaskStatusCompleted,
+		RiskLevel:              "low",
+		AcceptedPlanRevisionID: &revisionID,
+	})
+	require.NoError(t, err)
+}
+
+func createBlockingCriterionFixture(t *testing.T, repo Repository, tenantID, projectID, demandID, revisionID uuid.UUID, criterionID string) {
+	t.Helper()
+	require.NoError(t, repo.CreateDemandAcceptanceCriteria(context.Background(), []CreateDemandAcceptanceCriterionRequest{
+		{
+			TenantID:           tenantID,
+			ProjectID:          projectID,
+			DemandID:           demandID,
+			PlanRevisionID:     revisionID,
+			CriterionID:        criterionID,
+			Statement:          "人类确认核心链路可用",
+			VerificationMethod: "human_judgment",
+			Severity:           "blocking",
+		},
+	}))
+}
+
+func createCriterionVerdictFixture(t *testing.T, repo Repository, tenantID, projectID, demandID, revisionID uuid.UUID, criterionID, verdict, judgeType string) {
+	t.Helper()
+	require.NoError(t, repo.CreateDemandCriterionVerdict(context.Background(), CreateDemandCriterionVerdictRequest{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		DemandID:       demandID,
+		PlanRevisionID: revisionID,
+		CriterionID:    criterionID,
+		Verdict:        verdict,
+		JudgeType:      judgeType,
+		JudgeID:        uuid.New(),
+	}))
+}
+
+// TestRecomputeHoldsAtAcceptancePendingWhenBlockingUnsigned proves the
+// convergence gate: a demand whose only task is completed still holds at
+// acceptance_pending (not completed) while its snapshotted blocking
+// criterion has no verdict at all — awaiting human sign-off.
+func TestRecomputeHoldsAtAcceptancePendingWhenBlockingUnsigned(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+	createBlockingCriterionFixture(t, repo, tenantID, projectID, demandID, revisionID, "core-flow-signoff")
+	createCompletedDemandTaskFixture(t, repo, tenantID, projectID, demandID, revisionID)
+
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusAcceptancePending, demand.Status)
+}
+
+// TestRecomputeCompletesWhenAllBlockingSatisfied proves the release side of
+// the gate: once every blocking criterion has an effective satisfied
+// verdict, recompute advances the demand straight to completed.
+func TestRecomputeCompletesWhenAllBlockingSatisfied(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+	createBlockingCriterionFixture(t, repo, tenantID, projectID, demandID, revisionID, "core-flow-signoff")
+	createCriterionVerdictFixture(t, repo, tenantID, projectID, demandID, revisionID, "core-flow-signoff", "satisfied", "human")
+	createCompletedDemandTaskFixture(t, repo, tenantID, projectID, demandID, revisionID)
+
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusCompleted, demand.Status)
+}
+
+// TestRecomputeLegacyDemandWithoutSnapshotCompletes is the byte-identical
+// guard: a demand with no plan revision at all (predates the P1
+// acceptance-criteria rollout, or any other legacy path) completes exactly
+// as it did before the convergence gate existed — no gate, no hold.
+func TestRecomputeLegacyDemandWithoutSnapshotCompletes(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixtureWithStatusAndSourceRefs(t, repo, tenantID, projectID, ProjectDemandStatusExecuting, nil)
+	_, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  &demandID,
+		Title:     "无判据快照的遗留任务",
+		Status:    ProjectTaskStatusCompleted,
+		RiskLevel: "low",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusCompleted, demand.Status)
+}
+
+// TestRecomputeHumanVerdictTakesPrecedenceOverExecutor proves the binding
+// human-precedence resolution rule both directions: a human "unsatisfied"
+// overrides an executor "satisfied" (holds at acceptance_pending), and a
+// human "satisfied" overrides an executor "unsatisfied" (completes).
+func TestRecomputeHumanVerdictTakesPrecedenceOverExecutor(t *testing.T) {
+	cases := []struct {
+		name            string
+		executorVerdict string
+		humanVerdict    string
+		wantStatus      ProjectDemandStatus
+	}{
+		{
+			name:            "executor satisfied, human unsatisfied holds",
+			executorVerdict: "satisfied",
+			humanVerdict:    "unsatisfied",
+			wantStatus:      ProjectDemandStatusAcceptancePending,
+		},
+		{
+			name:            "executor unsatisfied, human satisfied completes",
+			executorVerdict: "unsatisfied",
+			humanVerdict:    "satisfied",
+			wantStatus:      ProjectDemandStatusCompleted,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, tenantID := newProjectRepositoryTestStore(t)
+			pgRepo := repo.(*PgRepository)
+			ctx := context.Background()
+			projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+			createBlockingCriterionFixture(t, repo, tenantID, projectID, demandID, revisionID, "core-flow-signoff")
+			executorTaskID := uuid.New()
+			require.NoError(t, repo.CreateDemandCriterionVerdict(ctx, CreateDemandCriterionVerdictRequest{
+				TenantID:       tenantID,
+				ProjectID:      projectID,
+				DemandID:       demandID,
+				PlanRevisionID: revisionID,
+				CriterionID:    "core-flow-signoff",
+				Verdict:        tc.executorVerdict,
+				JudgeType:      "executor",
+				JudgeID:        uuid.New(),
+				ProjectTaskID:  &executorTaskID,
+			}))
+			createCriterionVerdictFixture(t, repo, tenantID, projectID, demandID, revisionID, "core-flow-signoff", tc.humanVerdict, "human")
+			createCompletedDemandTaskFixture(t, repo, tenantID, projectID, demandID, revisionID)
+
+			require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+
+			demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantStatus, demand.Status)
+		})
+	}
+}
+
+// TestCountUnsatisfiedBlockingCriteriaSkipsNonBlocking proves non_blocking
+// criteria never count toward the gate, verdicts or not.
+func TestCountUnsatisfiedBlockingCriteriaSkipsNonBlocking(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+	require.NoError(t, repo.CreateDemandAcceptanceCriteria(ctx, []CreateDemandAcceptanceCriterionRequest{
+		{
+			TenantID:           tenantID,
+			ProjectID:          projectID,
+			DemandID:           demandID,
+			PlanRevisionID:     revisionID,
+			CriterionID:        "nice-to-have",
+			Statement:          "非阻塞的锦上添花判据",
+			VerificationMethod: "human_judgment",
+			Severity:           "non_blocking",
+		},
+	}))
+
+	count, err := pgRepo.CountUnsatisfiedBlockingCriteria(ctx, tenantID, demandID, revisionID)
+	require.NoError(t, err)
+	require.Equal(t, 0, count)
+}
+
+// insertVerdictWithExplicitIDTaskAndTimestamp inserts one verdict row with a
+// caller-chosen id, project_task_id and created_at, bypassing the repository
+// (which defaults id/created_at) so ordering tests can force rows to share
+// created_at while differing only by id.
+func insertVerdictWithExplicitIDTaskAndTimestamp(t *testing.T, pool *pgxpool.Pool, id, tenantID, projectID, demandID, revisionID, projectTaskID uuid.UUID, criterionID, verdict, judgeType string, createdAt time.Time) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO demand_criterion_verdicts
+			(id, tenant_id, project_id, demand_id, plan_revision_id, criterion_id, verdict, judge_type, judge_id, project_task_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		id, tenantID, projectID, demandID, revisionID, criterionID, verdict, judgeType, uuid.New(), projectTaskID, createdAt)
+	require.NoError(t, err)
+}
+
+// TestListDemandCriterionVerdictsOrdersByIDOnTiedCreatedAt locks the id
+// secondary sort key: ListDemandCriterionVerdicts returns rows in
+// (created_at ASC, id ASC) order, so verdicts sharing a created_at come back
+// in a total, deterministic order rather than physical-insertion order. The
+// convergence gate's resolver (ResolveUnsatisfiedBlockingCriteria) applies
+// "latest human wins" by overwriting in slice order, so this ordering is what
+// makes that tiebreak a deterministic function of (created_at, id) — the
+// uq_demand_verdicts_human index today caps humans at one row per criterion
+// (so the count is already index-deterministic for the human case), but this
+// pins the ordering the resolver's last-wins contract depends on, independent
+// of that index. Uses two executor verdicts (distinct project_task_id, allowed
+// to coexist by uq_demand_verdicts_task) sharing a created_at, and asserts the
+// returned id order is identical regardless of physical insertion order.
+func TestListDemandCriterionVerdictsOrdersByIDOnTiedCreatedAt(t *testing.T) {
+	sharedCreatedAt := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+
+	// physicalOrder selects which of the two ids is inserted first, to prove
+	// the returned order is driven by the ORDER BY, not physical heap order.
+	for _, physicalHigherFirst := range []bool{false, true} {
+		name := "lower-inserted-first"
+		if physicalHigherFirst {
+			name = "higher-inserted-first"
+		}
+		t.Run(name, func(t *testing.T) {
+			repo, tenantID := newProjectRepositoryTestStore(t)
+			pgRepo := repo.(*PgRepository)
+			pool := pgRepo.db.(*pgxpool.Pool)
+			ctx := context.Background()
+			projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+			createBlockingCriterionFixture(t, repo, tenantID, projectID, demandID, revisionID, "core-flow-signoff")
+
+			// Fresh ids each run (PK is global; the shared dev DB retains prior
+			// runs' rows), ordered by byte comparison to match Postgres uuid
+			// ordering so we know which id must come back first.
+			lowerID, higherID := uuid.New(), uuid.New()
+			if bytes.Compare(lowerID[:], higherID[:]) > 0 {
+				lowerID, higherID = higherID, lowerID
+			}
+			first, last := lowerID, higherID
+			if physicalHigherFirst {
+				first, last = higherID, lowerID
+			}
+			// One task per verdict row (distinct project_task_id keeps
+			// uq_demand_verdicts_task happy); ids drive the tiebreak.
+			taskByID := map[uuid.UUID]uuid.UUID{lowerID: uuid.New(), higherID: uuid.New()}
+			verdictByID := map[uuid.UUID]string{lowerID: "satisfied", higherID: "unsatisfied"}
+			insertVerdictWithExplicitIDTaskAndTimestamp(t, pool, first, tenantID, projectID, demandID, revisionID, taskByID[first], "core-flow-signoff", verdictByID[first], "executor", sharedCreatedAt)
+			insertVerdictWithExplicitIDTaskAndTimestamp(t, pool, last, tenantID, projectID, demandID, revisionID, taskByID[last], "core-flow-signoff", verdictByID[last], "executor", sharedCreatedAt)
+
+			verdicts, err := pgRepo.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+			require.NoError(t, err)
+			require.Len(t, verdicts, 2)
+			// Deterministic (created_at, id) order: lower id first, always,
+			// regardless of physical insertion order.
+			require.Equal(t, lowerID, verdicts[0].ID)
+			require.Equal(t, higherID, verdicts[1].ID)
+		})
+	}
 }
 
 func TestProjectTaskResultPaginationDefaultsCapsAndNormalizesOffset(t *testing.T) {
@@ -4282,6 +4569,15 @@ func createDemandFixtureWithStatusAndSourceRefs(t *testing.T, repo Repository, t
 		Content:           "验证任务节点和依赖边",
 		SourceType:        DemandSourceManual,
 		SourceRefs:        sourceRefs,
+		// CoordinationMode: the repository-level CreateProjectDemand issues this
+		// column explicitly (no DB-side default fallback — see
+		// queries/project.sql's CreateProjectDemand, which binds
+		// sqlc.arg('coordination_mode') unconditionally), so this fixture — which
+		// calls the repository directly, bypassing the Service-layer default —
+		// must supply a value satisfying chk_project_demands_coordination_mode
+		// itself. Pre-existing gap (predates this task); "plan" matches the
+		// column's own DB DEFAULT.
+		CoordinationMode: "plan",
 	}, status, &event.ID)
 	require.NoError(t, err)
 	return demand.ID

@@ -245,6 +245,62 @@ type CapabilityVocabulary struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 需求判据快照：计划批准分解时从 payload 固化的验收判据，收敛闸/血缘/签署全部查表不解析 JSONB
+type DemandAcceptanceCriterium struct {
+	// 判据快照主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 判据快照所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 判据快照所属项目 ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 判据快照所属需求 ID
+	DemandID uuid.UUID `json:"demand_id"`
+	// 判据固化时所属的计划修订版本 ID
+	PlanRevisionID uuid.UUID `json:"plan_revision_id"`
+	// 判据在 payload 内的原始 ID，租户+需求+计划修订范围内唯一
+	CriterionID string `json:"criterion_id"`
+	// 判据的自然语言陈述：什么算做对了
+	Statement string `json:"statement"`
+	// 判据的验证方式（如 test、review、manual_check）
+	VerificationMethod string `json:"verification_method"`
+	// 判据严重度（如 blocking、advisory）
+	Severity string `json:"severity"`
+	// 判据关联的满足来源列表（如任务/证据指针），JSONB 数组
+	SatisfiedBy []byte `json:"satisfied_by"`
+	// 判据快照固化时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 逐条判据判定记录：executor 投影（按 project_task_id 各自一条）+ 人类签署（project_task_id 为空，全局一条）两来源
+type DemandCriterionVerdict struct {
+	// 判定记录主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 判定记录所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 判定记录所属项目 ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 判定记录所属需求 ID
+	DemandID uuid.UUID `json:"demand_id"`
+	// 判定记录所属的计划修订版本 ID
+	PlanRevisionID uuid.UUID `json:"plan_revision_id"`
+	// 被判定的判据 ID，对应 demand_acceptance_criteria.criterion_id
+	CriterionID string `json:"criterion_id"`
+	// 判定结论：satisfied | unsatisfied
+	Verdict string `json:"verdict"`
+	// 判定来源类型：executor | human
+	JudgeType string `json:"judge_type"`
+	// 判定人/执行者 ID（人类用户 ID 或数字员工 ID）
+	JudgeID uuid.UUID `json:"judge_id"`
+	// 判定理由说明，可为空字符串
+	Reason string `json:"reason"`
+	// 判定引用的证据指针列表，JSONB 数组
+	EvidenceRefs []byte `json:"evidence_refs"`
+	// 关联的执行任务 ID；executor 投影必填，人类签署为空表示全局判定
+	ProjectTaskID uuid.NullUUID `json:"project_task_id"`
+	// 判定记录创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // 数字员工业务身份表
 type DigitalEmployee struct {
 	// 数字员工主键 UUID
@@ -1031,7 +1087,7 @@ type ProjectDemand struct {
 	Priority pgtype.Text `json:"priority"`
 	// 需求风险等级，由应用层和策略校验
 	RiskLevel pgtype.Text `json:"risk_level"`
-	// 需求状态：submitted, recorded, planning_pending, planned, executing, completed, failed, cancelled
+	// 需求状态：submitted, recorded, planning_pending, planned, executing, acceptance_pending, completed, failed, cancelled
 	Status string `json:"status"`
 	// 创建该需求时产生的项目事件ID
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`

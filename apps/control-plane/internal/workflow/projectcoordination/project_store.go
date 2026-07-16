@@ -593,6 +593,36 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
+	// Normalize a local copy of the payload's plan-level acceptance criteria
+	// (empty verification_method -> automated_test, empty severity ->
+	// blocking) rather than mutating input.Payload.PlanAcceptanceCriteria in
+	// place, since the planner already normalizes at plan-creation time
+	// (applyAcceptanceCriteriaDefaults) and this is a defensive re-normalize
+	// for whatever payload actually made it into the accepted revision. Both
+	// the handoff-contract injection below and the demand_acceptance_criteria
+	// snapshot after decomposition read from this normalized copy.
+	criteria := make([]PlanAcceptanceCriterion, len(input.Payload.PlanAcceptanceCriteria))
+	copy(criteria, input.Payload.PlanAcceptanceCriteria)
+	for i := range criteria {
+		normalizeCriterionDefaults(&criteria[i])
+	}
+	// criterionInjectionsByTaskKey holds, per planned task key, the
+	// {criterion_id, criterion} objects to append to that task's
+	// handoff_contract["acceptance_criteria"]. Only automated_test criteria
+	// are injected: human_judgment criteria are a human sign-off matter, not
+	// a task-level contract obligation (human 判归人).
+	criterionInjectionsByTaskKey := map[string][]any{}
+	for _, criterion := range criteria {
+		if criterion.VerificationMethod != VerificationMethodAutomatedTest {
+			continue
+		}
+		for _, taskKey := range criterion.SatisfiedBy {
+			criterionInjectionsByTaskKey[taskKey] = append(criterionInjectionsByTaskKey[taskKey], map[string]any{
+				"criterion_id": criterion.ID,
+				"criterion":    criterion.Statement,
+			})
+		}
+	}
 	graphTasks := make([]project.ProjectTaskGraphCreateTask, 0, len(input.Payload.Tasks))
 	for _, plannedTask := range input.Payload.Tasks {
 		employeeID, err := uuid.Parse(strings.TrimSpace(plannedTask.SelectedEmployeeID))
@@ -613,6 +643,11 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 		handoffContract := cloneAnyMap(plannedTask.HandoffContract)
 		if len(plannedTask.AcceptanceCriteria) > 0 {
 			handoffContract["acceptance_criteria"] = append([]string(nil), plannedTask.AcceptanceCriteria...)
+		}
+		if injections := criterionInjectionsByTaskKey[plannedTask.PlannedTaskKey]; len(injections) > 0 {
+			// Append, never overwrite: the planner's own task-level
+			// acceptance_criteria strings (if any) stay first in the list.
+			handoffContract["acceptance_criteria"] = appendAcceptanceCriterionInjections(handoffContract["acceptance_criteria"], injections)
 		}
 		if len(plannedTask.VerificationRequirements) > 0 {
 			handoffContract["verification_requirements"] = append([]string(nil), plannedTask.VerificationRequirements...)
@@ -662,11 +697,53 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 	if err != nil {
 		return nil, err
 	}
+	if len(criteria) > 0 {
+		snapshotRequests := make([]project.CreateDemandAcceptanceCriterionRequest, 0, len(criteria))
+		for _, criterion := range criteria {
+			snapshotRequests = append(snapshotRequests, project.CreateDemandAcceptanceCriterionRequest{
+				TenantID:           input.TenantID,
+				ProjectID:          input.ProjectID,
+				DemandID:           input.DemandID,
+				PlanRevisionID:     input.PlanRevisionID,
+				CriterionID:        criterion.ID,
+				Statement:          criterion.Statement,
+				VerificationMethod: criterion.VerificationMethod,
+				Severity:           criterion.Severity,
+				SatisfiedBy:        append([]string(nil), criterion.SatisfiedBy...),
+			})
+		}
+		// ON CONFLICT (tenant_id, demand_id, plan_revision_id, criterion_id) DO
+		// NOTHING on the repository side makes this idempotent across a
+		// replayed decompose (decomposition.Replayed above), so it is safe to
+		// call unconditionally rather than gating on that flag.
+		if err := s.repository.CreateDemandAcceptanceCriteria(ctx, snapshotRequests); err != nil {
+			return nil, err
+		}
+	}
 	results := make([]ProjectTaskResult, 0, len(decomposition.Tasks))
 	for _, task := range decomposition.Tasks {
 		results = append(results, ProjectTaskResult{ID: task.ID})
 	}
 	return results, nil
+}
+
+// appendAcceptanceCriterionInjections normalizes an existing
+// handoff_contract["acceptance_criteria"] value (nil, a planner-authored
+// []string, or an already-mixed []any) into a []any and appends the given
+// criterion-injection objects after it, so planner-supplied task-level
+// criteria are never overwritten.
+func appendAcceptanceCriterionInjections(existing any, injections []any) []any {
+	var combined []any
+	switch typed := existing.(type) {
+	case []string:
+		for _, value := range typed {
+			combined = append(combined, value)
+		}
+	case []any:
+		combined = append(combined, typed...)
+	}
+	combined = append(combined, injections...)
+	return combined
 }
 
 // plannedTaskInputRequirements keeps only schema'd dependency declarations in
@@ -3474,6 +3551,160 @@ func (s *ProjectStore) ReopenProjectDemandForReplanning(ctx context.Context, inp
 	}
 	_, err := s.repository.ReopenProjectDemandForReplanning(ctx, input.TenantID, input.DemandID)
 	return err
+}
+
+const (
+	// demandAcceptanceDecisionType is the human-decision type opened when the
+	// acceptance-criteria convergence gate (recomputeProjectDemandStatusWithQueries)
+	// parks a demand at acceptance_pending: every task is terminal but at least
+	// one blocking criterion still lacks a satisfied verdict.
+	demandAcceptanceDecisionType = "demand_acceptance"
+	// demandAcceptanceResourceType scopes the demand_acceptance approval request
+	// to its demand (ResourceID = demand ID), giving repeated convergence-gate
+	// probes — EnsureDemandAcceptanceDecisionForTask runs after every task
+	// completion/failure signal touching the demand — demand-scoped,
+	// pending-only idempotency via GetRequestByResource. Mirrors
+	// planningGapResourceType.
+	demandAcceptanceResourceType = "project_demand_acceptance"
+)
+
+// EnsureDemandAcceptanceDecisionForTask resolves the demand behind a
+// just-processed task and, if the convergence gate has parked it at
+// acceptance_pending, opens the demand_acceptance human-decision three-piece.
+// Called unconditionally by the coordinator workflow after every task
+// completion/failure signal (see workflow.go's ensureDemandAcceptanceDecisionForTask
+// helper) — most calls are a cheap no-op read, since the demand usually still
+// has other active tasks or completed cleanly with no gate hold. Mirrors
+// isProjectAcceptanceReady/requestProjectAcceptanceReview's independent-requery
+// pattern rather than plumbing the demand's post-writeback status through the
+// repository call chain (recomputeProjectDemandStatusWithQueries already
+// committed it by the time this signal is delivered).
+func (s *ProjectStore) EnsureDemandAcceptanceDecisionForTask(ctx context.Context, input EnsureDemandAcceptanceDecisionForTaskInput) (DecisionRequestResult, error) {
+	if s.repository == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, input.ProjectTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if task.DemandID == nil {
+		return DecisionRequestResult{}, nil
+	}
+	return s.ensureDemandAcceptanceDecision(ctx, input.TenantID, input.ProjectID, *task.DemandID)
+}
+
+// ensureDemandAcceptanceDecision opens the demand_acceptance human-decision
+// three-piece (approval request + decision.requested event + decision request
+// projection + inbox item) for a demand currently at acceptance_pending —
+// mirroring ensurePlanningGapDecision. No-ops (zero result, no error) when
+// the demand isn't (or is no longer) at acceptance_pending, when no approval
+// sink is wired (bare-repository callers), or when a pending demand_acceptance
+// approval already exists for this demand (idempotent per demand via
+// GetRequestByResource — unlike ensurePlanningGapDecision this does not
+// best-effort resolve the existing decision's id: no caller currently needs
+// it back on the idempotent path).
+func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (DecisionRequestResult, error) {
+	demand, err := s.repository.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if demand.Status != project.ProjectDemandStatusAcceptancePending {
+		return DecisionRequestResult{}, nil
+	}
+	if s.approvals == nil {
+		return DecisionRequestResult{}, nil
+	}
+	existing, err := s.approvals.GetRequestByResource(ctx, tenantID, demandAcceptanceResourceType, demandID)
+	if err != nil && !errors.Is(err, approval.ErrApprovalNotFound) {
+		return DecisionRequestResult{}, err
+	}
+	if existing != nil {
+		return DecisionRequestResult{}, nil
+	}
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, tenantID, projectID, demandID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	revisionID := project.CurrentEffectivePlanRevisionID(revisions)
+	var pendingCriteria []string
+	if revisionID != uuid.Nil {
+		criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
+		if err != nil {
+			return DecisionRequestResult{}, err
+		}
+		verdicts, err := s.repository.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+		if err != nil {
+			return DecisionRequestResult{}, err
+		}
+		pendingCriteria = project.ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)
+	}
+	projectRecord, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	targetUserID := projectRecord.HumanOwnerUserID
+	title := "需求验收：" + demand.Title
+	summary := "需求任务全部完成，等待人类逐条判据验收"
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:      tenantID,
+		ResourceType:  demandAcceptanceResourceType,
+		ResourceID:    demandID,
+		RequesterType: "project_coordinator",
+		TargetUserID:  targetUserID,
+		DecisionType:  demandAcceptanceDecisionType,
+		Title:         title,
+		Summary:       summary,
+		RiskLevel:     "high",
+		Options:       []any{},
+		ContextPayload: map[string]any{
+			"demand_id":        demandID.String(),
+			"plan_revision_id": revisionID.String(),
+			"pending_criteria": pendingCriteria,
+		},
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, project.ProjectEventDecisionRequested, demandID.String(), "需求已完成执行,等待人类逐条判据验收", map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"demand_id":           demandID.String(),
+		"target_user_id":      targetUserID.String(),
+		"decision_type":       demandAcceptanceDecisionType,
+	}))
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	// plan_revision_id must land on the decision COLUMN, not only in the
+	// approval ContextPayload: the sign endpoint resolves the pending
+	// demand_acceptance decision via GetPendingDemandAcceptanceDecisionByPlanRevision
+	// (WHERE plan_revision_id = current effective revision). A NULL column makes
+	// sign-off/completion/rejection unreachable (404).
+	var planRevisionPtr *uuid.UUID
+	if revisionID != uuid.Nil {
+		planRevisionPtr = &revisionID
+	}
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalRequest.ID,
+		PlanRevisionID:    planRevisionPtr,
+		TargetUserID:      targetUserID,
+		DecisionType:      demandAcceptanceDecisionType,
+		TitleSnapshot:     title,
+		SummarySnapshot:   summary,
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return DecisionRequestResult{}, err
+		}
+	}
+	return DecisionRequestResult{ID: decision.ID}, nil
 }
 
 func coordinatorEvent(tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID, summary string, payload map[string]any) project.AppendProjectEventRequest {

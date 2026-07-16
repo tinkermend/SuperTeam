@@ -1335,6 +1335,60 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/project-demands/{demandId}/acceptance-criteria:
+    get:
+      operationId: listDemandAcceptanceCriteria
+      summary: List a demand's snapshotted acceptance criteria with resolved verdicts and evidence
+      parameters:
+        - name: demandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Demand acceptance criteria with effective verdicts (human over executor) and satisfying-task summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemandAcceptanceCriteriaDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/project-demands/{demandId}/criterion-verdicts:
+    post:
+      operationId: signDemandCriterionVerdict
+      summary: Sign a human verdict against a demand's blocking human_judgment acceptance criterion
+      parameters:
+        - name: demandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignDemandCriterionVerdictRequest"
+      responses:
+        "200":
+          description: Criterion verdict recorded; demand still acceptance_pending (progress), or converged to completed/failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignDemandCriterionVerdictResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/route-decisions:
     get:
       operationId: listProjectRouteDecisions
@@ -7680,6 +7734,130 @@ components:
         target_exit_deliverable:
           type: string
           description: 人类改选的交付出口；仅 request_changes 时有意义，重规划将钉住该出口
+    DemandCriterionTaskSummary:
+      type: object
+      required:
+        - task_id
+        - summary
+      properties:
+        task_id:
+          type: string
+          description: 满足该判据的项目任务 ID（快照 satisfied_by 中的原始值）
+        summary:
+          type: string
+          description: 该任务最新执行结论；无执行摘要时为空字符串
+    DemandAcceptanceCriterionDetail:
+      type: object
+      required:
+        - criterion_id
+        - statement
+        - verification_method
+        - severity
+        - satisfied_by
+        - verdict
+        - judge_type
+        - evidence_refs
+        - task_summaries
+      properties:
+        criterion_id:
+          type: string
+        statement:
+          type: string
+        verification_method:
+          type: string
+          description: 验证方式，如 human_judgment / automated_test
+        severity:
+          type: string
+          description: blocking / non_blocking
+        satisfied_by:
+          type: array
+          items:
+            type: string
+        verdict:
+          type: string
+          nullable: true
+          enum:
+            - satisfied
+            - unsatisfied
+          description: 生效判定（人类优先于执行者）；无任何判定时为 null
+        judge_type:
+          type: string
+          nullable: true
+          enum:
+            - human
+            - executor
+          description: 生效判定的来源；无判定时为 null
+        evidence_refs:
+          type: array
+          items:
+            type: string
+        task_summaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/DemandCriterionTaskSummary"
+    DemandAcceptanceCriteriaDetail:
+      type: object
+      required:
+        - demand_id
+        - demand_status
+        - criteria
+      properties:
+        demand_id:
+          type: string
+          format: uuid
+        demand_status:
+          type: string
+          description: 需求当前状态；acceptance_pending 时人判判据可签署
+        criteria:
+          type: array
+          items:
+            $ref: "#/components/schemas/DemandAcceptanceCriterionDetail"
+    SignDemandCriterionVerdictRequest:
+      type: object
+      required:
+        - criterion_id
+        - verdict
+      properties:
+        criterion_id:
+          type: string
+          description: 需求当前计划修订版本快照中的判据 ID（demand_acceptance_criteria.criterion_id）
+        verdict:
+          type: string
+          enum:
+            - satisfied
+            - unsatisfied
+        reason:
+          type: string
+    SignDemandCriterionVerdictResult:
+      type: object
+      required:
+        - demand_id
+        - demand_status
+        - criterion_id
+        - verdict
+        - signed
+        - total
+        - remaining
+      properties:
+        demand_id:
+          type: string
+          format: uuid
+        demand_status:
+          type: string
+          description: 签署后的需求状态：仍为 acceptance_pending（进度）或已收敛为 completed / failed
+        criterion_id:
+          type: string
+        verdict:
+          type: string
+        signed:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int32
+        remaining:
+          type: integer
+          format: int32
     CompleteProjectTaskRequest:
       type: object
       required:

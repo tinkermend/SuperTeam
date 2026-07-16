@@ -127,6 +127,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			lastErr = fmt.Errorf("planner response decode failed: %w; raw response: %s", err, plannerContentExcerpt(content))
 			continue
 		}
+		applyAcceptanceCriteriaDefaults(&plan, snapshot.CoordinationPolicy)
 		ApplyTaskTypeDefaults(&plan)
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
 		ApplyPlanningProfileScores(snapshot, &plan)
@@ -158,6 +159,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			if requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
 				pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 				repaired := synthesizeRequiredReviewPlan(snapshot, pool, plan)
+				applyAcceptanceCriteriaDefaults(&repaired, snapshot.CoordinationPolicy)
 				ApplyTaskTypeDefaults(&repaired)
 				ApplyPlanningProfileScores(snapshot, &repaired)
 				repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12})
@@ -309,6 +311,7 @@ func buildPlannerSystemPrompt() string {
 		"permission_requirements are advisory annotations only. Prefer an empty array. A digital employee's boundary is enforced by the provider sandbox and by action-level human approval, not by matching permission names at planning time.",
 		"runtime_requirements entries must use the form kind:value. Only two kinds are evaluated: provider:<provider_type> such as provider:codex, and runtime_node:<uuid>. A bare token such as codex is not evaluated and is recorded as unrecognized. Prefer an empty array unless the task genuinely requires a specific provider.",
 		"plan_acceptance_criteria is a list of plan-level acceptance standards, each with id (short snake_case), statement (one sentence a human can judge), and satisfied_by (the task keys whose work feeds this criterion). Every criterion must be satisfied_by at least one task that exists in the plan. These are what the human owner reviews and approves before execution begins; state them as outcomes, not as steps.",
+		"Each plan_acceptance_criteria entry must also declare verification_method: automated_test when the criterion can be decided from command or test evidence (satisfied_by is then required), or human_judgment when it is a business or intent judgment only a human can make (satisfied_by may be empty). Also declare severity: blocking (default; failing it blocks acceptance) or non_blocking. statement must be a decidable assertion, not a vague qualifier like \"尽量\", \"适当\", or \"优化一下\".",
 		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
 		"selection_confidence is your own 0.0-1.0 confidence that the selected employee's described role and experience fit this task. Judge it from the employee's description, not from capability name overlap.",
 		"produces is a list of short, stable, snake_case keys naming the artifacts this task hands to downstream tasks, for example load_test_report. Every key a task lists in input_requirements.required_inputs must appear in the produces of one of its DIRECT blockers (declare the edge in blocked_by_keys; one edge = one handoff). At execution time the platform injects each task's direct blockers' results as upstream_results into its dispatch request, and a completed task must return result_contract.deliverables covering every name in its produces.",
@@ -583,9 +586,12 @@ func decodePlanAcceptanceCriteria(raw json.RawMessage) []PlanAcceptanceCriterion
 		return nil
 	}
 	var decoded []struct {
-		ID          string          `json:"id"`
-		Statement   string          `json:"statement"`
-		SatisfiedBy json.RawMessage `json:"satisfied_by"`
+		ID                 string          `json:"id"`
+		Statement          string          `json:"statement"`
+		SatisfiedBy        json.RawMessage `json:"satisfied_by"`
+		VerificationMethod string          `json:"verification_method"`
+		Severity           string          `json:"severity"`
+		EvidenceHint       string          `json:"evidence_hint"`
 	}
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		return nil
@@ -596,9 +602,12 @@ func decodePlanAcceptanceCriteria(raw json.RawMessage) []PlanAcceptanceCriterion
 			continue
 		}
 		out = append(out, PlanAcceptanceCriterion{
-			ID:          strings.TrimSpace(entry.ID),
-			Statement:   strings.TrimSpace(entry.Statement),
-			SatisfiedBy: nonNilStrings(decodePlannerStringArray(entry.SatisfiedBy)),
+			ID:                 strings.TrimSpace(entry.ID),
+			Statement:          strings.TrimSpace(entry.Statement),
+			SatisfiedBy:        nonNilStrings(decodePlannerStringArray(entry.SatisfiedBy)),
+			VerificationMethod: strings.TrimSpace(entry.VerificationMethod),
+			Severity:           strings.TrimSpace(entry.Severity),
+			EvidenceHint:       strings.TrimSpace(entry.EvidenceHint),
 		})
 	}
 	return out
