@@ -117,6 +117,8 @@ type Repository interface {
 	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error)
 	CreateDemandConstraintExemption(ctx context.Context, req CreateDemandConstraintExemptionRequest) error
 	ListDemandConstraintExemptions(ctx context.Context, tenantID, demandID uuid.UUID) ([]DemandConstraintExemption, error)
+	CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error
+	ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error)
 	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
 	CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error)
 	GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error)
@@ -591,6 +593,23 @@ type CreateDemandConstraintExemptionRequest struct {
 	Roles             []string
 	GrantedByUserID   uuid.UUID
 	DecisionRequestID *uuid.UUID
+}
+
+// CreateDemandAcceptanceCriterionRequest snapshots one plan-level acceptance
+// criterion into demand_acceptance_criteria. The
+// (tenant_id, demand_id, plan_revision_id, criterion_id) unique constraint
+// makes a batch of these idempotent: re-decomposing the same plan revision
+// (e.g. a replayed Temporal activity) re-inserts the same rows as no-ops.
+type CreateDemandAcceptanceCriterionRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	PlanRevisionID     uuid.UUID
+	CriterionID        string
+	Statement          string
+	VerificationMethod string
+	Severity           string
+	SatisfiedBy        []string
 }
 
 type CreateEvidenceRefRequest struct {

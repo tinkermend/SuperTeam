@@ -593,6 +593,36 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
+	// Normalize a local copy of the payload's plan-level acceptance criteria
+	// (empty verification_method -> automated_test, empty severity ->
+	// blocking) rather than mutating input.Payload.PlanAcceptanceCriteria in
+	// place, since the planner already normalizes at plan-creation time
+	// (applyAcceptanceCriteriaDefaults) and this is a defensive re-normalize
+	// for whatever payload actually made it into the accepted revision. Both
+	// the handoff-contract injection below and the demand_acceptance_criteria
+	// snapshot after decomposition read from this normalized copy.
+	criteria := make([]PlanAcceptanceCriterion, len(input.Payload.PlanAcceptanceCriteria))
+	copy(criteria, input.Payload.PlanAcceptanceCriteria)
+	for i := range criteria {
+		normalizeCriterionDefaults(&criteria[i])
+	}
+	// criterionInjectionsByTaskKey holds, per planned task key, the
+	// {criterion_id, criterion} objects to append to that task's
+	// handoff_contract["acceptance_criteria"]. Only automated_test criteria
+	// are injected: human_judgment criteria are a human sign-off matter, not
+	// a task-level contract obligation (human 判归人).
+	criterionInjectionsByTaskKey := map[string][]any{}
+	for _, criterion := range criteria {
+		if criterion.VerificationMethod != VerificationMethodAutomatedTest {
+			continue
+		}
+		for _, taskKey := range criterion.SatisfiedBy {
+			criterionInjectionsByTaskKey[taskKey] = append(criterionInjectionsByTaskKey[taskKey], map[string]any{
+				"criterion_id": criterion.ID,
+				"criterion":    criterion.Statement,
+			})
+		}
+	}
 	graphTasks := make([]project.ProjectTaskGraphCreateTask, 0, len(input.Payload.Tasks))
 	for _, plannedTask := range input.Payload.Tasks {
 		employeeID, err := uuid.Parse(strings.TrimSpace(plannedTask.SelectedEmployeeID))
@@ -613,6 +643,11 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 		handoffContract := cloneAnyMap(plannedTask.HandoffContract)
 		if len(plannedTask.AcceptanceCriteria) > 0 {
 			handoffContract["acceptance_criteria"] = append([]string(nil), plannedTask.AcceptanceCriteria...)
+		}
+		if injections := criterionInjectionsByTaskKey[plannedTask.PlannedTaskKey]; len(injections) > 0 {
+			// Append, never overwrite: the planner's own task-level
+			// acceptance_criteria strings (if any) stay first in the list.
+			handoffContract["acceptance_criteria"] = appendAcceptanceCriterionInjections(handoffContract["acceptance_criteria"], injections)
 		}
 		if len(plannedTask.VerificationRequirements) > 0 {
 			handoffContract["verification_requirements"] = append([]string(nil), plannedTask.VerificationRequirements...)
@@ -662,11 +697,53 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 	if err != nil {
 		return nil, err
 	}
+	if len(criteria) > 0 {
+		snapshotRequests := make([]project.CreateDemandAcceptanceCriterionRequest, 0, len(criteria))
+		for _, criterion := range criteria {
+			snapshotRequests = append(snapshotRequests, project.CreateDemandAcceptanceCriterionRequest{
+				TenantID:           input.TenantID,
+				ProjectID:          input.ProjectID,
+				DemandID:           input.DemandID,
+				PlanRevisionID:     input.PlanRevisionID,
+				CriterionID:        criterion.ID,
+				Statement:          criterion.Statement,
+				VerificationMethod: criterion.VerificationMethod,
+				Severity:           criterion.Severity,
+				SatisfiedBy:        append([]string(nil), criterion.SatisfiedBy...),
+			})
+		}
+		// ON CONFLICT (tenant_id, demand_id, plan_revision_id, criterion_id) DO
+		// NOTHING on the repository side makes this idempotent across a
+		// replayed decompose (decomposition.Replayed above), so it is safe to
+		// call unconditionally rather than gating on that flag.
+		if err := s.repository.CreateDemandAcceptanceCriteria(ctx, snapshotRequests); err != nil {
+			return nil, err
+		}
+	}
 	results := make([]ProjectTaskResult, 0, len(decomposition.Tasks))
 	for _, task := range decomposition.Tasks {
 		results = append(results, ProjectTaskResult{ID: task.ID})
 	}
 	return results, nil
+}
+
+// appendAcceptanceCriterionInjections normalizes an existing
+// handoff_contract["acceptance_criteria"] value (nil, a planner-authored
+// []string, or an already-mixed []any) into a []any and appends the given
+// criterion-injection objects after it, so planner-supplied task-level
+// criteria are never overwritten.
+func appendAcceptanceCriterionInjections(existing any, injections []any) []any {
+	var combined []any
+	switch typed := existing.(type) {
+	case []string:
+		for _, value := range typed {
+			combined = append(combined, value)
+		}
+	case []any:
+		combined = append(combined, typed...)
+	}
+	combined = append(combined, injections...)
+	return combined
 }
 
 // plannedTaskInputRequirements keeps only schema'd dependency declarations in

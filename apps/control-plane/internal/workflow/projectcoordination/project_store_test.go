@@ -1286,6 +1286,198 @@ func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 	require.Equal(t, map[string]any{"repository": "superteam", "scope": "one host"}, req.Tasks[0].PlannerMetadata["planner_notes"])
 }
 
+// decomposeAcceptanceCriteriaFixtureInput builds a two-task, two-criterion
+// DecomposeAcceptedPlanRevisionInput shared by the acceptance-criteria
+// snapshot/injection tests below: task "inspect" is satisfied_by the
+// automated_test criterion "c1" (declared with empty VerificationMethod and
+// Severity so the snapshot test can assert normalization happened), task
+// "notify" is not named in any criterion's satisfied_by, and criterion "c2"
+// is human_judgment with no satisfied_by (the human-sign-off shape).
+func decomposeAcceptanceCriteriaFixtureInput(tenantID, projectID, demandID, jobID, routeID, revisionID, employeeID uuid.UUID) DecomposeAcceptedPlanRevisionInput {
+	return DecomposeAcceptedPlanRevisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		PlanRevisionID:    revisionID,
+		PlanFingerprint:   "fingerprint",
+		Payload: PlanRevisionPayload{
+			Summary: "accepted",
+			Tasks: []PlanRevisionTask{
+				{
+					PlannedTaskKey:          "inspect",
+					Title:                   "检查",
+					Objective:               "检查输入",
+					TaskType:                "analysis",
+					SelectedEmployeeID:      employeeID.String(),
+					EmployeeSelectionReason: "具备分析能力",
+					ExpectedOutputs:         []string{"结论"},
+					Produces:                []string{"inspection_summary"},
+					AcceptanceCriteria:      []string{"独立复核"},
+				},
+				{
+					PlannedTaskKey:          "notify",
+					Title:                   "通知",
+					Objective:               "通知负责人",
+					TaskType:                "notification",
+					SelectedEmployeeID:      employeeID.String(),
+					EmployeeSelectionReason: "具备通知能力",
+					ExpectedOutputs:         []string{"通知记录"},
+					Produces:                []string{"notification_record"},
+				},
+			},
+			PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+				{
+					ID:          "c1",
+					Statement:   "结论可复核",
+					SatisfiedBy: []string{"inspect"},
+					// VerificationMethod/Severity left empty on purpose: the
+					// store must normalize before snapshotting/injecting.
+				},
+				{
+					ID:                 "c2",
+					Statement:          "人类负责人确认交付符合需求意图",
+					VerificationMethod: VerificationMethodHumanJudgment,
+					Severity:           CriterionSeverityBlocking,
+				},
+			},
+			FinalSummaryContract: PlanRevisionFinalSummaryContract{RequiredSections: []string{"conclusion", "evidence", "risks", "next_steps"}},
+		},
+	}
+}
+
+func decomposeAcceptanceCriteriaFixtureRepo(tenantID, projectID, demandID, revisionID uuid.UUID) *projectStoreMemoryRepository {
+	repo := &projectStoreMemoryRepository{}
+	repo.planRevisions = append(repo.planRevisions, project.PlanRevision{
+		ID:              revisionID,
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		DemandID:        demandID,
+		Status:          project.PlanRevisionStatusAccepted,
+		Payload:         map[string]any{"summary": "accepted"},
+		PlanFingerprint: "fingerprint",
+	})
+	return repo
+}
+
+func TestDecomposePersistsCriteriaSnapshot(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	revisionID := uuid.New()
+	employeeID := uuid.New()
+	repo := decomposeAcceptanceCriteriaFixtureRepo(tenantID, projectID, demandID, revisionID)
+	store := NewProjectStore(repo)
+
+	_, err := store.DecomposeAcceptedPlanRevision(context.Background(), decomposeAcceptanceCriteriaFixtureInput(tenantID, projectID, demandID, jobID, routeID, revisionID, employeeID))
+	require.NoError(t, err)
+
+	snapshot, err := repo.ListDemandAcceptanceCriteria(context.Background(), tenantID, demandID, revisionID)
+	require.NoError(t, err)
+	require.Len(t, snapshot, 2)
+
+	byCriterionID := map[string]project.DemandAcceptanceCriterion{}
+	for _, row := range snapshot {
+		require.Equal(t, tenantID, row.TenantID)
+		require.Equal(t, projectID, row.ProjectID)
+		require.Equal(t, demandID, row.DemandID)
+		require.Equal(t, revisionID, row.PlanRevisionID)
+		byCriterionID[row.CriterionID] = row
+	}
+
+	c1, ok := byCriterionID["c1"]
+	require.True(t, ok)
+	require.Equal(t, "结论可复核", c1.Statement)
+	// Empty method/severity in the payload must snapshot as the normalized
+	// defaults, not blank.
+	require.Equal(t, VerificationMethodAutomatedTest, c1.VerificationMethod)
+	require.Equal(t, CriterionSeverityBlocking, c1.Severity)
+	require.Equal(t, []string{"inspect"}, c1.SatisfiedBy)
+
+	c2, ok := byCriterionID["c2"]
+	require.True(t, ok)
+	require.Equal(t, "人类负责人确认交付符合需求意图", c2.Statement)
+	require.Equal(t, VerificationMethodHumanJudgment, c2.VerificationMethod)
+	require.Equal(t, CriterionSeverityBlocking, c2.Severity)
+	require.Empty(t, c2.SatisfiedBy)
+}
+
+func TestDecomposeInjectsCriterionIDsIntoHandoffContracts(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	revisionID := uuid.New()
+	employeeID := uuid.New()
+	repo := decomposeAcceptanceCriteriaFixtureRepo(tenantID, projectID, demandID, revisionID)
+	store := NewProjectStore(repo)
+
+	_, err := store.DecomposeAcceptedPlanRevision(context.Background(), decomposeAcceptanceCriteriaFixtureInput(tenantID, projectID, demandID, jobID, routeID, revisionID, employeeID))
+	require.NoError(t, err)
+
+	require.Len(t, repo.decomposeAcceptedPlanRevisionRequests, 1)
+	tasksByKey := map[string]project.ProjectTaskGraphCreateTask{}
+	for _, task := range repo.decomposeAcceptedPlanRevisionRequests[0].Tasks {
+		tasksByKey[task.Key] = task
+	}
+
+	inspect, ok := tasksByKey["inspect"]
+	require.True(t, ok)
+	// Planner-authored task-level criterion stays first; the injected
+	// criterion_id object is appended after it, never overwriting it.
+	require.Equal(t, []any{
+		"独立复核",
+		map[string]any{"criterion_id": "c1", "criterion": "结论可复核"},
+	}, inspect.HandoffContract["acceptance_criteria"])
+
+	notify, ok := tasksByKey["notify"]
+	require.True(t, ok)
+	// "notify" is not named in any criterion's satisfied_by and has no
+	// planner-authored acceptance_criteria of its own, so no key at all.
+	_, hasKey := notify.HandoffContract["acceptance_criteria"]
+	require.False(t, hasKey)
+
+	// The human_judgment criterion (c2) must never appear in any task's
+	// handoff contract: human judgment is a human sign-off matter, not an
+	// employee-facing task contract obligation.
+	for _, task := range repo.decomposeAcceptedPlanRevisionRequests[0].Tasks {
+		criteria, _ := task.HandoffContract["acceptance_criteria"].([]any)
+		for _, entry := range criteria {
+			obj, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			require.NotEqual(t, "c2", obj["criterion_id"], "human_judgment criterion must not be injected into task %q", task.Key)
+		}
+	}
+}
+
+func TestDecomposeSnapshotIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	revisionID := uuid.New()
+	employeeID := uuid.New()
+	repo := decomposeAcceptanceCriteriaFixtureRepo(tenantID, projectID, demandID, revisionID)
+	store := NewProjectStore(repo)
+	input := decomposeAcceptanceCriteriaFixtureInput(tenantID, projectID, demandID, jobID, routeID, revisionID, employeeID)
+
+	_, err := store.DecomposeAcceptedPlanRevision(context.Background(), input)
+	require.NoError(t, err)
+	_, err = store.DecomposeAcceptedPlanRevision(context.Background(), input)
+	require.NoError(t, err)
+
+	snapshot, err := repo.ListDemandAcceptanceCriteria(context.Background(), tenantID, demandID, revisionID)
+	require.NoError(t, err)
+	require.Len(t, snapshot, 2, "re-decomposing the same accepted plan revision must not duplicate snapshot rows")
+}
+
 func TestProjectStoreRequestPlanRevisionReviewStoresPlanRevisionID(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -5294,6 +5486,7 @@ type projectStoreMemoryRepository struct {
 	acceptanceRecords []project.ProjectAcceptanceRecord
 
 	demandConstraintExemptions []project.DemandConstraintExemption
+	demandAcceptanceCriteria   []project.DemandAcceptanceCriterion
 
 	getProjectCalls       int
 	getProjectDemandCalls int
@@ -5323,6 +5516,49 @@ func (r *projectStoreMemoryRepository) ListDemandConstraintExemptions(ctx contex
 	for _, exemption := range r.demandConstraintExemptions {
 		if exemption.TenantID == tenantID && exemption.DemandID == demandID {
 			result = append(result, exemption)
+		}
+	}
+	return result, nil
+}
+
+// CreateDemandAcceptanceCriteria mirrors PgRepository's ON CONFLICT (tenant_id,
+// demand_id, plan_revision_id, criterion_id) DO NOTHING idempotency so
+// TestDecomposeSnapshotIdempotent exercises the same no-duplicate-rows
+// contract against the fake that it does against Postgres.
+func (r *projectStoreMemoryRepository) CreateDemandAcceptanceCriteria(ctx context.Context, reqs []project.CreateDemandAcceptanceCriterionRequest) error {
+	for _, req := range reqs {
+		exists := false
+		for _, existing := range r.demandAcceptanceCriteria {
+			if existing.TenantID == req.TenantID && existing.DemandID == req.DemandID &&
+				existing.PlanRevisionID == req.PlanRevisionID && existing.CriterionID == req.CriterionID {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+		r.demandAcceptanceCriteria = append(r.demandAcceptanceCriteria, project.DemandAcceptanceCriterion{
+			ID:                 uuid.New(),
+			TenantID:           req.TenantID,
+			ProjectID:          req.ProjectID,
+			DemandID:           req.DemandID,
+			PlanRevisionID:     req.PlanRevisionID,
+			CriterionID:        req.CriterionID,
+			Statement:          req.Statement,
+			VerificationMethod: req.VerificationMethod,
+			Severity:           req.Severity,
+			SatisfiedBy:        append([]string(nil), req.SatisfiedBy...),
+		})
+	}
+	return nil
+}
+
+func (r *projectStoreMemoryRepository) ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]project.DemandAcceptanceCriterion, error) {
+	result := make([]project.DemandAcceptanceCriterion, 0)
+	for _, criterion := range r.demandAcceptanceCriteria {
+		if criterion.TenantID == tenantID && criterion.DemandID == demandID && criterion.PlanRevisionID == planRevisionID {
+			result = append(result, criterion)
 		}
 	}
 	return result, nil

@@ -67,6 +67,7 @@ type Querier interface {
 	CreateArtifactRetentionHold(ctx context.Context, arg CreateArtifactRetentionHoldParams) (ArtifactRetentionHold, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
 	CreateCaptchaChallenge(ctx context.Context, arg CreateCaptchaChallengeParams) (AuthCaptchaChallenge, error)
+	CreateDemandAcceptanceCriterion(ctx context.Context, arg CreateDemandAcceptanceCriterionParams) error
 	CreateDemandConstraintExemption(ctx context.Context, arg CreateDemandConstraintExemptionParams) (ProjectDemandConstraintExemption, error)
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (CreateDigitalEmployeeConfigRevisionRow, error)
@@ -314,6 +315,7 @@ type Querier interface {
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error)
 	ListCurrentDigitalEmployeeWorkspaceFiles(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesRow, error)
 	ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error)
+	ListDemandAcceptanceCriteria(ctx context.Context, arg ListDemandAcceptanceCriteriaParams) ([]DemandAcceptanceCriterium, error)
 	ListDemandConstraintExemptionsByDemand(ctx context.Context, arg ListDemandConstraintExemptionsByDemandParams) ([]ProjectDemandConstraintExemption, error)
 	ListDemandLaunchCoordinationJobs(ctx context.Context, arg ListDemandLaunchCoordinationJobsParams) ([]ProjectCoordinationJob, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, arg ListDemandLaunchDecisionRequestsParams) ([]ProjectDecisionRequest, error)

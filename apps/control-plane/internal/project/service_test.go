@@ -9254,6 +9254,7 @@ type memoryRepository struct {
 	acceptanceRecords                []ProjectAcceptanceRecord
 	archiveSnapshots                 []ProjectArchiveSnapshot
 	demandConstraintExemptions       []DemandConstraintExemption
+	demandAcceptanceCriteria         []DemandAcceptanceCriterion
 	projectTeamScopes                map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
 	lastListProjects                 ListProjectsRequest
 	lastTasksLimit                   int32
@@ -9308,6 +9309,46 @@ func (r *memoryRepository) ListDemandConstraintExemptions(ctx context.Context, t
 	for _, exemption := range r.demandConstraintExemptions {
 		if exemption.TenantID == tenantID && exemption.DemandID == demandID {
 			result = append(result, exemption)
+		}
+	}
+	return result, nil
+}
+
+func (r *memoryRepository) CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error {
+	for _, req := range reqs {
+		exists := false
+		for _, existing := range r.demandAcceptanceCriteria {
+			if existing.TenantID == req.TenantID && existing.DemandID == req.DemandID &&
+				existing.PlanRevisionID == req.PlanRevisionID && existing.CriterionID == req.CriterionID {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue // idempotent: mirrors UNIQUE(tenant_id, demand_id, plan_revision_id, criterion_id) ON CONFLICT DO NOTHING
+		}
+		r.demandAcceptanceCriteria = append(r.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+			ID:                 uuid.New(),
+			TenantID:           req.TenantID,
+			ProjectID:          req.ProjectID,
+			DemandID:           req.DemandID,
+			PlanRevisionID:     req.PlanRevisionID,
+			CriterionID:        req.CriterionID,
+			Statement:          req.Statement,
+			VerificationMethod: req.VerificationMethod,
+			Severity:           req.Severity,
+			SatisfiedBy:        append([]string(nil), req.SatisfiedBy...),
+			CreatedAt:          time.Now().UTC(),
+		})
+	}
+	return nil
+}
+
+func (r *memoryRepository) ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error) {
+	result := make([]DemandAcceptanceCriterion, 0)
+	for _, criterion := range r.demandAcceptanceCriteria {
+		if criterion.TenantID == tenantID && criterion.DemandID == demandID && criterion.PlanRevisionID == planRevisionID {
+			result = append(result, criterion)
 		}
 	}
 	return result, nil

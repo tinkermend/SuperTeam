@@ -5231,6 +5231,60 @@ func (r *PgRepository) ListDemandConstraintExemptions(ctx context.Context, tenan
 	return result, nil
 }
 
+// CreateDemandAcceptanceCriteria snapshots a batch of plan-level acceptance
+// criteria (typically an entire plan revision's worth) in one transaction.
+// Each insert is ON CONFLICT (tenant_id, demand_id, plan_revision_id,
+// criterion_id) DO NOTHING, so a repeat call (e.g. a replayed decompose) is a
+// no-op rather than an error.
+func (r *PgRepository) CreateDemandAcceptanceCriteria(ctx context.Context, reqs []CreateDemandAcceptanceCriterionRequest) error {
+	if len(reqs) == 0 {
+		return nil
+	}
+	_, err := withProjectQueries(ctx, r, "demand acceptance criteria snapshot", func(q *queries.Queries) (struct{}, error) {
+		for _, req := range reqs {
+			satisfiedBy, err := jsonbStringSlice(req.SatisfiedBy, "satisfied_by")
+			if err != nil {
+				return struct{}{}, err
+			}
+			if err := q.CreateDemandAcceptanceCriterion(ctx, queries.CreateDemandAcceptanceCriterionParams{
+				TenantID:           req.TenantID,
+				ProjectID:          req.ProjectID,
+				DemandID:           req.DemandID,
+				PlanRevisionID:     req.PlanRevisionID,
+				CriterionID:        req.CriterionID,
+				Statement:          req.Statement,
+				VerificationMethod: req.VerificationMethod,
+				Severity:           req.Severity,
+				SatisfiedBy:        satisfiedBy,
+			}); err != nil {
+				return struct{}{}, err
+			}
+		}
+		return struct{}{}, nil
+	})
+	return err
+}
+
+func (r *PgRepository) ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error) {
+	rows, err := r.q.ListDemandAcceptanceCriteria(ctx, queries.ListDemandAcceptanceCriteriaParams{
+		TenantID:       tenantID,
+		DemandID:       demandID,
+		PlanRevisionID: planRevisionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DemandAcceptanceCriterion, 0, len(rows))
+	for _, row := range rows {
+		criterion, err := demandAcceptanceCriterionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, criterion)
+	}
+	return result, nil
+}
+
 func (r *PgRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
 	return r.createAcceptanceRecordWithQueries(ctx, r.q, req)
 }
@@ -6549,6 +6603,26 @@ func demandConstraintExemptionFromRecord(row queries.ProjectDemandConstraintExem
 		GrantedByUserID:   row.GrantedByUserID,
 		DecisionRequestID: ptrUUID(row.DecisionRequestID),
 		CreatedAt:         row.CreatedAt.Time,
+	}, nil
+}
+
+func demandAcceptanceCriterionFromRecord(row queries.DemandAcceptanceCriterium) (DemandAcceptanceCriterion, error) {
+	satisfiedBy, err := stringSliceFromJSON(row.SatisfiedBy)
+	if err != nil {
+		return DemandAcceptanceCriterion{}, fmt.Errorf("satisfied_by: %w", err)
+	}
+	return DemandAcceptanceCriterion{
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		ProjectID:          row.ProjectID,
+		DemandID:           row.DemandID,
+		PlanRevisionID:     row.PlanRevisionID,
+		CriterionID:        row.CriterionID,
+		Statement:          row.Statement,
+		VerificationMethod: row.VerificationMethod,
+		Severity:           row.Severity,
+		SatisfiedBy:        satisfiedBy,
+		CreatedAt:          row.CreatedAt.Time,
 	}, nil
 }
 

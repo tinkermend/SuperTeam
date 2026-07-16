@@ -1383,6 +1383,27 @@ type DemandConstraintExemption struct {
 	CreatedAt         time.Time
 }
 
+// DemandAcceptanceCriterion is a plan-level acceptance criterion snapshotted
+// into demand_acceptance_criteria when its plan revision is decomposed into
+// tasks. It fixes the judged criteria for that plan revision so the
+// convergence gate, lineage and human sign-off all read a table instead of
+// re-parsing the plan revision payload JSONB. See migration 064 and
+// projectcoordination.PlanAcceptanceCriterion (the payload-side type this is
+// snapshotted from, post normalizeCriterionDefaults).
+type DemandAcceptanceCriterion struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	DemandID           uuid.UUID
+	PlanRevisionID     uuid.UUID
+	CriterionID        string
+	Statement          string
+	VerificationMethod string
+	Severity           string
+	SatisfiedBy        []string
+	CreatedAt          time.Time
+}
+
 type ProjectArchiveSnapshot struct {
 	ID                   uuid.UUID
 	TenantID             uuid.UUID
