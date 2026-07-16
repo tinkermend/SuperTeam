@@ -10,8 +10,16 @@ import "github.com/google/uuid"
 const demandAcceptanceCriterionSeverityBlocking = "blocking"
 
 const (
-	demandCriterionVerdictSatisfied = "satisfied"
-	demandCriterionJudgeTypeHuman   = "human"
+	demandCriterionVerdictSatisfied   = "satisfied"
+	demandCriterionVerdictUnsatisfied = "unsatisfied"
+	demandCriterionJudgeTypeHuman     = "human"
+	// demandCriterionVerificationMethodHumanJudgment mirrors
+	// projectcoordination.VerificationMethodHumanJudgment at the persistence
+	// layer (see acceptance_criteria.go's knownVerificationMethods registry).
+	// Service.SignDemandCriterionVerdict only accepts sign-off against
+	// criteria snapshotted with this verification method — Phase 1 leaves
+	// automated_test criteria to the executor-projection verdict path.
+	demandCriterionVerificationMethodHumanJudgment = "human_judgment"
 )
 
 // ResolveUnsatisfiedBlockingCriteria returns the criterion_ids (snapshot

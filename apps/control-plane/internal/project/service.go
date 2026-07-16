@@ -5358,6 +5358,322 @@ func (s *Service) resolveProjectTaskAcceptanceDecision(ctx context.Context, deci
 	return err
 }
 
+// SignDemandCriterionVerdict records one human sign-off against a
+// snapshotted blocking human_judgment acceptance criterion for a demand
+// parked at acceptance_pending by the convergence gate (see
+// gatedCompletionStatus / ensureDemandAcceptanceDecision). Preconditions
+// (each a distinct error so the handler can map a specific status code):
+//   - demand.Status must be acceptance_pending (else ErrProjectConflict).
+//   - a pending demand_acceptance decision must exist for the demand's
+//     current effective plan revision (else ErrProjectNotFound).
+//   - the caller must be the decision's TargetUserID or the project's
+//     human_owner (else ErrProjectDecisionForbidden) — mirrors
+//     ResolveProjectTaskHumanWait's actor check.
+//   - criterion_id must name a blocking, human_judgment criterion in the
+//     revision's snapshot (else ErrInvalidProject).
+//
+// Re-signing the same criterion with the same verdict is idempotent (no new
+// row, no side effects, current progress echoed back); re-signing with a
+// different verdict is ErrProjectConflict — Phase 1 has no re-judgement.
+//
+// A satisfied verdict recomputes the demand via
+// PgRepository.RecomputeProjectDemandStatus (the convergence gate reads ALL
+// blocking criteria, human_judgment or not, so completion is driven by the
+// gate, not by this criterion's human_judgment subset alone). An
+// unsatisfied verdict on a blocking criterion fails the demand immediately
+// regardless of any other still-unsigned criteria — the gate itself can only
+// ever produce "still pending" or "completed", never "failed", so that
+// transition is forced here.
+func (s *Service) SignDemandCriterionVerdict(ctx context.Context, req SignDemandCriterionVerdictRequest) (*SignDemandCriterionVerdictResult, error) {
+	req.CriterionID = strings.TrimSpace(req.CriterionID)
+	req.Verdict = strings.TrimSpace(req.Verdict)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TenantID == uuid.Nil || req.DemandID == uuid.Nil || req.ActorUserID == uuid.Nil || req.CriterionID == "" || !validDemandCriterionVerdict(req.Verdict) {
+		return nil, ErrInvalidProject
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, req.TenantID, req.DemandID)
+	if err != nil {
+		return nil, err
+	}
+	if demand.Status != ProjectDemandStatusAcceptancePending {
+		return nil, ErrProjectConflict
+	}
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, demand.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, req.TenantID, demand.ProjectID, req.DemandID)
+	if err != nil {
+		return nil, err
+	}
+	revisionID := CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return nil, ErrProjectConflict
+	}
+	decision, err := s.repository.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, req.TenantID, demand.ProjectID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	if req.ActorUserID != decision.TargetUserID && req.ActorUserID != projectRecord.HumanOwnerUserID {
+		return nil, ErrProjectDecisionForbidden
+	}
+	criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, req.TenantID, req.DemandID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	criterion := findDemandAcceptanceCriterion(criteria, req.CriterionID)
+	if criterion == nil || criterion.Severity != demandAcceptanceCriterionSeverityBlocking || criterion.VerificationMethod != demandCriterionVerificationMethodHumanJudgment {
+		return nil, ErrInvalidProject
+	}
+	verdicts, err := s.repository.ListDemandCriterionVerdicts(ctx, req.TenantID, req.DemandID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	humanJudgmentCriteria := blockingHumanJudgmentCriteria(criteria)
+	if existing := findHumanCriterionVerdict(verdicts, req.CriterionID); existing != nil {
+		if existing.Verdict == req.Verdict {
+			signed, total := demandAcceptanceHumanProgress(humanJudgmentCriteria, verdicts)
+			return &SignDemandCriterionVerdictResult{
+				DemandID:     req.DemandID,
+				DemandStatus: demand.Status,
+				CriterionID:  req.CriterionID,
+				Verdict:      req.Verdict,
+				Signed:       signed,
+				Total:        total,
+				Remaining:    total - signed,
+			}, nil
+		}
+		return nil, ErrProjectConflict
+	}
+	if err := s.repository.CreateDemandCriterionVerdict(ctx, CreateDemandCriterionVerdictRequest{
+		TenantID:       req.TenantID,
+		ProjectID:      demand.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: revisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      demandCriterionJudgeTypeHuman,
+		JudgeID:        req.ActorUserID,
+		Reason:         req.Reason,
+	}); err != nil {
+		return nil, err
+	}
+	verdicts = append(verdicts, DemandCriterionVerdict{
+		DemandID:       req.DemandID,
+		PlanRevisionID: revisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      demandCriterionJudgeTypeHuman,
+		JudgeID:        req.ActorUserID,
+		Reason:         req.Reason,
+	})
+	signed, total := demandAcceptanceHumanProgress(humanJudgmentCriteria, verdicts)
+
+	if req.Verdict == demandCriterionVerdictUnsatisfied {
+		if err := s.rejectDemandAcceptance(ctx, req, demand, decision, *criterion); err != nil {
+			return nil, err
+		}
+		return &SignDemandCriterionVerdictResult{
+			DemandID:     req.DemandID,
+			DemandStatus: ProjectDemandStatusFailed,
+			CriterionID:  req.CriterionID,
+			Verdict:      req.Verdict,
+			Signed:       signed,
+			Total:        total,
+			Remaining:    total - signed,
+		}, nil
+	}
+
+	if err := s.repository.RecomputeProjectDemandStatus(ctx, req.TenantID, demand.ProjectID, req.DemandID); err != nil {
+		return nil, err
+	}
+	updatedDemand, err := s.repository.GetProjectDemand(ctx, req.TenantID, req.DemandID)
+	if err != nil {
+		return nil, err
+	}
+	if updatedDemand.Status == ProjectDemandStatusCompleted {
+		if err := s.completeDemandAcceptance(ctx, req, decision); err != nil {
+			return nil, err
+		}
+	}
+	return &SignDemandCriterionVerdictResult{
+		DemandID:     req.DemandID,
+		DemandStatus: updatedDemand.Status,
+		CriterionID:  req.CriterionID,
+		Verdict:      req.Verdict,
+		Signed:       signed,
+		Total:        total,
+		Remaining:    total - signed,
+	}, nil
+}
+
+// completeDemandAcceptance resolves the demand_acceptance decision approved
+// and appends demand.acceptance_completed once
+// PgRepository.RecomputeProjectDemandStatus has already advanced the demand
+// to completed. Called only from that branch of SignDemandCriterionVerdict —
+// it does not itself touch demand status.
+func (s *Service) completeDemandAcceptance(ctx context.Context, req SignDemandCriterionVerdictRequest, decision DecisionRequest) error {
+	if s.approvals != nil && decision.ApprovalRequestID != uuid.Nil {
+		if err := s.approvals.ResolveApproval(ctx, ResolveApprovalRequest{
+			TenantID:          req.TenantID,
+			ApprovalRequestID: decision.ApprovalRequestID,
+			DecidedByUserID:   req.ActorUserID,
+			Decision:          "approved",
+			Comment:           req.Reason,
+		}); err != nil {
+			return err
+		}
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    decision.ProjectID,
+		EventType:    ProjectEventDemandAcceptanceCompleted,
+		ActorType:    "human_user",
+		ActorID:      req.ActorUserID.String(),
+		ResourceType: strPtr("project_demand"),
+		ResourceID:   strPtr(req.DemandID.String()),
+		Summary:      "需求验收判据全部签署通过",
+		Payload:      map[string]any{"demand_id": req.DemandID.String(), "decision_request_id": decision.ID.String()},
+	})
+	if err != nil {
+		return err
+	}
+	resolved, err := s.repository.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
+		TenantID:        req.TenantID,
+		ProjectID:       decision.ProjectID,
+		ID:              decision.ID,
+		StatusSnapshot:  "approved",
+		ResolvedEventID: &event.ID,
+	})
+	if err != nil {
+		return err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.ResolveProjectDecisionRequest(ctx, resolved); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rejectDemandAcceptance resolves the demand_acceptance decision rejected,
+// appends the structured demand.acceptance_rejected event (criterion_id,
+// statement, reason — outer-loop rework fodder) and force-advances the
+// demand to failed: the convergence gate itself never produces "failed"
+// (see gatedCompletionStatus), so a blocking human_judgment criterion signed
+// unsatisfied must drive that transition here, bypassing
+// RecomputeProjectDemandStatus entirely.
+func (s *Service) rejectDemandAcceptance(ctx context.Context, req SignDemandCriterionVerdictRequest, demand ProjectDemand, decision DecisionRequest, criterion DemandAcceptanceCriterion) error {
+	if s.approvals != nil && decision.ApprovalRequestID != uuid.Nil {
+		if err := s.approvals.ResolveApproval(ctx, ResolveApprovalRequest{
+			TenantID:          req.TenantID,
+			ApprovalRequestID: decision.ApprovalRequestID,
+			DecidedByUserID:   req.ActorUserID,
+			Decision:          "rejected",
+			Comment:           req.Reason,
+		}); err != nil {
+			return err
+		}
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    demand.ProjectID,
+		EventType:    ProjectEventDemandAcceptanceRejected,
+		ActorType:    "human_user",
+		ActorID:      req.ActorUserID.String(),
+		ResourceType: strPtr("project_demand"),
+		ResourceID:   strPtr(req.DemandID.String()),
+		Summary:      "需求验收判据签署未通过",
+		Payload: map[string]any{
+			"criterion_id": criterion.CriterionID,
+			"statement":    criterion.Statement,
+			"reason":       req.Reason,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	resolved, err := s.repository.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
+		TenantID:        req.TenantID,
+		ProjectID:       demand.ProjectID,
+		ID:              decision.ID,
+		StatusSnapshot:  "rejected",
+		ResolvedEventID: &event.ID,
+	})
+	if err != nil {
+		return err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.ResolveProjectDecisionRequest(ctx, resolved); err != nil {
+			return err
+		}
+	}
+	return s.repository.AdvanceProjectDemandStatus(ctx, req.TenantID, demand.ProjectID, req.DemandID, ProjectDemandStatusFailed)
+}
+
+// findDemandAcceptanceCriterion looks up a snapshotted criterion by its
+// payload-side criterion_id (not the snapshot row's own UUID).
+func findDemandAcceptanceCriterion(criteria []DemandAcceptanceCriterion, criterionID string) *DemandAcceptanceCriterion {
+	for i := range criteria {
+		if criteria[i].CriterionID == criterionID {
+			return &criteria[i]
+		}
+	}
+	return nil
+}
+
+// blockingHumanJudgmentCriteria filters a revision's criterion snapshot down
+// to the ones Service.SignDemandCriterionVerdict accepts sign-off against —
+// the denominator for sign-off progress (Total/Signed/Remaining).
+func blockingHumanJudgmentCriteria(criteria []DemandAcceptanceCriterion) []DemandAcceptanceCriterion {
+	result := make([]DemandAcceptanceCriterion, 0, len(criteria))
+	for _, c := range criteria {
+		if c.Severity == demandAcceptanceCriterionSeverityBlocking && c.VerificationMethod == demandCriterionVerificationMethodHumanJudgment {
+			result = append(result, c)
+		}
+	}
+	return result
+}
+
+// findHumanCriterionVerdict returns the existing human sign-off (ProjectTaskID
+// nil) for a criterion, if any — at most one can exist per
+// uq_demand_verdicts_human (migration 064).
+func findHumanCriterionVerdict(verdicts []DemandCriterionVerdict, criterionID string) *DemandCriterionVerdict {
+	for i := range verdicts {
+		if verdicts[i].CriterionID == criterionID && verdicts[i].JudgeType == demandCriterionJudgeTypeHuman && verdicts[i].ProjectTaskID == nil {
+			return &verdicts[i]
+		}
+	}
+	return nil
+}
+
+// demandAcceptanceHumanProgress reports how many of the demand's blocking
+// human_judgment criteria (humanJudgmentCriteria) already carry a satisfied
+// human verdict, out of the total.
+func demandAcceptanceHumanProgress(humanJudgmentCriteria []DemandAcceptanceCriterion, verdicts []DemandCriterionVerdict) (signed, total int32) {
+	satisfied := make(map[string]bool, len(verdicts))
+	for _, v := range verdicts {
+		if v.JudgeType == demandCriterionJudgeTypeHuman && v.ProjectTaskID == nil && v.Verdict == demandCriterionVerdictSatisfied {
+			satisfied[v.CriterionID] = true
+		}
+	}
+	for _, c := range humanJudgmentCriteria {
+		if satisfied[c.CriterionID] {
+			signed++
+		}
+	}
+	return signed, int32(len(humanJudgmentCriteria))
+}
+
+func validDemandCriterionVerdict(verdict string) bool {
+	switch verdict {
+	case demandCriterionVerdictSatisfied, demandCriterionVerdictUnsatisfied:
+		return true
+	default:
+		return false
+	}
+}
+
 func projectTaskAcceptanceResponseSummary(comment string) string {
 	comment = strings.TrimSpace(comment)
 	if comment != "" {

@@ -1999,6 +1999,7 @@ function projectPhaseLabel(phase: string) {
 
 function demandStatusLabel(status: string) {
   const labels: Record<string, string> = {
+    acceptance_pending: "待验收",
     cancelled: "已取消",
     completed: "已完成",
     executing: "执行中",

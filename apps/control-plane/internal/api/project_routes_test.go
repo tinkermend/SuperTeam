@@ -1339,6 +1339,7 @@ type routeProjectService struct {
 	dispatchGates                     []project.PreDispatchGateResult
 	dispatchGateListReq               project.ListPreDispatchGateResultsRequest
 	resolveDecisionReq                project.ResolveDecisionRequest
+	signCriterionVerdictReq           project.SignDemandCriterionVerdictRequest
 	retryWorkflowSignalReq            project.RetryWorkflowSignalRequest
 	completeAttemptReq                project.CompleteProjectTaskAttemptRequest
 	submitProjectTaskAttemptResultReq project.SubmitProjectTaskAttemptResultRequest
@@ -1646,6 +1647,19 @@ func (s *routeProjectService) GetDemandLaunchDetail(ctx context.Context, tenantI
 		Demand:       project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: uuid.New(), Title: "补充验收证据", SourceType: project.DemandSourceManual, Status: project.ProjectDemandStatusPlanningPending},
 		Project:      projectValue,
 		ProjectTasks: []project.ProjectTask{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demandID, Title: "补充验收证据", Status: "pending"}},
+	}, nil
+}
+
+func (s *routeProjectService) SignDemandCriterionVerdict(ctx context.Context, req project.SignDemandCriterionVerdictRequest) (*project.SignDemandCriterionVerdictResult, error) {
+	s.signCriterionVerdictReq = req
+	return &project.SignDemandCriterionVerdictResult{
+		DemandID:     req.DemandID,
+		DemandStatus: project.ProjectDemandStatusAcceptancePending,
+		CriterionID:  req.CriterionID,
+		Verdict:      req.Verdict,
+		Signed:       1,
+		Total:        1,
+		Remaining:    0,
 	}, nil
 }
 

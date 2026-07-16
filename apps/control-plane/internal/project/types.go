@@ -37,6 +37,10 @@ var (
 	// ErrInvalidCoordinationMode means a demand's coordination_mode is neither
 	// empty nor one of the known modes (plan, loop).
 	ErrInvalidCoordinationMode = errors.New("invalid coordination_mode")
+	// ErrProjectDecisionForbidden means the caller signing a demand_acceptance
+	// criterion verdict is neither the decision's TargetUserID nor the
+	// project's human_owner. See Service.SignDemandCriterionVerdict.
+	ErrProjectDecisionForbidden = errors.New("project decision forbidden")
 )
 
 const ProjectDeleteBlockedCode = "project_delete_blocked"
@@ -227,6 +231,19 @@ const (
 	ProjectEventTaskUpstreamSupplementRejected  ProjectEventType = "project_task.upstream_supplement_rejected"
 	ProjectEventTaskUpstreamSupplementExhausted ProjectEventType = "project_task.upstream_supplement_exhausted"
 	ProjectEventDemandReplanningReopened        ProjectEventType = "demand.replanning_reopened"
+	// ProjectEventDemandAcceptanceCompleted is appended when the last
+	// unsigned blocking human_judgment acceptance criterion for a demand is
+	// signed satisfied, converging the demand_acceptance decision to
+	// approved and the demand to completed. See
+	// Service.SignDemandCriterionVerdict.
+	ProjectEventDemandAcceptanceCompleted ProjectEventType = "demand.acceptance_completed"
+	// ProjectEventDemandAcceptanceRejected is appended when a human signs a
+	// blocking acceptance criterion unsatisfied, immediately failing the
+	// demand_acceptance decision and the demand — remaining unsigned
+	// criteria are no longer required. Payload carries {criterion_id,
+	// statement, reason} structured for outer-loop rework. See
+	// Service.SignDemandCriterionVerdict.
+	ProjectEventDemandAcceptanceRejected ProjectEventType = "demand.acceptance_rejected"
 )
 
 type EvidenceVerificationStatus string
@@ -1439,6 +1456,33 @@ type DemandCriterionVerdict struct {
 	EvidenceRefs   []string
 	ProjectTaskID  *uuid.UUID
 	CreatedAt      time.Time
+}
+
+// SignDemandCriterionVerdictRequest is one human sign-off against a
+// snapshotted blocking human_judgment acceptance criterion for a demand
+// currently at acceptance_pending. See Service.SignDemandCriterionVerdict.
+type SignDemandCriterionVerdictRequest struct {
+	TenantID    uuid.UUID
+	DemandID    uuid.UUID
+	ActorUserID uuid.UUID
+	CriterionID string
+	Verdict     string
+	Reason      string
+}
+
+// SignDemandCriterionVerdictResult reports the demand's status after a
+// criterion sign-off, plus sign-off progress across the demand's blocking
+// human_judgment criteria (Total/Signed/Remaining) — meaningful only while
+// DemandStatus is still acceptance_pending; once completed or failed the
+// counts reflect the final tally.
+type SignDemandCriterionVerdictResult struct {
+	DemandID     uuid.UUID
+	DemandStatus ProjectDemandStatus
+	CriterionID  string
+	Verdict      string
+	Signed       int32
+	Total        int32
+	Remaining    int32
 }
 
 type ProjectArchiveSnapshot struct {

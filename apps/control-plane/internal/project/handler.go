@@ -37,6 +37,7 @@ type HandlerService interface {
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error)
+	SignDemandCriterionVerdict(ctx context.Context, req SignDemandCriterionVerdictRequest) (*SignDemandCriterionVerdictResult, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error)
 	ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
@@ -720,6 +721,39 @@ func (h *HTTPHandler) GetDemandLaunchDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, demandLaunchDetailResponseFromDomain(*detail))
+}
+
+func (h *HTTPHandler) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDecisionResolve)
+	if !ok {
+		return
+	}
+	demandID, err := uuid.Parse(chi.URLParam(r, "demandId"))
+	if err != nil {
+		writeHandlerError(w, ErrInvalidProject)
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body signDemandCriterionVerdictBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	result, err := service.SignDemandCriterionVerdict(r.Context(), SignDemandCriterionVerdictRequest{
+		TenantID:    tenantID,
+		DemandID:    demandID,
+		ActorUserID: actorID,
+		CriterionID: body.CriterionID,
+		Verdict:     body.Verdict,
+		Reason:      body.Reason,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, signDemandCriterionVerdictResponseFromDomain(*result))
 }
 
 func (h *HTTPHandler) ListRouteDecisions(w http.ResponseWriter, r *http.Request) {
@@ -1696,9 +1730,9 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrUnauthorizedProjectTeamScope):
 		http.Error(w, "当前用户无权使用该团队创建项目。", http.StatusForbidden)
-	case errors.Is(err, ErrProjectTaskForbidden):
+	case errors.Is(err, ErrProjectTaskForbidden), errors.Is(err, ErrProjectDecisionForbidden):
 		http.Error(w, "project task forbidden", http.StatusForbidden)
-	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked):
+	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -1851,6 +1885,34 @@ type resolveDecisionBody struct {
 	Comment               string         `json:"comment"`
 	Payload               map[string]any `json:"payload"`
 	TargetExitDeliverable string         `json:"target_exit_deliverable,omitempty"`
+}
+
+type signDemandCriterionVerdictBody struct {
+	CriterionID string `json:"criterion_id"`
+	Verdict     string `json:"verdict"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+type signDemandCriterionVerdictResponse struct {
+	DemandID     string `json:"demand_id"`
+	DemandStatus string `json:"demand_status"`
+	CriterionID  string `json:"criterion_id"`
+	Verdict      string `json:"verdict"`
+	Signed       int32  `json:"signed"`
+	Total        int32  `json:"total"`
+	Remaining    int32  `json:"remaining"`
+}
+
+func signDemandCriterionVerdictResponseFromDomain(result SignDemandCriterionVerdictResult) signDemandCriterionVerdictResponse {
+	return signDemandCriterionVerdictResponse{
+		DemandID:     result.DemandID.String(),
+		DemandStatus: string(result.DemandStatus),
+		CriterionID:  result.CriterionID,
+		Verdict:      result.Verdict,
+		Signed:       result.Signed,
+		Total:        result.Total,
+		Remaining:    result.Remaining,
+	}
 }
 
 type ProjectTaskAttemptRuntimeBody struct {

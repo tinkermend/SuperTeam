@@ -38,6 +38,13 @@ const (
 	// record is persisted and the coordinator reopens the demand and replans it,
 	// exactly like restaffed, with the exempted constraint skipped this time.
 	PlanningGapDecisionExempted = "exempted"
+	// DecisionTypeDemandAcceptance is the human-decision type opened when a
+	// demand converges to acceptance_pending (see gatedCompletionStatus /
+	// ensureDemandAcceptanceDecision) — resolved by
+	// Service.SignDemandCriterionVerdict once every blocking human_judgment
+	// criterion has a satisfied verdict, or immediately on the first
+	// unsatisfied blocking sign-off.
+	DecisionTypeDemandAcceptance = "demand_acceptance"
 )
 
 const (

@@ -2736,6 +2736,51 @@ func (q *Queries) GetLatestProjectEventSequence(ctx context.Context, arg GetLate
 	return max_sequence, err
 }
 
+const GetPendingDemandAcceptanceDecisionByPlanRevision = `-- name: GetPendingDemandAcceptanceDecisionByPlanRevision :one
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND plan_revision_id = $3::uuid
+  AND decision_type = 'demand_acceptance'
+  AND status_snapshot = 'pending'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetPendingDemandAcceptanceDecisionByPlanRevisionParams struct {
+	TenantID       uuid.UUID `json:"tenant_id"`
+	ProjectID      uuid.UUID `json:"project_id"`
+	PlanRevisionID uuid.UUID `json:"plan_revision_id"`
+}
+
+func (q *Queries) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, arg GetPendingDemandAcceptanceDecisionByPlanRevisionParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, GetPendingDemandAcceptanceDecisionByPlanRevision, arg.TenantID, arg.ProjectID, arg.PlanRevisionID)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
+	)
+	return i, err
+}
+
 const GetProject = `-- name: GetProject :one
 SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key FROM projects
 WHERE tenant_id = $1::uuid

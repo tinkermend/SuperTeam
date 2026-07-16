@@ -4940,6 +4940,21 @@ func (r *PgRepository) GetDecisionRequestByApprovalAndTask(ctx context.Context, 
 	return decisionRequestFromRecord(row)
 }
 
+func (r *PgRepository) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, queries.GetPendingDemandAcceptanceDecisionByPlanRevisionParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		PlanRevisionID: planRevisionID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
 func (r *PgRepository) GetDecisionRequestByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error) {
 	row, err := r.q.GetProjectDecisionRequestByPlanRevision(ctx, queries.GetProjectDecisionRequestByPlanRevisionParams{
 		TenantID:       tenantID,

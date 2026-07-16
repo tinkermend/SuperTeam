@@ -1727,6 +1727,16 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT 1;
 
+-- name: GetPendingDemandAcceptanceDecisionByPlanRevision :one
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND plan_revision_id = sqlc.arg('plan_revision_id')::uuid
+  AND decision_type = 'demand_acceptance'
+  AND status_snapshot = 'pending'
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: ResolveProjectDecisionRequest :one
 UPDATE project_decision_requests
 SET status_snapshot = sqlc.arg('status_snapshot')::varchar,

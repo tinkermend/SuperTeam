@@ -1349,6 +1349,35 @@ export function getProjectDemandLaunchDetail(
   );
 }
 
+export type SignDemandCriterionVerdictInput = {
+  criterion_id: string;
+  verdict: "satisfied" | "unsatisfied";
+  reason?: string;
+};
+
+export type SignDemandCriterionVerdictResult = {
+  demand_id: string;
+  demand_status: string;
+  criterion_id: string;
+  verdict: string;
+  signed: number;
+  total: number;
+  remaining: number;
+};
+
+export function signDemandCriterionVerdict(
+  options: ApiClientOptions,
+  demandId: string,
+  input: SignDemandCriterionVerdictInput,
+): Promise<SignDemandCriterionVerdictResult> {
+  return postJson<SignDemandCriterionVerdictResult>(
+    options,
+    `/api/v1/project-demands/${encodeURIComponent(demandId)}/criterion-verdicts`,
+    input,
+    "sign demand criterion verdict",
+  );
+}
+
 export function listProjectRouteDecisions(
   options: ApiClientOptions,
   projectId: string,

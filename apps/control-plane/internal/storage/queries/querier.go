@@ -214,6 +214,7 @@ type Querier interface {
 	GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDefinitionParams) (McpServer, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeConfigRevisionNumberParams) (int32, error)
 	GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error)
+	GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, arg GetPendingDemandAcceptanceDecisionByPlanRevisionParams) (ProjectDecisionRequest, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
 	GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzFactsParams) (GetProjectAuthzFactsRow, error)
 	GetProjectBudgetSummary(ctx context.Context, arg GetProjectBudgetSummaryParams) (GetProjectBudgetSummaryRow, error)
