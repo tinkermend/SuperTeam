@@ -268,7 +268,9 @@ func ValidateRouteDecisionGraph(plan RouteDecisionPlan, poolIDs []uuid.UUID, pol
 		// directly; it is not required to be backed by any task's produces.
 		// Every other criterion (including a not-yet-normalized empty method,
 		// which normalizeCriterionDefaults treats as automated_test) still
-		// needs at least one satisfier.
+		// needs at least one satisfier — this deliberately includes
+		// adversarial_review, which reviews a specific task's output and is
+		// therefore never exempt the way human_judgment is.
 		if criterion.VerificationMethod != VerificationMethodHumanJudgment && len(criterion.SatisfiedBy) == 0 {
 			return invalidRouteDecision("acceptance_criterion_has_no_satisfier: plan acceptance criterion %q has no satisfied_by task; a criterion must be backed by at least one task", criterion.ID)
 		}

@@ -189,3 +189,54 @@ func TestValidateCriteriaSemanticsAutomatedRequiresSatisfiedBy(t *testing.T) {
 	require.Contains(t, err.Error(), "automated_test_requires_satisfied_by")
 	require.Contains(t, err.Error(), "ac1")
 }
+
+// TestAdversarialReviewMethodRegistered: adversarial_review is a known
+// verification_method — a criterion declaring it (with satisfied_by) passes
+// semantic validation like automated_test does.
+func TestAdversarialReviewMethodRegistered(t *testing.T) {
+	require.True(t, knownVerificationMethods[VerificationMethodAdversarialReview])
+	require.Equal(t, "adversarial_review", VerificationMethodAdversarialReview)
+
+	plan := RouteDecisionPlan{
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "ac1", Statement: "对抗式评审确认输出无重大缺陷", VerificationMethod: VerificationMethodAdversarialReview, SatisfiedBy: []string{"a"}},
+		},
+	}
+
+	err := validateAcceptanceCriteriaSemantics(plan)
+
+	require.NoError(t, err)
+}
+
+// TestAdversarialReviewRequiresSatisfiedBy: adversarial_review reviews a
+// specific task's output, so — same as automated_test — it must declare at
+// least one satisfied_by task. It is NOT exempted the way human_judgment is.
+func TestAdversarialReviewRequiresSatisfiedBy(t *testing.T) {
+	plan := RouteDecisionPlan{
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "ac1", Statement: "对抗式评审确认输出无重大缺陷", VerificationMethod: VerificationMethodAdversarialReview, SatisfiedBy: nil},
+		},
+	}
+
+	err := validateAcceptanceCriteriaSemantics(plan)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "automated_test_requires_satisfied_by")
+	require.Contains(t, err.Error(), "ac1")
+}
+
+// TestUnknownMethodStillRejected: regression — adding adversarial_review to
+// the registry must not loosen rejection of genuinely unrecognized methods.
+func TestUnknownMethodStillRejected(t *testing.T) {
+	plan := RouteDecisionPlan{
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "ac1", Statement: "登录失败返回 401", VerificationMethod: "vibe_check", SatisfiedBy: []string{"a"}},
+		},
+	}
+
+	err := validateAcceptanceCriteriaSemantics(plan)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown_verification_method")
+	require.Contains(t, err.Error(), "vibe_check")
+}

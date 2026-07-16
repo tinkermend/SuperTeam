@@ -9,16 +9,18 @@ import (
 // Adding a new judgment channel means adding it here; validateAcceptanceCriteriaSemantics
 // rejects any non-empty value not present in this map.
 const (
-	VerificationMethodAutomatedTest = "automated_test"
-	VerificationMethodHumanJudgment = "human_judgment"
+	VerificationMethodAutomatedTest     = "automated_test"
+	VerificationMethodHumanJudgment     = "human_judgment"
+	VerificationMethodAdversarialReview = "adversarial_review"
 
 	CriterionSeverityBlocking    = "blocking"
 	CriterionSeverityNonBlocking = "non_blocking"
 )
 
 var knownVerificationMethods = map[string]bool{
-	VerificationMethodAutomatedTest: true,
-	VerificationMethodHumanJudgment: true,
+	VerificationMethodAutomatedTest:     true,
+	VerificationMethodHumanJudgment:     true,
+	VerificationMethodAdversarialReview: true,
 }
 
 var knownCriterionSeverities = map[string]bool{
@@ -236,8 +238,8 @@ func validateAcceptanceCriteriaSemantics(plan RouteDecisionPlan) error {
 		if method != "" && !knownVerificationMethods[method] {
 			return invalidRouteDecision("unknown_verification_method: plan acceptance criterion %q declares unrecognized verification_method %q", criterion.ID, criterion.VerificationMethod)
 		}
-		if method == VerificationMethodAutomatedTest && len(criterion.SatisfiedBy) == 0 {
-			return invalidRouteDecision("automated_test_requires_satisfied_by: plan acceptance criterion %q declares verification_method automated_test but has no satisfied_by task", criterion.ID)
+		if (method == VerificationMethodAutomatedTest || method == VerificationMethodAdversarialReview) && len(criterion.SatisfiedBy) == 0 {
+			return invalidRouteDecision("automated_test_requires_satisfied_by: plan acceptance criterion %q declares verification_method %q but has no satisfied_by task", criterion.ID, method)
 		}
 		severity := strings.TrimSpace(criterion.Severity)
 		if severity != "" && !knownCriterionSeverities[severity] {

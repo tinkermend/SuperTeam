@@ -54,6 +54,17 @@ const (
 	// automated_test criteria to the executor-projection verdict path.
 	demandCriterionVerificationMethodHumanJudgment = "human_judgment"
 	demandCriterionJudgeTypeExecutor               = "executor"
+	// demandCriterionVerificationMethodAdversarialReview mirrors
+	// projectcoordination.VerificationMethodAdversarialReview at the
+	// persistence layer (see acceptance_criteria.go's knownVerificationMethods
+	// registry). Registered here for the persistence-side mirror; the judge
+	// engine that produces verdicts against this method is a later task.
+	demandCriterionVerificationMethodAdversarialReview = "adversarial_review"
+	// demandCriterionJudgeTypeAdversarial mirrors the judge_type recorded
+	// against a DemandCriterionVerdict produced by the adversarial-review
+	// judge (a later task); registered here alongside its verification
+	// method so both persistence-side mirrors land together.
+	demandCriterionJudgeTypeAdversarial = "adversarial"
 )
 
 // criterionEffectiveVerdict resolves a single criterion's effective verdict
