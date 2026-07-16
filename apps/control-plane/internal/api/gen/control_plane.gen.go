@@ -3013,6 +3013,8 @@ type DigitalEmployeeRecentEventSummary struct {
 
 // DigitalEmployeeRun defines model for DigitalEmployeeRun.
 type DigitalEmployeeRun struct {
+	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
+	ChatThreadId              *openapi_types.UUID       `json:"chat_thread_id,omitempty"`
 	CommandId                 string                    `json:"command_id"`
 	CompletedAt               *time.Time                `json:"completed_at,omitempty"`
 	CreatedAt                 *time.Time                `json:"created_at,omitempty"`
@@ -3082,6 +3084,8 @@ type DigitalEmployeeRunList struct {
 
 // DigitalEmployeeRunListItem defines model for DigitalEmployeeRunListItem.
 type DigitalEmployeeRunListItem struct {
+	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
+	ChatThreadId              *openapi_types.UUID               `json:"chat_thread_id,omitempty"`
 	CommandId                 string                            `json:"command_id"`
 	CompletedAt               *time.Time                        `json:"completed_at,omitempty"`
 	CreatedAt                 *time.Time                        `json:"created_at,omitempty"`
@@ -5680,6 +5684,9 @@ type ListDigitalEmployeeRunsParams struct {
 	From      *time.Time                            `form:"from,omitempty" json:"from,omitempty"`
 	To        *time.Time                            `form:"to,omitempty" json:"to,omitempty"`
 	RunKind   *ListDigitalEmployeeRunsParamsRunKind `form:"run_kind,omitempty" json:"run_kind,omitempty"`
+
+	// ChatThreadId Narrow to one chat conversation (thread root run id); matches the root turn and its follow-ups, chat runs only.
+	ChatThreadId *openapi_types.UUID `form:"chat_thread_id,omitempty" json:"chat_thread_id,omitempty"`
 }
 
 // ListDigitalEmployeeRunsParamsRunKind defines parameters for ListDigitalEmployeeRuns.
@@ -9756,6 +9763,19 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRuns(w http.ResponseWriter
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "run_kind"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "run_kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "chat_thread_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "chat_thread_id", r.URL.Query(), &params.ChatThreadId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "chat_thread_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "chat_thread_id", Err: err})
 		}
 		return
 	}

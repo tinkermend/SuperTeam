@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   FolderOpen,
   MessageCircle,
+  MessageSquarePlus,
   SendHorizontal,
   UserRound,
 } from "lucide-react";
@@ -19,8 +20,10 @@ import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployeeRun,
   getDigitalEmployeeRun,
+  listDigitalEmployeeRuns,
   listDigitalEmployees,
   type DigitalEmployeeRun,
+  type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
 import type { Project } from "@/lib/api/projects";
@@ -92,6 +95,24 @@ export function buildTaskDraft(entry: ChatEntry, employeeName: string): string {
   return `【目标】(请改写为你要的结果)\n\n${excerpt}\n\n【背景】源自与 @${employeeName} 的单次对话：${entry.question}`;
 }
 
+/** 把服务端持久化的 chat run 还原成一条对话条目（会话恢复用）。问题文本即
+ * run 的 task_title（objective 全文入库）；已完成但结果被平台清理/过期的
+ * run 保留条目、答案降级提示（spec §6 决议 2）。导出以便测试直接覆盖场景。 */
+export function entryFromRunListItem(item: DigitalEmployeeRunListItem): ChatEntry {
+  const entry: ChatEntry = {
+    question: item.task_title,
+    runId: item.id,
+    status: item.status,
+  };
+  if (item.status === "completed") {
+    const hasResult = item.result && Object.keys(item.result).length > 0;
+    entry.answer = hasResult ? extractAnswerText(item) : "（内容已过期或无结果）";
+  } else if (TERMINAL_RUN_STATUSES.has(item.status)) {
+    entry.error = item.error_message ?? "对话执行失败，请重试";
+  }
+  return entry;
+}
+
 export function ChatPanel({
   apiOptions,
   onConvertToTask,
@@ -103,6 +124,12 @@ export function ChatPanel({
   const [question, setQuestion] = useState("");
   const [thread, setThread] = useState<ChatEntry[]>([]);
   const [sendError, setSendError] = useState("");
+  // 会话恢复的水合标记：记录 thread 当前对应的 (employee, project) 锚点。
+  // 锚点变化(挂载/换员工/换项目)后由服务端最新链重建;点"新对话"只清视图、
+  // 不动水合标记,下一条消息不带 resume 即开新链(spec §4.4)。
+  const [hydratedAnchor, setHydratedAnchor] = useState("");
+  const [restoreFailed, setRestoreFailed] = useState(false);
+  const anchorKey = employeeId && projectId ? `${employeeId}::${projectId}` : "";
 
   const employeesQuery = useQuery({
     queryFn: () => listDigitalEmployees(apiOptions),
@@ -122,6 +149,68 @@ export function ChatPanel({
       setEmployeeId(employees[0].id);
     }
   }, [employees, employeeId]);
+
+  // 会话恢复：按 (employee, project) 锚点取最新 chat run 的 chat_thread_id,
+  // 再拉全链重建"当前会话"。
+  const restoreQuery = useQuery({
+    enabled: Boolean(anchorKey),
+    refetchOnMount: "always",
+    queryKey: ["chat-restore", employeeId, projectId],
+    queryFn: async (): Promise<ChatEntry[]> => {
+      const latest = await listDigitalEmployeeRuns(apiOptions, employeeId, {
+        limit: 1,
+        project_id: projectId,
+        run_kind: "chat",
+      });
+      const threadId = latest.items[0]?.chat_thread_id;
+      if (!threadId) {
+        return [];
+      }
+      const runs = await listDigitalEmployeeRuns(apiOptions, employeeId, {
+        chat_thread_id: threadId,
+        limit: 100,
+      });
+      // 服务端按 created_at 倒序分页,视图按时间正序展示。
+      return [...runs.items].reverse().map(entryFromRunListItem);
+    },
+  });
+
+  const restoring = Boolean(anchorKey) && hydratedAnchor !== anchorKey && !restoreQuery.isError;
+
+  // 水合只认本次挂载后取回的新鲜数据(isFetchedAfterMount)：跨路由缓存的旧线程
+  // 可能缺少离开页面前最后发出的消息,直接吃缓存会静默丢轮。
+  useEffect(() => {
+    if (
+      !anchorKey ||
+      hydratedAnchor === anchorKey ||
+      !restoreQuery.isSuccess ||
+      !restoreQuery.isFetchedAfterMount ||
+      restoreQuery.isFetching
+    ) {
+      return;
+    }
+    setThread(restoreQuery.data);
+    setHydratedAnchor(anchorKey);
+    setRestoreFailed(false);
+  }, [
+    anchorKey,
+    hydratedAnchor,
+    restoreQuery.isSuccess,
+    restoreQuery.isFetchedAfterMount,
+    restoreQuery.isFetching,
+    restoreQuery.data,
+  ]);
+
+  // 恢复失败不阻塞对话：按空线程水合并给出非阻断提示,用户可直接开始新对话
+  // (代价是本条链暂时不可见,下次进入页面会重试恢复)。
+  useEffect(() => {
+    if (!anchorKey || hydratedAnchor === anchorKey || !restoreQuery.isError) {
+      return;
+    }
+    setThread([]);
+    setHydratedAnchor(anchorKey);
+    setRestoreFailed(true);
+  }, [anchorKey, hydratedAnchor, restoreQuery.isError]);
 
   // Synchronous in-flight guard: React (re)renders — and therefore refreshes the
   // `sendMutation.isPending` closures captured by button handlers — only after the
@@ -208,24 +297,42 @@ export function ChatPanel({
     }
   }
 
+  // 换员工/换项目 = 切换会话锚点：清掉当前视图,由恢复查询重建新锚点自己的
+  // 最新链(切回来时旧会话仍在)。
   function handleEmployeeChange(nextEmployeeId: string) {
     setEmployeeId(nextEmployeeId);
     setThread([]);
     setSendError("");
+    setRestoreFailed(false);
   }
 
-  // Same rule as changing employee: the project is part of the conversation's
-  // anchor, so switching it starts a new conversation rather than resuming the
-  // old thread against a different anchor.
   function handleProjectChange(nextProjectId: string) {
     onProjectChange(nextProjectId);
+    setThread([]);
+    setSendError("");
+    setRestoreFailed(false);
+  }
+
+  // 新对话是断链的唯一主动入口：只清本地视图,下一条消息不带 resume_of_run_id,
+  // 服务端即冠新 thread 根,当前锚点的"最新链"随之切换。
+  function handleNewConversation() {
+    if (activeEntry || sendInFlightRef.current) {
+      return;
+    }
     setThread([]);
     setSendError("");
   }
 
   function handleSend() {
     const trimmed = question.trim();
-    if (!trimmed || !employeeId || !projectId || activeEntry || sendInFlightRef.current) {
+    if (
+      !trimmed ||
+      !employeeId ||
+      !projectId ||
+      restoring ||
+      activeEntry ||
+      sendInFlightRef.current
+    ) {
       return;
     }
     sendInFlightRef.current = true;
@@ -237,12 +344,14 @@ export function ChatPanel({
       });
   }
 
+  // 重试沿用当前会话的续链语义(带上最近完成轮的 resume 目标)；此前不带
+  // resume 会静默开新链,恢复视图时旧上下文"消失"。
   function handleRetry(entry: ChatEntry) {
     if (activeEntry || sendInFlightRef.current) {
       return;
     }
     sendInFlightRef.current = true;
-    sendWithDegradeFallback(entry.question)
+    sendWithDegradeFallback(entry.question, lastCompleted?.runId)
       .catch(() => {})
       .finally(() => {
         sendInFlightRef.current = false;
@@ -262,6 +371,7 @@ export function ChatPanel({
     Boolean(question.trim()) &&
     Boolean(employeeId) &&
     Boolean(projectId) &&
+    !restoring &&
     !activeEntry &&
     !sendMutation.isPending;
 
@@ -296,6 +406,15 @@ export function ChatPanel({
             </SelectContent>
           </Select>
         </LaunchChip>
+        <button
+          className="tl-ghost tl-chat-new"
+          disabled={thread.length === 0 || Boolean(activeEntry) || sendMutation.isPending}
+          onClick={handleNewConversation}
+          type="button"
+        >
+          <MessageSquarePlus aria-hidden className="size-3.5" />
+          新对话
+        </button>
       </div>
 
       <div className="tl-chat-thread v3-glass-inner" data-testid="chat-thread">
@@ -313,7 +432,10 @@ export function ChatPanel({
             description="请先创建一名数字员工再发起对话"
           />
         ) : null}
-        {employeesQuery.isSuccess && employees.length > 0 && thread.length === 0 ? (
+        {employeesQuery.isSuccess && employees.length > 0 && restoring ? (
+          <V3LoadingState label="恢复历史对话…" />
+        ) : null}
+        {employeesQuery.isSuccess && employees.length > 0 && !restoring && thread.length === 0 ? (
           <V3EmptyState
             icon={<MessageCircle aria-hidden />}
             title="向数字员工提问开始对话"
@@ -353,6 +475,7 @@ export function ChatPanel({
         ))}
       </div>
 
+      {restoreFailed ? <div className="tl-err">⚠ 历史对话恢复失败，可直接开始新对话</div> : null}
       {sendError ? <div className="tl-err">⚠ {sendError}</div> : null}
 
       <div className="tl-chat-composer v3-glass-inner">

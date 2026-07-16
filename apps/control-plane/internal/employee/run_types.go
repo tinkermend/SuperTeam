@@ -80,7 +80,11 @@ type DigitalEmployeeRun struct {
 	ProviderSessionExternalID *string
 	RunKind                   string
 	ResumeOfRunID             *uuid.UUID
-	Status                    DigitalEmployeeRunStatus
+	// ChatThreadID is the effective chat conversation id: non-nil for every
+	// chat run (the stored thread root, or the run's own id for a root turn),
+	// nil for task runs.
+	ChatThreadID *uuid.UUID
+	Status       DigitalEmployeeRunStatus
 	Result                    map[string]any
 	Diagnostic                map[string]any
 	LogRef                    *string
@@ -126,8 +130,12 @@ type DigitalEmployeeRunListFilter struct {
 	From      *time.Time
 	To        *time.Time
 	RunKind   *string
-	Limit     int32
-	Offset    int32
+	// ChatThreadID, when non-nil, narrows the list to the chat runs of one
+	// conversation (thread root run id); matches both the root turn and its
+	// follow-ups, chat runs only.
+	ChatThreadID *uuid.UUID
+	Limit        int32
+	Offset       int32
 }
 
 // DigitalEmployeeRunListItem augments a run with the joined task title, optional
@@ -190,6 +198,10 @@ type CreateDigitalEmployeeRunRequest struct {
 	// task dispatch does. Required when RunKind is RunKindChat; CreateRun
 	// clears it to nil for RunKindTask (ignored, not validated).
 	ProjectID *uuid.UUID
+	// chatThreadID is resolved by CreateRun itself (inherited from the resumed
+	// run's effective thread id); caller-provided values are discarded. Kept
+	// unexported so the handler layer cannot populate it.
+	chatThreadID *uuid.UUID
 }
 
 type StartProjectTaskRunPreflight struct {

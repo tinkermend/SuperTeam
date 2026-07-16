@@ -260,6 +260,8 @@ export type DigitalEmployeeRun = {
   updated_at?: string;
   run_kind: DigitalEmployeeRunKind;
   resume_of_run_id?: string;
+  /** Effective chat conversation id (thread root run id); present on chat runs only. */
+  chat_thread_id?: string;
 };
 
 export type DigitalEmployeeRunEvent = {
@@ -313,6 +315,9 @@ export type ListDigitalEmployeeRunsFilter = RunPagination & {
   from?: string;
   to?: string;
   run_kind?: DigitalEmployeeRunKind;
+  /** Narrow to one chat conversation (thread root run id); matches the root
+   * turn and its follow-ups, chat runs only. */
+  chat_thread_id?: string;
 };
 
 export type DigitalEmployeeOverviewExecutionStatus =
@@ -867,6 +872,7 @@ export function listDigitalEmployeeRuns(
   if (filter.from) params.set("from", filter.from);
   if (filter.to) params.set("to", filter.to);
   if (filter.run_kind) params.set("run_kind", filter.run_kind);
+  if (filter.chat_thread_id) params.set("chat_thread_id", filter.chat_thread_id);
   const query = params.toString();
 
   return getJson<DigitalEmployeeRunListResult>(

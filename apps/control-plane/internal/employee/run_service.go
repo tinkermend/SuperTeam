@@ -153,6 +153,9 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if req.RunKind != RunKindTask && req.RunKind != RunKindChat {
 		return nil, ErrInvalidRunKind
 	}
+	// chatThreadID is resolved exclusively by the resume branch below; discard
+	// anything a caller in this package may have pre-set.
+	req.chatThreadID = nil
 
 	if req.RunKind == RunKindChat {
 		if req.ProjectID == nil || *req.ProjectID == uuid.Nil {
@@ -208,6 +211,15 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		}
 		req.Metadata["provider_session_id"] = sessionID
 		req.Metadata["resume_of_run_id"] = prior.ID.String()
+		// Follow-up turns join the prior run's conversation: inherit its
+		// effective thread id (never nil for a chat run — GetRun resolves the
+		// root turn's own id). A root turn (no resume) leaves this nil and its
+		// effective thread id is its own run id at read time.
+		req.chatThreadID = prior.ChatThreadID
+		if req.chatThreadID == nil {
+			rootID := prior.ID
+			req.chatThreadID = &rootID
+		}
 	}
 
 	if req.RunKind == RunKindChat {
@@ -493,6 +505,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		GraceSec:               req.GraceSec,
 		RunKind:                runKind,
 		ResumeOfRunID:          req.ResumeOfRunID,
+		ChatThreadID:           req.chatThreadID,
 	}
 
 	run, err := s.repository.CreateRun(ctx, createReq)

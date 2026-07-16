@@ -172,6 +172,14 @@ function baseRunFields(runId: string, employeeId: string): Partial<DigitalEmploy
   };
 }
 
+function emptyRunListResponse() {
+  return jsonResponse({
+    filters: { projects: [], statuses: [] },
+    items: [],
+    total_count: 0,
+  });
+}
+
 function createChatFetcher() {
   const employees = [makeEmployee()];
   const runScripts = new Map<string, Array<Partial<DigitalEmployeeRun>>>();
@@ -188,6 +196,10 @@ function createChatFetcher() {
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "GET") {
+      // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
+      return emptyRunListResponse();
+    }
     if (createMatch && method === "POST") {
       runCounter += 1;
       const runId = `run-${runCounter}`;
@@ -245,6 +257,10 @@ function createFailingSendFetcher() {
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "GET") {
+      // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
+      return emptyRunListResponse();
+    }
     if (createMatch && method === "POST") {
       return jsonResponse({ message: "员工繁忙，暂时无法接单" }, 409);
     }
@@ -273,6 +289,10 @@ function createRetryDeferredFetcher() {
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "GET") {
+      // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
+      return emptyRunListResponse();
+    }
     if (createMatch && method === "POST") {
       createCallCount += 1;
       const runId = `run-${createCallCount}`;
@@ -333,6 +353,10 @@ function createResumeDegradeFetcher() {
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "GET") {
+      // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
+      return emptyRunListResponse();
+    }
     if (createMatch && method === "POST") {
       createCallCount += 1;
       const employeeId = createMatch[1];
@@ -388,6 +412,10 @@ function createNonResumableFailureFetcher() {
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (createMatch && method === "GET") {
+      // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
+      return emptyRunListResponse();
+    }
     if (createMatch && method === "POST") {
       createCallCount += 1;
       const employeeId = createMatch[1];
@@ -417,6 +445,69 @@ function createNonResumableFailureFetcher() {
   return { fetcher, getCreateCallCount: () => createCallCount };
 }
 
+type RestoreThreadItem = Partial<DigitalEmployeeRun> & {
+  task_title: string;
+  work_product_count?: number;
+};
+
+/** Serves a persisted chat conversation for the restore-on-mount queries:
+ * GET /runs?run_kind=chat&limit=1 returns the newest run, GET /runs?chat_thread_id=…
+ * returns the whole thread (both created_at-desc, as the server does). POST /runs
+ * and GET /runs/:id behave like createChatFetcher's immediate-completion runs. */
+function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
+  const employees = [makeEmployee()];
+  let runCounter = 100;
+
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const path = url.pathname;
+
+    if (path === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse(employees);
+    }
+
+    const runsMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+    if (runsMatch && method === "GET") {
+      const employeeId = runsMatch[1];
+      const desc = [...threadItemsAsc]
+        .reverse()
+        .map((item) => ({ ...baseRunFields(String(item.id), employeeId), ...item }));
+      const items = url.searchParams.get("chat_thread_id") ? desc : desc.slice(0, 1);
+      return jsonResponse({
+        filters: { projects: [], statuses: [] },
+        items,
+        total_count: desc.length,
+      });
+    }
+    if (runsMatch && method === "POST") {
+      runCounter += 1;
+      const body = JSON.parse(String(init?.body)) as { resume_of_run_id?: string };
+      return jsonResponse(
+        {
+          ...baseRunFields(`run-${runCounter}`, runsMatch[1]),
+          status: "queued",
+          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {}),
+        },
+        201,
+      );
+    }
+
+    const getMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs\/([^/]+)$/);
+    if (getMatch && method === "GET") {
+      return jsonResponse({
+        ...baseRunFields(getMatch[2], getMatch[1]),
+        status: "completed",
+        result: { output: `轮询回答-${getMatch[2]}` },
+      });
+    }
+
+    return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+  });
+
+  return { fetcher };
+}
+
 async function renderWithQueryClient(children: ReactNode) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -441,7 +532,7 @@ describe("ChatPanel", () => {
     document.body.innerHTML = "";
   });
 
-  it("lists mock employees by name and role, sends a first question without resume_of_run_id, renders the completed answer, sends a follow-up with resume_of_run_id, converts to a task draft, and retries a failed run without resume_of_run_id", async () => {
+  it("lists mock employees by name and role, sends a first question without resume_of_run_id, renders the completed answer, sends a follow-up with resume_of_run_id, converts to a task draft, and retries a failed run resuming the last completed turn", async () => {
     const { fetcher, setRunScript } = createChatFetcher();
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
@@ -507,7 +598,8 @@ describe("ChatPanel", () => {
     expect(payload.digitalEmployeeId).toBe("emp-1");
     expect(payload.anchorProjectId).toBe("project-1");
 
-    // 6. second run fails -> error card + retry; retry resends without resume_of_run_id
+    // 6. second run fails -> error card + retry; retry stays on the current
+    // conversation by resuming the last completed turn (run-1)
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -522,6 +614,7 @@ describe("ChatPanel", () => {
         objective: "第二个问题",
         run_kind: "chat",
         project_id: "project-1",
+        resume_of_run_id: "run-1",
       });
     });
   });
@@ -667,7 +760,7 @@ describe("ChatPanel", () => {
   it("renders a required 项目 chip and keeps send disabled until a project is selected", async () => {
     const { fetcher } = createChatFetcher();
     const onConvertToTask = vi.fn();
-    await renderWithQueryClient(
+    const { queryClient } = await renderWithQueryClient(
       <ControlledChatPanel
         apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
         initialProjectId=""
@@ -682,8 +775,13 @@ describe("ChatPanel", () => {
     await typeInLabeledField("对话问题", "第一个问题");
     expect(getButton("发送").disabled).toBe(true);
 
+    // selecting a project arms the anchor; send stays gated until the anchor's
+    // conversation restore settles (empty here), then becomes available
     await clickButton("生产巡检项目");
-    expect(getButton("发送").disabled).toBe(false);
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(getButton("发送").disabled).toBe(false));
   });
 
   it("clears the thread when the project changes mid-conversation, and the next send has no resume_of_run_id", async () => {
@@ -726,6 +824,162 @@ describe("ChatPanel", () => {
       });
     });
   });
+
+  it("restores the anchor's latest conversation on mount and resumes it on follow-up", async () => {
+    const { fetcher } = createRestoreFetcher([
+      {
+        chat_thread_id: "run-a",
+        id: "run-a",
+        result: { output: "历史回答一" },
+        status: "completed",
+        task_title: "历史问题一",
+      },
+      {
+        chat_thread_id: "run-a",
+        id: "run-b",
+        resume_of_run_id: "run-a",
+        result: { output: "历史回答二" },
+        status: "completed",
+        task_title: "历史问题二",
+      },
+    ]);
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+
+    // both turns come back from the server, oldest first
+    await waitFor(() => {
+      const text = chatThread().textContent ?? "";
+      expect(text).toContain("历史问题一");
+      expect(text).toContain("历史回答一");
+      expect(text).toContain("历史问题二");
+      expect(text).toContain("历史回答二");
+      expect(text.indexOf("历史问题一")).toBeLessThan(text.indexOf("历史问题二"));
+    });
+
+    // a follow-up resumes the restored conversation's last completed turn
+    await typeInLabeledField("对话问题", "恢复后的追问");
+    await clickButton("发送");
+    await waitFor(() => {
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies[0]).toEqual({
+        objective: "恢复后的追问",
+        run_kind: "chat",
+        project_id: "project-1",
+        resume_of_run_id: "run-b",
+      });
+    });
+  });
+
+  it("renders an expired-content placeholder for a restored completed turn whose result was cleared", async () => {
+    const { fetcher } = createRestoreFetcher([
+      {
+        chat_thread_id: "run-a",
+        id: "run-a",
+        result: {},
+        status: "completed",
+        task_title: "被清理的历史问题",
+      },
+    ]);
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+
+    await waitFor(() => {
+      const text = chatThread().textContent ?? "";
+      expect(text).toContain("被清理的历史问题");
+      expect(text).toContain("（内容已过期或无结果）");
+    });
+  });
+
+  it("starts a fresh conversation via 新对话: clears the restored thread and the next send carries no resume_of_run_id", async () => {
+    const { fetcher } = createRestoreFetcher([
+      {
+        chat_thread_id: "run-a",
+        id: "run-a",
+        result: { output: "历史回答一" },
+        status: "completed",
+        task_title: "历史问题一",
+      },
+    ]);
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(chatThread().textContent).toContain("历史问题一"));
+
+    await clickButton("新对话");
+    expect(chatThread().textContent).not.toContain("历史问题一");
+
+    await typeInLabeledField("对话问题", "全新会话的问题");
+    await clickButton("发送");
+    await waitFor(() => {
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies[0]).toEqual({
+        objective: "全新会话的问题",
+        run_kind: "chat",
+        project_id: "project-1",
+      });
+    });
+  });
+
+  it("resumes polling for a restored in-flight run until it completes", async () => {
+    const { fetcher } = createRestoreFetcher([
+      {
+        chat_thread_id: "run-a",
+        id: "run-a",
+        status: "running",
+        task_title: "离开前发出的问题",
+      },
+    ]);
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(chatThread().textContent).toContain("离开前发出的问题"));
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(chatThread().textContent).toContain("轮询回答-run-a"));
+  });
 });
 
 function chatThread() {
@@ -764,7 +1018,11 @@ function getByLabelText(label: string) {
 
 function postBodies(fetcher: ReturnType<typeof createChatFetcher>["fetcher"], path: string) {
   return fetcher.mock.calls
-    .filter(([url]) => new URL(String(url)).pathname === path)
+    .filter(
+      ([url, init]) =>
+        new URL(String(url)).pathname === path &&
+        ((init as RequestInit | undefined)?.method ?? "GET") === "POST",
+    )
     .map(([, init]) => JSON.parse(String((init as RequestInit | undefined)?.body)) as Record<string, unknown>);
 }
 

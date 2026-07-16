@@ -2361,6 +2361,8 @@ type Task struct {
 	RunKind string `json:"run_kind"`
 	// chat 追问血缘:指向上一个 chat run(task_runs.id),仅审计用,无 FK。
 	ResumeOfRunID uuid.NullUUID `json:"resume_of_run_id"`
+	// chat 会话根 id(根 run 的 task_runs.id);首轮为 NULL(有效值=自身 run id),追问轮继承前序有效值。仅 chat run 使用,无 FK。
+	ChatThreadID uuid.NullUUID `json:"chat_thread_id"`
 }
 
 // 任务工件表

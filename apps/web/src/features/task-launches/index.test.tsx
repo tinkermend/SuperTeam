@@ -249,6 +249,14 @@ function createTaskLaunchFetcherWithChat({
         },
       ]);
     }
+    if (path === "/api/v1/digital-employees/emp-1/runs" && method === "GET") {
+      // 会话恢复查询:页面级用例不预置历史会话,返回空列表。
+      return jsonResponse({
+        filters: { projects: [], statuses: [] },
+        items: [],
+        total_count: 0,
+      });
+    }
     if (path === "/api/v1/digital-employees/emp-1/runs" && method === "POST") {
       return jsonResponse(
         {
@@ -717,9 +725,9 @@ function getByLabelText(label: string) {
 }
 
 function postBody(fetcher: ReturnType<typeof createTaskLaunchFetcher>, path: string) {
-  const call = fetcher.mock.calls.find(([url]) => {
+  const call = fetcher.mock.calls.find(([url, init]) => {
     const parsed = new URL(String(url));
-    return parsed.pathname === path;
+    return parsed.pathname === path && ((init as RequestInit | undefined)?.method ?? "GET") === "POST";
   });
   expect(call).toBeDefined();
   return JSON.parse(String(call?.[1]?.body)) as Record<string, unknown>;

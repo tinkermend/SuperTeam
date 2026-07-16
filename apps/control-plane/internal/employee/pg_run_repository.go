@@ -292,7 +292,22 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 	})
 	mapped.RunKind = run.RunKind
 	mapped.ResumeOfRunID = uuidPtrFromNull(run.ResumeOfRunID)
+	mapped.ChatThreadID = effectiveChatThreadID(run.RunKind, run.ChatThreadID, run.ID)
 	return mapped, nil
+}
+
+// effectiveChatThreadID resolves a chat run's conversation id: the stored
+// thread root when present, else the run's own id (a conversation's root turn
+// stores NULL). Task runs have no thread.
+func effectiveChatThreadID(runKind string, stored uuid.NullUUID, runID uuid.UUID) *uuid.UUID {
+	if runKind != RunKindChat {
+		return nil
+	}
+	id := runID
+	if stored.Valid {
+		id = stored.UUID
+	}
+	return &id
 }
 
 func (r *PgRunRepository) GetRunByID(ctx context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
@@ -339,6 +354,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 	}
 
 	runKind := textFromPtr(filter.RunKind)
+	chatThreadID := nullUUIDFromPtr(filter.ChatThreadID)
 
 	rows, err := r.q.ListDigitalEmployeeRunsDetailed(ctx, queries.ListDigitalEmployeeRunsDetailedParams{
 		TenantID:          tenantID,
@@ -348,6 +364,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		FromTime:          fromTime,
 		ToTime:            toTime,
 		RunKind:           runKind,
+		ChatThreadID:      chatThreadID,
 		Limit:             filter.Limit,
 		Offset:            filter.Offset,
 	})
@@ -363,6 +380,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 		FromTime:          fromTime,
 		ToTime:            toTime,
 		RunKind:           runKind,
+		ChatThreadID:      chatThreadID,
 	})
 	if err != nil {
 		return nil, err
@@ -450,6 +468,7 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		GraceSec:               int4FromPtr(req.GraceSec),
 		RunKind:                req.RunKind,
 		ResumeOfRunID:          nullUUIDFromPtr(req.ResumeOfRunID),
+		ChatThreadID:           nullUUIDFromPtr(req.ChatThreadID),
 	})
 	if err != nil {
 		return nil, mapCreateRunError(err, req)
@@ -996,6 +1015,7 @@ func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRu
 	// the equivalent fixup in GetRun).
 	run.RunKind = row.RunKind
 	run.ResumeOfRunID = uuidPtrFromNull(row.ResumeOfRunID)
+	run.ChatThreadID = effectiveChatThreadID(row.RunKind, row.ChatThreadID, row.ID)
 
 	item := DigitalEmployeeRunListItem{
 		Run:              run,

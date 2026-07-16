@@ -332,7 +332,8 @@ created_task AS (
         idempotency_key,
         risk_level,
         run_kind,
-        resume_of_run_id
+        resume_of_run_id,
+        chat_thread_id
     )
     SELECT
         CASE
@@ -359,7 +360,8 @@ created_task AS (
         idempotency_input.idempotency_key,
         COALESCE(sqlc.narg('risk_level')::varchar, 'normal'),
         sqlc.arg('run_kind')::varchar,
-        sqlc.narg('resume_of_run_id')::uuid
+        sqlc.narg('resume_of_run_id')::uuid,
+        sqlc.narg('chat_thread_id')::uuid
     FROM idempotency_input
     CROSS JOIN lock_barrier
     CROSS JOIN LATERAL (
@@ -460,7 +462,8 @@ ORDER BY tr.created_at DESC
 LIMIT 1;
 
 -- name: GetDigitalEmployeeRun :one
-SELECT tr.*, t.run_kind, t.resume_of_run_id
+SELECT tr.*, t.run_kind, t.resume_of_run_id,
+    t.chat_thread_id
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
@@ -533,6 +536,7 @@ SELECT
     t.title AS task_title,
     t.run_kind,
     t.resume_of_run_id,
+    t.chat_thread_id,
     p.id AS project_id,
     p.name AS project_name,
     jsonb_array_length(tr.work_products) AS work_product_count
@@ -544,10 +548,15 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND t.deleted_at IS NULL
   AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
-  AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
+  -- chat run 无 project_tasks 关联,project 过滤对其按 §13 审计锚点匹配。
+  AND (sqlc.narg('project_id')::uuid IS NULL
+       OR p.id = sqlc.narg('project_id')::uuid
+       OR (t.run_kind = 'chat' AND t.params -> 'metadata' ->> 'anchor_project_id' = sqlc.narg('project_id')::uuid::text))
   AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
   AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
   AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar)
+  AND (sqlc.narg('chat_thread_id')::uuid IS NULL
+       OR (t.run_kind = 'chat' AND (t.chat_thread_id = sqlc.narg('chat_thread_id')::uuid OR tr.id = sqlc.narg('chat_thread_id')::uuid)))
 ORDER BY tr.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -561,10 +570,15 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND t.deleted_at IS NULL
   AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
-  AND (sqlc.narg('project_id')::uuid IS NULL OR p.id = sqlc.narg('project_id')::uuid)
+  -- 与 ListDigitalEmployeeRunsDetailed 的过滤语义保持一致(chat 锚点 + thread)。
+  AND (sqlc.narg('project_id')::uuid IS NULL
+       OR p.id = sqlc.narg('project_id')::uuid
+       OR (t.run_kind = 'chat' AND t.params -> 'metadata' ->> 'anchor_project_id' = sqlc.narg('project_id')::uuid::text))
   AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
   AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
-  AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar);
+  AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar)
+  AND (sqlc.narg('chat_thread_id')::uuid IS NULL
+       OR (t.run_kind = 'chat' AND (t.chat_thread_id = sqlc.narg('chat_thread_id')::uuid OR tr.id = sqlc.narg('chat_thread_id')::uuid)));
 
 -- name: ListDigitalEmployeeRunProjectOptions :many
 SELECT DISTINCT p.id, p.name

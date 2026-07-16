@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // TestParseRunListFilterRunKind asserts that the run_kind query parameter is
@@ -46,6 +48,43 @@ func TestParseRunListFilterRunKind(t *testing.T) {
 			}
 			if filter.RunKind == nil || *filter.RunKind != *tc.wantRunKind {
 				t.Fatalf("expected RunKind %q, got %#v", *tc.wantRunKind, filter.RunKind)
+			}
+		})
+	}
+}
+
+// TestParseRunListFilterChatThreadID asserts the chat_thread_id query
+// parameter parses into DigitalEmployeeRunListFilter.ChatThreadID: absent
+// means nil, a valid uuid is forwarded, and garbage is a 400 message.
+func TestParseRunListFilterChatThreadID(t *testing.T) {
+	threadID := uuid.New()
+
+	cases := []struct {
+		name       string
+		query      string
+		wantThread *uuid.UUID
+		wantErr    string
+	}{
+		{name: "absent", query: "", wantThread: nil, wantErr: ""},
+		{name: "valid", query: "chat_thread_id=" + threadID.String(), wantThread: &threadID, wantErr: ""},
+		{name: "invalid", query: "chat_thread_id=not-a-uuid", wantThread: nil, wantErr: "chat_thread_id must be a valid uuid"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/runs?"+tc.query, nil)
+			filter, parseErr := parseRunListFilter(r)
+			if parseErr != tc.wantErr {
+				t.Fatalf("expected parse error %q, got %q", tc.wantErr, parseErr)
+			}
+			if tc.wantThread == nil {
+				if filter.ChatThreadID != nil {
+					t.Fatalf("expected nil ChatThreadID, got %s", *filter.ChatThreadID)
+				}
+				return
+			}
+			if filter.ChatThreadID == nil || *filter.ChatThreadID != *tc.wantThread {
+				t.Fatalf("expected ChatThreadID %s, got %#v", *tc.wantThread, filter.ChatThreadID)
 			}
 		})
 	}

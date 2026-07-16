@@ -1476,6 +1476,95 @@ func chatAnchorRunService(t *testing.T, repo *fakeRunServiceRepository, dispatch
 	return service
 }
 
+// TestCreateRunChatThreadIDResolution covers the chat 会话持久化 spec's thread
+// grouping rule: a follow-up turn persists the prior run's effective thread id
+// (stored root, else the prior run's own id for legacy chains), a root turn
+// persists nil (its effective thread id is its own run id at read time), and
+// task runs never carry one — including when a same-package caller pre-set it.
+func TestCreateRunChatThreadIDResolution(t *testing.T) {
+	t.Run("follow-up inherits prior effective thread id", func(t *testing.T) {
+		prior := validResumableChatRun()
+		rootID := uuid.New()
+		prior.ChatThreadID = &rootID
+		repo := chatAnchorRunServiceRepository(&prior.TaskID)
+		repo.run = prior
+		dispatcher := newFakeRunServiceDispatcher()
+		service := chatAnchorRunService(t, repo, dispatcher)
+
+		_, err := service.CreateRun(context.Background(), validChatResumeRequest(prior.ID))
+
+		if err != nil {
+			t.Fatalf("chat resume: %v", err)
+		}
+		created := repo.createRunRequests[0]
+		if created.ChatThreadID == nil || *created.ChatThreadID != rootID {
+			t.Fatalf("expected inherited thread id %s, got %#v", rootID, created.ChatThreadID)
+		}
+	})
+
+	t.Run("legacy prior without thread id falls back to prior run id", func(t *testing.T) {
+		prior := validResumableChatRun()
+		prior.ChatThreadID = nil
+		repo := chatAnchorRunServiceRepository(&prior.TaskID)
+		repo.run = prior
+		dispatcher := newFakeRunServiceDispatcher()
+		service := chatAnchorRunService(t, repo, dispatcher)
+
+		_, err := service.CreateRun(context.Background(), validChatResumeRequest(prior.ID))
+
+		if err != nil {
+			t.Fatalf("chat resume: %v", err)
+		}
+		created := repo.createRunRequests[0]
+		if created.ChatThreadID == nil || *created.ChatThreadID != prior.ID {
+			t.Fatalf("expected legacy fallback thread id %s, got %#v", prior.ID, created.ChatThreadID)
+		}
+	})
+
+	t.Run("root chat run persists nil thread id", func(t *testing.T) {
+		repo := chatAnchorRunServiceRepository(nil)
+		dispatcher := newFakeRunServiceDispatcher()
+		service := chatAnchorRunService(t, repo, dispatcher)
+
+		req := validCreateRunServiceRequest()
+		req.RunKind = RunKindChat
+		projectID := runServiceProjectID
+		req.ProjectID = &projectID
+		stray := uuid.New()
+		req.chatThreadID = &stray // must be discarded: service-resolved only
+
+		_, err := service.CreateRun(context.Background(), req)
+
+		if err != nil {
+			t.Fatalf("chat root run: %v", err)
+		}
+		if created := repo.createRunRequests[0]; created.ChatThreadID != nil {
+			t.Fatalf("expected nil thread id on a root turn, got %#v", created.ChatThreadID)
+		}
+	})
+
+	t.Run("task run never carries a thread id", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.preflight = validRunServicePreflight()
+		dispatcher := newFakeRunServiceDispatcher()
+		dispatcher.connected[repo.preflight.NodeID] = true
+		service := mustNewRunService(t, repo, dispatcher)
+
+		req := validCreateRunServiceRequest()
+		stray := uuid.New()
+		req.chatThreadID = &stray
+
+		_, err := service.CreateRun(context.Background(), req)
+
+		if err != nil {
+			t.Fatalf("task run: %v", err)
+		}
+		if created := repo.createRunRequests[0]; created.ChatThreadID != nil {
+			t.Fatalf("expected nil thread id on a task run, got %#v", created.ChatThreadID)
+		}
+	})
+}
+
 func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)

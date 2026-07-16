@@ -320,6 +320,7 @@
 @media (max-width: 760px) {
   .tl-params { grid-template-columns: 1fr; }
   .tl-chat-header { grid-template-columns: 1fr; }
+  .tl-chat-new { justify-self: start; }
   .tl-actions { flex-wrap: wrap; }
   .tl-btn-send, .tl-btn-draft { width: 100%; justify-content: center; }
   .tl-btn-send { margin-left: 0; }
@@ -333,7 +334,9 @@
   gap: 18px;
   padding: 26px;
 }
-.tl-chat-header { display: grid; grid-template-columns: repeat(2, minmax(0, 320px)); gap: 16px; }
+.tl-chat-header { display: grid; grid-template-columns: repeat(2, minmax(0, 320px)) 1fr; gap: 16px; }
+.tl-chat-new { justify-self: end; align-self: end; }
+.tl-chat-new:disabled { opacity: 0.5; cursor: not-allowed; }
 .tl-chat-thread {
   display: flex;
   flex-direction: column;

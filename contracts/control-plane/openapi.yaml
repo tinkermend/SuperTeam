@@ -3570,6 +3570,13 @@ paths:
             enum:
               - task
               - chat
+        - name: chat_thread_id
+          in: query
+          required: false
+          description: Narrow to one chat conversation (thread root run id); matches the root turn and its follow-ups, chat runs only.
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: Digital employee run list
@@ -11472,6 +11479,10 @@ components:
         resume_of_run_id:
           type: string
           format: uuid
+        chat_thread_id:
+          type: string
+          format: uuid
+          description: Effective chat conversation id (thread root run id); present on chat runs only.
     DigitalEmployeeRunStats:
       type: object
       required:

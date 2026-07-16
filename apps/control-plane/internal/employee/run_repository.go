@@ -159,6 +159,10 @@ type CreateRunRecordRequest struct {
 	// of the same name onto the persisted task row.
 	RunKind       string
 	ResumeOfRunID *uuid.UUID
+	// ChatThreadID persists the chat thread root on the task row for follow-up
+	// turns; nil for task runs and for a conversation's root turn (whose
+	// effective thread id is its own run id, resolved at read time).
+	ChatThreadID *uuid.UUID
 }
 
 type UpdateRunStatusRequest struct {

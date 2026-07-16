@@ -155,6 +155,13 @@ func parseRunListFilter(r *http.Request) (DigitalEmployeeRunListFilter, string) 
 		}
 		filter.RunKind = &raw
 	}
+	if raw := query.Get("chat_thread_id"); raw != "" {
+		threadID, err := uuid.Parse(raw)
+		if err != nil {
+			return DigitalEmployeeRunListFilter{}, "chat_thread_id must be a valid uuid"
+		}
+		filter.ChatThreadID = &threadID
+	}
 	return filter, ""
 }
 
@@ -344,6 +351,7 @@ type digitalEmployeeRunResponse struct {
 	ProviderSessionExternalID *string                  `json:"provider_session_external_id,omitempty"`
 	RunKind                   string                   `json:"run_kind"`
 	ResumeOfRunID             *string                  `json:"resume_of_run_id,omitempty"`
+	ChatThreadID              *string                  `json:"chat_thread_id,omitempty"`
 	Status                    DigitalEmployeeRunStatus `json:"status"`
 	Result                    map[string]any           `json:"result"`
 	Diagnostic                map[string]any           `json:"diagnostic"`
@@ -382,6 +390,7 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		ProviderSessionExternalID: run.ProviderSessionExternalID,
 		RunKind:                   run.RunKind,
 		ResumeOfRunID:             uuidStringPtr(run.ResumeOfRunID),
+		ChatThreadID:              uuidStringPtr(run.ChatThreadID),
 		Status:                    run.Status,
 		Result:                    cloneMap(run.Result),
 		Diagnostic:                cloneMap(run.Diagnostic),
