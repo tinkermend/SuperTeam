@@ -3126,6 +3126,38 @@ func (s *Service) demandAcceptanceCriteriaSnapshot(ctx context.Context, task Pro
 	return s.repository.ListDemandAcceptanceCriteria(ctx, task.TenantID, *task.DemandID, *task.AcceptedPlanRevisionID)
 }
 
+// criteriaSatisfiedByTask narrows a demand+revision criteria snapshot to the
+// criteria THIS task is on the hook for: those whose SatisfiedBy names the
+// task's planned key — the same identity Task 4's decompose-time injection
+// keyed on (criterionInjectionsByTaskKey[plannedTask.PlannedTaskKey]).
+// Defense-in-depth for both projection and attestation tightening: without
+// this scope, the statement-text matching fallback could resolve one task's
+// echoed statement against a similarly-worded criterion belonging to a
+// different task — rejecting task A for task B's missing attestation, or
+// projecting a verdict task B never earned. A task with no planned key (never
+// produced by Task-4 decomposition) is on the hook for nothing. human_judgment
+// criteria typically carry an empty SatisfiedBy and thus fall out of scope
+// here too — consistent with them being a human sign-off matter.
+func criteriaSatisfiedByTask(snapshot []DemandAcceptanceCriterion, task ProjectTask) []DemandAcceptanceCriterion {
+	if task.PlannedTaskKey == nil {
+		return nil
+	}
+	taskKey := strings.TrimSpace(*task.PlannedTaskKey)
+	if taskKey == "" {
+		return nil
+	}
+	scoped := make([]DemandAcceptanceCriterion, 0, len(snapshot))
+	for _, criterion := range snapshot {
+		for _, satisfiedBy := range criterion.SatisfiedBy {
+			if strings.TrimSpace(satisfiedBy) == taskKey {
+				scoped = append(scoped, criterion)
+				break
+			}
+		}
+	}
+	return scoped
+}
+
 // matchAcceptanceResultToSnapshotCriterion resolves which of the employee's
 // self-reported AcceptanceResults judges a given snapshot criterion. Matching
 // resolution (Task 4 review, binding): criterion_id equality first — the
@@ -3171,7 +3203,7 @@ func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, ta
 		return nil, nil
 	}
 	var errs []TaskResultValidationError
-	for _, criterion := range snapshot {
+	for _, criterion := range criteriaSatisfiedByTask(snapshot, task) {
 		if criterion.VerificationMethod != demandAcceptanceVerificationMethodAutomatedTest {
 			continue
 		}
@@ -3232,7 +3264,7 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 	if len(snapshot) == 0 {
 		return nil
 	}
-	for _, criterion := range snapshot {
+	for _, criterion := range criteriaSatisfiedByTask(snapshot, task) {
 		result, ok := matchAcceptanceResultToSnapshotCriterion(contract.AcceptanceResults, criterion)
 		if !ok {
 			continue

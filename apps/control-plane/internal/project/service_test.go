@@ -2184,13 +2184,29 @@ func TestSubmitProjectTaskAttemptResultCompletedAcceptsOwnedRuntimeAttestationRe
 	require.Equal(t, "accepted", result.ValidationStatus)
 }
 
+// demandCriterionSnapshotTaskKey is the planned task key demandCriterion
+// SnapshotFixture assigns to the fixture task and names in each criterion's
+// SatisfiedBy, mirroring real Task-4 decomposition data where automated_test
+// criteria always name their satisfying tasks and every decomposed task
+// carries its planned key.
+const demandCriterionSnapshotTaskKey = "task-under-test"
+
 // demandCriterionSnapshotFixture appends one demand_acceptance_criteria
 // snapshot row (Task 4) scoped to the fixture's tenant/project and the given
-// demand/plan-revision, and links the fixture's task to that demand/revision
-// so demandAcceptanceCriteriaSnapshot can find it.
+// demand/plan-revision, links the fixture's task to that demand/revision so
+// demandAcceptanceCriteriaSnapshot can find it, and puts the task's planned
+// key into the criterion's SatisfiedBy (automated_test only — human_judgment
+// criteria have empty SatisfiedBy in real data, planner never assigns them a
+// satisfying task).
 func demandCriterionSnapshotFixture(repo *projectTaskResultMemoryRepository, fixture projectTaskAttemptServiceFixture, demandID, planRevisionID uuid.UUID, criterionID, statement, verificationMethod string) {
+	taskKey := demandCriterionSnapshotTaskKey
 	repo.tasks[0].DemandID = &demandID
 	repo.tasks[0].AcceptedPlanRevisionID = &planRevisionID
+	repo.tasks[0].PlannedTaskKey = &taskKey
+	var satisfiedBy []string
+	if verificationMethod == "automated_test" {
+		satisfiedBy = []string{taskKey}
+	}
 	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, DemandAcceptanceCriterion{
 		TenantID:           fixture.tenantID,
 		ProjectID:          fixture.projectID,
@@ -2200,6 +2216,7 @@ func demandCriterionSnapshotFixture(repo *projectTaskResultMemoryRepository, fix
 		Statement:          statement,
 		VerificationMethod: verificationMethod,
 		Severity:           "blocking",
+		SatisfiedBy:        satisfiedBy,
 	})
 }
 
@@ -2289,6 +2306,74 @@ func TestRecordResultProjectsCriterionVerdictsStatementOnlyMatch(t *testing.T) {
 	require.Equal(t, "satisfied", verdicts[0].Verdict)
 }
 
+// TestProjectionScopedBySatisfiedBy is the cross-task collision guard: both
+// projection and attestation tightening must only consider snapshot criteria
+// whose SatisfiedBy names THIS task's planned key. Criterion-b belongs to a
+// different task (task-b) and shares statement text with the employee's
+// statement-echo result; without scoping, the statement fallback would match
+// it — rejecting this task for task-b's missing attestation and/or projecting
+// a verdict task-b never earned.
+func TestProjectionScopedBySatisfiedBy(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	// Own criterion: satisfied_by this task's planned key (set by the fixture).
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c-a", "结论可复核（本任务）", "automated_test")
+	// Foreign criterion: similar statement, satisfied_by a DIFFERENT task.
+	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+		TenantID:           fixture.tenantID,
+		ProjectID:          fixture.projectID,
+		DemandID:           demandID,
+		PlanRevisionID:     planRevisionID,
+		CriterionID:        "c-b",
+		Statement:          "结论可复核",
+		VerificationMethod: "automated_test",
+		Severity:           "blocking",
+		SatisfiedBy:        []string{"task-b"},
+	})
+	attestationRef := "attestation:project-task-attempt:" + fixture.attemptID.String() + ":cmd-1"
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-satisfied-by-scoping"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					// Own criterion, judged normally with attestation proof.
+					CriterionID:  "c-a",
+					Status:       TaskResultCriterionStatusPassed,
+					EvidenceRefs: []string{attestationRef},
+				},
+				{
+					// Statement echo that textually matches FOREIGN criterion
+					// c-b, with no attestation ref: must neither trip
+					// tightening for c-b nor project a verdict onto it.
+					Criterion: "结论可复核",
+					Status:    TaskResultCriterionStatusPassed,
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, TaskResultDecisionCompleteAccepted, result.Decision)
+	require.Equal(t, "accepted", result.ValidationStatus)
+	require.NotContains(t, result.ValidationErrors, "acceptance_result_attestation_required:c-b")
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	require.Equal(t, "c-a", verdicts[0].CriterionID)
+	require.Equal(t, "satisfied", verdicts[0].Verdict)
+}
+
 func TestAutomatedCriterionRequiresAttestationEvidence(t *testing.T) {
 	t.Run("missing attestation ref rejects with error code", func(t *testing.T) {
 		repo := newProjectTaskResultMemoryRepository()
@@ -2374,6 +2459,12 @@ func TestHumanJudgmentSelfReportIgnored(t *testing.T) {
 	demandID := uuid.New()
 	planRevisionID := uuid.New()
 	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "c2", "业务判断达标", "human_judgment")
+	// Put this task into the human_judgment criterion's SatisfiedBy (planner
+	// permits it: "satisfied_by may be empty" for human_judgment, i.e. it is
+	// optional, not forbidden). This keeps the criterion inside
+	// criteriaSatisfiedByTask's scope so the test exercises the actual
+	// human_judgment ignore branch, not the SatisfiedBy scoping filter.
+	repo.demandAcceptanceCriteria[len(repo.demandAcceptanceCriteria)-1].SatisfiedBy = []string{demandCriterionSnapshotTaskKey}
 
 	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-human-judgment-self-report"),
