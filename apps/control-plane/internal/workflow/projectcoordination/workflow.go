@@ -67,6 +67,9 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 			if workflowErr == nil && pending.FailureRecovery != nil {
 				pendingFailureRecoveries[pending.FailureRecovery.DecisionRequestID.String()] = *pending.FailureRecovery
 			}
+			if workflowErr == nil {
+				workflowErr = ensureDemandAcceptanceDecisionForTask(ctx, input, signal.ProjectTaskID)
+			}
 		})
 		selector.AddReceive(failedCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal EmployeeTaskFailed
@@ -75,6 +78,9 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 			pending, workflowErr = handleEmployeeTaskFailed(ctx, input, signal)
 			if workflowErr == nil && pending != nil {
 				pendingFailureRecoveries[pending.DecisionRequestID.String()] = *pending
+			}
+			if workflowErr == nil {
+				workflowErr = ensureDemandAcceptanceDecisionForTask(ctx, input, signal.ProjectTaskID)
 			}
 		})
 		selector.AddReceive(transferCh, func(c workflow.ReceiveChannel, more bool) {
@@ -861,6 +867,29 @@ func createUpstreamSupplementTasks(ctx workflow.Context, tenantID, projectID, so
 		return CreateUpstreamSupplementResult{}, err
 	}
 	return result, nil
+}
+
+// ensureDemandAcceptanceDecisionForTask probes, after every task
+// completion/failure signal, whether the task's demand just converged to
+// acceptance_pending (the demand-acceptance criteria gate — see
+// recomputeProjectDemandStatusWithQueries) and if so opens the
+// demand_acceptance human-decision three-piece. Gated behind GetVersion so
+// histories recorded before this gate existed replay unchanged; new
+// executions always probe (the activity itself is a cheap, idempotent no-op
+// on the common case where the demand isn't at acceptance_pending).
+func ensureDemandAcceptanceDecisionForTask(ctx workflow.Context, input ProjectCoordinatorInput, projectTaskID uuid.UUID) error {
+	if workflow.GetVersion(ctx, "demand-acceptance-gate", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return nil
+	}
+	if projectTaskID == uuid.Nil {
+		return nil
+	}
+	var result DecisionRequestResult
+	return workflow.ExecuteActivity(ctx, (*Activities).EnsureDemandAcceptanceDecisionForTask, EnsureDemandAcceptanceDecisionForTaskInput{
+		TenantID:      input.TenantID,
+		ProjectID:     input.ProjectID,
+		ProjectTaskID: projectTaskID,
+	}).Get(ctx, &result)
 }
 
 func isProjectAcceptanceReady(ctx workflow.Context, tenantID, projectID uuid.UUID) (bool, error) {

@@ -257,21 +257,36 @@ const (
 	ProjectDemandStatusPlanningPending ProjectDemandStatus = "planning_pending"
 	ProjectDemandStatusPlanned         ProjectDemandStatus = "planned"
 	ProjectDemandStatusExecuting       ProjectDemandStatus = "executing"
-	ProjectDemandStatusCompleted       ProjectDemandStatus = "completed"
-	ProjectDemandStatusFailed          ProjectDemandStatus = "failed"
-	ProjectDemandStatusCancelled       ProjectDemandStatus = "cancelled"
+	// ProjectDemandStatusAcceptancePending is the convergence gate's hold state:
+	// every project task under the demand has reached a terminal state and none
+	// failed, but at least one blocking acceptance criterion for the demand's
+	// current plan revision still lacks a satisfied verdict (see
+	// PgRepository.recomputeProjectDemandStatusWithQueries and
+	// CountUnsatisfiedBlockingCriteria). A human must sign off the remaining
+	// criteria (demand_acceptance decision) before the demand can advance to
+	// completed. Ranked below the terminal group so AreAllProjectDemandsTerminal
+	// / project-level acceptance correctly wait for it.
+	ProjectDemandStatusAcceptancePending ProjectDemandStatus = "acceptance_pending"
+	ProjectDemandStatusCompleted         ProjectDemandStatus = "completed"
+	ProjectDemandStatusFailed            ProjectDemandStatus = "failed"
+	ProjectDemandStatusCancelled         ProjectDemandStatus = "cancelled"
 )
 
 // projectDemandStatusRank orders demand lifecycle states so status can only be
 // advanced forward. Terminal states share the highest rank; intake states share 0.
+// acceptance_pending sits between executing and the terminal group: reachable
+// from executing, and itself able to advance to completed or failed (a human
+// rejecting acceptance fails the demand), but never back to executing.
 func projectDemandStatusRank(status ProjectDemandStatus) int {
 	switch status {
 	case ProjectDemandStatusPlanned:
 		return 1
 	case ProjectDemandStatusExecuting:
 		return 2
-	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+	case ProjectDemandStatusAcceptancePending:
 		return 3
+	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+		return 4
 	default:
 		// submitted / recorded / planning_pending and any unknown intake state
 		return 0

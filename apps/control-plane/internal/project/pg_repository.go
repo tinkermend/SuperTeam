@@ -4692,10 +4692,78 @@ func (r *PgRepository) recomputeProjectDemandStatusWithQueries(ctx context.Conte
 		if counts.Failed > 0 {
 			target = ProjectDemandStatusFailed
 		} else {
-			target = ProjectDemandStatusCompleted
+			target, err = r.gatedCompletionStatus(ctx, tenantID, projectID, demandID)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return r.advanceProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID, target)
+}
+
+// gatedCompletionStatus is the acceptance-criteria convergence gate: a demand
+// whose tasks have all finished cleanly completes immediately UNLESS its
+// current (open) plan revision has a snapshotted blocking acceptance
+// criterion that still lacks a satisfied verdict, in which case it holds at
+// acceptance_pending for human sign-off instead. Demands with no open plan
+// revision — legacy demands that predate the acceptance-criteria snapshot
+// rollout, or any demand whose CurrentEffectivePlanRevisionID resolves to
+// uuid.Nil — complete exactly as they did before the gate existed; a plan
+// revision with zero snapshotted criteria (e.g. the planner emitted none)
+// resolves to zero unsatisfied and also completes. See
+// TestRecomputeLegacyDemandWithoutSnapshotCompletes,
+// TestRecomputeHoldsAtAcceptancePendingWhenBlockingUnsigned and
+// TestRecomputeCompletesWhenAllBlockingSatisfied.
+func (r *PgRepository) gatedCompletionStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandStatus, error) {
+	revisions, err := r.ListPlanRevisionsForDemand(ctx, tenantID, projectID, demandID)
+	if err != nil {
+		return "", err
+	}
+	revisionID := CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return ProjectDemandStatusCompleted, nil
+	}
+	unsatisfied, err := r.CountUnsatisfiedBlockingCriteria(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return "", err
+	}
+	if unsatisfied > 0 {
+		return ProjectDemandStatusAcceptancePending, nil
+	}
+	return ProjectDemandStatusCompleted, nil
+}
+
+// CountUnsatisfiedBlockingCriteria reports how many blocking acceptance
+// criteria for a demand's plan revision lack a satisfied effective verdict —
+// the convergence gate's hold/release signal (gatedCompletionStatus above).
+// See ResolveUnsatisfiedBlockingCriteria for the human-precedence resolution
+// rule applied to determine each criterion's effective verdict.
+func (r *PgRepository) CountUnsatisfiedBlockingCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) (int, error) {
+	criteria, err := r.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, planRevisionID)
+	if err != nil {
+		return 0, err
+	}
+	if len(criteria) == 0 {
+		return 0, nil
+	}
+	verdicts, err := r.ListDemandCriterionVerdicts(ctx, tenantID, demandID, planRevisionID)
+	if err != nil {
+		return 0, err
+	}
+	return len(ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)), nil
+}
+
+// RecomputeProjectDemandStatus recomputes and (forward-only) advances a
+// demand's lifecycle status from outside a shared writeback transaction —
+// the same derivation recomputeProjectDemandStatusWithQueries applies inline
+// during project-task writebacks, exposed standalone for tests and any
+// future caller that needs to force a recompute without a task event driving
+// it.
+func (r *PgRepository) RecomputeProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error {
+	_, err := withProjectQueries(ctx, r, "recompute project demand status", func(q *queries.Queries) (struct{}, error) {
+		return struct{}{}, r.recomputeProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID)
+	})
+	return err
 }
 
 // AdvanceProjectDemandStatus advances a demand's lifecycle status from outside a

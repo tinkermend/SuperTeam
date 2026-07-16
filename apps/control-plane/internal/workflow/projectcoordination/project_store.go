@@ -3553,6 +3553,150 @@ func (s *ProjectStore) ReopenProjectDemandForReplanning(ctx context.Context, inp
 	return err
 }
 
+const (
+	// demandAcceptanceDecisionType is the human-decision type opened when the
+	// acceptance-criteria convergence gate (recomputeProjectDemandStatusWithQueries)
+	// parks a demand at acceptance_pending: every task is terminal but at least
+	// one blocking criterion still lacks a satisfied verdict.
+	demandAcceptanceDecisionType = "demand_acceptance"
+	// demandAcceptanceResourceType scopes the demand_acceptance approval request
+	// to its demand (ResourceID = demand ID), giving repeated convergence-gate
+	// probes — EnsureDemandAcceptanceDecisionForTask runs after every task
+	// completion/failure signal touching the demand — demand-scoped,
+	// pending-only idempotency via GetRequestByResource. Mirrors
+	// planningGapResourceType.
+	demandAcceptanceResourceType = "project_demand_acceptance"
+)
+
+// EnsureDemandAcceptanceDecisionForTask resolves the demand behind a
+// just-processed task and, if the convergence gate has parked it at
+// acceptance_pending, opens the demand_acceptance human-decision three-piece.
+// Called unconditionally by the coordinator workflow after every task
+// completion/failure signal (see workflow.go's ensureDemandAcceptanceDecisionForTask
+// helper) — most calls are a cheap no-op read, since the demand usually still
+// has other active tasks or completed cleanly with no gate hold. Mirrors
+// isProjectAcceptanceReady/requestProjectAcceptanceReview's independent-requery
+// pattern rather than plumbing the demand's post-writeback status through the
+// repository call chain (recomputeProjectDemandStatusWithQueries already
+// committed it by the time this signal is delivered).
+func (s *ProjectStore) EnsureDemandAcceptanceDecisionForTask(ctx context.Context, input EnsureDemandAcceptanceDecisionForTaskInput) (DecisionRequestResult, error) {
+	if s.repository == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, input.ProjectTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if task.DemandID == nil {
+		return DecisionRequestResult{}, nil
+	}
+	return s.ensureDemandAcceptanceDecision(ctx, input.TenantID, input.ProjectID, *task.DemandID)
+}
+
+// ensureDemandAcceptanceDecision opens the demand_acceptance human-decision
+// three-piece (approval request + decision.requested event + decision request
+// projection + inbox item) for a demand currently at acceptance_pending —
+// mirroring ensurePlanningGapDecision. No-ops (zero result, no error) when
+// the demand isn't (or is no longer) at acceptance_pending, when no approval
+// sink is wired (bare-repository callers), or when a pending demand_acceptance
+// approval already exists for this demand (idempotent per demand via
+// GetRequestByResource — unlike ensurePlanningGapDecision this does not
+// best-effort resolve the existing decision's id: no caller currently needs
+// it back on the idempotent path).
+func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (DecisionRequestResult, error) {
+	demand, err := s.repository.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if demand.Status != project.ProjectDemandStatusAcceptancePending {
+		return DecisionRequestResult{}, nil
+	}
+	if s.approvals == nil {
+		return DecisionRequestResult{}, nil
+	}
+	existing, err := s.approvals.GetRequestByResource(ctx, tenantID, demandAcceptanceResourceType, demandID)
+	if err != nil && !errors.Is(err, approval.ErrApprovalNotFound) {
+		return DecisionRequestResult{}, err
+	}
+	if existing != nil {
+		return DecisionRequestResult{}, nil
+	}
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, tenantID, projectID, demandID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	revisionID := project.CurrentEffectivePlanRevisionID(revisions)
+	var pendingCriteria []string
+	if revisionID != uuid.Nil {
+		criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
+		if err != nil {
+			return DecisionRequestResult{}, err
+		}
+		verdicts, err := s.repository.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+		if err != nil {
+			return DecisionRequestResult{}, err
+		}
+		pendingCriteria = project.ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)
+	}
+	projectRecord, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	targetUserID := projectRecord.HumanOwnerUserID
+	title := "需求验收：" + demand.Title
+	summary := "需求任务全部完成，等待人类逐条判据验收"
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:      tenantID,
+		ResourceType:  demandAcceptanceResourceType,
+		ResourceID:    demandID,
+		RequesterType: "project_coordinator",
+		TargetUserID:  targetUserID,
+		DecisionType:  demandAcceptanceDecisionType,
+		Title:         title,
+		Summary:       summary,
+		RiskLevel:     "high",
+		Options:       []any{},
+		ContextPayload: map[string]any{
+			"demand_id":        demandID.String(),
+			"plan_revision_id": revisionID.String(),
+			"pending_criteria": pendingCriteria,
+		},
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, project.ProjectEventDecisionRequested, demandID.String(), "需求已完成执行,等待人类逐条判据验收", map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"demand_id":           demandID.String(),
+		"target_user_id":      targetUserID.String(),
+		"decision_type":       demandAcceptanceDecisionType,
+	}))
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalRequest.ID,
+		TargetUserID:      targetUserID,
+		DecisionType:      demandAcceptanceDecisionType,
+		TitleSnapshot:     title,
+		SummarySnapshot:   summary,
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return DecisionRequestResult{}, err
+		}
+	}
+	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
 func coordinatorEvent(tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID, summary string, payload map[string]any) project.AppendProjectEventRequest {
 	if actorID == "" {
 		actorID = "project_coordinator"

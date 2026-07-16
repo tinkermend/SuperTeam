@@ -376,6 +376,105 @@ func TestRejectDemandPlanningIsIdempotent(t *testing.T) {
 	require.Len(t, eventsByType(repo.events, project.ProjectEventCoordinationBlocked), 1)
 }
 
+// TestEnsureDemandAcceptanceDecisionCreatesThreePieceAndIsIdempotent proves the
+// demand_acceptance three-piece (approval request + decision.requested event +
+// decision request projection + inbox item), the pending_criteria payload
+// (blocking-only, unsatisfied-only), and demand-scoped idempotency — mirrors
+// TestRejectDemandPlanningCreatesPlanningGapDecision for planning_gap.
+func TestEnsureDemandAcceptanceDecisionCreatesThreePieceAndIsIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	revisionID := uuid.New()
+	taskID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "上线支付网关整改",
+			Status: project.ProjectDemandStatusAcceptancePending,
+		},
+		tasks: []project.ProjectTask{
+			{ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID, Title: "支付网关灰度发布"},
+		},
+		planRevisions: []project.PlanRevision{
+			{ID: revisionID, TenantID: tenantID, ProjectID: projectID, DemandID: demandID, RevisionNumber: 1, Status: project.PlanRevisionStatusDecomposed},
+		},
+		demandAcceptanceCriteria: []project.DemandAcceptanceCriterion{
+			{TenantID: tenantID, ProjectID: projectID, DemandID: demandID, PlanRevisionID: revisionID, CriterionID: "core-flow-signoff", Statement: "人类确认核心链路可用", VerificationMethod: "human_judgment", Severity: "blocking"},
+			{TenantID: tenantID, ProjectID: projectID, DemandID: demandID, PlanRevisionID: revisionID, CriterionID: "nice-to-have", Statement: "非阻塞的锦上添花判据", VerificationMethod: "human_judgment", Severity: "non_blocking"},
+		},
+	}
+	approvals := &projectStoreApprovalCreator{}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	result, err := store.EnsureDemandAcceptanceDecisionForTask(context.Background(), EnsureDemandAcceptanceDecisionForTaskInput{
+		TenantID: tenantID, ProjectID: projectID, ProjectTaskID: taskID,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, result.ID)
+
+	require.Equal(t, "demand_acceptance", approvals.last.DecisionType)
+	require.Equal(t, ownerID, approvals.last.TargetUserID)
+	require.Equal(t, demandID, approvals.last.ResourceID)
+	require.Equal(t, "需求验收：上线支付网关整改", approvals.last.Title)
+	require.Equal(t, demandID.String(), approvals.last.ContextPayload["demand_id"])
+	require.Equal(t, revisionID.String(), approvals.last.ContextPayload["plan_revision_id"])
+	require.Equal(t, []string{"core-flow-signoff"}, approvals.last.ContextPayload["pending_criteria"])
+
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "demand_acceptance", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, ownerID, repo.decisionRequests[0].TargetUserID)
+	require.Equal(t, "pending", repo.decisionRequests[0].StatusSnapshot)
+	require.NotEmpty(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested))
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, "demand_acceptance", inbox.upserts[0].DecisionType)
+
+	// Idempotent: a second probe against the same demand (e.g. a different
+	// task's completion signal re-running the convergence-gate check) creates
+	// nothing new.
+	result2, err := store.EnsureDemandAcceptanceDecisionForTask(context.Background(), EnsureDemandAcceptanceDecisionForTaskInput{
+		TenantID: tenantID, ProjectID: projectID, ProjectTaskID: taskID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uuid.Nil, result2.ID)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Len(t, inbox.upserts, 1)
+	require.Len(t, projectStoreEventsByType(repo.events, project.ProjectEventDecisionRequested), 1)
+}
+
+// TestEnsureDemandAcceptanceDecisionSkipsWhenNotAcceptancePending proves the
+// probe is a true no-op (no approval, no decision, no event) for the common
+// case of a task completion signal on a demand that isn't at
+// acceptance_pending — most convergence-gate probes hit this path.
+func TestEnsureDemandAcceptanceDecisionSkipsWhenNotAcceptancePending(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "执行中的需求",
+			Status: project.ProjectDemandStatusExecuting,
+		},
+		tasks: []project.ProjectTask{
+			{ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID, Title: "还在跑的任务"},
+		},
+	}
+	approvals := &projectStoreApprovalCreator{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, &projectStoreDecisionInboxProjector{})
+
+	result, err := store.EnsureDemandAcceptanceDecisionForTask(context.Background(), EnsureDemandAcceptanceDecisionForTaskInput{
+		TenantID: tenantID, ProjectID: projectID, ProjectTaskID: taskID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uuid.Nil, result.ID)
+	require.Empty(t, repo.decisionRequests)
+	require.Equal(t, uuid.Nil, approvals.last.ResourceID)
+}
+
 func TestLoadProjectCoordinationSnapshotRecordsBlockedEventWhenNoPlannableDigitalEmployee(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -5487,6 +5586,7 @@ type projectStoreMemoryRepository struct {
 
 	demandConstraintExemptions []project.DemandConstraintExemption
 	demandAcceptanceCriteria   []project.DemandAcceptanceCriterion
+	demandCriterionVerdicts    []project.DemandCriterionVerdict
 
 	getProjectCalls       int
 	getProjectDemandCalls int
@@ -5559,6 +5659,34 @@ func (r *projectStoreMemoryRepository) ListDemandAcceptanceCriteria(ctx context.
 	for _, criterion := range r.demandAcceptanceCriteria {
 		if criterion.TenantID == tenantID && criterion.DemandID == demandID && criterion.PlanRevisionID == planRevisionID {
 			result = append(result, criterion)
+		}
+	}
+	return result, nil
+}
+
+func (r *projectStoreMemoryRepository) CreateDemandCriterionVerdict(ctx context.Context, req project.CreateDemandCriterionVerdictRequest) error {
+	r.demandCriterionVerdicts = append(r.demandCriterionVerdicts, project.DemandCriterionVerdict{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      req.JudgeType,
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   append([]string(nil), req.EvidenceRefs...),
+		ProjectTaskID:  req.ProjectTaskID,
+	})
+	return nil
+}
+
+func (r *projectStoreMemoryRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]project.DemandCriterionVerdict, error) {
+	result := make([]project.DemandCriterionVerdict, 0)
+	for _, verdict := range r.demandCriterionVerdicts {
+		if verdict.TenantID == tenantID && verdict.DemandID == demandID && verdict.PlanRevisionID == planRevisionID {
+			result = append(result, verdict)
 		}
 	}
 	return result, nil

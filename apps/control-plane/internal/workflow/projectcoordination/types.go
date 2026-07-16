@@ -277,6 +277,16 @@ type RequestProjectAcceptanceReviewInput struct {
 	ProjectID uuid.UUID
 }
 
+// EnsureDemandAcceptanceDecisionForTaskInput carries just the task the
+// coordinator's completed/failed signal fired for; ProjectStore resolves the
+// task's demand internally, since neither EmployeeTaskCompleted nor
+// EmployeeTaskFailed carries a demand ID directly.
+type EnsureDemandAcceptanceDecisionForTaskInput struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+}
+
 type RequestProjectTaskIterationExhaustedReviewInput struct {
 	TenantID       uuid.UUID
 	ProjectID      uuid.UUID

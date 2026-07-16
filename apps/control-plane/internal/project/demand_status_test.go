@@ -19,6 +19,12 @@ func TestProjectDemandStatusCanAdvance(t *testing.T) {
 		{"no regress executing to planned", ProjectDemandStatusExecuting, ProjectDemandStatusPlanned, false},
 		{"no terminal to terminal flip", ProjectDemandStatusCompleted, ProjectDemandStatusFailed, false},
 		{"submitted ranks as intake", ProjectDemandStatusSubmitted, ProjectDemandStatusPlanned, true},
+		{"executing to acceptance_pending", ProjectDemandStatusExecuting, ProjectDemandStatusAcceptancePending, true},
+		{"acceptance_pending to completed", ProjectDemandStatusAcceptancePending, ProjectDemandStatusCompleted, true},
+		{"acceptance_pending to failed", ProjectDemandStatusAcceptancePending, ProjectDemandStatusFailed, true},
+		{"no regress acceptance_pending to executing", ProjectDemandStatusAcceptancePending, ProjectDemandStatusExecuting, false},
+		{"no self re-apply on acceptance_pending", ProjectDemandStatusAcceptancePending, ProjectDemandStatusAcceptancePending, false},
+		{"planning_pending straight to acceptance_pending", ProjectDemandStatusPlanningPending, ProjectDemandStatusAcceptancePending, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
