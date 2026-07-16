@@ -1650,6 +1650,14 @@ func (s *routeProjectService) GetDemandLaunchDetail(ctx context.Context, tenantI
 	}, nil
 }
 
+func (s *routeProjectService) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*project.DemandAcceptanceCriteriaDetail, error) {
+	return &project.DemandAcceptanceCriteriaDetail{
+		DemandID:     demandID,
+		DemandStatus: project.ProjectDemandStatusAcceptancePending,
+		Criteria:     []project.DemandAcceptanceCriterionDetail{},
+	}, nil
+}
+
 func (s *routeProjectService) SignDemandCriterionVerdict(ctx context.Context, req project.SignDemandCriterionVerdictRequest) (*project.SignDemandCriterionVerdictResult, error) {
 	s.signCriterionVerdictReq = req
 	return &project.SignDemandCriterionVerdictResult{

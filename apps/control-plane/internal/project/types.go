@@ -1458,6 +1458,42 @@ type DemandCriterionVerdict struct {
 	CreatedAt      time.Time
 }
 
+// DemandCriterionTaskSummary is one satisfied_by task's latest result
+// conclusion, surfaced beside its criterion so the human sees what was
+// produced before signing (anti-rubber-stamp). Summary is empty when the
+// task has no execution summary yet.
+type DemandCriterionTaskSummary struct {
+	TaskID  string
+	Summary string
+}
+
+// DemandAcceptanceCriterionDetail is one snapshotted acceptance criterion
+// enriched for the acceptance panel: its EFFECTIVE verdict resolved under the
+// demand-acceptance precedence rule (human over executor), the judge type
+// behind that verdict, its evidence refs, and the result summaries of the
+// tasks that satisfied it. Verdict/JudgeType are nil when no verdict exists.
+type DemandAcceptanceCriterionDetail struct {
+	CriterionID        string
+	Statement          string
+	VerificationMethod string
+	Severity           string
+	SatisfiedBy        []string
+	Verdict            *string
+	JudgeType          *string
+	EvidenceRefs       []string
+	TaskSummaries      []DemandCriterionTaskSummary
+}
+
+// DemandAcceptanceCriteriaDetail is the acceptance panel read model: the
+// demand's current status plus its snapshotted criteria (snapshot order) with
+// resolved verdicts and evidence. Criteria is empty for legacy demands with no
+// open plan revision snapshot.
+type DemandAcceptanceCriteriaDetail struct {
+	DemandID     uuid.UUID
+	DemandStatus ProjectDemandStatus
+	Criteria     []DemandAcceptanceCriterionDetail
+}
+
 // SignDemandCriterionVerdictRequest is one human sign-off against a
 // snapshotted blocking human_judgment acceptance criterion for a demand
 // currently at acceptance_pending. See Service.SignDemandCriterionVerdict.

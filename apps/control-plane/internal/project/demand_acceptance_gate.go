@@ -20,7 +20,52 @@ const (
 	// criteria snapshotted with this verification method — Phase 1 leaves
 	// automated_test criteria to the executor-projection verdict path.
 	demandCriterionVerificationMethodHumanJudgment = "human_judgment"
+	demandCriterionJudgeTypeExecutor               = "executor"
 )
+
+// criterionEffectiveVerdict resolves a single criterion's effective verdict
+// under the demand-acceptance precedence rule, the single source shared by the
+// convergence gate and the acceptance panel read model:
+//
+//   - A human verdict (satisfied or unsatisfied) always wins.
+//   - Absent a human verdict, the criterion is satisfied iff at least one
+//     executor verdict for it is satisfied; with only unsatisfied executor
+//     verdicts the effective verdict is unsatisfied.
+//   - With no verdict at all it is unresolved (hasVerdict=false).
+//
+// It also returns the judge type and evidence refs behind the winning verdict
+// so callers can surface provenance without re-scanning.
+func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID string) (verdict string, judgeType string, evidenceRefs []string, hasVerdict bool) {
+	var human *DemandCriterionVerdict
+	var executorSatisfied *DemandCriterionVerdict
+	var executorAny *DemandCriterionVerdict
+	for i := range verdicts {
+		v := &verdicts[i]
+		if v.CriterionID != criterionID {
+			continue
+		}
+		if v.JudgeType == demandCriterionJudgeTypeHuman {
+			human = v // last human verdict wins (arrives in created_at,id order)
+			continue
+		}
+		if executorAny == nil {
+			executorAny = v
+		}
+		if v.Verdict == demandCriterionVerdictSatisfied && executorSatisfied == nil {
+			executorSatisfied = v
+		}
+	}
+	switch {
+	case human != nil:
+		return human.Verdict, demandCriterionJudgeTypeHuman, human.EvidenceRefs, true
+	case executorSatisfied != nil:
+		return demandCriterionVerdictSatisfied, demandCriterionJudgeTypeExecutor, executorSatisfied.EvidenceRefs, true
+	case executorAny != nil:
+		return executorAny.Verdict, demandCriterionJudgeTypeExecutor, executorAny.EvidenceRefs, true
+	default:
+		return "", "", nil, false
+	}
+}
 
 // ResolveUnsatisfiedBlockingCriteria returns the criterion_ids (snapshot
 // order) of blocking criteria not satisfied under the demand-acceptance
@@ -39,40 +84,13 @@ const (
 // ensureDemandAcceptanceDecision (the demand_acceptance decision's
 // pending_criteria payload) so both read the identical rule.
 func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, verdicts []DemandCriterionVerdict) []string {
-	type resolvedVerdict struct {
-		human             *string
-		executorSatisfied bool
-	}
-	states := make(map[string]*resolvedVerdict, len(verdicts))
-	for _, v := range verdicts {
-		st := states[v.CriterionID]
-		if st == nil {
-			st = &resolvedVerdict{}
-			states[v.CriterionID] = st
-		}
-		if v.JudgeType == demandCriterionJudgeTypeHuman {
-			value := v.Verdict
-			st.human = &value
-			continue
-		}
-		if v.Verdict == demandCriterionVerdictSatisfied {
-			st.executorSatisfied = true
-		}
-	}
 	pending := make([]string, 0)
 	for _, c := range criteria {
 		if c.Severity != demandAcceptanceCriterionSeverityBlocking {
 			continue
 		}
-		satisfied := false
-		if st, ok := states[c.CriterionID]; ok {
-			if st.human != nil {
-				satisfied = *st.human == demandCriterionVerdictSatisfied
-			} else {
-				satisfied = st.executorSatisfied
-			}
-		}
-		if !satisfied {
+		verdict, _, _, hasVerdict := criterionEffectiveVerdict(verdicts, c.CriterionID)
+		if !hasVerdict || verdict != demandCriterionVerdictSatisfied {
 			pending = append(pending, c.CriterionID)
 		}
 	}

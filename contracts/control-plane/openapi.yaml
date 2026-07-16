@@ -1335,6 +1335,28 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/project-demands/{demandId}/acceptance-criteria:
+    get:
+      operationId: listDemandAcceptanceCriteria
+      summary: List a demand's snapshotted acceptance criteria with resolved verdicts and evidence
+      parameters:
+        - name: demandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Demand acceptance criteria with effective verdicts (human over executor) and satisfying-task summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemandAcceptanceCriteriaDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/project-demands/{demandId}/criterion-verdicts:
     post:
       operationId: signDemandCriterionVerdict
@@ -7712,6 +7734,84 @@ components:
         target_exit_deliverable:
           type: string
           description: 人类改选的交付出口；仅 request_changes 时有意义，重规划将钉住该出口
+    DemandCriterionTaskSummary:
+      type: object
+      required:
+        - task_id
+        - summary
+      properties:
+        task_id:
+          type: string
+          description: 满足该判据的项目任务 ID（快照 satisfied_by 中的原始值）
+        summary:
+          type: string
+          description: 该任务最新执行结论；无执行摘要时为空字符串
+    DemandAcceptanceCriterionDetail:
+      type: object
+      required:
+        - criterion_id
+        - statement
+        - verification_method
+        - severity
+        - satisfied_by
+        - verdict
+        - judge_type
+        - evidence_refs
+        - task_summaries
+      properties:
+        criterion_id:
+          type: string
+        statement:
+          type: string
+        verification_method:
+          type: string
+          description: 验证方式，如 human_judgment / automated_test
+        severity:
+          type: string
+          description: blocking / non_blocking
+        satisfied_by:
+          type: array
+          items:
+            type: string
+        verdict:
+          type: string
+          nullable: true
+          enum:
+            - satisfied
+            - unsatisfied
+          description: 生效判定（人类优先于执行者）；无任何判定时为 null
+        judge_type:
+          type: string
+          nullable: true
+          enum:
+            - human
+            - executor
+          description: 生效判定的来源；无判定时为 null
+        evidence_refs:
+          type: array
+          items:
+            type: string
+        task_summaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/DemandCriterionTaskSummary"
+    DemandAcceptanceCriteriaDetail:
+      type: object
+      required:
+        - demand_id
+        - demand_status
+        - criteria
+      properties:
+        demand_id:
+          type: string
+          format: uuid
+        demand_status:
+          type: string
+          description: 需求当前状态；acceptance_pending 时人判判据可签署
+        criteria:
+          type: array
+          items:
+            $ref: "#/components/schemas/DemandAcceptanceCriterionDetail"
     SignDemandCriterionVerdictRequest:
       type: object
       required:

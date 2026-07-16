@@ -8950,6 +8950,132 @@ func blockingHumanJudgmentCriterion(criterionID, statement string) DemandAccepta
 	}
 }
 
+func TestListDemandAcceptanceCriteriaDetailResolvesEffectiveVerdictsAndSummaries(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	taskID := uuid.New()
+	c1 := blockingHumanJudgmentCriterion("c1", "第一条判据")
+	c1.SatisfiedBy = []string{taskID.String()}
+	c2 := blockingHumanJudgmentCriterion("c2", "第二条判据")
+	c3 := DemandAcceptanceCriterion{
+		CriterionID:        "c3",
+		Statement:          "自动判据",
+		VerificationMethod: "automated_test",
+		Severity:           demandAcceptanceCriterionSeverityBlocking,
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{c1, c2, c3})
+
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:            uuid.New(),
+		TenantID:      f.tenantID,
+		ProjectID:     f.projectID,
+		ProjectTaskID: taskID,
+		Conclusion:    "已交付并通过测试",
+		CreatedAt:     time.Now().UTC(),
+	})
+
+	execTaskC1 := uuid.New()
+	execTaskC3 := uuid.New()
+	repo.demandCriterionVerdicts = append(repo.demandCriterionVerdicts,
+		// c1 executor satisfied — must be overridden by the later human verdict.
+		DemandCriterionVerdict{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+			CriterionID: "c1", Verdict: "satisfied", JudgeType: "executor", ProjectTaskID: &execTaskC1,
+			EvidenceRefs: []string{"attestation:executor-c1"},
+		},
+		// c1 human unsatisfied — precedence over executor.
+		DemandCriterionVerdict{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+			CriterionID: "c1", Verdict: "unsatisfied", JudgeType: "human", JudgeID: f.ownerID, Reason: "未达标",
+		},
+		// c3 executor satisfied — no human verdict, executor stands.
+		DemandCriterionVerdict{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+			CriterionID: "c3", Verdict: "satisfied", JudgeType: "executor", ProjectTaskID: &execTaskC3,
+			EvidenceRefs: []string{"attestation:executor-c3"},
+		},
+	)
+
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(context.Background(), f.tenantID, f.demandID)
+	if err != nil {
+		t.Fatalf("list acceptance criteria: %v", err)
+	}
+	if detail.DemandStatus != ProjectDemandStatusAcceptancePending {
+		t.Fatalf("expected demand_status acceptance_pending, got %s", detail.DemandStatus)
+	}
+	if len(detail.Criteria) != 3 {
+		t.Fatalf("expected 3 criteria in snapshot order, got %d", len(detail.Criteria))
+	}
+
+	// c1: human unsatisfied overrides executor satisfied; task_summaries resolved.
+	got1 := detail.Criteria[0]
+	if got1.CriterionID != "c1" {
+		t.Fatalf("expected first criterion c1, got %s", got1.CriterionID)
+	}
+	if got1.Verdict == nil || *got1.Verdict != "unsatisfied" {
+		t.Fatalf("expected c1 effective verdict unsatisfied, got %v", got1.Verdict)
+	}
+	if got1.JudgeType == nil || *got1.JudgeType != "human" {
+		t.Fatalf("expected c1 judge_type human, got %v", got1.JudgeType)
+	}
+	if len(got1.TaskSummaries) != 1 || got1.TaskSummaries[0].TaskID != taskID.String() || got1.TaskSummaries[0].Summary != "已交付并通过测试" {
+		t.Fatalf("expected c1 task_summaries to resolve latest conclusion, got %#v", got1.TaskSummaries)
+	}
+
+	// c2: no verdict at all → nil verdict/judge, empty task summaries.
+	got2 := detail.Criteria[1]
+	if got2.Verdict != nil || got2.JudgeType != nil {
+		t.Fatalf("expected c2 unresolved verdict/judge, got verdict=%v judge=%v", got2.Verdict, got2.JudgeType)
+	}
+	if len(got2.TaskSummaries) != 0 {
+		t.Fatalf("expected c2 no task summaries, got %#v", got2.TaskSummaries)
+	}
+
+	// c3: executor satisfied stands; evidence surfaced.
+	got3 := detail.Criteria[2]
+	if got3.Verdict == nil || *got3.Verdict != "satisfied" {
+		t.Fatalf("expected c3 effective verdict satisfied, got %v", got3.Verdict)
+	}
+	if got3.JudgeType == nil || *got3.JudgeType != "executor" {
+		t.Fatalf("expected c3 judge_type executor, got %v", got3.JudgeType)
+	}
+	if len(got3.EvidenceRefs) != 1 || got3.EvidenceRefs[0] != "attestation:executor-c3" {
+		t.Fatalf("expected c3 evidence_refs from executor verdict, got %#v", got3.EvidenceRefs)
+	}
+}
+
+func TestListDemandAcceptanceCriteriaDetailReturnsEmptyWhenNoOpenRevision(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning, HumanOwnerUserID: uuid.New()}
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: ProjectDemandStatusExecuting,
+	})
+
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(context.Background(), tenantID, demandID)
+	if err != nil {
+		t.Fatalf("list acceptance criteria: %v", err)
+	}
+	if detail.DemandStatus != ProjectDemandStatusExecuting {
+		t.Fatalf("expected demand_status executing, got %s", detail.DemandStatus)
+	}
+	if len(detail.Criteria) != 0 {
+		t.Fatalf("expected no criteria for legacy demand without open revision, got %d", len(detail.Criteria))
+	}
+}
+
 func TestSignDemandCriterionVerdictReturnsProgressWhenCriteriaRemain(t *testing.T) {
 	repo := newMemoryRepository()
 	approvals := &fakeApprovalResolver{}

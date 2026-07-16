@@ -1976,6 +1976,115 @@ func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID 
 	}, nil
 }
 
+// ListDemandAcceptanceCriteriaDetail builds the acceptance-panel read model for
+// a demand: its snapshotted criteria (snapshot order) with each one's EFFECTIVE
+// verdict resolved under the human-over-executor precedence rule, plus the
+// result summaries of the tasks that satisfied it (anti-rubber-stamp evidence).
+// Legacy demands with no open plan revision snapshot return an empty criteria
+// list — the panel simply renders nothing.
+func (s *Service) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandAcceptanceCriteriaDetail, error) {
+	if tenantID == uuid.Nil || demandID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, tenantID, demand.ProjectID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	revisionID := CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return &DemandAcceptanceCriteriaDetail{
+			DemandID:     demandID,
+			DemandStatus: demand.Status,
+			Criteria:     []DemandAcceptanceCriterionDetail{},
+		}, nil
+	}
+	criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	verdicts, err := s.repository.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Gather the union of satisfied_by task IDs and fetch each one's latest
+	// result conclusion in a single batched read.
+	taskIDSet := make(map[uuid.UUID]struct{})
+	taskIDs := make([]uuid.UUID, 0)
+	for _, c := range criteria {
+		for _, raw := range c.SatisfiedBy {
+			taskID, parseErr := uuid.Parse(strings.TrimSpace(raw))
+			if parseErr != nil {
+				continue
+			}
+			if _, seen := taskIDSet[taskID]; seen {
+				continue
+			}
+			taskIDSet[taskID] = struct{}{}
+			taskIDs = append(taskIDs, taskID)
+		}
+	}
+	latestSummaryByTask := make(map[uuid.UUID]ExecutionSummary)
+	if len(taskIDs) > 0 {
+		summaries, summErr := s.repository.ListExecutionSummariesByTaskIDs(ctx, tenantID, demand.ProjectID, taskIDs)
+		if summErr != nil {
+			return nil, summErr
+		}
+		for _, summary := range summaries {
+			existing, ok := latestSummaryByTask[summary.ProjectTaskID]
+			if !ok || summary.CreatedAt.After(existing.CreatedAt) {
+				latestSummaryByTask[summary.ProjectTaskID] = summary
+			}
+		}
+	}
+
+	details := make([]DemandAcceptanceCriterionDetail, 0, len(criteria))
+	for _, c := range criteria {
+		detail := DemandAcceptanceCriterionDetail{
+			CriterionID:        c.CriterionID,
+			Statement:          c.Statement,
+			VerificationMethod: c.VerificationMethod,
+			Severity:           c.Severity,
+			SatisfiedBy:        append([]string(nil), c.SatisfiedBy...),
+			EvidenceRefs:       []string{},
+			TaskSummaries:      make([]DemandCriterionTaskSummary, 0, len(c.SatisfiedBy)),
+		}
+		if verdict, judgeType, evidenceRefs, hasVerdict := criterionEffectiveVerdict(verdicts, c.CriterionID); hasVerdict {
+			v := verdict
+			j := judgeType
+			detail.Verdict = &v
+			detail.JudgeType = &j
+			if len(evidenceRefs) > 0 {
+				detail.EvidenceRefs = append([]string(nil), evidenceRefs...)
+			}
+		}
+		for _, raw := range c.SatisfiedBy {
+			taskRef := strings.TrimSpace(raw)
+			summaryText := ""
+			if taskID, parseErr := uuid.Parse(taskRef); parseErr == nil {
+				if summary, ok := latestSummaryByTask[taskID]; ok {
+					summaryText = summary.Conclusion
+				}
+			}
+			detail.TaskSummaries = append(detail.TaskSummaries, DemandCriterionTaskSummary{
+				TaskID:  taskRef,
+				Summary: summaryText,
+			})
+		}
+		details = append(details, detail)
+	}
+
+	return &DemandAcceptanceCriteriaDetail{
+		DemandID:     demandID,
+		DemandStatus: demand.Status,
+		Criteria:     details,
+	}, nil
+}
+
 func (s *Service) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error) {
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || (req.CoordinationJobID == nil && req.DemandID == nil) {
 		return nil, ErrInvalidProject

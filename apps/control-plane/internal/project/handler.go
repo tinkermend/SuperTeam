@@ -37,6 +37,7 @@ type HandlerService interface {
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error)
+	ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandAcceptanceCriteriaDetail, error)
 	SignDemandCriterionVerdict(ctx context.Context, req SignDemandCriterionVerdictRequest) (*SignDemandCriterionVerdictResult, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error)
 	ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error)
@@ -721,6 +722,28 @@ func (h *HTTPHandler) GetDemandLaunchDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, demandLaunchDetailResponseFromDomain(*detail))
+}
+
+func (h *HTTPHandler) ListDemandAcceptanceCriteria(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDemandRead)
+	if !ok {
+		return
+	}
+	demandID, err := uuid.Parse(chi.URLParam(r, "demandId"))
+	if err != nil {
+		writeHandlerError(w, ErrInvalidProject)
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(r.Context(), tenantID, demandID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, demandAcceptanceCriteriaResponseFromDomain(*detail))
 }
 
 func (h *HTTPHandler) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request) {
@@ -1885,6 +1908,63 @@ type resolveDecisionBody struct {
 	Comment               string         `json:"comment"`
 	Payload               map[string]any `json:"payload"`
 	TargetExitDeliverable string         `json:"target_exit_deliverable,omitempty"`
+}
+
+type demandCriterionTaskSummaryResponse struct {
+	TaskID  string `json:"task_id"`
+	Summary string `json:"summary"`
+}
+
+type demandAcceptanceCriterionDetailResponse struct {
+	CriterionID        string                               `json:"criterion_id"`
+	Statement          string                               `json:"statement"`
+	VerificationMethod string                               `json:"verification_method"`
+	Severity           string                               `json:"severity"`
+	SatisfiedBy        []string                             `json:"satisfied_by"`
+	Verdict            *string                              `json:"verdict"`
+	JudgeType          *string                              `json:"judge_type"`
+	EvidenceRefs       []string                             `json:"evidence_refs"`
+	TaskSummaries      []demandCriterionTaskSummaryResponse `json:"task_summaries"`
+}
+
+type demandAcceptanceCriteriaResponse struct {
+	DemandID     string                                    `json:"demand_id"`
+	DemandStatus string                                    `json:"demand_status"`
+	Criteria     []demandAcceptanceCriterionDetailResponse `json:"criteria"`
+}
+
+func demandAcceptanceCriteriaResponseFromDomain(detail DemandAcceptanceCriteriaDetail) demandAcceptanceCriteriaResponse {
+	criteria := make([]demandAcceptanceCriterionDetailResponse, 0, len(detail.Criteria))
+	for _, c := range detail.Criteria {
+		satisfiedBy := c.SatisfiedBy
+		if satisfiedBy == nil {
+			satisfiedBy = []string{}
+		}
+		evidenceRefs := c.EvidenceRefs
+		if evidenceRefs == nil {
+			evidenceRefs = []string{}
+		}
+		summaries := make([]demandCriterionTaskSummaryResponse, 0, len(c.TaskSummaries))
+		for _, s := range c.TaskSummaries {
+			summaries = append(summaries, demandCriterionTaskSummaryResponse{TaskID: s.TaskID, Summary: s.Summary})
+		}
+		criteria = append(criteria, demandAcceptanceCriterionDetailResponse{
+			CriterionID:        c.CriterionID,
+			Statement:          c.Statement,
+			VerificationMethod: c.VerificationMethod,
+			Severity:           c.Severity,
+			SatisfiedBy:        satisfiedBy,
+			Verdict:            c.Verdict,
+			JudgeType:          c.JudgeType,
+			EvidenceRefs:       evidenceRefs,
+			TaskSummaries:      summaries,
+		})
+	}
+	return demandAcceptanceCriteriaResponse{
+		DemandID:     detail.DemandID.String(),
+		DemandStatus: string(detail.DemandStatus),
+		Criteria:     criteria,
+	}
 }
 
 type signDemandCriterionVerdictBody struct {

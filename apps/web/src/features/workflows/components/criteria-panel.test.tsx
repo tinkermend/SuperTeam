@@ -1,0 +1,160 @@
+import { userEvent } from "vitest/browser";
+import { describe, expect, it, vi } from "vitest";
+import { render } from "vitest-browser-react";
+import { CriteriaPanelView } from "./criteria-panel";
+import type { DemandAcceptanceCriterionDetail } from "@/lib/api/projects";
+
+function criterion(
+  overrides: Partial<DemandAcceptanceCriterionDetail> = {},
+): DemandAcceptanceCriterionDetail {
+  return {
+    criterion_id: "c1",
+    statement: "接口在 500ms 内返回",
+    verification_method: "human_judgment",
+    severity: "blocking",
+    satisfied_by: [],
+    verdict: null,
+    judge_type: null,
+    evidence_refs: [],
+    task_summaries: [],
+    ...overrides,
+  };
+}
+
+describe("CriteriaPanelView", () => {
+  it("renders each criterion with method, severity, verdict and judge badges", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({
+            criterion_id: "c1",
+            statement: "接口在 500ms 内返回",
+            verdict: "satisfied",
+            judge_type: "executor",
+            verification_method: "automated_test",
+          }),
+          criterion({
+            criterion_id: "c2",
+            statement: "文案由负责人确认",
+            verdict: "unsatisfied",
+            judge_type: "human",
+            severity: "non_blocking",
+          }),
+          criterion({ criterion_id: "c3", statement: "待判定项", verdict: null }),
+        ]}
+        demandStatus="completed"
+      />,
+    );
+
+    const row1 = screen.getByTestId("criterion-row-c1");
+    const row2 = screen.getByTestId("criterion-row-c2");
+    const row3 = screen.getByTestId("criterion-row-c3");
+
+    await expect.element(row1.getByText("接口在 500ms 内返回")).toBeInTheDocument();
+    await expect.element(row1.getByText("自动验证")).toBeInTheDocument();
+    await expect.element(row1.getByText("已满足")).toBeInTheDocument();
+    await expect.element(row1.getByText("员工判定")).toBeInTheDocument();
+
+    await expect.element(row2.getByText("人类判定")).toBeInTheDocument();
+    await expect.element(row2.getByText("非阻断")).toBeInTheDocument();
+    await expect.element(row2.getByText("未满足")).toBeInTheDocument();
+    await expect.element(row2.getByText("负责人判定")).toBeInTheDocument();
+
+    await expect.element(row3.getByText("待判定", { exact: true })).toBeInTheDocument();
+  });
+
+  it("renders evidence refs as labeled monospace chips without navigation", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({
+            criterion_id: "c1",
+            evidence_refs: ["attestation:abc-123", "artifact://report.md"],
+          }),
+        ]}
+        demandStatus="completed"
+      />,
+    );
+
+    const chip = screen.getByText("attestation:abc-123");
+    await expect.element(chip).toBeInTheDocument();
+    // Non-link: must not be an anchor element.
+    expect(
+      (chip.element() as HTMLElement).closest("a"),
+    ).toBeNull();
+    await expect.element(screen.getByText("artifact://report.md")).toBeInTheDocument();
+  });
+
+  it("shows sign controls only for acceptance_pending human_judgment criteria not yet signed", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({ criterion_id: "c1", verdict: null, judge_type: null }),
+          // already human-signed → read-only
+          criterion({ criterion_id: "c2", verdict: "satisfied", judge_type: "human" }),
+          // automated → no sign controls
+          criterion({
+            criterion_id: "c3",
+            verification_method: "automated_test",
+            verdict: "satisfied",
+            judge_type: "executor",
+          }),
+        ]}
+        demandStatus="acceptance_pending"
+        onSign={vi.fn()}
+      />,
+    );
+
+    await expect
+      .element(screen.getByTestId("criterion-sign-satisfied-c1"))
+      .toBeInTheDocument();
+    expect(screen.container.querySelector('[data-testid="criterion-sign-satisfied-c2"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="criterion-sign-satisfied-c3"]')).toBeNull();
+  });
+
+  it("does not render sign controls when demand is not acceptance_pending", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[criterion({ criterion_id: "c1", verdict: null, judge_type: null })]}
+        demandStatus="completed"
+        onSign={vi.fn()}
+      />,
+    );
+
+    expect(screen.container.querySelector('[data-testid="criterion-sign-satisfied-c1"]')).toBeNull();
+  });
+
+  it("submits sign with criterion id, verdict and reason", async () => {
+    const onSign = vi.fn();
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[criterion({ criterion_id: "c1", verdict: null, judge_type: null })]}
+        demandStatus="acceptance_pending"
+        onSign={onSign}
+      />,
+    );
+
+    await userEvent.fill(screen.getByTestId("criterion-reason-c1"), "已逐条核对产出");
+    await userEvent.click(screen.getByTestId("criterion-sign-satisfied-c1"));
+
+    expect(onSign).toHaveBeenCalledWith("c1", "satisfied", "已逐条核对产出");
+  });
+
+  it("renders task summaries so the human sees produced work before signing", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({
+            criterion_id: "c1",
+            satisfied_by: ["task-1"],
+            task_summaries: [{ task_id: "task-1", summary: "已交付并通过回归" }],
+          }),
+        ]}
+        demandStatus="acceptance_pending"
+        onSign={vi.fn()}
+      />,
+    );
+
+    await expect.element(screen.getByText("已交付并通过回归")).toBeInTheDocument();
+  });
+});

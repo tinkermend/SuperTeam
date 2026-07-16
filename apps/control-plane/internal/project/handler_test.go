@@ -1131,6 +1131,77 @@ func TestProjectHandlerMapsSignDemandCriterionVerdictErrors(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerListsDemandAcceptanceCriteria(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	demandID := uuid.New()
+	verdict := "unsatisfied"
+	judge := "human"
+	service := &handlerTestService{
+		acceptanceCriteriaResult: &DemandAcceptanceCriteriaDetail{
+			DemandID:     demandID,
+			DemandStatus: ProjectDemandStatusAcceptancePending,
+			Criteria: []DemandAcceptanceCriterionDetail{
+				{
+					CriterionID:        "c1",
+					Statement:          "第一条判据",
+					VerificationMethod: "human_judgment",
+					Severity:           "blocking",
+					SatisfiedBy:        []string{"task-1"},
+					Verdict:            &verdict,
+					JudgeType:          &judge,
+					EvidenceRefs:       []string{"attestation:abc"},
+					TaskSummaries:      []DemandCriterionTaskSummary{{TaskID: "task-1", Summary: "已交付"}},
+				},
+			},
+		},
+	}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/acceptance-criteria", nil)
+	req = withProjectRouteParams(req, map[string]string{"demandId": demandID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.ListDemandAcceptanceCriteria(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected list acceptance criteria 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.acceptanceCriteriaTenantID != tenantID || service.acceptanceCriteriaDemandID != demandID {
+		t.Fatalf("unexpected list acceptance criteria args: tenant=%s demand=%s", service.acceptanceCriteriaTenantID, service.acceptanceCriteriaDemandID)
+	}
+	var body demandAcceptanceCriteriaResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode list acceptance criteria response: %v", err)
+	}
+	if body.DemandStatus != "acceptance_pending" || len(body.Criteria) != 1 {
+		t.Fatalf("unexpected list acceptance criteria response: %#v", body)
+	}
+	c := body.Criteria[0]
+	if c.CriterionID != "c1" || c.Verdict == nil || *c.Verdict != "unsatisfied" || c.JudgeType == nil || *c.JudgeType != "human" {
+		t.Fatalf("unexpected criterion payload: %#v", c)
+	}
+	if len(c.TaskSummaries) != 1 || c.TaskSummaries[0].Summary != "已交付" {
+		t.Fatalf("expected task summary in payload, got %#v", c.TaskSummaries)
+	}
+}
+
+func TestProjectHandlerMapsListDemandAcceptanceCriteriaErrors(t *testing.T) {
+	demandID := uuid.New()
+	service := &handlerTestService{acceptanceCriteriaErr: ErrProjectNotFound}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/acceptance-criteria", nil)
+	req = withProjectRouteParams(req, map[string]string{"demandId": demandID.String()})
+	req = withConsoleContext(req, uuid.New(), uuid.New())
+	resp := httptest.NewRecorder()
+
+	handler.ListDemandAcceptanceCriteria(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -2239,6 +2310,10 @@ type handlerTestService struct {
 	signCriterionVerdictReq           SignDemandCriterionVerdictRequest
 	signCriterionVerdictResult        *SignDemandCriterionVerdictResult
 	signCriterionVerdictErr           error
+	acceptanceCriteriaTenantID        uuid.UUID
+	acceptanceCriteriaDemandID        uuid.UUID
+	acceptanceCriteriaResult          *DemandAcceptanceCriteriaDetail
+	acceptanceCriteriaErr             error
 	taskGraph                         ProjectTaskGraph
 	taskGraphReq                      GetProjectTaskGraphRequest
 	taskGraphCalls                    int
@@ -2487,6 +2562,18 @@ func (s *handlerTestService) SignDemandCriterionVerdict(ctx context.Context, req
 		Total:        1,
 		Remaining:    0,
 	}, nil
+}
+
+func (s *handlerTestService) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandAcceptanceCriteriaDetail, error) {
+	s.acceptanceCriteriaTenantID = tenantID
+	s.acceptanceCriteriaDemandID = demandID
+	if s.acceptanceCriteriaErr != nil {
+		return nil, s.acceptanceCriteriaErr
+	}
+	if s.acceptanceCriteriaResult != nil {
+		return s.acceptanceCriteriaResult, nil
+	}
+	return &DemandAcceptanceCriteriaDetail{DemandID: demandID, DemandStatus: ProjectDemandStatusAcceptancePending}, nil
 }
 
 func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {

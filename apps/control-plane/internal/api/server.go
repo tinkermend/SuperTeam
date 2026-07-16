@@ -302,6 +302,7 @@ func (s *Server) registerRoutes() {
 				r.Post("/projects/{projectId}/demands", s.projectHandler.SubmitDemand)
 				r.Get("/projects/{projectId}/demands", s.projectHandler.ListProjectDemands)
 				r.Get("/project-demands/{demandId}/launch-detail", s.projectHandler.GetDemandLaunchDetail)
+				r.Get("/project-demands/{demandId}/acceptance-criteria", s.projectHandler.ListDemandAcceptanceCriteria)
 				r.Post("/project-demands/{demandId}/criterion-verdicts", s.projectHandler.SignDemandCriterionVerdict)
 				r.Get("/projects/{projectId}/route-decisions", s.projectHandler.ListRouteDecisions)
 				r.Get("/projects/{projectId}/plan-revisions", s.projectHandler.ListPlanRevisions)
