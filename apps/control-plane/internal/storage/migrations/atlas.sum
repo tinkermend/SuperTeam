@@ -1,4 +1,4 @@
-h1:Jom3FJywKanPX4IG32Fr4ZlymyS9PiW3pGT7kCOuF+U=
+h1:kKjSs7wY92Oawr8Hks47PCnq69WoIbsr+7OWLx7CUSo=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -62,3 +62,4 @@ h1:Jom3FJywKanPX4IG32Fr4ZlymyS9PiW3pGT7kCOuF+U=
 062_skill_mcp_dependencies.sql h1:2vzH/ZxA00ZPG3MJbBI86GWJo54RuzBNCenOsGJf4k4=
 063_capability_vocabulary_exemptions_standard_employees.sql h1:dUQKIj5cLRE++xI0e164tpS2Ku6ccihF3NBFqF2oNw4=
 064_demand_acceptance_criteria_verdicts.sql h1:jihBneuqp1adt0pckRJ3gsNAf+OMYiiBgQxuJ2p5Oic=
+065_demand_acceptance_comment_fixes.sql h1:KKQTHxMvpNwDFEV2PUEt0XK+ebs5pYZ4ZrQJZRkqN3M=
