@@ -63,6 +63,34 @@ describe("CriteriaPanelView", () => {
     await expect.element(row3.getByText("待判定", { exact: true })).toBeInTheDocument();
   });
 
+  it("renders an executor not_applicable verdict as a distinct 不适用 state without sign controls", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({
+            criterion_id: "c-na",
+            statement: "自动测试通过",
+            verification_method: "automated_test",
+            verdict: "not_applicable",
+            judge_type: "executor",
+            evidence_refs: ["artifact:na-rationale"],
+          }),
+        ]}
+        demandStatus="acceptance_pending"
+        onSign={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByTestId("criterion-row-c-na");
+    await expect.element(row.getByText("不适用")).toBeInTheDocument();
+    await expect.element(row.getByText("员工判定")).toBeInTheDocument();
+    await expect.element(row.getByText("artifact:na-rationale")).toBeInTheDocument();
+    // Automated criterion → never human-signable, N/A or not.
+    expect(
+      screen.container.querySelector('[data-testid="criterion-sign-satisfied-c-na"]'),
+    ).toBeNull();
+  });
+
   it("renders evidence refs as labeled monospace chips without navigation", async () => {
     const screen = await render(
       <CriteriaPanelView

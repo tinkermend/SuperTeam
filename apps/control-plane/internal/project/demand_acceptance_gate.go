@@ -12,7 +12,16 @@ const demandAcceptanceCriterionSeverityBlocking = "blocking"
 const (
 	demandCriterionVerdictSatisfied   = "satisfied"
 	demandCriterionVerdictUnsatisfied = "unsatisfied"
-	demandCriterionJudgeTypeHuman     = "human"
+	// demandCriterionVerdictNotApplicable is the third verdict value, projected
+	// only from an executor's contract-valid not_applicable acceptance result
+	// (which requires a human_accepted_reason) for an automated_test criterion.
+	// It RELEASES the convergence gate — a blocking criterion the executor
+	// justifiably marked N/A must not deadlock the demand, since the mandatory
+	// human_judgment fallback criterion remains the human backstop. A human
+	// verdict still overrides it (see criterionEffectiveVerdict). Humans never
+	// sign not_applicable directly (SignDemandCriterionVerdict rejects it).
+	demandCriterionVerdictNotApplicable = "not_applicable"
+	demandCriterionJudgeTypeHuman       = "human"
 	// demandCriterionVerificationMethodHumanJudgment mirrors
 	// projectcoordination.VerificationMethodHumanJudgment at the persistence
 	// layer (see acceptance_criteria.go's knownVerificationMethods registry).
@@ -29,8 +38,10 @@ const (
 //
 //   - A human verdict (satisfied or unsatisfied) always wins.
 //   - Absent a human verdict, the criterion is satisfied iff at least one
-//     executor verdict for it is satisfied; with only unsatisfied executor
-//     verdicts the effective verdict is unsatisfied.
+//     executor verdict for it is satisfied; else not_applicable iff at least
+//     one executor verdict for it is not_applicable (both release the gate);
+//     with only unsatisfied executor verdicts the effective verdict is
+//     unsatisfied.
 //   - With no verdict at all it is unresolved (hasVerdict=false).
 //
 // It also returns the judge type and evidence refs behind the winning verdict
@@ -38,6 +49,7 @@ const (
 func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID string) (verdict string, judgeType string, evidenceRefs []string, hasVerdict bool) {
 	var human *DemandCriterionVerdict
 	var executorSatisfied *DemandCriterionVerdict
+	var executorNotApplicable *DemandCriterionVerdict
 	var executorAny *DemandCriterionVerdict
 	for i := range verdicts {
 		v := &verdicts[i]
@@ -54,12 +66,17 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 		if v.Verdict == demandCriterionVerdictSatisfied && executorSatisfied == nil {
 			executorSatisfied = v
 		}
+		if v.Verdict == demandCriterionVerdictNotApplicable && executorNotApplicable == nil {
+			executorNotApplicable = v
+		}
 	}
 	switch {
 	case human != nil:
 		return human.Verdict, demandCriterionJudgeTypeHuman, human.EvidenceRefs, true
 	case executorSatisfied != nil:
 		return demandCriterionVerdictSatisfied, demandCriterionJudgeTypeExecutor, executorSatisfied.EvidenceRefs, true
+	case executorNotApplicable != nil:
+		return demandCriterionVerdictNotApplicable, demandCriterionJudgeTypeExecutor, executorNotApplicable.EvidenceRefs, true
 	case executorAny != nil:
 		return executorAny.Verdict, demandCriterionJudgeTypeExecutor, executorAny.EvidenceRefs, true
 	default:
@@ -73,8 +90,10 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 //
 //   - A human verdict for a criterion — satisfied or unsatisfied — always
 //     takes precedence over any executor verdict for the same criterion.
-//   - Absent a human verdict, the criterion is satisfied iff at least one
-//     executor verdict for it is satisfied.
+//   - Absent a human verdict, the criterion is released iff at least one
+//     executor verdict for it is satisfied or not_applicable (the executor's
+//     justified N/A on an automated_test criterion releases the gate — the
+//     human_judgment fallback remains the backstop).
 //   - A blocking criterion with no verdict at all is unsatisfied (awaiting
 //     sign-off).
 //   - non_blocking criteria are never included, regardless of verdicts.
@@ -90,7 +109,7 @@ func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, ve
 			continue
 		}
 		verdict, _, _, hasVerdict := criterionEffectiveVerdict(verdicts, c.CriterionID)
-		if !hasVerdict || verdict != demandCriterionVerdictSatisfied {
+		if !hasVerdict || (verdict != demandCriterionVerdictSatisfied && verdict != demandCriterionVerdictNotApplicable) {
 			pending = append(pending, c.CriterionID)
 		}
 	}

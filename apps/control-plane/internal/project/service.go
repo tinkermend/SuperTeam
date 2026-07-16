@@ -3480,15 +3480,19 @@ func attestationRecordRef(att ProjectTaskAttestation) string {
 }
 
 // demandCriterionVerdictValueFromResultStatus maps an employee's self-reported
-// criterion status to the verdict table's satisfied/unsatisfied vocabulary.
-// needs_human/not_applicable are left for a human sign-off pass (not this
-// executor projection) and are intentionally not projected.
+// criterion status to the verdict table's vocabulary. not_applicable projects
+// as the third verdict value (the contract layer already requires a
+// human_accepted_reason for it, and the gate treats it as non-blocking — see
+// demandCriterionVerdictNotApplicable). needs_human genuinely awaits resolution
+// and is intentionally not projected.
 func demandCriterionVerdictValueFromResultStatus(status TaskResultCriterionStatus) (string, bool) {
 	switch status {
 	case TaskResultCriterionStatusPassed, TaskResultCriterionStatusHumanOverridden:
-		return "satisfied", true
+		return demandCriterionVerdictSatisfied, true
 	case TaskResultCriterionStatusFailed:
-		return "unsatisfied", true
+		return demandCriterionVerdictUnsatisfied, true
+	case TaskResultCriterionStatusNotApplicable:
+		return demandCriterionVerdictNotApplicable, true
 	default:
 		return "", false
 	}
@@ -3503,9 +3507,10 @@ func demandCriterionVerdictValueFromResultStatus(status TaskResultCriterionStatu
 // shows a real, traceable attestation ref even though the employee never echoed
 // it. human_judgment criteria are a human sign-off matter (later task): an
 // employee self-report against one is intentionally not projected, only logged.
-// Criteria with no matching result, or whose result status is
-// needs_human/not_applicable, are left unprojected — a later attempt or a human
-// may still resolve them. No-ops entirely when the task has no criteria snapshot
+// Criteria with no matching result, or whose result status is needs_human, are
+// left unprojected — a later attempt or a human may still resolve them; a
+// not_applicable result IS projected as the non-blocking not_applicable verdict.
+// No-ops entirely when the task has no criteria snapshot
 // (legacy guard, mirrors validateAcceptanceCriterionAttestation).
 func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, contract TaskResultContract) error {
 	if contract.Status != TaskResultStatusCompleted || task.AssignedDigitalEmployeeID == nil {

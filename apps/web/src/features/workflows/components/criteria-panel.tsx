@@ -30,6 +30,8 @@ function verdictPill(verdict: DemandAcceptanceCriterionDetail["verdict"]): {
       return { label: "已满足", tone: "ok" };
     case "unsatisfied":
       return { label: "未满足", tone: "danger" };
+    case "not_applicable":
+      return { label: "不适用", tone: "mute" };
     default:
       return { label: "待判定", tone: "mute" };
   }

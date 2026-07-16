@@ -2618,6 +2618,118 @@ func TestProjectionSkippedWithoutSnapshot(t *testing.T) {
 	require.Empty(t, repo.demandCriterionVerdicts)
 }
 
+// TestNotApplicableAutomatedCriterionDoesNotDeadlock is the regression guard
+// for the convergence-gate deadlock: an executor returning a contract-valid
+// not_applicable acceptance result (with the required human reason + evidence)
+// for an injected automated_test blocking criterion must PROJECT a verdict —
+// now with the third verdict value not_applicable — so the gate treats that
+// criterion as released rather than counting a verdict-less blocking criterion
+// as permanently unsatisfied. The mandatory human_judgment fallback remains the
+// only pending criterion, so the demand can still complete once the human signs
+// it — no permanent stuck.
+func TestNotApplicableAutomatedCriterionDoesNotDeadlock(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	employeeID := *repo.tasks[0].AssignedDigitalEmployeeID
+	demandID := uuid.New()
+	planRevisionID := uuid.New()
+	// Injected automated_test blocking criterion the executor judges N/A.
+	demandCriterionSnapshotFixture(repo, fixture, demandID, planRevisionID, "auto-check", "自动测试通过", "automated_test")
+	// The mandatory human_judgment fallback backstop ("人类负责人确认交付符合需求意图").
+	repo.demandAcceptanceCriteria = append(repo.demandAcceptanceCriteria, DemandAcceptanceCriterion{
+		TenantID:           fixture.tenantID,
+		ProjectID:          fixture.projectID,
+		DemandID:           demandID,
+		PlanRevisionID:     planRevisionID,
+		CriterionID:        "human-fallback",
+		Statement:          "人类负责人确认交付符合需求意图",
+		VerificationMethod: "human_judgment",
+		Severity:           "blocking",
+	})
+
+	summary, err := service.SubmitProjectTaskAttemptResult(context.Background(), SubmitProjectTaskAttemptResultRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-result-not-applicable-no-deadlock"),
+		ResultContract: TaskResultContract{
+			Status:  TaskResultStatusCompleted,
+			Summary: "完成分析",
+			AcceptanceResults: []TaskResultAcceptanceResult{
+				{
+					CriterionID:         "auto-check",
+					Status:              TaskResultCriterionStatusNotApplicable,
+					HumanAcceptedReason: "该自动检查不适用于本次交付范围",
+					EvidenceRefs:        []string{"artifact:na-rationale"},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	// The task completes cleanly — not_applicable is not attestation-gated.
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	result := requireSingleProjectTaskResult(t, repo, fixture)
+	require.Equal(t, "accepted", result.ValidationStatus)
+
+	// The not_applicable verdict is now PROJECTED (previously dropped, which is
+	// what stranded the gate).
+	verdicts, err := repo.ListDemandCriterionVerdicts(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, verdicts, 1)
+	require.Equal(t, "auto-check", verdicts[0].CriterionID)
+	require.Equal(t, "not_applicable", verdicts[0].Verdict)
+	require.Equal(t, "executor", verdicts[0].JudgeType)
+	require.Equal(t, employeeID, verdicts[0].JudgeID)
+	require.Equal(t, "该自动检查不适用于本次交付范围", verdicts[0].Reason)
+
+	// Gate: the not_applicable automated criterion is released; only the unsigned
+	// human_judgment fallback remains pending. The demand is NOT deadlocked.
+	criteria, err := repo.ListDemandAcceptanceCriteria(context.Background(), fixture.tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	pending := ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)
+	require.Equal(t, []string{"human-fallback"}, pending)
+}
+
+// TestResolveUnsatisfiedBlockingCriteriaReleasesNotApplicable pins the gate
+// resolver matrix for the third verdict value: satisfied and not_applicable
+// both RELEASE a blocking criterion; unsatisfied and no-verdict both BLOCK; and
+// a human verdict still overrides an executor not_applicable in both directions.
+func TestResolveUnsatisfiedBlockingCriteriaReleasesNotApplicable(t *testing.T) {
+	criteria := []DemandAcceptanceCriterion{{CriterionID: "a", Severity: "blocking"}}
+	verdict := func(v, judge string) []DemandCriterionVerdict {
+		return []DemandCriterionVerdict{{CriterionID: "a", Verdict: v, JudgeType: judge}}
+	}
+	cases := []struct {
+		name     string
+		verdicts []DemandCriterionVerdict
+		released bool
+	}{
+		{"executor satisfied releases", verdict("satisfied", "executor"), true},
+		{"executor not_applicable releases", verdict("not_applicable", "executor"), true},
+		{"executor unsatisfied blocks", verdict("unsatisfied", "executor"), false},
+		{"no verdict blocks", nil, false},
+		{"human satisfied overrides executor not_applicable (released)", []DemandCriterionVerdict{
+			{CriterionID: "a", Verdict: "not_applicable", JudgeType: "executor"},
+			{CriterionID: "a", Verdict: "satisfied", JudgeType: "human"},
+		}, true},
+		{"human unsatisfied overrides executor not_applicable (blocks)", []DemandCriterionVerdict{
+			{CriterionID: "a", Verdict: "not_applicable", JudgeType: "executor"},
+			{CriterionID: "a", Verdict: "unsatisfied", JudgeType: "human"},
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pending := ResolveUnsatisfiedBlockingCriteria(criteria, tc.verdicts)
+			if tc.released {
+				require.Empty(t, pending)
+			} else {
+				require.Equal(t, []string{"a"}, pending)
+			}
+		})
+	}
+}
+
 func TestStringRefIsAttestation(t *testing.T) {
 	cases := []struct {
 		name string
