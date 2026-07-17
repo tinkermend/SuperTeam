@@ -638,7 +638,11 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 	var credentialSealer capability.CredentialSealer
-	if credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY"); credentialKey != "" {
+	credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY")
+	if credentialKey == "" {
+		credentialKey = cfg.Security.CredentialEncryptionKey
+	}
+	if credentialKey != "" {
 		credentialSealer, err = capability.NewAESGCMCredentialSealer(credentialKey)
 		if err != nil {
 			return nil, err

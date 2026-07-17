@@ -238,8 +238,8 @@ GATE 实测揪出并已修复(均含回归测试):
 
 ## 环境事实(联调恢复必读)
 
-- **control-plane 重启必须带** `CONTROL_PLANE_CREDENTIAL_KEY=$(cat .scratch/dev-services/credential.key)`,否则 sealer 缺失 → bootstrap/绑定/contact-sync 全部 503;密钥丢失则已加密的 App Secret 无法解密,需重新 upsert app-config。
-- connector 启动:`FEISHU_CONNECTOR_TOKEN=$(cat /tmp/feishu-connector-token.txt) scripts/dev-services.sh start feishu-connector`(token 文件是 /tmp 易失,丢了经 `POST /api/v1/admin/service-tokens` 重签)。
+- 凭据加密主密钥已进 `apps/control-plane/config/config.yaml` 的 `security.credentialEncryptionKey`(环境变量 CONTROL_PLANE_CREDENTIAL_KEY 可覆盖)——裸 `restart control-plane` 即可,无需手带环境变量;更换密钥会使库内已加密 App Secret 不可解,需重新 upsert app-config。
+- connector 凭据在 `.scratch/dev-services/feishu-connector.token`,dev-services 启动 feishu-connector 时自动装载;丢失经 `POST /api/v1/admin/service-tokens` 重签后写回该文件。
 - 飞书后台已配:事件订阅长连接、回调配置长连接(卡片按钮依赖,GATE 中现配)、OAuth 重定向 URL `http://127.0.0.1:8081/api/v1/auth/feishu/oauth-callback`。
 - **建议正式启用前在飞书后台轮换 App Secret**(明文在对话中出现过),轮换后重新 upsert app-config 即可。
 - 联调时确认用户其他框架未连同一 app 的长连接(集群模式分流消息)。

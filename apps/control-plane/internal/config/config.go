@@ -9,6 +9,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SecurityConfig 平台安全相关配置。
+type SecurityConfig struct {
+	// CredentialEncryptionKey 是外部凭据(飞书 App Secret 等)的 AES-GCM 主密钥,
+	// base64 编码 32 字节。环境变量 CONTROL_PLANE_CREDENTIAL_KEY 优先于此值。
+	// 更换密钥会使库内已加密凭据不可解,需重新录入。
+	CredentialEncryptionKey string `yaml:"credentialEncryptionKey"`
+}
+
 type Config struct {
 	HTTP        HTTPConfig        `yaml:"http"`
 	Postgres    PostgresConfig    `yaml:"postgres"`
@@ -16,6 +24,7 @@ type Config struct {
 	ObjectStore ObjectStoreConfig `yaml:"objectStore"`
 	Temporal    TemporalConfig    `yaml:"temporal"`
 	Planner     PlannerConfig     `yaml:"planner"`
+	Security    SecurityConfig    `yaml:"security"`
 	Authz       AuthzConfig       `yaml:"authz"`
 	Auth        AuthConfig        `yaml:"auth"`
 	EmployeeEnv EmployeeEnvConfig `yaml:"employeeEnv"`
