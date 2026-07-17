@@ -1,4 +1,4 @@
-h1:pZgAqcuEXbFhGuHX5UKKHBXEPrGEYIedLKS4j41QnM8=
+h1:fHLreqUSaLbzRMI7lhJZixhzRci72Ri5QJzrpAlbf4A=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -68,3 +68,4 @@ h1:pZgAqcuEXbFhGuHX5UKKHBXEPrGEYIedLKS4j41QnM8=
 068_evidence_grounding.sql h1:5/ifXLtC++F/8NFE5i4mUk6sIpeiIS5sjmFPqe9pVYE=
 069_adversarial_review_judgements.sql h1:n0zFHlDYCXNbn4eVkc46ss1eyUcZnYQJVpQDC13Y6Oc=
 070_drop_project_leader_acceptance.sql h1:GMhZcyC+PwwL6UQFQLME1b/bE33u3MDWv52QPN38MDM=
+071_feishu_integration.sql h1:WvFr/vQ7GG/ymd1xuAtjPvNil60M+Uaec4DrS8dFOyY=
