@@ -824,10 +824,6 @@ type Project struct {
 	Status string `json:"status"`
 	// 人类负责人ID
 	HumanOwnerUserID uuid.UUID `json:"human_owner_user_id"`
-	// 项目负责人或推进人用户ID
-	LeaderUserID uuid.NullUUID `json:"leader_user_id"`
-	// 项目验收人用户ID
-	AcceptanceUserID uuid.NullUUID `json:"acceptance_user_id"`
 	// 绑定的 Temporal 工作流ID
 	CoordinationWorkflowID pgtype.Text `json:"coordination_workflow_id"`
 	// 虚拟协调线程状态
@@ -1302,7 +1298,7 @@ type ProjectMember struct {
 	PrincipalType string `json:"principal_type"`
 	// 成员主体ID
 	PrincipalID uuid.UUID `json:"principal_id"`
-	// 项目内角色：owner / leader / acceptance / executor / reviewer / observer
+	// 项目内角色:owner / executor / reviewer / observer 等,应用层注册校验;人类成员同等身份,不再划分 leader/acceptance
 	ProjectRole string `json:"project_role"`
 	// 成员展示名称快照
 	DisplayNameSnapshot pgtype.Text `json:"display_name_snapshot"`

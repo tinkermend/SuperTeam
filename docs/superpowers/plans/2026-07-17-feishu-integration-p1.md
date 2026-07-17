@@ -43,7 +43,7 @@
 - Modify: `CLAUDE.md` 协作模型句 → "项目人类成员同等身份,human_owner 为必绑锚点与兜底路由目标"
 - Modify: atlas.sum
 
-**要点:** `DROP COLUMN projects.leader_user_id, acceptance_user_id`;`project_members.project_role` 注释收敛(结构不动);web 零引用已核实,无前端改动。
+**要点:** `DROP COLUMN projects.leader_user_id, acceptance_user_id`;`project_members.project_role` 注释收敛(结构不动);**勘误:web 并非零引用**(早前只按 Go 命名查漏了 snake_case)——`project-config-page.tsx:434-450` 仍暴露"负责人/验收人用户 ID"两输入框、`:644` 角色过滤、`lib/api/projects.ts` 三处类型,一并剃除(改动前读 DESIGN.md)。
 
 - [ ] **Step 1: 失败测试**——现有引用两字段/两常量的测试改期望(创建项目不再接受/返回两字段;角色校验仅剩 owner 分支)。
 - [ ] **Step 2: RED → 实现 → 全包测试 + migrate-validate + replay 测试**(types 被 coordinator 引用)。

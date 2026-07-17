@@ -1247,22 +1247,16 @@ func (e ProjectRepoBindingStatus) Valid() bool {
 
 // Defines values for ProjectRole.
 const (
-	ProjectRoleAcceptance ProjectRole = "acceptance"
-	ProjectRoleExecutor   ProjectRole = "executor"
-	ProjectRoleLeader     ProjectRole = "leader"
-	ProjectRoleObserver   ProjectRole = "observer"
-	ProjectRoleOwner      ProjectRole = "owner"
-	ProjectRoleReviewer   ProjectRole = "reviewer"
+	ProjectRoleExecutor ProjectRole = "executor"
+	ProjectRoleObserver ProjectRole = "observer"
+	ProjectRoleOwner    ProjectRole = "owner"
+	ProjectRoleReviewer ProjectRole = "reviewer"
 )
 
 // Valid indicates whether the value is a known member of the ProjectRole enum.
 func (e ProjectRole) Valid() bool {
 	switch e {
-	case ProjectRoleAcceptance:
-		return true
 	case ProjectRoleExecutor:
-		return true
-	case ProjectRoleLeader:
 		return true
 	case ProjectRoleObserver:
 		return true
@@ -2443,14 +2437,12 @@ type CreateProjectLendingRequest struct {
 
 // CreateProjectRequest defines model for CreateProjectRequest.
 type CreateProjectRequest struct {
-	AcceptanceUserId   *openapi_types.UUID     `json:"acceptance_user_id,omitempty"`
 	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
 	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
 	Description        *string                 `json:"description,omitempty"`
 	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
 	Goal               string                  `json:"goal"`
 	HumanOwnerUserId   openapi_types.UUID      `json:"human_owner_user_id"`
-	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
 	Members            *[]ProjectMemberInput   `json:"members,omitempty"`
 	Name               string                  `json:"name"`
 	RepoBinding        *ProjectRepoBinding     `json:"repo_binding,omitempty"`
@@ -3662,7 +3654,6 @@ type PresignUploadResponse struct {
 
 // Project defines model for Project.
 type Project struct {
-	AcceptanceUserId       *openapi_types.UUID    `json:"acceptance_user_id,omitempty"`
 	AllowedActions         *[]string              `json:"allowed_actions,omitempty"`
 	ApprovalPolicy         map[string]interface{} `json:"approval_policy"`
 	ArchivedAt             *time.Time             `json:"archived_at,omitempty"`
@@ -3675,7 +3666,6 @@ type Project struct {
 	Goal                   string                 `json:"goal"`
 	HumanOwnerUserId       openapi_types.UUID     `json:"human_owner_user_id"`
 	Id                     openapi_types.UUID     `json:"id"`
-	LeaderUserId           *openapi_types.UUID    `json:"leader_user_id,omitempty"`
 	Name                   string                 `json:"name"`
 	RepoBinding            ProjectRepoBinding     `json:"repo_binding"`
 	ScenarioTemplateKey    *string                `json:"scenario_template_key,omitempty"`
@@ -5427,14 +5417,12 @@ type UpdateEmployeeTemplateRequest struct {
 
 // UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.
 type UpdateProjectConfigRequest struct {
-	AcceptanceUserId   *openapi_types.UUID     `json:"acceptance_user_id,omitempty"`
 	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
 	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
 	Description        *string                 `json:"description,omitempty"`
 	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
 	Goal               *string                 `json:"goal,omitempty"`
 	HumanOwnerUserId   *openapi_types.UUID     `json:"human_owner_user_id,omitempty"`
-	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
 
 	// Members When present, replaces the project member set; when omitted, members are preserved.
 	Members     *[]ProjectMemberInput `json:"members,omitempty"`

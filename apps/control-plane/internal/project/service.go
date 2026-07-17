@@ -1500,7 +1500,7 @@ func (s *Service) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptan
 	if projectArchived(project) {
 		return nil, ErrProjectArchived
 	}
-	if req.AcceptedByUserID != project.HumanOwnerUserID && (project.AcceptanceUserID == nil || req.AcceptedByUserID != *project.AcceptanceUserID) {
+	if req.AcceptedByUserID != project.HumanOwnerUserID {
 		return nil, ErrInvalidProjectAcceptance
 	}
 	if req.Status == "accepted" && (len(req.EvidenceRefIDs) == 0 || len(req.ReportRefIDs) == 0) {
@@ -6011,9 +6011,6 @@ func (s *Service) maybeOpenProjectAcceptanceReview(ctx context.Context, tenantID
 		_, _ = s.repository.TransitionProjectStatus(ctx, tenantID, projectID, []string{string(ProjectStatusAcceptance)}, string(ProjectStatusRunning))
 	}
 	targetUserID := projectRecord.HumanOwnerUserID
-	if projectRecord.AcceptanceUserID != nil && *projectRecord.AcceptanceUserID != uuid.Nil {
-		targetUserID = *projectRecord.AcceptanceUserID
-	}
 	approvalRequestID, err := s.approvals.CreateRequest(ctx, CreateApprovalRequestInput{
 		TenantID:      tenantID,
 		ResourceType:  "project",
@@ -6954,7 +6951,7 @@ func validateMembers(members []ProjectMemberInput) error {
 		if member.ProjectRole == ProjectRoleExecutor && member.PrincipalType != PrincipalTypeDigitalEmployee {
 			return ErrInvalidProjectMember
 		}
-		if (member.ProjectRole == ProjectRoleOwner || member.ProjectRole == ProjectRoleLeader || member.ProjectRole == ProjectRoleAcceptance) && member.PrincipalType != PrincipalTypeHumanUser {
+		if member.ProjectRole == ProjectRoleOwner && member.PrincipalType != PrincipalTypeHumanUser {
 			return ErrInvalidProjectMember
 		}
 	}

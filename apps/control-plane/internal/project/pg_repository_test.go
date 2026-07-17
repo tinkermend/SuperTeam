@@ -22,7 +22,6 @@ import (
 )
 
 func TestProjectFromRecordMapsPoliciesAndOptionalUsers(t *testing.T) {
-	leaderID := uuid.New()
 	teamID := uuid.New()
 	archivedAt := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
 	row := queries.Project{
@@ -34,7 +33,6 @@ func TestProjectFromRecordMapsPoliciesAndOptionalUsers(t *testing.T) {
 		Goal:                   pgtype.Text{String: "修复超时链路", Valid: true},
 		Status:                 "running",
 		HumanOwnerUserID:       uuid.New(),
-		LeaderUserID:           uuid.NullUUID{UUID: leaderID, Valid: true},
 		CoordinationWorkflowID: pgtype.Text{String: "project-coordinator:abc", Valid: true},
 		CoordinationStatus:     pgtype.Text{String: "registered", Valid: true},
 		CoordinationPolicy:     []byte(`{"auto_dispatch_low_risk":true}`),
@@ -54,9 +52,6 @@ func TestProjectFromRecordMapsPoliciesAndOptionalUsers(t *testing.T) {
 	}
 	if project.TeamID == nil || *project.TeamID != teamID {
 		t.Fatalf("expected team id %s, got %#v", teamID, project.TeamID)
-	}
-	if project.LeaderUserID == nil || *project.LeaderUserID != leaderID {
-		t.Fatalf("expected leader id %s, got %#v", leaderID, project.LeaderUserID)
 	}
 	if project.Description == nil || *project.Description != "线上超时整改" {
 		t.Fatalf("expected description, got %#v", project.Description)
@@ -4230,24 +4225,16 @@ func TestProjectTaskGraphRunsFromRowsMapsBoundRuns(t *testing.T) {
 
 func TestProjectConfigSnapshotIncludesHumanOwner(t *testing.T) {
 	ownerID := uuid.New()
-	leaderID := uuid.New()
 	project := Project{
 		Name:             "项目",
 		Goal:             "目标",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: ownerID,
-		LeaderUserID:     &leaderID,
 	}
 
 	snapshot := projectConfigSnapshot(project)
 	if snapshot["human_owner_user_id"] != ownerID.String() {
 		t.Fatalf("expected human owner in snapshot, got %#v", snapshot)
-	}
-	if snapshot["leader_user_id"] != leaderID.String() {
-		t.Fatalf("expected leader in snapshot, got %#v", snapshot)
-	}
-	if snapshot["acceptance_user_id"] != "" {
-		t.Fatalf("expected empty acceptance id, got %#v", snapshot)
 	}
 }
 

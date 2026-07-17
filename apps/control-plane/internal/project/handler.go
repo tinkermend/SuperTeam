@@ -264,8 +264,6 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		Description:         req.Description,
 		Goal:                req.Goal,
 		HumanOwnerUserID:    req.HumanOwnerUserID,
-		LeaderUserID:        req.LeaderUserID,
-		AcceptanceUserID:    req.AcceptanceUserID,
 		Members:             req.Members,
 		CoordinationPolicy:  req.CoordinationPolicy,
 		ApprovalPolicy:      req.ApprovalPolicy,
@@ -1560,8 +1558,6 @@ func (h *HTTPHandler) updateProjectConfig(w http.ResponseWriter, r *http.Request
 		Description:        req.Description,
 		Goal:               req.Goal,
 		HumanOwnerUserID:   req.HumanOwnerUserID,
-		LeaderUserID:       req.LeaderUserID,
-		AcceptanceUserID:   req.AcceptanceUserID,
 		Members:            req.Members,
 		CoordinationPolicy: req.CoordinationPolicy,
 		ApprovalPolicy:     req.ApprovalPolicy,
@@ -1811,8 +1807,6 @@ type createProjectBody struct {
 	Description         string                   `json:"description"`
 	Goal                string                   `json:"goal"`
 	HumanOwnerUserID    uuid.UUID                `json:"human_owner_user_id"`
-	LeaderUserID        *uuid.UUID               `json:"leader_user_id"`
-	AcceptanceUserID    *uuid.UUID               `json:"acceptance_user_id"`
 	Members             []ProjectMemberInput     `json:"members"`
 	CoordinationPolicy  map[string]any           `json:"coordination_policy"`
 	ApprovalPolicy      map[string]any           `json:"approval_policy"`
@@ -1880,8 +1874,6 @@ type updateProjectBody struct {
 	Description        string                   `json:"description"`
 	Goal               string                   `json:"goal"`
 	HumanOwnerUserID   uuid.UUID                `json:"human_owner_user_id"`
-	LeaderUserID       *uuid.UUID               `json:"leader_user_id"`
-	AcceptanceUserID   *uuid.UUID               `json:"acceptance_user_id"`
 	Members            *[]ProjectMemberInput    `json:"members"`
 	CoordinationPolicy map[string]any           `json:"coordination_policy"`
 	ApprovalPolicy     map[string]any           `json:"approval_policy"`
@@ -2169,8 +2161,6 @@ type projectResponse struct {
 	Goal                   string                     `json:"goal"`
 	Status                 ProjectStatus              `json:"status"`
 	HumanOwnerUserID       string                     `json:"human_owner_user_id"`
-	LeaderUserID           *string                    `json:"leader_user_id,omitempty"`
-	AcceptanceUserID       *string                    `json:"acceptance_user_id,omitempty"`
 	CoordinationWorkflowID string                     `json:"coordination_workflow_id"`
 	CoordinationStatus     string                     `json:"coordination_status"`
 	CoordinationPolicy     map[string]any             `json:"coordination_policy"`
@@ -2927,8 +2917,6 @@ func projectResponseFromDomain(project Project) projectResponse {
 		Goal:                   project.Goal,
 		Status:                 project.Status,
 		HumanOwnerUserID:       project.HumanOwnerUserID.String(),
-		LeaderUserID:           stringPtr(project.LeaderUserID),
-		AcceptanceUserID:       stringPtr(project.AcceptanceUserID),
 		CoordinationWorkflowID: project.CoordinationWorkflowID,
 		CoordinationStatus:     project.CoordinationStatus,
 		CoordinationPolicy:     mapOrEmpty(project.CoordinationPolicy),

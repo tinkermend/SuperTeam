@@ -5270,8 +5270,6 @@ components:
       type: string
       enum:
         - owner
-        - leader
-        - acceptance
         - executor
         - reviewer
         - observer
@@ -5539,12 +5537,6 @@ components:
         status:
           $ref: "#/components/schemas/ProjectStatus"
         human_owner_user_id:
-          type: string
-          format: uuid
-        leader_user_id:
-          type: string
-          format: uuid
-        acceptance_user_id:
           type: string
           format: uuid
         coordination_workflow_id:
@@ -7680,12 +7672,6 @@ components:
         human_owner_user_id:
           type: string
           format: uuid
-        leader_user_id:
-          type: string
-          format: uuid
-        acceptance_user_id:
-          type: string
-          format: uuid
         members:
           type: array
           items:
@@ -7732,12 +7718,6 @@ components:
         goal:
           type: string
         human_owner_user_id:
-          type: string
-          format: uuid
-        leader_user_id:
-          type: string
-          format: uuid
-        acceptance_user_id:
           type: string
           format: uuid
         members:

@@ -70,10 +70,8 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     description: "配置说明",
     evidence_policy: { retention_days: 90 },
     goal: "完成客户接入验收",
-    acceptance_user_id: "acceptance-user-1",
     human_owner_user_id: "human-owner-1",
     id: "project-1",
-    leader_user_id: "leader-user-1",
     name: "客户接入验收",
     status,
     tenant_id: "tenant-1",
@@ -400,8 +398,6 @@ describe("ProjectConfigView", () => {
       0,
     );
     await userEvent.fill(screen.getByLabelText("人类 Owner 用户 ID"), "human-owner-2");
-    await userEvent.fill(screen.getByLabelText("Leader 用户 ID"), "leader-user-2");
-    await userEvent.fill(screen.getByLabelText("验收人用户 ID"), "acceptance-user-2");
     await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
     await expect.element(screen.getByLabelText("协调策略 JSON")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("协调策略 JSON"), '{"cadence":"hourly"}');
@@ -416,10 +412,8 @@ describe("ProjectConfigView", () => {
       });
       expect(putCall).toBeTruthy();
       expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
-        acceptance_user_id: "acceptance-user-2",
         coordination_policy: { cadence: "hourly" },
         human_owner_user_id: "human-owner-2",
-        leader_user_id: "leader-user-2",
       });
     });
   });

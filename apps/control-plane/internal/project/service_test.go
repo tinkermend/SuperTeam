@@ -4996,8 +4996,6 @@ func TestCreateProjectValidatesRolePrincipalTypes(t *testing.T) {
 		role          ProjectRole
 	}{
 		{name: "owner must be human", principalType: PrincipalTypeDigitalEmployee, role: ProjectRoleOwner},
-		{name: "leader must be human", principalType: PrincipalTypeDigitalEmployee, role: ProjectRoleLeader},
-		{name: "acceptance must be human", principalType: PrincipalTypeDigitalEmployee, role: ProjectRoleAcceptance},
 		{name: "executor must be digital employee", principalType: PrincipalTypeHumanUser, role: ProjectRoleExecutor},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -11052,8 +11050,6 @@ func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectR
 		Goal:                   req.Goal,
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       req.HumanOwnerUserID,
-		LeaderUserID:           req.LeaderUserID,
-		AcceptanceUserID:       req.AcceptanceUserID,
 		CoordinationWorkflowID: workflowID,
 		CoordinationStatus:     "registered",
 		CoordinationPolicy:     req.CoordinationPolicy,
@@ -11151,12 +11147,6 @@ func (r *memoryRepository) UpdateProjectConfig(ctx context.Context, req UpdatePr
 	}
 	if req.HumanOwnerUserID != uuid.Nil {
 		project.HumanOwnerUserID = req.HumanOwnerUserID
-	}
-	if req.LeaderUserID != nil {
-		project.LeaderUserID = req.LeaderUserID
-	}
-	if req.AcceptanceUserID != nil {
-		project.AcceptanceUserID = req.AcceptanceUserID
 	}
 	if req.CoordinationPolicy != nil {
 		project.CoordinationPolicy = req.CoordinationPolicy

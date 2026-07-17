@@ -93,8 +93,6 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		Goal:                   textOrNull(req.Goal),
 		Status:                 string(ProjectStatusRunning),
 		HumanOwnerUserID:       req.HumanOwnerUserID,
-		LeaderUserID:           nullUUID(req.LeaderUserID),
-		AcceptanceUserID:       nullUUID(req.AcceptanceUserID),
 		CoordinationWorkflowID: textOrNull(workflowID),
 		CoordinationStatus:     textOrNull("registered"),
 		CoordinationPolicy:     coordinationPolicy,
@@ -282,8 +280,6 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 		Description:          textOrNull(req.Description),
 		Goal:                 textOrNull(req.Goal),
 		HumanOwnerUserID:     nullUUIDIfNotNil(req.HumanOwnerUserID),
-		LeaderUserID:         nullUUID(req.LeaderUserID),
-		AcceptanceUserID:     nullUUID(req.AcceptanceUserID),
 		CoordinationPolicy:   coordinationPolicy,
 		ApprovalPolicy:       approvalPolicy,
 		EvidencePolicy:       evidencePolicy,
@@ -5927,8 +5923,6 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		Goal:                   textValue(row.Goal),
 		Status:                 ProjectStatus(row.Status),
 		HumanOwnerUserID:       row.HumanOwnerUserID,
-		LeaderUserID:           ptrUUID(row.LeaderUserID),
-		AcceptanceUserID:       ptrUUID(row.AcceptanceUserID),
 		CoordinationWorkflowID: textValue(row.CoordinationWorkflowID),
 		CoordinationStatus:     textValue(row.CoordinationStatus),
 		CoordinationPolicy:     coordinationPolicy,
@@ -7718,12 +7712,6 @@ func projectConfigChangedSections(req UpdateProjectConfigRequest) []any {
 	if req.HumanOwnerUserID != uuid.Nil {
 		sections = append(sections, "human_owner_user_id")
 	}
-	if req.LeaderUserID != nil {
-		sections = append(sections, "leader_user_id")
-	}
-	if req.AcceptanceUserID != nil {
-		sections = append(sections, "acceptance_user_id")
-	}
 	if req.CoordinationPolicy != nil {
 		sections = append(sections, "coordination_policy")
 	}
@@ -7740,8 +7728,6 @@ func projectConfigChangedSections(req UpdateProjectConfigRequest) []any {
 		"name",
 		"goal",
 		"human_owner_user_id",
-		"leader_user_id",
-		"acceptance_user_id",
 		"coordination_policy",
 		"approval_policy",
 		"evidence_policy",
@@ -7773,16 +7759,6 @@ func projectConfigSnapshot(project Project) map[string]any {
 		"coordination_policy": project.CoordinationPolicy,
 		"approval_policy":     project.ApprovalPolicy,
 		"evidence_policy":     project.EvidencePolicy,
-	}
-	if project.LeaderUserID != nil {
-		snapshot["leader_user_id"] = project.LeaderUserID.String()
-	} else {
-		snapshot["leader_user_id"] = ""
-	}
-	if project.AcceptanceUserID != nil {
-		snapshot["acceptance_user_id"] = project.AcceptanceUserID.String()
-	} else {
-		snapshot["acceptance_user_id"] = ""
 	}
 	return snapshot
 }
