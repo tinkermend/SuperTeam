@@ -678,7 +678,31 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	// (handleEmployeeTaskCompletedLegacy) is deliberately NOT fenced/triggered:
 	// legacy plans predate the adversarial_review method, so they never carry
 	// such criteria.
-	if workflow.GetVersion(ctx, "adversarial-review-trigger", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+	//
+	// v1 → v2 evolution (real full-stack E2E finding): v1 HELD the whole task
+	// graph on a held/errored review — it early-returned taskCompletionPending
+	// BEFORE resolveReadyDownstream, so downstream never dispatched, the graph
+	// never went terminal, and requestProjectAcceptanceReview never fired. The
+	// demand got STUCK in `executing` and never reached `acceptance_pending`,
+	// which made the human tier-3 override (Task 4.5, gated on acceptance_pending)
+	// unreachable — a held review became a dead end instead of a human hand-off.
+	// Product decision: a held adversarial review must NOT block the task graph.
+	// v2 lets downstream proceed so the graph can reach the acceptance gate, where
+	// the persisted adversarial verdict (satisfied=false / escalate_human) — or, on
+	// review error, the verdict-LESS blocking criterion — HOLDS the demand at
+	// acceptance_pending via the convergence gate, and a human can override it.
+	// The hold moves from the workflow (task graph) to the acceptance gate.
+	//
+	// Why a NEW version, not an edit of v1: v1 already shipped and a live dev
+	// workflow ran on it during the E2E. Temporal replay discipline forbids
+	// retroactively editing a shipped version. GetVersion(..., DefaultVersion, 2)
+	// returns: DefaultVersion for old histories (marker absent → original direct
+	// path), 1 for the shipped v1 history (marker=1 → v1 block-downstream, preserved
+	// below for replay), 2 for new executions (v2 fall-through). minSupported stays
+	// DefaultVersion so old histories — including TestReplayRealCoordinatorHistory —
+	// remain valid.
+	adversarialVersion := workflow.GetVersion(ctx, "adversarial-review-trigger", workflow.DefaultVersion, 2)
+	if adversarialVersion != workflow.DefaultVersion {
 		var review AdversarialReviewForTaskResult
 		reviewErr := workflow.ExecuteActivity(ctx, (*Activities).AdversarialReviewForTask, AdversarialReviewForTaskInput{
 			TenantID:        input.TenantID,
@@ -687,24 +711,36 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 		}).Get(ctx, &review)
 		if reviewErr != nil {
 			// Spec author requirement: a review that cannot complete (LLM
-			// transport failure after retries exhaust) must NEVER auto-pass. Hold
-			// the demand — do NOT unlock downstream. The blocking adversarial
-			// criterion stays verdict-less, so the convergence gate holds it for
-			// the human tier-3 path. Swallow the error (return pending) so the
-			// workflow task does not fail-and-retry into a hot loop.
+			// transport failure after retries exhaust) must NEVER auto-pass. The
+			// blocking adversarial criterion stays verdict-less, so the convergence
+			// gate holds it for the human tier-3 path. Swallow the error (do not
+			// fail the workflow task) so it does not fail-and-retry into a hot loop.
 			workflow.GetLogger(ctx).Error("adversarial review failed; holding demand for human escalation",
-				"completed_task_id", signal.ProjectTaskID.String(), "error", reviewErr.Error())
-			return taskCompletionPending{}, nil
-		}
-		if review.Reviewed && (!review.AllSatisfied || review.AnyEscalated) {
+				"completed_task_id", signal.ProjectTaskID.String(), "error", reviewErr.Error(),
+				"adversarial_version", adversarialVersion)
+			if adversarialVersion == 1 {
+				// v1 (preserved for replay): block downstream — early-return before
+				// resolveReadyDownstream. Kept verbatim so v1 histories replay.
+				return taskCompletionPending{}, nil
+			}
+			// v2: fall through to resolveReadyDownstream. The verdict-less blocking
+			// criterion holds the demand at the acceptance gate (not here), so the
+			// graph can reach acceptance_pending for the human tier-3 override.
+		} else if review.Reviewed && (!review.AllSatisfied || review.AnyEscalated) {
 			// Adversarial criterion unsatisfied (majority refute) or escalate_human
-			// (budget exhausted). The verdict is now persisted, so the convergence
-			// gate holds the demand; do NOT unlock downstream, and let the
-			// acceptance/human tier-3 machinery own it.
-			workflow.GetLogger(ctx).Info("adversarial review held demand",
+			// (budget exhausted). The verdict is persisted, so the convergence gate
+			// holds the demand; the acceptance/human tier-3 machinery owns it.
+			workflow.GetLogger(ctx).Info("adversarial review held demand at acceptance gate",
 				"completed_task_id", signal.ProjectTaskID.String(),
-				"all_satisfied", review.AllSatisfied, "any_escalated", review.AnyEscalated)
-			return taskCompletionPending{}, nil
+				"all_satisfied", review.AllSatisfied, "any_escalated", review.AnyEscalated,
+				"adversarial_version", adversarialVersion)
+			if adversarialVersion == 1 {
+				// v1 (preserved for replay): block downstream. Kept verbatim.
+				return taskCompletionPending{}, nil
+			}
+			// v2: fall through to resolveReadyDownstream. The persisted verdict holds
+			// the demand at the acceptance gate; downstream proceeds so the graph can
+			// reach the acceptance gate rather than stalling in `executing`.
 		}
 	}
 	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
