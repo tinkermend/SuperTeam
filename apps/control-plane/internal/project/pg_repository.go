@@ -5631,6 +5631,27 @@ func (r *PgRepository) CreateAdversarialJudgements(ctx context.Context, reqs []C
 	return nil
 }
 
+// ListAdversarialJudgements reads back every per-lens judge row
+// (demand_adversarial_judgements) for one demand's plan revision, ordered by
+// created_at — the read-side companion to CreateAdversarialJudgements. Callers
+// filter the returned rows by CriterionID for a single criterion's judge panel
+// (autonomy posture Phase C1 rework input).
+func (r *PgRepository) ListAdversarialJudgements(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAdversarialJudgement, error) {
+	rows, err := r.q.ListAdversarialJudgements(ctx, queries.ListAdversarialJudgementsParams{
+		TenantID:       tenantID,
+		DemandID:       demandID,
+		PlanRevisionID: planRevisionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DemandAdversarialJudgement, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, demandAdversarialJudgementFromRecord(row))
+	}
+	return result, nil
+}
+
 func (r *PgRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
 	rows, err := r.q.ListDemandCriterionVerdicts(ctx, queries.ListDemandCriterionVerdictsParams{
 		TenantID:       tenantID,
@@ -7014,6 +7035,22 @@ func demandCriterionVerdictFromRecord(row queries.DemandCriterionVerdict) (Deman
 		ProjectTaskID:  ptrUUID(row.ProjectTaskID),
 		CreatedAt:      row.CreatedAt.Time,
 	}, nil
+}
+
+func demandAdversarialJudgementFromRecord(row queries.DemandAdversarialJudgement) DemandAdversarialJudgement {
+	return DemandAdversarialJudgement{
+		ID:             row.ID,
+		TenantID:       row.TenantID,
+		ProjectID:      row.ProjectID,
+		DemandID:       row.DemandID,
+		PlanRevisionID: row.PlanRevisionID,
+		CriterionID:    row.CriterionID,
+		ReviewedTaskID: row.ReviewedTaskID,
+		Lens:           row.Lens,
+		Verdict:        row.Verdict,
+		Reason:         row.Reason,
+		CreatedAt:      row.CreatedAt.Time,
+	}
 }
 
 func acceptanceRecordFromRecord(row queries.ProjectAcceptanceRecord) (ProjectAcceptanceRecord, error) {

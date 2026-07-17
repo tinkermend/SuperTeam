@@ -136,6 +136,14 @@ type Repository interface {
 	CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error
 	CreateAdversarialVerdict(ctx context.Context, req CreateAdversarialVerdictRequest) error
 	CreateAdversarialJudgements(ctx context.Context, reqs []CreateAdversarialJudgementRequest) error
+	// ListAdversarialJudgements reads back every per-lens judge row
+	// (demand_adversarial_judgements) written by CreateAdversarialJudgements for
+	// one demand's plan revision, ordered by created_at. It was write-only until
+	// autonomy posture Phase C1 — the auto-rework input builder uses it to
+	// surface each judge's refutation reason for an unsatisfied
+	// adversarial_review criterion; callers filter the returned rows by
+	// CriterionID.
+	ListAdversarialJudgements(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAdversarialJudgement, error)
 	ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error)
 	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
 	CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error)

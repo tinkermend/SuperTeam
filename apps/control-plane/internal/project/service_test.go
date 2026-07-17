@@ -10737,6 +10737,14 @@ func (r *memoryRepository) CreateAdversarialJudgements(ctx context.Context, reqs
 	return nil
 }
 
+// ListAdversarialJudgements: memoryRepository's CreateAdversarialJudgements is
+// a no-op stub (no test in this package currently exercises the per-lens
+// write path), so there is nothing to read back here. Real read-back is
+// covered by TestListAdversarialJudgementsReadsBack against PgRepository.
+func (r *memoryRepository) ListAdversarialJudgements(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAdversarialJudgement, error) {
+	return nil, nil
+}
+
 func (r *memoryRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
 	result := make([]DemandCriterionVerdict, 0)
 	for _, verdict := range r.demandCriterionVerdicts {

@@ -2210,6 +2210,85 @@ func TestLinkPreDispatchGateResultToAttempt(t *testing.T) {
 	require.Equal(t, queued.Attempt.ID, *linkedGate.AttemptID)
 }
 
+// TestListAdversarialJudgementsReadsBack: ListAdversarialJudgements is the
+// read-side companion to CreateAdversarialJudgements — the per-lens judge
+// refutation reasons were write-only before autonomy posture Phase C1. Write
+// three lens rows for one criterion via CreateAdversarialJudgements, read them
+// back, and assert every lens's verdict/reason round-trips and rows come back
+// ordered by created_at (ascending, matching insertion order).
+func TestListAdversarialJudgementsReadsBack(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	planRevisionID := uuid.New()
+	reviewedTaskID := uuid.New()
+
+	err := repo.CreateAdversarialJudgements(context.Background(), []CreateAdversarialJudgementRequest{
+		{
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			DemandID:       demandID,
+			PlanRevisionID: planRevisionID,
+			CriterionID:    "c1",
+			ReviewedTaskID: reviewedTaskID,
+			Lens:           "correctness",
+			Verdict:        "refuted",
+			Reason:         "输出未覆盖边界条件",
+		},
+		{
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			DemandID:       demandID,
+			PlanRevisionID: planRevisionID,
+			CriterionID:    "c1",
+			ReviewedTaskID: reviewedTaskID,
+			Lens:           "security",
+			Verdict:        "accepted",
+			Reason:         "未发现安全问题",
+		},
+		{
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			DemandID:       demandID,
+			PlanRevisionID: planRevisionID,
+			CriterionID:    "c1",
+			ReviewedTaskID: reviewedTaskID,
+			Lens:           "reproducibility",
+			Verdict:        "refuted",
+			Reason:         "复现步骤缺失依赖版本",
+		},
+	})
+	require.NoError(t, err)
+
+	judgements, err := repo.ListAdversarialJudgements(context.Background(), tenantID, demandID, planRevisionID)
+	require.NoError(t, err)
+	require.Len(t, judgements, 3)
+
+	byLens := make(map[string]DemandAdversarialJudgement, len(judgements))
+	for _, j := range judgements {
+		byLens[j.Lens] = j
+		require.Equal(t, tenantID, j.TenantID)
+		require.Equal(t, projectID, j.ProjectID)
+		require.Equal(t, demandID, j.DemandID)
+		require.Equal(t, planRevisionID, j.PlanRevisionID)
+		require.Equal(t, "c1", j.CriterionID)
+		require.Equal(t, reviewedTaskID, j.ReviewedTaskID)
+	}
+	require.Equal(t, "refuted", byLens["correctness"].Verdict)
+	require.Equal(t, "输出未覆盖边界条件", byLens["correctness"].Reason)
+	require.Equal(t, "accepted", byLens["security"].Verdict)
+	require.Equal(t, "未发现安全问题", byLens["security"].Reason)
+	require.Equal(t, "refuted", byLens["reproducibility"].Verdict)
+	require.Equal(t, "复现步骤缺失依赖版本", byLens["reproducibility"].Reason)
+
+	// ORDER BY created_at ASC, id ASC (see ListAdversarialJudgements sqlc
+	// query) — rows must come back non-decreasing by created_at.
+	for i := 1; i < len(judgements); i++ {
+		require.False(t, judgements[i].CreatedAt.Before(judgements[i-1].CreatedAt),
+			"expected non-decreasing created_at order, got %v before %v", judgements[i].CreatedAt, judgements[i-1].CreatedAt)
+	}
+}
+
 func TestLinkPreDispatchGateResultToAttemptRejectsWrongTaskAndUpdatesAttempt(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

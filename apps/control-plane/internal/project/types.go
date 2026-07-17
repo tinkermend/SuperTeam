@@ -1465,6 +1465,29 @@ type DemandCriterionVerdict struct {
 	CreatedAt      time.Time
 }
 
+// DemandAdversarialJudgement is one judge's per-lens verdict detail row for an
+// adversarial_review criterion (demand_adversarial_judgements): the individual
+// lens's (correctness/security/reproducibility/...) refutation verdict and
+// reason, distinct from the aggregate DemandCriterionVerdict row that
+// CreateAdversarialVerdict writes. Read-side companion to
+// CreateAdversarialJudgementRequest — was write-only until autonomy posture
+// Phase C1 added ListAdversarialJudgements so the auto-rework input builder
+// can surface per-lens refutation reasons. EvidenceRefs is intentionally
+// omitted — callers only need lens/verdict/reason/criterion_id/reviewed_task_id.
+type DemandAdversarialJudgement struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	ReviewedTaskID uuid.UUID
+	Lens           string
+	Verdict        string
+	Reason         string
+	CreatedAt      time.Time
+}
+
 // DemandCriterionTaskSummary is one satisfied_by task's latest result
 // conclusion, surfaced beside its criterion so the human sees what was
 // produced before signing (anti-rubber-stamp). Summary is empty when the
