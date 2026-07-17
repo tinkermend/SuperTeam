@@ -1,7 +1,7 @@
 # 目录与能力投影语义修订 设计
 
 日期：2026-07-17
-状态：已与人类确认设计方向，待评审
+状态：已与人类确认设计方向；三分期已全部落地并经真实 E2E（Phase 1/3/2 分别于 2026-07-17 合并 main,GATE 记录见 CHANGELOG 同日条目与 §8/§5 附注）
 范围来源：用户发现"员工家目录版本化拉取 + 项目目录 + 任务时加载/卸载"的闭环在实现上走偏；经源码勘察证实三处断点 + chat 目录语义缺失，随后与人类逐项拍板能力投影模型与冲突策略。本 spec 是对 `2026-06-29-project-code-workspace-runtime-affinity-design.md`（下称主 spec）、`2026-06-30-runtime-digital-employee-capability-cache-auth-design.md`（下称 cache spec）的修订与最小落地，并与 `2026-07-15-skill-mcp-dependency-and-unload-design.md`（下称 unload spec，已落地）保持兼容。
 
 ## 背景与断点勘察（已核实源码，2026-07-17）
@@ -123,6 +123,6 @@ Phase 1 与 2/3 可并行立项；Phase 1 内部控制平面与 runtime 改动�
 
 1. §4 迁移决策：**一刀切**，既存 chat 线程断链重开，不做旧 CWD 兼容期。
 2. chat 目录清理：**纯本地 TTL（缺省 7 天）+ 条数兜底（缺省 5）**，不引入控制平面归档事件（见 §5）。
-3. opencode 项目根 `opencode.json` 合并行为：**已实测（2026-07-17 GATE）——确实加载**。CWD 下故意写坏的 `opencode.json` 使 opencode 直接报错退出（"Config file … is not valid JSON(C)"），证明项目检出里的 `opencode.json`（含其 `mcp` 段）会被 opencode 进程加载——claude 有 `--strict-mcp-config` 屏蔽、codex 不读项目配置，**opencode 是三 provider 中唯一裸奔的**。屏蔽手段设计归 Phase 2 与注册表项目级 MCP 绑定一并出方案（候选：worktree 物化后中和项目根 `opencode.json` 的 mcp 段 / 上游争取 strict 开关），在此之前 repo 绑定项目派发 opencode 员工存在仓库内容注入 MCP 的既知口子。
+3. opencode 项目根 `opencode.json` 合并行为：**已实测（2026-07-17 GATE）——确实加载**。CWD 下故意写坏的 `opencode.json` 使 opencode 直接报错退出（"Config file … is not valid JSON(C)"），证明项目检出里的 `opencode.json`（含其 `mcp` 段）会被 opencode 进程加载——claude 有 `--strict-mcp-config` 屏蔽、codex 不读项目配置，**opencode 是三 provider 中唯一裸奔的**。屏蔽已于 Phase 2 落地（2026-07-17）：实测 `OPENCODE_CONFIG` 不抑制项目配置、发现跟 `--dir` 走、无官方禁用开关,采用 **skip-worktree+删除** 在 worktree 物化时移除根级 `opencode.json(c)`（git status/diff 零痕迹、重放幂等、其余 provider 不受影响,E2E 实证）。
 
 **Phase 1 实施与 GATE 记录（2026-07-17，已合并 main 并真实 E2E）**：实现于 `feat/directory-capability-projection-p1`（合并 commit c3fe0a8f 系列，CHANGELOG 同日条目）。GATE 全项 PASS：① claude chat 全链——稳定家目录物化技能+逐 key 软链进 `chat/{proj}/{thread}` 工作区、readonly worktree、provider 真实发现技能；② 同线程二轮 resume——文件连续、provider 记忆延续、presign 恰 1 次（checksum 缓存命中零重复下载）；③ 项目任务路径——低风险需求零人类触点直达 completed，工作区 `workspaces/{proj}/{task}/{attempt}` 真实产物+技能软链→稳定家目录，一次性 `project-tasks/` 目录零新增；④ codex smoke——`.agents/skills` 软链被 codex 发现并自述按技能指引核对；⑤ opencode smoke——修复两处既有缺陷后全链通过：spawn 未关 stdin 致继承管道时永挂（stdin 置 null）、事件 schema 漂移（1.17 实际输出 `step_start`/`text`/`step_finish`，parser 原全部丢弃致 run 永滞 dispatching，补映射+真实样本单测）；⑥ 见上第 3 条 opencode.json 合并实测。附带发现（既有，待立项）：provider 早退/零事件时 run 永滞 `dispatching` 无看门狗，靠 stale reap 兜底。
