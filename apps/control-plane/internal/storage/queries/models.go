@@ -319,7 +319,7 @@ type DemandAdversarialJudgement struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-// 逐条判据判定记录：executor 投影（按 project_task_id 各自一条）+ 人类签署（project_task_id 为空，全局一条）+ 对抗评审聚合（project_task_id 为空，全局一条）三来源
+// 逐条判据判定记录：executor 投影（按 project_task_id 各自一条）+ 人类签署（project_task_id 为空，全局一条）+ 对抗评审聚合（project_task_id 为空，全局一条）+ 检测门聚合（project_task_id 为空，全局一条）四来源
 type DemandCriterionVerdict struct {
 	// 判定记录主键 UUID
 	ID uuid.UUID `json:"id"`
@@ -335,7 +335,7 @@ type DemandCriterionVerdict struct {
 	CriterionID string `json:"criterion_id"`
 	// 判定结论：satisfied | unsatisfied | not_applicable（not_applicable 仅由 executor 对 automated_test 判据投影，非阻断，仍需人类兜底判据签署）
 	Verdict string `json:"verdict"`
-	// 判定来源类型：executor | human | adversarial
+	// 判定来源类型：executor | human | adversarial | review_gate
 	JudgeType string `json:"judge_type"`
 	// 判定人/执行者 ID（人类用户 ID 或数字员工 ID）
 	JudgeID uuid.UUID `json:"judge_id"`

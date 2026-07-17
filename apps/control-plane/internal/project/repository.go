@@ -135,6 +135,11 @@ type Repository interface {
 	ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error)
 	CreateDemandCriterionVerdict(ctx context.Context, req CreateDemandCriterionVerdictRequest) error
 	CreateAdversarialVerdict(ctx context.Context, req CreateAdversarialVerdictRequest) error
+	// CreateReviewGateVerdict upserts the aggregate row (judge_type=review_gate,
+	// project_task_id NULL) for one criterion's violation-detection outcome. It
+	// dedupes against uq_demand_verdicts_review_gate (migration 073), so a task
+	// retry re-running the detectors upserts the same row.
+	CreateReviewGateVerdict(ctx context.Context, req CreateReviewGateVerdictRequest) error
 	CreateAdversarialJudgements(ctx context.Context, reqs []CreateAdversarialJudgementRequest) error
 	// ListAdversarialJudgements reads back every per-lens judge row
 	// (demand_adversarial_judgements) written by CreateAdversarialJudgements for
@@ -668,6 +673,28 @@ type CreateDemandCriterionVerdictRequest struct {
 // same row. JudgeID is uuid.Nil — an adversarial verdict has no human/employee
 // judge; the lens detail lives in demand_adversarial_judgements.
 type CreateAdversarialVerdictRequest struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	CriterionID    string
+	Verdict        string
+	JudgeID        uuid.UUID
+	Reason         string
+	EvidenceRefs   []string
+}
+
+// CreateReviewGateVerdictRequest records the aggregate outcome of the violation
+// detection gate for one criterion: one global row per criterion (judge_type
+// "review_gate", project_task_id nil) written by the detection-gate execution
+// (review-gate P1). Verdict is "satisfied" (no violating detection → default
+// release) or "unsatisfied" (a block/need_human tier detection held the gate).
+// It dedupes against uq_demand_verdicts_review_gate (partial unique:
+// project_task_id IS NULL AND judge_type='review_gate'), so a task retry
+// re-running the detectors upserts the same row. JudgeID is uuid.Nil — a
+// review_gate verdict has no human/employee judge; the per-detector findings
+// live in Reason/EvidenceRefs.
+type CreateReviewGateVerdictRequest struct {
 	TenantID       uuid.UUID
 	ProjectID      uuid.UUID
 	DemandID       uuid.UUID

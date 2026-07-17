@@ -5622,6 +5622,28 @@ func (r *PgRepository) CreateAdversarialVerdict(ctx context.Context, req CreateA
 	})
 }
 
+// CreateReviewGateVerdict upserts the aggregate row (judge_type=review_gate,
+// project_task_id NULL) for one criterion's violation-detection outcome. ON
+// CONFLICT against uq_demand_verdicts_review_gate overwrites verdict/reason so a
+// task retry re-running the detectors is idempotent (see migration 073).
+func (r *PgRepository) CreateReviewGateVerdict(ctx context.Context, req CreateReviewGateVerdictRequest) error {
+	evidenceRefs, err := jsonbStringSlice(req.EvidenceRefs, "evidence_refs")
+	if err != nil {
+		return err
+	}
+	return r.q.CreateReviewGateVerdict(ctx, queries.CreateReviewGateVerdictParams{
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   evidenceRefs,
+	})
+}
+
 // CreateAdversarialJudgements upserts the per-lens detail rows for one
 // adversarial_review criterion, one row per lens. Each row dedupes against
 // uq_adversarial_judgement so a task retry overwrites the same lens rows.

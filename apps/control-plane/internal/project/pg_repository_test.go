@@ -946,6 +946,72 @@ func TestNotApplicableDoesNotEscapeHighRiskOversight(t *testing.T) {
 	require.Equal(t, []string{"human_final_confirmation"}, ResolveUnsatisfiedBlockingCriteria(criteria, verdicts))
 }
 
+// TestCreateReviewGateVerdictReadsBack proves the review_gate aggregate row
+// round-trips: CreateReviewGateVerdict writes a judge_type=review_gate,
+// project_task_id NULL row that ListDemandCriterionVerdicts reads back; a second
+// write for the same criterion upserts (idempotent, one row) via
+// uq_demand_verdicts_review_gate, flipping unsatisfied→satisfied in place.
+func TestCreateReviewGateVerdictReadsBack(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	projectID, demandID, revisionID := demandAcceptanceGateFixture(t, repo, tenantID)
+
+	// First write: unsatisfied (detection gate HOLD).
+	require.NoError(t, repo.CreateReviewGateVerdict(ctx, CreateReviewGateVerdictRequest{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		DemandID:       demandID,
+		PlanRevisionID: revisionID,
+		CriterionID:    "gate-c1",
+		Verdict:        "unsatisfied",
+		Reason:         "检测门 HOLD（动作档 block）：secret_leak: 疑似密钥泄漏",
+		EvidenceRefs:   []string{"artifact://run/1"},
+	}))
+
+	verdicts, err := repo.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+	require.NoError(t, err)
+	gate := findReviewGateVerdict(verdicts, "gate-c1")
+	require.NotNil(t, gate, "expected a review_gate verdict row, got %#v", verdicts)
+	require.Equal(t, "review_gate", gate.JudgeType)
+	require.Equal(t, "unsatisfied", gate.Verdict)
+	require.Nil(t, gate.ProjectTaskID)
+	require.Equal(t, []string{"artifact://run/1"}, gate.EvidenceRefs)
+
+	// Second write for the same criterion: upsert flips it to satisfied, still one row.
+	require.NoError(t, repo.CreateReviewGateVerdict(ctx, CreateReviewGateVerdictRequest{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		DemandID:       demandID,
+		PlanRevisionID: revisionID,
+		CriterionID:    "gate-c1",
+		Verdict:        "satisfied",
+		Reason:         "检测门无命中：默认放行",
+	}))
+
+	verdicts, err = repo.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+	require.NoError(t, err)
+	var gateRows int
+	for _, v := range verdicts {
+		if v.CriterionID == "gate-c1" && v.JudgeType == "review_gate" {
+			gateRows++
+		}
+	}
+	require.Equal(t, 1, gateRows, "expected review_gate row to upsert, not duplicate")
+	gate = findReviewGateVerdict(verdicts, "gate-c1")
+	require.NotNil(t, gate)
+	require.Equal(t, "satisfied", gate.Verdict)
+}
+
+// findReviewGateVerdict returns the review_gate aggregate row for a criterion.
+func findReviewGateVerdict(verdicts []DemandCriterionVerdict, criterionID string) *DemandCriterionVerdict {
+	for i := range verdicts {
+		if verdicts[i].CriterionID == criterionID && verdicts[i].JudgeType == "review_gate" && verdicts[i].ProjectTaskID == nil {
+			return &verdicts[i]
+		}
+	}
+	return nil
+}
+
 // insertVerdictWithExplicitIDTaskAndTimestamp inserts one verdict row with a
 // caller-chosen id, project_task_id and created_at, bypassing the repository
 // (which defaults id/created_at) so ordering tests can force rows to share

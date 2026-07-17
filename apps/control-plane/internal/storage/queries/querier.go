@@ -134,6 +134,13 @@ type Querier interface {
 	CreateProviderSessionEvent(ctx context.Context, arg CreateProviderSessionEventParams) (ProviderSessionEvent, error)
 	CreateProviderSessionEventIfAbsent(ctx context.Context, arg CreateProviderSessionEventIfAbsentParams) (CreateProviderSessionEventIfAbsentRow, error)
 	CreateProviderSessionEventLedgerEvent(ctx context.Context, arg CreateProviderSessionEventLedgerEventParams) (ExecutionLedgerEvent, error)
+	// 检测门聚合行写入：demand_criterion_verdicts, judge_type=review_gate, project_task_id 为空，
+	// 一 criterion 一行。upsert 供任务重试/重跑幂等。镜像 CreateAdversarialVerdict，只是 judge_type
+	// 与命中的 partial unique index 不同（uq_demand_verdicts_review_gate，见迁移 073）。
+	// 检测门聚合行：judge_type 固定 review_gate、project_task_id 恒为 NULL，命中 uq_demand_verdicts_review_gate
+	// 唯一索引（谓词 project_task_id IS NULL AND judge_type='review_gate'）。不能复用 CreateDemandCriterionVerdict/
+	// CreateAdversarialVerdict，二者 ON CONFLICT 谓词各自只对 executor/adversarial 行去重，对本聚合行不命中。
+	CreateReviewGateVerdict(ctx context.Context, arg CreateReviewGateVerdictParams) error
 	CreateRuntimeBootstrapKey(ctx context.Context, arg CreateRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	CreateRuntimeCommandReceipt(ctx context.Context, arg CreateRuntimeCommandReceiptParams) (CreateRuntimeCommandReceiptRow, error)
 	CreateRuntimeEvent(ctx context.Context, arg CreateRuntimeEventParams) (RuntimeEvent, error)

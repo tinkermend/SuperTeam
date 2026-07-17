@@ -10911,6 +10911,35 @@ func (r *memoryRepository) CreateAdversarialVerdict(ctx context.Context, req Cre
 	return nil
 }
 
+func (r *memoryRepository) CreateReviewGateVerdict(ctx context.Context, req CreateReviewGateVerdictRequest) error {
+	for i, existing := range r.demandCriterionVerdicts {
+		if existing.TenantID == req.TenantID && existing.DemandID == req.DemandID &&
+			existing.PlanRevisionID == req.PlanRevisionID && existing.CriterionID == req.CriterionID &&
+			existing.ProjectTaskID == nil && existing.JudgeType == "review_gate" {
+			r.demandCriterionVerdicts[i].Verdict = req.Verdict
+			r.demandCriterionVerdicts[i].Reason = req.Reason
+			r.demandCriterionVerdicts[i].EvidenceRefs = append([]string(nil), req.EvidenceRefs...)
+			return nil
+		}
+	}
+	r.demandCriterionVerdicts = append(r.demandCriterionVerdicts, DemandCriterionVerdict{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		DemandID:       req.DemandID,
+		PlanRevisionID: req.PlanRevisionID,
+		CriterionID:    req.CriterionID,
+		Verdict:        req.Verdict,
+		JudgeType:      "review_gate",
+		JudgeID:        req.JudgeID,
+		Reason:         req.Reason,
+		EvidenceRefs:   append([]string(nil), req.EvidenceRefs...),
+		ProjectTaskID:  nil,
+		CreatedAt:      time.Now().UTC(),
+	})
+	return nil
+}
+
 func (r *memoryRepository) CreateAdversarialJudgements(ctx context.Context, reqs []CreateAdversarialJudgementRequest) error {
 	return nil
 }
