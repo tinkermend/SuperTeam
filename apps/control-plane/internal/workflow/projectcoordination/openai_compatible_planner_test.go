@@ -265,25 +265,30 @@ func TestOpenAICompatibleRoutePlannerAcceptsLowLLMConfidenceWhenServerScoreIsHig
 	require.NotZero(t, plan.Tasks[0].SelectionScore)
 }
 
-// When a template-bound project has a single active executor and the demand needs
-// a merge (review_verdict exit), the planner honestly scores the sole employee low
-// for the review role. Validation returns ErrNoSuitableEmployee with the raw score
-// text; the planner must upgrade that to the actionable structural-gap message so a
-// human sees the ways-out hints instead of "scored 0.30".
+// When a template-bound project has a single active executor and a NON-migratable
+// role_independence constraint stays in force (reviewer/developer with no skeleton
+// dependency edge — see independentReviewNoEdgeLiteral), the sole employee fills both
+// independent roles. Governance escalates through ErrNoSuitableEmployee; the planner
+// must upgrade that to the actionable structural-gap message so a human sees the
+// ways-out hints (补充员工/改浅出口/换模板) instead of the raw score text.
+// (software_delivery's own role_independence — review depends_on develop — is now
+// migrated to adversarial_review, so a single executor no longer hits a structural
+// gap there; the gap survives only for undeterminable-relation constraints.)
 func TestOpenAICompatibleRoutePlannerPrefersStructuralGapMessageOnLowConfidence(t *testing.T) {
 	employeeID := uuid.New()
 	content := fmt.Sprintf(`{
 		"reason":"single executor cannot provide independent review",
 		"requires_human_review":false,
-		"template_key":"software_delivery",
-		"exit_deliverable":"review_verdict",
+		"template_key":"independent_review",
+		"exit_deliverable":"integrated_release",
 		"tasks":[
 			{"key":"develop","title":"开发","summary":"实现变更","selected_employee_id":%q,"employee_selection_reason":"唯一可执行员工","required_capabilities":[],"matched_capabilities":[],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":[],"selection_score":0,"selection_confidence":0.9,"stage_index":0,"expected_outputs":["branch_ref"],"produces":["branch_ref","head_commit"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"feature_development"},
-			{"key":"review","title":"审查","summary":"审查变更","selected_employee_id":%q,"employee_selection_reason":"缺少独立审查员，勉强指派开发者","required_capabilities":[],"matched_capabilities":[],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":[],"selection_score":0,"selection_confidence":0.3,"stage_index":1,"expected_outputs":["review_verdict"],"produces":["review_verdict"],"input_requirements":{"required_inputs":["head_commit"]},"handoff_contract":{},"blocked_by_keys":["develop"],"risk_level":"high","task_kind":"feature_development"}
+			{"key":"review","title":"审查","summary":"审查变更","selected_employee_id":%q,"employee_selection_reason":"缺少独立审查员，勉强指派开发者","required_capabilities":[],"matched_capabilities":[],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":[],"selection_score":0,"selection_confidence":0.3,"stage_index":1,"expected_outputs":["review_verdict"],"produces":["review_verdict"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"high","task_kind":"feature_development"},
+			{"key":"integrate","title":"集成","summary":"集成发布","selected_employee_id":%q,"employee_selection_reason":"唯一可执行员工","required_capabilities":[],"matched_capabilities":[],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":[],"selection_score":0,"selection_confidence":0.9,"stage_index":2,"expected_outputs":["integrated_release"],"produces":["integrated_release"],"input_requirements":{"required_inputs":["branch_ref","review_verdict"]},"handoff_contract":{},"blocked_by_keys":["develop","review"],"risk_level":"medium","task_kind":"feature_development"}
 		],
 		"budget_estimate":{"mode":"planner"},
 		"planner_metadata":{"provider":"openai-compatible"}
-	}`, employeeID.String(), employeeID.String())
+	}`, employeeID.String(), employeeID.String(), employeeID.String())
 	client := &countingChatCompletionClient{content: content}
 	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
@@ -294,7 +299,7 @@ func TestOpenAICompatibleRoutePlannerPrefersStructuralGapMessageOnLowConfidence(
 
 	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		Demand:              DemandSnapshot{ID: uuid.New(), Title: "合入需求", Content: "通过审查合入"},
-		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
+		ScenarioTemplate:    independentReviewTemplateSnapshot(t),
 		DigitalEmployeePool: []ProjectMemberSnapshot{openAITestExecutorMember(employeeID)},
 	})
 

@@ -230,6 +230,141 @@ func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmp
 	return nil
 }
 
+// reviewedStepForIndependence identifies the reviewed skeleton step of a
+// role_independence constraint from the skeleton DEPENDENCY: of the two roles the
+// constraint names, the one whose step depends_on the other role's step is the
+// reviewer; the depended-on (reviewed) role's step is what an adversarial review
+// judges. It only resolves the classic two-role review pair — a constraint naming
+// other than exactly two roles, or two roles with no dependency edge between their
+// steps (so reviewer/reviewed is undeterminable), returns ok=false, and the caller
+// must fall back to the original enforceRoleIndependence behavior. steps is the
+// pruned skeleton, so only dependency edges reachable from the chosen exit count.
+func reviewedStepForIndependence(constraint scenariotemplate.SpecConstraint, steps []scenariotemplate.SpecSkeletonStep) (scenariotemplate.SpecSkeletonStep, bool) {
+	if len(constraint.Roles) != 2 {
+		return scenariotemplate.SpecSkeletonStep{}, false
+	}
+	stepByName := make(map[string]scenariotemplate.SpecSkeletonStep, len(steps))
+	for _, s := range steps {
+		stepByName[s.Step] = s
+	}
+	// reviewedFor returns the reviewed role's depended-on step when some step of
+	// reviewerRole depends_on a step of reviewedRole.
+	reviewedFor := func(reviewerRole, reviewedRole string) (scenariotemplate.SpecSkeletonStep, bool) {
+		for _, s := range steps {
+			if s.Role != reviewerRole {
+				continue
+			}
+			for _, dep := range s.DependsOn {
+				d, ok := stepByName[dep]
+				if ok && d.Role == reviewedRole {
+					return d, true
+				}
+			}
+		}
+		return scenariotemplate.SpecSkeletonStep{}, false
+	}
+	if reviewed, ok := reviewedFor(constraint.Roles[0], constraint.Roles[1]); ok {
+		return reviewed, true
+	}
+	if reviewed, ok := reviewedFor(constraint.Roles[1], constraint.Roles[0]); ok {
+		return reviewed, true
+	}
+	return scenariotemplate.SpecSkeletonStep{}, false
+}
+
+// migrateReviewerRoleToAdversarial implements Part A of the adversarial-review
+// rollout: a template's independent-review declaration (a role_independence
+// constraint whose reviewer/reviewed relation is determinable from the skeleton
+// dependency) is REPLACED by a blocking adversarial_review criterion on the
+// reviewed task — N AI judges, independent by construction, stand in for the single
+// human reviewer, so the four-eyes requirement is satisfied without demanding a
+// distinct reviewer employee. Returns migrated=true when the constraint's
+// independence is now provided by the judges (so the caller skips the
+// shared-employee enforceRoleIndependence check); false when the relation could not
+// be determined (caller keeps the original behavior).
+//
+// The injected criterion is self-consistently valid (verification_method=
+// adversarial_review with a non-empty SatisfiedBy pointing at the reviewed task's
+// planned key) because governance runs AFTER validateAcceptanceCriteriaSemantics —
+// nothing re-validates what we inject here. Injection is idempotent: if an
+// adversarial_review criterion already satisfied_by the reviewed task exists (a
+// prior governance pass), we report migrated without appending a duplicate.
+func migrateReviewerRoleToAdversarial(constraint scenariotemplate.SpecConstraint, steps []scenariotemplate.SpecSkeletonStep, producedBy map[string]string, taskByKey map[string]*PlannedTask, plan *RouteDecisionPlan) bool {
+	reviewedStep, ok := reviewedStepForIndependence(constraint, steps)
+	if !ok {
+		return false
+	}
+	reviewedTask, ok := stepTask(reviewedStep, producedBy, taskByKey)
+	if !ok {
+		// Reviewed step produces nothing in this plan: no task to hang the
+		// adversarial criterion on. Leave the original constraint behavior intact.
+		return false
+	}
+	for _, existing := range plan.PlanAcceptanceCriteria {
+		if existing.VerificationMethod == VerificationMethodAdversarialReview && containsString(existing.SatisfiedBy, reviewedTask.Key) {
+			return true // idempotent: already injected
+		}
+	}
+	plan.PlanAcceptanceCriteria = append(plan.PlanAcceptanceCriteria, PlanAcceptanceCriterion{
+		ID:                 "adversarial_review:" + reviewedTask.Key,
+		Statement:          fmt.Sprintf("独立对抗评审：%s 的产出须经多判官证伪评审通过", reviewedStep.Step),
+		SatisfiedBy:        []string{reviewedTask.Key},
+		VerificationMethod: VerificationMethodAdversarialReview,
+		Severity:           CriterionSeverityBlocking,
+	})
+	plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
+		Kind:    "adversarial_review",
+		Message: fmt.Sprintf("独立审查已迁为 adversarial_review（被审步骤 %s），独立性由判官组保证；不再要求独立 reviewer 员工", reviewedStep.Step),
+	})
+	return true
+}
+
+// enforceAutonomousStageExitEvidence implements Part B: an autonomous stage must
+// not gate solely on opinion. A skeleton step is treated as autonomous when it is
+// NOT the target of an in-force human_gate constraint — an approximation of a true
+// per-stage checkpoint declaration (the Phase A Task 4 human_checkpoint field has
+// not landed; when it does this should key on that instead of human_gate).
+//
+// For each autonomous step, its exit criteria are the plan acceptance criteria
+// whose satisfied_by names the step's produced task. It is rejected (replan) only
+// when the step HAS exit criteria and every one is human_judgment — a step with no
+// exit criteria (a non-deliverable/uncriteriaed step) is not an error. This runs
+// AFTER Part A's injection, so a reviewed step made non-opinion by an injected
+// adversarial_review criterion passes.
+func enforceAutonomousStageExitEvidence(spec scenariotemplate.SpecV2, steps []scenariotemplate.SpecSkeletonStep, producedBy map[string]string, taskByKey map[string]*PlannedTask, plan *RouteDecisionPlan) error {
+	humanGated := map[string]bool{}
+	for _, constraint := range spec.Constraints {
+		if constraint.Kind == "human_gate" && exitCondMet(spec, constraint.When, plan.ExitDeliverable) {
+			humanGated[constraint.Target] = true
+		}
+	}
+	for _, step := range steps {
+		if humanGated[step.Step] {
+			continue // human-gated stage: a human at the gate is the evidence
+		}
+		task, ok := stepTask(step, producedBy, taskByKey)
+		if !ok {
+			continue
+		}
+		hasExitCriteria := false
+		allOpinion := true
+		for _, criterion := range plan.PlanAcceptanceCriteria {
+			if !containsString(criterion.SatisfiedBy, task.Key) {
+				continue
+			}
+			hasExitCriteria = true
+			if criterion.VerificationMethod != VerificationMethodHumanJudgment {
+				allOpinion = false
+				break
+			}
+		}
+		if hasExitCriteria && allOpinion {
+			return invalidRouteDecision("autonomous_stage_opinion_only_exit: 无人自治阶段 %q（任务 %s）的出口判据不得全为意见类，需至少一条 automated_test 或 adversarial_review", step.Step, task.Key)
+		}
+	}
+	return nil
+}
+
 // demandConstraintExempted reports whether snapshot's first-class exemptions
 // (project_demand_constraint_exemptions, loaded per-demand by
 // LoadProjectCoordinationSnapshot) cover the given role_independence constraint,
@@ -432,6 +567,13 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 				})
 				continue
 			}
+			// Part A: 模板的独立审查声明 → 被审任务上的 adversarial_review 判据（AI
+			// 判官替换单一 reviewer 员工）。迁移成功即视为判官组天然提供四眼独立，
+			// 不再因 reviewer/developer 共享员工 reject。关系不可判（无依赖边）的约束
+			// 保持原 enforceRoleIndependence 行为。
+			if migrateReviewerRoleToAdversarial(constraint, steps, producedBy, taskByKey, plan) {
+				continue
+			}
 			if err := enforceRoleIndependence(constraint, roleEmployees, roleCapabilities, activeExecutorCount); err != nil {
 				return err
 			}
@@ -458,6 +600,13 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 				Message: fmt.Sprintf("发布任务已强制人类审批：由 human_gate@%s v%d 触发", snapshot.ScenarioTemplate.Key, snapshot.ScenarioTemplate.Version),
 			})
 		}
+	}
+
+	// Part B: after Part A's adversarial injection, reject any autonomous stage
+	// whose exit gates on opinion alone. Runs after the constraint loop so the
+	// injected adversarial_review criteria count toward "non-opinion exit".
+	if err := enforceAutonomousStageExitEvidence(spec, steps, producedBy, taskByKey, plan); err != nil {
+		return err
 	}
 
 	// Collapse annotation is server-generated, unconditionally, from the
