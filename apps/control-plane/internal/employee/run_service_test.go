@@ -336,15 +336,12 @@ func TestStartProjectTaskRunResolvesNodeThenUsesPreflightForNode(t *testing.T) {
 		t.Fatalf("expected start payload to use project placement/provider, got %#v", payload)
 	}
 	agentHome, _ := payload["agent_home_dir"].(string)
-	for _, want := range []string{
-		repo.projectTaskPreflight.WorkspaceBaseDir,
-		projectID.String(),
-		projectTaskID.String(),
-		attemptID.String(),
-		runServiceEmployeeID.String(),
-	} {
-		if !strings.Contains(agentHome, want) {
-			t.Fatalf("expected derived agent_home_dir %q to contain %q", agentHome, want)
+	if agentHome != stableAgentHomeDir(repo.projectTaskPreflight.WorkspaceBaseDir, repo.projectTaskPreflight.TeamID, runServiceEmployeeID) {
+		t.Fatalf("expected stable employee capability-cache home, got %q", agentHome)
+	}
+	for _, forbidden := range []string{projectID.String(), projectTaskID.String(), attemptID.String()} {
+		if strings.Contains(agentHome, forbidden) {
+			t.Fatalf("agent_home_dir %q must not be scoped by project/task/attempt %q", agentHome, forbidden)
 		}
 	}
 	if payload["execution_instance_id"] != createReq.ExecutionInstanceID.String() {
@@ -1188,11 +1185,37 @@ func TestCreateRunChatResolvesProjectAnchorNodeAndDispatches(t *testing.T) {
 	if metadata["anchor_project_id"] != projectID.String() {
 		t.Fatalf("expected anchor_project_id metadata, got %#v", metadata["anchor_project_id"])
 	}
+	// 目录与能力投影修订 spec §4: chat anchor gains filesystem semantics — the
+	// runtime keys the chat working directory by (project, thread); an unbound
+	// project dispatches workspace_mode "none" with no project_git.
+	if metadata["project_id"] != projectID.String() {
+		t.Fatalf("expected project_id metadata for runtime chat dir keying, got %#v", metadata["project_id"])
+	}
+	if metadata["workspace_mode"] != "none" {
+		t.Fatalf("expected workspace_mode none for unbound anchor project, got %#v", metadata["workspace_mode"])
+	}
+	if _, hasGit := metadata["project_git"]; hasGit {
+		t.Fatalf("expected no project_git for unbound anchor project, got %#v", metadata["project_git"])
+	}
 	if len(dispatcher.commands) != 1 || dispatcher.commands[0].nodeID != repo.projectTaskPreflight.NodeID {
 		t.Fatalf("expected dispatch to resolved project anchor node, got %#v", dispatcher.commands)
 	}
 	if dispatcher.commands[0].command.Type != "start_session" {
 		t.Fatalf("expected a first-message chat run (no resume) to dispatch start_session, got %q", dispatcher.commands[0].command.Type)
+	}
+	chatPayload := commandPayload(t, dispatcher.commands[0].command)
+	// 目录与能力投影修订 spec §1: chat uses the stable employee capability-cache
+	// home, never a per-message one-off directory.
+	if chatPayload["agent_home_dir"] != stableAgentHomeDir(repo.projectTaskPreflight.WorkspaceBaseDir, repo.projectTaskPreflight.TeamID, runServiceEmployeeID) {
+		t.Fatalf("expected stable employee capability-cache home for chat, got %#v", chatPayload["agent_home_dir"])
+	}
+	payloadMetadata, ok := chatPayload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object in chat payload, got %#v", chatPayload["metadata"])
+	}
+	// A root turn's effective thread id is its own run id (spec §4).
+	if payloadMetadata["chat_thread_id"] != run.ID.String() {
+		t.Fatalf("expected root turn chat_thread_id == run id %s, got %#v", run.ID, payloadMetadata["chat_thread_id"])
 	}
 	// Verify the payload's session_policy for a first-question chat run
 	// has NO provider_session_id and mode is "new" (or unset, defaulting to "new")
@@ -1207,6 +1230,54 @@ func TestCreateRunChatResolvesProjectAnchorNodeAndDispatches(t *testing.T) {
 	mode, _ := sessionPolicy["mode"].(string)
 	if mode != "" && mode != "new" {
 		t.Fatalf("expected first-question chat run to have mode=new or unset, got %q", mode)
+	}
+}
+
+// TestCreateRunChatRepoBoundAnchorSeedsReadonlyWorktree covers 目录与能力投影修订
+// spec §4's repo-bound branch: when the anchor project has a repo binding,
+// chat dispatch carries workspace_mode "readonly", the binding's project_git
+// metadata, and base_ref = default_branch, so the runtime can seed a readonly
+// worktree in the thread-keyed chat directory.
+func TestCreateRunChatRepoBoundAnchorSeedsReadonlyWorktree(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+	validator := service.chatAnchorValidator.(*fakeChatAnchorProjectValidator)
+	validator.projectGit = map[string]any{
+		"url":            "https://git.example.com/acme/repo.git",
+		"default_branch": "main",
+	}
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+
+	run, err := service.CreateRun(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create chat run: %v", err)
+	}
+	_ = run
+	if validator.gitCalls != 1 {
+		t.Fatalf("expected anchor project git resolved exactly once, got %d", validator.gitCalls)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got %#v", payload["metadata"])
+	}
+	if metadata["workspace_mode"] != "readonly" {
+		t.Fatalf("expected workspace_mode readonly for repo-bound anchor, got %#v", metadata["workspace_mode"])
+	}
+	if metadata["base_ref"] != "main" {
+		t.Fatalf("expected base_ref main, got %#v", metadata["base_ref"])
+	}
+	projectGit, ok := metadata["project_git"].(map[string]any)
+	if !ok || projectGit["url"] != "https://git.example.com/acme/repo.git" {
+		t.Fatalf("expected project_git binding metadata, got %#v", metadata["project_git"])
 	}
 }
 
@@ -2282,12 +2353,17 @@ var (
 
 // fakeChatAnchorProjectValidator is the fake ChatAnchorProjectValidator for
 // chat run dispatch tests: it records the (tenant, project) pair it was
-// called with and, by default, approves the anchor (err == nil).
+// called with and, by default, approves the anchor (err == nil). It also
+// implements ChatAnchorProjectGitResolver: projectGit == nil models an
+// unbound project (chat gets workspace_mode "none").
 type fakeChatAnchorProjectValidator struct {
 	err           error
 	calls         int
 	lastTenantID  uuid.UUID
 	lastProjectID uuid.UUID
+	projectGit    map[string]any
+	gitErr        error
+	gitCalls      int
 }
 
 func (f *fakeChatAnchorProjectValidator) ValidateChatAnchorProject(_ context.Context, tenantID, projectID uuid.UUID) error {
@@ -2295,6 +2371,14 @@ func (f *fakeChatAnchorProjectValidator) ValidateChatAnchorProject(_ context.Con
 	f.lastTenantID = tenantID
 	f.lastProjectID = projectID
 	return f.err
+}
+
+func (f *fakeChatAnchorProjectValidator) ChatAnchorProjectGit(_ context.Context, tenantID, projectID uuid.UUID) (map[string]any, error) {
+	f.gitCalls++
+	if f.gitErr != nil {
+		return nil, f.gitErr
+	}
+	return f.projectGit, nil
 }
 
 type fakeProjectTaskNodeResolver struct {

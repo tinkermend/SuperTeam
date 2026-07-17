@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -42,4 +43,52 @@ func (a ChatAnchorProjectValidatorAdapter) ValidateChatAnchorProject(ctx context
 		return err
 	}
 	return nil
+}
+
+// ChatAnchorProjectGit implements employee.ChatAnchorProjectGitResolver
+// (目录与能力投影修订 spec §4): chat dispatch seeds a readonly worktree from the
+// anchor project's repo binding, so it needs the same project_git metadata
+// shape project task dispatch emits. Returns nil (no error) when the project
+// has no repo binding.
+func (a ChatAnchorProjectValidatorAdapter) ChatAnchorProjectGit(ctx context.Context, tenantID, projectID uuid.UUID) (map[string]any, error) {
+	record, err := a.service.requireActiveProject(ctx, tenantID, projectID)
+	if err != nil {
+		if errors.Is(err, ErrProjectNotFound) || errors.Is(err, ErrInvalidProject) {
+			return nil, fmt.Errorf("%w: project not found", employee.ErrInvalidInput)
+		}
+		if errors.Is(err, ErrProjectArchived) {
+			return nil, fmt.Errorf("%w: project is archived", employee.ErrInvalidInput)
+		}
+		return nil, err
+	}
+	return repoBindingGitMetadata(record.RepoBinding), nil
+}
+
+// repoBindingGitMetadata mirrors projectcoordination.projectGitMetadata (that
+// package imports project, so the helper cannot be shared without a cycle);
+// both must keep emitting the metadata["project_git"] shape the runtime's
+// payload.rs::project_git_metadata parses.
+func repoBindingGitMetadata(binding ProjectRepoBinding) map[string]any {
+	if binding.Status != ProjectRepoBindingStatusBound {
+		return nil
+	}
+	values := map[string]any{
+		"url":            strings.TrimSpace(binding.URL),
+		"default_branch": strings.TrimSpace(binding.DefaultBranch),
+	}
+	if binding.GitCredentialRef != nil {
+		if credentialRef := strings.TrimSpace(*binding.GitCredentialRef); credentialRef != "" {
+			values["git_credential_ref"] = credentialRef
+		}
+	}
+	scope := make([]any, 0, len(binding.Scope))
+	for _, item := range binding.Scope {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			scope = append(scope, trimmed)
+		}
+	}
+	if len(scope) > 0 {
+		values["scope"] = scope
+	}
+	return values
 }

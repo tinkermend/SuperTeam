@@ -472,7 +472,10 @@ printf '%s\n' '{"type":"result","result":"done"}'
             Some(agent_home_dir.as_path())
         );
         assert!(agent_home_dir.join(".claude").is_dir());
-        assert!(snapshot.workspace_path.join(".claude").is_dir());
+        // 目录与能力投影修订 spec §2: linking is per declared skill key — a
+        // payload with no skills must not project the home skills dir into
+        // the workspace wholesale.
+        assert!(!snapshot.workspace_path.join(".claude/skills").exists());
 
         let complete = wait_for_writeback(capture.complete.clone()).await;
         assert_eq!(complete.command_id, "cmd-ws-start");
