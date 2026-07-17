@@ -12,6 +12,11 @@ pub struct ProjectWorkspaceRequest {
     pub project_id: Option<String>,
     pub project_task_id: Option<String>,
     pub attempt_id: Option<String>,
+    /// Set for chat dispatch (目录与能力投影修订 spec §4): the working
+    /// directory is then keyed by (project, thread) instead of
+    /// (project, task, attempt), so files and provider session state stay
+    /// stable across the turns of one conversation.
+    pub chat_thread_id: Option<String>,
     pub workspace_mode: String,
     pub project_git: Option<RuntimeProjectGitPayload>,
     pub base_ref: Option<String>,
@@ -41,11 +46,21 @@ pub fn resolve_project_workspace(
         anyhow::bail!("project_git is required for workspace_mode={mode}");
     }
 
-    let workspace_path = base_dir
-        .join("workspaces")
-        .join(project_id)
-        .join(task_id)
-        .join(attempt_id);
+    let chat_thread_id = request
+        .chat_thread_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let workspace_path = if let Some(thread_id) = chat_thread_id {
+        validate_segment(thread_id, "chat_thread_id")?;
+        base_dir.join("chat").join(project_id).join(thread_id)
+    } else {
+        base_dir
+            .join("workspaces")
+            .join(project_id)
+            .join(task_id)
+            .join(attempt_id)
+    };
     std::fs::create_dir_all(&workspace_path).context("create project task workspace")?;
 
     let repo_path = if let Some(git) = &request.project_git {
@@ -84,43 +99,74 @@ fn absolutize_base_dir(base_dir: &Path) -> Result<PathBuf> {
         .join(base_dir))
 }
 
+/// Links the employee's materialized skills into the task workspace one skill
+/// key at a time (目录与能力投影修订 spec §2/§3.1). A key already present in
+/// the workspace — e.g. a skill checked into the project repo — wins and the
+/// employee-side link is skipped; the skipped keys are returned so callers can
+/// surface the conflict instead of hiding it. A missing employee-side source
+/// is an error, never a silent no-op: the session payload declared the skill,
+/// so the capability cache must contain it by the time linking runs.
 pub fn link_provider_skills(
     agent_home_dir: &Path,
     workspace_path: &Path,
     provider_type: &str,
-) -> Result<()> {
-    let links: &[(&str, &str)] = match provider_type {
-        "claude-code" | "claude" => &[(".claude/skills", ".claude/skills")],
-        "codex" => &[(".agents/skills", ".agents/skills")],
-        "opencode" => &[(".opencode/skills", ".opencode/skills")],
-        _ => &[],
+    skill_keys: &[String],
+) -> Result<Vec<String>> {
+    if skill_keys.is_empty() {
+        return Ok(Vec::new());
+    }
+    let skills_rel = match provider_type {
+        "claude-code" | "claude" => ".claude/skills",
+        "codex" => ".agents/skills",
+        "opencode" => ".opencode/skills",
+        other => anyhow::bail!("unsupported provider_type for skill linking: {other}"),
     };
 
-    for (home_rel, workspace_rel) in links {
-        let source = agent_home_dir.join(home_rel);
+    let mut skipped = Vec::new();
+    for key in skill_keys {
+        let source = agent_home_dir.join(skills_rel).join(key);
         if !source.exists() {
-            continue;
+            anyhow::bail!(
+                "employee skill {key} is not materialized at {}",
+                source.display()
+            );
         }
-
-        let target = workspace_path.join(workspace_rel);
+        let target = workspace_path.join(skills_rel).join(key);
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create skill link parent: {}", parent.display()))?;
         }
-        if target.exists() {
-            continue;
+        match std::fs::symlink_metadata(&target) {
+            Ok(metadata) => {
+                let already_linked = metadata.file_type().is_symlink()
+                    && std::fs::read_link(&target)
+                        .map(|link| link == source)
+                        .unwrap_or(false);
+                if already_linked {
+                    continue;
+                }
+                // Project-native content wins (spec §3.1) — skip the
+                // employee-side skill, loudly.
+                eprintln!(
+                    "workspace already provides skill key {key} at {}; employee-side skill skipped (project wins)",
+                    target.display()
+                );
+                skipped.push(key.clone());
+            }
+            Err(_) => {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(&source, &target).with_context(|| {
+                    format!(
+                        "link provider skill {key} from {} to {}",
+                        source.display(),
+                        target.display()
+                    )
+                })?;
+            }
         }
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&source, &target).with_context(|| {
-            format!(
-                "link provider skills from {} to {}",
-                source.display(),
-                target.display()
-            )
-        })?;
     }
 
-    Ok(())
+    Ok(skipped)
 }
 
 fn ensure_repo_placeholder(repo_path: &Path, git: &RuntimeProjectGitPayload) -> Result<()> {
@@ -318,6 +364,7 @@ mod tests {
             project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
@@ -341,6 +388,7 @@ mod tests {
             project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
             workspace_mode: "branch".to_string(),
             project_git: None,
             base_ref: Some("main".to_string()),
@@ -359,6 +407,7 @@ mod tests {
             project_id: Some("../escape".to_string()),
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
@@ -388,6 +437,7 @@ mod tests {
             project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
                 url: source.to_string_lossy().to_string(),
@@ -439,6 +489,7 @@ mod tests {
             project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
                 url: source.to_string_lossy().to_string(),
@@ -472,6 +523,7 @@ mod tests {
             project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
             workspace_mode: "branch".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
                 url: source.to_string_lossy().to_string(),
@@ -487,6 +539,157 @@ mod tests {
 
         assert_eq!(second.workspace_path, first.workspace_path);
         assert!(second.workspace_path.join("README.md").exists());
+    }
+
+    #[test]
+    fn chat_workspace_keyed_by_project_and_thread_is_stable_across_turns() {
+        let temp = TempDir::new().unwrap();
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().to_path_buf(),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: None,
+            attempt_id: None,
+            chat_thread_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            workspace_mode: "none".to_string(),
+            project_git: None,
+            base_ref: None,
+        };
+
+        let first = resolve_project_workspace(request.clone()).unwrap();
+        let second = resolve_project_workspace(request).unwrap();
+
+        assert!(first.workspace_path.ends_with(
+            "chat/11111111-1111-4111-8111-111111111111/44444444-4444-4444-8444-444444444444"
+        ));
+        assert_eq!(second.workspace_path, first.workspace_path);
+    }
+
+    #[test]
+    fn chat_workspace_rejects_unsafe_thread_segment() {
+        let temp = TempDir::new().unwrap();
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().to_path_buf(),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: None,
+            attempt_id: None,
+            chat_thread_id: Some("../escape".to_string()),
+            workspace_mode: "none".to_string(),
+            project_git: None,
+            base_ref: None,
+        };
+
+        let err = resolve_project_workspace(request).unwrap_err().to_string();
+
+        assert!(err.contains("chat_thread_id is not a safe path segment"));
+    }
+
+    #[test]
+    fn chat_workspace_materializes_readonly_worktree_for_repo_bound_project() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("README.md"), "hello\n").unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "source"]);
+        run_test_git(&source, ["config", "user.email", "test@example.com"]);
+        run_test_git(&source, ["config", "user.name", "Test User"]);
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "initial"]);
+
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().join("runtime"),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: None,
+            attempt_id: None,
+            chat_thread_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            workspace_mode: "readonly".to_string(),
+            project_git: Some(RuntimeProjectGitPayload {
+                url: source.to_string_lossy().to_string(),
+                default_branch: Some("main".to_string()),
+                git_credential_ref: None,
+                scope: Vec::new(),
+            }),
+            base_ref: Some("main".to_string()),
+        };
+
+        let first = resolve_project_workspace(request.clone()).unwrap();
+        let second = resolve_project_workspace(request).unwrap();
+
+        assert!(first.workspace_path.ends_with(
+            "chat/11111111-1111-4111-8111-111111111111/44444444-4444-4444-8444-444444444444"
+        ));
+        assert!(first.workspace_path.join("README.md").exists());
+        assert_eq!(second.workspace_path, first.workspace_path);
+        assert!(
+            first
+                .repo_path
+                .unwrap()
+                .ends_with("repos/11111111-1111-4111-8111-111111111111")
+        );
+    }
+
+    #[test]
+    fn links_declared_skill_keys_and_reports_project_native_conflicts() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let workspace = temp.path().join("workspace");
+        std::fs::create_dir_all(home.join(".claude/skills/alpha")).unwrap();
+        std::fs::write(home.join(".claude/skills/alpha/SKILL.md"), "alpha\n").unwrap();
+        std::fs::create_dir_all(home.join(".claude/skills/beta")).unwrap();
+        std::fs::write(home.join(".claude/skills/beta/SKILL.md"), "beta\n").unwrap();
+        // Project repo already ships its own `beta` (project-native skill).
+        std::fs::create_dir_all(workspace.join(".claude/skills/beta")).unwrap();
+        std::fs::write(
+            workspace.join(".claude/skills/beta/SKILL.md"),
+            "project-native beta\n",
+        )
+        .unwrap();
+
+        let skipped = link_provider_skills(
+            &home,
+            &workspace,
+            "claude-code",
+            &["alpha".to_string(), "beta".to_string()],
+        )
+        .unwrap();
+
+        // alpha links from the employee cache; beta stays project-native.
+        let alpha = workspace.join(".claude/skills/alpha");
+        assert!(alpha.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(
+            std::fs::read_link(&alpha).unwrap(),
+            home.join(".claude/skills/alpha")
+        );
+        assert_eq!(skipped, vec!["beta".to_string()]);
+        assert_eq!(
+            std::fs::read_to_string(workspace.join(".claude/skills/beta/SKILL.md")).unwrap(),
+            "project-native beta\n"
+        );
+
+        // Replay is idempotent: existing correct links are neither conflicts
+        // nor errors.
+        let replayed = link_provider_skills(
+            &home,
+            &workspace,
+            "claude-code",
+            &["alpha".to_string(), "beta".to_string()],
+        )
+        .unwrap();
+        assert_eq!(replayed, vec!["beta".to_string()]);
+    }
+
+    #[test]
+    fn linking_a_declared_but_unmaterialized_skill_fails_loudly() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let workspace = temp.path().join("workspace");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let err = link_provider_skills(&home, &workspace, "claude-code", &["ghost".to_string()])
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("employee skill ghost is not materialized"));
     }
 
     fn run_test_git<I, S>(cwd: &std::path::Path, args: I)

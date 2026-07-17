@@ -304,7 +304,7 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 	// nonce per call is safe.
 	nonce := chatDispatchNonce(req.IdempotencyKey)
 	compatExecutionInstanceID := chatCompatibilityExecutionInstanceID(req.TenantID, projectID, req.DigitalEmployeeID, nonce)
-	agentHomeDir := chatAgentHomeDir(projectPreflight.WorkspaceBaseDir, projectID, req.DigitalEmployeeID, nonce)
+	agentHomeDir := stableAgentHomeDir(projectPreflight.WorkspaceBaseDir, projectPreflight.TeamID, req.DigitalEmployeeID)
 	preflight := projectTaskRunPreflightToRunPreflight(projectPreflight, compatExecutionInstanceID, agentHomeDir)
 
 	if req.Metadata == nil {
@@ -313,6 +313,27 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 	// Audit-only anchor record (§13): not a new column, lives in
 	// tasks.params["metadata"]["anchor_project_id"] via buildRunParams.
 	req.Metadata["anchor_project_id"] = projectID.String()
+	// 目录与能力投影修订 spec §4: the chat anchor gains filesystem semantics —
+	// the runtime keys the chat working directory by (project, thread) and
+	// seeds a readonly worktree when the anchor project has a repo binding.
+	// chat_thread_id itself is injected at payload-build time (a root turn
+	// only knows its thread id once the run row exists).
+	req.Metadata["project_id"] = projectID.String()
+	workspaceMode := "none"
+	if resolver, ok := s.chatAnchorValidator.(ChatAnchorProjectGitResolver); ok {
+		projectGit, err := resolver.ChatAnchorProjectGit(ctx, req.TenantID, projectID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve chat anchor project git: %w", err)
+		}
+		if projectGit != nil {
+			workspaceMode = "readonly"
+			req.Metadata["project_git"] = projectGit
+			if defaultBranch, _ := projectGit["default_branch"].(string); strings.TrimSpace(defaultBranch) != "" {
+				req.Metadata["base_ref"] = defaultBranch
+			}
+		}
+	}
+	req.Metadata["workspace_mode"] = workspaceMode
 
 	return s.createAndDispatchRun(ctx, req, objective, prompt, preflight)
 }
@@ -381,7 +402,7 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 	}
 
 	compatExecutionInstanceID := projectTaskCompatibilityExecutionInstanceID(req)
-	agentHomeDir := projectTaskAgentHomeDir(projectPreflight.WorkspaceBaseDir, req.ProjectID, req.ProjectTaskID, req.ProjectTaskAttemptID, req.DigitalEmployeeID)
+	agentHomeDir := stableAgentHomeDir(projectPreflight.WorkspaceBaseDir, projectPreflight.TeamID, req.DigitalEmployeeID)
 	preflight := projectTaskRunPreflightToRunPreflight(projectPreflight, compatExecutionInstanceID, agentHomeDir)
 
 	metadata := projectTaskRunMetadata(req, projectPreflight)
@@ -1209,23 +1230,33 @@ func projectTaskRunPreflightToRunPreflight(preflight StartProjectTaskRunPrefligh
 	}
 }
 
-func projectTaskAgentHomeDir(baseDir string, projectID, projectTaskID, attemptID, employeeID uuid.UUID) string {
-	return path.Join(
-		strings.TrimSpace(baseDir),
-		"project-tasks",
-		projectID.String(),
-		projectTaskID.String(),
-		attemptID.String(),
-		"employees",
-		employeeID.String(),
-	)
+// stableAgentHomeDir derives the employee's persistent capability-cache
+// directory on the resolved node (目录与能力投影修订 spec §1): every dispatch of
+// the same employee lands on the same directory so skill checksum caching and
+// persona materialization survive across tasks and chat turns. The derivation
+// mirrors the runtime's own (instances.rs::derive_agent_home_dir) —
+// workspace_base_dir/(teams/{team}/)employees/{employee} — so provision-time
+// and session-time paths agree.
+func stableAgentHomeDir(baseDir string, teamID, employeeID uuid.UUID) string {
+	if teamID != uuid.Nil {
+		return path.Join(
+			strings.TrimSpace(baseDir),
+			"teams",
+			teamID.String(),
+			"employees",
+			employeeID.String(),
+		)
+	}
+	return path.Join(strings.TrimSpace(baseDir), "employees", employeeID.String())
 }
 
-// chatDispatchNonce derives the value that scopes a chat run's one-off
-// workspace directory and compatibility execution-instance id (see
-// createChatRun). When the caller supplies an idempotency_key, the nonce is a
-// short hash of it so retries of the same logical dispatch are deterministic;
-// otherwise a fresh value is used.
+// chatDispatchNonce derives the value that scopes a chat run's compatibility
+// execution-instance id (see createChatRun). It no longer scopes any
+// directory — the agent home is the stable employee capability cache and the
+// chat working directory is keyed by thread (目录与能力投影修订 spec §1/§4).
+// When the caller supplies an idempotency_key, the nonce is a short hash of
+// it so retries of the same logical dispatch are deterministic; otherwise a
+// fresh value is used.
 func chatDispatchNonce(idempotencyKey *string) string {
 	if idempotencyKey != nil {
 		if trimmed := strings.TrimSpace(*idempotencyKey); trimmed != "" {
@@ -1234,21 +1265,6 @@ func chatDispatchNonce(idempotencyKey *string) string {
 		}
 	}
 	return strings.ReplaceAll(uuid.NewString(), "-", "")
-}
-
-// chatAgentHomeDir derives a chat-specific, one-off working directory rooted
-// under the resolved node's workspace base dir. Unlike project task dispatch,
-// chat never reuses a project task worktree — the directory is scoped to
-// (project anchor, employee, dispatch nonce) and is discarded once the run
-// reaches a terminal state.
-func chatAgentHomeDir(baseDir string, projectID, employeeID uuid.UUID, nonce string) string {
-	return path.Join(
-		strings.TrimSpace(baseDir),
-		"chat",
-		projectID.String(),
-		employeeID.String(),
-		nonce,
-	)
 }
 
 // chatCompatibilityExecutionInstanceID mirrors
@@ -1392,6 +1408,18 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		if strings.TrimSpace(version) == "" {
 			metadata["execution_context_packet_version"] = "v1"
 		}
+	}
+	if req.RunKind == RunKindChat {
+		// 目录与能力投影修订 spec §4: the runtime keys the chat working
+		// directory by thread so files and provider session state survive
+		// across turns. Follow-up turns inherit the resolved thread id; a
+		// root turn's effective thread id is its own run id, matching
+		// GetRun's read-time resolution.
+		threadID := run.ID
+		if req.chatThreadID != nil {
+			threadID = *req.chatThreadID
+		}
+		metadata["chat_thread_id"] = threadID.String()
 	}
 	return map[string]any{
 		"provider_run_protocol":   providerRunProtocol,

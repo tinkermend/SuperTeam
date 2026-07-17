@@ -2154,6 +2154,266 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TeamOverview"
+  /api/v1/connector/bootstrap:
+    get:
+      operationId: connectorBootstrap
+      summary: Fetch decrypted Feishu app configs for an authenticated connector service
+      responses:
+        "200":
+          description: Active Feishu app configs with decrypted secrets (service-auth channel only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorBootstrapResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/identity:
+    get:
+      operationId: connectorResolveIdentity
+      summary: Resolve a Feishu open_id to its bound platform user
+      parameters:
+        - name: app_config_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: open_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bound identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuIdentity"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/outbox:
+    get:
+      operationId: connectorListOutbox
+      summary: List pending Feishu outbox messages for delivery
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Pending outbox items (oldest first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuOutboxListResponse"
+  /api/v1/connector/outbox/{outboxId}/ack:
+    post:
+      operationId: connectorAckOutbox
+      summary: Acknowledge a delivery attempt (sent backfills the Feishu message id; 3 failures finalize)
+      parameters:
+        - name: outboxId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeishuOutboxAckRequest"
+      responses:
+        "200":
+          description: Ack result (idempotent for already-final rows)
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/my-projects:
+    get:
+      operationId: connectorMyProjects
+      summary: List projects the on-behalf-of user may raise demands in (owner or active human member)
+      responses:
+        "200":
+          description: Projects for the acting user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorProjectListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/demands:
+    post:
+      operationId: connectorSubmitDemand
+      summary: Submit a demand on behalf of the bound user (source_type is fixed to feishu)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorSubmitDemandRequest"
+      responses:
+        "201":
+          description: Demand created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorSubmitDemandResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/decisions/{decisionId}/resolve:
+    post:
+      operationId: connectorResolveDecision
+      summary: Resolve a decision on behalf of the bound user (409 when already resolved by someone else)
+      parameters:
+        - name: decisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorResolveDecisionRequest"
+      responses:
+        "200":
+          description: Decision resolved
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/service-tokens:
+    post:
+      operationId: issueServiceToken
+      summary: Issue an external service token (plaintext returned once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueServiceTokenRequest"
+      responses:
+        "201":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueServiceTokenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/service-tokens/{tokenId}:
+    delete:
+      operationId: revokeServiceToken
+      summary: Revoke an external service token
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Token revoked
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/app-configs:
+    get:
+      operationId: listFeishuAppConfigs
+      summary: List active Feishu app configs (secrets never echoed)
+      responses:
+        "200":
+          description: App config list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuAppConfigListResponse"
+    post:
+      operationId: upsertFeishuAppConfig
+      summary: Create or rotate a tenant Feishu app config (secret sealed at rest)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertFeishuAppConfigRequest"
+      responses:
+        "201":
+          description: App config stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuAppConfig"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/contact-sync:
+    post:
+      operationId: feishuContactSync
+      summary: Batch-bind Feishu identities by looking up user emails in the Feishu directory
+      responses:
+        "200":
+          description: Per-app sync reports
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuContactSyncResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/identities:
+    get:
+      operationId: listFeishuIdentities
+      summary: List all Feishu identity bindings for the tenant
+      responses:
+        "200":
+          description: Identity bindings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuIdentityListResponse"
+  /api/v1/auth/feishu/oauth-start:
+    get:
+      operationId: feishuOAuthStart
+      summary: Redirect the current console user to the Feishu authorize page (binds on callback)
+      parameters:
+        - name: app_config_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: return_to
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to Feishu authorize page
+  /api/v1/auth/feishu/oauth-callback:
+    get:
+      operationId: feishuOAuthCallback
+      summary: Consume the Feishu OAuth redirect and finish binding (one-time state is the credential)
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect back to the web console
   /api/v1/audit/events:
     get:
       operationId: listAuditEvents
@@ -4351,6 +4611,266 @@ components:
           schema:
             type: string
   schemas:
+    ConnectorProjectListResponse:
+      type: object
+      required:
+        - projects
+      properties:
+        projects:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - name
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+    ConnectorSubmitDemandRequest:
+      type: object
+      required:
+        - project_id
+        - title
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        coordination_mode:
+          type: string
+          enum:
+            - plan
+            - loop
+    ConnectorSubmitDemandResponse:
+      type: object
+      required:
+        - demand_id
+        - title
+        - status
+      properties:
+        demand_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+    ConnectorResolveDecisionRequest:
+      type: object
+      required:
+        - project_id
+        - decision
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        decision:
+          type: string
+        comment:
+          type: string
+    FeishuOutboxListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - kind
+              - resource_type
+              - resource_id
+              - recipient_user_id
+              - recipient_open_id
+              - payload
+              - attempts
+              - created_at
+            properties:
+              id:
+                type: string
+                format: uuid
+              kind:
+                type: string
+                enum:
+                  - decision_card
+                  - card_update
+                  - result_notice
+              resource_type:
+                type: string
+              resource_id:
+                type: string
+                format: uuid
+              project_id:
+                type: string
+                format: uuid
+              recipient_user_id:
+                type: string
+                format: uuid
+              recipient_open_id:
+                type: string
+              payload:
+                type: object
+                additionalProperties: true
+              attempts:
+                type: integer
+              created_at:
+                type: string
+                format: date-time
+    FeishuOutboxAckRequest:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          type: string
+          enum:
+            - sent
+            - failed
+        feishu_message_id:
+          type: string
+        error:
+          type: string
+    FeishuContactSyncResponse:
+      type: object
+      required:
+        - reports
+      properties:
+        reports:
+          type: array
+          items:
+            type: object
+            required:
+              - app_id
+              - matched
+              - bound
+              - already_bound
+              - unmatched
+            properties:
+              app_id:
+                type: string
+              matched:
+                type: integer
+              bound:
+                type: integer
+              already_bound:
+                type: integer
+              unmatched:
+                type: integer
+    FeishuIdentityListResponse:
+      type: object
+      required:
+        - identities
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeishuIdentity"
+    ConnectorBootstrapResponse:
+      type: object
+      required:
+        - configs
+      properties:
+        configs:
+          type: array
+          items:
+            type: object
+            required:
+              - config_id
+              - tenant_id
+              - app_id
+              - app_secret
+            properties:
+              config_id:
+                type: string
+                format: uuid
+              tenant_id:
+                type: string
+                format: uuid
+              app_id:
+                type: string
+              app_secret:
+                type: string
+    FeishuIdentity:
+      type: object
+      required:
+        - auth_user_id
+        - open_id
+        - bound_via
+      properties:
+        auth_user_id:
+          type: string
+          format: uuid
+        open_id:
+          type: string
+        bound_via:
+          type: string
+          enum:
+            - contact_sync
+            - oauth
+    IssueServiceTokenRequest:
+      type: object
+      required:
+        - service_name
+      properties:
+        service_name:
+          type: string
+    IssueServiceTokenResponse:
+      type: object
+      required:
+        - id
+        - service_name
+        - token
+      properties:
+        id:
+          type: string
+          format: uuid
+        service_name:
+          type: string
+        token:
+          type: string
+          description: Plaintext token, returned exactly once at issuance.
+    UpsertFeishuAppConfigRequest:
+      type: object
+      required:
+        - app_id
+        - app_secret
+      properties:
+        app_id:
+          type: string
+        app_secret:
+          type: string
+          description: Sealed with AES-GCM at rest; never echoed back.
+    FeishuAppConfig:
+      type: object
+      required:
+        - id
+        - app_id
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        app_id:
+          type: string
+        status:
+          type: string
+    FeishuAppConfigListResponse:
+      type: object
+      required:
+        - configs
+      properties:
+        configs:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeishuAppConfig"
     PromptTemplateVariable:
       type: object
       required:
@@ -5270,8 +5790,6 @@ components:
       type: string
       enum:
         - owner
-        - leader
-        - acceptance
         - executor
         - reviewer
         - observer
@@ -5539,12 +6057,6 @@ components:
         status:
           $ref: "#/components/schemas/ProjectStatus"
         human_owner_user_id:
-          type: string
-          format: uuid
-        leader_user_id:
-          type: string
-          format: uuid
-        acceptance_user_id:
           type: string
           format: uuid
         coordination_workflow_id:
@@ -7680,12 +8192,6 @@ components:
         human_owner_user_id:
           type: string
           format: uuid
-        leader_user_id:
-          type: string
-          format: uuid
-        acceptance_user_id:
-          type: string
-          format: uuid
         members:
           type: array
           items:
@@ -7732,12 +8238,6 @@ components:
         goal:
           type: string
         human_owner_user_id:
-          type: string
-          format: uuid
-        leader_user_id:
-          type: string
-          format: uuid
-        acceptance_user_id:
           type: string
           format: uuid
         members:

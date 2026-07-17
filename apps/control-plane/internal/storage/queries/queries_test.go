@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/storage/testenv"
 )
@@ -6129,4 +6130,207 @@ func TestProjectRuntimeNodesQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, employeeID2, affinity2.DigitalEmployeeID)
 	require.Equal(t, nodeA.ID, affinity2.RuntimeNodeID)
+}
+
+// any-of-N:项目决策类 inbox 事项对该项目全部 active 人类成员可见(成员同等身份);
+// 非成员、数字员工成员、非 active 成员均不可见;非项目决策事项不受成员分支影响。
+func TestInboxProjectDecisionVisibleToProjectHumanMembers(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	memberID := uuid.New()
+	inactiveID := uuid.New()
+	employeeID := uuid.New()
+	outsiderID := uuid.New()
+
+	seedMember := func(principalType string, principalID uuid.UUID, status string) {
+		_, err := testQueries.CreateProjectMember(ctx, queries.CreateProjectMemberParams{
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: principalType,
+			PrincipalID:   principalID,
+			ProjectRole:   "reviewer",
+			Status:        status,
+			Settings:      []byte(`{}`),
+		})
+		require.NoError(t, err)
+	}
+	seedMember("human_user", memberID, "active")
+	seedMember("human_user", inactiveID, "removed")
+	seedMember("digital_employee", employeeID, "active")
+
+	item, err := testQueries.UpsertInboxItem(ctx, queries.UpsertInboxItemParams{
+		TenantID:        tenantID,
+		TargetUserID:    ownerID,
+		Scope:           "tenant",
+		ItemType:        "project_decision",
+		SourceType:      "project_decision",
+		SourceID:        uuid.New(),
+		SourceProjectID: uuid.NullUUID{UUID: projectID, Valid: true},
+		Title:           "需要负责人确认",
+		Status:          "open",
+		ActionSchema:    []byte(`[]`),
+		ContextPayload:  []byte(`{}`),
+		DeepLink:        []byte(`{}`),
+		LastActivityAt:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	visibleTo := func(userID uuid.UUID) bool {
+		rows, err := testQueries.ListInboxItems(ctx, queries.ListInboxItemsParams{
+			TenantID:     tenantID,
+			TargetUserID: uuid.NullUUID{UUID: userID, Valid: true},
+			Limit:        10,
+		})
+		require.NoError(t, err)
+		for _, row := range rows {
+			if row.ID == item.ID {
+				return true
+			}
+		}
+		return false
+	}
+
+	require.True(t, visibleTo(ownerID), "target user must see the item")
+	require.True(t, visibleTo(memberID), "active human member must see project decision (any-of-N)")
+	require.False(t, visibleTo(inactiveID), "inactive member must not see it")
+	require.False(t, visibleTo(employeeID), "digital employee member must not see it")
+	require.False(t, visibleTo(outsiderID), "non-member must not see it")
+
+	count, err := testQueries.CountInboxItems(ctx, queries.CountInboxItemsParams{
+		TenantID:     tenantID,
+		TargetUserID: uuid.NullUUID{UUID: memberID, Valid: true},
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, count, int64(1), "count must include member-visible project decision")
+}
+
+// 决策创建与飞书 outbox 同事务投影:收件人=合格处理人×绑定表;resolve 后
+// pending 作废、已发送卡入队更新;ack 生命周期(sent 回填消息ID / failed 三次终态)。
+func TestDecisionOutboxLifecycle(t *testing.T) {
+	ctx := context.Background()
+	tenantID := seedTestTenant(t, testDB)
+	ownerID := seedTestAuthUser(t, testDB, "feishu-outbox-owner")
+	memberID := seedTestAuthUser(t, testDB, "feishu-outbox-member")
+
+	projectRow, err := testQueries.CreateProject(ctx, queries.CreateProjectParams{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		Name:             "outbox project",
+		Goal:             pgtype.Text{String: "outbox goal", Valid: true},
+		Status:           "active",
+		HumanOwnerUserID: ownerID,
+		ApprovalPolicy:   []byte(`{}`),
+		EvidencePolicy:   []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateProjectMember(ctx, queries.CreateProjectMemberParams{
+		TenantID: tenantID, ProjectID: projectRow.ID,
+		PrincipalType: "human_user", PrincipalID: memberID,
+		ProjectRole: "reviewer", Status: "active", Settings: []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	appConfig, err := testQueries.UpsertFeishuAppConfig(ctx, queries.UpsertFeishuAppConfigParams{
+		TenantID: tenantID, AppID: "cli_outbox", AppSecretSealed: "sealed:x",
+	})
+	require.NoError(t, err)
+	for user, openID := range map[uuid.UUID]string{ownerID: "ou_owner", memberID: "ou_member"} {
+		_, err = testQueries.CreateFeishuIdentity(ctx, queries.CreateFeishuIdentityParams{
+			TenantID: tenantID, AuthUserID: user, FeishuAppConfigID: appConfig.ID,
+			OpenID: openID, BoundVia: "oauth",
+		})
+		require.NoError(t, err)
+	}
+
+	repo := project.NewPgRepository(testQueries)
+	decision, err := repo.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectRow.ID,
+		ApprovalRequestID: uuid.New(),
+		TargetUserID:      ownerID,
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "计划评审",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+
+	pending, err := testQueries.ListPendingFeishuOutbox(ctx, queries.ListPendingFeishuOutboxParams{TenantID: tenantID, Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, pending, 2, "one decision_card per bound eligible decider")
+	openIDs := map[string]bool{}
+	for _, row := range pending {
+		require.Equal(t, "decision_card", row.Kind)
+		require.Equal(t, decision.ID, row.ResourceID)
+		openIDs[row.RecipientOpenID] = true
+	}
+	require.True(t, openIDs["ou_owner"] && openIDs["ou_member"], "recipients expanded to owner+member")
+
+	// ack: first sent (message id backfilled), second stays pending then fails 3x → failed.
+	sent, err := testQueries.MarkFeishuOutboxSent(ctx, queries.MarkFeishuOutboxSentParams{
+		TenantID: tenantID, ID: pending[0].ID,
+		FeishuMessageID: pgtype.Text{String: "om_123", Valid: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sent", sent.Status)
+
+	var failedRow queries.FeishuOutbox
+	for i := 0; i < 3; i++ {
+		failedRow, err = testQueries.MarkFeishuOutboxFailed(ctx, queries.MarkFeishuOutboxFailedParams{
+			TenantID: tenantID, ID: pending[1].ID, LastError: "network", MaxAttempts: 3,
+		})
+		require.NoError(t, err)
+	}
+	require.Equal(t, "failed", failedRow.Status)
+	require.EqualValues(t, 3, failedRow.Attempts)
+
+	// resolve → 无 pending 可作废(都已终态), 但 sent 行入队 card_update。
+	_, err = repo.ResolveDecisionRequest(ctx, project.ResolveDecisionRequestRepositoryRequest{
+		TenantID: tenantID, ProjectID: projectRow.ID, ID: decision.ID,
+		StatusSnapshot: "approved",
+	})
+	require.NoError(t, err)
+
+	afterResolve, err := testQueries.ListPendingFeishuOutbox(ctx, queries.ListPendingFeishuOutboxParams{TenantID: tenantID, Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, afterResolve, 1, "one card_update for the sent card")
+	require.Equal(t, "card_update", afterResolve[0].Kind)
+	require.Equal(t, "ou_owner", afterResolve[0].RecipientOpenID)
+}
+
+// 全员未绑定 → 单行 skipped_unbound 留痕,决策创建不受阻。
+func TestDecisionOutboxSkippedWhenUnbound(t *testing.T) {
+	ctx := context.Background()
+	tenantID := seedTestTenant(t, testDB)
+	ownerID := seedTestAuthUser(t, testDB, "feishu-unbound-owner")
+
+	projectRow, err := testQueries.CreateProject(ctx, queries.CreateProjectParams{
+		ID: uuid.New(), TenantID: tenantID, Name: "unbound project",
+		Goal: pgtype.Text{String: "g", Valid: true}, Status: "active",
+		HumanOwnerUserID: ownerID, ApprovalPolicy: []byte(`{}`), EvidencePolicy: []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	repo := project.NewPgRepository(testQueries)
+	decision, err := repo.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID: tenantID, ProjectID: projectRow.ID, ApprovalRequestID: uuid.New(),
+		TargetUserID: ownerID, DecisionType: "plan_review",
+		TitleSnapshot: "计划评审", StatusSnapshot: "pending",
+	})
+	require.NoError(t, err)
+
+	rows, err := testDB.Query(ctx, "SELECT status, recipient_open_id FROM feishu_outbox WHERE tenant_id=$1 AND resource_id=$2", tenantID, decision.ID)
+	require.NoError(t, err)
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var status, openID string
+		require.NoError(t, rows.Scan(&status, &openID))
+		require.Equal(t, "skipped_unbound", status)
+		require.Equal(t, "", openID)
+		count++
+	}
+	require.Equal(t, 1, count)
 }

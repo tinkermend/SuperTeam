@@ -30,6 +30,28 @@ WEB_WAIT_URL="${SUPERTEAM_DEV_WEB_WAIT_URL-http://127.0.0.1:3000/}"
 RUNTIME_AGENT_CMD="${SUPERTEAM_DEV_RUNTIME_AGENT_CMD:-pnpm run dev:runtime-agent}"
 RUNTIME_AGENT_WAIT_URL="${SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL-}"
 
+# feishu-connector 不进默认 all(飞书通道按需启动);无 HTTP 面,不配 WAIT_URL。
+FEISHU_CONNECTOR_CMD="${SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD:-go run ./apps/feishu-connector}"
+FEISHU_CONNECTOR_WAIT_URL="${SUPERTEAM_DEV_FEISHU_CONNECTOR_WAIT_URL-}"
+
+# 凭据加密主密钥由 control-plane 配置文件承载(config.yaml security.credentialEncryptionKey,
+# 环境变量 CONTROL_PLANE_CREDENTIAL_KEY 可覆盖),脚本不再注入。
+# feishu-connector 服务凭据(经 POST /api/v1/admin/service-tokens 签发后存入该文件)。
+FEISHU_CONNECTOR_TOKEN_FILE="${SUPERTEAM_DEV_FEISHU_CONNECTOR_TOKEN_FILE:-$PROJECT_ROOT/.scratch/dev-services/feishu-connector.token}"
+
+# 自动装载 connector 服务凭据:环境变量优先;无则读文件;都没有仅告警(bootstrap 会失败)。
+ensure_feishu_connector_token() {
+    if [ -n "${FEISHU_CONNECTOR_TOKEN:-}" ]; then
+        return 0
+    fi
+    if [ -f "$FEISHU_CONNECTOR_TOKEN_FILE" ]; then
+        FEISHU_CONNECTOR_TOKEN="$(cat "$FEISHU_CONNECTOR_TOKEN_FILE")"
+        export FEISHU_CONNECTOR_TOKEN
+        return 0
+    fi
+    log_warn "FEISHU_CONNECTOR_TOKEN 未设置且 $FEISHU_CONNECTOR_TOKEN_FILE 不存在;经 POST /api/v1/admin/service-tokens 签发后写入该文件"
+}
+
 OPENFGA_COMPOSE_FILE="${SUPERTEAM_DEV_OPENFGA_COMPOSE_FILE:-$PROJECT_ROOT/docker-compose.dev.yml}"
 OPENFGA_MODE="${SUPERTEAM_DEV_OPENFGA_MODE:-auto}"
 OPENFGA_CMD="${SUPERTEAM_DEV_OPENFGA_CMD:-openfga}"
@@ -113,7 +135,7 @@ ensure_dirs() {
 
 is_known_service() {
     case "$1" in
-        temporal|control-plane|web|runtime-agent|openfga) return 0 ;;
+        temporal|control-plane|web|runtime-agent|openfga|feishu-connector) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -124,6 +146,7 @@ service_command() {
         control-plane) printf '%s\n' "$CONTROL_PLANE_CMD" ;;
         web) printf '%s\n' "$WEB_CMD" ;;
         runtime-agent) printf '%s\n' "$RUNTIME_AGENT_CMD" ;;
+        feishu-connector) printf '%s\n' "$FEISHU_CONNECTOR_CMD" ;;
     esac
 }
 
@@ -134,6 +157,7 @@ service_wait_url() {
         web) printf '%s\n' "$WEB_WAIT_URL" ;;
         runtime-agent) printf '%s\n' "$RUNTIME_AGENT_WAIT_URL" ;;
         openfga) printf '%s\n' "$OPENFGA_WAIT_URL" ;;
+        feishu-connector) printf '%s\n' "$FEISHU_CONNECTOR_WAIT_URL" ;;
     esac
 }
 
@@ -382,6 +406,10 @@ run_control_plane_migrations() {
 start_service() {
     local service="$1"
     ensure_dirs
+
+    case "$service" in
+        feishu-connector) ensure_feishu_connector_token ;;
+    esac
 
     if [ "$service" = "openfga" ]; then
         start_openfga_service

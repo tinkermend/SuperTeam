@@ -26,7 +26,7 @@ use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
 use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest, ProviderRunHandle};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
-use crate::skills::materialize_skills;
+use crate::skills::materialize_provider_skills;
 use crate::workspace_files::{
     WorkspaceMaterializationPlan, atomic_write, materialize_workspace, provider_home_kind,
 };
@@ -288,7 +288,7 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
-        let command_workspace = match self.ensure_command_instance(&command.id, &payload) {
+        let command_workspace = match self.ensure_command_instance(&command.id, &payload).await {
             Ok(command_workspace) => command_workspace,
             Err(error) => {
                 self.write_session_workspace_sync_failure(
@@ -644,8 +644,9 @@ impl RuntimeCommandExecutor {
             if let Some(control_plane_client) = &self.control_plane {
                 let fetcher =
                     crate::skills::PresignSkillArchiveFetcher::new(control_plane_client.clone());
-                if let Err(error) = materialize_skills(
+                if let Err(error) = materialize_provider_skills(
                     &PathBuf::from(&payload.agent_home_dir),
+                    &payload.provider_type,
                     &payload.skills,
                     &fetcher,
                 )
@@ -1001,7 +1002,7 @@ impl RuntimeCommandExecutor {
         }
     }
 
-    fn ensure_command_instance(
+    async fn ensure_command_instance(
         &self,
         command_id: &str,
         payload: &RuntimeSessionCommandPayload,
@@ -1026,59 +1027,103 @@ impl RuntimeCommandExecutor {
 
         // Everything below runs after the session MCP injection above has already
         // written the home-dir config. Any early return from here on must roll the
-        // injection back best-effort, so the fallible steps are collected into this
-        // closure and the single call site below handles rollback + error wrapping
-        // uniformly instead of repeating it at every `?`.
-        let post_inject: anyhow::Result<CommandWorkspace> = (|| {
-            let provider_home = provider_home_kind(&payload.provider_type)?;
-            materialize_workspace(WorkspaceMaterializationPlan {
-                agent_home_dir: agent_home_dir.clone(),
-                provider_home,
-                files: payload.workspace_files.clone(),
-            })?;
-
-            let project_workspace = payload.project_workspace();
-            let capability_manifest_version = project_workspace.capability_manifest_version.clone();
-            let provider_auth_mode = project_workspace.provider_auth_mode.clone();
-            let resolved = crate::project_workspace::resolve_project_workspace(
-                crate::project_workspace::ProjectWorkspaceRequest {
-                    base_dir: self.config.workspace.base_dir.clone(),
-                    project_id: project_workspace.project_id,
-                    project_task_id: project_workspace.project_task_id,
-                    attempt_id: project_workspace.project_task_attempt_id,
-                    workspace_mode: project_workspace
-                        .workspace_mode
-                        .unwrap_or_else(|| "none".to_string()),
-                    project_git: project_workspace.project_git,
-                    base_ref: project_workspace.base_ref,
-                },
-            )?;
-
-            let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
-                &resolved.workspace_path,
-                &payload.provider_type,
-                &payload.mcp_servers,
-            )?;
-
-            crate::project_workspace::link_provider_skills(
-                &agent_home_dir,
-                &resolved.workspace_path,
-                &payload.provider_type,
-            )?;
-
-            Ok(CommandWorkspace {
-                workspace_path: resolved.workspace_path,
-                employee_capability_dir: agent_home_dir.clone(),
-                agent_home_dir: agent_home_dir.clone(),
-                capability_manifest_version,
-                provider_auth_mode,
-                mcp_config_path,
+        // injection back best-effort, so the fallible steps live in one helper and
+        // this single call site handles rollback + error wrapping uniformly.
+        self.ensure_command_instance_post_inject(payload, &agent_home_dir)
+            .await
+            .map_err(|error| {
+                rollback_session_mcp_config_best_effort(
+                    command_id,
+                    Some(agent_home_dir.as_path()),
+                );
+                self.recorded_error(command_id, error)
             })
-        })();
+    }
 
-        post_inject.map_err(|error| {
-            rollback_session_mcp_config_best_effort(command_id, Some(agent_home_dir.as_path()));
-            self.recorded_error(command_id, error)
+    async fn ensure_command_instance_post_inject(
+        &self,
+        payload: &RuntimeSessionCommandPayload,
+        agent_home_dir: &Path,
+    ) -> anyhow::Result<CommandWorkspace> {
+        let provider_home = provider_home_kind(&payload.provider_type)?;
+        materialize_workspace(WorkspaceMaterializationPlan {
+            agent_home_dir: agent_home_dir.to_path_buf(),
+            provider_home,
+            files: payload.workspace_files.clone(),
+        })?;
+
+        // 目录与能力投影修订 spec §2: the session payload's skill set is
+        // materialized into the stable employee capability cache before the
+        // workspace links are made. Per-item checksum markers make this an
+        // incremental no-op when the cache is already current; a declared
+        // skill that cannot be materialized fails the session loudly.
+        if !payload.skills.is_empty() {
+            let control_plane_client = self.control_plane.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("session skills require a control plane client for presigned downloads")
+            })?;
+            let fetcher =
+                crate::skills::PresignSkillArchiveFetcher::new(control_plane_client.clone());
+            crate::skills::materialize_provider_skills(
+                agent_home_dir,
+                &payload.provider_type,
+                &payload.skills,
+                &fetcher,
+            )
+            .await?;
+        }
+
+        let project_workspace = payload.project_workspace();
+        let capability_manifest_version = project_workspace.capability_manifest_version.clone();
+        let provider_auth_mode = project_workspace.provider_auth_mode.clone();
+        let resolved = crate::project_workspace::resolve_project_workspace(
+            crate::project_workspace::ProjectWorkspaceRequest {
+                base_dir: self.config.workspace.base_dir.clone(),
+                project_id: project_workspace.project_id,
+                project_task_id: project_workspace.project_task_id,
+                attempt_id: project_workspace.project_task_attempt_id,
+                chat_thread_id: project_workspace.chat_thread_id,
+                workspace_mode: project_workspace
+                    .workspace_mode
+                    .unwrap_or_else(|| "none".to_string()),
+                project_git: project_workspace.project_git,
+                base_ref: project_workspace.base_ref,
+            },
+        )?;
+
+        let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
+            &resolved.workspace_path,
+            &payload.provider_type,
+            &payload.mcp_servers,
+        )?;
+
+        let skill_keys: Vec<String> = payload
+            .skills
+            .iter()
+            .map(|skill| skill.skill_key.clone())
+            .collect();
+        let skipped = crate::project_workspace::link_provider_skills(
+            agent_home_dir,
+            &resolved.workspace_path,
+            &payload.provider_type,
+            &skill_keys,
+        )?;
+        if !skipped.is_empty() {
+            // Project-native skills won these keys (spec §3.1); Phase 2 wires
+            // this into the dispatch record/attestation.
+            eprintln!(
+                "command {}: employee skills skipped in favor of project-native skills: {}",
+                payload.command_id,
+                skipped.join(",")
+            );
+        }
+
+        Ok(CommandWorkspace {
+            workspace_path: resolved.workspace_path,
+            employee_capability_dir: agent_home_dir.to_path_buf(),
+            agent_home_dir: agent_home_dir.to_path_buf(),
+            capability_manifest_version,
+            provider_auth_mode,
+            mcp_config_path,
         })
     }
 

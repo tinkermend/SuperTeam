@@ -112,6 +112,17 @@ type ChatAnchorProjectValidator interface {
 	ValidateChatAnchorProject(ctx context.Context, tenantID, projectID uuid.UUID) error
 }
 
+// ChatAnchorProjectGitResolver optionally extends ChatAnchorProjectValidator
+// (目录与能力投影修订 spec §4): the chat anchor gains filesystem semantics, so
+// dispatch needs the anchor project's repo binding to seed a readonly worktree.
+// Returns the same metadata shape project task dispatch puts under
+// metadata["project_git"] (url/default_branch/git_credential_ref/scope), or
+// nil when the project has no repo binding. Resolved by type assertion so
+// existing validator fakes keep compiling.
+type ChatAnchorProjectGitResolver interface {
+	ChatAnchorProjectGit(ctx context.Context, tenantID, projectID uuid.UUID) (map[string]any, error)
+}
+
 type RunPreflight struct {
 	TenantID              uuid.UUID
 	TeamID                uuid.UUID

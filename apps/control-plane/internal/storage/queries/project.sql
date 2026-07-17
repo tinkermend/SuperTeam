@@ -8,8 +8,6 @@ INSERT INTO projects (
     goal,
     status,
     human_owner_user_id,
-    leader_user_id,
-    acceptance_user_id,
     coordination_workflow_id,
     coordination_status,
     coordination_policy,
@@ -30,8 +28,6 @@ INSERT INTO projects (
     sqlc.narg('goal')::text,
     sqlc.arg('status')::varchar,
     sqlc.arg('human_owner_user_id')::uuid,
-    sqlc.narg('leader_user_id')::uuid,
-    sqlc.narg('acceptance_user_id')::uuid,
     sqlc.narg('coordination_workflow_id')::varchar,
     sqlc.narg('coordination_status')::varchar,
     COALESCE(sqlc.narg('coordination_policy')::jsonb, '{}'::jsonb),
@@ -93,8 +89,6 @@ WITH visible_demands AS (
       )
       AND (
         p.human_owner_user_id = sqlc.arg('actor_user_id')::uuid
-        OR p.leader_user_id = sqlc.arg('actor_user_id')::uuid
-        OR p.acceptance_user_id = sqlc.arg('actor_user_id')::uuid
         OR EXISTS (
           SELECT 1
           FROM project_members pm
@@ -403,8 +397,6 @@ SET
     goal = COALESCE(sqlc.narg('goal')::text, goal),
     status = COALESCE(sqlc.narg('status')::varchar, status),
     human_owner_user_id = COALESCE(sqlc.narg('human_owner_user_id')::uuid, human_owner_user_id),
-    leader_user_id = COALESCE(sqlc.narg('leader_user_id')::uuid, leader_user_id),
-    acceptance_user_id = COALESCE(sqlc.narg('acceptance_user_id')::uuid, acceptance_user_id),
     coordination_policy = COALESCE(sqlc.narg('coordination_policy')::jsonb, coordination_policy),
     approval_policy = COALESCE(sqlc.narg('approval_policy')::jsonb, approval_policy),
     evidence_policy = COALESCE(sqlc.narg('evidence_policy')::jsonb, evidence_policy),

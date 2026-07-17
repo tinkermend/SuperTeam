@@ -61,14 +61,12 @@ type ProjectConfigViewProps = {
 };
 
 type ConfigDraft = {
-  acceptanceUserID: string;
   approvalPolicy: string;
   coordinationPolicy: string;
   description: string;
   evidencePolicy: string;
   goal: string;
   humanOwnerUserID: string;
-  leaderUserID: string;
   name: string;
 };
 
@@ -428,30 +426,6 @@ export function ProjectConfigView({
                       }
                     />
                   </Field>
-                  <Field label="Leader 用户 ID">
-                    <Input
-                      disabled={configFieldsDisabled}
-                      value={draft.leaderUserID}
-                      onChange={(event) =>
-                        updateDraft((current) => ({
-                          ...current,
-                          leaderUserID: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
-                  <Field label="验收人用户 ID">
-                    <Input
-                      disabled={configFieldsDisabled}
-                      value={draft.acceptanceUserID}
-                      onChange={(event) =>
-                        updateDraft((current) => ({
-                          ...current,
-                          acceptanceUserID: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
                   <Field label="目标">
                     <Textarea
                       disabled={configFieldsDisabled}
@@ -551,14 +525,12 @@ export function ProjectConfigView({
 
 function emptyConfigDraft(): ConfigDraft {
   return {
-    acceptanceUserID: "",
     approvalPolicy: "{}",
     coordinationPolicy: "{}",
     description: "",
     evidencePolicy: "{}",
     goal: "",
     humanOwnerUserID: "",
-    leaderUserID: "",
     name: "",
   };
 }
@@ -572,14 +544,12 @@ function getLatestConfigRevision(revisions: ProjectConfigRevision[]) {
 
 function configToDraft(config: ProjectConfig): ConfigDraft {
   return {
-    acceptanceUserID: config.project.acceptance_user_id ?? "",
     approvalPolicy: JSON.stringify(config.approval_policy ?? {}, null, 2),
     coordinationPolicy: JSON.stringify(config.coordination_policy ?? {}, null, 2),
     description: config.project.description ?? "",
     evidencePolicy: JSON.stringify(config.evidence_policy ?? {}, null, 2),
     goal: config.project.goal,
     humanOwnerUserID: config.project.human_owner_user_id,
-    leaderUserID: config.project.leader_user_id ?? "",
     name: config.project.name,
   };
 }
@@ -602,14 +572,12 @@ function configToMemberDraft(config: ProjectConfig): MemberDraft {
 
 function draftToInput(draft: ConfigDraft): UpdateProjectConfigInput {
   return {
-    acceptance_user_id: draft.acceptanceUserID.trim() || undefined,
     approval_policy: parseJsonObject(draft.approvalPolicy, "审批规则"),
     coordination_policy: parseJsonObject(draft.coordinationPolicy, "协调策略"),
     description: draft.description.trim() || undefined,
     evidence_policy: parseJsonObject(draft.evidencePolicy, "证据归档"),
     goal: draft.goal.trim() || undefined,
     human_owner_user_id: draft.humanOwnerUserID.trim() || undefined,
-    leader_user_id: draft.leaderUserID.trim() || undefined,
     name: draft.name.trim() || undefined,
   };
 }
@@ -641,8 +609,6 @@ function parseMembers(value: string): ProjectMemberInput[] {
     }
     if (
       candidate.project_role !== "owner" &&
-      candidate.project_role !== "leader" &&
-      candidate.project_role !== "acceptance" &&
       candidate.project_role !== "executor" &&
       candidate.project_role !== "reviewer" &&
       candidate.project_role !== "observer"

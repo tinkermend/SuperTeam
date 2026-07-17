@@ -414,11 +414,9 @@ function createProjectFetcher(
     if (url.pathname === "/api/v1/projects" && method === "POST") {
       const body = JSON.parse(String(init?.body)) as Partial<Project>;
       const created = makeProject("project-3", body.name ?? "新建项目");
-      created.acceptance_user_id = body.acceptance_user_id;
       created.description = body.description;
       created.goal = body.goal ?? created.goal;
       created.human_owner_user_id = body.human_owner_user_id ?? created.human_owner_user_id;
-      created.leader_user_id = body.leader_user_id;
       projects.unshift(created);
       return jsonResponse({
         members: [],

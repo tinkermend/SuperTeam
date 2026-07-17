@@ -3,6 +3,7 @@ export * from "./costs";
 export * from "./authz";
 export * from "./client";
 export * from "./employees";
+export * from "./feishu";
 export * from "./health";
 export * from "./inbox";
 export * from "./projects";

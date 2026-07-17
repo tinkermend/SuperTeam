@@ -146,8 +146,6 @@ type ProjectRole string
 
 const (
 	ProjectRoleOwner      ProjectRole = "owner"
-	ProjectRoleLeader     ProjectRole = "leader"
-	ProjectRoleAcceptance ProjectRole = "acceptance"
 	ProjectRoleExecutor   ProjectRole = "executor"
 	ProjectRoleReviewer   ProjectRole = "reviewer"
 	ProjectRoleObserver   ProjectRole = "observer"
@@ -413,8 +411,6 @@ type Project struct {
 	Goal                   string
 	Status                 ProjectStatus
 	HumanOwnerUserID       uuid.UUID
-	LeaderUserID           *uuid.UUID
-	AcceptanceUserID       *uuid.UUID
 	CoordinationWorkflowID string
 	CoordinationStatus     string
 	CoordinationPolicy     map[string]any
@@ -1593,8 +1589,6 @@ type CreateProjectRequest struct {
 	Description        string
 	Goal               string
 	HumanOwnerUserID   uuid.UUID
-	LeaderUserID       *uuid.UUID
-	AcceptanceUserID   *uuid.UUID
 	Members            []ProjectMemberInput
 	CoordinationPolicy map[string]any
 	ApprovalPolicy     map[string]any
@@ -1644,8 +1638,6 @@ type UpdateProjectConfigRequest struct {
 	Description        string
 	Goal               string
 	HumanOwnerUserID   uuid.UUID
-	LeaderUserID       *uuid.UUID
-	AcceptanceUserID   *uuid.UUID
 	Members            *[]ProjectMemberInput
 	CoordinationPolicy map[string]any
 	ApprovalPolicy     map[string]any
