@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -106,6 +107,46 @@ type TaskResultDeliverable struct {
 	Value   string `json:"value,omitempty"`
 	Ref     string `json:"ref,omitempty"`
 	Summary string `json:"summary,omitempty"`
+}
+
+// UnmarshalJSON 对 value 做类型宽容(调度韧性缺陷家族#4):执行者交付结构化
+// 对象/数组/数字时不再 400 拒收——非字符串 JSON 原样紧凑序列化为字符串存储。
+// 拒收会让"会话已完成、结果写不回"的任务永久卡 running,比宽容的代价大得多。
+func (d *TaskResultDeliverable) UnmarshalJSON(data []byte) error {
+	type deliverableAlias struct {
+		Name    string          `json:"name"`
+		Kind    string          `json:"kind,omitempty"`
+		Value   json.RawMessage `json:"value,omitempty"`
+		Ref     string          `json:"ref,omitempty"`
+		Summary string          `json:"summary,omitempty"`
+	}
+	var alias deliverableAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	d.Name = alias.Name
+	d.Kind = alias.Kind
+	d.Ref = alias.Ref
+	d.Summary = alias.Summary
+	d.Value = ""
+	if len(alias.Value) == 0 {
+		return nil
+	}
+	var asString string
+	if err := json.Unmarshal(alias.Value, &asString); err == nil {
+		d.Value = asString
+		return nil
+	}
+	trimmed := strings.TrimSpace(string(alias.Value))
+	if trimmed == "null" {
+		return nil
+	}
+	compact := &bytes.Buffer{}
+	if err := json.Compact(compact, alias.Value); err != nil {
+		return fmt.Errorf("deliverable value is not valid json: %w", err)
+	}
+	d.Value = compact.String()
+	return nil
 }
 
 type TaskResultAcceptanceResult struct {
