@@ -942,6 +942,24 @@ func (e PatchScenarioTemplateRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for PresignRuntimeRawLogRequestObject.
+const (
+	Manifest PresignRuntimeRawLogRequestObject = "manifest"
+	Part     PresignRuntimeRawLogRequestObject = "part"
+)
+
+// Valid indicates whether the value is a known member of the PresignRuntimeRawLogRequestObject enum.
+func (e PresignRuntimeRawLogRequestObject) Valid() bool {
+	switch e {
+	case Manifest:
+		return true
+	case Part:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectAcceptanceRecordStatus.
 const (
 	ProjectAcceptanceRecordStatusAccepted          ProjectAcceptanceRecordStatus = "accepted"
@@ -3612,6 +3630,36 @@ type PatchScenarioTemplateRequest struct {
 // PatchScenarioTemplateRequestStatus defines model for PatchScenarioTemplateRequest.Status.
 type PatchScenarioTemplateRequestStatus string
 
+// PresignRuntimeArtifactRequest defines model for PresignRuntimeArtifactRequest.
+type PresignRuntimeArtifactRequest struct {
+	ContentType *string `json:"content_type,omitempty"`
+	Sha256      string  `json:"sha256"`
+	SizeBytes   int64   `json:"size_bytes"`
+}
+
+// PresignRuntimeRawLogRequest defines model for PresignRuntimeRawLogRequest.
+type PresignRuntimeRawLogRequest struct {
+	AttemptId openapi_types.UUID                `json:"attempt_id"`
+	Object    PresignRuntimeRawLogRequestObject `json:"object"`
+
+	// PartIndex Required when object=part; segment ordinal within the attempt.
+	PartIndex *int32 `json:"part_index,omitempty"`
+	SizeBytes *int64 `json:"size_bytes,omitempty"`
+}
+
+// PresignRuntimeRawLogRequestObject defines model for PresignRuntimeRawLogRequest.Object.
+type PresignRuntimeRawLogRequestObject string
+
+// PresignUploadResponse defines model for PresignUploadResponse.
+type PresignUploadResponse struct {
+	AlreadyExists bool       `json:"already_exists"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	ObjectKey     string     `json:"object_key"`
+
+	// UploadUrl Absent when already_exists=true.
+	UploadUrl *string `json:"upload_url,omitempty"`
+}
+
 // Project defines model for Project.
 type Project struct {
 	AcceptanceUserId       *openapi_types.UUID    `json:"acceptance_user_id,omitempty"`
@@ -3686,23 +3734,29 @@ type ProjectArchiveSnapshot struct {
 
 // ProjectArtifactRef defines model for ProjectArtifactRef.
 type ProjectArtifactRef struct {
-	ArtifactId      *openapi_types.UUID    `json:"artifact_id,omitempty"`
-	ArtifactType    string                 `json:"artifact_type"`
-	Checksum        *string                `json:"checksum,omitempty"`
-	ContentType     *string                `json:"content_type,omitempty"`
-	CreatedAt       *time.Time             `json:"created_at,omitempty"`
-	CreatedEventId  *openapi_types.UUID    `json:"created_event_id,omitempty"`
-	Id              openapi_types.UUID     `json:"id"`
-	Metadata        map[string]interface{} `json:"metadata"`
-	ObjectRef       string                 `json:"object_ref"`
-	ProjectId       openapi_types.UUID     `json:"project_id"`
-	ProjectTaskId   *openapi_types.UUID    `json:"project_task_id,omitempty"`
-	RetentionHoldId *openapi_types.UUID    `json:"retention_hold_id,omitempty"`
-	RetentionStatus string                 `json:"retention_status"`
-	SizeBytes       *int64                 `json:"size_bytes,omitempty"`
-	TenantId        openapi_types.UUID     `json:"tenant_id"`
-	Title           string                 `json:"title"`
-	UpdatedAt       *time.Time             `json:"updated_at,omitempty"`
+	ArtifactId   *openapi_types.UUID `json:"artifact_id,omitempty"`
+	ArtifactType string              `json:"artifact_type"`
+
+	// AttemptId Producing project task attempt (execution lineage); absent for manual/project-level artifacts.
+	AttemptId      *openapi_types.UUID `json:"attempt_id,omitempty"`
+	Checksum       *string             `json:"checksum,omitempty"`
+	ContentType    *string             `json:"content_type,omitempty"`
+	CreatedAt      *time.Time          `json:"created_at,omitempty"`
+	CreatedEventId *openapi_types.UUID `json:"created_event_id,omitempty"`
+
+	// DigitalEmployeeId Producing digital employee (execution lineage).
+	DigitalEmployeeId *openapi_types.UUID    `json:"digital_employee_id,omitempty"`
+	Id                openapi_types.UUID     `json:"id"`
+	Metadata          map[string]interface{} `json:"metadata"`
+	ObjectRef         string                 `json:"object_ref"`
+	ProjectId         openapi_types.UUID     `json:"project_id"`
+	ProjectTaskId     *openapi_types.UUID    `json:"project_task_id,omitempty"`
+	RetentionHoldId   *openapi_types.UUID    `json:"retention_hold_id,omitempty"`
+	RetentionStatus   string                 `json:"retention_status"`
+	SizeBytes         *int64                 `json:"size_bytes,omitempty"`
+	TenantId          openapi_types.UUID     `json:"tenant_id"`
+	Title             string                 `json:"title"`
+	UpdatedAt         *time.Time             `json:"updated_at,omitempty"`
 }
 
 // ProjectBudgetLedgerEntry defines model for ProjectBudgetLedgerEntry.
@@ -5043,7 +5097,18 @@ type SkillTeamBinding struct {
 }
 
 // StartProjectTaskAttemptRequest defines model for StartProjectTaskAttemptRequest.
-type StartProjectTaskAttemptRequest = ProjectTaskAttemptRuntimeFields
+type StartProjectTaskAttemptRequest struct {
+	// CommandId Runtime command executing this attempt; used to backfill a missing digital_employee_run_id linkage left by dispatch-conflict bookkeeping failures.
+	CommandId         *string            `json:"command_id,omitempty"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	LeaseToken        string             `json:"lease_token"`
+	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
+	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
+
+	// RawLog Pointer to the unparsed provider stdout/stderr uploaded by the runtime. log_sha256 is reported by the same process that produced the bytes, so the control plane must recompute it before treating it as tamper evidence.
+	RawLog        *ProjectTaskAttemptRawLog `json:"raw_log,omitempty"`
+	RuntimeNodeId openapi_types.UUID        `json:"runtime_node_id"`
+}
 
 // StopDigitalEmployeeRunRequest defines model for StopDigitalEmployeeRunRequest.
 type StopDigitalEmployeeRunRequest struct {
@@ -5137,9 +5202,23 @@ type TaskResultCriterionStatus string
 
 // TaskResultRef defines model for TaskResultRef.
 type TaskResultRef struct {
-	Ref     string  `json:"ref"`
-	Summary *string `json:"summary,omitempty"`
-	Type    string  `json:"type"`
+	ContentType *string `json:"content_type,omitempty"`
+
+	// IsEvidence True for tool-produced content (execution_transcript/diff/declared); false for digital-employee self reports (conclusion). Bare string refs default to false.
+	IsEvidence *bool `json:"is_evidence,omitempty"`
+
+	// Name Human-readable artifact file name (raw.jsonl / changes.diff / conclusion.md).
+	Name *string `json:"name,omitempty"`
+	Ref  string  `json:"ref"`
+
+	// Sha256 Content hash of the uploaded (redacted) bytes; presence marks the ref as a runtime-uploaded, content-addressed artifact.
+	Sha256    *string `json:"sha256,omitempty"`
+	SizeBytes *int64  `json:"size_bytes,omitempty"`
+	Summary   *string `json:"summary,omitempty"`
+
+	// Truncated True when the collected file exceeded the single-file cap and was truncated before upload.
+	Truncated *bool  `json:"truncated,omitempty"`
+	Type      string `json:"type"`
 }
 
 // TaskResultStatus defines model for TaskResultStatus.
@@ -5916,6 +5995,11 @@ type RegisterRuntimeNodeParams struct {
 	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
 }
 
+// PresignRuntimeSkillArchiveDownloadJSONBody defines parameters for PresignRuntimeSkillArchiveDownload.
+type PresignRuntimeSkillArchiveDownloadJSONBody struct {
+	ArchiveObjectRef string `json:"archive_object_ref"`
+}
+
 // ClaimRuntimeTaskParams defines parameters for ClaimRuntimeTask.
 type ClaimRuntimeTaskParams struct {
 	Timeout *int                `form:"timeout,omitempty" json:"timeout,omitempty"`
@@ -6105,6 +6189,9 @@ type PutProjectRuntimePlacementJSONRequestBody = PutProjectRuntimePlacementReque
 // AppendProviderSessionEventJSONRequestBody defines body for AppendProviderSessionEvent for application/json ContentType.
 type AppendProviderSessionEventJSONRequestBody = AppendProviderSessionEventRequest
 
+// PresignRuntimeArtifactUploadJSONRequestBody defines body for PresignRuntimeArtifactUpload for application/json ContentType.
+type PresignRuntimeArtifactUploadJSONRequestBody = PresignRuntimeArtifactRequest
+
 // CancelRuntimeCommandJSONRequestBody defines body for CancelRuntimeCommand for application/json ContentType.
 type CancelRuntimeCommandJSONRequestBody = RuntimeCommandTerminalWritebackRequest
 
@@ -6159,11 +6246,17 @@ type WaitHumanProjectTaskAttemptJSONRequestBody = WaitHumanProjectTaskAttemptReq
 // CreateProjectTaskAttestationJSONRequestBody defines body for CreateProjectTaskAttestation for application/json ContentType.
 type CreateProjectTaskAttestationJSONRequestBody = CreateProjectTaskAttestationRequest
 
+// PresignRuntimeRawLogUploadJSONRequestBody defines body for PresignRuntimeRawLogUpload for application/json ContentType.
+type PresignRuntimeRawLogUploadJSONRequestBody = PresignRuntimeRawLogRequest
+
 // RegisterRuntimeNodeJSONRequestBody defines body for RegisterRuntimeNode for application/json ContentType.
 type RegisterRuntimeNodeJSONRequestBody = RegisterRuntimeNodeRequest
 
 // RevokeRuntimeSessionJSONRequestBody defines body for RevokeRuntimeSession for application/json ContentType.
 type RevokeRuntimeSessionJSONRequestBody = RevokeRuntimeSessionRequest
+
+// PresignRuntimeSkillArchiveDownloadJSONRequestBody defines body for PresignRuntimeSkillArchiveDownload for application/json ContentType.
+type PresignRuntimeSkillArchiveDownloadJSONRequestBody PresignRuntimeSkillArchiveDownloadJSONBody
 
 // CompleteRuntimeTaskJSONRequestBody defines body for CompleteRuntimeTask for application/json ContentType.
 type CompleteRuntimeTaskJSONRequestBody = CompleteTaskRequest
@@ -6701,6 +6794,9 @@ func (t *ProviderSessionEvent) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Retrieve an artifact's raw content via presigned redirect
+	// (GET /api/v1/artifacts/{artifactRefId}/content)
+	GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID)
 	// List audit events by project resource
 	// (GET /api/v1/audit/events)
 	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
@@ -7019,6 +7115,9 @@ type ServerInterface interface {
 	// Append a provider session event reported by Runtime Agent
 	// (POST /api/v1/provider-sessions/{providerSessionId}/events)
 	AppendProviderSessionEvent(w http.ResponseWriter, r *http.Request, providerSessionId ProviderSessionId, params AppendProviderSessionEventParams)
+	// Presign a direct upload URL for a content-addressed artifact
+	// (POST /api/v1/runtime/artifacts/presign)
+	PresignRuntimeArtifactUpload(w http.ResponseWriter, r *http.Request)
 	// Cancel a Runtime command reported by Runtime Agent
 	// (POST /api/v1/runtime/commands/{commandId}/cancelled)
 	CancelRuntimeCommand(w http.ResponseWriter, r *http.Request, commandId CommandId, params CancelRuntimeCommandParams)
@@ -7094,6 +7193,9 @@ type ServerInterface interface {
 	// Record a Runtime attestation for a ProjectTask attempt
 	// (POST /api/v1/runtime/project-task-attestations)
 	CreateProjectTaskAttestation(w http.ResponseWriter, r *http.Request)
+	// Presign a direct upload URL for a raw transcript segment or manifest
+	// (POST /api/v1/runtime/raw-logs/presign)
+	PresignRuntimeRawLogUpload(w http.ResponseWriter, r *http.Request)
 	// Register a Runtime Agent node
 	// (POST /api/v1/runtime/register)
 	RegisterRuntimeNode(w http.ResponseWriter, r *http.Request, params RegisterRuntimeNodeParams)
@@ -7103,6 +7205,9 @@ type ServerInterface interface {
 	// Revoke a short-lived Runtime Agent session
 	// (POST /api/v1/runtime/sessions/{sessionId}/revoke)
 	RevokeRuntimeSession(w http.ResponseWriter, r *http.Request, sessionId RuntimeSessionId)
+	// Presign a direct download URL for a skill archive
+	// (POST /api/v1/runtime/skills/presign)
+	PresignRuntimeSkillArchiveDownload(w http.ResponseWriter, r *http.Request)
 	// Deprecated legacy Runtime task claim; use RuntimeCommand start_session and ProjectTaskAttempt writeback
 	// (POST /api/v1/runtime/tasks/claim)
 	ClaimRuntimeTask(w http.ResponseWriter, r *http.Request, params ClaimRuntimeTaskParams)
@@ -7303,6 +7408,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// Retrieve an artifact's raw content via presigned redirect
+// (GET /api/v1/artifacts/{artifactRefId}/content)
+func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // List audit events by project resource
 // (GET /api/v1/audit/events)
@@ -7940,6 +8051,12 @@ func (_ Unimplemented) AppendProviderSessionEvent(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Presign a direct upload URL for a content-addressed artifact
+// (POST /api/v1/runtime/artifacts/presign)
+func (_ Unimplemented) PresignRuntimeArtifactUpload(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Cancel a Runtime command reported by Runtime Agent
 // (POST /api/v1/runtime/commands/{commandId}/cancelled)
 func (_ Unimplemented) CancelRuntimeCommand(w http.ResponseWriter, r *http.Request, commandId CommandId, params CancelRuntimeCommandParams) {
@@ -8090,6 +8207,12 @@ func (_ Unimplemented) CreateProjectTaskAttestation(w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Presign a direct upload URL for a raw transcript segment or manifest
+// (POST /api/v1/runtime/raw-logs/presign)
+func (_ Unimplemented) PresignRuntimeRawLogUpload(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Register a Runtime Agent node
 // (POST /api/v1/runtime/register)
 func (_ Unimplemented) RegisterRuntimeNode(w http.ResponseWriter, r *http.Request, params RegisterRuntimeNodeParams) {
@@ -8105,6 +8228,12 @@ func (_ Unimplemented) RenewRuntimeSession(w http.ResponseWriter, r *http.Reques
 // Revoke a short-lived Runtime Agent session
 // (POST /api/v1/runtime/sessions/{sessionId}/revoke)
 func (_ Unimplemented) RevokeRuntimeSession(w http.ResponseWriter, r *http.Request, sessionId RuntimeSessionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Presign a direct download URL for a skill archive
+// (POST /api/v1/runtime/skills/presign)
+func (_ Unimplemented) PresignRuntimeSkillArchiveDownload(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8506,6 +8635,32 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetArtifactContent operation middleware
+func (siw *ServerInterfaceWrapper) GetArtifactContent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "artifactRefId" -------------
+	var artifactRefId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "artifactRefId", chi.URLParam(r, "artifactRefId"), &artifactRefId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "artifactRefId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArtifactContent(w, r, artifactRefId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListAuditEvents operation middleware
 func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *http.Request) {
@@ -12541,6 +12696,20 @@ func (siw *ServerInterfaceWrapper) AppendProviderSessionEvent(w http.ResponseWri
 	handler.ServeHTTP(w, r)
 }
 
+// PresignRuntimeArtifactUpload operation middleware
+func (siw *ServerInterfaceWrapper) PresignRuntimeArtifactUpload(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PresignRuntimeArtifactUpload(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CancelRuntimeCommand operation middleware
 func (siw *ServerInterfaceWrapper) CancelRuntimeCommand(w http.ResponseWriter, r *http.Request) {
 
@@ -13467,6 +13636,20 @@ func (siw *ServerInterfaceWrapper) CreateProjectTaskAttestation(w http.ResponseW
 	handler.ServeHTTP(w, r)
 }
 
+// PresignRuntimeRawLogUpload operation middleware
+func (siw *ServerInterfaceWrapper) PresignRuntimeRawLogUpload(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PresignRuntimeRawLogUpload(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RegisterRuntimeNode operation middleware
 func (siw *ServerInterfaceWrapper) RegisterRuntimeNode(w http.ResponseWriter, r *http.Request) {
 
@@ -13555,6 +13738,20 @@ func (siw *ServerInterfaceWrapper) RevokeRuntimeSession(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeRuntimeSession(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PresignRuntimeSkillArchiveDownload operation middleware
+func (siw *ServerInterfaceWrapper) PresignRuntimeSkillArchiveDownload(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PresignRuntimeSkillArchiveDownload(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15807,6 +16004,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/artifacts/{artifactRefId}/content", wrapper.GetArtifactContent)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/audit/events", wrapper.ListAuditEvents)
 	})
 	r.Group(func(r chi.Router) {
@@ -16125,6 +16325,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/provider-sessions/{providerSessionId}/events", wrapper.AppendProviderSessionEvent)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/artifacts/presign", wrapper.PresignRuntimeArtifactUpload)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/commands/{commandId}/cancelled", wrapper.CancelRuntimeCommand)
 	})
 	r.Group(func(r chi.Router) {
@@ -16200,6 +16403,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attestations", wrapper.CreateProjectTaskAttestation)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/raw-logs/presign", wrapper.PresignRuntimeRawLogUpload)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/register", wrapper.RegisterRuntimeNode)
 	})
 	r.Group(func(r chi.Router) {
@@ -16207,6 +16413,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/sessions/{sessionId}/revoke", wrapper.RevokeRuntimeSession)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/skills/presign", wrapper.PresignRuntimeSkillArchiveDownload)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/tasks/claim", wrapper.ClaimRuntimeTask)

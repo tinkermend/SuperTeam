@@ -1307,6 +1307,7 @@ func (h *HTTPHandler) StartProjectTaskAttempt(w http.ResponseWriter, r *http.Req
 	}
 	if _, err := service.StartProjectTaskAttempt(r.Context(), StartProjectTaskAttemptRequest{
 		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+		CommandID:                        strings.TrimSpace(body.CommandID),
 	}); err != nil {
 		writeHandlerError(w, err)
 		return
@@ -2032,6 +2033,7 @@ func (b *projectTaskAttemptRawLogBody) toRawLog() *ProjectTaskAttemptRawLog {
 
 type startProjectTaskAttemptBody struct {
 	ProjectTaskAttemptRuntimeBody
+	CommandID string `json:"command_id"`
 }
 
 type renewProjectTaskAttemptLeaseBody struct {
@@ -2726,23 +2728,25 @@ type projectEvidenceResponse struct {
 }
 
 type projectArtifactResponse struct {
-	ID              string         `json:"id"`
-	TenantID        string         `json:"tenant_id"`
-	ProjectID       string         `json:"project_id"`
-	ProjectTaskID   *string        `json:"project_task_id,omitempty"`
-	ArtifactID      *string        `json:"artifact_id,omitempty"`
-	ArtifactType    string         `json:"artifact_type"`
-	Title           string         `json:"title"`
-	ObjectRef       string         `json:"object_ref"`
-	ContentType     *string        `json:"content_type,omitempty"`
-	SizeBytes       *int64         `json:"size_bytes,omitempty"`
-	Checksum        *string        `json:"checksum,omitempty"`
-	RetentionStatus string         `json:"retention_status"`
-	RetentionHoldID *string        `json:"retention_hold_id,omitempty"`
-	Metadata        map[string]any `json:"metadata"`
-	CreatedEventID  *string        `json:"created_event_id,omitempty"`
-	CreatedAt       string         `json:"created_at,omitempty"`
-	UpdatedAt       string         `json:"updated_at,omitempty"`
+	ID                string         `json:"id"`
+	TenantID          string         `json:"tenant_id"`
+	ProjectID         string         `json:"project_id"`
+	ProjectTaskID     *string        `json:"project_task_id,omitempty"`
+	AttemptID         *string        `json:"attempt_id,omitempty"`
+	DigitalEmployeeID *string        `json:"digital_employee_id,omitempty"`
+	ArtifactID        *string        `json:"artifact_id,omitempty"`
+	ArtifactType      string         `json:"artifact_type"`
+	Title             string         `json:"title"`
+	ObjectRef         string         `json:"object_ref"`
+	ContentType       *string        `json:"content_type,omitempty"`
+	SizeBytes         *int64         `json:"size_bytes,omitempty"`
+	Checksum          *string        `json:"checksum,omitempty"`
+	RetentionStatus   string         `json:"retention_status"`
+	RetentionHoldID   *string        `json:"retention_hold_id,omitempty"`
+	Metadata          map[string]any `json:"metadata"`
+	CreatedEventID    *string        `json:"created_event_id,omitempty"`
+	CreatedAt         string         `json:"created_at,omitempty"`
+	UpdatedAt         string         `json:"updated_at,omitempty"`
 }
 
 type projectReportResponse struct {
@@ -3735,23 +3739,25 @@ func artifactResponses(artifacts []ProjectArtifactRef) []projectArtifactResponse
 
 func artifactResponseFromDomain(artifact ProjectArtifactRef) projectArtifactResponse {
 	return projectArtifactResponse{
-		ID:              artifact.ID.String(),
-		TenantID:        artifact.TenantID.String(),
-		ProjectID:       artifact.ProjectID.String(),
-		ProjectTaskID:   stringPtr(artifact.ProjectTaskID),
-		ArtifactID:      stringPtr(artifact.ArtifactID),
-		ArtifactType:    artifact.ArtifactType,
-		Title:           artifact.Title,
-		ObjectRef:       artifact.ObjectRef,
-		ContentType:     artifact.ContentType,
-		SizeBytes:       artifact.SizeBytes,
-		Checksum:        artifact.Checksum,
-		RetentionStatus: artifact.RetentionStatus,
-		RetentionHoldID: stringPtr(artifact.RetentionHoldID),
-		Metadata:        mapOrEmpty(artifact.Metadata),
-		CreatedEventID:  stringPtr(artifact.CreatedEventID),
-		CreatedAt:       timeValue(artifact.CreatedAt),
-		UpdatedAt:       timeValue(artifact.UpdatedAt),
+		ID:                artifact.ID.String(),
+		TenantID:          artifact.TenantID.String(),
+		ProjectID:         artifact.ProjectID.String(),
+		ProjectTaskID:     stringPtr(artifact.ProjectTaskID),
+		AttemptID:         stringPtr(artifact.AttemptID),
+		DigitalEmployeeID: stringPtr(artifact.DigitalEmployeeID),
+		ArtifactID:        stringPtr(artifact.ArtifactID),
+		ArtifactType:      artifact.ArtifactType,
+		Title:             artifact.Title,
+		ObjectRef:         artifact.ObjectRef,
+		ContentType:       artifact.ContentType,
+		SizeBytes:         artifact.SizeBytes,
+		Checksum:          artifact.Checksum,
+		RetentionStatus:   artifact.RetentionStatus,
+		RetentionHoldID:   stringPtr(artifact.RetentionHoldID),
+		Metadata:          mapOrEmpty(artifact.Metadata),
+		CreatedEventID:    stringPtr(artifact.CreatedEventID),
+		CreatedAt:         timeValue(artifact.CreatedAt),
+		UpdatedAt:         timeValue(artifact.UpdatedAt),
 	}
 }
 

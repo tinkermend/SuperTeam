@@ -53,6 +53,7 @@ const STATUS_LABELS: Record<string, string> = {
   superseded: "已被替代",
   timed_out: "已超时",
   unknown: "未知",
+  unverified: "自述·不构成证据",
   verified: "已验证",
   waiting: "等待中",
   waiting_human: "等待人工",

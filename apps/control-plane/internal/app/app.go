@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api"
@@ -324,6 +325,29 @@ func isRunStartIdempotencyFingerprintMismatch(err error) bool {
 	return errors.Is(err, employee.ErrConflict) && strings.Contains(err.Error(), "idempotency fingerprint mismatch")
 }
 
+// artifactObjectStoreAdapter narrows storage.S3ObjectStore to the primitive
+// signature project.ArtifactObjectStore expects (no storage types leak into
+// the project package).
+type artifactObjectStoreAdapter struct {
+	store *storage.S3ObjectStore
+}
+
+func (a artifactObjectStoreAdapter) StatObject(ctx context.Context, key string) (bool, int64, error) {
+	stat, err := a.store.StatObject(ctx, key)
+	if err != nil {
+		return false, 0, err
+	}
+	return stat.Exists, stat.SizeBytes, nil
+}
+
+func (a artifactObjectStoreAdapter) PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (string, error) {
+	return a.store.PresignPut(ctx, key, contentType, ttl)
+}
+
+func (a artifactObjectStoreAdapter) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	return a.store.PresignGet(ctx, key, ttl)
+}
+
 type projectArtifactLocker struct {
 	artifactService *artifact.Service
 	projectEvents   projectEventAppender
@@ -495,6 +519,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 
 	projectRepository := project.NewPgRepository(q, stores.Postgres)
+	if pgProjectRepository, ok := projectRepository.(*project.PgRepository); ok {
+		adapter := artifactObjectStoreAdapter{store: stores.ObjectStore}
+		pgProjectRepository.SetArtifactObjectVerifier(adapter.StatObject)
+	}
 	decisionProjector := inbox.NewDecisionProjectorAdapter(inboxService)
 
 	auditRepository := audit.NewPgRepository(q)
@@ -589,6 +617,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	projectService.SetArtifactObjectStore(artifactObjectStoreAdapter{store: stores.ObjectStore})
 	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
 	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}})
 	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})

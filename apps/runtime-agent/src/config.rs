@@ -13,17 +13,6 @@ pub struct RuntimeConfig {
     pub providers: ProvidersSection,
     pub tools: ToolsSection,
     pub logging: LoggingSection,
-    pub s3: Option<S3Section>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct S3Section {
-    pub endpoint: String,
-    pub region: String,
-    pub bucket: String,
-    pub access_key_id: String,
-    pub secret_access_key: String,
-    pub force_path_style: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,18 +88,10 @@ struct FileConfig {
     providers: Option<FileProvidersSection>,
     tools: Option<FileToolsSection>,
     logging: Option<FileLoggingSection>,
-    s3: Option<FileS3Section>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FileS3Section {
-    endpoint: String,
-    region: String,
-    bucket: String,
-    access_key_id: String,
-    secret_access_key: String,
+    /// 兼容读入并忽略:runtime 不再持有对象存储凭证(证据地基 spec §8 修订 1),
+    /// 上传/下载一律经控制平面 presigned URL。
     #[serde(default)]
-    force_path_style: bool,
+    s3: Option<serde_yaml_ng::Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -167,20 +148,6 @@ struct FileLoggingSection {
 }
 
 impl RuntimeConfig {
-    fn ensure_s3(&mut self) -> &mut S3Section {
-        if self.s3.is_none() {
-            self.s3 = Some(S3Section {
-                endpoint: String::new(),
-                region: String::new(),
-                bucket: String::new(),
-                access_key_id: String::new(),
-                secret_access_key: String::new(),
-                force_path_style: false,
-            });
-        }
-        self.s3.as_mut().unwrap()
-    }
-
     pub fn new(node_id: impl Into<String>) -> anyhow::Result<Self> {
         let mut cfg = Self::default();
         cfg.runtime.node_id = node_id.into().trim().to_string();
@@ -288,16 +255,8 @@ impl RuntimeConfig {
             }
         }
 
-        if let Some(s3) = file.s3 {
-            self.s3 = Some(S3Section {
-                endpoint: s3.endpoint,
-                region: s3.region,
-                bucket: s3.bucket,
-                access_key_id: s3.access_key_id,
-                secret_access_key: s3.secret_access_key,
-                force_path_style: s3.force_path_style,
-            });
-        }
+        // file.s3 兼容读入并忽略(见 FileConfig.s3 注释)。
+        let _ = file.s3;
 
         Ok(())
     }
@@ -377,24 +336,6 @@ impl RuntimeConfig {
             }
             "RUNTIME_AGENT_TOOL_PROBE_NAMES" => {
                 self.tools.probe_names = parse_tool_probe_names(value);
-            }
-            "S3_ENDPOINT" => {
-                self.ensure_s3().endpoint = value.to_string();
-            }
-            "S3_REGION" => {
-                self.ensure_s3().region = value.to_string();
-            }
-            "S3_BUCKET" => {
-                self.ensure_s3().bucket = value.to_string();
-            }
-            "S3_ACCESS_KEY_ID" => {
-                self.ensure_s3().access_key_id = value.to_string();
-            }
-            "S3_SECRET_ACCESS_KEY" => {
-                self.ensure_s3().secret_access_key = value.to_string();
-            }
-            "S3_FORCE_PATH_STYLE" => {
-                self.ensure_s3().force_path_style = parse_env(key, value)?;
             }
             _ => {}
         }
@@ -503,7 +444,6 @@ impl Default for RuntimeConfig {
                 output: "stdout".to_string(),
                 file_path: None,
             },
-            s3: None,
         }
     }
 }

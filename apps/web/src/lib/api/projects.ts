@@ -149,7 +149,9 @@ export type ProjectEvidenceVerificationStatus =
   | "linked"
   | "verified"
   | "rejected"
-  | "superseded";
+  | "superseded"
+  /** 数字员工自述(self_report):可读但不构成证据。 */
+  | "unverified";
 export type ProjectAcceptanceStatus =
   | "accepted"
   | "rejected"

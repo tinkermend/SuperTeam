@@ -42,9 +42,17 @@ func TestGeneratedTaskResultSchemasExposeOnlyPlannedPublicFields(t *testing.T) {
 		"Notes",
 		"Status",
 	})
+	// 证据地基 spec §4.6:artifact_refs 元素扩展为对象形态(内容寻址上传),
+	// 新增字段为计划内公开字段。
 	requireGeneratedFields(gen.TaskResultRef{}, []string{
+		"ContentType",
+		"IsEvidence",
+		"Name",
 		"Ref",
+		"Sha256",
+		"SizeBytes",
 		"Summary",
+		"Truncated",
 		"Type",
 	})
 }

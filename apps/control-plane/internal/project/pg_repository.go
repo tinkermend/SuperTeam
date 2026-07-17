@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,6 +28,9 @@ const (
 type PgRepository struct {
 	q  *queries.Queries
 	db projectTransactionBeginner
+	// artifactObjectVerifier 在物化前核实 runtime 声称已上传的对象确实存在且
+	// 大小相符(spec §4.4 第 2 步);返回 (exists, sizeBytes, err)。
+	artifactObjectVerifier func(ctx context.Context, key string) (bool, int64, error)
 }
 
 type projectTransactionBeginner interface {
@@ -3664,6 +3668,7 @@ func (r *PgRepository) StartProjectTaskAttemptWriteback(ctx context.Context, req
 			ID:                req.AttemptID,
 			RuntimeNodeID:     req.RuntimeNodeID,
 			ProviderSessionID: textPtr(req.ProviderSessionID),
+			CommandID:         textOrNull(req.CommandID),
 			LeaseToken:        req.LeaseToken,
 		})
 		if err != nil {
@@ -3845,16 +3850,176 @@ func (r *PgRepository) RenewProjectTaskAttemptLeaseWriteback(ctx context.Context
 	return projectTaskAttemptFromRecord(row)
 }
 
-// extractExecutionEvidenceRefsWithQueries persists each evidence_ref carried on a
-// completed task's execution summary into the project_evidence_refs read model.
-// The /projects/{id}/evidence endpoint reads that read model, so without this
-// extraction the evidence a digital employee produced (runtime commands, session
-// refs, artifacts) stays buried on the execution_summary row and never surfaces —
-// which is why evidence lists read empty even though summaries carry evidence_refs.
-// Best-effort: the authoritative refs live on the summary, so a malformed
-// individual entry is skipped rather than failing the completion writeback.
-func (r *PgRepository) extractExecutionEvidenceRefsWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID, taskID *uuid.UUID, employeeID uuid.UUID, summaryID uuid.UUID, refs []any) {
-	for _, raw := range refs {
+// SetArtifactObjectVerifier 注入对象存在性核验(app 装配时来自对象存储的
+// StatObject);未注入时含已上传 artifact 的物化直接失败——宁可拒绝完成,
+// 不写无法核验的"证据"。
+func (r *PgRepository) SetArtifactObjectVerifier(verifier func(ctx context.Context, key string) (bool, int64, error)) {
+	r.artifactObjectVerifier = verifier
+}
+
+// uploadedArtifactRef 是 runtime 采集上传后写进 result contract 的对象形态
+// artifact_refs 元素(契约 TaskResultRef 扩展字段,spec §4.6)。
+type uploadedArtifactRef struct {
+	Type        string
+	Name        string
+	Sha256      string
+	SizeBytes   int64
+	ContentType string
+	Truncated   bool
+	IsEvidence  bool
+	Raw         map[string]any
+}
+
+var uploadedArtifactSha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+// parseUploadedArtifactRef 只认携带合法 sha256 的对象形态元素;裸字符串与无
+// sha256 的对象是自报引用(无内容可核验),走旧的 parseArtifactRefElement 路径。
+func parseUploadedArtifactRef(raw any) (uploadedArtifactRef, bool) {
+	entry, ok := raw.(map[string]any)
+	if !ok {
+		return uploadedArtifactRef{}, false
+	}
+	sha, _ := entry["sha256"].(string)
+	sha = strings.ToLower(strings.TrimSpace(sha))
+	if !uploadedArtifactSha256Pattern.MatchString(sha) {
+		return uploadedArtifactRef{}, false
+	}
+	parsed := uploadedArtifactRef{Sha256: sha, Raw: entry}
+	parsed.Type, _ = entry["type"].(string)
+	parsed.Type = strings.TrimSpace(parsed.Type)
+	if parsed.Type == "" {
+		parsed.Type = "execution_artifact"
+	}
+	parsed.Name, _ = entry["name"].(string)
+	parsed.Name = strings.TrimSpace(parsed.Name)
+	if parsed.Name == "" {
+		parsed.Name = parsed.Type
+	}
+	parsed.ContentType, _ = entry["content_type"].(string)
+	switch size := entry["size_bytes"].(type) {
+	case float64:
+		parsed.SizeBytes = int64(size)
+	case int64:
+		parsed.SizeBytes = size
+	}
+	parsed.Truncated, _ = entry["truncated"].(bool)
+	parsed.IsEvidence, _ = entry["is_evidence"].(bool)
+	return parsed, true
+}
+
+// evidenceRowForArtifactType 把 artifact 类型映射为证据行语义(spec §4.4 第 3 步):
+// 工具产生的内容是可核验证据(submitted);数字员工自述(conclusion 等
+// is_evidence=false)只能是 self_report/unverified,不冒充证据。
+func evidenceRowForArtifactType(artifactType string, isEvidence bool) (string, EvidenceVerificationStatus) {
+	if !isEvidence {
+		return "self_report", EvidenceVerificationStatusUnverified
+	}
+	switch artifactType {
+	case "execution_transcript":
+		return "execution_transcript", EvidenceVerificationStatusSubmitted
+	case "diff":
+		return "code_change", EvidenceVerificationStatusSubmitted
+	case "declared":
+		return "declared_output", EvidenceVerificationStatusSubmitted
+	default:
+		return artifactType, EvidenceVerificationStatusSubmitted
+	}
+}
+
+// materializeAttemptEvidenceWithQueries 是物化路径合一后的唯一执行侧证据/工件
+// 写入点(spec §4.4、§8 修订 2/6),在 attempt writeback 事务内运行:
+//   - 对象形态 artifact_refs:核验对象存在且大小相符 → upsert
+//     project_artifact_refs(attempt 血缘,attempt 内幂等)→ 派生证据行
+//     (artifact_ref_id 指向可取回对象)。
+//   - 自报引用(裸字符串/无 sha256):保留 artifact 行以供人类查看,不派生证据。
+//   - evidence_refs(runtime-command:// 等指针):照写证据行(submitted),
+//     但不计入真证据。
+//
+// 零真证据 → 返回错误 → 整个 completion 回滚:数字员工不能只交一份自述就把
+// 任务标完成(spec §4.4 第 4 步)。
+func (r *PgRepository) materializeAttemptEvidenceWithQueries(ctx context.Context, q *queries.Queries, req CompleteProjectTaskAttemptRequest, projectID uuid.UUID, taskID uuid.UUID, summaryID uuid.UUID) error {
+	verifiedEvidenceCount := 0
+
+	for _, raw := range req.ArtifactRefs {
+		if uploaded, ok := parseUploadedArtifactRef(raw); ok {
+			objectKey := fmt.Sprintf("artifacts/%s/sha256/%s", req.TenantID, uploaded.Sha256)
+			if r.artifactObjectVerifier == nil {
+				return fmt.Errorf("%w: artifact object verifier is not configured", ErrInvalidProjectEvidence)
+			}
+			exists, sizeBytes, err := r.artifactObjectVerifier(ctx, objectKey)
+			if err != nil {
+				return fmt.Errorf("verify artifact object %s: %w", objectKey, err)
+			}
+			if !exists {
+				return fmt.Errorf("%w: artifact object %s does not exist in object store", ErrInvalidProjectEvidence, objectKey)
+			}
+			if uploaded.SizeBytes > 0 && sizeBytes != uploaded.SizeBytes {
+				return fmt.Errorf("%w: artifact object %s size mismatch (declared %d, stored %d)", ErrInvalidProjectEvidence, objectKey, uploaded.SizeBytes, sizeBytes)
+			}
+			artifact, err := r.createArtifactRefWithQueries(ctx, q, CreateArtifactRefRequest{
+				TenantID:          req.TenantID,
+				ProjectID:         projectID,
+				ProjectTaskID:     &taskID,
+				AttemptID:         &req.AttemptID,
+				DigitalEmployeeID: &req.DigitalEmployeeID,
+				ArtifactType:      uploaded.Type,
+				Title:             uploaded.Name,
+				ObjectRef:         objectKey,
+				ContentType:       uploaded.ContentType,
+				SizeBytes:         &sizeBytes,
+				Checksum:          uploaded.Sha256,
+				RetentionStatus:   "pending",
+				Metadata:          uploaded.Raw,
+			})
+			if err != nil {
+				return fmt.Errorf("materialize artifact ref %s: %w", objectKey, err)
+			}
+			evidenceType, status := evidenceRowForArtifactType(uploaded.Type, uploaded.IsEvidence)
+			if _, err := r.createEvidenceRefWithQueries(ctx, q, CreateEvidenceRefRequest{
+				TenantID:           req.TenantID,
+				ProjectID:          projectID,
+				ProjectTaskID:      &taskID,
+				ExecutionSummaryID: &summaryID,
+				EvidenceType:       evidenceType,
+				Title:              uploaded.Name,
+				SourceType:         "artifact",
+				SourceRef:          objectKey,
+				ArtifactRefID:      &artifact.ID,
+				SubmittedByType:    "digital_employee",
+				SubmittedByID:      &req.DigitalEmployeeID,
+				VerificationStatus: status,
+				Metadata:           map[string]any{"artifact_type": uploaded.Type, "truncated": uploaded.Truncated},
+			}); err != nil {
+				return fmt.Errorf("materialize evidence for artifact %s: %w", objectKey, err)
+			}
+			if uploaded.IsEvidence {
+				verifiedEvidenceCount++
+			}
+			continue
+		}
+		// 自报引用:无内容可核验,保留 artifact 行(带血缘)以供人类查看。
+		parsed, ok := parseArtifactRefElement(raw)
+		if !ok {
+			continue
+		}
+		if _, err := r.createArtifactRefWithQueries(ctx, q, CreateArtifactRefRequest{
+			TenantID:          req.TenantID,
+			ProjectID:         projectID,
+			ProjectTaskID:     &taskID,
+			AttemptID:         &req.AttemptID,
+			DigitalEmployeeID: &req.DigitalEmployeeID,
+			ArtifactType:      parsed.ArtifactType,
+			Title:             parsed.Title,
+			ObjectRef:         parsed.ObjectRef,
+			ContentType:       parsed.ContentType,
+			Checksum:          parsed.Checksum,
+			RetentionStatus:   "pending",
+		}); err != nil {
+			return fmt.Errorf("materialize self-reported artifact ref: %w", err)
+		}
+	}
+
+	for _, raw := range req.EvidenceRefs {
 		entry, ok := raw.(map[string]any)
 		if !ok {
 			continue
@@ -3868,22 +4033,27 @@ func (r *PgRepository) extractExecutionEvidenceRefsWithQueries(ctx context.Conte
 			refType = "execution_evidence"
 		}
 		if _, err := r.createEvidenceRefWithQueries(ctx, q, CreateEvidenceRefRequest{
-			TenantID:           tenantID,
+			TenantID:           req.TenantID,
 			ProjectID:          projectID,
-			ProjectTaskID:      taskID,
+			ProjectTaskID:      &taskID,
 			ExecutionSummaryID: &summaryID,
 			EvidenceType:       refType,
 			Title:              "执行证据：" + refType,
 			SourceType:         refType,
 			SourceRef:          sourceRef,
 			SubmittedByType:    "digital_employee",
-			SubmittedByID:      &employeeID,
+			SubmittedByID:      &req.DigitalEmployeeID,
+			VerificationStatus: EvidenceVerificationStatusSubmitted,
 			Metadata:           entry,
 		}); err != nil {
-			// Best-effort: skip individual failures so completion stays intact.
-			continue
+			return fmt.Errorf("materialize evidence ref %s: %w", sourceRef, err)
 		}
 	}
+
+	if verifiedEvidenceCount == 0 {
+		return fmt.Errorf("%w: completion carries no verifiable evidence artifact (execution transcript missing)", ErrInvalidProjectEvidence)
+	}
+	return nil
 }
 
 func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
@@ -3945,7 +4115,9 @@ func (r *PgRepository) completeProjectTaskAttemptWritebackWithQueries(ctx contex
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
-	r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.TenantID, task.ProjectID, &task.ID, req.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.EvidenceRefs))
+	if err := r.materializeAttemptEvidenceWithQueries(ctx, q, req, task.ProjectID, task.ID, summary.ID); err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
 	finishParams := queries.FinishProjectTaskAttemptParams{
 		TenantID:          req.TenantID,
 		ID:                req.AttemptID,
@@ -4031,7 +4203,9 @@ func (r *PgRepository) completeProjectTaskAttemptAcceptanceWritebackWithQueries(
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
-	r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.Complete.TenantID, req.Task.ProjectID, &req.Task.ID, req.Complete.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.Complete.EvidenceRefs))
+	if err := r.materializeAttemptEvidenceWithQueries(ctx, q, req.Complete, req.Task.ProjectID, req.Task.ID, summary.ID); err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
 	finishParams := queries.FinishProjectTaskAttemptParams{
 		TenantID:          req.Complete.TenantID,
 		ID:                req.Complete.AttemptID,
@@ -5127,28 +5301,45 @@ func (r *PgRepository) updateEvidenceVerificationStatusWithQueries(ctx context.C
 }
 
 func (r *PgRepository) CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error) {
+	return r.createArtifactRefWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) createArtifactRefWithQueries(ctx context.Context, q *queries.Queries, req CreateArtifactRefRequest) (ProjectArtifactRef, error) {
 	metadata, err := jsonbObject(req.Metadata, "metadata")
 	if err != nil {
 		return ProjectArtifactRef{}, err
 	}
-	row, err := r.q.CreateProjectArtifactRef(ctx, queries.CreateProjectArtifactRefParams{
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		ProjectTaskID:   nullUUID(req.ProjectTaskID),
-		ArtifactID:      nullUUID(req.ArtifactID),
-		ArtifactType:    req.ArtifactType,
-		Title:           req.Title,
-		ObjectRef:       req.ObjectRef,
-		ContentType:     textOrNull(req.ContentType),
-		SizeBytes:       int8Ptr(req.SizeBytes),
-		Checksum:        textOrNull(req.Checksum),
-		RetentionStatus: textOrNull(req.RetentionStatus),
-		RetentionHoldID: nullUUID(req.RetentionHoldID),
-		Metadata:        metadata,
-		CreatedEventID:  nullUUID(req.CreatedEventID),
+	row, err := q.CreateProjectArtifactRef(ctx, queries.CreateProjectArtifactRefParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ProjectTaskID:     nullUUID(req.ProjectTaskID),
+		AttemptID:         nullUUID(req.AttemptID),
+		DigitalEmployeeID: nullUUID(req.DigitalEmployeeID),
+		ArtifactID:        nullUUID(req.ArtifactID),
+		ArtifactType:      req.ArtifactType,
+		Title:             req.Title,
+		ObjectRef:         req.ObjectRef,
+		ContentType:       textOrNull(req.ContentType),
+		SizeBytes:         int8Ptr(req.SizeBytes),
+		Checksum:          textOrNull(req.Checksum),
+		RetentionStatus:   textOrNull(req.RetentionStatus),
+		RetentionHoldID:   nullUUID(req.RetentionHoldID),
+		Metadata:          metadata,
+		CreatedEventID:    nullUUID(req.CreatedEventID),
 	})
 	if err != nil {
 		return ProjectArtifactRef{}, err
+	}
+	return artifactRefFromRecord(row)
+}
+
+func (r *PgRepository) GetArtifactRef(ctx context.Context, tenantID, artifactRefID uuid.UUID) (ProjectArtifactRef, error) {
+	row, err := r.q.GetProjectArtifactRef(ctx, queries.GetProjectArtifactRefParams{
+		TenantID: tenantID,
+		ID:       artifactRefID,
+	})
+	if err != nil {
+		return ProjectArtifactRef{}, projectRepositoryError(err)
 	}
 	return artifactRefFromRecord(row)
 }
@@ -6686,23 +6877,25 @@ func artifactRefFromRecord(row queries.ProjectArtifactRef) (ProjectArtifactRef, 
 		return ProjectArtifactRef{}, fmt.Errorf("metadata: %w", err)
 	}
 	return ProjectArtifactRef{
-		ID:              row.ID,
-		TenantID:        row.TenantID,
-		ProjectID:       row.ProjectID,
-		ProjectTaskID:   ptrUUID(row.ProjectTaskID),
-		ArtifactID:      ptrUUID(row.ArtifactID),
-		ArtifactType:    row.ArtifactType,
-		Title:           row.Title,
-		ObjectRef:       row.ObjectRef,
-		ContentType:     ptrText(row.ContentType),
-		SizeBytes:       ptrInt8(row.SizeBytes),
-		Checksum:        ptrText(row.Checksum),
-		RetentionStatus: row.RetentionStatus,
-		RetentionHoldID: ptrUUID(row.RetentionHoldID),
-		Metadata:        metadata,
-		CreatedEventID:  ptrUUID(row.CreatedEventID),
-		CreatedAt:       row.CreatedAt.Time,
-		UpdatedAt:       row.UpdatedAt.Time,
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		ProjectTaskID:     ptrUUID(row.ProjectTaskID),
+		AttemptID:         ptrUUID(row.AttemptID),
+		DigitalEmployeeID: ptrUUID(row.DigitalEmployeeID),
+		ArtifactID:        ptrUUID(row.ArtifactID),
+		ArtifactType:      row.ArtifactType,
+		Title:             row.Title,
+		ObjectRef:         row.ObjectRef,
+		ContentType:       ptrText(row.ContentType),
+		SizeBytes:         ptrInt8(row.SizeBytes),
+		Checksum:          ptrText(row.Checksum),
+		RetentionStatus:   row.RetentionStatus,
+		RetentionHoldID:   ptrUUID(row.RetentionHoldID),
+		Metadata:          metadata,
+		CreatedEventID:    ptrUUID(row.CreatedEventID),
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
 	}, nil
 }
 

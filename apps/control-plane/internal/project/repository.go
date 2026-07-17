@@ -121,6 +121,7 @@ type Repository interface {
 	UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error)
 	UpdateEvidenceVerificationStatusWithEvent(ctx context.Context, req UpdateEvidenceVerificationStatusWithEventRequest) (ProjectEvidenceRefWriteResult, error)
 	CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error)
+	GetArtifactRef(ctx context.Context, tenantID, artifactRefID uuid.UUID) (ProjectArtifactRef, error)
 	ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error)
 	UpdateArtifactRetention(ctx context.Context, req UpdateArtifactRetentionRequest) (ProjectArtifactRef, error)
 	CreateReportRef(ctx context.Context, req CreateReportRefRequest) (ProjectReportRef, error)
@@ -730,20 +731,23 @@ type UpdateEvidenceVerificationStatusWithEventRequest struct {
 }
 
 type CreateArtifactRefRequest struct {
-	TenantID        uuid.UUID
-	ProjectID       uuid.UUID
-	ProjectTaskID   *uuid.UUID
-	ArtifactID      *uuid.UUID
-	ArtifactType    string
-	Title           string
-	ObjectRef       string
-	ContentType     string
-	SizeBytes       *int64
-	Checksum        string
-	RetentionStatus string
-	RetentionHoldID *uuid.UUID
-	Metadata        map[string]any
-	CreatedEventID  *uuid.UUID
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID *uuid.UUID
+	// AttemptID/DigitalEmployeeID:执行物化路径必填的血缘;人工上传为 nil。
+	AttemptID         *uuid.UUID
+	DigitalEmployeeID *uuid.UUID
+	ArtifactID        *uuid.UUID
+	ArtifactType      string
+	Title             string
+	ObjectRef         string
+	ContentType       string
+	SizeBytes         *int64
+	Checksum          string
+	RetentionStatus   string
+	RetentionHoldID   *uuid.UUID
+	Metadata          map[string]any
+	CreatedEventID    *uuid.UUID
 }
 
 type UpdateArtifactRetentionRequest struct {

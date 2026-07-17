@@ -454,6 +454,43 @@ struct CapturedProjectTaskBudgetHeartbeat {
     payload: Value,
 }
 
+/// 证据地基:completion 路径现在要求 presign+上传成功;这个桩把
+/// presign 指回本服务器的 PUT 端点并一律 200,让既有 writeback 断言不变。
+fn with_object_store_stub<S: Clone + Send + Sync + 'static>(
+    router: Router<S>,
+    addr: std::net::SocketAddr,
+) -> Router<S> {
+    let artifact_addr = addr;
+    let raw_addr = addr;
+    router
+        .route(
+            "/api/v1/runtime/artifacts/presign",
+            post(move |Json(body): Json<serde_json::Value>| async move {
+                let sha = body["sha256"].as_str().unwrap_or_default().to_string();
+                Json(serde_json::json!({
+                    "object_key": format!("artifacts/test-tenant/sha256/{sha}"),
+                    "upload_url": format!("http://{artifact_addr}/mock-upload/{sha}"),
+                    "already_exists": false,
+                }))
+            }),
+        )
+        .route(
+            "/api/v1/runtime/raw-logs/presign",
+            post(move |Json(body): Json<serde_json::Value>| async move {
+                let object = body["object"].as_str().unwrap_or_default().to_string();
+                Json(serde_json::json!({
+                    "object_key": format!("runs/test-tenant/test-attempt/{object}"),
+                    "upload_url": format!("http://{raw_addr}/mock-upload/raw-{object}"),
+                    "already_exists": false,
+                }))
+            }),
+        )
+        .route(
+            "/mock-upload/{key}",
+            axum::routing::put(|| async { StatusCode::OK }),
+        )
+}
+
 async fn serve_command_completion_writebacks(
     capture: CommandCompletionCapture,
 ) -> CommandWritebackServer {
@@ -495,8 +532,8 @@ async fn serve_command_completion_writebacks(
         .route(
             "/api/v1/runtime/project-task-attempts/{attempt_id}/budget-heartbeat",
             post(capture_project_task_budget_heartbeat),
-        )
-        .with_state(capture);
+        );
+    let app = with_object_store_stub(app, addr).with_state(capture);
     let task = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
@@ -587,8 +624,8 @@ async fn serve_delayed_terminal_attestation_writebacks(
         .route(
             "/api/v1/runtime/project-task-attestations",
             post(delayed_terminal_attestation_writeback),
-        )
-        .with_state(capture);
+        );
+    let app = with_object_store_stub(app, addr).with_state(capture);
     let task = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
@@ -1096,7 +1133,15 @@ async fn project_task_completion_writeback_omits_result_contract_for_legacy_summ
     assert!(captured.get("result_contract").is_none());
     assert_eq!(captured["conclusion"], "legacy complete");
     assert_eq!(captured["evidence_refs"][0], "artifact:report");
-    assert_eq!(captured["artifact_refs"][0], "artifact:analysis-report");
+    // 采集的 transcript artifact 前插(证据地基),自报引用保留在其后。
+    assert_eq!(captured["artifact_refs"][0]["type"], "execution_transcript");
+    assert_eq!(captured["artifact_refs"][0]["is_evidence"], true);
+    let self_reported = captured["artifact_refs"]
+        .as_array()
+        .expect("artifact_refs array")
+        .iter()
+        .any(|entry| entry == "artifact:analysis-report");
+    assert!(self_reported, "self-reported ref must be preserved");
 }
 
 #[tokio::test]
@@ -1598,10 +1643,17 @@ EOF
         project_complete.payload["evidence_refs"][0]["ref"],
         "artifact://evidence-one"
     );
+    // 采集的 transcript artifact 前插;自报的 file:// 引用保留在其后。
     assert_eq!(
-        project_complete.payload["artifact_refs"][0]["ref"],
-        "file://artifact-one"
+        project_complete.payload["artifact_refs"][0]["type"],
+        "execution_transcript"
     );
+    let self_reported = project_complete.payload["artifact_refs"]
+        .as_array()
+        .expect("artifact_refs array")
+        .iter()
+        .any(|entry| entry["ref"] == "file://artifact-one");
+    assert!(self_reported, "self-reported artifact ref must be preserved");
     assert_eq!(
         project_complete.payload["confidence_factors"]["provider_confidence"],
         "high"

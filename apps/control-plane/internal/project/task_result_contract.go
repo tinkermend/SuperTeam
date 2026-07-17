@@ -135,15 +135,23 @@ func (r *TaskResultAcceptanceResult) UnmarshalJSON(data []byte) error {
 }
 
 type TaskResultRef struct {
-	ID       string         `json:"id,omitempty"`
-	Kind     string         `json:"kind,omitempty"`
-	Type     string         `json:"type,omitempty"`
-	Ref      string         `json:"ref,omitempty"`
-	URI      string         `json:"uri,omitempty"`
-	URL      string         `json:"url,omitempty"`
-	Title    string         `json:"title,omitempty"`
-	Summary  string         `json:"summary,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	ID      string `json:"id,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Ref     string `json:"ref,omitempty"`
+	URI     string `json:"uri,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Title   string `json:"title,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	// 证据地基(spec §4.6):runtime 采集上传的对象形态 artifact 引用。
+	// Sha256 存在即代表内容寻址对象,物化时据此核验并建立血缘。
+	Name        string         `json:"name,omitempty"`
+	Sha256      string         `json:"sha256,omitempty"`
+	SizeBytes   int64          `json:"size_bytes,omitempty"`
+	ContentType string         `json:"content_type,omitempty"`
+	Truncated   bool           `json:"truncated,omitempty"`
+	IsEvidence  bool           `json:"is_evidence,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 type TaskResultChange struct {

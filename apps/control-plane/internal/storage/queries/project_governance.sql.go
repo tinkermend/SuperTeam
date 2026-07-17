@@ -162,6 +162,8 @@ INSERT INTO project_artifact_refs (
     tenant_id,
     project_id,
     project_task_id,
+    attempt_id,
+    digital_employee_id,
     artifact_id,
     artifact_type,
     title,
@@ -178,41 +180,54 @@ INSERT INTO project_artifact_refs (
     $2::uuid,
     $3::uuid,
     $4::uuid,
-    $5::varchar,
-    $6::varchar,
-    $7::text,
+    $5::uuid,
+    $6::uuid,
+    $7::varchar,
     $8::varchar,
-    $9::bigint,
+    $9::text,
     $10::varchar,
-    COALESCE($11::varchar, 'unheld'::varchar),
-    $12::uuid,
-    COALESCE($13::jsonb, '{}'::jsonb),
-    $14::uuid
-) RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at
+    $11::bigint,
+    $12::varchar,
+    COALESCE($13::varchar, 'unheld'::varchar),
+    $14::uuid,
+    COALESCE($15::jsonb, '{}'::jsonb),
+    $16::uuid
+)
+ON CONFLICT (tenant_id, project_task_id, attempt_id, checksum)
+    WHERE attempt_id IS NOT NULL AND project_task_id IS NOT NULL
+    DO UPDATE SET updated_at = NOW()
+RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at, attempt_id, digital_employee_id
 `
 
 type CreateProjectArtifactRefParams struct {
-	TenantID        uuid.UUID     `json:"tenant_id"`
-	ProjectID       uuid.UUID     `json:"project_id"`
-	ProjectTaskID   uuid.NullUUID `json:"project_task_id"`
-	ArtifactID      uuid.NullUUID `json:"artifact_id"`
-	ArtifactType    string        `json:"artifact_type"`
-	Title           string        `json:"title"`
-	ObjectRef       string        `json:"object_ref"`
-	ContentType     pgtype.Text   `json:"content_type"`
-	SizeBytes       pgtype.Int8   `json:"size_bytes"`
-	Checksum        pgtype.Text   `json:"checksum"`
-	RetentionStatus pgtype.Text   `json:"retention_status"`
-	RetentionHoldID uuid.NullUUID `json:"retention_hold_id"`
-	Metadata        []byte        `json:"metadata"`
-	CreatedEventID  uuid.NullUUID `json:"created_event_id"`
+	TenantID          uuid.UUID     `json:"tenant_id"`
+	ProjectID         uuid.UUID     `json:"project_id"`
+	ProjectTaskID     uuid.NullUUID `json:"project_task_id"`
+	AttemptID         uuid.NullUUID `json:"attempt_id"`
+	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
+	ArtifactID        uuid.NullUUID `json:"artifact_id"`
+	ArtifactType      string        `json:"artifact_type"`
+	Title             string        `json:"title"`
+	ObjectRef         string        `json:"object_ref"`
+	ContentType       pgtype.Text   `json:"content_type"`
+	SizeBytes         pgtype.Int8   `json:"size_bytes"`
+	Checksum          pgtype.Text   `json:"checksum"`
+	RetentionStatus   pgtype.Text   `json:"retention_status"`
+	RetentionHoldID   uuid.NullUUID `json:"retention_hold_id"`
+	Metadata          []byte        `json:"metadata"`
+	CreatedEventID    uuid.NullUUID `json:"created_event_id"`
 }
 
+// attempt 内幂等:同一 attempt 的 result 重复提交命中部分唯一索引
+// uq_project_artifact_refs_attempt_checksum 时原行返回;attempt_id 为 NULL
+// 的人工/项目级 artifact 不参与该索引,保持普通插入语义。
 func (q *Queries) CreateProjectArtifactRef(ctx context.Context, arg CreateProjectArtifactRefParams) (ProjectArtifactRef, error) {
 	row := q.db.QueryRow(ctx, CreateProjectArtifactRef,
 		arg.TenantID,
 		arg.ProjectID,
 		arg.ProjectTaskID,
+		arg.AttemptID,
+		arg.DigitalEmployeeID,
 		arg.ArtifactID,
 		arg.ArtifactType,
 		arg.Title,
@@ -244,6 +259,8 @@ func (q *Queries) CreateProjectArtifactRef(ctx context.Context, arg CreateProjec
 		&i.CreatedEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AttemptID,
+		&i.DigitalEmployeeID,
 	)
 	return i, err
 }
@@ -612,6 +629,44 @@ func (q *Queries) GetLatestProjectAcceptanceRecord(ctx context.Context, arg GetL
 	return i, err
 }
 
+const GetProjectArtifactRef = `-- name: GetProjectArtifactRef :one
+SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at, attempt_id, digital_employee_id FROM project_artifact_refs
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+`
+
+type GetProjectArtifactRefParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectArtifactRef(ctx context.Context, arg GetProjectArtifactRefParams) (ProjectArtifactRef, error) {
+	row := q.db.QueryRow(ctx, GetProjectArtifactRef, arg.TenantID, arg.ID)
+	var i ProjectArtifactRef
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ProjectTaskID,
+		&i.ArtifactID,
+		&i.ArtifactType,
+		&i.Title,
+		&i.ObjectRef,
+		&i.ContentType,
+		&i.SizeBytes,
+		&i.Checksum,
+		&i.RetentionStatus,
+		&i.RetentionHoldID,
+		&i.Metadata,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AttemptID,
+		&i.DigitalEmployeeID,
+	)
+	return i, err
+}
+
 const GetProjectBudgetSummary = `-- name: GetProjectBudgetSummary :one
 SELECT
     COALESCE(SUM(estimated_tokens), 0)::bigint AS estimated_tokens,
@@ -742,7 +797,7 @@ func (q *Queries) ListProjectArchiveSnapshots(ctx context.Context, arg ListProje
 }
 
 const ListProjectArtifactRefs = `-- name: ListProjectArtifactRefs :many
-SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at FROM project_artifact_refs
+SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at, attempt_id, digital_employee_id FROM project_artifact_refs
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND ($3::varchar IS NULL OR artifact_type = $3::varchar)
@@ -794,6 +849,8 @@ func (q *Queries) ListProjectArtifactRefs(ctx context.Context, arg ListProjectAr
 			&i.CreatedEventID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AttemptID,
+			&i.DigitalEmployeeID,
 		); err != nil {
 			return nil, err
 		}
@@ -1044,7 +1101,7 @@ SET retention_status = $1::varchar,
 WHERE tenant_id = $3::uuid
   AND project_id = $4::uuid
   AND id = $5::uuid
-RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at
+RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at, attempt_id, digital_employee_id
 `
 
 type UpdateProjectArtifactRetentionParams struct {
@@ -1082,6 +1139,8 @@ func (q *Queries) UpdateProjectArtifactRetention(ctx context.Context, arg Update
 		&i.CreatedEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AttemptID,
+		&i.DigitalEmployeeID,
 	)
 	return i, err
 }

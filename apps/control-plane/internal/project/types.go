@@ -254,6 +254,9 @@ const (
 	EvidenceVerificationStatusVerified   EvidenceVerificationStatus = "verified"
 	EvidenceVerificationStatusRejected   EvidenceVerificationStatus = "rejected"
 	EvidenceVerificationStatusSuperseded EvidenceVerificationStatus = "superseded"
+	// EvidenceVerificationStatusUnverified 标记数字员工自述(self_report):
+	// 内容可读但不构成证据,永远不参与"有证据即可完成"的判定。
+	EvidenceVerificationStatusUnverified EvidenceVerificationStatus = "unverified"
 )
 
 type DemandSourceType string
@@ -1312,20 +1315,24 @@ type ProjectArtifactRef struct {
 	ID              uuid.UUID
 	TenantID        uuid.UUID
 	ProjectID       uuid.UUID
-	ProjectTaskID   *uuid.UUID
-	ArtifactID      *uuid.UUID
-	ArtifactType    string
-	Title           string
-	ObjectRef       string
-	ContentType     *string
-	SizeBytes       *int64
-	Checksum        *string
-	RetentionStatus string
-	RetentionHoldID *uuid.UUID
-	Metadata        map[string]any
-	CreatedEventID  *uuid.UUID
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ProjectTaskID *uuid.UUID
+	// AttemptID/DigitalEmployeeID 是执行血缘:同一任务下多员工/多次 attempt
+	// 各自成行(去重发生在存储层,血缘保留在关系层);人工/项目级 artifact 为 nil。
+	AttemptID         *uuid.UUID
+	DigitalEmployeeID *uuid.UUID
+	ArtifactID        *uuid.UUID
+	ArtifactType      string
+	Title             string
+	ObjectRef         string
+	ContentType       *string
+	SizeBytes         *int64
+	Checksum          *string
+	RetentionStatus   string
+	RetentionHoldID   *uuid.UUID
+	Metadata          map[string]any
+	CreatedEventID    *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type ProjectReportRef struct {
@@ -1742,6 +1749,9 @@ type ProjectTaskAttemptRawLog struct {
 
 type StartProjectTaskAttemptRequest struct {
 	ProjectTaskAttemptRuntimeRequest
+	// CommandID 是 runtime 侧执行该 attempt 的命令 id;started 回写携带它,
+	// 用于回填 dispatch 冲突路径遗留的 NULL digital_employee_run_id 关联。
+	CommandID string
 }
 
 type RenewProjectTaskAttemptLeaseRequest struct {

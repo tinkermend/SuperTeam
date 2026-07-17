@@ -96,6 +96,9 @@ type Querier interface {
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateProjectAcceptanceRecord(ctx context.Context, arg CreateProjectAcceptanceRecordParams) (ProjectAcceptanceRecord, error)
 	CreateProjectArchiveSnapshot(ctx context.Context, arg CreateProjectArchiveSnapshotParams) (ProjectArchiveSnapshot, error)
+	// attempt 内幂等:同一 attempt 的 result 重复提交命中部分唯一索引
+	// uq_project_artifact_refs_attempt_checksum 时原行返回;attempt_id 为 NULL
+	// 的人工/项目级 artifact 不参与该索引,保持普通插入语义。
 	CreateProjectArtifactRef(ctx context.Context, arg CreateProjectArtifactRefParams) (ProjectArtifactRef, error)
 	CreateProjectBudgetLedgerEntry(ctx context.Context, arg CreateProjectBudgetLedgerEntryParams) (ProjectBudgetLedger, error)
 	CreateProjectConfigRevision(ctx context.Context, arg CreateProjectConfigRevisionParams) (ProjectConfigRevision, error)
@@ -136,7 +139,6 @@ type Querier interface {
 	CreateScenarioTemplateVersion(ctx context.Context, arg CreateScenarioTemplateVersionParams) (ScenarioTemplateVersion, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
-	CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifactParams) (TaskArtifact, error)
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
 	CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
@@ -168,7 +170,6 @@ type Querier interface {
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
 	DeleteSkillMCPDependenciesForSkill(ctx context.Context, arg DeleteSkillMCPDependenciesForSkillParams) error
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
-	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
 	DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
@@ -226,6 +227,7 @@ type Querier interface {
 	GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error)
 	GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, arg GetPendingDemandAcceptanceDecisionByPlanRevisionParams) (ProjectDecisionRequest, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
+	GetProjectArtifactRef(ctx context.Context, arg GetProjectArtifactRefParams) (ProjectArtifactRef, error)
 	GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzFactsParams) (GetProjectAuthzFactsRow, error)
 	GetProjectBudgetSummary(ctx context.Context, arg GetProjectBudgetSummaryParams) (GetProjectBudgetSummaryRow, error)
 	GetProjectConfigRevision(ctx context.Context, arg GetProjectConfigRevisionParams) (ProjectConfigRevision, error)
@@ -293,7 +295,6 @@ type Querier interface {
 	GetScenarioTemplateMaxVersion(ctx context.Context, arg GetScenarioTemplateMaxVersionParams) (int32, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)
 	GetTask(ctx context.Context, arg GetTaskParams) (Task, error)
-	GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
 	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
 	GetTeamLendingPolicy(ctx context.Context, arg GetTeamLendingPolicyParams) (TeamLendingPolicy, error)
@@ -432,7 +433,6 @@ type Querier interface {
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
-	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)
 	ListTaskEventsForRun(ctx context.Context, arg ListTaskEventsForRunParams) ([]TaskEvent, error)
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
@@ -503,6 +503,10 @@ type Querier interface {
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
+	// digital_employee_run_id 回填:dispatch 冲突路径可能留下 NULL 的 run 关联
+	// (命令已送达但派发簿记失败),导致 provider 事件按 run_id 关联不到 attempt
+	// 而静默不进 ledger(07-13 记档缺陷)。runtime 在 started 回写带 command_id,
+	// 此处按 task_runs.command_id(全局唯一)补上缺失的关联。
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)

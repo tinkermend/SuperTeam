@@ -202,6 +202,9 @@ pub struct ProjectTaskStartWriteback {
     pub lease_token: String,
     pub runtime_node_id: String,
     pub idempotency_key: String,
+    /// 执行该 attempt 的 runtime 命令 id;控制平面用它回填 dispatch 冲突
+    /// 路径遗留的 NULL run 关联(否则 provider 事件静默不进 ledger)。
+    pub command_id: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub provider_session_id: Option<String>,
 }
@@ -443,4 +446,52 @@ pub struct HeartbeatResponse {
     pub last_heartbeat_at: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+}
+
+/// 证据地基(spec 2026-07-09 §8 修订 1):runtime 零对象存储凭证,
+/// 所有对象直传/直取都先向控制平面换取 presigned URL。
+
+/// Presign request for a content-addressed artifact upload.
+#[derive(Debug, Clone, Serialize)]
+pub struct PresignArtifactUploadRequest {
+    pub sha256: String,
+    pub size_bytes: i64,
+    pub content_type: String,
+}
+
+/// Presign request for a raw transcript segment or manifest upload.
+#[derive(Debug, Clone, Serialize)]
+pub struct PresignRawLogUploadRequest {
+    pub attempt_id: String,
+    /// "part" or "manifest".
+    pub object: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub part_index: Option<i32>,
+    pub size_bytes: i64,
+}
+
+/// Presigned upload target returned by the control plane.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PresignUploadResponse {
+    pub object_key: String,
+    #[serde(default)]
+    pub upload_url: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub already_exists: bool,
+}
+
+/// Presign request for downloading a skill archive.
+#[derive(Debug, Clone, Serialize)]
+pub struct PresignSkillArchiveDownloadRequest {
+    pub archive_object_ref: String,
+}
+
+/// Presigned download target returned by the control plane.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PresignDownloadResponse {
+    pub download_url: String,
+    #[serde(default)]
+    pub expires_at: Option<String>,
 }

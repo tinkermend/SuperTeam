@@ -3,7 +3,7 @@ use std::io::{self, Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
-use aws_sdk_s3::Client as S3Client;
+use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
@@ -11,6 +11,61 @@ use crate::commands::payload::RuntimeSkillPayload;
 
 const MAX_ARCHIVE_SIZE: u64 = 200 * 1024 * 1024;
 const MAX_FILE_COUNT: usize = 10_000;
+
+/// Fetches a skill archive's bytes. The only production implementation goes
+/// through control-plane-issued presigned GET URLs (证据地基 spec §8 修订 1:
+/// runtime 零对象存储凭证);下载完整性由 archive_checksum_sha256 复核保证,
+/// 与取回通道无关。
+#[async_trait]
+pub trait SkillArchiveFetcher: Send + Sync {
+    async fn fetch(&self, skill: &RuntimeSkillPayload) -> Result<Vec<u8>>;
+}
+
+pub struct PresignSkillArchiveFetcher {
+    control_plane: crate::controlplane::client::ControlPlaneClient,
+    http: reqwest::Client,
+}
+
+impl PresignSkillArchiveFetcher {
+    pub fn new(control_plane: crate::controlplane::client::ControlPlaneClient) -> Self {
+        Self {
+            control_plane,
+            http: reqwest::Client::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl SkillArchiveFetcher for PresignSkillArchiveFetcher {
+    async fn fetch(&self, skill: &RuntimeSkillPayload) -> Result<Vec<u8>> {
+        let presigned = self
+            .control_plane
+            .presign_skill_archive_download(
+                &crate::controlplane::models::PresignSkillArchiveDownloadRequest {
+                    archive_object_ref: skill.archive_object_ref.clone(),
+                },
+            )
+            .await
+            .with_context(|| {
+                format!("failed to presign skill archive download: {}", skill.skill_key)
+            })?;
+        let response = self
+            .http
+            .get(&presigned.download_url)
+            .send()
+            .await
+            .with_context(|| format!("failed to fetch skill archive: {}", skill.skill_key))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            anyhow::bail!("skill archive download rejected for {}: {status}", skill.skill_key);
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .with_context(|| format!("failed to read skill archive body: {}", skill.skill_key))?;
+        Ok(bytes.to_vec())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncedSkill {
@@ -23,17 +78,14 @@ pub struct SyncedSkill {
 pub async fn materialize_skills(
     agent_home_dir: &Path,
     skills: &[RuntimeSkillPayload],
-    s3_client: &S3Client,
-    bucket: &str,
+    fetcher: &dyn SkillArchiveFetcher,
 ) -> Result<Vec<SyncedSkill>> {
     let mut synced = Vec::with_capacity(skills.len());
 
     for skill in skills {
         let target_dir = agent_home_dir.join("skills").join(&skill.skill_key);
         let temp_root = agent_home_dir.join(".skill-tmp");
-        synced.push(
-            materialize_skill_to_dir(&target_dir, &temp_root, skill, s3_client, bucket).await?,
-        );
+        synced.push(materialize_skill_to_dir(&target_dir, &temp_root, skill, fetcher).await?);
     }
 
     Ok(synced)
@@ -43,8 +95,7 @@ pub async fn materialize_skill_to_dir(
     target_dir: &Path,
     temp_root: &Path,
     skill: &RuntimeSkillPayload,
-    s3_client: &S3Client,
-    bucket: &str,
+    fetcher: &dyn SkillArchiveFetcher,
 ) -> Result<SyncedSkill> {
     validate_skill_key(&skill.skill_key)?;
     ensure_safe_install_path(target_dir, temp_root)?;
@@ -61,22 +112,7 @@ pub async fn materialize_skill_to_dir(
         }
     }
 
-    let object_key = extract_object_key(&skill.archive_object_ref)?;
-
-    let response = s3_client
-        .get_object()
-        .bucket(bucket)
-        .key(&object_key)
-        .send()
-        .await
-        .with_context(|| format!("failed to fetch skill archive from s3: {bucket}/{object_key}"))?;
-
-    let body = response
-        .body
-        .collect()
-        .await
-        .map_err(|e| anyhow::anyhow!("read s3 body: {e}"))?;
-    let archive_bytes = body.into_bytes();
+    let archive_bytes = fetcher.fetch(skill).await?;
 
     if archive_bytes.len() as u64 > MAX_ARCHIVE_SIZE {
         anyhow::bail!(
@@ -194,16 +230,6 @@ pub fn ensure_safe_install_path(target_dir: &Path, temp_root: &Path) -> Result<(
     ensure_safe_target_path(target_dir)?;
     ensure_safe_target_path(temp_root)?;
     Ok(())
-}
-
-fn extract_object_key(uri: &str) -> Result<String> {
-    if let Some(stripped) = uri.strip_prefix("s3://") {
-        if let Some(slash_pos) = stripped.find('/') {
-            return Ok(stripped[slash_pos + 1..].to_string());
-        }
-        return Ok(stripped.to_string());
-    }
-    Ok(uri.to_string())
 }
 
 fn normalize_zip_path(entry_name: &str, root_prefix: &str) -> Result<PathBuf> {
@@ -508,18 +534,6 @@ mod tests {
         assert!(validate_skill_key("bad\\key").is_err());
         assert!(validate_skill_key("..").is_err());
         assert!(validate_skill_key(".").is_err());
-    }
-
-    #[test]
-    fn extract_object_key_parses_s3_uri() {
-        assert_eq!(
-            extract_object_key("s3://bucket/skills/tenant/diagnose/abc.zip").unwrap(),
-            "skills/tenant/diagnose/abc.zip"
-        );
-        assert_eq!(
-            extract_object_key("skills/tenant/diagnose/abc.zip").unwrap(),
-            "skills/tenant/diagnose/abc.zip"
-        );
     }
 
     #[test]

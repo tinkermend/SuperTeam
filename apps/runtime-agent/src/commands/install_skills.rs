@@ -2,13 +2,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use aws_sdk_s3::Client as S3Client;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::payload::RuntimeSkillPayload;
 use crate::skills::{
-    ensure_safe_install_path, materialize_skill_to_dir, remove_skill_dir_if_exists,
-    validate_skill_key as validate_key,
+    SkillArchiveFetcher, ensure_safe_install_path, materialize_skill_to_dir,
+    remove_skill_dir_if_exists, validate_skill_key as validate_key,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,8 +115,7 @@ pub fn prepare_provider_skill_install_paths(
 
 pub async fn install_skill_targets(
     payload: InstallSkillsCommandPayload,
-    s3_client: &S3Client,
-    bucket: &str,
+    fetcher: &dyn SkillArchiveFetcher,
 ) -> Result<Vec<InstalledSkillTarget>> {
     if payload.targets.is_empty() {
         anyhow::bail!("install_skills targets must not be empty");
@@ -151,8 +149,7 @@ pub async fn install_skill_targets(
             &paths.target_dir,
             &paths.temp_root,
             &payload.skill,
-            s3_client,
-            bucket,
+            fetcher,
         )
         .await
         {

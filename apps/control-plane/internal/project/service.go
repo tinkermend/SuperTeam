@@ -26,6 +26,7 @@ type Service struct {
 	runtimeNodes              ProjectRuntimeNodeReader
 	planningProfiles          DigitalEmployeePlanningProfileSource
 	scenarioTemplates         ScenarioTemplateResolver
+	artifactObjectStore       ArtifactObjectStore
 }
 
 // ScenarioTemplateResolver is the narrow view of the scenario template
@@ -3131,25 +3132,8 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 				return nil, err
 			}
 		}
-		if err := s.materializeTaskCompletionEvidence(ctx, task, CompleteProjectTaskRequest{
-			TenantID:              req.TenantID,
-			RuntimeNodeID:         req.RuntimeNodeID,
-			ProjectTaskID:         req.ProjectTaskID,
-			DigitalEmployeeID:     digitalEmployeeID,
-			Conclusion:            req.Conclusion,
-			EvidenceRefs:          req.EvidenceRefs,
-			ArtifactRefs:          req.ArtifactRefs,
-			ConfidenceFactors:     req.ConfidenceFactors,
-			Uncertainty:           req.Uncertainty,
-			MissingInformation:    req.MissingInformation,
-			RecommendedNextAction: req.RecommendedNextAction,
-			RequiresHumanReview:   req.RequiresHumanReview,
-		}, result.Summary.ID); err != nil {
-			_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EvidenceMaterialization", "failed", err, map[string]any{
-				"project_task_id":      task.ID.String(),
-				"execution_summary_id": result.Summary.ID.String(),
-			})
-		}
+		// 证据/工件物化已随 writeback 事务原子完成
+		// (materializeAttemptEvidenceWithQueries),不再有事务外补写。
 		return &result.Summary, nil
 	}
 	var result ProjectTaskWritebackResult
@@ -3161,25 +3145,8 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		return nil, err
 	}
 	s.recordHandoffVerifiedLedgerEvent(ctx, task, req.ProjectTaskAttemptRuntimeRequest)
-	if err := s.materializeTaskCompletionEvidence(ctx, task, CompleteProjectTaskRequest{
-		TenantID:              req.TenantID,
-		RuntimeNodeID:         req.RuntimeNodeID,
-		ProjectTaskID:         req.ProjectTaskID,
-		DigitalEmployeeID:     digitalEmployeeID,
-		Conclusion:            req.Conclusion,
-		EvidenceRefs:          req.EvidenceRefs,
-		ArtifactRefs:          req.ArtifactRefs,
-		ConfidenceFactors:     req.ConfidenceFactors,
-		Uncertainty:           req.Uncertainty,
-		MissingInformation:    req.MissingInformation,
-		RecommendedNextAction: req.RecommendedNextAction,
-		RequiresHumanReview:   req.RequiresHumanReview,
-	}, result.Summary.ID); err != nil {
-		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EvidenceMaterialization", "failed", err, map[string]any{
-			"project_task_id":      task.ID.String(),
-			"execution_summary_id": result.Summary.ID.String(),
-		})
-	}
+	// 证据/工件物化已随 writeback 事务原子完成
+	// (materializeAttemptEvidenceWithQueries),不再有事务外补写。
 	if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
 		TenantID:           req.TenantID,
 		ProjectID:          task.ProjectID,
@@ -4106,6 +4073,22 @@ func taskResultRefsToAny(refs []TaskResultRef) []any {
 		}
 		if ref.Summary != "" {
 			value["summary"] = ref.Summary
+		}
+		// 采集上传的对象形态字段透传给物化(证据地基 spec §4.6):丢掉 sha256
+		// 会让 /result 路径的 artifact 退化成不可核验的自报引用。
+		if ref.Sha256 != "" {
+			value["sha256"] = ref.Sha256
+			if ref.Name != "" {
+				value["name"] = ref.Name
+			}
+			if ref.SizeBytes > 0 {
+				value["size_bytes"] = float64(ref.SizeBytes)
+			}
+			if ref.ContentType != "" {
+				value["content_type"] = ref.ContentType
+			}
+			value["truncated"] = ref.Truncated
+			value["is_evidence"] = ref.IsEvidence
 		}
 		values = append(values, value)
 	}
