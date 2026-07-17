@@ -814,6 +814,15 @@ type revisionTaskCreator interface {
 	CreateRevisionTaskForResult(ctx context.Context, input CreateRevisionTaskForResultInput) (CreateRevisionTaskForResultResult, error)
 }
 
+// reworkFromAdversarialCreator is the narrow store seam for turning a held
+// adversarial criterion into an automatic rework task (Phase C1 Task 3). Like
+// revisionTaskCreator it is type-asserted off a.store, not folded into the
+// monolithic ActivityStore, so the many store fakes need not grow. The workflow
+// trigger that calls it is Task 4.
+type reworkFromAdversarialCreator interface {
+	CreateReworkTaskFromAdversarial(ctx context.Context, input CreateReworkTaskFromAdversarialInput) (CreateReworkTaskFromAdversarialResult, error)
+}
+
 type upstreamSupplementTaskCreator interface {
 	CreateUpstreamSupplementTasks(ctx context.Context, input CreateUpstreamSupplementInput) (CreateUpstreamSupplementResult, error)
 }
@@ -840,6 +849,14 @@ func (a *Activities) CreateUpstreamSupplementTasks(ctx context.Context, input Cr
 		return CreateUpstreamSupplementResult{}, ErrActivityStoreRequired
 	}
 	return store.CreateUpstreamSupplementTasks(ctx, input)
+}
+
+func (a *Activities) CreateReworkTaskFromAdversarial(ctx context.Context, input CreateReworkTaskFromAdversarialInput) (CreateReworkTaskFromAdversarialResult, error) {
+	store, ok := a.store.(reworkFromAdversarialCreator)
+	if a.store == nil || !ok {
+		return CreateReworkTaskFromAdversarialResult{}, ErrActivityStoreRequired
+	}
+	return store.CreateReworkTaskFromAdversarial(ctx, input)
 }
 
 func handleEmployeeTaskFailed(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskFailed) (*pendingTaskFailureRecovery, error) {

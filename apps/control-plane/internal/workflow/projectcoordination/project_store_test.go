@@ -5808,6 +5808,7 @@ type projectStoreMemoryRepository struct {
 	demandConstraintExemptions []project.DemandConstraintExemption
 	demandAcceptanceCriteria   []project.DemandAcceptanceCriterion
 	demandCriterionVerdicts    []project.DemandCriterionVerdict
+	adversarialJudgements      []project.DemandAdversarialJudgement
 
 	getProjectCalls       int
 	getProjectDemandCalls int
@@ -5908,6 +5909,16 @@ func (r *projectStoreMemoryRepository) ListDemandCriterionVerdicts(ctx context.C
 	for _, verdict := range r.demandCriterionVerdicts {
 		if verdict.TenantID == tenantID && verdict.DemandID == demandID && verdict.PlanRevisionID == planRevisionID {
 			result = append(result, verdict)
+		}
+	}
+	return result, nil
+}
+
+func (r *projectStoreMemoryRepository) ListAdversarialJudgements(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]project.DemandAdversarialJudgement, error) {
+	result := make([]project.DemandAdversarialJudgement, 0)
+	for _, judgement := range r.adversarialJudgements {
+		if judgement.TenantID == tenantID && judgement.DemandID == demandID && judgement.PlanRevisionID == planRevisionID {
+			result = append(result, judgement)
 		}
 	}
 	return result, nil

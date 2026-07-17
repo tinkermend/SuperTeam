@@ -251,6 +251,26 @@ type CreateRevisionTaskForResultResult struct {
 	Exhausted bool
 }
 
+// CreateReworkTaskFromAdversarialInput identifies a held (majority-refute)
+// adversarial criterion whose refutations should drive an automatic rework task.
+type CreateReworkTaskFromAdversarialInput struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ReviewedTaskID     uuid.UUID
+	CriterionID        string
+	CriterionStatement string
+	DemandID           uuid.UUID
+	PlanRevisionID     uuid.UUID
+}
+
+// CreateReworkTaskFromAdversarialResult reports the created rework task, or
+// Exhausted when the source task's revision budget was already spent (no task
+// created; Task 4 routes that to a human tier-3 hold).
+type CreateReworkTaskFromAdversarialResult struct {
+	TaskID    uuid.UUID
+	Exhausted bool
+}
+
 // CreateUpstreamSupplementInput describes a blocked task and the inputs it lacks.
 type CreateUpstreamSupplementInput struct {
 	TenantID      uuid.UUID

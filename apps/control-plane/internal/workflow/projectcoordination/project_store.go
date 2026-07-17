@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -962,35 +963,137 @@ func (s *ProjectStore) CreateRevisionTaskForResult(ctx context.Context, input Cr
 	if s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, source) {
 		return CreateRevisionTaskForResultResult{Exhausted: true}, nil
 	}
+	resultID := result.ID
+	taskID, err := s.buildRevisionTask(ctx, input.TenantID, input.ProjectID, source, result.Contract.RevisionRequest, &resultID, result.Contract.Summary)
+	if err != nil {
+		return CreateRevisionTaskForResultResult{}, err
+	}
+	return CreateRevisionTaskForResultResult{TaskID: taskID}, nil
+}
+
+// buildRevisionTask is the shared rework-task construction core. It is driven by
+// a RevisionRequest (self-reported by the executor OR synthesized from adversarial
+// judge refutations), the source task, and an OPTIONAL source result id: NOT
+// hard-wired to a ProjectTaskResult. Both CreateRevisionTaskForResult (self-report
+// path) and CreateReworkTaskFromAdversarial (adversarial path) call it. When
+// sourceResultID is non-nil it is linked to the created rework task for lineage
+// (LinkProjectTaskResultRevisionTask); when nil (no execution result on the source
+// yet) the link is skipped and the planned_task_key falls back to a fresh suffix.
+func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask, rev *project.TaskResultRevisionRequest, sourceResultID *uuid.UUID, sourceResultSummary string) (uuid.UUID, error) {
 	revision, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
-		TenantID:                  input.TenantID,
-		ProjectID:                 input.ProjectID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
 		DemandID:                  source.DemandID,
-		Title:                     revisionTaskTitle(source, result),
-		Summary:                   revisionTaskSummary(source, result),
+		Title:                     revisionTaskTitle(source, rev),
+		Summary:                   revisionTaskSummary(source, rev, sourceResultSummary),
 		Status:                    project.ProjectTaskStatusPlanned,
 		AssignedDigitalEmployeeID: source.AssignedDigitalEmployeeID,
 		RiskLevel:                 stringPtrValue(source.RiskLevel),
 		RequiresHumanApproval:     source.RequiresHumanApproval,
 		CoordinationJobID:         source.CoordinationJobID,
 		RouteDecisionID:           source.RouteDecisionID,
-		PlannedTaskKey:            revisionTaskKey(source, result),
+		PlannedTaskKey:            revisionTaskKey(source, sourceResultID),
 		TaskKind:                  source.TaskKind,
 		StageIndex:                source.StageIndex,
 		RevisionOfTaskID:          &source.ID,
 		ExpectedOutputs:           append([]any(nil), source.ExpectedOutputs...),
-		InputRequirements:         revisionInputRequirements(source, result),
+		InputRequirements:         revisionInputRequirements(source, rev, sourceResultID, sourceResultSummary),
 		HandoffContract:           cloneAnyMap(source.HandoffContract),
-		PlannerMetadata:           revisionPlannerMetadata(source, result),
+		PlannerMetadata:           revisionPlannerMetadata(source, sourceResultID),
 		BlockedByTaskIDs:          append([]uuid.UUID(nil), source.BlockedByTaskIDs...),
 	})
 	if err != nil {
-		return CreateRevisionTaskForResultResult{}, err
+		return uuid.Nil, err
 	}
-	if _, err := s.repository.LinkProjectTaskResultRevisionTask(ctx, input.TenantID, input.ProjectID, result.ID, revision.ID); err != nil {
-		return CreateRevisionTaskForResultResult{}, err
+	if sourceResultID != nil {
+		if _, err := s.repository.LinkProjectTaskResultRevisionTask(ctx, tenantID, projectID, *sourceResultID, revision.ID); err != nil {
+			return uuid.Nil, err
+		}
 	}
-	return CreateRevisionTaskForResultResult{TaskID: revision.ID}, nil
+	return revision.ID, nil
+}
+
+// CreateReworkTaskFromAdversarial turns an adversarial "held" (majority-refute)
+// criterion into an automatic rework task, feeding the judges' structured
+// refutation reasons back as the rework input. It has NO self-reported
+// RevisionRequest (the executor did not ask for a revision); the reasons are
+// synthesized from the per-lens refute judgements. Budget guard runs first: an
+// over-budget source returns {Exhausted:true} without creating a task (Task 4
+// routes that to a human tier-3 hold). Does NOT wire the workflow trigger.
+func (s *ProjectStore) CreateReworkTaskFromAdversarial(ctx context.Context, input CreateReworkTaskFromAdversarialInput) (CreateReworkTaskFromAdversarialResult, error) {
+	if s.repository == nil {
+		return CreateReworkTaskFromAdversarialResult{}, ErrActivityStoreRequired
+	}
+	source, err := s.repository.GetProjectTask(ctx, input.TenantID, input.ReviewedTaskID)
+	if err != nil {
+		return CreateReworkTaskFromAdversarialResult{}, err
+	}
+	if source.ProjectID != input.ProjectID {
+		return CreateReworkTaskFromAdversarialResult{}, project.ErrProjectNotFound
+	}
+	if s.revisionBudgetExhausted(ctx, input.TenantID, input.ProjectID, source) {
+		return CreateReworkTaskFromAdversarialResult{Exhausted: true}, nil
+	}
+	judgements, err := s.repository.ListAdversarialJudgements(ctx, input.TenantID, input.DemandID, input.PlanRevisionID)
+	if err != nil {
+		return CreateReworkTaskFromAdversarialResult{}, err
+	}
+	filtered := make([]project.DemandAdversarialJudgement, 0, len(judgements))
+	for _, judgement := range judgements {
+		if judgement.CriterionID == input.CriterionID {
+			filtered = append(filtered, judgement)
+		}
+	}
+	rev := synthesizeAdversarialRevision(input.CriterionID, input.CriterionStatement, filtered)
+	var sourceResultID *uuid.UUID
+	sourceResultSummary := ""
+	if latest, err := s.latestTaskResult(ctx, source); err == nil && latest != nil {
+		resultID := latest.ID
+		sourceResultID = &resultID
+		sourceResultSummary = latest.Contract.Summary
+	}
+	taskID, err := s.buildRevisionTask(ctx, input.TenantID, input.ProjectID, source, &rev, sourceResultID, sourceResultSummary)
+	if err != nil {
+		return CreateReworkTaskFromAdversarialResult{}, err
+	}
+	return CreateReworkTaskFromAdversarialResult{TaskID: taskID}, nil
+}
+
+// synthesizeAdversarialRevision builds a RevisionRequest from the per-lens
+// adversarial judgements for one held criterion. Only REFUTED lenses feed the
+// rework: RequestedChanges is one "<lens>: <reason>" entry per refute (accepted
+// lenses are excluded); Reason is a majority-refute summary carrying the criterion
+// statement. RecommendedTaskSummary mirrors the reason; the title is left to fall
+// back to the source task's title so the rework reads as a revision of it.
+func synthesizeAdversarialRevision(criterionID, statement string, judgements []project.DemandAdversarialJudgement) project.TaskResultRevisionRequest {
+	refuted := make([]project.DemandAdversarialJudgement, 0, len(judgements))
+	for _, judgement := range judgements {
+		if judgement.Verdict == AdversarialVerdictRefuted {
+			refuted = append(refuted, judgement)
+		}
+	}
+	changes := make([]string, 0, len(refuted))
+	for _, judgement := range refuted {
+		lens := strings.TrimSpace(judgement.Lens)
+		if lens == "" {
+			lens = "judge"
+		}
+		reason := strings.TrimSpace(judgement.Reason)
+		if reason == "" {
+			reason = "未给出理由"
+		}
+		changes = append(changes, lens+": "+reason)
+	}
+	stmt := strings.TrimSpace(statement)
+	if stmt == "" {
+		stmt = strings.TrimSpace(criterionID)
+	}
+	reason := fmt.Sprintf("对抗评审 %d/%d 判官证伪：%s", len(refuted), len(judgements), stmt)
+	return project.TaskResultRevisionRequest{
+		Reason:                 reason,
+		RequestedChanges:       changes,
+		RecommendedTaskSummary: reason,
+	}
 }
 
 // CreateUpstreamSupplementTasks appends a task for the owner of each missing
@@ -4029,26 +4132,31 @@ func recoveryPlannerMetadata(source project.ProjectTask, decisionRequestID uuid.
 	return metadata
 }
 
-func revisionInputRequirements(source project.ProjectTask, result project.ProjectTaskResult) map[string]any {
+func revisionInputRequirements(source project.ProjectTask, rev *project.TaskResultRevisionRequest, sourceResultID *uuid.UUID, sourceResultSummary string) map[string]any {
 	requirements := cloneAnyMap(source.InputRequirements)
-	revision := result.Contract.RevisionRequest
-	requirements["revision_reason"] = revision.Reason
-	requirements["requested_changes"] = append([]string(nil), revision.RequestedChanges...)
+	if rev != nil {
+		requirements["revision_reason"] = rev.Reason
+		requirements["requested_changes"] = append([]string(nil), rev.RequestedChanges...)
+	}
 	requirements["source_task_id"] = source.ID.String()
-	requirements["source_result_id"] = result.ID.String()
-	if result.Contract.Summary != "" {
-		requirements["source_result_summary"] = result.Contract.Summary
+	if sourceResultID != nil {
+		requirements["source_result_id"] = sourceResultID.String()
+	}
+	if sourceResultSummary != "" {
+		requirements["source_result_summary"] = sourceResultSummary
 	}
 	return requirements
 }
 
-func revisionPlannerMetadata(source project.ProjectTask, result project.ProjectTaskResult) map[string]any {
+func revisionPlannerMetadata(source project.ProjectTask, sourceResultID *uuid.UUID) map[string]any {
 	metadata := cloneAnyMap(source.PlannerMetadata)
 	metadata["revision_root_task_id"] = revisionRootTaskID(source)
 	metadata["revision_attempt_count"] = revisionAttemptCount(source) + 1
 	metadata["revision_max_attempts"] = revisionMaxAttempts(source)
 	metadata["source_task_id"] = source.ID.String()
-	metadata["source_result_id"] = result.ID.String()
+	if sourceResultID != nil {
+		metadata["source_result_id"] = sourceResultID.String()
+	}
 	return metadata
 }
 
@@ -4082,9 +4190,9 @@ func plannerProducesFromMetadata(metadata map[string]any) []string {
 	}
 }
 
-func revisionTaskTitle(source project.ProjectTask, result project.ProjectTaskResult) string {
-	if result.Contract.RevisionRequest != nil && strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskTitle) != "" {
-		return strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskTitle)
+func revisionTaskTitle(source project.ProjectTask, rev *project.TaskResultRevisionRequest) string {
+	if rev != nil && strings.TrimSpace(rev.RecommendedTaskTitle) != "" {
+		return strings.TrimSpace(rev.RecommendedTaskTitle)
 	}
 	if strings.Contains(source.Title, "修订") {
 		return source.Title
@@ -4092,26 +4200,33 @@ func revisionTaskTitle(source project.ProjectTask, result project.ProjectTaskRes
 	return source.Title + "（修订）"
 }
 
-func revisionTaskSummary(source project.ProjectTask, result project.ProjectTaskResult) string {
-	if result.Contract.RevisionRequest != nil && strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskSummary) != "" {
-		return strings.TrimSpace(result.Contract.RevisionRequest.RecommendedTaskSummary)
+func revisionTaskSummary(source project.ProjectTask, rev *project.TaskResultRevisionRequest, sourceResultSummary string) string {
+	if rev != nil && strings.TrimSpace(rev.RecommendedTaskSummary) != "" {
+		return strings.TrimSpace(rev.RecommendedTaskSummary)
 	}
-	if strings.TrimSpace(result.Contract.Summary) != "" {
-		return strings.TrimSpace(result.Contract.Summary)
+	if strings.TrimSpace(sourceResultSummary) != "" {
+		return strings.TrimSpace(sourceResultSummary)
 	}
 	return stringPtrValue(source.Summary)
 }
 
-func revisionTaskKey(source project.ProjectTask, result project.ProjectTaskResult) *string {
+func revisionTaskKey(source project.ProjectTask, sourceResultID *uuid.UUID) *string {
 	base := source.ID.String()
 	if value, ok := source.PlannerMetadata["iteration_key"].(string); ok && strings.TrimSpace(value) != "" {
 		base = strings.TrimSpace(value)
 	} else if source.PlannedTaskKey != nil && strings.TrimSpace(*source.PlannedTaskKey) != "" {
 		base = strings.TrimSpace(*source.PlannedTaskKey)
 	}
-	key := base + "#revision-" + result.ID.String()[:8]
+	// When a source result exists the suffix is derived from it (preserving the
+	// self-report path's key byte-for-byte); otherwise (adversarial path with no
+	// execution result yet) a fresh suffix keeps the planned_task_key unique.
+	suffix := uuid.NewString()[:8]
+	if sourceResultID != nil {
+		suffix = sourceResultID.String()[:8]
+	}
+	key := base + "#revision-" + suffix
 	if len(key) > 100 {
-		key = source.ID.String()[:8] + "#revision-" + result.ID.String()[:8]
+		key = source.ID.String()[:8] + "#revision-" + suffix
 	}
 	return &key
 }
