@@ -205,3 +205,4 @@ project_id、repo_url、`git_credential_ref`、base_ref、scope、workspace_mode
 ## 13. 实施同步记录
 
 - 2026-06-30：`docs/superpowers/plans/2026-06-30-project-workspace-autonomous-outer-loop.md` 对本 spec 的 Phase 1 约束进行实现同步。本 worktree/plan 已实现或正在实现的约束包括：项目工作区与员工能力缓存/Provider auth 分离、Provider host auth 默认、项目 repo binding、Runtime attestation、budget heartbeat。真实链路验证尚未完成，当前记录只能作为实现同步说明，不能声明功能可用。
+- 2026-07-17：源码勘察发现 Phase 1 实现偏离（派发链路家目录一次性化、会话不消费 payload.skills、清理未闭环、chat CWD 落全局共享缺省目录），修订见 `2026-07-17-directory-capability-projection-revision-design.md`——该 spec 修订本文 §13 chat"被动锚点"语义（chat 目录按 chat_thread_id 键 + readonly worktree），并给出能力投影模型（存储员工级缓存 / 能力只属员工无项目过滤轴 / 冲突项目优先按 key 留痕 / 项目 MCP 走注册表项目级绑定）。
