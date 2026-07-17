@@ -787,6 +787,55 @@ func TestGovernanceReviewIndependenceSatisfiedByJudges(t *testing.T) {
 	require.Nil(t, adversarialCriterionSatisfiedBy(unmigratedPlan.PlanAcceptanceCriteria, "develop"))
 }
 
+// nonReviewSeparationOfDutiesLiteral declares a role_independence[approver,requester]
+// with a genuine skeleton dependency edge (approve depends_on request) but where the
+// depending ("reviewer") role — approver — carries NO review-class capability
+// (approver: ["approval"], requester: ["submit_request"]). This is a separation-of-
+// duties constraint, NOT a review relationship: the dependency edge alone would fool
+// the pre-fix migration discriminator, but the missing review-class capability must
+// now keep it OUT of the adversarial_review migration so the four-eyes
+// enforceRoleIndependence enforcement stays in force.
+const nonReviewSeparationOfDutiesLiteral = `{"spec_version":2,"roles":[{"key":"requester","title":"发起","required_capabilities":["submit_request"]},{"key":"approver","title":"审批","required_capabilities":["approval"]}],"skeleton":[{"step":"request","role":"requester","produces_defaults":[{"name":"request_form","kind":"evidence_ref"}]},{"step":"approve","role":"approver","depends_on":["request"],"required_inputs_defaults":["request_form"],"produces_defaults":[{"name":"approval_record","kind":"evidence_ref"}]}],"exits":[{"deliverable":"approval_record","label":"审批完成"}],"constraints":[{"kind":"role_independence","roles":["approver","requester"]}],"collapse_rules":[],"default_acceptance_criteria":[]}`
+
+// TestGovernanceDoesNotMigrateNonReviewSeparationOfDuties: a two-role
+// role_independence with a dependency edge but whose depending role has NO review-class
+// capability (approver: approval, not *_review) is a separation-of-duties constraint,
+// not a review. It must NOT be migrated to adversarial_review — so no adversarial_review
+// criterion is injected AND the original enforceRoleIndependence still rejects a shared
+// employee (four-eyes preserved). Before the review-signal was added to the
+// discriminator, the bare dependency edge (approve depends_on request) mis-triggered
+// migration: an adversarial_review criterion would be injected on the "request" task and
+// enforceRoleIndependence skipped, silently allowing one employee to both request and
+// approve — the exact separation-of-duties defeat this fix closes.
+func TestGovernanceDoesNotMigrateNonReviewSeparationOfDuties(t *testing.T) {
+	employeeA := uuid.New()
+	employeeB := uuid.New()
+	request := planTaskWithIO("request", nil, []string{"request_form"}, nil)
+	request.SelectedEmployeeID = employeeA
+	approve := planTaskWithIO("approve", []string{"request"}, []string{"approval_record"}, []string{"request_form"})
+	approve.SelectedEmployeeID = employeeA // same employee both requests and approves
+	plan := RouteDecisionPlan{
+		Reason:          "non-review separation of duties, shared employee",
+		TemplateKey:     "approval_flow",
+		ExitDeliverable: "approval_record",
+		Tasks:           []PlannedTask{request, approve},
+	}
+	snapshot := CoordinationSnapshot{
+		ScenarioTemplate:    templateSnapshotFromLiteral(t, "approval_flow", 1, nonReviewSeparationOfDutiesLiteral),
+		DigitalEmployeePool: activeExecutorPool(employeeA, employeeB),
+	}
+
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+
+	// Not migrated → original four-eyes rejection still fires on the shared employee.
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Contains(t, err.Error(), "role_independence")
+	// No adversarial_review criterion injected on the (would-be reviewed) request task —
+	// nor anywhere: a non-review SoD constraint must not spawn an adversarial criterion.
+	require.Nil(t, adversarialCriterionSatisfiedBy(plan.PlanAcceptanceCriteria, "request"))
+	require.Nil(t, constraintNoteWithKind(plan.ConstraintNotes, "adversarial_review"))
+}
+
 // TestExitEvidenceRejectsAllOpinionAutonomousStage: an autonomous step (not a
 // human_gate target) whose exit criteria are ALL human_judgment is rejected —
 // an unattended stage must not gate on opinion alone.

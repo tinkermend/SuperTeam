@@ -230,16 +230,47 @@ func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmp
 	return nil
 }
 
+// roleHasReviewCapability reports whether role declares at least one review-class
+// required capability — any capability key CONTAINING the substring "review"
+// (case-insensitive), e.g. code_review, design_review, peer_review.
+//
+// This is a HEURISTIC review signal, deliberately part of the migration
+// discriminator (see reviewedStepForIndependence): a skeleton dependency edge alone
+// does NOT mark a review relationship — a non-review separation-of-duties constraint
+// (e.g. role_independence[approver, requester] where approve depends_on request)
+// also has a dependency edge, yet migrating it would inject a spurious
+// adversarial_review criterion AND silently disable the four-eyes
+// enforceRoleIndependence enforcement, defeating separation of duties. Requiring the
+// depending ("reviewer") role to carry a review-class capability keeps that
+// migration scoped to genuine review pairs.
+//
+// TODO(governance): a future explicit constraint field/kind (e.g. a review_of
+// pointer or a dedicated review_independence constraint kind) would be more robust
+// than substring-matching a capability key; this heuristic is the interim signal
+// until that lands.
+func roleHasReviewCapability(role scenariotemplate.SpecRole) bool {
+	for _, capability := range role.RequiredCapabilities {
+		if strings.Contains(strings.ToLower(capability), "review") {
+			return true
+		}
+	}
+	return false
+}
+
 // reviewedStepForIndependence identifies the reviewed skeleton step of a
-// role_independence constraint from the skeleton DEPENDENCY: of the two roles the
-// constraint names, the one whose step depends_on the other role's step is the
-// reviewer; the depended-on (reviewed) role's step is what an adversarial review
-// judges. It only resolves the classic two-role review pair — a constraint naming
-// other than exactly two roles, or two roles with no dependency edge between their
-// steps (so reviewer/reviewed is undeterminable), returns ok=false, and the caller
-// must fall back to the original enforceRoleIndependence behavior. steps is the
-// pruned skeleton, so only dependency edges reachable from the chosen exit count.
-func reviewedStepForIndependence(constraint scenariotemplate.SpecConstraint, steps []scenariotemplate.SpecSkeletonStep) (scenariotemplate.SpecSkeletonStep, bool) {
+// role_independence constraint from the skeleton DEPENDENCY plus a REVIEW SIGNAL: of
+// the two roles the constraint names, the one whose step depends_on the other role's
+// step is the reviewer, and — for the pair to count as a genuine review relationship —
+// that reviewer role must carry a review-class required capability (see
+// roleHasReviewCapability); the depended-on (reviewed) role's step is what an
+// adversarial review judges. It only resolves the classic two-role review pair — a
+// constraint naming other than exactly two roles, two roles with no dependency edge
+// between their steps (so reviewer/reviewed is undeterminable), or a depending role
+// with NO review-class capability (a non-review separation-of-duties constraint)
+// returns ok=false, and the caller must fall back to the original
+// enforceRoleIndependence behavior. steps is the pruned skeleton, so only dependency
+// edges reachable from the chosen exit count.
+func reviewedStepForIndependence(constraint scenariotemplate.SpecConstraint, steps []scenariotemplate.SpecSkeletonStep, roleByKey map[string]scenariotemplate.SpecRole) (scenariotemplate.SpecSkeletonStep, bool) {
 	if len(constraint.Roles) != 2 {
 		return scenariotemplate.SpecSkeletonStep{}, false
 	}
@@ -248,8 +279,13 @@ func reviewedStepForIndependence(constraint scenariotemplate.SpecConstraint, ste
 		stepByName[s.Step] = s
 	}
 	// reviewedFor returns the reviewed role's depended-on step when some step of
-	// reviewerRole depends_on a step of reviewedRole.
+	// reviewerRole depends_on a step of reviewedRole AND reviewerRole carries a
+	// review-class capability (so the dependency edge really is a review, not a
+	// generic separation-of-duties ordering).
 	reviewedFor := func(reviewerRole, reviewedRole string) (scenariotemplate.SpecSkeletonStep, bool) {
+		if !roleHasReviewCapability(roleByKey[reviewerRole]) {
+			return scenariotemplate.SpecSkeletonStep{}, false
+		}
 		for _, s := range steps {
 			if s.Role != reviewerRole {
 				continue
@@ -289,8 +325,8 @@ func reviewedStepForIndependence(constraint scenariotemplate.SpecConstraint, ste
 // nothing re-validates what we inject here. Injection is idempotent: if an
 // adversarial_review criterion already satisfied_by the reviewed task exists (a
 // prior governance pass), we report migrated without appending a duplicate.
-func migrateReviewerRoleToAdversarial(constraint scenariotemplate.SpecConstraint, steps []scenariotemplate.SpecSkeletonStep, producedBy map[string]string, taskByKey map[string]*PlannedTask, plan *RouteDecisionPlan) bool {
-	reviewedStep, ok := reviewedStepForIndependence(constraint, steps)
+func migrateReviewerRoleToAdversarial(constraint scenariotemplate.SpecConstraint, steps []scenariotemplate.SpecSkeletonStep, producedBy map[string]string, taskByKey map[string]*PlannedTask, roleByKey map[string]scenariotemplate.SpecRole, plan *RouteDecisionPlan) bool {
+	reviewedStep, ok := reviewedStepForIndependence(constraint, steps, roleByKey)
 	if !ok {
 		return false
 	}
@@ -532,8 +568,10 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 	}
 
 	roleTitle := make(map[string]string, len(spec.Roles))
+	roleByKey := make(map[string]scenariotemplate.SpecRole, len(spec.Roles))
 	for _, role := range spec.Roles {
 		roleTitle[role.Key] = role.Title
+		roleByKey[role.Key] = role
 	}
 	roleCapabilities := roleCapabilitiesFromSpec(spec)
 
@@ -571,7 +609,7 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 			// 判官替换单一 reviewer 员工）。迁移成功即视为判官组天然提供四眼独立，
 			// 不再因 reviewer/developer 共享员工 reject。关系不可判（无依赖边）的约束
 			// 保持原 enforceRoleIndependence 行为。
-			if migrateReviewerRoleToAdversarial(constraint, steps, producedBy, taskByKey, plan) {
+			if migrateReviewerRoleToAdversarial(constraint, steps, producedBy, taskByKey, roleByKey, plan) {
 				continue
 			}
 			if err := enforceRoleIndependence(constraint, roleEmployees, roleCapabilities, activeExecutorCount); err != nil {
