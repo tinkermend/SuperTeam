@@ -52,13 +52,24 @@ func adversarialItem(criterionID string, budgetExhausted bool) AdversarialReview
 // GetProject and inherits nil (panic-on-call) for everything else via the
 // embedded interface — none of which PrepareAdversarialReview reaches for a task
 // with no LatestTaskResultID / CoordinationJobID.
+//
+// byID, when set, lets a test wire additional tasks (e.g. a revision-root
+// ancestor) resolvable by their own ID — GetProjectTask checks byID first and
+// falls back to the single `task` field so existing single-task tests are
+// unaffected.
 type stubAdversarialRepo struct {
 	project.Repository
 	task     project.ProjectTask
 	criteria []project.DemandAcceptanceCriterion
+	byID     map[uuid.UUID]project.ProjectTask
 }
 
 func (r *stubAdversarialRepo) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {
+	if r.byID != nil {
+		if found, ok := r.byID[projectTaskID]; ok {
+			return found, nil
+		}
+	}
 	return r.task, nil
 }
 
@@ -220,6 +231,88 @@ func TestAdversarialEngineErrorDoesNotReleaseGate(t *testing.T) {
 	}
 	pending := project.ResolveUnsatisfiedBlockingCriteria([]project.DemandAcceptanceCriterion{criterion}, nil)
 	require.Equal(t, []string{"crit_adv"}, pending)
+}
+
+// TestAdversarialCriteriaMatchRevisionByRootKey: a rework task minted by
+// reviseTask gets a NEW PlannedTaskKey (revisionTaskKey's "<base>#revision-…"
+// suffix), but the demand's adversarial_review criterion still names the
+// ORIGINAL (revision-root) task's key in SatisfiedBy — that snapshot is never
+// rewritten as revisions chain. Without resolving the root key, a completed
+// rework would satisfy no criterion and the judges would never re-fire,
+// silently breaking the self-iteration loop. This asserts the criterion IS
+// found via the root key even though the revision task's own key differs.
+func TestAdversarialCriteriaMatchRevisionByRootKey(t *testing.T) {
+	tenantID, projectID := uuid.New(), uuid.New()
+	demandID, planRevisionID := uuid.New(), uuid.New()
+
+	rootKey := "develop"
+	rootID := uuid.New()
+	root := project.ProjectTask{
+		ID:             rootID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		PlannedTaskKey: &rootKey,
+	}
+
+	revisionKey := "develop#revision-abcd1234"
+	revision := project.ProjectTask{
+		ID:                     uuid.New(),
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		DemandID:               &demandID,
+		AcceptedPlanRevisionID: &planRevisionID,
+		PlannedTaskKey:         &revisionKey,
+		RevisionOfTaskID:       &rootID,
+		PlannerMetadata:        map[string]any{"revision_root_task_id": rootID.String()},
+	}
+
+	criteria := []project.DemandAcceptanceCriterion{
+		adversarialCriterionRow(demandID, planRevisionID, "crit_adv", VerificationMethodAdversarialReview, rootKey),
+	}
+
+	repo := &stubAdversarialRepo{
+		task:     revision,
+		criteria: criteria,
+		byID: map[uuid.UUID]project.ProjectTask{
+			revision.ID: revision,
+			rootID:      root,
+		},
+	}
+	store := &ProjectStore{repository: repo}
+
+	plan, err := store.PrepareAdversarialReview(context.Background(), PrepareAdversarialReviewInput{
+		TenantID: tenantID, ProjectID: projectID, CompletedTaskID: revision.ID,
+	})
+	require.NoError(t, err)
+	require.True(t, plan.Reviewed)
+	require.Len(t, plan.Items, 1)
+	require.Equal(t, "crit_adv", plan.Items[0].Input.CriterionID)
+}
+
+// TestNonRevisionTaskUnchanged: a normal (non-revision) task still matches
+// adversarial_review criteria only on its own PlannedTaskKey — a regression
+// guard that the root-key resolution added for revisions does not broaden
+// matching for tasks that were never reworked.
+func TestNonRevisionTaskUnchanged(t *testing.T) {
+	tenantID, projectID := uuid.New(), uuid.New()
+	demandID, planRevisionID := uuid.New(), uuid.New()
+
+	criteria := []project.DemandAcceptanceCriterion{
+		adversarialCriterionRow(demandID, planRevisionID, "crit_adv", VerificationMethodAdversarialReview, "perf_task"),
+		adversarialCriterionRow(demandID, planRevisionID, "crit_other", VerificationMethodAdversarialReview, "other_task"),
+	}
+
+	task := stubAdversarialTask(tenantID, projectID, demandID, planRevisionID, "perf_task")
+	repo := &stubAdversarialRepo{task: task, criteria: criteria}
+	store := &ProjectStore{repository: repo}
+
+	plan, err := store.PrepareAdversarialReview(context.Background(), PrepareAdversarialReviewInput{
+		TenantID: tenantID, ProjectID: projectID, CompletedTaskID: task.ID,
+	})
+	require.NoError(t, err)
+	require.True(t, plan.Reviewed)
+	require.Len(t, plan.Items, 1)
+	require.Equal(t, "crit_adv", plan.Items[0].Input.CriterionID)
 }
 
 func TestAdversarialJudgeCountPolicy(t *testing.T) {

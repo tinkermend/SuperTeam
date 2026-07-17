@@ -222,6 +222,16 @@ func (s *ProjectStore) PrepareAdversarialReview(ctx context.Context, input Prepa
 // planned KEY (not UUID) — the same identity rule as
 // project.criteriaSatisfiedByTask. A task with no demand/plan-revision/planned
 // key is on the hook for nothing.
+//
+// A rework task minted by reworkTask/reviseTask gets a NEW PlannedTaskKey
+// (revisionTaskKey: "<base>#revision-<resultID>") distinct from the task it
+// revises, but the demand's adversarial_review criteria still name the
+// ORIGINAL (revision-root) task's key in SatisfiedBy — that snapshot is fixed
+// at planning time and is never rewritten as revisions chain. So a rework
+// task is also on the hook for any criterion whose SatisfiedBy names the
+// revision-root task's planned key, not just its own — otherwise a completed
+// rework never re-fires the judges and the self-iteration loop silently
+// breaks after one round.
 func (s *ProjectStore) listAdversarialCriteriaForTask(ctx context.Context, task project.ProjectTask) ([]project.DemandAcceptanceCriterion, error) {
 	if task.DemandID == nil || task.AcceptedPlanRevisionID == nil || task.PlannedTaskKey == nil {
 		return nil, nil
@@ -229,6 +239,10 @@ func (s *ProjectStore) listAdversarialCriteriaForTask(ctx context.Context, task 
 	taskKey := strings.TrimSpace(*task.PlannedTaskKey)
 	if taskKey == "" {
 		return nil, nil
+	}
+	matchKeys := map[string]struct{}{taskKey: {}}
+	if rootKey := s.revisionRootPlannedTaskKey(ctx, task); rootKey != "" {
+		matchKeys[rootKey] = struct{}{}
 	}
 	criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, task.TenantID, *task.DemandID, *task.AcceptedPlanRevisionID)
 	if err != nil {
@@ -240,13 +254,48 @@ func (s *ProjectStore) listAdversarialCriteriaForTask(ctx context.Context, task 
 			continue
 		}
 		for _, satisfiedBy := range c.SatisfiedBy {
-			if strings.TrimSpace(satisfiedBy) == taskKey {
+			if _, ok := matchKeys[strings.TrimSpace(satisfiedBy)]; ok {
 				scoped = append(scoped, c)
 				break
 			}
 		}
 	}
 	return scoped, nil
+}
+
+// revisionRootPlannedTaskKey resolves the PlannedTaskKey of task's
+// revision-root ancestor, so listAdversarialCriteriaForTask can match
+// SatisfiedBy entries that still name the original (pre-revision) task. It
+// returns "" — falling back to matching the task's own key only — when task
+// is not a revision, the root cannot be resolved, or the root has no planned
+// key. Root lookup failure must never error the whole trigger: a review that
+// under-matches degrades to "not re-triggered," which is the pre-fix
+// behavior, not a new failure mode.
+func (s *ProjectStore) revisionRootPlannedTaskKey(ctx context.Context, task project.ProjectTask) string {
+	if task.RevisionOfTaskID == nil {
+		if _, hasMetadataRoot := task.PlannerMetadata["revision_root_task_id"]; !hasMetadataRoot {
+			return ""
+		}
+	}
+	if s.repository == nil {
+		return ""
+	}
+	rootIDValue := revisionRootTaskID(task)
+	if rootIDValue == "" || rootIDValue == task.ID.String() {
+		return ""
+	}
+	rootID, err := uuid.Parse(rootIDValue)
+	if err != nil {
+		return ""
+	}
+	root, err := s.repository.GetProjectTask(ctx, task.TenantID, rootID)
+	if err != nil {
+		return ""
+	}
+	if root.PlannedTaskKey == nil {
+		return ""
+	}
+	return strings.TrimSpace(*root.PlannedTaskKey)
 }
 
 // PersistAdversarialOutcome writes one criterion's aggregate verdict
