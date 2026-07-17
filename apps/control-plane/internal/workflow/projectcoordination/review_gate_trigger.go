@@ -21,12 +21,16 @@ package projectcoordination
 // independent detectors, not a correctness/quality scorer. "No violation" is the
 // DEFAULT-RELEASE direction — it does NOT judge the artifact "correct".
 //
-// Failure posture is DELIBERATELY OPPOSITE the adversarial trigger's: a detector
-// that cannot run must NOT manufacture a hold. LLM-detector failures already fail
-// OPEN inside the detectors (return Detected=false). A store-level Activity error
-// propagates and the workflow logs + falls through: the criterion simply gets no
-// verdict, which for review_gate means DEFAULT RELEASE (Task 5's default-reversal
-// gate). The human sees any detected violation at final acceptance (spec §6).
+// Failure posture: LLM-detector failures fail OPEN inside the detectors (return
+// Detected=false) — a detector that cannot run must not manufacture a violation.
+// A store-level Activity error propagates and the workflow logs + falls through.
+// Since the P1.1 placeholder-race fix, "falls through" no longer means default
+// release: the reviewed task's completion already wrote a `pending` placeholder
+// verdict (project.Service.projectReviewGatePlaceholderVerdicts), so a gate that
+// was TRIGGERED but never concluded leaves the demand HELD at acceptance_pending
+// for the human — deliberately failing toward oversight rather than releasing an
+// artifact whose detection round never finished. A criterion whose task never
+// completed (gate never triggered) still has no verdict and still default-releases.
 
 import (
 	"context"
@@ -104,8 +108,9 @@ type PersistReviewGateOutcomeInput struct {
 // RunReviewGateForTask is the orchestrating Activity. Unlike AdversarialReviewForTask
 // it does NOT propagate detector failures as a hold: the detectors fail OPEN
 // internally, and only a store load/persist error propagates here — the workflow
-// swallows it and falls through (default release for a verdict-less review_gate
-// criterion). It runs the standard detectors once over the artifact and writes the
+// swallows it and falls through (leaving the completion-time `pending` placeholder
+// holding the demand for the human; see the failure-posture note at the top of this
+// file). It runs the standard detectors once over the artifact and writes the
 // SAME aggregate outcome to every review_gate criterion the task satisfies.
 func (a *Activities) RunReviewGateForTask(ctx context.Context, input RunReviewGateForTaskInput) (RunReviewGateForTaskResult, error) {
 	store, ok := a.store.(reviewGateStore)
@@ -194,15 +199,27 @@ func (s *ProjectStore) PrepareReviewGate(ctx context.Context, input PrepareRevie
 
 // PersistReviewGateOutcome writes one criterion's aggregate gate outcome as a
 // review_gate demand_criterion_verdicts row (judge_type=review_gate,
-// project_task_id NULL) via the shared projection. Upsert-idempotent, so a task
-// retry re-running the gate is safe.
+// project_task_id NULL) via the shared projection, then recomputes the demand's
+// lifecycle status. The recompute is the second half of the placeholder-race
+// fix (project.Service.projectReviewGatePlaceholderVerdicts): the reviewed
+// task's completion synchronously wrote a `pending` placeholder that held the
+// demand at acceptance_pending, and NOTHING else recomputes after this
+// asynchronous verdict lands — without it a clean artifact (verdict flipped to
+// satisfied) would stay held forever instead of default-releasing. The
+// recompute is forward-only and idempotent: on unsatisfied it re-derives
+// acceptance_pending (no change), on satisfied it converges the demand to
+// completed exactly as the pre-placeholder default release did, only ~13s
+// later. Upsert-idempotent, so a task retry re-running the gate is safe.
 func (s *ProjectStore) PersistReviewGateOutcome(ctx context.Context, input PersistReviewGateOutcomeInput) error {
-	return s.projectReviewGateVerdict(ctx, ReviewGateVerdictInput{
+	if err := s.projectReviewGateVerdict(ctx, ReviewGateVerdictInput{
 		TenantID:       input.TenantID,
 		ProjectID:      input.ProjectID,
 		DemandID:       input.DemandID,
 		PlanRevisionID: input.PlanRevisionID,
 		CriterionID:    input.CriterionID,
 		Outcome:        input.Outcome,
-	})
+	}); err != nil {
+		return err
+	}
+	return s.repository.RecomputeProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID)
 }

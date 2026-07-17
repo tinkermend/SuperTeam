@@ -79,6 +79,18 @@ const (
 	// criterionEffectiveVerdict so a detector verdict is never miscounted as an
 	// executor self-report.
 	demandCriterionJudgeTypeReviewGate = "review_gate"
+	// demandCriterionVerdictReviewGatePending is the conservative PLACEHOLDER
+	// verdict written SYNCHRONOUSLY (judge_type=review_gate aggregate row)
+	// inside the reviewed task's completion path, BEFORE the demand-status
+	// recompute runs — closing the race where a review_gate-only demand
+	// auto-completed while the asynchronous detector (~13s LLM call) was still
+	// running, bypassing the gate entirely. The gate treats it as HOLD; the
+	// asynchronous RunReviewGateForTask activity then flips it to satisfied
+	// (release) or unsatisfied (keep held for the human). Only ever written for
+	// review_gate criteria — the placeholder is a bounded "wait for the
+	// detector's conclusion", not an open-ended correctness proof, so it does
+	// not violate the default-release reframe.
+	demandCriterionVerdictReviewGatePending = "pending"
 )
 
 // criterionEffectiveVerdict resolves a single criterion's effective verdict
@@ -212,12 +224,19 @@ func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, ve
 		}
 		if c.VerificationMethod == demandCriterionVerificationMethodReviewGate {
 			// Default-release reframe (spec §2 违反检测门): a review_gate criterion is
-			// a violation DETECTOR, not a correctness proof. It holds ONLY when a
-			// violation was actually detected — the effective verdict is `unsatisfied`
-			// (a detector fired, or a human override is unsatisfied). No verdict yet
-			// (gate not run / nothing detected) OR `satisfied` → RELEASE. This INVERTS
-			// the "no verdict = pending" default that automated_test/human_judgment keep.
-			if hasVerdict && verdict == demandCriterionVerdictUnsatisfied {
+			// a violation DETECTOR, not a correctness proof. No verdict at all
+			// (gate never triggered for this criterion) → RELEASE. This INVERTS
+			// the "no verdict = pending" default that automated_test/human_judgment
+			// keep. But once a verdict EXISTS, only `satisfied` releases:
+			//   - `unsatisfied` — a detector fired (or a human override) → HOLD;
+			//   - `pending` — the synchronous placeholder written at the reviewed
+			//     task's completion, before the async detector concluded → HOLD
+			//     (bounded: the detector was triggered by that same completion and
+			//     flips it within seconds; see
+			//     demandCriterionVerdictReviewGatePending);
+			//   - any other value is an unexpected state and fails toward the
+			//     human (HOLD) rather than releasing on garbage.
+			if hasVerdict && verdict != demandCriterionVerdictSatisfied {
 				pending = append(pending, c.CriterionID)
 			}
 			continue

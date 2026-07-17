@@ -32,6 +32,9 @@ function verdictPill(verdict: DemandAcceptanceCriterionDetail["verdict"]): {
       return { label: "未满足", tone: "danger" };
     case "not_applicable":
       return { label: "不适用", tone: "mute" };
+    case "pending":
+      // review_gate 完成时占位:检测器出结论前保持 HOLD。
+      return { label: "检测中", tone: "info" };
     default:
       return { label: "待判定", tone: "mute" };
   }
@@ -43,6 +46,10 @@ function judgeLabel(judgeType: DemandAcceptanceCriterionDetail["judge_type"]): s
       return "负责人判定";
     case "executor":
       return "员工判定";
+    case "adversarial":
+      return "对抗评审判定";
+    case "review_gate":
+      return "检测门判定";
     default:
       return null;
   }

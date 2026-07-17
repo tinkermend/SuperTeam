@@ -242,16 +242,22 @@ func (e CredentialType) Valid() bool {
 
 // Defines values for DemandAcceptanceCriterionDetailJudgeType.
 const (
-	Executor DemandAcceptanceCriterionDetailJudgeType = "executor"
-	Human    DemandAcceptanceCriterionDetailJudgeType = "human"
+	Adversarial DemandAcceptanceCriterionDetailJudgeType = "adversarial"
+	Executor    DemandAcceptanceCriterionDetailJudgeType = "executor"
+	Human       DemandAcceptanceCriterionDetailJudgeType = "human"
+	ReviewGate  DemandAcceptanceCriterionDetailJudgeType = "review_gate"
 )
 
 // Valid indicates whether the value is a known member of the DemandAcceptanceCriterionDetailJudgeType enum.
 func (e DemandAcceptanceCriterionDetailJudgeType) Valid() bool {
 	switch e {
+	case Adversarial:
+		return true
 	case Executor:
 		return true
 	case Human:
+		return true
+	case ReviewGate:
 		return true
 	default:
 		return false
@@ -260,13 +266,19 @@ func (e DemandAcceptanceCriterionDetailJudgeType) Valid() bool {
 
 // Defines values for DemandAcceptanceCriterionDetailVerdict.
 const (
-	DemandAcceptanceCriterionDetailVerdictSatisfied   DemandAcceptanceCriterionDetailVerdict = "satisfied"
-	DemandAcceptanceCriterionDetailVerdictUnsatisfied DemandAcceptanceCriterionDetailVerdict = "unsatisfied"
+	DemandAcceptanceCriterionDetailVerdictNotApplicable DemandAcceptanceCriterionDetailVerdict = "not_applicable"
+	DemandAcceptanceCriterionDetailVerdictPending       DemandAcceptanceCriterionDetailVerdict = "pending"
+	DemandAcceptanceCriterionDetailVerdictSatisfied     DemandAcceptanceCriterionDetailVerdict = "satisfied"
+	DemandAcceptanceCriterionDetailVerdictUnsatisfied   DemandAcceptanceCriterionDetailVerdict = "unsatisfied"
 )
 
 // Valid indicates whether the value is a known member of the DemandAcceptanceCriterionDetailVerdict enum.
 func (e DemandAcceptanceCriterionDetailVerdict) Valid() bool {
 	switch e {
+	case DemandAcceptanceCriterionDetailVerdictNotApplicable:
+		return true
+	case DemandAcceptanceCriterionDetailVerdictPending:
+		return true
 	case DemandAcceptanceCriterionDetailVerdictSatisfied:
 		return true
 	case DemandAcceptanceCriterionDetailVerdictUnsatisfied:
@@ -2726,7 +2738,7 @@ type DemandAcceptanceCriterionDetail struct {
 	Statement     string                       `json:"statement"`
 	TaskSummaries []DemandCriterionTaskSummary `json:"task_summaries"`
 
-	// Verdict 生效判定（人类优先于执行者）；无任何判定时为 null
+	// Verdict 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；无任何判定时为 null
 	Verdict *DemandAcceptanceCriterionDetailVerdict `json:"verdict"`
 
 	// VerificationMethod 验证方式，如 human_judgment / automated_test
@@ -2736,7 +2748,7 @@ type DemandAcceptanceCriterionDetail struct {
 // DemandAcceptanceCriterionDetailJudgeType 生效判定的来源；无判定时为 null
 type DemandAcceptanceCriterionDetailJudgeType string
 
-// DemandAcceptanceCriterionDetailVerdict 生效判定（人类优先于执行者）；无任何判定时为 null
+// DemandAcceptanceCriterionDetailVerdict 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；无任何判定时为 null
 type DemandAcceptanceCriterionDetailVerdict string
 
 // DemandCriterionTaskSummary defines model for DemandCriterionTaskSummary.

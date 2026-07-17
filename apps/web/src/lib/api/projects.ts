@@ -1351,8 +1351,8 @@ export type DemandAcceptanceCriterionDetail = {
   verification_method: string;
   severity: string;
   satisfied_by: string[];
-  verdict: "satisfied" | "unsatisfied" | "not_applicable" | null;
-  judge_type: "human" | "executor" | null;
+  verdict: "satisfied" | "unsatisfied" | "not_applicable" | "pending" | null;
+  judge_type: "human" | "executor" | "adversarial" | "review_gate" | null;
   evidence_refs: string[];
   task_summaries: DemandCriterionTaskSummary[];
 };

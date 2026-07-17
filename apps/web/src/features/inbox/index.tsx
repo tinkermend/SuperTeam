@@ -102,6 +102,9 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     queryKey: ["inbox-items", view, filters],
     queryFn: () => listInboxItems(apiOptions, { ...filters, view }),
     placeholderData: keepPreviousData,
+    // 外部渠道(飞书/他人)的 resolve 不会推送到已打开的页面,轮询让待处理项
+    // 在数秒内自动消失/更新,而不是停留到用户手动刷新。
+    refetchInterval: 5000,
   });
 
   const actionMutation = useMutation({

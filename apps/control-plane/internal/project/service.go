@@ -3097,6 +3097,9 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 	if err := s.projectDemandCriterionVerdicts(ctx, task, req.ProjectTaskAttemptRuntimeRequest, *resultContract); err != nil {
 		return nil, err
 	}
+	if err := s.projectReviewGatePlaceholderVerdicts(ctx, task); err != nil {
+		return nil, err
+	}
 	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
 	if err != nil {
 		return nil, err
@@ -3569,6 +3572,60 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 			Reason:         reason,
 			EvidenceRefs:   evidenceRefs,
 			ProjectTaskID:  &task.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// projectReviewGatePlaceholderVerdicts writes the conservative `pending`
+// placeholder verdict (review_gate aggregate row) for every review_gate
+// criterion THIS completing task satisfies, BEFORE the writeback transaction
+// recomputes the demand status. Without it, a review_gate-only demand
+// auto-completes at task completion — the criterion has no verdict yet, so the
+// default-release gate lets it through — while the asynchronous detector
+// (RunReviewGateForTask, triggered by the same completion's
+// EmployeeTaskCompleted signal, ~13s of LLM latency) is still running: a
+// detected violation would land on an already-completed demand, bypassing the
+// gate. The placeholder makes the convergence gate HOLD at acceptance_pending
+// until the detector flips the same aggregate row (upsert on
+// uq_demand_verdicts_review_gate) to satisfied (release, followed by the
+// activity-side demand-status recompute) or unsatisfied (stay held for the
+// human). Re-completion (task retry) deliberately overwrites a previous
+// round's real verdict back to pending: a new artifact means a new detection
+// round, and holding until it concludes is the conservative direction.
+//
+// Scope note: criteriaSatisfiedByTask matches the task's OWN planned key only.
+// A rework task (revision of a held original) matches its review_gate criteria
+// via the revision-root key on the trigger side
+// (listCriteriaForTaskByMethod), so its completion writes no fresh
+// placeholder here — but by construction a rework round only exists because a
+// prior-round verdict already exists on the criterion, so the gate is not
+// bypassable through that path (at worst a stale prior verdict governs for the
+// seconds until the detector overwrites it; recorded as a known P1.1 edge in
+// the spec).
+func (s *Service) projectReviewGatePlaceholderVerdicts(ctx context.Context, task ProjectTask) error {
+	snapshot, err := s.demandAcceptanceCriteriaSnapshot(ctx, task)
+	if err != nil {
+		return err
+	}
+	if len(snapshot) == 0 {
+		return nil
+	}
+	for _, criterion := range criteriaSatisfiedByTask(snapshot, task) {
+		if criterion.VerificationMethod != demandCriterionVerificationMethodReviewGate {
+			continue
+		}
+		if err := s.repository.CreateReviewGateVerdict(ctx, CreateReviewGateVerdictRequest{
+			TenantID:       task.TenantID,
+			ProjectID:      task.ProjectID,
+			DemandID:       criterion.DemandID,
+			PlanRevisionID: criterion.PlanRevisionID,
+			CriterionID:    criterion.CriterionID,
+			Verdict:        demandCriterionVerdictReviewGatePending,
+			JudgeID:        uuid.Nil,
+			Reason:         "检测门待执行：任务完成已触发检测器，占位保持 HOLD 至检测器出结论",
 		}); err != nil {
 			return err
 		}

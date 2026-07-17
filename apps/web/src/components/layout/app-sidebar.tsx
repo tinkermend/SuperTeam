@@ -26,6 +26,8 @@ export function AppSidebar() {
       }
     },
     staleTime: 30 * 1000,
+    // 外部渠道(飞书/他人)resolve 后徽标数应自动回落,轮询兜底(与 staleTime 一致)。
+    refetchInterval: 30 * 1000,
   });
   const inboxBadge =
     inboxBadgeQuery.data && inboxBadgeQuery.data.mine_open_count > 0

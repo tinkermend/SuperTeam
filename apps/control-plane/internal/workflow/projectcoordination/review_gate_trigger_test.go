@@ -19,11 +19,12 @@ import (
 // everything else via the embedded interface.
 type stubReviewGateRepo struct {
 	project.Repository
-	task     project.ProjectTask
-	criteria []project.DemandAcceptanceCriterion
-	result   project.ProjectTaskResult
-	policy   map[string]any
-	verdicts []project.CreateReviewGateVerdictRequest
+	task       project.ProjectTask
+	criteria   []project.DemandAcceptanceCriterion
+	result     project.ProjectTaskResult
+	policy     map[string]any
+	verdicts   []project.CreateReviewGateVerdictRequest
+	recomputes []uuid.UUID
 }
 
 func (r *stubReviewGateRepo) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {
@@ -44,6 +45,11 @@ func (r *stubReviewGateRepo) ListProjectTaskResults(ctx context.Context, req pro
 
 func (r *stubReviewGateRepo) CreateReviewGateVerdict(ctx context.Context, req project.CreateReviewGateVerdictRequest) error {
 	r.verdicts = append(r.verdicts, req)
+	return nil
+}
+
+func (r *stubReviewGateRepo) RecomputeProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error {
+	r.recomputes = append(r.recomputes, demandID)
 	return nil
 }
 
@@ -113,6 +119,10 @@ func TestRunReviewGateForTaskProjectsVerdict(t *testing.T) {
 		require.Len(t, repo.verdicts, 1)
 		require.Equal(t, "crit_rg", repo.verdicts[0].CriterionID)
 		require.Equal(t, reviewGateVerdictUnsatisfied, repo.verdicts[0].Verdict)
+		// P1.1 race fix: persisting the verdict must recompute the demand status
+		// (the completion-time `pending` placeholder held it; unsatisfied re-derives
+		// acceptance_pending idempotently).
+		require.Equal(t, []uuid.UUID{demandID}, repo.recomputes)
 	})
 
 	t.Run("clean projects satisfied", func(t *testing.T) {
@@ -132,6 +142,10 @@ func TestRunReviewGateForTaskProjectsVerdict(t *testing.T) {
 		require.False(t, out.AnyViolation)
 		require.Len(t, repo.verdicts, 1)
 		require.Equal(t, reviewGateVerdictSatisfied, repo.verdicts[0].Verdict)
+		// P1.1 race fix: the satisfied flip must recompute the demand status so a
+		// placeholder-held demand converges to completed (default release, delayed
+		// to the detector's conclusion) — without this it would stay held forever.
+		require.Equal(t, []uuid.UUID{demandID}, repo.recomputes)
 	})
 
 	t.Run("no review_gate criterion is a no-op", func(t *testing.T) {
@@ -149,6 +163,7 @@ func TestRunReviewGateForTaskProjectsVerdict(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, out.Reviewed)
 		require.Empty(t, repo.verdicts)
+		require.Empty(t, repo.recomputes, "no review_gate criterion → no verdict, no recompute")
 	})
 }
 

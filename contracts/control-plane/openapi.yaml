@@ -8492,13 +8492,17 @@ components:
           enum:
             - satisfied
             - unsatisfied
-          description: 生效判定（人类优先于执行者）；无任何判定时为 null
+            - not_applicable
+            - pending
+          description: 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；无任何判定时为 null
         judge_type:
           type: string
           nullable: true
           enum:
             - human
             - executor
+            - adversarial
+            - review_gate
           description: 生效判定的来源；无判定时为 null
         evidence_refs:
           type: array

@@ -1,4 +1,4 @@
-h1:s7188m046YBF4YlJ/eYCbswJ4k6Il5+oktPQsKVVA38=
+h1:YZZZgAJzK2R0Mjd5hDTDrKCSNzMm+09UQslOTaFCs90=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -71,3 +71,4 @@ h1:s7188m046YBF4YlJ/eYCbswJ4k6Il5+oktPQsKVVA38=
 071_feishu_integration.sql h1:WvFr/vQ7GG/ymd1xuAtjPvNil60M+Uaec4DrS8dFOyY=
 072_project_mcp_bindings.sql h1:XWLX1NgvbbUAkv2NgdtMz+CjN3BtVH6gIgfh0Mi2GjM=
 073_review_gate_verdicts.sql h1:zhhmtGSG3tO5UUM2ix/YeQd86mPmJAfyD6woDDWg+0w=
+074_review_gate_pending_placeholder.sql h1:N1Pxoki4yRU79qlrNPFJGucbzYGBehN3sEqB2V45xnc=

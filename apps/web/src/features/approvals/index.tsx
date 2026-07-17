@@ -83,6 +83,8 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
     queryKey: ["approvals-center", filters],
     queryFn: () => listInboxItems(apiOptions, filters),
     placeholderData: keepPreviousData,
+    // 同 inbox:外部渠道 resolve 无推送,靠轮询反映状态变化。
+    refetchInterval: 5000,
   });
 
   const actionMutation = useMutation({

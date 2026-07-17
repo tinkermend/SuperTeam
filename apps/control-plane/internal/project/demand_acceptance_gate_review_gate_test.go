@@ -75,6 +75,39 @@ func TestReviewGateCleanReleases(t *testing.T) {
 	require.Empty(t, pending)
 }
 
+// TestReviewGatePendingPlaceholderHolds (P1.1 race fix): the synchronous
+// `pending` placeholder written at the reviewed task's completion HOLDS the
+// criterion until the asynchronous detector flips it — closing the window where
+// a review_gate-only demand auto-completed before the detector concluded.
+func TestReviewGatePendingPlaceholderHolds(t *testing.T) {
+	criterion := reviewGateCriterion("crit_rg")
+	verdicts := []DemandCriterionVerdict{reviewGateVerdict("crit_rg", demandCriterionVerdictReviewGatePending)}
+	pending := ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, verdicts)
+	require.Equal(t, []string{"crit_rg"}, pending)
+}
+
+// TestReviewGateUnknownVerdictHolds: once ANY review_gate verdict exists, only
+// `satisfied` releases — an unexpected value fails toward the human instead of
+// releasing on garbage.
+func TestReviewGateUnknownVerdictHolds(t *testing.T) {
+	criterion := reviewGateCriterion("crit_rg")
+	verdicts := []DemandCriterionVerdict{reviewGateVerdict("crit_rg", "garbage")}
+	pending := ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, verdicts)
+	require.Equal(t, []string{"crit_rg"}, pending)
+}
+
+// TestHumanOverridesReviewGatePending: the human can release a placeholder-held
+// criterion directly (e.g. the detector never concluded) — human satisfied wins
+// over the pending placeholder.
+func TestHumanOverridesReviewGatePending(t *testing.T) {
+	criterion := reviewGateCriterion("crit_rg")
+	verdicts := []DemandCriterionVerdict{
+		reviewGateVerdict("crit_rg", demandCriterionVerdictReviewGatePending),
+		humanVerdict("crit_rg", demandCriterionVerdictSatisfied),
+	}
+	require.Empty(t, ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, verdicts))
+}
+
 // TestHumanOverridesReviewGate: a human verdict always wins over the review_gate
 // aggregate — human satisfied releases a detector-flagged criterion; human
 // unsatisfied holds it.

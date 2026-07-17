@@ -794,10 +794,20 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	// is persisted `unsatisfied` and the Task-5 default-reversal convergence gate
 	// holds the demand at acceptance_pending, where the human sees it at final
 	// acceptance (the "human final acceptance" model, spec §6). An Activity error
-	// (store load/persist failure) is logged and swallowed — the criterion simply
-	// gets no verdict, which for review_gate means DEFAULT RELEASE: a detector that
-	// could not run must not manufacture a hold. Either way we fall through to
-	// resolveReadyDownstream.
+	// (store load/persist failure) is logged and swallowed — since the P1.1
+	// placeholder-race fix the criterion is NOT verdict-less at this point: the
+	// completion writeback already wrote a `pending` placeholder, so a gate that
+	// was triggered but never concluded leaves the demand HELD for the human
+	// (fail-toward-oversight), not default-released. Either way we fall through
+	// to resolveReadyDownstream.
+	//
+	// Ordering matters for the placeholder fix: this activity is AWAITED here,
+	// and ensureDemandAcceptanceDecisionForTask runs only after this handler
+	// returns — so in the clean case (verdict flipped to satisfied + activity-side
+	// recompute → demand completed) no demand_acceptance decision is ever opened
+	// for the transient placeholder hold; in the violation case the demand is
+	// still acceptance_pending when the ensure probe runs, and the human decision
+	// three-piece opens exactly as before.
 	if workflow.GetVersion(ctx, "review-gate-trigger", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
 		var gate RunReviewGateForTaskResult
 		gateErr := workflow.ExecuteActivity(ctx, (*Activities).RunReviewGateForTask, RunReviewGateForTaskInput{
