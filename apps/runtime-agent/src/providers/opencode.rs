@@ -48,6 +48,11 @@ impl ProviderAdapter for OpenCodeProvider {
         raw_sink: std::sync::Arc<dyn crate::raw_log::RawLineSink>,
     ) -> anyhow::Result<ProviderRun> {
         let mut command = self.build_command(&request);
+        // `opencode run` appends piped stdin to the prompt and waits for EOF;
+        // inheriting the daemon's never-closing stdin therefore hangs the run
+        // forever with zero output. The prompt is always passed as an argv
+        // argument, so stdin must be closed explicitly.
+        command.stdin(std::process::Stdio::null());
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());
         let mut child = command.spawn().context("failed to spawn opencode")?;
