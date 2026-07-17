@@ -65,6 +65,20 @@ const (
 	// judge (a later task); registered here alongside its verification
 	// method so both persistence-side mirrors land together.
 	demandCriterionJudgeTypeAdversarial = "adversarial"
+	// demandCriterionVerificationMethodReviewGate mirrors
+	// projectcoordination.VerificationMethodReviewGate at the persistence
+	// layer (see acceptance_criteria.go's knownVerificationMethods registry).
+	// A review_gate criterion is a violation DETECTOR bound to a specific
+	// task's output — it holds the convergence gate ONLY when a violation was
+	// actually detected, and RELEASES by default (no verdict / satisfied). See
+	// ResolveUnsatisfiedBlockingCriteria for the default-release reframe.
+	demandCriterionVerificationMethodReviewGate = "review_gate"
+	// demandCriterionJudgeTypeReviewGate mirrors the judge_type recorded
+	// against a DemandCriterionVerdict produced by the review-gate detector
+	// (Task 4's projection). Caught before the executor accumulators in
+	// criterionEffectiveVerdict so a detector verdict is never miscounted as an
+	// executor self-report.
+	demandCriterionJudgeTypeReviewGate = "review_gate"
 )
 
 // criterionEffectiveVerdict resolves a single criterion's effective verdict
@@ -84,6 +98,7 @@ const (
 func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID string) (verdict string, judgeType string, evidenceRefs []string, hasVerdict bool) {
 	var human *DemandCriterionVerdict
 	var adversarial *DemandCriterionVerdict
+	var reviewGate *DemandCriterionVerdict
 	var executorSatisfied *DemandCriterionVerdict
 	var executorNotApplicable *DemandCriterionVerdict
 	var executorAny *DemandCriterionVerdict
@@ -101,6 +116,14 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 			// project_task_id NULL) is NOT an executor verdict — catch it here
 			// before the executor accumulators so it is never miscounted as one.
 			adversarial = v
+			continue
+		}
+		if v.JudgeType == demandCriterionJudgeTypeReviewGate {
+			// The review_gate aggregate row (detector outcome, project_task_id
+			// NULL) is likewise NOT an executor verdict — catch it before the
+			// executor accumulators so its judge type is preserved and it is
+			// never miscounted as an executor self-report.
+			reviewGate = v
 			continue
 		}
 		if executorAny == nil {
@@ -122,6 +145,14 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 		// verdict still overrides it (handled above); the executor never decides
 		// an adversarial_review criterion.
 		return adversarial.Verdict, demandCriterionJudgeTypeAdversarial, adversarial.EvidenceRefs, true
+	case reviewGate != nil:
+		// A review_gate criterion's effective verdict is its detector aggregate
+		// verdict (satisfied | unsatisfied). A human verdict still overrides it
+		// (handled above); the executor never decides a review_gate criterion.
+		// A criterion only ever carries adversarial OR review_gate rows, never
+		// both, so ordering relative to the adversarial case is immaterial —
+		// this case exists to return the review_gate judge type distinctly.
+		return reviewGate.Verdict, demandCriterionJudgeTypeReviewGate, reviewGate.EvidenceRefs, true
 	case executorSatisfied != nil:
 		return demandCriterionVerdictSatisfied, demandCriterionJudgeTypeExecutor, executorSatisfied.EvidenceRefs, true
 	case executorNotApplicable != nil:
@@ -175,6 +206,18 @@ func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, ve
 			if !hasVerdict ||
 				(judgeType != demandCriterionJudgeTypeHuman && judgeType != demandCriterionJudgeTypeAdversarial) ||
 				verdict != demandCriterionVerdictSatisfied {
+				pending = append(pending, c.CriterionID)
+			}
+			continue
+		}
+		if c.VerificationMethod == demandCriterionVerificationMethodReviewGate {
+			// Default-release reframe (spec §2 违反检测门): a review_gate criterion is
+			// a violation DETECTOR, not a correctness proof. It holds ONLY when a
+			// violation was actually detected — the effective verdict is `unsatisfied`
+			// (a detector fired, or a human override is unsatisfied). No verdict yet
+			// (gate not run / nothing detected) OR `satisfied` → RELEASE. This INVERTS
+			// the "no verdict = pending" default that automated_test/human_judgment keep.
+			if hasVerdict && verdict == demandCriterionVerdictUnsatisfied {
 				pending = append(pending, c.CriterionID)
 			}
 			continue

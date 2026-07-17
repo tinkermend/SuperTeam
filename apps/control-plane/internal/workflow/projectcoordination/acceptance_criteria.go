@@ -12,6 +12,13 @@ const (
 	VerificationMethodAutomatedTest     = "automated_test"
 	VerificationMethodHumanJudgment     = "human_judgment"
 	VerificationMethodAdversarialReview = "adversarial_review"
+	// VerificationMethodReviewGate is the violation-detection gate channel: a
+	// criterion reviewed by the review-gate detector (Task 4), which reviews a
+	// specific task's output and therefore requires satisfied_by like
+	// automated_test/adversarial_review. Its convergence-gate semantics are
+	// default-release (holds only on a detected violation) — see the project
+	// package's ResolveUnsatisfiedBlockingCriteria.
+	VerificationMethodReviewGate = "review_gate"
 
 	CriterionSeverityBlocking    = "blocking"
 	CriterionSeverityNonBlocking = "non_blocking"
@@ -21,6 +28,7 @@ var knownVerificationMethods = map[string]bool{
 	VerificationMethodAutomatedTest:     true,
 	VerificationMethodHumanJudgment:     true,
 	VerificationMethodAdversarialReview: true,
+	VerificationMethodReviewGate:        true,
 }
 
 var knownCriterionSeverities = map[string]bool{
@@ -238,7 +246,7 @@ func validateAcceptanceCriteriaSemantics(plan RouteDecisionPlan) error {
 		if method != "" && !knownVerificationMethods[method] {
 			return invalidRouteDecision("unknown_verification_method: plan acceptance criterion %q declares unrecognized verification_method %q", criterion.ID, criterion.VerificationMethod)
 		}
-		if (method == VerificationMethodAutomatedTest || method == VerificationMethodAdversarialReview) && len(criterion.SatisfiedBy) == 0 {
+		if (method == VerificationMethodAutomatedTest || method == VerificationMethodAdversarialReview || method == VerificationMethodReviewGate) && len(criterion.SatisfiedBy) == 0 {
 			return invalidRouteDecision("automated_test_requires_satisfied_by: plan acceptance criterion %q declares verification_method %q but has no satisfied_by task", criterion.ID, method)
 		}
 		severity := strings.TrimSpace(criterion.Severity)
