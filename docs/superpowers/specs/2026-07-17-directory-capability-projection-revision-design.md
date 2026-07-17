@@ -92,7 +92,7 @@
 
 - **`cleanup_policy` 真执行**：run 终态回执后按策略处理该 attempt 的任务工作区——`on_success`（默认）成功清、失败保留供排障；`always` / `never` 字面义。清理 = `git worktree remove` + 目录删除 + `git worktree prune`；任务级 MCP 投影随工作区消亡（无需独立删除逻辑）。
 - **`max_retained` 生效**：按项目维度对保留的 attempt 工作区做 LRU 裁剪，运行中 attempt 引用的不删（cache spec §5 同款约束）。
-- **chat 目录清理**：纯本地 TTL——线程目录 N 天无新活动即删（缺省 7 天，挂 runtime config），另加每（项目,员工）最多保留 N 个线程目录的条数兜底（缺省 5）。不引入控制平面归档事件依赖，runtime 单侧闭环；超期旧线程续聊时文件丢失、resume 断链，与 §4 迁移的一刀切语义一致（旧线程不承诺无限期可续）。
+- **chat 目录清理**：纯本地 TTL——线程目录 N 天无新活动即删（缺省 7 天，挂 runtime config），另加条数兜底。不引入控制平面归档事件依赖，runtime 单侧闭环；超期旧线程续聊时文件丢失、resume 断链，与 §4 迁移的一刀切语义一致（旧线程不承诺无限期可续）。**实现口径调整（2026-07-17 Phase 3 落地）**：目录布局 `chat/{proj}/{thread_id}` 不编码员工，原定"每（项目,员工）保留 5"落地为**每项目条数兜底**（`chat_max_retained` 缺省 20）；"无活动"判定=目录自身与一级子项 mtime 最大值（深层写入不必然更新根 mtime，一级深度在准确性与扫描成本间折中，误差方向早删由天级 TTL 吸收）。终态清理与后台清扫实现于 `workspace_cleanup.rs`（终态钩子在 artifacts/attestation 与终态回写之后；早退路径由 30 分钟周期 janitor 兜底；活跃 run 引用目录一律跳过）。
 - **技能缓存清理**：绑定移除后投影层天然不再软链（无需即刻物理删除）；员工缓存的物理 LRU 属 cache spec Phase 2 全量范围,本期不做。
 
 ## 6. 对上游 spec 的修订关系

@@ -262,6 +262,16 @@ impl RuntimeRunStore {
         runs.get(run_id).map(|state| state.snapshot.clone())
     }
 
+    /// 非终态 run 引用的工作区路径集合——后台清扫据此跳过活跃目录
+    /// (目录与能力投影修订 spec §5)。
+    pub async fn active_workspaces(&self) -> std::collections::HashSet<PathBuf> {
+        let runs = self.runs.lock().await;
+        runs.values()
+            .filter(|state| state.snapshot.status == RunStatus::Running)
+            .map(|state| state.snapshot.workspace_path.clone())
+            .collect()
+    }
+
     pub async fn events(&self, run_id: &str) -> Option<Vec<RunEventRecord>> {
         let runs = self.runs.lock().await;
         runs.get(run_id).map(|state| state.events.clone())

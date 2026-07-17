@@ -18,4 +18,5 @@ pub mod server;
 pub mod session;
 pub mod skills;
 pub mod tools;
+pub mod workspace_cleanup;
 pub mod workspace_files;

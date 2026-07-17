@@ -1155,6 +1155,20 @@ impl RuntimeCommandExecutor {
         // Err branch below can still roll back the session MCP injection when
         // the drain bails out early via `?` before reaching its tail hook.
         let rollback_home = spec.agent_home_dir.clone();
+        // 终态清理计划(spec §5):仅任务 attempt 工作区形态会得到 Some;chat
+        // 线程目录与未知路径在 plan 层就被排除。base_dir 相对路径按与
+        // resolve_project_workspace 相同规则绝对化,保证前缀比对成立。
+        let terminal_cleanup = crate::project_workspace::absolutize_workspace_base_dir(
+            &self.config.workspace.base_dir,
+        )
+        .ok()
+        .and_then(|base_dir| {
+            crate::workspace_cleanup::TerminalWorkspaceCleanup::plan(
+                &self.config.workspace.cleanup_policy,
+                &base_dir,
+                &spec.workspace_path,
+            )
+        });
         tokio::spawn(async move {
             let result = drain_provider_events(
                 runs.clone(),
@@ -1167,6 +1181,7 @@ impl RuntimeCommandExecutor {
                 provider_started_at,
                 heartbeat_stop,
                 raw_sink,
+                terminal_cleanup,
             )
             .await;
 
@@ -2955,6 +2970,7 @@ async fn drain_provider_events(
     provider_started_at: Instant,
     heartbeat_stop: Option<CancellationToken>,
     raw_sink: Arc<dyn crate::raw_log::RawLineSink>,
+    terminal_cleanup: Option<crate::workspace_cleanup::TerminalWorkspaceCleanup>,
 ) -> anyhow::Result<()> {
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
@@ -3038,6 +3054,7 @@ async fn drain_provider_events(
     // Finalize before the terminal writeback so the attempt row and the raw
     // transcript pointer land in the same call.
     finalize_raw_log(&raw_sink, writeback.as_ref()).await;
+    let mut run_succeeded = false;
     if let (Some(writeback), Some(mut completion)) =
         (&writeback, terminal_writeback.finish_successful_stream())
     {
@@ -3067,6 +3084,13 @@ async fn drain_provider_events(
         writeback
             .complete(completion.summary, completion.provider_session_id)
             .await?;
+        run_succeeded = true;
+    }
+    // 终态清理(spec §5):在 artifacts/attestation 采集与终态回写全部落地之后
+    // 执行,绝不影响 run 结果。早退 `?` 路径会跳过本钩子——遗留目录由后台清扫
+    // (workspace_cleanup::sweep)兜底。
+    if let Some(cleanup) = &terminal_cleanup {
+        cleanup.apply(run_succeeded);
     }
     Ok(())
 }

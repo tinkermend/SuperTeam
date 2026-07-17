@@ -18,7 +18,9 @@ pub async fn run_command_loop(
     control_plane: ControlPlaneClient,
 ) -> Result<()> {
     let ws_url = runtime_ws_url(&config.runtime.control_plane_url)?;
+    let janitor_config = config.clone();
     let executor = RuntimeCommandExecutor::with_control_plane_client(config, control_plane.clone());
+    crate::workspace_cleanup::spawn_janitor(janitor_config, executor.runs());
 
     loop {
         match control_plane.runtime_authorization().await {

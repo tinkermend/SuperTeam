@@ -90,6 +90,12 @@ pub fn resolve_project_workspace(
     })
 }
 
+/// 供工作区清理等旁路调用:与本模块解析工作区时相同的 base_dir 绝对化规则,
+/// 保证跨模块的路径前缀比对一致。
+pub fn absolutize_workspace_base_dir(base_dir: &Path) -> Result<PathBuf> {
+    absolutize_base_dir(base_dir)
+}
+
 fn absolutize_base_dir(base_dir: &Path) -> Result<PathBuf> {
     if base_dir.is_absolute() {
         return Ok(base_dir.to_path_buf());

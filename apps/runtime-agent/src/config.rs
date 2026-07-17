@@ -39,6 +39,10 @@ pub struct WorkspaceSection {
     pub base_dir: PathBuf,
     pub cleanup_policy: String,
     pub max_retained: u16,
+    /// chat 线程目录无活动多少天后可被后台清扫删除(spec §5)。
+    pub chat_ttl_days: u16,
+    /// 每项目保留的 chat 线程目录数上限(TTL 内也裁剪)。
+    pub chat_max_retained: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +122,8 @@ struct FileWorkspaceSection {
     base_dir: Option<PathBuf>,
     cleanup_policy: Option<String>,
     max_retained: Option<u16>,
+    chat_ttl_days: Option<u16>,
+    chat_max_retained: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -226,6 +232,8 @@ impl RuntimeConfig {
             apply_path(&mut self.workspace.base_dir, workspace.base_dir);
             apply_string(&mut self.workspace.cleanup_policy, workspace.cleanup_policy);
             apply_copy(&mut self.workspace.max_retained, workspace.max_retained);
+            apply_copy(&mut self.workspace.chat_ttl_days, workspace.chat_ttl_days);
+            apply_copy(&mut self.workspace.chat_max_retained, workspace.chat_max_retained);
         }
 
         if let Some(providers) = file.providers {
@@ -300,6 +308,12 @@ impl RuntimeConfig {
             "RUNTIME_AGENT_CLEANUP_POLICY" => self.workspace.cleanup_policy = value.to_string(),
             "RUNTIME_AGENT_MAX_RETAINED_WORKSPACES" => {
                 self.workspace.max_retained = parse_env(key, value)?;
+            }
+            "RUNTIME_AGENT_CHAT_TTL_DAYS" => {
+                self.workspace.chat_ttl_days = parse_env(key, value)?;
+            }
+            "RUNTIME_AGENT_MAX_RETAINED_CHAT_THREADS" => {
+                self.workspace.chat_max_retained = parse_env(key, value)?;
             }
             "RUNTIME_AGENT_PROVIDER_CLAUDE_CODE_ENABLED" => {
                 self.providers.claude_code.enabled = parse_env(key, value)?;
@@ -419,6 +433,8 @@ impl Default for RuntimeConfig {
                 base_dir: PathBuf::from(".superteam/workspaces"),
                 cleanup_policy: "on_success".to_string(),
                 max_retained: 10,
+                chat_ttl_days: 7,
+                chat_max_retained: 20,
             },
             providers: ProvidersSection {
                 claude_code: ProviderSection {
