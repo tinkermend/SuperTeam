@@ -205,6 +205,45 @@
 - 收尾门禁(可自动化部分):verify:control-plane 绿(双 Go 模块)、契约 guard 绿、
   web typecheck 0 错误、build 绿、用户页 13 例绿(全量串行见下一条记录)
 
+**2026-07-17 15:25 GATE 中断记录(用户指示:暂停联调推进其他任务,先合并 main;后续联调问题开新分支):**
+
+真实链路已 PASS 的部分(全程真人真飞书,无 mock):
+- 绑定(OAuth):回调 302 → 绑定行落库(bound_via=oauth, union_id 同步),Console 用户页状态列正确。
+- 私聊发起:提需求四步流(项目卡→模式卡→内容→确认卡→回执卡)全通;demand `source_type=feishu` 落库;普通消息只回引导卡零副作用。
+- 审批卡:plan_review 卡真实送达手机、批准生效(事件 ActorID=绑定用户)、card_update 整卡替换成功;重复点击全程幂等。
+- 基建:长连接稳定(含一次 1006 断线自动重连)、事件去重、outbox 全生命周期(含 skipped_unbound 与 failed×3 终态,真实飞书 API 错误驱动)。
+
+GATE 实测揪出并已修复(均含回归测试):
+- `a82abf3d` 决策卡按钮在 card_update 落地前可重复点击 → 回调同步整卡置换归零时间窗。
+- `b62e709e` **韧性缺陷家族#4 真实复现**:员工交付 object 型 deliverables.value → 写回 400 → 会话已完成但任务永久卡 running → 验收/通知全断。已修(UnmarshalJSON 类型宽容)。
+- `05099fd1` bot 私聊进入事件无 handler 的日志噪音。
+
+## 待手动联调清单(恢复联调时按序执行)
+
+**现场状态(截至中断)**:demand《看一下当前服务器性能情况》卡 executing(缺陷#4 受害者,写回已丢,见遗留#1);demand《分析当前电脑占用 cpu top5 进程》停在 planning_pending(用户中断,可继续或作废)。
+
+1. **完整快乐路径复跑**(缺陷#4 修复后未走完):飞书提新需求 → 批准(**验证卡片瞬时变灰**,修复 a82abf3d 后未实测)→ 真实执行完成 → demand 进 acceptance_pending → 手机收验收卡(富信息+深链)→ Console 签署判据 → demand completed → 手机收只读结果卡。psql 断言 demand_criterion_verdicts / feishu_outbox 各环节。
+2. **any-of-N 双人**(需第二个真人飞书账号):双人类成员项目,两人都绑定 → 决策卡两人同收 → A 批准 → B 的卡片经 card_update 变"已处理" → B 再点按钮 → toast"已被处理"+卡片置换;非成员 C 点卡(转发场景)→ 403 语义。
+3. **投影不阻塞**:删除绑定行后触发决策 → outbox 单行 skipped_unbound → Console inbox 照常可批。
+4. **通讯录反查**:契约已实现但真实调用 500(疑缺通讯录权限或邮箱不匹配)——开通 `contact:user.id:readonly` 权限、给测试用户配真实邮箱后重测 contact-sync 报告数字。
+5. **换绑**:OAuth 重复绑定同账号(幂等)与换飞书账号(删旧建新)。
+6. **事件重推幂等**:长连接断线期间制造决策 → 重连后不重复投递(event_id 去重 + outbox 状态机)。
+
+## 遗留缺陷(不阻塞合并,后续立项/新分支)
+
+1. **写回失败无持久重试**(韧性家族新面孔):runtime 写回 400/失联后结果永久丢失,任务卡 running 无恢复通路(实证:task ec160de3,重启 runtime-agent 不自愈)。需要:runtime 侧写回持久化重试,或控制平面 attempt 级僵尸检测→重派/转人工。
+2. **决策卡 payload 富集受限**:outbox 快照只有 title/summary/risk,判据清单、预算等"能塞尽塞"目标需要扩快照字段(spec §8.2 完整落地留联调后评估)。
+3. **contact-sync 错误可观测性**:失败只回 500,应透出飞书错误码与权限提示。
+4. **OAuth state 单副本**:内存态,control-plane 多副本部署时需外置(P1 已知约束)。
+
+## 环境事实(联调恢复必读)
+
+- **control-plane 重启必须带** `CONTROL_PLANE_CREDENTIAL_KEY=$(cat .scratch/dev-services/credential.key)`,否则 sealer 缺失 → bootstrap/绑定/contact-sync 全部 503;密钥丢失则已加密的 App Secret 无法解密,需重新 upsert app-config。
+- connector 启动:`FEISHU_CONNECTOR_TOKEN=$(cat /tmp/feishu-connector-token.txt) scripts/dev-services.sh start feishu-connector`(token 文件是 /tmp 易失,丢了经 `POST /api/v1/admin/service-tokens` 重签)。
+- 飞书后台已配:事件订阅长连接、回调配置长连接(卡片按钮依赖,GATE 中现配)、OAuth 重定向 URL `http://127.0.0.1:8081/api/v1/auth/feishu/oauth-callback`。
+- **建议正式启用前在飞书后台轮换 App Secret**(明文在对话中出现过),轮换后重新 upsert app-config 即可。
+- 联调时确认用户其他框架未连同一 app 的长连接(集群模式分流消息)。
+
 **设计偏差(相对计划,均已在提交说明留痕):**
 1. Task 6 result_notice 只发 completed/failed;acceptance_pending 由 demand_acceptance 决策卡承载,避免双消息。
 2. skipped_unbound 留痕为 outbox 行自身(可查询),未另写 ProjectEvent(避免仓储层事件递归)。
