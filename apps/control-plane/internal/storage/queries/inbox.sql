@@ -147,6 +147,19 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = sqlc.narg('target_user_id')::uuid
+      )
+    )
   )
   AND (
     sqlc.narg('item_type')::varchar IS NULL
@@ -173,6 +186,19 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = sqlc.narg('target_user_id')::uuid
+      )
+    )
   )
   AND (
     sqlc.narg('item_type')::varchar IS NULL
@@ -195,6 +221,19 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = sqlc.narg('target_user_id')::uuid
+      )
+    )
   );
 
 -- name: CancelInboxItemsForProjectDelete :many

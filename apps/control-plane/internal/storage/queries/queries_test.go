@@ -6130,3 +6130,77 @@ func TestProjectRuntimeNodesQueries(t *testing.T) {
 	require.Equal(t, employeeID2, affinity2.DigitalEmployeeID)
 	require.Equal(t, nodeA.ID, affinity2.RuntimeNodeID)
 }
+
+// any-of-N:项目决策类 inbox 事项对该项目全部 active 人类成员可见(成员同等身份);
+// 非成员、数字员工成员、非 active 成员均不可见;非项目决策事项不受成员分支影响。
+func TestInboxProjectDecisionVisibleToProjectHumanMembers(t *testing.T) {
+	ctx := context.Background()
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	memberID := uuid.New()
+	inactiveID := uuid.New()
+	employeeID := uuid.New()
+	outsiderID := uuid.New()
+
+	seedMember := func(principalType string, principalID uuid.UUID, status string) {
+		_, err := testQueries.CreateProjectMember(ctx, queries.CreateProjectMemberParams{
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: principalType,
+			PrincipalID:   principalID,
+			ProjectRole:   "reviewer",
+			Status:        status,
+			Settings:      []byte(`{}`),
+		})
+		require.NoError(t, err)
+	}
+	seedMember("human_user", memberID, "active")
+	seedMember("human_user", inactiveID, "removed")
+	seedMember("digital_employee", employeeID, "active")
+
+	item, err := testQueries.UpsertInboxItem(ctx, queries.UpsertInboxItemParams{
+		TenantID:        tenantID,
+		TargetUserID:    ownerID,
+		Scope:           "tenant",
+		ItemType:        "project_decision",
+		SourceType:      "project_decision",
+		SourceID:        uuid.New(),
+		SourceProjectID: uuid.NullUUID{UUID: projectID, Valid: true},
+		Title:           "需要负责人确认",
+		Status:          "open",
+		ActionSchema:    []byte(`[]`),
+		ContextPayload:  []byte(`{}`),
+		DeepLink:        []byte(`{}`),
+		LastActivityAt:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	visibleTo := func(userID uuid.UUID) bool {
+		rows, err := testQueries.ListInboxItems(ctx, queries.ListInboxItemsParams{
+			TenantID:     tenantID,
+			TargetUserID: uuid.NullUUID{UUID: userID, Valid: true},
+			Limit:        10,
+		})
+		require.NoError(t, err)
+		for _, row := range rows {
+			if row.ID == item.ID {
+				return true
+			}
+		}
+		return false
+	}
+
+	require.True(t, visibleTo(ownerID), "target user must see the item")
+	require.True(t, visibleTo(memberID), "active human member must see project decision (any-of-N)")
+	require.False(t, visibleTo(inactiveID), "inactive member must not see it")
+	require.False(t, visibleTo(employeeID), "digital employee member must not see it")
+	require.False(t, visibleTo(outsiderID), "non-member must not see it")
+
+	count, err := testQueries.CountInboxItems(ctx, queries.CountInboxItemsParams{
+		TenantID:     tenantID,
+		TargetUserID: uuid.NullUUID{UUID: memberID, Valid: true},
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, count, int64(1), "count must include member-visible project decision")
+}

@@ -1500,7 +1500,9 @@ func (s *Service) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptan
 	if projectArchived(project) {
 		return nil, ErrProjectArchived
 	}
-	if req.AcceptedByUserID != project.HumanOwnerUserID {
+	if eligible, err := s.isEligibleDecider(ctx, req.TenantID, project, req.AcceptedByUserID); err != nil {
+		return nil, err
+	} else if !eligible {
 		return nil, ErrInvalidProjectAcceptance
 	}
 	if req.Status == "accepted" && (len(req.EvidenceRefIDs) == 0 || len(req.ReportRefIDs) == 0) {
@@ -5379,6 +5381,29 @@ func (s *Service) RequestProjectTaskTransfer(ctx context.Context, req RequestPro
 	return &result.Transfer, nil
 }
 
+// isEligibleDecider reports whether userID may act on the project's human
+// decisions. Project human members are equal-status deciders (any-of-N,
+// first write wins): the set is every active human_user member plus the
+// human owner (who may not appear in the member table).
+func (s *Service) isEligibleDecider(ctx context.Context, tenantID uuid.UUID, projectRecord Project, userID uuid.UUID) (bool, error) {
+	if userID == uuid.Nil {
+		return false, nil
+	}
+	if userID == projectRecord.HumanOwnerUserID {
+		return true, nil
+	}
+	members, err := s.repository.ListProjectMembers(ctx, tenantID, projectRecord.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.Status == "active" && member.PrincipalID == userID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {
 	req.Decision = strings.TrimSpace(req.Decision)
 	req.Comment = strings.TrimSpace(req.Comment)
@@ -5393,6 +5418,13 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	decision, err := s.findDecisionRequest(ctx, req.TenantID, req.ProjectID, req.DecisionRequestID)
 	if err != nil {
 		return nil, err
+	}
+	eligible, err := s.isEligibleDecider(ctx, req.TenantID, projectRecord, req.DecidedByUserID)
+	if err != nil {
+		return nil, err
+	}
+	if !eligible {
+		return nil, ErrProjectDecisionForbidden
 	}
 	// request_changes is plan-review vocabulary only: it means "supersede this
 	// plan revision and replan". Other decision types (e.g. project_acceptance)
@@ -5731,11 +5763,13 @@ func (s *Service) SignDemandCriterionVerdict(ctx context.Context, req SignDemand
 		return nil, ErrProjectConflict
 	}
 
-	decision, err := s.repository.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, req.TenantID, demand.ProjectID, revisionID)
-	if err != nil {
+	// Existence gate: signing requires a pending demand_acceptance decision.
+	if _, err := s.repository.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, req.TenantID, demand.ProjectID, revisionID); err != nil {
 		return nil, err
 	}
-	if req.ActorUserID != decision.TargetUserID && req.ActorUserID != projectRecord.HumanOwnerUserID {
+	if eligible, err := s.isEligibleDecider(ctx, req.TenantID, projectRecord, req.ActorUserID); err != nil {
+		return nil, err
+	} else if !eligible {
 		return nil, ErrProjectDecisionForbidden
 	}
 	criterion := findDemandAcceptanceCriterion(criteria, req.CriterionID)
@@ -5851,10 +5885,12 @@ func (s *Service) reconcileTerminalDemandSignOff(ctx context.Context, req SignDe
 		resolution = "rejected"
 		rejectedCriterion = findRejectedHumanCriterion(criteria, verdicts)
 	}
-	decision, err := s.repository.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, req.TenantID, demand.ProjectID, revisionID)
+	_, err := s.repository.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, req.TenantID, demand.ProjectID, revisionID)
 	switch {
 	case err == nil:
-		if req.ActorUserID != decision.TargetUserID && req.ActorUserID != projectRecord.HumanOwnerUserID {
+		if eligible, err := s.isEligibleDecider(ctx, req.TenantID, projectRecord, req.ActorUserID); err != nil {
+			return nil, err
+		} else if !eligible {
 			return nil, ErrProjectDecisionForbidden
 		}
 		if err := s.resolveDemandAcceptanceDecisionIfPending(ctx, req.TenantID, demand.ProjectID, req.DemandID, revisionID, resolution, req.ActorUserID, req.Reason, rejectedCriterion); err != nil {

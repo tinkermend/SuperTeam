@@ -9501,6 +9501,186 @@ func TestSignDemandCriterionVerdictRejectsUnauthorizedSigner(t *testing.T) {
 	}
 }
 
+func addActiveHumanMember(repo *memoryRepository, tenantID, projectID uuid.UUID, role ProjectRole) uuid.UUID {
+	memberID := uuid.New()
+	repo.members[projectID] = append(repo.members[projectID], ProjectMember{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		PrincipalType: PrincipalTypeHumanUser,
+		PrincipalID:   memberID,
+		ProjectRole:   role,
+		Status:        "active",
+	})
+	return memberID
+}
+
+func TestSignDemandCriterionVerdictAllowsProjectHumanMember(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "判据"),
+	})
+	memberID := addActiveHumanMember(repo, f.tenantID, f.projectID, ProjectRoleReviewer)
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:    f.tenantID,
+		DemandID:    f.demandID,
+		ActorUserID: memberID,
+		CriterionID: "c1",
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		t.Fatalf("expected project human member to sign (any-of-N), got %v", err)
+	}
+	if result == nil {
+		t.Fatalf("expected sign result for eligible member")
+	}
+	if len(repo.demandCriterionVerdicts) != 1 {
+		t.Fatalf("expected verdict written by member, got %d", len(repo.demandCriterionVerdicts))
+	}
+}
+
+func TestSignDemandCriterionVerdictRejectsInactiveOrNonHumanMember(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "判据"),
+	})
+	inactiveID := uuid.New()
+	employeeID := uuid.New()
+	repo.members[f.projectID] = append(repo.members[f.projectID],
+		ProjectMember{ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, PrincipalType: PrincipalTypeHumanUser, PrincipalID: inactiveID, ProjectRole: ProjectRoleReviewer, Status: "removed"},
+		ProjectMember{ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, PrincipalType: PrincipalTypeDigitalEmployee, PrincipalID: employeeID, ProjectRole: ProjectRoleExecutor, Status: "active"},
+	)
+	for _, actorID := range []uuid.UUID{inactiveID, employeeID} {
+		_, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+			TenantID:    f.tenantID,
+			DemandID:    f.demandID,
+			ActorUserID: actorID,
+			CriterionID: "c1",
+			Verdict:     "satisfied",
+		})
+		if !errors.Is(err, ErrProjectDecisionForbidden) {
+			t.Fatalf("expected forbidden for actor %s, got %v", actorID, err)
+		}
+	}
+}
+
+func TestResolveDecisionAllowsProjectHumanMember(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID: projectID, TenantID: tenantID, Name: "项目", Goal: "目标",
+		Status: ProjectStatusRunning, HumanOwnerUserID: ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID: decisionID, TenantID: tenantID, ProjectID: projectID,
+		ApprovalRequestID: uuid.New(), TargetUserID: ownerID,
+		DecisionType: "route_review", TitleSnapshot: "需要确认", StatusSnapshot: "pending",
+	})
+	memberID := addActiveHumanMember(repo, tenantID, projectID, ProjectRoleReviewer)
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionID,
+		DecidedByUserID: memberID, Decision: "approved", Comment: "同意",
+	})
+	if err != nil {
+		t.Fatalf("expected project human member to resolve (any-of-N), got %v", err)
+	}
+	if resolved.StatusSnapshot != "approved" {
+		t.Fatalf("expected approved, got %s", resolved.StatusSnapshot)
+	}
+}
+
+func TestResolveDecisionRejectsNonMemberActor(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID: projectID, TenantID: tenantID, Name: "项目", Goal: "目标",
+		Status: ProjectStatusRunning, HumanOwnerUserID: ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID: decisionID, TenantID: tenantID, ProjectID: projectID,
+		ApprovalRequestID: uuid.New(), TargetUserID: ownerID,
+		DecisionType: "route_review", TitleSnapshot: "需要确认", StatusSnapshot: "pending",
+	})
+
+	_, err = service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionID,
+		DecidedByUserID: uuid.New(), Decision: "approved",
+	})
+	if !errors.Is(err, ErrProjectDecisionForbidden) {
+		t.Fatalf("expected forbidden for non-member, got %v", err)
+	}
+	if approvals.calls != 0 {
+		t.Fatalf("expected no approval side effect, got %d", approvals.calls)
+	}
+}
+
+func TestProjectAcceptanceAllowsProjectHumanMember(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+	memberID := addActiveHumanMember(repo.memoryRepository, tenantID, projectID, ProjectRoleReviewer)
+	evidence, err := repo.CreateEvidenceRef(context.Background(), CreateEvidenceRefRequest{
+		TenantID: tenantID, ProjectID: projectID, EvidenceType: "test_result", Title: "回归测试结果",
+		SourceType: "artifact", SourceRef: "s3://bucket/reports/regression.json",
+		SubmittedByType: "human_user", SubmittedByID: &ownerID,
+		VerificationStatus: EvidenceVerificationStatusSubmitted,
+	})
+	if err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+	report, err := repo.CreateReportRef(context.Background(), CreateReportRefRequest{
+		TenantID: tenantID, ProjectID: projectID, ReportType: "final_report", Title: "验收报告",
+		ObjectRef: "s3://bucket/reports/final.md", Format: "markdown",
+		GeneratedByType: "human_user", GeneratedByID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("seed report: %v", err)
+	}
+
+	if _, err := service.CreateAcceptanceRecord(context.Background(), CreateAcceptanceServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, AcceptedByUserID: memberID,
+		Status: "accepted", Conclusion: "通过", EvidenceRefIDs: []uuid.UUID{evidence.ID}, ReportRefIDs: []uuid.UUID{report.ID},
+	}); err != nil {
+		t.Fatalf("expected project human member acceptance (any-of-N), got %v", err)
+	}
+}
+
 func TestSignDemandCriterionVerdictRejectsNonHumanJudgmentCriterion(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

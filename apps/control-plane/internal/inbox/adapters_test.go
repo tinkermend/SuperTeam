@@ -495,7 +495,7 @@ func TestProjectDecisionActionAdapterResolvesDecision(t *testing.T) {
 	adapter := NewProjectDecisionActionAdapter(service)
 	req := SourceActionRequest{
 		TenantID:        repo.project.TenantID,
-		ActorUserID:     uuid.New(),
+		ActorUserID:     repo.project.HumanOwnerUserID,
 		SourceID:        decisionID,
 		SourceProjectID: &projectID,
 		Action:          "approved",
@@ -598,7 +598,7 @@ func TestProjectDecisionActionAdapterNormalizesSourceErrors(t *testing.T) {
 
 			_, err = adapter.ResolveProjectDecisionAction(context.Background(), SourceActionRequest{
 				TenantID:        repo.project.TenantID,
-				ActorUserID:     uuid.New(),
+				ActorUserID:     repo.project.HumanOwnerUserID,
 				SourceID:        decisionID,
 				SourceProjectID: &projectID,
 				Action:          "approved",
@@ -695,6 +695,10 @@ func (r projectActionRepository) GetDecisionRequest(_ context.Context, tenantID,
 		return project.DecisionRequest{}, project.ErrInvalidProject
 	}
 	return r.decision, nil
+}
+
+func (r *projectActionRepository) ListProjectMembers(_ context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectMember, error) {
+	return nil, nil
 }
 
 func (r *projectActionRepository) AppendProjectEvent(_ context.Context, event project.AppendProjectEventRequest) (project.ProjectEvent, error) {
