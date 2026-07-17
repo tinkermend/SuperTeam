@@ -684,6 +684,24 @@ func (e EmployeeTemplateStatus) Valid() bool {
 	}
 }
 
+// Defines values for FeishuIdentityBoundVia.
+const (
+	ContactSync FeishuIdentityBoundVia = "contact_sync"
+	Oauth       FeishuIdentityBoundVia = "oauth"
+)
+
+// Valid indicates whether the value is a known member of the FeishuIdentityBoundVia enum.
+func (e FeishuIdentityBoundVia) Valid() bool {
+	switch e {
+	case ContactSync:
+		return true
+	case Oauth:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GovernanceSummaryStatus.
 const (
 	GovernanceSummaryStatusActive        GovernanceSummaryStatus = "active"
@@ -2289,6 +2307,16 @@ type CompleteTaskRequest struct {
 	Result *map[string]interface{} `json:"result,omitempty"`
 }
 
+// ConnectorBootstrapResponse defines model for ConnectorBootstrapResponse.
+type ConnectorBootstrapResponse struct {
+	Configs []struct {
+		AppId     string             `json:"app_id"`
+		AppSecret string             `json:"app_secret"`
+		ConfigId  openapi_types.UUID `json:"config_id"`
+		TenantId  openapi_types.UUID `json:"tenant_id"`
+	} `json:"configs"`
+}
+
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
 type CreateDigitalEmployeeConfigRevisionRequest struct {
 	BudgetPolicy          *map[string]interface{}                           `json:"budget_policy,omitempty"`
@@ -3394,6 +3422,28 @@ type FailTaskRequest struct {
 	Error string `json:"error"`
 }
 
+// FeishuAppConfig defines model for FeishuAppConfig.
+type FeishuAppConfig struct {
+	AppId  string             `json:"app_id"`
+	Id     openapi_types.UUID `json:"id"`
+	Status string             `json:"status"`
+}
+
+// FeishuAppConfigListResponse defines model for FeishuAppConfigListResponse.
+type FeishuAppConfigListResponse struct {
+	Configs []FeishuAppConfig `json:"configs"`
+}
+
+// FeishuIdentity defines model for FeishuIdentity.
+type FeishuIdentity struct {
+	AuthUserId openapi_types.UUID     `json:"auth_user_id"`
+	BoundVia   FeishuIdentityBoundVia `json:"bound_via"`
+	OpenId     string                 `json:"open_id"`
+}
+
+// FeishuIdentityBoundVia defines model for FeishuIdentity.BoundVia.
+type FeishuIdentityBoundVia string
+
 // GovernanceSummaryStatus defines model for GovernanceSummaryStatus.
 type GovernanceSummaryStatus string
 
@@ -3520,6 +3570,20 @@ type InstallSkillResponse struct {
 
 // InstallSkillResponseTargetScope defines model for InstallSkillResponse.TargetScope.
 type InstallSkillResponseTargetScope string
+
+// IssueServiceTokenRequest defines model for IssueServiceTokenRequest.
+type IssueServiceTokenRequest struct {
+	ServiceName string `json:"service_name"`
+}
+
+// IssueServiceTokenResponse defines model for IssueServiceTokenResponse.
+type IssueServiceTokenResponse struct {
+	Id          openapi_types.UUID `json:"id"`
+	ServiceName string             `json:"service_name"`
+
+	// Token Plaintext token, returned exactly once at issuance.
+	Token string `json:"token"`
+}
 
 // MCPAuthStrategy defines model for MCPAuthStrategy.
 type MCPAuthStrategy string
@@ -5488,6 +5552,14 @@ type UpsertEnvironmentVariableRequest struct {
 	Value string `json:"value"`
 }
 
+// UpsertFeishuAppConfigRequest defines model for UpsertFeishuAppConfigRequest.
+type UpsertFeishuAppConfigRequest struct {
+	AppId string `json:"app_id"`
+
+	// AppSecret Sealed with AES-GCM at rest; never echoed back.
+	AppSecret string `json:"app_secret"`
+}
+
 // UpsertTeamLendingPolicy defines model for UpsertTeamLendingPolicy.
 type UpsertTeamLendingPolicy struct {
 	AllowLending      bool                    `json:"allow_lending"`
@@ -5687,6 +5759,12 @@ type ListAuditEventsParams struct {
 
 // ListAuditEventsParamsResourceType defines parameters for ListAuditEvents.
 type ListAuditEventsParamsResourceType string
+
+// ConnectorResolveIdentityParams defines parameters for ConnectorResolveIdentity.
+type ConnectorResolveIdentityParams struct {
+	AppConfigId openapi_types.UUID `form:"app_config_id" json:"app_config_id"`
+	OpenId      string             `form:"open_id" json:"open_id"`
+}
 
 // ListDigitalEmployeesParams defines parameters for ListDigitalEmployees.
 type ListDigitalEmployeesParams struct {
@@ -6086,6 +6164,12 @@ type ListWorkflowInstancesParams struct {
 	Limit     *Limit                  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset    *Offset                 `form:"offset,omitempty" json:"offset,omitempty"`
 }
+
+// UpsertFeishuAppConfigJSONRequestBody defines body for UpsertFeishuAppConfig for application/json ContentType.
+type UpsertFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
+
+// IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
+type IssueServiceTokenJSONRequestBody = IssueServiceTokenRequest
 
 // CreateEmployeeTemplateJSONRequestBody defines body for CreateEmployeeTemplate for application/json ContentType.
 type CreateEmployeeTemplateJSONRequestBody = CreateEmployeeTemplateRequest
@@ -6782,12 +6866,30 @@ func (t *ProviderSessionEvent) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List active Feishu app configs (secrets never echoed)
+	// (GET /api/v1/admin/feishu/app-configs)
+	ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request)
+	// Create or rotate a tenant Feishu app config (secret sealed at rest)
+	// (POST /api/v1/admin/feishu/app-configs)
+	UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request)
+	// Issue an external service token (plaintext returned once)
+	// (POST /api/v1/admin/service-tokens)
+	IssueServiceToken(w http.ResponseWriter, r *http.Request)
+	// Revoke an external service token
+	// (DELETE /api/v1/admin/service-tokens/{tokenId})
+	RevokeServiceToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID)
 	// Retrieve an artifact's raw content via presigned redirect
 	// (GET /api/v1/artifacts/{artifactRefId}/content)
 	GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID)
 	// List audit events by project resource
 	// (GET /api/v1/audit/events)
 	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
+	// Fetch decrypted Feishu app configs for an authenticated connector service
+	// (GET /api/v1/connector/bootstrap)
+	ConnectorBootstrap(w http.ResponseWriter, r *http.Request)
+	// Resolve a Feishu open_id to its bound platform user
+	// (GET /api/v1/connector/identity)
+	ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams)
 	// List digital employee avatar assets
 	// (GET /api/v1/digital-employee-avatar-assets)
 	ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request)
@@ -7397,6 +7499,30 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
+// List active Feishu app configs (secrets never echoed)
+// (GET /api/v1/admin/feishu/app-configs)
+func (_ Unimplemented) ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create or rotate a tenant Feishu app config (secret sealed at rest)
+// (POST /api/v1/admin/feishu/app-configs)
+func (_ Unimplemented) UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Issue an external service token (plaintext returned once)
+// (POST /api/v1/admin/service-tokens)
+func (_ Unimplemented) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Revoke an external service token
+// (DELETE /api/v1/admin/service-tokens/{tokenId})
+func (_ Unimplemented) RevokeServiceToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Retrieve an artifact's raw content via presigned redirect
 // (GET /api/v1/artifacts/{artifactRefId}/content)
 func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID) {
@@ -7406,6 +7532,18 @@ func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request
 // List audit events by project resource
 // (GET /api/v1/audit/events)
 func (_ Unimplemented) ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Fetch decrypted Feishu app configs for an authenticated connector service
+// (GET /api/v1/connector/bootstrap)
+func (_ Unimplemented) ConnectorBootstrap(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Resolve a Feishu open_id to its bound platform user
+// (GET /api/v1/connector/identity)
+func (_ Unimplemented) ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8624,6 +8762,74 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// ListFeishuAppConfigs operation middleware
+func (siw *ServerInterfaceWrapper) ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFeishuAppConfigs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpsertFeishuAppConfig operation middleware
+func (siw *ServerInterfaceWrapper) UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpsertFeishuAppConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IssueServiceToken operation middleware
+func (siw *ServerInterfaceWrapper) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueServiceToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeServiceToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeServiceToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tokenId" -------------
+	var tokenId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenId", chi.URLParam(r, "tokenId"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeServiceToken(w, r, tokenId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetArtifactContent operation middleware
 func (siw *ServerInterfaceWrapper) GetArtifactContent(w http.ResponseWriter, r *http.Request) {
 
@@ -8713,6 +8919,66 @@ func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListAuditEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorBootstrap operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorBootstrap(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorBootstrap(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorResolveIdentity operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConnectorResolveIdentityParams
+
+	// ------------- Required query parameter "app_config_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "app_config_id", r.URL.Query(), &params.AppConfigId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "app_config_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "app_config_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "open_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "open_id", r.URL.Query(), &params.OpenId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "open_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "open_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorResolveIdentity(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15992,10 +16258,28 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/feishu/app-configs", wrapper.ListFeishuAppConfigs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/feishu/app-configs", wrapper.UpsertFeishuAppConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/service-tokens", wrapper.IssueServiceToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/admin/service-tokens/{tokenId}", wrapper.RevokeServiceToken)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/artifacts/{artifactRefId}/content", wrapper.GetArtifactContent)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/audit/events", wrapper.ListAuditEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/bootstrap", wrapper.ConnectorBootstrap)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/identity", wrapper.ConnectorResolveIdentity)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employee-avatar-assets", wrapper.ListDigitalEmployeeAvatarAssets)

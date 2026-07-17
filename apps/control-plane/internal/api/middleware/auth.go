@@ -233,3 +233,100 @@ func GetRuntimeToken(ctx context.Context) string {
 	}
 	return ""
 }
+
+const (
+	ServiceNameKey    contextKey = "service_name"
+	ActingUserIDKey   contextKey = "acting_user_id"
+	ActingOpenIDKey   contextKey = "acting_open_id"
+	ServiceTokenIDKey contextKey = "service_token_id"
+)
+
+// ServiceAuthService 验证外部服务凭据(如 feishu-connector),返回凭据归属租户等信息。
+type ServiceAuthService interface {
+	ValidateServiceToken(ctx context.Context, serviceName, token string) (ServiceIdentity, error)
+}
+
+// ServiceIdentity 是服务凭据验证结果的中间件视图。
+type ServiceIdentity struct {
+	TokenID  uuid.UUID
+	TenantID uuid.UUID
+}
+
+// OnBehalfOfResolver 校验 on-behalf-of 声明:acting user 必须存在且其飞书绑定
+// 的 open_id 与请求声明一致(服务端反查绑定表,防 connector 被攻破后任意冒充)。
+type OnBehalfOfResolver interface {
+	VerifyOnBehalfOf(ctx context.Context, tenantID, actingUserID uuid.UUID, openID string) error
+}
+
+// ServiceAuth 认证外部服务:Bearer token + X-Service-Name。可选的
+// X-On-Behalf-Of + X-Feishu-Open-Id 头声明行为人,经 resolver 核对后注入
+// UserIDKey——下游 handler 对 on-behalf-of 请求可复用 Console 同款身份读取。
+func ServiceAuth(authService ServiceAuthService, resolver OnBehalfOfResolver) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if authService == nil {
+				http.Error(w, "service auth is not configured", http.StatusUnauthorized)
+				return
+			}
+			token, ok := bearerToken(w, r)
+			if !ok {
+				return
+			}
+			serviceName := strings.TrimSpace(r.Header.Get("X-Service-Name"))
+			if serviceName == "" {
+				http.Error(w, "missing X-Service-Name header", http.StatusUnauthorized)
+				return
+			}
+			identity, err := authService.ValidateServiceToken(r.Context(), serviceName, token)
+			if err != nil {
+				http.Error(w, "invalid service token", http.StatusUnauthorized)
+				return
+			}
+			ctx := context.WithValue(r.Context(), ServiceNameKey, serviceName)
+			ctx = context.WithValue(ctx, ServiceTokenIDKey, identity.TokenID)
+			ctx = context.WithValue(ctx, TenantIDKey, identity.TenantID)
+
+			actingUserRaw := strings.TrimSpace(r.Header.Get("X-On-Behalf-Of"))
+			if actingUserRaw != "" {
+				actingUserID, err := uuid.Parse(actingUserRaw)
+				if err != nil || actingUserID == uuid.Nil {
+					http.Error(w, "invalid X-On-Behalf-Of header", http.StatusBadRequest)
+					return
+				}
+				openID := strings.TrimSpace(r.Header.Get("X-Feishu-Open-Id"))
+				if openID == "" {
+					http.Error(w, "missing X-Feishu-Open-Id header for on-behalf-of request", http.StatusBadRequest)
+					return
+				}
+				if resolver == nil {
+					http.Error(w, "on-behalf-of is not configured", http.StatusForbidden)
+					return
+				}
+				if err := resolver.VerifyOnBehalfOf(ctx, identity.TenantID, actingUserID, openID); err != nil {
+					http.Error(w, "on-behalf-of identity mismatch", http.StatusForbidden)
+					return
+				}
+				ctx = context.WithValue(ctx, UserIDKey, actingUserID)
+				ctx = context.WithValue(ctx, ActingUserIDKey, actingUserID)
+				ctx = context.WithValue(ctx, ActingOpenIDKey, openID)
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// GetServiceName 返回服务身份名(非服务请求返回空串)。
+func GetServiceName(ctx context.Context) string {
+	if v, ok := ctx.Value(ServiceNameKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// GetActingOpenID 返回 on-behalf-of 请求声明的飞书 open_id(无则空串)。
+func GetActingOpenID(ctx context.Context) string {
+	if v, ok := ctx.Value(ActingOpenIDKey).(string); ok {
+		return v
+	}
+	return ""
+}

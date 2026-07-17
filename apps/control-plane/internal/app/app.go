@@ -18,7 +18,9 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/capability"
+	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
@@ -28,6 +30,7 @@ import (
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
+	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -719,6 +722,11 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	tenantHandler := tenant.NewHandler(tenantService)
 	costHandler := cost.NewHTTPHandler(cost.NewService(cost.NewPgRepository(stores.Postgres)))
 	teamLendingHandler := teamlending.NewHandler(teamLendingService)
+	serviceAuthCore := serviceauth.NewService(serviceauth.NewPgRepository(q))
+	serviceTokenHandler := serviceauth.NewHTTPHandler(serviceAuthCore)
+	feishuService := feishu.NewService(feishu.NewPgRepository(q), credentialSealer)
+	feishuConnectorHandler := feishu.NewConnectorHTTPHandler(feishuService)
+	feishuAdminHandler := feishu.NewAdminHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
@@ -733,6 +741,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetCapabilityHandler(capabilityHandler)
 	server.SetScenarioTemplateHandler(scenarioTemplateHandler)
 	server.SetPromptTemplateHandler(promptTemplateHandler)
+	server.SetServiceTokenHandler(serviceTokenHandler)
+	server.SetFeishuHandlers(feishuConnectorHandler, feishuAdminHandler)
+	server.SetServiceAuth(serviceAuthMiddlewareAdapter{core: serviceAuthCore}, feishuService)
 
 	return &Container{
 		Queries:                        q,
@@ -864,4 +875,17 @@ func (a scenarioTemplateSourceAdapter) GetScenarioTemplateSnapshot(ctx context.C
 		return projectcoordination.ScenarioTemplateSnapshot{}, fmt.Errorf("scenario template %q is %s", key, template.Status)
 	}
 	return projectcoordination.ScenarioTemplateSnapshot{Key: template.Key, Name: template.Name, Version: template.ActiveVersion, Spec: template.Spec}, nil
+}
+
+// serviceAuthMiddlewareAdapter 把 serviceauth.Service 适配成中间件需要的最小视图。
+type serviceAuthMiddlewareAdapter struct {
+	core *serviceauth.Service
+}
+
+func (a serviceAuthMiddlewareAdapter) ValidateServiceToken(ctx context.Context, serviceName, token string) (middleware.ServiceIdentity, error) {
+	validated, err := a.core.ValidateServiceToken(ctx, serviceName, token)
+	if err != nil {
+		return middleware.ServiceIdentity{}, err
+	}
+	return middleware.ServiceIdentity{TokenID: validated.ID, TenantID: validated.TenantID}, nil
 }

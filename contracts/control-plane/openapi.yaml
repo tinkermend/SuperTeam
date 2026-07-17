@@ -2154,6 +2154,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TeamOverview"
+  /api/v1/connector/bootstrap:
+    get:
+      operationId: connectorBootstrap
+      summary: Fetch decrypted Feishu app configs for an authenticated connector service
+      responses:
+        "200":
+          description: Active Feishu app configs with decrypted secrets (service-auth channel only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorBootstrapResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/identity:
+    get:
+      operationId: connectorResolveIdentity
+      summary: Resolve a Feishu open_id to its bound platform user
+      parameters:
+        - name: app_config_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: open_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bound identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuIdentity"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/service-tokens:
+    post:
+      operationId: issueServiceToken
+      summary: Issue an external service token (plaintext returned once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueServiceTokenRequest"
+      responses:
+        "201":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueServiceTokenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/service-tokens/{tokenId}:
+    delete:
+      operationId: revokeServiceToken
+      summary: Revoke an external service token
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Token revoked
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/app-configs:
+    get:
+      operationId: listFeishuAppConfigs
+      summary: List active Feishu app configs (secrets never echoed)
+      responses:
+        "200":
+          description: App config list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuAppConfigListResponse"
+    post:
+      operationId: upsertFeishuAppConfig
+      summary: Create or rotate a tenant Feishu app config (secret sealed at rest)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertFeishuAppConfigRequest"
+      responses:
+        "201":
+          description: App config stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuAppConfig"
+        "400":
+          $ref: "#/components/responses/Error"
   /api/v1/audit/events:
     get:
       operationId: listAuditEvents
@@ -4351,6 +4453,104 @@ components:
           schema:
             type: string
   schemas:
+    ConnectorBootstrapResponse:
+      type: object
+      required:
+        - configs
+      properties:
+        configs:
+          type: array
+          items:
+            type: object
+            required:
+              - config_id
+              - tenant_id
+              - app_id
+              - app_secret
+            properties:
+              config_id:
+                type: string
+                format: uuid
+              tenant_id:
+                type: string
+                format: uuid
+              app_id:
+                type: string
+              app_secret:
+                type: string
+    FeishuIdentity:
+      type: object
+      required:
+        - auth_user_id
+        - open_id
+        - bound_via
+      properties:
+        auth_user_id:
+          type: string
+          format: uuid
+        open_id:
+          type: string
+        bound_via:
+          type: string
+          enum:
+            - contact_sync
+            - oauth
+    IssueServiceTokenRequest:
+      type: object
+      required:
+        - service_name
+      properties:
+        service_name:
+          type: string
+    IssueServiceTokenResponse:
+      type: object
+      required:
+        - id
+        - service_name
+        - token
+      properties:
+        id:
+          type: string
+          format: uuid
+        service_name:
+          type: string
+        token:
+          type: string
+          description: Plaintext token, returned exactly once at issuance.
+    UpsertFeishuAppConfigRequest:
+      type: object
+      required:
+        - app_id
+        - app_secret
+      properties:
+        app_id:
+          type: string
+        app_secret:
+          type: string
+          description: Sealed with AES-GCM at rest; never echoed back.
+    FeishuAppConfig:
+      type: object
+      required:
+        - id
+        - app_id
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        app_id:
+          type: string
+        status:
+          type: string
+    FeishuAppConfigListResponse:
+      type: object
+      required:
+        - configs
+      properties:
+        configs:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeishuAppConfig"
     PromptTemplateVariable:
       type: object
       required:
