@@ -15,8 +15,10 @@ package projectcoordination
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // DetectionArtifact 是被审任务的真实工件切片：不是任务描述或计划，而是实际产出
@@ -117,5 +119,170 @@ func newSecretLeakDetector() *RuleDetector {
 		key:      "secret_leak",
 		severity: "block",
 		rules:    secretLeakRules,
+	}
+}
+
+// LLMPromptDetector 是基于 LLM prompt 的 ConditionDetector 实现，复用 route planner
+// 的 chatCompletionClient 通道（openai_compatible_planner.go:62/54）。
+//
+// 诚实边界（spec §1/§10，与本文件顶部的抽象注释一致）：这个检测器只回答"这份真实工件
+// 是否存在某一条已定义的违反类别"，它不证明工件整体正确，也不对工件打总体质量结论。
+// systemPrompt 必须被框成"检测违反"而不是"评估质量/给结论"——LLMPromptDetector 本身不
+// 强制这一点，写新的 system prompt 时必须遵守这个框架。
+//
+// 放行方向（与 RuleDetector 及规则型检测器一致，但理由不同）：这是审阅质量类检测器，不
+// 是安全类检测器。任何模糊场景——LLM 调用失败、回复不是期望的 JSON 形状、或者回复里没有
+// 显式给出 detected 字段——一律返回 Detected=false（默认放行），绝不把"我们看不懂模型的
+// 回复"伪造成一次真实命中，也绝不让整个 Detect 调用向上抛错。这与安全类检测器"不确定就拦
+// 截"的失败方向相反；那个失败关闭策略是按条件的 action-tier 关注点，属于 Task 3，不在这
+// 里处理。
+type LLMPromptDetector struct {
+	key          string
+	severity     string
+	systemPrompt string
+	model        string
+	client       chatCompletionClient
+}
+
+// Key 实现 ConditionDetector。
+func (d *LLMPromptDetector) Key() string {
+	return d.key
+}
+
+// llmDetectorMaxTokens 限制检测回复的长度：检测器只需要一个短 JSON 判定，不需要长篇推理。
+const llmDetectorMaxTokens = 512
+
+// llmDetectorTemperature 使用确定性温度：检测器判定"存在/不存在"，不是创造性任务。
+const llmDetectorTemperature = 0
+
+// maxDetectorArtifactBytes 是喂给 LLM 的 diff/deliverables 文本上限，镜像
+// openai_compatible_planner.go 里 maxChatCompletionResponseBytes 的"设上限、不让单次调用
+// 无界增长"思路，但这里限的是我们自己发送的 user 消息大小，不是收到的响应体大小。
+const maxDetectorArtifactBytes = 40000
+
+// Detect 实现 ConditionDetector：把真实工件（art.DiffText / art.Deliverables /
+// art.Summary——真实代码/产出，不是任何"已完成"的叙述性声明）交给 LLM 做违反检测，解析回
+// 复为 {"detected": bool, "finding": string}。
+//
+// 任何解析或调用异常都收敛为 Detected=false（见类型注释的放行方向说明），不向上传播为
+// error——一次检测器判定失败不应该让整个审阅门崩溃。
+func (d *LLMPromptDetector) Detect(ctx context.Context, art DetectionArtifact) DetectionResult {
+	if d == nil || d.client == nil {
+		return DetectionResult{}
+	}
+
+	content, err := d.client.CreateChatCompletion(ctx, OpenAICompatibleChatRequest{
+		Model:       d.model,
+		System:      d.systemPrompt,
+		User:        buildLLMDetectorUserPrompt(art),
+		MaxTokens:   llmDetectorMaxTokens,
+		Temperature: llmDetectorTemperature,
+	})
+	if err != nil {
+		// Client/transport failure: unreadable, not a detection. Fail open toward
+		// release (see type comment).
+		return DetectionResult{}
+	}
+
+	reply, ok := decodeLLMDetectionReply(content)
+	if !ok || !reply.Detected {
+		// Either the reply did not parse as the expected JSON shape, or it parsed
+		// but detected was absent/false. Both collapse to no-detection: we never
+		// fabricate a hit from a reply we cannot confidently read as one.
+		return DetectionResult{}
+	}
+
+	return DetectionResult{
+		Detected:     true,
+		Severity:     d.severity,
+		ConditionKey: d.key,
+		Finding:      reply.Finding,
+	}
+}
+
+// llmDetectionReply 是 LLM 检测器回复的期望 JSON 形状。
+type llmDetectionReply struct {
+	Detected bool   `json:"detected"`
+	Finding  string `json:"finding"`
+}
+
+// decodeLLMDetectionReply 解析 LLM 回复为 llmDetectionReply。容忍模型把 JSON 包在
+// ```json ... ``` 代码块里的常见偏差；除此之外不做宽松兜底——解析失败就是解析失败，交给
+// 调用方按放行方向处理，不在这里猜测。
+func decodeLLMDetectionReply(content string) (llmDetectionReply, bool) {
+	trimmed := strings.TrimSpace(content)
+	trimmed = strings.TrimPrefix(trimmed, "```json")
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSuffix(trimmed, "```")
+	trimmed = strings.TrimSpace(trimmed)
+
+	var reply llmDetectionReply
+	if err := json.Unmarshal([]byte(trimmed), &reply); err != nil {
+		return llmDetectionReply{}, false
+	}
+	return reply, true
+}
+
+// buildLLMDetectorUserPrompt 把真实工件（不是任务描述、不是"已完成"的叙述性声明）组装成
+// user 消息：真实 diff 文本 + 交付物清单 + 摘要。diff 文本超出 maxDetectorArtifactBytes 时
+// 截断，避免单次检测调用的请求体无界增长。
+func buildLLMDetectorUserPrompt(art DetectionArtifact) string {
+	var b strings.Builder
+	b.WriteString("以下是需要检测的真实工件（实际代码/产出，不是任务描述或计划，也不是任何“已完成”的叙述性声明）：\n\n")
+
+	if art.DiffText != "" {
+		b.WriteString("真实 diff：\n")
+		b.WriteString(truncateForDetectorPrompt(art.DiffText))
+		b.WriteString("\n\n")
+	}
+
+	if len(art.Deliverables) > 0 {
+		b.WriteString("交付物清单：\n")
+		for _, deliverable := range art.Deliverables {
+			b.WriteString("- ")
+			b.WriteString(truncateForDetectorPrompt(deliverable))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if art.Summary != "" {
+		b.WriteString("摘要（仅供参考，判定必须基于上面的真实 diff/交付物，不能仅凭这段摘要下结论）：\n")
+		b.WriteString(truncateForDetectorPrompt(art.Summary))
+		b.WriteString("\n\n")
+	}
+
+	b.WriteString("只输出 JSON：{\"detected\": bool, \"finding\": string}")
+	return b.String()
+}
+
+// truncateForDetectorPrompt 把单段文本截断到 maxDetectorArtifactBytes 以内。
+func truncateForDetectorPrompt(text string) string {
+	if len(text) <= maxDetectorArtifactBytes {
+		return text
+	}
+	return text[:maxDetectorArtifactBytes] + "\n…(truncated)"
+}
+
+// codeReviewSystemPrompt 是首个 LLM 条件（code_review）的 system prompt：框成"检测违反"
+// 而不是"评估质量/给结论"——不要求整体好坏判断、不要求打分、不要求判断改动是否"做对了"，
+// 只回答"是否存在这些已定义的违反类别"。
+var codeReviewSystemPrompt = strings.Join([]string{
+	"你是代码审查违反检测器（violation detector），不是整体质量评估器。",
+	"任务：只判断这份改动是否**存在**以下违反类别之一：明显的代码缺陷、逻辑错误、安全漏洞（如注入、越权、密钥硬编码）、会导致运行时崩溃或数据损坏的问题。",
+	"只输出 JSON：{\"detected\": bool, \"finding\": string}。不要输出任何其他文字，不要用 markdown 代码块包裹。",
+	"如果不确定、证据不足、或未发现上述任何违反类别，输出 detected=false，finding 留空字符串。",
+	"不要评价这份改动整体好坏，不要给出总体结论，不要判断它是否“做对了”或已经达成需求——只检测是否**存在**上面列出的违反类别。",
+}, "\n")
+
+// newCodeReviewDetector 构造代码审查检测器（条件键 code_review，severity=major）：扫描真
+// 实 diff 有无明显缺陷/漏洞类问题。
+func newCodeReviewDetector(client chatCompletionClient, model string) *LLMPromptDetector {
+	return &LLMPromptDetector{
+		key:          "code_review",
+		severity:     "major",
+		systemPrompt: codeReviewSystemPrompt,
+		model:        model,
+		client:       client,
 	}
 }

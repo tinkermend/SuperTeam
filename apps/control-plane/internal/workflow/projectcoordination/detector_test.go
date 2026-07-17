@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -127,3 +128,97 @@ func TestSecretLeakDetectorKey(t *testing.T) {
 }
 
 var _ ConditionDetector = (*RuleDetector)(nil)
+var _ ConditionDetector = (*LLMPromptDetector)(nil)
+
+func TestLLMDetectorParsesDetected(t *testing.T) {
+	client := fakeChatCompletionClient{content: `{"detected":true,"finding":"SQL 拼接注入风险"}`}
+	d := newCodeReviewDetector(client, "test-model")
+
+	res := d.Detect(context.Background(), DetectionArtifact{
+		DiffText: "+query := \"SELECT * FROM users WHERE id = \" + userInput\n",
+	})
+
+	if !res.Detected {
+		t.Fatalf("expected Detected=true, got false")
+	}
+	if res.Severity != "major" {
+		t.Fatalf("expected Severity=major, got %q", res.Severity)
+	}
+	if res.ConditionKey != "code_review" {
+		t.Fatalf("expected ConditionKey=code_review, got %q", res.ConditionKey)
+	}
+	if res.Finding != "SQL 拼接注入风险" {
+		t.Fatalf("expected Finding to be carried through, got %q", res.Finding)
+	}
+}
+
+func TestLLMDetectorCleanReleases(t *testing.T) {
+	client := fakeChatCompletionClient{content: `{"detected":false}`}
+	d := newCodeReviewDetector(client, "test-model")
+
+	res := d.Detect(context.Background(), DetectionArtifact{
+		DiffText: "+func Add(a, b int) int { return a + b }\n",
+	})
+
+	if res.Detected {
+		t.Fatalf("expected Detected=false for clean diff, got true with Finding=%q", res.Finding)
+	}
+}
+
+func TestLLMDetectorParseFailReleases(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{name: "plain garbage", content: "this is not json at all"},
+		{name: "malformed json", content: `{"detected": tru`},
+		{name: "detected field absent", content: `{"finding":"noted but no verdict"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fakeChatCompletionClient{content: tc.content}
+			d := newCodeReviewDetector(client, "test-model")
+
+			res := d.Detect(context.Background(), DetectionArtifact{DiffText: "+x := 1\n"})
+
+			if res.Detected {
+				t.Fatalf("expected Detected=false (default release) for unparseable/absent reply %q, got true", tc.content)
+			}
+		})
+	}
+}
+
+func TestLLMDetectorClientErrorReleases(t *testing.T) {
+	client := fakeChatCompletionClient{err: errors.New("upstream unavailable")}
+	d := newCodeReviewDetector(client, "test-model")
+
+	res := d.Detect(context.Background(), DetectionArtifact{DiffText: "+x := 1\n"})
+
+	if res.Detected {
+		t.Fatalf("expected Detected=false when client errors, got true")
+	}
+}
+
+func TestLLMDetectorPromptFramedAsViolation(t *testing.T) {
+	d := newCodeReviewDetector(fakeChatCompletionClient{content: `{"detected":false}`}, "test-model")
+
+	prompt := d.systemPrompt
+	for _, want := range []string{"检测", "违反", "detected"} {
+		if !strings.Contains(strings.ToLower(prompt), strings.ToLower(want)) {
+			t.Fatalf("expected system prompt to contain detection framing %q, got: %s", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{"打分", "评分", "score", "正确性"} {
+		if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
+			t.Fatalf("expected system prompt to NOT contain scoring framing %q, got: %s", forbidden, prompt)
+		}
+	}
+}
+
+func TestLLMDetectorKey(t *testing.T) {
+	d := newCodeReviewDetector(fakeChatCompletionClient{content: `{"detected":false}`}, "test-model")
+	if d.Key() != "code_review" {
+		t.Fatalf("expected Key()=code_review, got %q", d.Key())
+	}
+}
