@@ -102,6 +102,14 @@
 - **Phase C1 自动返工 → 归位为可选策略**（`auto_rework` policy，默认关）：现在检出违反的默认终态是**人类最终验收决策**；自动返工是"以后模型可信了再开"的档位，不是当前自治默认。管道（C1 已建）保留，改默认。
 - **保留不动**：档1 attestation 执行接地、verdict 血缘、四眼独立、模板阶段卡点服务端强制——这些是"自治且可问责"的根。
 
+### 7.1 P1 实际落地范围（诚实修正，勿据本节上文反推 P1 已做全）
+
+上文 §7 描述的是**目标终态**。**P1（2026-07-17，feat/review-gate-p1）实际落地的是**：
+- **新增 `review_gate` 作为平行的新 verification_method**（规则型 secret_leak + LLM-prompt 型 code_review + 注册表/配置层 + 检测门执行 + 收敛闸对 review_gate 默认反转 + 触发接线 + 人类可签署 + executor 跳过）。收敛闸反转**只作用于 review_gate**，automated_test/human_judgment 语义不变。
+- **`adversarial_review` **P1 未改****：仍是 Phase B 的 held-by-default 语义，未降格为 review_gate、未改默认放行。它被视为**弃用**（新工作用 review_gate），但运行时语义在 P1 保持原样，以不破坏已 E2E 的行为。上文"adversarial_review→降格默认放行"是**后续阶段**目标，非 P1。
+- **C1 自动返工 `auto_rework` 默认关 **P1 未做****：C1 在 v3 路径保持原样（仅影响弃用的 adversarial 路径；新 review_gate 本就"检出→held→人类"无返工）。上文"auto_rework 默认关"是后续目标。
+- **P1 未做的其他项**：安全/高危**中途硬阻断**（block 与 need_human 目前都只在验收门 held，无中途拦——需 P2 接命令日志/transcript）；对象存储 diff 内容取回（P1 检测器只扫内联工件，diff 只在对象存储时 code_review 会退扫 executor 自述，fails-toward-release 无害但削弱接地，P2 闭合）；多 distinct-task review_gate 判据的 worst-wins 持久化（P1 last-writer-wins，用单 satisfied_by 规避）；自定义条件槽 + 前端菜单（P3）。
+
 ---
 
 ## 8. 信任三档诚实修正
