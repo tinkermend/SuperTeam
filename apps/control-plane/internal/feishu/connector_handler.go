@@ -16,8 +16,9 @@ import (
 
 // ConnectorHTTPHandler 服务 /api/v1/connector/* 路由组(仅 ServiceAuth 可达)。
 type ConnectorHTTPHandler struct {
-	service *Service
-	outbox  OutboxRepository
+	service  *Service
+	outbox   OutboxRepository
+	projects ProjectGateway
 }
 
 func NewConnectorHTTPHandler(service *Service) *ConnectorHTTPHandler {

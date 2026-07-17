@@ -425,6 +425,7 @@ type Querier interface {
 	ListProjectTasksByDemand(ctx context.Context, arg ListProjectTasksByDemandParams) ([]ProjectTask, error)
 	ListProjectTransferRequests(ctx context.Context, arg ListProjectTransferRequestsParams) ([]ProjectTransferRequest, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
+	ListProjectsForHumanMember(ctx context.Context, arg ListProjectsForHumanMemberParams) ([]ListProjectsForHumanMemberRow, error)
 	ListPromptTemplates(ctx context.Context, arg ListPromptTemplatesParams) ([]TaskPromptTemplate, error)
 	ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error)
 	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)

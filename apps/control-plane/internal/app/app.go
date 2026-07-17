@@ -738,6 +738,11 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	feishuService.SetOAuthOrigins(feishuPublicOrigin, feishuWebOrigin)
 	feishuConnectorHandler := feishu.NewConnectorHTTPHandler(feishuService)
 	feishuConnectorHandler.SetOutboxRepository(feishu.NewPgRepository(q))
+	feishuConnectorHandler.SetProjectGateway(feishuProjectGatewayAdapter{
+		q:        q,
+		projects: projectService,
+		repo:     projectRepository,
+	})
 	feishuAdminHandler := feishu.NewAdminHTTPHandler(feishuService)
 	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
@@ -922,4 +927,70 @@ func (a feishuUserListerAdapter) ListActiveUsersWithEmail(ctx context.Context) (
 		out = append(out, feishu.UserEmail{UserID: user.ID, Email: user.Email})
 	}
 	return out, nil
+}
+
+// feishuProjectGatewayAdapter 把 connector 业务动作接到项目域。
+type feishuProjectGatewayAdapter struct {
+	q        *queries.Queries
+	projects *project.Service
+	repo     project.Repository
+}
+
+func (a feishuProjectGatewayAdapter) ListProjectsForHumanMember(ctx context.Context, tenantID, userID uuid.UUID) ([]feishu.ProjectRef, error) {
+	rows, err := a.q.ListProjectsForHumanMember(ctx, queries.ListProjectsForHumanMemberParams{
+		TenantID:    tenantID,
+		ActorUserID: userID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]feishu.ProjectRef, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, feishu.ProjectRef{ID: row.ID, Name: row.Name})
+	}
+	return out, nil
+}
+
+func (a feishuProjectGatewayAdapter) SubmitDemand(ctx context.Context, tenantID, projectID, userID uuid.UUID, title, content, mode string) (uuid.UUID, string, error) {
+	demand, err := a.projects.SubmitDemand(ctx, project.SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: userID,
+		Title:             title,
+		Content:           content,
+		SourceType:        project.DemandSourceType("feishu"),
+		CoordinationMode:  mode,
+	})
+	if err != nil {
+		if errors.Is(err, project.ErrInvalidProject) || errors.Is(err, project.ErrInvalidCoordinationMode) {
+			return uuid.Nil, "", fmt.Errorf("%w: %v", feishu.ErrGatewayBadInput, err)
+		}
+		return uuid.Nil, "", err
+	}
+	return demand.ID, string(demand.Status), nil
+}
+
+func (a feishuProjectGatewayAdapter) ResolveDecision(ctx context.Context, tenantID, projectID, decisionID, userID uuid.UUID, decision, comment string) (bool, error) {
+	_, err := a.projects.ResolveDecision(ctx, project.ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   userID,
+		Decision:          decision,
+		Comment:           comment,
+	})
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, project.ErrProjectDecisionForbidden) {
+		return false, feishu.ErrGatewayForbidden
+	}
+	if errors.Is(err, project.ErrInvalidProject) {
+		// 已终态且异值 → 已由他人处理;其余按坏输入。
+		if existing, getErr := a.repo.GetDecisionRequest(ctx, tenantID, projectID, decisionID); getErr == nil && existing.StatusSnapshot != "pending" {
+			return true, nil
+		}
+		return false, fmt.Errorf("%w: %v", feishu.ErrGatewayBadInput, err)
+	}
+	return false, err
 }

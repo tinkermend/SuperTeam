@@ -81,6 +81,24 @@ func (e AllowedTeamAction) Valid() bool {
 	}
 }
 
+// Defines values for ConnectorSubmitDemandRequestCoordinationMode.
+const (
+	ConnectorSubmitDemandRequestCoordinationModeLoop ConnectorSubmitDemandRequestCoordinationMode = "loop"
+	ConnectorSubmitDemandRequestCoordinationModePlan ConnectorSubmitDemandRequestCoordinationMode = "plan"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorSubmitDemandRequestCoordinationMode enum.
+func (e ConnectorSubmitDemandRequestCoordinationMode) Valid() bool {
+	switch e {
+	case ConnectorSubmitDemandRequestCoordinationModeLoop:
+		return true
+	case ConnectorSubmitDemandRequestCoordinationModePlan:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateDigitalEmployeeConfigRevisionRequestStatus.
 const (
 	CreateDigitalEmployeeConfigRevisionRequestStatusActive   CreateDigitalEmployeeConfigRevisionRequestStatus = "active"
@@ -1787,16 +1805,16 @@ func (e SkillInstallationTargetScope) Valid() bool {
 
 // Defines values for SubmitProjectDemandRequestCoordinationMode.
 const (
-	Loop SubmitProjectDemandRequestCoordinationMode = "loop"
-	Plan SubmitProjectDemandRequestCoordinationMode = "plan"
+	SubmitProjectDemandRequestCoordinationModeLoop SubmitProjectDemandRequestCoordinationMode = "loop"
+	SubmitProjectDemandRequestCoordinationModePlan SubmitProjectDemandRequestCoordinationMode = "plan"
 )
 
 // Valid indicates whether the value is a known member of the SubmitProjectDemandRequestCoordinationMode enum.
 func (e SubmitProjectDemandRequestCoordinationMode) Valid() bool {
 	switch e {
-	case Loop:
+	case SubmitProjectDemandRequestCoordinationModeLoop:
 		return true
-	case Plan:
+	case SubmitProjectDemandRequestCoordinationModePlan:
 		return true
 	default:
 		return false
@@ -2354,6 +2372,39 @@ type ConnectorBootstrapResponse struct {
 		ConfigId  openapi_types.UUID `json:"config_id"`
 		TenantId  openapi_types.UUID `json:"tenant_id"`
 	} `json:"configs"`
+}
+
+// ConnectorProjectListResponse defines model for ConnectorProjectListResponse.
+type ConnectorProjectListResponse struct {
+	Projects []struct {
+		Id   openapi_types.UUID `json:"id"`
+		Name string             `json:"name"`
+	} `json:"projects"`
+}
+
+// ConnectorResolveDecisionRequest defines model for ConnectorResolveDecisionRequest.
+type ConnectorResolveDecisionRequest struct {
+	Comment   *string            `json:"comment,omitempty"`
+	Decision  string             `json:"decision"`
+	ProjectId openapi_types.UUID `json:"project_id"`
+}
+
+// ConnectorSubmitDemandRequest defines model for ConnectorSubmitDemandRequest.
+type ConnectorSubmitDemandRequest struct {
+	Content          *string                                       `json:"content,omitempty"`
+	CoordinationMode *ConnectorSubmitDemandRequestCoordinationMode `json:"coordination_mode,omitempty"`
+	ProjectId        openapi_types.UUID                            `json:"project_id"`
+	Title            string                                        `json:"title"`
+}
+
+// ConnectorSubmitDemandRequestCoordinationMode defines model for ConnectorSubmitDemandRequest.CoordinationMode.
+type ConnectorSubmitDemandRequestCoordinationMode string
+
+// ConnectorSubmitDemandResponse defines model for ConnectorSubmitDemandResponse.
+type ConnectorSubmitDemandResponse struct {
+	DemandId openapi_types.UUID `json:"demand_id"`
+	Status   string             `json:"status"`
+	Title    string             `json:"title"`
 }
 
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
@@ -6272,6 +6323,12 @@ type UpsertFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
 // IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
 type IssueServiceTokenJSONRequestBody = IssueServiceTokenRequest
 
+// ConnectorResolveDecisionJSONRequestBody defines body for ConnectorResolveDecision for application/json ContentType.
+type ConnectorResolveDecisionJSONRequestBody = ConnectorResolveDecisionRequest
+
+// ConnectorSubmitDemandJSONRequestBody defines body for ConnectorSubmitDemand for application/json ContentType.
+type ConnectorSubmitDemandJSONRequestBody = ConnectorSubmitDemandRequest
+
 // ConnectorAckOutboxJSONRequestBody defines body for ConnectorAckOutbox for application/json ContentType.
 type ConnectorAckOutboxJSONRequestBody = FeishuOutboxAckRequest
 
@@ -7003,9 +7060,18 @@ type ServerInterface interface {
 	// Fetch decrypted Feishu app configs for an authenticated connector service
 	// (GET /api/v1/connector/bootstrap)
 	ConnectorBootstrap(w http.ResponseWriter, r *http.Request)
+	// Resolve a decision on behalf of the bound user (409 when already resolved by someone else)
+	// (POST /api/v1/connector/decisions/{decisionId}/resolve)
+	ConnectorResolveDecision(w http.ResponseWriter, r *http.Request, decisionId openapi_types.UUID)
+	// Submit a demand on behalf of the bound user (source_type is fixed to feishu)
+	// (POST /api/v1/connector/demands)
+	ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request)
 	// Resolve a Feishu open_id to its bound platform user
 	// (GET /api/v1/connector/identity)
 	ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams)
+	// List projects the on-behalf-of user may raise demands in (owner or active human member)
+	// (GET /api/v1/connector/my-projects)
+	ConnectorMyProjects(w http.ResponseWriter, r *http.Request)
 	// List pending Feishu outbox messages for delivery
 	// (GET /api/v1/connector/outbox)
 	ConnectorListOutbox(w http.ResponseWriter, r *http.Request, params ConnectorListOutboxParams)
@@ -7687,9 +7753,27 @@ func (_ Unimplemented) ConnectorBootstrap(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Resolve a decision on behalf of the bound user (409 when already resolved by someone else)
+// (POST /api/v1/connector/decisions/{decisionId}/resolve)
+func (_ Unimplemented) ConnectorResolveDecision(w http.ResponseWriter, r *http.Request, decisionId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a demand on behalf of the bound user (source_type is fixed to feishu)
+// (POST /api/v1/connector/demands)
+func (_ Unimplemented) ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Resolve a Feishu open_id to its bound platform user
 // (GET /api/v1/connector/identity)
 func (_ Unimplemented) ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List projects the on-behalf-of user may raise demands in (owner or active human member)
+// (GET /api/v1/connector/my-projects)
+func (_ Unimplemented) ConnectorMyProjects(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9220,6 +9304,46 @@ func (siw *ServerInterfaceWrapper) ConnectorBootstrap(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// ConnectorResolveDecision operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorResolveDecision(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "decisionId" -------------
+	var decisionId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "decisionId", chi.URLParam(r, "decisionId"), &decisionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "decisionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorResolveDecision(w, r, decisionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorSubmitDemand operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorSubmitDemand(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ConnectorResolveIdentity operation middleware
 func (siw *ServerInterfaceWrapper) ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request) {
 
@@ -9257,6 +9381,20 @@ func (siw *ServerInterfaceWrapper) ConnectorResolveIdentity(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ConnectorResolveIdentity(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorMyProjects operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorMyProjects(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorMyProjects(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16628,7 +16766,16 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/connector/bootstrap", wrapper.ConnectorBootstrap)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/decisions/{decisionId}/resolve", wrapper.ConnectorResolveDecision)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/demands", wrapper.ConnectorSubmitDemand)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/connector/identity", wrapper.ConnectorResolveIdentity)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/my-projects", wrapper.ConnectorMyProjects)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/connector/outbox", wrapper.ConnectorListOutbox)

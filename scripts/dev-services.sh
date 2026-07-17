@@ -30,6 +30,11 @@ WEB_WAIT_URL="${SUPERTEAM_DEV_WEB_WAIT_URL-http://127.0.0.1:3000/}"
 RUNTIME_AGENT_CMD="${SUPERTEAM_DEV_RUNTIME_AGENT_CMD:-pnpm run dev:runtime-agent}"
 RUNTIME_AGENT_WAIT_URL="${SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL-}"
 
+# feishu-connector 不进默认 all(飞书通道按需启动);无 HTTP 面,不配 WAIT_URL。
+# 依赖环境变量 FEISHU_CONNECTOR_TOKEN(经 POST /api/v1/admin/service-tokens 签发)。
+FEISHU_CONNECTOR_CMD="${SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD:-go run ./apps/feishu-connector}"
+FEISHU_CONNECTOR_WAIT_URL="${SUPERTEAM_DEV_FEISHU_CONNECTOR_WAIT_URL-}"
+
 OPENFGA_COMPOSE_FILE="${SUPERTEAM_DEV_OPENFGA_COMPOSE_FILE:-$PROJECT_ROOT/docker-compose.dev.yml}"
 OPENFGA_MODE="${SUPERTEAM_DEV_OPENFGA_MODE:-auto}"
 OPENFGA_CMD="${SUPERTEAM_DEV_OPENFGA_CMD:-openfga}"
@@ -113,7 +118,7 @@ ensure_dirs() {
 
 is_known_service() {
     case "$1" in
-        temporal|control-plane|web|runtime-agent|openfga) return 0 ;;
+        temporal|control-plane|web|runtime-agent|openfga|feishu-connector) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -124,6 +129,7 @@ service_command() {
         control-plane) printf '%s\n' "$CONTROL_PLANE_CMD" ;;
         web) printf '%s\n' "$WEB_CMD" ;;
         runtime-agent) printf '%s\n' "$RUNTIME_AGENT_CMD" ;;
+        feishu-connector) printf '%s\n' "$FEISHU_CONNECTOR_CMD" ;;
     esac
 }
 
@@ -134,6 +140,7 @@ service_wait_url() {
         web) printf '%s\n' "$WEB_WAIT_URL" ;;
         runtime-agent) printf '%s\n' "$RUNTIME_AGENT_WAIT_URL" ;;
         openfga) printf '%s\n' "$OPENFGA_WAIT_URL" ;;
+        feishu-connector) printf '%s\n' "$FEISHU_CONNECTOR_WAIT_URL" ;;
     esac
 }
 

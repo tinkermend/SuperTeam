@@ -460,6 +460,57 @@ func (q *Queries) ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFe
 	return items, nil
 }
 
+const ListProjectsForHumanMember = `-- name: ListProjectsForHumanMember :many
+SELECT p.id, p.name
+FROM projects p
+WHERE p.tenant_id = $1::uuid
+  AND p.deleted_at IS NULL
+  AND p.status NOT IN ('archived')
+  AND (
+    p.human_owner_user_id = $2::uuid
+    OR EXISTS (
+      SELECT 1 FROM project_members pm
+      WHERE pm.tenant_id = p.tenant_id
+        AND pm.project_id = p.id
+        AND pm.principal_type = 'human_user'
+        AND pm.principal_id = $2::uuid
+        AND pm.status = 'active'
+    )
+  )
+ORDER BY p.updated_at DESC
+LIMIT 50
+`
+
+type ListProjectsForHumanMemberParams struct {
+	TenantID    uuid.UUID `json:"tenant_id"`
+	ActorUserID uuid.UUID `json:"actor_user_id"`
+}
+
+type ListProjectsForHumanMemberRow struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+func (q *Queries) ListProjectsForHumanMember(ctx context.Context, arg ListProjectsForHumanMemberParams) ([]ListProjectsForHumanMemberRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectsForHumanMember, arg.TenantID, arg.ActorUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectsForHumanMemberRow{}
+	for rows.Next() {
+		var i ListProjectsForHumanMemberRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListSentFeishuOutboxByResource = `-- name: ListSentFeishuOutboxByResource :many
 SELECT id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at FROM feishu_outbox
 WHERE tenant_id = $1::uuid

@@ -2233,6 +2233,62 @@ paths:
           description: Ack result (idempotent for already-final rows)
         "400":
           $ref: "#/components/responses/Error"
+  /api/v1/connector/my-projects:
+    get:
+      operationId: connectorMyProjects
+      summary: List projects the on-behalf-of user may raise demands in (owner or active human member)
+      responses:
+        "200":
+          description: Projects for the acting user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorProjectListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/demands:
+    post:
+      operationId: connectorSubmitDemand
+      summary: Submit a demand on behalf of the bound user (source_type is fixed to feishu)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorSubmitDemandRequest"
+      responses:
+        "201":
+          description: Demand created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorSubmitDemandResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/decisions/{decisionId}/resolve:
+    post:
+      operationId: connectorResolveDecision
+      summary: Resolve a decision on behalf of the bound user (409 when already resolved by someone else)
+      parameters:
+        - name: decisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorResolveDecisionRequest"
+      responses:
+        "200":
+          description: Decision resolved
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/admin/service-tokens:
     post:
       operationId: issueServiceToken
@@ -4555,6 +4611,69 @@ components:
           schema:
             type: string
   schemas:
+    ConnectorProjectListResponse:
+      type: object
+      required:
+        - projects
+      properties:
+        projects:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - name
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+    ConnectorSubmitDemandRequest:
+      type: object
+      required:
+        - project_id
+        - title
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        coordination_mode:
+          type: string
+          enum:
+            - plan
+            - loop
+    ConnectorSubmitDemandResponse:
+      type: object
+      required:
+        - demand_id
+        - title
+        - status
+      properties:
+        demand_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+    ConnectorResolveDecisionRequest:
+      type: object
+      required:
+        - project_id
+        - decision
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        decision:
+          type: string
+        comment:
+          type: string
     FeishuOutboxListResponse:
       type: object
       required:

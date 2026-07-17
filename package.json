@@ -18,7 +18,7 @@
     "verify:db": "corepack pnpm test:go",
     "test": "corepack pnpm test:ts && corepack pnpm test:go && corepack pnpm test:rust",
     "test:ts": "corepack pnpm -r --if-present test",
-    "test:go": "go test ./apps/control-plane/...",
+    "test:go": "go test ./apps/control-plane/... ./apps/feishu-connector/...",
     "test:rust": "cargo test --manifest-path apps/runtime-agent/Cargo.toml",
     "typecheck": "corepack pnpm -r --if-present typecheck"
   },

@@ -285,6 +285,9 @@ func (s *Server) registerRoutes() {
 				r.Get("/identity", s.feishuConnectorHandler.Identity)
 				r.Get("/outbox", s.feishuConnectorHandler.ListOutbox)
 				r.Post("/outbox/{outboxId}/ack", s.feishuConnectorHandler.AckOutbox)
+				r.Get("/my-projects", s.feishuConnectorHandler.MyProjects)
+				r.Post("/demands", s.feishuConnectorHandler.SubmitDemand)
+				r.Post("/decisions/{decisionId}/resolve", s.feishuConnectorHandler.ResolveDecision)
 			})
 		}
 

@@ -170,3 +170,23 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND resource_id = sqlc.arg('resource_id')::uuid
   AND status = 'sent'
   AND kind = 'decision_card';
+
+-- name: ListProjectsForHumanMember :many
+SELECT p.id, p.name
+FROM projects p
+WHERE p.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND p.deleted_at IS NULL
+  AND p.status NOT IN ('archived')
+  AND (
+    p.human_owner_user_id = sqlc.arg('actor_user_id')::uuid
+    OR EXISTS (
+      SELECT 1 FROM project_members pm
+      WHERE pm.tenant_id = p.tenant_id
+        AND pm.project_id = p.id
+        AND pm.principal_type = 'human_user'
+        AND pm.principal_id = sqlc.arg('actor_user_id')::uuid
+        AND pm.status = 'active'
+    )
+  )
+ORDER BY p.updated_at DESC
+LIMIT 50;
