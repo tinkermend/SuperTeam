@@ -100,11 +100,13 @@ type runtimeMCPListerAdapter struct {
 	capability *capability.Service
 }
 
-func (a runtimeMCPListerAdapter) ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]employee.RuntimeMCPServerPayload, error) {
+func (a runtimeMCPListerAdapter) ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) ([]employee.RuntimeMCPServerPayload, error) {
 	if a.capability == nil {
 		return nil, nil
 	}
-	effective, err := a.capability.ListEffectiveMCPConfigForRuntime(ctx, tenantID, digitalEmployeeID)
+	// projectID 非 nil 时并入项目级 MCP 绑定（同 server_key 项目侧优先）；
+	// 之后的 MissingEnvVars 过滤对项目侧条目同样生效。
+	effective, err := a.capability.ListEffectiveMCPConfigForRuntime(ctx, tenantID, digitalEmployeeID, projectID)
 	if err != nil {
 		return nil, err
 	}

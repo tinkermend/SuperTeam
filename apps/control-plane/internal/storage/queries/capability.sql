@@ -450,3 +450,81 @@ WHERE NOT EXISTS (
       AND team_duplicate.status = 'active'
 )
 ORDER BY source_scope ASC, name ASC;
+
+-- 项目级 MCP 绑定（迁移 072，目录与能力投影修订 spec §3.2）。
+-- 项目绑定是声明式全量替换（PUT 语义）：先软删项目下全部活跃绑定，再逐条插入
+-- 期望集合；部分失败向"更少能力"收敛（fail-closed），不会静默多授权。
+
+-- name: CreateProjectMCPBinding :one
+INSERT INTO project_mcp_bindings (
+    tenant_id,
+    project_id,
+    mcp_server_id,
+    credential_env_var,
+    metadata,
+    created_by
+)
+VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('mcp_server_id')::uuid,
+    sqlc.narg('credential_env_var')::text,
+    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
+    sqlc.narg('created_by')::uuid
+)
+RETURNING *;
+
+-- name: ListProjectMCPBindings :many
+SELECT
+    pb.*,
+    m.name AS server_name,
+    m.server_key,
+    m.url,
+    m.transport,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.risk_level,
+    m.status AS server_status
+FROM project_mcp_bindings pb
+JOIN mcp_servers m ON m.id = pb.mcp_server_id
+    AND m.tenant_id = pb.tenant_id
+    AND m.deleted_at IS NULL
+WHERE pb.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pb.project_id = sqlc.arg('project_id')::uuid
+  AND pb.deleted_at IS NULL
+ORDER BY pb.created_at DESC;
+
+-- name: SoftDeleteProjectMCPBindingsForProject :exec
+UPDATE project_mcp_bindings
+SET deleted_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND deleted_at IS NULL;
+
+-- name: ListEffectiveProjectMCPBindingsForRuntime :many
+-- 项目绑定的运行时投影行：只取活跃绑定 × 活跃注册表定义。缺失 env 判定由调用方
+-- 用目标员工的已配置 env 集合完成（与员工侧投影同一套过滤逻辑），凭据值不经此路。
+SELECT
+    m.id AS server_id,
+    m.tenant_id,
+    m.name,
+    m.server_key,
+    m.transport,
+    m.url,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.tool_allowlist,
+    m.risk_level,
+    pb.credential_env_var,
+    'project'::text AS source_scope,
+    pb.status AS binding_status
+FROM project_mcp_bindings pb
+JOIN mcp_servers m ON m.id = pb.mcp_server_id
+    AND m.tenant_id = pb.tenant_id
+    AND m.deleted_at IS NULL
+    AND m.status = 'active'
+WHERE pb.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pb.project_id = sqlc.arg('project_id')::uuid
+  AND pb.deleted_at IS NULL
+  AND pb.status = 'active'
+ORDER BY m.name ASC;

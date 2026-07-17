@@ -259,6 +259,8 @@ type handlerService struct {
 	createTeamBindingReq       CreateTeamMCPBindingRequest
 	createEmployeeBindingV2Req CreateEmployeeMCPBindingV2Request
 	effectiveConfigReq         EmployeeScopedRequest
+	listProjectBindingsReq     ProjectScopedRequest
+	putProjectBindingsReq      PutProjectMCPBindingsRequest
 
 	skillMCPDependencies      []SkillMCPDependency
 	dependentSkills           []DependentSkill
@@ -359,6 +361,16 @@ func (s *handlerService) DeleteEmployeeMCPBindingV2(_ context.Context, _ DeleteE
 func (s *handlerService) ListEffectiveMCPConfig(_ context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
 	s.effectiveConfigReq = req
 	return s.effectiveServers, s.err
+}
+
+func (s *handlerService) ListProjectMCPBindings(_ context.Context, req ProjectScopedRequest) ([]MCPBinding, error) {
+	s.listProjectBindingsReq = req
+	return []MCPBinding{s.mcpBinding}, s.err
+}
+
+func (s *handlerService) PutProjectMCPBindings(_ context.Context, req PutProjectMCPBindingsRequest) ([]MCPBinding, error) {
+	s.putProjectBindingsReq = req
+	return []MCPBinding{s.mcpBinding}, s.err
 }
 
 func (s *handlerService) ListSkillMCPDependencies(_ context.Context, req ListSkillMCPDependenciesRequest) ([]SkillMCPDependency, error) {
@@ -748,5 +760,134 @@ func TestHandlerDeleteMCPServerDefinitionConflictMapsTo409(t *testing.T) {
 	handler.DeleteMCPServerDefinition(resp, req)
 	if resp.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d", resp.Code)
+	}
+}
+
+// TestHandlerProjectMCPBindingRoutesUseProjectConfigActions 验证项目绑定端点的 authz
+// 形状：读走 project.config.read、写走 project.config.edit，资源都是 ResourceProject
+// （项目归属裁决在 authorizer 的 checkProjectAccess 内完成，不携带 team 维度）。
+func TestHandlerProjectMCPBindingRoutesUseProjectConfigActions(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	projectID := uuid.New()
+	serverID := uuid.New()
+	service := &handlerService{
+		mcpBinding: MCPBinding{
+			ID:          uuid.New(),
+			TenantID:    tenantID,
+			ProjectID:   &projectID,
+			MCPServerID: serverID,
+			ServerKey:   "github-mcp",
+			Status:      "active",
+			SourceScope: "project",
+		},
+	}
+	handler := NewHandler(service)
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler.SetAuthorizer(authorizer)
+
+	listReq := requestWithConsoleIdentity(
+		requestWithChiParams(httptest.NewRequest(http.MethodGet, "/projects/"+projectID.String()+"/mcp-bindings", nil), map[string]string{"projectId": projectID.String()}),
+		tenantID,
+		userID,
+	)
+	listResp := httptest.NewRecorder()
+	handler.ListProjectMCPBindings(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+	if service.listProjectBindingsReq.TenantID != tenantID || service.listProjectBindingsReq.UserID != userID || service.listProjectBindingsReq.ProjectID != projectID {
+		t.Fatalf("unexpected list project bindings request: %#v", service.listProjectBindingsReq)
+	}
+	var listed []map[string]any
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode project binding list: %v", err)
+	}
+	if len(listed) != 1 || listed[0]["project_id"] != projectID.String() || listed[0]["source_scope"] != "project" {
+		t.Fatalf("expected project-scoped binding response, got %#v", listed)
+	}
+
+	putReq := requestWithConsoleIdentity(
+		requestWithChiParams(httptest.NewRequest(http.MethodPut, "/projects/"+projectID.String()+"/mcp-bindings", bytes.NewBufferString(`{"items":[{"mcp_server_id":"`+serverID.String()+`","credential_env_var":"GH_TOKEN"}]}`)), map[string]string{"projectId": projectID.String()}),
+		tenantID,
+		userID,
+	)
+	putResp := httptest.NewRecorder()
+	handler.PutProjectMCPBindings(putResp, putReq)
+	if putResp.Code != http.StatusOK {
+		t.Fatalf("expected put status 200, got %d: %s", putResp.Code, putResp.Body.String())
+	}
+	if service.putProjectBindingsReq.TenantID != tenantID || service.putProjectBindingsReq.UserID != userID || service.putProjectBindingsReq.ProjectID != projectID {
+		t.Fatalf("unexpected put project bindings request: %#v", service.putProjectBindingsReq)
+	}
+	if len(service.putProjectBindingsReq.Items) != 1 || service.putProjectBindingsReq.Items[0].MCPServerID != serverID || service.putProjectBindingsReq.Items[0].CredentialEnvVar != "GH_TOKEN" {
+		t.Fatalf("unexpected put project bindings items: %#v", service.putProjectBindingsReq.Items)
+	}
+
+	if len(authorizer.checks) != 2 {
+		t.Fatalf("expected two authz checks, got %#v", authorizer.checks)
+	}
+	if authorizer.checks[0].Action != authz.ActionProjectConfigRead || authorizer.checks[0].Resource.Type != authz.ResourceProject || authorizer.checks[0].Resource.ID != projectID.String() || authorizer.checks[0].TeamID != nil {
+		t.Fatalf("unexpected project binding read authz check: %#v", authorizer.checks[0])
+	}
+	if authorizer.checks[1].Action != authz.ActionProjectConfigEdit || authorizer.checks[1].Resource.Type != authz.ResourceProject || authorizer.checks[1].Resource.ID != projectID.String() || authorizer.checks[1].TeamID != nil {
+		t.Fatalf("unexpected project binding edit authz check: %#v", authorizer.checks[1])
+	}
+}
+
+func TestHandlerPutProjectMCPBindingsRejectsMalformedBody(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	projectID := uuid.New()
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "invalid json", body: `{"items":`},
+		{name: "invalid server id", body: `{"items":[{"mcp_server_id":"not-a-uuid"}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &handlerService{}
+			handler := NewHandler(service)
+			handler.SetAuthorizer(&handlerAuthorizer{allowed: true})
+			req := requestWithConsoleIdentity(
+				requestWithChiParams(httptest.NewRequest(http.MethodPut, "/projects/"+projectID.String()+"/mcp-bindings", bytes.NewBufferString(tt.body)), map[string]string{"projectId": projectID.String()}),
+				tenantID,
+				userID,
+			)
+			resp := httptest.NewRecorder()
+			handler.PutProjectMCPBindings(resp, req)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d: %s", resp.Code, resp.Body.String())
+			}
+			if service.putProjectBindingsReq.ProjectID != uuid.Nil {
+				t.Fatalf("service must not be called for malformed body")
+			}
+		})
+	}
+}
+
+func TestHandlerProjectMCPBindingRoutesDenyWhenAuthorizerRejects(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerService{}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(&handlerAuthorizer{allowed: false})
+
+	req := requestWithConsoleIdentity(
+		requestWithChiParams(httptest.NewRequest(http.MethodPut, "/projects/"+projectID.String()+"/mcp-bindings", bytes.NewBufferString(`{"items":[]}`)), map[string]string{"projectId": projectID.String()}),
+		tenantID,
+		userID,
+	)
+	resp := httptest.NewRecorder()
+	handler.PutProjectMCPBindings(resp, req)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.putProjectBindingsReq.ProjectID != uuid.Nil {
+		t.Fatalf("service must not be called when authorization is denied")
 	}
 }

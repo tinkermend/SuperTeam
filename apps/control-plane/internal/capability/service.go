@@ -43,6 +43,11 @@ type Repository interface {
 	ListEffectiveMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error)
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]string, error)
 
+	// 项目级 MCP 绑定（迁移 072，目录与能力投影修订 spec §3.2）。
+	PutProjectMCPBindings(ctx context.Context, tenantID, projectID, createdBy uuid.UUID, items []ProjectMCPBindingInput) ([]MCPBinding, error)
+	ListProjectMCPBindings(ctx context.Context, req ProjectScopedRequest) ([]MCPBinding, error)
+	ListEffectiveProjectMCPServers(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) ([]EffectiveMCPServer, error)
+
 	// Skill <-> MCP registry dependency declarations (migration 062).
 	SkillExistsForTenant(ctx context.Context, tenantID, skillID uuid.UUID) (bool, error)
 	ListSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID) ([]SkillMCPDependency, error)
@@ -440,6 +445,65 @@ func (s *Service) DeleteTeamMCPBinding(ctx context.Context, req DeleteTeamMCPBin
 	return s.repository.DeleteTeamMCPBinding(ctx, req)
 }
 
+// PutProjectMCPBindings declaratively replaces a project's MCP bindings with the desired set
+// after validating each referenced server exists, is active and belongs to the tenant.
+// 与 team 绑定一致：不校验 project 本体存在性（team 版同样不校验 team 存在），归属
+// 边界由 handler 层的项目级 authz（ResourceProject）承担；env-var 预检同样是 advisory，
+// 因为凭据值由各员工自己的环境变量提供。
+func (s *Service) PutProjectMCPBindings(ctx context.Context, req PutProjectMCPBindingsRequest) ([]MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.ProjectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: project_id is required", ErrInvalidInput)
+	}
+	if req.UserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	seen := map[uuid.UUID]struct{}{}
+	items := make([]ProjectMCPBindingInput, 0, len(req.Items))
+	for _, item := range req.Items {
+		if item.MCPServerID == uuid.Nil {
+			return nil, fmt.Errorf("%w: mcp_server_id is required", ErrInvalidInput)
+		}
+		if _, dup := seen[item.MCPServerID]; dup {
+			return nil, fmt.Errorf("%w: duplicate mcp_server_id %s", ErrInvalidInput, item.MCPServerID)
+		}
+		seen[item.MCPServerID] = struct{}{}
+		if err := validateCredentialEnvVar(item.CredentialEnvVar); err != nil {
+			return nil, err
+		}
+		if _, err := s.requireActiveMCPDefinition(ctx, req.TenantID, item.MCPServerID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: mcp server %s not found", ErrInvalidInput, item.MCPServerID)
+			}
+			return nil, err
+		}
+		item.CredentialEnvVar = strings.TrimSpace(item.CredentialEnvVar)
+		items = append(items, item)
+	}
+	return s.repository.PutProjectMCPBindings(ctx, req.TenantID, req.ProjectID, req.UserID, items)
+}
+
+func (s *Service) ListProjectMCPBindings(ctx context.Context, req ProjectScopedRequest) ([]MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.UserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	if req.ProjectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: project_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListProjectMCPBindings(ctx, req)
+}
+
 // CreateEmployeeMCPBindingV2 binds a registered MCP to a digital employee. The MCP must exist
 // and be active; the returned binding carries a preflight (MissingEnvVars / blocked_missing_env)
 // computed against the employee's configured env vars.
@@ -529,8 +593,12 @@ func (s *Service) ListEffectiveMCPConfig(ctx context.Context, req EmployeeScoped
 
 // ListEffectiveMCPConfigForRuntime resolves effective MCP servers for an employee in a system
 // (runtime) context where there is no console user. It performs the same resolution as
-// ListEffectiveMCPConfig but skips the user-scoped validation.
-func (s *Service) ListEffectiveMCPConfigForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]EffectiveMCPServer, error) {
+// ListEffectiveMCPConfig but skips the user-scoped validation. projectID 可选（目录与能力
+// 投影修订 spec §3.2）：非 nil 时结果 = 员工侧集合（team 继承 + 个人）∪ 项目绑定集合，
+// 同 server_key 时项目绑定优先——两侧均在治理链内，冲突在治理体系内以项目侧为准。
+// 项目绑定的 MissingEnvVars 同样按该员工的已配置 env 集合判定，调用方对全量结果做
+// 统一的 env-satisfied 过滤即可。
+func (s *Service) ListEffectiveMCPConfigForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) ([]EffectiveMCPServer, error) {
 	if err := s.requireRepository(); err != nil {
 		return nil, err
 	}
@@ -540,10 +608,36 @@ func (s *Service) ListEffectiveMCPConfigForRuntime(ctx context.Context, tenantID
 	if digitalEmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
-	return s.repository.ListEffectiveMCPBindingsV2(ctx, EmployeeScopedRequest{
+	employeeSide, err := s.repository.ListEffectiveMCPBindingsV2(ctx, EmployeeScopedRequest{
 		TenantID:          tenantID,
 		DigitalEmployeeID: digitalEmployeeID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if projectID == nil || *projectID == uuid.Nil {
+		return employeeSide, nil
+	}
+	projectSide, err := s.repository.ListEffectiveProjectMCPServers(ctx, tenantID, *projectID, digitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	if len(projectSide) == 0 {
+		return employeeSide, nil
+	}
+	projectKeys := make(map[string]struct{}, len(projectSide))
+	for _, server := range projectSide {
+		projectKeys[server.ServerKey] = struct{}{}
+	}
+	merged := make([]EffectiveMCPServer, 0, len(employeeSide)+len(projectSide))
+	for _, server := range employeeSide {
+		if _, overridden := projectKeys[server.ServerKey]; overridden {
+			continue
+		}
+		merged = append(merged, server)
+	}
+	merged = append(merged, projectSide...)
+	return merged, nil
 }
 
 // EvaluateEmployeeSkillMCPDependencies is the employee panel data source: for each skill
@@ -580,7 +674,8 @@ func (s *Service) EvaluateEmployeeSkillMCPDependencies(ctx context.Context, req 
 	// MissingEnvVars rather than excluded. Confirmed against its implementation and against
 	// runtimeMCPListerAdapter in app.go, which does its own post-hoc filtering on MissingEnvVars
 	// before building the Runtime payload — so blocked bindings are not dropped here.
-	effective, err := s.ListEffectiveMCPConfigForRuntime(ctx, req.TenantID, req.DigitalEmployeeID)
+	// 员工面板无项目上下文，projectID 传 nil：只评估员工自身携带的绑定集合。
+	effective, err := s.ListEffectiveMCPConfigForRuntime(ctx, req.TenantID, req.DigitalEmployeeID, nil)
 	if err != nil {
 		return nil, err
 	}

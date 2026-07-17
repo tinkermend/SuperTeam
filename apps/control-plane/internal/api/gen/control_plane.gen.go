@@ -3732,6 +3732,7 @@ type MCPBinding struct {
 	Id                openapi_types.UUID  `json:"id"`
 	McpServerId       openapi_types.UUID  `json:"mcp_server_id"`
 	MissingEnvVars    *[]string           `json:"missing_env_vars,omitempty"`
+	ProjectId         *openapi_types.UUID `json:"project_id,omitempty"`
 	RequiredEnvVars   *[]string           `json:"required_env_vars,omitempty"`
 	RiskLevel         *string             `json:"risk_level,omitempty"`
 	ServerKey         *string             `json:"server_key,omitempty"`
@@ -4762,6 +4763,14 @@ type ProviderSessionEvent1 = interface{}
 // PushTaskEventsRequest defines model for PushTaskEventsRequest.
 type PushTaskEventsRequest struct {
 	Events []map[string]interface{} `json:"events"`
+}
+
+// PutProjectMCPBindingsRequest defines model for PutProjectMCPBindingsRequest.
+type PutProjectMCPBindingsRequest struct {
+	Items []struct {
+		CredentialEnvVar *string            `json:"credential_env_var,omitempty"`
+		McpServerId      openapi_types.UUID `json:"mcp_server_id"`
+	} `json:"items"`
 }
 
 // PutProjectRuntimePlacementRequest defines model for PutProjectRuntimePlacementRequest.
@@ -6413,6 +6422,9 @@ type PatchProjectEvidenceJSONRequestBody = PatchProjectEvidenceRequest
 // CreateProjectLendingRequestJSONRequestBody defines body for CreateProjectLendingRequest for application/json ContentType.
 type CreateProjectLendingRequestJSONRequestBody = CreateProjectLendingRequest
 
+// PutProjectMCPBindingsJSONRequestBody defines body for PutProjectMCPBindings for application/json ContentType.
+type PutProjectMCPBindingsJSONRequestBody = PutProjectMCPBindingsRequest
+
 // ReplaceProjectMembersJSONRequestBody defines body for ReplaceProjectMembers for application/json ContentType.
 type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
 
@@ -7336,6 +7348,12 @@ type ServerInterface interface {
 	// Create a lending request from a project (demand side)
 	// (POST /api/v1/projects/{projectId}/lending-requests)
 	CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project MCP bindings to registered MCP servers
+	// (GET /api/v1/projects/{projectId}/mcp-bindings)
+	ListProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Declaratively replace the project's MCP bindings with the desired set
+	// (PUT /api/v1/projects/{projectId}/mcp-bindings)
+	PutProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// List project members
 	// (GET /api/v1/projects/{projectId}/members)
 	ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -8302,6 +8320,18 @@ func (_ Unimplemented) ListProjectLendingRequests(w http.ResponseWriter, r *http
 // Create a lending request from a project (demand side)
 // (POST /api/v1/projects/{projectId}/lending-requests)
 func (_ Unimplemented) CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project MCP bindings to registered MCP servers
+// (GET /api/v1/projects/{projectId}/mcp-bindings)
+func (_ Unimplemented) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Declaratively replace the project's MCP bindings with the desired set
+// (PUT /api/v1/projects/{projectId}/mcp-bindings)
+func (_ Unimplemented) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -12676,6 +12706,58 @@ func (siw *ServerInterfaceWrapper) CreateProjectLendingRequest(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// ListProjectMCPBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectMCPBindings(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutProjectMCPBindings operation middleware
+func (siw *ServerInterfaceWrapper) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutProjectMCPBindings(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjectMembers operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 
@@ -17040,6 +17122,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/lending-requests", wrapper.CreateProjectLendingRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/mcp-bindings", wrapper.ListProjectMCPBindings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/mcp-bindings", wrapper.PutProjectMCPBindings)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/members", wrapper.ListProjectMembers)

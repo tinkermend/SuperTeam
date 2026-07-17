@@ -46,6 +46,7 @@ struct CommandWorkspace {
     capability_manifest_version: Option<String>,
     provider_auth_mode: String,
     mcp_config_path: Option<PathBuf>,
+    skill_conflicts: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -320,6 +321,7 @@ impl RuntimeCommandExecutor {
             capability_manifest_version: command_workspace.capability_manifest_version,
             provider_auth_mode: command_workspace.provider_auth_mode,
             mcp_config_path: command_workspace.mcp_config_path,
+            skill_conflicts: command_workspace.skill_conflicts,
             prompt,
             session_id: session_id.clone(),
             continue_session: matches!(
@@ -1082,6 +1084,7 @@ impl RuntimeCommandExecutor {
                 project_task_id: project_workspace.project_task_id,
                 attempt_id: project_workspace.project_task_attempt_id,
                 chat_thread_id: project_workspace.chat_thread_id,
+                provider_type: Some(payload.provider_type.clone()),
                 workspace_mode: project_workspace
                     .workspace_mode
                     .unwrap_or_else(|| "none".to_string()),
@@ -1108,8 +1111,8 @@ impl RuntimeCommandExecutor {
             &skill_keys,
         )?;
         if !skipped.is_empty() {
-            // Project-native skills won these keys (spec §3.1); Phase 2 wires
-            // this into the dispatch record/attestation.
+            // 项目原生技能压过员工侧同 key(spec §3.1):stderr 留痕之外,冲突
+            // 清单随 CommandWorkspace 进 RunSpec,在 attestation metadata 落库。
             eprintln!(
                 "command {}: employee skills skipped in favor of project-native skills: {}",
                 payload.command_id,
@@ -1124,6 +1127,7 @@ impl RuntimeCommandExecutor {
             capability_manifest_version,
             provider_auth_mode,
             mcp_config_path,
+            skill_conflicts: skipped,
         })
     }
 
@@ -2158,6 +2162,18 @@ fn project_task_attestation_writeback(
         "provider_auth_mode".to_string(),
         serde_json::Value::String(spec.provider_auth_mode.clone()),
     );
+    if !spec.skill_conflicts.is_empty() {
+        // spec §3.1:项目原生技能覆盖员工技能不得静默,冲突 key 入 attestation。
+        metadata.insert(
+            "skill_conflicts".to_string(),
+            serde_json::Value::Array(
+                spec.skill_conflicts
+                    .iter()
+                    .map(|key| serde_json::Value::String(key.clone()))
+                    .collect(),
+            ),
+        );
+    }
     if let Some(model) = &spec.model {
         metadata.insert(
             "model".to_string(),
@@ -3972,6 +3988,7 @@ mod tests {
             mcp_config_path: Some(PathBuf::from(
                 "/workspace/project/.superteam/mcp/claude.json",
             )),
+            skill_conflicts: vec!["beta".to_string()],
             prompt: "complete task".to_string(),
             session_id: None,
             continue_session: false,
@@ -4017,6 +4034,11 @@ mod tests {
         assert_eq!(
             body.metadata["provider_auth_mode"],
             serde_json::Value::String("host".to_string())
+        );
+        assert_eq!(
+            body.metadata["skill_conflicts"],
+            serde_json::json!(["beta"]),
+            "spec §3.1: project-native skill conflicts must reach the attestation metadata"
         );
         assert!(body.metadata.get("workspace_path").is_none());
         assert!(body.metadata.get("agent_home_dir").is_none());

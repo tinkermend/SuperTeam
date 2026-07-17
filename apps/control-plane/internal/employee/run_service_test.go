@@ -2759,12 +2759,19 @@ func (f *fakeRuntimeSkillLister) ListSkillsForRuntime(context.Context, uuid.UUID
 }
 
 // fakeRuntimeMCPLister is a standalone RuntimeMCPLister fake used to project a fixed
-// set of env-satisfied MCP servers into prepareStartSessionDependencies.
+// set of env-satisfied MCP servers into prepareStartSessionDependencies. It captures the
+// project dimension each call carries so tests can assert which dispatch paths pass it.
 type fakeRuntimeMCPLister struct {
-	records []RuntimeMCPServerPayload
+	records          []RuntimeMCPServerPayload
+	called           bool
+	lastProjectID    *uuid.UUID
+	projectIDByCalls []*uuid.UUID
 }
 
-func (f *fakeRuntimeMCPLister) ListRuntimeMCPServersForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]RuntimeMCPServerPayload, error) {
+func (f *fakeRuntimeMCPLister) ListRuntimeMCPServersForRuntime(_ context.Context, _, _ uuid.UUID, projectID *uuid.UUID) ([]RuntimeMCPServerPayload, error) {
+	f.called = true
+	f.lastProjectID = projectID
+	f.projectIDByCalls = append(f.projectIDByCalls, projectID)
 	return f.records, nil
 }
 
@@ -2883,4 +2890,92 @@ func TestRunServiceBlocksDispatchForFanOutWhenOnlyOneOfTwoSkillsSatisfied(t *tes
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("expected fan-out with one unsatisfied dependency not to dispatch, got %#v", dispatcher.commands)
 	}
+}
+
+// TestRunServiceMCPListerReceivesProjectDimensionPerDispatchPath 覆盖 MCP 投影的
+// 项目维度传递（目录与能力投影修订 spec §3.2）：chat 派发与项目任务派发把各自的
+// project_id 传给 RuntimeMCPLister（并入项目级绑定），legacy standalone 任务派发
+// 传 nil——即使调用方误带了 ProjectID，CreateRun 对 task-kind 也会清空。
+func TestRunServiceMCPListerReceivesProjectDimensionPerDispatchPath(t *testing.T) {
+	t.Run("chat dispatch passes anchor project", func(t *testing.T) {
+		repo := chatAnchorRunServiceRepository(nil)
+		dispatcher := newFakeRunServiceDispatcher()
+		service := chatAnchorRunService(t, repo, dispatcher)
+		lister := &fakeRuntimeMCPLister{}
+		service.SetMCPLister(lister)
+
+		req := validCreateRunServiceRequest()
+		req.RunKind = RunKindChat
+		projectID := runServiceProjectID
+		req.ProjectID = &projectID
+
+		if _, err := service.CreateRun(context.Background(), req); err != nil {
+			t.Fatalf("create chat run: %v", err)
+		}
+		if !lister.called {
+			t.Fatalf("expected mcp lister to be called for chat dispatch")
+		}
+		if lister.lastProjectID == nil || *lister.lastProjectID != projectID {
+			t.Fatalf("expected chat dispatch to pass anchor project id, got %#v", lister.lastProjectID)
+		}
+	})
+
+	t.Run("project task dispatch passes project", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+		dispatcher := newFakeRunServiceDispatcher()
+		dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
+		service := mustNewRunService(t, repo, dispatcher)
+		service.SetProjectTaskNodeResolver(&fakeProjectTaskNodeResolver{nodeID: repo.projectTaskPreflight.RuntimeNodeID})
+		lister := &fakeRuntimeMCPLister{}
+		service.SetMCPLister(lister)
+
+		projectID := uuid.New()
+		_, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+			TenantID:             runServiceTenantID,
+			ProjectID:            projectID,
+			DemandID:             uuid.New(),
+			ProjectTaskID:        uuid.New(),
+			ProjectTaskAttemptID: uuid.New(),
+			DigitalEmployeeID:    runServiceEmployeeID,
+			DispatchUserID:       uuid.New(),
+			Objective:            "整理上线证据",
+			Prompt:               "请完成项目任务",
+		})
+		if err != nil {
+			t.Fatalf("start project task run: %v", err)
+		}
+		if !lister.called {
+			t.Fatalf("expected mcp lister to be called for project task dispatch")
+		}
+		if lister.lastProjectID == nil || *lister.lastProjectID != projectID {
+			t.Fatalf("expected project task dispatch to pass project id, got %#v", lister.lastProjectID)
+		}
+	})
+
+	t.Run("legacy standalone task dispatch passes nil", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.preflight = validRunServicePreflight()
+		dispatcher := newFakeRunServiceDispatcher()
+		dispatcher.connected[repo.preflight.NodeID] = true
+		service := mustNewRunService(t, repo, dispatcher)
+		lister := &fakeRuntimeMCPLister{}
+		service.SetMCPLister(lister)
+
+		req := validCreateRunServiceRequest()
+		// task-kind 请求即使误带 ProjectID 也不得进入 MCP 投影维度：chat 锚点
+		// 语义之外，CreateRun 对 RunKindTask 一律清空该字段。
+		strayProjectID := uuid.New()
+		req.ProjectID = &strayProjectID
+
+		if _, err := service.CreateRun(context.Background(), req); err != nil {
+			t.Fatalf("create standalone task run: %v", err)
+		}
+		if !lister.called {
+			t.Fatalf("expected mcp lister to be called for standalone dispatch")
+		}
+		if lister.lastProjectID != nil {
+			t.Fatalf("expected standalone dispatch to pass nil project id, got %s", lister.lastProjectID)
+		}
+	})
 }

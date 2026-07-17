@@ -55,8 +55,10 @@ type RuntimeEnvironmentLister interface {
 
 // RuntimeMCPLister resolves the effective MCP servers for an employee, already filtered to
 // env-satisfied bindings, ready to project into the runtime start-session payload.
+// projectID 可选（目录与能力投影修订 spec §3.2）：项目任务与 chat 派发携带项目维度，
+// 结果并入项目级 MCP 绑定且同 server_key 项目侧优先；legacy standalone 派发传 nil。
 type RuntimeMCPLister interface {
-	ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeMCPServerPayload, error)
+	ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) ([]RuntimeMCPServerPayload, error)
 }
 
 // SkillMCPDependencyLister resolves the MCP dependencies declared by a set of skills.
@@ -422,6 +424,7 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		}
 	}
 
+	projectID := req.ProjectID
 	createReq := CreateDigitalEmployeeRunRequest{
 		TenantID:          req.TenantID,
 		UserID:            req.DispatchUserID,
@@ -435,6 +438,9 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		// Project task dispatch always produces a task run; chat runs are only
 		// created via the workbench CreateRun path.
 		RunKind: RunKindTask,
+		// 项目任务派发绕过 CreateRun 直达 createAndDispatchRun：ProjectID 在这里
+		// 只作 MCP 投影维度（项目级绑定并入），不承载 chat 锚点语义。
+		ProjectID: &projectID,
 	}
 
 	run, err := s.createAndDispatchRun(ctx, createReq, objective, prompt, preflight)
@@ -475,7 +481,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 	}
 	if activeRun != nil {
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
-			deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, preflight)
+			deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, req.ProjectID, preflight)
 			if err != nil {
 				return nil, err
 			}
@@ -491,7 +497,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		}
 	}
 
-	deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, preflight)
+	deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, req.ProjectID, preflight)
 	if err != nil {
 		return nil, err
 	}
@@ -673,7 +679,7 @@ type SkillDependencyEvaluation struct {
 	MissingEnv   []string
 }
 
-func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, preflight RunPreflight) (startSessionDependencies, error) {
+func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID, preflight RunPreflight) (startSessionDependencies, error) {
 	var deps startSessionDependencies
 	configInput, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, tenantID, digitalEmployeeID)
 	if err != nil {
@@ -705,7 +711,8 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 	if s.mcpLister != nil {
 		// Loaded after env vars: the lister excludes bindings whose required env vars the
 		// employee has not configured, so only env-satisfied MCP servers are projected.
-		runtimeMCP, err := s.mcpLister.ListRuntimeMCPServersForRuntime(ctx, tenantID, digitalEmployeeID)
+		// 项目维度（可为 nil）并入项目级 MCP 绑定，env-satisfied 过滤对其同样生效。
+		runtimeMCP, err := s.mcpLister.ListRuntimeMCPServersForRuntime(ctx, tenantID, digitalEmployeeID, projectID)
 		if err != nil {
 			return deps, fmt.Errorf("list runtime mcp servers: %w", err)
 		}

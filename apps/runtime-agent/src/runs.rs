@@ -52,6 +52,10 @@ pub struct RunSpec {
     pub provider_auth_mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_config_path: Option<PathBuf>,
+    /// 项目原生技能压过员工侧同 key 技能的冲突清单(spec §3.1),随 attestation
+    /// 留痕。空表示无冲突。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_conflicts: Vec<String>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -103,6 +107,10 @@ pub struct RunSnapshot {
     pub provider_auth_mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_config_path: Option<PathBuf>,
+    /// 项目原生技能压过员工侧同 key 技能的冲突清单(spec §3.1),随 attestation
+    /// 留痕。空表示无冲突。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_conflicts: Vec<String>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -163,6 +171,7 @@ impl RuntimeRunStore {
             capability_manifest_version: spec.capability_manifest_version,
             provider_auth_mode: spec.provider_auth_mode,
             mcp_config_path: spec.mcp_config_path,
+            skill_conflicts: spec.skill_conflicts,
             prompt: spec.prompt,
             session_id: spec.session_id,
             continue_session: spec.continue_session,
@@ -354,6 +363,7 @@ mod tests {
             capability_manifest_version: None,
             provider_auth_mode: "host".to_string(),
             mcp_config_path: None,
+            skill_conflicts: Vec::new(),
             prompt: "test".to_string(),
             session_id: None,
             continue_session: false,

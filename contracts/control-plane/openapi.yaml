@@ -2913,6 +2913,47 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/mcp-bindings:
+    get:
+      operationId: listProjectMCPBindings
+      summary: List project MCP bindings to registered MCP servers
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project MCP binding list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPBinding"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: putProjectMCPBindings
+      summary: Declaratively replace the project's MCP bindings with the desired set
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutProjectMCPBindingsRequest"
+      responses:
+        "200":
+          description: Project MCP binding list after replacement
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPBinding"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/mcp-bindings-v2:
     get:
       operationId: listEmployeeMCPBindingsV2
@@ -10394,6 +10435,23 @@ components:
           format: uuid
         credential_env_var:
           type: string
+    PutProjectMCPBindingsRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - mcp_server_id
+            properties:
+              mcp_server_id:
+                type: string
+                format: uuid
+              credential_env_var:
+                type: string
     MCPBinding:
       type: object
       required:
@@ -10412,6 +10470,9 @@ components:
           type: string
           format: uuid
         digital_employee_id:
+          type: string
+          format: uuid
+        project_id:
           type: string
           format: uuid
         mcp_server_id:

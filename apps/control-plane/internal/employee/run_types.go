@@ -197,6 +197,9 @@ type CreateDigitalEmployeeRunRequest struct {
 	// budget, and policy boundary requires a project context the way project
 	// task dispatch does. Required when RunKind is RunKindChat; CreateRun
 	// clears it to nil for RunKindTask (ignored, not validated).
+	// 它同时是 MCP 投影的项目维度（目录与能力投影修订 spec §3.2）：非 nil 时
+	// 派发依赖解析会把项目级 MCP 绑定并入员工侧集合（同 server_key 项目侧优
+	// 先）。StartProjectTaskRun 绕过 CreateRun 组装请求时会据此回填项目 ID。
 	ProjectID *uuid.UUID
 	// chatThreadID is resolved by CreateRun itself (inherited from the resumed
 	// run's effective thread id); caller-provided values are discarded. Kept

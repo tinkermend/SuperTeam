@@ -229,6 +229,66 @@ func (q *Queries) CreateMCPServerDefinition(ctx context.Context, arg CreateMCPSe
 	return i, err
 }
 
+const CreateProjectMCPBinding = `-- name: CreateProjectMCPBinding :one
+
+INSERT INTO project_mcp_bindings (
+    tenant_id,
+    project_id,
+    mcp_server_id,
+    credential_env_var,
+    metadata,
+    created_by
+)
+VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::text,
+    COALESCE($5::jsonb, '{}'::jsonb),
+    $6::uuid
+)
+RETURNING id, tenant_id, project_id, mcp_server_id, credential_env_var, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+`
+
+type CreateProjectMCPBindingParams struct {
+	TenantID         uuid.UUID     `json:"tenant_id"`
+	ProjectID        uuid.UUID     `json:"project_id"`
+	McpServerID      uuid.UUID     `json:"mcp_server_id"`
+	CredentialEnvVar pgtype.Text   `json:"credential_env_var"`
+	Metadata         []byte        `json:"metadata"`
+	CreatedBy        uuid.NullUUID `json:"created_by"`
+}
+
+// 项目级 MCP 绑定（迁移 072，目录与能力投影修订 spec §3.2）。
+// 项目绑定是声明式全量替换（PUT 语义）：先软删项目下全部活跃绑定，再逐条插入
+// 期望集合；部分失败向"更少能力"收敛（fail-closed），不会静默多授权。
+func (q *Queries) CreateProjectMCPBinding(ctx context.Context, arg CreateProjectMCPBindingParams) (ProjectMcpBinding, error) {
+	row := q.db.QueryRow(ctx, CreateProjectMCPBinding,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.McpServerID,
+		arg.CredentialEnvVar,
+		arg.Metadata,
+		arg.CreatedBy,
+	)
+	var i ProjectMcpBinding
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.McpServerID,
+		&i.CredentialEnvVar,
+		&i.Status,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateTeamMCPBinding = `-- name: CreateTeamMCPBinding :one
 INSERT INTO team_mcp_bindings (
     tenant_id,
@@ -961,6 +1021,90 @@ func (q *Queries) ListEffectiveMCPServersForEmployee(ctx context.Context, arg Li
 	return items, nil
 }
 
+const ListEffectiveProjectMCPBindingsForRuntime = `-- name: ListEffectiveProjectMCPBindingsForRuntime :many
+SELECT
+    m.id AS server_id,
+    m.tenant_id,
+    m.name,
+    m.server_key,
+    m.transport,
+    m.url,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.tool_allowlist,
+    m.risk_level,
+    pb.credential_env_var,
+    'project'::text AS source_scope,
+    pb.status AS binding_status
+FROM project_mcp_bindings pb
+JOIN mcp_servers m ON m.id = pb.mcp_server_id
+    AND m.tenant_id = pb.tenant_id
+    AND m.deleted_at IS NULL
+    AND m.status = 'active'
+WHERE pb.tenant_id = $1::uuid
+  AND pb.project_id = $2::uuid
+  AND pb.deleted_at IS NULL
+  AND pb.status = 'active'
+ORDER BY m.name ASC
+`
+
+type ListEffectiveProjectMCPBindingsForRuntimeParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type ListEffectiveProjectMCPBindingsForRuntimeRow struct {
+	ServerID         uuid.UUID   `json:"server_id"`
+	TenantID         uuid.UUID   `json:"tenant_id"`
+	Name             string      `json:"name"`
+	ServerKey        string      `json:"server_key"`
+	Transport        string      `json:"transport"`
+	Url              string      `json:"url"`
+	AuthStrategy     string      `json:"auth_strategy"`
+	RequiredEnvVars  []string    `json:"required_env_vars"`
+	ToolAllowlist    []string    `json:"tool_allowlist"`
+	RiskLevel        string      `json:"risk_level"`
+	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
+	SourceScope      string      `json:"source_scope"`
+	BindingStatus    string      `json:"binding_status"`
+}
+
+// 项目绑定的运行时投影行：只取活跃绑定 × 活跃注册表定义。缺失 env 判定由调用方
+// 用目标员工的已配置 env 集合完成（与员工侧投影同一套过滤逻辑），凭据值不经此路。
+func (q *Queries) ListEffectiveProjectMCPBindingsForRuntime(ctx context.Context, arg ListEffectiveProjectMCPBindingsForRuntimeParams) ([]ListEffectiveProjectMCPBindingsForRuntimeRow, error) {
+	rows, err := q.db.Query(ctx, ListEffectiveProjectMCPBindingsForRuntime, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEffectiveProjectMCPBindingsForRuntimeRow{}
+	for rows.Next() {
+		var i ListEffectiveProjectMCPBindingsForRuntimeRow
+		if err := rows.Scan(
+			&i.ServerID,
+			&i.TenantID,
+			&i.Name,
+			&i.ServerKey,
+			&i.Transport,
+			&i.Url,
+			&i.AuthStrategy,
+			&i.RequiredEnvVars,
+			&i.ToolAllowlist,
+			&i.RiskLevel,
+			&i.CredentialEnvVar,
+			&i.SourceScope,
+			&i.BindingStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListEmployeeMCPBindingsV2 = `-- name: ListEmployeeMCPBindingsV2 :many
 SELECT
     eb.id, eb.tenant_id, eb.digital_employee_id, eb.mcp_server_id, eb.credential_env_var, eb.status, eb.metadata, eb.disabled_at, eb.deleted_at, eb.created_by, eb.created_at, eb.updated_at,
@@ -1089,6 +1233,96 @@ func (q *Queries) ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UU
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectMCPBindings = `-- name: ListProjectMCPBindings :many
+SELECT
+    pb.id, pb.tenant_id, pb.project_id, pb.mcp_server_id, pb.credential_env_var, pb.status, pb.metadata, pb.disabled_at, pb.deleted_at, pb.created_by, pb.created_at, pb.updated_at,
+    m.name AS server_name,
+    m.server_key,
+    m.url,
+    m.transport,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.risk_level,
+    m.status AS server_status
+FROM project_mcp_bindings pb
+JOIN mcp_servers m ON m.id = pb.mcp_server_id
+    AND m.tenant_id = pb.tenant_id
+    AND m.deleted_at IS NULL
+WHERE pb.tenant_id = $1::uuid
+  AND pb.project_id = $2::uuid
+  AND pb.deleted_at IS NULL
+ORDER BY pb.created_at DESC
+`
+
+type ListProjectMCPBindingsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type ListProjectMCPBindingsRow struct {
+	ID               uuid.UUID          `json:"id"`
+	TenantID         uuid.UUID          `json:"tenant_id"`
+	ProjectID        uuid.UUID          `json:"project_id"`
+	McpServerID      uuid.UUID          `json:"mcp_server_id"`
+	CredentialEnvVar pgtype.Text        `json:"credential_env_var"`
+	Status           string             `json:"status"`
+	Metadata         []byte             `json:"metadata"`
+	DisabledAt       pgtype.Timestamptz `json:"disabled_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CreatedBy        uuid.NullUUID      `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ServerName       string             `json:"server_name"`
+	ServerKey        string             `json:"server_key"`
+	Url              string             `json:"url"`
+	Transport        string             `json:"transport"`
+	AuthStrategy     string             `json:"auth_strategy"`
+	RequiredEnvVars  []string           `json:"required_env_vars"`
+	RiskLevel        string             `json:"risk_level"`
+	ServerStatus     string             `json:"server_status"`
+}
+
+func (q *Queries) ListProjectMCPBindings(ctx context.Context, arg ListProjectMCPBindingsParams) ([]ListProjectMCPBindingsRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectMCPBindings, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectMCPBindingsRow{}
+	for rows.Next() {
+		var i ListProjectMCPBindingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.McpServerID,
+			&i.CredentialEnvVar,
+			&i.Status,
+			&i.Metadata,
+			&i.DisabledAt,
+			&i.DeletedAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ServerName,
+			&i.ServerKey,
+			&i.Url,
+			&i.Transport,
+			&i.AuthStrategy,
+			&i.RequiredEnvVars,
+			&i.RiskLevel,
+			&i.ServerStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -1330,4 +1564,22 @@ func (q *Queries) ListUserCredentials(ctx context.Context, arg ListUserCredentia
 		return nil, err
 	}
 	return items, nil
+}
+
+const SoftDeleteProjectMCPBindingsForProject = `-- name: SoftDeleteProjectMCPBindingsForProject :exec
+UPDATE project_mcp_bindings
+SET deleted_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND deleted_at IS NULL
+`
+
+type SoftDeleteProjectMCPBindingsForProjectParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) SoftDeleteProjectMCPBindingsForProject(ctx context.Context, arg SoftDeleteProjectMCPBindingsForProjectParams) error {
+	_, err := q.db.Exec(ctx, SoftDeleteProjectMCPBindingsForProject, arg.TenantID, arg.ProjectID)
+	return err
 }

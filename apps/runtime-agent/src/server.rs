@@ -143,6 +143,7 @@ async fn create_run(
         capability_manifest_version: None,
         provider_auth_mode: "host".to_string(),
         mcp_config_path: None,
+        skill_conflicts: Vec::new(),
         prompt: request.prompt,
         session_id: request.session_id,
         continue_session: request.continue_session,

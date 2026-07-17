@@ -522,6 +522,9 @@ func (s *Server) registerRoutes() {
 				r.Post("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.CreateEmployeeMCPBindingV2)
 				r.Get("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.ListEmployeeMCPBindingsV2)
 				r.Delete("/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBindingV2)
+				// 项目级 MCP 绑定（迁移 072）：项目公共 MCP 的注册表正门。
+				r.Get("/projects/{projectId}/mcp-bindings", s.capabilityHandler.ListProjectMCPBindings)
+				r.Put("/projects/{projectId}/mcp-bindings", s.capabilityHandler.PutProjectMCPBindings)
 				r.Get("/digital-employees/{employeeId}/effective-mcp-config", s.capabilityHandler.ListEffectiveMCPConfig)
 				r.Get("/digital-employees/{employeeId}/skill-mcp-dependency-status", s.capabilityHandler.ListEmployeeSkillMCPDependencyStatus)
 			})

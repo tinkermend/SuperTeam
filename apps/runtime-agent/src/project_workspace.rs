@@ -17,6 +17,10 @@ pub struct ProjectWorkspaceRequest {
     /// (project, task, attempt), so files and provider session state stay
     /// stable across the turns of one conversation.
     pub chat_thread_id: Option<String>,
+    /// 派发的 provider 类型。opencode 会在启动时裸加载工作区根部的
+    /// opencode.json(c)(实测无官方禁用开关,spec §8.3),物化 worktree 时须
+    /// 屏蔽仓库原生 MCP 配置;其余 provider 无此行为。
+    pub provider_type: Option<String>,
     pub workspace_mode: String,
     pub project_git: Option<RuntimeProjectGitPayload>,
     pub base_ref: Option<String>,
@@ -75,6 +79,7 @@ pub fn resolve_project_workspace(
                 &mode,
                 request.base_ref.as_deref(),
                 &git.scope,
+                shielded_repo_configs(request.provider_type.as_deref()),
             )?;
         }
         Some(repo_path)
@@ -229,15 +234,27 @@ fn ensure_repo_cache(
     Ok(())
 }
 
+/// spec §3.2/§8.3:opencode 是三 provider 中唯一会从工作区根裸加载仓库 MCP
+/// 配置的(claude 有 --strict-mcp-config,codex 不读项目配置),平台的 MCP 治理
+/// 要求注册表是唯一入口,故对 opencode 屏蔽仓库原生配置文件。
+fn shielded_repo_configs(provider_type: Option<&str>) -> &'static [&'static str] {
+    match provider_type {
+        Some("opencode") => &["opencode.json", "opencode.jsonc"],
+        _ => &[],
+    }
+}
+
 fn materialize_git_worktree(
     repo_path: &Path,
     workspace_path: &Path,
     mode: &str,
     base_ref: Option<&str>,
     scope: &[String],
+    shielded_configs: &[&str],
 ) -> Result<()> {
     if workspace_path.join(".git").exists() {
         apply_sparse_scope(workspace_path, scope)?;
+        shield_repo_configs(workspace_path, shielded_configs)?;
         return Ok(());
     }
 
@@ -283,7 +300,36 @@ fn materialize_git_worktree(
     }
 
     apply_sparse_scope(workspace_path, scope)?;
+    shield_repo_configs(workspace_path, shielded_configs)?;
 
+    Ok(())
+}
+
+/// 用 skip-worktree + 删除屏蔽仓库原生配置:文件从工作区消失,而 git
+/// status/diff 对该路径保持沉默——不弄脏 worktree,不污染 diff 证据链。
+/// 幂等:重放/续聊时文件已不在则跳过。
+fn shield_repo_configs(workspace_path: &Path, shielded_configs: &[&str]) -> Result<()> {
+    for name in shielded_configs {
+        let target = workspace_path.join(name);
+        if !target.exists() {
+            continue;
+        }
+        run_git(
+            workspace_path,
+            [
+                OsString::from("update-index"),
+                OsString::from("--skip-worktree"),
+                OsString::from(*name),
+            ],
+        )?;
+        std::fs::remove_file(&target)
+            .with_context(|| format!("shield repo config {}", target.display()))?;
+        eprintln!(
+            "shielded repo-native provider config {} in {}",
+            name,
+            workspace_path.display()
+        );
+    }
     Ok(())
 }
 
@@ -371,6 +417,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
@@ -395,6 +442,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            provider_type: None,
             workspace_mode: "branch".to_string(),
             project_git: None,
             base_ref: Some("main".to_string()),
@@ -414,6 +462,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
@@ -444,6 +493,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            provider_type: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
                 url: source.to_string_lossy().to_string(),
@@ -496,6 +546,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            provider_type: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
                 url: source.to_string_lossy().to_string(),
@@ -530,6 +581,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            provider_type: None,
             workspace_mode: "branch".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
                 url: source.to_string_lossy().to_string(),
@@ -556,6 +608,7 @@ mod tests {
             project_task_id: None,
             attempt_id: None,
             chat_thread_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
@@ -579,6 +632,7 @@ mod tests {
             project_task_id: None,
             attempt_id: None,
             chat_thread_id: Some("../escape".to_string()),
+            provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
@@ -607,6 +661,7 @@ mod tests {
             project_task_id: None,
             attempt_id: None,
             chat_thread_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            provider_type: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
                 url: source.to_string_lossy().to_string(),
@@ -696,6 +751,71 @@ mod tests {
             .to_string();
 
         assert!(err.contains("employee skill ghost is not materialized"));
+    }
+
+    #[test]
+    fn shields_repo_native_opencode_config_without_dirtying_worktree() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("README.md"), "hello\n").unwrap();
+        std::fs::write(source.join("opencode.json"), "{\"mcp\":{}}\n").unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "source"]);
+        run_test_git(&source, ["config", "user.email", "test@example.com"]);
+        run_test_git(&source, ["config", "user.name", "Test User"]);
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "initial"]);
+
+        let request = |provider: Option<&str>, attempt: &str| ProjectWorkspaceRequest {
+            base_dir: temp.path().join("runtime"),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            attempt_id: Some(attempt.to_string()),
+            chat_thread_id: None,
+            provider_type: provider.map(ToString::to_string),
+            workspace_mode: "readonly".to_string(),
+            project_git: Some(RuntimeProjectGitPayload {
+                url: source.to_string_lossy().to_string(),
+                default_branch: Some("main".to_string()),
+                git_credential_ref: None,
+                scope: Vec::new(),
+            }),
+            base_ref: Some("main".to_string()),
+        };
+
+        // opencode:仓库原生配置被屏蔽,且 git 状态保持干净(证据链不污染)。
+        let opencode = resolve_project_workspace(request(
+            Some("opencode"),
+            "33333333-3333-4333-8333-333333333333",
+        ))
+        .unwrap();
+        assert!(!opencode.workspace_path.join("opencode.json").exists());
+        assert!(opencode.workspace_path.join("README.md").exists());
+        let status = std::process::Command::new("git")
+            .current_dir(&opencode.workspace_path)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        assert!(
+            status.stdout.is_empty(),
+            "shielding must not dirty the worktree, got: {}",
+            String::from_utf8_lossy(&status.stdout)
+        );
+        // 重放幂等:再次 resolve 不报错,文件保持屏蔽。
+        let replay = resolve_project_workspace(request(
+            Some("opencode"),
+            "33333333-3333-4333-8333-333333333333",
+        ))
+        .unwrap();
+        assert!(!replay.workspace_path.join("opencode.json").exists());
+
+        // 其他 provider 不受影响:项目原生 opencode.json 照常检出。
+        let claude = resolve_project_workspace(request(
+            Some("claude-code"),
+            "44444444-4444-4444-8444-444444444444",
+        ))
+        .unwrap();
+        assert!(claude.workspace_path.join("opencode.json").exists());
     }
 
     fn run_test_git<I, S>(cwd: &std::path::Path, args: I)
