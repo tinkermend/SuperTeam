@@ -779,7 +779,16 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 			// rather than stalling in `executing`.
 		}
 	}
-	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
+	// v3 fence: when a REVISION (rework) task completes — whether the loop
+	// converged (judges satisfied) or exhausted/escalated to the human gate — its
+	// downstream dependents are blocked on the revision ROOT (anchored round 0),
+	// not on this rework. Resolve downstream of the root so the reviewed work's
+	// terminal state finally flips blocked→planned. DefaultVersion/v1/v2 keep
+	// resolving downstream-of-the-completing-task exactly as recorded (replay
+	// safety); GetVersion is sticky, so a v3 rework completion re-enters here and
+	// re-reads adversarialVersion==3.
+	resolveRevisionRoot := adversarialVersion >= 3
+	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, resolveRevisionRoot)
 	if err != nil {
 		return taskCompletionPending{}, err
 	}
@@ -812,7 +821,7 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 }
 
 func handleEmployeeTaskCompletedLegacy(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) (taskCompletionPending, error) {
-	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
+	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, false)
 	if err != nil {
 		return taskCompletionPending{}, err
 	}
@@ -1094,12 +1103,13 @@ func listDispatchableTasks(ctx workflow.Context, tenantID, projectID, coordinati
 	return taskIDs, nil
 }
 
-func resolveReadyDownstream(ctx workflow.Context, tenantID, projectID, completedTaskID uuid.UUID) ([]uuid.UUID, error) {
+func resolveReadyDownstream(ctx workflow.Context, tenantID, projectID, completedTaskID uuid.UUID, resolveRevisionRoot bool) ([]uuid.UUID, error) {
 	var taskIDs []uuid.UUID
 	if err := workflow.ExecuteActivity(ctx, (*Activities).ResolveReadyDownstream, ResolveReadyDownstreamInput{
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		CompletedTaskID: completedTaskID,
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		CompletedTaskID:     completedTaskID,
+		ResolveRevisionRoot: resolveRevisionRoot,
 	}).Get(ctx, &taskIDs); err != nil {
 		return nil, err
 	}

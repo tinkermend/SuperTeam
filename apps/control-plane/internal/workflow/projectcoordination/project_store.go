@@ -874,7 +874,26 @@ func (s *ProjectStore) ResolveReadyDownstream(ctx context.Context, input Resolve
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
-	dependentIDs, err := s.repository.ListDependentsOfTask(ctx, input.TenantID, input.ProjectID, input.CompletedTaskID)
+	anchorTaskID := input.CompletedTaskID
+	if input.ResolveRevisionRoot {
+		// The completing task may be a rework (revision) whose downstream
+		// dependents are blocked on the revision ROOT (anchored at round 0), not
+		// on this rework. Resolve downstream of the root so the reviewed work's
+		// convergence/exhaustion finally releases the blocked dependents. For a
+		// non-revision task revisionRootTaskID returns its own id, so this is a
+		// no-op there.
+		completed, err := s.repository.GetProjectTask(ctx, input.TenantID, input.CompletedTaskID)
+		if err != nil {
+			return nil, err
+		}
+		if completed.ProjectID != input.ProjectID {
+			return nil, project.ErrProjectNotFound
+		}
+		if rootID, parseErr := uuid.Parse(revisionRootTaskID(completed)); parseErr == nil && rootID != uuid.Nil {
+			anchorTaskID = rootID
+		}
+	}
+	dependentIDs, err := s.repository.ListDependentsOfTask(ctx, input.TenantID, input.ProjectID, anchorTaskID)
 	if err != nil {
 		return nil, err
 	}
@@ -1008,6 +1027,12 @@ func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectI
 		TaskKind:                  source.TaskKind,
 		StageIndex:                source.StageIndex,
 		RevisionOfTaskID:          &source.ID,
+		// Carry the source's accepted plan revision onto the rework task so
+		// listAdversarialCriteriaForTask's guard (DemandID / AcceptedPlanRevisionID /
+		// PlannedTaskKey all non-nil) passes and the judges re-fire on rework
+		// completion. Without this the rework's accepted_plan_revision_id is NULL and
+		// the self-iteration loop silently never closes.
+		AcceptedPlanRevisionID:    source.AcceptedPlanRevisionID,
 		ExpectedOutputs:           append([]any(nil), source.ExpectedOutputs...),
 		InputRequirements:         revisionInputRequirements(source, rev, sourceResultID, sourceResultSummary),
 		HandoffContract:           cloneAnyMap(source.HandoffContract),

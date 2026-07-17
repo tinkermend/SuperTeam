@@ -223,6 +223,15 @@ type ResolveReadyDownstreamInput struct {
 	TenantID        uuid.UUID
 	ProjectID       uuid.UUID
 	CompletedTaskID uuid.UUID
+	// ResolveRevisionRoot, when true, anchors downstream resolution on the
+	// completed task's revision ROOT instead of the completed task itself. A
+	// held+reviewed task's downstream dependents are blocked on the ROOT (round
+	// 0); when a rework converges or exhausts, the completing task is the rework
+	// (not the root), and resolving downstream-of-the-rework releases nothing —
+	// the root's downstream stays blocked forever. Set ONLY under the v3
+	// adversarial fence so DefaultVersion/v1/v2 histories keep resolving
+	// downstream-of-the-completing-task exactly as recorded (replay safety).
+	ResolveRevisionRoot bool
 }
 
 type InspectTaskResultDecisionInput struct {
