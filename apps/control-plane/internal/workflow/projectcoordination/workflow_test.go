@@ -2278,6 +2278,10 @@ type recordingActivityStore struct {
 	reopenDemandInputs                 []ReopenProjectDemandForReplanningInput
 	reopenDemandErr                    error
 	appendEventTypes                   []string
+
+	reworkFromAdversarialInputs []CreateReworkTaskFromAdversarialInput
+	reworkFromAdversarialResult CreateReworkTaskFromAdversarialResult
+	reworkFromAdversarialErr    error
 }
 
 type rawDispatchWorkflowActivities struct {
@@ -2464,6 +2468,15 @@ func (s *recordingActivityStore) CreateUpstreamSupplementTasks(ctx context.Conte
 	s.calls = append(s.calls, "CreateUpstreamSupplementTasks")
 	s.upstreamSupplementInputs = append(s.upstreamSupplementInputs, input)
 	return s.upstreamSupplementResult, nil
+}
+
+func (s *recordingActivityStore) CreateReworkTaskFromAdversarial(ctx context.Context, input CreateReworkTaskFromAdversarialInput) (CreateReworkTaskFromAdversarialResult, error) {
+	s.calls = append(s.calls, "CreateReworkTaskFromAdversarial")
+	s.reworkFromAdversarialInputs = append(s.reworkFromAdversarialInputs, input)
+	if s.reworkFromAdversarialErr != nil {
+		return CreateReworkTaskFromAdversarialResult{}, s.reworkFromAdversarialErr
+	}
+	return s.reworkFromAdversarialResult, nil
 }
 
 func (s *recordingActivityStore) RequestProjectTaskIterationExhaustedReview(ctx context.Context, input RequestProjectTaskIterationExhaustedReviewInput) (DecisionRequestResult, error) {

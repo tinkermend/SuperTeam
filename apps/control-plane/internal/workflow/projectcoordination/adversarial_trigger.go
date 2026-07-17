@@ -46,10 +46,21 @@ type AdversarialReviewForTaskInput struct {
 // adversarial_review criterion (nothing to judge). AllSatisfied is true only
 // when every reviewed criterion aggregated to satisfied. AnyEscalated is true
 // when any criterion hit the budget short-circuit (escalate_human).
+//
+// Task 4 (Phase C1) additions: ReviewedTaskID/DemandID/PlanRevisionID carry the
+// coordinates the workflow needs to dispatch an auto-rework activity WITHOUT an
+// extra store lookup; HeldCriteria lists every criterion the judges REFUTED
+// (Aggregate==unsatisfied) — the rework-eligible set. escalate_human criteria
+// are deliberately EXCLUDED from HeldCriteria (they route to the human path via
+// AnyEscalated, never to auto-rework).
 type AdversarialReviewForTaskResult struct {
-	Reviewed     bool
-	AllSatisfied bool
-	AnyEscalated bool
+	Reviewed       bool
+	AllSatisfied   bool
+	AnyEscalated   bool
+	ReviewedTaskID uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	HeldCriteria   []HeldAdversarialCriterion
 }
 
 // PrepareAdversarialReviewInput asks the store to assemble the per-criterion
@@ -116,6 +127,12 @@ func (a *Activities) AdversarialReviewForTask(ctx context.Context, input Adversa
 		if judgeInput.Model == "" {
 			judgeInput.Model = a.judgeModel
 		}
+		// All items belong to the SAME completed task / demand / plan-revision;
+		// carry those coordinates so the workflow can dispatch the auto-rework
+		// activity without a second store lookup (Task 4).
+		result.ReviewedTaskID = judgeInput.ReviewedTaskID
+		result.DemandID = item.DemandID
+		result.PlanRevisionID = item.PlanRevisionID
 		review, err := a.RunAdversarialReview(ctx, judgeInput)
 		if err != nil {
 			// Terminal error handling (spec author requirement): do NOT persist a
@@ -143,10 +160,17 @@ func (a *Activities) AdversarialReviewForTask(ctx context.Context, input Adversa
 		case AdversarialAggregateSatisfied:
 			// released for this criterion
 		case AdversarialAggregateEscalateHuman:
+			// Budget short-circuit → human path. NOT a held (rework-eligible)
+			// criterion: AnyEscalated flags it, and it is excluded from
+			// HeldCriteria so it never drives an auto-rework.
 			result.AllSatisfied = false
 			result.AnyEscalated = true
-		default: // unsatisfied (majority refute)
+		default: // unsatisfied (majority refute) → rework-eligible held criterion
 			result.AllSatisfied = false
+			result.HeldCriteria = append(result.HeldCriteria, HeldAdversarialCriterion{
+				CriterionID: judgeInput.CriterionID,
+				Statement:   judgeInput.Assertion,
+			})
 		}
 	}
 	return result, nil

@@ -251,16 +251,27 @@ type CreateRevisionTaskForResultResult struct {
 	Exhausted bool
 }
 
-// CreateReworkTaskFromAdversarialInput identifies a held (majority-refute)
-// adversarial criterion whose refutations should drive an automatic rework task.
+// HeldAdversarialCriterion is one adversarial_review criterion the judges
+// REFUTED (Aggregate==unsatisfied) on the reviewed task. Task 4 carries a slice
+// of these — one per held criterion — so a single rework task can cover them
+// all. escalate_human criteria are NOT held criteria: they short-circuit to the
+// human path (AnyEscalated), never to auto-rework.
+type HeldAdversarialCriterion struct {
+	CriterionID string
+	Statement   string
+}
+
+// CreateReworkTaskFromAdversarialInput identifies a reviewed task and the set of
+// held (majority-refute) adversarial criteria whose refutations should drive ONE
+// automatic rework task. It is TASK-scoped (Phase C1 Task 4): a single rework
+// covers every held criterion, merging their refuted-lens reasons.
 type CreateReworkTaskFromAdversarialInput struct {
-	TenantID           uuid.UUID
-	ProjectID          uuid.UUID
-	ReviewedTaskID     uuid.UUID
-	CriterionID        string
-	CriterionStatement string
-	DemandID           uuid.UUID
-	PlanRevisionID     uuid.UUID
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	ReviewedTaskID uuid.UUID
+	DemandID       uuid.UUID
+	PlanRevisionID uuid.UUID
+	HeldCriteria   []HeldAdversarialCriterion
 }
 
 // CreateReworkTaskFromAdversarialResult reports the created rework task, or

@@ -693,15 +693,16 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	// acceptance_pending via the convergence gate, and a human can override it.
 	// The hold moves from the workflow (task graph) to the acceptance gate.
 	//
-	// Why a NEW version, not an edit of v1: v1 already shipped and a live dev
-	// workflow ran on it during the E2E. Temporal replay discipline forbids
-	// retroactively editing a shipped version. GetVersion(..., DefaultVersion, 2)
-	// returns: DefaultVersion for old histories (marker absent → original direct
-	// path), 1 for the shipped v1 history (marker=1 → v1 block-downstream, preserved
-	// below for replay), 2 for new executions (v2 fall-through). minSupported stays
-	// DefaultVersion so old histories — including TestReplayRealCoordinatorHistory —
-	// remain valid.
-	adversarialVersion := workflow.GetVersion(ctx, "adversarial-review-trigger", workflow.DefaultVersion, 2)
+	// Why a NEW version, not an edit of v1/v2: each shipped and ran on a live dev
+	// workflow. Temporal replay discipline forbids retroactively editing a shipped
+	// version. GetVersion(..., DefaultVersion, 3) returns: DefaultVersion for old
+	// histories (marker absent → original direct path), 1 for the shipped v1
+	// history (marker=1 → v1 block-downstream, preserved below), 2 for v2 histories
+	// (unblock-to-acceptance, preserved below), 3 for new executions (v3
+	// auto-rework). minSupported stays DefaultVersion so old histories — including
+	// TestReplayRealCoordinatorHistory — remain valid, and the NEW auto-rework
+	// ExecuteActivity command fires ONLY on v3 (never on replayed v1/v2/Default).
+	adversarialVersion := workflow.GetVersion(ctx, "adversarial-review-trigger", workflow.DefaultVersion, 3)
 	if adversarialVersion != workflow.DefaultVersion {
 		var review AdversarialReviewForTaskResult
 		reviewErr := workflow.ExecuteActivity(ctx, (*Activities).AdversarialReviewForTask, AdversarialReviewForTaskInput{
@@ -723,24 +724,59 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 				// resolveReadyDownstream. Kept verbatim so v1 histories replay.
 				return taskCompletionPending{}, nil
 			}
-			// v2: fall through to resolveReadyDownstream. The verdict-less blocking
+			// v2/v3: fall through to resolveReadyDownstream. The verdict-less blocking
 			// criterion holds the demand at the acceptance gate (not here), so the
 			// graph can reach acceptance_pending for the human tier-3 override.
 		} else if review.Reviewed && (!review.AllSatisfied || review.AnyEscalated) {
 			// Adversarial criterion unsatisfied (majority refute) or escalate_human
 			// (budget exhausted). The verdict is persisted, so the convergence gate
 			// holds the demand; the acceptance/human tier-3 machinery owns it.
-			workflow.GetLogger(ctx).Info("adversarial review held demand at acceptance gate",
+			workflow.GetLogger(ctx).Info("adversarial review held demand",
 				"completed_task_id", signal.ProjectTaskID.String(),
 				"all_satisfied", review.AllSatisfied, "any_escalated", review.AnyEscalated,
+				"held_criteria", len(review.HeldCriteria),
 				"adversarial_version", adversarialVersion)
 			if adversarialVersion == 1 {
 				// v1 (preserved for replay): block downstream. Kept verbatim.
 				return taskCompletionPending{}, nil
 			}
-			// v2: fall through to resolveReadyDownstream. The persisted verdict holds
-			// the demand at the acceptance gate; downstream proceeds so the graph can
-			// reach the acceptance gate rather than stalling in `executing`.
+			// v3 auto-rework: a held review with rework-eligible criteria (judges
+			// REFUTED, NOT escalate_human) and remaining revision budget dispatches
+			// ONE rework task feeding the refutations back as input; downstream then
+			// WAITS for convergence (no resolveReadyDownstream). Budget-exhausted or
+			// escalate_human or a rework-activity error all fall through to
+			// resolveReadyDownstream — release to the human acceptance gate. NEVER a
+			// silent auto-pass. Fenced on v3 so the new ExecuteActivity command is
+			// absent from replayed v1/v2 histories.
+			if adversarialVersion >= 3 && len(review.HeldCriteria) > 0 && !review.AnyEscalated {
+				var rework CreateReworkTaskFromAdversarialResult
+				reworkErr := workflow.ExecuteActivity(ctx, (*Activities).CreateReworkTaskFromAdversarial, CreateReworkTaskFromAdversarialInput{
+					TenantID:       input.TenantID,
+					ProjectID:      input.ProjectID,
+					ReviewedTaskID: signal.ProjectTaskID,
+					DemandID:       review.DemandID,
+					PlanRevisionID: review.PlanRevisionID,
+					HeldCriteria:   review.HeldCriteria,
+				}).Get(ctx, &rework)
+				if reworkErr != nil {
+					// Rework could not be created (transport/store failure, retries
+					// exhausted): release to the human acceptance gate; do NOT auto-pass.
+					workflow.GetLogger(ctx).Error("adversarial auto-rework failed; releasing to acceptance gate",
+						"completed_task_id", signal.ProjectTaskID.String(), "error", reworkErr.Error())
+					// fall through to resolveReadyDownstream
+				} else if !rework.Exhausted && rework.TaskID != uuid.Nil {
+					// Rework dispatched: downstream waits for convergence.
+					workflow.GetLogger(ctx).Info("adversarial held → auto-rework dispatched",
+						"completed_task_id", signal.ProjectTaskID.String(), "rework_task_id", rework.TaskID.String())
+					return taskCompletionPending{}, dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, []uuid.UUID{rework.TaskID}, project.DispatchReasonRetry)
+				}
+				// Budget-exhausted (rework.Exhausted): fall through to
+				// resolveReadyDownstream — release to acceptance_pending for a human.
+			}
+			// v2 (and v3 escalate/exhausted/error): fall through to
+			// resolveReadyDownstream. The persisted verdict holds the demand at the
+			// acceptance gate; downstream proceeds so the graph can reach the gate
+			// rather than stalling in `executing`.
 		}
 	}
 	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)

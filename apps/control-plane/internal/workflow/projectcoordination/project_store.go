@@ -2,6 +2,8 @@ package projectcoordination
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -964,7 +966,7 @@ func (s *ProjectStore) CreateRevisionTaskForResult(ctx context.Context, input Cr
 		return CreateRevisionTaskForResultResult{Exhausted: true}, nil
 	}
 	resultID := result.ID
-	taskID, err := s.buildRevisionTask(ctx, input.TenantID, input.ProjectID, source, result.Contract.RevisionRequest, &resultID, result.Contract.Summary)
+	taskID, err := s.buildRevisionTask(ctx, input.TenantID, input.ProjectID, source, result.Contract.RevisionRequest, &resultID, result.Contract.Summary, nil)
 	if err != nil {
 		return CreateRevisionTaskForResultResult{}, err
 	}
@@ -979,7 +981,17 @@ func (s *ProjectStore) CreateRevisionTaskForResult(ctx context.Context, input Cr
 // sourceResultID is non-nil it is linked to the created rework task for lineage
 // (LinkProjectTaskResultRevisionTask); when nil (no execution result on the source
 // yet) the link is skipped and the planned_task_key falls back to a fresh suffix.
-func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask, rev *project.TaskResultRevisionRequest, sourceResultID *uuid.UUID, sourceResultSummary string) (uuid.UUID, error) {
+//
+// plannedKeyOverride, when non-nil, PINS the rework task's planned_task_key
+// instead of deriving it via revisionTaskKey. The adversarial path uses this to
+// stay idempotent under Temporal retry when the source has no execution result
+// yet (revisionTaskKey would otherwise mint a fresh random suffix); the
+// self-report path passes nil to keep its key byte-for-byte.
+func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask, rev *project.TaskResultRevisionRequest, sourceResultID *uuid.UUID, sourceResultSummary string, plannedKeyOverride *string) (uuid.UUID, error) {
+	plannedKey := plannedKeyOverride
+	if plannedKey == nil {
+		plannedKey = revisionTaskKey(source, sourceResultID)
+	}
 	revision, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
 		TenantID:                  tenantID,
 		ProjectID:                 projectID,
@@ -992,7 +1004,7 @@ func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectI
 		RequiresHumanApproval:     source.RequiresHumanApproval,
 		CoordinationJobID:         source.CoordinationJobID,
 		RouteDecisionID:           source.RouteDecisionID,
-		PlannedTaskKey:            revisionTaskKey(source, sourceResultID),
+		PlannedTaskKey:            plannedKey,
 		TaskKind:                  source.TaskKind,
 		StageIndex:                source.StageIndex,
 		RevisionOfTaskID:          &source.ID,
@@ -1013,13 +1025,22 @@ func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectI
 	return revision.ID, nil
 }
 
-// CreateReworkTaskFromAdversarial turns an adversarial "held" (majority-refute)
-// criterion into an automatic rework task, feeding the judges' structured
-// refutation reasons back as the rework input. It has NO self-reported
+// CreateReworkTaskFromAdversarial turns a reviewed task's held (majority-refute)
+// adversarial criteria into ONE automatic rework task, feeding the judges'
+// structured refutation reasons back as the rework input. It is TASK-scoped
+// (Phase C1 Task 4): a single rework covers EVERY held criterion, merging their
+// refuted-lens reasons into one RevisionRequest. It has NO self-reported
 // RevisionRequest (the executor did not ask for a revision); the reasons are
 // synthesized from the per-lens refute judgements. Budget guard runs first: an
-// over-budget source returns {Exhausted:true} without creating a task (Task 4
-// routes that to a human tier-3 hold). Does NOT wire the workflow trigger.
+// over-budget source returns {Exhausted:true} without creating a task (the
+// workflow routes that to the human acceptance gate).
+//
+// Idempotency (Task 4 requirement): the latestTaskResult error is PROPAGATED,
+// not swallowed — so a Temporal retry re-derives the SAME deterministic planned
+// key from the same result id and never spawns a duplicate rework. When the
+// source has no execution result yet, the planned key is seeded DETERMINISTICALLY
+// from reviewed-task-id + plan-revision (never a fresh random uuid), so two
+// invocations with identical inputs yield the same PlannedTaskKey.
 func (s *ProjectStore) CreateReworkTaskFromAdversarial(ctx context.Context, input CreateReworkTaskFromAdversarialInput) (CreateReworkTaskFromAdversarialResult, error) {
 	if s.repository == nil {
 		return CreateReworkTaskFromAdversarialResult{}, ErrActivityStoreRequired
@@ -1038,25 +1059,80 @@ func (s *ProjectStore) CreateReworkTaskFromAdversarial(ctx context.Context, inpu
 	if err != nil {
 		return CreateReworkTaskFromAdversarialResult{}, err
 	}
-	filtered := make([]project.DemandAdversarialJudgement, 0, len(judgements))
-	for _, judgement := range judgements {
-		if judgement.CriterionID == input.CriterionID {
-			filtered = append(filtered, judgement)
-		}
+	rev := synthesizeAdversarialRevisionForCriteria(input.HeldCriteria, judgements)
+	// Do NOT swallow this error: propagating it lets a Temporal retry re-derive
+	// the SAME deterministic planned key from the same result id, keeping the
+	// activity idempotent.
+	latest, err := s.latestTaskResult(ctx, source)
+	if err != nil {
+		return CreateReworkTaskFromAdversarialResult{}, err
 	}
-	rev := synthesizeAdversarialRevision(input.CriterionID, input.CriterionStatement, filtered)
 	var sourceResultID *uuid.UUID
 	sourceResultSummary := ""
-	if latest, err := s.latestTaskResult(ctx, source); err == nil && latest != nil {
+	var plannedKeyOverride *string
+	if latest != nil {
 		resultID := latest.ID
 		sourceResultID = &resultID
 		sourceResultSummary = latest.Contract.Summary
+		// revisionTaskKey derives its suffix deterministically from the result id.
+	} else {
+		// No execution result yet: seed the suffix deterministically from
+		// reviewed-task-id + plan-revision instead of revisionTaskKey's random uuid.
+		plannedKeyOverride = adversarialReworkTaskKey(source, input.PlanRevisionID)
 	}
-	taskID, err := s.buildRevisionTask(ctx, input.TenantID, input.ProjectID, source, &rev, sourceResultID, sourceResultSummary)
+	taskID, err := s.buildRevisionTask(ctx, input.TenantID, input.ProjectID, source, &rev, sourceResultID, sourceResultSummary, plannedKeyOverride)
 	if err != nil {
 		return CreateReworkTaskFromAdversarialResult{}, err
 	}
 	return CreateReworkTaskFromAdversarialResult{TaskID: taskID}, nil
+}
+
+// synthesizeAdversarialRevisionForCriteria merges every held criterion's
+// refuted-lens synthesis into ONE RevisionRequest: RequestedChanges is the union
+// of all held criteria's refuted-lens "<lens>: <reason>" entries, and Reason is
+// the combined per-criterion majority-refute summaries. One rework task therefore
+// carries the full held-criteria refutation set for the reviewed task.
+func synthesizeAdversarialRevisionForCriteria(held []HeldAdversarialCriterion, judgements []project.DemandAdversarialJudgement) project.TaskResultRevisionRequest {
+	changes := make([]string, 0)
+	reasons := make([]string, 0, len(held))
+	for _, criterion := range held {
+		filtered := make([]project.DemandAdversarialJudgement, 0, len(judgements))
+		for _, judgement := range judgements {
+			if judgement.CriterionID == criterion.CriterionID {
+				filtered = append(filtered, judgement)
+			}
+		}
+		rev := synthesizeAdversarialRevision(criterion.CriterionID, criterion.Statement, filtered)
+		changes = append(changes, rev.RequestedChanges...)
+		reasons = append(reasons, rev.Reason)
+	}
+	combined := strings.Join(reasons, "；")
+	return project.TaskResultRevisionRequest{
+		Reason:                 combined,
+		RequestedChanges:       changes,
+		RecommendedTaskSummary: combined,
+	}
+}
+
+// adversarialReworkTaskKey derives a DETERMINISTIC planned_task_key for an
+// adversarial rework task whose source has no execution result yet. The suffix is
+// a stable hash of reviewed-task-id + plan-revision, so a Temporal retry produces
+// the byte-identical key and the CreateProjectTask unique constraint blocks any
+// duplicate. It mirrors revisionTaskKey's "<base>#revision-<8hex>" shape.
+func adversarialReworkTaskKey(source project.ProjectTask, planRevisionID uuid.UUID) *string {
+	base := source.ID.String()
+	if value, ok := source.PlannerMetadata["iteration_key"].(string); ok && strings.TrimSpace(value) != "" {
+		base = strings.TrimSpace(value)
+	} else if source.PlannedTaskKey != nil && strings.TrimSpace(*source.PlannedTaskKey) != "" {
+		base = strings.TrimSpace(*source.PlannedTaskKey)
+	}
+	digest := sha256.Sum256([]byte(source.ID.String() + ":" + planRevisionID.String()))
+	suffix := hex.EncodeToString(digest[:])[:8]
+	key := base + "#revision-" + suffix
+	if len(key) > 100 {
+		key = source.ID.String()[:8] + "#revision-" + suffix
+	}
+	return &key
 }
 
 // synthesizeAdversarialRevision builds a RevisionRequest from the per-lens

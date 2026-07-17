@@ -108,13 +108,14 @@ func TestCreateReworkTaskFromAdversarialCarriesReasons(t *testing.T) {
 	store := NewProjectStore(repo)
 
 	created, err := store.CreateReworkTaskFromAdversarial(context.Background(), CreateReworkTaskFromAdversarialInput{
-		TenantID:           tenantID,
-		ProjectID:          projectID,
-		ReviewedTaskID:     reviewedTaskID,
-		CriterionID:        criterionID,
-		CriterionStatement: "登录流程必须防重放",
-		DemandID:           demandID,
-		PlanRevisionID:     planRevisionID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ReviewedTaskID: reviewedTaskID,
+		DemandID:       demandID,
+		PlanRevisionID: planRevisionID,
+		HeldCriteria: []HeldAdversarialCriterion{
+			{CriterionID: criterionID, Statement: "登录流程必须防重放"},
+		},
 	})
 
 	require.NoError(t, err)
@@ -174,13 +175,14 @@ func TestCreateReworkExhaustedReturnsNoTask(t *testing.T) {
 	store := NewProjectStore(repo)
 
 	created, err := store.CreateReworkTaskFromAdversarial(context.Background(), CreateReworkTaskFromAdversarialInput{
-		TenantID:           tenantID,
-		ProjectID:          projectID,
-		ReviewedTaskID:     reviewedTaskID,
-		CriterionID:        "crit-login-secure",
-		CriterionStatement: "登录流程必须防重放",
-		DemandID:           demandID,
-		PlanRevisionID:     planRevisionID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ReviewedTaskID: reviewedTaskID,
+		DemandID:       demandID,
+		PlanRevisionID: planRevisionID,
+		HeldCriteria: []HeldAdversarialCriterion{
+			{CriterionID: "crit-login-secure", Statement: "登录流程必须防重放"},
+		},
 	})
 
 	require.NoError(t, err)
