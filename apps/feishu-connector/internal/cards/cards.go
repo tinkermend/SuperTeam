@@ -142,6 +142,7 @@ func DecisionCard(payload map[string]any, decisionID, projectID, webOrigin strin
 			"decision_id": decisionID,
 			"project_id":  projectID,
 			"decision":    decision,
+			"title":       title,
 		}
 	}
 
@@ -224,6 +225,8 @@ func decisionTypeLabel(decisionType string) string {
 
 func statusLabel(status string) string {
 	switch status {
+	case "":
+		return "已处理"
 	case "approved":
 		return "批准"
 	case "rejected":

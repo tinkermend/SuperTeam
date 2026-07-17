@@ -166,11 +166,18 @@ func TestResolveDecisionActionAndConflict(t *testing.T) {
 	if reply.ToastType != "success" || len(cp.resolved) != 1 || cp.resolved[0] != "dec-1:approved" {
 		t.Fatalf("resolve failed: %#v resolved=%v", reply, cp.resolved)
 	}
+	// 点击瞬间同步置换已处理卡:按钮不可再点(修复"批准可来回点")。
+	if reply.NewCardJSON == "" || !strings.Contains(reply.NewCardJSON, "已处理") || strings.Contains(reply.NewCardJSON, "resolve_decision") {
+		t.Fatalf("expected inert resolved card in sync reply, got %s", reply.NewCardJSON)
+	}
 
 	cp.conflict = true
 	reply = router.HandleCardAction(context.Background(), action)
-	if reply.ToastType != "info" || !strings.Contains(reply.ToastContent, "已由他人处理") {
+	if reply.ToastType != "info" || !strings.Contains(reply.ToastContent, "已被处理") {
 		t.Fatalf("expected conflict toast, got %#v", reply)
+	}
+	if reply.NewCardJSON == "" {
+		t.Fatalf("conflict reply must also replace the card")
 	}
 }
 

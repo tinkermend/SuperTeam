@@ -43,10 +43,12 @@ type CardAction struct {
 	FormValue   map[string]any
 }
 
-// CardActionReply 是回调的同步应答(toast 提示)。
+// CardActionReply 是回调的同步应答:toast 提示 + 可选的整卡替换
+// (NewCardJSON 非空时,点击瞬间即置换卡片,消除按钮可重复点击的时间窗)。
 type CardActionReply struct {
 	ToastType    string
 	ToastContent string
+	NewCardJSON  string
 }
 
 // Handler 由 inbound 路由实现;必须快速返回(重活自行异步)。
@@ -170,6 +172,12 @@ func (g *Gateway) handleCardAction(ctx context.Context, event *callback.CardActi
 			toastType = "info"
 		}
 		resp.Toast = &callback.Toast{Type: toastType, Content: reply.ToastContent}
+	}
+	if reply.NewCardJSON != "" {
+		var cardData map[string]any
+		if err := json.Unmarshal([]byte(reply.NewCardJSON), &cardData); err == nil {
+			resp.Card = &callback.Card{Type: "raw", Data: cardData}
+		}
 	}
 	return resp
 }

@@ -217,10 +217,22 @@ func (r *Router) onResolveDecision(ctx context.Context, action gateway.CardActio
 		log.Printf("[inbound] resolve decision: %v", err)
 		return gateway.CardActionReply{ToastType: "error", ToastContent: "处理失败,请稍后再试或到 Console 处理"}
 	}
+	title, _ := action.Value["title"].(string)
 	if conflict {
-		return gateway.CardActionReply{ToastType: "info", ToastContent: "该决策已由他人处理"}
+		// 已由他人(或本人此前)处理:同步置换为已处理卡,终结可点状态。
+		return gateway.CardActionReply{
+			ToastType:    "info",
+			ToastContent: "该决策已被处理",
+			NewCardJSON:  cards.DecisionResolvedCard(map[string]any{"title": title}),
+		}
 	}
-	return gateway.CardActionReply{ToastType: "success", ToastContent: "已提交:" + decision}
+	// 点击瞬间同步置换已处理卡,消除按钮重复可点的时间窗;
+	// 其他收件人的卡由 outbox card_update 兜底更新(any-of-N)。
+	return gateway.CardActionReply{
+		ToastType:    "success",
+		ToastContent: "已提交:" + decision,
+		NewCardJSON:  cards.DecisionResolvedCard(map[string]any{"title": title, "resolved_status": decision}),
+	}
 }
 
 func (r *Router) sendText(ctx context.Context, openID, text string) {
