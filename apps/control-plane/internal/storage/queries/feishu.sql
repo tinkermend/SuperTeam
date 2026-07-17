@@ -101,3 +101,72 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 SELECT * FROM user_feishu_identities
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC;
+
+-- name: CreateFeishuOutbox :one
+INSERT INTO feishu_outbox (
+    tenant_id,
+    project_id,
+    kind,
+    resource_type,
+    resource_id,
+    recipient_user_id,
+    recipient_open_id,
+    payload,
+    status
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.narg('project_id')::uuid,
+    sqlc.arg('kind')::varchar,
+    sqlc.arg('resource_type')::varchar,
+    sqlc.arg('resource_id')::uuid,
+    sqlc.arg('recipient_user_id')::uuid,
+    sqlc.arg('recipient_open_id')::varchar,
+    COALESCE(sqlc.narg('payload')::jsonb, '{}'::jsonb),
+    COALESCE(sqlc.narg('status')::varchar, 'pending')
+) RETURNING *;
+
+-- name: ListPendingFeishuOutbox :many
+SELECT * FROM feishu_outbox
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = 'pending'
+ORDER BY created_at ASC
+LIMIT sqlc.arg('limit');
+
+-- name: MarkFeishuOutboxSent :one
+UPDATE feishu_outbox
+SET status = 'sent',
+    attempts = attempts + 1,
+    feishu_message_id = sqlc.narg('feishu_message_id')::varchar,
+    last_error = NULL,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'pending'
+RETURNING *;
+
+-- name: MarkFeishuOutboxFailed :one
+UPDATE feishu_outbox
+SET attempts = attempts + 1,
+    last_error = sqlc.arg('last_error')::text,
+    status = CASE WHEN attempts + 1 >= sqlc.arg('max_attempts')::int THEN 'failed' ELSE 'pending' END,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'pending'
+RETURNING *;
+
+-- name: SupersedePendingFeishuOutboxByResource :exec
+UPDATE feishu_outbox
+SET status = 'superseded', updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND resource_type = sqlc.arg('resource_type')::varchar
+  AND resource_id = sqlc.arg('resource_id')::uuid
+  AND status = 'pending';
+
+-- name: ListSentFeishuOutboxByResource :many
+SELECT * FROM feishu_outbox
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND resource_type = sqlc.arg('resource_type')::varchar
+  AND resource_id = sqlc.arg('resource_id')::uuid
+  AND status = 'sent'
+  AND kind = 'decision_card';

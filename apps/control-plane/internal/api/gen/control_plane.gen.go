@@ -702,6 +702,45 @@ func (e FeishuIdentityBoundVia) Valid() bool {
 	}
 }
 
+// Defines values for FeishuOutboxAckRequestResult.
+const (
+	FeishuOutboxAckRequestResultFailed FeishuOutboxAckRequestResult = "failed"
+	FeishuOutboxAckRequestResultSent   FeishuOutboxAckRequestResult = "sent"
+)
+
+// Valid indicates whether the value is a known member of the FeishuOutboxAckRequestResult enum.
+func (e FeishuOutboxAckRequestResult) Valid() bool {
+	switch e {
+	case FeishuOutboxAckRequestResultFailed:
+		return true
+	case FeishuOutboxAckRequestResultSent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeishuOutboxListResponseItemsKind.
+const (
+	CardUpdate   FeishuOutboxListResponseItemsKind = "card_update"
+	DecisionCard FeishuOutboxListResponseItemsKind = "decision_card"
+	ResultNotice FeishuOutboxListResponseItemsKind = "result_notice"
+)
+
+// Valid indicates whether the value is a known member of the FeishuOutboxListResponseItemsKind enum.
+func (e FeishuOutboxListResponseItemsKind) Valid() bool {
+	switch e {
+	case CardUpdate:
+		return true
+	case DecisionCard:
+		return true
+	case ResultNotice:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GovernanceSummaryStatus.
 const (
 	GovernanceSummaryStatusActive        GovernanceSummaryStatus = "active"
@@ -2165,19 +2204,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
-	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
-	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
+	Cancelled ListInboxItemsParamsStatus = "cancelled"
+	Open      ListInboxItemsParamsStatus = "open"
+	Resolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case ListInboxItemsParamsStatusCancelled:
+	case Cancelled:
 		return true
-	case ListInboxItemsParamsStatusOpen:
+	case Open:
 		return true
-	case ListInboxItemsParamsStatusResolved:
+	case Resolved:
 		return true
 	default:
 		return false
@@ -3459,6 +3498,35 @@ type FeishuIdentityBoundVia string
 type FeishuIdentityListResponse struct {
 	Identities []FeishuIdentity `json:"identities"`
 }
+
+// FeishuOutboxAckRequest defines model for FeishuOutboxAckRequest.
+type FeishuOutboxAckRequest struct {
+	Error           *string                      `json:"error,omitempty"`
+	FeishuMessageId *string                      `json:"feishu_message_id,omitempty"`
+	Result          FeishuOutboxAckRequestResult `json:"result"`
+}
+
+// FeishuOutboxAckRequestResult defines model for FeishuOutboxAckRequest.Result.
+type FeishuOutboxAckRequestResult string
+
+// FeishuOutboxListResponse defines model for FeishuOutboxListResponse.
+type FeishuOutboxListResponse struct {
+	Items []struct {
+		Attempts        int                               `json:"attempts"`
+		CreatedAt       time.Time                         `json:"created_at"`
+		Id              openapi_types.UUID                `json:"id"`
+		Kind            FeishuOutboxListResponseItemsKind `json:"kind"`
+		Payload         map[string]interface{}            `json:"payload"`
+		ProjectId       *openapi_types.UUID               `json:"project_id,omitempty"`
+		RecipientOpenId string                            `json:"recipient_open_id"`
+		RecipientUserId openapi_types.UUID                `json:"recipient_user_id"`
+		ResourceId      openapi_types.UUID                `json:"resource_id"`
+		ResourceType    string                            `json:"resource_type"`
+	} `json:"items"`
+}
+
+// FeishuOutboxListResponseItemsKind defines model for FeishuOutboxListResponse.Items.Kind.
+type FeishuOutboxListResponseItemsKind string
 
 // GovernanceSummaryStatus defines model for GovernanceSummaryStatus.
 type GovernanceSummaryStatus string
@@ -5794,6 +5862,11 @@ type ConnectorResolveIdentityParams struct {
 	OpenId      string             `form:"open_id" json:"open_id"`
 }
 
+// ConnectorListOutboxParams defines parameters for ConnectorListOutbox.
+type ConnectorListOutboxParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListDigitalEmployeesParams defines parameters for ListDigitalEmployees.
 type ListDigitalEmployeesParams struct {
 	Limit      *Limit                                `form:"limit,omitempty" json:"limit,omitempty"`
@@ -6198,6 +6271,9 @@ type UpsertFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
 
 // IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
 type IssueServiceTokenJSONRequestBody = IssueServiceTokenRequest
+
+// ConnectorAckOutboxJSONRequestBody defines body for ConnectorAckOutbox for application/json ContentType.
+type ConnectorAckOutboxJSONRequestBody = FeishuOutboxAckRequest
 
 // CreateEmployeeTemplateJSONRequestBody defines body for CreateEmployeeTemplate for application/json ContentType.
 type CreateEmployeeTemplateJSONRequestBody = CreateEmployeeTemplateRequest
@@ -6930,6 +7006,12 @@ type ServerInterface interface {
 	// Resolve a Feishu open_id to its bound platform user
 	// (GET /api/v1/connector/identity)
 	ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams)
+	// List pending Feishu outbox messages for delivery
+	// (GET /api/v1/connector/outbox)
+	ConnectorListOutbox(w http.ResponseWriter, r *http.Request, params ConnectorListOutboxParams)
+	// Acknowledge a delivery attempt (sent backfills the Feishu message id; 3 failures finalize)
+	// (POST /api/v1/connector/outbox/{outboxId}/ack)
+	ConnectorAckOutbox(w http.ResponseWriter, r *http.Request, outboxId openapi_types.UUID)
 	// List digital employee avatar assets
 	// (GET /api/v1/digital-employee-avatar-assets)
 	ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request)
@@ -7608,6 +7690,18 @@ func (_ Unimplemented) ConnectorBootstrap(w http.ResponseWriter, r *http.Request
 // Resolve a Feishu open_id to its bound platform user
 // (GET /api/v1/connector/identity)
 func (_ Unimplemented) ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List pending Feishu outbox messages for delivery
+// (GET /api/v1/connector/outbox)
+func (_ Unimplemented) ConnectorListOutbox(w http.ResponseWriter, r *http.Request, params ConnectorListOutboxParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Acknowledge a delivery attempt (sent backfills the Feishu message id; 3 failures finalize)
+// (POST /api/v1/connector/outbox/{outboxId}/ack)
+func (_ Unimplemented) ConnectorAckOutbox(w http.ResponseWriter, r *http.Request, outboxId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9163,6 +9257,65 @@ func (siw *ServerInterfaceWrapper) ConnectorResolveIdentity(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ConnectorResolveIdentity(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorListOutbox operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorListOutbox(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConnectorListOutboxParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorListOutbox(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorAckOutbox operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorAckOutbox(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "outboxId" -------------
+	var outboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "outboxId", chi.URLParam(r, "outboxId"), &outboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outboxId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorAckOutbox(w, r, outboxId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16476,6 +16629,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/connector/identity", wrapper.ConnectorResolveIdentity)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/outbox", wrapper.ConnectorListOutbox)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/outbox/{outboxId}/ack", wrapper.ConnectorAckOutbox)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employee-avatar-assets", wrapper.ListDigitalEmployeeAvatarAssets)

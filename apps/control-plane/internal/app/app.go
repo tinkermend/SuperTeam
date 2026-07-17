@@ -737,6 +737,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	feishuService.SetOAuthOrigins(feishuPublicOrigin, feishuWebOrigin)
 	feishuConnectorHandler := feishu.NewConnectorHTTPHandler(feishuService)
+	feishuConnectorHandler.SetOutboxRepository(feishu.NewPgRepository(q))
 	feishuAdminHandler := feishu.NewAdminHTTPHandler(feishuService)
 	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)

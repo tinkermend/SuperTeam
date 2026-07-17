@@ -2192,6 +2192,47 @@ paths:
                 $ref: "#/components/schemas/FeishuIdentity"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/connector/outbox:
+    get:
+      operationId: connectorListOutbox
+      summary: List pending Feishu outbox messages for delivery
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Pending outbox items (oldest first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuOutboxListResponse"
+  /api/v1/connector/outbox/{outboxId}/ack:
+    post:
+      operationId: connectorAckOutbox
+      summary: Acknowledge a delivery attempt (sent backfills the Feishu message id; 3 failures finalize)
+      parameters:
+        - name: outboxId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeishuOutboxAckRequest"
+      responses:
+        "200":
+          description: Ack result (idempotent for already-final rows)
+        "400":
+          $ref: "#/components/responses/Error"
   /api/v1/admin/service-tokens:
     post:
       operationId: issueServiceToken
@@ -4514,6 +4555,70 @@ components:
           schema:
             type: string
   schemas:
+    FeishuOutboxListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - kind
+              - resource_type
+              - resource_id
+              - recipient_user_id
+              - recipient_open_id
+              - payload
+              - attempts
+              - created_at
+            properties:
+              id:
+                type: string
+                format: uuid
+              kind:
+                type: string
+                enum:
+                  - decision_card
+                  - card_update
+                  - result_notice
+              resource_type:
+                type: string
+              resource_id:
+                type: string
+                format: uuid
+              project_id:
+                type: string
+                format: uuid
+              recipient_user_id:
+                type: string
+                format: uuid
+              recipient_open_id:
+                type: string
+              payload:
+                type: object
+                additionalProperties: true
+              attempts:
+                type: integer
+              created_at:
+                type: string
+                format: date-time
+    FeishuOutboxAckRequest:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          type: string
+          enum:
+            - sent
+            - failed
+        feishu_message_id:
+          type: string
+        error:
+          type: string
     FeishuContactSyncResponse:
       type: object
       required:

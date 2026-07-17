@@ -283,6 +283,8 @@ func (s *Server) registerRoutes() {
 				r.Use(middleware.ServiceAuth(s.serviceAuthService, s.onBehalfOfResolver))
 				r.Get("/bootstrap", s.feishuConnectorHandler.Bootstrap)
 				r.Get("/identity", s.feishuConnectorHandler.Identity)
+				r.Get("/outbox", s.feishuConnectorHandler.ListOutbox)
+				r.Post("/outbox/{outboxId}/ack", s.feishuConnectorHandler.AckOutbox)
 			})
 		}
 

@@ -90,6 +90,7 @@ type Querier interface {
 	CreateEmployeeTemplate(ctx context.Context, arg CreateEmployeeTemplateParams) (DigitalEmployeeTemplate, error)
 	CreateExecutionLedgerEvent(ctx context.Context, arg CreateExecutionLedgerEventParams) (ExecutionLedgerEvent, error)
 	CreateFeishuIdentity(ctx context.Context, arg CreateFeishuIdentityParams) (UserFeishuIdentity, error)
+	CreateFeishuOutbox(ctx context.Context, arg CreateFeishuOutboxParams) (FeishuOutbox, error)
 	// ============================================================================
 	// MCP HTTP capability registry (migration 037)
 	// ============================================================================
@@ -387,6 +388,7 @@ type Querier interface {
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOpenFGAMembers(ctx context.Context) ([]ListOpenFGAMembersRow, error)
 	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]ListOpenFGAProjectTeamScopesRow, error)
+	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	ListProjectArchiveSnapshots(ctx context.Context, arg ListProjectArchiveSnapshotsParams) ([]ProjectArchiveSnapshot, error)
 	ListProjectArtifactRefs(ctx context.Context, arg ListProjectArtifactRefsParams) ([]ProjectArtifactRef, error)
@@ -441,6 +443,7 @@ type Querier interface {
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListScenarioTemplateVersions(ctx context.Context, arg ListScenarioTemplateVersionsParams) ([]ScenarioTemplateVersion, error)
 	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
+	ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error)
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
@@ -469,6 +472,8 @@ type Querier interface {
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
 	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error)
+	MarkFeishuOutboxFailed(ctx context.Context, arg MarkFeishuOutboxFailedParams) (FeishuOutbox, error)
+	MarkFeishuOutboxSent(ctx context.Context, arg MarkFeishuOutboxSentParams) (FeishuOutbox, error)
 	MarkProjectPlanRevisionDecomposed(ctx context.Context, arg MarkProjectPlanRevisionDecomposedParams) (ProjectPlanRevision, error)
 	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
 	MarkProjectTaskLatestDispatchGate(ctx context.Context, arg MarkProjectTaskLatestDispatchGateParams) (ProjectTask, error)
@@ -521,6 +526,7 @@ type Querier interface {
 	// 此处按 task_runs.command_id(全局唯一)补上缺失的关联。
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
+	SupersedePendingFeishuOutboxByResource(ctx context.Context, arg SupersedePendingFeishuOutboxByResourceParams) error
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
 	TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error
 	// Forward-guarded project status transition: only applied when the current status

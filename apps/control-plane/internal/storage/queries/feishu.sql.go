@@ -62,6 +62,75 @@ func (q *Queries) CreateFeishuIdentity(ctx context.Context, arg CreateFeishuIden
 	return i, err
 }
 
+const CreateFeishuOutbox = `-- name: CreateFeishuOutbox :one
+INSERT INTO feishu_outbox (
+    tenant_id,
+    project_id,
+    kind,
+    resource_type,
+    resource_id,
+    recipient_user_id,
+    recipient_open_id,
+    payload,
+    status
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::varchar,
+    $4::varchar,
+    $5::uuid,
+    $6::uuid,
+    $7::varchar,
+    COALESCE($8::jsonb, '{}'::jsonb),
+    COALESCE($9::varchar, 'pending')
+) RETURNING id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at
+`
+
+type CreateFeishuOutboxParams struct {
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	ProjectID       uuid.NullUUID `json:"project_id"`
+	Kind            string        `json:"kind"`
+	ResourceType    string        `json:"resource_type"`
+	ResourceID      uuid.UUID     `json:"resource_id"`
+	RecipientUserID uuid.UUID     `json:"recipient_user_id"`
+	RecipientOpenID string        `json:"recipient_open_id"`
+	Payload         []byte        `json:"payload"`
+	Status          pgtype.Text   `json:"status"`
+}
+
+func (q *Queries) CreateFeishuOutbox(ctx context.Context, arg CreateFeishuOutboxParams) (FeishuOutbox, error) {
+	row := q.db.QueryRow(ctx, CreateFeishuOutbox,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Kind,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.RecipientUserID,
+		arg.RecipientOpenID,
+		arg.Payload,
+		arg.Status,
+	)
+	var i FeishuOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.Kind,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.RecipientUserID,
+		&i.RecipientOpenID,
+		&i.Payload,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.FeishuMessageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateServiceToken = `-- name: CreateServiceToken :one
 
 INSERT INTO auth_service_tokens (
@@ -342,6 +411,195 @@ func (q *Queries) ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeish
 	return items, nil
 }
 
+const ListPendingFeishuOutbox = `-- name: ListPendingFeishuOutbox :many
+SELECT id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at FROM feishu_outbox
+WHERE tenant_id = $1::uuid
+  AND status = 'pending'
+ORDER BY created_at ASC
+LIMIT $2
+`
+
+type ListPendingFeishuOutboxParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	Limit    int32     `json:"limit"`
+}
+
+func (q *Queries) ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error) {
+	rows, err := q.db.Query(ctx, ListPendingFeishuOutbox, arg.TenantID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeishuOutbox{}
+	for rows.Next() {
+		var i FeishuOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.Kind,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.RecipientUserID,
+			&i.RecipientOpenID,
+			&i.Payload,
+			&i.Status,
+			&i.Attempts,
+			&i.LastError,
+			&i.FeishuMessageID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListSentFeishuOutboxByResource = `-- name: ListSentFeishuOutboxByResource :many
+SELECT id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at FROM feishu_outbox
+WHERE tenant_id = $1::uuid
+  AND resource_type = $2::varchar
+  AND resource_id = $3::uuid
+  AND status = 'sent'
+  AND kind = 'decision_card'
+`
+
+type ListSentFeishuOutboxByResourceParams struct {
+	TenantID     uuid.UUID `json:"tenant_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   uuid.UUID `json:"resource_id"`
+}
+
+func (q *Queries) ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error) {
+	rows, err := q.db.Query(ctx, ListSentFeishuOutboxByResource, arg.TenantID, arg.ResourceType, arg.ResourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeishuOutbox{}
+	for rows.Next() {
+		var i FeishuOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.Kind,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.RecipientUserID,
+			&i.RecipientOpenID,
+			&i.Payload,
+			&i.Status,
+			&i.Attempts,
+			&i.LastError,
+			&i.FeishuMessageID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const MarkFeishuOutboxFailed = `-- name: MarkFeishuOutboxFailed :one
+UPDATE feishu_outbox
+SET attempts = attempts + 1,
+    last_error = $1::text,
+    status = CASE WHEN attempts + 1 >= $2::int THEN 'failed' ELSE 'pending' END,
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND id = $4::uuid
+  AND status = 'pending'
+RETURNING id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at
+`
+
+type MarkFeishuOutboxFailedParams struct {
+	LastError   string    `json:"last_error"`
+	MaxAttempts int32     `json:"max_attempts"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+	ID          uuid.UUID `json:"id"`
+}
+
+func (q *Queries) MarkFeishuOutboxFailed(ctx context.Context, arg MarkFeishuOutboxFailedParams) (FeishuOutbox, error) {
+	row := q.db.QueryRow(ctx, MarkFeishuOutboxFailed,
+		arg.LastError,
+		arg.MaxAttempts,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i FeishuOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.Kind,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.RecipientUserID,
+		&i.RecipientOpenID,
+		&i.Payload,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.FeishuMessageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const MarkFeishuOutboxSent = `-- name: MarkFeishuOutboxSent :one
+UPDATE feishu_outbox
+SET status = 'sent',
+    attempts = attempts + 1,
+    feishu_message_id = $1::varchar,
+    last_error = NULL,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND status = 'pending'
+RETURNING id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at
+`
+
+type MarkFeishuOutboxSentParams struct {
+	FeishuMessageID pgtype.Text `json:"feishu_message_id"`
+	TenantID        uuid.UUID   `json:"tenant_id"`
+	ID              uuid.UUID   `json:"id"`
+}
+
+func (q *Queries) MarkFeishuOutboxSent(ctx context.Context, arg MarkFeishuOutboxSentParams) (FeishuOutbox, error) {
+	row := q.db.QueryRow(ctx, MarkFeishuOutboxSent, arg.FeishuMessageID, arg.TenantID, arg.ID)
+	var i FeishuOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.Kind,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.RecipientUserID,
+		&i.RecipientOpenID,
+		&i.Payload,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.FeishuMessageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const RevokeServiceToken = `-- name: RevokeServiceToken :one
 UPDATE auth_service_tokens
 SET status = 'revoked', revoked_at = NOW()
@@ -370,6 +628,26 @@ func (q *Queries) RevokeServiceToken(ctx context.Context, arg RevokeServiceToken
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const SupersedePendingFeishuOutboxByResource = `-- name: SupersedePendingFeishuOutboxByResource :exec
+UPDATE feishu_outbox
+SET status = 'superseded', updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND resource_type = $2::varchar
+  AND resource_id = $3::uuid
+  AND status = 'pending'
+`
+
+type SupersedePendingFeishuOutboxByResourceParams struct {
+	TenantID     uuid.UUID `json:"tenant_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   uuid.UUID `json:"resource_id"`
+}
+
+func (q *Queries) SupersedePendingFeishuOutboxByResource(ctx context.Context, arg SupersedePendingFeishuOutboxByResourceParams) error {
+	_, err := q.db.Exec(ctx, SupersedePendingFeishuOutboxByResource, arg.TenantID, arg.ResourceType, arg.ResourceID)
+	return err
 }
 
 const TouchServiceTokenLastUsed = `-- name: TouchServiceTokenLastUsed :exec

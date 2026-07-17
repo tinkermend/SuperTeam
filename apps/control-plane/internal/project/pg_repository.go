@@ -4837,7 +4837,11 @@ func (r *PgRepository) advanceProjectDemandStatusWithQueries(ctx context.Context
 		TenantID: tenantID,
 		ID:       demandID,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// 需求终态只读通知与状态迁移同事务入队(投影不阻断业务的前提是行插入,无外呼)。
+	return r.enqueueDemandResultNoticeWithQueries(ctx, q, tenantID, projectID, demandID, target)
 }
 
 // recomputeProjectDemandStatusWithQueries derives a demand's lifecycle status from
@@ -5076,7 +5080,17 @@ func (r *PgRepository) createDecisionRequestWithQueries(ctx context.Context, q *
 	if err != nil {
 		return DecisionRequest{}, err
 	}
-	return decisionRequestFromRecord(row)
+	decision, err := decisionRequestFromRecord(row)
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	// 飞书审批卡与决策创建同事务入队(仅 pending 决策需要人处理)。
+	if decision.StatusSnapshot == "pending" {
+		if err := r.enqueueDecisionCardOutboxWithQueries(ctx, q, decision); err != nil {
+			return DecisionRequest{}, err
+		}
+	}
+	return decision, nil
 }
 
 func (r *PgRepository) GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error) {
@@ -5151,7 +5165,15 @@ func (r *PgRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDe
 	if err != nil {
 		return DecisionRequest{}, err
 	}
-	return decisionRequestFromRecord(row)
+	decision, err := decisionRequestFromRecord(row)
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	// resolve 后:pending 卡作废,已发送卡入队更新为已处理态。
+	if err := r.supersedeDecisionOutboxWithQueries(ctx, r.q, decision); err != nil {
+		return DecisionRequest{}, err
+	}
+	return decision, nil
 }
 
 func (r *PgRepository) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
