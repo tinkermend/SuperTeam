@@ -113,6 +113,18 @@ func (r *PgRepository) ListIdentitiesByUsers(ctx context.Context, tenantID uuid.
 	return identities, nil
 }
 
+func (r *PgRepository) ListIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Identity, error) {
+	rows, err := r.q.ListFeishuIdentitiesByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	identities := make([]Identity, 0, len(rows))
+	for _, row := range rows {
+		identities = append(identities, identityFromRow(row))
+	}
+	return identities, nil
+}
+
 func (r *PgRepository) DeleteIdentityByUser(ctx context.Context, tenantID, appConfigID, authUserID uuid.UUID) error {
 	return r.q.DeleteFeishuIdentityByUser(ctx, queries.DeleteFeishuIdentityByUserParams{
 		TenantID:          tenantID,

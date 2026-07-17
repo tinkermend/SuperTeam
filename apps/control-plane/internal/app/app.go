@@ -725,8 +725,20 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	serviceAuthCore := serviceauth.NewService(serviceauth.NewPgRepository(q))
 	serviceTokenHandler := serviceauth.NewHTTPHandler(serviceAuthCore)
 	feishuService := feishu.NewService(feishu.NewPgRepository(q), credentialSealer)
+	feishuService.SetClient(feishu.NewClient(os.Getenv("FEISHU_API_BASE_URL")))
+	feishuService.SetUserLister(feishuUserListerAdapter{auth: authService})
+	feishuPublicOrigin := os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN")
+	if feishuPublicOrigin == "" {
+		feishuPublicOrigin = "http://127.0.0.1:8081"
+	}
+	feishuWebOrigin := os.Getenv("CONTROL_PLANE_WEB_ORIGIN")
+	if feishuWebOrigin == "" {
+		feishuWebOrigin = "http://127.0.0.1:3000"
+	}
+	feishuService.SetOAuthOrigins(feishuPublicOrigin, feishuWebOrigin)
 	feishuConnectorHandler := feishu.NewConnectorHTTPHandler(feishuService)
 	feishuAdminHandler := feishu.NewAdminHTTPHandler(feishuService)
+	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
@@ -743,6 +755,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetPromptTemplateHandler(promptTemplateHandler)
 	server.SetServiceTokenHandler(serviceTokenHandler)
 	server.SetFeishuHandlers(feishuConnectorHandler, feishuAdminHandler)
+	server.SetFeishuOAuthHandler(feishuOAuthHandler)
 	server.SetServiceAuth(serviceAuthMiddlewareAdapter{core: serviceAuthCore}, feishuService)
 
 	return &Container{
@@ -888,4 +901,24 @@ func (a serviceAuthMiddlewareAdapter) ValidateServiceToken(ctx context.Context, 
 		return middleware.ServiceIdentity{}, err
 	}
 	return middleware.ServiceIdentity{TokenID: validated.ID, TenantID: validated.TenantID}, nil
+}
+
+// feishuUserListerAdapter 把 auth 用户目录适配为通讯录反查所需的邮箱来源。
+type feishuUserListerAdapter struct {
+	auth *auth.Service
+}
+
+func (a feishuUserListerAdapter) ListActiveUsersWithEmail(ctx context.Context) ([]feishu.UserEmail, error) {
+	users, err := a.auth.ListUsers(ctx, auth.ListUsersFilter{Status: "active", Limit: 1000})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]feishu.UserEmail, 0, len(users))
+	for _, user := range users {
+		if user.Email == "" {
+			continue
+		}
+		out = append(out, feishu.UserEmail{UserID: user.ID, Email: user.Email})
+	}
+	return out, nil
 }

@@ -267,6 +267,41 @@ func (q *Queries) ListActiveServiceTokensByName(ctx context.Context, serviceName
 	return items, nil
 }
 
+const ListFeishuIdentitiesByTenant = `-- name: ListFeishuIdentitiesByTenant :many
+SELECT id, tenant_id, auth_user_id, feishu_app_config_id, open_id, union_id, bound_via, created_at FROM user_feishu_identities
+WHERE tenant_id = $1::uuid
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error) {
+	rows, err := q.db.Query(ctx, ListFeishuIdentitiesByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserFeishuIdentity{}
+	for rows.Next() {
+		var i UserFeishuIdentity
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthUserID,
+			&i.FeishuAppConfigID,
+			&i.OpenID,
+			&i.UnionID,
+			&i.BoundVia,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListFeishuIdentitiesByUsers = `-- name: ListFeishuIdentitiesByUsers :many
 SELECT id, tenant_id, auth_user_id, feishu_app_config_id, open_id, union_id, bound_via, created_at FROM user_feishu_identities
 WHERE tenant_id = $1::uuid

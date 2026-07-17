@@ -96,3 +96,8 @@ DELETE FROM user_feishu_identities
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND feishu_app_config_id = sqlc.arg('feishu_app_config_id')::uuid
   AND auth_user_id = sqlc.arg('auth_user_id')::uuid;
+
+-- name: ListFeishuIdentitiesByTenant :many
+SELECT * FROM user_feishu_identities
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+ORDER BY created_at DESC;

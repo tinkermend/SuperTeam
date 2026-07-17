@@ -379,6 +379,7 @@ type Querier interface {
 	// apps/control-plane/internal/storage/queries/digital_employee_templates.sql
 	ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID) ([]DigitalEmployeeTemplate, error)
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
+	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
 	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
 	ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UUID) ([]McpServer, error)

@@ -62,6 +62,7 @@ type Repository interface {
 	GetIdentityByOpenID(ctx context.Context, appConfigID uuid.UUID, openID string) (Identity, error)
 	GetIdentityByUser(ctx context.Context, appConfigID, authUserID uuid.UUID) (Identity, error)
 	ListIdentitiesByUsers(ctx context.Context, tenantID uuid.UUID, userIDs []uuid.UUID) ([]Identity, error)
+	ListIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Identity, error)
 	DeleteIdentityByUser(ctx context.Context, tenantID, appConfigID, authUserID uuid.UUID) error
 }
 
@@ -71,12 +72,17 @@ type CredentialSealer interface {
 }
 
 type Service struct {
-	repo   Repository
-	sealer CredentialSealer
+	repo         Repository
+	sealer       CredentialSealer
+	client       APIClient
+	userLister   UserLister
+	oauthStates  *oauthStateStore
+	publicOrigin string
+	webOrigin    string
 }
 
 func NewService(repo Repository, sealer CredentialSealer) *Service {
-	return &Service{repo: repo, sealer: sealer}
+	return &Service{repo: repo, sealer: sealer, oauthStates: newOAuthStateStore()}
 }
 
 // UpsertAppConfig 加密写入(或轮换)租户飞书应用配置。secret 明文只在请求中出现。
@@ -180,4 +186,12 @@ func (s *Service) ListIdentitiesByUsers(ctx context.Context, tenantID uuid.UUID,
 		return nil, nil
 	}
 	return s.repo.ListIdentitiesByUsers(ctx, tenantID, userIDs)
+}
+
+// ListIdentitiesByTenant 全量绑定列表(Console 用户管理展示绑定状态)。
+func (s *Service) ListIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Identity, error) {
+	if tenantID == uuid.Nil {
+		return nil, ErrInvalidInput
+	}
+	return s.repo.ListIdentitiesByTenant(ctx, tenantID)
 }

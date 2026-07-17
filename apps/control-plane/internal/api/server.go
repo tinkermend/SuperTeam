@@ -52,6 +52,7 @@ type Server struct {
 	serviceTokenHandler            *serviceauth.HTTPHandler
 	feishuConnectorHandler         *feishu.ConnectorHTTPHandler
 	feishuAdminHandler             *feishu.AdminHTTPHandler
+	feishuOAuthHandler             *feishu.OAuthHTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -238,6 +239,11 @@ func (s *Server) SetFeishuHandlers(connectorHandler *feishu.ConnectorHTTPHandler
 	s.registerRoutes()
 }
 
+func (s *Server) SetFeishuOAuthHandler(handler *feishu.OAuthHTTPHandler) {
+	s.feishuOAuthHandler = handler
+	s.registerRoutes()
+}
+
 func (s *Server) SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler) {
 	s.runtimeCommandWritebackHandler = runtimeCommandWritebackHandler
 	s.registerRoutes()
@@ -293,7 +299,20 @@ func (s *Server) registerRoutes() {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
 				r.Post("/admin/feishu/app-configs", s.feishuAdminHandler.UpsertAppConfig)
 				r.Get("/admin/feishu/app-configs", s.feishuAdminHandler.ListAppConfigs)
+				r.Post("/admin/feishu/contact-sync", s.feishuAdminHandler.ContactSync)
+				r.Get("/admin/feishu/identities", s.feishuAdminHandler.ListIdentities)
 			})
+		}
+
+		if s.feishuOAuthHandler != nil {
+			if s.authService != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.ConsoleUserAuth(s.authService))
+					r.Get("/auth/feishu/oauth-start", s.feishuOAuthHandler.Start)
+				})
+			}
+			// Callback 无会话中间件:一次性 state 即凭证(来源于 Start 的会话)。
+			r.Get("/auth/feishu/oauth-callback", s.feishuOAuthHandler.Callback)
 		}
 
 		if s.employeeHandler != nil {

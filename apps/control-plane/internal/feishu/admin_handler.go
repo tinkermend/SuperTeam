@@ -107,3 +107,45 @@ func (h *AdminHTTPHandler) ListAppConfigs(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"configs": out})
 }
+
+// ContactSync 通讯录批量反查绑定(管理员触发,零用户操作初始化)。
+func (h *AdminHTTPHandler) ContactSync(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorize(w, r, authz.ActionCredentialCreate)
+	if !ok {
+		return
+	}
+	reports, err := h.service.ContactSync(r.Context(), tenantID)
+	if err != nil {
+		writeFeishuBindingError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reports": reports})
+}
+
+type identityListItem struct {
+	AuthUserID string `json:"auth_user_id"`
+	OpenID     string `json:"open_id"`
+	BoundVia   string `json:"bound_via"`
+}
+
+// ListIdentities 全量绑定列表(用户管理页展示绑定状态)。
+func (h *AdminHTTPHandler) ListIdentities(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorize(w, r, authz.ActionCredentialRead)
+	if !ok {
+		return
+	}
+	identities, err := h.service.ListIdentitiesByTenant(r.Context(), tenantID)
+	if err != nil {
+		writeFeishuBindingError(w, err)
+		return
+	}
+	out := make([]identityListItem, 0, len(identities))
+	for _, identity := range identities {
+		out = append(out, identityListItem{
+			AuthUserID: identity.AuthUserID.String(),
+			OpenID:     identity.OpenID,
+			BoundVia:   identity.BoundVia,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"identities": out})
+}

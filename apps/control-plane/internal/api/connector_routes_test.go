@@ -91,6 +91,10 @@ func (r *connectorRouteRepo) ListIdentitiesByUsers(_ context.Context, tenantID u
 	return nil, nil
 }
 
+func (r *connectorRouteRepo) ListIdentitiesByTenant(_ context.Context, tenantID uuid.UUID) ([]feishu.Identity, error) {
+	return nil, nil
+}
+
 func (r *connectorRouteRepo) DeleteIdentityByUser(_ context.Context, tenantID, appConfigID, authUserID uuid.UUID) error {
 	return nil
 }

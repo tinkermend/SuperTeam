@@ -341,6 +341,24 @@ function createUsersFetcher({
       });
     }
 
+    if (url.pathname === "/api/v1/admin/feishu/identities" && method === "GET") {
+      return jsonResponse({
+        identities: [
+          {
+            auth_user_id: USER_OPERATOR_ID,
+            open_id: "ou_operator",
+            bound_via: "contact_sync",
+          },
+        ],
+      });
+    }
+
+    if (url.pathname === "/api/v1/admin/feishu/contact-sync" && method === "POST") {
+      return jsonResponse({
+        reports: [{ app_id: "cli_test", matched: 2, bound: 1, already_bound: 1, unmatched: 3 }],
+      });
+    }
+
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
       status: 404,
@@ -676,7 +694,25 @@ describe("Users", () => {
         ]);
       }
 
-      return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
+      if (url.pathname === "/api/v1/admin/feishu/identities" && method === "GET") {
+      return jsonResponse({
+        identities: [
+          {
+            auth_user_id: USER_OPERATOR_ID,
+            open_id: "ou_operator",
+            bound_via: "contact_sync",
+          },
+        ],
+      });
+    }
+
+    if (url.pathname === "/api/v1/admin/feishu/contact-sync" && method === "POST") {
+      return jsonResponse({
+        reports: [{ app_id: "cli_test", matched: 2, bound: 1, already_bound: 1, unmatched: 3 }],
+      });
+    }
+
+    return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
         headers: { "content-type": "application/json" },
         status: 404,
       });
@@ -733,5 +769,41 @@ describe("Users", () => {
     await expect.element(governanceLayout.getByText("当前用户创建或协作项目时可选择的团队范围。")).not.toBeInTheDocument();
     await expect.element(governanceLayout.getByText("可选团队", { exact: true })).not.toBeInTheDocument();
     expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname.endsWith("/project-team-scopes"))).toBe(false);
+  });
+
+  it("renders feishu binding status per user from the identities endpoint", async () => {
+    const fetcher = createUsersFetcher();
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText("已绑定 · 同步")).toBeInTheDocument();
+    await expect.element(screen.getByText("未绑定").first()).toBeInTheDocument();
+  });
+
+  it("runs feishu contact sync and surfaces the report summary", async () => {
+    const fetcher = createUsersFetcher();
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { exact: true, name: "同步飞书绑定" }));
+
+    await expect.element(screen.getByTestId("feishu-contact-sync-summary")).toBeInTheDocument();
+    await expect.element(screen.getByText(/新绑 1/)).toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.some(
+        ([input, init]) =>
+          new URL(String(input)).pathname === "/api/v1/admin/feishu/contact-sync" && init?.method === "POST",
+      ),
+    ).toBe(true);
   });
 });

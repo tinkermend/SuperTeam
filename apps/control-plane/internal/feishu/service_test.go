@@ -105,6 +105,16 @@ func (r *memoryRepo) ListIdentitiesByUsers(_ context.Context, tenantID uuid.UUID
 	return out, nil
 }
 
+func (r *memoryRepo) ListIdentitiesByTenant(_ context.Context, tenantID uuid.UUID) ([]Identity, error) {
+	var out []Identity
+	for _, identity := range r.identities {
+		if identity.TenantID == tenantID {
+			out = append(out, identity)
+		}
+	}
+	return out, nil
+}
+
 func (r *memoryRepo) DeleteIdentityByUser(_ context.Context, tenantID, appConfigID, authUserID uuid.UUID) error {
 	kept := r.identities[:0]
 	for _, identity := range r.identities {

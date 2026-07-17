@@ -3434,6 +3434,17 @@ type FeishuAppConfigListResponse struct {
 	Configs []FeishuAppConfig `json:"configs"`
 }
 
+// FeishuContactSyncResponse defines model for FeishuContactSyncResponse.
+type FeishuContactSyncResponse struct {
+	Reports []struct {
+		AlreadyBound int    `json:"already_bound"`
+		AppId        string `json:"app_id"`
+		Bound        int    `json:"bound"`
+		Matched      int    `json:"matched"`
+		Unmatched    int    `json:"unmatched"`
+	} `json:"reports"`
+}
+
 // FeishuIdentity defines model for FeishuIdentity.
 type FeishuIdentity struct {
 	AuthUserId openapi_types.UUID     `json:"auth_user_id"`
@@ -3443,6 +3454,11 @@ type FeishuIdentity struct {
 
 // FeishuIdentityBoundVia defines model for FeishuIdentity.BoundVia.
 type FeishuIdentityBoundVia string
+
+// FeishuIdentityListResponse defines model for FeishuIdentityListResponse.
+type FeishuIdentityListResponse struct {
+	Identities []FeishuIdentity `json:"identities"`
+}
 
 // GovernanceSummaryStatus defines model for GovernanceSummaryStatus.
 type GovernanceSummaryStatus string
@@ -5760,6 +5776,18 @@ type ListAuditEventsParams struct {
 // ListAuditEventsParamsResourceType defines parameters for ListAuditEvents.
 type ListAuditEventsParamsResourceType string
 
+// FeishuOAuthCallbackParams defines parameters for FeishuOAuthCallback.
+type FeishuOAuthCallbackParams struct {
+	Code  string `form:"code" json:"code"`
+	State string `form:"state" json:"state"`
+}
+
+// FeishuOAuthStartParams defines parameters for FeishuOAuthStart.
+type FeishuOAuthStartParams struct {
+	AppConfigId *openapi_types.UUID `form:"app_config_id,omitempty" json:"app_config_id,omitempty"`
+	ReturnTo    *string             `form:"return_to,omitempty" json:"return_to,omitempty"`
+}
+
 // ConnectorResolveIdentityParams defines parameters for ConnectorResolveIdentity.
 type ConnectorResolveIdentityParams struct {
 	AppConfigId openapi_types.UUID `form:"app_config_id" json:"app_config_id"`
@@ -6872,6 +6900,12 @@ type ServerInterface interface {
 	// Create or rotate a tenant Feishu app config (secret sealed at rest)
 	// (POST /api/v1/admin/feishu/app-configs)
 	UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request)
+	// Batch-bind Feishu identities by looking up user emails in the Feishu directory
+	// (POST /api/v1/admin/feishu/contact-sync)
+	FeishuContactSync(w http.ResponseWriter, r *http.Request)
+	// List all Feishu identity bindings for the tenant
+	// (GET /api/v1/admin/feishu/identities)
+	ListFeishuIdentities(w http.ResponseWriter, r *http.Request)
 	// Issue an external service token (plaintext returned once)
 	// (POST /api/v1/admin/service-tokens)
 	IssueServiceToken(w http.ResponseWriter, r *http.Request)
@@ -6884,6 +6918,12 @@ type ServerInterface interface {
 	// List audit events by project resource
 	// (GET /api/v1/audit/events)
 	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
+	// Consume the Feishu OAuth redirect and finish binding (one-time state is the credential)
+	// (GET /api/v1/auth/feishu/oauth-callback)
+	FeishuOAuthCallback(w http.ResponseWriter, r *http.Request, params FeishuOAuthCallbackParams)
+	// Redirect the current console user to the Feishu authorize page (binds on callback)
+	// (GET /api/v1/auth/feishu/oauth-start)
+	FeishuOAuthStart(w http.ResponseWriter, r *http.Request, params FeishuOAuthStartParams)
 	// Fetch decrypted Feishu app configs for an authenticated connector service
 	// (GET /api/v1/connector/bootstrap)
 	ConnectorBootstrap(w http.ResponseWriter, r *http.Request)
@@ -7511,6 +7551,18 @@ func (_ Unimplemented) UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Batch-bind Feishu identities by looking up user emails in the Feishu directory
+// (POST /api/v1/admin/feishu/contact-sync)
+func (_ Unimplemented) FeishuContactSync(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List all Feishu identity bindings for the tenant
+// (GET /api/v1/admin/feishu/identities)
+func (_ Unimplemented) ListFeishuIdentities(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Issue an external service token (plaintext returned once)
 // (POST /api/v1/admin/service-tokens)
 func (_ Unimplemented) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
@@ -7532,6 +7584,18 @@ func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request
 // List audit events by project resource
 // (GET /api/v1/audit/events)
 func (_ Unimplemented) ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Consume the Feishu OAuth redirect and finish binding (one-time state is the credential)
+// (GET /api/v1/auth/feishu/oauth-callback)
+func (_ Unimplemented) FeishuOAuthCallback(w http.ResponseWriter, r *http.Request, params FeishuOAuthCallbackParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Redirect the current console user to the Feishu authorize page (binds on callback)
+// (GET /api/v1/auth/feishu/oauth-start)
+func (_ Unimplemented) FeishuOAuthStart(w http.ResponseWriter, r *http.Request, params FeishuOAuthStartParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8790,6 +8854,34 @@ func (siw *ServerInterfaceWrapper) UpsertFeishuAppConfig(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// FeishuContactSync operation middleware
+func (siw *ServerInterfaceWrapper) FeishuContactSync(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FeishuContactSync(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFeishuIdentities operation middleware
+func (siw *ServerInterfaceWrapper) ListFeishuIdentities(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFeishuIdentities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // IssueServiceToken operation middleware
 func (siw *ServerInterfaceWrapper) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
 
@@ -8919,6 +9011,98 @@ func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListAuditEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FeishuOAuthCallback operation middleware
+func (siw *ServerInterfaceWrapper) FeishuOAuthCallback(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FeishuOAuthCallbackParams
+
+	// ------------- Required query parameter "code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code", r.URL.Query(), &params.Code, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FeishuOAuthCallback(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FeishuOAuthStart operation middleware
+func (siw *ServerInterfaceWrapper) FeishuOAuthStart(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FeishuOAuthStartParams
+
+	// ------------- Optional query parameter "app_config_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "app_config_id", r.URL.Query(), &params.AppConfigId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "app_config_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "app_config_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "return_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "return_to", r.URL.Query(), &params.ReturnTo, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "return_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "return_to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FeishuOAuthStart(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16264,6 +16448,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/feishu/app-configs", wrapper.UpsertFeishuAppConfig)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/feishu/contact-sync", wrapper.FeishuContactSync)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/feishu/identities", wrapper.ListFeishuIdentities)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/service-tokens", wrapper.IssueServiceToken)
 	})
 	r.Group(func(r chi.Router) {
@@ -16274,6 +16464,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/audit/events", wrapper.ListAuditEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/auth/feishu/oauth-callback", wrapper.FeishuOAuthCallback)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/auth/feishu/oauth-start", wrapper.FeishuOAuthStart)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/connector/bootstrap", wrapper.ConnectorBootstrap)

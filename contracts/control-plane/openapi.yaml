@@ -2256,6 +2256,67 @@ paths:
                 $ref: "#/components/schemas/FeishuAppConfig"
         "400":
           $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/contact-sync:
+    post:
+      operationId: feishuContactSync
+      summary: Batch-bind Feishu identities by looking up user emails in the Feishu directory
+      responses:
+        "200":
+          description: Per-app sync reports
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuContactSyncResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/identities:
+    get:
+      operationId: listFeishuIdentities
+      summary: List all Feishu identity bindings for the tenant
+      responses:
+        "200":
+          description: Identity bindings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuIdentityListResponse"
+  /api/v1/auth/feishu/oauth-start:
+    get:
+      operationId: feishuOAuthStart
+      summary: Redirect the current console user to the Feishu authorize page (binds on callback)
+      parameters:
+        - name: app_config_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: return_to
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to Feishu authorize page
+  /api/v1/auth/feishu/oauth-callback:
+    get:
+      operationId: feishuOAuthCallback
+      summary: Consume the Feishu OAuth redirect and finish binding (one-time state is the credential)
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect back to the web console
   /api/v1/audit/events:
     get:
       operationId: listAuditEvents
@@ -4453,6 +4514,41 @@ components:
           schema:
             type: string
   schemas:
+    FeishuContactSyncResponse:
+      type: object
+      required:
+        - reports
+      properties:
+        reports:
+          type: array
+          items:
+            type: object
+            required:
+              - app_id
+              - matched
+              - bound
+              - already_bound
+              - unmatched
+            properties:
+              app_id:
+                type: string
+              matched:
+                type: integer
+              bound:
+                type: integer
+              already_bound:
+                type: integer
+              unmatched:
+                type: integer
+    FeishuIdentityListResponse:
+      type: object
+      required:
+        - identities
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeishuIdentity"
     ConnectorBootstrapResponse:
       type: object
       required:
