@@ -59,24 +59,27 @@ func TestPlanDemandRouteMarksNoSuitableEmployeeNonRetryable(t *testing.T) {
 
 // TestStructuralGapErrorCarriesDetails proves the structured PlanningGap survives
 // the real governance-detection path (EnforceScenarioTemplateGovernance on a
-// single-employee software_delivery fixture, same as
+// single-employee NON-migratable role_independence fixture, same as
 // TestGovernanceRoleIndependenceStructuralGapEscalates) through
 // wrapNoSuitableEmployeeError's ApplicationError Details attachment, without a live
-// Temporal test environment.
+// Temporal test environment. (software_delivery's own role_independence is now
+// migrated to adversarial_review and so no longer produces a structural gap; the
+// gap only arises for role_independence constraints whose reviewer/reviewed
+// relation is undeterminable from the skeleton — see independentReviewNoEdgeLiteral.)
 func TestStructuralGapErrorCarriesDetails(t *testing.T) {
 	employeeA := uuid.New()
 	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
 	develop.SelectedEmployeeID = employeeA
-	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
+	review := planTaskWithIO("review", nil, []string{"review_verdict"}, nil)
 	review.SelectedEmployeeID = employeeA
 	plan := RouteDecisionPlan{
 		Reason:          "structural gap",
-		TemplateKey:     "software_delivery",
-		ExitDeliverable: "review_verdict",
+		TemplateKey:     "independent_review",
+		ExitDeliverable: "integrated_release",
 		Tasks:           []PlannedTask{develop, review},
 	}
 	snapshot := CoordinationSnapshot{
-		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
+		ScenarioTemplate:    independentReviewTemplateSnapshot(t),
 		DigitalEmployeePool: activeExecutorPool(employeeA),
 	}
 	planErr := EnforceScenarioTemplateGovernance(snapshot, &plan)
