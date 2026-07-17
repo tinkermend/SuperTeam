@@ -45,9 +45,9 @@
 
 **要点:** `DROP COLUMN projects.leader_user_id, acceptance_user_id`;`project_members.project_role` 注释收敛(结构不动);**勘误:web 并非零引用**(早前只按 Go 命名查漏了 snake_case)——`project-config-page.tsx:434-450` 仍暴露"负责人/验收人用户 ID"两输入框、`:644` 角色过滤、`lib/api/projects.ts` 三处类型,一并剃除(改动前读 DESIGN.md)。
 
-- [ ] **Step 1: 失败测试**——现有引用两字段/两常量的测试改期望(创建项目不再接受/返回两字段;角色校验仅剩 owner 分支)。
-- [ ] **Step 2: RED → 实现 → 全包测试 + migrate-validate + replay 测试**(types 被 coordinator 引用)。
-- [ ] **Step 3: Commit** — `refactor(project): 剃除leader/验收人残留——成员同等身份 (迁移070)`
+- [x] **Step 1: 失败测试**——现有引用两字段/两常量的测试改期望(创建项目不再接受/返回两字段;角色校验仅剩 owner 分支)。
+- [x] **Step 2: RED → 实现 → 全包测试 + migrate-validate + replay 测试**(types 被 coordinator 引用)。
+- [x] **Step 3: Commit** — `refactor(project): 剃除leader/验收人残留——成员同等身份 (迁移070)`
 
 ---
 
@@ -61,9 +61,9 @@
 
 **Interfaces:** `EligibleDeciders` 语义单点实现,后续 outbox 展开(Task 6)复用同一查询的列表版 `ListEligibleDeciders(ctx, tenantID, projectID) ([]uuid.UUID, error)`。
 
-- [ ] **Step 1: 失败测试**——成员可签署/批准(原本 403 的用例反转);非成员仍 403;owner 不在成员表仍可(并集兜底);先到先得(A 批后 B 同值 200 幂等/异值 409);inbox 对成员可见非成员不可见。
-- [ ] **Step 2: RED → 实现 → 全包 + replay 测试。**
-- [ ] **Step 3: Commit** — `feat(project): 决策any-of-N——合格处理人集合取代单目标人`
+- [x] **Step 1: 失败测试**——成员可签署/批准(原本 403 的用例反转);非成员仍 403;owner 不在成员表仍可(并集兜底);先到先得(A 批后 B 同值 200 幂等/异值 409);inbox 对成员可见非成员不可见。
+- [x] **Step 2: RED → 实现 → 全包 + replay 测试。**
+- [x] **Step 3: Commit** — `feat(project): 决策any-of-N——合格处理人集合取代单目标人`
 
 ---
 
@@ -73,8 +73,8 @@
 
 四表按 spec §9:`feishu_app_configs`(secret sealed)、`user_feishu_identities`(双 UNIQUE)、`auth_service_tokens`(hash 存库仿 auth_runtime_tokens)、`feishu_outbox`(pending 局部索引;status: pending|sent|failed|skipped_unbound|superseded)。全中文 COMMENT。
 
-- [ ] **Step 1: 写迁移 → atlas hash + migrate-validate + migrate-up + psql 抽查四表。**
-- [ ] **Step 2: Commit** — `feat(db): 飞书绑定/服务凭据/outbox四表 (迁移071)`
+- [x] **Step 1: 写迁移 → atlas hash + migrate-validate + migrate-up + psql 抽查四表。**
+- [x] **Step 2: Commit** — `feat(db): 飞书绑定/服务凭据/outbox四表 (迁移071)`
 
 ---
 
@@ -89,9 +89,9 @@
 
 **要点:** on-behalf-of 动作的 authz 一律 `ActorUser`=绑定用户(不扩 FGA);审计 payload 带 `{channel, service, feishu_open_id}`。
 
-- [ ] **Step 1: 失败测试**——无 token 401;错 token 401;吊销后 401;on-behalf-of 头与绑定表不一致 403;一致则上下文注入正确;bootstrap 返回 sealed 解密后配置且仅 ServiceAuth 可达。
-- [ ] **Step 2: RED → 实现 → 全包 + verify:contracts。**
-- [ ] **Step 3: Commit** — `feat(auth): 外部服务凭据切片——ServiceAuth+on-behalf-of判权`
+- [x] **Step 1: 失败测试**——无 token 401;错 token 401;吊销后 401;on-behalf-of 头与绑定表不一致 403;一致则上下文注入正确;bootstrap 返回 sealed 解密后配置且仅 ServiceAuth 可达。
+- [x] **Step 2: RED → 实现 → 全包 + verify:contracts。**
+- [x] **Step 3: Commit** — `feat(auth): 外部服务凭据切片——ServiceAuth+on-behalf-of判权`
 
 ---
 
@@ -105,9 +105,9 @@
 
 **要点:** 飞书 HTTP 调用封装在 `internal/feishu` 单包,单测用 httptest 假服务器;真实调用留 GATE。换绑=删旧建新+事件留痕。
 
-- [ ] **Step 1: 失败测试**——batch_get_id 命中写绑定/失配跳过;双 UNIQUE 冲突路径;oauth callback 绑定当前会话用户;identity 端点命中/404;web 组件测试(按钮/状态列)。
-- [ ] **Step 2: RED → 实现 → 全包 + web 定向测试 + verify:contracts。**
-- [ ] **Step 3: Commit** — `feat(feishu): 身份绑定双路径——通讯录批量反查+OAuth单点绑定`
+- [x] **Step 1: 失败测试**——batch_get_id 命中写绑定/失配跳过;双 UNIQUE 冲突路径;oauth callback 绑定当前会话用户;identity 端点命中/404;web 组件测试(按钮/状态列)。
+- [x] **Step 2: RED → 实现 → 全包 + web 定向测试 + verify:contracts。**
+- [x] **Step 3: Commit** — `feat(feishu): 身份绑定双路径——通讯录批量反查+OAuth单点绑定`
 
 ---
 
@@ -120,9 +120,9 @@
 - Modify: api/server.go + openapi:`GET /api/v1/connector/outbox?limit=`、`POST /api/v1/connector/outbox/{id}/ack`(body: sent|failed+error+feishu_message_id)
 - Test: repository/service 层
 
-- [ ] **Step 1: 失败测试**——决策创建产生 N 行(N=已绑定合格人数);零绑定 → skipped_unbound+事件;resolve → pending 变 superseded+新增 card_update;demand completed → result_notice;outbox 拉取只返回 pending;ack 幂等;attempts 递增,3 次失败标 failed。
-- [ ] **Step 2: RED → 实现 → 全包 + replay 测试**(project_store 触发路径)。
-- [ ] **Step 3: Commit** — `feat(feishu): 决策/结果outbox——同事务写入+收件人展开+消费端点`
+- [x] **Step 1: 失败测试**——决策创建产生 N 行(N=已绑定合格人数);零绑定 → skipped_unbound+事件;resolve → pending 变 superseded+新增 card_update;demand completed → result_notice;outbox 拉取只返回 pending;ack 幂等;attempts 递增,3 次失败标 failed。
+- [x] **Step 2: RED → 实现 → 全包 + replay 测试**(project_store 触发路径)。
+- [x] **Step 3: Commit** — `feat(feishu): 决策/结果outbox——同事务写入+收件人展开+消费端点`
 
 ---
 
@@ -135,8 +135,8 @@
 
 **要点:** 事件 handler ≤3 秒:去重→入 channel→返回;业务 goroutine 池消费。启动:bootstrap 拉 app 配置(重试退避)→ 建长连接。单测:gateway 事件→队列、去重、会话态 TTL(飞书 SDK 侧 mock 接口化)。
 
-- [ ] **Step 1: 失败测试 → RED → 实现 → `cd apps/feishu-connector && go test ./...` 全绿;dev-services start/stop/status 冒烟。**
-- [ ] **Step 2: Commit** — `feat(connector): 飞书connector骨架——长连接+event_id去重+异步消费`
+- [x] **Step 1: 失败测试 → RED → 实现 → `cd apps/feishu-connector && go test ./...` 全绿;dev-services start/stop/status 冒烟。**
+- [x] **Step 2: Commit** — `feat(connector): 飞书connector骨架——长连接+event_id去重+异步消费`
 
 ---
 
@@ -147,9 +147,9 @@
 - Modify: 控制平面 `POST /api/v1/connector/demands`(on-behalf-of SubmitDemand 包装,`SourceType=feishu` 注册)、`GET /api/v1/connector/my-projects`(on-behalf-of 成员项目列表)+ openapi
 - Test: connector inbound 状态机(假 cpclient/假飞书 sender);控制平面两端点
 
-- [ ] **Step 1: 失败测试**——未绑定引导;表单全流程状态迁移;确认后调 demands 端点参数正确;demand `source_type=feishu`/`submitted_by`=绑定用户;my-projects 只列成员项目。
-- [ ] **Step 2: RED → 实现 → 双侧全包 + verify:contracts。**
-- [ ] **Step 3: Commit** — `feat(connector): 私聊显式发起需求——项目选择/模式/确认全流程`
+- [x] **Step 1: 失败测试**——未绑定引导;表单全流程状态迁移;确认后调 demands 端点参数正确;demand `source_type=feishu`/`submitted_by`=绑定用户;my-projects 只列成员项目。
+- [x] **Step 2: RED → 实现 → 双侧全包 + verify:contracts。**
+- [x] **Step 3: Commit** — `feat(connector): 私聊显式发起需求——项目选择/模式/确认全流程`
 
 ---
 
@@ -161,8 +161,8 @@
 - Modify: 控制平面 `POST /api/v1/connector/decisions/{decisionId}/resolve` + openapi
 - Test: 渲染器(各决策类型 fixture→卡片 JSON 断言,含裁剪);回调翻译;409 路径
 
-- [ ] **Step 1: 失败测试 → RED → 实现 → 双侧全包 + verify:contracts。**
-- [ ] **Step 2: Commit** — `feat(connector): 审批卡分级渲染+回调resolve+卡片状态更新`
+- [x] **Step 1: 失败测试 → RED → 实现 → 双侧全包 + verify:contracts。**
+- [x] **Step 2: Commit** — `feat(connector): 审批卡分级渲染+回调resolve+卡片状态更新`
 
 ---
 
@@ -192,4 +192,26 @@
 
 ## 实施记录
 
-(实施时追加。)
+**2026-07-17 Task 1-9 全部落地(9 commits, feat/feishu-integration-p1),Task 10 GATE 待真实飞书环境:**
+
+- Task 1 `15fee4e7` 剃除 leader/验收人(迁移070+全链+CLAUDE.md;勘误:web 配置页原仍暴露两输入框,一并剃除)
+- Task 2 `72f859f8` any-of-N(isEligibleDecider 四判权点+inbox 三查询集合扩展+DB 后端可见性测试)
+- Task 3 `45cbc7df` 迁移071 四表(atlas podman scratch 全量 replay 过)
+- Task 4 `123cab00` 服务凭据切片(ServiceAuth+on-behalf-of 绑定表反查防冒充;判权不扩 OpenFGA)
+- Task 5 `eab45496` 绑定双路径(通讯录反查+OAuth 一次性 state+防开放重定向;web 用户页绑定列+同步按钮)
+- Task 6 `b9d4ecc4` outbox(决策创建/resolve/需求终态三钩子同事务;收件人展开纯函数;消费端点;DB 生命周期测试)
+- Task 7/8/9 `1b3811a4` connector 进程(合并提交——main.go 依赖 inbound/outbound 使分拆无法各自编译):
+  长连接骨架/去重/会话态/入站四步提需求流/出站分级卡片/控制平面三业务端点
+- 收尾门禁(可自动化部分):verify:control-plane 绿(双 Go 模块)、契约 guard 绿、
+  web typecheck 0 错误、build 绿、用户页 13 例绿(全量串行见下一条记录)
+
+**设计偏差(相对计划,均已在提交说明留痕):**
+1. Task 6 result_notice 只发 completed/failed;acceptance_pending 由 demand_acceptance 决策卡承载,避免双消息。
+2. skipped_unbound 留痕为 outbox 行自身(可查询),未另写 ProjectEvent(避免仓储层事件递归)。
+3. clarification 决策卡 P1 深链 Console(卡内回文本留 P2)。
+4. 决策卡 payload 富集程度受 outbox 快照字段限制(title/summary/risk);判据清单等更富内容需扩快照,留实施记录待 GATE 后评估。
+
+**Task 10 GATE 前置(需人类提供):** 两个真人飞书账号(A=成员+绑定, B=非成员/未绑定);
+App Secret 经 POST /api/v1/admin/feishu/app-configs 写入(cli_a80b4b3fec91d00d);
+服务凭据经 POST /api/v1/admin/service-tokens 签发注入 FEISHU_CONNECTOR_TOKEN;
+用户其他框架的长连接确认下线;dev-services 加载分支码。

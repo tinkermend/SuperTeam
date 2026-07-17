@@ -694,25 +694,7 @@ describe("Users", () => {
         ]);
       }
 
-      if (url.pathname === "/api/v1/admin/feishu/identities" && method === "GET") {
-      return jsonResponse({
-        identities: [
-          {
-            auth_user_id: USER_OPERATOR_ID,
-            open_id: "ou_operator",
-            bound_via: "contact_sync",
-          },
-        ],
-      });
-    }
-
-    if (url.pathname === "/api/v1/admin/feishu/contact-sync" && method === "POST") {
-      return jsonResponse({
-        reports: [{ app_id: "cli_test", matched: 2, bound: 1, already_bound: 1, unmatched: 3 }],
-      });
-    }
-
-    return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
+return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
         headers: { "content-type": "application/json" },
         status: 404,
       });
