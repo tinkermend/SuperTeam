@@ -1017,7 +1017,17 @@ impl RuntimeCommandExecutor {
             .ok_or_else(|| {
                 self.recorded_error(command_id, anyhow::anyhow!("agent_home_dir is required"))
             })?;
+        // 控制平面按"绝对路径运行时派生"原则下发的可能是相对路径;此处一次性
+        // 绝对化,否则后续逐 key 软链的 target 会是相对路径——从任务工作区解析
+        // 不到(悬空链接),provider 读不穿技能内容。
         let agent_home_dir = PathBuf::from(agent_home_dir_text);
+        let agent_home_dir = if agent_home_dir.is_absolute() {
+            agent_home_dir
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&agent_home_dir))
+                .unwrap_or(agent_home_dir)
+        };
 
         if let Err(error) = crate::mcp_config::inject_session_mcp_config(
             &agent_home_dir,

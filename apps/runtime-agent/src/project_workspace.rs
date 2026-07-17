@@ -262,6 +262,17 @@ fn materialize_git_worktree(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("HEAD");
+    // 仓库缓存的本地分支停留在 clone 时刻;fetch 只推进 origin/*。base_ref 若
+    // 直接解析本地分支,repo 绑定项目将永远检出旧代码——优先用 origin/{base}。
+    let origin_base = format!("origin/{base}");
+    let base = if base != "HEAD"
+        && git_ref_exists(repo_path, &format!("refs/remotes/{origin_base}"))
+    {
+        origin_base
+    } else {
+        base.to_string()
+    };
+    let base = base.as_str();
 
     match mode {
         "branch" => {
@@ -349,6 +360,15 @@ fn apply_sparse_scope(workspace_path: &Path, scope: &[String]) -> Result<()> {
     let mut args = vec![OsString::from("sparse-checkout"), OsString::from("set")];
     args.extend(scope.iter().map(OsString::from));
     run_git(workspace_path, args)
+}
+
+fn git_ref_exists(repo_path: &Path, refname: &str) -> bool {
+    Command::new("git")
+        .current_dir(repo_path)
+        .args(["rev-parse", "--verify", "--quiet", refname])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
 }
 
 fn run_git<I, S>(cwd: &Path, args: I) -> Result<()>
@@ -816,6 +836,51 @@ mod tests {
         ))
         .unwrap();
         assert!(claude.workspace_path.join("opencode.json").exists());
+    }
+
+    #[test]
+    fn new_attempt_checks_out_commits_pushed_after_repo_cache_clone() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("README.md"), "v1\n").unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "source"]);
+        run_test_git(&source, ["config", "user.email", "test@example.com"]);
+        run_test_git(&source, ["config", "user.name", "Test User"]);
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "v1"]);
+
+        let request = |attempt: &str| ProjectWorkspaceRequest {
+            base_dir: temp.path().join("runtime"),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            attempt_id: Some(attempt.to_string()),
+            chat_thread_id: None,
+            provider_type: None,
+            workspace_mode: "readonly".to_string(),
+            project_git: Some(RuntimeProjectGitPayload {
+                url: source.to_string_lossy().to_string(),
+                default_branch: Some("main".to_string()),
+                git_credential_ref: None,
+                scope: Vec::new(),
+            }),
+            base_ref: Some("main".to_string()),
+        };
+
+        // 第一次 attempt 建立仓库缓存。
+        resolve_project_workspace(request("33333333-3333-4333-8333-333333333333")).unwrap();
+        // 源仓库随后前进一格。
+        std::fs::write(source.join("NEW.md"), "v2\n").unwrap();
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "v2"]);
+        // 新 attempt 必须看到新提交(fetch 推进 origin/main,检出用 origin/main
+        // 而非停在 clone 时刻的本地 main)。
+        let second =
+            resolve_project_workspace(request("44444444-4444-4444-8444-444444444444")).unwrap();
+        assert!(
+            second.workspace_path.join("NEW.md").exists(),
+            "new attempt must check out commits pushed after the cache was cloned"
+        );
     }
 
     fn run_test_git<I, S>(cwd: &std::path::Path, args: I)
