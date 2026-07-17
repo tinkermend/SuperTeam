@@ -163,6 +163,26 @@ type AuthRuntimeToken struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 外部服务凭据(服务身份认证,on-behalf-of 判权仍以绑定用户为行为人)
+type AuthServiceToken struct {
+	// 凭据记录ID
+	ID uuid.UUID `json:"id"`
+	// 所属租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 服务名(如 feishu-connector),与请求头 X-Service-Name 匹配
+	ServiceName string `json:"service_name"`
+	// 凭据哈希(明文只在签发时返回一次,不落库)
+	TokenHash string `json:"token_hash"`
+	// 凭据状态:active / revoked,应用层校验
+	Status string `json:"status"`
+	// 最近使用时间(审计用)
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	// 签发时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 吊销时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+}
+
 // Web 控制台用户会话表
 type AuthSession struct {
 	// 会话主键 UUID
@@ -712,6 +732,58 @@ type ExecutionLedgerEvent struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 租户级飞书应用配置(企业自建应用凭据)
+type FeishuAppConfig struct {
+	// 配置记录ID
+	ID uuid.UUID `json:"id"`
+	// 所属租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 飞书应用 App ID(公开标识,明文)
+	AppID string `json:"app_id"`
+	// 飞书应用 App Secret(AES-GCM sealer 加密后的密文,禁止明文入库)
+	AppSecretSealed string `json:"app_secret_sealed"`
+	// 配置状态:active / disabled,应用层校验
+	Status string `json:"status"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 飞书出站消息队列(与业务写同事务入队,投影不阻塞业务;connector 轮询+ack)
+type FeishuOutbox struct {
+	// outbox 行ID
+	ID uuid.UUID `json:"id"`
+	// 所属租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 关联项目ID(可空)
+	ProjectID uuid.NullUUID `json:"project_id"`
+	// 消息种类:decision_card(可操作审批卡) / card_update(决策终态卡片更新) / result_notice(只读结果通知),应用层注册
+	Kind string `json:"kind"`
+	// 来源资源类型(如 decision_request / project_demand)
+	ResourceType string `json:"resource_type"`
+	// 来源资源ID
+	ResourceID uuid.UUID `json:"resource_id"`
+	// 收件人平台用户ID(收件人展开在写入时按合格处理人集合×绑定表完成)
+	RecipientUserID uuid.UUID `json:"recipient_user_id"`
+	// 收件人飞书 open_id(写入时冗余快照,消费侧免反查)
+	RecipientOpenID string `json:"recipient_open_id"`
+	// 卡片渲染所需业务快照(标题/摘要/判据/深链等)
+	Payload []byte `json:"payload"`
+	// 状态:pending / sent / failed / skipped_unbound / superseded,应用层状态机
+	Status string `json:"status"`
+	// 投递尝试次数(3 次失败标 failed)
+	Attempts int32 `json:"attempts"`
+	// 最近一次投递失败原因
+	LastError pgtype.Text `json:"last_error"`
+	// 飞书消息ID(发送成功后回填,用于后续卡片更新)
+	FeishuMessageID pgtype.Text `json:"feishu_message_id"`
+	// 入队时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 收件箱可操作事项 read model，聚合需要人类用户处理的审批和项目决策待办
 type InboxItem struct {
 	// 收件箱事项ID
@@ -824,10 +896,6 @@ type Project struct {
 	Status string `json:"status"`
 	// 人类负责人ID
 	HumanOwnerUserID uuid.UUID `json:"human_owner_user_id"`
-	// 项目负责人或推进人用户ID
-	LeaderUserID uuid.NullUUID `json:"leader_user_id"`
-	// 项目验收人用户ID
-	AcceptanceUserID uuid.NullUUID `json:"acceptance_user_id"`
 	// 绑定的 Temporal 工作流ID
 	CoordinationWorkflowID pgtype.Text `json:"coordination_workflow_id"`
 	// 虚拟协调线程状态
@@ -1302,7 +1370,7 @@ type ProjectMember struct {
 	PrincipalType string `json:"principal_type"`
 	// 成员主体ID
 	PrincipalID uuid.UUID `json:"principal_id"`
-	// 项目内角色：owner / leader / acceptance / executor / reviewer / observer
+	// 项目内角色:owner / executor / reviewer / observer 等,应用层注册校验;人类成员同等身份,不再划分 leader/acceptance
 	ProjectRole string `json:"project_role"`
 	// 成员展示名称快照
 	DisplayNameSnapshot pgtype.Text `json:"display_name_snapshot"`
@@ -2823,6 +2891,26 @@ type UserCredential struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 凭据更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 平台用户与飞书身份绑定(open_id 一人一绑,双向唯一)
+type UserFeishuIdentity struct {
+	// 绑定记录ID
+	ID uuid.UUID `json:"id"`
+	// 所属租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 平台用户ID(auth_users.id)
+	AuthUserID uuid.UUID `json:"auth_user_id"`
+	// 归属飞书应用配置ID(feishu_app_configs.id)
+	FeishuAppConfigID uuid.UUID `json:"feishu_app_config_id"`
+	// 飞书 open_id(按应用隔离的用户标识,来源为飞书平台事件/OAuth,不可伪造)
+	OpenID string `json:"open_id"`
+	// 飞书 union_id(跨应用标识,多飞书企业兼容预留,可空)
+	UnionID pgtype.Text `json:"union_id"`
+	// 绑定方式:contact_sync(通讯录反查) / oauth(用户授权),应用层注册校验
+	BoundVia string `json:"bound_via"`
+	// 绑定时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 人类用户创建项目时可选择的团队授权范围

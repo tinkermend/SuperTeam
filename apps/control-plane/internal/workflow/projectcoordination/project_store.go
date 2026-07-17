@@ -2132,9 +2132,6 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		_, _ = s.repository.TransitionProjectStatus(ctx, input.TenantID, input.ProjectID, []string{string(project.ProjectStatusAcceptance)}, string(project.ProjectStatusRunning))
 	}
 	targetUserID := projectRecord.HumanOwnerUserID
-	if projectRecord.AcceptanceUserID != nil && *projectRecord.AcceptanceUserID != uuid.Nil {
-		targetUserID = *projectRecord.AcceptanceUserID
-	}
 	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
 		TenantID:      input.TenantID,
 		ResourceType:  "project",

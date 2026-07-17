@@ -56,6 +56,19 @@ WHERE tenant_id = $1::uuid
   AND (
     $2::uuid IS NULL
     OR target_user_id = $2::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = $2::uuid
+      )
+    )
   )
 `
 
@@ -81,6 +94,19 @@ WHERE tenant_id = $1::uuid
   AND (
     $3::uuid IS NULL
     OR target_user_id = $3::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = $3::uuid
+      )
+    )
   )
   AND (
     $4::varchar IS NULL
@@ -171,6 +197,19 @@ WHERE tenant_id = $1::uuid
   AND (
     $3::uuid IS NULL
     OR target_user_id = $3::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = $3::uuid
+      )
+    )
   )
   AND (
     $4::varchar IS NULL

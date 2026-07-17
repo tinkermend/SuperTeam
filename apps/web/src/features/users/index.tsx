@@ -51,11 +51,15 @@ import { Label } from "@/components/ui/label";
 import {
   listAuthzMembers,
   createUser,
+  feishuOAuthStartUrl,
+  listFeishuIdentities,
   listUsers,
   resetUserPassword,
+  syncFeishuContacts,
   updateUserStatus,
   type AuthzMemberRecord,
   type CreateUserRequest,
+  type FeishuIdentity,
   type UserSummary,
 } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -125,10 +129,34 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
     queryKey: ["users", "authz-members"],
   });
 
+  const feishuIdentitiesQuery = useQuery({
+    queryFn: () => listFeishuIdentities(apiOptions),
+    queryKey: ["users", "feishu-identities"],
+  });
+  const contactSyncMutation = useMutation({
+    mutationFn: () => syncFeishuContacts(apiOptions),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["users", "feishu-identities"] });
+    },
+  });
+
   const users = usersQuery.data?.items ?? [];
   const authzMembersByUserId = useMemo(() => {
     return new Map((authzMembersQuery.data?.items ?? []).map((member) => [member.user_id, member]));
   }, [authzMembersQuery.data?.items]);
+  const feishuIdentitiesByUserId = useMemo(() => {
+    return new Map((feishuIdentitiesQuery.data ?? []).map((identity) => [identity.auth_user_id, identity]));
+  }, [feishuIdentitiesQuery.data]);
+  const contactSyncSummary = contactSyncMutation.data
+    ? contactSyncMutation.data.reduce(
+        (acc, report) => ({
+          bound: acc.bound + report.bound,
+          alreadyBound: acc.alreadyBound + report.already_bound,
+          unmatched: acc.unmatched + report.unmatched,
+        }),
+        { bound: 0, alreadyBound: 0, unmatched: 0 },
+      )
+    : undefined;
   const selectedUser = users.find((user) => user.id === selectedUserId) ?? users[0];
   const selectedMember = selectedUser ? authzMembersByUserId.get(selectedUser.id) : undefined;
   const selectedIdentity = selectedUser ? mergeUserIdentity(selectedUser, selectedMember) : undefined;
@@ -210,6 +238,34 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+          {contactSyncSummary ? (
+            <span className="text-sm text-v3-ink-2 tabular-nums" data-testid="feishu-contact-sync-summary">
+              飞书同步:新绑 {contactSyncSummary.bound} · 已绑 {contactSyncSummary.alreadyBound} · 未匹配 {contactSyncSummary.unmatched}
+            </span>
+          ) : null}
+          {contactSyncMutation.isError ? (
+            <span className="text-sm text-v3-danger-text" data-testid="feishu-contact-sync-error">
+              飞书同步失败,请检查应用配置
+            </span>
+          ) : null}
+          <V3Button
+            disabled={contactSyncMutation.isPending}
+            onClick={() => contactSyncMutation.mutate()}
+            type="button"
+            variant="outline"
+          >
+            {contactSyncMutation.isPending ? "同步中…" : "同步飞书绑定"}
+          </V3Button>
+          <V3Button
+            onClick={() => {
+              // OAuth 授权是外部整页跳转,允许原生 location 导航。
+              window.location.href = feishuOAuthStartUrl(apiOptions, "/users");
+            }}
+            type="button"
+            variant="outline"
+          >
+            绑定我的飞书
+          </V3Button>
           <V3Button onClick={() => handleCreateUserOpenChange(true)} type="button">
             <UserPlus data-icon="inline-start" />
             新建用户
@@ -231,6 +287,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
           master={
             <UserGovernanceTable
               authzMembersByUserId={authzMembersByUserId}
+              feishuIdentitiesByUserId={feishuIdentitiesByUserId}
               density={tableDensity}
               filters={filters}
               isError={usersQuery.isError}
@@ -305,6 +362,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
 
 function UserGovernanceTable({
   authzMembersByUserId,
+  feishuIdentitiesByUserId,
   density,
   filters,
   isError,
@@ -319,6 +377,7 @@ function UserGovernanceTable({
   users,
 }: {
   authzMembersByUserId: Map<string, AuthzMemberRecord>;
+  feishuIdentitiesByUserId: Map<string, FeishuIdentity>;
   density: UserTableDensity;
   filters: UserManagementFilters;
   isError: boolean;
@@ -404,6 +463,7 @@ function UserGovernanceTable({
                 <V3Th>用户</V3Th>
                 <V3Th>状态</V3Th>
                 <V3Th>控制台访问</V3Th>
+                <V3Th>飞书</V3Th>
                 <V3Th>成员身份</V3Th>
                 <V3Th>操作</V3Th>
               </V3Tr>
@@ -430,6 +490,19 @@ function UserGovernanceTable({
                       <StatusPill tone={member?.console_access ? "ok" : "mute"}>
                         {member?.console_access ? "允许" : "未确认"}
                       </StatusPill>
+                    </V3Td>
+                    <V3Td>
+                      {(() => {
+                        const identity = feishuIdentitiesByUserId.get(user.id);
+                        return (
+                          <StatusPill
+                            title={identity ? identity.open_id : undefined}
+                            tone={identity ? "ok" : "mute"}
+                          >
+                            {identity ? (identity.bound_via === "oauth" ? "已绑定 · 授权" : "已绑定 · 同步") : "未绑定"}
+                          </StatusPill>
+                        );
+                      })()}
                     </V3Td>
                     <V3Td className="min-w-[150px]">{formatMembershipSummary(member)}</V3Td>
                     <V3Td>

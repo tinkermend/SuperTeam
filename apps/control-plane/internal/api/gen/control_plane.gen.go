@@ -81,6 +81,24 @@ func (e AllowedTeamAction) Valid() bool {
 	}
 }
 
+// Defines values for ConnectorSubmitDemandRequestCoordinationMode.
+const (
+	ConnectorSubmitDemandRequestCoordinationModeLoop ConnectorSubmitDemandRequestCoordinationMode = "loop"
+	ConnectorSubmitDemandRequestCoordinationModePlan ConnectorSubmitDemandRequestCoordinationMode = "plan"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorSubmitDemandRequestCoordinationMode enum.
+func (e ConnectorSubmitDemandRequestCoordinationMode) Valid() bool {
+	switch e {
+	case ConnectorSubmitDemandRequestCoordinationModeLoop:
+		return true
+	case ConnectorSubmitDemandRequestCoordinationModePlan:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateDigitalEmployeeConfigRevisionRequestStatus.
 const (
 	CreateDigitalEmployeeConfigRevisionRequestStatusActive   CreateDigitalEmployeeConfigRevisionRequestStatus = "active"
@@ -684,6 +702,63 @@ func (e EmployeeTemplateStatus) Valid() bool {
 	}
 }
 
+// Defines values for FeishuIdentityBoundVia.
+const (
+	ContactSync FeishuIdentityBoundVia = "contact_sync"
+	Oauth       FeishuIdentityBoundVia = "oauth"
+)
+
+// Valid indicates whether the value is a known member of the FeishuIdentityBoundVia enum.
+func (e FeishuIdentityBoundVia) Valid() bool {
+	switch e {
+	case ContactSync:
+		return true
+	case Oauth:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeishuOutboxAckRequestResult.
+const (
+	FeishuOutboxAckRequestResultFailed FeishuOutboxAckRequestResult = "failed"
+	FeishuOutboxAckRequestResultSent   FeishuOutboxAckRequestResult = "sent"
+)
+
+// Valid indicates whether the value is a known member of the FeishuOutboxAckRequestResult enum.
+func (e FeishuOutboxAckRequestResult) Valid() bool {
+	switch e {
+	case FeishuOutboxAckRequestResultFailed:
+		return true
+	case FeishuOutboxAckRequestResultSent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeishuOutboxListResponseItemsKind.
+const (
+	CardUpdate   FeishuOutboxListResponseItemsKind = "card_update"
+	DecisionCard FeishuOutboxListResponseItemsKind = "decision_card"
+	ResultNotice FeishuOutboxListResponseItemsKind = "result_notice"
+)
+
+// Valid indicates whether the value is a known member of the FeishuOutboxListResponseItemsKind enum.
+func (e FeishuOutboxListResponseItemsKind) Valid() bool {
+	switch e {
+	case CardUpdate:
+		return true
+	case DecisionCard:
+		return true
+	case ResultNotice:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GovernanceSummaryStatus.
 const (
 	GovernanceSummaryStatusActive        GovernanceSummaryStatus = "active"
@@ -1247,22 +1322,16 @@ func (e ProjectRepoBindingStatus) Valid() bool {
 
 // Defines values for ProjectRole.
 const (
-	ProjectRoleAcceptance ProjectRole = "acceptance"
-	ProjectRoleExecutor   ProjectRole = "executor"
-	ProjectRoleLeader     ProjectRole = "leader"
-	ProjectRoleObserver   ProjectRole = "observer"
-	ProjectRoleOwner      ProjectRole = "owner"
-	ProjectRoleReviewer   ProjectRole = "reviewer"
+	ProjectRoleExecutor ProjectRole = "executor"
+	ProjectRoleObserver ProjectRole = "observer"
+	ProjectRoleOwner    ProjectRole = "owner"
+	ProjectRoleReviewer ProjectRole = "reviewer"
 )
 
 // Valid indicates whether the value is a known member of the ProjectRole enum.
 func (e ProjectRole) Valid() bool {
 	switch e {
-	case ProjectRoleAcceptance:
-		return true
 	case ProjectRoleExecutor:
-		return true
-	case ProjectRoleLeader:
 		return true
 	case ProjectRoleObserver:
 		return true
@@ -1736,16 +1805,16 @@ func (e SkillInstallationTargetScope) Valid() bool {
 
 // Defines values for SubmitProjectDemandRequestCoordinationMode.
 const (
-	Loop SubmitProjectDemandRequestCoordinationMode = "loop"
-	Plan SubmitProjectDemandRequestCoordinationMode = "plan"
+	SubmitProjectDemandRequestCoordinationModeLoop SubmitProjectDemandRequestCoordinationMode = "loop"
+	SubmitProjectDemandRequestCoordinationModePlan SubmitProjectDemandRequestCoordinationMode = "plan"
 )
 
 // Valid indicates whether the value is a known member of the SubmitProjectDemandRequestCoordinationMode enum.
 func (e SubmitProjectDemandRequestCoordinationMode) Valid() bool {
 	switch e {
-	case Loop:
+	case SubmitProjectDemandRequestCoordinationModeLoop:
 		return true
-	case Plan:
+	case SubmitProjectDemandRequestCoordinationModePlan:
 		return true
 	default:
 		return false
@@ -2153,19 +2222,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
-	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
-	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
+	Cancelled ListInboxItemsParamsStatus = "cancelled"
+	Open      ListInboxItemsParamsStatus = "open"
+	Resolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case ListInboxItemsParamsStatusCancelled:
+	case Cancelled:
 		return true
-	case ListInboxItemsParamsStatusOpen:
+	case Open:
 		return true
-	case ListInboxItemsParamsStatusResolved:
+	case Resolved:
 		return true
 	default:
 		return false
@@ -2293,6 +2362,49 @@ type CompleteProjectTaskRequest struct {
 // CompleteTaskRequest defines model for CompleteTaskRequest.
 type CompleteTaskRequest struct {
 	Result *map[string]interface{} `json:"result,omitempty"`
+}
+
+// ConnectorBootstrapResponse defines model for ConnectorBootstrapResponse.
+type ConnectorBootstrapResponse struct {
+	Configs []struct {
+		AppId     string             `json:"app_id"`
+		AppSecret string             `json:"app_secret"`
+		ConfigId  openapi_types.UUID `json:"config_id"`
+		TenantId  openapi_types.UUID `json:"tenant_id"`
+	} `json:"configs"`
+}
+
+// ConnectorProjectListResponse defines model for ConnectorProjectListResponse.
+type ConnectorProjectListResponse struct {
+	Projects []struct {
+		Id   openapi_types.UUID `json:"id"`
+		Name string             `json:"name"`
+	} `json:"projects"`
+}
+
+// ConnectorResolveDecisionRequest defines model for ConnectorResolveDecisionRequest.
+type ConnectorResolveDecisionRequest struct {
+	Comment   *string            `json:"comment,omitempty"`
+	Decision  string             `json:"decision"`
+	ProjectId openapi_types.UUID `json:"project_id"`
+}
+
+// ConnectorSubmitDemandRequest defines model for ConnectorSubmitDemandRequest.
+type ConnectorSubmitDemandRequest struct {
+	Content          *string                                       `json:"content,omitempty"`
+	CoordinationMode *ConnectorSubmitDemandRequestCoordinationMode `json:"coordination_mode,omitempty"`
+	ProjectId        openapi_types.UUID                            `json:"project_id"`
+	Title            string                                        `json:"title"`
+}
+
+// ConnectorSubmitDemandRequestCoordinationMode defines model for ConnectorSubmitDemandRequest.CoordinationMode.
+type ConnectorSubmitDemandRequestCoordinationMode string
+
+// ConnectorSubmitDemandResponse defines model for ConnectorSubmitDemandResponse.
+type ConnectorSubmitDemandResponse struct {
+	DemandId openapi_types.UUID `json:"demand_id"`
+	Status   string             `json:"status"`
+	Title    string             `json:"title"`
 }
 
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
@@ -2443,14 +2555,12 @@ type CreateProjectLendingRequest struct {
 
 // CreateProjectRequest defines model for CreateProjectRequest.
 type CreateProjectRequest struct {
-	AcceptanceUserId   *openapi_types.UUID     `json:"acceptance_user_id,omitempty"`
 	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
 	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
 	Description        *string                 `json:"description,omitempty"`
 	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
 	Goal               string                  `json:"goal"`
 	HumanOwnerUserId   openapi_types.UUID      `json:"human_owner_user_id"`
-	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
 	Members            *[]ProjectMemberInput   `json:"members,omitempty"`
 	Name               string                  `json:"name"`
 	RepoBinding        *ProjectRepoBinding     `json:"repo_binding,omitempty"`
@@ -3402,6 +3512,73 @@ type FailTaskRequest struct {
 	Error string `json:"error"`
 }
 
+// FeishuAppConfig defines model for FeishuAppConfig.
+type FeishuAppConfig struct {
+	AppId  string             `json:"app_id"`
+	Id     openapi_types.UUID `json:"id"`
+	Status string             `json:"status"`
+}
+
+// FeishuAppConfigListResponse defines model for FeishuAppConfigListResponse.
+type FeishuAppConfigListResponse struct {
+	Configs []FeishuAppConfig `json:"configs"`
+}
+
+// FeishuContactSyncResponse defines model for FeishuContactSyncResponse.
+type FeishuContactSyncResponse struct {
+	Reports []struct {
+		AlreadyBound int    `json:"already_bound"`
+		AppId        string `json:"app_id"`
+		Bound        int    `json:"bound"`
+		Matched      int    `json:"matched"`
+		Unmatched    int    `json:"unmatched"`
+	} `json:"reports"`
+}
+
+// FeishuIdentity defines model for FeishuIdentity.
+type FeishuIdentity struct {
+	AuthUserId openapi_types.UUID     `json:"auth_user_id"`
+	BoundVia   FeishuIdentityBoundVia `json:"bound_via"`
+	OpenId     string                 `json:"open_id"`
+}
+
+// FeishuIdentityBoundVia defines model for FeishuIdentity.BoundVia.
+type FeishuIdentityBoundVia string
+
+// FeishuIdentityListResponse defines model for FeishuIdentityListResponse.
+type FeishuIdentityListResponse struct {
+	Identities []FeishuIdentity `json:"identities"`
+}
+
+// FeishuOutboxAckRequest defines model for FeishuOutboxAckRequest.
+type FeishuOutboxAckRequest struct {
+	Error           *string                      `json:"error,omitempty"`
+	FeishuMessageId *string                      `json:"feishu_message_id,omitempty"`
+	Result          FeishuOutboxAckRequestResult `json:"result"`
+}
+
+// FeishuOutboxAckRequestResult defines model for FeishuOutboxAckRequest.Result.
+type FeishuOutboxAckRequestResult string
+
+// FeishuOutboxListResponse defines model for FeishuOutboxListResponse.
+type FeishuOutboxListResponse struct {
+	Items []struct {
+		Attempts        int                               `json:"attempts"`
+		CreatedAt       time.Time                         `json:"created_at"`
+		Id              openapi_types.UUID                `json:"id"`
+		Kind            FeishuOutboxListResponseItemsKind `json:"kind"`
+		Payload         map[string]interface{}            `json:"payload"`
+		ProjectId       *openapi_types.UUID               `json:"project_id,omitempty"`
+		RecipientOpenId string                            `json:"recipient_open_id"`
+		RecipientUserId openapi_types.UUID                `json:"recipient_user_id"`
+		ResourceId      openapi_types.UUID                `json:"resource_id"`
+		ResourceType    string                            `json:"resource_type"`
+	} `json:"items"`
+}
+
+// FeishuOutboxListResponseItemsKind defines model for FeishuOutboxListResponse.Items.Kind.
+type FeishuOutboxListResponseItemsKind string
+
 // GovernanceSummaryStatus defines model for GovernanceSummaryStatus.
 type GovernanceSummaryStatus string
 
@@ -3528,6 +3705,20 @@ type InstallSkillResponse struct {
 
 // InstallSkillResponseTargetScope defines model for InstallSkillResponse.TargetScope.
 type InstallSkillResponseTargetScope string
+
+// IssueServiceTokenRequest defines model for IssueServiceTokenRequest.
+type IssueServiceTokenRequest struct {
+	ServiceName string `json:"service_name"`
+}
+
+// IssueServiceTokenResponse defines model for IssueServiceTokenResponse.
+type IssueServiceTokenResponse struct {
+	Id          openapi_types.UUID `json:"id"`
+	ServiceName string             `json:"service_name"`
+
+	// Token Plaintext token, returned exactly once at issuance.
+	Token string `json:"token"`
+}
 
 // MCPAuthStrategy defines model for MCPAuthStrategy.
 type MCPAuthStrategy string
@@ -3662,7 +3853,6 @@ type PresignUploadResponse struct {
 
 // Project defines model for Project.
 type Project struct {
-	AcceptanceUserId       *openapi_types.UUID    `json:"acceptance_user_id,omitempty"`
 	AllowedActions         *[]string              `json:"allowed_actions,omitempty"`
 	ApprovalPolicy         map[string]interface{} `json:"approval_policy"`
 	ArchivedAt             *time.Time             `json:"archived_at,omitempty"`
@@ -3675,7 +3865,6 @@ type Project struct {
 	Goal                   string                 `json:"goal"`
 	HumanOwnerUserId       openapi_types.UUID     `json:"human_owner_user_id"`
 	Id                     openapi_types.UUID     `json:"id"`
-	LeaderUserId           *openapi_types.UUID    `json:"leader_user_id,omitempty"`
 	Name                   string                 `json:"name"`
 	RepoBinding            ProjectRepoBinding     `json:"repo_binding"`
 	ScenarioTemplateKey    *string                `json:"scenario_template_key,omitempty"`
@@ -5427,14 +5616,12 @@ type UpdateEmployeeTemplateRequest struct {
 
 // UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.
 type UpdateProjectConfigRequest struct {
-	AcceptanceUserId   *openapi_types.UUID     `json:"acceptance_user_id,omitempty"`
 	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
 	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
 	Description        *string                 `json:"description,omitempty"`
 	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
 	Goal               *string                 `json:"goal,omitempty"`
 	HumanOwnerUserId   *openapi_types.UUID     `json:"human_owner_user_id,omitempty"`
-	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
 
 	// Members When present, replaces the project member set; when omitted, members are preserved.
 	Members     *[]ProjectMemberInput `json:"members,omitempty"`
@@ -5498,6 +5685,14 @@ type UpsertEnvironmentVariableRequest struct {
 
 	// Value Plaintext value accepted only on write; never returned by read APIs.
 	Value string `json:"value"`
+}
+
+// UpsertFeishuAppConfigRequest defines model for UpsertFeishuAppConfigRequest.
+type UpsertFeishuAppConfigRequest struct {
+	AppId string `json:"app_id"`
+
+	// AppSecret Sealed with AES-GCM at rest; never echoed back.
+	AppSecret string `json:"app_secret"`
 }
 
 // UpsertTeamLendingPolicy defines model for UpsertTeamLendingPolicy.
@@ -5699,6 +5894,29 @@ type ListAuditEventsParams struct {
 
 // ListAuditEventsParamsResourceType defines parameters for ListAuditEvents.
 type ListAuditEventsParamsResourceType string
+
+// FeishuOAuthCallbackParams defines parameters for FeishuOAuthCallback.
+type FeishuOAuthCallbackParams struct {
+	Code  string `form:"code" json:"code"`
+	State string `form:"state" json:"state"`
+}
+
+// FeishuOAuthStartParams defines parameters for FeishuOAuthStart.
+type FeishuOAuthStartParams struct {
+	AppConfigId *openapi_types.UUID `form:"app_config_id,omitempty" json:"app_config_id,omitempty"`
+	ReturnTo    *string             `form:"return_to,omitempty" json:"return_to,omitempty"`
+}
+
+// ConnectorResolveIdentityParams defines parameters for ConnectorResolveIdentity.
+type ConnectorResolveIdentityParams struct {
+	AppConfigId openapi_types.UUID `form:"app_config_id" json:"app_config_id"`
+	OpenId      string             `form:"open_id" json:"open_id"`
+}
+
+// ConnectorListOutboxParams defines parameters for ConnectorListOutbox.
+type ConnectorListOutboxParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // ListDigitalEmployeesParams defines parameters for ListDigitalEmployees.
 type ListDigitalEmployeesParams struct {
@@ -6098,6 +6316,21 @@ type ListWorkflowInstancesParams struct {
 	Limit     *Limit                  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset    *Offset                 `form:"offset,omitempty" json:"offset,omitempty"`
 }
+
+// UpsertFeishuAppConfigJSONRequestBody defines body for UpsertFeishuAppConfig for application/json ContentType.
+type UpsertFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
+
+// IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
+type IssueServiceTokenJSONRequestBody = IssueServiceTokenRequest
+
+// ConnectorResolveDecisionJSONRequestBody defines body for ConnectorResolveDecision for application/json ContentType.
+type ConnectorResolveDecisionJSONRequestBody = ConnectorResolveDecisionRequest
+
+// ConnectorSubmitDemandJSONRequestBody defines body for ConnectorSubmitDemand for application/json ContentType.
+type ConnectorSubmitDemandJSONRequestBody = ConnectorSubmitDemandRequest
+
+// ConnectorAckOutboxJSONRequestBody defines body for ConnectorAckOutbox for application/json ContentType.
+type ConnectorAckOutboxJSONRequestBody = FeishuOutboxAckRequest
 
 // CreateEmployeeTemplateJSONRequestBody defines body for CreateEmployeeTemplate for application/json ContentType.
 type CreateEmployeeTemplateJSONRequestBody = CreateEmployeeTemplateRequest
@@ -6794,12 +7027,57 @@ func (t *ProviderSessionEvent) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List active Feishu app configs (secrets never echoed)
+	// (GET /api/v1/admin/feishu/app-configs)
+	ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request)
+	// Create or rotate a tenant Feishu app config (secret sealed at rest)
+	// (POST /api/v1/admin/feishu/app-configs)
+	UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request)
+	// Batch-bind Feishu identities by looking up user emails in the Feishu directory
+	// (POST /api/v1/admin/feishu/contact-sync)
+	FeishuContactSync(w http.ResponseWriter, r *http.Request)
+	// List all Feishu identity bindings for the tenant
+	// (GET /api/v1/admin/feishu/identities)
+	ListFeishuIdentities(w http.ResponseWriter, r *http.Request)
+	// Issue an external service token (plaintext returned once)
+	// (POST /api/v1/admin/service-tokens)
+	IssueServiceToken(w http.ResponseWriter, r *http.Request)
+	// Revoke an external service token
+	// (DELETE /api/v1/admin/service-tokens/{tokenId})
+	RevokeServiceToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID)
 	// Retrieve an artifact's raw content via presigned redirect
 	// (GET /api/v1/artifacts/{artifactRefId}/content)
 	GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID)
 	// List audit events by project resource
 	// (GET /api/v1/audit/events)
 	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
+	// Consume the Feishu OAuth redirect and finish binding (one-time state is the credential)
+	// (GET /api/v1/auth/feishu/oauth-callback)
+	FeishuOAuthCallback(w http.ResponseWriter, r *http.Request, params FeishuOAuthCallbackParams)
+	// Redirect the current console user to the Feishu authorize page (binds on callback)
+	// (GET /api/v1/auth/feishu/oauth-start)
+	FeishuOAuthStart(w http.ResponseWriter, r *http.Request, params FeishuOAuthStartParams)
+	// Fetch decrypted Feishu app configs for an authenticated connector service
+	// (GET /api/v1/connector/bootstrap)
+	ConnectorBootstrap(w http.ResponseWriter, r *http.Request)
+	// Resolve a decision on behalf of the bound user (409 when already resolved by someone else)
+	// (POST /api/v1/connector/decisions/{decisionId}/resolve)
+	ConnectorResolveDecision(w http.ResponseWriter, r *http.Request, decisionId openapi_types.UUID)
+	// Submit a demand on behalf of the bound user (source_type is fixed to feishu)
+	// (POST /api/v1/connector/demands)
+	ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request)
+	// Resolve a Feishu open_id to its bound platform user
+	// (GET /api/v1/connector/identity)
+	ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams)
+	// List projects the on-behalf-of user may raise demands in (owner or active human member)
+	// (GET /api/v1/connector/my-projects)
+	ConnectorMyProjects(w http.ResponseWriter, r *http.Request)
+	// List pending Feishu outbox messages for delivery
+	// (GET /api/v1/connector/outbox)
+	ConnectorListOutbox(w http.ResponseWriter, r *http.Request, params ConnectorListOutboxParams)
+	// Acknowledge a delivery attempt (sent backfills the Feishu message id; 3 failures finalize)
+	// (POST /api/v1/connector/outbox/{outboxId}/ack)
+	ConnectorAckOutbox(w http.ResponseWriter, r *http.Request, outboxId openapi_types.UUID)
 	// List digital employee avatar assets
 	// (GET /api/v1/digital-employee-avatar-assets)
 	ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request)
@@ -7409,6 +7687,42 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
+// List active Feishu app configs (secrets never echoed)
+// (GET /api/v1/admin/feishu/app-configs)
+func (_ Unimplemented) ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create or rotate a tenant Feishu app config (secret sealed at rest)
+// (POST /api/v1/admin/feishu/app-configs)
+func (_ Unimplemented) UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Batch-bind Feishu identities by looking up user emails in the Feishu directory
+// (POST /api/v1/admin/feishu/contact-sync)
+func (_ Unimplemented) FeishuContactSync(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List all Feishu identity bindings for the tenant
+// (GET /api/v1/admin/feishu/identities)
+func (_ Unimplemented) ListFeishuIdentities(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Issue an external service token (plaintext returned once)
+// (POST /api/v1/admin/service-tokens)
+func (_ Unimplemented) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Revoke an external service token
+// (DELETE /api/v1/admin/service-tokens/{tokenId})
+func (_ Unimplemented) RevokeServiceToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Retrieve an artifact's raw content via presigned redirect
 // (GET /api/v1/artifacts/{artifactRefId}/content)
 func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID) {
@@ -7418,6 +7732,60 @@ func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request
 // List audit events by project resource
 // (GET /api/v1/audit/events)
 func (_ Unimplemented) ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Consume the Feishu OAuth redirect and finish binding (one-time state is the credential)
+// (GET /api/v1/auth/feishu/oauth-callback)
+func (_ Unimplemented) FeishuOAuthCallback(w http.ResponseWriter, r *http.Request, params FeishuOAuthCallbackParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Redirect the current console user to the Feishu authorize page (binds on callback)
+// (GET /api/v1/auth/feishu/oauth-start)
+func (_ Unimplemented) FeishuOAuthStart(w http.ResponseWriter, r *http.Request, params FeishuOAuthStartParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Fetch decrypted Feishu app configs for an authenticated connector service
+// (GET /api/v1/connector/bootstrap)
+func (_ Unimplemented) ConnectorBootstrap(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Resolve a decision on behalf of the bound user (409 when already resolved by someone else)
+// (POST /api/v1/connector/decisions/{decisionId}/resolve)
+func (_ Unimplemented) ConnectorResolveDecision(w http.ResponseWriter, r *http.Request, decisionId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a demand on behalf of the bound user (source_type is fixed to feishu)
+// (POST /api/v1/connector/demands)
+func (_ Unimplemented) ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Resolve a Feishu open_id to its bound platform user
+// (GET /api/v1/connector/identity)
+func (_ Unimplemented) ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List projects the on-behalf-of user may raise demands in (owner or active human member)
+// (GET /api/v1/connector/my-projects)
+func (_ Unimplemented) ConnectorMyProjects(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List pending Feishu outbox messages for delivery
+// (GET /api/v1/connector/outbox)
+func (_ Unimplemented) ConnectorListOutbox(w http.ResponseWriter, r *http.Request, params ConnectorListOutboxParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Acknowledge a delivery attempt (sent backfills the Feishu message id; 3 failures finalize)
+// (POST /api/v1/connector/outbox/{outboxId}/ack)
+func (_ Unimplemented) ConnectorAckOutbox(w http.ResponseWriter, r *http.Request, outboxId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8636,6 +9004,102 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// ListFeishuAppConfigs operation middleware
+func (siw *ServerInterfaceWrapper) ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFeishuAppConfigs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpsertFeishuAppConfig operation middleware
+func (siw *ServerInterfaceWrapper) UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpsertFeishuAppConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FeishuContactSync operation middleware
+func (siw *ServerInterfaceWrapper) FeishuContactSync(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FeishuContactSync(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFeishuIdentities operation middleware
+func (siw *ServerInterfaceWrapper) ListFeishuIdentities(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFeishuIdentities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IssueServiceToken operation middleware
+func (siw *ServerInterfaceWrapper) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueServiceToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeServiceToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeServiceToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tokenId" -------------
+	var tokenId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenId", chi.URLParam(r, "tokenId"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeServiceToken(w, r, tokenId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetArtifactContent operation middleware
 func (siw *ServerInterfaceWrapper) GetArtifactContent(w http.ResponseWriter, r *http.Request) {
 
@@ -8725,6 +9189,271 @@ func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListAuditEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FeishuOAuthCallback operation middleware
+func (siw *ServerInterfaceWrapper) FeishuOAuthCallback(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FeishuOAuthCallbackParams
+
+	// ------------- Required query parameter "code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "code", r.URL.Query(), &params.Code, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FeishuOAuthCallback(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FeishuOAuthStart operation middleware
+func (siw *ServerInterfaceWrapper) FeishuOAuthStart(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FeishuOAuthStartParams
+
+	// ------------- Optional query parameter "app_config_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "app_config_id", r.URL.Query(), &params.AppConfigId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "app_config_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "app_config_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "return_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "return_to", r.URL.Query(), &params.ReturnTo, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "return_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "return_to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FeishuOAuthStart(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorBootstrap operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorBootstrap(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorBootstrap(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorResolveDecision operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorResolveDecision(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "decisionId" -------------
+	var decisionId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "decisionId", chi.URLParam(r, "decisionId"), &decisionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "decisionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorResolveDecision(w, r, decisionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorSubmitDemand operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorSubmitDemand(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorResolveIdentity operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConnectorResolveIdentityParams
+
+	// ------------- Required query parameter "app_config_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "app_config_id", r.URL.Query(), &params.AppConfigId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "app_config_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "app_config_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "open_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "open_id", r.URL.Query(), &params.OpenId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "open_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "open_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorResolveIdentity(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorMyProjects operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorMyProjects(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorMyProjects(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorListOutbox operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorListOutbox(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConnectorListOutboxParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorListOutbox(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorAckOutbox operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorAckOutbox(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "outboxId" -------------
+	var outboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "outboxId", chi.URLParam(r, "outboxId"), &outboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outboxId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorAckOutbox(w, r, outboxId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16004,10 +16733,55 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/feishu/app-configs", wrapper.ListFeishuAppConfigs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/feishu/app-configs", wrapper.UpsertFeishuAppConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/feishu/contact-sync", wrapper.FeishuContactSync)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/feishu/identities", wrapper.ListFeishuIdentities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/service-tokens", wrapper.IssueServiceToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/admin/service-tokens/{tokenId}", wrapper.RevokeServiceToken)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/artifacts/{artifactRefId}/content", wrapper.GetArtifactContent)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/audit/events", wrapper.ListAuditEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/auth/feishu/oauth-callback", wrapper.FeishuOAuthCallback)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/auth/feishu/oauth-start", wrapper.FeishuOAuthStart)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/bootstrap", wrapper.ConnectorBootstrap)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/decisions/{decisionId}/resolve", wrapper.ConnectorResolveDecision)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/demands", wrapper.ConnectorSubmitDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/identity", wrapper.ConnectorResolveIdentity)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/my-projects", wrapper.ConnectorMyProjects)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/connector/outbox", wrapper.ConnectorListOutbox)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/outbox/{outboxId}/ack", wrapper.ConnectorAckOutbox)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employee-avatar-assets", wrapper.ListDigitalEmployeeAvatarAssets)

@@ -89,6 +89,8 @@ type Querier interface {
 	CreateEmployeeMCPBindingV2(ctx context.Context, arg CreateEmployeeMCPBindingV2Params) (DigitalEmployeeMcpBindingsV2, error)
 	CreateEmployeeTemplate(ctx context.Context, arg CreateEmployeeTemplateParams) (DigitalEmployeeTemplate, error)
 	CreateExecutionLedgerEvent(ctx context.Context, arg CreateExecutionLedgerEventParams) (ExecutionLedgerEvent, error)
+	CreateFeishuIdentity(ctx context.Context, arg CreateFeishuIdentityParams) (UserFeishuIdentity, error)
+	CreateFeishuOutbox(ctx context.Context, arg CreateFeishuOutboxParams) (FeishuOutbox, error)
 	// ============================================================================
 	// MCP HTTP capability registry (migration 037)
 	// ============================================================================
@@ -137,6 +139,8 @@ type Querier interface {
 	CreateRuntimeToken(ctx context.Context, arg CreateRuntimeTokenParams) (AuthRuntimeToken, error)
 	CreateScenarioTemplate(ctx context.Context, arg CreateScenarioTemplateParams) (ScenarioTemplate, error)
 	CreateScenarioTemplateVersion(ctx context.Context, arg CreateScenarioTemplateVersionParams) (ScenarioTemplateVersion, error)
+	// 飞书集成:服务凭据、应用配置、身份绑定查询。
+	CreateServiceToken(ctx context.Context, arg CreateServiceTokenParams) (AuthServiceToken, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
@@ -161,6 +165,7 @@ type Querier interface {
 	DeleteExpiredCaptchaChallenges(ctx context.Context, before pgtype.Timestamptz) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteFeishuIdentityByUser(ctx context.Context, arg DeleteFeishuIdentityByUserParams) error
 	DeleteMCPServerDefinition(ctx context.Context, arg DeleteMCPServerDefinitionParams) error
 	DeleteProjectEmployeeNodeAffinitiesForDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForDeleteParams) ([]uuid.UUID, error)
 	DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams) ([]uuid.UUID, error)
@@ -212,6 +217,9 @@ type Querier interface {
 	GetDigitalEmployeeWorkspaceFileByPath(ctx context.Context, arg GetDigitalEmployeeWorkspaceFileByPathParams) (DigitalEmployeeWorkspaceFile, error)
 	GetEmployeeTemplateByID(ctx context.Context, arg GetEmployeeTemplateByIDParams) (DigitalEmployeeTemplate, error)
 	GetEmployeeTemplateByType(ctx context.Context, arg GetEmployeeTemplateByTypeParams) (DigitalEmployeeTemplate, error)
+	GetFeishuAppConfig(ctx context.Context, arg GetFeishuAppConfigParams) (FeishuAppConfig, error)
+	GetFeishuIdentityByOpenID(ctx context.Context, arg GetFeishuIdentityByOpenIDParams) (UserFeishuIdentity, error)
+	GetFeishuIdentityByUser(ctx context.Context, arg GetFeishuIdentityByUserParams) (UserFeishuIdentity, error)
 	GetInboxItem(ctx context.Context, arg GetInboxItemParams) (InboxItem, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (GetLatestDigitalEmployeeConfigRevisionRow, error)
 	GetLatestProjectAcceptanceRecord(ctx context.Context, arg GetLatestProjectAcceptanceRecordParams) (ProjectAcceptanceRecord, error)
@@ -317,7 +325,9 @@ type Querier interface {
 	LinkProjectTaskLatestResult(ctx context.Context, arg LinkProjectTaskLatestResultParams) (ProjectTask, error)
 	LinkProjectTaskResultDecisionRequest(ctx context.Context, arg LinkProjectTaskResultDecisionRequestParams) (ProjectTaskResult, error)
 	LinkProjectTaskResultRevisionTask(ctx context.Context, arg LinkProjectTaskResultRevisionTaskParams) (ProjectTaskResult, error)
+	ListActiveFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error)
 	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKey, error)
+	ListActiveServiceTokensByName(ctx context.Context, serviceName string) ([]AuthServiceToken, error)
 	// 逐判官明细回读：血缘/审计面板按租户+需求+计划修订版本列出全部 lens 判定。
 	ListAdversarialJudgements(ctx context.Context, arg ListAdversarialJudgementsParams) ([]DemandAdversarialJudgement, error)
 	ListApprovalDecisionsForRequest(ctx context.Context, arg ListApprovalDecisionsForRequestParams) ([]ApprovalDecision, error)
@@ -370,12 +380,15 @@ type Querier interface {
 	// apps/control-plane/internal/storage/queries/digital_employee_templates.sql
 	ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID) ([]DigitalEmployeeTemplate, error)
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
+	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
+	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
 	ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UUID) ([]McpServer, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOpenFGAMembers(ctx context.Context) ([]ListOpenFGAMembersRow, error)
 	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]ListOpenFGAProjectTeamScopesRow, error)
+	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	ListProjectArchiveSnapshots(ctx context.Context, arg ListProjectArchiveSnapshotsParams) ([]ProjectArchiveSnapshot, error)
 	ListProjectArtifactRefs(ctx context.Context, arg ListProjectArtifactRefsParams) ([]ProjectArtifactRef, error)
@@ -412,6 +425,7 @@ type Querier interface {
 	ListProjectTasksByDemand(ctx context.Context, arg ListProjectTasksByDemandParams) ([]ProjectTask, error)
 	ListProjectTransferRequests(ctx context.Context, arg ListProjectTransferRequestsParams) ([]ProjectTransferRequest, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
+	ListProjectsForHumanMember(ctx context.Context, arg ListProjectsForHumanMemberParams) ([]ListProjectsForHumanMemberRow, error)
 	ListPromptTemplates(ctx context.Context, arg ListPromptTemplatesParams) ([]TaskPromptTemplate, error)
 	ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error)
 	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)
@@ -430,6 +444,7 @@ type Querier interface {
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListScenarioTemplateVersions(ctx context.Context, arg ListScenarioTemplateVersionsParams) ([]ScenarioTemplateVersion, error)
 	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
+	ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error)
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
@@ -458,6 +473,8 @@ type Querier interface {
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
 	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error)
+	MarkFeishuOutboxFailed(ctx context.Context, arg MarkFeishuOutboxFailedParams) (FeishuOutbox, error)
+	MarkFeishuOutboxSent(ctx context.Context, arg MarkFeishuOutboxSentParams) (FeishuOutbox, error)
 	MarkProjectPlanRevisionDecomposed(ctx context.Context, arg MarkProjectPlanRevisionDecomposedParams) (ProjectPlanRevision, error)
 	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
 	MarkProjectTaskLatestDispatchGate(ctx context.Context, arg MarkProjectTaskLatestDispatchGateParams) (ProjectTask, error)
@@ -482,6 +499,7 @@ type Querier interface {
 	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
 	RevokeRuntimeSession(ctx context.Context, arg RevokeRuntimeSessionParams) (RuntimeSession, error)
+	RevokeServiceToken(ctx context.Context, arg RevokeServiceTokenParams) (AuthServiceToken, error)
 	// 已生效（approved/auto_approved）的借调可被团队负责人撤销。
 	RevokeTeamLendingRequest(ctx context.Context, arg RevokeTeamLendingRequestParams) (TeamLendingRequest, error)
 	RevokeUserProjectTeamScopes(ctx context.Context, arg RevokeUserProjectTeamScopesParams) error
@@ -509,7 +527,9 @@ type Querier interface {
 	// 此处按 task_runs.command_id(全局唯一)补上缺失的关联。
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
+	SupersedePendingFeishuOutboxByResource(ctx context.Context, arg SupersedePendingFeishuOutboxByResourceParams) error
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
+	TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error
 	// Forward-guarded project status transition: only applied when the current status
 	// is in from_statuses. No matching row (wrong current status) yields no rows so the
 	// caller can treat it as an idempotent no-op via ErrNoRows.
@@ -554,6 +574,7 @@ type Querier interface {
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, arg UpsertDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	UpsertDigitalEmployeeWorkspaceFileSync(ctx context.Context, arg UpsertDigitalEmployeeWorkspaceFileSyncParams) error
+	UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuAppConfigParams) (FeishuAppConfig, error)
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, arg UpsertProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)

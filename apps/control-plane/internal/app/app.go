@@ -18,7 +18,9 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/capability"
+	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
@@ -28,6 +30,7 @@ import (
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
+	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -635,7 +638,11 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 	var credentialSealer capability.CredentialSealer
-	if credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY"); credentialKey != "" {
+	credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY")
+	if credentialKey == "" {
+		credentialKey = cfg.Security.CredentialEncryptionKey
+	}
+	if credentialKey != "" {
 		credentialSealer, err = capability.NewAESGCMCredentialSealer(credentialKey)
 		if err != nil {
 			return nil, err
@@ -719,6 +726,29 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	tenantHandler := tenant.NewHandler(tenantService)
 	costHandler := cost.NewHTTPHandler(cost.NewService(cost.NewPgRepository(stores.Postgres)))
 	teamLendingHandler := teamlending.NewHandler(teamLendingService)
+	serviceAuthCore := serviceauth.NewService(serviceauth.NewPgRepository(q))
+	serviceTokenHandler := serviceauth.NewHTTPHandler(serviceAuthCore)
+	feishuService := feishu.NewService(feishu.NewPgRepository(q), credentialSealer)
+	feishuService.SetClient(feishu.NewClient(os.Getenv("FEISHU_API_BASE_URL")))
+	feishuService.SetUserLister(feishuUserListerAdapter{auth: authService})
+	feishuPublicOrigin := os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN")
+	if feishuPublicOrigin == "" {
+		feishuPublicOrigin = "http://127.0.0.1:8081"
+	}
+	feishuWebOrigin := os.Getenv("CONTROL_PLANE_WEB_ORIGIN")
+	if feishuWebOrigin == "" {
+		feishuWebOrigin = "http://127.0.0.1:3000"
+	}
+	feishuService.SetOAuthOrigins(feishuPublicOrigin, feishuWebOrigin)
+	feishuConnectorHandler := feishu.NewConnectorHTTPHandler(feishuService)
+	feishuConnectorHandler.SetOutboxRepository(feishu.NewPgRepository(q))
+	feishuConnectorHandler.SetProjectGateway(feishuProjectGatewayAdapter{
+		q:        q,
+		projects: projectService,
+		repo:     projectRepository,
+	})
+	feishuAdminHandler := feishu.NewAdminHTTPHandler(feishuService)
+	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
@@ -733,6 +763,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetCapabilityHandler(capabilityHandler)
 	server.SetScenarioTemplateHandler(scenarioTemplateHandler)
 	server.SetPromptTemplateHandler(promptTemplateHandler)
+	server.SetServiceTokenHandler(serviceTokenHandler)
+	server.SetFeishuHandlers(feishuConnectorHandler, feishuAdminHandler)
+	server.SetFeishuOAuthHandler(feishuOAuthHandler)
+	server.SetServiceAuth(serviceAuthMiddlewareAdapter{core: serviceAuthCore}, feishuService)
 
 	return &Container{
 		Queries:                        q,
@@ -864,4 +898,103 @@ func (a scenarioTemplateSourceAdapter) GetScenarioTemplateSnapshot(ctx context.C
 		return projectcoordination.ScenarioTemplateSnapshot{}, fmt.Errorf("scenario template %q is %s", key, template.Status)
 	}
 	return projectcoordination.ScenarioTemplateSnapshot{Key: template.Key, Name: template.Name, Version: template.ActiveVersion, Spec: template.Spec}, nil
+}
+
+// serviceAuthMiddlewareAdapter 把 serviceauth.Service 适配成中间件需要的最小视图。
+type serviceAuthMiddlewareAdapter struct {
+	core *serviceauth.Service
+}
+
+func (a serviceAuthMiddlewareAdapter) ValidateServiceToken(ctx context.Context, serviceName, token string) (middleware.ServiceIdentity, error) {
+	validated, err := a.core.ValidateServiceToken(ctx, serviceName, token)
+	if err != nil {
+		return middleware.ServiceIdentity{}, err
+	}
+	return middleware.ServiceIdentity{TokenID: validated.ID, TenantID: validated.TenantID}, nil
+}
+
+// feishuUserListerAdapter 把 auth 用户目录适配为通讯录反查所需的邮箱来源。
+type feishuUserListerAdapter struct {
+	auth *auth.Service
+}
+
+func (a feishuUserListerAdapter) ListActiveUsersWithEmail(ctx context.Context) ([]feishu.UserEmail, error) {
+	users, err := a.auth.ListUsers(ctx, auth.ListUsersFilter{Status: "active", Limit: 1000})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]feishu.UserEmail, 0, len(users))
+	for _, user := range users {
+		if user.Email == "" {
+			continue
+		}
+		out = append(out, feishu.UserEmail{UserID: user.ID, Email: user.Email})
+	}
+	return out, nil
+}
+
+// feishuProjectGatewayAdapter 把 connector 业务动作接到项目域。
+type feishuProjectGatewayAdapter struct {
+	q        *queries.Queries
+	projects *project.Service
+	repo     project.Repository
+}
+
+func (a feishuProjectGatewayAdapter) ListProjectsForHumanMember(ctx context.Context, tenantID, userID uuid.UUID) ([]feishu.ProjectRef, error) {
+	rows, err := a.q.ListProjectsForHumanMember(ctx, queries.ListProjectsForHumanMemberParams{
+		TenantID:    tenantID,
+		ActorUserID: userID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]feishu.ProjectRef, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, feishu.ProjectRef{ID: row.ID, Name: row.Name})
+	}
+	return out, nil
+}
+
+func (a feishuProjectGatewayAdapter) SubmitDemand(ctx context.Context, tenantID, projectID, userID uuid.UUID, title, content, mode string) (uuid.UUID, string, error) {
+	demand, err := a.projects.SubmitDemand(ctx, project.SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: userID,
+		Title:             title,
+		Content:           content,
+		SourceType:        project.DemandSourceType("feishu"),
+		CoordinationMode:  mode,
+	})
+	if err != nil {
+		if errors.Is(err, project.ErrInvalidProject) || errors.Is(err, project.ErrInvalidCoordinationMode) {
+			return uuid.Nil, "", fmt.Errorf("%w: %v", feishu.ErrGatewayBadInput, err)
+		}
+		return uuid.Nil, "", err
+	}
+	return demand.ID, string(demand.Status), nil
+}
+
+func (a feishuProjectGatewayAdapter) ResolveDecision(ctx context.Context, tenantID, projectID, decisionID, userID uuid.UUID, decision, comment string) (bool, error) {
+	_, err := a.projects.ResolveDecision(ctx, project.ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   userID,
+		Decision:          decision,
+		Comment:           comment,
+	})
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, project.ErrProjectDecisionForbidden) {
+		return false, feishu.ErrGatewayForbidden
+	}
+	if errors.Is(err, project.ErrInvalidProject) {
+		// 已终态且异值 → 已由他人处理;其余按坏输入。
+		if existing, getErr := a.repo.GetDecisionRequest(ctx, tenantID, projectID, decisionID); getErr == nil && existing.StatusSnapshot != "pending" {
+			return true, nil
+		}
+		return false, fmt.Errorf("%w: %v", feishu.ErrGatewayBadInput, err)
+	}
+	return false, err
 }

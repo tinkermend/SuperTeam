@@ -20,13 +20,7 @@ export type ProjectStatus =
 export type ProjectCoordinationMode = "plan" | "loop";
 
 export type ProjectPrincipalType = "human_user" | "digital_employee" | "team";
-export type ProjectRole =
-  | "owner"
-  | "leader"
-  | "acceptance"
-  | "executor"
-  | "reviewer"
-  | "observer";
+export type ProjectRole = "owner" | "executor" | "reviewer" | "observer";
 export type ReviewerSelectionReason =
   | "project_reviewer_default"
   | "project_human_owner_fallback"
@@ -167,8 +161,6 @@ export type Project = {
   goal: string;
   status: ProjectStatus;
   human_owner_user_id: string;
-  leader_user_id?: string;
-  acceptance_user_id?: string;
   coordination_workflow_id: string;
   coordination_status: string;
   coordination_policy: Record<string, unknown>;
@@ -870,8 +862,6 @@ export type CreateProjectInput = {
   description?: string;
   goal: string;
   human_owner_user_id: string;
-  leader_user_id?: string;
-  acceptance_user_id?: string;
   members?: ProjectMemberInput[];
   coordination_policy?: Record<string, unknown>;
   approval_policy?: Record<string, unknown>;
@@ -890,8 +880,6 @@ export type UpdateProjectConfigInput = {
   description?: string;
   goal?: string;
   human_owner_user_id?: string;
-  leader_user_id?: string;
-  acceptance_user_id?: string;
   members?: ProjectMemberInput[];
   coordination_policy?: Record<string, unknown>;
   approval_policy?: Record<string, unknown>;

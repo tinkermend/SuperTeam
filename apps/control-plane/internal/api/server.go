@@ -13,12 +13,14 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/capability"
+	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
+	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
@@ -45,6 +47,12 @@ type Server struct {
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
 	teamLendingHandler             *teamlending.HTTPHandler
+	serviceAuthService             middleware.ServiceAuthService
+	onBehalfOfResolver             middleware.OnBehalfOfResolver
+	serviceTokenHandler            *serviceauth.HTTPHandler
+	feishuConnectorHandler         *feishu.ConnectorHTTPHandler
+	feishuAdminHandler             *feishu.AdminHTTPHandler
+	feishuOAuthHandler             *feishu.OAuthHTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -207,6 +215,35 @@ func (s *Server) SetScenarioTemplateHandler(scenarioTemplateHandler *scenariotem
 	s.registerRoutes()
 }
 
+// SetServiceAuth 配置外部服务凭据认证与 on-behalf-of 核验(/api/v1/connector/* 依赖)。
+func (s *Server) SetServiceAuth(authService middleware.ServiceAuthService, resolver middleware.OnBehalfOfResolver) {
+	s.serviceAuthService = authService
+	s.onBehalfOfResolver = resolver
+	s.registerRoutes()
+}
+
+func (s *Server) SetServiceTokenHandler(handler *serviceauth.HTTPHandler) {
+	s.serviceTokenHandler = handler
+	if s.authorizer != nil && handler != nil {
+		handler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetFeishuHandlers(connectorHandler *feishu.ConnectorHTTPHandler, adminHandler *feishu.AdminHTTPHandler) {
+	s.feishuConnectorHandler = connectorHandler
+	s.feishuAdminHandler = adminHandler
+	if s.authorizer != nil && adminHandler != nil {
+		adminHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetFeishuOAuthHandler(handler *feishu.OAuthHTTPHandler) {
+	s.feishuOAuthHandler = handler
+	s.registerRoutes()
+}
+
 func (s *Server) SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler) {
 	s.runtimeCommandWritebackHandler = runtimeCommandWritebackHandler
 	s.registerRoutes()
@@ -239,6 +276,49 @@ func (s *Server) registerRoutes() {
 			r.Put("/{id}/status", s.taskHandler.UpdateTaskStatus)
 			r.Post("/{id}/cancel", s.taskHandler.CancelTask)
 		})
+
+		// 外部服务通道:仅服务凭据可达,业务动作以 on-behalf-of 绑定用户判权。
+		if s.feishuConnectorHandler != nil && s.serviceAuthService != nil {
+			r.Route("/connector", func(r chi.Router) {
+				r.Use(middleware.ServiceAuth(s.serviceAuthService, s.onBehalfOfResolver))
+				r.Get("/bootstrap", s.feishuConnectorHandler.Bootstrap)
+				r.Get("/identity", s.feishuConnectorHandler.Identity)
+				r.Get("/outbox", s.feishuConnectorHandler.ListOutbox)
+				r.Post("/outbox/{outboxId}/ack", s.feishuConnectorHandler.AckOutbox)
+				r.Get("/my-projects", s.feishuConnectorHandler.MyProjects)
+				r.Post("/demands", s.feishuConnectorHandler.SubmitDemand)
+				r.Post("/decisions/{decisionId}/resolve", s.feishuConnectorHandler.ResolveDecision)
+			})
+		}
+
+		if s.serviceTokenHandler != nil && s.authService != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Post("/admin/service-tokens", s.serviceTokenHandler.IssueToken)
+				r.Delete("/admin/service-tokens/{tokenId}", s.serviceTokenHandler.RevokeToken)
+			})
+		}
+
+		if s.feishuAdminHandler != nil && s.authService != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Post("/admin/feishu/app-configs", s.feishuAdminHandler.UpsertAppConfig)
+				r.Get("/admin/feishu/app-configs", s.feishuAdminHandler.ListAppConfigs)
+				r.Post("/admin/feishu/contact-sync", s.feishuAdminHandler.ContactSync)
+				r.Get("/admin/feishu/identities", s.feishuAdminHandler.ListIdentities)
+			})
+		}
+
+		if s.feishuOAuthHandler != nil {
+			if s.authService != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.ConsoleUserAuth(s.authService))
+					r.Get("/auth/feishu/oauth-start", s.feishuOAuthHandler.Start)
+				})
+			}
+			// Callback 无会话中间件:一次性 state 即凭证(来源于 Start 的会话)。
+			r.Get("/auth/feishu/oauth-callback", s.feishuOAuthHandler.Callback)
+		}
 
 		if s.employeeHandler != nil {
 			r.Group(func(r chi.Router) {
