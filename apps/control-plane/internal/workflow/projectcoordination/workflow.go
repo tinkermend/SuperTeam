@@ -779,6 +779,41 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 			// rather than stalling in `executing`.
 		}
 	}
+	// Review-gate trigger (violation-detection gate, Task 6). INDEPENDENT fence,
+	// separate from the adversarial one above: it drives the DETECTION path
+	// (secret_leak/code_review detectors → review_gate verdict), not the
+	// adversarial JUDGE path. GetVersion from birth: this issues a NEW
+	// ExecuteActivity command absent from old histories, so on replay of any
+	// pre-Task-6 history GetVersion returns DefaultVersion (no marker written) →
+	// the block is skipped → no new command → replay-safe (see
+	// TestReplayRealCoordinatorHistory). It fires only on the common fall-through
+	// path (i.e. when the adversarial block did not early-return to hold/rework),
+	// which is exactly when the demand is heading to the acceptance gate.
+	//
+	// It NEVER blocks downstream: on a detected violation the review_gate verdict
+	// is persisted `unsatisfied` and the Task-5 default-reversal convergence gate
+	// holds the demand at acceptance_pending, where the human sees it at final
+	// acceptance (the "human final acceptance" model, spec §6). An Activity error
+	// (store load/persist failure) is logged and swallowed — the criterion simply
+	// gets no verdict, which for review_gate means DEFAULT RELEASE: a detector that
+	// could not run must not manufacture a hold. Either way we fall through to
+	// resolveReadyDownstream.
+	if workflow.GetVersion(ctx, "review-gate-trigger", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		var gate RunReviewGateForTaskResult
+		gateErr := workflow.ExecuteActivity(ctx, (*Activities).RunReviewGateForTask, RunReviewGateForTaskInput{
+			TenantID:        input.TenantID,
+			ProjectID:       input.ProjectID,
+			CompletedTaskID: signal.ProjectTaskID,
+		}).Get(ctx, &gate)
+		if gateErr != nil {
+			workflow.GetLogger(ctx).Error("review gate failed; falling through (verdict-less review_gate → default release)",
+				"completed_task_id", signal.ProjectTaskID.String(), "error", gateErr.Error())
+		} else if gate.Reviewed && gate.AnyViolation {
+			workflow.GetLogger(ctx).Info("review gate detected violation; demand held at acceptance gate for human final acceptance",
+				"completed_task_id", signal.ProjectTaskID.String())
+		}
+		// Always fall through: a review_gate hold lives at the acceptance gate, never here.
+	}
 	// v3 fence: when a REVISION (rework) task completes — whether the loop
 	// converged (judges satisfied) or exhausted/escalated to the human gate — its
 	// downstream dependents are blocked on the revision ROOT (anchored round 0),

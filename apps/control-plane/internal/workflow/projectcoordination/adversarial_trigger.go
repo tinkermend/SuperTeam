@@ -257,6 +257,18 @@ func (s *ProjectStore) PrepareAdversarialReview(ctx context.Context, input Prepa
 // rework never re-fires the judges and the self-iteration loop silently
 // breaks after one round.
 func (s *ProjectStore) listAdversarialCriteriaForTask(ctx context.Context, task project.ProjectTask) ([]project.DemandAcceptanceCriterion, error) {
+	return s.listCriteriaForTaskByMethod(ctx, task, VerificationMethodAdversarialReview)
+}
+
+// listCriteriaForTaskByMethod is the method-parameterized generalization of the
+// per-task criterion scoping rule shared by the adversarial-review and
+// review-gate triggers: it narrows the demand+revision criteria snapshot to the
+// criteria whose VerificationMethod == method AND whose SatisfiedBy names the
+// task's planned KEY (its own key, or — for a rework task — the revision-root
+// ancestor's key; see revisionRootPlannedTaskKey and the doc on
+// listAdversarialCriteriaForTask). A task with no demand/plan-revision/planned
+// key is on the hook for nothing.
+func (s *ProjectStore) listCriteriaForTaskByMethod(ctx context.Context, task project.ProjectTask, method string) ([]project.DemandAcceptanceCriterion, error) {
 	if task.DemandID == nil || task.AcceptedPlanRevisionID == nil || task.PlannedTaskKey == nil {
 		return nil, nil
 	}
@@ -274,7 +286,7 @@ func (s *ProjectStore) listAdversarialCriteriaForTask(ctx context.Context, task 
 	}
 	scoped := make([]project.DemandAcceptanceCriterion, 0, len(criteria))
 	for _, c := range criteria {
-		if c.VerificationMethod != VerificationMethodAdversarialReview {
+		if c.VerificationMethod != method {
 			continue
 		}
 		for _, satisfiedBy := range c.SatisfiedBy {

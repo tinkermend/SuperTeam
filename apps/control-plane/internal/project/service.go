@@ -3521,6 +3521,20 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 			)
 			continue
 		}
+		if criterion.VerificationMethod == demandCriterionVerificationMethodReviewGate {
+			// review_gate criteria are decided by the violation-detection gate
+			// (aggregate row, judge_type=review_gate), never by executor
+			// self-report — the detectors own this channel. Projecting an executor
+			// verdict here would let a task self-satisfy a criterion the detectors
+			// must decide. Skip; only log.
+			slog.Default().Warn("demand acceptance criterion self-reported by executor: ignored, awaiting review gate",
+				"project_task_id", task.ID,
+				"demand_id", criterion.DemandID,
+				"plan_revision_id", criterion.PlanRevisionID,
+				"criterion_id", criterion.CriterionID,
+			)
+			continue
+		}
 		verdictValue, ok := demandCriterionVerdictValueFromResultStatus(result.Status)
 		if !ok {
 			continue
@@ -5774,14 +5788,19 @@ func (s *Service) SignDemandCriterionVerdict(ctx context.Context, req SignDemand
 	}
 	criterion := findDemandAcceptanceCriterion(criteria, req.CriterionID)
 	// Tier-3 human override (spec §2): a blocking criterion is human-signable when its
-	// method is human_judgment OR adversarial_review. Allowing adversarial_review here lets
-	// the human goalkeeper override the tier-2 adversarial judges — criterionEffectiveVerdict
+	// method is human_judgment OR adversarial_review OR review_gate. Allowing adversarial_review
+	// here lets the human goalkeeper override the tier-2 adversarial judges — criterionEffectiveVerdict
 	// already gives a human verdict precedence over the adversarial aggregate — so a held
 	// adversarial verdict (unsatisfied, or escalate_human on budget exhaustion / engine error)
-	// is resolvable instead of a dead end. Any other method (e.g. automated_test) stays unsignable.
+	// is resolvable instead of a dead end. review_gate is included for the same reason: a
+	// detected violation persists an `unsatisfied` review_gate verdict that holds the demand at
+	// final acceptance, and the human goalkeeper must be able to waive/confirm it here — otherwise
+	// a detected violation would be unresolvable via the real API. Any other method (e.g.
+	// automated_test) stays unsignable.
 	if criterion == nil || criterion.Severity != demandAcceptanceCriterionSeverityBlocking ||
 		(criterion.VerificationMethod != demandCriterionVerificationMethodHumanJudgment &&
-			criterion.VerificationMethod != demandCriterionVerificationMethodAdversarialReview) {
+			criterion.VerificationMethod != demandCriterionVerificationMethodAdversarialReview &&
+			criterion.VerificationMethod != demandCriterionVerificationMethodReviewGate) {
 		return nil, ErrInvalidProject
 	}
 	if existing := findHumanCriterionVerdict(verdicts, req.CriterionID); existing != nil {

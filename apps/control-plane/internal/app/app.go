@@ -604,7 +604,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		// Wire the adversarial-review judge client (same OpenAI-compatible seam as
 		// the route planner) and the judge model id, so RunAdversarialReview /
-		// AdversarialReviewForTask can decide adversarial_review criteria.
+		// AdversarialReviewForTask can decide adversarial_review criteria. The
+		// review-gate detector Activity (RunReviewGateForTask) reuses the SAME
+		// client/model for its code_review LLM detector; if unwired, the LLM
+		// detectors fail open and only rule detectors (secret_leak) fire.
 		coordinationActivities = projectcoordination.WithJudgeClient(
 			coordinationActivities,
 			projectcoordination.NewOpenAICompatibleChatCompletionClient(cfg.Planner.BaseURL, cfg.Planner.APIKey),
