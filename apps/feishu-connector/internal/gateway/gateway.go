@@ -84,6 +84,10 @@ func New(appConfigID, appID, appSecret string, handler Handler) *Gateway {
 		}).
 		OnP2CardActionTrigger(func(ctx context.Context, event *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
 			return g.handleCardAction(ctx, event), nil
+		}).
+		// 用户打开 bot 私聊会推此事件;业务无需响应,注册空 handler 消掉 SDK 的 not-found-handler 错误日志。
+		OnP2ChatAccessEventBotP2pChatEnteredV1(func(ctx context.Context, event *larkim.P2ChatAccessEventBotP2pChatEnteredV1) error {
+			return nil
 		})
 	g.wsClient = larkws.NewClient(appID, appSecret,
 		larkws.WithEventHandler(eventHandler),
