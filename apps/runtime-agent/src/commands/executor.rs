@@ -69,6 +69,9 @@ struct ArtifactCollectionContext {
     raw_log_path: PathBuf,
     workspace_path: Option<PathBuf>,
     environment: BTreeMap<String, String>,
+    /// Pre-run file listing for non-git workspaces (输出附件 spec §1.1
+    /// snapshot fallback); None when git can answer "what is new" itself.
+    workspace_baseline: Option<std::collections::BTreeSet<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -386,6 +389,13 @@ impl RuntimeCommandExecutor {
                     raw_log_path: self.runs.run_dir(&run_id).join("raw.jsonl"),
                     workspace_path: Some(spec.workspace_path.clone()),
                     environment: spec.environment.clone(),
+                    workspace_baseline: if spec.workspace_path.join(".git").exists() {
+                        None
+                    } else {
+                        Some(crate::artifacts::snapshot_workspace_files(
+                            &spec.workspace_path,
+                        ))
+                    },
                 }),
             });
         if let Some(writeback) = &writeback {
@@ -1638,7 +1648,11 @@ impl RuntimeCommandWritebackSink {
                 // 采集+上传发生在 complete writeback 之前(证据地基 spec §3.4):
                 // 控制平面收到 result 时对象已在存储中,可在同一事务里物化。
                 // 上传失败 → 整个 completion 失败,任务不得声称拥有从未落库的证据。
-                let collected_refs = self.collect_and_upload_artifacts(summary.as_deref()).await?;
+                let mut collected_refs =
+                    self.collect_and_upload_artifacts(summary.as_deref()).await?;
+                // 输出附件是 best-effort(输出附件 spec §1.5):单个附件失败
+                // 降级为可见的 skip note,绝不拖垮 completion。
+                collected_refs.extend(self.collect_and_upload_attachments().await);
                 let mut writeback = project_task_complete_writeback(
                     project_task,
                     &self.command_id,
@@ -1680,6 +1694,24 @@ impl RuntimeCommandWritebackSink {
         )
         .await;
         crate::artifacts::upload_artifacts(&self.client, artifacts).await
+    }
+
+    /// Collects and uploads `execution_output` attachments best-effort.
+    /// Infallible by design: failures surface as skip notes in the refs.
+    async fn collect_and_upload_attachments(&self) -> Vec<serde_json::Value> {
+        let Some(context) = &self.artifact_collection else {
+            return Vec::new();
+        };
+        let Some(workspace) = &context.workspace_path else {
+            return Vec::new();
+        };
+        let collection =
+            crate::artifacts::collect_attachments(workspace, context.workspace_baseline.as_ref())
+                .await;
+        if collection.attachments.is_empty() && collection.skipped.is_empty() {
+            return Vec::new();
+        }
+        crate::artifacts::upload_attachments_best_effort(&self.client, collection).await
     }
 
     async fn fail_project_task(&self, error_message: &str) -> anyhow::Result<()> {

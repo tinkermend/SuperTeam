@@ -1,8 +1,8 @@
 import type { ApiClientOptions } from "./client";
 import {
+  ApiRequestError,
   buildApiUrl,
   deleteJson,
-  deleteJsonWithResponse,
   getJson,
   parseJson,
   patchJson,
@@ -321,20 +321,6 @@ export type ProjectRuntimePlacementStatus =
   | "workspace_pending"
   | "contract_mismatch";
 
-export type ProjectRuntimePlacementState = "active" | "released" | "lost";
-
-export type ProjectRuntimePlacement = {
-  id: string;
-  project_id: string;
-  runtime_node_id: string;
-  placement_status: ProjectRuntimePlacementState;
-  placement_reason?: string;
-  assigned_at: string;
-  released_at?: string;
-  created_at: string;
-  updated_at: string;
-};
-
 export type ProjectReadinessReason = {
   code: string;
   message: string;
@@ -370,12 +356,6 @@ export type ProjectRuntimePlacementReadiness = {
   employee_readiness: ProjectEmployeeReadiness[];
   blocking_reasons: ProjectReadinessReason[];
   next_actions: ProjectReadinessAction[];
-};
-
-export type PutProjectRuntimePlacementInput = {
-  runtime_node_id: string;
-  reason?: string;
-  expected_provider_types?: string[];
 };
 
 export type DispatchGateStatus =
@@ -1172,38 +1152,33 @@ export function getProjectConfig(
   );
 }
 
-export function getProjectRuntimePlacement(
+export type ProjectRuntimeNodeBinding = {
+  runtime_node_id: string;
+};
+
+export function addProjectRuntimeNode(
   options: ApiClientOptions,
   projectId: string,
-): Promise<ProjectRuntimePlacement> {
-  return getJson<ProjectRuntimePlacement>(
+  runtimeNodeId: string,
+  input?: { reason?: string },
+): Promise<ProjectRuntimeNodeBinding> {
+  return putJson<ProjectRuntimeNodeBinding>(
     options,
-    projectPath(projectId, "/runtime-placement"),
-    "project runtime placement",
+    projectPath(projectId, `/runtime-nodes/${encodeURIComponent(runtimeNodeId)}`),
+    input ?? {},
+    "project runtime node",
   );
 }
 
-export function putProjectRuntimePlacement(
+export function removeProjectRuntimeNode(
   options: ApiClientOptions,
   projectId: string,
-  input: PutProjectRuntimePlacementInput,
-): Promise<ProjectRuntimePlacement> {
-  return putJson<ProjectRuntimePlacement>(
+  runtimeNodeId: string,
+): Promise<void> {
+  return deleteJson(
     options,
-    projectPath(projectId, "/runtime-placement"),
-    input,
-    "project runtime placement",
-  );
-}
-
-export function releaseProjectRuntimePlacement(
-  options: ApiClientOptions,
-  projectId: string,
-): Promise<ProjectRuntimePlacement> {
-  return deleteJsonWithResponse<ProjectRuntimePlacement>(
-    options,
-    projectPath(projectId, "/runtime-placement"),
-    "project runtime placement",
+    projectPath(projectId, `/runtime-nodes/${encodeURIComponent(runtimeNodeId)}`),
+    "project runtime node",
   );
 }
 
@@ -1575,6 +1550,28 @@ export function listProjectArtifacts(
     projectPath(projectId, `/artifacts${paginationQuery(filters)}`),
     "project artifacts",
   );
+}
+
+/**
+ * 拉取工件文本内容用于预览:经 302 跟随到对象存储 presigned URL。
+ * 跨域腿依赖 bucket CORS 允许 web origin(输出附件 spec §3)。
+ */
+export async function getArtifactContentText(
+  options: ApiClientOptions,
+  artifactRefId: string,
+): Promise<string> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(
+    buildApiUrl(
+      options.baseUrl,
+      `/api/v1/artifacts/${encodeURIComponent(artifactRefId)}/content`,
+    ),
+    { credentials: "include", method: "GET" },
+  );
+  if (!response.ok) {
+    throw new ApiRequestError("artifact content", response.status);
+  }
+  return response.text();
 }
 
 export function listProjectReports(
