@@ -837,11 +837,14 @@ func TestLoadSnapshotAppliesLendingGate(t *testing.T) {
 	for _, member := range snapshot.DigitalEmployeePool {
 		got[member.PrincipalID] = true
 	}
-	if !got[ownEmp] || !got[grantedEmp] || !got[noTeamEmp] {
-		t.Fatalf("own-team, granted-foreign-team and no-team employees must be eligible: %#v", snapshot.DigitalEmployeePool)
+	if !got[ownEmp] || !got[grantedEmp] {
+		t.Fatalf("own-team and granted-foreign-team employees must be eligible: %#v", snapshot.DigitalEmployeePool)
 	}
 	if got[foreignEmp] {
 		t.Fatalf("ungranted foreign-team employee must be gated out: %#v", snapshot.DigitalEmployeePool)
+	}
+	if got[noTeamEmp] {
+		t.Fatalf("teamless employee must be gated out by the participation gate: %#v", snapshot.DigitalEmployeePool)
 	}
 	skipEvents := 0
 	for _, event := range repo.events {
@@ -851,6 +854,13 @@ func TestLoadSnapshotAppliesLendingGate(t *testing.T) {
 	}
 	if skipEvents != 1 {
 		t.Fatalf("expected one lending-skip event, got %d", skipEvents)
+	}
+	teamlessEvents := eventsByType(repo.events, project.ProjectEventTeamlessEmployeeSkipped)
+	if len(teamlessEvents) != 1 {
+		t.Fatalf("expected one teamless-skip event, got %#v", teamlessEvents)
+	}
+	if got := teamlessEvents[0].Payload["digital_employee_id"]; got != noTeamEmp.String() {
+		t.Fatalf("teamless-skip event must name the teamless employee, got %#v", got)
 	}
 }
 
@@ -901,7 +911,12 @@ func TestLoadSnapshotLendingGateFailsOpen(t *testing.T) {
 		},
 	}
 	// A lending lookup error must not strand planning: the gate fails open (no filtering).
-	gate := fakeLendingGatekeeper{grantsErr: errLendingGateProbe}
+	// The employee resolves to a (foreign) team so the teamless participation gate
+	// stays out of the picture and this test isolates the lending-grants error path.
+	gate := fakeLendingGatekeeper{
+		employeeTeams: map[uuid.UUID]uuid.UUID{foreignEmp: uuid.New()},
+		grantsErr:     errLendingGateProbe,
+	}
 	store := NewProjectStore(repo).WithLendingGatekeeper(gate)
 
 	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{TenantID: tenantID, ProjectID: projectID, DemandID: demandID})
@@ -914,6 +929,86 @@ func TestLoadSnapshotLendingGateFailsOpen(t *testing.T) {
 }
 
 var errLendingGateProbe = errors.New("lending gate probe")
+
+func TestLoadSnapshotTeamlessGateFailsOpenOnResolveError(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownTeam := uuid.New()
+	employeeID := uuid.New()
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, TeamID: &ownTeam},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: employeeID, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+		},
+	}
+	gate := fakeLendingGatekeeper{resolveErr: errLendingGateProbe}
+	store := NewProjectStore(repo).WithLendingGatekeeper(gate)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{TenantID: tenantID, ProjectID: projectID, DemandID: demandID})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if len(snapshot.DigitalEmployeePool) != 1 {
+		t.Fatalf("team resolve error should fail open and keep the candidate: %#v", snapshot.DigitalEmployeePool)
+	}
+	if events := eventsByType(repo.events, project.ProjectEventTeamlessEmployeeSkipped); len(events) != 0 {
+		t.Fatalf("fail-open must not record teamless skips: %#v", events)
+	}
+}
+
+// teamAssignmentsMemoryRepository wires the repository-side team resolver used
+// when no lending gatekeeper is configured.
+type teamAssignmentsMemoryRepository struct {
+	*projectStoreMemoryRepository
+	assignments map[uuid.UUID]*uuid.UUID
+}
+
+func (r *teamAssignmentsMemoryRepository) ListDigitalEmployeeTeamAssignments(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]*uuid.UUID, error) {
+	result := make(map[uuid.UUID]*uuid.UUID, len(employeeIDs))
+	for _, id := range employeeIDs {
+		if teamID, ok := r.assignments[id]; ok {
+			result[id] = teamID
+		}
+	}
+	return result, nil
+}
+
+func TestLoadSnapshotTeamlessGateUsesRepositoryResolverWithoutLending(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	teamID := uuid.New()
+	teamedEmp := uuid.New()
+	teamlessEmp := uuid.New()
+
+	base := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: teamedEmp, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: teamlessEmp, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+		},
+	}
+	repo := &teamAssignmentsMemoryRepository{
+		projectStoreMemoryRepository: base,
+		assignments:                  map[uuid.UUID]*uuid.UUID{teamedEmp: &teamID, teamlessEmp: nil},
+	}
+	store := NewProjectStore(repo)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{TenantID: tenantID, ProjectID: projectID, DemandID: demandID})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if len(snapshot.DigitalEmployeePool) != 1 || snapshot.DigitalEmployeePool[0].PrincipalID != teamedEmp {
+		t.Fatalf("teamless employee must be excluded via repository resolver: %#v", snapshot.DigitalEmployeePool)
+	}
+	if events := eventsByType(base.events, project.ProjectEventTeamlessEmployeeSkipped); len(events) != 1 {
+		t.Fatalf("expected one teamless-skip event, got %#v", events)
+	}
+}
 
 func TestProjectStorePersistRouteDecisionAggregatesGraphFields(t *testing.T) {
 	tenantID := uuid.New()

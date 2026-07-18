@@ -230,6 +230,10 @@ const (
 	ProjectEventArchiveSnapshotCreated          ProjectEventType = "project.archive_snapshot.created"
 	ProjectEventArchiveRetentionPending         ProjectEventType = "project.archive.retention_pending"
 	ProjectEventLendingEmployeeSkipped          ProjectEventType = "project.lending.employee_skipped"
+	// ProjectEventTeamlessEmployeeSkipped is appended when a digital employee
+	// project member is excluded from the coordinator's executor pool because
+	// it has no team affiliation (participation gate).
+	ProjectEventTeamlessEmployeeSkipped ProjectEventType = "project.teamless.employee_skipped"
 	ProjectEventTaskUpstreamSupplementRejected  ProjectEventType = "project_task.upstream_supplement_rejected"
 	ProjectEventTaskUpstreamSupplementExhausted ProjectEventType = "project_task.upstream_supplement_exhausted"
 	ProjectEventDemandReplanningReopened        ProjectEventType = "demand.replanning_reopened"
