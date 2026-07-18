@@ -250,6 +250,8 @@ func (s *Service) UpdateTeamConstitution(ctx context.Context, tenantID, teamID u
 type DeleteTeamRequest struct {
 	TenantID uuid.UUID
 	TeamID   uuid.UUID
+	// 删除操作者：团队唯一退出路径是删除，必须落审计（spec 2026-07-18-team-lifecycle-convergence）。
+	ActorUserID uuid.UUID
 }
 
 func (s *Service) DeleteTeam(ctx context.Context, req DeleteTeamRequest) error {
@@ -259,7 +261,7 @@ func (s *Service) DeleteTeam(ctx context.Context, req DeleteTeamRequest) error {
 	if req.TeamID == uuid.Nil {
 		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
 	}
-	if err := s.repository.DeleteTeam(ctx, req.TenantID, req.TeamID); err != nil {
+	if err := s.repository.DeleteTeam(ctx, req.TenantID, req.TeamID, req.ActorUserID); err != nil {
 		return fmt.Errorf("delete team: %w", err)
 	}
 	return nil

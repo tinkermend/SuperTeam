@@ -15,7 +15,7 @@ type Repository interface {
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error)
 	UpdateTeam(ctx context.Context, params UpdateTeamParams) (TeamRecord, error)
 	UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (TeamRecord, error)
-	DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUID) error
+	DeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error
 	ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error)
 	GetTeamMember(ctx context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error)
 	AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error)

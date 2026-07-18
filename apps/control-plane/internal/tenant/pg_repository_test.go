@@ -62,7 +62,7 @@ func TestPgRepositoryDeleteTeamRollsBackWhenSoftDeleteFails(t *testing.T) {
 		db: stubBeginner{tx: tx},
 	}
 
-	err := repo.DeleteTeam(context.Background(), tenantID, teamID)
+	err := repo.DeleteTeam(context.Background(), tenantID, teamID, uuid.New())
 	if !errors.Is(err, deleteErr) {
 		t.Fatalf("expected delete error to surface, got %v", err)
 	}
@@ -123,7 +123,7 @@ func TestPgRepositoryDeleteTeamCleansBindingsBeforeSoftDelete(t *testing.T) {
 		db: stubBeginner{tx: tx},
 	}
 
-	err := repo.DeleteTeam(context.Background(), tenantID, teamID)
+	err := repo.DeleteTeam(context.Background(), tenantID, teamID, uuid.New())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected not found from soft delete no rows, got %v", err)
 	}

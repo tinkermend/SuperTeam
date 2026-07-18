@@ -901,7 +901,7 @@ func (r *memoryRepository) UpdateTeamConstitution(_ context.Context, tenantID, t
 	return record, nil
 }
 
-func (r *memoryRepository) DeleteTeam(_ context.Context, tenantID, teamID uuid.UUID) error {
+func (r *memoryRepository) DeleteTeam(_ context.Context, tenantID, teamID, _ uuid.UUID) error {
 	if _, ok := r.teams[teamID]; !ok {
 		return ErrNotFound
 	}

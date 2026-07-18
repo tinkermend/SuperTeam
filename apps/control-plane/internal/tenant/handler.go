@@ -245,7 +245,11 @@ func (h *HTTPHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := service.DeleteTeam(r.Context(), DeleteTeamRequest{TenantID: tenantID, TeamID: teamID}); err != nil {
+	if err := service.DeleteTeam(r.Context(), DeleteTeamRequest{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		ActorUserID: middleware.GetUserID(r.Context()),
+	}); err != nil {
 		writeHandlerError(w, err)
 		return
 	}

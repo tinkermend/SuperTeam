@@ -336,7 +336,7 @@ func (r *PgRepository) UpdateTeamConstitution(ctx context.Context, tenantID, tea
 	return teamRecordFromQuery(team)
 }
 
-func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUID) error {
+func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error {
 	if r.db == nil {
 		return fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)
 	}
@@ -374,6 +374,23 @@ func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUI
 		TenantID: tenantID,
 	}); err != nil {
 		return mapNoRows(err)
+	}
+	// 团队唯一退出路径是删除：审计与软删同事务，删除必有日志（生命周期收敛 spec §1）。
+	deleteDetails, err := json.Marshal(map[string]any{"team_id": teamID.String()})
+	if err != nil {
+		return fmt.Errorf("marshal team delete audit details: %w", err)
+	}
+	if _, err := qtx.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      actorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       "team.delete",
+		Details:      deleteDetails,
+	}); err != nil {
+		return fmt.Errorf("record team delete audit: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
