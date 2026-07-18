@@ -2859,6 +2859,8 @@ type TenantTeam struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	HumanOwnerUserIds []uuid.UUID        `json:"human_owner_user_ids"`
 	Constitution      []byte             `json:"constitution"`
+	// 删除发起人(pending_delete 期间有值;恢复时清空)
+	DeleteRequestedBy uuid.NullUUID `json:"delete_requested_by"`
 }
 
 // 团队高权限角色变更申请表

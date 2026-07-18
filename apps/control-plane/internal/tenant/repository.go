@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -16,6 +17,11 @@ type Repository interface {
 	UpdateTeam(ctx context.Context, params UpdateTeamParams) (TeamRecord, error)
 	UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (TeamRecord, error)
 	DeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error
+	// P2 审核确认制:待确认队列/恢复/确认物理删除(spec 2026-07-18-team-lifecycle-convergence §2)。
+	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error)
+	ListStalePendingDeleteTeams(ctx context.Context, staleBefore time.Time) ([]PendingDeleteTeamRecord, error)
+	RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (TeamRecord, error)
+	ConfirmTeamDelete(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (TeamRecord, error)
 	ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error)
 	GetTeamMember(ctx context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error)
 	AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error)
@@ -124,6 +130,13 @@ type DecideTeamMemberRoleRequestParams struct {
 }
 
 type TeamRecord = Team
+
+// PendingDeleteTeamRecord 待确认删除队列条目:附带删除时间(滞留时长)与发起人。
+type PendingDeleteTeamRecord struct {
+	Team
+	DeletedAt         time.Time
+	DeleteRequestedBy *uuid.UUID
+}
 
 type TeamListItemRecord = TeamListItem
 

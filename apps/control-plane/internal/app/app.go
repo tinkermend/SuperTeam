@@ -852,6 +852,10 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 		// 调度韧性:预确认态 run 的超时看门狗(残债交接 §1 第 2 层)。
 		go container.EmployeeRun.StartStaleRunWatchdog(ctx, time.Minute)
 	}
+	if container.TenantService != nil && container.InboxService != nil {
+		// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒)。
+		go startTeamPendingDeleteReminder(ctx, container.TenantService, container.InboxService)
+	}
 	stopWatching := make(chan struct{})
 	go func() {
 		select {

@@ -205,7 +205,7 @@ VALUES (
     $5::uuid[],
     COALESCE($6::jsonb, '{}'::jsonb)
 )
-RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, delete_requested_by
 `
 
 type CreateTenantTeamParams struct {
@@ -241,6 +241,7 @@ func (q *Queries) CreateTenantTeam(ctx context.Context, arg CreateTenantTeamPara
 		&i.UpdatedAt,
 		&i.HumanOwnerUserIds,
 		&i.Constitution,
+		&i.DeleteRequestedBy,
 	)
 	return i, err
 }
@@ -494,7 +495,7 @@ func (q *Queries) GetTeamMemberRoleRequest(ctx context.Context, arg GetTeamMembe
 }
 
 const GetTenantTeam = `-- name: GetTenantTeam :one
-SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution
+SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, delete_requested_by
 FROM tenant_teams
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -523,6 +524,7 @@ func (q *Queries) GetTenantTeam(ctx context.Context, arg GetTenantTeamParams) (T
 		&i.UpdatedAt,
 		&i.HumanOwnerUserIds,
 		&i.Constitution,
+		&i.DeleteRequestedBy,
 	)
 	return i, err
 }
@@ -546,7 +548,7 @@ employee_counts AS (
   GROUP BY tenant_id, team_id
 )
 SELECT
-  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids, tt.constitution,
+  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids, tt.constitution, tt.delete_requested_by,
   COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
@@ -600,6 +602,7 @@ type GetTenantTeamSummaryRow struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	HumanOwnerUserIds    []uuid.UUID        `json:"human_owner_user_ids"`
 	Constitution         []byte             `json:"constitution"`
+	DeleteRequestedBy    uuid.NullUUID      `json:"delete_requested_by"`
 	HumanOwners          []byte             `json:"human_owners"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
@@ -626,6 +629,7 @@ func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSum
 		&i.UpdatedAt,
 		&i.HumanOwnerUserIds,
 		&i.Constitution,
+		&i.DeleteRequestedBy,
 		&i.HumanOwners,
 		&i.MemberCount,
 		&i.DigitalEmployeeCount,
@@ -818,7 +822,7 @@ employee_counts AS (
   GROUP BY tenant_id, team_id
 )
 SELECT
-  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids, tt.constitution,
+  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids, tt.constitution, tt.delete_requested_by,
   COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
@@ -901,6 +905,7 @@ type ListTenantTeamSummariesRow struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	HumanOwnerUserIds    []uuid.UUID        `json:"human_owner_user_ids"`
 	Constitution         []byte             `json:"constitution"`
+	DeleteRequestedBy    uuid.NullUUID      `json:"delete_requested_by"`
 	HumanOwners          []byte             `json:"human_owners"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
@@ -940,6 +945,7 @@ func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTea
 			&i.UpdatedAt,
 			&i.HumanOwnerUserIds,
 			&i.Constitution,
+			&i.DeleteRequestedBy,
 			&i.HumanOwners,
 			&i.MemberCount,
 			&i.DigitalEmployeeCount,
@@ -959,7 +965,7 @@ func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTea
 }
 
 const ListTenantTeams = `-- name: ListTenantTeams :many
-SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution
+SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, delete_requested_by
 FROM tenant_teams
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
@@ -1004,6 +1010,7 @@ func (q *Queries) ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams
 			&i.UpdatedAt,
 			&i.HumanOwnerUserIds,
 			&i.Constitution,
+			&i.DeleteRequestedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -1026,7 +1033,7 @@ SET
 WHERE id = $5::uuid
   AND tenant_id = $6::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, delete_requested_by
 `
 
 type UpdateTenantTeamParams struct {
@@ -1062,6 +1069,7 @@ func (q *Queries) UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamPara
 		&i.UpdatedAt,
 		&i.HumanOwnerUserIds,
 		&i.Constitution,
+		&i.DeleteRequestedBy,
 	)
 	return i, err
 }
@@ -1074,7 +1082,7 @@ SET
 WHERE id = $2::uuid
   AND tenant_id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, delete_requested_by
 `
 
 type UpdateTenantTeamConstitutionParams struct {
@@ -1100,6 +1108,7 @@ func (q *Queries) UpdateTenantTeamConstitution(ctx context.Context, arg UpdateTe
 		&i.UpdatedAt,
 		&i.HumanOwnerUserIds,
 		&i.Constitution,
+		&i.DeleteRequestedBy,
 	)
 	return i, err
 }

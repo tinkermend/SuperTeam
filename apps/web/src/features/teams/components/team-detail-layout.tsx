@@ -81,7 +81,7 @@ export function TeamDetailLayout({
                 <AlertDialogHeader>
                   <AlertDialogTitle>确认删除团队</AlertDialogTitle>
                   <AlertDialogDescription>
-                    删除后，所有绑定的数字员工将失去团队归属，团队的技能绑定与能力（MCP）绑定将一并解除，操作不可逆。
+                    删除后，所有绑定的数字员工将失去团队归属（进入候岗大厅），技能与能力（MCP）绑定一并解除；团队进入"待确认删除"状态，管理员可在团队管理页恢复，或确认后彻底删除。
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

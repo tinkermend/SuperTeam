@@ -909,6 +909,33 @@ func (r *memoryRepository) DeleteTeam(_ context.Context, tenantID, teamID, _ uui
 	return nil
 }
 
+func (r *memoryRepository) ListPendingDeleteTeams(_ context.Context, _ uuid.UUID) ([]PendingDeleteTeamRecord, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) ListStalePendingDeleteTeams(_ context.Context, _ time.Time) ([]PendingDeleteTeamRecord, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) RestorePendingDeleteTeam(_ context.Context, tenantID, teamID, _ uuid.UUID) (TeamRecord, error) {
+	record, ok := r.teams[teamID]
+	if !ok || record.TenantID != tenantID {
+		return TeamRecord{}, ErrNotFound
+	}
+	record.Status = TeamStatusActive
+	r.teams[teamID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) ConfirmTeamDelete(_ context.Context, tenantID, teamID, _ uuid.UUID) (TeamRecord, error) {
+	record, ok := r.teams[teamID]
+	if !ok || record.TenantID != tenantID {
+		return TeamRecord{}, ErrNotFound
+	}
+	delete(r.teams, teamID)
+	return record, nil
+}
+
 func (r *memoryRepository) ListTeamMembers(_ context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error) {
 	records := make([]TeamMemberRecord, 0, len(r.teamMembers))
 	for _, record := range r.teamMembers {

@@ -35,6 +35,9 @@ type Querier interface {
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
 	CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
+	// 兜底:软删时 UnbindTeamDigitalEmployees 已清存活员工;这里连已删员工的历史引用一并清。
+	ClearDigitalEmployeesTeamRef(ctx context.Context, arg ClearDigitalEmployeesTeamRefParams) error
+	ClearProjectsTeamRef(ctx context.Context, arg ClearProjectsTeamRefParams) error
 	CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	ConsumeCaptchaChallenge(ctx context.Context, arg ConsumeCaptchaChallengeParams) (int64, error)
 	CountActiveArtifactRetentionHolds(ctx context.Context, arg CountActiveArtifactRetentionHoldsParams) (int32, error)
@@ -328,6 +331,16 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
 	GetUserCredential(ctx context.Context, arg GetUserCredentialParams) (UserCredential, error)
+	// 仅允许物理删除待确认态团队;P1 前的遗留软删终态(status=active)不可经此路径删除。
+	HardDeleteTeam(ctx context.Context, arg HardDeleteTeamParams) (TenantTeam, error)
+	HardDeleteTeamLendingPolicies(ctx context.Context, arg HardDeleteTeamLendingPoliciesParams) error
+	HardDeleteTeamLendingRequests(ctx context.Context, arg HardDeleteTeamLendingRequestsParams) error
+	HardDeleteTeamMCPBindings(ctx context.Context, arg HardDeleteTeamMCPBindingsParams) error
+	HardDeleteTeamMCPServers(ctx context.Context, arg HardDeleteTeamMCPServersParams) error
+	HardDeleteTeamMemberRoleRequests(ctx context.Context, arg HardDeleteTeamMemberRoleRequestsParams) error
+	HardDeleteTeamMembers(ctx context.Context, arg HardDeleteTeamMembersParams) error
+	HardDeleteTeamRuntimeNodeScopes(ctx context.Context, teamID uuid.UUID) error
+	HardDeleteTeamUserProjectTeamScopes(ctx context.Context, teamID uuid.UUID) error
 	IncrementPromptTemplateUseCount(ctx context.Context, arg IncrementPromptTemplateUseCountParams) error
 	InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error)
 	InsertSkillMCPDependency(ctx context.Context, arg InsertSkillMCPDependencyParams) error
@@ -404,6 +417,7 @@ type Querier interface {
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOpenFGAMembers(ctx context.Context) ([]ListOpenFGAMembersRow, error)
 	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]ListOpenFGAProjectTeamScopesRow, error)
+	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error)
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	ListProjectArchiveSnapshots(ctx context.Context, arg ListProjectArchiveSnapshotsParams) ([]ProjectArchiveSnapshot, error)
@@ -464,6 +478,8 @@ type Querier interface {
 	ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error)
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
+	// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
+	ListStalePendingDeleteTeams(ctx context.Context, staleBefore pgtype.Timestamptz) ([]TenantTeam, error)
 	// 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
 	// run。running/cancelling 是真实活跃态,不在清扫范围。
 	ListStalePreConfirmationDigitalEmployeeRuns(ctx context.Context, arg ListStalePreConfirmationDigitalEmployeeRunsParams) ([]TaskRun, error)
@@ -516,6 +532,7 @@ type Querier interface {
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
 	ResolveApprovalRequest(ctx context.Context, arg ResolveApprovalRequestParams) (ApprovalRequest, error)
 	ResolveProjectDecisionRequest(ctx context.Context, arg ResolveProjectDecisionRequestParams) (ProjectDecisionRequest, error)
+	RestorePendingDeleteTeam(ctx context.Context, arg RestorePendingDeleteTeamParams) (TenantTeam, error)
 	RestoreProjectTaskAfterDispatchStartFailure(ctx context.Context, arg RestoreProjectTaskAfterDispatchStartFailureParams) (ProjectTask, error)
 	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
@@ -541,6 +558,7 @@ type Querier interface {
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
 	SoftDeleteProjectMCPBindingsForProject(ctx context.Context, arg SoftDeleteProjectMCPBindingsForProjectParams) error
+	// 删除进入待确认态:全站不可见(deleted_at),管理员恢复或确认后才物理删除。
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
 	SoftDeleteTeamMCPBindings(ctx context.Context, arg SoftDeleteTeamMCPBindingsParams) error
 	// digital_employee_run_id 回填:dispatch 冲突路径可能留下 NULL 的 run 关联

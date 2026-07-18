@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus, UsersRound } from "lucide-react";
 import { Main } from "@/components/layout/main";
@@ -11,11 +11,30 @@ import {
   V3Button,
   V3ErrorState,
   V3LoadingState,
+  V3Table,
+  V3Td,
+  V3Th,
+  V3Tr,
+  WorkSurface,
 } from "@/components/superteam";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  confirmTeamDelete,
   deleteTeam,
   getTeamOverview,
+  listPendingDeleteTeams,
   listTeamSummaries,
+  restorePendingDeleteTeam,
 } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { CreateTeamView } from "./components/create-team-page";
@@ -117,9 +136,100 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
             isLoading={teams.isLoading}
             teams={teams.data ?? []}
           />
+          <PendingDeleteTeamsSection apiBaseUrl={apiBaseUrl} fetcher={fetcher} />
         </div>
       </Main>
     </>
+  );
+}
+
+// 待确认删除队列(生命周期收敛 P2):删除后的团队滞留于此,管理员恢复或确认物理删除;
+// 永不因超时自动删除,滞留超 7 天会收到收件箱催办。
+function PendingDeleteTeamsSection({ apiBaseUrl, fetcher }: TeamsViewProps) {
+  const apiOptions = { baseUrl: apiBaseUrl, fetcher };
+  const queryClient = useQueryClient();
+  const pending = useQuery({
+    queryKey: ["pending-delete-teams"],
+    queryFn: () => listPendingDeleteTeams(apiOptions),
+  });
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ["pending-delete-teams"] });
+    void queryClient.invalidateQueries({ queryKey: ["team-summaries"] });
+  };
+  const restoreMutation = useMutation({
+    mutationFn: (teamId: string) => restorePendingDeleteTeam(apiOptions, teamId),
+    onSuccess: invalidate,
+  });
+  const confirmMutation = useMutation({
+    mutationFn: (teamId: string) => confirmTeamDelete(apiOptions, teamId),
+    onSuccess: invalidate,
+  });
+  // 防御非数组响应(网关错误页等):队列语义是"有才显示",异常一律隐藏不阻塞主列表。
+  const items = Array.isArray(pending.data) ? pending.data : [];
+  if (pending.isLoading || pending.isError || items.length === 0) return null;
+  return (
+    <WorkSurface data-pending-delete-teams>
+      <div className="flex items-center justify-between gap-3 px-4 pt-4">
+        <h2 className="text-sm font-semibold text-v3-ink">待确认删除</h2>
+        <span className="text-xs text-v3-ink-3">恢复或确认后生效；未确认前不会物理删除</span>
+      </div>
+      <V3Table aria-label="待确认删除团队">
+        <thead>
+          <tr>
+            <V3Th>团队</V3Th>
+            <V3Th>删除时间</V3Th>
+            <V3Th>滞留</V3Th>
+            <V3Th aria-label="操作" />
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((team) => {
+            const stalledDays = Math.max(0, Math.floor((Date.now() - new Date(team.deleted_at).getTime()) / 86_400_000));
+            return (
+              <V3Tr key={team.id}>
+                <V3Td>
+                  <span className="font-medium text-v3-ink">{team.name}</span>
+                  <span className="ml-2 text-xs text-v3-ink-3">{team.slug}</span>
+                </V3Td>
+                <V3Td className="tabular-nums">{new Date(team.deleted_at).toLocaleString("zh-CN", { hour12: false })}</V3Td>
+                <V3Td className="tabular-nums">{stalledDays} 天</V3Td>
+                <V3Td>
+                  <div className="flex justify-end gap-2">
+                    <V3Button
+                      size="sm"
+                      variant="outline"
+                      disabled={restoreMutation.isPending}
+                      onClick={() => restoreMutation.mutate(team.id)}
+                    >
+                      恢复
+                    </V3Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <V3Button size="sm" variant="danger" disabled={confirmMutation.isPending}>
+                          确认删除
+                        </V3Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>确认物理删除团队</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            将彻底删除「{team.name}」及其成员关系、技能与能力绑定等归属数据，操作不可逆；删除记录会保留在审计日志中。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => confirmMutation.mutate(team.id)}>彻底删除</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </V3Td>
+              </V3Tr>
+            );
+          })}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
   );
 }
 

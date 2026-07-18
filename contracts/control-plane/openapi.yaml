@@ -2492,6 +2492,56 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/pending-deletes:
+    get:
+      operationId: listPendingDeleteTeams
+      summary: List teams awaiting delete confirmation
+      description: >-
+        待确认删除队列(生命周期收敛 P2):删除后的团队进入 pending_delete(全站不可见),
+        管理员在此恢复或确认物理删除;永不因超时自动删除。
+      responses:
+        "200":
+          description: Pending delete teams ordered by oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingDeleteTeam"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/restore:
+    post:
+      operationId: restorePendingDeleteTeam
+      summary: Restore a team from pending delete back to active
+      description: 恢复待确认删除的团队;原成员的数字员工归属不回填(已入候岗,由人工重新编排)。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/confirm-delete:
+    post:
+      operationId: confirmTeamDelete
+      summary: Confirm and physically delete a pending-delete team
+      description: 确认物理删除:级联清理归属数据并删除团队行,审计带团队快照;仅允许待确认态团队。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "204":
+          description: Team physically deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/digital-employees:
     post:
       operationId: bindTeamDigitalEmployee
@@ -9277,6 +9327,20 @@ components:
       type: string
       enum:
         - active
+        - pending_delete
+    PendingDeleteTeam:
+      allOf:
+        - $ref: "#/components/schemas/Team"
+        - type: object
+          required:
+            - deleted_at
+          properties:
+            deleted_at:
+              type: string
+              format: date-time
+            delete_requested_by:
+              type: string
+              format: uuid
     AuditEvent:
       type: object
       required:
