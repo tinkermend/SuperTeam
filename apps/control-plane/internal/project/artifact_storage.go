@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/superteam/control-plane/internal/systemconfig"
 )
 
 // 证据地基(spec 2026-07-09 §3-4):对象字节走 runtime ↔ 对象存储数据面,
@@ -22,18 +24,44 @@ type ArtifactObjectStore interface {
 }
 
 const (
-	// ArtifactMaxFileSizeBytes 单文件上限,与 runtime 采集侧限额一致(spec §4.1)。
-	ArtifactMaxFileSizeBytes = int64(10 * 1024 * 1024)
 	// rawLogMaxPartSizeBytes raw 分段按 8MiB 轮转,留少量余量。
 	rawLogMaxPartSizeBytes = int64(9 * 1024 * 1024)
 
-	artifactPresignTTL       = 15 * time.Minute
-	artifactContentGetTTL    = 5 * time.Minute
 	artifactObjectKeyPrefix  = "artifacts/"
 	rawLogObjectKeyPrefix    = "runs/"
 	rawLogPresignObjectPart  = "part"
 	rawLogPresignObjectindex = "manifest"
 )
+
+// ArtifactMaxFileSizeBytes 单文件上限默认值,单一定义在 systemconfig 注册表;
+// 生效值可被系统配置中心覆盖(P1 只允许调低,与 runtime 采集侧硬限额对齐)。
+var ArtifactMaxFileSizeBytes = systemconfig.DefaultFor(systemconfig.KeyArtifactMaxFileSizeBytes)
+
+// SetSystemConfigReader 注入配置中心读取器;未注入(测试)时使用注册表默认值。
+func (s *Service) SetSystemConfigReader(reader systemconfig.Reader) {
+	s.systemConfig = reader
+}
+
+func (s *Service) artifactMaxFileSizeBytes(ctx context.Context, tenantID uuid.UUID) int64 {
+	if s.systemConfig == nil {
+		return systemconfig.DefaultFor(systemconfig.KeyArtifactMaxFileSizeBytes)
+	}
+	return s.systemConfig.Int64(ctx, tenantID, systemconfig.KeyArtifactMaxFileSizeBytes)
+}
+
+func (s *Service) artifactPresignUploadTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {
+	if s.systemConfig == nil {
+		return systemconfig.DefaultDurationFor(systemconfig.KeyArtifactPresignUploadTTL)
+	}
+	return s.systemConfig.Duration(ctx, tenantID, systemconfig.KeyArtifactPresignUploadTTL)
+}
+
+func (s *Service) artifactContentGetTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {
+	if s.systemConfig == nil {
+		return systemconfig.DefaultDurationFor(systemconfig.KeyArtifactContentGetTTL)
+	}
+	return s.systemConfig.Duration(ctx, tenantID, systemconfig.KeyArtifactContentGetTTL)
+}
 
 var sha256HexPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -70,8 +98,9 @@ func (s *Service) PresignRuntimeArtifactUpload(ctx context.Context, req PresignR
 	if !sha256HexPattern.MatchString(sha) {
 		return PresignRuntimeArtifactResult{}, fmt.Errorf("%w: sha256 must be 64 lowercase hex chars", ErrInvalidProject)
 	}
-	if req.SizeBytes <= 0 || req.SizeBytes > ArtifactMaxFileSizeBytes {
-		return PresignRuntimeArtifactResult{}, fmt.Errorf("%w: size_bytes must be within (0, %d]", ErrInvalidProject, ArtifactMaxFileSizeBytes)
+	maxFileSizeBytes := s.artifactMaxFileSizeBytes(ctx, req.TenantID)
+	if req.SizeBytes <= 0 || req.SizeBytes > maxFileSizeBytes {
+		return PresignRuntimeArtifactResult{}, fmt.Errorf("%w: size_bytes must be within (0, %d]", ErrInvalidProject, maxFileSizeBytes)
 	}
 
 	key := fmt.Sprintf("%s%s/sha256/%s", artifactObjectKeyPrefix, req.TenantID, sha)
@@ -83,14 +112,15 @@ func (s *Service) PresignRuntimeArtifactUpload(ctx context.Context, req PresignR
 		return PresignRuntimeArtifactResult{ObjectKey: key, AlreadyExists: true}, nil
 	}
 
-	url, err := s.artifactObjectStore.PresignPut(ctx, key, strings.TrimSpace(req.ContentType), artifactPresignTTL)
+	presignTTL := s.artifactPresignUploadTTL(ctx, req.TenantID)
+	url, err := s.artifactObjectStore.PresignPut(ctx, key, strings.TrimSpace(req.ContentType), presignTTL)
 	if err != nil {
 		return PresignRuntimeArtifactResult{}, fmt.Errorf("presign artifact put: %w", err)
 	}
 	return PresignRuntimeArtifactResult{
 		ObjectKey: key,
 		UploadURL: url,
-		ExpiresAt: time.Now().Add(artifactPresignTTL),
+		ExpiresAt: time.Now().Add(presignTTL),
 	}, nil
 }
 
@@ -145,14 +175,15 @@ func (s *Service) PresignRuntimeRawLogUpload(ctx context.Context, req PresignRun
 		return PresignRuntimeRawLogResult{}, fmt.Errorf("%w: object must be part or manifest", ErrInvalidProject)
 	}
 
-	url, err := s.artifactObjectStore.PresignPut(ctx, key, contentType, artifactPresignTTL)
+	presignTTL := s.artifactPresignUploadTTL(ctx, req.TenantID)
+	url, err := s.artifactObjectStore.PresignPut(ctx, key, contentType, presignTTL)
 	if err != nil {
 		return PresignRuntimeRawLogResult{}, fmt.Errorf("presign raw log put: %w", err)
 	}
 	return PresignRuntimeRawLogResult{
 		ObjectKey: key,
 		UploadURL: url,
-		ExpiresAt: time.Now().Add(artifactPresignTTL),
+		ExpiresAt: time.Now().Add(presignTTL),
 	}, nil
 }
 
@@ -174,7 +205,7 @@ func (s *Service) PresignArtifactContent(ctx context.Context, ref ProjectArtifac
 	if !strings.HasPrefix(ref.ObjectRef, expectedPrefix) {
 		return "", fmt.Errorf("%w: artifact content is not retrievable (external or legacy object_ref)", ErrInvalidProjectEvidence)
 	}
-	url, err := s.artifactObjectStore.PresignGet(ctx, ref.ObjectRef, artifactContentGetTTL)
+	url, err := s.artifactObjectStore.PresignGet(ctx, ref.ObjectRef, s.artifactContentGetTTL(ctx, ref.TenantID))
 	if err != nil {
 		return "", fmt.Errorf("presign artifact get: %w", err)
 	}

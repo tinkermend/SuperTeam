@@ -22,6 +22,7 @@ import (
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
+	"github.com/superteam/control-plane/internal/systemconfig"
 	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
 )
@@ -45,6 +46,7 @@ type Server struct {
 	promptTemplateHandler          *prompttemplate.HTTPHandler
 	scenarioTemplateHandler        *scenariotemplate.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
+	systemConfigHandler            *systemconfig.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
 	teamLendingHandler             *teamlending.HTTPHandler
 	serviceAuthService             middleware.ServiceAuthService
@@ -198,6 +200,14 @@ func (s *Server) SetCapabilityHandler(capabilityHandler *capability.HTTPHandler)
 	s.capabilityHandler = capabilityHandler
 	if capabilityHandler != nil {
 		capabilityHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetSystemConfigHandler(systemConfigHandler *systemconfig.HTTPHandler) {
+	s.systemConfigHandler = systemConfigHandler
+	if systemConfigHandler != nil {
+		systemConfigHandler.SetAuthorizer(s.authorizer)
 	}
 	s.registerRoutes()
 }
@@ -517,6 +527,16 @@ func (s *Server) registerRoutes() {
 				r.Put("/projects/{projectId}/mcp-bindings", s.capabilityHandler.PutProjectMCPBindings)
 				r.Get("/digital-employees/{employeeId}/effective-mcp-config", s.capabilityHandler.ListEffectiveMCPConfig)
 				r.Get("/digital-employees/{employeeId}/skill-mcp-dependency-status", s.capabilityHandler.ListEmployeeSkillMCPDependencyStatus)
+			})
+		}
+
+		if s.systemConfigHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				// 系统配置中心(迁移 085):注册表投影 + 覆盖值管理。
+				r.Get("/system-configs", s.systemConfigHandler.ListSystemConfigs)
+				r.Put("/system-configs/{configKey}", s.systemConfigHandler.UpdateSystemConfig)
+				r.Delete("/system-configs/{configKey}", s.systemConfigHandler.ResetSystemConfig)
 			})
 		}
 

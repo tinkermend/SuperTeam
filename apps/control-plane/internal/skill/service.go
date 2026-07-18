@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/storage"
+	"github.com/superteam/control-plane/internal/systemconfig"
 	"gopkg.in/yaml.v3"
 )
 
@@ -49,12 +50,25 @@ type ObjectStore interface {
 }
 
 type Service struct {
-	repository  Repository
-	objectStore ObjectStore
+	repository   Repository
+	objectStore  ObjectStore
+	systemConfig systemconfig.Reader
 }
 
 func NewService(repository Repository, objectStore ObjectStore) *Service {
 	return &Service{repository: repository, objectStore: objectStore}
+}
+
+// SetSystemConfigReader 注入配置中心读取器;未注入(测试)时使用注册表默认值。
+func (s *Service) SetSystemConfigReader(reader systemconfig.Reader) {
+	s.systemConfig = reader
+}
+
+func (s *Service) archivePresignTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {
+	if s.systemConfig == nil {
+		return systemconfig.DefaultDurationFor(systemconfig.KeySkillArchivePresignTTL)
+	}
+	return s.systemConfig.Duration(ctx, tenantID, systemconfig.KeySkillArchivePresignTTL)
 }
 
 // InstallSkill loads a skill onto a team or an employee as a pure logical
@@ -275,7 +289,6 @@ func (s *Service) DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 	return nil
 }
 
-const archiveDownloadPresignTTL = 15 * time.Minute
 
 // PresignArchiveDownload 为 runtime 即将物化的 skill 归档签发短时 GET URL。
 // key 必须落在调用方租户的 skills/ 前缀内——这是跨租户读取的唯一闸门;
@@ -299,11 +312,12 @@ func (s *Service) PresignArchiveDownload(ctx context.Context, tenantID uuid.UUID
 	if !strings.HasPrefix(key, expectedPrefix) {
 		return "", time.Time{}, fmt.Errorf("%w: archive_object_ref is outside the tenant's skills prefix", ErrInvalidInput)
 	}
-	url, err := s.objectStore.PresignGet(ctx, key, archiveDownloadPresignTTL)
+	presignTTL := s.archivePresignTTL(ctx, tenantID)
+	url, err := s.objectStore.PresignGet(ctx, key, presignTTL)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("presign skill archive get: %w", err)
 	}
-	return url, time.Now().Add(archiveDownloadPresignTTL), nil
+	return url, time.Now().Add(presignTTL), nil
 }
 
 func extractObjectKeyFromURI(uri string) string {

@@ -4351,6 +4351,70 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/system-configs:
+    get:
+      operationId: listSystemConfigs
+      summary: List system config registry projection (definitions + effective values)
+      responses:
+        "200":
+          description: System config list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfigListResponse"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/system-configs/{configKey}:
+    put:
+      operationId: updateSystemConfig
+      summary: Set a system config override (validated against server-side registry bounds)
+      parameters:
+        - name: configKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSystemConfigRequest"
+      responses:
+        "200":
+          description: System config updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfigItem"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: resetSystemConfig
+      summary: Reset a system config to its registry default (delete the override)
+      parameters:
+        - name: configKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: System config reset to default
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfigItem"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   parameters:
     Limit:
@@ -4529,6 +4593,68 @@ components:
           schema:
             type: string
   schemas:
+    SystemConfigItem:
+      type: object
+      required:
+        - key
+        - domain
+        - label
+        - description
+        - value_type
+        - default_value
+        - effective_value
+        - is_overridden
+        - min_value
+        - max_value
+      properties:
+        key:
+          type: string
+        domain:
+          type: string
+          description: Registry domain tag; the console groups tabs by this value.
+        label:
+          type: string
+        description:
+          type: string
+        value_type:
+          type: string
+          description: bytes | duration_seconds (registry-validated, not a closed enum)
+        default_value:
+          type: integer
+          format: int64
+        effective_value:
+          type: integer
+          format: int64
+        is_overridden:
+          type: boolean
+        min_value:
+          type: integer
+          format: int64
+        max_value:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+        updated_by_name:
+          type: string
+    SystemConfigListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemConfigItem"
+    UpdateSystemConfigRequest:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: integer
+          format: int64
     ConnectorProjectListResponse:
       type: object
       required:

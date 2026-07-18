@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/systemconfig"
 )
 
 type Service struct {
@@ -28,6 +29,7 @@ type Service struct {
 	planningProfiles          DigitalEmployeePlanningProfileSource
 	scenarioTemplates         ScenarioTemplateResolver
 	artifactObjectStore       ArtifactObjectStore
+	systemConfig              systemconfig.Reader
 }
 
 // ScenarioTemplateResolver is the narrow view of the scenario template

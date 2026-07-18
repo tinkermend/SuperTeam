@@ -137,7 +137,9 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 	case ActionMCPRegistryRead,
 		ActionMCPRegistryManage,
 		ActionScenarioTemplateRead,
-		ActionScenarioTemplateManage:
+		ActionScenarioTemplateManage,
+		ActionSystemConfigRead,
+		ActionSystemConfigManage:
 		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
 			decision = deny(ReasonInvalidResource)
 			break

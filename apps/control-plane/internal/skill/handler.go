@@ -14,9 +14,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/systemconfig"
 )
 
-const maxUploadBytes = 50 << 20
+// 技能包上传上限默认值在 systemconfig 注册表,可被系统配置中心覆盖。
 
 type HandlerService interface {
 	ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error)
@@ -33,8 +34,21 @@ type HandlerService interface {
 }
 
 type HTTPHandler struct {
-	service    HandlerService
-	authorizer authz.Authorizer
+	service      HandlerService
+	authorizer   authz.Authorizer
+	systemConfig systemconfig.Reader
+}
+
+// SetSystemConfigReader 注入配置中心读取器;未注入(测试)时使用注册表默认值。
+func (h *HTTPHandler) SetSystemConfigReader(reader systemconfig.Reader) {
+	h.systemConfig = reader
+}
+
+func (h *HTTPHandler) uploadMaxBytes(r *http.Request, tenantID uuid.UUID) int64 {
+	if h.systemConfig == nil {
+		return systemconfig.DefaultFor(systemconfig.KeySkillUploadMaxBytes)
+	}
+	return h.systemConfig.Int64(r.Context(), tenantID, systemconfig.KeySkillUploadMaxBytes)
 }
 
 func NewHandler(service HandlerService) *HTTPHandler {
@@ -95,6 +109,7 @@ func (h *HTTPHandler) UploadSkill(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	maxUploadBytes := h.uploadMaxBytes(r, tenantID)
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -110,8 +125,8 @@ func (h *HTTPHandler) UploadSkill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot read uploaded file", http.StatusBadRequest)
 		return
 	}
-	if len(archive) > maxUploadBytes {
-		http.Error(w, "uploaded skill zip exceeds 50MB", http.StatusBadRequest)
+	if int64(len(archive)) > maxUploadBytes {
+		http.Error(w, fmt.Sprintf("uploaded skill zip exceeds %d bytes", maxUploadBytes), http.StatusBadRequest)
 		return
 	}
 	runtimeDependencies, err := parseRuntimeDependenciesForm(r)

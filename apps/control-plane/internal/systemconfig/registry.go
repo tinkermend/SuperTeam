@@ -1,0 +1,155 @@
+package systemconfig
+
+import (
+	"fmt"
+	"time"
+)
+
+// 领域标签:前端按此分 tab,新增 domain 前端零改动(未知 domain 落"其他")。
+const (
+	DomainArtifact  = "artifact"
+	DomainExecution = "execution"
+	DomainSecurity  = "security"
+)
+
+// 各配置项 key。使用点经 Reader 取值时引用这些常量。
+const (
+	KeyArtifactMaxFileSizeBytes      = "artifact.max_file_size_bytes"
+	KeyArtifactPresignUploadTTL      = "artifact.presign_upload_ttl_seconds"
+	KeyArtifactContentGetTTL         = "artifact.content_get_ttl_seconds"
+	KeySkillUploadMaxBytes           = "skill.upload_max_bytes"
+	KeySkillArchivePresignTTL        = "skill.archive_presign_ttl_seconds"
+	KeyRuntimeSessionTTLSeconds      = "runtime.session_ttl_seconds"
+	KeyAuthSessionTTLSeconds         = "auth.session_ttl_seconds"
+)
+
+// registry 是配置项注册表:非封闭枚举,新增配置项 = 此处加一条 + 使用点接入,
+// 无迁移、无契约变更(列表接口按注册表动态返回)。默认值是原使用点常量的单一定义处。
+var registry = []Definition{
+	{
+		Key:    KeyArtifactMaxFileSizeBytes,
+		Domain: DomainArtifact,
+		Label:  "单个工件大小上限",
+		Description: "runtime 回传单个工件(含报告文件)的最大字节数,超限的 presign 请求被拒绝。" +
+			"P1 上限锁定 10MiB:runtime 采集侧为独立硬编码限额,配置下发通道(P2)落地前只允许调低,防止调高后 runtime 静默丢文件。",
+		ValueType:    ValueTypeBytes,
+		DefaultValue: 10 * 1024 * 1024,
+		MinValue:     1 * 1024 * 1024,
+		MaxValue:     10 * 1024 * 1024,
+	},
+	{
+		Key:          KeyArtifactPresignUploadTTL,
+		Domain:       DomainArtifact,
+		Label:        "工件上传链接有效期",
+		Description:  "为 runtime 签发的工件直传 URL 的有效秒数。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 15 * 60,
+		MinValue:     60,
+		MaxValue:     3600,
+	},
+	{
+		Key:          KeyArtifactContentGetTTL,
+		Domain:       DomainArtifact,
+		Label:        "工件下载链接有效期",
+		Description:  "控制台取回工件内容的 presign GET URL 的有效秒数。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 5 * 60,
+		MinValue:     60,
+		MaxValue:     3600,
+	},
+	{
+		Key:          KeySkillUploadMaxBytes,
+		Domain:       DomainArtifact,
+		Label:        "技能包上传大小上限",
+		Description:  "技能包 zip 上传的最大字节数。上限 200MiB 与 runtime 解包限额对齐。",
+		ValueType:    ValueTypeBytes,
+		DefaultValue: 50 * 1024 * 1024,
+		MinValue:     1 * 1024 * 1024,
+		MaxValue:     200 * 1024 * 1024,
+	},
+	{
+		Key:          KeySkillArchivePresignTTL,
+		Domain:       DomainArtifact,
+		Label:        "技能归档下载链接有效期",
+		Description:  "为 runtime 物化技能签发的归档下载 URL 的有效秒数。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 15 * 60,
+		MinValue:     60,
+		MaxValue:     3600,
+	},
+	{
+		Key:          KeyRuntimeSessionTTLSeconds,
+		Domain:       DomainSecurity,
+		Label:        "Runtime 会话有效期",
+		Description:  "runtime 节点会话令牌的有效秒数;只影响新签发/续期的会话,存量会话按签发时值到期。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 12 * 3600,
+		MinValue:     3600,
+		MaxValue:     7 * 24 * 3600,
+	},
+	{
+		Key:          KeyAuthSessionTTLSeconds,
+		Domain:       DomainSecurity,
+		Label:        "登录会话有效期",
+		Description:  "控制台登录会话的有效秒数;只影响新登录,存量会话按签发时值到期,不做存量回收。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 12 * 3600,
+		MinValue:     3600,
+		MaxValue:     7 * 24 * 3600,
+	},
+}
+
+var registryByKey = buildRegistryIndex()
+
+func buildRegistryIndex() map[string]Definition {
+	index := make(map[string]Definition, len(registry))
+	for _, def := range registry {
+		if def.Key == "" || def.Label == "" || def.Domain == "" {
+			panic(fmt.Sprintf("systemconfig: definition %q missing key/label/domain", def.Key))
+		}
+		if _, dup := index[def.Key]; dup {
+			panic(fmt.Sprintf("systemconfig: duplicate definition key %q", def.Key))
+		}
+		if def.MinValue > def.MaxValue {
+			panic(fmt.Sprintf("systemconfig: definition %q has min > max", def.Key))
+		}
+		if def.DefaultValue < def.MinValue || def.DefaultValue > def.MaxValue {
+			panic(fmt.Sprintf("systemconfig: definition %q default out of bounds", def.Key))
+		}
+		switch def.ValueType {
+		case ValueTypeBytes, ValueTypeDurationSeconds:
+		default:
+			panic(fmt.Sprintf("systemconfig: definition %q has unknown value type %q", def.Key, def.ValueType))
+		}
+		index[def.Key] = def
+	}
+	return index
+}
+
+// Definitions 返回注册表快照(顺序稳定)。
+func Definitions() []Definition {
+	out := make([]Definition, len(registry))
+	copy(out, registry)
+	return out
+}
+
+// LookupDefinition 按 key 查定义。
+func LookupDefinition(key string) (Definition, bool) {
+	def, ok := registryByKey[key]
+	return def, ok
+}
+
+// DefaultFor 返回注册表默认值,是各使用点 Reader 未注入时的统一兜底,
+// 避免默认值在消费方重复定义产生漂移。未注册 key panic(编程错误)。
+func DefaultFor(key string) int64 {
+	def, ok := registryByKey[key]
+	if !ok {
+		panic(fmt.Sprintf("systemconfig: DefaultFor unknown key %q", key))
+	}
+	return def.DefaultValue
+}
+
+// DefaultDurationFor 是 DefaultFor 的 duration_seconds 便捷形态。
+func DefaultDurationFor(key string) time.Duration {
+	return time.Duration(DefaultFor(key)) * time.Second
+}

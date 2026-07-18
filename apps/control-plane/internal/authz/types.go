@@ -60,6 +60,9 @@ const (
 	ActionScenarioTemplateRead   = "scenario_template.read"
 	ActionScenarioTemplateManage = "scenario_template.manage"
 
+	ActionSystemConfigRead   = "system_config.read"
+	ActionSystemConfigManage = "system_config.manage"
+
 	ActionSkillRead    = "skill.read"
 	ActionSkillUpload  = "skill.upload"
 	ActionSkillDelete  = "skill.delete"

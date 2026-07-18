@@ -25,6 +25,7 @@ import (
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
+	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
@@ -32,6 +33,7 @@ import (
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
+	"github.com/superteam/control-plane/internal/systemconfig"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/task"
@@ -468,6 +470,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 
 	q := queries.New(stores.Postgres)
 
+	// 系统配置中心:先于各消费方构造,审计依赖在 auditService 就绪后回填。
+	systemConfigService := systemconfig.NewService(systemconfig.NewPgRepository(q))
+
 	taskRepository := task.NewPgRepository(q)
 	taskService, err := task.NewService(taskRepository)
 	if err != nil {
@@ -488,7 +493,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
 	skillRepository := skill.NewPgRepository(stores.Postgres, q)
 	skillService := skill.NewService(skillRepository, stores.ObjectStore)
+	skillService.SetSystemConfigReader(systemConfigService)
 	runtimeService.SetRequiredToolsResolver(skillService)
+	// runtime 包被 api/middleware 反向依赖不能 import systemconfig,以闭包注入。
+	runtimeService.SetSessionTTLResolver(func(ctx context.Context, tenantID uuid.UUID) time.Duration {
+		return systemConfigService.Duration(ctx, tenantID, systemconfig.KeyRuntimeSessionTTLSeconds)
+	})
 	employeeService, err := employee.NewService(employeeRepository)
 	if err != nil {
 		return nil, err
@@ -533,6 +543,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	systemConfigService.SetAuditRecorder(auditService)
 
 	runRepository := employee.NewPgRunRepository(q, stores.Postgres)
 	runService, err := employee.NewDigitalEmployeeRunService(runRepository, runtimeCommands, auditService)
@@ -673,6 +684,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 	projectService.SetArtifactObjectStore(artifactObjectStoreAdapter{store: stores.ObjectStore})
+	projectService.SetSystemConfigReader(systemConfigService)
 	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
 	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)})
 	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})
@@ -710,6 +722,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	// 登录先于租户上下文,登录会话 TTL 固定读平台默认租户的配置。
+	authService.SetSessionTTLResolver(func(ctx context.Context) time.Duration {
+		return systemConfigService.Duration(ctx, platform.DefaultTenantID, systemconfig.KeyAuthSessionTTLSeconds)
+	})
 	authzRepository := authz.NewPgRepository(q)
 	authzRecorder := authz.NewOperationLogDecisionRecorder(q)
 	dbAuthorizer := authz.NewDBAuthorizer(authzRepository, authzRecorder)
@@ -758,7 +774,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	auditHandler := audit.NewHandler(auditService)
 	projectHandler := project.NewHandler(projectService)
 	skillHandler := skill.NewHandler(skillService)
+	skillHandler.SetSystemConfigReader(systemConfigService)
 	capabilityHandler := capability.NewHandler(capabilityService)
+	systemConfigHandler := systemconfig.NewHandler(systemConfigService)
 	scenarioTemplateHandler := scenariotemplate.NewHandler(scenarioTemplateService)
 	promptTemplateRepository := prompttemplate.NewPgRepository(q)
 	promptTemplateService := prompttemplate.NewService(promptTemplateRepository, authService, nil)
@@ -801,6 +819,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)
 	server.SetCapabilityHandler(capabilityHandler)
+	server.SetSystemConfigHandler(systemConfigHandler)
 	server.SetScenarioTemplateHandler(scenarioTemplateHandler)
 	server.SetPromptTemplateHandler(promptTemplateHandler)
 	server.SetServiceTokenHandler(serviceTokenHandler)

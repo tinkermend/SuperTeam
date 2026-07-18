@@ -5235,6 +5235,31 @@ type SubmitProjectTaskAttemptResultRequest struct {
 	RuntimeNodeId  openapi_types.UUID        `json:"runtime_node_id"`
 }
 
+// SystemConfigItem defines model for SystemConfigItem.
+type SystemConfigItem struct {
+	DefaultValue int64  `json:"default_value"`
+	Description  string `json:"description"`
+
+	// Domain Registry domain tag; the console groups tabs by this value.
+	Domain         string     `json:"domain"`
+	EffectiveValue int64      `json:"effective_value"`
+	IsOverridden   bool       `json:"is_overridden"`
+	Key            string     `json:"key"`
+	Label          string     `json:"label"`
+	MaxValue       int64      `json:"max_value"`
+	MinValue       int64      `json:"min_value"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+	UpdatedByName  *string    `json:"updated_by_name,omitempty"`
+
+	// ValueType bytes | duration_seconds (registry-validated, not a closed enum)
+	ValueType string `json:"value_type"`
+}
+
+// SystemConfigListResponse defines model for SystemConfigListResponse.
+type SystemConfigListResponse struct {
+	Items []SystemConfigItem `json:"items"`
+}
+
 // Task defines model for Task.
 type Task struct {
 	AssignedNodeId *string                 `json:"assigned_node_id,omitempty"`
@@ -5526,6 +5551,11 @@ type UpdateProjectConfigRequest struct {
 	Members     *[]ProjectMemberInput `json:"members,omitempty"`
 	Name        *string               `json:"name,omitempty"`
 	RepoBinding *ProjectRepoBinding   `json:"repo_binding,omitempty"`
+}
+
+// UpdateSystemConfigRequest defines model for UpdateSystemConfigRequest.
+type UpdateSystemConfigRequest struct {
+	Value int64 `json:"value"`
 }
 
 // UpdateTaskStatusRequest defines model for UpdateTaskStatusRequest.
@@ -6409,6 +6439,9 @@ type InstallSkillJSONRequestBody = InstallSkillRequest
 
 // ReplaceSkillMCPDependenciesJSONRequestBody defines body for ReplaceSkillMCPDependencies for application/json ContentType.
 type ReplaceSkillMCPDependenciesJSONRequestBody = ReplaceSkillMCPDependenciesRequest
+
+// UpdateSystemConfigJSONRequestBody defines body for UpdateSystemConfig for application/json ContentType.
+type UpdateSystemConfigJSONRequestBody = UpdateSystemConfigRequest
 
 // CreateTaskJSONRequestBody defines body for CreateTask for application/json ContentType.
 type CreateTaskJSONRequestBody = CreateTaskRequest
@@ -7423,6 +7456,15 @@ type ServerInterface interface {
 	// Declaratively replace the MCP dependencies of a skill
 	// (PUT /api/v1/skills/{skillId}/mcp-dependencies)
 	ReplaceSkillMCPDependencies(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// List system config registry projection (definitions + effective values)
+	// (GET /api/v1/system-configs)
+	ListSystemConfigs(w http.ResponseWriter, r *http.Request)
+	// Reset a system config to its registry default (delete the override)
+	// (DELETE /api/v1/system-configs/{configKey})
+	ResetSystemConfig(w http.ResponseWriter, r *http.Request, configKey string)
+	// Set a system config override (validated against server-side registry bounds)
+	// (PUT /api/v1/system-configs/{configKey})
+	UpdateSystemConfig(w http.ResponseWriter, r *http.Request, configKey string)
 	// List tasks
 	// (GET /api/v1/tasks)
 	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
@@ -8569,6 +8611,24 @@ func (_ Unimplemented) ListSkillMCPDependencies(w http.ResponseWriter, r *http.R
 // Declaratively replace the MCP dependencies of a skill
 // (PUT /api/v1/skills/{skillId}/mcp-dependencies)
 func (_ Unimplemented) ReplaceSkillMCPDependencies(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List system config registry projection (definitions + effective values)
+// (GET /api/v1/system-configs)
+func (_ Unimplemented) ListSystemConfigs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reset a system config to its registry default (delete the override)
+// (DELETE /api/v1/system-configs/{configKey})
+func (_ Unimplemented) ResetSystemConfig(w http.ResponseWriter, r *http.Request, configKey string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Set a system config override (validated against server-side registry bounds)
+// (PUT /api/v1/system-configs/{configKey})
+func (_ Unimplemented) UpdateSystemConfig(w http.ResponseWriter, r *http.Request, configKey string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -14907,6 +14967,72 @@ func (siw *ServerInterfaceWrapper) ReplaceSkillMCPDependencies(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// ListSystemConfigs operation middleware
+func (siw *ServerInterfaceWrapper) ListSystemConfigs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSystemConfigs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResetSystemConfig operation middleware
+func (siw *ServerInterfaceWrapper) ResetSystemConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "configKey" -------------
+	var configKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "configKey", chi.URLParam(r, "configKey"), &configKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "configKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetSystemConfig(w, r, configKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSystemConfig operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSystemConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "configKey" -------------
+	var configKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "configKey", chi.URLParam(r, "configKey"), &configKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "configKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSystemConfig(w, r, configKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTasks operation middleware
 func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
 
@@ -16875,6 +17001,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/skills/{skillId}/mcp-dependencies", wrapper.ReplaceSkillMCPDependencies)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/system-configs", wrapper.ListSystemConfigs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/system-configs/{configKey}", wrapper.ResetSystemConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/system-configs/{configKey}", wrapper.UpdateSystemConfig)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tasks", wrapper.ListTasks)

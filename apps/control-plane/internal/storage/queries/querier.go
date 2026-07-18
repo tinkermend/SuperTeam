@@ -183,6 +183,7 @@ type Querier interface {
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
 	DeleteSkillMCPDependenciesForSkill(ctx context.Context, arg DeleteSkillMCPDependenciesForSkillParams) error
+	DeleteSystemConfigOverride(ctx context.Context, arg DeleteSystemConfigOverrideParams) (int64, error)
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
 	DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSkillBindingsParams) error
@@ -309,6 +310,7 @@ type Querier interface {
 	GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioTemplateByKeyParams) (ScenarioTemplate, error)
 	GetScenarioTemplateMaxVersion(ctx context.Context, arg GetScenarioTemplateMaxVersionParams) (int32, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)
+	GetSystemConfigOverride(ctx context.Context, arg GetSystemConfigOverrideParams) (SystemConfigOverride, error)
 	GetTask(ctx context.Context, arg GetTaskParams) (Task, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
 	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
@@ -474,6 +476,7 @@ type Querier interface {
 	// run。running/cancelling 是真实活跃态,不在清扫范围。
 	ListStalePreConfirmationDigitalEmployeeRuns(ctx context.Context, arg ListStalePreConfirmationDigitalEmployeeRunsParams) ([]TaskRun, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
+	ListSystemConfigOverrides(ctx context.Context, tenantID uuid.UUID) ([]ListSystemConfigOverridesRow, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)
 	ListTaskEventsForRun(ctx context.Context, arg ListTaskEventsForRunParams) ([]TaskEvent, error)
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
@@ -609,6 +612,7 @@ type Querier interface {
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	UpsertRuntimeNodeForTenant(ctx context.Context, arg UpsertRuntimeNodeForTenantParams) (RuntimeNode, error)
+	UpsertSystemConfigOverride(ctx context.Context, arg UpsertSystemConfigOverrideParams) (SystemConfigOverride, error)
 	// 团队借调查询：供给侧策略（每团队一条 active，upsert）+ 需求侧借调请求生命周期。
 	// D1 团队级 (project, team) 粒度；D2 超纲强制转人工；D3 请求自带 status。
 	// 每团队一条 active 策略：存在则更新，不存在则插入。

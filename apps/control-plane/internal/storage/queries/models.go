@@ -2386,6 +2386,21 @@ type SkillMcpDependency struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+// 平台级系统配置覆盖值;配置项定义(key/类型/默认值/边界/文案)在服务端注册表,本表只存管理员显式修改的覆盖,删除行即恢复默认
+type SystemConfigOverride struct {
+	ID uuid.UUID `json:"id"`
+	// 租户 ID;平台级参数按租户隔离,无租户上下文的读取方使用平台默认租户
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 配置项 key,点分命名(如 artifact.max_file_size_bytes),必须存在于服务端注册表
+	ConfigKey string `json:"config_key"`
+	// 覆盖值,JSON 标量;类型与边界由服务端注册表校验后写入
+	Value []byte `json:"value"`
+	// 最后修改人用户 ID,展示与审计冗余,应用层维护不加外键
+	UpdatedBy uuid.NullUUID      `json:"updated_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 任务主表
 type Task struct {
 	// 任务主键 UUID

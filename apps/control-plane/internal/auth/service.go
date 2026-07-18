@@ -59,6 +59,25 @@ type Service struct {
 	captchaSecret          []byte
 	captchaTTL             time.Duration
 	now                    func() time.Time
+	sessionTTLResolver     func(ctx context.Context) time.Duration
+}
+
+// defaultAuthSessionTTL 是登录会话 TTL 兜底默认值;生效值经 SetSessionTTLResolver
+// 读系统配置中心(auth.session_ttl_seconds)。auth 包被 api/middleware 反向依赖,
+// 不能直接 import systemconfig(会成环),由 app 装配层以闭包注入(登录先于租户
+// 上下文,闭包内固定使用平台默认租户)。
+const defaultAuthSessionTTL = 12 * time.Hour
+
+// SetSessionTTLResolver 注入登录会话 TTL 解析器;未注入(测试)时使用兜底默认值。
+func (s *Service) SetSessionTTLResolver(resolver func(ctx context.Context) time.Duration) {
+	s.sessionTTLResolver = resolver
+}
+
+func (s *Service) sessionTTL(ctx context.Context) time.Duration {
+	if s.sessionTTLResolver == nil {
+		return defaultAuthSessionTTL
+	}
+	return s.sessionTTLResolver(ctx)
 }
 
 type ServiceOption func(*Service) error
@@ -473,7 +492,7 @@ func (s *Service) CreateSession(ctx context.Context, userID uuid.UUID, clientIP,
 	now := time.Now().UTC()
 	session := &Session{
 		UserID:     userID,
-		ExpiresAt:  now.Add(12 * time.Hour),
+		ExpiresAt:  now.Add(s.sessionTTL(ctx)),
 		LastSeenAt: now,
 		ClientIP:   clientIP,
 		UserAgent:  userAgent,

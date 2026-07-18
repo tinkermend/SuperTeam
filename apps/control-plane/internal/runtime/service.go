@@ -26,13 +26,21 @@ var (
 
 const (
 	// HeartbeatTimeout is the duration after which a node is considered offline
-	HeartbeatTimeout  = 60 * time.Second
+	HeartbeatTimeout = 60 * time.Second
+	// RuntimeSessionTTL 是会话 TTL 的兜底默认值;生效值经 SessionTTLResolver
+	// 读系统配置中心(runtime.session_ttl_seconds),注册表默认值与此保持一致。
+	// runtime 包被 api/middleware 反向依赖,不能直接 import systemconfig(会成环),
+	// 故由 app 装配层以闭包注入。
 	RuntimeSessionTTL = 12 * time.Hour
 )
+
+// SessionTTLResolver 返回某租户的 runtime 会话 TTL。
+type SessionTTLResolver func(ctx context.Context, tenantID uuid.UUID) time.Duration
 
 type Service struct {
 	repository            Repository
 	requiredToolsResolver RequiredToolsResolver
+	sessionTTLResolver    SessionTTLResolver
 }
 
 type RequiredToolsResolver interface {
@@ -50,6 +58,17 @@ func NewService(repository Repository) (*Service, error) {
 
 func (s *Service) SetRequiredToolsResolver(resolver RequiredToolsResolver) {
 	s.requiredToolsResolver = resolver
+}
+
+func (s *Service) SetSessionTTLResolver(resolver SessionTTLResolver) {
+	s.sessionTTLResolver = resolver
+}
+
+func (s *Service) sessionTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {
+	if s.sessionTTLResolver == nil {
+		return RuntimeSessionTTL
+	}
+	return s.sessionTTLResolver(ctx, tenantID)
 }
 
 func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*EnrollHelloResponse, error) {
@@ -301,13 +320,14 @@ func (s *Service) IssueRuntimeSession(ctx context.Context, enrollment RuntimeEnr
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to hash runtime session token: %w", err)
 	}
+	sessionTenantID := tenantOrDefault(enrollment.TenantID)
 	session, err := enrollmentRepo.CreateRuntimeSession(ctx, CreateRuntimeSessionParams{
-		TenantID:        tenantOrDefault(enrollment.TenantID),
+		TenantID:        sessionTenantID,
 		RuntimeNodeID:   enrollment.RuntimeNodeID,
 		EnrollmentID:    enrollment.ID,
 		TokenLookupHash: LookupRuntimeSessionTokenHash(token),
 		TokenSecretHash: secretHash,
-		ExpiresAt:       timestamptzFromTime(time.Now().Add(RuntimeSessionTTL)),
+		ExpiresAt:       timestamptzFromTime(time.Now().Add(s.sessionTTL(ctx, sessionTenantID))),
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create runtime session: %w", err)
@@ -329,7 +349,7 @@ func (s *Service) RenewRuntimeSession(ctx context.Context, token string) (*Runti
 	record, err := enrollmentRepo.RenewRuntimeSession(ctx, RenewRuntimeSessionParams{
 		TenantID:  validation.TenantID,
 		SessionID: validation.SessionID,
-		ExpiresAt: timestamptzFromTime(time.Now().Add(RuntimeSessionTTL)),
+		ExpiresAt: timestamptzFromTime(time.Now().Add(s.sessionTTL(ctx, validation.TenantID))),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSession, err)

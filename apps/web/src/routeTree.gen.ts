@@ -24,6 +24,7 @@ import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedTeamsIndexRouteImport } from './routes/_authenticated/teams/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedTaskLaunchesIndexRouteImport } from './routes/_authenticated/task-launches/index'
+import { Route as AuthenticatedSystemConfigIndexRouteImport } from './routes/_authenticated/system-config/index'
 import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenticated/skills/index'
 import { Route as AuthenticatedScenarioTemplatesIndexRouteImport } from './routes/_authenticated/scenario-templates/index'
 import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authenticated/runtime/index'
@@ -134,6 +135,12 @@ const AuthenticatedTaskLaunchesIndexRoute =
   AuthenticatedTaskLaunchesIndexRouteImport.update({
     id: '/task-launches/',
     path: '/task-launches/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSystemConfigIndexRoute =
+  AuthenticatedSystemConfigIndexRouteImport.update({
+    id: '/system-config/',
+    path: '/system-config/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSkillsIndexRoute =
@@ -379,6 +386,7 @@ export interface FileRoutesByFullPath {
   '/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/scenario-templates/': typeof AuthenticatedScenarioTemplatesIndexRoute
   '/skills/': typeof AuthenticatedSkillsIndexRoute
+  '/system-config/': typeof AuthenticatedSystemConfigIndexRoute
   '/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/teams/': typeof AuthenticatedTeamsIndexRoute
@@ -429,6 +437,7 @@ export interface FileRoutesByTo {
   '/runtime': typeof AuthenticatedRuntimeIndexRoute
   '/scenario-templates': typeof AuthenticatedScenarioTemplatesIndexRoute
   '/skills': typeof AuthenticatedSkillsIndexRoute
+  '/system-config': typeof AuthenticatedSystemConfigIndexRoute
   '/task-launches': typeof AuthenticatedTaskLaunchesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/teams': typeof AuthenticatedTeamsIndexRoute
@@ -482,6 +491,7 @@ export interface FileRoutesById {
   '/_authenticated/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/_authenticated/scenario-templates/': typeof AuthenticatedScenarioTemplatesIndexRoute
   '/_authenticated/skills/': typeof AuthenticatedSkillsIndexRoute
+  '/_authenticated/system-config/': typeof AuthenticatedSystemConfigIndexRoute
   '/_authenticated/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/teams/': typeof AuthenticatedTeamsIndexRoute
@@ -535,6 +545,7 @@ export interface FileRouteTypes {
     | '/runtime/'
     | '/scenario-templates/'
     | '/skills/'
+    | '/system-config/'
     | '/task-launches/'
     | '/tasks/'
     | '/teams/'
@@ -585,6 +596,7 @@ export interface FileRouteTypes {
     | '/runtime'
     | '/scenario-templates'
     | '/skills'
+    | '/system-config'
     | '/task-launches'
     | '/tasks'
     | '/teams'
@@ -637,6 +649,7 @@ export interface FileRouteTypes {
     | '/_authenticated/runtime/'
     | '/_authenticated/scenario-templates/'
     | '/_authenticated/skills/'
+    | '/_authenticated/system-config/'
     | '/_authenticated/task-launches/'
     | '/_authenticated/tasks/'
     | '/_authenticated/teams/'
@@ -767,6 +780,13 @@ declare module '@tanstack/react-router' {
       path: '/task-launches'
       fullPath: '/task-launches/'
       preLoaderRoute: typeof AuthenticatedTaskLaunchesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/system-config/': {
+      id: '/_authenticated/system-config/'
+      path: '/system-config'
+      fullPath: '/system-config/'
+      preLoaderRoute: typeof AuthenticatedSystemConfigIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/skills/': {
@@ -1097,6 +1117,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRuntimeIndexRoute: typeof AuthenticatedRuntimeIndexRoute
   AuthenticatedScenarioTemplatesIndexRoute: typeof AuthenticatedScenarioTemplatesIndexRoute
   AuthenticatedSkillsIndexRoute: typeof AuthenticatedSkillsIndexRoute
+  AuthenticatedSystemConfigIndexRoute: typeof AuthenticatedSystemConfigIndexRoute
   AuthenticatedTaskLaunchesIndexRoute: typeof AuthenticatedTaskLaunchesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedTeamsIndexRoute: typeof AuthenticatedTeamsIndexRoute
@@ -1140,6 +1161,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedScenarioTemplatesIndexRoute:
     AuthenticatedScenarioTemplatesIndexRoute,
   AuthenticatedSkillsIndexRoute: AuthenticatedSkillsIndexRoute,
+  AuthenticatedSystemConfigIndexRoute: AuthenticatedSystemConfigIndexRoute,
   AuthenticatedTaskLaunchesIndexRoute: AuthenticatedTaskLaunchesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedTeamsIndexRoute: AuthenticatedTeamsIndexRoute,

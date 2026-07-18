@@ -118,6 +118,7 @@ describe('sidebarData', () => {
       '用户管理',
       '审计中心',
       '日志管理',
+      '系统配置',
     ])
     expect(platformItems?.[0]).toMatchObject({
       title: '审批中心',

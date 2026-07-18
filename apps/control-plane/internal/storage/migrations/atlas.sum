@@ -1,4 +1,4 @@
-h1:QqTEgBenKSKMm1shb1KdnrpUOfvbAnnsRxUoElO/kAM=
+h1:dWe9BNL2FZA+RIiiZjnYY82kUYoANWczG2cc0rNNroU=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -82,3 +82,4 @@ h1:QqTEgBenKSKMm1shb1KdnrpUOfvbAnnsRxUoElO/kAM=
 082_drop_dead_columns.sql h1:HtBpkJRddOo1di8qkvuuCo1Rg3Esaj3n5u8KVZ4r028=
 083_drop_tenant_profiles.sql h1:Pk6Uub/dpFqoTd/1GXv3vQbbays6UZyGwFlBDn9FaSg=
 084_drop_task_state_history.sql h1:HFrGriFQpSWS86UgBYeki1wpxNEraJ897RoFR8AMCmU=
+085_create_system_config_overrides.sql h1:0gqTEt4EcaEAv9G3Xm01uhEUhgX+QnucIYnJdz7FqrI=
