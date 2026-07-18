@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, postJson } from "./client";
+import { deleteJson, getJson, postJson, putJson } from "./client";
 
 export type CredentialType = "mcp_token";
 
@@ -380,6 +380,34 @@ export function deleteEmployeeMcpBindingV2(
     options,
     `/api/v1/digital-employees/${encodedEmployeeId}/mcp-bindings-v2/${encodedBindingId}`,
     "delete employee mcp binding",
+  );
+}
+
+export function listProjectMcpBindings(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<McpBinding[]> {
+  const encodedProjectId = encodePathSegment(projectId);
+
+  return getJson<McpBinding[]>(
+    options,
+    `/api/v1/projects/${encodedProjectId}/mcp-bindings`,
+    "project mcp bindings",
+  );
+}
+
+export function putProjectMcpBindings(
+  options: ApiClientOptions,
+  projectId: string,
+  items: CreateMcpBindingInput[],
+): Promise<McpBinding[]> {
+  const encodedProjectId = encodePathSegment(projectId);
+
+  return putJson<McpBinding[]>(
+    options,
+    `/api/v1/projects/${encodedProjectId}/mcp-bindings`,
+    { items },
+    "put project mcp bindings",
   );
 }
 

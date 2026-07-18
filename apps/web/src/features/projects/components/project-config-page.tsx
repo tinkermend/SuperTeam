@@ -53,6 +53,7 @@ import { ProjectManagementShell } from "./project-management-shell";
 import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
+import { ProjectMcpBindingsPanel } from "./project-mcp-bindings-panel";
 
 type ProjectConfigViewProps = {
   apiBaseUrl: string;
@@ -393,6 +394,7 @@ export function ProjectConfigView({
               <ProjectConfigTab value="overview">概览</ProjectConfigTab>
               <ProjectConfigTab value="members">成员</ProjectConfigTab>
               <ProjectConfigTab value="digital">数字员工池</ProjectConfigTab>
+              <ProjectConfigTab value="mcp">MCP 绑定</ProjectConfigTab>
               <ProjectConfigTab value="coordination">协调策略</ProjectConfigTab>
               <ProjectConfigTab value="approval">审批规则</ProjectConfigTab>
               <ProjectConfigTab value="evidence">证据归档</ProjectConfigTab>
@@ -474,6 +476,14 @@ export function ProjectConfigView({
                 icon={<Bot />}
                 title="数字员工池"
                 members={config.digital_employee_pool}
+              />
+            </TabsContent>
+
+            <TabsContent value="mcp">
+              <ProjectMcpBindingsPanel
+                apiOptions={apiOptions}
+                disabled={isArchived}
+                projectId={projectId}
               />
             </TabsContent>
 
