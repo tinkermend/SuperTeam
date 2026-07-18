@@ -40,6 +40,10 @@ func startTeamPendingDeleteReminder(ctx context.Context, tenantService *tenant.S
 }
 
 func remindStalePendingDeleteTeams(ctx context.Context, tenantService *tenant.Service, inboxService *inbox.Service) error {
+	// 先回收孤儿催办(团队已恢复/已确认删除的条目自动关闭),再投递新催办。
+	if err := tenantService.ResolveOrphanPendingDeleteReminders(ctx); err != nil {
+		return err
+	}
 	stale, err := tenantService.ListStalePendingDeleteTeams(ctx, time.Now().Add(-teamPendingDeleteStaleAfter))
 	if err != nil {
 		return err

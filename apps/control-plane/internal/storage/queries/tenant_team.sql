@@ -76,6 +76,17 @@ WHERE status = 'pending_delete'
 ORDER BY deleted_at ASC
 LIMIT 100;
 
+-- name: ResolveOrphanTeamPendingDeleteReminders :exec
+-- 孤儿催办回收:团队已被恢复或确认删除后,其滞留催办条目自动关闭(清扫任务每轮执行)。
+UPDATE inbox_items
+SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
+WHERE source_type = 'team_pending_delete'
+  AND status = 'open'
+  AND NOT EXISTS (
+    SELECT 1 FROM tenant_teams t
+    WHERE t.id = inbox_items.source_id AND t.status = 'pending_delete'
+  );
+
 -- name: HardDeleteTeam :one
 -- 仅允许物理删除待确认态团队;P1 前的遗留软删终态(status=active)不可经此路径删除。
 DELETE FROM tenant_teams

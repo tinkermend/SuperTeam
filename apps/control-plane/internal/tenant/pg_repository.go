@@ -437,6 +437,12 @@ func (r *PgRepository) ListStalePendingDeleteTeams(ctx context.Context, staleBef
 	return records, nil
 }
 
+// ResolveOrphanPendingDeleteReminders 孤儿催办回收:团队离开 pending_delete 后
+// 其滞留催办收件箱条目自动关闭。
+func (r *PgRepository) ResolveOrphanPendingDeleteReminders(ctx context.Context) error {
+	return r.q.ResolveOrphanTeamPendingDeleteReminders(ctx)
+}
+
 // RestorePendingDeleteTeam 恢复待确认删除的团队(status→active, deleted_at 清空),
 // 审计与状态翻转同事务;员工归属不回填(已入候岗,由人工重新编排)。
 func (r *PgRepository) RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (TeamRecord, error) {

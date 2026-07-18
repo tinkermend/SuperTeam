@@ -20,6 +20,7 @@ type Repository interface {
 	// P2 审核确认制:待确认队列/恢复/确认物理删除(spec 2026-07-18-team-lifecycle-convergence §2)。
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error)
 	ListStalePendingDeleteTeams(ctx context.Context, staleBefore time.Time) ([]PendingDeleteTeamRecord, error)
+	ResolveOrphanPendingDeleteReminders(ctx context.Context) error
 	RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (TeamRecord, error)
 	ConfirmTeamDelete(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (TeamRecord, error)
 	ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error)

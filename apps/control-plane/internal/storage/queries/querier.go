@@ -531,6 +531,8 @@ type Querier interface {
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
 	ResolveApprovalRequest(ctx context.Context, arg ResolveApprovalRequestParams) (ApprovalRequest, error)
+	// 孤儿催办回收:团队已被恢复或确认删除后,其滞留催办条目自动关闭(清扫任务每轮执行)。
+	ResolveOrphanTeamPendingDeleteReminders(ctx context.Context) error
 	ResolveProjectDecisionRequest(ctx context.Context, arg ResolveProjectDecisionRequestParams) (ProjectDecisionRequest, error)
 	RestorePendingDeleteTeam(ctx context.Context, arg RestorePendingDeleteTeamParams) (TenantTeam, error)
 	RestoreProjectTaskAfterDispatchStartFailure(ctx context.Context, arg RestoreProjectTaskAfterDispatchStartFailureParams) (ProjectTask, error)

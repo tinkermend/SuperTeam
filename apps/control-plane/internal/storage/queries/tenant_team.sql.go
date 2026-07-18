@@ -356,6 +356,23 @@ func (q *Queries) ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignD
 	return i, err
 }
 
+const ResolveOrphanTeamPendingDeleteReminders = `-- name: ResolveOrphanTeamPendingDeleteReminders :exec
+UPDATE inbox_items
+SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
+WHERE source_type = 'team_pending_delete'
+  AND status = 'open'
+  AND NOT EXISTS (
+    SELECT 1 FROM tenant_teams t
+    WHERE t.id = inbox_items.source_id AND t.status = 'pending_delete'
+  )
+`
+
+// 孤儿催办回收:团队已被恢复或确认删除后,其滞留催办条目自动关闭(清扫任务每轮执行)。
+func (q *Queries) ResolveOrphanTeamPendingDeleteReminders(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, ResolveOrphanTeamPendingDeleteReminders)
+	return err
+}
+
 const RestorePendingDeleteTeam = `-- name: RestorePendingDeleteTeam :one
 UPDATE tenant_teams
 SET status = 'active',

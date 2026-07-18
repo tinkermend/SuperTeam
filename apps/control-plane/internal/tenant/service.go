@@ -306,6 +306,14 @@ func (s *Service) ListStalePendingDeleteTeams(ctx context.Context, staleBefore t
 	return records, nil
 }
 
+// ResolveOrphanPendingDeleteReminders 孤儿催办回收(供清扫任务每轮执行)。
+func (s *Service) ResolveOrphanPendingDeleteReminders(ctx context.Context) error {
+	if err := s.repository.ResolveOrphanPendingDeleteReminders(ctx); err != nil {
+		return fmt.Errorf("resolve orphan pending delete reminders: %w", err)
+	}
+	return nil
+}
+
 // RestorePendingDeleteTeam 恢复待确认删除的团队;员工归属不回填。
 func (s *Service) RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (*Team, error) {
 	if tenantID == uuid.Nil || teamID == uuid.Nil {

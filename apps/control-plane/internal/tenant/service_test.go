@@ -989,6 +989,10 @@ func (r *memoryRepository) ListStalePendingDeleteTeams(_ context.Context, _ time
 	return nil, nil
 }
 
+func (r *memoryRepository) ResolveOrphanPendingDeleteReminders(_ context.Context) error {
+	return nil
+}
+
 func (r *memoryRepository) RestorePendingDeleteTeam(_ context.Context, tenantID, teamID, _ uuid.UUID) (TeamRecord, error) {
 	record, ok := r.teams[teamID]
 	if !ok || record.TenantID != tenantID {
