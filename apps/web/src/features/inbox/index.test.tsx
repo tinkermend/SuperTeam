@@ -352,14 +352,16 @@ describe("InboxView", () => {
     expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
   });
 
-  it("requests all inbox by default", async () => {
+  it("requests open inbox items by default", async () => {
+    // 默认 status=open:服务端无 status 过滤会返回 resolved/cancelled 项,
+    // "待处理事项"会把已处理旧项继续标成待处理(外部渠道 resolve 后也不消失)。
     const fetcher = createInboxFetcher();
     const screen = await renderInboxView(fetcher);
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
     const requestUrl = latestInboxRequestUrl(fetcher);
-    expect(requestUrl?.searchParams.has("status")).toBe(false);
+    expect(requestUrl?.searchParams.get("status")).toBe("open");
     expect(requestUrl?.searchParams.get("limit")).toBe("50");
     expect(requestUrl?.searchParams.get("offset")).toBe("0");
   });
@@ -437,13 +439,13 @@ describe("InboxView", () => {
       const requestUrl = latestInboxRequestUrl(fetcher);
       expect(requestUrl?.searchParams.has("project_id")).toBe(false);
       expect(requestUrl?.searchParams.has("target_user_id")).toBe(false);
-      expect(requestUrl?.searchParams.has("status")).toBe(false);
+      expect(requestUrl?.searchParams.get("status")).toBe("open");
       expect(requestUrl?.searchParams.get("offset")).toBe("0");
     });
     await expect.element(screen.getByLabelText("项目 ID")).toHaveValue("");
     await expect.element(screen.getByLabelText("目标用户 ID")).toHaveValue("");
     await expect.element(screen.getByRole("button", { name: "状态" })).toHaveTextContent(
-      "所有",
+      "开放",
     );
   });
 

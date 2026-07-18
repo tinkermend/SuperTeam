@@ -42,6 +42,10 @@ type SelectedAction = {
 const DEFAULT_INBOX_FILTERS = {
   limit: 50,
   offset: 0,
+  // 默认只看 open:服务端无 status 过滤时会返回 resolved/cancelled 项,
+  // "待处理事项"列表会把几天前已处理的旧项继续标成待处理(外部渠道 resolve
+  // 后该项也因此永不消失)。用户可用状态筛选切回"所有"。
+  status: "open",
 } satisfies InboxListFilters;
 
 const EMPTY_UUID_FILTER_DRAFTS = {
