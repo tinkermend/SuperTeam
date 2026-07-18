@@ -35,6 +35,9 @@ function verdictPill(verdict: DemandAcceptanceCriterionDetail["verdict"]): {
     case "pending":
       // review_gate 完成时占位:检测器出结论前保持 HOLD。
       return { label: "检测中", tone: "info" };
+    case "escalate_human":
+      // 对抗评审判官预算耗尽:显式升级到人类决断,不是"还没判"。
+      return { label: "升级人类", tone: "warn" };
     default:
       return { label: "待判定", tone: "mute" };
   }

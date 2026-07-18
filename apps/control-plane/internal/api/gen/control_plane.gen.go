@@ -266,6 +266,7 @@ func (e DemandAcceptanceCriterionDetailJudgeType) Valid() bool {
 
 // Defines values for DemandAcceptanceCriterionDetailVerdict.
 const (
+	DemandAcceptanceCriterionDetailVerdictEscalateHuman DemandAcceptanceCriterionDetailVerdict = "escalate_human"
 	DemandAcceptanceCriterionDetailVerdictNotApplicable DemandAcceptanceCriterionDetailVerdict = "not_applicable"
 	DemandAcceptanceCriterionDetailVerdictPending       DemandAcceptanceCriterionDetailVerdict = "pending"
 	DemandAcceptanceCriterionDetailVerdictSatisfied     DemandAcceptanceCriterionDetailVerdict = "satisfied"
@@ -275,6 +276,8 @@ const (
 // Valid indicates whether the value is a known member of the DemandAcceptanceCriterionDetailVerdict enum.
 func (e DemandAcceptanceCriterionDetailVerdict) Valid() bool {
 	switch e {
+	case DemandAcceptanceCriterionDetailVerdictEscalateHuman:
+		return true
 	case DemandAcceptanceCriterionDetailVerdictNotApplicable:
 		return true
 	case DemandAcceptanceCriterionDetailVerdictPending:
@@ -2738,7 +2741,7 @@ type DemandAcceptanceCriterionDetail struct {
 	Statement     string                       `json:"statement"`
 	TaskSummaries []DemandCriterionTaskSummary `json:"task_summaries"`
 
-	// Verdict 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；无任何判定时为 null
+	// Verdict 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；escalate_human 仅出现于 adversarial_review 判据的对抗聚合（判官预算耗尽升级人类）；无任何判定时为 null
 	Verdict *DemandAcceptanceCriterionDetailVerdict `json:"verdict"`
 
 	// VerificationMethod 验证方式，如 human_judgment / automated_test
@@ -2748,7 +2751,7 @@ type DemandAcceptanceCriterionDetail struct {
 // DemandAcceptanceCriterionDetailJudgeType 生效判定的来源；无判定时为 null
 type DemandAcceptanceCriterionDetailJudgeType string
 
-// DemandAcceptanceCriterionDetailVerdict 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；无任何判定时为 null
+// DemandAcceptanceCriterionDetailVerdict 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；escalate_human 仅出现于 adversarial_review 判据的对抗聚合（判官预算耗尽升级人类）；无任何判定时为 null
 type DemandAcceptanceCriterionDetailVerdict string
 
 // DemandCriterionTaskSummary defines model for DemandCriterionTaskSummary.

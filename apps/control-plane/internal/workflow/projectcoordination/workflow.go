@@ -816,7 +816,7 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 			CompletedTaskID: signal.ProjectTaskID,
 		}).Get(ctx, &gate)
 		if gateErr != nil {
-			workflow.GetLogger(ctx).Error("review gate failed; falling through (verdict-less review_gate → default release)",
+			workflow.GetLogger(ctx).Error("review gate failed; falling through (completion-time pending placeholder keeps the demand HELD for the human)",
 				"completed_task_id", signal.ProjectTaskID.String(), "error", gateErr.Error())
 		} else if gate.Reviewed && gate.AnyViolation {
 			workflow.GetLogger(ctx).Info("review gate detected violation; demand held at acceptance gate for human final acceptance",

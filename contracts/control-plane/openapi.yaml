@@ -8494,7 +8494,8 @@ components:
             - unsatisfied
             - not_applicable
             - pending
-          description: 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；无任何判定时为 null
+            - escalate_human
+          description: 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；escalate_human 仅出现于 adversarial_review 判据的对抗聚合（判官预算耗尽升级人类）；无任何判定时为 null
         judge_type:
           type: string
           nullable: true

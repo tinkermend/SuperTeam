@@ -231,9 +231,11 @@ func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, ve
 			//   - `unsatisfied` — a detector fired (or a human override) → HOLD;
 			//   - `pending` — the synchronous placeholder written at the reviewed
 			//     task's completion, before the async detector concluded → HOLD
-			//     (bounded: the detector was triggered by that same completion and
-			//     flips it within seconds; see
-			//     demandCriterionVerdictReviewGatePending);
+			//     (on the direct path the detector fires from the same completion's
+			//     signal and flips it within seconds; on the requires-acceptance
+			//     path it fires only after the human approves the task, during
+			//     which the task itself is still non-terminal and the hold is
+			//     redundant; see demandCriterionVerdictReviewGatePending);
 			//   - any other value is an unexpected state and fails toward the
 			//     human (HOLD) rather than releasing on garbage.
 			if hasVerdict && verdict != demandCriterionVerdictSatisfied {

@@ -45,6 +45,7 @@ import (
 type reviewGateStore interface {
 	PrepareReviewGate(ctx context.Context, input PrepareReviewGateInput) (ReviewGatePlan, error)
 	PersistReviewGateOutcome(ctx context.Context, input PersistReviewGateOutcomeInput) error
+	RecomputeDemandStatusAfterReviewGate(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error
 }
 
 // RunReviewGateForTaskInput identifies the just-completed, accepted task.
@@ -136,6 +137,7 @@ func (a *Activities) RunReviewGateForTask(ctx context.Context, input RunReviewGa
 	tolerance := reviewGateMinorTolerance(plan.Policy)
 	outcome := runReviewGate(ctx, plan.Artifact, enabled, tolerance)
 
+	recomputed := make(map[uuid.UUID]struct{}, 1)
 	for _, item := range plan.Items {
 		if err := store.PersistReviewGateOutcome(ctx, PersistReviewGateOutcomeInput{
 			TenantID:       input.TenantID,
@@ -145,6 +147,25 @@ func (a *Activities) RunReviewGateForTask(ctx context.Context, input RunReviewGa
 			CriterionID:    item.CriterionID,
 			Outcome:        outcome,
 		}); err != nil {
+			return RunReviewGateForTaskResult{}, err
+		}
+		recomputed[item.DemandID] = struct{}{}
+	}
+	// Second half of the placeholder-race fix: the reviewed task's completion
+	// wrote a `pending` placeholder that held its demand at acceptance_pending,
+	// and NOTHING else recomputes after the verdicts above land — without this,
+	// a clean artifact (verdict flipped to satisfied) would stay held forever.
+	// Once per distinct demand, after ALL of that demand's criterion verdicts
+	// are persisted (a task's ReviewGateItems can share a demand; recomputing
+	// per criterion would be N identical transactional recomputes). Forward-only
+	// and idempotent: on unsatisfied it re-derives acceptance_pending (no
+	// change); on satisfied it converges the demand to completed exactly as the
+	// pre-placeholder default release did, only ~13s later. An error propagates
+	// so the Activity retry re-runs the (idempotent) persist + recompute pair —
+	// a transient recompute failure self-heals; a permanent one leaves the
+	// demand held for the human, never silently released.
+	for demandID := range recomputed {
+		if err := store.RecomputeDemandStatusAfterReviewGate(ctx, input.TenantID, input.ProjectID, demandID); err != nil {
 			return RunReviewGateForTaskResult{}, err
 		}
 	}
@@ -199,27 +220,27 @@ func (s *ProjectStore) PrepareReviewGate(ctx context.Context, input PrepareRevie
 
 // PersistReviewGateOutcome writes one criterion's aggregate gate outcome as a
 // review_gate demand_criterion_verdicts row (judge_type=review_gate,
-// project_task_id NULL) via the shared projection, then recomputes the demand's
-// lifecycle status. The recompute is the second half of the placeholder-race
-// fix (project.Service.projectReviewGatePlaceholderVerdicts): the reviewed
-// task's completion synchronously wrote a `pending` placeholder that held the
-// demand at acceptance_pending, and NOTHING else recomputes after this
-// asynchronous verdict lands — without it a clean artifact (verdict flipped to
-// satisfied) would stay held forever instead of default-releasing. The
-// recompute is forward-only and idempotent: on unsatisfied it re-derives
-// acceptance_pending (no change), on satisfied it converges the demand to
-// completed exactly as the pre-placeholder default release did, only ~13s
-// later. Upsert-idempotent, so a task retry re-running the gate is safe.
+// project_task_id NULL) via the shared projection. Upsert-idempotent, so a
+// task retry re-running the gate is safe. The demand-status recompute that
+// releases a placeholder-held demand runs once per demand AFTER all of its
+// criterion verdicts are persisted — see RunReviewGateForTask.
 func (s *ProjectStore) PersistReviewGateOutcome(ctx context.Context, input PersistReviewGateOutcomeInput) error {
-	if err := s.projectReviewGateVerdict(ctx, ReviewGateVerdictInput{
+	return s.projectReviewGateVerdict(ctx, ReviewGateVerdictInput{
 		TenantID:       input.TenantID,
 		ProjectID:      input.ProjectID,
 		DemandID:       input.DemandID,
 		PlanRevisionID: input.PlanRevisionID,
 		CriterionID:    input.CriterionID,
 		Outcome:        input.Outcome,
-	}); err != nil {
-		return err
+	})
+}
+
+// RecomputeDemandStatusAfterReviewGate re-derives one demand's lifecycle
+// status after the gate's verdicts landed — the release half of the
+// placeholder-race fix (see RunReviewGateForTask's recompute loop).
+func (s *ProjectStore) RecomputeDemandStatusAfterReviewGate(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error {
+	if s.repository == nil {
+		return ErrActivityStoreRequired
 	}
-	return s.repository.RecomputeProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID)
+	return s.repository.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID)
 }

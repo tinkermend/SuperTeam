@@ -4060,6 +4060,12 @@ func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, 
 
 func (r *PgRepository) CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task attempt completion result writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		// Placeholders first: the completion helper below recomputes the demand
+		// status in this same transaction, and the convergence gate must already
+		// see the pending review_gate rows when it does.
+		if err := r.createReviewGateVerdictsWithQueries(ctx, q, req.ReviewGatePlaceholders); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
 		result, err := r.completeProjectTaskAttemptWritebackWithQueries(ctx, q, req.Complete)
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
@@ -4151,6 +4157,12 @@ func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context
 
 func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task attempt acceptance result writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		// Placeholders atomic with the result record: the task parks at
+		// waiting-human here, so the rows only become load-bearing when the
+		// human-wait resolution writeback later recomputes the demand.
+		if err := r.createReviewGateVerdictsWithQueries(ctx, q, req.ReviewGatePlaceholders); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
 		result, err := r.completeProjectTaskAttemptAcceptanceWritebackWithQueries(ctx, q, req.Acceptance)
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
@@ -5627,11 +5639,15 @@ func (r *PgRepository) CreateAdversarialVerdict(ctx context.Context, req CreateA
 // CONFLICT against uq_demand_verdicts_review_gate overwrites verdict/reason so a
 // task retry re-running the detectors is idempotent (see migration 073).
 func (r *PgRepository) CreateReviewGateVerdict(ctx context.Context, req CreateReviewGateVerdictRequest) error {
+	return createReviewGateVerdictWithQueries(ctx, r.q, req)
+}
+
+func createReviewGateVerdictWithQueries(ctx context.Context, q *queries.Queries, req CreateReviewGateVerdictRequest) error {
 	evidenceRefs, err := jsonbStringSlice(req.EvidenceRefs, "evidence_refs")
 	if err != nil {
 		return err
 	}
-	return r.q.CreateReviewGateVerdict(ctx, queries.CreateReviewGateVerdictParams{
+	return q.CreateReviewGateVerdict(ctx, queries.CreateReviewGateVerdictParams{
 		TenantID:       req.TenantID,
 		ProjectID:      req.ProjectID,
 		DemandID:       req.DemandID,
@@ -5642,6 +5658,19 @@ func (r *PgRepository) CreateReviewGateVerdict(ctx context.Context, req CreateRe
 		Reason:         req.Reason,
 		EvidenceRefs:   evidenceRefs,
 	})
+}
+
+// createReviewGateVerdictsWithQueries upserts a batch of review_gate aggregate
+// rows inside the caller's transaction — the completion writebacks use it to
+// commit `pending` placeholders atomically with the task completion, before
+// the in-transaction demand-status recompute.
+func (r *PgRepository) createReviewGateVerdictsWithQueries(ctx context.Context, q *queries.Queries, reqs []CreateReviewGateVerdictRequest) error {
+	for _, req := range reqs {
+		if err := createReviewGateVerdictWithQueries(ctx, q, req); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CreateAdversarialJudgements upserts the per-lens detail rows for one

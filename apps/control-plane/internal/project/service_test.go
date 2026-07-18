@@ -12877,6 +12877,13 @@ func (r *memoryRepository) CompleteProjectTaskAttemptWriteback(ctx context.Conte
 
 func (r *memoryRepository) CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error) {
 	snapshot := r.writebackSnapshot()
+	// Mirrors PgRepository: review_gate pending placeholders commit inside the
+	// writeback, before the completion's demand-status recompute.
+	for _, placeholder := range req.ReviewGatePlaceholders {
+		if err := r.CreateReviewGateVerdict(ctx, placeholder); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
 	result, err := r.CompleteProjectTaskAttemptWriteback(ctx, req.Complete)
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
@@ -12891,6 +12898,11 @@ func (r *memoryRepository) CompleteProjectTaskAttemptResultWriteback(ctx context
 func (r *projectTaskResultMemoryRepository) CompleteProjectTaskAttemptResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptResultWritebackRequest) (ProjectTaskWritebackResult, error) {
 	snapshot := r.writebackSnapshot()
 	resultSnapshot := append([]ProjectTaskResult(nil), r.projectTaskResults...)
+	for _, placeholder := range req.ReviewGatePlaceholders {
+		if err := r.CreateReviewGateVerdict(ctx, placeholder); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
 	result, err := r.memoryRepository.CompleteProjectTaskAttemptWriteback(ctx, req.Complete)
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
@@ -13140,6 +13152,11 @@ func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx con
 
 func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error) {
 	snapshot := r.writebackSnapshot()
+	for _, placeholder := range req.ReviewGatePlaceholders {
+		if err := r.CreateReviewGateVerdict(ctx, placeholder); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
 	result, err := r.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, req.Acceptance)
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
@@ -13154,6 +13171,11 @@ func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceResultWriteback(c
 func (r *projectTaskResultMemoryRepository) CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceResultWritebackRequest) (ProjectTaskWritebackResult, error) {
 	snapshot := r.writebackSnapshot()
 	resultSnapshot := append([]ProjectTaskResult(nil), r.projectTaskResults...)
+	for _, placeholder := range req.ReviewGatePlaceholders {
+		if err := r.CreateReviewGateVerdict(ctx, placeholder); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
 	result, err := r.memoryRepository.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, req.Acceptance)
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err

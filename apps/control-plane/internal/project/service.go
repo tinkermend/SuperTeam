@@ -3097,7 +3097,8 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 	if err := s.projectDemandCriterionVerdicts(ctx, task, req.ProjectTaskAttemptRuntimeRequest, *resultContract); err != nil {
 		return nil, err
 	}
-	if err := s.projectReviewGatePlaceholderVerdicts(ctx, task); err != nil {
+	reviewGatePlaceholders, err := s.reviewGatePlaceholderVerdictRequests(ctx, task)
+	if err != nil {
 		return nil, err
 	}
 	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
@@ -3125,8 +3126,9 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		var result ProjectTaskWritebackResult
 		var err error
 		result, err = writebackRepository.CompleteProjectTaskAttemptAcceptanceResultWriteback(ctx, CompleteProjectTaskAttemptAcceptanceResultWritebackRequest{
-			Acceptance: acceptanceReq,
-			Result:     recordReq,
+			Acceptance:             acceptanceReq,
+			Result:                 recordReq,
+			ReviewGatePlaceholders: reviewGatePlaceholders,
 		})
 		if err != nil {
 			return nil, err
@@ -3143,8 +3145,9 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 	}
 	var result ProjectTaskWritebackResult
 	result, err = writebackRepository.CompleteProjectTaskAttemptResultWriteback(ctx, CompleteProjectTaskAttemptResultWritebackRequest{
-		Complete: req,
-		Result:   recordReq,
+		Complete:               req,
+		Result:                 recordReq,
+		ReviewGatePlaceholders: reviewGatePlaceholders,
 	})
 	if err != nil {
 		return nil, err
@@ -3579,45 +3582,63 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 	return nil
 }
 
-// projectReviewGatePlaceholderVerdicts writes the conservative `pending`
-// placeholder verdict (review_gate aggregate row) for every review_gate
-// criterion THIS completing task satisfies, BEFORE the writeback transaction
-// recomputes the demand status. Without it, a review_gate-only demand
-// auto-completes at task completion — the criterion has no verdict yet, so the
-// default-release gate lets it through — while the asynchronous detector
-// (RunReviewGateForTask, triggered by the same completion's
-// EmployeeTaskCompleted signal, ~13s of LLM latency) is still running: a
-// detected violation would land on an already-completed demand, bypassing the
-// gate. The placeholder makes the convergence gate HOLD at acceptance_pending
-// until the detector flips the same aggregate row (upsert on
-// uq_demand_verdicts_review_gate) to satisfied (release, followed by the
-// activity-side demand-status recompute) or unsatisfied (stay held for the
-// human). Re-completion (task retry) deliberately overwrites a previous
-// round's real verdict back to pending: a new artifact means a new detection
-// round, and holding until it concludes is the conservative direction.
+// reviewGatePlaceholderVerdictRequests builds the conservative `pending`
+// placeholder verdict rows (review_gate aggregate rows) for every review_gate
+// criterion THIS completing task satisfies. The caller passes them into the
+// completion writeback request so they commit IN THE SAME TRANSACTION as the
+// task completion, before the demand-status recompute runs — atomicity matters
+// both ways: without the placeholder a review_gate-only demand auto-completes
+// while the asynchronous detector (RunReviewGateForTask, triggered by the same
+// completion's EmployeeTaskCompleted signal, ~13s of LLM latency) is still
+// running, so a detected violation lands on an already-completed demand
+// (gate bypassed); and a placeholder committed OUTSIDE the writeback would
+// survive a failed writeback (task concurrently transferred/cancelled) as an
+// orphaned pending row permanently holding the demand with no detector ever
+// coming to flip it. In-transaction, both windows are closed. The detector
+// then flips the same aggregate row (upsert on uq_demand_verdicts_review_gate)
+// to satisfied (release, followed by the activity-side demand-status
+// recompute) or unsatisfied (stay held for the human). Re-completion (task
+// retry / revision round) deliberately overwrites a previous round's real
+// verdict back to pending: a new artifact means a new detection round, and
+// holding until it concludes is the conservative direction.
 //
-// Scope note: criteriaSatisfiedByTask matches the task's OWN planned key only.
-// A rework task (revision of a held original) matches its review_gate criteria
-// via the revision-root key on the trigger side
-// (listCriteriaForTaskByMethod), so its completion writes no fresh
-// placeholder here — but by construction a rework round only exists because a
-// prior-round verdict already exists on the criterion, so the gate is not
-// bypassable through that path (at worst a stale prior verdict governs for the
-// seconds until the detector overwrites it; recorded as a known P1.1 edge in
-// the spec).
-func (s *Service) projectReviewGatePlaceholderVerdicts(ctx context.Context, task ProjectTask) error {
+// Scope: the task's OWN planned key, plus — for a revision/rework task — the
+// revision-root ancestor's key (reviewGateRevisionRootPlannedTaskKey), the
+// SAME identity rule the detector trigger applies
+// (projectcoordination.listCriteriaForTaskByMethod). The root key matters: a
+// revision task carries a derived key ("<base>#revision-<n>") while the
+// criteria's SatisfiedBy names the root's key, so matching only the own key
+// would skip the placeholder on every revision completion and reopen the race
+// on exactly the revision path (a revision spawned before any accepted
+// completion has NO prior verdict to fall back on).
+//
+// Timing honesty: on the direct completion path the placeholder is flipped
+// within seconds (the detector fires from the same completion's signal). On
+// the requires-acceptance path the placeholder is written when the executor
+// submits the result, but the EmployeeTaskCompleted signal — and therefore
+// the detector — only fires after the human approves the task, so the
+// criterion shows as pending ("检测中") for the whole human wait. The demand
+// cannot complete during that wait anyway (the task itself is still
+// non-terminal), so the hold is redundant-but-harmless there; it becomes
+// load-bearing the moment the task turns terminal.
+func (s *Service) reviewGatePlaceholderVerdictRequests(ctx context.Context, task ProjectTask) ([]CreateReviewGateVerdictRequest, error) {
 	snapshot, err := s.demandAcceptanceCriteriaSnapshot(ctx, task)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(snapshot) == 0 {
-		return nil
+		return nil, nil
 	}
-	for _, criterion := range criteriaSatisfiedByTask(snapshot, task) {
+	matched := criteriaSatisfiedByTask(snapshot, task)
+	if rootKey := s.reviewGateRevisionRootPlannedTaskKey(ctx, task); rootKey != "" {
+		matched = append(matched, criteriaSatisfiedByKey(snapshot, rootKey, matched)...)
+	}
+	var requests []CreateReviewGateVerdictRequest
+	for _, criterion := range matched {
 		if criterion.VerificationMethod != demandCriterionVerificationMethodReviewGate {
 			continue
 		}
-		if err := s.repository.CreateReviewGateVerdict(ctx, CreateReviewGateVerdictRequest{
+		requests = append(requests, CreateReviewGateVerdictRequest{
 			TenantID:       task.TenantID,
 			ProjectID:      task.ProjectID,
 			DemandID:       criterion.DemandID,
@@ -3626,11 +3647,59 @@ func (s *Service) projectReviewGatePlaceholderVerdicts(ctx context.Context, task
 			Verdict:        demandCriterionVerdictReviewGatePending,
 			JudgeID:        uuid.Nil,
 			Reason:         "检测门待执行：任务完成已触发检测器，占位保持 HOLD 至检测器出结论",
-		}); err != nil {
-			return err
+		})
+	}
+	return requests, nil
+}
+
+// criteriaSatisfiedByKey returns the criteria whose SatisfiedBy names key,
+// excluding any already present in existing (matched by CriterionID) — the
+// revision-root complement to criteriaSatisfiedByTask.
+func criteriaSatisfiedByKey(snapshot []DemandAcceptanceCriterion, key string, existing []DemandAcceptanceCriterion) []DemandAcceptanceCriterion {
+	seen := make(map[string]struct{}, len(existing))
+	for _, c := range existing {
+		seen[c.CriterionID] = struct{}{}
+	}
+	var scoped []DemandAcceptanceCriterion
+	for _, criterion := range snapshot {
+		if _, dup := seen[criterion.CriterionID]; dup {
+			continue
+		}
+		for _, satisfiedBy := range criterion.SatisfiedBy {
+			if strings.TrimSpace(satisfiedBy) == key {
+				scoped = append(scoped, criterion)
+				break
+			}
 		}
 	}
-	return nil
+	return scoped
+}
+
+// reviewGateRevisionRootPlannedTaskKey mirrors
+// projectcoordination.revisionRootPlannedTaskKey at the service layer: the
+// planned key of the task's revision-root ancestor, or "" when the task is
+// not a revision / the root cannot be resolved / the root has no key. Lookup
+// failure degrades to own-key matching (no error) — an under-matched
+// placeholder degrades to the pre-fix race window, never a new failure mode.
+func (s *Service) reviewGateRevisionRootPlannedTaskKey(ctx context.Context, task ProjectTask) string {
+	rootIDValue := ""
+	if value, ok := task.PlannerMetadata["revision_root_task_id"].(string); ok && strings.TrimSpace(value) != "" {
+		rootIDValue = strings.TrimSpace(value)
+	} else if task.RevisionOfTaskID != nil && *task.RevisionOfTaskID != uuid.Nil {
+		rootIDValue = task.RevisionOfTaskID.String()
+	}
+	if rootIDValue == "" || rootIDValue == task.ID.String() {
+		return ""
+	}
+	rootID, err := uuid.Parse(rootIDValue)
+	if err != nil {
+		return ""
+	}
+	root, err := s.repository.GetProjectTask(ctx, task.TenantID, rootID)
+	if err != nil || root.PlannedTaskKey == nil {
+		return ""
+	}
+	return strings.TrimSpace(*root.PlannedTaskKey)
 }
 
 // mergeStringRefs returns the union of two ref slices preserving order

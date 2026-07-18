@@ -198,11 +198,23 @@ type ProjectTaskAttemptWritebackRepository interface {
 type CompleteProjectTaskAttemptResultWritebackRequest struct {
 	Complete CompleteProjectTaskAttemptRequest
 	Result   RecordProjectTaskResultRequest
+	// ReviewGatePlaceholders are the `pending` review_gate placeholder verdicts
+	// (Service.reviewGatePlaceholderVerdictRequests) to upsert INSIDE the
+	// writeback transaction, before its demand-status recompute — atomic with
+	// the completion so a failed writeback leaves no orphaned pending row and a
+	// committed one can never recompute ahead of its placeholder.
+	ReviewGatePlaceholders []CreateReviewGateVerdictRequest
 }
 
 type CompleteProjectTaskAttemptAcceptanceResultWritebackRequest struct {
 	Acceptance CompleteProjectTaskAttemptAcceptanceWritebackRequest
 	Result     RecordProjectTaskResultRequest
+	// ReviewGatePlaceholders: see CompleteProjectTaskAttemptResultWritebackRequest.
+	// On this leg the task parks at waiting-human, so the placeholder is
+	// redundant until the human approves — but writing it here keeps it atomic
+	// with the result record and already in place for the human-wait
+	// resolution writeback's recompute.
+	ReviewGatePlaceholders []CreateReviewGateVerdictRequest
 }
 
 type ProviderEventExecutionLedgerRepository interface {
