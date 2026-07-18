@@ -84,6 +84,9 @@ func (s *Service) Create(ctx context.Context, req CreateScenarioTemplateRequest)
 	if spec == nil {
 		spec = map[string]any{}
 	}
+	if err := rejectVersionlessV2Spec(spec); err != nil {
+		return ScenarioTemplate{}, err
+	}
 	parsedSpec, err := ParseSpec(spec)
 	if err != nil {
 		return ScenarioTemplate{}, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
@@ -152,6 +155,9 @@ func (s *Service) CreateVersion(ctx context.Context, req CreateScenarioTemplateV
 	spec := req.Spec
 	if spec == nil {
 		spec = map[string]any{}
+	}
+	if err := rejectVersionlessV2Spec(spec); err != nil {
+		return ScenarioTemplate{}, err
 	}
 	parsedSpec, err := ParseSpec(spec)
 	if err != nil {
@@ -296,6 +302,21 @@ func (s *Service) Patch(ctx context.Context, req PatchScenarioTemplateRequest) (
 	s.recordAudit(ctx, req.TenantID, updated.Key, "status", req.ActorUserID, details)
 
 	return updated, nil
+}
+
+// rejectVersionlessV2Spec is the spec_version guardrail (spec
+// 2026-07-18-scenario-template-spec-version-guardrail): a v2-shaped spec that
+// forgot "spec_version": 2 would be v1-normalized with its governance fields
+// silently dropped — reject it at write time with an actionable message
+// instead of registering a template whose constraints don't exist at runtime.
+func rejectVersionlessV2Spec(spec map[string]any) error {
+	missing, offending := MissingSpecVersionForV2Shape(spec)
+	if !missing {
+		return nil
+	}
+	return fmt.Errorf(
+		`%w: spec 包含 v2 字段（%s）但未声明 "spec_version": 2；v1 归一化会静默丢弃这些字段导致治理约束失效。请补 "spec_version": 2 后重试`,
+		ErrInvalidInput, strings.Join(offending, "、"))
 }
 
 // validateSpecVocabulary collects every role's required_capabilities and
