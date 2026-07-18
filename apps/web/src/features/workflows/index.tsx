@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CriteriaPanel } from "./components/criteria-panel";
@@ -185,7 +185,7 @@ function WorkflowBlockingBanner({ graph }: { graph: ProjectTaskGraph | undefined
 /**
  * 规划缺口面板：coordination.blocked 事件携带结构化 gap（RejectDemandPlanning →
  * 任务 4-6 的 planning_gap 决策通道）时，在阻塞横幅下方给出三条处置动作——一键补员、
- * 豁免约束重规划、发起借调（仅链接）。没有 gap 就不渲染面板（非结构性诊断没有可执行
+ * 豁免约束重规划。没有 gap 就不渲染面板（非结构性诊断没有可执行
  * 的结构化处置项）。
  */
 function WorkflowGapPanel({
@@ -263,11 +263,6 @@ function WorkflowGapPanel({
             variant="outline"
           >
             豁免并重规划
-          </V3Button>
-          <V3Button asChild variant="ghost">
-            <Link params={{ projectId }} to="/projects/$projectId/config">
-              发起借调
-            </Link>
           </V3Button>
         </div>
       </div>

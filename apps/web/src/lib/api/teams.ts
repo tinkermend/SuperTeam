@@ -15,12 +15,10 @@ export type TeamMemberRole =
   | "approver"
   | "member"
   | "viewer";
-export type TeamMemberRoleRequestStatus = "pending" | "approved" | "rejected";
 export type AllowedTeamAction =
   | "team.update"
   | "team.delete"
   | "team.member.add"
-  | "team.member.request_privileged_role"
   | "team.governance.edit"
   | "team.governance.approve"
   | "team.capability.bind"
@@ -95,22 +93,6 @@ export type TeamMember = {
   updated_at?: string;
 };
 
-export type TeamMemberRoleRequest = {
-  id: string;
-  tenant_id: string;
-  team_id: string;
-  target_user_id: string;
-  requested_role: TeamMemberRole;
-  requested_by: string;
-  status: TeamMemberRoleRequestStatus;
-  reason: string;
-  decided_by?: string;
-  decided_at?: string;
-  decision_reason: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
 export type TeamAuditEvent = {
   id: string;
   tenant_id: string;
@@ -167,16 +149,6 @@ export type UpdateTeamConstitutionInput = Record<string, unknown>;
 export type AddTeamMemberInput = {
   user_id: string;
   role: Extract<TeamMemberRole, "member" | "viewer">;
-};
-
-export type CreateTeamMemberRoleRequestInput = {
-  target_user_id: string;
-  requested_role: Extract<TeamMemberRole, "owner" | "admin" | "approver">;
-  reason: string;
-};
-
-export type DecideTeamMemberRoleRequestInput = {
-  decision_reason?: string;
 };
 
 function teamPath(teamId: string, suffix = ""): string {
@@ -370,66 +342,6 @@ export function removeTeamMember(
   );
 }
 
-export function listTeamMemberRoleRequests(
-  options: ApiClientOptions,
-  teamId: string,
-  status?: TeamMemberRoleRequestStatus,
-): Promise<TeamMemberRoleRequest[]> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
-  return getJson<TeamMemberRoleRequest[]>(
-    options,
-    teamPath(teamId, `/member-role-requests${query}`),
-    "team member role requests",
-  );
-}
-
-export function createTeamMemberRoleRequest(
-  options: ApiClientOptions,
-  teamId: string,
-  input: CreateTeamMemberRoleRequestInput,
-): Promise<TeamMemberRoleRequest> {
-  return postJson<TeamMemberRoleRequest>(
-    options,
-    teamPath(teamId, "/member-role-requests"),
-    input,
-    "create team member role request",
-  );
-}
-
-export function approveTeamMemberRoleRequest(
-  options: ApiClientOptions,
-  teamId: string,
-  requestId: string,
-  input: DecideTeamMemberRoleRequestInput = {},
-): Promise<TeamMemberRoleRequest> {
-  return postJson<TeamMemberRoleRequest>(
-    options,
-    teamPath(
-      teamId,
-      `/member-role-requests/${encodeURIComponent(requestId)}/approve`,
-    ),
-    input,
-    "approve team member role request",
-  );
-}
-
-export function rejectTeamMemberRoleRequest(
-  options: ApiClientOptions,
-  teamId: string,
-  requestId: string,
-  input: DecideTeamMemberRoleRequestInput = {},
-): Promise<TeamMemberRoleRequest> {
-  return postJson<TeamMemberRoleRequest>(
-    options,
-    teamPath(
-      teamId,
-      `/member-role-requests/${encodeURIComponent(requestId)}/reject`,
-    ),
-    input,
-    "reject team member role request",
-  );
-}
-
 export function listTeamAuditEvents(
   options: ApiClientOptions,
   teamId: string,
@@ -439,68 +351,5 @@ export function listTeamAuditEvents(
     options,
     teamAuditPath(teamId, filters),
     "team audit events",
-  );
-}
-
-// ---- 团队借调（lending）----
-
-export type TeamLendingApprovalMode = "auto" | "manual";
-export type TeamLendingRequestStatus =
-  | "pending"
-  | "auto_approved"
-  | "approved"
-  | "rejected"
-  | "revoked";
-
-export type TeamLendingRequest = {
-  id: string;
-  tenant_id: string;
-  team_id: string;
-  project_id: string;
-  status: TeamLendingRequestStatus;
-  requested_by_user_id: string;
-  request_reason: string;
-  requested_budget?: string;
-  requested_capability: Record<string, unknown>;
-  granted_budget?: string;
-  granted_capability: Record<string, unknown>;
-  is_exception: boolean;
-  decided_by_user_id?: string;
-  decided_at?: string;
-  decision_reason?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type CreateProjectLendingRequestInput = {
-  team_id: string;
-  request_reason?: string;
-  requested_budget?: string;
-  requested_capability?: Record<string, unknown>;
-};
-
-export function createProjectLendingRequest(
-  options: ApiClientOptions,
-  projectId: string,
-  input: CreateProjectLendingRequestInput,
-): Promise<TeamLendingRequest> {
-  return postJson<TeamLendingRequest>(
-    options,
-    `/api/v1/projects/${encodeURIComponent(projectId)}/lending-requests`,
-    input,
-    "create project lending request",
-  );
-}
-
-export async function listProjectLendingRequests(
-  options: ApiClientOptions,
-  projectId: string,
-  status?: TeamLendingRequestStatus,
-): Promise<TeamLendingRequest[]> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
-  return getJson<TeamLendingRequest[]>(
-    options,
-    `/api/v1/projects/${encodeURIComponent(projectId)}/lending-requests${query}`,
-    "project lending requests",
   );
 }

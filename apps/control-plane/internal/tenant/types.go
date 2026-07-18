@@ -57,14 +57,6 @@ const (
 	MaxTeamDescriptionLength   = 280
 )
 
-type TeamMemberRoleRequestStatus string
-
-const (
-	TeamMemberRoleRequestStatusPending  TeamMemberRoleRequestStatus = "pending"
-	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
-	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
-)
-
 type ValidationIssue struct {
 	Field    string
 	Message  string
@@ -138,22 +130,6 @@ type TeamMember struct {
 	UpdatedAt        time.Time
 }
 
-type TeamMemberRoleRequest struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	TeamID         uuid.UUID
-	TargetUserID   uuid.UUID
-	RequestedRole  string
-	RequestedBy    uuid.UUID
-	Status         TeamMemberRoleRequestStatus
-	Reason         string
-	DecidedBy      *uuid.UUID
-	DecidedAt      *time.Time
-	DecisionReason string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
-
 type CreateTeamRequest struct {
 	TenantID                  uuid.UUID
 	ActorUserID               uuid.UUID
@@ -208,21 +184,4 @@ type RemoveTeamMemberRequest struct {
 	TenantID     uuid.UUID
 	TeamID       uuid.UUID
 	MembershipID uuid.UUID
-}
-
-type CreateRoleRequestRequest struct {
-	TenantID      uuid.UUID
-	TeamID        uuid.UUID
-	TargetUserID  uuid.UUID
-	RequestedRole string
-	RequestedBy   uuid.UUID
-	Reason        string
-}
-
-type DecideRoleRequestRequest struct {
-	TenantID       uuid.UUID
-	TeamID         uuid.UUID
-	RequestID      uuid.UUID
-	DecidedBy      uuid.UUID
-	DecisionReason string
 }

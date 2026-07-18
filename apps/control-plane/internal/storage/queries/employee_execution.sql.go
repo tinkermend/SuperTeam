@@ -62,20 +62,6 @@ aborted_configs AS (
       AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
     RETURNING decr.id
 ),
-aborted_workspace_files AS (
-    UPDATE digital_employee_workspace_files dewf
-    SET status = 'deleted',
-        archived_at = COALESCE(dewf.archived_at, NOW()),
-        deleted_at = COALESCE(dewf.deleted_at, NOW()),
-        updated_at = NOW()
-    FROM abort_args
-    WHERE dewf.tenant_id = abort_args.tenant_id
-      AND dewf.digital_employee_id = abort_args.digital_employee_id
-      AND dewf.deleted_at IS NULL
-      AND EXISTS (SELECT 1 FROM aborted_employee)
-      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
-    RETURNING dewf.id
-),
 aborted_receipts AS (
     UPDATE runtime_command_receipts rcr
     SET status = CASE
@@ -3759,44 +3745,6 @@ type SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams struct {
 
 func (q *Queries) SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const SoftDeleteDigitalEmployeeWorkspaceFilesForDelete = `-- name: SoftDeleteDigitalEmployeeWorkspaceFilesForDelete :many
-UPDATE digital_employee_workspace_files
-SET status = 'deleted',
-    archived_at = COALESCE(archived_at, $1::timestamptz),
-    deleted_at = COALESCE(deleted_at, $1::timestamptz),
-    updated_at = $1::timestamptz
-WHERE tenant_id = $2::uuid
-  AND digital_employee_id = $3::uuid
-  AND deleted_at IS NULL
-RETURNING id
-`
-
-type SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams struct {
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	TenantID          uuid.UUID          `json:"tenant_id"`
-	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
-}
-
-func (q *Queries) SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeWorkspaceFilesForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
 	if err != nil {
 		return nil, err
 	}

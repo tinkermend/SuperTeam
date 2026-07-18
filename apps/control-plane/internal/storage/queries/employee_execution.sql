@@ -219,17 +219,6 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND archived_at IS NULL
 RETURNING id;
 
--- name: SoftDeleteDigitalEmployeeWorkspaceFilesForDelete :many
-UPDATE digital_employee_workspace_files
-SET status = 'deleted',
-    archived_at = COALESCE(archived_at, sqlc.arg('deleted_at')::timestamptz),
-    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
-    updated_at = sqlc.arg('deleted_at')::timestamptz
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-  AND deleted_at IS NULL
-RETURNING id;
-
 -- name: DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete :many
 DELETE FROM project_employee_node_affinity
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -1158,20 +1147,6 @@ aborted_configs AS (
       AND EXISTS (SELECT 1 FROM aborted_employee)
       AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
     RETURNING decr.id
-),
-aborted_workspace_files AS (
-    UPDATE digital_employee_workspace_files dewf
-    SET status = 'deleted',
-        archived_at = COALESCE(dewf.archived_at, NOW()),
-        deleted_at = COALESCE(dewf.deleted_at, NOW()),
-        updated_at = NOW()
-    FROM abort_args
-    WHERE dewf.tenant_id = abort_args.tenant_id
-      AND dewf.digital_employee_id = abort_args.digital_employee_id
-      AND dewf.deleted_at IS NULL
-      AND EXISTS (SELECT 1 FROM aborted_employee)
-      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
-    RETURNING dewf.id
 ),
 aborted_receipts AS (
     UPDATE runtime_command_receipts rcr

@@ -1,7 +1,5 @@
 use serde_json::json;
-use superteam_runtime_agent::commands::payload::{
-    RuntimeSessionCommandPayload, RuntimeWorkspaceSyncCommandPayload, SessionPolicyMode,
-};
+use superteam_runtime_agent::commands::payload::{RuntimeSessionCommandPayload, SessionPolicyMode};
 use superteam_runtime_agent::controlplane::models::{RuntimeCommand, RuntimeCommandType};
 
 fn command(payload: serde_json::Value) -> RuntimeCommand {
@@ -306,230 +304,6 @@ fn resume_session_requires_explicit_provider_session_id_even_when_mode_is_new() 
 }
 
 #[test]
-fn parses_valid_workspace_sync_payload_with_generic_workspace_file() {
-    let command = RuntimeCommand {
-        id: "cmd-sync".to_string(),
-        command_type: RuntimeCommandType::SyncWorkspaceFiles,
-        payload: serde_json::json!({
-            "command_id": "cmd-sync",
-            "tenant_id": "00000000-0000-4000-8000-000000000001",
-            "team_id": "11111111-1111-4111-8111-111111111111",
-            "digital_employee_id": "22222222-2222-4222-8222-222222222222",
-            "execution_instance_id": "33333333-3333-4333-8333-333333333333",
-            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
-            "provider_type": "claude-code",
-            "agent_home_dir": "/tmp/workspaces/teams/11111111-1111-4111-8111-111111111111/employees/22222222-2222-4222-8222-222222222222",
-            "workspace_files": [{
-                "file_id": "55555555-5555-4555-8555-555555555555",
-                "revision_id": "66666666-6666-4666-8666-666666666666",
-                "path": "context.md",
-                "file_role": "entrypoint",
-                "mime_type": "text/markdown",
-                "sync_policy": "auto",
-                "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                "size_bytes": 0,
-                "storage_backend": "db",
-                "content_text": ""
-            }],
-            "skills": [],
-            "mcp_servers": []
-        }),
-    };
-
-    let parsed = RuntimeWorkspaceSyncCommandPayload::from_command(&command).unwrap();
-    assert_eq!(
-        parsed.team_id.as_deref(),
-        Some("11111111-1111-4111-8111-111111111111")
-    );
-    assert_eq!(parsed.workspace_files[0].path, "context.md");
-    assert!(parsed.skills.is_empty());
-    assert!(parsed.mcp_servers.is_empty());
-}
-
-#[test]
-fn rejects_instruction_workspace_files_in_workspace_sync_payload() {
-    let mut payload = valid_workspace_sync_payload("cmd-instruction-workspace-file");
-    payload["workspace_files"] = serde_json::json!([{
-        "file_id": "55555555-5555-4555-8555-555555555555",
-        "revision_id": "66666666-6666-4666-8666-666666666666",
-        "path": "docs/AGENTS.md",
-        "file_role": "entrypoint",
-        "mime_type": "text/markdown",
-        "sync_policy": "auto",
-        "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649afbf4c8996fb92427ae",
-        "size_bytes": 0,
-        "storage_backend": "db",
-        "content_text": ""
-    }]);
-
-    let command = RuntimeCommand {
-        id: "cmd-instruction-workspace-file".to_string(),
-        command_type: RuntimeCommandType::SyncWorkspaceFiles,
-        payload,
-    };
-    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
-        .expect_err("instruction workspace files must be rejected");
-
-    assert!(error.to_string().contains("instruction workspace file"));
-}
-
-#[test]
-fn parses_team_less_workspace_sync_payload() {
-    let mut payload = valid_workspace_sync_payload("cmd-team-less");
-    payload["team_id"] = json!("");
-    payload["agent_home_dir"] =
-        json!("/tmp/workspaces/employees/22222222-2222-4222-8222-222222222222");
-    let command = RuntimeCommand {
-        id: "cmd-team-less".to_string(),
-        command_type: RuntimeCommandType::SyncWorkspaceFiles,
-        payload,
-    };
-
-    let parsed = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
-        .expect("team-less workspace sync payload should parse");
-
-    assert_eq!(parsed.team_id.as_deref(), Some(""));
-    assert!(parsed.agent_home_dir.contains("/employees/"));
-}
-
-#[test]
-fn rejects_blank_team_id_in_workspace_sync_payload() {
-    let mut payload = valid_workspace_sync_payload("cmd-blank-team");
-    payload["team_id"] = json!(" ");
-    let command = RuntimeCommand {
-        id: "cmd-blank-team".to_string(),
-        command_type: RuntimeCommandType::SyncWorkspaceFiles,
-        payload,
-    };
-
-    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
-        .expect_err("blank team_id should fail");
-
-    assert!(
-        error
-            .to_string()
-            .contains("team_id must be a UUID-like string")
-    );
-}
-
-#[test]
-fn parses_workspace_sync_payload_with_effective_capabilities() {
-    let mut payload = valid_workspace_sync_payload("cmd-capabilities");
-    payload["skills"] = json!([
-        {
-            "skill_id": "77777777-7777-4777-8777-777777777777",
-            "skill_key": "database-troubleshooting",
-            "revision_id": "88888888-8888-4888-8888-888888888888",
-            "archive_object_ref": "s3://runtime-skills/tenant/database-troubleshooting.zip",
-            "archive_checksum_sha256": "sha256:database-troubleshooting",
-            "archive_size_bytes": 4096,
-            "archive_file_count": 3
-        },
-        {
-            "skill_id": "99999999-9999-4999-8999-999999999999",
-            "skill_key": "sql-review",
-            "revision_id": null,
-            "archive_object_ref": "s3://runtime-skills/tenant/sql-review.zip",
-            "archive_checksum_sha256": "sha256:sql-review",
-            "archive_size_bytes": 2048,
-            "archive_file_count": 1
-        }
-    ]);
-    payload["mcp_servers"] = json!([
-        {
-            "server_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            "server_key": "postgres-readonly",
-            "transport": "stdio",
-            "config_ref": "team:mcp/postgres-readonly",
-            "permission_scope": {
-                "schemas": ["public"],
-                "readonly": true
-            }
-        }
-    ]);
-    let command = RuntimeCommand {
-        id: "cmd-capabilities".to_string(),
-        command_type: RuntimeCommandType::SyncWorkspaceFiles,
-        payload,
-    };
-
-    let parsed = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
-        .expect("workspace sync payload with effective capabilities");
-
-    assert_eq!(parsed.skills.len(), 2);
-    assert_eq!(parsed.skills[0].skill_key, "database-troubleshooting");
-    assert_eq!(
-        parsed.skills[0].archive_object_ref,
-        "s3://runtime-skills/tenant/database-troubleshooting.zip"
-    );
-    assert_eq!(parsed.skills[1].skill_key, "sql-review");
-    assert_eq!(parsed.mcp_servers.len(), 1);
-    assert_eq!(parsed.mcp_servers[0].server_key, "postgres-readonly");
-    assert_eq!(
-        parsed.mcp_servers[0].permission_scope["schemas"][0],
-        "public"
-    );
-    assert_eq!(parsed.mcp_servers[0].permission_scope["readonly"], true);
-}
-
-#[test]
-fn parses_persona_memory_and_capability_bindings_for_workspace_sync_payload() {
-    let mut command = RuntimeCommand {
-        id: "cmd-persona".to_string(),
-        command_type: RuntimeCommandType::SyncWorkspaceFiles,
-        payload: valid_workspace_sync_payload("cmd-persona"),
-    };
-    command.payload["persona_memory_markdown"] = serde_json::json!("# 人格画像\n证据优先");
-    command.payload["capability_bindings"] = serde_json::json!({
-        "skills": ["incident-diagnosis"],
-        "mcp_servers": ["postgres-readonly"],
-        "external_capabilities": [],
-        "environment_variable_refs": ["PG_DSN"]
-    });
-
-    let payload = RuntimeWorkspaceSyncCommandPayload::from_command(&command).unwrap();
-
-    assert_eq!(
-        payload.persona_memory_markdown.as_deref(),
-        Some("# 人格画像\n证据优先")
-    );
-    assert_eq!(
-        payload.capability_bindings["skills"][0],
-        "incident-diagnosis"
-    );
-}
-
-fn valid_workspace_sync_payload(command_id: &str) -> serde_json::Value {
-    serde_json::json!({
-        "command_id": command_id,
-        "tenant_id": "00000000-0000-4000-8000-000000000001",
-        "team_id": "11111111-1111-4111-8111-111111111111",
-        "digital_employee_id": "22222222-2222-4222-8222-222222222222",
-        "execution_instance_id": "33333333-3333-4333-8333-333333333333",
-        "runtime_node_id": "44444444-4444-4444-8444-444444444444",
-        "provider_type": "claude-code",
-        "agent_home_dir": "/tmp/workspaces/teams/11111111-1111-4111-8111-111111111111/employees/22222222-2222-4222-8222-222222222222",
-        "workspace_files": [],
-        "skills": [],
-        "mcp_servers": []
-    })
-}
-
-#[test]
-fn parses_sync_workspace_files_command_type() {
-    let raw = serde_json::json!({
-        "id": "cmd-sync",
-        "type": "sync_workspace_files",
-        "payload": {}
-    });
-    let command: RuntimeCommand = serde_json::from_value(raw).unwrap();
-    assert!(matches!(
-        command.command_type,
-        RuntimeCommandType::SyncWorkspaceFiles
-    ));
-}
-
-#[test]
 fn parses_provision_instance_command_type_as_unsupported() {
     // provision_instance 命令已随 CP 侧下发点全数移除而下线:该标签必须落入
     // Unsupported 兜底,而不是恢复为专属枚举分支。
@@ -542,6 +316,22 @@ fn parses_provision_instance_command_type_as_unsupported() {
     assert!(matches!(
         command.command_type,
         RuntimeCommandType::Unsupported(ref value) if value == "provision_instance"
+    ));
+}
+
+#[test]
+fn parses_sync_workspace_files_command_type_as_unsupported() {
+    // sync_workspace_files 命令已随工作区文件下发功能下线:该标签必须落入
+    // Unsupported 兜底,而不是恢复为专属枚举分支。
+    let raw = serde_json::json!({
+        "id": "cmd-sync",
+        "type": "sync_workspace_files",
+        "payload": {}
+    });
+    let command: RuntimeCommand = serde_json::from_value(raw).unwrap();
+    assert!(matches!(
+        command.command_type,
+        RuntimeCommandType::Unsupported(ref value) if value == "sync_workspace_files"
     ));
 }
 
@@ -559,40 +349,4 @@ fn parses_install_skills_command_type_as_unsupported() {
         command.command_type,
         RuntimeCommandType::Unsupported(ref value) if value == "install_skills"
     ));
-}
-
-#[test]
-fn rejects_unknown_command_type_for_workspace_materialization_payload() {
-    let command = RuntimeCommand {
-        id: "cmd-unknown".to_string(),
-        command_type: RuntimeCommandType::Unsupported("unknown".to_string()),
-        payload: valid_workspace_sync_payload("cmd-unknown"),
-    };
-
-    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
-        .expect_err("unknown command type must not be accepted as workspace materialization");
-
-    assert!(
-        error
-            .to_string()
-            .contains("runtime command type is not a workspace materialization operation")
-    );
-}
-
-#[test]
-fn rejects_empty_command_type_for_workspace_materialization_payload() {
-    let command = RuntimeCommand {
-        id: "cmd-empty".to_string(),
-        command_type: RuntimeCommandType::Unsupported(String::new()),
-        payload: valid_workspace_sync_payload("cmd-empty"),
-    };
-
-    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
-        .expect_err("empty command type must not be accepted as sync_workspace_files");
-
-    assert!(
-        error
-            .to_string()
-            .contains("runtime command type is not a workspace materialization operation")
-    );
 }

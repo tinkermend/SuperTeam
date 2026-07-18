@@ -134,11 +134,11 @@ describe("RunDetailDrawer", () => {
     // element with text: 已取消".
   });
 
-  it("renders completed result conclusion as prose with raw JSON collapsed", async () => {
+  it("renders completed result conclusion as markdown with raw JSON collapsed", async () => {
     const completedRun: DigitalEmployeeRunListItem = {
       ...runningRun,
       status: "completed",
-      result: { summary: "已生成验收报告", detail: { files: 3 } },
+      result: { summary: "已生成**验收报告**\n\n- 覆盖 3 个文件", detail: { files: 3 } },
     };
     const screen = await render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -153,7 +153,10 @@ describe("RunDetailDrawer", () => {
       </QueryClientProvider>,
     );
 
-    await expect.element(screen.getByText("已生成验收报告")).toBeVisible();
+    // "**验收报告**" 必须渲染成 <strong> 元素而不是保留星号的纯文本
+    await expect.element(screen.getByText("验收报告", { exact: true })).toBeVisible();
+    expect(screen.getByText(/\*\*验收报告\*\*/).query()).toBeNull();
+    await expect.element(screen.getByRole("listitem").getByText(/覆盖 3 个文件/)).toBeVisible();
     await expect.element(screen.getByText("原始结果 JSON")).toBeVisible();
   });
 

@@ -512,7 +512,7 @@ func TestServiceDeleteDigitalEmployeeSoftDeletesCascadeAndAudits(t *testing.T) {
 	runtimeNodeID := uuid.New()
 	now := time.Now().UTC()
 	repo.employees[employeeID] = DigitalEmployeeRecord{ID: employeeID, TenantID: tenantID, TeamID: &teamID, OwnerUserID: actorID, EmployeeType: "devops_engineer", ProviderType: "codex", Name: "可删除员工", Role: "devops", Status: DigitalEmployeeStatusReady, CreatedAt: now, UpdatedAt: now}
-	repo.deleteCascadeResult = DigitalEmployeeDeleteCascadeResult{ExecutionInstances: 1, EnvironmentVariables: 2, MCPBindingsV2: 1, SkillBindings: 1, ConfigRevisions: 1, WorkspaceFiles: 1, ProjectAffinities: 1, ExecutionInstanceID: &executionInstanceID, RuntimeNodeID: &runtimeNodeID, AgentHomeDir: "/srv/superteam/agents/emp", ProviderType: "codex", WorkspaceFileIDs: []uuid.UUID{uuid.New()}}
+	repo.deleteCascadeResult = DigitalEmployeeDeleteCascadeResult{ExecutionInstances: 1, EnvironmentVariables: 2, MCPBindingsV2: 1, SkillBindings: 1, ConfigRevisions: 1, ProjectAffinities: 1, ExecutionInstanceID: &executionInstanceID, RuntimeNodeID: &runtimeNodeID, AgentHomeDir: "/srv/superteam/agents/emp", ProviderType: "codex"}
 
 	err = svc.DeleteDigitalEmployee(context.Background(), DeleteDigitalEmployeeRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, ActorUserID: actorID})
 	require.NoError(t, err)

@@ -1,4 +1,11 @@
-import { Download, Eye, FileArchive, FileOutput, FileText } from "lucide-react";
+import {
+  Download,
+  Eye,
+  FileArchive,
+  FileOutput,
+  FileText,
+  PackageCheck,
+} from "lucide-react";
 import { useState } from "react";
 import {
   IconTile,
@@ -31,17 +38,25 @@ const ATTACHMENT_TYPES = new Set([
   "execution_output_skipped",
 ]);
 
+/** 正式交付物(deliverables/ 契约声明,平台已核对对象存在;v2 spec §4)。 */
+const DECLARED_TYPES = new Set(["declared", "declared_skipped"]);
+
 export function ProjectArtifactReportPanel({
   artifacts = [],
   reports = [],
 }: ProjectArtifactReportPanelProps) {
   const [previewArtifact, setPreviewArtifact] =
     useState<ProjectArtifactRef | null>(null);
+  const declared = artifacts.filter((artifact) =>
+    DECLARED_TYPES.has(artifact.artifact_type),
+  );
   const attachments = artifacts.filter((artifact) =>
     ATTACHMENT_TYPES.has(artifact.artifact_type),
   );
   const evidenceArtifacts = artifacts.filter(
-    (artifact) => !ATTACHMENT_TYPES.has(artifact.artifact_type),
+    (artifact) =>
+      !ATTACHMENT_TYPES.has(artifact.artifact_type) &&
+      !DECLARED_TYPES.has(artifact.artifact_type),
   );
 
   return (
@@ -63,70 +78,20 @@ export function ProjectArtifactReportPanel({
         </StatusPill>
       </SoftCard>
 
-      {attachments.length > 0 ? (
-        <WorkSurface>
-          <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
-            <div className="min-w-0">
-              <h4 className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
-                <FileOutput className="size-4 text-v3-artifact" />
-                执行输出附件
-              </h4>
-              <p className="mt-0.5 text-xs text-v3-ink-2">
-                数字员工执行时新产生的文件,原样采集,未经平台核实与脱敏
-              </p>
-            </div>
-            <span className="shrink-0 text-xs text-v3-ink-2">
-              {attachments.length} 条
-            </span>
-          </div>
-          <V3Table>
-            <thead>
-              <tr>
-                <V3Th className="min-w-[200px]">文件</V3Th>
-                <V3Th>格式</V3Th>
-                <V3Th>大小</V3Th>
-                <V3Th>保留状态</V3Th>
-                <V3Th>内容</V3Th>
-              </tr>
-            </thead>
-            <tbody>
-              {attachments.map((artifact) => (
-                <V3Tr key={artifact.id}>
-                  <V3Td className="max-w-[300px] whitespace-normal">
-                    <div className="grid gap-0.5">
-                      <span className="line-clamp-2 font-medium text-v3-ink">
-                        {artifact.title}
-                      </span>
-                      {attachmentRelativePath(artifact) ? (
-                        <span className="truncate font-mono text-xs text-v3-ink-2">
-                          {attachmentRelativePath(artifact)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </V3Td>
-                  <V3Td className="text-v3-ink-2">
-                    {formatLabel(artifact.content_type)}
-                  </V3Td>
-                  <V3Td className="text-v3-ink-2 tabular-nums">
-                    {formatSize(artifact.size_bytes)}
-                  </V3Td>
-                  <V3Td>
-                    <StatusPill tone={retentionTone(artifact.retention_status)}>
-                      {statusLabel(artifact.retention_status)}
-                    </StatusPill>
-                  </V3Td>
-                  <V3Td>
-                    <ArtifactContentActions
-                      artifact={artifact}
-                      onPreview={setPreviewArtifact}
-                    />
-                  </V3Td>
-                </V3Tr>
-              ))}
-            </tbody>
-          </V3Table>
-        </WorkSurface>
-      ) : null}
+      <OutputFilesSection
+        artifacts={declared}
+        icon={<PackageCheck className="size-4 text-v3-artifact" />}
+        onPreview={setPreviewArtifact}
+        subtitle="契约声明的交付物(deliverables/),平台已核对对象存在;内容为原样产出"
+        title="正式交付物"
+      />
+      <OutputFilesSection
+        artifacts={attachments}
+        icon={<FileOutput className="size-4 text-v3-artifact" />}
+        onPreview={setPreviewArtifact}
+        subtitle="数字员工执行时新产生的文件,原样采集,未经平台核实与脱敏"
+        title="执行输出附件"
+      />
 
       <WorkSurface>
         <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
@@ -250,6 +215,87 @@ export function ProjectArtifactReportPanel({
   );
 }
 
+/** 输出文件类分区(正式交付物/执行输出附件共用):空集合时整区不渲染。 */
+function OutputFilesSection({
+  artifacts,
+  icon,
+  onPreview,
+  subtitle,
+  title,
+}: {
+  artifacts: ProjectArtifactRef[];
+  icon: React.ReactNode;
+  onPreview: (artifact: ProjectArtifactRef) => void;
+  subtitle: string;
+  title: string;
+}) {
+  if (artifacts.length === 0) {
+    return null;
+  }
+  return (
+    <WorkSurface>
+      <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+        <div className="min-w-0">
+          <h4 className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
+            {icon}
+            {title}
+          </h4>
+          <p className="mt-0.5 text-xs text-v3-ink-2">{subtitle}</p>
+        </div>
+        <span className="shrink-0 text-xs text-v3-ink-2">
+          {artifacts.length} 条
+        </span>
+      </div>
+      <V3Table>
+        <thead>
+          <tr>
+            <V3Th className="min-w-[200px]">文件</V3Th>
+            <V3Th>格式</V3Th>
+            <V3Th>大小</V3Th>
+            <V3Th>保留状态</V3Th>
+            <V3Th>内容</V3Th>
+          </tr>
+        </thead>
+        <tbody>
+          {artifacts.map((artifact) => (
+            <V3Tr key={artifact.id}>
+              <V3Td className="max-w-[300px] whitespace-normal">
+                <div className="grid gap-0.5">
+                  <span className="line-clamp-2 font-medium text-v3-ink">
+                    {artifact.title}
+                  </span>
+                  {attachmentRelativePath(artifact) ? (
+                    <span className="truncate font-mono text-xs text-v3-ink-2">
+                      {attachmentRelativePath(artifact)}
+                    </span>
+                  ) : null}
+                </div>
+              </V3Td>
+              <V3Td className="text-v3-ink-2">
+                {formatLabel(artifact.content_type)}
+              </V3Td>
+              <V3Td className="text-v3-ink-2 tabular-nums">
+                {formatSize(artifact.size_bytes)}
+              </V3Td>
+              <V3Td>
+                <StatusPill tone={retentionTone(artifact.retention_status)}>
+                  {statusLabel(artifact.retention_status)}
+                </StatusPill>
+              </V3Td>
+              <V3Td>
+                <ArtifactContentActions
+                  artifact={artifact}
+                  onPreview={onPreview}
+                />
+              </V3Td>
+            </V3Tr>
+          ))}
+        </tbody>
+      </V3Table>
+    </WorkSurface>
+  );
+}
+
 function ArtifactContentActions({
   artifact,
   onPreview,
@@ -257,7 +303,7 @@ function ArtifactContentActions({
   artifact: ProjectArtifactRef;
   onPreview: (artifact: ProjectArtifactRef) => void;
 }) {
-  if (artifact.artifact_type === "execution_output_skipped") {
+  if (artifact.artifact_type.endsWith("_skipped")) {
     return <span className="text-xs text-v3-ink-2">未采集(超限)</span>;
   }
   if (!isRetrievableArtifact(artifact)) {

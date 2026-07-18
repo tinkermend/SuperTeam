@@ -22,7 +22,6 @@ import (
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
-	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
 )
 
@@ -46,7 +45,6 @@ type Server struct {
 	scenarioTemplateHandler        *scenariotemplate.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
-	teamLendingHandler             *teamlending.HTTPHandler
 	serviceAuthService             middleware.ServiceAuthService
 	onBehalfOfResolver             middleware.OnBehalfOfResolver
 	serviceTokenHandler            *serviceauth.HTTPHandler
@@ -178,14 +176,6 @@ func (s *Server) SetTenantHandler(tenantHandler *tenant.HTTPHandler) {
 	s.registerRoutes()
 }
 
-func (s *Server) SetTeamLendingHandler(teamLendingHandler *teamlending.HTTPHandler) {
-	s.teamLendingHandler = teamLendingHandler
-	if teamLendingHandler != nil {
-		teamLendingHandler.SetAuthorizer(s.authorizer)
-	}
-	s.registerRoutes()
-}
-
 func (s *Server) SetSkillHandler(skillHandler *skill.HTTPHandler) {
 	s.skillHandler = skillHandler
 	if skillHandler != nil {
@@ -288,6 +278,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/my-projects", s.feishuConnectorHandler.MyProjects)
 				r.Post("/demands", s.feishuConnectorHandler.SubmitDemand)
 				r.Post("/decisions/{decisionId}/resolve", s.feishuConnectorHandler.ResolveDecision)
+				r.Post("/demands/{demandId}/criteria/sign", s.feishuConnectorHandler.SignDemandCriterion)
 			})
 		}
 
@@ -449,26 +440,6 @@ func (s *Server) registerRoutes() {
 				r.Post("/teams/{teamId}/members", s.tenantHandler.AddTeamMember)
 				r.Post("/teams/{teamId}/digital-employees", s.tenantHandler.BindTeamDigitalEmployee)
 				r.Delete("/teams/{teamId}/members/{memberId}", s.tenantHandler.RemoveTeamMember)
-				r.Get("/teams/{teamId}/member-role-requests", s.tenantHandler.ListTeamMemberRoleRequests)
-				r.Post("/teams/{teamId}/member-role-requests", s.tenantHandler.CreateTeamMemberRoleRequest)
-				r.Post("/teams/{teamId}/member-role-requests/{requestId}/approve", s.tenantHandler.ApproveTeamMemberRoleRequest)
-				r.Post("/teams/{teamId}/member-role-requests/{requestId}/reject", s.tenantHandler.RejectTeamMemberRoleRequest)
-			})
-		}
-
-		if s.teamLendingHandler != nil {
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.ConsoleUserAuth(s.authService))
-				// 团队供给侧：借调策略 + 请求审批/撤销。
-				r.Get("/teams/{teamId}/lending-policy", s.teamLendingHandler.GetLendingPolicy)
-				r.Put("/teams/{teamId}/lending-policy", s.teamLendingHandler.UpsertLendingPolicy)
-				r.Get("/teams/{teamId}/lending-requests", s.teamLendingHandler.ListTeamLendingRequests)
-				r.Post("/teams/{teamId}/lending-requests/{requestId}/approve", s.teamLendingHandler.ApproveLendingRequest)
-				r.Post("/teams/{teamId}/lending-requests/{requestId}/reject", s.teamLendingHandler.RejectLendingRequest)
-				r.Post("/teams/{teamId}/lending-requests/{requestId}/revoke", s.teamLendingHandler.RevokeLendingRequest)
-				// 项目需求侧：发起借调 + 查看。
-				r.Post("/projects/{projectId}/lending-requests", s.teamLendingHandler.CreateProjectLendingRequest)
-				r.Get("/projects/{projectId}/lending-requests", s.teamLendingHandler.ListProjectLendingRequests)
 			})
 		}
 

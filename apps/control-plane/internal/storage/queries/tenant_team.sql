@@ -100,23 +100,8 @@ DELETE FROM tenant_members
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND team_id = sqlc.arg('team_id')::uuid;
 
--- name: HardDeleteTeamMemberRoleRequests :exec
-DELETE FROM tenant_team_member_role_requests
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND team_id = sqlc.arg('team_id')::uuid;
-
 -- name: HardDeleteTeamMCPBindings :exec
 DELETE FROM team_mcp_bindings
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND team_id = sqlc.arg('team_id')::uuid;
-
--- name: HardDeleteTeamLendingPolicies :exec
-DELETE FROM team_lending_policy
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND team_id = sqlc.arg('team_id')::uuid;
-
--- name: HardDeleteTeamLendingRequests :exec
-DELETE FROM team_lending_request
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND team_id = sqlc.arg('team_id')::uuid;
 

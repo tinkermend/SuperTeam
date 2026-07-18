@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type TaskResultStatus string
@@ -504,6 +506,35 @@ func enrichContractWithHandoffVerification(task ProjectTask, contract TaskResult
 			Method:  "platform_produces_check",
 			Summary: "deliverable \"" + name + "\" 已交付（平台核对）",
 		})
+	}
+	return contract
+}
+
+// resolveDeclaredDeliverableRefs 把契约里 deliverables[].ref 从相对路径/文件名
+// 改写为已物化 declared 工件的 artifact_ref_id(v2 spec §3)。匹配不到的 Ref
+// 与纯 value 项原样保留——值型交付物合法,不硬性失败。原始路径在改写时挪进
+// Summary(为空时)以免血缘信息丢失。
+func resolveDeclaredDeliverableRefs(contract TaskResultContract, declared map[string]uuid.UUID) TaskResultContract {
+	if len(declared) == 0 || len(contract.Deliverables) == 0 {
+		return contract
+	}
+	for index, deliverable := range contract.Deliverables {
+		ref := strings.TrimSpace(deliverable.Ref)
+		if ref == "" {
+			continue
+		}
+		artifactRefID, ok := declared[ref]
+		if !ok {
+			// 兼容 agent 只写文件名或省略 deliverables/ 前缀的写法。
+			artifactRefID, ok = declared[strings.TrimPrefix(ref, "deliverables/")]
+		}
+		if !ok {
+			continue
+		}
+		contract.Deliverables[index].Ref = artifactRefID.String()
+		if strings.TrimSpace(deliverable.Summary) == "" {
+			contract.Deliverables[index].Summary = ref
+		}
 	}
 	return contract
 }

@@ -1440,7 +1440,7 @@ func TestGetProjectTaskGraphReturnsGapAndDecisionRequestIDInBlockingFact(t *test
 				"roles":                 []any{"reviewer", "developer"},
 				"required_capabilities": []any{"code_review"},
 				"active_executor_count": float64(1),
-				"options":               []any{"restaff", "exempt", "lending"},
+				"options":               []any{"restaff", "exempt"},
 			},
 		},
 		CreatedAt: createdAt,
@@ -1491,7 +1491,7 @@ func TestGetProjectTaskGraphReturnsGapAndDecisionRequestIDInBlockingFact(t *test
 		t.Fatalf("unexpected gap.active_executor_count: %#v", gap["active_executor_count"])
 	}
 	options, ok := gap["options"].([]any)
-	if !ok || len(options) != 3 {
+	if !ok || len(options) != 2 {
 		t.Fatalf("unexpected gap.options: %#v", gap["options"])
 	}
 }

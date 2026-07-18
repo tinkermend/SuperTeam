@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -238,7 +237,9 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 	if run == nil {
-		return false, nil, s.recordNonRunCommandTerminal(ctx, identity, commandID, receipt, terminal, spec)
+		// provision_instance 与 sync_workspace_files 命令均已退役:
+		// 不再存在任何合法的"无 run"命令回执。
+		return false, nil, fmt.Errorf("%w: command receipt does not belong to a digital employee run", ErrNotFound)
 	}
 	wasTerminal := run.Status.IsTerminal()
 	projectionTerminal := terminal
@@ -333,134 +334,6 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		return false, nil, err
 	}
 	return true, providerLedgerRequest, nil
-}
-
-// recordNonRunCommandTerminal handles terminal writebacks for command receipts
-// that never had a digital employee run. The provision_instance command was
-// retired together with the eager skill-install machinery, so the only live
-// non-run receipt kind left is the workspace file sync command.
-func (s *DigitalEmployeeRunWritebackService) recordNonRunCommandTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
-	if receipt != nil && receipt.CommandType == "sync_workspace_files" {
-		return s.recordWorkspaceSyncTerminal(ctx, identity, commandID, receipt, terminal, spec)
-	}
-	return fmt.Errorf("%w: command receipt does not belong to a digital employee run", ErrNotFound)
-}
-
-func (s *DigitalEmployeeRunWritebackService) recordWorkspaceSyncTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
-	if err := validateWorkspaceSyncReceipt(identity, commandID, receipt); err != nil {
-		return err
-	}
-	switch spec.status {
-	case DigitalEmployeeRunStatusCompleted, DigitalEmployeeRunStatusFailed:
-	default:
-		return fmt.Errorf("%w: workspace sync command only accepts completed or failed terminal writeback", ErrInvalidInput)
-	}
-	if isTerminalReceiptStatus(receipt.Status) {
-		if receipt.Status == string(spec.status) {
-			return nil
-		}
-		return fmt.Errorf("%w: workspace sync command receipt is already terminal with status %s", ErrConflict, receipt.Status)
-	}
-
-	targets, err := workspaceSyncTargetsFromReceipt(receipt)
-	if err != nil {
-		return err
-	}
-	switch spec.status {
-	case DigitalEmployeeRunStatusCompleted:
-		hashes, err := syncedHashesByTarget(terminal.Result)
-		if err != nil {
-			return err
-		}
-		if err := s.upsertSyncedWorkspaceFiles(ctx, receipt, commandID, targets, hashes, time.Now().UTC()); err != nil {
-			return err
-		}
-	case DigitalEmployeeRunStatusFailed:
-		if err := s.upsertFailedWorkspaceFiles(ctx, receipt, commandID, targets, terminal.ErrorMessage); err != nil {
-			return err
-		}
-	}
-
-	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
-		TenantID:     identity.TenantID,
-		CommandID:    commandID,
-		Status:       string(spec.status),
-		Result:       terminalReceiptResult(terminal, spec.status),
-		ErrorMessage: terminal.ErrorMessage,
-	}); err != nil {
-		return fmt.Errorf("update workspace sync command receipt terminal status: %w", err)
-	}
-	eventType, action := workspaceSyncAuditEvent(spec.status)
-	return s.logRuntimeAudit(ctx, eventType, receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), action)
-}
-
-func (s *DigitalEmployeeRunWritebackService) upsertSyncedWorkspaceFiles(ctx context.Context, receipt *RuntimeCommandReceipt, commandID string, targets []workspaceFileSyncTarget, hashes map[workspaceFileSyncTarget]string, syncedAt time.Time) error {
-	digitalEmployeeID, err := uuidFromPayload(receipt.Payload, "digital_employee_id")
-	if err != nil {
-		return err
-	}
-	executionInstanceID, err := uuidFromPayload(receipt.Payload, "execution_instance_id")
-	if err != nil {
-		return err
-	}
-	lastCommandID := commandID
-	for _, target := range targets {
-		hash, ok := hashes[target]
-		if !ok {
-			return fmt.Errorf("%w: synced_files missing content_hash for file_id %s revision_id %s", ErrInvalidInput, target.fileID, target.revisionID)
-		}
-		syncedHash := hash
-		if err := s.repository.UpsertWorkspaceFileSync(ctx, UpsertWorkspaceFileSyncParams{
-			TenantID:            receipt.TenantID,
-			DigitalEmployeeID:   digitalEmployeeID,
-			ExecutionInstanceID: executionInstanceID,
-			FileID:              target.fileID,
-			RevisionID:          target.revisionID,
-			RuntimeNodeID:       receipt.RuntimeNodeID,
-			Status:              "synced",
-			SyncedHash:          &syncedHash,
-			LastCommandID:       &lastCommandID,
-			LastSyncedAt:        &syncedAt,
-		}); err != nil {
-			return fmt.Errorf("upsert synced workspace file: %w", err)
-		}
-	}
-	return nil
-}
-
-func workspaceSyncAuditEvent(status DigitalEmployeeRunStatus) (string, string) {
-	if status == DigitalEmployeeRunStatusFailed {
-		return "digital_employee_workspace_files_sync_failed", "employee.workspace.sync_failed"
-	}
-	return "digital_employee_workspace_files_synced", "employee.workspace.sync"
-}
-
-func (s *DigitalEmployeeRunWritebackService) upsertFailedWorkspaceFiles(ctx context.Context, receipt *RuntimeCommandReceipt, commandID string, targets []workspaceFileSyncTarget, errorMessage *string) error {
-	digitalEmployeeID, err := uuidFromPayload(receipt.Payload, "digital_employee_id")
-	if err != nil {
-		return err
-	}
-	executionInstanceID, err := uuidFromPayload(receipt.Payload, "execution_instance_id")
-	if err != nil {
-		return err
-	}
-	lastCommandID := commandID
-	for _, target := range targets {
-		if err := s.repository.UpsertWorkspaceFileSync(ctx, UpsertWorkspaceFileSyncParams{
-			TenantID:            receipt.TenantID,
-			DigitalEmployeeID:   digitalEmployeeID,
-			ExecutionInstanceID: executionInstanceID,
-			FileID:              target.fileID,
-			RevisionID:          target.revisionID,
-			RuntimeNodeID:       receipt.RuntimeNodeID,
-			Status:              "failed",
-			ErrorMessage:        errorMessage,
-			LastCommandID:       &lastCommandID,
-		}); err != nil {
-			return fmt.Errorf("upsert failed workspace file: %w", err)
-		}
-	}
-	return nil
 }
 
 func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, forUpdate bool) (*RuntimeCommandReceipt, *DigitalEmployeeRun, error) {
@@ -639,93 +512,6 @@ func ensureRunRuntimeIdentity(identity RuntimeCommandWritebackIdentity, run *Dig
 	return nil
 }
 
-type workspaceFileSyncTarget struct {
-	fileID     uuid.UUID
-	revisionID uuid.UUID
-}
-
-func validateWorkspaceSyncReceipt(identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt) error {
-	if receipt == nil {
-		return fmt.Errorf("%w: workspace sync command receipt is missing", ErrNotFound)
-	}
-	if receipt.TenantID != identity.TenantID || receipt.CommandID != commandID {
-		return fmt.Errorf("%w: workspace sync command receipt does not match request", ErrInvalidInput)
-	}
-	if err := ensureReceiptRuntimeIdentity(identity, receipt); err != nil {
-		return err
-	}
-	if receipt.CommandType != "sync_workspace_files" {
-		return fmt.Errorf("%w: command receipt is not a workspace sync command", ErrInvalidInput)
-	}
-	if receipt.ResourceType != "digital_employee_workspace_sync" || receipt.ResourceID == uuid.Nil {
-		return fmt.Errorf("%w: command receipt is not a digital employee workspace sync command", ErrInvalidInput)
-	}
-	executionInstanceID, err := uuidFromPayload(receipt.Payload, "execution_instance_id")
-	if err != nil {
-		return err
-	}
-	if receipt.ResourceID != executionInstanceID {
-		return fmt.Errorf("%w: workspace sync resource_id does not match execution_instance_id", ErrInvalidInput)
-	}
-	if _, err := uuidFromPayload(receipt.Payload, "digital_employee_id"); err != nil {
-		return err
-	}
-	targets, err := workspaceSyncTargetsFromReceipt(receipt)
-	if err != nil {
-		return err
-	}
-	for _, target := range targets {
-		if target.fileID == uuid.Nil || target.revisionID == uuid.Nil {
-			return fmt.Errorf("%w: workspace sync target file_id and revision_id are required", ErrInvalidInput)
-		}
-	}
-	return nil
-}
-
-func workspaceSyncTargetsFromReceipt(receipt *RuntimeCommandReceipt) ([]workspaceFileSyncTarget, error) {
-	if receipt == nil {
-		return nil, fmt.Errorf("%w: workspace sync command receipt is missing", ErrNotFound)
-	}
-	rawFiles, ok := receipt.Payload["workspace_files"]
-	if !ok {
-		return nil, fmt.Errorf("%w: workspace_files is required for workspace sync", ErrInvalidInput)
-	}
-
-	var files []any
-	switch typed := rawFiles.(type) {
-	case []any:
-		files = typed
-	case []map[string]any:
-		files = make([]any, 0, len(typed))
-		for _, file := range typed {
-			files = append(files, file)
-		}
-	default:
-		return nil, fmt.Errorf("%w: workspace_files must be an array", ErrInvalidInput)
-	}
-
-	targets := make([]workspaceFileSyncTarget, 0, len(files))
-	for _, file := range files {
-		payload, ok := file.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%w: workspace_files entries must be objects", ErrInvalidInput)
-		}
-		fileID, err := uuidFromPayload(payload, "file_id")
-		if err != nil {
-			return nil, err
-		}
-		revisionID, err := uuidFromPayload(payload, "revision_id")
-		if err != nil {
-			return nil, err
-		}
-		targets = append(targets, workspaceFileSyncTarget{
-			fileID:     fileID,
-			revisionID: revisionID,
-		})
-	}
-	return targets, nil
-}
-
 func uuidFromPayload(payload map[string]any, key string) (uuid.UUID, error) {
 	value, ok := payload[key]
 	if !ok {
@@ -746,52 +532,6 @@ func uuidFromPayload(payload map[string]any, key string) (uuid.UUID, error) {
 	default:
 		return uuid.Nil, fmt.Errorf("%w: %s must be a UUID", ErrInvalidInput, key)
 	}
-}
-
-func syncedHashesByTarget(result map[string]any) (map[workspaceFileSyncTarget]string, error) {
-	hashes := map[workspaceFileSyncTarget]string{}
-	if result == nil {
-		return hashes, nil
-	}
-	rawFiles, ok := result["synced_files"]
-	if !ok || rawFiles == nil {
-		return hashes, nil
-	}
-
-	var files []any
-	switch typed := rawFiles.(type) {
-	case []any:
-		files = typed
-	case []map[string]any:
-		files = make([]any, 0, len(typed))
-		for _, file := range typed {
-			files = append(files, file)
-		}
-	default:
-		return nil, fmt.Errorf("%w: synced_files must be an array", ErrInvalidInput)
-	}
-
-	for _, file := range files {
-		payload, ok := file.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%w: synced_files entries must be objects", ErrInvalidInput)
-		}
-		fileID, err := uuidFromPayload(payload, "file_id")
-		if err != nil {
-			return nil, err
-		}
-		revisionID, err := uuidFromPayload(payload, "revision_id")
-		if err != nil {
-			return nil, err
-		}
-		contentHash, _ := payload["content_hash"].(string)
-		contentHash = strings.TrimSpace(contentHash)
-		if contentHash == "" {
-			continue
-		}
-		hashes[workspaceFileSyncTarget{fileID: fileID, revisionID: revisionID}] = contentHash
-	}
-	return hashes, nil
 }
 
 func isTerminalReceiptStatus(status string) bool {

@@ -1,4 +1,5 @@
--- 085_drop_skill_installations.sql
+-- 086_drop_skill_installations.sql
+-- (原085,与并行会话"烂尾功能下线"迁移撞号,renumber)
 -- 能力绑定统一收尾(见 079):市场"安装"已改纯逻辑绑定,物理安装事实由派发时
 -- runtime 懒收敛 + attestation(capability_manifest_version/capability_convergence)
 -- 承载。本表 079 起冻结(停写停读,端点已删),用户拍板正式下线。

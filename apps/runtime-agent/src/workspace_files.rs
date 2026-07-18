@@ -4,10 +4,8 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::commands::payload::RuntimeWorkspaceFilePayload;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderHomeKind {
@@ -20,21 +18,11 @@ pub enum ProviderHomeKind {
 pub struct WorkspaceMaterializationPlan {
     pub agent_home_dir: PathBuf,
     pub provider_home: ProviderHomeKind,
-    pub files: Vec<RuntimeWorkspaceFilePayload>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct SyncedWorkspaceFile {
-    pub file_id: String,
-    pub revision_id: String,
-    pub path: String,
-    pub content_hash: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceMaterializationResult {
     pub agent_home_dir: PathBuf,
-    pub synced_files: Vec<SyncedWorkspaceFile>,
 }
 
 pub fn provider_home_kind(provider_type: &str) -> Result<ProviderHomeKind> {
@@ -57,91 +45,11 @@ pub fn materialize_workspace(
         provider_private_dir(plan.provider_home),
     )?;
 
-    let mut synced_files = Vec::new();
-
-    for file in plan.files {
-        if file.sync_policy == "disabled" {
-            continue;
-        }
-
-        let path = validate_workspace_path(&file.path)?;
-
-        if file.storage_backend == "object_store" {
-            anyhow::bail!("object_store workspace files are not supported yet: {path}");
-        }
-        if file.storage_backend != "db" {
-            anyhow::bail!(
-                "unsupported workspace file storage_backend '{}': {path}",
-                file.storage_backend
-            );
-        }
-
-        let content = file.content_text.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("content_text is required for db-backed workspace file: {path}")
-        })?;
-        let computed_hash = sha256_hex(content.as_bytes());
-        if !computed_hash.eq_ignore_ascii_case(&file.content_hash) {
-            anyhow::bail!(
-                "workspace file content_hash mismatch for {path}: expected {}, got {computed_hash}",
-                file.content_hash
-            );
-        }
-
-        atomic_write_workspace_file(&plan.agent_home_dir, &path, content.as_bytes())?;
-        synced_files.push(SyncedWorkspaceFile {
-            file_id: file.file_id,
-            revision_id: file.revision_id,
-            path,
-            content_hash: computed_hash,
-        });
-    }
-
     Ok(WorkspaceMaterializationResult {
         agent_home_dir: plan.agent_home_dir,
-        synced_files,
     })
 }
 
-pub fn validate_workspace_path(path: &str) -> Result<String> {
-    if path.is_empty() {
-        anyhow::bail!("workspace file path must not be empty");
-    }
-    if path.starts_with('/') || Path::new(path).is_absolute() {
-        anyhow::bail!("workspace file path must be relative: {path}");
-    }
-    if path.ends_with('/') {
-        anyhow::bail!("workspace file path must not end with a slash: {path}");
-    }
-    if path.contains('\\') || path.contains('\0') {
-        anyhow::bail!("workspace file path contains an unsafe character: {path}");
-    }
-    if Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            name.eq_ignore_ascii_case("AGENTS.md") || name.eq_ignore_ascii_case("CLAUDE.md")
-        })
-    {
-        anyhow::bail!("instruction workspace file is not supported: {path}");
-    }
-
-    let mut components = path.split('/');
-    let first = components
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("workspace file path must not be empty"))?;
-    reject_component(first, path)?;
-    if matches!(
-        first,
-        ".claude" | ".opencode" | ".codex" | ".git" | ".superteam"
-    ) {
-        anyhow::bail!("workspace file path uses a reserved top-level directory: {path}");
-    }
-    for component in components {
-        reject_component(component, path)?;
-    }
-
-    Ok(path.to_string())
-}
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
@@ -192,25 +100,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     write_result
 }
 
-fn atomic_write_workspace_file(
-    agent_home_dir: &Path,
-    relative_path: &str,
-    bytes: &[u8],
-) -> Result<()> {
-    let target = prepare_workspace_target(agent_home_dir, relative_path)?;
-    atomic_write(&target, bytes)
-}
 
-fn prepare_workspace_target(agent_home_dir: &Path, relative_path: &str) -> Result<PathBuf> {
-    let relative = Path::new(relative_path);
-    if let Some(parent) = relative.parent() {
-        ensure_workspace_directory_components(agent_home_dir, parent)?;
-    }
-
-    let target = agent_home_dir.join(relative);
-    reject_symlink_file_target(&target)?;
-    Ok(target)
-}
 
 fn ensure_real_workspace_root(agent_home_dir: &Path) -> Result<()> {
     match fs::symlink_metadata(agent_home_dir) {
@@ -269,6 +159,7 @@ fn ensure_workspace_directory_components(agent_home_dir: &Path, relative_dir: &P
     Ok(())
 }
 
+
 fn ensure_real_directory_component(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
@@ -307,35 +198,7 @@ fn ensure_real_directory_component(path: &Path) -> Result<()> {
     }
 }
 
-fn reject_symlink_file_target(path: &Path) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() {
-                anyhow::bail!(
-                    "workspace file target must not be a symlink: {}",
-                    path.display()
-                );
-            }
-            if metadata.is_dir() {
-                anyhow::bail!(
-                    "workspace file target must not be a directory: {}",
-                    path.display()
-                );
-            }
-            Ok(())
-        }
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error)
-            .with_context(|| format!("failed to inspect workspace file target {}", path.display())),
-    }
-}
 
-fn reject_component(component: &str, full_path: &str) -> Result<()> {
-    if component.is_empty() || component == "." || component == ".." {
-        anyhow::bail!("workspace file path contains an unsafe component: {full_path}");
-    }
-    Ok(())
-}
 
 fn provider_private_dir(provider_home: ProviderHomeKind) -> &'static str {
     match provider_home {

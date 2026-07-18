@@ -1869,11 +1869,11 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 	require.NoError(t, err)
 
 	governanceFilteredRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
-		TenantID:          tenantID,
-		GovernanceStatus:  pgtype.Text{String: "not_configured", Valid: true},
-		Q:                 pgtype.Text{String: "unconfigured", Valid: true},
-		Limit:             20,
-		Offset:            0,
+		TenantID:         tenantID,
+		GovernanceStatus: pgtype.Text{String: "not_configured", Valid: true},
+		Q:                pgtype.Text{String: "unconfigured", Valid: true},
+		Limit:            20,
+		Offset:           0,
 	})
 	require.NoError(t, err)
 	require.Len(t, governanceFilteredRows, 1)
@@ -1892,69 +1892,6 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 		assert.Equal(t, team.ID, ownerRows[0].ID)
 	}
 
-}
-
-func TestTeamMemberRoleRequestQueries(t *testing.T) {
-	ctx := context.Background()
-	cleanupTestData(t, testDB)
-
-	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	requester, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
-		Username:     "role-requester",
-		DisplayName:  pgtype.Text{String: "Role Requester", Valid: true},
-		Email:        pgtype.Text{String: "role-requester@example.com", Valid: true},
-		PasswordHash: "$2a$10$hashedpassword",
-		Status:       "active",
-	})
-	require.NoError(t, err)
-
-	target, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
-		Username:     "role-target",
-		DisplayName:  pgtype.Text{String: "Role Target", Valid: true},
-		Email:        pgtype.Text{String: "role-target@example.com", Valid: true},
-		PasswordHash: "$2a$10$hashedpassword",
-		Status:       "active",
-	})
-	require.NoError(t, err)
-
-	team, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:          tenantID,
-		Slug:              "role-requests",
-		Name:              "角色申请团队",
-		Status:            "active",
-		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
-		Metadata:          []byte(`{"domain":"team-management"}`),
-	})
-	require.NoError(t, err)
-
-	request, err := testQueries.CreateTeamMemberRoleRequest(ctx, queries.CreateTeamMemberRoleRequestParams{
-		TenantID:      tenantID,
-		TeamID:        team.ID,
-		TargetUserID:  target.ID,
-		RequestedRole: "admin",
-		RequestedBy:   requester.ID,
-		Reason:        "需要维护团队治理草稿",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, tenantID, request.TenantID)
-	assert.Equal(t, team.ID, request.TeamID)
-	assert.Equal(t, target.ID, request.TargetUserID)
-	assert.Equal(t, "admin", request.RequestedRole)
-	assert.Equal(t, requester.ID, request.RequestedBy)
-	assert.Equal(t, "pending", request.Status)
-
-	requests, err := testQueries.ListTeamMemberRoleRequests(ctx, queries.ListTeamMemberRoleRequestsParams{
-		TenantID: tenantID,
-		TeamID:   team.ID,
-		Status:   pgtype.Text{String: "pending", Valid: true},
-		Limit:    20,
-		Offset:   0,
-	})
-	require.NoError(t, err)
-	require.Len(t, requests, 1)
-	assert.Equal(t, request.ID, requests[0].ID)
-	assert.Equal(t, "admin", requests[0].RequestedRole)
-	assert.Equal(t, "需要维护团队治理草稿", requests[0].Reason)
 }
 
 func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {

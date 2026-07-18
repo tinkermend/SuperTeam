@@ -443,14 +443,6 @@ func (r *PgRunRepository) ListRunEvents(ctx context.Context, tenantID, taskID, r
 	return out, nil
 }
 
-func (r *PgRunRepository) ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
-	return (&PgRepository{q: r.q}).ListWorkspaceFilesForSync(ctx, tenantID, digitalEmployeeID)
-}
-
-func (r *PgRunRepository) UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error {
-	return (&PgRepository{q: r.q}).UpsertWorkspaceFileSync(ctx, params)
-}
-
 func (r *PgRunRepository) GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error) {
 	return (&PgRepository{q: r.q}).GetDigitalEmployeeRunStats(ctx, tenantID, digitalEmployeeID)
 }

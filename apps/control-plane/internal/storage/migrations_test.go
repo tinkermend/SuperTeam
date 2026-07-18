@@ -2230,7 +2230,7 @@ func TestMigration079CapabilityBindingUnification(t *testing.T) {
 	}
 }
 
-func TestMigration085DropsSkillInstallations(t *testing.T) {
+func TestMigration086DropsSkillInstallations(t *testing.T) {
 	pool, schemaName := applyAllMigrations(t)
 
 	assertTableAbsent(t, pool, schemaName, "skill_installations")

@@ -47,7 +47,7 @@ func roleCapabilitiesFromSpec(spec scenariotemplate.SpecV2) map[string][]string 
 // structural escalation: RequiredCapabilities is the order-preserving union (no
 // duplicates) of constraint.Roles' declared required_capabilities. Options is
 // always the fixed three-way-out set — restaff (补充员工), exempt (改选更浅出口),
-// lending (换用模板/借调) — regardless of which constraint triggered the gap.
+// — regardless of which constraint triggered the gap.
 func buildRoleIndependenceGap(constraint scenariotemplate.SpecConstraint, roleCapabilities map[string][]string, activeExecutorCount int) PlanningGap {
 	var capabilities []string
 	seen := make(map[string]bool, len(constraint.Roles))
@@ -65,7 +65,7 @@ func buildRoleIndependenceGap(constraint scenariotemplate.SpecConstraint, roleCa
 		Roles:                append([]string(nil), constraint.Roles...),
 		RequiredCapabilities: capabilities,
 		ActiveExecutorCount:  activeExecutorCount,
-		Options:              []string{"restaff", "exempt", "lending"},
+		Options:              []string{"restaff", "exempt"},
 	}
 }
 

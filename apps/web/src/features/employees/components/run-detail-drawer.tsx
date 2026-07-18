@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Square } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
+import { MarkdownProse, StatusPill, V3Button, type V3Tone } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   listDigitalEmployeeRunEvents,
@@ -67,7 +67,10 @@ export function RunDetailDrawer({ apiOptions, employeeId, run, open, onOpenChang
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-xl" side="right">
+      <SheetContent
+        className="w-[min(880px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] gap-0 overflow-y-auto sm:max-w-[880px]"
+        side="right"
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {displayedRun.task_title}
@@ -148,9 +151,9 @@ function ResultBlock({ run }: { run: DigitalEmployeeRunListItem }) {
     <div>
       <p className="text-sm font-medium">结果</p>
       {conclusion ? (
-        <p className="mt-2 whitespace-pre-wrap break-words rounded-md border border-v3-line bg-v3-card-soft p-3 text-sm leading-6 text-v3-ink">
+        <MarkdownProse className="mt-2 break-words rounded-md border border-v3-line bg-v3-card-soft p-3">
           {conclusion}
-        </p>
+        </MarkdownProse>
       ) : null}
       {rawJson && conclusion ? (
         <details className="mt-2" onToggle={(event) => setRawOpen(event.currentTarget.open)}>

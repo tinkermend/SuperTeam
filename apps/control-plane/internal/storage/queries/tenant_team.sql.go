@@ -124,38 +124,6 @@ func (q *Queries) HardDeleteTeam(ctx context.Context, arg HardDeleteTeamParams) 
 	return i, err
 }
 
-const HardDeleteTeamLendingPolicies = `-- name: HardDeleteTeamLendingPolicies :exec
-DELETE FROM team_lending_policy
-WHERE tenant_id = $1::uuid
-  AND team_id = $2::uuid
-`
-
-type HardDeleteTeamLendingPoliciesParams struct {
-	TenantID uuid.UUID `json:"tenant_id"`
-	TeamID   uuid.UUID `json:"team_id"`
-}
-
-func (q *Queries) HardDeleteTeamLendingPolicies(ctx context.Context, arg HardDeleteTeamLendingPoliciesParams) error {
-	_, err := q.db.Exec(ctx, HardDeleteTeamLendingPolicies, arg.TenantID, arg.TeamID)
-	return err
-}
-
-const HardDeleteTeamLendingRequests = `-- name: HardDeleteTeamLendingRequests :exec
-DELETE FROM team_lending_request
-WHERE tenant_id = $1::uuid
-  AND team_id = $2::uuid
-`
-
-type HardDeleteTeamLendingRequestsParams struct {
-	TenantID uuid.UUID `json:"tenant_id"`
-	TeamID   uuid.UUID `json:"team_id"`
-}
-
-func (q *Queries) HardDeleteTeamLendingRequests(ctx context.Context, arg HardDeleteTeamLendingRequestsParams) error {
-	_, err := q.db.Exec(ctx, HardDeleteTeamLendingRequests, arg.TenantID, arg.TeamID)
-	return err
-}
-
 const HardDeleteTeamMCPBindings = `-- name: HardDeleteTeamMCPBindings :exec
 DELETE FROM team_mcp_bindings
 WHERE tenant_id = $1::uuid
@@ -169,22 +137,6 @@ type HardDeleteTeamMCPBindingsParams struct {
 
 func (q *Queries) HardDeleteTeamMCPBindings(ctx context.Context, arg HardDeleteTeamMCPBindingsParams) error {
 	_, err := q.db.Exec(ctx, HardDeleteTeamMCPBindings, arg.TenantID, arg.TeamID)
-	return err
-}
-
-const HardDeleteTeamMemberRoleRequests = `-- name: HardDeleteTeamMemberRoleRequests :exec
-DELETE FROM tenant_team_member_role_requests
-WHERE tenant_id = $1::uuid
-  AND team_id = $2::uuid
-`
-
-type HardDeleteTeamMemberRoleRequestsParams struct {
-	TenantID uuid.UUID `json:"tenant_id"`
-	TeamID   uuid.UUID `json:"team_id"`
-}
-
-func (q *Queries) HardDeleteTeamMemberRoleRequests(ctx context.Context, arg HardDeleteTeamMemberRoleRequestsParams) error {
-	_, err := q.db.Exec(ctx, HardDeleteTeamMemberRoleRequests, arg.TenantID, arg.TeamID)
 	return err
 }
 
