@@ -1578,6 +1578,13 @@ func (s *Service) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UU
 		return nil, ErrInvalidProject
 	}
 	record, err := s.repository.GetLatestAcceptanceRecord(ctx, tenantID, projectID)
+	if errors.Is(err, ErrProjectNotFound) {
+		// 无验收记录与项目不存在共用 ErrProjectNotFound；项目存在时返回 nil 表示"尚无记录"。
+		if _, projectErr := s.repository.GetProject(ctx, tenantID, projectID); projectErr != nil {
+			return nil, projectErr
+		}
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -1199,6 +1199,10 @@ func (h *HTTPHandler) GetAcceptance(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
+	if acceptance == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	writeJSON(w, http.StatusOK, acceptanceResponseFromDomain(*acceptance))
 }
 

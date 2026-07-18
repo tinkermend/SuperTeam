@@ -772,6 +772,16 @@ func TestProjectHandlerMapsGovernanceNotFound(t *testing.T) {
 		t.Fatalf("expected missing acceptance to return 404, got %d: %s", acceptanceResp.Code, acceptanceResp.Body.String())
 	}
 
+	noRecordHandler := newTestHandler(&handlerTestService{getAcceptanceMissing: true})
+	noRecordReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/acceptance", nil)
+	noRecordReq = withProjectRouteParams(noRecordReq, map[string]string{"projectId": projectID.String()})
+	noRecordReq = withConsoleContext(noRecordReq, tenantID, actorID)
+	noRecordResp := httptest.NewRecorder()
+	noRecordHandler.GetAcceptance(noRecordResp, noRecordReq)
+	if noRecordResp.Code != http.StatusNoContent {
+		t.Fatalf("expected project without acceptance to return 204, got %d: %s", noRecordResp.Code, noRecordResp.Body.String())
+	}
+
 	revisionID := uuid.New()
 	revisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/config-revisions/"+revisionID.String(), nil)
 	revisionReq = withProjectRouteParams(revisionReq, map[string]string{"projectId": projectID.String(), "revisionId": revisionID.String()})
@@ -2289,6 +2299,7 @@ type handlerTestService struct {
 	createAcceptanceReq               CreateAcceptanceServiceRequest
 	createArchiveReq                  CreateArchiveSnapshotServiceRequest
 	getAcceptanceErr                  error
+	getAcceptanceMissing              bool
 	getConfigRevisionErr              error
 	getOverviewCalls                  int
 	routeDecisionTenantID             uuid.UUID
@@ -2796,6 +2807,9 @@ func (s *handlerTestService) CreateAcceptance(ctx context.Context, req CreateAcc
 func (s *handlerTestService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {
 	if s.getAcceptanceErr != nil {
 		return nil, s.getAcceptanceErr
+	}
+	if s.getAcceptanceMissing {
+		return nil, nil
 	}
 	record := testAcceptance(tenantID, projectID, uuid.New())
 	return &record, nil

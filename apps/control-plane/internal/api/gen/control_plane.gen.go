@@ -3844,6 +3844,7 @@ type PendingDeleteTeam struct {
 	CreatedAt         *time.Time              `json:"created_at,omitempty"`
 	DeleteRequestedBy *openapi_types.UUID     `json:"delete_requested_by,omitempty"`
 	DeletedAt         time.Time               `json:"deleted_at"`
+	Description       *string                 `json:"description,omitempty"`
 	HumanOwnerUserIds *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
 	HumanOwners       *[]TeamHumanOwner       `json:"human_owners,omitempty"`
 	Id                openapi_types.UUID      `json:"id"`

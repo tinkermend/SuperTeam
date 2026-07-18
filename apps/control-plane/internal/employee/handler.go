@@ -625,6 +625,10 @@ func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter,
 		writeHandlerError(w, err)
 		return
 	}
+	if instance == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	writeJSON(w, http.StatusOK, executionInstanceResponseFromDomain(instance))
 }
 
