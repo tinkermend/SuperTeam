@@ -116,6 +116,19 @@ describe("SkillUploadView", () => {
     await expect.element(link).toHaveAttribute("data-router-link", "true");
   });
 
+  it("exposes the file picker trigger as a real button and keeps the hidden input out of the tab order", async () => {
+    const screen = await renderUploadView();
+
+    await expect.element(screen.getByRole("button", { name: "选择技能 zip 包" })).toBeVisible();
+    expect(document.getElementById("skill-upload-file")).toHaveAttribute("tabindex", "-1");
+
+    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill-api-doc.zip", { type: "application/zip" }));
+
+    await expect.element(screen.getByRole("button", { exact: true, name: "更换技能 zip 包" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { exact: true, name: "更换" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { exact: true, name: "移除" })).toBeVisible();
+  });
+
   it("derives the package display name from the zip filename and requires a Chinese skill name", async () => {
     const screen = await renderUploadView();
     const publishButton = screen.getByRole("button", { name: "发布到技能市场" });
