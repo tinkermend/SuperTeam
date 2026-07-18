@@ -96,6 +96,39 @@ func (s SpecV2) StepByProduce(name string) (SpecSkeletonStep, bool) {
 	return SpecSkeletonStep{}, false
 }
 
+// v2OnlyTopLevelKeys are the spec fields normalizeV1 silently drops: a spec
+// carrying any of them while declaring spec_version < 2 is a v2-shaped spec
+// missing its version declaration, and registering it would silently disable
+// the governance the author wrote down (constraints/exits gone). See
+// MissingSpecVersionForV2Shape.
+var v2OnlyTopLevelKeys = []string{"constraints", "exits", "collapse_rules"}
+
+// MissingSpecVersionForV2Shape reports whether raw is a v2-shaped spec that
+// forgot to declare "spec_version": 2 — the write-time guardrail predicate
+// (spec 2026-07-18-scenario-template-spec-version-guardrail §3). It fires when
+// specVersion(raw) < 2 AND the spec carries any v2-only top-level key, or an
+// object-shaped default_acceptance_criteria entry (normalizeV1 only keeps
+// string entries). Genuine v1 shapes (no v2-only fields) never match, so the
+// legacy write path stays open and the runtime read path is untouched.
+func MissingSpecVersionForV2Shape(raw map[string]any) (bool, []string) {
+	if specVersion(raw) >= 2 {
+		return false, nil
+	}
+	var offending []string
+	for _, key := range v2OnlyTopLevelKeys {
+		if _, ok := raw[key]; ok {
+			offending = append(offending, key)
+		}
+	}
+	for _, criterionAny := range toAnySlice(raw["default_acceptance_criteria"]) {
+		if _, isString := criterionAny.(string); !isString {
+			offending = append(offending, "default_acceptance_criteria(对象条目)")
+			break
+		}
+	}
+	return len(offending) > 0, offending
+}
+
 // ParseSpec parses a scenario template's raw JSONB spec into a typed SpecV2.
 // specs with spec_version < 2 (or absent, e.g. nil/empty raw) are normalized
 // from the legacy v1 shape. ParseSpec(nil) returns a zero-value SpecV2 with

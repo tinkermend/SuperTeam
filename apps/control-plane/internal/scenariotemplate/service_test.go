@@ -501,3 +501,137 @@ func TestPatchRejectsUnsupportedStatus(t *testing.T) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }
+
+// --- spec_version 缺失护栏 (spec 2026-07-18-scenario-template-spec-version-guardrail) ---
+
+// versionlessV2Spec is a v2-shaped spec whose author forgot "spec_version": 2 —
+// pre-guardrail it would be v1-normalized with constraints/exits silently dropped.
+func versionlessV2Spec() map[string]any {
+	return map[string]any{
+		"roles": []any{
+			map[string]any{"key": "requester", "required_capabilities": []any{"code_review"}},
+			map[string]any{"key": "approver", "required_capabilities": []any{"code_review"}},
+		},
+		"skeleton": []any{
+			map[string]any{"step": "request", "role": "requester"},
+			map[string]any{"step": "approve", "role": "approver", "depends_on": []any{"request"}},
+		},
+		"exits":       []any{map[string]any{"deliverable": "approval_record", "label": "审批通过"}},
+		"constraints": []any{map[string]any{"kind": "role_independence", "roles": []any{"requester", "approver"}}},
+	}
+}
+
+func TestCreateRejectsVersionlessV2Spec(t *testing.T) {
+	repo := newFakeRepository()
+	svc := NewService(repo)
+
+	_, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: uuid.New(),
+		Key:      "versionless_v2",
+		Name:     "无版本号v2模板",
+		Spec:     versionlessV2Spec(),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for versionless v2 spec, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "spec_version") {
+		t.Fatalf("expected actionable spec_version message, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "constraints") {
+		t.Fatalf("expected offending keys named in error, got %v", err)
+	}
+	if len(repo.templates) != 0 {
+		t.Fatalf("expected no template row, got %#v", repo.templates)
+	}
+}
+
+func TestCreateVersionRejectsVersionlessV2Spec(t *testing.T) {
+	repo := newFakeRepository()
+	svc := NewService(repo)
+	svc.SetVocabularyRepository(&fakeVocabularyRepository{active: map[string]bool{"code_review": true}})
+	tenantID := uuid.New()
+	created, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: tenantID,
+		Key:      "guardrail_bump",
+		Name:     "护栏版本模板",
+		Spec:     goodSpec("code_review"),
+	})
+	if err != nil {
+		t.Fatalf("create baseline template: %v", err)
+	}
+
+	_, err = svc.CreateVersion(context.Background(), CreateScenarioTemplateVersionRequest{
+		TenantID: tenantID,
+		Key:      created.Key,
+		Spec:     versionlessV2Spec(),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for versionless v2 spec on version bump, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "spec_version") {
+		t.Fatalf("expected actionable spec_version message, got %v", err)
+	}
+}
+
+func TestCreateAcceptsGenuineV1SpecUnchanged(t *testing.T) {
+	repo := newFakeRepository()
+	svc := NewService(repo)
+	svc.SetVocabularyRepository(&fakeVocabularyRepository{active: map[string]bool{"code_review": true}})
+
+	// 真 v1 形态：只有 v1 字段（independent_from），无任何 v2 专属键。
+	created, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: uuid.New(),
+		Key:      "genuine_v1",
+		Name:     "真v1模板",
+		Spec: map[string]any{
+			"roles": []any{
+				map[string]any{"key": "developer", "required_capabilities": []any{"code_review"}},
+				map[string]any{"key": "reviewer", "required_capabilities": []any{"code_review"}, "independent_from": []any{"developer"}},
+			},
+			"skeleton": []any{
+				map[string]any{"step": "develop", "role": "developer"},
+				map[string]any{"step": "review", "role": "reviewer", "depends_on": []any{"develop"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("genuine v1 spec must stay accepted: %v", err)
+	}
+	// v1 归一化回归断言：independent_from 仍被合成为 role_independence 约束。
+	parsed, err := ParseSpec(created.Spec)
+	if err != nil {
+		t.Fatalf("parse stored v1 spec: %v", err)
+	}
+	foundIndependence := false
+	for _, constraint := range parsed.Constraints {
+		if constraint.Kind == "role_independence" {
+			foundIndependence = true
+		}
+	}
+	if !foundIndependence {
+		t.Fatalf("expected v1 independent_from to normalize into role_independence, got %#v", parsed.Constraints)
+	}
+}
+
+func TestCreateRejectsVersionlessObjectAcceptanceCriteria(t *testing.T) {
+	repo := newFakeRepository()
+	svc := NewService(repo)
+
+	_, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: uuid.New(),
+		Key:      "versionless_criteria",
+		Name:     "无版本号对象判据模板",
+		Spec: map[string]any{
+			"roles": []any{map[string]any{"key": "developer"}},
+			"default_acceptance_criteria": []any{
+				map[string]any{"statement": "对象形态判据", "applies_from_exit": "branch_ref"},
+			},
+		},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for versionless object criteria, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "default_acceptance_criteria") {
+		t.Fatalf("expected offending field named in error, got %v", err)
+	}
+}
