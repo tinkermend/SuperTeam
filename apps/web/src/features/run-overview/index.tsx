@@ -56,22 +56,35 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     retry: false,
   });
   // 项目透镜的任务链路：仅选中项目时拉取，零常驻成本；与 overview 同频轮询。
-  // task-graph 端点必须限定 demand 域，与项目详情页同规则取最新 demand 的链路。
+  // task-graph 端点必须限定 demand 域。默认选最新 demand，但选定后"钉住"——
+  // 新 demand 到达不抢当前视图（除非当前 demand 从列表消失），并提供显式切换。
   const projectDemands = useQuery({
     queryKey: ["run-overview", "project-demands", selectedProjectId],
-    queryFn: () => listProjectDemands({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, { limit: 1 }),
+    queryFn: () => listProjectDemands({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, { limit: 20 }),
     enabled: Boolean(selectedProjectId),
     refetchInterval: 10_000,
     retry: false,
   });
-  const latestDemandId = projectDemands.data?.[0]?.id;
+  const [selectedDemandId, setSelectedDemandId] = useState<string>();
+  const demandList = useMemo(() => projectDemands.data ?? [], [projectDemands.data]);
+  const demandIdsKey = demandList.map((demand) => demand.id).join("|");
+  useEffect(() => {
+    setSelectedDemandId(undefined);
+  }, [selectedProjectId]);
+  useEffect(() => {
+    if (demandList.length === 0) return;
+    setSelectedDemandId((current) =>
+      current && demandList.some((demand) => demand.id === current) ? current : demandList[0].id,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demandIdsKey]);
   const taskGraph = useQuery({
-    queryKey: ["run-overview", "task-graph", selectedProjectId, latestDemandId],
+    queryKey: ["run-overview", "task-graph", selectedProjectId, selectedDemandId],
     queryFn: () =>
       getProjectTaskGraph({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, {
-        demandId: latestDemandId as string,
+        demandId: selectedDemandId as string,
       }),
-    enabled: Boolean(selectedProjectId) && Boolean(latestDemandId),
+    enabled: Boolean(selectedProjectId) && Boolean(selectedDemandId),
     refetchInterval: 10_000,
     retry: false,
   });
@@ -96,6 +109,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
       lastStreamInvalidateRef.current = now;
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "activity"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "digital-employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-overview", "project-demands"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "task-graph"] });
     };
     source.addEventListener("activity", onActivity);
@@ -180,7 +194,10 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   const handleRefresh = () => {
     void employees.refetch();
     void teams.refetch();
-    if (selectedProjectId) void taskGraph.refetch();
+    if (selectedProjectId) {
+      void projectDemands.refetch();
+      void taskGraph.refetch();
+    }
   };
 
   return (
@@ -292,6 +309,9 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
               onSelectProject={handleSelectProject}
               lens={lens}
               lensLoading={projectDemands.isLoading || taskGraph.isLoading}
+              demands={demandList}
+              selectedDemandId={selectedDemandId}
+              onSelectDemand={setSelectedDemandId}
             />
           }
         />
