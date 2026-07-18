@@ -1611,6 +1611,77 @@ func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksPara
 	return items, nil
 }
 
+const ListStalePreConfirmationDigitalEmployeeRuns = `-- name: ListStalePreConfirmationDigitalEmployeeRuns :many
+SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.lease_expires_at, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
+FROM task_runs tr
+WHERE tr.status IN ('queued', 'dispatching')
+  AND tr.updated_at < $1::timestamptz
+ORDER BY tr.updated_at ASC
+LIMIT $2::int
+`
+
+type ListStalePreConfirmationDigitalEmployeeRunsParams struct {
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	BatchLimit  int32              `json:"batch_limit"`
+}
+
+// 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
+// run。running/cancelling 是真实活跃态,不在清扫范围。
+func (q *Queries) ListStalePreConfirmationDigitalEmployeeRuns(ctx context.Context, arg ListStalePreConfirmationDigitalEmployeeRunsParams) ([]TaskRun, error) {
+	rows, err := q.db.Query(ctx, ListStalePreConfirmationDigitalEmployeeRuns, arg.StaleBefore, arg.BatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskRun{}
+	for rows.Next() {
+		var i TaskRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TaskID,
+			&i.NodeID,
+			&i.RuntimeNodeID,
+			&i.ProviderSessionID,
+			&i.Status,
+			&i.LeaseExpiresAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.FinishedAt,
+			&i.Result,
+			&i.ErrorMessage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CommandID,
+			&i.DigitalEmployeeID,
+			&i.ExecutionInstanceID,
+			&i.IdempotencyKey,
+			&i.IdempotencyFingerprint,
+			&i.TimeoutSec,
+			&i.GraceSec,
+			&i.Diagnostic,
+			&i.LogRef,
+			&i.RawResultRef,
+			&i.WorkProducts,
+			&i.SessionState,
+			&i.ErrorCode,
+			&i.ErrorFamily,
+			&i.ExitCode,
+			&i.Signal,
+			&i.TimedOut,
+			&i.ProviderType,
+			&i.ProviderSessionExternalID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTaskEvents = `-- name: ListTaskEvents :many
 SELECT id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at, command_id, raw_event_ref, log_ref, metadata FROM task_events
 WHERE task_id = $1::uuid

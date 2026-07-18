@@ -848,6 +848,10 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 		}
 		defer container.CoordinationWorker.Stop()
 	}
+	if container.EmployeeRun != nil {
+		// 调度韧性:预确认态 run 的超时看门狗(残债交接 §1 第 2 层)。
+		go container.EmployeeRun.StartStaleRunWatchdog(ctx, time.Minute)
+	}
 	stopWatching := make(chan struct{})
 	go func() {
 		select {
