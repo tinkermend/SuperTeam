@@ -368,6 +368,9 @@ function createSkillsFetcher() {
     if (url.pathname === "/api/v1/digital-employees/overview" && method === "GET") {
       return jsonResponse(employeeOverviewFixture);
     }
+    if (url.pathname === "/api/v1/skills/skill-api-doc" && method === "DELETE") {
+      return new Response(null, { status: 204 });
+    }
     if (url.pathname === "/api/v1/skills/skill-api-doc/install" && method === "POST") {
       return jsonResponse({
         skill_id: "skill-api-doc",
@@ -630,6 +633,71 @@ describe("SkillsView", () => {
       expect(document.body.querySelector('[aria-label="需求澄清助手 安装记录"]')).toBeNull();
     });
     expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-requirement/installations")).toBe(1);
+  });
+
+  it("deletes a skill from the market card after confirming the danger dialog", async () => {
+    const fetcher = createSkillsFetcher();
+    const screen = await renderSkillsView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "删除 接口文档生成" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "删除技能 接口文档生成" });
+    await expect.element(dialog).toBeVisible();
+    await expect.element(dialog.getByText("归档文件将被清除", { exact: false })).toBeVisible();
+
+    await userEvent.click(dialog.getByRole("button", { name: "删除" }));
+
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith(
+        "http://control-plane.local/api/v1/skills/skill-api-doc",
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+    await vi.waitFor(() => {
+      expect(countFetcherCalls(fetcher, "/api/v1/skills")).toBeGreaterThanOrEqual(2);
+    });
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+  });
+
+  it("exposes a delete entry inside the skill detail sheet", async () => {
+    const screen = await renderSkillsView();
+
+    await userEvent.click(screen.getByRole("button", { name: "查看详情 需求澄清助手" }));
+    await expect.element(screen.getByRole("dialog", { name: "需求澄清助手" })).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "删除技能 需求澄清助手" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "删除技能 需求澄清助手" });
+    await expect.element(dialog).toBeVisible();
+    await expect.element(
+      dialog.getByText("2 个团队绑定与 2 个数字员工绑定会同时解除", { exact: false }),
+    ).toBeVisible();
+  });
+
+  it("keeps the delete dialog open and shows the error when skill deletion fails", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      if (url.pathname === "/api/v1/skills" && method === "GET") {
+        return jsonResponse(skillsFixture);
+      }
+      if (url.pathname === "/api/v1/skills/skill-api-doc" && method === "DELETE") {
+        return jsonResponse({ error: "skill is referenced" }, 409);
+      }
+      if (url.pathname.endsWith("/installations") && method === "GET") {
+        return jsonResponse([]);
+      }
+      return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
+    });
+    const screen = await renderSkillsView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "删除 接口文档生成" }));
+    const dialog = screen.getByRole("alertdialog", { name: "删除技能 接口文档生成" });
+    await userEvent.click(dialog.getByRole("button", { name: "删除" }));
+
+    await expect.element(dialog.getByText("skill is referenced", { exact: false })).toBeVisible();
   });
 
   it("opens the install dialog from the table install button", async () => {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Blocks,
@@ -12,6 +12,7 @@ import {
   ServerCog,
   ShieldCheck,
   Stethoscope,
+  Trash2,
   UploadCloud,
   UserRoundCheck,
   Users,
@@ -44,9 +45,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
-import { listSkillInstallations, listSkills, type Skill, type SkillInstallation } from "@/lib/api/skills";
+import { deleteSkill, listSkillInstallations, listSkills, type Skill, type SkillInstallation } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { SkillInstallDialog } from "./install-dialog";
@@ -119,13 +121,29 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const [selectedSkillId, setSelectedSkillId] = useState<string>();
   const [installSkillId, setInstallSkillId] = useState<string>();
   const [detailOpen, setDetailOpen] = useState(false);
+  const [deleteSkillId, setDeleteSkillId] = useState<string>();
+  const [deleteError, setDeleteError] = useState<string>();
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
 
+  const queryClient = useQueryClient();
   const apiOptions: ApiOpts = { baseUrl: apiBaseUrl, fetcher };
   const skills = useQuery({
     queryKey: ["skills", query],
     queryFn: () => listSkills(apiOptions, { q: query }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (skillId: string) => deleteSkill(apiOptions, skillId),
+    onSuccess: (_, skillId) => {
+      setDeleteSkillId(undefined);
+      setDeleteError(undefined);
+      setDetailOpen(false);
+      setSelectedSkillId((current) => (current === skillId ? undefined : current));
+      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+    onError: (error) => {
+      setDeleteError(error instanceof Error ? error.message : "删除技能失败，请稍后重试。");
+    },
   });
 
   const skillRows = skills.data ?? [];
@@ -138,6 +156,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   );
   const selectedSkill = filteredRows.find((skill) => skill.id === selectedSkillId) ?? filteredRows[0];
   const installSkillTarget = skillRows.find((skill) => skill.id === installSkillId);
+  const deleteSkillTarget = skillRows.find((skill) => skill.id === deleteSkillId);
   const skillInstallations = useQuery({
     enabled: Boolean(selectedSkill && skills.data),
     queryKey: ["skill", selectedSkill?.id, "installations"],
@@ -228,6 +247,10 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
                   </div>
                 ) : null}
                 <SkillMarketGrid
+                  onDeleteSkill={(id) => {
+                    setDeleteError(undefined);
+                    setDeleteSkillId(id);
+                  }}
                   onInstallSkill={setInstallSkillId}
                   onOpenDetail={(id) => {
                     setSelectedSkillId(id);
@@ -269,9 +292,43 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
         installations={skillInstallations.data ?? []}
         isError={skillInstallations.isError}
         isLoading={skillInstallations.isPending}
+        onDeleteSkill={(id) => {
+          setDeleteError(undefined);
+          setDeleteSkillId(id);
+        }}
         onOpenChange={setDetailOpen}
         open={detailOpen && Boolean(selectedSkill)}
         skill={selectedSkill}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteSkillTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteSkillId(undefined);
+            setDeleteError(undefined);
+          }
+        }}
+        title={`删除技能 ${deleteSkillTarget?.name ?? ""}`}
+        desc={
+          <div className="space-y-2">
+            <p>
+              删除后技能将从市场下架，
+              {deleteSkillTarget && deleteSkillTarget.team_bindings.length + deleteSkillTarget.agent_bindings.length > 0
+                ? `当前 ${deleteSkillTarget.team_bindings.length} 个团队绑定与 ${deleteSkillTarget.agent_bindings.length} 个数字员工绑定会同时解除，`
+                : ""}
+              归档文件将被清除，此操作不可撤销。
+            </p>
+            {deleteError ? <p className="font-semibold text-v3-danger">{deleteError}</p> : null}
+          </div>
+        }
+        confirmText="删除"
+        destructive
+        isLoading={deleteMutation.isPending}
+        handleConfirm={() => {
+          if (deleteSkillTarget) {
+            deleteMutation.mutate(deleteSkillTarget.id);
+          }
+        }}
       />
       <SkillInstallDialog
         apiBaseUrl={apiBaseUrl}
@@ -424,6 +481,7 @@ function SkillDetailSheet({
   installations,
   isError,
   isLoading,
+  onDeleteSkill,
   onOpenChange,
   open,
   skill,
@@ -432,6 +490,7 @@ function SkillDetailSheet({
   installations: SkillInstallation[];
   isError: boolean;
   isLoading: boolean;
+  onDeleteSkill: (id: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   skill?: Skill;
@@ -578,6 +637,19 @@ function SkillDetailSheet({
             )}
           </section>
         </div>
+        <div className="flex items-center justify-between gap-3 border-t border-v3-line p-4">
+          <p className="text-[12px] text-v3-ink-3">删除会同时解除全部绑定并清除归档文件。</p>
+          <V3Button
+            aria-label={`删除技能 ${skill.name}`}
+            onClick={() => onDeleteSkill(skill.id)}
+            size="sm"
+            type="button"
+            variant="danger"
+          >
+            <Trash2 data-icon="inline-start" />
+            删除技能
+          </V3Button>
+        </div>
       </SheetContent>
     </Sheet>
   );
@@ -721,12 +793,14 @@ function FilterSelect({
 
 /** 方向 B · 能力矩阵卡片：左侧状态 accent bar + 图标 + 名称 + 描述 + pill + 标签 + 绑定数 + 操作。 */
 function SkillMarketGrid({
+  onDeleteSkill,
   onInstallSkill,
   onOpenDetail,
   onSelectSkill,
   rows,
   selectedSkillId,
 }: {
+  onDeleteSkill: (id: string) => void;
   onInstallSkill: (id: string) => void;
   onOpenDetail: (id: string) => void;
   onSelectSkill: (id: string) => void;
@@ -794,6 +868,19 @@ function SkillMarketGrid({
                 </span>
               </div>
               <div className="flex gap-2">
+                <V3Button
+                  aria-label={`删除 ${skill.name}`}
+                  className="text-v3-ink-3 hover:text-v3-danger"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteSkill(skill.id);
+                  }}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 />
+                </V3Button>
                 <V3Button
                   aria-label={`查看详情 ${skill.name}`}
                   onClick={(event) => {
