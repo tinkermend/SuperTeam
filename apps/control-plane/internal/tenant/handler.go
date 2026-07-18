@@ -27,6 +27,7 @@ type HandlerService interface {
 	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
 	ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamMember, error)
 	AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error)
+	BindTeamDigitalEmployee(ctx context.Context, req BindTeamDigitalEmployeeRequest) error
 	RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error
 	CreateRoleRequest(ctx context.Context, req CreateRoleRequestRequest) (*TeamMemberRoleRequest, error)
 	ListRoleRequests(ctx context.Context, tenantID, teamID uuid.UUID, status TeamMemberRoleRequestStatus, limit, offset int32) ([]*TeamMemberRoleRequest, error)
@@ -325,6 +326,42 @@ func (h *HTTPHandler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, teamMemberResponseFromDomain(member))
+}
+
+// BindTeamDigitalEmployee 收编候岗数字员工进本团队（POST /teams/{teamId}/digital-employees）。
+func (h *HTTPHandler) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamUpdate, "team digital employee bind")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.BindTeamDigitalEmployee(r.Context(), BindTeamDigitalEmployeeRequest{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		EmployeeID:  req.DigitalEmployeeID,
+		ActorUserID: middleware.GetUserID(r.Context()),
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"digital_employee_id": req.DigitalEmployeeID.String(),
+		"team_id":             teamID.String(),
+	})
 }
 
 func (h *HTTPHandler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {

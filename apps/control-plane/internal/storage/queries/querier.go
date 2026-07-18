@@ -505,6 +505,7 @@ type Querier interface {
 	NextProjectPlanRevisionNumber(ctx context.Context, arg NextProjectPlanRevisionNumberParams) (int32, error)
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
+	ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error)
 	RejectProjectPlanRevision(ctx context.Context, arg RejectProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	RejectTeamLendingRequest(ctx context.Context, arg RejectTeamLendingRequestParams) (TeamLendingRequest, error)

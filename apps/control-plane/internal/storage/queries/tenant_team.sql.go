@@ -51,6 +51,34 @@ func (q *Queries) DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSki
 	return err
 }
 
+const ReassignDigitalEmployeeTeam = `-- name: ReassignDigitalEmployeeTeam :one
+UPDATE digital_employees
+SET team_id = $1::uuid,
+    updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, team_id
+`
+
+type ReassignDigitalEmployeeTeamParams struct {
+	TeamID     uuid.UUID `json:"team_id"`
+	EmployeeID uuid.UUID `json:"employee_id"`
+	TenantID   uuid.UUID `json:"tenant_id"`
+}
+
+type ReassignDigitalEmployeeTeamRow struct {
+	ID     uuid.UUID     `json:"id"`
+	TeamID uuid.NullUUID `json:"team_id"`
+}
+
+func (q *Queries) ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error) {
+	row := q.db.QueryRow(ctx, ReassignDigitalEmployeeTeam, arg.TeamID, arg.EmployeeID, arg.TenantID)
+	var i ReassignDigitalEmployeeTeamRow
+	err := row.Scan(&i.ID, &i.TeamID)
+	return i, err
+}
+
 const SoftDeleteTeam = `-- name: SoftDeleteTeam :one
 UPDATE tenant_teams
 SET deleted_at = NOW(),

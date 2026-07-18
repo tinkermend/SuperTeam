@@ -280,6 +280,60 @@ func (r *PgRepository) CreateDigitalEmployeeDeleteAuditEvent(ctx context.Context
 	return err
 }
 
+// ReassignDigitalEmployeeTeam implements TeamReassignRepository: 换队/首次归队。
+// 目标团队必须存在且 active；返回换队后的员工记录并落审计事件（含 from/to）。
+func (r *PgRepository) ReassignDigitalEmployeeTeam(ctx context.Context, params ReassignDigitalEmployeeTeamRequest) (DigitalEmployeeRecord, error) {
+	team, err := r.q.GetTenantTeam(ctx, queries.GetTenantTeamParams{
+		ID:       params.TeamID,
+		TenantID: params.TenantID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DigitalEmployeeRecord{}, fmt.Errorf("%w: 目标团队不存在", ErrInvalidInput)
+		}
+		return DigitalEmployeeRecord{}, err
+	}
+	if team.Status != "active" {
+		return DigitalEmployeeRecord{}, fmt.Errorf("%w: 目标团队状态为 %s，无法归队", ErrInvalidInput, team.Status)
+	}
+	previous, err := r.GetDigitalEmployee(ctx, params.TenantID, params.DigitalEmployeeID)
+	if err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+	if _, err := r.q.ReassignDigitalEmployeeTeam(ctx, queries.ReassignDigitalEmployeeTeamParams{
+		TeamID:     params.TeamID,
+		EmployeeID: params.DigitalEmployeeID,
+		TenantID:   params.TenantID,
+	}); err != nil {
+		return DigitalEmployeeRecord{}, mapNoRows(err)
+	}
+	fromTeamID := ""
+	if previous.TeamID != nil {
+		fromTeamID = previous.TeamID.String()
+	}
+	details, err := json.Marshal(map[string]any{
+		"digital_employee_id": params.DigitalEmployeeID.String(),
+		"from_team_id":        fromTeamID,
+		"to_team_id":          params.TeamID.String(),
+	})
+	if err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+	if _, err := r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
+		EventType:    "digital_employee_management",
+		ActorType:    "user",
+		ActorID:      params.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "digital_employee", Valid: true},
+		ResourceID:   pgtype.Text{String: params.DigitalEmployeeID.String(), Valid: true},
+		Action:       "digital_employee.team.reassign",
+		Details:      details,
+	}); err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+	return r.GetDigitalEmployee(ctx, params.TenantID, params.DigitalEmployeeID)
+}
+
 func (r *PgRepository) EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
 	if _, err := r.q.GetTenantTeam(ctx, queries.GetTenantTeamParams{
 		ID:       teamID,

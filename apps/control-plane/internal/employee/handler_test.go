@@ -98,6 +98,10 @@ func (s *fakeTemplateHandlerService) UpdateStatus(ctx context.Context, req Updat
 	return nil, nil
 }
 
+func (s *fakeTemplateHandlerService) ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error) {
+	return nil, nil
+}
+
 func (s *fakeTemplateHandlerService) GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error) {
 	return nil, nil
 }

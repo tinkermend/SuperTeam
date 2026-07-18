@@ -365,6 +365,43 @@ func (s *Service) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (
 	return teamMemberFromRecord(record), nil
 }
 
+type BindTeamDigitalEmployeeRequest struct {
+	TenantID    uuid.UUID
+	TeamID      uuid.UUID
+	EmployeeID  uuid.UUID
+	ActorUserID uuid.UUID
+}
+
+// BindTeamDigitalEmployee 把候岗（无归属）数字员工收编进已有团队——团队归属
+// 参与门禁的产品内归队入口。仅 active 团队可收编。
+func (s *Service) BindTeamDigitalEmployee(ctx context.Context, req BindTeamDigitalEmployeeRequest) error {
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.EmployeeID == uuid.Nil {
+		return fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	team, err := s.repository.GetTeam(ctx, req.TenantID, req.TeamID)
+	if err != nil {
+		return err
+	}
+	if team.Status != TeamStatusActive {
+		return fmt.Errorf("%w: 团队状态为 %s，无法收编数字员工", ErrInvalidInput, team.Status)
+	}
+	if err := s.repository.BindTeamDigitalEmployee(ctx, BindTeamDigitalEmployeeParams{
+		TenantID:    req.TenantID,
+		TeamID:      req.TeamID,
+		EmployeeID:  req.EmployeeID,
+		ActorUserID: req.ActorUserID,
+	}); err != nil {
+		return fmt.Errorf("bind team digital employee: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error {
 	if req.TenantID == uuid.Nil {
 		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

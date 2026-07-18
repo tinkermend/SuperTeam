@@ -9,6 +9,15 @@ WHERE id = sqlc.arg('employee_id')::uuid
   AND deleted_at IS NULL
 RETURNING id;
 
+-- name: ReassignDigitalEmployeeTeam :one
+UPDATE digital_employees
+SET team_id = sqlc.arg('team_id')::uuid,
+    updated_at = NOW()
+WHERE id = sqlc.arg('employee_id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
+RETURNING id, team_id;
+
 -- name: UnbindTeamDigitalEmployees :exec
 UPDATE digital_employees
 SET team_id = NULL,

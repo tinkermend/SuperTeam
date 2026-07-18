@@ -20,6 +20,7 @@ type Repository interface {
 	ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error)
 	GetTeamMember(ctx context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error)
 	AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error)
+	BindTeamDigitalEmployee(ctx context.Context, params BindTeamDigitalEmployeeParams) error
 	DisableTeamMemberRole(ctx context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error)
 	CountTeamOwners(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error)
 	CreateTeamMemberRoleRequest(ctx context.Context, params CreateTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error)
@@ -88,6 +89,13 @@ type AddTeamMemberParams struct {
 	TeamID   uuid.UUID
 	UserID   uuid.UUID
 	Role     string
+}
+
+type BindTeamDigitalEmployeeParams struct {
+	TenantID    uuid.UUID
+	TeamID      uuid.UUID
+	EmployeeID  uuid.UUID
+	ActorUserID uuid.UUID
 }
 
 type DisableTeamMemberRoleParams struct {

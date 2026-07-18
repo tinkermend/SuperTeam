@@ -1925,6 +1925,10 @@ func (s *routeEmployeeService) DeleteDigitalEmployee(ctx context.Context, req em
 	return s.deleteErr
 }
 
+func (s *routeEmployeeService) ReassignTeam(ctx context.Context, req employee.ReassignDigitalEmployeeTeamRequest) (*employee.DigitalEmployee, error) {
+	return nil, nil
+}
+
 func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.UpdateStatusRequest) (*employee.DigitalEmployee, error) {
 	s.updateCalled = true
 	s.updateReq = req

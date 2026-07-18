@@ -2492,6 +2492,32 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/digital-employees:
+    post:
+      operationId: bindTeamDigitalEmployee
+      summary: Bind an unassigned (lobby) digital employee into the team
+      description: >-
+        收编候岗数字员工进本团队。仅接受当前无团队归属的员工——已有归属的员工
+        返回 400（跨队转移走 PUT /digital-employees/{employeeId}/team）。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindTeamDigitalEmployeeRequest"
+      responses:
+        "200":
+          description: Digital employee bound into the team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindTeamDigitalEmployeeResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/skills:
     get:
       operationId: listTeamSkills
@@ -3890,6 +3916,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployee"
+  /api/v1/digital-employees/{employeeId}/team:
+    put:
+      operationId: reassignDigitalEmployeeTeam
+      summary: Reassign a digital employee to a team (first assignment or transfer)
+      description: >-
+        团队归属参与门禁的归队入口：目标团队必须存在且 active。副作用：员工的
+        agent home dir 按 (team, employee) 键，换队后下次派发落新家目录（provider
+        会话连续性重置）；团队级技能与 MCP 绑定继承随之切换。
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReassignDigitalEmployeeTeamRequest"
+      responses:
+        "200":
+          description: Digital employee reassigned to the team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployee"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/execution-instance:
     get:
       operationId: getDigitalEmployeeExecutionInstance
@@ -12003,6 +12056,34 @@ components:
       properties:
         status:
           $ref: "#/components/schemas/DigitalEmployeeStatus"
+    ReassignDigitalEmployeeTeamRequest:
+      type: object
+      required:
+        - team_id
+      properties:
+        team_id:
+          type: string
+          format: uuid
+    BindTeamDigitalEmployeeRequest:
+      type: object
+      required:
+        - digital_employee_id
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+    BindTeamDigitalEmployeeResponse:
+      type: object
+      required:
+        - digital_employee_id
+        - team_id
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
     DigitalEmployeeExecutionInstanceStatus:
       type: string
       enum:
