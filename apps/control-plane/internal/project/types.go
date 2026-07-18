@@ -11,6 +11,10 @@ import (
 var (
 	ErrInvalidProject               = errors.New("invalid project")
 	ErrInvalidProjectMember         = errors.New("invalid project member")
+	// ErrTeamlessProjectMember means a digital_employee member has no team
+	// affiliation. Team affiliation is a precondition for project
+	// participation; teamless (lobby) employees must be bound to a team first.
+	ErrTeamlessProjectMember = errors.New("teamless digital employee cannot join project")
 	ErrProjectNotFound              = errors.New("project not found")
 	ErrProjectConflict              = errors.New("project conflict")
 	ErrProjectArchived              = errors.New("project archived")

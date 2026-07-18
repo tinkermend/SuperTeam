@@ -57,6 +57,13 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListDigitalEmployeeTeamAssignments :many
+SELECT id, team_id
+FROM digital_employees
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = ANY(sqlc.arg('employee_ids')::uuid[])
+  AND deleted_at IS NULL;
+
 -- name: GetDigitalEmployeeSchedulingSkillCounts :one
 WITH target_employee AS (
     SELECT tenant_id, id AS digital_employee_id, team_id

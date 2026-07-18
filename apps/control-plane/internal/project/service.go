@@ -23,6 +23,7 @@ type Service struct {
 	inbox                     DecisionInboxProjector
 	archiveArtifactLocker     ArchiveArtifactLocker
 	teamScopeAuthorizer       ProjectTeamScopeAuthorizer
+	memberTeamResolver        MemberTeamAssignmentResolver
 	runtimeNodes              ProjectRuntimeNodeReader
 	planningProfiles          DigitalEmployeePlanningProfileSource
 	scenarioTemplates         ScenarioTemplateResolver
@@ -57,6 +58,14 @@ type latestConfigRevisionRepository interface {
 
 type ProjectTeamScopeAuthorizer interface {
 	CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error)
+}
+
+// MemberTeamAssignmentResolver resolves digital employees' team affiliation
+// for the participation gate: a digital_employee project member must belong to
+// a team. nil resolver skips the check (test fakes without the lookup wired);
+// the pg repository always implements it.
+type MemberTeamAssignmentResolver interface {
+	ListDigitalEmployeeTeamAssignments(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]*uuid.UUID, error)
 }
 
 type ProjectRuntimeNodeReader interface {
@@ -142,6 +151,7 @@ func NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository 
 		coordinator = NoopCoordinatorSignalClient{}
 	}
 	teamScopeAuthorizer, _ := repository.(ProjectTeamScopeAuthorizer)
+	memberTeamResolver, _ := repository.(MemberTeamAssignmentResolver)
 	return &Service{
 		repository:            repository,
 		coordinator:           coordinator,
@@ -149,7 +159,14 @@ func NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository 
 		inbox:                 inbox,
 		archiveArtifactLocker: locker,
 		teamScopeAuthorizer:   teamScopeAuthorizer,
+		memberTeamResolver:    memberTeamResolver,
 	}, nil
+}
+
+func (s *Service) SetMemberTeamAssignmentResolver(resolver MemberTeamAssignmentResolver) {
+	if s != nil {
+		s.memberTeamResolver = resolver
+	}
 }
 
 func (s *Service) SetTeamScopeAuthorizer(authorizer ProjectTeamScopeAuthorizer) {
@@ -183,6 +200,9 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		return nil, ErrInvalidProject
 	}
 	if err := validateMembers(req.Members); err != nil {
+		return nil, err
+	}
+	if err := s.validateMemberTeamAssignments(ctx, req.TenantID, req.Members); err != nil {
 		return nil, err
 	}
 	if err := s.validateProjectTeamScopes(ctx, req); err != nil {
@@ -1204,6 +1224,9 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 		return nil, ErrInvalidProject
 	}
 	if err := validateMembers(members); err != nil {
+		return nil, err
+	}
+	if err := s.validateMemberTeamAssignments(ctx, tenantID, members); err != nil {
 		return nil, err
 	}
 	replaced, err := s.repository.ReplaceProjectMembers(ctx, tenantID, projectID, members)
@@ -7117,6 +7140,54 @@ func (s *Service) validateAcceptanceRefs(ctx context.Context, tenantID, projectI
 		if _, ok := reportIDs[id]; !ok {
 			return ErrInvalidProjectAcceptance
 		}
+	}
+	return nil
+}
+
+// validateMemberTeamAssignments enforces the participation gate: every
+// digital_employee member must exist and belong to a team. Teamless (lobby)
+// employees are rejected with the offending names/ids in the error message.
+func (s *Service) validateMemberTeamAssignments(ctx context.Context, tenantID uuid.UUID, members []ProjectMemberInput) error {
+	if s.memberTeamResolver == nil {
+		return nil
+	}
+	employeeIDs := make([]uuid.UUID, 0, len(members))
+	seen := make(map[uuid.UUID]bool, len(members))
+	for _, member := range members {
+		if member.PrincipalType != PrincipalTypeDigitalEmployee || seen[member.PrincipalID] {
+			continue
+		}
+		seen[member.PrincipalID] = true
+		employeeIDs = append(employeeIDs, member.PrincipalID)
+	}
+	if len(employeeIDs) == 0 {
+		return nil
+	}
+	assignments, err := s.memberTeamResolver.ListDigitalEmployeeTeamAssignments(ctx, tenantID, employeeIDs)
+	if err != nil {
+		return fmt.Errorf("resolve digital employee team assignments: %w", err)
+	}
+	violations := make([]string, 0)
+	for _, member := range members {
+		if member.PrincipalType != PrincipalTypeDigitalEmployee {
+			continue
+		}
+		teamID, found := assignments[member.PrincipalID]
+		if found && teamID != nil && *teamID != uuid.Nil {
+			continue
+		}
+		label := member.PrincipalID.String()
+		if trimmed := strings.TrimSpace(member.DisplayNameSnapshot); trimmed != "" {
+			label = trimmed
+		}
+		if !found {
+			violations = append(violations, label+"(不存在)")
+		} else {
+			violations = append(violations, label)
+		}
+	}
+	if len(violations) > 0 {
+		return fmt.Errorf("%w: %s", ErrTeamlessProjectMember, strings.Join(violations, ", "))
 	}
 	return nil
 }

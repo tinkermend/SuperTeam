@@ -3208,6 +3208,44 @@ func (q *Queries) ListDigitalEmployeeOverviewOperationalFacts(ctx context.Contex
 	return items, nil
 }
 
+const ListDigitalEmployeeTeamAssignments = `-- name: ListDigitalEmployeeTeamAssignments :many
+SELECT id, team_id
+FROM digital_employees
+WHERE tenant_id = $1::uuid
+  AND id = ANY($2::uuid[])
+  AND deleted_at IS NULL
+`
+
+type ListDigitalEmployeeTeamAssignmentsParams struct {
+	TenantID    uuid.UUID   `json:"tenant_id"`
+	EmployeeIds []uuid.UUID `json:"employee_ids"`
+}
+
+type ListDigitalEmployeeTeamAssignmentsRow struct {
+	ID     uuid.UUID     `json:"id"`
+	TeamID uuid.NullUUID `json:"team_id"`
+}
+
+func (q *Queries) ListDigitalEmployeeTeamAssignments(ctx context.Context, arg ListDigitalEmployeeTeamAssignmentsParams) ([]ListDigitalEmployeeTeamAssignmentsRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeTeamAssignments, arg.TenantID, arg.EmployeeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeTeamAssignmentsRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeTeamAssignmentsRow
+		if err := rows.Scan(&i.ID, &i.TeamID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListDigitalEmployees = `-- name: ListDigitalEmployees :many
 SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
 FROM digital_employees

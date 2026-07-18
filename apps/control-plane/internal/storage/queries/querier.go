@@ -378,6 +378,7 @@ type Querier interface {
 	ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error)
 	ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEmployeeRunsParams) ([]ListDigitalEmployeeRunsRow, error)
 	ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListDigitalEmployeeRunsDetailedParams) ([]ListDigitalEmployeeRunsDetailedRow, error)
+	ListDigitalEmployeeTeamAssignments(ctx context.Context, arg ListDigitalEmployeeTeamAssignmentsParams) ([]ListDigitalEmployeeTeamAssignmentsRow, error)
 	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
 	// 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
 	ListEffectiveLendingTeamsForProject(ctx context.Context, arg ListEffectiveLendingTeamsForProjectParams) ([]uuid.UUID, error)
