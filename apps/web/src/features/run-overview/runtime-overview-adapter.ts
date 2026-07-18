@@ -30,7 +30,11 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
   const activeTeams = input.teams.filter((team) => team.status === "active");
   const employeesByTeam = groupEmployeesByTeam(input.employees.items);
   const teamIdsByFloor = distributeTeamsByFloor(activeTeams, employeesByTeam);
-  const floors = buildFloorLayouts(teamIdsByFloor);
+  // 大厅层只在存在未归属团队的员工时出现，避免常驻空楼层。
+  const hasUnassignedEmployees = (employeesByTeam.get(UNASSIGNED_TEAM_ID) ?? []).length > 0;
+  const floors = buildFloorLayouts(teamIdsByFloor).filter(
+    (floor) => floor.floorId !== "lobby" || hasUnassignedEmployees,
+  );
   const floorIdByTeamId = new Map(
     floors.flatMap((floor) => floor.teamIds.map((teamId) => [teamId, floor.floorId] as const)),
   );
@@ -130,7 +134,7 @@ function distributeTeamsByFloor(
   teams: TeamListItem[],
   employeesByTeam: Map<string, DigitalEmployeeOverviewItem[]>,
 ): Record<RuntimeOverviewFloorId, string[]> {
-  const floors: Record<RuntimeOverviewFloorId, string[]> = { "floor-1": [], "floor-2": [], "floor-3": [] };
+  const floors: Record<RuntimeOverviewFloorId, string[]> = { "floor-1": [], "floor-2": [], "floor-3": [], lobby: [] };
   const capacities = runtimeOverviewSlotCapacities();
   const slots = (Object.keys(capacities) as RuntimeOverviewFloorId[]).flatMap((floorId) =>
     capacities[floorId].map((capacity, index) => ({ floorId, index, capacity })),

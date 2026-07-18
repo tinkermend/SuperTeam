@@ -206,23 +206,34 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
                   <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
                     全部重点
                   </span>
-                  {overview.floors.map((floor) => (
-                    <V3Button
-                      key={floor.floorId}
-                      type="button"
-                      variant={activeFloorId === floor.floorId ? "primary" : "outline"}
-                      onClick={() => handleSelectFloor(floor.floorId)}
-                    >
-                      {floor.label}
-                      {lensFloorIds?.has(floor.floorId) ? (
-                        <span
-                          data-runtime-lens-floor-dot={floor.floorId}
-                          className="ml-1 size-2 rounded-full bg-v3-brand"
-                          aria-label="该楼层有选中项目的参与员工"
-                        />
-                      ) : null}
-                    </V3Button>
-                  ))}
+                  {overview.floors.map((floor) => {
+                    const lobbyCount =
+                      floor.floorId === "lobby"
+                        ? overview.employees.filter((employee) => employee.floorId === "lobby").length
+                        : 0;
+                    return (
+                      <V3Button
+                        key={floor.floorId}
+                        type="button"
+                        variant={activeFloorId === floor.floorId ? "primary" : "outline"}
+                        onClick={() => handleSelectFloor(floor.floorId)}
+                      >
+                        {floor.label}
+                        {lobbyCount > 0 ? (
+                          <span data-runtime-lobby-count className="ml-1 tabular-nums">
+                            · {lobbyCount}
+                          </span>
+                        ) : null}
+                        {lensFloorIds?.has(floor.floorId) ? (
+                          <span
+                            data-runtime-lens-floor-dot={floor.floorId}
+                            className="ml-1 size-2 rounded-full bg-v3-brand"
+                            aria-label="该楼层有选中项目的参与员工"
+                          />
+                        ) : null}
+                      </V3Button>
+                    );
+                  })}
                   <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
                     异常优先
                   </span>

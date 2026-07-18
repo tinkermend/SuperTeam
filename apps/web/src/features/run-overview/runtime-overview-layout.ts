@@ -15,6 +15,8 @@ const floorBackgrounds: Record<RuntimeOverviewFloorId, string> = {
   "floor-1": "/images/run-overview/floor-1-office-v4.png",
   "floor-2": "/images/run-overview/floor-2-office-v4.png",
   "floor-3": "/images/run-overview/floor-3-office-v4.png",
+  // TODO: 换成专属大厅底图 floor-lobby-office-v4.png（等待素材），当前临时复用 floor-1。
+  lobby: "/images/run-overview/floor-1-office-v4.png",
 };
 
 const floorTeamSlots: Record<RuntimeOverviewFloorId, RuntimeOverviewTeamSlot[]> = {
@@ -48,16 +50,19 @@ const floorTeamSlots: Record<RuntimeOverviewFloorId, RuntimeOverviewTeamSlot[]> 
     workspace([225, 675, 500, 675, 500, 790, 225, 790], 265, 555, "data", 3, { x: 260, y: 732, dx: 78, dy: 0 }),
     workspace([630, 640, 1085, 640, 1085, 805, 630, 805], 1099, 669, "lab", 10, { x: 690, y: 694, dx: 76, dy: 64, columns: 5 }),
   ],
+  // 大厅层没有团队 slot：不参与团队分配，只有下方的候岗工位。
+  lobby: [],
 };
 
-// 候岗区：未归属团队的员工固定落座 floor-1 右侧空带。不是团队 slot（不参与
-// distributeTeamsByFloor 分配、不计入楼层容量），仅在有未归属员工时渲染。
-const lobbySlot = workspace([1520, 470, 1660, 470, 1660, 760, 1520, 760], 1464, 350, "lobby", 3, {
-  x: 1580,
-  y: 530,
-  dx: 0,
-  dy: 78,
-  columns: 1,
+// 候岗工位：大厅层内唯一的工位，10 座开放区网格（几何复用 floor-1 中下部开放办公区，
+// 该区域的卡片间距/呼出线/座位热区均已被布局测试覆盖）。不是团队 slot、不计任何容量口径。
+// TODO: 专属大厅底图到位后按图微调 polygon 与座位坐标。
+const lobbySlot = workspace([630, 640, 1085, 640, 1085, 805, 630, 805], 455, 515, "lobby", 10, {
+  x: 690,
+  y: 694,
+  dx: 76,
+  dy: 64,
+  columns: 5,
 });
 
 const floorConnectorPaths: Record<RuntimeOverviewFloorId, RuntimeOverviewFloor["layout"]["paths"]> = {
@@ -81,6 +86,7 @@ const floorConnectorPaths: Record<RuntimeOverviewFloorId, RuntimeOverviewFloor["
   ],
   "floor-2": [],
   "floor-3": [],
+  lobby: [],
 };
 
 type SeatGrid = { x: number; y: number; dx: number; dy: number; columns?: number; rotation?: number };
@@ -156,7 +162,7 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
         seats: buildSeats(teamId, workspaceSlot.capacity, seatGrid),
       }];
     });
-    if (floorId === "floor-1") {
+    if (floorId === "lobby") {
       const { seatGrid, ...lobbyWorkspace } = lobbySlot;
       workspaces.push({
         ...lobbyWorkspace,
@@ -166,7 +172,7 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
     }
     return {
       floorId,
-      label: `${floorIndex + 1}层`,
+      label: floorId === "lobby" ? "大厅" : `${floorIndex + 1}层`,
       teamIds,
       summary: {
         teamCount: teamIds.length,
@@ -192,5 +198,6 @@ export function runtimeOverviewSlotCapacities(): Record<RuntimeOverviewFloorId, 
     "floor-1": floorTeamSlots["floor-1"].map((slot) => slot.capacity),
     "floor-2": floorTeamSlots["floor-2"].map((slot) => slot.capacity),
     "floor-3": floorTeamSlots["floor-3"].map((slot) => slot.capacity),
+    lobby: [],
   };
 }

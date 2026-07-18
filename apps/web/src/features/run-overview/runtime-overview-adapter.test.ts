@@ -448,8 +448,11 @@ describe("buildRuntimeOverview", () => {
 
     const mapped = overview.employees.find((item) => item.employeeId === "emp-free-1");
     expect(mapped?.teamId).toBe("unassigned");
-    expect(mapped?.floorId).toBe("floor-1");
+    expect(mapped?.floorId).toBe("lobby");
     expect(mapped?.seatId).toBe("unassigned-seat-1");
+    // 大厅层仅在有候岗员工时出现。
+    expect(overview.floors.some((floor) => floor.floorId === "lobby")).toBe(true);
+    expect(base.floors.some((floor) => floor.floorId === "lobby")).toBe(false);
     // 候岗不占团队容量：容量汇总与无候岗员工时完全一致，也不出现在团队列表。
     expect(overview.summary.capacityTotal).toBe(base.summary.capacityTotal);
     expect(overview.summary.capacityUsed).toBe(base.summary.capacityUsed);
@@ -457,17 +460,17 @@ describe("buildRuntimeOverview", () => {
   });
 
   it("leaves lobby overflow employees visible in the list but without a seat", () => {
-    const lobbyCrowd = [1, 2, 3, 4].map((index) => unassignedEmployee(`emp-free-${index}`, `候岗${index}`));
+    const lobbyCrowd = Array.from({ length: 11 }, (_, index) => unassignedEmployee(`emp-free-${index + 1}`, `候岗${index + 1}`));
     const overview = buildRuntimeOverview({
       activeFloorId: "floor-1",
-      employees: { ...employees, items: lobbyCrowd, pagination: { limit: 100, offset: 0, total_count: 4 } },
+      employees: { ...employees, items: lobbyCrowd, pagination: { limit: 100, offset: 0, total_count: 11 } },
       generatedAt: "2026-07-05T10:00:00Z",
       teams,
     });
 
     const seatIds = overview.employees.map((item) => item.seatId);
-    expect(seatIds.slice(0, 3)).toEqual(["unassigned-seat-1", "unassigned-seat-2", "unassigned-seat-3"]);
-    expect(seatIds[3]).toBeUndefined();
+    expect(seatIds.slice(0, 10)).toEqual(Array.from({ length: 10 }, (_, index) => `unassigned-seat-${index + 1}`));
+    expect(seatIds[10]).toBeUndefined();
   });
 });
 
