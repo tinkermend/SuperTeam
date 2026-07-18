@@ -327,6 +327,7 @@ function createProjectFetcher(
     deletePreviewCanDelete?: boolean;
     deleteStatus?: number;
     deletePayload?: unknown;
+    includeArchivedProject?: boolean;
   } = {},
 ) {
   const projects = [
@@ -335,6 +336,9 @@ function createProjectFetcher(
       allowed_actions: options.projectAllowedActions ?? ["project.archive", "project.delete"],
     },
     makeProject("project-2", "生产巡检整改"),
+    ...(options.includeArchivedProject
+      ? [makeProject("project-3", "已归档走查项目", "archived")]
+      : []),
   ];
 
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2522,23 +2526,61 @@ describe("ProjectsView", () => {
     expect(queueText).toContain("生产巡检整改");
   });
 
-  it("posts to the archive route", async () => {
+  it("requires confirmation before posting to the archive route", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
-    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
-    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
-
-    await vi.waitFor(() => {
-      const archiveCall = fetchCalls(fetcher).find(([url, init]) => {
+    const archivePosts = () =>
+      fetchCalls(fetcher).filter(([url, init]) => {
         return (
           String(url).endsWith("/api/v1/projects/project-1/archive") &&
           init?.method === "POST"
         );
       });
+
+    // 取消路径：打开弹窗后取消，不得发出归档请求。
+    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
+    await expect
+      .element(screen.getByRole("heading", { name: "归档项目" }))
+      .toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(archivePosts()).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认归档" }));
+
+    await vi.waitFor(() => {
+      const archiveCall = archivePosts()[0];
       expect(archiveCall).toBeTruthy();
       expect(archiveCall?.[1]?.body).toBeUndefined();
       expect(archiveCall?.[1]?.headers).toEqual({ accept: "application/json" });
+    });
+  });
+
+  it("shows 已归档 instead of 待调度 for archived projects in the queue handler column", async () => {
+    const fetcher = createProjectFetcher({ includeArchivedProject: true });
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await expect
+      .element(screen.getByTestId("project-risk-queue").getByText("已归档走查项目"))
+      .toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      const rows = Array.from(
+        screen
+          .getByTestId("project-risk-queue")
+          .element()
+          .querySelectorAll("tbody tr"),
+      );
+      const archivedRow = rows.find((row) =>
+        row.textContent?.includes("已归档走查项目"),
+      );
+      expect(archivedRow).toBeTruthy();
+      const handlerCell = archivedRow?.querySelector(
+        '[data-testid="project-queue-current-handler"]',
+      );
+      expect(handlerCell?.textContent).toBe("已归档");
     });
   });
 

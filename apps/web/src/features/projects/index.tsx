@@ -264,6 +264,7 @@ export function ProjectsView({
   const [selectedRuntimeNodeId, setSelectedRuntimeNodeId] = useState("");
   const [selectedQueueProjectId, setSelectedQueueProjectId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteBlocked, setDeleteBlocked] =
@@ -657,6 +658,7 @@ export function ProjectsView({
   const archiveMutation = useMutation({
     mutationFn: (projectId: string) => archiveProject(apiOptions, projectId),
     onSuccess: async (project) => {
+      setArchiveDialogOpen(false);
       queryClient.setQueryData(["project", project.id], project);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
@@ -1070,9 +1072,8 @@ export function ProjectsView({
                     initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
                     isArchived={isArchived}
                     onArchiveProject={() => {
-                      if (effectiveProjectId) {
-                        archiveMutation.mutate(effectiveProjectId);
-                      }
+                      archiveMutation.reset();
+                      setArchiveDialogOpen(true);
                     }}
                     onDeleteProject={() => setDeleteDialogOpen(true)}
                     onCreateAcceptance={(input) => {
@@ -1152,6 +1153,35 @@ export function ProjectsView({
         onOpenChange={setDemandOpen}
         onSubmit={(input) => submitDemandMutation.mutate(input)}
       />
+      {displayedProject ? (
+        <ConfirmDialog
+          cancelBtnText="取消"
+          confirmText="确认归档"
+          desc={
+            <div className="space-y-2">
+              <p>
+                确认归档项目「{displayedProject.name}
+                」？归档后项目停止推进、配置与需求提交将被禁用，且当前没有取消归档入口；历史记录仍可查看。
+              </p>
+              {archiveMutation.isError ? (
+                <p className="text-sm text-v3-danger">
+                  {queryErrorMessage(archiveMutation.error)}
+                </p>
+              ) : null}
+            </div>
+          }
+          destructive
+          handleConfirm={() => {
+            if (effectiveProjectId) {
+              archiveMutation.mutate(effectiveProjectId);
+            }
+          }}
+          isLoading={archiveMutation.isPending}
+          onOpenChange={setArchiveDialogOpen}
+          open={archiveDialogOpen}
+          title="归档项目"
+        />
+      ) : null}
       {displayedProject ? (
         <ConfirmDialog
           cancelBtnText="取消"
