@@ -1,7 +1,7 @@
 # 目录与能力投影修订 残债立项交接（run 永滞看门狗 + 项目 MCP 绑定 Web 页等）
 
 > 日期：2026-07-18
-> 状态：待处理（自包含，可分项直接开工）
+> 状态：§1(runtime 层)/§3/§4 已完结入 main（2026-07-18, 8bc8304f, GATE 三项真实 E2E PASS,附录见 CHANGELOG 同日条目）;§1 第 2 层(CP 超时看门狗)/§2(Web 页)/§5-§7 仍待处理
 > 背景：`2026-07-17-directory-capability-projection-revision-design.md` 三分期（P1 稳定缓存与投影 / P3 清理闭环 / P2 治理增强）已全部合并 main 并经真实 E2E（GATE 记录见 CHANGELOG 2026-07-17 三条同名条目）。过程中揪修既有缺陷 4 个（opencode stdin 永挂、opencode 事件 schema 漂移、相对家目录软链悬空、worktree 恒检出 clone 旧 main），另沉淀下列残债。本文逐项立项，按优先级排列。
 > 相关 spec：目录与能力投影修订（同目录 2026-07-17）；调度韧性缺陷家族（散见 handoff-loop / scenario-template-p2 记录，本文 §1 是家族新例）。
 
