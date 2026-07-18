@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { StaffGapDialog, type StaffGapDialogProps } from "./staff-gap-dialog";
 import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
@@ -30,6 +30,7 @@ vi.mock("@/lib/api/projects", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/projects")>();
   return {
     ...actual,
+    getProject: vi.fn(),
     listProjectMembers: vi.fn(),
     replaceProjectMembers: vi.fn(),
     resolveProjectDecision: vi.fn(),
@@ -40,9 +41,8 @@ const { createDigitalEmployee, listDigitalEmployeeAvatarAssets } = await import(
   "@/lib/api/employees"
 );
 const { listEmployeeTemplates } = await import("@/lib/api/employee-templates");
-const { listProjectMembers, replaceProjectMembers, resolveProjectDecision } = await import(
-  "@/lib/api/projects"
-);
+const { getProject, listProjectMembers, replaceProjectMembers, resolveProjectDecision } =
+  await import("@/lib/api/projects");
 
 const codeReviewerTemplate: EmployeeTemplate = {
   capability_bindings: {
@@ -155,8 +155,29 @@ function renderDialog(props: Partial<StaffGapDialogProps> = {}) {
 }
 
 describe("StaffGapDialog", () => {
+  beforeEach(() => {
+    // 补员员工必须带团队归属（参与门禁）：默认项目已绑定团队。
+    vi.mocked(getProject).mockResolvedValue({ id: "project-1", team_id: "team-1" } as never);
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("blocks restaffing with an explicit error when the project has no team", async () => {
+    vi.mocked(listEmployeeTemplates).mockResolvedValue([codeReviewerTemplate, testerTemplate]);
+    vi.mocked(listDigitalEmployeeAvatarAssets).mockResolvedValue([avatarAsset]);
+    vi.mocked(getProject).mockResolvedValue({ id: "project-1" } as never);
+    const screen = await renderDialog();
+
+    await vi.waitFor(() => {
+      expect(listEmployeeTemplates).toHaveBeenCalled();
+    });
+    await userEvent.click(screen.getByRole("button", { name: "创建并补员" }));
+
+    await expect.element(screen.getByText("项目未绑定团队，无法补员：请先为项目绑定团队")).toBeVisible();
+    expect(createDigitalEmployee).not.toHaveBeenCalled();
+    expect(replaceProjectMembers).not.toHaveBeenCalled();
   });
 
   it("preselects the template matching gap.required_capabilities and submits create → members → resolve in order", async () => {
@@ -187,6 +208,7 @@ describe("StaffGapDialog", () => {
         employee_type: "standard_code_reviewer",
         provider_type: "claude-code",
         role: "代码审查",
+        team_id: "team-1",
       }),
     );
     expect(listProjectMembers).toHaveBeenCalledWith(

@@ -797,6 +797,26 @@ export function listEmployeeEnvironmentVariables(
   );
 }
 
+/**
+ * 换队/首次归队（团队归属参与门禁的归队入口）。目标团队必须存在且 active。
+ * 副作用：agent home dir 按 (team, employee) 键，换队后下次派发落新家目录；
+ * 团队级技能与 MCP 继承随之切换。
+ */
+export function reassignDigitalEmployeeTeam(
+  options: ApiClientOptions,
+  employeeId: string,
+  teamId: string,
+): Promise<DigitalEmployee> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return putJson<DigitalEmployee>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/team`,
+    { team_id: teamId },
+    "reassign digital employee team",
+  );
+}
+
 export function upsertEmployeeEnvironmentVariable(
   options: ApiClientOptions,
   employeeId: string,

@@ -340,6 +340,25 @@ export function addTeamMember(
   );
 }
 
+export type BindTeamDigitalEmployeeResult = {
+  digital_employee_id: string;
+  team_id: string;
+};
+
+/** 收编候岗（无归属）数字员工进本团队；已有归属的员工会被 400 拒绝。 */
+export function bindTeamDigitalEmployee(
+  options: ApiClientOptions,
+  teamId: string,
+  digitalEmployeeId: string,
+): Promise<BindTeamDigitalEmployeeResult> {
+  return postJson<BindTeamDigitalEmployeeResult>(
+    options,
+    teamPath(teamId, "/digital-employees"),
+    { digital_employee_id: digitalEmployeeId },
+    "bind team digital employee",
+  );
+}
+
 export function removeTeamMember(
   options: ApiClientOptions,
   teamId: string,

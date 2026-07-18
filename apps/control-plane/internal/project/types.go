@@ -11,6 +11,10 @@ import (
 var (
 	ErrInvalidProject               = errors.New("invalid project")
 	ErrInvalidProjectMember         = errors.New("invalid project member")
+	// ErrTeamlessProjectMember means a digital_employee member has no team
+	// affiliation. Team affiliation is a precondition for project
+	// participation; teamless (lobby) employees must be bound to a team first.
+	ErrTeamlessProjectMember = errors.New("teamless digital employee cannot join project")
 	ErrProjectNotFound              = errors.New("project not found")
 	ErrProjectConflict              = errors.New("project conflict")
 	ErrProjectArchived              = errors.New("project archived")
@@ -226,6 +230,10 @@ const (
 	ProjectEventArchiveSnapshotCreated          ProjectEventType = "project.archive_snapshot.created"
 	ProjectEventArchiveRetentionPending         ProjectEventType = "project.archive.retention_pending"
 	ProjectEventLendingEmployeeSkipped          ProjectEventType = "project.lending.employee_skipped"
+	// ProjectEventTeamlessEmployeeSkipped is appended when a digital employee
+	// project member is excluded from the coordinator's executor pool because
+	// it has no team affiliation (participation gate).
+	ProjectEventTeamlessEmployeeSkipped ProjectEventType = "project.teamless.employee_skipped"
 	ProjectEventTaskUpstreamSupplementRejected  ProjectEventType = "project_task.upstream_supplement_rejected"
 	ProjectEventTaskUpstreamSupplementExhausted ProjectEventType = "project_task.upstream_supplement_exhausted"
 	ProjectEventDemandReplanningReopened        ProjectEventType = "demand.replanning_reopened"

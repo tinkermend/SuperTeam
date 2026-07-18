@@ -739,6 +739,9 @@ type memoryRepository struct {
 	lastListTeamSummariesParams ListTeamSummariesParams
 	lastAddTeamMemberParams     AddTeamMemberParams
 	createdTeamWithMembers      CreateTeamWithInitialMembersParams
+
+	bindTeamDigitalEmployeeParams []BindTeamDigitalEmployeeParams
+	bindTeamDigitalEmployeeErr    error
 }
 
 type memoryAuditEvent struct {
@@ -955,6 +958,11 @@ func (r *memoryRepository) GetTeamMember(_ context.Context, tenantID, teamID, me
 	return record, nil
 }
 
+func (r *memoryRepository) BindTeamDigitalEmployee(_ context.Context, params BindTeamDigitalEmployeeParams) error {
+	r.bindTeamDigitalEmployeeParams = append(r.bindTeamDigitalEmployeeParams, params)
+	return r.bindTeamDigitalEmployeeErr
+}
+
 func (r *memoryRepository) AddTeamMember(_ context.Context, params AddTeamMemberParams) (TeamMemberRecord, error) {
 	r.addTeamMemberCalled = true
 	r.lastAddTeamMemberParams = params
@@ -1070,4 +1078,73 @@ type fakeTeamAuditReader struct{}
 
 func (r *fakeTeamAuditReader) ListTeamEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int) ([]*audit.Event, error) {
 	return []*audit.Event{}, nil
+}
+
+// --- BindTeamDigitalEmployee (团队归属参与门禁的归队入口) ---
+
+func TestBindTeamDigitalEmployeeBindsIntoActiveTeam(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo, &fakeTeamAuditReader{})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID, teamID, employeeID, actorID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	repo.teams[teamID] = TeamRecord{ID: teamID, TenantID: tenantID, Status: TeamStatusActive}
+
+	if err := service.BindTeamDigitalEmployee(context.Background(), BindTeamDigitalEmployeeRequest{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		EmployeeID:  employeeID,
+		ActorUserID: actorID,
+	}); err != nil {
+		t.Fatalf("bind team digital employee: %v", err)
+	}
+	if len(repo.bindTeamDigitalEmployeeParams) != 1 {
+		t.Fatalf("expected one bind call, got %d", len(repo.bindTeamDigitalEmployeeParams))
+	}
+	got := repo.bindTeamDigitalEmployeeParams[0]
+	if got.TeamID != teamID || got.EmployeeID != employeeID || got.ActorUserID != actorID {
+		t.Fatalf("unexpected bind params: %#v", got)
+	}
+}
+
+func TestBindTeamDigitalEmployeeRejectsInactiveTeam(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo, &fakeTeamAuditReader{})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID, teamID := uuid.New(), uuid.New()
+	repo.teams[teamID] = TeamRecord{ID: teamID, TenantID: tenantID, Status: TeamStatusDisabled}
+
+	err = service.BindTeamDigitalEmployee(context.Background(), BindTeamDigitalEmployeeRequest{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		EmployeeID:  uuid.New(),
+		ActorUserID: uuid.New(),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for inactive team, got %v", err)
+	}
+	if len(repo.bindTeamDigitalEmployeeParams) != 0 {
+		t.Fatalf("expected no bind call, got %d", len(repo.bindTeamDigitalEmployeeParams))
+	}
+}
+
+func TestBindTeamDigitalEmployeeRejectsUnknownTeam(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo, &fakeTeamAuditReader{})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	err = service.BindTeamDigitalEmployee(context.Background(), BindTeamDigitalEmployeeRequest{
+		TenantID:    uuid.New(),
+		TeamID:      uuid.New(),
+		EmployeeID:  uuid.New(),
+		ActorUserID: uuid.New(),
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected not found for unknown team, got %v", err)
+	}
 }

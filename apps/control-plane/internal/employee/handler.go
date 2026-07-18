@@ -27,6 +27,7 @@ type HandlerService interface {
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployee, error)
 	DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
+	ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error)
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
 	BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
@@ -562,6 +563,42 @@ func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 		Status:            req.Status,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, employeeResponseFromDomain(employee))
+}
+
+// ReassignDigitalEmployeeTeam 换队/首次归队（PUT /digital-employees/{employeeId}/team）。
+// 副作用：agent home dir 按 (team, employee) 键，换队后下次派发落新家目录；
+// 团队级技能与 MCP 继承随之切换。
+func (h *HTTPHandler) ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeTeamUpdate, &employeeID, "digital employee team reassign")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		TeamID uuid.UUID `json:"team_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	employee, err := service.ReassignTeam(r.Context(), ReassignDigitalEmployeeTeamRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		TeamID:            req.TeamID,
+		ActorUserID:       middleware.GetUserID(r.Context()),
 	})
 	if err != nil {
 		writeHandlerError(w, err)

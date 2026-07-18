@@ -546,6 +546,29 @@ func (r *PgRepository) AreAllProjectDemandsTerminal(ctx context.Context, tenantI
 	return counts.TotalCount > 0 && counts.NonTerminalCount == 0, nil
 }
 
+// ListDigitalEmployeeTeamAssignments implements MemberTeamAssignmentResolver:
+// missing ids are absent from the map; a nil value means the employee exists
+// but is teamless (lobby state).
+func (r *PgRepository) ListDigitalEmployeeTeamAssignments(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]*uuid.UUID, error) {
+	rows, err := r.q.ListDigitalEmployeeTeamAssignments(ctx, queries.ListDigitalEmployeeTeamAssignmentsParams{
+		TenantID:    tenantID,
+		EmployeeIds: employeeIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	assignments := make(map[uuid.UUID]*uuid.UUID, len(rows))
+	for _, row := range rows {
+		if row.TeamID.Valid {
+			teamID := row.TeamID.UUID
+			assignments[row.ID] = &teamID
+		} else {
+			assignments[row.ID] = nil
+		}
+	}
+	return assignments, nil
+}
+
 func (r *PgRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
 	created, err := withProjectQueries(ctx, r, "project members", func(q *queries.Queries) ([]ProjectMember, error) {
 		return r.replaceProjectMembersWithQueries(ctx, q, tenantID, projectID, members)

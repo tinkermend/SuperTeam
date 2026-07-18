@@ -1316,6 +1316,42 @@ func TestCreateRunChatRejectsInvalidAnchorProject(t *testing.T) {
 	}
 }
 
+// TestCreateRunChatRejectsNonMemberParticipant covers the participation gate:
+// the anchor project may be valid, but the driving digital employee must be an
+// active digital_employee member of it — a non-member is 400-rejected before
+// node resolution.
+func TestCreateRunChatRejectsNonMemberParticipant(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+	resolver := service.nodeResolver.(*fakeProjectTaskNodeResolver)
+	validator := service.chatAnchorValidator.(*fakeChatAnchorProjectValidator)
+	validator.participantErr = fmt.Errorf("%w: 该数字员工不是该项目的成员，无法发起对话", ErrInvalidInput)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput when the participant gate rejects the employee, got %v", err)
+	}
+	if validator.participantCalls != 1 {
+		t.Fatalf("expected participant gate to be consulted exactly once, got %d", validator.participantCalls)
+	}
+	if validator.lastParticipantID != req.DigitalEmployeeID {
+		t.Fatalf("expected participant gate to receive the driving employee id, got %s", validator.lastParticipantID)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("expected node resolution to be skipped once the participant is rejected, got %d calls", resolver.calls)
+	}
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected no run created when the participant is rejected, got %d", repo.createdRunCount)
+	}
+}
+
 // TestCreateRunChatResumeRejectsMismatchedAnchorProject covers §13's resume
 // validation-matrix addition: a follow-up chat run's project_id must equal
 // the prior run's persisted anchor_project_id, since the provider session
@@ -2357,13 +2393,17 @@ var (
 // implements ChatAnchorProjectGitResolver: projectGit == nil models an
 // unbound project (chat gets workspace_mode "none").
 type fakeChatAnchorProjectValidator struct {
-	err           error
-	calls         int
-	lastTenantID  uuid.UUID
-	lastProjectID uuid.UUID
-	projectGit    map[string]any
-	gitErr        error
-	gitCalls      int
+	err            error
+	calls          int
+	lastTenantID   uuid.UUID
+	lastProjectID  uuid.UUID
+	projectGit     map[string]any
+	gitErr         error
+	gitCalls       int
+	participantErr error
+	// participantCalls counts ValidateChatParticipant invocations (participation gate).
+	participantCalls  int
+	lastParticipantID uuid.UUID
 }
 
 func (f *fakeChatAnchorProjectValidator) ValidateChatAnchorProject(_ context.Context, tenantID, projectID uuid.UUID) error {
@@ -2371,6 +2411,12 @@ func (f *fakeChatAnchorProjectValidator) ValidateChatAnchorProject(_ context.Con
 	f.lastTenantID = tenantID
 	f.lastProjectID = projectID
 	return f.err
+}
+
+func (f *fakeChatAnchorProjectValidator) ValidateChatParticipant(_ context.Context, _, _, digitalEmployeeID uuid.UUID) error {
+	f.participantCalls++
+	f.lastParticipantID = digitalEmployeeID
+	return f.participantErr
 }
 
 func (f *fakeChatAnchorProjectValidator) ChatAnchorProjectGit(_ context.Context, tenantID, projectID uuid.UUID) (map[string]any, error) {

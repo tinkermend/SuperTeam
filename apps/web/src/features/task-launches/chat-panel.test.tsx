@@ -180,6 +180,30 @@ function emptyRunListResponse() {
   });
 }
 
+/** 参与门禁：ChatPanel 现在按项目成员过滤员工，测试 fetcher 统一把
+ * mock 员工全部投影为锚点项目的 active digital_employee 成员。 */
+function projectMembersRouteResponse(
+  path: string,
+  method: string,
+  employees: DigitalEmployee[],
+): Response | null {
+  const membersMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/members$/);
+  if (!membersMatch || method !== "GET") {
+    return null;
+  }
+  return jsonResponse(
+    employees.map((employee, index) => ({
+      id: `member-${index + 1}`,
+      tenant_id: "tenant-1",
+      project_id: membersMatch[1],
+      principal_type: "digital_employee",
+      principal_id: employee.id,
+      project_role: "executor",
+      status: "active",
+    })),
+  );
+}
+
 function createChatFetcher() {
   const employees = [makeEmployee()];
   const runScripts = new Map<string, Array<Partial<DigitalEmployeeRun>>>();
@@ -193,6 +217,11 @@ function createChatFetcher() {
 
     if (path === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse(employees);
+    }
+
+    const membersResponse = projectMembersRouteResponse(path, method, employees);
+    if (membersResponse) {
+      return membersResponse;
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -256,6 +285,11 @@ function createFailingSendFetcher() {
       return jsonResponse(employees);
     }
 
+    const membersResponse = projectMembersRouteResponse(path, method, employees);
+    if (membersResponse) {
+      return membersResponse;
+    }
+
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
       // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
@@ -286,6 +320,11 @@ function createRetryDeferredFetcher() {
 
     if (path === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse(employees);
+    }
+
+    const membersResponse = projectMembersRouteResponse(path, method, employees);
+    if (membersResponse) {
+      return membersResponse;
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -352,6 +391,11 @@ function createResumeDegradeFetcher() {
       return jsonResponse(employees);
     }
 
+    const membersResponse = projectMembersRouteResponse(path, method, employees);
+    if (membersResponse) {
+      return membersResponse;
+    }
+
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
       // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
@@ -411,6 +455,11 @@ function createNonResumableFailureFetcher() {
       return jsonResponse(employees);
     }
 
+    const membersResponse = projectMembersRouteResponse(path, method, employees);
+    if (membersResponse) {
+      return membersResponse;
+    }
+
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
       // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
@@ -465,6 +514,11 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
 
     if (path === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse(employees);
+    }
+
+    const membersResponse = projectMembersRouteResponse(path, method, employees);
+    if (membersResponse) {
+      return membersResponse;
     }
 
     const runsMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -769,15 +823,22 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    // 参与门禁：未选项目时员工下拉只出占位，不出任何候选员工
+    await waitFor(() => expect(getByText("请先选择项目")).toBeTruthy());
+    expect(queryByText("Ada · 客服助手")).toBeNull();
     expect(getByLabelText("项目")).toBeTruthy();
 
     await typeInLabeledField("对话问题", "第一个问题");
     expect(getButton("发送").disabled).toBe(true);
 
-    // selecting a project arms the anchor; send stays gated until the anchor's
-    // conversation restore settles (empty here), then becomes available
+    // selecting a project arms the anchor and loads its member employees; send
+    // stays gated until the anchor's conversation restore settles (empty here)
     await clickButton("生产巡检项目");
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    // 员工自动选中后锚点会话恢复需要再走一轮查询才能落定
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -810,6 +871,12 @@ describe("ChatPanel", () => {
     // switching the project anchor clears the prior Q/A, same as switching employee
     expect(chatThread().textContent).not.toContain("第一个问题");
     expect(chatThread().textContent).not.toContain("第一轮回答");
+
+    // 参与门禁：新锚点项目的成员列表加载完成后员工重新可选
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
 
     setRunScript("run-2", [{ status: "completed", result: { output: "第二轮回答" } }]);
     await typeInLabeledField("对话问题", "第二个问题");

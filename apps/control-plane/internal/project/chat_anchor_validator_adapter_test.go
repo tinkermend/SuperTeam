@@ -97,3 +97,67 @@ func TestChatAnchorProjectValidatorAdapter_RejectsArchivedProject(t *testing.T) 
 	require.ErrorIs(t, err, employee.ErrInvalidInput)
 	require.False(t, errors.Is(err, ErrProjectArchived), "adapter must not leak the raw project.ErrProjectArchived sentinel across the package boundary")
 }
+
+// --- ValidateChatParticipant (团队归属参与门禁) ---
+
+func TestChatAnchorValidatorAdapter_ApprovesActiveProjectMemberParticipant(t *testing.T) {
+	repo := newMemoryRepository()
+	tenantID, projectID, employeeID := uuid.New(), uuid.New(), uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning}
+	repo.members[projectID] = []ProjectMember{{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+		PrincipalType: PrincipalTypeDigitalEmployee, PrincipalID: employeeID,
+		ProjectRole: ProjectRoleExecutor, Status: "active",
+	}}
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	validator := NewChatAnchorProjectValidatorAdapter(service).(employee.ChatParticipantValidator)
+
+	require.NoError(t, validator.ValidateChatParticipant(context.Background(), tenantID, projectID, employeeID))
+}
+
+func TestChatAnchorValidatorAdapter_RejectsNonMemberParticipant(t *testing.T) {
+	repo := newMemoryRepository()
+	tenantID, projectID := uuid.New(), uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning}
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	validator := NewChatAnchorProjectValidatorAdapter(service).(employee.ChatParticipantValidator)
+
+	err = validator.ValidateChatParticipant(context.Background(), tenantID, projectID, uuid.New())
+	require.ErrorIs(t, err, employee.ErrInvalidInput)
+}
+
+func TestChatAnchorValidatorAdapter_RejectsInactiveMemberParticipant(t *testing.T) {
+	repo := newMemoryRepository()
+	tenantID, projectID, employeeID := uuid.New(), uuid.New(), uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning}
+	repo.members[projectID] = []ProjectMember{{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+		PrincipalType: PrincipalTypeDigitalEmployee, PrincipalID: employeeID,
+		ProjectRole: ProjectRoleExecutor, Status: "removed",
+	}}
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	validator := NewChatAnchorProjectValidatorAdapter(service).(employee.ChatParticipantValidator)
+
+	err = validator.ValidateChatParticipant(context.Background(), tenantID, projectID, employeeID)
+	require.ErrorIs(t, err, employee.ErrInvalidInput)
+}
+
+func TestChatAnchorValidatorAdapter_RejectsHumanPrincipalAsParticipant(t *testing.T) {
+	repo := newMemoryRepository()
+	tenantID, projectID, humanID := uuid.New(), uuid.New(), uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning}
+	repo.members[projectID] = []ProjectMember{{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+		PrincipalType: PrincipalTypeHumanUser, PrincipalID: humanID,
+		ProjectRole: ProjectRoleOwner, Status: "active",
+	}}
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	validator := NewChatAnchorProjectValidatorAdapter(service).(employee.ChatParticipantValidator)
+
+	err = validator.ValidateChatParticipant(context.Background(), tenantID, projectID, humanID)
+	require.ErrorIs(t, err, employee.ErrInvalidInput)
+}

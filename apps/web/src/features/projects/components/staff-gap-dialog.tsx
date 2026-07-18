@@ -27,6 +27,7 @@ import {
 } from "@/lib/api/employees";
 import { listEmployeeTemplates, type EmployeeTemplate } from "@/lib/api/employee-templates";
 import {
+  getProject,
   listProjectMembers,
   replaceProjectMembers,
   resolveProjectDecision,
@@ -77,6 +78,12 @@ export function StaffGapDialog({
     enabled: open,
     queryFn: () => listEmployeeTemplates(apiOptions),
     queryKey: ["employee-templates", apiOptions.baseUrl],
+  });
+  // 补员员工必须带团队归属（参与门禁）：新员工默认归入项目自身团队。
+  const projectQuery = useQuery({
+    enabled: open,
+    queryFn: () => getProject(apiOptions, projectId),
+    queryKey: ["staff-gap-project", apiOptions.baseUrl, projectId],
   });
   const avatarAssetsQuery = useQuery({
     enabled: open,
@@ -129,6 +136,11 @@ export function StaffGapDialog({
         if (!avatarAssetId) {
           throw new Error("暂无可用头像资源，无法创建数字员工");
         }
+        // 无团队员工会被成员写入门禁 400 拒掉，在创建前显式失败而不是链条中段报错。
+        const projectTeamId = projectQuery.data?.team_id;
+        if (!projectTeamId) {
+          throw new Error("项目未绑定团队，无法补员：请先为项目绑定团队");
+        }
         employee = await createDigitalEmployee(apiOptions, {
           avatar_asset_id: avatarAssetId,
           capability_bindings: selectedTemplate.capability_bindings,
@@ -137,6 +149,7 @@ export function StaffGapDialog({
           persona_memory_markdown: selectedTemplate.persona_memory_markdown,
           provider_type: providerType,
           role: selectedTemplate.default_role,
+          team_id: projectTeamId,
         });
         createdEmployeeRef.current = employee;
       }

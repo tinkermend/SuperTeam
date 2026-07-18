@@ -839,6 +839,44 @@ func (s *Service) UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*D
 	return employeeFromRecord(record), nil
 }
 
+type ReassignDigitalEmployeeTeamRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	TeamID            uuid.UUID
+	ActorUserID       uuid.UUID
+}
+
+// TeamReassignRepository is the optional repository capability behind
+// 员工换队/首次归队：把员工绑到目标团队（目标团队必须存在且 active），
+// 已有归属的员工允许跨队转移。pg 仓储实现；不实现的 fake 视为不支持。
+type TeamReassignRepository interface {
+	ReassignDigitalEmployeeTeam(ctx context.Context, params ReassignDigitalEmployeeTeamRequest) (DigitalEmployeeRecord, error)
+}
+
+// ReassignTeam 换队/首次归队。副作用提示：员工的 agent home dir 按
+// (team, employee) 键，换队后下次派发落新家目录（provider 会话连续性重置）；
+// 团队级技能与 MCP 绑定继承随之切换。
+func (s *Service) ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	reassigner, ok := s.repository.(TeamReassignRepository)
+	if !ok {
+		return nil, fmt.Errorf("%w: team reassignment is not supported by this repository", ErrInvalidInput)
+	}
+	record, err := reassigner.ReassignDigitalEmployeeTeam(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return employeeFromRecord(record), nil
+}
+
 func (s *Service) BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

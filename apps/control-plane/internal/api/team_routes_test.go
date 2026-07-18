@@ -1262,6 +1262,10 @@ func (s *routeTeamService) ListTeamMembers(ctx context.Context, tenantID, teamID
 	}, nil
 }
 
+func (s *routeTeamService) BindTeamDigitalEmployee(ctx context.Context, req tenant.BindTeamDigitalEmployeeRequest) error {
+	return nil
+}
+
 func (s *routeTeamService) AddTeamMember(ctx context.Context, req tenant.AddTeamMemberRequest) (*tenant.TeamMember, error) {
 	s.addMemberCalled = true
 	s.addMemberReq = req

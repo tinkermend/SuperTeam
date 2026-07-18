@@ -28,6 +28,7 @@ import type { UserSummary } from "@/lib/api";
 import type { AllowedTeamAction, TeamMember, TeamOverview } from "@/lib/api/teams";
 import {
   addTeamMember,
+  bindTeamDigitalEmployee,
   listTeamMembers,
   removeTeamMember,
 } from "@/lib/api/teams";
@@ -50,6 +51,7 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
 
   const apiOptions = useMemo(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
   const canAddMember = allowedActions.includes("team.member.add");
+  const canManageTeam = allowedActions.includes("team.update");
 
   const [directAddResetToken, setDirectAddResetToken] = useState(0);
 
@@ -62,6 +64,21 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
   const digitalEmployeesQuery = useQuery({
     queryKey: ["team-digital-employees", teamId],
     queryFn: () => listDigitalEmployees(apiOptions, { team_id: teamId }),
+  });
+
+  // 候岗（无归属）数字员工——团队归属参与门禁的归队入口，收编后才可参与项目。
+  const unassignedEmployeesQuery = useQuery({
+    enabled: canManageTeam,
+    queryKey: ["unassigned-digital-employees", teamId],
+    queryFn: () => listDigitalEmployees(apiOptions, { assignment: "unassigned" }),
+  });
+
+  const bindEmployeeMutation = useMutation({
+    mutationFn: (employeeId: string) => bindTeamDigitalEmployee(apiOptions, teamId, employeeId),
+    onSuccess: () => {
+      void digitalEmployeesQuery.refetch();
+      void unassignedEmployeesQuery.refetch();
+    },
   });
 
   const refetchRoster = () => {
@@ -105,6 +122,16 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
       <DigitalEmployeesSection
         employees={digitalRoster}
         isLoading={digitalEmployeesQuery.isLoading}
+        bindPanel={
+          canManageTeam ? (
+            <BindUnassignedEmployeePanel
+              employees={unassignedEmployeesQuery.data ?? []}
+              error={bindEmployeeMutation.error}
+              isPending={bindEmployeeMutation.isPending}
+              onBind={(employeeId) => bindEmployeeMutation.mutate(employeeId)}
+            />
+          ) : null
+        }
       />
 
       <HumanMembersSection
@@ -132,9 +159,11 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
 // === Panels ===
 
 function DigitalEmployeesSection({
+  bindPanel,
   employees,
   isLoading,
 }: {
+  bindPanel?: ReactNode;
   employees: DigitalEmployee[];
   isLoading: boolean;
 }) {
@@ -152,6 +181,7 @@ function DigitalEmployeesSection({
           </Link>
         </V3Button>
       </div>
+      {bindPanel}
       <div>
         {isLoading ? (
           <V3LoadingState label="加载数字员工" />
@@ -307,6 +337,73 @@ function HumanMembersSection({
         ) : undefined
       }
     />
+  );
+}
+
+// 收编候岗数字员工：团队归属参与门禁的归队入口。仅无归属员工可收编，
+// 收编后员工才具备参与项目的资格。
+function BindUnassignedEmployeePanel({
+  employees,
+  error,
+  isPending,
+  onBind,
+}: {
+  employees: DigitalEmployee[];
+  error: unknown;
+  isPending: boolean;
+  onBind: (employeeId: string) => void;
+}) {
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+
+  useEffect(() => {
+    if (selectedEmployeeId && !employees.some((employee) => employee.id === selectedEmployeeId)) {
+      setSelectedEmployeeId("");
+    }
+  }, [employees, selectedEmployeeId]);
+
+  if (employees.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="border-b border-v3-line bg-v3-card-soft px-5 py-4">
+      <form
+        className="flex flex-col gap-3 sm:flex-row sm:items-end"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (selectedEmployeeId) {
+            onBind(selectedEmployeeId);
+            setSelectedEmployeeId("");
+          }
+        }}
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <Label htmlFor="bind-unassigned-employee">收编候岗数字员工</Label>
+          <select
+            className="h-9 rounded-xl border border-v3-line-strong bg-v3-card px-3 text-sm text-v3-ink"
+            disabled={isPending}
+            id="bind-unassigned-employee"
+            onChange={(event) => setSelectedEmployeeId(event.target.value)}
+            value={selectedEmployeeId}
+          >
+            <option value="">选择候岗员工（{employees.length} 名待归队）</option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.name} · {employee.role || "未设置职能"}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-v3-ink-3">无团队归属的数字员工无法参与项目，收编后即可被项目引用。</p>
+          {error ? (
+            <p className="text-xs text-v3-danger">{error instanceof Error ? error.message : "收编失败，请重试"}</p>
+          ) : null}
+        </div>
+        <V3Button disabled={!selectedEmployeeId || isPending} size="sm" type="submit">
+          <UserPlus data-icon="inline-start" className="mr-1" />
+          收编进本团队
+        </V3Button>
+      </form>
+    </div>
   );
 }
 

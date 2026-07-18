@@ -2340,6 +2340,17 @@ type AuditEvent struct {
 	TenantId     openapi_types.UUID     `json:"tenant_id"`
 }
 
+// BindTeamDigitalEmployeeRequest defines model for BindTeamDigitalEmployeeRequest.
+type BindTeamDigitalEmployeeRequest struct {
+	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
+}
+
+// BindTeamDigitalEmployeeResponse defines model for BindTeamDigitalEmployeeResponse.
+type BindTeamDigitalEmployeeResponse struct {
+	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
+	TeamId            openapi_types.UUID `json:"team_id"`
+}
+
 // CompleteProjectTaskAttemptRequest defines model for CompleteProjectTaskAttemptRequest.
 type CompleteProjectTaskAttemptRequest struct {
 	ArtifactRefs       *[]interface{}          `json:"artifact_refs,omitempty"`
@@ -4795,6 +4806,11 @@ type PutProjectRuntimePlacementRequest struct {
 	RuntimeNodeId         openapi_types.UUID `json:"runtime_node_id"`
 }
 
+// ReassignDigitalEmployeeTeamRequest defines model for ReassignDigitalEmployeeTeamRequest.
+type ReassignDigitalEmployeeTeamRequest struct {
+	TeamId openapi_types.UUID `json:"team_id"`
+}
+
 // RecordProjectTaskAttemptBudgetHeartbeatRequest defines model for RecordProjectTaskAttemptBudgetHeartbeatRequest.
 type RecordProjectTaskAttemptBudgetHeartbeatRequest struct {
 	ConsumedTokens       *int32             `json:"consumed_tokens,omitempty"`
@@ -6398,6 +6414,9 @@ type BindEmployeeSkillJSONRequestBody BindEmployeeSkillJSONBody
 // UpdateDigitalEmployeeStatusJSONRequestBody defines body for UpdateDigitalEmployeeStatus for application/json ContentType.
 type UpdateDigitalEmployeeStatusJSONRequestBody = UpdateDigitalEmployeeStatusRequest
 
+// ReassignDigitalEmployeeTeamJSONRequestBody defines body for ReassignDigitalEmployeeTeam for application/json ContentType.
+type ReassignDigitalEmployeeTeamJSONRequestBody = ReassignDigitalEmployeeTeamRequest
+
 // ExecuteInboxActionJSONRequestBody defines body for ExecuteInboxAction for application/json ContentType.
 type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
 
@@ -6562,6 +6581,9 @@ type UpdateTeamJSONRequestBody = UpdateTeamRequest
 
 // UpdateTeamConstitutionJSONRequestBody defines body for UpdateTeamConstitution for application/json ContentType.
 type UpdateTeamConstitutionJSONRequestBody = UpdateTeamConstitutionRequest
+
+// BindTeamDigitalEmployeeJSONRequestBody defines body for BindTeamDigitalEmployee for application/json ContentType.
+type BindTeamDigitalEmployeeJSONRequestBody = BindTeamDigitalEmployeeRequest
 
 // UpsertTeamLendingPolicyJSONRequestBody defines body for UpsertTeamLendingPolicy for application/json ContentType.
 type UpsertTeamLendingPolicyJSONRequestBody = UpsertTeamLendingPolicy
@@ -7234,6 +7256,9 @@ type ServerInterface interface {
 	// Update a digital employee status
 	// (PUT /api/v1/digital-employees/{employeeId}/status)
 	UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Reassign a digital employee to a team (first assignment or transfer)
+	// (PUT /api/v1/digital-employees/{employeeId}/team)
+	ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Get actionable inbox badge counts
 	// (GET /api/v1/inbox/badge)
 	GetInboxBadge(w http.ResponseWriter, r *http.Request)
@@ -7618,6 +7643,9 @@ type ServerInterface interface {
 	// Update a tenant team's constitution
 	// (PATCH /api/v1/teams/{teamId}/constitution)
 	UpdateTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Bind an unassigned (lobby) digital employee into the team
+	// (POST /api/v1/teams/{teamId}/digital-employees)
+	BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// Disable a tenant team
 	// (POST /api/v1/teams/{teamId}/disable)
 	DisableTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -8077,6 +8105,12 @@ func (_ Unimplemented) UnbindEmployeeSkill(w http.ResponseWriter, r *http.Reques
 // Update a digital employee status
 // (PUT /api/v1/digital-employees/{employeeId}/status)
 func (_ Unimplemented) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reassign a digital employee to a team (first assignment or transfer)
+// (PUT /api/v1/digital-employees/{employeeId}/team)
+func (_ Unimplemented) ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8845,6 +8879,12 @@ func (_ Unimplemented) ListTeamAuditEvents(w http.ResponseWriter, r *http.Reques
 // Update a tenant team's constitution
 // (PATCH /api/v1/teams/{teamId}/constitution)
 func (_ Unimplemented) UpdateTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Bind an unassigned (lobby) digital employee into the team
+// (POST /api/v1/teams/{teamId}/digital-employees)
+func (_ Unimplemented) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -11036,6 +11076,32 @@ func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeStatus(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateDigitalEmployeeStatus(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReassignDigitalEmployeeTeam operation middleware
+func (siw *ServerInterfaceWrapper) ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReassignDigitalEmployeeTeam(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15672,6 +15738,32 @@ func (siw *ServerInterfaceWrapper) UpdateTeamConstitution(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// BindTeamDigitalEmployee operation middleware
+func (siw *ServerInterfaceWrapper) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BindTeamDigitalEmployee(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DisableTeam operation middleware
 func (siw *ServerInterfaceWrapper) DisableTeam(w http.ResponseWriter, r *http.Request) {
 
@@ -17010,6 +17102,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/status", wrapper.UpdateDigitalEmployeeStatus)
 	})
 	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/team", wrapper.ReassignDigitalEmployeeTeam)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/inbox/badge", wrapper.GetInboxBadge)
 	})
 	r.Group(func(r chi.Router) {
@@ -17392,6 +17487,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/api/v1/teams/{teamId}/constitution", wrapper.UpdateTeamConstitution)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/digital-employees", wrapper.BindTeamDigitalEmployee)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/disable", wrapper.DisableTeam)

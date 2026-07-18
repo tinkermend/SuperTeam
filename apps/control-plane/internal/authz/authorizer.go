@@ -106,6 +106,7 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		}
 		decision, err = a.checkEmployeeOwnerAction(ctx, req)
 	case ActionEmployeeStatusUpdate,
+		ActionEmployeeTeamUpdate,
 		ActionEmployeeDelete,
 		ActionEmployeeExecutionBind,
 		ActionEmployeeRunCreate,

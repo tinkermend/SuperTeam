@@ -201,6 +201,40 @@ func createTeamMemberAuditEvent(ctx context.Context, q *queries.Queries, params 
 	return err
 }
 
+// BindTeamDigitalEmployee 收编一名候岗（无归属）数字员工进团队。底层 SQL 带
+// team_id IS NULL 守卫：已有归属的员工不会被抢占，返回 ErrInvalidInput。
+func (r *PgRepository) BindTeamDigitalEmployee(ctx context.Context, params BindTeamDigitalEmployeeParams) error {
+	_, err := r.q.BindDigitalEmployeeToTeam(ctx, queries.BindDigitalEmployeeToTeamParams{
+		TeamID:     params.TeamID,
+		EmployeeID: params.EmployeeID,
+		TenantID:   params.TenantID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: 数字员工不存在或已有团队归属", ErrInvalidInput)
+		}
+		return err
+	}
+	details, err := json.Marshal(map[string]any{
+		"team_id":             params.TeamID.String(),
+		"digital_employee_id": params.EmployeeID.String(),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      params.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: params.TeamID.String(), Valid: true},
+		Action:       "team.digital_employee.bind",
+		Details:      details,
+	})
+	return err
+}
+
 func (r *PgRepository) ListTeams(ctx context.Context, params ListTeamsParams) ([]TeamRecord, error) {
 	teams, err := r.q.ListTenantTeams(ctx, queries.ListTenantTeamsParams{
 		TenantID: params.TenantID,
