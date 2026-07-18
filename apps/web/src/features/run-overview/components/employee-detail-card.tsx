@@ -63,7 +63,9 @@ function IdentityBlock({ employee, team }: { employee: RuntimeOverviewEmployee; 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {team ? (
           <span className="rounded-lg bg-v3-brand-soft px-2.5 py-1 font-semibold text-v3-brand-deep">{team.name}</span>
-        ) : null}
+        ) : (
+          <span className="rounded-lg bg-v3-card-soft px-2.5 py-1 font-medium text-v3-ink-2">未归属团队</span>
+        )}
         {employee.projectCount > 0 ? (
           <span className="text-v3-ink-2 tabular-nums" data-employee-project-count>
             关联 {employee.projectCount} 个项目

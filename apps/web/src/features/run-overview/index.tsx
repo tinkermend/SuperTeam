@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Activity, Pause, Play, RefreshCw } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { MasterDetailLayout, V3Button, V3ErrorState, V3LoadingState } from "@/components/superteam";
 import { getDigitalEmployeeActivity, getDigitalEmployeeOverview } from "@/lib/api/employees";
+import { getProjectTaskGraph, listProjectDemands } from "@/lib/api/projects";
 import { listTeamSummaries } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { EmployeeDetailCard } from "./components/employee-detail-card";
@@ -13,6 +14,7 @@ import { RuntimeMapStage } from "./components/runtime-map-stage";
 import { RuntimeOverviewSidePanel } from "./components/runtime-overview-side-panel";
 import { buildRuntimeOverview } from "./runtime-overview-adapter";
 import type { RuntimeOverviewFloorId } from "./runtime-overview-model";
+import { buildProjectLens, lensParticipantFloorIds } from "./runtime-overview-project-lens";
 import { useRuntimeFocusCarousel } from "./use-runtime-focus-carousel";
 
 export function RunOverviewPage() {
@@ -28,8 +30,14 @@ type RunOverviewViewProps = {
 
 export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: RunOverviewViewProps) {
   const search = useSearch({ strict: false }) as { employee?: string; project?: string };
+  const navigate = useNavigate();
   const [activeFloorId, setActiveFloorId] = useState<RuntimeOverviewFloorId>("floor-1");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>();
+  // 项目透镜：初始从 ?project= 深链进入；选中/退出会回写 URL 供分享与反向链入。
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(search.project || undefined);
+  useEffect(() => {
+    setSelectedProjectId(search.project || undefined);
+  }, [search.project]);
   const employees = useQuery({
     queryKey: ["run-overview", "digital-employees"],
     queryFn: () => getDigitalEmployeeOverview({ baseUrl: apiBaseUrl, fetcher }, { limit: 100 }),
@@ -44,6 +52,26 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   const activity = useQuery({
     queryKey: ["run-overview", "activity"],
     queryFn: () => getDigitalEmployeeActivity({ baseUrl: apiBaseUrl, fetcher }, { limit: 8 }),
+    refetchInterval: 10_000,
+    retry: false,
+  });
+  // 项目透镜的任务链路：仅选中项目时拉取，零常驻成本；与 overview 同频轮询。
+  // task-graph 端点必须限定 demand 域，与项目详情页同规则取最新 demand 的链路。
+  const projectDemands = useQuery({
+    queryKey: ["run-overview", "project-demands", selectedProjectId],
+    queryFn: () => listProjectDemands({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, { limit: 1 }),
+    enabled: Boolean(selectedProjectId),
+    refetchInterval: 10_000,
+    retry: false,
+  });
+  const latestDemandId = projectDemands.data?.[0]?.id;
+  const taskGraph = useQuery({
+    queryKey: ["run-overview", "task-graph", selectedProjectId, latestDemandId],
+    queryFn: () =>
+      getProjectTaskGraph({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, {
+        demandId: latestDemandId as string,
+      }),
+    enabled: Boolean(selectedProjectId) && Boolean(latestDemandId),
     refetchInterval: 10_000,
     retry: false,
   });
@@ -68,6 +96,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
       lastStreamInvalidateRef.current = now;
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "activity"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "digital-employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-overview", "task-graph"] });
     };
     source.addEventListener("activity", onActivity);
     return () => {
@@ -95,9 +124,19 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     return buildRuntimeOverview({ activeFloorId, employees: employees.data, generatedAt: new Date().toISOString(), teams: teams.data });
   }, [activeFloorId, employees.data, teams.data]);
   const error = employees.error ?? teams.error;
+  const lens = useMemo(
+    () => (selectedProjectId && taskGraph.data ? buildProjectLens(selectedProjectId, taskGraph.data) : undefined),
+    [selectedProjectId, taskGraph.data],
+  );
+  const lensFloorIds = useMemo(
+    () => (lens && overview ? new Set(lensParticipantFloorIds(lens, overview)) : undefined),
+    [lens, overview],
+  );
   const carousel = useRuntimeFocusCarousel({
     employees: overview?.employees ?? [],
     initialInteracted: Boolean(search.employee),
+    // 透镜态强制暂停轮播：链路阅读期间焦点不被抢走，退出透镜即恢复。
+    forcePaused: Boolean(selectedProjectId),
   });
   const searchEmployeeId =
     search.employee && overview?.employees.some((employee) => employee.employeeId === search.employee)
@@ -130,9 +169,18 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     setActiveFloorId(floorId);
     carousel.notifyInteraction();
   };
+  const handleSelectProject = (projectId?: string) => {
+    setSelectedProjectId(projectId);
+    void navigate({
+      to: "/run-overview",
+      search: (previous: { employee?: string; project?: string }) => ({ ...previous, project: projectId || undefined }),
+      replace: true,
+    });
+  };
   const handleRefresh = () => {
     void employees.refetch();
     void teams.refetch();
+    if (selectedProjectId) void taskGraph.refetch();
   };
 
   return (
@@ -166,6 +214,13 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
                       onClick={() => handleSelectFloor(floor.floorId)}
                     >
                       {floor.label}
+                      {lensFloorIds?.has(floor.floorId) ? (
+                        <span
+                          data-runtime-lens-floor-dot={floor.floorId}
+                          className="ml-1 size-2 rounded-full bg-v3-brand"
+                          aria-label="该楼层有选中项目的参与员工"
+                        />
+                      ) : null}
                     </V3Button>
                   ))}
                   <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
@@ -179,25 +234,38 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
                 <StatusLegend className="mx-auto" />
                 {carousel.queue.length > 0 ? (
                   <div data-runtime-carousel-indicator className="flex items-center gap-2 text-sm text-v3-ink-2">
-                    <span className="tabular-nums">
-                      {carousel.isPaused
-                        ? "轮播已暂停 · 稍后自动恢复"
-                        : `焦点轮播 ${carousel.queueIndex >= 0 ? carousel.queueIndex + 1 : 1} / ${carousel.queue.length}`}
-                    </span>
-                    <V3Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      aria-label={carousel.isPaused ? "恢复轮播" : "暂停轮播"}
-                      onClick={() => (carousel.isPaused ? carousel.resume() : carousel.notifyInteraction())}
-                    >
-                      {carousel.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-                      {carousel.isPaused ? "恢复" : "暂停"}
-                    </V3Button>
+                    {selectedProjectId ? (
+                      <span className="tabular-nums">项目透镜聚焦中 · 轮播已暂停</span>
+                    ) : (
+                      <>
+                        <span className="tabular-nums">
+                          {carousel.isPaused
+                            ? "轮播已暂停 · 稍后自动恢复"
+                            : `焦点轮播 ${carousel.queueIndex >= 0 ? carousel.queueIndex + 1 : 1} / ${carousel.queue.length}`}
+                        </span>
+                        <V3Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          aria-label={carousel.isPaused ? "恢复轮播" : "暂停轮播"}
+                          onClick={() => (carousel.isPaused ? carousel.resume() : carousel.notifyInteraction())}
+                        >
+                          {carousel.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+                          {carousel.isPaused ? "恢复" : "暂停"}
+                        </V3Button>
+                      </>
+                    )}
                   </div>
                 ) : null}
               </div>
-              <RuntimeMapStage activeFloorId={activeFloorId} overview={overview} selectedEmployeeId={effectiveSelectedEmployeeId} onSelectEmployee={handleSelectEmployee} />
+              <RuntimeMapStage
+                activeFloorId={activeFloorId}
+                lens={lens}
+                overview={overview}
+                selectedEmployeeId={effectiveSelectedEmployeeId}
+                onSelectEmployee={handleSelectEmployee}
+                onSelectFloor={handleSelectFloor}
+              />
               {selectedEmployee ? (
                 <div className="mt-5">
                   <EmployeeDetailCard employee={selectedEmployee} team={selectedTeam} />
@@ -205,7 +273,16 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
               ) : null}
             </div>
           }
-          detail={<RuntimeOverviewSidePanel overview={overview} activity={recentActivity} />}
+          detail={
+            <RuntimeOverviewSidePanel
+              overview={overview}
+              activity={recentActivity}
+              selectedProjectId={selectedProjectId}
+              onSelectProject={handleSelectProject}
+              lens={lens}
+              lensLoading={projectDemands.isLoading || taskGraph.isLoading}
+            />
+          }
         />
       ) : null}
       </Main>

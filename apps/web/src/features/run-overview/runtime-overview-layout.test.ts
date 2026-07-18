@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildFloorLayouts } from "./runtime-overview-layout";
-import type { RuntimeOverviewFloorId } from "./runtime-overview-model";
+import { buildFloorLayouts, runtimeOverviewSlotCapacities } from "./runtime-overview-layout";
+import { type RuntimeOverviewFloorId, UNASSIGNED_TEAM_ID } from "./runtime-overview-model";
 
 const teamIdsByFloor: Record<RuntimeOverviewFloorId, string[]> = {
   "floor-1": ["team-1", "team-2", "team-3", "team-4", "team-5", "team-6", "team-7", "team-8"],
@@ -91,6 +91,26 @@ describe("runtime overview floor layout", () => {
     expect(workspace.cardAnchor.x).toBe(455);
     expect(cardBounds.right).toBeGreaterThanOrEqual(workspaceBounds.left);
     expect(cardBounds.bottom).toBeLessThanOrEqual(minSeatY - 24);
+  });
+
+  it("appends a floor-one lobby workspace that is not a distributable team slot", () => {
+    const layouts = buildFloorLayouts(teamIdsByFloor);
+    const [floorOne, floorTwo, floorThree] = layouts;
+
+    const lobby = floorOne.layout.teamWorkspaces.find((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID);
+    expect(lobby).toBeDefined();
+    expect(lobby?.decorationVariant).toBe("lobby");
+    expect(lobby?.seats.length).toBe(lobby?.capacity);
+    // 候岗区不是团队 slot：不进楼层团队清单、不进分配容量表、不计楼层容量。
+    expect(floorOne.teamIds).not.toContain(UNASSIGNED_TEAM_ID);
+    expect(floorTwo.layout.teamWorkspaces.some((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID)).toBe(false);
+    expect(floorThree.layout.teamWorkspaces.some((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID)).toBe(false);
+    const capacities = runtimeOverviewSlotCapacities();
+    expect(capacities["floor-1"].length).toBe(8);
+    const teamCapacityTotal = floorOne.layout.teamWorkspaces
+      .filter((workspace) => workspace.teamId !== UNASSIGNED_TEAM_ID)
+      .reduce((sum, workspace) => sum + workspace.capacity, 0);
+    expect(floorOne.summary.capacityTotal).toBe(teamCapacityTotal);
   });
 
   it("keeps team summary cards from covering seat and avatar positions", () => {

@@ -1,4 +1,5 @@
 import type { DigitalEmployeeActivity, DigitalEmployeeOverview } from "@/lib/api/employees";
+import type { ProjectTaskGraph } from "@/lib/api/projects";
 import type { TeamListItem } from "@/lib/api/teams";
 
 export const digitalEmployeeActivityFixture: DigitalEmployeeActivity = {
@@ -110,11 +111,71 @@ export const digitalEmployeeOverviewFixture: DigitalEmployeeOverview = {
   ],
 };
 
+// 未归属团队的员工：验证候岗区落座与"未归属团队"文案。
+export const digitalEmployeeOverviewWithUnassignedFixture: DigitalEmployeeOverview = {
+  ...digitalEmployeeOverviewFixture,
+  summary: {
+    ...digitalEmployeeOverviewFixture.summary,
+    total_count: 6,
+    operational_status_counts: { working: 2, idle: 3, waiting_human: 1 },
+  },
+  pagination: { limit: 100, offset: 0, total_count: 6 },
+  items: [...digitalEmployeeOverviewFixture.items, employee("emp-free-1", "赵新", "分析师 AI", null, "", "idle")],
+};
+
+// 项目透镜 fixture：陆一鸣(emp-dev-1) → 高秀英(emp-ops-1) → 沈嘉(emp-dev-2) 的交接链；
+// 中段任务运行中(primary)、首段已完成(muted)，另有一条未派发任务。
+export const projectTaskGraphFixture: ProjectTaskGraph = {
+  nodes: [
+    graphNode("task-a", "整理告警上下文", "completed", "emp-dev-1", 0),
+    graphNode("task-b", "定位根因并出修复计划", "running", "emp-ops-1", 1),
+    graphNode("task-c", "复核修复计划", "pending", "emp-dev-2", 2),
+    graphNode("task-d", "编写回归清单", "pending", undefined, 2),
+  ],
+  edges: [
+    { dependent_task_id: "task-b", blocker_task_id: "task-a", edge_status: "satisfied" },
+    { dependent_task_id: "task-c", blocker_task_id: "task-b", edge_status: "blocking" },
+  ],
+  employees: [
+    { digital_employee_id: "emp-dev-1", display_name: "陆一鸣", project_role: "executor", status: "active" },
+    { digital_employee_id: "emp-ops-1", display_name: "高秀英", project_role: "executor", status: "active" },
+    { digital_employee_id: "emp-dev-2", display_name: "沈嘉", project_role: "executor", status: "active" },
+  ],
+  runs: [],
+  execution_summaries: [],
+  recent_events: [],
+  decision_requests: [],
+  blocking_facts: [],
+};
+
+function graphNode(
+  id: string,
+  title: string,
+  status: string,
+  assignedDigitalEmployeeId: string | undefined,
+  stageIndex: number,
+): ProjectTaskGraph["nodes"][number] {
+  return {
+    id,
+    tenant_id: "tenant-1",
+    project_id: "project-lens-1",
+    title,
+    status,
+    assigned_digital_employee_id: assignedDigitalEmployeeId,
+    requires_human_approval: false,
+    stage_index: stageIndex,
+    expected_outputs: [],
+    input_requirements: {},
+    handoff_contract: {},
+    planner_metadata: {},
+  };
+}
+
 function employee(
   id: string,
   name: string,
   role: string,
-  teamId: string,
+  teamId: string | null,
   teamName: string,
   status: DigitalEmployeeOverview["items"][number]["operational_state"]["status"],
   title = "",
@@ -123,7 +184,7 @@ function employee(
     identity_summary: {
       id,
       tenant_id: "tenant-1",
-      team_id: teamId,
+      team_id: teamId ?? undefined,
       team_name: teamName,
       owner_user_id: "owner-1",
       owner_display_name: "Owner",

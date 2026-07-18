@@ -431,4 +431,48 @@ describe("buildRuntimeOverview", () => {
     const mapped = overview.employees.find((item) => item.employeeId === "no-avatar-1");
     expect(mapped?.avatarAsset?.url).toMatch(/^\/images\/digital-employee-avatars\/engineer-[mf]-\d{2}-256\.webp$/);
   });
+
+  it("seats unassigned employees in the floor-one lobby without touching team capacity", () => {
+    const withUnassigned = {
+      ...employees,
+      items: [...employees.items, unassignedEmployee("emp-free-1", "赵新")],
+      pagination: { limit: 100, offset: 0, total_count: 6 },
+    };
+    const base = buildRuntimeOverview({ activeFloorId: "floor-1", employees, generatedAt: "2026-07-05T10:00:00Z", teams });
+    const overview = buildRuntimeOverview({
+      activeFloorId: "floor-1",
+      employees: withUnassigned,
+      generatedAt: "2026-07-05T10:00:00Z",
+      teams,
+    });
+
+    const mapped = overview.employees.find((item) => item.employeeId === "emp-free-1");
+    expect(mapped?.teamId).toBe("unassigned");
+    expect(mapped?.floorId).toBe("floor-1");
+    expect(mapped?.seatId).toBe("unassigned-seat-1");
+    // 候岗不占团队容量：容量汇总与无候岗员工时完全一致，也不出现在团队列表。
+    expect(overview.summary.capacityTotal).toBe(base.summary.capacityTotal);
+    expect(overview.summary.capacityUsed).toBe(base.summary.capacityUsed);
+    expect(overview.teams.some((team) => team.teamId === "unassigned")).toBe(false);
+  });
+
+  it("leaves lobby overflow employees visible in the list but without a seat", () => {
+    const lobbyCrowd = [1, 2, 3, 4].map((index) => unassignedEmployee(`emp-free-${index}`, `候岗${index}`));
+    const overview = buildRuntimeOverview({
+      activeFloorId: "floor-1",
+      employees: { ...employees, items: lobbyCrowd, pagination: { limit: 100, offset: 0, total_count: 4 } },
+      generatedAt: "2026-07-05T10:00:00Z",
+      teams,
+    });
+
+    const seatIds = overview.employees.map((item) => item.seatId);
+    expect(seatIds.slice(0, 3)).toEqual(["unassigned-seat-1", "unassigned-seat-2", "unassigned-seat-3"]);
+    expect(seatIds[3]).toBeUndefined();
+  });
 });
+
+function unassignedEmployee(id: string, name: string) {
+  const item = employee(id, name, "分析师 AI", "team-x", "", "idle");
+  item.identity_summary.team_id = undefined;
+  return item;
+}
