@@ -173,7 +173,22 @@ func (h *HTTPHandler) GetArtifactContent(w http.ResponseWriter, r *http.Request)
 		writeHandlerError(w, err)
 		return
 	}
+	// format=json:返回 presigned URL 本体供浏览器两步取回。302 的 fetch
+	// 跨域重定向会把 Origin 置为 null(redirect taint),迫使对象存储 CORS
+	// 放行 null origin;两步取回下第二跳请求 Origin 干净,桶只需常规放行。
+	if r.URL.Query().Get("format") == "json" {
+		writeJSON(w, http.StatusOK, artifactContentLocationResponse{
+			URL:       url,
+			ExpiresAt: time.Now().Add(artifactContentGetTTL).UTC().Format(time.RFC3339),
+		})
+		return
+	}
 	http.Redirect(w, r, url, http.StatusFound)
+}
+
+type artifactContentLocationResponse struct {
+	URL       string `json:"url"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 func formatPresignExpiry(t time.Time) string {
