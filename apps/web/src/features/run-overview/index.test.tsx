@@ -30,6 +30,7 @@ vi.mock("@tanstack/react-router", () => ({
     return <a href={`${href}${query}`}>{children}</a>;
   },
   useSearch: () => routerSearch,
+  useNavigate: () => () => Promise.resolve(),
 }));
 
 vi.mock("@/components/layout/main", () => ({
@@ -55,7 +56,13 @@ vi.mock("@/components/layout/shell-page-header", () => ({
 }));
 
 import { RunOverviewView } from "@/features/run-overview";
-import { digitalEmployeeActivityFixture, digitalEmployeeOverviewFixture, teamListFixture } from "./runtime-overview-fixtures";
+import {
+  digitalEmployeeActivityFixture,
+  digitalEmployeeOverviewFixture,
+  digitalEmployeeOverviewWithUnassignedFixture,
+  projectTaskGraphFixture,
+  teamListFixture,
+} from "./runtime-overview-fixtures";
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -64,19 +71,28 @@ function jsonResponse(body: unknown) {
   });
 }
 
-function createFetcher({ withActivity = true }: { withActivity?: boolean } = {}) {
+function createFetcher({
+  withActivity = true,
+  withUnassigned = false,
+}: { withActivity?: boolean; withUnassigned?: boolean } = {}) {
   const requests: Array<{ pathname: string; search: string }> = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     requests.push({ pathname: url.pathname, search: url.search });
     if (url.pathname === "/api/v1/digital-employees/overview") {
-      return jsonResponse(digitalEmployeeOverviewFixture);
+      return jsonResponse(withUnassigned ? digitalEmployeeOverviewWithUnassignedFixture : digitalEmployeeOverviewFixture);
     }
     if (url.pathname === "/api/v1/digital-employees/activity" && withActivity) {
       return jsonResponse(digitalEmployeeActivityFixture);
     }
     if (url.pathname === "/api/v1/teams") {
       return jsonResponse(teamListFixture);
+    }
+    if (/^\/api\/v1\/projects\/[^/]+\/demands$/.test(url.pathname)) {
+      return jsonResponse([{ id: "demand-1" }]);
+    }
+    if (/^\/api\/v1\/projects\/[^/]+\/task-graph$/.test(url.pathname)) {
+      return jsonResponse(projectTaskGraphFixture);
     }
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), { status: 404 });
   }) as unknown as typeof fetch;
@@ -270,7 +286,8 @@ describe("RunOverviewView", () => {
     const screen = await renderPage(fetcher, { employee: "emp-ops-1" });
 
     await expect.element(screen.getByText("所属项目")).toBeVisible();
-    await expect.element(screen.getByText("运维团队交付项目")).toBeVisible();
+    // 侧栏项目透镜选择器里也会出现同名项目，深链断言限定在运行快照卡内。
+    await expect.element(screen.getByText("运维团队交付项目").first()).toBeVisible();
     const projectLink = screen.container.querySelector("[data-employee-current-project] a");
     expect(projectLink?.getAttribute("href")).toBe("/projects/emp-ops-1-project");
     await expect.element(screen.getByText("关联 1 个项目")).toBeVisible();
@@ -410,6 +427,91 @@ describe("RunOverviewView", () => {
     await userEvent.click(screen.getByRole("button", { name: "恢复轮播" }));
     await expect.element(screen.getByText(/焦点轮播/)).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "罗明" })).toBeVisible();
+  });
+
+  it("seats unassigned employees in the visible lobby with consistent headcount", async () => {
+    const { fetcher } = createFetcher({ withUnassigned: true });
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByRole("heading", { name: "候岗区" })).toBeVisible();
+    await expect.element(screen.getByText("待编入团队 1 名")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /赵新/ })).toBeVisible();
+    expect(screen.container.querySelectorAll("[data-runtime-seat='unassigned']").length).toBe(3);
+
+    // 选中候岗员工：详情卡显示"未归属团队"。
+    await userEvent.click(screen.getByRole("button", { name: /赵新/ }));
+    await expect.element(screen.getByRole("heading", { name: "赵新" })).toBeVisible();
+    await expect.element(screen.getByText("未归属团队")).toBeVisible();
+  });
+
+  it("hides the lobby when every employee belongs to a team", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByLabelText("运行总览地图画布")).toBeVisible();
+    expect(screen.container.querySelector("[data-runtime-lobby-callout]")).toBeNull();
+  });
+
+  it("activates the project lens with highlighted participants and handoff edges", async () => {
+    const { fetcher, requests } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
+    expect(option).not.toBeNull();
+    await userEvent.click(option as HTMLElement);
+
+    // 任务链路按最新 demand 拉取。
+    await expect.poll(() => requests.some((request) => request.pathname.endsWith("/task-graph"))).toBe(true);
+    expect(requests.find((request) => request.pathname.endsWith("/task-graph"))?.search).toContain("demand_id=demand-1");
+
+    // 交接连线：完成段→活跃段 primary、待开始段 muted。
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
+    expect(
+      screen.container.querySelector("[data-runtime-lens-edge='emp-dev-1->emp-ops-1']")?.getAttribute("data-runtime-lens-edge-tone"),
+    ).toBe("primary");
+    expect(
+      screen.container.querySelector("[data-runtime-lens-edge='emp-ops-1->emp-dev-2']")?.getAttribute("data-runtime-lens-edge-tone"),
+    ).toBe("muted");
+
+    // 参与者高亮/停留脉冲，非参与者降暗。
+    expect(screen.container.querySelector("button[data-employee-id='emp-ops-1']")?.getAttribute("data-lens-state")).toBe("stop");
+    expect(screen.container.querySelector("button[data-employee-id='emp-dev-1']")?.getAttribute("data-lens-state")).toBe(
+      "participant",
+    );
+    expect(screen.container.querySelector("button[data-employee-id='emp-dev-3']")?.getAttribute("data-lens-state")).toBe("dimmed");
+
+    // 侧栏摘要与轮播互斥。
+    await expect.element(screen.getByText("参与 3 人")).toBeVisible();
+    await expect.element(screen.getByText("交接 2 段")).toBeVisible();
+    await expect.element(screen.getByText("待派发 1")).toBeVisible();
+    await expect.element(screen.getByText("项目透镜聚焦中 · 轮播已暂停")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "查看项目详情" })).toBeVisible();
+  });
+
+  it("clears highlights and resumes the carousel when exiting the lens", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
+    expect(option).not.toBeNull();
+    await userEvent.click(option as HTMLElement);
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
+
+    await userEvent.click(screen.getByText("退出透镜"));
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(0);
+    expect(screen.container.querySelector("button[data-employee-id='emp-dev-3']")?.getAttribute("data-lens-state")).toBeNull();
+    await expect.element(screen.getByText(/焦点轮播/)).toBeVisible();
+  });
+
+  it("enters the lens from a project deep link", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { project: "emp-ops-1-project" });
+
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
+    await expect.element(screen.getByText("退出透镜")).toBeVisible();
+    await expect.element(screen.getByText("项目透镜聚焦中 · 轮播已暂停")).toBeVisible();
   });
 
   it("starts paused when opened with an employee deep link", async () => {

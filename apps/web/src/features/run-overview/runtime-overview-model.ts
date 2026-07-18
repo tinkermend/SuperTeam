@@ -1,5 +1,8 @@
 import type { DigitalEmployeeOperationalStatus } from "@/lib/api/employees";
 
+// 未归属团队的伪团队 ID：这些员工固定落座候岗区，不参与团队容量统计。
+export const UNASSIGNED_TEAM_ID = "unassigned";
+
 export type RuntimeOverviewWorkspaceCapacity = 3 | 4 | 6 | 8 | 10;
 
 export type RuntimeOverviewFloorId = "floor-1" | "floor-2" | "floor-3";
@@ -47,7 +50,7 @@ export type RuntimeOverviewTeamWorkspace = {
   cardAnchor: { x: number; y: number };
   calloutTarget: { x: number; y: number };
   seats: RuntimeOverviewSeat[];
-  decorationVariant: "standard" | "lab" | "ops" | "review" | "data";
+  decorationVariant: "standard" | "lab" | "ops" | "review" | "data" | "lobby";
 };
 
 export type RuntimeOverviewPath = {

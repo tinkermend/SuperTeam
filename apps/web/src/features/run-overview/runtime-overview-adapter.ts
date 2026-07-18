@@ -13,6 +13,7 @@ import {
   type RuntimeOverviewFloorId,
   type RuntimeOverviewTeam,
   type RuntimeOverviewWorkspaceCapacity,
+  UNASSIGNED_TEAM_ID,
 } from "./runtime-overview-model";
 import { buildFloorLayouts, runtimeOverviewSlotCapacities } from "./runtime-overview-layout";
 
@@ -59,7 +60,7 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
     };
   });
   const overviewEmployees = input.employees.items.map((item): RuntimeOverviewEmployee => {
-    const teamId = item.identity_summary.team_id ?? "unassigned";
+    const teamId = item.identity_summary.team_id ?? UNASSIGNED_TEAM_ID;
     const workspace = workspaceByTeamId.get(teamId);
     const floorId = floorIdByTeamId.get(teamId) ?? workspace?.floorId ?? "floor-1";
     const teamItems = employeesByTeam.get(teamId) ?? [];
@@ -111,7 +112,7 @@ function buildRecentActivity(items: DigitalEmployeeOverviewItem[]): RuntimeOverv
       item.recent_events.map((event) => ({
         employeeId: item.identity_summary.id,
         employeeName: item.identity_summary.name,
-        teamId: item.identity_summary.team_id ?? "unassigned",
+        teamId: item.identity_summary.team_id ?? UNASSIGNED_TEAM_ID,
         label: event.label,
         status: event.status,
         occurredAt: event.occurred_at,
@@ -164,7 +165,7 @@ function largestAvailableSlotIndex(slots: Array<{ capacity: RuntimeOverviewWorks
 function groupEmployeesByTeam(items: DigitalEmployeeOverviewItem[]) {
   const grouped = new Map<string, DigitalEmployeeOverviewItem[]>();
   for (const item of items) {
-    const teamId = item.identity_summary.team_id ?? "unassigned";
+    const teamId = item.identity_summary.team_id ?? UNASSIGNED_TEAM_ID;
     grouped.set(teamId, [...(grouped.get(teamId) ?? []), item]);
   }
   return grouped;
@@ -175,7 +176,7 @@ function employeePresenceFromItem(item: DigitalEmployeeOverviewItem, floorId: Ru
   const avatarAsset = overviewAvatarAsset(item);
   return {
     employeeId: item.identity_summary.id,
-    teamId: item.identity_summary.team_id ?? "unassigned",
+    teamId: item.identity_summary.team_id ?? UNASSIGNED_TEAM_ID,
     floorId,
     seatId,
     name: item.identity_summary.name,

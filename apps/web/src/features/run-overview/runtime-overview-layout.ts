@@ -3,6 +3,7 @@ import {
   type RuntimeOverviewFloorId,
   type RuntimeOverviewTeamWorkspace,
   type RuntimeOverviewWorkspaceCapacity,
+  UNASSIGNED_TEAM_ID,
 } from "./runtime-overview-model";
 
 export const RUNTIME_OVERVIEW_CANVAS = {
@@ -48,6 +49,16 @@ const floorTeamSlots: Record<RuntimeOverviewFloorId, RuntimeOverviewTeamSlot[]> 
     workspace([630, 640, 1085, 640, 1085, 805, 630, 805], 1099, 669, "lab", 10, { x: 690, y: 694, dx: 76, dy: 64, columns: 5 }),
   ],
 };
+
+// 候岗区：未归属团队的员工固定落座 floor-1 右侧空带。不是团队 slot（不参与
+// distributeTeamsByFloor 分配、不计入楼层容量），仅在有未归属员工时渲染。
+const lobbySlot = workspace([1520, 470, 1660, 470, 1660, 760, 1520, 760], 1464, 350, "lobby", 3, {
+  x: 1580,
+  y: 530,
+  dx: 0,
+  dy: 78,
+  columns: 1,
+});
 
 const floorConnectorPaths: Record<RuntimeOverviewFloorId, RuntimeOverviewFloor["layout"]["paths"]> = {
   "floor-1": [
@@ -145,6 +156,14 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
         seats: buildSeats(teamId, workspaceSlot.capacity, seatGrid),
       }];
     });
+    if (floorId === "floor-1") {
+      const { seatGrid, ...lobbyWorkspace } = lobbySlot;
+      workspaces.push({
+        ...lobbyWorkspace,
+        teamId: UNASSIGNED_TEAM_ID,
+        seats: buildSeats(UNASSIGNED_TEAM_ID, lobbyWorkspace.capacity, seatGrid),
+      });
+    }
     return {
       floorId,
       label: `${floorIndex + 1}层`,
@@ -153,7 +172,9 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
         teamCount: teamIds.length,
         errorCount: 0,
         capacityUsed: 0,
-        capacityTotal: workspaces.reduce((sum, workspace) => sum + workspace.capacity, 0),
+        capacityTotal: workspaces
+          .filter((workspace) => workspace.teamId !== UNASSIGNED_TEAM_ID)
+          .reduce((sum, workspace) => sum + workspace.capacity, 0),
       },
       layout: {
         backgroundImageUrl: floorBackgrounds[floorId],

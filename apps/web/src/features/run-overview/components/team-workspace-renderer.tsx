@@ -1,6 +1,6 @@
 import { StatusPill } from "@/components/superteam";
 import type { RuntimeOverviewEmployee, RuntimeOverviewTeam, RuntimeOverviewTeamWorkspace } from "../runtime-overview-model";
-import { EmployeeAvatarNode } from "./employee-avatar-node";
+import { EmployeeAvatarNode, type EmployeeLensState } from "./employee-avatar-node";
 
 type TeamWorkspaceRendererProps = {
   employees: RuntimeOverviewEmployee[];
@@ -9,10 +9,12 @@ type TeamWorkspaceRendererProps = {
   selectedTeamId?: string;
   team: RuntimeOverviewTeam;
   workspace: RuntimeOverviewTeamWorkspace;
+  lensStateFor?: (employeeId: string) => EmployeeLensState | undefined;
 };
 
 export function TeamWorkspaceRenderer({
   employees,
+  lensStateFor,
   onSelectEmployee,
   selectedEmployeeId,
   selectedTeamId,
@@ -55,6 +57,7 @@ export function TeamWorkspaceRenderer({
           <EmployeeAvatarNode
             key={employee.employeeId}
             employee={employee}
+            lensState={lensStateFor?.(employee.employeeId)}
             selected={employee.employeeId === selectedEmployeeId}
             x={seat.x}
             y={seat.y}

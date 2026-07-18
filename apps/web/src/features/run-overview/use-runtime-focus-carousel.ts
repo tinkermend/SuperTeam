@@ -16,6 +16,8 @@ type UseRuntimeFocusCarouselInput = {
   employees: RuntimeOverviewEmployee[];
   // 初始即视为有人在交互（如带 ?employee= 深链打开），先暂停再自动恢复。
   initialInteracted?: boolean;
+  // 强制暂停（如项目透镜态）：为 true 期间不轮播也不自动恢复，翻回 false 立即恢复。
+  forcePaused?: boolean;
   dwellMs?: number;
   resumeAfterMs?: number;
 };
@@ -33,14 +35,16 @@ export type RuntimeFocusCarousel = {
 export function useRuntimeFocusCarousel({
   employees,
   initialInteracted = false,
+  forcePaused = false,
   dwellMs = CAROUSEL_DEFAULT_DWELL_MS,
   resumeAfterMs = CAROUSEL_DEFAULT_RESUME_MS,
 }: UseRuntimeFocusCarouselInput): RuntimeFocusCarousel {
   const [focusEmployeeId, setFocusEmployeeId] = useState<string>();
   const [isPaused, setIsPaused] = useState(initialInteracted);
+  const effectivePaused = isPaused || forcePaused;
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const isPausedRef = useRef(isPaused);
-  isPausedRef.current = isPaused;
+  const isPausedRef = useRef(effectivePaused);
+  isPausedRef.current = effectivePaused;
 
   const queue = useMemo(() => {
     return employees
@@ -74,7 +78,7 @@ export function useRuntimeFocusCarousel({
 
   // 驻留计时：每 dwellMs 前进一位；焦点变化（含插队）即重新计时。
   useEffect(() => {
-    if (isPaused || queue.length <= 1) return;
+    if (effectivePaused || queue.length <= 1) return;
     const timer = setTimeout(() => {
       setFocusEmployeeId((current) => {
         const activeQueue = queueRef.current;
@@ -84,7 +88,7 @@ export function useRuntimeFocusCarousel({
       });
     }, dwellMs);
     return () => clearTimeout(timer);
-  }, [isPaused, queueKey, dwellMs, focusEmployeeId]);
+  }, [effectivePaused, queueKey, dwellMs, focusEmployeeId]);
 
   // 状态变化插队：与上次快照 diff，出现进入队列态的状态变化时立即抢占焦点（暂停时不打断用户）。
   const statusSnapshotRef = useRef(new Map<string, RuntimeOverviewEmployee["status"]>());
@@ -129,5 +133,5 @@ export function useRuntimeFocusCarousel({
 
   const queueIndex = queue.findIndex((employee) => employee.employeeId === focusEmployeeId);
 
-  return { focusEmployeeId, queue, queueIndex, isPaused, notifyInteraction, resume };
+  return { focusEmployeeId, queue, queueIndex, isPaused: effectivePaused, notifyInteraction, resume };
 }
