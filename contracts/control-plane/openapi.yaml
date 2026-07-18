@@ -1768,7 +1768,24 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: format
+          in: query
+          required: false
+          description: >-
+            默认 302 重定向到 presigned URL；format=json 时改为 200 返回
+            presigned URL 本体，供浏览器两步取回（避免 fetch 跨域重定向的
+            Origin taint 迫使对象存储 CORS 放行 null origin）。
+          schema:
+            type: string
+            enum:
+              - json
       responses:
+        "200":
+          description: Presigned download location (format=json)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactContentLocation"
         "302":
           description: Redirect to presigned download URL
         "400":
@@ -8849,6 +8866,17 @@ components:
           format: date-time
         already_exists:
           type: boolean
+    ArtifactContentLocation:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: 短时 presigned GET URL，浏览器应以无凭证模式直接拉取
+        expires_at:
+          type: string
+          format: date-time
     SubmitProjectTaskAttemptResultRequest:
       allOf:
         - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"

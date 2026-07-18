@@ -2064,6 +2064,21 @@ func (e WorkflowInstanceStatus) Valid() bool {
 	}
 }
 
+// Defines values for GetArtifactContentParamsFormat.
+const (
+	Json GetArtifactContentParamsFormat = "json"
+)
+
+// Valid indicates whether the value is a known member of the GetArtifactContentParamsFormat enum.
+func (e GetArtifactContentParamsFormat) Valid() bool {
+	switch e {
+	case Json:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListAuditEventsParamsResourceType.
 const (
 	ListAuditEventsParamsResourceTypeProject ListAuditEventsParamsResourceType = "project"
@@ -2219,6 +2234,14 @@ type AppendProviderSessionEventRequest0 = interface{}
 
 // AppendProviderSessionEventRequest1 defines model for .
 type AppendProviderSessionEventRequest1 = interface{}
+
+// ArtifactContentLocation defines model for ArtifactContentLocation.
+type ArtifactContentLocation struct {
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+
+	// Url 短时 presigned GET URL，浏览器应以无凭证模式直接拉取
+	Url string `json:"url"`
+}
 
 // AuditEvent defines model for AuditEvent.
 type AuditEvent struct {
@@ -5770,6 +5793,15 @@ type TaskId = openapi_types.UUID
 // TeamId defines model for TeamId.
 type TeamId = openapi_types.UUID
 
+// GetArtifactContentParams defines parameters for GetArtifactContent.
+type GetArtifactContentParams struct {
+	// Format 默认 302 重定向到 presigned URL；format=json 时改为 200 返回 presigned URL 本体，供浏览器两步取回（避免 fetch 跨域重定向的 Origin taint 迫使对象存储 CORS 放行 null origin）。
+	Format *GetArtifactContentParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// GetArtifactContentParamsFormat defines parameters for GetArtifactContent.
+type GetArtifactContentParamsFormat string
+
 // ListAuditEventsParams defines parameters for ListAuditEvents.
 type ListAuditEventsParams struct {
 	ResourceType ListAuditEventsParamsResourceType `form:"resource_type" json:"resource_type"`
@@ -6933,7 +6965,7 @@ type ServerInterface interface {
 	RevokeServiceToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID)
 	// Retrieve an artifact's raw content via presigned redirect
 	// (GET /api/v1/artifacts/{artifactRefId}/content)
-	GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID)
+	GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID, params GetArtifactContentParams)
 	// List audit events by project resource
 	// (GET /api/v1/audit/events)
 	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
@@ -7590,7 +7622,7 @@ func (_ Unimplemented) RevokeServiceToken(w http.ResponseWriter, r *http.Request
 
 // Retrieve an artifact's raw content via presigned redirect
 // (GET /api/v1/artifacts/{artifactRefId}/content)
-func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID) {
+func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID, params GetArtifactContentParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8938,8 +8970,24 @@ func (siw *ServerInterfaceWrapper) GetArtifactContent(w http.ResponseWriter, r *
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetArtifactContentParams
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetArtifactContent(w, r, artifactRefId)
+		siw.Handler.GetArtifactContent(w, r, artifactRefId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
