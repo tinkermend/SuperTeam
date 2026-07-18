@@ -76,7 +76,7 @@ handler decode 后区分「字段缺失」与「空数组」：缺失（nil）�
 
 ## 5.【上游跟踪·观察项】opencode 仓库配置屏蔽的上游化
 
-skip-worktree+删除是绕行方案（有效但非本意）。理想态是 opencode 官方提供 strict/禁用项目配置开关（对齐 claude `--strict-mcp-config`）。跟踪 upstream release notes，有开关后把 `shield_repo_configs` 换成传开关并删绕行。无工期，升级 opencode 版本时顺手检查。
+skip-worktree+删除是绕行方案（有效但非本意）。理想态是 opencode 官方提供 strict/禁用项目配置开关（对齐 claude `--strict-mcp-config`）。跟踪 upstream release notes，有开关后把 `shield_repo_configs` 换成传开关并删绕行。无工期，升级 opencode 版本时顺手检查。**检查记录**：2026-07-18 opencode 1.17.16——`run --help` 仅有 `--pure`（禁外部插件,不含项目配置）,无禁用项目配置开关,绕行维持。
 
 ---
 
