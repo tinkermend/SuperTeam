@@ -247,27 +247,6 @@ func (s *Service) UpdateTeamConstitution(ctx context.Context, tenantID, teamID u
 	return teamFromRecord(record), nil
 }
 
-func (s *Service) ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequest) (*Team, error) {
-	if req.TenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
-	}
-	if req.TeamID == uuid.Nil {
-		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
-	}
-	if !req.Status.IsValid() {
-		return nil, fmt.Errorf("%w: invalid team status", ErrInvalidInput)
-	}
-	record, err := s.repository.SetTeamStatus(ctx, SetTeamStatusParams{
-		TenantID: req.TenantID,
-		TeamID:   req.TeamID,
-		Status:   req.Status,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("set team status: %w", err)
-	}
-	return teamFromRecord(record), nil
-}
-
 type DeleteTeamRequest struct {
 	TenantID uuid.UUID
 	TeamID   uuid.UUID

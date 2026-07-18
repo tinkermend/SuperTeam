@@ -2,10 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   addTeamMember,
   approveTeamMemberRoleRequest,
-  archiveTeam,
   createTeam,
   createTeamMemberRoleRequest,
-  disableTeam,
+  deleteTeam,
   getTeamOverview,
   listTeamAuditEvents,
   listTeamMemberRoleRequests,
@@ -14,7 +13,6 @@ import {
   listTeams,
   rejectTeamMemberRoleRequest,
   removeTeamMember,
-  restoreTeam,
   updateTeam,
   updateTeamConstitution,
 } from "./teams";
@@ -139,7 +137,7 @@ describe("team API", () => {
       capability_count: 12,
       pending_draft_count: 2,
       pending_item_count: 3,
-      allowed_actions: ["team.update", "team.disable"],
+      allowed_actions: ["team.update", "team.delete"],
     };
     const fetcher = vi.fn(
       async () =>
@@ -219,47 +217,25 @@ describe("team API", () => {
     );
   });
 
-  it.each([
-    ["disables", disableTeam, "/disable"],
-    ["archives", archiveTeam, "/archive"],
-    ["restores", restoreTeam, "/restore"],
-  ] as const)("%s team with POST", async (_label, action, suffix) => {
-    const team = {
-      id: "11111111-1111-4111-8111-111111111111",
-      tenant_id: "22222222-2222-4222-8222-222222222222",
-      slug: "ops",
-      name: "运维团队",
-      status: "active",
-    };
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(team), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
+  it("deletes a team with DELETE and cookie credentials", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
 
     await expect(
-      action(
+      deleteTeam(
         {
           baseUrl: "http://control-plane.local",
           fetcher,
         },
         "team 1/primary",
       ),
-    ).resolves.toEqual(team);
+    ).resolves.toBeUndefined();
 
     expect(fetcher).toHaveBeenCalledWith(
-      `http://control-plane.local/api/v1/teams/team%201%2Fprimary${suffix}`,
-      {
-        body: JSON.stringify({}),
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary",
+      expect.objectContaining({
         credentials: "include",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
+        method: "DELETE",
+      }),
     );
   });
 

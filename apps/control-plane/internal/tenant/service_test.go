@@ -12,12 +12,15 @@ import (
 	"github.com/superteam/control-plane/internal/audit"
 )
 
-func TestTeamStatusAllowsArchived(t *testing.T) {
-	if !TeamStatusArchived.IsValid() {
-		t.Fatalf("expected archived team status to be valid")
+func TestTeamStatusOnlyActiveIsValid(t *testing.T) {
+	if !TeamStatusActive.IsValid() {
+		t.Fatalf("expected active team status to be valid")
 	}
-	if TeamStatus("paused").IsValid() {
-		t.Fatalf("expected unknown team status to be invalid")
+	// 生命周期收敛：archived/disabled 已撤销，仅 active 合法。
+	for _, status := range []TeamStatus{"archived", "disabled", "paused"} {
+		if status.IsValid() {
+			t.Fatalf("expected %q team status to be invalid", status)
+		}
 	}
 }
 
@@ -507,27 +510,6 @@ func TestUpdateTeamMetadataDisplayDoesNotMutateOrShareInput(t *testing.T) {
 	}
 }
 
-func TestChangeTeamStatusRejectsInvalidStatus(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewServiceWithoutAuditForTest(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-
-	_, err = svc.ChangeTeamStatus(context.Background(), ChangeTeamStatusRequest{
-		TenantID: uuid.New(),
-		TeamID:   uuid.New(),
-		Status:   TeamStatus("paused"),
-	})
-
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for unknown status, got %v", err)
-	}
-	if repo.setTeamStatusCalled {
-		t.Fatalf("expected invalid status request not to reach repository")
-	}
-}
-
 func TestGetOverviewUsesTeamSummaryAggregate(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewServiceWithoutAuditForTest(repo)
@@ -732,7 +714,6 @@ type memoryRepository struct {
 	listTeamSummariesCalled     bool
 	getTeamSummaryCalled        bool
 	updateTeamCalled            bool
-	setTeamStatusCalled         bool
 	addTeamMemberCalled         bool
 	disableTeamMemberCalled     bool
 	decideRoleRequestCalled     bool
@@ -915,18 +896,6 @@ func (r *memoryRepository) UpdateTeamConstitution(_ context.Context, tenantID, t
 		return TeamRecord{}, ErrNotFound
 	}
 	record.Constitution = cloneMap(constitution)
-	record.UpdatedAt = time.Now().UTC()
-	r.teams[record.ID] = record
-	return record, nil
-}
-
-func (r *memoryRepository) SetTeamStatus(_ context.Context, params SetTeamStatusParams) (TeamRecord, error) {
-	r.setTeamStatusCalled = true
-	record, ok := r.teams[params.TeamID]
-	if !ok || record.TenantID != params.TenantID {
-		return TeamRecord{}, ErrNotFound
-	}
-	record.Status = params.Status
 	record.UpdatedAt = time.Now().UTC()
 	r.teams[record.ID] = record
 	return record, nil

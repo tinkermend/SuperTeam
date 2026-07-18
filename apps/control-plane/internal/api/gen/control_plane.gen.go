@@ -35,25 +35,20 @@ func (e AddTeamMemberRequestRole) Valid() bool {
 
 // Defines values for AllowedTeamAction.
 const (
-	TeamArchive                     AllowedTeamAction = "team.archive"
 	TeamAuditRead                   AllowedTeamAction = "team.audit.read"
 	TeamCapabilityBind              AllowedTeamAction = "team.capability.bind"
 	TeamCapabilityUnbind            AllowedTeamAction = "team.capability.unbind"
 	TeamDelete                      AllowedTeamAction = "team.delete"
-	TeamDisable                     AllowedTeamAction = "team.disable"
 	TeamGovernanceApprove           AllowedTeamAction = "team.governance.approve"
 	TeamGovernanceEdit              AllowedTeamAction = "team.governance.edit"
 	TeamMemberAdd                   AllowedTeamAction = "team.member.add"
 	TeamMemberRequestPrivilegedRole AllowedTeamAction = "team.member.request_privileged_role"
-	TeamRestore                     AllowedTeamAction = "team.restore"
 	TeamUpdate                      AllowedTeamAction = "team.update"
 )
 
 // Valid indicates whether the value is a known member of the AllowedTeamAction enum.
 func (e AllowedTeamAction) Valid() bool {
 	switch e {
-	case TeamArchive:
-		return true
 	case TeamAuditRead:
 		return true
 	case TeamCapabilityBind:
@@ -62,8 +57,6 @@ func (e AllowedTeamAction) Valid() bool {
 		return true
 	case TeamDelete:
 		return true
-	case TeamDisable:
-		return true
 	case TeamGovernanceApprove:
 		return true
 	case TeamGovernanceEdit:
@@ -71,8 +64,6 @@ func (e AllowedTeamAction) Valid() bool {
 	case TeamMemberAdd:
 		return true
 	case TeamMemberRequestPrivilegedRole:
-		return true
-	case TeamRestore:
 		return true
 	case TeamUpdate:
 		return true
@@ -2057,19 +2048,13 @@ func (e TeamMemberRoleRequestStatus) Valid() bool {
 
 // Defines values for TeamStatus.
 const (
-	TeamStatusActive   TeamStatus = "active"
-	TeamStatusArchived TeamStatus = "archived"
-	TeamStatusDisabled TeamStatus = "disabled"
+	TeamStatusActive TeamStatus = "active"
 )
 
 // Valid indicates whether the value is a known member of the TeamStatus enum.
 func (e TeamStatus) Valid() bool {
 	switch e {
 	case TeamStatusActive:
-		return true
-	case TeamStatusArchived:
-		return true
-	case TeamStatusDisabled:
 		return true
 	default:
 		return false
@@ -7634,9 +7619,6 @@ type ServerInterface interface {
 	// Update a tenant team
 	// (PATCH /api/v1/teams/{teamId})
 	UpdateTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Archive a tenant team
-	// (POST /api/v1/teams/{teamId}/archive)
-	ArchiveTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// List team audit events
 	// (GET /api/v1/teams/{teamId}/audit)
 	ListTeamAuditEvents(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamAuditEventsParams)
@@ -7646,9 +7628,6 @@ type ServerInterface interface {
 	// Bind an unassigned (lobby) digital employee into the team
 	// (POST /api/v1/teams/{teamId}/digital-employees)
 	BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Disable a tenant team
-	// (POST /api/v1/teams/{teamId}/disable)
-	DisableTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// Read the team lending policy
 	// (GET /api/v1/teams/{teamId}/lending-policy)
 	GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -7709,9 +7688,6 @@ type ServerInterface interface {
 	// Get the team management overview
 	// (GET /api/v1/teams/{teamId}/overview)
 	GetTeamOverview(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Restore a tenant team to active
-	// (POST /api/v1/teams/{teamId}/restore)
-	RestoreTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// List team inherited skills
 	// (GET /api/v1/teams/{teamId}/skills)
 	ListTeamSkills(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -8864,12 +8840,6 @@ func (_ Unimplemented) UpdateTeam(w http.ResponseWriter, r *http.Request, teamId
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Archive a tenant team
-// (POST /api/v1/teams/{teamId}/archive)
-func (_ Unimplemented) ArchiveTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // List team audit events
 // (GET /api/v1/teams/{teamId}/audit)
 func (_ Unimplemented) ListTeamAuditEvents(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamAuditEventsParams) {
@@ -8885,12 +8855,6 @@ func (_ Unimplemented) UpdateTeamConstitution(w http.ResponseWriter, r *http.Req
 // Bind an unassigned (lobby) digital employee into the team
 // (POST /api/v1/teams/{teamId}/digital-employees)
 func (_ Unimplemented) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Disable a tenant team
-// (POST /api/v1/teams/{teamId}/disable)
-func (_ Unimplemented) DisableTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9011,12 +8975,6 @@ func (_ Unimplemented) RemoveTeamMember(w http.ResponseWriter, r *http.Request, 
 // Get the team management overview
 // (GET /api/v1/teams/{teamId}/overview)
 func (_ Unimplemented) GetTeamOverview(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Restore a tenant team to active
-// (POST /api/v1/teams/{teamId}/restore)
-func (_ Unimplemented) RestoreTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -15631,32 +15589,6 @@ func (siw *ServerInterfaceWrapper) UpdateTeam(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
-// ArchiveTeam operation middleware
-func (siw *ServerInterfaceWrapper) ArchiveTeam(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ArchiveTeam(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListTeamAuditEvents operation middleware
 func (siw *ServerInterfaceWrapper) ListTeamAuditEvents(w http.ResponseWriter, r *http.Request) {
 
@@ -15755,32 +15687,6 @@ func (siw *ServerInterfaceWrapper) BindTeamDigitalEmployee(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.BindTeamDigitalEmployee(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DisableTeam operation middleware
-func (siw *ServerInterfaceWrapper) DisableTeam(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DisableTeam(w, r, teamId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16486,32 +16392,6 @@ func (siw *ServerInterfaceWrapper) GetTeamOverview(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTeamOverview(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RestoreTeam operation middleware
-func (siw *ServerInterfaceWrapper) RestoreTeam(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RestoreTeam(w, r, teamId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17480,9 +17360,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/api/v1/teams/{teamId}", wrapper.UpdateTeam)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/archive", wrapper.ArchiveTeam)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/audit", wrapper.ListTeamAuditEvents)
 	})
 	r.Group(func(r chi.Router) {
@@ -17490,9 +17367,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/digital-employees", wrapper.BindTeamDigitalEmployee)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/disable", wrapper.DisableTeam)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/lending-policy", wrapper.GetTeamLendingPolicy)
@@ -17553,9 +17427,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/overview", wrapper.GetTeamOverview)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/restore", wrapper.RestoreTeam)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/skills", wrapper.ListTeamSkills)

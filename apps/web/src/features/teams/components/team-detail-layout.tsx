@@ -1,4 +1,4 @@
-import { Archive, RotateCcw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { Trash2, UsersRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "@tanstack/react-router";
 import { IconTile, StatusPill, V3Button, V3Tabs } from "@/components/superteam";
@@ -21,46 +21,27 @@ import { TeamCapabilitiesTab } from "./team-capabilities-tab";
 import { TeamConstitutionTab } from "./team-constitution-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
 
+// 团队生命周期收敛：存活团队唯一状态 active，退出只有删除一条路（软删+审计）。
 function TeamStatusPill({ status }: { status: TeamStatus }) {
-  const tone: Record<TeamStatus, "ok" | "mute" | "warn"> = {
-    active: "ok",
-    archived: "mute",
-    disabled: "warn",
-  };
-
-  return (
-    <StatusPill tone={tone[status]}>
-      {teamStatusLabel(status)}
-    </StatusPill>
-  );
+  return <StatusPill tone="ok">{teamStatusLabel(status)}</StatusPill>;
 }
 
 type TeamDetailLayoutProps = {
   apiOptions: ApiClientOptions;
-  onArchiveTeam?: () => void;
   onDeleteTeam?: () => void;
-  onDisableTeam?: () => void;
-  onRestoreTeam?: () => void;
   onTeamChanged?: () => void;
   overview: TeamOverview;
 };
 
 export function TeamDetailLayout({
   apiOptions,
-  onArchiveTeam,
   onDeleteTeam,
-  onDisableTeam,
-  onRestoreTeam,
   onTeamChanged,
   overview,
 }: TeamDetailLayoutProps) {
   const location = useLocation();
   const team = overview.team;
-  const isActive = team.status === "active";
-  const canEditConstitution = isActive && overview.allowed_actions.includes("team.governance.edit");
-  const canDisable = isActive && overview.allowed_actions.includes("team.disable");
-  const canArchive = team.status !== "archived" && overview.allowed_actions.includes("team.archive");
-  const canRestore = team.status !== "active" && overview.allowed_actions.includes("team.restore");
+  const canEditConstitution = overview.allowed_actions.includes("team.governance.edit");
   const canDelete = overview.allowed_actions.includes("team.delete");
   const [activeTab, setActiveTab] = useState(() => resolveTeamDetailTab(location.hash));
 
@@ -88,24 +69,6 @@ export function TeamDetailLayout({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canDisable ? (
-            <V3Button onClick={onDisableTeam} size="sm" variant="outline">
-              <ShieldCheck data-icon="inline-start" />
-              禁用团队
-            </V3Button>
-          ) : null}
-          {canArchive ? (
-            <V3Button onClick={onArchiveTeam} size="sm" variant="outline">
-              <Archive data-icon="inline-start" />
-              归档团队
-            </V3Button>
-          ) : null}
-          {canRestore ? (
-            <V3Button onClick={onRestoreTeam} size="sm" variant="outline">
-              <RotateCcw data-icon="inline-start" />
-              恢复团队
-            </V3Button>
-          ) : null}
           {canDelete ? (
             <AlertDialog>
               <AlertDialogTrigger asChild>

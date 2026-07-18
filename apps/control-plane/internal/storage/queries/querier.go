@@ -531,7 +531,6 @@ type Querier interface {
 	SetEmployeeTemplateStatus(ctx context.Context, arg SetEmployeeTemplateStatusParams) (DigitalEmployeeTemplate, error)
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)
-	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
 	SkillExistsForTenant(ctx context.Context, arg SkillExistsForTenantParams) (bool, error)
 	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams) ([]SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow, error)

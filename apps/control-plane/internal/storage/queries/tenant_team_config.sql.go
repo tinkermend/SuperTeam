@@ -1015,54 +1015,6 @@ func (q *Queries) ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams
 	return items, nil
 }
 
-const SetTenantTeamStatus = `-- name: SetTenantTeamStatus :one
-UPDATE tenant_teams
-SET
-  status = $1::varchar,
-  disabled_at = CASE
-    WHEN $1::varchar = 'disabled' THEN COALESCE(disabled_at, NOW())
-    WHEN $1::varchar = 'active' THEN NULL
-    ELSE disabled_at
-  END,
-  archived_at = CASE
-    WHEN $1::varchar = 'archived' THEN COALESCE(archived_at, NOW())
-    WHEN $1::varchar = 'active' THEN NULL
-    ELSE archived_at
-  END,
-  updated_at = NOW()
-WHERE id = $2::uuid
-  AND tenant_id = $3::uuid
-  AND deleted_at IS NULL
-RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution
-`
-
-type SetTenantTeamStatusParams struct {
-	Status   string    `json:"status"`
-	ID       uuid.UUID `json:"id"`
-	TenantID uuid.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error) {
-	row := q.db.QueryRow(ctx, SetTenantTeamStatus, arg.Status, arg.ID, arg.TenantID)
-	var i TenantTeam
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.Slug,
-		&i.Name,
-		&i.Status,
-		&i.Metadata,
-		&i.ArchivedAt,
-		&i.DisabledAt,
-		&i.DeletedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.HumanOwnerUserIds,
-		&i.Constitution,
-	)
-	return i, err
-}
-
 const UpdateTenantTeam = `-- name: UpdateTenantTeam :one
 UPDATE tenant_teams
 SET

@@ -13,12 +13,9 @@ import {
   V3LoadingState,
 } from "@/components/superteam";
 import {
-  archiveTeam,
   deleteTeam,
-  disableTeam,
   getTeamOverview,
   listTeamSummaries,
-  restoreTeam,
 } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { CreateTeamView } from "./components/create-team-page";
@@ -143,24 +140,6 @@ export function TeamDetailView({
     queryKey: ["team-overview", teamId],
     queryFn: () => getTeamOverview(apiOptions, teamId),
   });
-  const disableMutation = useMutation({
-    mutationFn: () => disableTeam(apiOptions, teamId),
-    onSuccess: () => {
-      void overview.refetch();
-    },
-  });
-  const archiveMutation = useMutation({
-    mutationFn: () => archiveTeam(apiOptions, teamId),
-    onSuccess: () => {
-      void overview.refetch();
-    },
-  });
-  const restoreMutation = useMutation({
-    mutationFn: () => restoreTeam(apiOptions, teamId),
-    onSuccess: () => {
-      void overview.refetch();
-    },
-  });
   const deleteMutation = useMutation({
     mutationFn: () => deleteTeam(apiOptions, teamId),
     onSuccess: () => {
@@ -185,10 +164,7 @@ export function TeamDetailView({
         {overview.data ? (
           <TeamDetailLayout
             apiOptions={apiOptions}
-            onArchiveTeam={() => archiveMutation.mutate()}
             onDeleteTeam={() => deleteMutation.mutate()}
-            onDisableTeam={() => disableMutation.mutate()}
-            onRestoreTeam={() => restoreMutation.mutate()}
             onTeamChanged={() => void overview.refetch()}
             overview={overview.data}
           />

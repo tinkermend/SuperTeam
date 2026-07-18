@@ -377,22 +377,3 @@ WHERE id = sqlc.arg('id')::uuid
   AND sqlc.arg('status')::varchar IN ('approved', 'rejected')
 RETURNING *;
 
--- name: SetTenantTeamStatus :one
-UPDATE tenant_teams
-SET
-  status = sqlc.arg('status')::varchar,
-  disabled_at = CASE
-    WHEN sqlc.arg('status')::varchar = 'disabled' THEN COALESCE(disabled_at, NOW())
-    WHEN sqlc.arg('status')::varchar = 'active' THEN NULL
-    ELSE disabled_at
-  END,
-  archived_at = CASE
-    WHEN sqlc.arg('status')::varchar = 'archived' THEN COALESCE(archived_at, NOW())
-    WHEN sqlc.arg('status')::varchar = 'active' THEN NULL
-    ELSE archived_at
-  END,
-  updated_at = NOW()
-WHERE id = sqlc.arg('id')::uuid
-  AND tenant_id = sqlc.arg('tenant_id')::uuid
-  AND deleted_at IS NULL
-RETURNING *;

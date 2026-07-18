@@ -336,18 +336,6 @@ func (r *PgRepository) UpdateTeamConstitution(ctx context.Context, tenantID, tea
 	return teamRecordFromQuery(team)
 }
 
-func (r *PgRepository) SetTeamStatus(ctx context.Context, params SetTeamStatusParams) (TeamRecord, error) {
-	team, err := r.q.SetTenantTeamStatus(ctx, queries.SetTenantTeamStatusParams{
-		ID:       params.TeamID,
-		TenantID: params.TenantID,
-		Status:   string(params.Status),
-	})
-	if err != nil {
-		return TeamRecord{}, mapNoRows(err)
-	}
-	return teamRecordFromQuery(team)
-}
-
 func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUID) error {
 	if r.db == nil {
 		return fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)

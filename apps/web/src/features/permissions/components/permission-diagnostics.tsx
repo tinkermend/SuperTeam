@@ -22,9 +22,6 @@ const actionOptions: CheckPermissionRequest["action"][] = [
   "team.create",
   "team.read",
   "team.update",
-  "team.disable",
-  "team.archive",
-  "team.restore",
   "team.member.add",
   "team.member.remove",
   "team.member.change_role",
@@ -243,9 +240,6 @@ function getResourceDefaults(
       };
     case "team.access":
     case "team.update":
-    case "team.disable":
-    case "team.archive":
-    case "team.restore":
     case "team.member.add":
     case "team.member.remove":
     case "team.member.change_role":
@@ -287,9 +281,6 @@ function usesTeamResource(action: CheckPermissionRequest["action"], resourceType
   switch (action) {
     case "team.access":
     case "team.update":
-    case "team.disable":
-    case "team.archive":
-    case "team.restore":
     case "team.member.add":
     case "team.member.remove":
     case "team.member.change_role":

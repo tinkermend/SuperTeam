@@ -183,9 +183,6 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		}
 		decision, err = a.checkTeamManagementAction(ctx, req)
 	case ActionTeamUpdate,
-		ActionTeamDisable,
-		ActionTeamArchive,
-		ActionTeamRestore,
 		ActionTeamDelete,
 		ActionTeamMemberAdd,
 		ActionTeamMemberRemove,
@@ -697,9 +694,6 @@ func roleAllowsTeamAction(action, role string) bool {
 		ActionTeamLendingPolicyRead, ActionTeamLendingRequestRead:
 		return roleAllowsTeamRead(role)
 	case ActionTeamUpdate,
-		ActionTeamDisable,
-		ActionTeamArchive,
-		ActionTeamRestore,
 		ActionTeamMemberAdd,
 		ActionTeamMemberRemove,
 		ActionTeamMemberChangeRole,
