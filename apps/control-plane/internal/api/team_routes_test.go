@@ -48,6 +48,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	createBody := `{
 		"slug":"platform",
 		"name":"Platform",
+		"description":"提供平台工程与可靠性交付能力",
 		"human_owner_user_ids":["` + ownerID.String() + `"],
 		"initial_members":[
 			{"user_id":"` + memberID.String() + `","role":"member"},
@@ -72,6 +73,9 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if service.createReq.ActorUserID != user.ID {
 		t.Fatalf("expected actor user %s, got %s", user.ID, service.createReq.ActorUserID)
 	}
+	if service.createReq.Description != "提供平台工程与可靠性交付能力" {
+		t.Fatalf("expected description in create request, got %q", service.createReq.Description)
+	}
 	if !reflect.DeepEqual(service.createReq.InitialMembers, []tenant.InitialTeamMemberInput{
 		{UserID: memberID, Role: tenant.TeamRoleMember},
 		{UserID: viewerID, Role: tenant.TeamRoleViewer},
@@ -82,6 +86,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		Team struct {
 			ID                string         `json:"id"`
 			TenantID          string         `json:"tenant_id"`
+			Description       string         `json:"description"`
 			HumanOwnerUserIDs []string       `json:"human_owner_user_ids"`
 			Metadata          map[string]any `json:"metadata"`
 		} `json:"team"`
@@ -95,6 +100,9 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if created.Team.Metadata["cost_center"] != "r-and-d" {
 		t.Fatalf("expected metadata in response, got %#v", created.Team.Metadata)
+	}
+	if created.Team.Description != "提供平台工程与可靠性交付能力" {
+		t.Fatalf("expected description in response, got %q", created.Team.Description)
 	}
 	if len(created.AllowedActions) == 0 {
 		t.Fatalf("expected create response to include allowed actions, got %#v", created)
@@ -114,6 +122,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected list filters active/ops/draft_pending, got %#v", service.listReq)
 	}
 	var listed []struct {
+		Description string `json:"description"`
 		HumanOwners []struct {
 			UserID      string `json:"user_id"`
 			Username    string `json:"username"`
@@ -133,6 +142,9 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if listed[0].HumanOwners[0].Avatar == nil || listed[0].HumanOwners[0].Avatar.Seed != "user:owner" {
 		t.Fatalf("expected list response to include human owner avatar, got %#v", listed)
+	}
+	if listed[0].Description != "负责日常平台运行与发布保障" {
+		t.Fatalf("expected list response to include description, got %#v", listed)
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID, nil)
@@ -157,7 +169,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected overview tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.overviewTenantID, service.overviewTeamID)
 	}
 
-	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID, strings.NewReader(`{"slug":"platform-sre","name":"Platform SRE","human_owner_user_ids":["`+ownerID.String()+`"],"metadata":{"cost_center":"ops"}}`))
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID, strings.NewReader(`{"slug":"platform-sre","name":"Platform SRE","description":"负责平台可靠性与工程效率","human_owner_user_ids":["`+ownerID.String()+`"],"metadata":{"cost_center":"ops"}}`))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.AddCookie(cookie)
 	updateResp := httptest.NewRecorder()
@@ -167,6 +179,9 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.updateReq.TenantID != expectedTenantID || service.updateReq.TeamID.String() != created.Team.ID || service.updateReq.Name != "Platform SRE" {
 		t.Fatalf("expected update request for tenant/team/name, got %#v", service.updateReq)
+	}
+	if service.updateReq.Description == nil || *service.updateReq.Description != "负责平台可靠性与工程效率" {
+		t.Fatalf("expected description in update request, got %#v", service.updateReq.Description)
 	}
 
 	constitutionReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID+"/constitution", strings.NewReader(`{"hard_rules":["review before deploy"]}`))
@@ -1048,6 +1063,7 @@ func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeam
 		TenantID:          req.TenantID,
 		Slug:              req.Slug,
 		Name:              req.Name,
+		Description:       req.Description,
 		Status:            status,
 		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
 		Metadata:          req.Metadata,
@@ -1079,6 +1095,7 @@ func (s *routeTeamService) ListTeamSummaries(ctx context.Context, req tenant.Lis
 				TenantID:          req.TenantID,
 				Slug:              "ops",
 				Name:              "Ops",
+				Description:       "负责日常平台运行与发布保障",
 				Status:            tenant.TeamStatusActive,
 				HumanOwnerUserIDs: []uuid.UUID{ownerID},
 				HumanOwners: []tenant.TeamHumanOwner{{
@@ -1151,11 +1168,16 @@ func (s *routeTeamService) UpdateTeam(ctx context.Context, req tenant.UpdateTeam
 	s.updateCalled = true
 	s.updateReq = req
 	now := time.Now().UTC()
+	description := ""
+	if req.Description != nil {
+		description = *req.Description
+	}
 	return &tenant.Team{
 		ID:                req.TeamID,
 		TenantID:          req.TenantID,
 		Slug:              req.Slug,
 		Name:              req.Name,
+		Description:       description,
 		Status:            tenant.TeamStatusActive,
 		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
 		Metadata:          req.Metadata,

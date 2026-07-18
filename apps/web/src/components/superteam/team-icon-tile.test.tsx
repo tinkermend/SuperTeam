@@ -3,19 +3,41 @@ import { render } from "vitest-browser-react";
 import { TeamIconTile, getTeamDisplayConfig } from "./team-icon-tile";
 
 describe("TeamIconTile", () => {
-  it("resolves known ops display metadata", async () => {
+  it("falls legacy display metadata back to the general team illustration", async () => {
     expect(getTeamDisplayConfig({ display: { icon_key: "ops", color_tone: "cyan" } })).toMatchObject({
-      iconKey: "ops",
+      iconKey: "role-general-team",
+      imageSrc: "/images/team-role-icons/general-team.webp",
       tone: "cyan",
     });
     const screen = await render(<TeamIconTile metadata={{ display: { icon_key: "ops", color_tone: "cyan" } }} />);
-    await expect.element(screen.getByLabelText("运维团队图标")).toBeInTheDocument();
+    await expect.element(screen.getByLabelText("通用团队")).toBeInTheDocument();
   });
 
   it("falls back to neutral team icon", () => {
     expect(getTeamDisplayConfig({ display: { icon_key: "unknown", color_tone: "unknown" } })).toMatchObject({
-      iconKey: "default",
+      iconKey: "role-general-team",
       tone: "neutral",
     });
+  });
+
+  it("resolves a generated role illustration", async () => {
+    const config = getTeamDisplayConfig({
+      display: { icon_key: "role-quality-automation", color_tone: "blue" },
+    });
+
+    expect(config).toMatchObject({
+      iconKey: "role-quality-automation",
+      imageSrc: "/images/team-role-icons/quality-automation.webp",
+      label: "自动化测试",
+    });
+
+    const screen = await render(
+      <TeamIconTile
+        metadata={{
+          display: { icon_key: "role-quality-automation", color_tone: "blue" },
+        }}
+      />,
+    );
+    await expect.element(screen.getByLabelText("自动化测试")).toBeInTheDocument();
   });
 });

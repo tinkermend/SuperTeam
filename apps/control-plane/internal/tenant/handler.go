@@ -96,6 +96,7 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug                      string                   `json:"slug"`
 		Name                      string                   `json:"name"`
+		Description               string                   `json:"description"`
 		Status                    TeamStatus               `json:"status"`
 		HumanOwnerUserIDs         []uuid.UUID              `json:"human_owner_user_ids,omitempty"`
 		InitialMembers            []InitialTeamMemberInput `json:"initial_members"`
@@ -111,6 +112,7 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:               middleware.GetUserID(r.Context()),
 		Slug:                      req.Slug,
 		Name:                      req.Name,
+		Description:               req.Description,
 		Status:                    req.Status,
 		HumanOwnerUserIDs:         req.HumanOwnerUserIDs,
 		InitialMembers:            req.InitialMembers,
@@ -184,6 +186,7 @@ func (h *HTTPHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug              string         `json:"slug"`
 		Name              string         `json:"name"`
+		Description       *string        `json:"description,omitempty"`
 		HumanOwnerUserIDs []uuid.UUID    `json:"human_owner_user_ids,omitempty"`
 		Metadata          map[string]any `json:"metadata"`
 	}
@@ -196,6 +199,7 @@ func (h *HTTPHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 		TeamID:            teamID,
 		Slug:              req.Slug,
 		Name:              req.Name,
+		Description:       req.Description,
 		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
 		Metadata:          req.Metadata,
 	})
@@ -503,7 +507,6 @@ var overviewActions = []string{
 	authz.ActionTeamLendingRequestDecide,
 }
 
-
 func (h *HTTPHandler) decideTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, approve bool) {
 	teamID, ok := teamIDFromRequest(w, r)
 	if !ok {
@@ -642,6 +645,7 @@ type teamResponse struct {
 	TenantID          string                   `json:"tenant_id"`
 	Slug              string                   `json:"slug"`
 	Name              string                   `json:"name"`
+	Description       string                   `json:"description"`
 	Status            TeamStatus               `json:"status"`
 	HumanOwnerUserIDs []string                 `json:"human_owner_user_ids,omitempty"`
 	HumanOwners       []teamHumanOwnerResponse `json:"human_owners,omitempty"`
@@ -656,6 +660,7 @@ type teamListItemResponse struct {
 	TenantID             string                   `json:"tenant_id"`
 	Slug                 string                   `json:"slug"`
 	Name                 string                   `json:"name"`
+	Description          string                   `json:"description"`
 	Status               TeamStatus               `json:"status"`
 	HumanOwnerUserIDs    []string                 `json:"human_owner_user_ids,omitempty"`
 	HumanOwners          []teamHumanOwnerResponse `json:"human_owners,omitempty"`
@@ -819,6 +824,7 @@ func teamResponseFromDomain(team *Team) teamResponse {
 		TenantID:          team.TenantID.String(),
 		Slug:              team.Slug,
 		Name:              team.Name,
+		Description:       team.Description,
 		Status:            team.Status,
 		HumanOwnerUserIDs: uuidStringSlice(team.HumanOwnerUserIDs),
 		HumanOwners:       teamHumanOwnersResponseFromDomain(team.HumanOwners),
@@ -835,6 +841,7 @@ func teamListItemResponseFromDomain(item *TeamListItem) teamListItemResponse {
 		TenantID:             item.TenantID.String(),
 		Slug:                 item.Slug,
 		Name:                 item.Name,
+		Description:          item.Description,
 		Status:               item.Status,
 		HumanOwnerUserIDs:    uuidStringSlice(item.HumanOwnerUserIDs),
 		HumanOwners:          teamHumanOwnersResponseFromDomain(item.HumanOwners),

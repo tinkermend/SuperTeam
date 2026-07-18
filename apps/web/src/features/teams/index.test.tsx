@@ -133,6 +133,9 @@ function makeTeamSummary(index: number) {
     tenant_id: "tenant-1",
     slug: isPrimary ? "ops" : `team-${index}`,
     name: isPrimary ? "运维团队" : `团队 ${index}`,
+    description: isPrimary
+      ? "负责生产稳定性与云基础设施的设计、运行和演进。"
+      : `负责团队 ${index} 的协作交付与日常运营。`,
     status: "active",
     human_owner_user_ids: [isPrimary ? "human-owner-1" : `human-owner-${index}`],
     human_owners: [{
@@ -157,7 +160,7 @@ function makeTeamSummary(index: number) {
     metadata: {
       display: {
         color_tone: isPrimary ? "cyan" : "neutral",
-        icon_key: isPrimary ? "ops" : "default",
+        icon_key: isPrimary ? "role-cloud-infrastructure" : "role-general-team",
       },
     },
   };
@@ -786,17 +789,22 @@ describe("TeamsView", () => {
 
     // Summary stats
     await expect.element(screen.getByText("20 个团队")).toBeVisible();
-    await expect.element(screen.getByText("25 位 agent")).toBeVisible();
+    await expect.element(screen.getByText("25 名数字员工")).toBeVisible();
+    await expect.element(screen.getByText("50 项能力绑定")).toBeVisible();
 
     // Card details
     await expect.element(screen.getByText("运维团队")).toBeVisible();
+    await expect
+      .element(screen.getByText("负责生产稳定性与云基础设施的设计、运行和演进。"))
+      .toBeVisible();
+    await expect.element(screen.getByText("团队说明").first()).toBeVisible();
     
-    const links = screen.getByRole("link", { name: /查看完整部门/ }).all();
+    const links = screen.getByRole("link", { name: "查看 运维团队 团队详情" }).all();
     await expect.element(links[0]).toHaveAttribute("data-router-link", "true");
     await expect.element(links[0]).toHaveAttribute("href", "/teams/team-1");
     
     await expect
-      .element(screen.getByLabelText("运维团队图标"))
+      .element(screen.getByLabelText("云基础设施"))
       .toBeVisible();
     await expect
       .element(screen.getByText("负责人甲", { exact: true }))
@@ -805,14 +813,14 @@ describe("TeamsView", () => {
       .element(screen.getByText("owner@example.com", { exact: true }))
       .toBeVisible();
       
-    const employeeCounts = screen.getByText("6 位数字员工").all();
+    const employeeCounts = screen.getByText("6 名数字员工").all();
     await expect.element(employeeCounts[0]).toBeVisible();
     
-    const levelLabels = screen.getByText("L1").all();
-    await expect.element(levelLabels[0]).toBeVisible();
+    await expect.element(screen.getByText("已生效").first()).toBeVisible();
 
-    expect(document.querySelectorAll('[data-slot="v3-glass-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
+    expect(document.querySelector("[data-team-card-grid]")?.className).toContain("@5xl:grid-cols-3");
   });
 
   it("keeps long team names inside the card header", async () => {
@@ -850,11 +858,10 @@ describe("TeamsView", () => {
     const identityGroup = textColumn?.parentElement;
     const cardHeader = identityGroup?.parentElement;
 
-    await expect.element(screen.getByText("L1")).toBeVisible();
+    await expect.element(screen.getByText("活跃")).toBeVisible();
     expect(heading).toHaveAttribute("title", longTeamName);
     expect(heading).toHaveClass("line-clamp-2");
     expect(textColumn).toHaveClass("min-w-0");
-    expect(textColumn).toHaveClass("flex-1");
     expect(identityGroup).toHaveClass("min-w-0");
     expect(identityGroup).toHaveClass("flex-1");
     expect(cardHeader).toHaveClass("min-w-0");

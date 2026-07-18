@@ -86,7 +86,7 @@ SET deleted_at = NOW(),
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description
 `
 
 type SoftDeleteTeamParams struct {
@@ -111,6 +111,7 @@ func (q *Queries) SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) 
 		&i.UpdatedAt,
 		&i.HumanOwnerUserIds,
 		&i.Constitution,
+		&i.Description,
 	)
 	return i, err
 }

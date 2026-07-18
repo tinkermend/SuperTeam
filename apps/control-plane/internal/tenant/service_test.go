@@ -100,6 +100,7 @@ func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
 		ActorUserID:       actorID,
 		Slug:              "security",
 		Name:              "安全团队",
+		Description:       "  负责应用安全架构评审与风险响应。  ",
 		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		InitialMembers: []InitialTeamMemberInput{
 			{UserID: memberID, Role: TeamRoleMember},
@@ -112,6 +113,12 @@ func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
 
 	if overview.Team == nil || overview.Team.Slug != "security" {
 		t.Fatalf("expected created overview team, got %#v", overview.Team)
+	}
+	if overview.Team.Description != "负责应用安全架构评审与风险响应。" {
+		t.Fatalf("expected normalized description, got %q", overview.Team.Description)
+	}
+	if repo.createdTeamWithMembers.Description != "负责应用安全架构评审与风险响应。" {
+		t.Fatalf("expected description to reach repository, got %q", repo.createdTeamWithMembers.Description)
 	}
 	if overview.MemberCount != 3 {
 		t.Fatalf("expected owner plus two members in overview, got %d", overview.MemberCount)
@@ -432,6 +439,7 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 		ActorUserID:       uuid.New(),
 		Slug:              "ops",
 		Name:              "Ops",
+		Description:       "负责生产系统的稳定运行。",
 		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Metadata:          map[string]any{"cost_center": "ops"},
 	})
@@ -454,6 +462,67 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 	}
 	if updated.Metadata["cost_center"] != "ops" {
 		t.Fatalf("expected metadata to be preserved, got %#v", updated.Metadata)
+	}
+	if updated.Description != "负责生产系统的稳定运行。" {
+		t.Fatalf("expected description to be preserved, got %q", updated.Description)
+	}
+}
+
+func TestUpdateTeamNormalizesDescription(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:          tenantID,
+		ActorUserID:       uuid.New(),
+		Slug:              "ops",
+		Name:              "Ops",
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	description := "  负责生产稳定性与基础设施演进。  "
+
+	updated, err := svc.UpdateTeam(context.Background(), UpdateTeamRequest{
+		TenantID:    tenantID,
+		TeamID:      team.Team.ID,
+		Slug:        "ops",
+		Name:        "Ops",
+		Description: &description,
+	})
+	if err != nil {
+		t.Fatalf("update team: %v", err)
+	}
+	if updated.Description != "负责生产稳定性与基础设施演进。" {
+		t.Fatalf("expected normalized description, got %q", updated.Description)
+	}
+}
+
+func TestCreateTeamRejectsOverlongDescription(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:          uuid.New(),
+		ActorUserID:       uuid.New(),
+		Slug:              "ops",
+		Name:              "Ops",
+		Description:       strings.Repeat("说", MaxTeamDescriptionLength+1),
+		HumanOwnerUserIDs: []uuid.UUID{uuid.New()},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected overlong description to be invalid, got %v", err)
+	}
+	if repo.createTeamWithMembersCalled {
+		t.Fatal("expected overlong description not to reach repository")
 	}
 }
 
@@ -750,6 +819,7 @@ func (r *memoryRepository) CreateTeam(_ context.Context, params CreateTeamParams
 		TenantID:          params.TenantID,
 		Slug:              params.Slug,
 		Name:              params.Name,
+		Description:       params.Description,
 		Status:            params.Status,
 		HumanOwnerUserIDs: params.HumanOwnerUserIDs,
 		Metadata:          cloneMap(params.Metadata),
@@ -781,6 +851,7 @@ func (r *memoryRepository) CreateTeamWithInitialMembers(_ context.Context, param
 		TenantID:          params.TenantID,
 		Slug:              params.Slug,
 		Name:              params.Name,
+		Description:       params.Description,
 		Status:            params.Status,
 		HumanOwnerUserIDs: params.OwnerUserIDs,
 		Metadata:          cloneMap(params.Metadata),
@@ -883,6 +954,7 @@ func (r *memoryRepository) UpdateTeam(_ context.Context, params UpdateTeamParams
 	}
 	record.Slug = params.Slug
 	record.Name = params.Name
+	record.Description = params.Description
 	record.HumanOwnerUserIDs = params.HumanOwnerUserIDs
 	record.Metadata = cloneMap(params.Metadata)
 	record.UpdatedAt = time.Now().UTC()

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Plus, UsersRound } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
@@ -90,7 +90,16 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
   return (
     <>
       <ShellPageHeader
-        icon={<UsersRound />}
+        icon={
+          <img
+            alt=""
+            className="size-8 object-contain"
+            decoding="async"
+            height={32}
+            src="/images/team-role-icons/general-team.webp"
+            width={32}
+          />
+        }
         iconTone="info"
         title="团队管理"
         subtitle="团队负责人、治理配置和协作边界。"
@@ -111,8 +120,6 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
             onReset={() => setFilters({ q: "" })}
           />
           <TeamCardGrid
-            apiBaseUrl={apiBaseUrl}
-            fetcher={fetcher}
             isError={teams.isError}
             isLoading={teams.isLoading}
             teams={teams.data ?? []}

@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, Search, Check } from "lucide-react";
-import { DynamicIcon, iconNames } from "lucide-react/dynamic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,52 +10,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { TeamIconTile } from "./team-icon-tile";
-
-const allIconNames = iconNames as readonly string[];
-const iconNameSet = new Set(allIconNames);
-
-const CATEGORIES = [
-  {
-    id: "general",
-    label: "通用",
-    icons: [
-      "user", "users", "users-round", "network", "building-2", "briefcase",
-      "folder", "file", "target", "settings", "database", "inbox",
-    ],
-  },
-  {
-    id: "rd",
-    label: "研发",
-    icons: [
-      "code", "code-xml", "terminal", "bug", "git-branch", "git-commit",
-      "braces", "blocks", "box", "cpu", "sparkles", "wand-sparkles",
-    ],
-  },
-  {
-    id: "ops",
-    label: "运维",
-    icons: [
-      "server", "server-cog", "cloud", "cloud-cog", "container", "layers",
-      "activity", "gauge", "zap", "radio", "hard-drive", "webhook",
-    ],
-  },
-  {
-    id: "security",
-    label: "安全",
-    icons: [
-      "shield", "shield-check", "shield-alert", "lock", "unlock", "key",
-      "fingerprint", "scan-face", "eye", "eye-off", "file-key", "user-round-search",
-    ],
-  },
-  {
-    id: "delivery",
-    label: "交付",
-    icons: [
-      "package", "package-check", "truck", "plane", "rocket", "box-select",
-      "check-circle", "check-square", "clipboard-check", "milestone", "flag", "compass",
-    ],
-  },
-];
+import { getTeamRoleIcon, teamRoleIcons } from "./team-role-icon-catalog";
 
 const MAX_SEARCH_RESULTS = 60;
 
@@ -73,19 +27,24 @@ export function TeamIconPicker({
 }: TeamIconPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("general");
+  const selectedRoleIcon = getTeamRoleIcon(value);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q) {
-      return allIconNames
-        .filter((name) => name.includes(q))
-        .slice(0, MAX_SEARCH_RESULTS);
+      const roleResults = teamRoleIcons
+        .filter((icon) =>
+          [icon.key, icon.label, ...icon.keywords]
+            .join(" ")
+            .toLowerCase()
+            .includes(q),
+        )
+        .map((icon) => icon.key);
+      return roleResults.slice(0, MAX_SEARCH_RESULTS);
     }
-    
-    const category = CATEGORIES.find(c => c.id === activeTab);
-    return (category?.icons || CATEGORIES[0].icons).filter(name => iconNameSet.has(name));
-  }, [query, activeTab]);
+
+    return teamRoleIcons.map((icon) => icon.key);
+  }, [query]);
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
@@ -99,31 +58,13 @@ export function TeamIconPicker({
           <TeamIconTile
             metadata={{ display: { color_tone: colorTone, icon_key: value } }}
           />
-          <span className="font-mono text-xs text-muted-foreground">{value}</span>
+          <span className="font-mono text-xs text-muted-foreground">
+            {selectedRoleIcon?.label ?? value}
+          </span>
           <ChevronDown className="size-4 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[420px] p-0">
-        <div className="flex border-b">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => {
-                setQuery("");
-                setActiveTab(cat.id);
-              }}
-              className={cn(
-                "flex-1 border-b-2 px-3 py-2.5 text-xs font-medium transition-colors",
-                !query && activeTab === cat.id
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              )}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-        
         <div className="p-3">
           <div className="relative mb-3">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -145,13 +86,15 @@ export function TeamIconPicker({
             ) : (
               <div className="grid grid-cols-6 gap-2 pr-3 pb-2">
                 {results.map((name) => {
+                  const roleIcon = getTeamRoleIcon(name);
+                  const label = roleIcon?.label ?? name;
                   const selected = name === value;
                   return (
                     <button
-                      aria-label={`选择图标 ${name}`}
+                      aria-label={`选择图标 ${label}`}
                       aria-pressed={selected}
                       className={cn(
-                        "relative flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border bg-card text-foreground transition-all hover:bg-muted/80 [&_svg]:size-5",
+                        "relative flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border bg-card text-foreground transition-all hover:bg-muted/80",
                         selected
                           ? "border-primary ring-1 ring-primary"
                           : "border-border shadow-sm",
@@ -161,12 +104,20 @@ export function TeamIconPicker({
                         onSelect(name);
                         setOpen(false);
                       }}
-                      title={name}
+                      title={label}
                       type="button"
                     >
-                      <DynamicIcon name={name as (typeof iconNames)[number]} />
+                      <img
+                        alt=""
+                        className="size-8 object-contain"
+                        decoding="async"
+                        height={32}
+                        loading="lazy"
+                        src={roleIcon?.src}
+                        width={32}
+                      />
                       <span className="max-w-[50px] truncate text-[9px] text-muted-foreground">
-                        {name}
+                        {label}
                       </span>
                       {selected && (
                         <div className="absolute -right-1.5 -top-1.5 rounded-full bg-primary p-0.5 text-primary-foreground">

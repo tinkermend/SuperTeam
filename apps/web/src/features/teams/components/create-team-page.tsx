@@ -57,6 +57,9 @@ export function CreateTeamView({
   function validateBasics(): Record<string, string> {
     const nextErrors: Record<string, string> = {};
     if (!draft.name.trim()) nextErrors.name = "团队名称不能为空";
+    if (draft.description.trim().length > 280) {
+      nextErrors.description = "团队说明不能超过 280 个字符";
+    }
     const slug = draft.slug.trim();
     if (!slug) {
       nextErrors.slug = "团队标识不能为空";

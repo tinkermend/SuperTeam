@@ -124,7 +124,6 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
-
     await userEvent.click(screen.getByRole("button", { name: "下一步: 确认并创建" }));
     await expect.element(screen.getByText("请至少选择一位负责人")).toBeVisible();
 
@@ -209,6 +208,10 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队说明", exact: true }),
+      "负责应用安全架构评审与风险响应。",
+    );
     await userEvent.type(
       screen.getByRole("searchbox", { name: "搜索平台注册用户" }),
       "owner",
@@ -227,12 +230,13 @@ describe("CreateTeamView", () => {
       )
       .toBe(true);
     expect(createTeamPostBody(fetcher)).toEqual({
+      description: "负责应用安全架构评审与风险响应。",
       human_owner_user_ids: ["owner-user"],
       initial_digital_employee_ids: [],
       metadata: {
         display: {
           color_tone: "teal",
-          icon_key: "security",
+          icon_key: "role-application-security",
         },
       },
       name: "安全团队",
@@ -268,6 +272,10 @@ describe("CreateTeamView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队说明", exact: true }),
+      "负责应用安全架构评审与风险响应。",
+    );
     await userEvent.type(
       screen.getByRole("searchbox", { name: "搜索平台注册用户" }),
       "owner",
@@ -286,12 +294,13 @@ describe("CreateTeamView", () => {
     await userEvent.click(screen.getByRole("button", { name: "确认并创建" }));
 
     await expect.poll(() => createTeamPostBody(fetcher)).toEqual({
+      description: "负责应用安全架构评审与风险响应。",
       human_owner_user_ids: ["owner-user"],
       initial_digital_employee_ids: ["employee-1"],
       metadata: {
         display: {
           color_tone: "teal",
-          icon_key: "security",
+          icon_key: "role-application-security",
         },
       },
       name: "安全团队",

@@ -2675,6 +2675,7 @@ type CreateTeamMemberRoleRequestRequestedRole string
 
 // CreateTeamRequest defines model for CreateTeamRequest.
 type CreateTeamRequest struct {
+	Description               *string               `json:"description,omitempty"`
 	HumanOwnerUserIds         []openapi_types.UUID  `json:"human_owner_user_ids"`
 	InitialDigitalEmployeeIds *[]openapi_types.UUID `json:"initial_digital_employee_ids,omitempty"`
 	InitialMembers            *[]struct {
@@ -3126,6 +3127,7 @@ type DigitalEmployeePolicyDefaults struct {
 // DigitalEmployeeProjectLinkSummary defines model for DigitalEmployeeProjectLinkSummary.
 type DigitalEmployeeProjectLinkSummary struct {
 	ActiveTaskCount  int32              `json:"active_task_count"`
+	Description      *string            `json:"description,omitempty"`
 	IsMember         bool               `json:"is_member"`
 	LastActivityAt   *time.Time         `json:"last_activity_at,omitempty"`
 	Name             string             `json:"name"`
@@ -5445,6 +5447,7 @@ type TaskStatus string
 type Team struct {
 	Constitution      *map[string]interface{} `json:"constitution,omitempty"`
 	CreatedAt         *time.Time              `json:"created_at,omitempty"`
+	Description       *string                 `json:"description,omitempty"`
 	HumanOwnerUserIds *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
 	HumanOwners       *[]TeamHumanOwner       `json:"human_owners,omitempty"`
 	Id                openapi_types.UUID      `json:"id"`
@@ -5533,6 +5536,7 @@ type TeamListItem struct {
 	Constitution         *map[string]interface{} `json:"constitution,omitempty"`
 	CreatedAt            *time.Time              `json:"created_at,omitempty"`
 	CurrentRevision      *int32                  `json:"current_revision,omitempty"`
+	Description          *string                 `json:"description,omitempty"`
 	DigitalEmployeeCount int32                   `json:"digital_employee_count"`
 	GovernanceStatus     GovernanceSummaryStatus `json:"governance_status"`
 	HumanOwnerUserIds    *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
@@ -5664,6 +5668,7 @@ type UpdateTeamConstitutionRequest map[string]interface{}
 
 // UpdateTeamRequest defines model for UpdateTeamRequest.
 type UpdateTeamRequest struct {
+	Description       *string                 `json:"description,omitempty"`
 	HumanOwnerUserIds *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
 	Metadata          *map[string]interface{} `json:"metadata,omitempty"`
 	Name              string                  `json:"name"`

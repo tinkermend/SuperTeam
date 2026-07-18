@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/audit"
@@ -57,6 +58,10 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
+	description, err := normalizeTeamDescription(req.Description)
+	if err != nil {
+		return nil, err
+	}
 	if len(req.HumanOwnerUserIDs) == 0 {
 		return nil, fmt.Errorf("%w: human_owner_user_ids is required", ErrInvalidInput)
 	}
@@ -89,6 +94,7 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 		ActorUserID:               req.ActorUserID,
 		Slug:                      slug,
 		Name:                      name,
+		Description:               description,
 		Status:                    status,
 		OwnerUserIDs:              req.HumanOwnerUserIDs,
 		InitialMembers:            initialMembers,
@@ -198,6 +204,14 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
+	var description string
+	if req.Description != nil {
+		var err error
+		description, err = normalizeTeamDescription(*req.Description)
+		if err != nil {
+			return nil, err
+		}
+	}
 	humanOwnerUserIDs := req.HumanOwnerUserIDs
 	var metadata map[string]any
 	if req.Metadata != nil {
@@ -207,7 +221,7 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 			return nil, err
 		}
 	}
-	if req.HumanOwnerUserIDs == nil || req.Metadata == nil {
+	if req.HumanOwnerUserIDs == nil || req.Metadata == nil || req.Description == nil {
 		existing, err := s.repository.GetTeam(ctx, req.TenantID, req.TeamID)
 		if err != nil {
 			return nil, fmt.Errorf("get team: %w", err)
@@ -218,12 +232,16 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 		if req.Metadata == nil {
 			metadata = cloneMap(existing.Metadata)
 		}
+		if req.Description == nil {
+			description = existing.Description
+		}
 	}
 	record, err := s.repository.UpdateTeam(ctx, UpdateTeamParams{
 		TenantID:          req.TenantID,
 		TeamID:            req.TeamID,
 		Slug:              slug,
 		Name:              name,
+		Description:       description,
 		HumanOwnerUserIDs: humanOwnerUserIDs,
 		Metadata:          metadata,
 	})
@@ -632,6 +650,7 @@ func teamFromRecord(record TeamRecord) *Team {
 		TenantID:          record.TenantID,
 		Slug:              record.Slug,
 		Name:              record.Name,
+		Description:       record.Description,
 		Status:            record.Status,
 		HumanOwnerUserIDs: record.HumanOwnerUserIDs,
 		HumanOwners:       record.HumanOwners,
@@ -734,6 +753,14 @@ func normalizeTeamMetadata(metadata map[string]any) (map[string]any, error) {
 		display[key] = strings.TrimSpace(text)
 	}
 	return cloned, nil
+}
+
+func normalizeTeamDescription(value string) (string, error) {
+	description := strings.TrimSpace(value)
+	if utf8.RuneCountInString(description) > MaxTeamDescriptionLength {
+		return "", fmt.Errorf("%w: description must be at most %d characters", ErrInvalidInput, MaxTeamDescriptionLength)
+	}
+	return description, nil
 }
 
 func cloneUserAvatarConfig(avatar *UserAvatarConfig) *UserAvatarConfig {

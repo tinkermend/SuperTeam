@@ -31,6 +31,7 @@ export type Team = {
   tenant_id: string;
   slug: string;
   name: string;
+  description?: string;
   status: TeamStatus;
   human_owner_user_ids?: string[];
   human_owners?: TeamHumanOwner[];
@@ -126,6 +127,7 @@ export type TeamAuditEvent = {
 export type CreateTeamInput = {
   slug: string;
   name: string;
+  description?: string;
   human_owner_user_ids: string[];
   initial_members?: InitialTeamMemberInput[];
   initial_digital_employee_ids?: string[];
@@ -154,6 +156,7 @@ export type ListTeamAuditEventsFilters = {
 export type UpdateTeamInput = {
   slug: string;
   name: string;
+  description?: string;
   human_owner_user_ids?: string[];
   metadata?: Record<string, unknown>;
 };

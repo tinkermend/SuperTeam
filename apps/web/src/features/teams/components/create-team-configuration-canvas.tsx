@@ -25,6 +25,7 @@ import { TeamIconTile } from "@/components/superteam/team-icon-tile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
 import type { UserSummary } from "@/lib/api/auth";
@@ -136,6 +137,10 @@ export function CreateTeamConfigurationCanvas({
     });
   }
 
+  function updateDescription(description: string) {
+    onChange({ ...draft, description });
+  }
+
   function updateIcon(iconKey: string) {
     onChange({
       ...draft,
@@ -233,6 +238,29 @@ export function CreateTeamConfigurationCanvas({
                 <span className="text-xs text-destructive">{errors.slug}</span>
               ) : (
                 <span className="text-[11px] text-v3-ink-3">默认按名称生成，可手动修改。</span>
+              )}
+            </div>
+
+            <div className="grid gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="team-description">团队说明</Label>
+                <span className="text-[11px] tabular-nums text-v3-ink-3">
+                  {draft.description.length}/280
+                </span>
+              </div>
+              <Textarea
+                className="min-h-20 resize-y bg-v3-card/90 text-sm"
+                id="team-description"
+                maxLength={280}
+                onChange={(event) => updateDescription(event.target.value)}
+                placeholder="简要说明团队负责的领域、服务对象或协作边界。"
+                rows={3}
+                value={draft.description}
+              />
+              {errors.description ? (
+                <span className="text-xs text-destructive">{errors.description}</span>
+              ) : (
+                <span className="text-[11px] text-v3-ink-3">用于团队目录展示，并可通过接口维护。</span>
               )}
             </div>
 

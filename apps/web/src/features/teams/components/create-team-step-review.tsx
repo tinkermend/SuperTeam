@@ -17,6 +17,7 @@ export function CreateTeamStepReview({
 }) {
   const previewName = draft.name.trim() || "未命名团队";
   const previewSlug = draft.slug.trim() || "team-slug";
+  const previewDescription = draft.description.trim();
 
   return (
     <div className="flex flex-col gap-5 lg:mx-auto lg:w-full lg:max-w-3xl">
@@ -35,6 +36,9 @@ export function CreateTeamStepReview({
               </div>
             </div>
           </div>
+          <p className="mt-3 line-clamp-2 max-w-2xl text-sm leading-5 text-white/85">
+            {previewDescription || "暂未填写团队说明"}
+          </p>
           <div className="mt-4 flex gap-8 border-t border-white/20 pt-3">
             <PreviewStat label="负责人" value={draft.owners.length} />
             <PreviewStat label="数字员工" value={draft.initial_digital_employees.length} />

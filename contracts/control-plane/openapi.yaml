@@ -9148,6 +9148,9 @@ components:
           type: string
         name:
           type: string
+        description:
+          type: string
+          maxLength: 280
         status:
           $ref: "#/components/schemas/TeamStatus"
         human_owner_user_ids:
@@ -9699,6 +9702,9 @@ components:
           maxLength: 64
         name:
           type: string
+        description:
+          type: string
+          maxLength: 280
         status:
           $ref: "#/components/schemas/TeamStatus"
         human_owner_user_ids:
@@ -9743,6 +9749,9 @@ components:
           maxLength: 64
         name:
           type: string
+        description:
+          type: string
+          maxLength: 280
         human_owner_user_ids:
           type: array
           items:
@@ -10921,6 +10930,9 @@ components:
           format: uuid
         name:
           type: string
+        description:
+          type: string
+          maxLength: 280
         status:
           type: string
         is_member:

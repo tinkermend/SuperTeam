@@ -1,9 +1,10 @@
 -- name: CreateTenantTeam :one
-INSERT INTO tenant_teams (tenant_id, slug, name, status, human_owner_user_ids, metadata)
+INSERT INTO tenant_teams (tenant_id, slug, name, description, status, human_owner_user_ids, metadata)
 VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('slug')::varchar,
     sqlc.arg('name')::varchar,
+    sqlc.arg('description')::varchar,
     sqlc.arg('status')::varchar,
     sqlc.arg('human_owner_user_ids')::uuid[],
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
@@ -163,6 +164,7 @@ UPDATE tenant_teams
 SET
   slug = sqlc.arg('slug')::varchar,
   name = sqlc.arg('name')::varchar,
+  description = sqlc.arg('description')::varchar,
   human_owner_user_ids = COALESCE(sqlc.arg('human_owner_user_ids')::uuid[], human_owner_user_ids),
   metadata = COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
   updated_at = NOW()
@@ -376,4 +378,3 @@ WHERE id = sqlc.arg('id')::uuid
   AND status = 'pending'
   AND sqlc.arg('status')::varchar IN ('approved', 'rejected')
 RETURNING *;
-

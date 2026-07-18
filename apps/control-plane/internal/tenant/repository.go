@@ -33,6 +33,7 @@ type CreateTeamParams struct {
 	TenantID          uuid.UUID
 	Slug              string
 	Name              string
+	Description       string
 	Status            TeamStatus
 	HumanOwnerUserIDs []uuid.UUID
 	Metadata          map[string]any
@@ -43,6 +44,7 @@ type CreateTeamWithInitialMembersParams struct {
 	ActorUserID               uuid.UUID
 	Slug                      string
 	Name                      string
+	Description               string
 	Status                    TeamStatus
 	OwnerUserIDs              []uuid.UUID
 	InitialMembers            []InitialTeamMemberInput
@@ -66,6 +68,7 @@ type UpdateTeamParams struct {
 	TeamID            uuid.UUID
 	Slug              string
 	Name              string
+	Description       string
 	HumanOwnerUserIDs []uuid.UUID
 	Metadata          map[string]any
 }

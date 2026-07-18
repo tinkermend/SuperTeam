@@ -52,7 +52,10 @@ const (
 	TeamRoleViewer   = "viewer"
 )
 
-const MaxDigitalEmployeesPerTeam = 10
+const (
+	MaxDigitalEmployeesPerTeam = 10
+	MaxTeamDescriptionLength   = 280
+)
 
 type TeamMemberRoleRequestStatus string
 
@@ -73,6 +76,7 @@ type Team struct {
 	TenantID          uuid.UUID
 	Slug              string
 	Name              string
+	Description       string
 	Status            TeamStatus
 	HumanOwnerUserIDs []uuid.UUID
 	HumanOwners       []TeamHumanOwner
@@ -155,6 +159,7 @@ type CreateTeamRequest struct {
 	ActorUserID               uuid.UUID
 	Slug                      string
 	Name                      string
+	Description               string
 	Status                    TeamStatus
 	HumanOwnerUserIDs         []uuid.UUID
 	InitialMembers            []InitialTeamMemberInput
@@ -181,6 +186,7 @@ type UpdateTeamRequest struct {
 	TeamID            uuid.UUID
 	Name              string
 	Slug              string
+	Description       *string
 	HumanOwnerUserIDs []uuid.UUID
 	Metadata          map[string]any
 }

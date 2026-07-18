@@ -2859,6 +2859,8 @@ type TenantTeam struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	HumanOwnerUserIds []uuid.UUID        `json:"human_owner_user_ids"`
 	Constitution      []byte             `json:"constitution"`
+	// 团队说明，描述职责、服务对象或协作边界，最长 280 字符
+	Description string `json:"description"`
 }
 
 // 团队高权限角色变更申请表

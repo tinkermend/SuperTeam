@@ -1,7 +1,8 @@
-import { Trash2, UsersRound } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "@tanstack/react-router";
-import { IconTile, StatusPill, V3Button, V3Tabs } from "@/components/superteam";
+import { TeamIconTile, type TeamDisplayMetadata } from "@/components/superteam/team-icon-tile";
+import { StatusPill, V3Button, V3Tabs } from "@/components/superteam";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,9 +54,10 @@ export function TeamDetailLayout({
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-4 rounded-v3-card bg-v3-card p-5 shadow-v3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <IconTile tone="info" size="lg">
-            <UsersRound />
-          </IconTile>
+          <TeamIconTile
+            className="size-14 rounded-[18px]"
+            metadata={(team.metadata ?? {}) as TeamDisplayMetadata}
+          />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-[28px] font-extrabold tracking-tight text-v3-ink">
