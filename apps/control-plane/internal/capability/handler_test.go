@@ -846,6 +846,9 @@ func TestHandlerPutProjectMCPBindingsRejectsMalformedBody(t *testing.T) {
 	}{
 		{name: "invalid json", body: `{"items":`},
 		{name: "invalid server id", body: `{"items":[{"mcp_server_id":"not-a-uuid"}]}`},
+		// 键名手滑不得被宽容为清空(残债交接 §3):缺 items 必须 400。
+		{name: "missing items key", body: `{"bindings":[]}`},
+		{name: "empty object", body: `{}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

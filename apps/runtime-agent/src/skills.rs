@@ -269,13 +269,22 @@ fn normalize_zip_path(entry_name: &str, root_prefix: &str) -> Result<PathBuf> {
 fn common_root_prefix(entry_names: &[String]) -> String {
     let mut root = "";
     for name in entry_names {
-        let parts: Vec<&str> = name.trim_end_matches('/').splitn(2, '/').collect();
-        if parts.len() < 2 {
+        let trimmed = name.trim_end_matches('/');
+        if trimmed.is_empty() {
+            continue;
+        }
+        let is_dir_entry = name.ends_with('/');
+        let mut parts = trimmed.splitn(2, '/');
+        let first = parts.next().unwrap_or_default();
+        if parts.next().is_none() && !is_dir_entry {
+            // 顶层裸文件(平铺 zip,如 SKILL.md 直接在根):没有公共根可剥。
             return String::new();
         }
+        // 根目录自身的显式条目("root/")不否决公共根——此前它会让判定直接
+        // 放弃,导致带目录条目的归档整层嵌套落盘(残债交接 §4)。
         if root.is_empty() {
-            root = parts[0];
-        } else if root != parts[0] {
+            root = first;
+        } else if root != first {
             return String::new();
         }
     }
@@ -553,6 +562,28 @@ mod tests {
 
         let result = normalize_zip_path("diagnose/scripts/run.sh", "diagnose/").unwrap();
         assert_eq!(result, PathBuf::from("scripts/run.sh"));
+    }
+
+    #[test]
+    fn common_root_prefix_survives_explicit_directory_entries() {
+        // 残债交接 §4:带显式目录条目的归档(macOS zip 常见)此前不剥根。
+        let names = vec![
+            "probe/".to_string(),
+            "probe/SKILL.md".to_string(),
+            "probe/scripts/".to_string(),
+            "probe/scripts/run.sh".to_string(),
+        ];
+        assert_eq!(common_root_prefix(&names), "probe/");
+    }
+
+    #[test]
+    fn common_root_prefix_flat_and_multi_root_archives_do_not_strip() {
+        // 平铺 zip:顶层裸文件,不剥。
+        let flat = vec!["SKILL.md".to_string(), "scripts/run.sh".to_string()];
+        assert_eq!(common_root_prefix(&flat), "");
+        // 多根:不剥。
+        let multi = vec!["a/SKILL.md".to_string(), "b/x.md".to_string()];
+        assert_eq!(common_root_prefix(&multi), "");
     }
 
     #[test]

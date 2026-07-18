@@ -3081,36 +3081,69 @@ async fn drain_provider_events(
     // transcript pointer land in the same call.
     finalize_raw_log(&raw_sink, writeback.as_ref()).await;
     let mut run_succeeded = false;
-    if let (Some(writeback), Some(mut completion)) =
-        (&writeback, terminal_writeback.finish_successful_stream())
-    {
-        let has_summary = completion
-            .summary
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|value| !value.is_empty());
-        let fallback_text = fallback_text_summary.trim();
-        if !has_summary && !fallback_text.is_empty() {
-            completion.summary = Some(fallback_text.to_string());
+    let stream_failed = terminal_writeback.failed;
+    match terminal_writeback.finish_successful_stream() {
+        Some(mut completion) => {
+            if let Some(writeback) = &writeback {
+                let has_summary = completion
+                    .summary
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|value| !value.is_empty());
+                let fallback_text = fallback_text_summary.trim();
+                if !has_summary && !fallback_text.is_empty() {
+                    completion.summary = Some(fallback_text.to_string());
+                }
+                writeback
+                    .record_attestation(
+                        &spec,
+                        "provider_terminal",
+                        "succeeded",
+                        completion.provider_session_id.as_deref(),
+                        Some(
+                            provider_started_at
+                                .elapsed()
+                                .as_millis()
+                                .min(i64::MAX as u128) as i64,
+                        ),
+                    )
+                    .await;
+                writeback
+                    .complete(completion.summary, completion.provider_session_id)
+                    .await?;
+                run_succeeded = true;
+            }
         }
-        writeback
-            .record_attestation(
-                &spec,
-                "provider_terminal",
-                "succeeded",
-                completion.provider_session_id.as_deref(),
-                Some(
-                    provider_started_at
-                        .elapsed()
-                        .as_millis()
-                        .min(i64::MAX as u128) as i64,
-                ),
-            )
-            .await;
-        writeback
-            .complete(completion.summary, completion.provider_session_id)
-            .await?;
-        run_succeeded = true;
+        // TurnError 路径(stream_failed)已在事件循环内完成 Fail 回写;这里只
+        // 处理"流结束却从未出现 TurnCompleted/TurnError"的异常早退——provider
+        // exit 0 零输出、输出格式漂移被解析层全量丢弃等。不在此收尾,run 将
+        // 永滞 dispatching 且无任何回写,只能等 stale reap(残债交接 §1,
+        // GATE 三次现场复现)。取消路径除外:cancel_run 已把 run 置终态。
+        None if !stream_failed => {
+            if !run_is_cancelled(&runs, &run_id).await {
+                let message = "provider exited without a terminal event".to_string();
+                let _ = runs.finish_failed(&run_id, message.clone()).await;
+                if let Some(writeback) = &writeback {
+                    writeback
+                        .record_attestation(
+                            &spec,
+                            "provider_terminal",
+                            "failed",
+                            latest_provider_session_id.as_deref(),
+                            Some(
+                                provider_started_at
+                                    .elapsed()
+                                    .as_millis()
+                                    .min(i64::MAX as u128)
+                                    as i64,
+                            ),
+                        )
+                        .await;
+                    let _ = writeback.fail(message).await;
+                }
+            }
+        }
+        None => {}
     }
     // 终态清理(spec §5):在 artifacts/attestation 采集与终态回写全部落地之后
     // 执行,绝不影响 run 结果。早退 `?` 路径会跳过本钩子——遗留目录由后台清扫

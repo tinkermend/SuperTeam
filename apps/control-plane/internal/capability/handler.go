@@ -602,6 +602,12 @@ func (h *HTTPHandler) PutProjectMCPBindings(w http.ResponseWriter, r *http.Reque
 		writeHandlerError(w, fmt.Errorf("%w: invalid json body", ErrInvalidInput))
 		return
 	}
+	// 声明式 PUT 里"清空"必须是显式的 []:字段缺失(nil)多半是键名手滑,
+	// 宽容成清空会静默抹掉全部绑定(残债交接 §3),按契约 required 拒绝。
+	if body.Items == nil {
+		writeHandlerError(w, fmt.Errorf("%w: items is required (use [] to clear all bindings)", ErrInvalidInput))
+		return
+	}
 	items := make([]ProjectMCPBindingInput, 0, len(body.Items))
 	for _, item := range body.Items {
 		serverID, err := uuid.Parse(item.MCPServerID)

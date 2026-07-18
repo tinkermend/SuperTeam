@@ -1387,6 +1387,56 @@ printf '%s\n' '{"type":"result","result":"provider completed before attestation 
 }
 
 #[tokio::test]
+async fn zero_event_provider_exit_fails_run_instead_of_hanging() {
+    // 残债交接 §1:provider exit 0 且零可解析输出(格式漂移被解析层全量丢弃、
+    // 包装脚本吞输出等)曾使 run 永滞 dispatching 且无任何回写。流结束而无
+    // 终局事件必须按失败收尾。
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-zero-events",
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        RUNTIME_NODE_EXTERNAL_ID,
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let command = session_command_in_home(
+        &home,
+        "cmd-zero-events",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("run something"),
+        None,
+    );
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Failed).await;
+    assert!(
+        snapshot
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("without a terminal event")),
+        "expected zero-event early-exit diagnosis, got {:?}",
+        snapshot.error
+    );
+    let command_fail = wait_for_writeback(capture.fail.clone()).await;
+    assert_eq!(command_fail.command_id, "cmd-zero-events");
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
 async fn provider_failure_after_result_fails_project_task_without_prior_completion() {
     let temp = TempDir::new().expect("tempdir");
     let fake_claude = make_script(
