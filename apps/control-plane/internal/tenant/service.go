@@ -285,6 +285,50 @@ func (s *Service) DeleteTeam(ctx context.Context, req DeleteTeamRequest) error {
 	return nil
 }
 
+// ListPendingDeleteTeams 待确认删除队列(管理员)。
+func (s *Service) ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	records, err := s.repository.ListPendingDeleteTeams(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list pending delete teams: %w", err)
+	}
+	return records, nil
+}
+
+// ListStalePendingDeleteTeams 滞留催办扫描(跨租户,供周期提醒任务)。
+func (s *Service) ListStalePendingDeleteTeams(ctx context.Context, staleBefore time.Time) ([]PendingDeleteTeamRecord, error) {
+	records, err := s.repository.ListStalePendingDeleteTeams(ctx, staleBefore)
+	if err != nil {
+		return nil, fmt.Errorf("list stale pending delete teams: %w", err)
+	}
+	return records, nil
+}
+
+// RestorePendingDeleteTeam 恢复待确认删除的团队;员工归属不回填。
+func (s *Service) RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (*Team, error) {
+	if tenantID == uuid.Nil || teamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and team_id are required", ErrInvalidInput)
+	}
+	record, err := s.repository.RestorePendingDeleteTeam(ctx, tenantID, teamID, actorUserID)
+	if err != nil {
+		return nil, fmt.Errorf("restore pending delete team: %w", err)
+	}
+	return teamFromRecord(record), nil
+}
+
+// ConfirmTeamDelete 确认物理删除待确认态团队。
+func (s *Service) ConfirmTeamDelete(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error {
+	if tenantID == uuid.Nil || teamID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id and team_id are required", ErrInvalidInput)
+	}
+	if _, err := s.repository.ConfirmTeamDelete(ctx, tenantID, teamID, actorUserID); err != nil {
+		return fmt.Errorf("confirm team delete: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

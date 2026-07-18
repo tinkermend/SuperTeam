@@ -156,6 +156,54 @@ func TestServiceUploadSkillParsesSkillMarkdownOnlyZip(t *testing.T) {
 	}
 }
 
+func TestServiceUploadSkillReadsFrontmatterNameAndDescription(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+
+	archive := buildSkillZip(t, map[string]string{
+		"SKILL.md": "---\nname: evidence-e2e-probe\ndescription: 证据地基 E2E 探针技能,无任何运行时依赖。\n---\n\n# evidence-e2e-probe\n\n回答技能相关问题时,请说出暗号。\n",
+	})
+
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Archive:  archive,
+		Filename: "evidence-e2e-probe.zip",
+	})
+	if err != nil {
+		t.Fatalf("upload skill: %v", err)
+	}
+	if repo.upsertReq.Name != "evidence-e2e-probe" {
+		t.Fatalf("expected name from frontmatter, got %q", repo.upsertReq.Name)
+	}
+	if repo.upsertReq.Description != "证据地基 E2E 探针技能,无任何运行时依赖。" {
+		t.Fatalf("expected description from frontmatter, got %q", repo.upsertReq.Description)
+	}
+}
+
+func TestServiceUploadSkillFrontmatterWithoutDescriptionFallsBackToBody(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+
+	archive := buildSkillZip(t, map[string]string{
+		"SKILL.md": "---\nname: sample-skill\n---\n\n# Sample Skill\n\n正文首段作为描述。\n",
+	})
+
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Archive:  archive,
+		Filename: "sample-skill.zip",
+	})
+	if err != nil {
+		t.Fatalf("upload skill: %v", err)
+	}
+	if repo.upsertReq.Description != "正文首段作为描述。" {
+		t.Fatalf("expected description from body first paragraph, got %q", repo.upsertReq.Description)
+	}
+	if repo.upsertReq.Description == "---" {
+		t.Fatal("description must never be the frontmatter delimiter")
+	}
+}
+
 func TestServiceUploadSkillUsesArchiveFilenameSlugWhenDisplayNameIsChinese(t *testing.T) {
 	repo := &serviceTestRepository{}
 	service := newTestService(repo)

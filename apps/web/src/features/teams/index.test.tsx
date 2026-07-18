@@ -777,6 +777,84 @@ function hasRequest(fetcher: typeof fetch, pathname: string, method: string) {
 }
 
 describe("TeamsView", () => {
+  it("lists pending-delete teams with restore and confirm actions", async () => {
+    const pendingTeam = {
+      id: "team-pending-1",
+      tenant_id: "tenant-1",
+      slug: "pending-ops",
+      name: "待确认团队",
+      status: "pending_delete",
+      deleted_at: "2026-07-10T10:00:00Z",
+      delete_requested_by: "user-1",
+    };
+    const fetcher = createTeamsFetcher({
+      extraRoutes: {
+        "GET /api/v1/teams/pending-deletes": [pendingTeam],
+        "POST /api/v1/teams/team-pending-1/restore": { ...pendingTeam, status: "active" },
+        "POST /api/v1/teams/team-pending-1/confirm-delete": {},
+      },
+    });
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "待确认删除" })).toBeVisible();
+    await expect.element(screen.getByText("待确认团队")).toBeVisible();
+
+    // 恢复：直接调 restore 端点。
+    await screen.getByRole("button", { name: "恢复" }).click();
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-pending-1/restore",
+      expect.objectContaining({ credentials: "include", method: "POST" }),
+    );
+  });
+
+  it("physically deletes a pending team only through the danger confirm dialog", async () => {
+    const pendingTeam = {
+      id: "team-pending-2",
+      tenant_id: "tenant-1",
+      slug: "pending-lab",
+      name: "待彻底删除团队",
+      status: "pending_delete",
+      deleted_at: "2026-07-01T10:00:00Z",
+    };
+    const fetcher = createTeamsFetcher({
+      extraRoutes: {
+        "GET /api/v1/teams/pending-deletes": [pendingTeam],
+        "POST /api/v1/teams/team-pending-2/confirm-delete": {},
+      },
+    });
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "待确认删除" })).toBeVisible();
+    await screen.getByRole("button", { name: "确认删除" }).click();
+    await expect.element(screen.getByRole("heading", { name: "确认物理删除团队" })).toBeVisible();
+    // 未点弹窗确认前不得调用物理删除端点。
+    expect(fetcher).not.toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-pending-2/confirm-delete",
+      expect.anything(),
+    );
+    await screen.getByRole("button", { name: "彻底删除" }).click();
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-pending-2/confirm-delete",
+      expect.objectContaining({ credentials: "include", method: "POST" }),
+    );
+  });
+
+  it("hides the pending-delete section when the queue is empty", async () => {
+    const fetcher = createTeamsFetcher({
+      extraRoutes: { "GET /api/v1/teams/pending-deletes": [] },
+    });
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "团队管理" })).toBeVisible();
+    expect(screen.container.querySelector("[data-pending-delete-teams]")).toBeNull();
+  });
+
   it("renders team card grid with summary stats", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(

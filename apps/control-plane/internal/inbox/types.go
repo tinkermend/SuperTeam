@@ -38,6 +38,8 @@ const (
 	ItemTypeApproval        ItemType = "approval"
 	ItemTypeProjectDecision ItemType = "project_decision"
 	ItemTypeTeamLending     ItemType = "team_lending"
+	// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒管理员处理)。
+	ItemTypeTeamPendingDelete ItemType = "team_pending_delete"
 )
 
 type SourceType string
@@ -46,6 +48,7 @@ const (
 	SourceTypeApprovalRequest        SourceType = "approval_request"
 	SourceTypeProjectDecisionRequest SourceType = "project_decision_request"
 	SourceTypeTeamLendingRequest     SourceType = "team_lending_request"
+	SourceTypeTeamPendingDelete      SourceType = "team_pending_delete"
 )
 
 type Action struct {
