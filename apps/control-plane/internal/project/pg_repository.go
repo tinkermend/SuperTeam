@@ -1134,7 +1134,11 @@ func (r *PgRepository) ListPlanRevisions(ctx context.Context, req ListPlanRevisi
 }
 
 func (r *PgRepository) ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error) {
-	rows, err := r.q.ListProjectPlanRevisionsForDemand(ctx, queries.ListProjectPlanRevisionsForDemandParams{
+	return listPlanRevisionsForDemandWithQueries(ctx, r.q, tenantID, projectID, demandID)
+}
+
+func listPlanRevisionsForDemandWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error) {
+	rows, err := q.ListProjectPlanRevisionsForDemand(ctx, queries.ListProjectPlanRevisionsForDemandParams{
 		TenantID:  tenantID,
 		ProjectID: projectID,
 		DemandID:  demandID,
@@ -4878,7 +4882,7 @@ func (r *PgRepository) recomputeProjectDemandStatusWithQueries(ctx context.Conte
 		if counts.Failed > 0 {
 			target = ProjectDemandStatusFailed
 		} else {
-			target, err = r.gatedCompletionStatus(ctx, tenantID, projectID, demandID)
+			target, err = gatedCompletionStatusWithQueries(ctx, q, tenantID, projectID, demandID)
 			if err != nil {
 				return err
 			}
@@ -4887,21 +4891,29 @@ func (r *PgRepository) recomputeProjectDemandStatusWithQueries(ctx context.Conte
 	return r.advanceProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID, target)
 }
 
-// gatedCompletionStatus is the acceptance-criteria convergence gate: a demand
-// whose tasks have all finished cleanly completes immediately UNLESS its
-// current (open) plan revision has a snapshotted blocking acceptance
-// criterion that still lacks a satisfied verdict, in which case it holds at
-// acceptance_pending for human sign-off instead. Demands with no open plan
-// revision — legacy demands that predate the acceptance-criteria snapshot
-// rollout, or any demand whose CurrentEffectivePlanRevisionID resolves to
-// uuid.Nil — complete exactly as they did before the gate existed; a plan
-// revision with zero snapshotted criteria (e.g. the planner emitted none)
-// resolves to zero unsatisfied and also completes. See
+// gatedCompletionStatusWithQueries is the acceptance-criteria convergence
+// gate: a demand whose tasks have all finished cleanly completes immediately
+// UNLESS its current (open) plan revision has a snapshotted blocking
+// acceptance criterion that still lacks a satisfied verdict, in which case it
+// holds at acceptance_pending for human sign-off instead. Demands with no
+// open plan revision — legacy demands that predate the acceptance-criteria
+// snapshot rollout, or any demand whose CurrentEffectivePlanRevisionID
+// resolves to uuid.Nil — complete exactly as they did before the gate
+// existed; a plan revision with zero snapshotted criteria (e.g. the planner
+// emitted none) resolves to zero unsatisfied and also completes. See
 // TestRecomputeLegacyDemandWithoutSnapshotCompletes,
 // TestRecomputeHoldsAtAcceptancePendingWhenBlockingUnsigned and
 // TestRecomputeCompletesWhenAllBlockingSatisfied.
-func (r *PgRepository) gatedCompletionStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (ProjectDemandStatus, error) {
-	revisions, err := r.ListPlanRevisionsForDemand(ctx, tenantID, projectID, demandID)
+//
+// It reads revisions/criteria/verdicts through the CALLER'S queries handle —
+// load-bearing since the P1.1 placeholder-race fix: the completion writeback
+// commits the review_gate `pending` placeholder in its own transaction and
+// recomputes in that same transaction, so gate reads through the shared pool
+// would not see the not-yet-committed placeholder and would default-release —
+// exactly the race the placeholder exists to close (caught by the live E2E,
+// not by the memory-fake unit tests, which have no transaction isolation).
+func gatedCompletionStatusWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, demandID uuid.UUID) (ProjectDemandStatus, error) {
+	revisions, err := listPlanRevisionsForDemandWithQueries(ctx, q, tenantID, projectID, demandID)
 	if err != nil {
 		return "", err
 	}
@@ -4909,7 +4921,7 @@ func (r *PgRepository) gatedCompletionStatus(ctx context.Context, tenantID, proj
 	if revisionID == uuid.Nil {
 		return ProjectDemandStatusCompleted, nil
 	}
-	unsatisfied, err := r.CountUnsatisfiedBlockingCriteria(ctx, tenantID, demandID, revisionID)
+	unsatisfied, err := countUnsatisfiedBlockingCriteriaWithQueries(ctx, q, tenantID, demandID, revisionID)
 	if err != nil {
 		return "", err
 	}
@@ -4925,14 +4937,18 @@ func (r *PgRepository) gatedCompletionStatus(ctx context.Context, tenantID, proj
 // See ResolveUnsatisfiedBlockingCriteria for the human-precedence resolution
 // rule applied to determine each criterion's effective verdict.
 func (r *PgRepository) CountUnsatisfiedBlockingCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) (int, error) {
-	criteria, err := r.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, planRevisionID)
+	return countUnsatisfiedBlockingCriteriaWithQueries(ctx, r.q, tenantID, demandID, planRevisionID)
+}
+
+func countUnsatisfiedBlockingCriteriaWithQueries(ctx context.Context, q *queries.Queries, tenantID, demandID, planRevisionID uuid.UUID) (int, error) {
+	criteria, err := listDemandAcceptanceCriteriaWithQueries(ctx, q, tenantID, demandID, planRevisionID)
 	if err != nil {
 		return 0, err
 	}
 	if len(criteria) == 0 {
 		return 0, nil
 	}
-	verdicts, err := r.ListDemandCriterionVerdicts(ctx, tenantID, demandID, planRevisionID)
+	verdicts, err := listDemandCriterionVerdictsWithQueries(ctx, q, tenantID, demandID, planRevisionID)
 	if err != nil {
 		return 0, err
 	}
@@ -5570,7 +5586,11 @@ func (r *PgRepository) CreateDemandAcceptanceCriteria(ctx context.Context, reqs 
 }
 
 func (r *PgRepository) ListDemandAcceptanceCriteria(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error) {
-	rows, err := r.q.ListDemandAcceptanceCriteria(ctx, queries.ListDemandAcceptanceCriteriaParams{
+	return listDemandAcceptanceCriteriaWithQueries(ctx, r.q, tenantID, demandID, planRevisionID)
+}
+
+func listDemandAcceptanceCriteriaWithQueries(ctx context.Context, q *queries.Queries, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandAcceptanceCriterion, error) {
+	rows, err := q.ListDemandAcceptanceCriteria(ctx, queries.ListDemandAcceptanceCriteriaParams{
 		TenantID:       tenantID,
 		DemandID:       demandID,
 		PlanRevisionID: planRevisionID,
@@ -5722,7 +5742,11 @@ func (r *PgRepository) ListAdversarialJudgements(ctx context.Context, tenantID, 
 }
 
 func (r *PgRepository) ListDemandCriterionVerdicts(ctx context.Context, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
-	rows, err := r.q.ListDemandCriterionVerdicts(ctx, queries.ListDemandCriterionVerdictsParams{
+	return listDemandCriterionVerdictsWithQueries(ctx, r.q, tenantID, demandID, planRevisionID)
+}
+
+func listDemandCriterionVerdictsWithQueries(ctx context.Context, q *queries.Queries, tenantID, demandID, planRevisionID uuid.UUID) ([]DemandCriterionVerdict, error) {
+	rows, err := q.ListDemandCriterionVerdicts(ctx, queries.ListDemandCriterionVerdictsParams{
 		TenantID:       tenantID,
 		DemandID:       demandID,
 		PlanRevisionID: planRevisionID,
