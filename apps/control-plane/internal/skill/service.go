@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/storage"
+	"gopkg.in/yaml.v3"
 )
 
 type Repository interface {
@@ -466,8 +467,45 @@ func isIgnoredArchiveEntry(value string) bool {
 	return false
 }
 
+type skillMarkdownDoc struct {
+	FrontmatterName        string
+	FrontmatterDescription string
+	Body                   string
+}
+
+// parseSkillMarkdown 剥离 SKILL.md 顶部的 YAML frontmatter 并提取 name/description。
+// frontmatter 解析失败时仍剥离该块,保证兜底启发式不会把 `---` 当正文。
+func parseSkillMarkdown(content string) skillMarkdownDoc {
+	doc := skillMarkdownDoc{Body: content}
+	lines := strings.Split(strings.TrimPrefix(content, "\ufeff"), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return doc
+	}
+	for i := 1; i < len(lines); i++ {
+		marker := strings.TrimSpace(lines[i])
+		if marker != "---" && marker != "..." {
+			continue
+		}
+		doc.Body = strings.Join(lines[i+1:], "\n")
+		var meta struct {
+			Name        string `yaml:"name"`
+			Description string `yaml:"description"`
+		}
+		if err := yaml.Unmarshal([]byte(strings.Join(lines[1:i], "\n")), &meta); err == nil {
+			doc.FrontmatterName = strings.TrimSpace(meta.Name)
+			doc.FrontmatterDescription = strings.TrimSpace(meta.Description)
+		}
+		return doc
+	}
+	return doc
+}
+
 func skillNameFromMarkdown(content string) string {
-	for _, line := range strings.Split(content, "\n") {
+	doc := parseSkillMarkdown(content)
+	if doc.FrontmatterName != "" {
+		return doc.FrontmatterName
+	}
+	for _, line := range strings.Split(doc.Body, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "# ") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
@@ -477,7 +515,11 @@ func skillNameFromMarkdown(content string) string {
 }
 
 func firstParagraphFromMarkdown(content string) string {
-	for _, line := range strings.Split(content, "\n") {
+	doc := parseSkillMarkdown(content)
+	if doc.FrontmatterDescription != "" {
+		return doc.FrontmatterDescription
+	}
+	for _, line := range strings.Split(doc.Body, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
