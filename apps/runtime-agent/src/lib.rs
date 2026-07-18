@@ -17,6 +17,7 @@ pub mod runtime_auth;
 pub mod server;
 pub mod session;
 pub mod skills;
+pub mod skills_convergence;
 pub mod tools;
 pub mod workspace_cleanup;
 pub mod workspace_files;

@@ -132,7 +132,15 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	if err != nil {
 		return nil, fmt.Errorf("list runtime provider options: %w", err)
 	}
-	capabilityOptions := capabilityOptionsForCreate(employeeTypes)
+	registrySkills, err := s.repository.ListSkillCapabilityOptions(ctx, req.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list skill capability options: %w", err)
+	}
+	registryMCPServers, err := s.repository.ListMCPCapabilityOptions(ctx, req.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list mcp capability options: %w", err)
+	}
+	capabilityOptions := capabilityOptionsForCreate(employeeTypes, registrySkills, registryMCPServers)
 
 	return &CreateOptions{
 		TeamConfig:             teamConfigOption,
@@ -199,7 +207,9 @@ func createOptionChecks(
 		}
 	}
 
-	capabilityCount := len(capabilityOptions.Skills) + len(capabilityOptions.MCPServers)
+	availableSkillCount := countAvailableCapabilityOptions(capabilityOptions.Skills)
+	availableMCPCount := countAvailableCapabilityOptions(capabilityOptions.MCPServers)
+	capabilityCount := availableSkillCount + availableMCPCount
 
 	return []CreateOptionCheck{
 		{
@@ -218,7 +228,7 @@ func createOptionChecks(
 			Key:     "capability_policy",
 			Label:   "能力边界",
 			Status:  checkStatus(capabilityCount > 0 || len(capabilityOptions.ProviderTypes) > 0, false),
-			Message: fmt.Sprintf("技能 %d · MCP %d", len(capabilityOptions.Skills), len(capabilityOptions.MCPServers)),
+			Message: fmt.Sprintf("技能 %d · MCP %d", availableSkillCount, availableMCPCount),
 		},
 		{
 			Key:     "runtime_provider",
@@ -235,6 +245,16 @@ func runtimeProviderCreateOptionMessage(availableRuntimeCount, totalRuntimeCount
 		message = fmt.Sprintf("%d/%d 个 Provider 候选当前可用于调度；%d 个 Runtime 会话未激活", availableRuntimeCount, totalRuntimeCount, inactiveRuntimeSessionCount)
 	}
 	return message
+}
+
+func countAvailableCapabilityOptions(items []CapabilityOptionItem) int {
+	count := 0
+	for _, item := range items {
+		if item.Available {
+			count++
+		}
+	}
+	return count
 }
 
 func checkStatus(passed bool, warning bool) string {
@@ -263,12 +283,58 @@ func teamConfigCreateOption(teamConfig TeamConfigInput) (TeamConfigCreateOption,
 	}, nil
 }
 
-func capabilityOptionsForCreate(employeeTypes []EmployeeTypeDefinition) CapabilityOptions {
+// capabilityOptionsForCreate merges the tenant registry (the authoritative
+// candidate source) with employee-type template recommendations. Registry
+// entries are Available; template-recommended keys missing from the registry
+// are appended with Available=false so the console can explain instead of
+// silently hiding them.
+func capabilityOptionsForCreate(employeeTypes []EmployeeTypeDefinition, registrySkills, registryMCPServers []CapabilityRegistryOption) CapabilityOptions {
 	return CapabilityOptions{
 		ProviderTypes: supportedProviderTypes(),
-		Skills:        platformSkillOptions(employeeTypes),
-		MCPServers:    platformMCPServerOptions(employeeTypes),
+		Skills:        mergeCapabilityOptionItems(registrySkills, platformSkillOptions(employeeTypes)),
+		MCPServers:    mergeCapabilityOptionItems(registryMCPServers, platformMCPServerOptions(employeeTypes)),
 	}
+}
+
+func mergeCapabilityOptionItems(registry []CapabilityRegistryOption, recommendedKeys []string) []CapabilityOptionItem {
+	recommended := make(map[string]struct{}, len(recommendedKeys))
+	for _, key := range recommendedKeys {
+		recommended[key] = struct{}{}
+	}
+	items := make([]CapabilityOptionItem, 0, len(registry)+len(recommendedKeys))
+	seen := make(map[string]struct{}, len(registry))
+	for _, option := range registry {
+		id := option.ID
+		label := strings.TrimSpace(option.Label)
+		if label == "" {
+			label = option.Key
+		}
+		_, isRecommended := recommended[option.Key]
+		items = append(items, CapabilityOptionItem{
+			Key:         option.Key,
+			ID:          &id,
+			Label:       label,
+			Description: option.Description,
+			Recommended: isRecommended,
+			Available:   true,
+			RiskLevel:   option.RiskLevel,
+		})
+		seen[option.Key] = struct{}{}
+	}
+	for _, key := range recommendedKeys {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		items = append(items, CapabilityOptionItem{
+			Key:         key,
+			Label:       key,
+			Description: "模板推荐,注册表未上架",
+			Recommended: true,
+			Available:   false,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Key < items[j].Key })
+	return items
 }
 
 func stringListFromAnyPolicy(value any) []string {
@@ -429,7 +495,26 @@ func (s *Service) normalizeCreateDigitalEmployeeRequest(ctx context.Context, req
 	req.ProviderType = providerType
 	req.BudgetPolicy = budgetPolicy
 	req.Metadata = metadataWithAvatarAsset(req.Metadata, avatarAsset)
+	req.Skills = normalizeCapabilityKeys(req.Skills)
+	req.MCPServers = normalizeCapabilityKeys(req.MCPServers)
 	return req, definition, nil
+}
+
+func normalizeCapabilityKeys(keys []string) []string {
+	seen := make(map[string]struct{}, len(keys))
+	normalized := make([]string, 0, len(keys))
+	for _, key := range keys {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 // employeeTypeDefinitionByType resolves an employee_type string to its
@@ -564,6 +649,9 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 	if err != nil {
 		return DigitalEmployeeRecord{}, err
 	}
+	if err := bindInitialCapabilities(ctx, repository, record, req, teamConfig); err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
 	configInput := employeeConfigInputFromRecord(configRevision)
 	preview, err := s.previewEffectiveConfigWithRepository(ctx, repository, teamConfig, configInput)
 	if err != nil {
@@ -579,6 +667,73 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 		return DigitalEmployeeRecord{}, fmt.Errorf("mark digital employee ready: %w", err)
 	}
 	return record, nil
+}
+
+// bindInitialCapabilities persists the creation-time skill/MCP selections as
+// logical binding rows inside the create transaction. Keys already covered by
+// the team baseline are skipped silently (the employee inherits them); keys
+// missing from the tenant registry reject the whole creation with 400.
+func bindInitialCapabilities(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, teamConfig TeamConfigInput) error {
+	teamSkills := toStringSet(optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"))
+	teamMCPServers := toStringSet(optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"))
+
+	skillSlugs := withoutKeys(req.Skills, teamSkills)
+	if len(skillSlugs) > 0 {
+		resolved, err := repository.ResolveSkillIDsBySlugs(ctx, req.TenantID, skillSlugs)
+		if err != nil {
+			return fmt.Errorf("resolve skill slugs: %w", err)
+		}
+		skillIDs := make([]uuid.UUID, 0, len(skillSlugs))
+		for _, slug := range skillSlugs {
+			id, ok := resolved[slug]
+			if !ok {
+				return fmt.Errorf("%w: unknown skill slug %q", ErrInvalidInput, slug)
+			}
+			skillIDs = append(skillIDs, id)
+		}
+		if err := repository.BindSkillsToEmployee(ctx, req.TenantID, record.ID, skillIDs); err != nil {
+			return fmt.Errorf("bind initial skills: %w", err)
+		}
+	}
+
+	serverKeys := withoutKeys(req.MCPServers, teamMCPServers)
+	if len(serverKeys) > 0 {
+		resolved, err := repository.ResolveMCPServerIDsByKeys(ctx, req.TenantID, serverKeys)
+		if err != nil {
+			return fmt.Errorf("resolve mcp server keys: %w", err)
+		}
+		serverIDs := make([]uuid.UUID, 0, len(serverKeys))
+		for _, key := range serverKeys {
+			id, ok := resolved[key]
+			if !ok {
+				return fmt.Errorf("%w: unknown mcp server key %q", ErrInvalidInput, key)
+			}
+			serverIDs = append(serverIDs, id)
+		}
+		if err := repository.BindMCPServersToEmployee(ctx, req.TenantID, record.ID, serverIDs); err != nil {
+			return fmt.Errorf("bind initial mcp servers: %w", err)
+		}
+	}
+	return nil
+}
+
+func toStringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func withoutKeys(keys []string, excluded map[string]struct{}) []string {
+	filtered := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if _, ok := excluded[key]; ok {
+			continue
+		}
+		filtered = append(filtered, key)
+	}
+	return filtered
 }
 
 func (s *Service) createInitialEnvironmentVariables(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest) error {
@@ -668,8 +823,15 @@ func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition Emp
 	}
 }
 
+// initialCapabilitySelection composes the non-binding capability declaration
+// stored on the config revision. Skill and MCP logical bindings live in the
+// binding tables (see bindInitialCapabilities); template defaults for those
+// two keys are expressed as create-options recommendations, not silently
+// merged server-side.
 func initialCapabilitySelection(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
 	defaults := cloneMap(definition.CapabilityBindings)
+	delete(defaults, "skills")
+	delete(defaults, "mcp_servers")
 	return mergePolicyMaps(defaults, req.CapabilityBindings)
 }
 func mergePolicyMaps(base, override map[string]any) map[string]any {
@@ -680,12 +842,18 @@ func mergePolicyMaps(base, override map[string]any) map[string]any {
 	return merged
 }
 
+// normalizeCapabilityBindings keeps only the non-binding declaration keys.
+// skills/mcp_servers are always stripped: their authoritative source is the
+// binding tables (skill_agent_bindings / digital_employee_mcp_bindings_v2),
+// never the config revision JSON.
 func normalizeCapabilityBindings(input map[string]any) map[string]any {
 	bindings := cloneMap(input)
 	if bindings == nil {
 		bindings = map[string]any{}
 	}
-	for _, key := range []string{"skills", "mcp_servers", "external_capabilities", "environment_variable_refs"} {
+	delete(bindings, "skills")
+	delete(bindings, "mcp_servers")
+	for _, key := range []string{"external_capabilities", "environment_variable_refs"} {
 		if _, ok := bindings[key]; !ok {
 			bindings[key] = []any{}
 		}
@@ -915,6 +1083,9 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if status != ConfigRevisionStatusDraft {
 		return nil, fmt.Errorf("%w: invalid config revision status", ErrInvalidInput)
 	}
+	if err := rejectLegacyCapabilityBindingKeys(req.CapabilityBindings); err != nil {
+		return nil, err
+	}
 	if _, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID); err != nil {
 		return nil, fmt.Errorf("get digital employee: %w", err)
 	}
@@ -962,6 +1133,19 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 		return nil, fmt.Errorf("create digital employee config revision: %w", err)
 	}
 	return configRevisionFromRecord(record), nil
+}
+
+// rejectLegacyCapabilityBindingKeys blocks config revisions that still try to
+// declare skills/mcp_servers in capability_bindings. Empty arrays (inherited
+// residue from stripped revisions) are tolerated and silently dropped by
+// normalizeCapabilityBindings.
+func rejectLegacyCapabilityBindingKeys(bindings map[string]any) error {
+	for _, key := range []string{"skills", "mcp_servers"} {
+		if values := stringList(bindings[key]); len(values) > 0 {
+			return fmt.Errorf("%w: capability_bindings.%s is no longer supported; manage %s bindings via the dedicated binding endpoints", ErrInvalidInput, key, key)
+		}
+	}
+	return nil
 }
 
 func inheritedConfigMap(requested map[string]any, latest *EmployeeConfigInput, selectLatest func(EmployeeConfigInput) map[string]any) map[string]any {

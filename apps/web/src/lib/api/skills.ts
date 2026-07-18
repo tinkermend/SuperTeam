@@ -1,4 +1,4 @@
-import { ApiRequestError, type ApiClientOptions } from "./client";
+import { type ApiClientOptions } from "./client";
 import { buildApiUrl, parseJson, getJson, putJson } from "./client";
 
 export type SkillTeamBinding = {
@@ -78,35 +78,6 @@ export type InstallSkillInput = {
   target_scope: SkillInstallTargetScope;
   team_id?: string;
   digital_employee_id?: string;
-  timeout_sec?: number;
-};
-
-export type SkillInstallBlockedTarget = {
-  digital_employee_id?: string;
-  employee_name?: string;
-  provider_type?: string;
-  runtime_node_id?: string;
-  node_id?: string;
-  reason_code: string;
-  message: string;
-};
-
-export type SkillInstallation = {
-  id?: string;
-  tenant_id?: string;
-  skill_id?: string;
-  target_scope?: SkillInstallTargetScope;
-  team_id?: string;
-  digital_employee_id?: string;
-  employee_name?: string;
-  runtime_node_id?: string;
-  node_id?: string;
-  provider_type: "opencode" | "codex" | "claude-code";
-  installed_path: string;
-  archive_checksum_sha256?: string;
-  installed_by?: string;
-  installed_at?: string;
-  metadata?: Record<string, unknown>;
 };
 
 export type InstallSkillResult = {
@@ -114,35 +85,9 @@ export type InstallSkillResult = {
   target_scope: SkillInstallTargetScope;
   team_id?: string;
   digital_employee_id?: string;
-  installed_count: number;
-  installations: SkillInstallation[];
-  blocked_targets?: SkillInstallBlockedTarget[];
+  already_bound: boolean;
+  bound_at: string;
 };
-
-type InstallSkillErrorResponse = {
-  error?: unknown;
-  phase?: unknown;
-  message?: unknown;
-  blocked_targets?: unknown;
-};
-
-export class InstallSkillError extends ApiRequestError {
-  readonly code: string;
-  readonly phase?: string;
-  readonly blockedTargets: SkillInstallBlockedTarget[];
-
-  constructor(status: number, response: InstallSkillErrorResponse) {
-    const message = typeof response.message === "string" && response.message ? response.message : undefined;
-    super("install skill", status, message);
-    this.name = "InstallSkillError";
-    if (message) {
-      this.message = message;
-    }
-    this.code = typeof response.error === "string" && response.error ? response.error : "skill_install_failed";
-    this.phase = typeof response.phase === "string" && response.phase ? response.phase : undefined;
-    this.blockedTargets = parseBlockedTargets(response.blocked_targets);
-  }
-}
 
 export async function deleteSkill(
   options: ApiClientOptions,
@@ -248,71 +193,7 @@ export async function installSkill(
     method: "POST",
   });
 
-  if (!response.ok) {
-    await parseInstallSkillError(response);
-  }
-
   return parseJson<InstallSkillResult>(response, "install skill");
-}
-
-export async function listSkillInstallations(
-  options: ApiClientOptions,
-  skillId: string,
-): Promise<SkillInstallation[]> {
-  const fetcher = options.fetcher ?? fetch;
-  const encodedSkillId = encodeURIComponent(skillId);
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/skills/${encodedSkillId}/installations`), {
-    credentials: "include",
-    headers: { accept: "application/json" },
-    method: "GET",
-  });
-
-  return parseJson<SkillInstallation[]>(response, "skill installations");
-}
-
-async function parseInstallSkillError(response: Response): Promise<never> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (response.status === 409 && contentType.includes("application/json")) {
-    const parsed = (await response.clone().json()) as InstallSkillErrorResponse;
-    if (parsed.error === "skill_install_failed") {
-      throw new InstallSkillError(response.status, parsed);
-    }
-  }
-
-  await parseJson<unknown>(response, "install skill");
-  throw new ApiRequestError("install skill", response.status);
-}
-
-function parseBlockedTargets(value: unknown): SkillInstallBlockedTarget[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((item): SkillInstallBlockedTarget | undefined => {
-      if (!item || typeof item !== "object") {
-        return undefined;
-      }
-      const record = item as Record<string, unknown>;
-      const reasonCode = stringValue(record.reason_code);
-      const message = stringValue(record.message);
-      if (!reasonCode || !message) {
-        return undefined;
-      }
-      return {
-        digital_employee_id: stringValue(record.digital_employee_id),
-        employee_name: stringValue(record.employee_name),
-        provider_type: stringValue(record.provider_type),
-        runtime_node_id: stringValue(record.runtime_node_id),
-        node_id: stringValue(record.node_id),
-        reason_code: reasonCode,
-        message,
-      };
-    })
-    .filter((item): item is SkillInstallBlockedTarget => Boolean(item));
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value ? value : undefined;
 }
 
 function cleanUploadList(items?: string[]): string[] {

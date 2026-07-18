@@ -91,6 +91,47 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	}, record.ReliabilitySignals)
 }
 
+func TestDigitalEmployeePlanningProfileAdapterComposesEffectiveBindings(t *testing.T) {
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	reader := fakePlanningProfileEmployeeReader{
+		employees: map[uuid.UUID]employee.DigitalEmployeeRecord{
+			employeeID: {ID: employeeID, TenantID: tenantID, EmployeeType: "database_admin", Status: employee.DigitalEmployeeStatusActive},
+		},
+		configs: map[uuid.UUID]employee.EmployeeConfigInput{
+			employeeID: {
+				TenantID:          tenantID,
+				DigitalEmployeeID: employeeID,
+				CapabilityBindings: map[string]any{
+					"external_capabilities": []any{"text_generation"},
+				},
+			},
+		},
+	}
+
+	adapter := digitalEmployeePlanningProfileAdapter{
+		reader: reader,
+		effectiveSkillSlugs: func(_ context.Context, gotTenant, gotEmployee uuid.UUID) ([]string, error) {
+			require.Equal(t, tenantID, gotTenant)
+			require.Equal(t, employeeID, gotEmployee)
+			return []string{"team-inherited-skill", "personal-skill"}, nil
+		},
+		effectiveMCPServerKeys: func(_ context.Context, _, _ uuid.UUID) ([]string, error) {
+			return []string{"postgres-readonly"}, nil
+		},
+	}
+	records, err := adapter.PlanningProfileRecords(context.Background(), tenantID, uuid.Nil, []uuid.UUID{employeeID})
+
+	require.NoError(t, err)
+	record := records[employeeID]
+	// Planner view = config declaration residue + authoritative binding tables.
+	require.Equal(t, map[string]any{
+		"external_capabilities": []any{"text_generation"},
+		"skills":                []any{"team-inherited-skill", "personal-skill"},
+		"mcp_servers":           []any{"postgres-readonly"},
+	}, record.CapabilityBindings)
+}
+
 func TestDigitalEmployeePlanningProfileAdapterUsesProjectTaskPreflightWithoutExecutionInstance(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

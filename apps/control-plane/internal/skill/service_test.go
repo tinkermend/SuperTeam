@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 	"github.com/superteam/control-plane/internal/storage"
 )
 
@@ -448,6 +449,130 @@ func TestPgRepositoryBindSkillsPreflightsTargetsBeforeInsert(t *testing.T) {
 	}
 }
 
+func TestInstallSkillIsPureLogicalBind(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	employeeID := uuid.New()
+	repo := &serviceTestRepository{
+		getSkillResult:     &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+		boundEmployeeSkill: &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+	}
+	svc := NewService(repo, nil)
+
+	result, err := svc.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID:          tenantID,
+		SkillID:           skillID,
+		TargetScope:       SkillInstallTargetEmployee,
+		DigitalEmployeeID: employeeID,
+	})
+
+	require.NoError(t, err)
+	require.False(t, result.AlreadyBound)
+	require.Equal(t, skillID, result.SkillID)
+	require.Equal(t, employeeID, result.DigitalEmployeeID)
+	require.False(t, result.BoundAt.IsZero())
+	require.Equal(t, BindEmployeeSkillRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, SkillID: skillID}, repo.employeeBindReq)
+}
+
+func TestInstallSkillReportsAlreadyBoundForEffectiveSkill(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	repo := &serviceTestRepository{
+		getSkillResult: &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+		effectiveSkills: []EffectiveEmployeeSkill{{
+			Skill: Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+		}},
+	}
+	svc := NewService(repo, nil)
+
+	result, err := svc.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID:          tenantID,
+		SkillID:           skillID,
+		TargetScope:       SkillInstallTargetEmployee,
+		DigitalEmployeeID: uuid.New(),
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.AlreadyBound)
+	require.Equal(t, BindEmployeeSkillRequest{}, repo.employeeBindReq)
+}
+
+func TestInstallSkillReportsAlreadyBoundForTeamInheritance(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	repo := &serviceTestRepository{
+		getSkillResult:  &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+		inheritedToTeam: true,
+	}
+	svc := NewService(repo, nil)
+
+	result, err := svc.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID:          tenantID,
+		SkillID:           skillID,
+		TargetScope:       SkillInstallTargetEmployee,
+		DigitalEmployeeID: uuid.New(),
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.AlreadyBound)
+}
+
+func TestInstallSkillTeamScopeBindsAndIsIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	teamID := uuid.New()
+	repo := &serviceTestRepository{
+		getSkillResult: &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+		boundTeamSkill: &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+	}
+	svc := NewService(repo, nil)
+
+	result, err := svc.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID:    tenantID,
+		SkillID:     skillID,
+		TargetScope: SkillInstallTargetTeam,
+		TeamID:      teamID,
+	})
+	require.NoError(t, err)
+	require.False(t, result.AlreadyBound)
+	require.Equal(t, BindTeamSkillRequest{TenantID: tenantID, TeamID: teamID, SkillID: skillID}, repo.teamBindReq)
+
+	repo.teamBindReq = BindTeamSkillRequest{}
+	repo.teamSkills = []*Skill{{ID: skillID, TenantID: tenantID, Slug: "diagnose"}}
+	result, err = svc.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID:    tenantID,
+		SkillID:     skillID,
+		TargetScope: SkillInstallTargetTeam,
+		TeamID:      teamID,
+	})
+	require.NoError(t, err)
+	require.True(t, result.AlreadyBound)
+	require.Equal(t, BindTeamSkillRequest{}, repo.teamBindReq)
+}
+
+func TestInstallSkillRejectsUnknownSkillAndScope(t *testing.T) {
+	tenantID := uuid.New()
+	repo := &serviceTestRepository{getSkillErr: ErrNotFound}
+	svc := NewService(repo, nil)
+
+	_, err := svc.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID:          tenantID,
+		SkillID:           uuid.New(),
+		TargetScope:       SkillInstallTargetEmployee,
+		DigitalEmployeeID: uuid.New(),
+	})
+	require.ErrorIs(t, err, ErrNotFound)
+
+	repo.getSkillErr = nil
+	repo.getSkillResult = &Skill{ID: uuid.New(), TenantID: tenantID}
+	_, err = svc.InstallSkill(context.Background(), InstallSkillRequest{
+		TenantID:    tenantID,
+		SkillID:     repo.getSkillResult.ID,
+		TargetScope: SkillInstallTargetScope("node"),
+	})
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
 type serviceTestRepository struct {
 	upsertReq          UpsertSkillPackageRequest
 	teamBindReq        BindTeamSkillRequest
@@ -455,6 +580,8 @@ type serviceTestRepository struct {
 	boundTeamSkill     *Skill
 	boundEmployeeSkill *Skill
 	effectiveSkills    []EffectiveEmployeeSkill
+	teamSkills         []*Skill
+	inheritedToTeam    bool
 
 	getSkillResult *Skill
 	getSkillErr    error
@@ -502,7 +629,7 @@ func (r *serviceTestRepository) UnbindSkillFromTeam(context.Context, BindTeamSki
 }
 
 func (r *serviceTestRepository) ListTeamSkills(context.Context, ListTeamSkillsRequest) ([]*Skill, error) {
-	return nil, nil
+	return r.teamSkills, nil
 }
 
 func (r *serviceTestRepository) BindSkillToEmployee(_ context.Context, req BindEmployeeSkillRequest) (*Skill, error) {
@@ -527,7 +654,7 @@ func (r *serviceTestRepository) DeleteSkill(context.Context, DeleteSkillRequest)
 }
 
 func (r *serviceTestRepository) IsSkillBoundToEmployeeTeam(context.Context, BindEmployeeSkillRequest) (bool, error) {
-	return false, nil
+	return r.inheritedToTeam, nil
 }
 
 func (r *serviceTestRepository) DeleteSkillMCPDependencies(_ context.Context, tenantID, skillID uuid.UUID) error {

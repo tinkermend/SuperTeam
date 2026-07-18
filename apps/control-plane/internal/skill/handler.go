@@ -30,7 +30,6 @@ type HandlerService interface {
 	UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error
 	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
 	InstallSkill(ctx context.Context, req InstallSkillRequest) (InstallSkillResult, error)
-	ListSkillInstallations(ctx context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error)
 }
 
 type HTTPHandler struct {
@@ -184,34 +183,10 @@ func (h *HTTPHandler) InstallSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := service.InstallSkill(r.Context(), req)
 	if err != nil {
-		writeInstallSkillError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, installSkillResponseFromDomain(result))
-}
-
-func (h *HTTPHandler) ListSkillInstallations(w http.ResponseWriter, r *http.Request) {
-	skillID, ok := skillIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionSkillRead, authz.ResourceRef{Type: authz.ResourceSkill, ID: skillID.String()}, "skill installation read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	installations, err := service.ListSkillInstallations(r.Context(), ListSkillInstallationsRequest{
-		TenantID: tenantID,
-		SkillID:  skillID,
-	})
-	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, skillInstallationResponses(installations))
+	writeJSON(w, http.StatusCreated, installSkillResponseFromDomain(result))
 }
 
 func (h *HTTPHandler) ListTeamSkills(w http.ResponseWriter, r *http.Request) {
@@ -464,38 +439,12 @@ type effectiveEmployeeSkillResponse struct {
 }
 
 type installSkillResponse struct {
-	SkillID           string                      `json:"skill_id"`
-	TargetScope       string                      `json:"target_scope"`
-	TeamID            string                      `json:"team_id,omitempty"`
-	DigitalEmployeeID string                      `json:"digital_employee_id,omitempty"`
-	InstalledCount    int                         `json:"installed_count"`
-	Installations     []skillInstallationResponse `json:"installations"`
-	BlockedTargets    []SkillInstallBlockedTarget `json:"blocked_targets,omitempty"`
-}
-
-type skillInstallationResponse struct {
-	ID                    string         `json:"id,omitempty"`
-	TenantID              string         `json:"tenant_id"`
-	SkillID               string         `json:"skill_id"`
-	TargetScope           string         `json:"target_scope"`
-	TeamID                string         `json:"team_id,omitempty"`
-	DigitalEmployeeID     string         `json:"digital_employee_id,omitempty"`
-	EmployeeName          string         `json:"employee_name,omitempty"`
-	RuntimeNodeID         string         `json:"runtime_node_id,omitempty"`
-	NodeID                string         `json:"node_id,omitempty"`
-	ProviderType          string         `json:"provider_type"`
-	InstalledPath         string         `json:"installed_path"`
-	ArchiveChecksumSHA256 string         `json:"archive_checksum_sha256,omitempty"`
-	InstalledBy           string         `json:"installed_by,omitempty"`
-	InstalledAt           string         `json:"installed_at,omitempty"`
-	Metadata              map[string]any `json:"metadata,omitempty"`
-}
-
-type installSkillErrorResponse struct {
-	Error          string                      `json:"error"`
-	Phase          string                      `json:"phase"`
-	Message        string                      `json:"message"`
-	BlockedTargets []SkillInstallBlockedTarget `json:"blocked_targets"`
+	SkillID           string `json:"skill_id"`
+	TargetScope       string `json:"target_scope"`
+	TeamID            string `json:"team_id,omitempty"`
+	DigitalEmployeeID string `json:"digital_employee_id,omitempty"`
+	AlreadyBound      bool   `json:"already_bound"`
+	BoundAt           string `json:"bound_at"`
 }
 
 func skillResponses(skills []*Skill) []skillResponse {
@@ -526,34 +475,9 @@ func installSkillResponseFromDomain(result InstallSkillResult) installSkillRespo
 		TargetScope:       string(result.TargetScope),
 		TeamID:            uuidStringOrEmpty(result.TeamID),
 		DigitalEmployeeID: uuidStringOrEmpty(result.DigitalEmployeeID),
-		InstalledCount:    result.InstalledCount,
-		Installations:     skillInstallationResponses(result.Installations),
-		BlockedTargets:    result.BlockedTargets,
+		AlreadyBound:      result.AlreadyBound,
+		BoundAt:           formatTime(result.BoundAt),
 	}
-}
-
-func skillInstallationResponses(installations []SkillInstallation) []skillInstallationResponse {
-	responses := make([]skillInstallationResponse, 0, len(installations))
-	for _, item := range installations {
-		responses = append(responses, skillInstallationResponse{
-			ID:                    uuidStringOrEmpty(item.ID),
-			TenantID:              item.TenantID.String(),
-			SkillID:               item.SkillID.String(),
-			TargetScope:           string(item.TargetScope),
-			TeamID:                uuidStringOrEmpty(item.TeamID),
-			DigitalEmployeeID:     uuidStringOrEmpty(item.DigitalEmployeeID),
-			EmployeeName:          item.EmployeeName,
-			RuntimeNodeID:         uuidStringOrEmpty(item.RuntimeNodeID),
-			NodeID:                item.NodeID,
-			ProviderType:          item.ProviderType,
-			InstalledPath:         item.InstalledPath,
-			ArchiveChecksumSHA256: item.ArchiveChecksumSHA256,
-			InstalledBy:           uuidStringOrEmpty(item.InstalledBy),
-			InstalledAt:           formatTime(item.InstalledAt),
-			Metadata:              item.Metadata,
-		})
-	}
-	return responses
 }
 
 func skillResponseFromDomain(item *Skill) skillResponse {
@@ -679,7 +603,9 @@ func installSkillRequestFromJSONBody(w http.ResponseWriter, r *http.Request) (In
 		TargetScope       SkillInstallTargetScope `json:"target_scope"`
 		TeamID            *uuid.UUID              `json:"team_id"`
 		DigitalEmployeeID *uuid.UUID              `json:"digital_employee_id"`
-		TimeoutSec        int                     `json:"timeout_sec"`
+		// timeout_sec is deprecated: install is a synchronous logical bind
+		// with no runtime wait. Accepted and ignored for old clients.
+		TimeoutSec int `json:"timeout_sec"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -699,13 +625,6 @@ func installSkillRequestFromJSONBody(w http.ResponseWriter, r *http.Request) (In
 			http.Error(w, "digital_employee_id must be a valid uuid", http.StatusBadRequest)
 			return InstallSkillRequest{}, false
 		}
-	}
-	if body.TimeoutSec < 0 {
-		http.Error(w, "timeout_sec must be non-negative", http.StatusBadRequest)
-		return InstallSkillRequest{}, false
-	}
-	if body.TimeoutSec > 0 {
-		req.Timeout = time.Duration(body.TimeoutSec) * time.Second
 	}
 	return req, true
 }
@@ -779,20 +698,6 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
-}
-
-func writeInstallSkillError(w http.ResponseWriter, err error) {
-	var installErr *InstallSkillError
-	if errors.As(err, &installErr) {
-		writeJSON(w, http.StatusConflict, installSkillErrorResponse{
-			Error:          "skill_install_failed",
-			Phase:          string(installErr.Phase),
-			Message:        installErr.Message,
-			BlockedTargets: installErr.BlockedTargets,
-		})
-		return
-	}
-	writeHandlerError(w, err)
 }
 
 func formatTime(value time.Time) string {

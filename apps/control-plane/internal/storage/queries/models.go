@@ -419,7 +419,7 @@ type DigitalEmployeeConfigRevision struct {
 	BudgetPolicy []byte `json:"budget_policy"`
 	// 数字员工人格记忆 Markdown，描述人格画像、专业边界、工作方式和表达偏好
 	PersonaMemoryMarkdown string `json:"persona_memory_markdown"`
-	// 数字员工能力绑定，保存 Skill、MCP、外部能力和环境变量引用
+	// 能力声明(仅 external_capabilities/environment_variable_refs);技能与 MCP 逻辑绑定的唯一权威源是 skill_agent_bindings/team_skill_bindings 与 digital_employee_mcp_bindings_v2/team_mcp_bindings
 	CapabilityBindings []byte `json:"capability_bindings"`
 }
 
@@ -2398,7 +2398,7 @@ type SkillAgentBinding struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 技能物理安装记录，只保存已成功写入数字员工 workspace 的安装事实
+// 已冻结(2026-07-19 能力绑定统一):物理安装事实由派发时 runtime 懒收敛 + attestation 承载,本表停写停读留存追溯,待另行 drop
 type SkillInstallation struct {
 	// 技能物理安装记录 ID
 	ID uuid.UUID `json:"id"`

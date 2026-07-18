@@ -530,7 +530,9 @@ fn parses_sync_workspace_files_command_type() {
 }
 
 #[test]
-fn parses_install_skills_command_type() {
+fn parses_install_skills_command_type_as_unsupported() {
+    // install_skills 命令已随技能纯逻辑绑定改造下线:该标签必须落入
+    // Unsupported 兜底,而不是恢复为专属枚举分支。
     let raw = serde_json::json!({
         "id": "cmd-install-skills",
         "type": "install_skills",
@@ -539,7 +541,7 @@ fn parses_install_skills_command_type() {
     let command: RuntimeCommand = serde_json::from_value(raw).unwrap();
     assert!(matches!(
         command.command_type,
-        RuntimeCommandType::InstallSkills
+        RuntimeCommandType::Unsupported(ref value) if value == "install_skills"
     ));
 }
 

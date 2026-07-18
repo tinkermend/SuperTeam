@@ -312,14 +312,73 @@ func TestCreateOptionsUsesTeamBaseline(t *testing.T) {
 	require.Equal(t, map[string]any{"mission": "stabilize ops"}, options.TeamConfig.Constitution)
 	require.Equal(t, []string{"baseline-skill", "shared-skill"}, options.TeamConfig.Skills)
 	require.Equal(t, []string{"baseline-mcp"}, options.TeamConfig.MCPServers)
-	require.NotEqual(t, []string{"baseline-skill", "shared-skill"}, options.CapabilityOptions.Skills)
-	require.NotEqual(t, []string{"baseline-mcp"}, options.CapabilityOptions.MCPServers)
-	require.Contains(t, options.CapabilityOptions.Skills, "database-troubleshooting")
-	require.Contains(t, options.CapabilityOptions.Skills, "frontend-implementation")
-	require.Contains(t, options.CapabilityOptions.MCPServers, "browser")
-	require.Contains(t, options.CapabilityOptions.MCPServers, "postgres-readonly")
-	require.NotContains(t, options.CapabilityOptions.Skills, "baseline-skill")
-	require.NotContains(t, options.CapabilityOptions.MCPServers, "baseline-mcp")
+	skillKeys := capabilityOptionKeys(options.CapabilityOptions.Skills)
+	mcpKeys := capabilityOptionKeys(options.CapabilityOptions.MCPServers)
+	require.Contains(t, skillKeys, "database-troubleshooting")
+	require.Contains(t, skillKeys, "frontend-implementation")
+	require.Contains(t, mcpKeys, "browser")
+	require.Contains(t, mcpKeys, "postgres-readonly")
+	require.NotContains(t, skillKeys, "baseline-skill")
+	require.NotContains(t, mcpKeys, "baseline-mcp")
+	// Template-recommended keys missing from the registry are surfaced as
+	// unavailable rather than silently hidden.
+	dbSkill := capabilityOptionByKey(t, options.CapabilityOptions.Skills, "database-troubleshooting")
+	require.True(t, dbSkill.Recommended)
+	require.False(t, dbSkill.Available)
+}
+
+func TestCreateOptionsIncludeRegistrySkillsAndMCPServers(t *testing.T) {
+	svc, repo, tenantID, teamID := newCreateOptionsTestService(t, nil, nil)
+	skillID := uuid.New()
+	serverID := uuid.New()
+	repo.registrySkills = []CapabilityRegistryOption{{
+		ID:          skillID,
+		Key:         "market-skill",
+		Label:       "市场技能",
+		Description: "来自技能市场",
+		RiskLevel:   "normal",
+	}}
+	repo.registryMCPServers = []CapabilityRegistryOption{{
+		ID:    serverID,
+		Key:   "market-mcp",
+		Label: "注册表 MCP",
+	}}
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   &teamID,
+	})
+
+	require.NoError(t, err)
+	marketSkill := capabilityOptionByKey(t, options.CapabilityOptions.Skills, "market-skill")
+	require.True(t, marketSkill.Available)
+	require.False(t, marketSkill.Recommended)
+	require.NotNil(t, marketSkill.ID)
+	require.Equal(t, skillID, *marketSkill.ID)
+	require.Equal(t, "市场技能", marketSkill.Label)
+	marketMCP := capabilityOptionByKey(t, options.CapabilityOptions.MCPServers, "market-mcp")
+	require.True(t, marketMCP.Available)
+	require.NotNil(t, marketMCP.ID)
+	require.Equal(t, serverID, *marketMCP.ID)
+}
+
+func capabilityOptionKeys(items []CapabilityOptionItem) []string {
+	keys := make([]string, 0, len(items))
+	for _, item := range items {
+		keys = append(keys, item.Key)
+	}
+	return keys
+}
+
+func capabilityOptionByKey(t *testing.T, items []CapabilityOptionItem, key string) CapabilityOptionItem {
+	t.Helper()
+	for _, item := range items {
+		if item.Key == key {
+			return item
+		}
+	}
+	t.Fatalf("capability option %q not found in %#v", key, items)
+	return CapabilityOptionItem{}
 }
 
 func TestGetCreateOptionsIncludesCustomAgentRegardlessOfTeamAllowlist(t *testing.T) {
@@ -935,9 +994,57 @@ func TestCreateDigitalEmployeeKeepsPlatformTypeDefaultsWithoutTeamPolicyClipping
 	if created.ID == uuid.Nil {
 		t.Fatalf("expected created employee id")
 	}
-	if !stringListContains(repo.createdConfigRevision.CapabilityBindings["skills"], "database-troubleshooting") {
-		t.Fatalf("expected platform default capabilities to remain, got %#v", repo.createdConfigRevision.CapabilityBindings)
+	// Template skill/MCP defaults are no longer silently merged into the
+	// config revision: skills/mcp_servers live in binding tables only, and
+	// template defaults surface as create-options recommendations.
+	if _, ok := repo.createdConfigRevision.CapabilityBindings["skills"]; ok {
+		t.Fatalf("expected skills key stripped from config revision, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
+	if _, ok := repo.createdConfigRevision.CapabilityBindings["mcp_servers"]; ok {
+		t.Fatalf("expected mcp_servers key stripped from config revision, got %#v", repo.createdConfigRevision.CapabilityBindings)
+	}
+}
+
+func TestCreateDigitalEmployeeBindsSelectedCapabilities(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	skillID := uuid.New()
+	serverID := uuid.New()
+	repo.registrySkills = []CapabilityRegistryOption{{ID: skillID, Key: "market-skill", Label: "市场技能"}}
+	repo.registryMCPServers = []CapabilityRegistryOption{{ID: serverID, Key: "market-mcp", Label: "注册表 MCP"}}
+	req.Skills = []string{"market-skill", " market-skill "}
+	req.MCPServers = []string{"market-mcp"}
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{skillID}, repo.boundSkillIDs[created.ID])
+	require.Equal(t, []uuid.UUID{serverID}, repo.boundMCPServerIDs[created.ID])
+	if _, ok := repo.createdConfigRevision.CapabilityBindings["skills"]; ok {
+		t.Fatalf("expected skills key stripped from stored revision, got %#v", repo.createdConfigRevision.CapabilityBindings)
+	}
+}
+
+func TestCreateDigitalEmployeeRejectsUnknownCapabilityKeys(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.Skills = []string{"ghost-skill"}
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	require.ErrorIs(t, err, ErrInvalidInput)
+	require.Contains(t, err.Error(), `unknown skill slug "ghost-skill"`)
+	require.Empty(t, repo.boundSkillIDs)
+	require.Equal(t, 1, repo.transactionRollbackCount)
+}
+
+func TestCreateDigitalEmployeeSkipsTeamInheritedCapabilityKeys(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	repo.teamBaselines[*req.TeamID] = TeamBaseline{Skills: []string{"inherited-skill"}}
+	req.Skills = []string{"inherited-skill"}
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	require.NoError(t, err)
+	require.Empty(t, repo.boundSkillIDs[created.ID])
 }
 
 func TestCreateDigitalEmployeeDoesNotWaitForProvisioningTimeout(t *testing.T) {
@@ -1354,7 +1461,7 @@ func TestCreateConfigRevisionStoresFinalFields(t *testing.T) {
 		TenantID:              tenantID,
 		DigitalEmployeeID:     employeeID,
 		PersonaMemoryMarkdown: &persona,
-		CapabilityBindings:    map[string]any{"skills": []any{"incident-diagnosis"}, "mcp_servers": []any{"postgres-readonly"}},
+		CapabilityBindings:    map[string]any{"external_capabilities": []any{"feishu-connector"}},
 		BudgetPolicy:          map[string]any{"daily_token_limit": float64(12000)},
 		Status:                ConfigRevisionStatusDraft,
 	})
@@ -1365,7 +1472,7 @@ func TestCreateConfigRevisionStoresFinalFields(t *testing.T) {
 	if revision.PersonaMemoryMarkdown != persona {
 		t.Fatalf("expected persona memory on revision, got %#v", revision.PersonaMemoryMarkdown)
 	}
-	if revision.CapabilityBindings["skills"] == nil {
+	if !stringListContains(revision.CapabilityBindings["external_capabilities"], "feishu-connector") {
 		t.Fatalf("expected capability bindings on revision, got %#v", revision.CapabilityBindings)
 	}
 	if revision.BudgetPolicy["daily_token_limit"] != float64(12000) {
@@ -1374,11 +1481,44 @@ func TestCreateConfigRevisionStoresFinalFields(t *testing.T) {
 	if repo.createdConfigRevision.PersonaMemoryMarkdown != persona {
 		t.Fatalf("expected persona memory persisted, got %#v", repo.createdConfigRevision.PersonaMemoryMarkdown)
 	}
-	if repo.createdConfigRevision.CapabilityBindings["skills"] == nil {
+	if !stringListContains(repo.createdConfigRevision.CapabilityBindings["external_capabilities"], "feishu-connector") {
 		t.Fatalf("expected capability bindings persisted, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
 	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(12000) {
 		t.Fatalf("expected budget policy persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
+	}
+}
+
+func TestCreateConfigRevisionRejectsLegacySkillAndMCPKeys(t *testing.T) {
+	svc, repo := newEmployeeServiceForTest(t)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	seedConfigRevisionEmployee(repo, tenantID, employeeID)
+
+	for _, bindings := range []map[string]any{
+		{"skills": []any{"incident-diagnosis"}},
+		{"mcp_servers": []any{"postgres-readonly"}},
+	} {
+		_, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+			TenantID:           tenantID,
+			DigitalEmployeeID:  employeeID,
+			CapabilityBindings: bindings,
+			Status:             ConfigRevisionStatusDraft,
+		})
+		require.ErrorIs(t, err, ErrInvalidInput)
+		require.Contains(t, err.Error(), "no longer supported")
+	}
+
+	// Empty arrays are stripped residue, not an error.
+	_, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:           tenantID,
+		DigitalEmployeeID:  employeeID,
+		CapabilityBindings: map[string]any{"skills": []any{}, "mcp_servers": []any{}},
+		Status:             ConfigRevisionStatusDraft,
+	})
+	require.NoError(t, err)
+	if _, ok := repo.createdConfigRevision.CapabilityBindings["skills"]; ok {
+		t.Fatalf("expected skills key stripped, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
 }
 
@@ -1394,7 +1534,7 @@ func TestCreateConfigRevisionPreservesOmittedMapFieldsFromLatestRevision(t *test
 		DigitalEmployeeID:     employeeID,
 		RevisionNumber:        7,
 		PersonaMemoryMarkdown: "# security reviewer",
-		CapabilityBindings:    map[string]any{"skills": []any{"release-review"}, "mcp_servers": []any{"security-readonly"}},
+		CapabilityBindings:    map[string]any{"external_capabilities": []any{"release-review"}, "skills": []any{"legacy-skill"}},
 		BudgetPolicy:          map[string]any{"daily_token_limit": float64(12000), "mode": "capped"},
 	}
 
@@ -1414,8 +1554,13 @@ func TestCreateConfigRevisionPreservesOmittedMapFieldsFromLatestRevision(t *test
 	if repo.createdConfigRevision.PersonaMemoryMarkdown != "# security reviewer" {
 		t.Fatalf("expected persona_memory_markdown to be preserved, got %#v", repo.createdConfigRevision.PersonaMemoryMarkdown)
 	}
-	if repo.createdConfigRevision.CapabilityBindings["skills"] == nil {
+	if !stringListContains(repo.createdConfigRevision.CapabilityBindings["external_capabilities"], "release-review") {
 		t.Fatalf("expected capability_bindings to be preserved, got %#v", repo.createdConfigRevision.CapabilityBindings)
+	}
+	// Inherited legacy skills residue from pre-unification revisions is
+	// silently stripped, not rejected.
+	if _, ok := repo.createdConfigRevision.CapabilityBindings["skills"]; ok {
+		t.Fatalf("expected inherited skills key stripped, got %#v", repo.createdConfigRevision.CapabilityBindings)
 	}
 }
 
@@ -2085,6 +2230,10 @@ type memoryRepository struct {
 	transactionRollbackCount  int
 	inTransaction             bool
 	templates                 map[uuid.UUID][]EmployeeTemplateRecord
+	registrySkills            []CapabilityRegistryOption
+	registryMCPServers        []CapabilityRegistryOption
+	boundSkillIDs             map[uuid.UUID][]uuid.UUID
+	boundMCPServerIDs         map[uuid.UUID][]uuid.UUID
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -2407,6 +2556,52 @@ func (r *memoryRepository) GetTeamBaseline(_ context.Context, tenantID, teamID u
 		Skills:       append([]string(nil), baseline.Skills...),
 		MCPServers:   append([]string(nil), baseline.MCPServers...),
 	}, nil
+}
+
+func (r *memoryRepository) ListSkillCapabilityOptions(_ context.Context, _ uuid.UUID) ([]CapabilityRegistryOption, error) {
+	return append([]CapabilityRegistryOption(nil), r.registrySkills...), nil
+}
+
+func (r *memoryRepository) ListMCPCapabilityOptions(_ context.Context, _ uuid.UUID) ([]CapabilityRegistryOption, error) {
+	return append([]CapabilityRegistryOption(nil), r.registryMCPServers...), nil
+}
+
+func (r *memoryRepository) ResolveSkillIDsBySlugs(_ context.Context, _ uuid.UUID, slugs []string) (map[string]uuid.UUID, error) {
+	return resolveRegistryKeys(r.registrySkills, slugs), nil
+}
+
+func (r *memoryRepository) ResolveMCPServerIDsByKeys(_ context.Context, _ uuid.UUID, keys []string) (map[string]uuid.UUID, error) {
+	return resolveRegistryKeys(r.registryMCPServers, keys), nil
+}
+
+func resolveRegistryKeys(registry []CapabilityRegistryOption, keys []string) map[string]uuid.UUID {
+	byKey := make(map[string]uuid.UUID, len(registry))
+	for _, option := range registry {
+		byKey[option.Key] = option.ID
+	}
+	resolved := make(map[string]uuid.UUID, len(keys))
+	for _, key := range keys {
+		if id, ok := byKey[key]; ok {
+			resolved[key] = id
+		}
+	}
+	return resolved
+}
+
+func (r *memoryRepository) BindSkillsToEmployee(_ context.Context, _ uuid.UUID, employeeID uuid.UUID, skillIDs []uuid.UUID) error {
+	if r.boundSkillIDs == nil {
+		r.boundSkillIDs = make(map[uuid.UUID][]uuid.UUID)
+	}
+	r.boundSkillIDs[employeeID] = append(r.boundSkillIDs[employeeID], skillIDs...)
+	return nil
+}
+
+func (r *memoryRepository) BindMCPServersToEmployee(_ context.Context, _ uuid.UUID, employeeID uuid.UUID, serverIDs []uuid.UUID) error {
+	if r.boundMCPServerIDs == nil {
+		r.boundMCPServerIDs = make(map[uuid.UUID][]uuid.UUID)
+	}
+	r.boundMCPServerIDs[employeeID] = append(r.boundMCPServerIDs[employeeID], serverIDs...)
+	return nil
 }
 
 func (r *memoryRepository) ListRuntimeProviderOptionsForCreate(_ context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error) {

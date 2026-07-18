@@ -876,42 +876,6 @@ func (e InboxItemStatus) Valid() bool {
 	}
 }
 
-// Defines values for InstallSkillErrorResponseError.
-const (
-	SkillInstallFailed InstallSkillErrorResponseError = "skill_install_failed"
-)
-
-// Valid indicates whether the value is a known member of the InstallSkillErrorResponseError enum.
-func (e InstallSkillErrorResponseError) Valid() bool {
-	switch e {
-	case SkillInstallFailed:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for InstallSkillErrorResponsePhase.
-const (
-	Preflight      InstallSkillErrorResponsePhase = "preflight"
-	RuntimeInstall InstallSkillErrorResponsePhase = "runtime_install"
-	Timeout        InstallSkillErrorResponsePhase = "timeout"
-)
-
-// Valid indicates whether the value is a known member of the InstallSkillErrorResponsePhase enum.
-func (e InstallSkillErrorResponsePhase) Valid() bool {
-	switch e {
-	case Preflight:
-		return true
-	case RuntimeInstall:
-		return true
-	case Timeout:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for InstallSkillRequestTargetScope.
 const (
 	InstallSkillRequestTargetScopeEmployee InstallSkillRequestTargetScope = "employee"
@@ -1770,45 +1734,6 @@ func (e SignDemandCriterionVerdictRequestVerdict) Valid() bool {
 	}
 }
 
-// Defines values for SkillInstallationProviderType.
-const (
-	ClaudeCode SkillInstallationProviderType = "claude-code"
-	Codex      SkillInstallationProviderType = "codex"
-	Opencode   SkillInstallationProviderType = "opencode"
-)
-
-// Valid indicates whether the value is a known member of the SkillInstallationProviderType enum.
-func (e SkillInstallationProviderType) Valid() bool {
-	switch e {
-	case ClaudeCode:
-		return true
-	case Codex:
-		return true
-	case Opencode:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SkillInstallationTargetScope.
-const (
-	SkillInstallationTargetScopeEmployee SkillInstallationTargetScope = "employee"
-	SkillInstallationTargetScopeTeam     SkillInstallationTargetScope = "team"
-)
-
-// Valid indicates whether the value is a known member of the SkillInstallationTargetScope enum.
-func (e SkillInstallationTargetScope) Valid() bool {
-	switch e {
-	case SkillInstallationTargetScopeEmployee:
-		return true
-	case SkillInstallationTargetScopeTeam:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for SubmitProjectDemandRequestCoordinationMode.
 const (
 	SubmitProjectDemandRequestCoordinationModeLoop SubmitProjectDemandRequestCoordinationMode = "loop"
@@ -2423,7 +2348,9 @@ type ConnectorSubmitDemandResponse struct {
 
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
 type CreateDigitalEmployeeConfigRevisionRequest struct {
-	BudgetPolicy          *map[string]interface{}                           `json:"budget_policy,omitempty"`
+	BudgetPolicy *map[string]interface{} `json:"budget_policy,omitempty"`
+
+	// CapabilityBindings Only external_capabilities and environment_variable_refs are accepted. Requests carrying non-empty skills or mcp_servers arrays are rejected with 400; skill and MCP logical bindings are managed via the dedicated binding endpoints.
 	CapabilityBindings    *map[string]interface{}                           `json:"capability_bindings,omitempty"`
 	PersonaMemoryMarkdown *string                                           `json:"persona_memory_markdown,omitempty"`
 	Status                *CreateDigitalEmployeeConfigRevisionRequestStatus `json:"status,omitempty"`
@@ -2434,9 +2361,11 @@ type CreateDigitalEmployeeConfigRevisionRequestStatus string
 
 // CreateDigitalEmployeeRequest defines model for CreateDigitalEmployeeRequest.
 type CreateDigitalEmployeeRequest struct {
-	ApprovalPolicy       *map[string]interface{} `json:"approval_policy,omitempty"`
-	AvatarAssetId        string                  `json:"avatar_asset_id"`
-	BudgetPolicy         *map[string]interface{} `json:"budget_policy,omitempty"`
+	ApprovalPolicy *map[string]interface{} `json:"approval_policy,omitempty"`
+	AvatarAssetId  string                  `json:"avatar_asset_id"`
+	BudgetPolicy   *map[string]interface{} `json:"budget_policy,omitempty"`
+
+	// CapabilityBindings Additional capability declarations (external_capabilities, environment_variable_refs). The skills and mcp_servers keys are deprecated here: when the top-level skills/mcp_servers fields are absent they are still read for backward compatibility, but they are always stripped from the stored config revision; logical bindings are persisted in the binding tables instead.
 	CapabilityBindings   *map[string]interface{} `json:"capability_bindings,omitempty"`
 	ContextPolicy        *map[string]interface{} `json:"context_policy,omitempty"`
 	Description          *string                 `json:"description,omitempty"`
@@ -2446,6 +2375,9 @@ type CreateDigitalEmployeeRequest struct {
 		Sensitive *bool  `json:"sensitive,omitempty"`
 		Value     string `json:"value"`
 	} `json:"environment_variables,omitempty"`
+
+	// McpServers MCP server keys from the tenant MCP registry to logically bind to the employee at creation. Unknown keys are rejected with 400.
+	McpServers            *[]string               `json:"mcp_servers,omitempty"`
 	Metadata              *map[string]interface{} `json:"metadata,omitempty"`
 	Name                  string                  `json:"name"`
 	PermissionPolicy      *map[string]interface{} `json:"permission_policy,omitempty"`
@@ -2453,6 +2385,9 @@ type CreateDigitalEmployeeRequest struct {
 	ProviderType          string                  `json:"provider_type"`
 	RiskLevel             *string                 `json:"risk_level,omitempty"`
 	Role                  *string                 `json:"role,omitempty"`
+
+	// Skills Skill slugs from the tenant skill registry to logically bind to the employee at creation. Unknown slugs are rejected with 400.
+	Skills *[]string `json:"skills,omitempty"`
 
 	// TeamId Team ID; omit or null for team-less (tenant-level) digital employees.
 	TeamId *openapi_types.UUID `json:"team_id,omitempty"`
@@ -2853,11 +2788,29 @@ type DigitalEmployeeBudgetSummary struct {
 	UsageTokensToday  int32    `json:"usage_tokens_today"`
 }
 
+// DigitalEmployeeCapabilityOptionItem defines model for DigitalEmployeeCapabilityOptionItem.
+type DigitalEmployeeCapabilityOptionItem struct {
+	// Available True when the key exists in the tenant registry and can be bound. Template-recommended keys missing from the registry are returned with available=false and cannot be selected.
+	Available   bool    `json:"available"`
+	Description *string `json:"description,omitempty"`
+
+	// Id Registry ID; present only when available is true.
+	Id *openapi_types.UUID `json:"id,omitempty"`
+
+	// Key Skill slug or MCP server key.
+	Key   string `json:"key"`
+	Label string `json:"label"`
+
+	// Recommended Recommended by the selected employee type template.
+	Recommended bool    `json:"recommended"`
+	RiskLevel   *string `json:"risk_level,omitempty"`
+}
+
 // DigitalEmployeeCapabilityOptions defines model for DigitalEmployeeCapabilityOptions.
 type DigitalEmployeeCapabilityOptions struct {
-	McpServers    []string `json:"mcp_servers"`
-	ProviderTypes []string `json:"provider_types"`
-	Skills        []string `json:"skills"`
+	McpServers    []DigitalEmployeeCapabilityOptionItem `json:"mcp_servers"`
+	ProviderTypes []string                              `json:"provider_types"`
+	Skills        []DigitalEmployeeCapabilityOptionItem `json:"skills"`
 }
 
 // DigitalEmployeeConfigRevision defines model for DigitalEmployeeConfigRevision.
@@ -3683,26 +3636,15 @@ type InboxSourceActionResult struct {
 	Status     string             `json:"status"`
 }
 
-// InstallSkillErrorResponse defines model for InstallSkillErrorResponse.
-type InstallSkillErrorResponse struct {
-	BlockedTargets []SkillInstallBlockedTarget    `json:"blocked_targets"`
-	Error          InstallSkillErrorResponseError `json:"error"`
-	Message        string                         `json:"message"`
-	Phase          InstallSkillErrorResponsePhase `json:"phase"`
-}
-
-// InstallSkillErrorResponseError defines model for InstallSkillErrorResponse.Error.
-type InstallSkillErrorResponseError string
-
-// InstallSkillErrorResponsePhase defines model for InstallSkillErrorResponse.Phase.
-type InstallSkillErrorResponsePhase string
-
 // InstallSkillRequest defines model for InstallSkillRequest.
 type InstallSkillRequest struct {
 	DigitalEmployeeId *openapi_types.UUID            `json:"digital_employee_id,omitempty"`
 	TargetScope       InstallSkillRequestTargetScope `json:"target_scope"`
 	TeamId            *openapi_types.UUID            `json:"team_id,omitempty"`
-	TimeoutSec        *int32                         `json:"timeout_sec,omitempty"`
+
+	// TimeoutSec Deprecated. Install is a synchronous logical bind; no runtime wait is involved. The value is ignored.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	TimeoutSec *int32 `json:"timeout_sec,omitempty"`
 }
 
 // InstallSkillRequestTargetScope defines model for InstallSkillRequest.TargetScope.
@@ -3710,10 +3652,10 @@ type InstallSkillRequestTargetScope string
 
 // InstallSkillResponse defines model for InstallSkillResponse.
 type InstallSkillResponse struct {
-	BlockedTargets    *[]SkillInstallBlockedTarget    `json:"blocked_targets,omitempty"`
+	// AlreadyBound True when the target already had the skill (including via team inheritance for employee scope). The call is idempotent.
+	AlreadyBound      bool                            `json:"already_bound"`
+	BoundAt           time.Time                       `json:"bound_at"`
 	DigitalEmployeeId *openapi_types.UUID             `json:"digital_employee_id,omitempty"`
-	Installations     []SkillInstallation             `json:"installations"`
-	InstalledCount    int32                           `json:"installed_count"`
 	SkillId           openapi_types.UUID              `json:"skill_id"`
 	TargetScope       InstallSkillResponseTargetScope `json:"target_scope"`
 	TeamId            *openapi_types.UUID             `json:"team_id,omitempty"`
@@ -3844,6 +3786,7 @@ type PendingDeleteTeam struct {
 	CreatedAt         *time.Time              `json:"created_at,omitempty"`
 	DeleteRequestedBy *openapi_types.UUID     `json:"delete_requested_by,omitempty"`
 	DeletedAt         time.Time               `json:"deleted_at"`
+	Description       *string                 `json:"description,omitempty"`
 	HumanOwnerUserIds *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
 	HumanOwners       *[]TeamHumanOwner       `json:"human_owners,omitempty"`
 	Id                openapi_types.UUID      `json:"id"`
@@ -5269,42 +5212,6 @@ type SkillAgentBinding struct {
 	TeamId    *openapi_types.UUID `json:"team_id,omitempty"`
 	TeamName  *string             `json:"team_name,omitempty"`
 }
-
-// SkillInstallBlockedTarget defines model for SkillInstallBlockedTarget.
-type SkillInstallBlockedTarget struct {
-	DigitalEmployeeId *openapi_types.UUID `json:"digital_employee_id,omitempty"`
-	EmployeeName      *string             `json:"employee_name,omitempty"`
-	Message           string              `json:"message"`
-	NodeId            *string             `json:"node_id,omitempty"`
-	ProviderType      *string             `json:"provider_type,omitempty"`
-	ReasonCode        string              `json:"reason_code"`
-	RuntimeNodeId     *openapi_types.UUID `json:"runtime_node_id,omitempty"`
-}
-
-// SkillInstallation defines model for SkillInstallation.
-type SkillInstallation struct {
-	ArchiveChecksumSha256 *string                       `json:"archive_checksum_sha256,omitempty"`
-	DigitalEmployeeId     *openapi_types.UUID           `json:"digital_employee_id,omitempty"`
-	EmployeeName          *string                       `json:"employee_name,omitempty"`
-	Id                    *openapi_types.UUID           `json:"id,omitempty"`
-	InstalledAt           *time.Time                    `json:"installed_at,omitempty"`
-	InstalledBy           *openapi_types.UUID           `json:"installed_by,omitempty"`
-	InstalledPath         string                        `json:"installed_path"`
-	Metadata              *map[string]interface{}       `json:"metadata,omitempty"`
-	NodeId                *string                       `json:"node_id,omitempty"`
-	ProviderType          SkillInstallationProviderType `json:"provider_type"`
-	RuntimeNodeId         *openapi_types.UUID           `json:"runtime_node_id,omitempty"`
-	SkillId               openapi_types.UUID            `json:"skill_id"`
-	TargetScope           SkillInstallationTargetScope  `json:"target_scope"`
-	TeamId                *openapi_types.UUID           `json:"team_id,omitempty"`
-	TenantId              openapi_types.UUID            `json:"tenant_id"`
-}
-
-// SkillInstallationProviderType defines model for SkillInstallation.ProviderType.
-type SkillInstallationProviderType string
-
-// SkillInstallationTargetScope defines model for SkillInstallation.TargetScope.
-type SkillInstallationTargetScope string
 
 // SkillMCPDependency defines model for SkillMCPDependency.
 type SkillMCPDependency struct {
@@ -7602,12 +7509,9 @@ type ServerInterface interface {
 	// Get a skill with archive metadata and bindings
 	// (GET /api/v1/skills/{skillId})
 	GetSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
-	// Install a skill onto team or employee Runtime targets
+	// Load a skill onto a team or employee as a logical capability binding
 	// (POST /api/v1/skills/{skillId}/install)
 	InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
-	// List skill installation records
-	// (GET /api/v1/skills/{skillId}/installations)
-	ListSkillInstallations(w http.ResponseWriter, r *http.Request, skillId SkillId)
 	// List MCP dependencies declared by a skill
 	// (GET /api/v1/skills/{skillId}/mcp-dependencies)
 	ListSkillMCPDependencies(w http.ResponseWriter, r *http.Request, skillId SkillId)
@@ -8790,15 +8694,9 @@ func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, skillId 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Install a skill onto team or employee Runtime targets
+// Load a skill onto a team or employee as a logical capability binding
 // (POST /api/v1/skills/{skillId}/install)
 func (_ Unimplemented) InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List skill installation records
-// (GET /api/v1/skills/{skillId}/installations)
-func (_ Unimplemented) ListSkillInstallations(w http.ResponseWriter, r *http.Request, skillId SkillId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -15248,32 +15146,6 @@ func (siw *ServerInterfaceWrapper) InstallSkill(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
-// ListSkillInstallations operation middleware
-func (siw *ServerInterfaceWrapper) ListSkillInstallations(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "skillId" -------------
-	var skillId SkillId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListSkillInstallations(w, r, skillId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListSkillMCPDependencies operation middleware
 func (siw *ServerInterfaceWrapper) ListSkillMCPDependencies(w http.ResponseWriter, r *http.Request) {
 
@@ -17437,9 +17309,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/skills/{skillId}/install", wrapper.InstallSkill)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/skills/{skillId}/installations", wrapper.ListSkillInstallations)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/skills/{skillId}/mcp-dependencies", wrapper.ListSkillMCPDependencies)

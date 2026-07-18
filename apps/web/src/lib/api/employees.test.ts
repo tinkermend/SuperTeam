@@ -314,8 +314,24 @@ describe("digital employee API", () => {
       ],
       capability_options: {
         provider_types: ["codex"],
-        skills: ["incident-diagnosis"],
-        mcp_servers: ["github"],
+        skills: [
+          {
+            key: "incident-diagnosis",
+            id: "44444444-4444-4444-8444-444444444444",
+            label: "故障诊断",
+            recommended: true,
+            available: true,
+          },
+        ],
+        mcp_servers: [
+          {
+            key: "github",
+            id: "55555555-5555-4555-8555-555555555555",
+            label: "GitHub MCP",
+            recommended: true,
+            available: true,
+          },
+        ],
       },
       runtime_provider_options: [
         {

@@ -411,6 +411,157 @@ ORDER BY s.slug ASC
 	}, nil
 }
 
+func (r *PgRepository) ListSkillCapabilityOptions(ctx context.Context, tenantID uuid.UUID) ([]CapabilityRegistryOption, error) {
+	if r.sql == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.sql.Query(ctx, `
+SELECT id, slug, name, COALESCE(description, ''), COALESCE(risk_level, '')
+FROM skills
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+ORDER BY slug ASC
+`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanCapabilityRegistryOptions(rows)
+}
+
+func (r *PgRepository) ListMCPCapabilityOptions(ctx context.Context, tenantID uuid.UUID) ([]CapabilityRegistryOption, error) {
+	if r.sql == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.sql.Query(ctx, `
+SELECT id, server_key, name, COALESCE(description, ''), COALESCE(risk_level, '')
+FROM mcp_servers
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+  AND status = 'active'
+ORDER BY server_key ASC
+`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanCapabilityRegistryOptions(rows)
+}
+
+func scanCapabilityRegistryOptions(rows pgx.Rows) ([]CapabilityRegistryOption, error) {
+	options := make([]CapabilityRegistryOption, 0)
+	for rows.Next() {
+		var option CapabilityRegistryOption
+		if err := rows.Scan(&option.ID, &option.Key, &option.Label, &option.Description, &option.RiskLevel); err != nil {
+			return nil, err
+		}
+		options = append(options, option)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return options, nil
+}
+
+func (r *PgRepository) ResolveSkillIDsBySlugs(ctx context.Context, tenantID uuid.UUID, slugs []string) (map[string]uuid.UUID, error) {
+	if len(slugs) == 0 {
+		return map[string]uuid.UUID{}, nil
+	}
+	if r.sql == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.sql.Query(ctx, `
+SELECT slug, id
+FROM skills
+WHERE tenant_id = $1
+  AND slug = ANY($2)
+  AND deleted_at IS NULL
+`, tenantID, slugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanKeyIDMap(rows)
+}
+
+func (r *PgRepository) ResolveMCPServerIDsByKeys(ctx context.Context, tenantID uuid.UUID, keys []string) (map[string]uuid.UUID, error) {
+	if len(keys) == 0 {
+		return map[string]uuid.UUID{}, nil
+	}
+	if r.sql == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.sql.Query(ctx, `
+SELECT server_key, id
+FROM mcp_servers
+WHERE tenant_id = $1
+  AND server_key = ANY($2)
+  AND deleted_at IS NULL
+  AND status = 'active'
+`, tenantID, keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanKeyIDMap(rows)
+}
+
+func scanKeyIDMap(rows pgx.Rows) (map[string]uuid.UUID, error) {
+	resolved := make(map[string]uuid.UUID)
+	for rows.Next() {
+		var key string
+		var id uuid.UUID
+		if err := rows.Scan(&key, &id); err != nil {
+			return nil, err
+		}
+		resolved[key] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+func (r *PgRepository) BindSkillsToEmployee(ctx context.Context, tenantID, employeeID uuid.UUID, skillIDs []uuid.UUID) error {
+	if len(skillIDs) == 0 {
+		return nil
+	}
+	if r.sql == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	for _, skillID := range skillIDs {
+		if _, err := r.sql.Exec(ctx, `
+INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status)
+VALUES ($1, $2, $3, 'enabled')
+ON CONFLICT (tenant_id, skill_id, digital_employee_id)
+DO UPDATE SET status = 'enabled', updated_at = NOW()
+`, tenantID, skillID, employeeID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *PgRepository) BindMCPServersToEmployee(ctx context.Context, tenantID, employeeID uuid.UUID, serverIDs []uuid.UUID) error {
+	if len(serverIDs) == 0 {
+		return nil
+	}
+	if r.sql == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	for _, serverID := range serverIDs {
+		if _, err := r.sql.Exec(ctx, `
+INSERT INTO digital_employee_mcp_bindings_v2 (tenant_id, digital_employee_id, mcp_server_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (tenant_id, digital_employee_id, mcp_server_id) WHERE deleted_at IS NULL
+DO UPDATE SET status = 'active', disabled_at = NULL, updated_at = NOW()
+`, tenantID, employeeID, serverID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *PgRepository) ListRuntimeProviderOptionsForCreate(ctx context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error) {
 	rows, err := r.q.ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx, queries.ListRuntimeProviderOptionsForDigitalEmployeeCreateParams{
 		TenantID: tenantID,

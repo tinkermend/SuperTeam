@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::commands::install_skills::{InstallSkillsCommandPayload, install_skill_targets};
 use crate::commands::payload::{
     RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload,
     RuntimeStopSessionCommandPayload, SessionPolicyMode, metadata_string,
@@ -47,6 +46,7 @@ struct CommandWorkspace {
     provider_auth_mode: String,
     mcp_config_path: Option<PathBuf>,
     skill_conflicts: Vec<String>,
+    skill_convergence: Option<crate::skills_convergence::SkillConvergenceReport>,
 }
 
 #[derive(Clone)]
@@ -171,6 +171,9 @@ pub struct RuntimeCommandExecutor {
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
     control_plane: Option<ControlPlaneClient>,
+    /// Per-home 收敛互斥:同一员工家目录上的两条并发命令不得同时收敛
+    /// (物化 + prune 互删防护)。
+    capability_locks: Arc<std::sync::Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 impl RuntimeCommandExecutor {
@@ -194,6 +197,7 @@ impl RuntimeCommandExecutor {
             registry: RuntimeCommandRegistry::default(),
             config,
             control_plane: None,
+            capability_locks: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -224,7 +228,6 @@ impl RuntimeCommandExecutor {
             | RuntimeCommandType::SendInput => self.handle_input_command(command).await,
             RuntimeCommandType::StopSession => self.handle_stop_command(command).await,
             RuntimeCommandType::EnsureInstance => self.handle_ensure_instance(command),
-            RuntimeCommandType::InstallSkills => self.handle_install_skills(command).await,
             RuntimeCommandType::ProvisionInstance => self.handle_provision_instance(command).await,
             RuntimeCommandType::SyncWorkspaceFiles => {
                 self.handle_sync_workspace_files(command).await
@@ -322,6 +325,7 @@ impl RuntimeCommandExecutor {
             provider_auth_mode: command_workspace.provider_auth_mode,
             mcp_config_path: command_workspace.mcp_config_path,
             skill_conflicts: command_workspace.skill_conflicts,
+            skill_convergence: command_workspace.skill_convergence,
             prompt,
             session_id: session_id.clone(),
             continue_session: matches!(
@@ -761,75 +765,6 @@ impl RuntimeCommandExecutor {
         })
     }
 
-    async fn handle_install_skills(
-        &self,
-        command: RuntimeCommand,
-    ) -> anyhow::Result<RuntimeCommandOutcome> {
-        let payload: InstallSkillsCommandPayload = match serde_json::from_value(command.payload) {
-            Ok(payload) => payload,
-            Err(error) => {
-                let error = self.recorded_error(
-                    &command.id,
-                    anyhow::anyhow!("invalid install_skills command payload: {error}"),
-                );
-                let message = error.to_string();
-                self.write_install_skills_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-        if payload.command_id != command.id {
-            let error = self.recorded_error(
-                &command.id,
-                anyhow::anyhow!("command_id does not match runtime command id"),
-            );
-            let message = error.to_string();
-            self.write_install_skills_failure(&command.id, message)
-                .await?;
-            return Err(error);
-        }
-
-        let Some(control_plane_client) = &self.control_plane else {
-            let error = self.recorded_error(
-                &command.id,
-                anyhow::anyhow!(
-                    "install_skills requires a control plane client for presigned downloads"
-                ),
-            );
-            let message = error.to_string();
-            self.write_install_skills_failure(&command.id, message)
-                .await?;
-            return Err(error);
-        };
-        let fetcher = crate::skills::PresignSkillArchiveFetcher::new(control_plane_client.clone());
-
-        let installed = match install_skill_targets(payload, &fetcher).await {
-            Ok(installed) => installed,
-            Err(error) => {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_install_skills_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-
-        if let Some(control_plane) = &self.control_plane {
-            control_plane
-                .complete_runtime_command(
-                    &command.id,
-                    &install_skills_completed_terminal(installed),
-                )
-                .await?;
-        }
-
-        Ok(RuntimeCommandOutcome {
-            command_id: command.id,
-            accepted: true,
-            run_id: None,
-        })
-    }
-
     fn ensure_instance_from_command(
         &self,
         command: &RuntimeCommand,
@@ -858,19 +793,6 @@ impl RuntimeCommandExecutor {
         if let Some(control_plane) = &self.control_plane {
             control_plane
                 .fail_runtime_command(command_id, &provisioning_failed_terminal(error_message))
-                .await?;
-        }
-        Ok(())
-    }
-
-    async fn write_install_skills_failure(
-        &self,
-        command_id: &str,
-        error_message: String,
-    ) -> anyhow::Result<()> {
-        if let Some(control_plane) = &self.control_plane {
-            control_plane
-                .fail_runtime_command(command_id, &install_skills_failed_terminal(error_message))
                 .await?;
         }
         Ok(())
@@ -1064,29 +986,60 @@ impl RuntimeCommandExecutor {
             files: payload.workspace_files.clone(),
         })?;
 
-        // 目录与能力投影修订 spec §2: the session payload's skill set is
-        // materialized into the stable employee capability cache before the
-        // workspace links are made. Per-item checksum markers make this an
-        // incremental no-op when the cache is already current; a declared
-        // skill that cannot be materialized fails the session loudly.
-        if !payload.skills.is_empty() {
-            let control_plane_client = self.control_plane.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("session skills require a control plane client for presigned downloads")
-            })?;
-            let fetcher =
-                crate::skills::PresignSkillArchiveFetcher::new(control_plane_client.clone());
-            crate::skills::materialize_provider_skills(
-                agent_home_dir,
-                &payload.provider_type,
-                &payload.skills,
-                &fetcher,
-            )
-            .await?;
-        }
-
         let project_workspace = payload.project_workspace();
         let capability_manifest_version = project_workspace.capability_manifest_version.clone();
         let provider_auth_mode = project_workspace.provider_auth_mode.clone();
+
+        // 技能懒收敛(capability-binding-unification):payload 的 skills[] 是员工
+        // 能力家目录的全量清单——物化新增/更新、prune 清单外 stale 目录,家目录
+        // stamp 短路重复派发。任务与 chat 两条派发路径都经此处生效;老 CP(无
+        // capability_manifest_version)保持只增不删的现状语义。
+        let fetcher: Box<dyn crate::skills::SkillArchiveFetcher> = match self.control_plane.as_ref()
+        {
+            Some(client) => Box::new(crate::skills::PresignSkillArchiveFetcher::new(
+                client.clone(),
+            )),
+            None => {
+                if !payload.skills.is_empty() {
+                    anyhow::bail!(
+                        "session skills require a control plane client for presigned downloads"
+                    );
+                }
+                Box::new(NoControlPlaneSkillFetcher)
+            }
+        };
+        let skill_convergence = {
+            // per-home 互斥:同一家目录上的并发命令串行收敛,防止互删。
+            let home_lock = self.capability_convergence_lock(agent_home_dir);
+            let _guard = home_lock.lock().await;
+            // 并发防护:家目录仍被 Running run 引用时跳过 prune(当前命令的 run
+            // 此时尚未注册——start_run 在收敛之后——不会误伤自己),stamp 不写,
+            // 下次派发补删。
+            let allow_prune = !self
+                .runs
+                .active_capability_dirs()
+                .await
+                .contains(agent_home_dir);
+            crate::skills_convergence::converge_provider_skills(
+                agent_home_dir,
+                &payload.provider_type,
+                &payload.skills,
+                capability_manifest_version.as_deref(),
+                fetcher.as_ref(),
+                allow_prune,
+            )
+            .await?
+        };
+        eprintln!(
+            "command {}: skill convergence for {} home (materialized={}, reused={}, pruned={}, prune_skipped={}, stamp_hit={})",
+            payload.command_id,
+            payload.provider_type,
+            skill_convergence.materialized.len(),
+            skill_convergence.reused.len(),
+            skill_convergence.pruned.len(),
+            skill_convergence.prune_skipped,
+            skill_convergence.stamp_hit,
+        );
         let resolved = crate::project_workspace::resolve_project_workspace(
             crate::project_workspace::ProjectWorkspaceRequest {
                 base_dir: self.config.workspace.base_dir.clone(),
@@ -1138,7 +1091,19 @@ impl RuntimeCommandExecutor {
             provider_auth_mode,
             mcp_config_path,
             skill_conflicts: skipped,
+            skill_convergence: Some(skill_convergence),
         })
+    }
+
+    fn capability_convergence_lock(&self, agent_home_dir: &Path) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self
+            .capability_locks
+            .lock()
+            .expect("capability convergence lock registry poisoned");
+        locks
+            .entry(agent_home_dir.to_path_buf())
+            .or_default()
+            .clone()
     }
 
     fn select_provider(
@@ -1225,6 +1190,23 @@ impl RuntimeCommandExecutor {
         self.registry
             .record_rejection(command_id, &error.to_string());
         error
+    }
+}
+
+/// 收敛在无 control plane client 且 skills 清单为空时仍要执行(prune/stamp 语义
+/// 不依赖下载);此 fetcher 只作占位,任何真实取回请求都是逻辑错误。
+struct NoControlPlaneSkillFetcher;
+
+#[async_trait::async_trait]
+impl crate::skills::SkillArchiveFetcher for NoControlPlaneSkillFetcher {
+    async fn fetch(
+        &self,
+        skill: &crate::commands::payload::RuntimeSkillPayload,
+    ) -> anyhow::Result<Vec<u8>> {
+        anyhow::bail!(
+            "session skills require a control plane client for presigned downloads: {}",
+            skill.skill_key
+        )
     }
 }
 
@@ -1383,45 +1365,6 @@ fn workspace_sync_failed_terminal(error_message: String) -> RuntimeCommandTermin
         error_message: Some(error_message),
         error_code: Some("workspace_sync_failed".to_string()),
         error_family: Some("workspace_materialization".to_string()),
-    }
-}
-
-fn install_skills_completed_terminal(
-    installed: Vec<crate::commands::install_skills::InstalledSkillTarget>,
-) -> RuntimeCommandTerminalWriteback {
-    let mut result = HashMap::new();
-    result.insert(
-        "installed".to_string(),
-        serde_json::to_value(installed).unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
-    );
-    RuntimeCommandTerminalWriteback {
-        status: "completed".to_string(),
-        summary: Some("runtime skills installed".to_string()),
-        result: Some(result),
-        diagnostic: None,
-        provider_session_external_id: None,
-        session_state_patch: None,
-        log_ref: None,
-        raw_result_ref: None,
-        error_message: None,
-        error_code: None,
-        error_family: None,
-    }
-}
-
-fn install_skills_failed_terminal(error_message: String) -> RuntimeCommandTerminalWriteback {
-    RuntimeCommandTerminalWriteback {
-        status: "failed".to_string(),
-        summary: None,
-        result: None,
-        diagnostic: None,
-        provider_session_external_id: None,
-        session_state_patch: None,
-        log_ref: None,
-        raw_result_ref: None,
-        error_message: Some(error_message),
-        error_code: Some("install_skills_failed".to_string()),
-        error_family: Some("runtime_skill_install".to_string()),
     }
 }
 
@@ -2182,6 +2125,15 @@ fn project_task_attestation_writeback(
                     .map(|key| serde_json::Value::String(key.clone()))
                     .collect(),
             ),
+        );
+    }
+    if let Some(skill_convergence) = &spec.skill_convergence {
+        // 技能懒收敛报告(capability-binding-unification):materialized/reused/
+        // pruned/prune_skipped/stamp_hit 全量留痕。
+        metadata.insert(
+            "capability_convergence".to_string(),
+            serde_json::to_value(skill_convergence)
+                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new())),
         );
     }
     if let Some(model) = &spec.model {
@@ -4032,6 +3984,13 @@ mod tests {
                 "/workspace/project/.superteam/mcp/claude.json",
             )),
             skill_conflicts: vec!["beta".to_string()],
+            skill_convergence: Some(crate::skills_convergence::SkillConvergenceReport {
+                materialized: vec!["alpha".to_string()],
+                reused: vec!["gamma".to_string()],
+                pruned: vec!["stale".to_string()],
+                prune_skipped: false,
+                stamp_hit: false,
+            }),
             prompt: "complete task".to_string(),
             session_id: None,
             continue_session: false,
@@ -4082,6 +4041,17 @@ mod tests {
             body.metadata["skill_conflicts"],
             serde_json::json!(["beta"]),
             "spec §3.1: project-native skill conflicts must reach the attestation metadata"
+        );
+        assert_eq!(
+            body.metadata["capability_convergence"],
+            serde_json::json!({
+                "materialized": ["alpha"],
+                "reused": ["gamma"],
+                "pruned": ["stale"],
+                "prune_skipped": false,
+                "stamp_hit": false
+            }),
+            "lazy skill convergence report must reach the attestation metadata"
         );
         assert!(body.metadata.get("workspace_path").is_none());
         assert!(body.metadata.get("agent_home_dir").is_none());

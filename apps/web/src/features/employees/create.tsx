@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bot,
@@ -43,6 +43,7 @@ import {
 } from "@/components/layout/shell-page-header";
 import type {
   DigitalEmployeeAvatarAsset,
+  DigitalEmployeeCapabilityOptionItem,
   DigitalEmployeeCreateOptions,
   DigitalEmployeeTypeOption,
 } from "@/lib/api/employees";
@@ -249,7 +250,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
           approval_policy: draft.approval_policy,
           budget_policy: budgetPolicyFromDraft(draft),
-          capability_bindings: capabilityBindingsFromDraft(draft, createOptions.data),
+          ...capabilitySelectionFromDraft(draft, createOptions.data),
+          capability_bindings: capabilityBindingsFromDraft(draft),
           context_policy: draft.context_policy,
           persona_memory_markdown: draft.persona_memory_markdown.trim(),
           risk_level: draft.risk_level,
@@ -1348,12 +1350,10 @@ function CapabilityStep({
 }) {
   const capabilityOptions = options?.capability_options;
   const inheritedCapabilities = inheritedCapabilityBindings(options);
-  const capabilityBindingsPreview = formatCapabilityBindingsPreview(
-    capabilityBindingsFromDraft(draft, options),
-  );
+  const capabilityBindingsPreview = formatCapabilityBindingsPreview(draft, options);
   const extensionCapabilityOptions = {
-    mcp_servers: withoutValues(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.mcp_servers),
-    skills: withoutValues(capabilityOptions?.skills ?? [], inheritedCapabilities.skills),
+    mcp_servers: withoutInheritedItems(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.mcp_servers),
+    skills: withoutInheritedItems(capabilityOptions?.skills ?? [], inheritedCapabilities.skills),
   };
 
   function toggle(kind: keyof WizardDraft["capability_binding_draft"], value: string) {
@@ -1401,12 +1401,30 @@ function CapabilityStep({
       </div>
       <CapabilityGroup
         checkedValues={draft.capability_binding_draft.skills}
+        emptyState={
+          <p className="text-sm text-v3-ink-3">
+            注册表暂无可选技能。候选来自租户技能市场,先
+            <Link className="text-v3-brand hover:underline" to="/skills">
+              去技能市场上架
+            </Link>
+            ,回到这里即可选用;创建后也可在员工详情"扩展能力"中加载。
+          </p>
+        }
         label="技能"
         onToggle={(value) => toggle("skills", value)}
         values={extensionCapabilityOptions.skills}
       />
       <CapabilityGroup
         checkedValues={draft.capability_binding_draft.mcp_servers}
+        emptyState={
+          <p className="text-sm text-v3-ink-3">
+            注册表暂无可选 MCP Server。候选来自 MCP 注册表,先
+            <Link className="text-v3-brand hover:underline" to="/mcp">
+              去 MCP 注册表登记
+            </Link>
+            ,回到这里即可选用。
+          </p>
+        }
         label="MCP Server"
         onToggle={(value) => toggle("mcp_servers", value)}
         values={extensionCapabilityOptions.mcp_servers}
@@ -1474,37 +1492,67 @@ function CapabilityReadOnlyList({ label, values }: { label: string; values: stri
 
 function CapabilityGroup({
   checkedValues,
+  emptyState,
   label,
   onToggle,
   values,
 }: {
   checkedValues: string[];
+  emptyState: ReactNode;
   label: string;
   onToggle: (value: string) => void;
-  values: string[];
+  values: DigitalEmployeeCapabilityOptionItem[];
 }) {
   return (
     <fieldset className="rounded-[14px] border border-v3-line p-3">
       <legend className="px-1 text-sm font-medium text-v3-ink">{label}</legend>
       <div className="mt-3 grid gap-2.5 md:grid-cols-2">
-        {values.map((value) => {
-          const checked = checkedValues.includes(value);
+        {values.map((item) => {
+          const checked = checkedValues.includes(item.key);
+          const disabled = !item.available;
           return (
             <label
               className={cn(
-                "flex cursor-pointer items-center gap-2 rounded-[12px] border px-3 py-2 text-sm transition-colors",
-                checked
-                  ? "border-v3-brand/40 bg-v3-brand-soft text-v3-brand-deep"
-                  : "border-v3-line bg-v3-card text-v3-ink hover:bg-v3-card-soft",
+                "flex items-start gap-2 rounded-[12px] border px-3 py-2 text-sm transition-colors",
+                disabled
+                  ? "cursor-not-allowed border-v3-line bg-v3-card-soft opacity-60"
+                  : checked
+                    ? "cursor-pointer border-v3-brand/40 bg-v3-brand-soft text-v3-brand-deep"
+                    : "cursor-pointer border-v3-line bg-v3-card text-v3-ink hover:bg-v3-card-soft",
               )}
-              key={value}
+              key={item.key}
             >
-              <Checkbox checked={checked} onCheckedChange={() => onToggle(value)} />
-              <span className="min-w-0 truncate">{value}</span>
+              <Checkbox
+                checked={checked}
+                className="mt-0.5"
+                disabled={disabled}
+                onCheckedChange={() => onToggle(item.key)}
+              />
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="min-w-0 truncate font-medium">{item.label}</span>
+                  {item.recommended ? (
+                    <Badge className="shrink-0" variant="secondary">
+                      推荐
+                    </Badge>
+                  ) : null}
+                  {disabled ? (
+                    <Badge className="shrink-0" variant="outline">
+                      未上架
+                    </Badge>
+                  ) : null}
+                </span>
+                {item.label !== item.key ? (
+                  <span className="truncate font-mono text-xs text-v3-ink-3">{item.key}</span>
+                ) : null}
+                {item.description ? (
+                  <span className="line-clamp-2 text-xs text-v3-ink-3">{item.description}</span>
+                ) : null}
+              </span>
             </label>
           );
         })}
-        {values.length === 0 ? <p className="text-sm text-v3-ink-3">暂无可选项</p> : null}
+        {values.length === 0 ? <div className="md:col-span-2">{emptyState}</div> : null}
       </div>
     </fieldset>
   );
@@ -1724,10 +1772,7 @@ function applyTypeDefaults(
     ...current,
     approval_policy: policyDefaults?.approval_policy ?? {},
     capability_bindings: capabilityBindingDefaults(typeOption.capability_bindings),
-    capability_binding_draft: {
-      mcp_servers: stringList(typeOption.capability_bindings?.mcp_servers),
-      skills: stringList(typeOption.capability_bindings?.skills),
-    },
+    capability_binding_draft: recommendedCapabilitySelection(typeOption, options),
     context_policy: {},
     daily_token_limit: dailyTokenLimit,
     employee_type: typeOption.type,
@@ -1755,6 +1800,33 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
   };
 }
 
+// recommendedCapabilitySelection preselects the template's recommended
+// skills/MCP servers, limited to keys that are actually available in the
+// tenant registry — template defaults are no longer merged server-side.
+function recommendedCapabilitySelection(
+  typeOption: DigitalEmployeeTypeOption,
+  options: DigitalEmployeeCreateOptions | undefined,
+): WizardDraft["capability_binding_draft"] {
+  const availableSkills = availableOptionKeys(options?.capability_options.skills);
+  const availableMCPServers = availableOptionKeys(options?.capability_options.mcp_servers);
+  const recommendedSkills = uniqueStringList([
+    ...(typeOption.recommended_skills ?? []),
+    ...stringList(typeOption.capability_bindings?.skills),
+  ]);
+  const recommendedMCPServers = uniqueStringList([
+    ...(typeOption.recommended_mcp_servers ?? []),
+    ...stringList(typeOption.capability_bindings?.mcp_servers),
+  ]);
+  return {
+    mcp_servers: recommendedMCPServers.filter((key) => availableMCPServers.has(key)),
+    skills: recommendedSkills.filter((key) => availableSkills.has(key)),
+  };
+}
+
+function availableOptionKeys(items: DigitalEmployeeCapabilityOptionItem[] | undefined): Set<string> {
+  return new Set((items ?? []).filter((item) => item.available).map((item) => item.key));
+}
+
 function inheritedCapabilityBindings(options: DigitalEmployeeCreateOptions | undefined): WizardDraft["capability_binding_draft"] {
   const teamConfig = options?.team_config as Record<string, unknown> | undefined;
 
@@ -1776,17 +1848,23 @@ function employeeExtensionCapabilityBindings(
   };
 }
 
-function capabilityBindingsFromDraft(
+// capabilitySelectionFromDraft is the top-level skills/mcp_servers payload:
+// the employee's own logical-binding selections, with team-inherited keys
+// removed. capability_bindings no longer carries skills/mcp_servers — the
+// server strips those keys and persists bindings in the binding tables.
+function capabilitySelectionFromDraft(
   draft: WizardDraft,
   options: DigitalEmployeeCreateOptions | undefined,
-): Record<string, unknown> {
+): { skills: string[]; mcp_servers: string[] } {
   const extension = employeeExtensionCapabilityBindings(draft.capability_binding_draft, options);
-  const bindings = capabilityBindingDefaults(draft.capability_bindings);
+  return {
+    skills: uniqueStringList(extension.skills),
+    mcp_servers: uniqueStringList(extension.mcp_servers),
+  };
+}
 
-  bindings.skills = uniqueStringList(extension.skills);
-  bindings.mcp_servers = uniqueStringList(extension.mcp_servers);
-
-  return bindings;
+function capabilityBindingsFromDraft(draft: WizardDraft): Record<string, unknown> {
+  return capabilityBindingDefaults(draft.capability_bindings);
 }
 
 function capabilityBindingDefaults(value: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -1830,6 +1908,15 @@ function withoutValues(values: string[], excludedValues: string[]) {
   return values.filter((value) => !excluded.has(value));
 }
 
+function withoutInheritedItems(
+  items: DigitalEmployeeCapabilityOptionItem[],
+  inheritedKeys: string[],
+) {
+  if (inheritedKeys.length === 0) return items;
+  const excluded = new Set(inheritedKeys);
+  return items.filter((item) => !excluded.has(item.key));
+}
+
 function parseDailyTokenLimit(rawValue: string) {
   const trimmed = rawValue.trim();
   if (!trimmed) return { value: undefined };
@@ -1844,12 +1931,17 @@ function formatJsonSummary(value: Record<string, unknown>) {
   return JSON.stringify(value, null, 2);
 }
 
-function formatCapabilityBindingsPreview(value: Record<string, unknown>) {
+function formatCapabilityBindingsPreview(
+  draft: WizardDraft,
+  options: DigitalEmployeeCreateOptions | undefined,
+) {
+  const selection = capabilitySelectionFromDraft(draft, options);
+  const bindings = capabilityBindingsFromDraft(draft);
   return [
-    `技能：${stringList(value.skills).length}`,
-    `MCP Server：${stringList(value.mcp_servers).length}`,
-    `外部能力：${stringList(value.external_capabilities).length}`,
-    `环境变量引用：${stringList(value.environment_variable_refs).length}`,
+    `技能：${selection.skills.length}`,
+    `MCP Server：${selection.mcp_servers.length}`,
+    `外部能力：${stringList(bindings.external_capabilities).length}`,
+    `环境变量引用：${stringList(bindings.environment_variable_refs).length}`,
   ].join("\n");
 }
 

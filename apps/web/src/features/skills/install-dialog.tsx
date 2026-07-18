@@ -18,13 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getDigitalEmployeeOverview, type DigitalEmployeeOverviewItem } from "@/lib/api/employees";
+import { getDigitalEmployeeOverview } from "@/lib/api/employees";
 import {
-  InstallSkillError,
   installSkill,
   type InstallSkillResult,
   type Skill,
-  type SkillInstallBlockedTarget,
   type SkillInstallTargetScope,
 } from "@/lib/api/skills";
 import { listTeams } from "@/lib/api/teams";
@@ -47,13 +45,13 @@ const targetScopeOptions: Array<{
   value: SkillInstallTargetScope;
 }> = [
   {
-    description: "安装到团队内可执行的数字员工",
+    description: "绑定到团队,团队内数字员工全部继承",
     icon: Users,
     label: "团队",
     value: "team",
   },
   {
-    description: "安装到单个数字员工运行环境",
+    description: "绑定到单个数字员工",
     icon: Bot,
     label: "数字员工",
     value: "employee",
@@ -98,10 +96,6 @@ export function SkillInstallDialog({
   }, [open, skill?.id]);
 
   const selectedTargetId = targetScope === "team" ? selectedTeamId : selectedEmployeeId;
-  const selectedEmployee =
-    targetScope === "employee"
-      ? (employees.data ?? []).find((employee) => employee.identity_summary.id === selectedEmployeeId)
-      : undefined;
   const targetLoadError =
     targetScope === "team" && teams.error instanceof Error
       ? teams.error.message
@@ -116,19 +110,17 @@ export function SkillInstallDialog({
       return installSkill(apiOptions, skill.id, {
         target_scope: targetScope,
         ...(targetScope === "team" ? { team_id: selectedTeamId } : { digital_employee_id: selectedEmployeeId }),
-        timeout_sec: 15,
       });
     },
     onSuccess: async (result) => {
       setInstallResult(result);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["skills"] }),
-        queryClient.invalidateQueries({ queryKey: ["skill", skill?.id, "installations"] }),
+        queryClient.invalidateQueries({ queryKey: ["skill", skill?.id] }),
       ]);
     },
   });
 
-  const installError = mutation.error instanceof InstallSkillError ? mutation.error : undefined;
   const mutationError = mutation.error instanceof Error ? mutation.error.message : undefined;
   const canSubmit = Boolean(skill && selectedTargetId) && !mutation.isPending;
 
@@ -155,7 +147,7 @@ export function SkillInstallDialog({
               <Bot />
             </IconTile>
             <div className="min-w-0">
-              <DialogTitle className="text-xl font-bold text-v3-ink">安装技能</DialogTitle>
+              <DialogTitle className="text-xl font-bold text-v3-ink">加载技能</DialogTitle>
               <DialogDescription className="mt-1 text-sm leading-5 text-v3-ink-2">
                 {skill?.name ?? "选择技能"} · {skill?.version ?? "待选择"}
               </DialogDescription>
@@ -165,7 +157,7 @@ export function SkillInstallDialog({
 
         <div className="space-y-5 px-5 py-5">
           <fieldset className="space-y-3">
-            <legend className="text-sm font-bold text-v3-ink">安装范围</legend>
+            <legend className="text-sm font-bold text-v3-ink">加载范围</legend>
             <RadioGroup
               className="grid gap-3 sm:grid-cols-2"
               onValueChange={(value) => {
@@ -200,7 +192,7 @@ export function SkillInstallDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-v3-ink" htmlFor="skill-install-target">
-              安装目标
+              加载目标
             </label>
             {targetScope === "team" ? (
               <Select
@@ -212,7 +204,7 @@ export function SkillInstallDialog({
                 value={selectedTeamId}
               >
                 <SelectTrigger
-                  aria-label="安装团队"
+                  aria-label="加载到团队"
                   className="h-11 w-full rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none"
                   id="skill-install-target"
                 >
@@ -236,7 +228,7 @@ export function SkillInstallDialog({
                 value={selectedEmployeeId}
               >
                 <SelectTrigger
-                  aria-label="安装数字员工"
+                  aria-label="加载到数字员工"
                   className="h-11 w-full rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none"
                   id="skill-install-target"
                 >
@@ -252,11 +244,9 @@ export function SkillInstallDialog({
               </Select>
             )}
             <p className="text-xs leading-5 text-v3-ink-3">
-              安装请求会等待运行节点确认，超时时间 15 秒。
+              加载是即时生效的逻辑绑定,不依赖任何运行节点;技能文件会在该员工下次任务派发时自动同步到运行环境。
             </p>
           </div>
-
-          {selectedEmployee ? <EmployeeRuntimeSummary item={selectedEmployee} /> : null}
 
           {targetLoadError ? (
             <div className="rounded-xl border border-v3-danger/30 bg-v3-danger-soft px-3 py-2 text-sm font-semibold text-v3-danger">
@@ -264,29 +254,25 @@ export function SkillInstallDialog({
             </div>
           ) : null}
           {mutationError ? (
-            <div className="space-y-3 rounded-xl border border-v3-danger/30 bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
-              <div className="font-semibold">{mutationError}</div>
-              {installError?.phase ? (
-                <div className="font-mono text-[11px] uppercase tracking-normal text-v3-danger/80">
-                  {installError.phase}
-                </div>
-              ) : null}
-              {installError?.blockedTargets.length ? (
-                <BlockedTargetList blockedTargets={installError.blockedTargets} />
-              ) : null}
+            <div className="rounded-xl border border-v3-danger/30 bg-v3-danger-soft px-3 py-2 text-sm font-semibold text-v3-danger">
+              {mutationError}
             </div>
           ) : null}
           {installResult ? (
             <div className="flex items-center gap-2 rounded-xl border border-v3-ok/30 bg-v3-ok-soft px-3 py-2 text-sm font-semibold text-v3-ok">
               <CheckCircle2 className="size-4" />
-              <span>已安装到 {installResult.installed_count} 个目标</span>
+              <span>
+                {installResult.already_bound
+                  ? "该目标已拥有此技能(含团队继承),无需重复加载"
+                  : "已加载,下次任务派发时同步到运行环境"}
+              </span>
             </div>
           ) : null}
         </div>
 
         <DialogFooter className="border-t border-v3-line bg-v3-card-soft px-5 py-4">
           {installResult ? (
-            <StatusPill tone="ok">安装完成</StatusPill>
+            <StatusPill tone="ok">{installResult.already_bound ? "已具备" : "已加载"}</StatusPill>
           ) : null}
           <V3Button
             disabled={mutation.isPending}
@@ -298,64 +284,10 @@ export function SkillInstallDialog({
           </V3Button>
           <V3Button disabled={!canSubmit} onClick={() => mutation.mutate()} type="button">
             {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            确认安装
+            确认加载
           </V3Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function BlockedTargetList({ blockedTargets }: { blockedTargets: SkillInstallBlockedTarget[] }) {
-  return (
-    <div className="space-y-2">
-      {blockedTargets.map((target, index) => (
-        <div
-          className="rounded-lg border border-v3-danger/20 bg-v3-card px-3 py-2 text-v3-ink"
-          data-testid="skill-install-blocked-target"
-          key={`${target.digital_employee_id ?? target.node_id ?? target.reason_code}-${index}`}
-        >
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-v3-ink">
-                {target.employee_name || target.digital_employee_id || "未知目标"}
-              </div>
-              <div className="mt-1 text-xs leading-5 text-v3-ink-2">{target.message}</div>
-            </div>
-            <span className="shrink-0 rounded-lg bg-v3-danger-soft px-2 py-1 font-mono text-[11px] font-bold text-v3-danger">
-              {target.reason_code}
-            </span>
-          </div>
-          {providerNodeLabel(target) ? (
-            <div className="mt-2 font-mono text-[11px] text-v3-ink-3">{providerNodeLabel(target)}</div>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function providerNodeLabel(target: SkillInstallBlockedTarget) {
-  const parts = [target.provider_type, target.node_id ?? target.runtime_node_id].filter(Boolean);
-  return parts.length ? parts.join(" · ") : undefined;
-}
-
-function EmployeeRuntimeSummary({ item }: { item: DigitalEmployeeOverviewItem }) {
-  const execution = item.execution_summary;
-  const runtimeLine = [execution.provider_type, execution.node_id].filter(Boolean).join(" · ");
-  const isInactive = execution.runtime_status !== "online";
-
-  return (
-    <div className="space-y-2 rounded-xl border border-v3-line bg-v3-card-soft px-3 py-3">
-      <div className="text-xs font-bold uppercase tracking-[0.12em] text-v3-ink-3">当前绑定 Runtime</div>
-      <div className="text-sm font-bold text-v3-ink">{execution.runtime_name || execution.node_id || "未命名节点"}</div>
-      {runtimeLine ? <div className="font-mono text-[11px] text-v3-ink-3">{runtimeLine}</div> : null}
-      <div className="text-xs leading-5 text-v3-ink-2">运行状态：{execution.runtime_status || "unknown"}</div>
-      {isInactive ? (
-        <div className="rounded-lg border border-v3-danger/25 bg-v3-danger-soft px-3 py-2 text-xs font-semibold text-v3-danger">
-          绑定节点已失活时，请先重新 provision 数字员工，再重试技能安装。
-        </div>
-      ) : null}
-    </div>
   );
 }

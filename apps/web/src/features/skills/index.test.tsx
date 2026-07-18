@@ -376,42 +376,9 @@ function createSkillsFetcher() {
         skill_id: "skill-api-doc",
         target_scope: "employee",
         digital_employee_id: "agent-1",
-        installed_count: 1,
-        installations: [
-          {
-            digital_employee_id: "agent-1",
-            employee_name: "需求澄清 Agent",
-            provider_type: "codex",
-            runtime_node_id: "runtime-1",
-            node_id: "node-1",
-            installed_path: "/var/superteam/skills/skill-api-doc",
-            archive_checksum_sha256: "def456abc123",
-            installed_at: "2026-06-24T08:00:00Z",
-          },
-        ],
+        already_bound: false,
+        bound_at: "2026-07-19T08:00:00Z",
       }, 201);
-    }
-    if (url.pathname === "/api/v1/skills/skill-requirement/installations" && method === "GET") {
-      return jsonResponse([
-        {
-          id: "installation-1",
-          skill_id: "skill-requirement",
-          digital_employee_id: "agent-1",
-          employee_name: "需求澄清 Agent",
-          provider_type: "codex",
-          runtime_node_id: "runtime-1",
-          node_id: "node-1",
-          installed_path: "/var/superteam/skills/requirement-clarifier",
-          archive_checksum_sha256: "abc123def456",
-          installed_at: "2026-06-24T08:00:00Z",
-        },
-      ]);
-    }
-    if (url.pathname === "/api/v1/skills/skill-api-doc/installations" && method === "GET") {
-      return jsonResponse([]);
-    }
-    if (url.pathname === "/api/v1/skills/skill-incident-review/installations" && method === "GET") {
-      return jsonResponse([]);
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -445,7 +412,7 @@ function createFailingSkillsFetcher() {
   });
 }
 
-function createInstallConflictFetcher() {
+function createAlreadyBoundInstallFetcher() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -460,24 +427,12 @@ function createInstallConflictFetcher() {
     }
     if (url.pathname === "/api/v1/skills/skill-api-doc/install" && method === "POST") {
       return jsonResponse({
-        error: "skill_install_failed",
-        phase: "preflight",
-        message: "技能安装预检失败",
-        blocked_targets: [
-          {
-            digital_employee_id: "agent-1",
-            employee_name: "需求澄清 Agent",
-            provider_type: "codex",
-            runtime_node_id: "runtime-1",
-            node_id: "node-a",
-            reason_code: "runtime_not_connected",
-            message: "绑定的 Runtime 节点已失活，请先重新 provision 数字员工",
-          },
-        ],
-      }, 409);
-    }
-    if (url.pathname.endsWith("/installations") && method === "GET") {
-      return jsonResponse([]);
+        skill_id: "skill-api-doc",
+        target_scope: "employee",
+        digital_employee_id: "agent-1",
+        already_bound: true,
+        bound_at: "2026-07-19T08:00:00Z",
+      }, 201);
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -510,7 +465,7 @@ describe("SkillsView", () => {
     await expect.element(screen.getByRole("button", { name: "选中 需求澄清助手" })).toBeVisible();
     await expect.element(screen.getByText("接口文档生成")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "查看详情 需求澄清助手" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "安装 接口文档生成" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "加载 接口文档生成" })).toBeVisible();
   });
 
   it("keeps unbound skills with declared runtime dependencies installable in the market list", async () => {
@@ -584,55 +539,46 @@ describe("SkillsView", () => {
     await expect.element(screen.getByRole("button", { name: "选中 接口文档生成" })).toBeVisible();
   });
 
-  it("loads installation records when selecting a skill detail in the current page", async () => {
+  it("shows the logical binding scope when selecting a skill in the current page", async () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
     await userEvent.click(screen.getByRole("button", { name: "选中 需求澄清助手" }));
 
-    const installationsRegion = screen.getByRole("region", { name: "需求澄清助手 安装记录" });
-    await expect.element(installationsRegion).toBeVisible();
-    await expect.element(installationsRegion.getByText("1.3.0")).toBeVisible();
-    await expect.element(installationsRegion.getByText("1 个目标")).toBeVisible();
-    await expect.element(installationsRegion.getByText("需求澄清 Agent")).toBeVisible();
-    await expect.element(installationsRegion.getByText("codex")).toBeVisible();
-    await expect.element(installationsRegion.getByText("runtime-1 · node-1")).toBeVisible();
-    await expect.element(installationsRegion.getByText("/var/superteam/skills/requirement-clarifier")).toBeVisible();
-    await expect.element(installationsRegion.getByText("2026-06-24T08:00:00Z")).toBeVisible();
-    await expect.element(installationsRegion.getByText("abc123def456")).toBeVisible();
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/skills/skill-requirement/installations",
-      expect.objectContaining({ method: "GET" }),
-    );
+    const bindingsRegion = screen.getByRole("region", { name: "需求澄清助手 加载范围" });
+    await expect.element(bindingsRegion).toBeVisible();
+    await expect.element(bindingsRegion.getByText("1.3.0")).toBeVisible();
+    await expect.element(bindingsRegion.getByText("4 个目标")).toBeVisible();
+    await expect.element(bindingsRegion.getByText("平台工程", { exact: true })).toBeVisible();
+    await expect.element(bindingsRegion.getByText("需求澄清 Agent")).toBeVisible();
+    // 逻辑绑定直接来自技能详情响应,不再有独立的安装记录接口。
+    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-requirement/installations")).toBe(0);
   });
 
-  it("renders an empty installation state for a selected skill without physical records", async () => {
+  it("renders an empty binding state for a selected skill without bindings", async () => {
     const screen = await renderSkillsView();
 
     await userEvent.click(screen.getByRole("button", { name: "选中 接口文档生成" }));
 
-    await expect.element(screen.getByRole("region", { name: "接口文档生成 安装记录" })).toBeVisible();
-    await expect.element(screen.getByText("暂无安装记录")).toBeVisible();
+    await expect.element(screen.getByRole("region", { name: "接口文档生成 加载范围" })).toBeVisible();
+    await expect.element(screen.getByText("尚未加载到任何目标")).toBeVisible();
   });
 
-  it("hides stale installation records when filters remove the selected skill from visible results", async () => {
-    const fetcher = createSkillsFetcher();
-    const screen = await renderSkillsView(fetcher);
+  it("hides the previous skill binding region when filters remove it from visible results", async () => {
+    const screen = await renderSkillsView();
 
     await userEvent.click(screen.getByRole("button", { name: "选中 需求澄清助手" }));
-    await expect.element(screen.getByRole("region", { name: "需求澄清助手 安装记录" })).toBeVisible();
-    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-requirement/installations")).toBe(1);
+    await expect.element(screen.getByRole("region", { name: "需求澄清助手 加载范围" })).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "有依赖" }));
 
-    await expect.element(screen.getByRole("region", { name: "接口文档生成 安装记录" })).toBeVisible();
+    await expect.element(screen.getByRole("region", { name: "接口文档生成 加载范围" })).toBeVisible();
     await vi.waitFor(() => {
       expect(document.body.textContent).not.toContain("需求澄清助手");
     });
     await vi.waitFor(() => {
-      expect(document.body.querySelector('[aria-label="需求澄清助手 安装记录"]')).toBeNull();
+      expect(document.body.querySelector('[aria-label="需求澄清助手 加载范围"]')).toBeNull();
     });
-    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-requirement/installations")).toBe(1);
   });
 
   it("deletes a skill from the market card after confirming the danger dialog", async () => {
@@ -700,23 +646,26 @@ describe("SkillsView", () => {
     await expect.element(dialog.getByText("skill is referenced", { exact: false })).toBeVisible();
   });
 
-  it("opens the install dialog from the table install button", async () => {
+  it("opens the load dialog from the market card load button", async () => {
     const screen = await renderSkillsView();
 
-    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "加载 接口文档生成" }));
 
-    const dialog = screen.getByRole("dialog", { name: "安装技能" });
+    const dialog = screen.getByRole("dialog", { name: "加载技能" });
     await expect.element(dialog).toBeVisible();
     await expect.element(dialog.getByText("接口文档生成 · 1.2.1")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "确认安装" })).toBeDisabled();
+    await expect.element(
+      dialog.getByText("技能文件会在该员工下次任务派发时自动同步到运行环境", { exact: false }),
+    ).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "确认加载" })).toBeDisabled();
   });
 
   it("loads only employee targets on default open and fetches teams after team scope is selected", async () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
-    await expect.element(screen.getByRole("dialog", { name: "安装技能" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "加载 接口文档生成" }));
+    await expect.element(screen.getByRole("dialog", { name: "加载技能" })).toBeVisible();
 
     expect(countFetcherCalls(fetcher, "/api/v1/digital-employees/overview")).toBe(1);
     expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(0);
@@ -727,8 +676,8 @@ describe("SkillsView", () => {
     expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(1);
 
     await userEvent.click(screen.getByRole("button", { name: "取消" }));
-    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
-    await expect.element(screen.getByRole("dialog", { name: "安装技能" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "加载 接口文档生成" }));
+    await expect.element(screen.getByRole("dialog", { name: "加载技能" })).toBeVisible();
 
     expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(1);
 
@@ -737,17 +686,13 @@ describe("SkillsView", () => {
     expect(countFetcherCalls(fetcher, "/api/v1/teams")).toBe(2);
   });
 
-  it("submits the selected employee target and displays install success", async () => {
+  it("submits the selected employee target as a logical bind and shows deferred-sync success", async () => {
     const fetcher = createSkillsFetcher();
     const screen = await renderSkillsView(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "选中 接口文档生成" }));
-    await expect.element(screen.getByText("暂无安装记录")).toBeVisible();
-    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-api-doc/installations")).toBe(1);
-
-    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "加载 接口文档生成" }));
     await userEvent.click(screen.getByRole("button", { name: "需求澄清 Agent" }));
-    await userEvent.click(screen.getByRole("button", { name: "确认安装" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认加载" }));
 
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/skills/skill-api-doc/install",
@@ -755,44 +700,24 @@ describe("SkillsView", () => {
         body: JSON.stringify({
           target_scope: "employee",
           digital_employee_id: "agent-1",
-          timeout_sec: 15,
         }),
         method: "POST",
       }),
     );
-    await expect.element(screen.getByText("已安装到 1 个目标")).toBeVisible();
-    await vi.waitFor(() => {
-      expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-api-doc/installations")).toBe(2);
-    });
+    await expect.element(screen.getByText("已加载,下次任务派发时同步到运行环境")).toBeVisible();
+    // 逻辑绑定不触达 runtime,也没有安装记录接口可刷新。
+    expect(countFetcherCalls(fetcher, "/api/v1/skills/skill-api-doc/installations")).toBe(0);
   });
 
-  it("renders blocked target details when install returns a structured conflict", async () => {
-    const fetcher = createInstallConflictFetcher();
+  it("surfaces already_bound results without treating them as failures", async () => {
+    const fetcher = createAlreadyBoundInstallFetcher();
     const screen = await renderSkillsView(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
+    await userEvent.click(screen.getByRole("button", { name: "加载 接口文档生成" }));
     await userEvent.click(screen.getByRole("button", { name: "需求澄清 Agent" }));
-    await userEvent.click(screen.getByRole("button", { name: "确认安装" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认加载" }));
 
-    const dialog = screen.getByRole("dialog", { name: "安装技能" });
-    await expect.element(dialog.getByText("技能安装预检失败")).toBeVisible();
-    const blockedTarget = screen.getByTestId("skill-install-blocked-target");
-    await expect.element(blockedTarget.getByText("需求澄清 Agent")).toBeVisible();
-    await expect.element(blockedTarget.getByText("runtime_not_connected")).toBeVisible();
-    await expect.element(dialog.getByText("绑定的 Runtime 节点已失活，请先重新 provision 数字员工")).toBeVisible();
-    await expect.element(blockedTarget.getByText("codex · node-a")).toBeVisible();
-  });
-
-  it("shows the bound runtime node summary before submitting an employee install", async () => {
-    const screen = await renderSkillsView();
-
-    await userEvent.click(screen.getByRole("button", { name: "安装 接口文档生成" }));
-    await userEvent.click(screen.getByRole("button", { name: "需求澄清 Agent" }));
-
-    const dialog = screen.getByRole("dialog", { name: "安装技能" });
-    await expect.element(dialog.getByText("当前绑定 Runtime")).toBeVisible();
-    await expect.element(dialog.getByText("历史 Smoke 节点")).toBeVisible();
-    await expect.element(dialog.getByText("codex · node-a")).toBeVisible();
-    await expect.element(dialog.getByText("绑定节点已失活时，请先重新 provision 数字员工，再重试技能安装。")).toBeVisible();
+    const dialog = screen.getByRole("dialog", { name: "加载技能" });
+    await expect.element(dialog.getByText("该目标已拥有此技能(含团队继承),无需重复加载")).toBeVisible();
   });
 });
