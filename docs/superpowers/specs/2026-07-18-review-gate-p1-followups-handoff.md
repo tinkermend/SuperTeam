@@ -1,7 +1,7 @@
 # 违反检测门 P1 follow-up 交接（review_gate 竞态 + 飞书/Web 实时刷新）
 
 > 日期：2026-07-18
-> 状态：待处理（交接给新会话，自包含）
+> 状态：**已完成**（2026-07-18 11:40 合并 main，三场景真实 E2E 全 PASS；实施记录见文末 §5）
 > 背景：违反检测门 P1 已合并 main（66ea3ee9），真实 E2E 两确认 PASS（干净→默认放行；违反→held→人类签放行），但揪出一个真实竞态缺陷 + 另有一个飞书/Web 实时刷新缺口。本文精确捕获这两项 + P1 已知局限，供新会话直接开工。
 > 相关 spec：`2026-07-17-review-gate-violation-detection-design.md`（含 §1 能守护/守护不了边界表、§7.1 P1 实际范围）。
 
@@ -78,3 +78,35 @@ inbox 查询按 `status` 过滤（`status='resolved'` 的不再列为待处理�
 - P1 已合并 main 66ea3ee9；分支 feat/review-gate-p1 + worktree 已删（P1 核心 E2E 过）。竞态修 + 飞书刷新是**新工作**（新分支）。
 - E2E 环境事实：主 checkout 跑 dev-services；执行实例直插 DB 造；deepseek 判官；完成需 object-store 可核验证据工件（手工完成用真实 prior-run artifact sha256 过 gate）；共享 dev 库 + 并发会话（隔离 worktree + ref 手术合并铁律见 memory `shared-checkout-concurrent-session-git-safety`）。
 - 建议顺序：先修 §1 竞态（承重、门被绕过）→ 再修 §2 飞书刷新（UX）。
+
+---
+
+## 5. 实施记录（2026-07-18，已合并 main，本 spec 完结）
+
+CHANGELOG 2026-07-18 11:40 条目为完整口径；此处只记 spec 层面结论与残余。
+
+### §1 竞态：落地形态与 spec 建议的差异
+- 采纳"同步保守占位 + 异步解析"，但**占位写进写回事务**（经 `ReviewGatePlaceholders` 字段传入两条 writeback 请求，事务内、recompute 前写）而非 spec 提示的 writeback 前独立写——评审证明事务外写会在写回失败时留孤儿 pending 永久 hold。
+- 占位匹配规则在 spec 的 `criteriaSatisfiedByTask` 之上补了 **revision-root key**（镜像触发器规则）：修订任务 planned key 是派生值（`<base>#revision-<n>`），只匹配自身 key 会让修订腿完全绕门。
+- spec 未写但必须补的另一半：**检测器写完 verdict 后每 distinct demand 一次 `RecomputeProjectDemandStatus`**——否则干净产出永滞 acceptance_pending。
+- **E2E 揪出的第三块**（spec 与评审都没预见）：`gatedCompletionStatus` 判据/verdict 读取原走连接池 r.q，看不到写回事务内未提交的占位 → 默认放行照旧绕门。收敛闸全部读取改走调用方事务 q（`gatedCompletionStatusWithQueries`）。memory fake 无事务隔离，单测全绿盖不住这类缺陷——真实 PG E2E 是必要门禁的实证。
+- 收敛闸语义：review_gate 判据"有 verdict 且非 satisfied 一律 HOLD"（含 pending 与未知值，fail-toward-human）；完全无 verdict 仍默认放行。
+- 失败姿态修订：门被**触发**但未出结论（Activity 错误耗尽重试/协调线程死亡）= 占位 held 留人类签，不再默认放行；未触发（任务未完成）仍默认放行。trigger/workflow 注释与日志已同步改述。
+
+### §2 实时刷新：落地 + E2E 揪出的更深一层
+- inbox 列表/审批中心 5s 轮询、侧栏 badge 30s 轮询（仿 run-overview 既有惯例，未做 SSE）。
+- **E2E 揪出**：收件箱列表默认不带 status，服务端返回全部状态——几天前 resolved 的旧项一直被标成"待处理"，外部渠道 resolve 后轮询拿到的还是同一批（§2 历史诊断"刷新后该项即消失"对默认视图并不成立）。修=默认 `status=open`（审批中心本就如此），用户可切"所有"。
+- 验收实测：打开的收件箱页不刷新，外部渠道（curl 走与飞书 connector 同一 resolve 后端路径）签署后 **≤6 秒**该项自动消失，徽标/统计同步归零。
+
+### 已知局限（全分支多智能体评审 15 agents，修 4 记 4）
+- **F1（§3 既有家族的加重面）**：多任务共享同一 review_gate 判据时聚合行 last-writer-wins + recompute forward-only——A 任务干净放行可发生在 B 任务违规检测出结果前，B 的 unsatisfied 落在已 completed 的需求上。P1 以单 satisfied_by 规避；根治=worst-wins/按轮持久化（P2）。
+- **F3**：pre-P1 启动且已处理过完成信号的协调线程被 GetVersion 钉在 DefaultVersion——占位会写但检测器永不跑，需求 held 至人签（此前是默认放行）。dev 库项目已清零无此类工作流；出现时人签可解，属 fail-toward-human。
+- **F6**：检测器驱动的自动放行不 resolve 已开出的 demand_acceptance 决策（悬挂收件箱项）。触达需要"无人参与的第二轮完成"序列，当前流程（单 satisfied_by + review_gate 无自动返工）不产生；修复需扩宽协调层 approval seam，暂记。
+- **F7**：verdict upsert 与 recompute 两次独立调用非原子；错误传播给 Activity 重试（幂等）自愈，永久失败=held 留人类，不会静默放行。
+- **requires-acceptance 腿的占位时长**：占位在结果提交时写入，检测器在人批任务后才触发——人批等待期判据显示"检测中"（期间任务非终态、hold 冗余无害；注释已如实记载）。
+
+### E2E 复用资产（散场清理后仍有效的打法）
+- 自铸 runtime session：向 `runtime_sessions` 插 sha256 lookup hash + bcrypt secret hash（绑定既有 approved enrollment），用毕删除。
+- 证据工件走真实 presign：`POST /api/v1/runtime/artifacts/presign` → PUT 上传 → 完成体 `artifact_refs` 带 `{sha256,size_bytes,is_evidence:true}` 过证据接地门。
+- 直插 fixture 注意：`project_tasks.input_requirements` 必须是 jsonb **对象**（`[]` 会让 taskFromRecord 解码 500）；`project_plan_revisions` 需 planner_input_hash/plan_fingerprint；attempts 需 idempotency_key。
+- fixture 项目经官方 DELETE API 归档（软删）。
