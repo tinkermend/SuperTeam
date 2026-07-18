@@ -56,6 +56,10 @@ pub struct RunSpec {
     /// 留痕。空表示无冲突。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skill_conflicts: Vec<String>,
+    /// 技能懒收敛报告(capability-binding-unification):随 attestation metadata
+    /// 落库(key `capability_convergence`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_convergence: Option<crate::skills_convergence::SkillConvergenceReport>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -111,6 +115,10 @@ pub struct RunSnapshot {
     /// 留痕。空表示无冲突。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skill_conflicts: Vec<String>,
+    /// 技能懒收敛报告(capability-binding-unification):随 attestation metadata
+    /// 落库(key `capability_convergence`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_convergence: Option<crate::skills_convergence::SkillConvergenceReport>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -172,6 +180,7 @@ impl RuntimeRunStore {
             provider_auth_mode: spec.provider_auth_mode,
             mcp_config_path: spec.mcp_config_path,
             skill_conflicts: spec.skill_conflicts,
+            skill_convergence: spec.skill_convergence,
             prompt: spec.prompt,
             session_id: spec.session_id,
             continue_session: spec.continue_session,
@@ -281,6 +290,22 @@ impl RuntimeRunStore {
             .collect()
     }
 
+    /// Running 状态 run 引用的员工能力家目录集合——技能懒收敛据此决定是否允许
+    /// prune:有并发 run 正在读同一家目录时跳过删除(下次派发补删)。
+    pub async fn active_capability_dirs(&self) -> std::collections::HashSet<PathBuf> {
+        let runs = self.runs.lock().await;
+        runs.values()
+            .filter(|state| state.snapshot.status == RunStatus::Running)
+            .filter_map(|state| {
+                state
+                    .snapshot
+                    .employee_capability_dir
+                    .clone()
+                    .or_else(|| state.snapshot.agent_home_dir.clone())
+            })
+            .collect()
+    }
+
     pub async fn events(&self, run_id: &str) -> Option<Vec<RunEventRecord>> {
         let runs = self.runs.lock().await;
         runs.get(run_id).map(|state| state.events.clone())
@@ -364,6 +389,7 @@ mod tests {
             provider_auth_mode: "host".to_string(),
             mcp_config_path: None,
             skill_conflicts: Vec::new(),
+            skill_convergence: None,
             prompt: "test".to_string(),
             session_id: None,
             continue_session: false,
@@ -382,5 +408,69 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    fn capability_run_spec(workspace: &std::path::Path, home: Option<&str>) -> RunSpec {
+        RunSpec {
+            provider_kind: "claude".to_string(),
+            workspace_path: workspace.to_path_buf(),
+            agent_home_dir: home.map(PathBuf::from),
+            employee_capability_dir: home.map(PathBuf::from),
+            capability_manifest_version: None,
+            provider_auth_mode: "host".to_string(),
+            mcp_config_path: None,
+            skill_conflicts: Vec::new(),
+            skill_convergence: None,
+            prompt: "test".to_string(),
+            session_id: None,
+            continue_session: false,
+            model: None,
+            environment: std::collections::BTreeMap::new(),
+            command_context: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn active_capability_dirs_only_includes_running_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RuntimeRunStore::new(dir.path());
+
+        let running = store
+            .start_run(
+                capability_run_spec(dir.path(), Some("/homes/running")),
+                None,
+            )
+            .await
+            .unwrap();
+        let finished = store
+            .start_run(
+                capability_run_spec(dir.path(), Some("/homes/finished")),
+                None,
+            )
+            .await
+            .unwrap();
+        let homeless = store
+            .start_run(capability_run_spec(dir.path(), None), None)
+            .await
+            .unwrap();
+        store
+            .record_event(
+                &finished.id,
+                ProviderEvent::TurnError {
+                    message: "boom".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let dirs = store.active_capability_dirs().await;
+        assert!(dirs.contains(&PathBuf::from("/homes/running")));
+        assert!(
+            !dirs.contains(&PathBuf::from("/homes/finished")),
+            "terminal runs must not block pruning"
+        );
+        assert_eq!(dirs.len(), 1, "runs without a home contribute nothing");
+
+        let _ = (running, homeless);
     }
 }

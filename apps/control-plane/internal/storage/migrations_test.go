@@ -2210,3 +2210,22 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 	require.Contains(t, string(authzSQL), "AND p.deleted_at IS NULL")
 	require.Contains(t, string(affinitySQL), "AND deleted_at IS NULL")
 }
+
+func TestMigration079CapabilityBindingUnification(t *testing.T) {
+	sql := readMigration(t, "079_capability_binding_unification.sql")
+
+	for _, expected := range []string{
+		"INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status)",
+		"INSERT INTO digital_employee_mcp_bindings_v2 (tenant_id, digital_employee_id, mcp_server_id)",
+		"jsonb_typeof(r.capability_bindings->'skills') = 'array'",
+		"jsonb_typeof(r.capability_bindings->'mcp_servers') = 'array'",
+		"s.deleted_at IS NULL",
+		"de.deleted_at IS NULL",
+		"m.status = 'active'",
+		"ON CONFLICT (tenant_id, skill_id, digital_employee_id)",
+		"ON CONFLICT (tenant_id, digital_employee_id, mcp_server_id) WHERE deleted_at IS NULL",
+		"SET capability_bindings = capability_bindings - 'skills' - 'mcp_servers'",
+	} {
+		assertMigrationContains(t, sql, expected)
+	}
+}

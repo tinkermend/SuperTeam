@@ -88,10 +88,20 @@ export type DigitalEmployeeTypeOption = {
   metadata?: Record<string, unknown>;
 };
 
+export type DigitalEmployeeCapabilityOptionItem = {
+  key: string;
+  id?: string;
+  label: string;
+  description?: string;
+  recommended: boolean;
+  available: boolean;
+  risk_level?: string;
+};
+
 export type DigitalEmployeeCapabilityOptions = {
   provider_types: string[];
-  skills: string[];
-  mcp_servers: string[];
+  skills: DigitalEmployeeCapabilityOptionItem[];
+  mcp_servers: DigitalEmployeeCapabilityOptionItem[];
 };
 
 export type DigitalEmployeeRuntimeProviderOption = {
@@ -535,6 +545,11 @@ export type CreateDigitalEmployeeInput = {
   risk_level?: string;
   metadata?: Record<string, unknown>;
   persona_memory_markdown?: string;
+  /** 技能注册表 slug 列表:创建即写逻辑绑定,派发时物化。 */
+  skills?: string[];
+  /** MCP 注册表 server_key 列表:同上。 */
+  mcp_servers?: string[];
+  /** 仅承载 external_capabilities/environment_variable_refs;skills/mcp_servers 已废弃并被服务端剥离。 */
   capability_bindings?: CapabilityBindings;
   provider_type: string;
   budget_policy?: BudgetPolicy;

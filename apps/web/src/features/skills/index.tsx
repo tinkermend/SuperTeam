@@ -48,7 +48,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
-import { deleteSkill, listSkillInstallations, listSkills, type Skill, type SkillInstallation } from "@/lib/api/skills";
+import { deleteSkill, listSkills, type Skill } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { SkillInstallDialog } from "./install-dialog";
@@ -157,11 +157,6 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const selectedSkill = filteredRows.find((skill) => skill.id === selectedSkillId) ?? filteredRows[0];
   const installSkillTarget = skillRows.find((skill) => skill.id === installSkillId);
   const deleteSkillTarget = skillRows.find((skill) => skill.id === deleteSkillId);
-  const skillInstallations = useQuery({
-    enabled: Boolean(selectedSkill && skills.data),
-    queryKey: ["skill", selectedSkill?.id, "installations"],
-    queryFn: () => listSkillInstallations(apiOptions, selectedSkill!.id),
-  });
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const activePage = Math.min(page, pageCount);
   const pagedRows = filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize);
@@ -276,22 +271,10 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             )}
           </WorkSurface>
 
-          {selectedSkill ? (
-            <SelectedSkillInstallations
-              installations={skillInstallations.data ?? []}
-              isError={skillInstallations.isError}
-              isLoading={skillInstallations.isPending}
-              errorMessage={skillInstallations.error instanceof Error ? skillInstallations.error.message : undefined}
-              skill={selectedSkill}
-            />
-          ) : null}
+          {selectedSkill ? <SelectedSkillBindings skill={selectedSkill} /> : null}
         </div>
       </Main>
       <SkillDetailSheet
-        errorMessage={skillInstallations.error instanceof Error ? skillInstallations.error.message : undefined}
-        installations={skillInstallations.data ?? []}
-        isError={skillInstallations.isError}
-        isLoading={skillInstallations.isPending}
         onDeleteSkill={(id) => {
           setDeleteError(undefined);
           setDeleteSkillId(id);
@@ -374,22 +357,14 @@ function SkillMarketPillStat({ metric }: { metric: MetricDefinition }) {
   );
 }
 
-function SelectedSkillInstallations({
-  errorMessage,
-  installations,
-  isError,
-  isLoading,
-  skill,
-}: {
-  errorMessage?: string;
-  installations: SkillInstallation[];
-  isError: boolean;
-  isLoading: boolean;
-  skill: Skill;
-}) {
+// SelectedSkillBindings 展示所选技能的逻辑绑定范围(团队/数字员工)。
+// 物理物化在任务派发时由 runtime 懒收敛完成,事实进入派发 attestation,
+// 平台不再维护独立的"安装记录"。
+function SelectedSkillBindings({ skill }: { skill: Skill }) {
+  const bindingCount = skill.team_bindings.length + skill.agent_bindings.length;
   return (
     <WorkSurface
-      aria-label={`${skill.name} 安装记录`}
+      aria-label={`${skill.name} 加载范围`}
       className="min-w-0 overflow-hidden"
       role="region"
     >
@@ -397,7 +372,7 @@ function SelectedSkillInstallations({
         <div className="flex min-w-0 items-start gap-3">
           <SkillIcon skill={skill} size="sm" />
           <div className="min-w-0">
-            <h2 className="truncate text-base font-bold text-v3-ink">安装记录</h2>
+            <h2 className="truncate text-base font-bold text-v3-ink">加载范围</h2>
             <p className="mt-1 min-w-0 text-[13px] leading-5 text-v3-ink-2">
               <span className="font-semibold text-v3-ink">{skill.name}</span>
               <span className="px-2 text-v3-ink-3">·</span>
@@ -405,91 +380,65 @@ function SelectedSkillInstallations({
             </p>
           </div>
         </div>
-        <StatusPill tone={installations.length > 0 ? "ok" : "info"}>
-          {installations.length} 个目标
-        </StatusPill>
+        <StatusPill tone={bindingCount > 0 ? "ok" : "info"}>{bindingCount} 个目标</StatusPill>
       </div>
 
-      {isLoading ? (
-        <V3LoadingState className="py-8" label="加载安装记录…" />
-      ) : isError ? (
-        <div className="p-4">
-          <V3ErrorState
-            title="安装记录加载失败"
-            description={errorMessage ?? "请检查技能安装记录接口。"}
-          />
-        </div>
-      ) : installations.length === 0 ? (
+      {bindingCount === 0 ? (
         <V3EmptyState
           className="py-10"
-          title="暂无安装记录"
-          description="成功安装到运行节点后会显示物理安装事实。"
+          title="尚未加载到任何目标"
+          description="通过“加载”把技能绑定到团队或数字员工;技能文件在下次任务派发时同步到运行环境。"
         />
       ) : (
-        <div className="divide-y divide-v3-line">
-          {installations.map((installation, index) => (
-            <SkillInstallationRow
-              installation={installation}
-              key={installation.id ?? `${installation.digital_employee_id ?? installation.node_id ?? "target"}-${index}`}
-            />
-          ))}
+        <div className="grid gap-3 p-4 md:grid-cols-2">
+          <div>
+            <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-v3-ink-2">
+              <Users className="size-3.5 text-v3-ink-3" />团队（{skill.team_bindings.length}）
+            </p>
+            {skill.team_bindings.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-v3-line-strong bg-v3-card-inner px-3 py-2 text-[12px] text-v3-ink-3">未绑定团队</p>
+            ) : (
+              <div className="space-y-1.5">
+                {skill.team_bindings.map((team) => (
+                  <div className="flex items-center gap-2 rounded-lg border border-v3-line bg-v3-card-inner px-3 py-1.5 text-[12px]" key={team.team_id}>
+                    <span className="font-semibold text-v3-ink">{team.team_name}</span>
+                    <span className="ml-auto font-mono text-[11px] text-v3-ink-3">{team.team_id}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-v3-ink-2">
+              <Bot className="size-3.5 text-v3-ink-3" />数字员工（{skill.agent_bindings.length}）
+            </p>
+            {skill.agent_bindings.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-v3-line-strong bg-v3-card-inner px-3 py-2 text-[12px] text-v3-ink-3">未绑定数字员工</p>
+            ) : (
+              <div className="space-y-1.5">
+                {skill.agent_bindings.map((agent) => (
+                  <div className="flex items-center gap-2 rounded-lg border border-v3-line bg-v3-card-inner px-3 py-1.5 text-[12px]" key={agent.agent_id}>
+                    <span className="font-semibold text-v3-ink">{agent.agent_name}</span>
+                    {agent.team_name ? <span className="text-v3-ink-3">· {agent.team_name}</span> : null}
+                    <span className="ml-auto font-mono text-[11px] text-v3-ink-3">{agent.agent_id}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </WorkSurface>
   );
 }
 
-function SkillInstallationRow({ installation }: { installation: SkillInstallation }) {
-  return (
-    <div className="grid min-w-0 gap-3 px-4 py-3 text-[13px] md:grid-cols-[minmax(160px,1.1fr)_minmax(150px,0.9fr)_minmax(220px,1.4fr)] md:items-start">
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-bold text-v3-ink" title={installationTargetLabel(installation)}>{installationTargetLabel(installation)}</span>
-          <StatusPill tone={providerTone(installation.provider_type)}>{installation.provider_type}</StatusPill>
-        </div>
-        {installation.digital_employee_id && installation.employee_name ? (
-          <div className="mt-1 break-all font-mono text-[11px] leading-relaxed text-v3-ink-3">
-            {installation.digital_employee_id}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="min-w-0 space-y-1">
-        <div className="break-all font-mono text-xs leading-relaxed text-v3-ink-2">{runtimeNodeLabel(installation)}</div>
-        {installation.installed_at ? (
-          <div className="truncate font-mono text-[11px] text-v3-ink-3">{installation.installed_at}</div>
-        ) : null}
-      </div>
-
-      <div className="min-w-0 space-y-1">
-        <div className="break-all font-mono text-xs leading-relaxed text-v3-ink-2">
-          {installation.installed_path}
-        </div>
-        {installation.archive_checksum_sha256 ? (
-          <div className="break-all font-mono text-[11px] leading-relaxed text-v3-ink-3">
-            {installation.archive_checksum_sha256}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 /** 技能详情抽屉：点击「查看详情」从右侧滑出，展示完整信息，不跳转页面。 */
 function SkillDetailSheet({
-  errorMessage,
-  installations,
-  isError,
-  isLoading,
   onDeleteSkill,
   onOpenChange,
   open,
   skill,
 }: {
-  errorMessage?: string;
-  installations: SkillInstallation[];
-  isError: boolean;
-  isLoading: boolean;
   onDeleteSkill: (id: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
@@ -540,10 +489,6 @@ function SkillDetailSheet({
               <div>
                 <p className="text-[11px] font-semibold text-v3-ink-3">数字员工绑定</p>
                 <p className="mt-0.5 text-[13px] font-semibold text-v3-ink">{skill.agent_bindings.length} 个</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">安装目标</p>
-                <p className="mt-0.5 text-[13px] font-semibold text-v3-ink">{installations.length} 个</p>
               </div>
               <div>
                 <p className="text-[11px] font-semibold text-v3-ink-3">运行依赖</p>
@@ -617,25 +562,6 @@ function SkillDetailSheet({
             </div>
           </section>
 
-          <section>
-            <h3 className="mb-2.5 text-[11px] font-bold tracking-wide text-v3-ink-3 uppercase">安装记录 · {installations.length} 个目标</h3>
-            {isLoading ? (
-              <V3LoadingState className="py-6" label="加载安装记录…" />
-            ) : isError ? (
-              <V3ErrorState description={errorMessage ?? "请检查技能安装记录接口。"} title="安装记录加载失败" />
-            ) : installations.length === 0 ? (
-              <V3EmptyState className="py-6" description="成功安装到运行节点后会显示物理安装事实。" title="暂无安装记录" />
-            ) : (
-              <div className="divide-y divide-v3-line">
-                {installations.map((installation, index) => (
-                  <SkillInstallationRow
-                    installation={installation}
-                    key={installation.id ?? `${installation.digital_employee_id ?? installation.node_id ?? "target"}-${index}`}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-v3-line p-4">
           <p className="text-[12px] text-v3-ink-3">删除会同时解除全部绑定并清除归档文件。</p>
@@ -894,7 +820,7 @@ function SkillMarketGrid({
                   查看详情
                 </V3Button>
                 <V3Button
-                  aria-label={`安装 ${skill.name}`}
+                  aria-label={`加载 ${skill.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     onSelectSkill(skill.id);
@@ -903,7 +829,7 @@ function SkillMarketGrid({
                   size="sm"
                   type="button"
                 >
-                  安装
+                  加载
                 </V3Button>
               </div>
             </div>
@@ -1022,20 +948,6 @@ function SkillIcon({ size = "default", skill }: { size?: "sm" | "default"; skill
       <Icon />
     </IconTile>
   );
-}
-
-function installationTargetLabel(installation: SkillInstallation) {
-  return installation.employee_name || installation.digital_employee_id || installation.node_id || installation.runtime_node_id || "未知目标";
-}
-
-function runtimeNodeLabel(installation: SkillInstallation) {
-  return [installation.runtime_node_id, installation.node_id].filter(Boolean).join(" · ") || "未记录运行节点";
-}
-
-function providerTone(providerType: SkillInstallation["provider_type"]): V3Tone {
-  if (providerType === "codex") return "brand";
-  if (providerType === "claude-code") return "artifact";
-  return "info";
 }
 
 function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {

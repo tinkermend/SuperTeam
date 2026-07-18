@@ -214,8 +214,14 @@ function createOptionsFixture({
     ],
     capability_options: {
       provider_types: sameRuntimeNodeProviders ? ["codex", "claude_code"] : ["codex"],
-      skills: ["incident-diagnosis", "sql-review"],
-      mcp_servers: ["postgres"],
+      skills: [
+        { key: "incident-diagnosis", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", label: "incident-diagnosis", recommended: false, available: true },
+        { key: "sql-review", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", label: "sql-review", recommended: false, available: true },
+        { key: "log-analysis", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3", label: "log-analysis", recommended: false, available: true },
+      ],
+      mcp_servers: [
+        { key: "postgres", id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", label: "postgres", recommended: false, available: true },
+      ],
     },
     runtime_provider_options: runtimeProviderOptions,
     creation_checks: [
@@ -713,15 +719,16 @@ describe("CreateEmployeeView", () => {
       risk_level: "medium",
       avatar_asset_id: avatarAsset.id,
       persona_memory_markdown: "# 数据库管理员\n可靠性优先",
-      capability_bindings: {
-        skills: [],
-        mcp_servers: [],
-      },
+      // 模板推荐(∩注册表可选)默认预勾选,团队继承的 sql-review/postgres 不重复提交。
+      skills: ["incident-diagnosis"],
+      mcp_servers: [],
       context_policy: {},
       approval_policy: { required: true },
       provider_type: "codex",
       environment_variables: [],
     });
+    // 技能/MCP 已迁到顶层逻辑绑定字段,capability_bindings 不再承载。
+    expect(body.capability_bindings).toEqual({});
     expect(body).not.toHaveProperty("role_profile");
     expect(body).not.toHaveProperty("constitution_addendum");
     expect(body).not.toHaveProperty("capability_selection");
@@ -878,16 +885,15 @@ describe("CreateEmployeeView", () => {
       risk_level: "medium",
       avatar_asset_id: avatarAsset.id,
       persona_memory_markdown: "# 自定义人格\n谨慎执行",
-      capability_bindings: {
-        skills: [],
-        mcp_servers: [],
-      },
+      skills: [],
+      mcp_servers: [],
       context_policy: {},
       approval_policy: {},
       provider_type: "codex",
       environment_variables: [],
       metadata: { creation_mode: "blank_custom" },
     });
+    expect(body.capability_bindings).toEqual({});
   });
 
   it("keeps template creation seeded with template defaults without repeating inherited baseline bindings", async () => {
@@ -917,9 +923,9 @@ describe("CreateEmployeeView", () => {
     expect(body.capability_bindings).toEqual({
       external_capabilities: ["deploy"],
       environment_variable_refs: ["PG_DSN"],
-      skills: [],
-      mcp_servers: [],
     });
+    expect(body.skills).toEqual(["incident-diagnosis"]);
+    expect(body.mcp_servers).toEqual([]);
     expect(body.context_policy).toEqual({});
     expect(body.approval_policy).toEqual({ required: true });
     expect(body.metadata).toBeUndefined();
@@ -963,16 +969,18 @@ describe("CreateEmployeeView", () => {
 
     await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("员工扩展能力", { exact: true })).toBeVisible();
-    await userEvent.click(screen.getByRole("checkbox", { name: "incident-diagnosis" }));
+    // incident-diagnosis 已因模板推荐预勾选;再补选一个非推荐技能。
+    await userEvent.click(screen.getByRole("checkbox", { name: "log-analysis" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await enterConfirmCreation(screen);
     await userEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
     const body = requestCreateBody(fetcher);
-    expect(body.capability_bindings).toEqual({
-      skills: ["incident-diagnosis"],
-      mcp_servers: [],
-    });
+    expect(body.skills).toEqual(["incident-diagnosis", "log-analysis"]);
+    // 团队继承的 postgres 不重复提交。
+    expect(body.mcp_servers).toEqual([]);
+    expect(body.capability_bindings).not.toHaveProperty("skills");
+    expect(body.capability_bindings).not.toHaveProperty("mcp_servers");
   });
 
   it("does not expose inherited capabilities as editable employee extensions", async () => {

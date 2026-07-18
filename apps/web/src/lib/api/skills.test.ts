@@ -5,9 +5,7 @@ import {
   deleteSkill,
   getSkill,
   installSkill,
-  InstallSkillError,
   listEmployeeSkills,
-  listSkillInstallations,
   listSkills,
   listTeamSkills,
   unbindEmployeeSkill,
@@ -195,30 +193,18 @@ describe("skills API", () => {
     );
   });
 
-  it("installs a skill with an encoded id and JSON target body", async () => {
+  it("installs a skill as a logical bind with an encoded id and JSON target body", async () => {
     const result = {
       skill_id: "skill 1/ops",
       target_scope: "employee",
       digital_employee_id: "employee 1/primary",
-      installed_count: 1,
-      installations: [
-        {
-          digital_employee_id: "employee 1/primary",
-          employee_name: "需求澄清 Agent",
-          provider_type: "codex",
-          runtime_node_id: "runtime-1",
-          node_id: "node-1",
-          installed_path: "/var/superteam/skills/skill-1",
-          archive_checksum_sha256: "abc123def456",
-          installed_at: "2026-06-24T08:00:00Z",
-        },
-      ],
+      already_bound: false,
+      bound_at: "2026-07-19T08:00:00Z",
     };
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(JSON.parse(String(init?.body))).toEqual({
         target_scope: "employee",
         digital_employee_id: "employee 1/primary",
-        timeout_sec: 15,
       });
       return new Response(JSON.stringify(result), {
         headers: { "content-type": "application/json" },
@@ -233,7 +219,6 @@ describe("skills API", () => {
         {
           target_scope: "employee",
           digital_employee_id: "employee 1/primary",
-          timeout_sec: 15,
         },
       ),
     ).resolves.toEqual(result);
@@ -244,7 +229,6 @@ describe("skills API", () => {
         body: JSON.stringify({
           target_scope: "employee",
           digital_employee_id: "employee 1/primary",
-          timeout_sec: 15,
         }),
         credentials: "include",
         headers: { accept: "application/json", "content-type": "application/json" },
@@ -253,89 +237,28 @@ describe("skills API", () => {
     );
   });
 
-  it("lists successful physical installations with an encoded skill id", async () => {
-    const rows = [
-      {
-        id: "installation-1",
-        skill_id: "skill 1/ops",
-        digital_employee_id: "employee-1",
-        employee_name: "需求澄清 Agent",
-        provider_type: "codex",
-        runtime_node_id: "runtime-1",
-        node_id: "node-1",
-        installed_path: "/var/superteam/skills/skill-1",
-        archive_checksum_sha256: "abc123def456",
-        installed_at: "2026-06-24T08:00:00Z",
-      },
-    ];
+  it("surfaces already_bound results from repeat installs", async () => {
+    const result = {
+      skill_id: "skill-1",
+      target_scope: "team",
+      team_id: "team-1",
+      already_bound: true,
+      bound_at: "2026-07-19T08:00:00Z",
+    };
     const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(rows), {
+      new Response(JSON.stringify(result), {
         headers: { "content-type": "application/json" },
+        status: 201,
       }),
-    );
-
-    await expect(listSkillInstallations({ baseUrl: "http://control-plane.local", fetcher }, "skill 1/ops")).resolves.toEqual(rows);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/skills/skill%201%2Fops/installations",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-  });
-
-  it("preserves structured install failure details from backend conflicts", async () => {
-    const fetcher = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          error: "skill_install_failed",
-          phase: "preflight",
-          message: "技能安装预检失败",
-          blocked_targets: [
-            {
-              digital_employee_id: "employee-1",
-              employee_name: "需求澄清 Agent",
-              provider_type: "codex",
-              runtime_node_id: "runtime-1",
-              node_id: "node-a",
-              reason_code: "runtime_not_connected",
-              message: "绑定的 Runtime 节点已失活，请先重新 provision 数字员工",
-            },
-          ],
-        }),
-        {
-          headers: { "content-type": "application/json" },
-          status: 409,
-        },
-      ),
     );
 
     await expect(
       installSkill(
         { baseUrl: "http://control-plane.local", fetcher },
         "skill-1",
-        { target_scope: "employee", digital_employee_id: "employee-1" },
+        { target_scope: "team", team_id: "team-1" },
       ),
-    ).rejects.toMatchObject({
-      name: "InstallSkillError",
-      status: 409,
-      code: "skill_install_failed",
-      phase: "preflight",
-      message: "技能安装预检失败",
-      blockedTargets: [
-        expect.objectContaining({
-          digital_employee_id: "employee-1",
-          employee_name: "需求澄清 Agent",
-          provider_type: "codex",
-          runtime_node_id: "runtime-1",
-          node_id: "node-a",
-          reason_code: "runtime_not_connected",
-          message: "绑定的 Runtime 节点已失活，请先重新 provision 数字员工",
-        }),
-      ],
-    } satisfies Partial<InstallSkillError>);
+    ).resolves.toEqual(result);
   });
 
   it("lists binds and unbinds team skills with encoded path segments", async () => {

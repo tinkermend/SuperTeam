@@ -2291,11 +2291,6 @@ employee_config_states AS (
         NULLIF(decr.budget_policy #>> '{daily_token_limit}', '') AS daily_token_limit_text,
         decr.revision_number AS employee_revision_number,
         CASE
-            WHEN jsonb_typeof(decr.capability_bindings -> 'mcp_servers') = 'array'
-            THEN jsonb_array_length(decr.capability_bindings -> 'mcp_servers')
-            ELSE 0
-        END::integer AS mcp_servers_count,
-        CASE
             WHEN decr.status = 'active' AND decr.archived_at IS NULL THEN 'approved'
             WHEN decr.status IN ('draft', 'pending_approval') AND decr.archived_at IS NULL THEN 'pending_approval'
             WHEN decr.status = 'archived' OR decr.archived_at IS NOT NULL THEN 'stale'
@@ -2304,6 +2299,22 @@ employee_config_states AS (
     FROM digital_employee_config_revisions decr
     JOIN overview_args args ON args.tenant_id = decr.tenant_id
     ORDER BY decr.tenant_id, decr.digital_employee_id, decr.revision_number DESC, decr.updated_at DESC
+),
+mcp_counts AS (
+    SELECT
+        demb.tenant_id,
+        demb.digital_employee_id,
+        COUNT(*)::integer AS mcp_servers_count
+    FROM digital_employee_mcp_bindings_v2 demb
+    JOIN overview_args args ON args.tenant_id = demb.tenant_id
+    JOIN mcp_servers m
+      ON m.id = demb.mcp_server_id
+     AND m.tenant_id = demb.tenant_id
+     AND m.deleted_at IS NULL
+     AND m.status = 'active'
+    WHERE demb.deleted_at IS NULL
+      AND demb.status = 'active'
+    GROUP BY demb.tenant_id, demb.digital_employee_id
 ),
 skill_counts AS (
     SELECT
@@ -2440,7 +2451,7 @@ overview_rows AS (
         NULL::integer AS team_revision_number,
         ecs.employee_revision_number,
         COALESCE(sc.skills_count, 0)::integer AS skills_count,
-        COALESCE(ecs.mcp_servers_count, 0)::integer AS mcp_servers_count,
+        COALESCE(mc.mcp_servers_count, 0)::integer AS mcp_servers_count,
         COALESCE(tt.constitution #>> '{ref}', tt.constitution #>> '{document_ref}', '')::text AS constitution_ref,
         COALESCE(tbu.today_budget_usage_tokens, 0)::integer AS today_budget_usage_tokens,
         br.budget_usage_tokens_30d,
@@ -2488,6 +2499,9 @@ overview_rows AS (
     LEFT JOIN skill_counts sc
       ON sc.tenant_id = de.tenant_id
      AND sc.digital_employee_id = de.id
+    LEFT JOIN mcp_counts mc
+      ON mc.tenant_id = de.tenant_id
+     AND mc.digital_employee_id = de.id
     LEFT JOIN employee_operational_facts eof
       ON eof.tenant_id = de.tenant_id
      AND eof.digital_employee_id = de.id
@@ -2785,6 +2799,8 @@ type ListDigitalEmployeeOverviewItemsRow struct {
 	ProjectsJson                             []byte             `json:"projects_json"`
 }
 
+// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
+// config revision JSON 不再承载 mcp_servers 声明)。
 func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error) {
 	rows, err := q.db.Query(ctx, ListDigitalEmployeeOverviewItems,
 		arg.TenantID,

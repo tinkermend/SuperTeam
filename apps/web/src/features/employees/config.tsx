@@ -90,6 +90,16 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         setCapabilityError(parsed.error);
         return;
       }
+      const legacyKey = ["skills", "mcp_servers"].find((key) => {
+        const value = parsed.value[key];
+        return Array.isArray(value) && value.length > 0;
+      });
+      if (legacyKey) {
+        setCapabilityError(
+          `capability_bindings 不再承载 ${legacyKey}:技能与 MCP 是逻辑绑定,请到员工详情"扩展能力"面板管理。`,
+        );
+        return;
+      }
       input.capability_bindings = parsed.value;
     }
 
@@ -151,6 +161,9 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
             {capabilityError ? (
               <p className="text-sm text-destructive">{capabilityError}</p>
             ) : null}
+            <p className="mt-1 text-xs text-muted-foreground">
+              仅承载 external_capabilities 与 environment_variable_refs;技能与 MCP 绑定请在员工详情"扩展能力"面板管理。
+            </p>
           </div>
         </CardContent>
       </Card>

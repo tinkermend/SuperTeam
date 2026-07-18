@@ -4311,7 +4311,12 @@ paths:
   /api/v1/skills/{skillId}/install:
     post:
       operationId: installSkill
-      summary: Install a skill onto team or employee Runtime targets
+      summary: Load a skill onto a team or employee as a logical capability binding
+      description: >-
+        Creates a logical skill binding for the target scope. Physical
+        materialization is deferred to the next task dispatch, where the
+        runtime converges the employee home directory against the resolved
+        capability manifest. No runtime node participates in this call.
       parameters:
         - $ref: "#/components/parameters/SkillId"
       requestBody:
@@ -4322,38 +4327,13 @@ paths:
               $ref: "#/components/schemas/InstallSkillRequest"
       responses:
         "201":
-          description: Skill installation completed
+          description: Skill logically bound to the target scope
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstallSkillResponse"
         "400":
           $ref: "#/components/responses/Error"
-        "403":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-        "409":
-          description: Skill installation failed before all targets completed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InstallSkillErrorResponse"
-  /api/v1/skills/{skillId}/installations:
-    get:
-      operationId: listSkillInstallations
-      summary: List skill installation records
-      parameters:
-        - $ref: "#/components/parameters/SkillId"
-      responses:
-        "200":
-          description: Skill installation records
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SkillInstallation"
         "403":
           $ref: "#/components/responses/Error"
         "404":
@@ -9998,13 +9978,17 @@ components:
           type: integer
           format: int32
           minimum: 0
+          deprecated: true
+          description: >-
+            Deprecated. Install is a synchronous logical bind; no runtime
+            wait is involved. The value is ignored.
     InstallSkillResponse:
       type: object
       required:
         - skill_id
         - target_scope
-        - installed_count
-        - installations
+        - already_bound
+        - bound_at
       properties:
         skill_id:
           type: string
@@ -10020,118 +10004,14 @@ components:
         digital_employee_id:
           type: string
           format: uuid
-        installed_count:
-          type: integer
-          format: int32
-        installations:
-          type: array
-          items:
-            $ref: "#/components/schemas/SkillInstallation"
-        blocked_targets:
-          type: array
-          items:
-            $ref: "#/components/schemas/SkillInstallBlockedTarget"
-    SkillInstallation:
-      type: object
-      required:
-        - tenant_id
-        - skill_id
-        - target_scope
-        - provider_type
-        - installed_path
-      properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        skill_id:
-          type: string
-          format: uuid
-        target_scope:
-          type: string
-          enum:
-            - team
-            - employee
-        team_id:
-          type: string
-          format: uuid
-        digital_employee_id:
-          type: string
-          format: uuid
-        employee_name:
-          type: string
-        runtime_node_id:
-          type: string
-          format: uuid
-        node_id:
-          type: string
-        provider_type:
-          type: string
-          enum:
-            - opencode
-            - codex
-            - claude-code
-        installed_path:
-          type: string
-        archive_checksum_sha256:
-          type: string
-        installed_by:
-          type: string
-          format: uuid
-        installed_at:
+        already_bound:
+          type: boolean
+          description: >-
+            True when the target already had the skill (including via team
+            inheritance for employee scope). The call is idempotent.
+        bound_at:
           type: string
           format: date-time
-        metadata:
-          type: object
-          additionalProperties: true
-    SkillInstallBlockedTarget:
-      type: object
-      required:
-        - reason_code
-        - message
-      properties:
-        digital_employee_id:
-          type: string
-          format: uuid
-        employee_name:
-          type: string
-        provider_type:
-          type: string
-        runtime_node_id:
-          type: string
-          format: uuid
-        node_id:
-          type: string
-        reason_code:
-          type: string
-        message:
-          type: string
-    InstallSkillErrorResponse:
-      type: object
-      required:
-        - error
-        - phase
-        - message
-        - blocked_targets
-      properties:
-        error:
-          type: string
-          enum:
-            - skill_install_failed
-        phase:
-          type: string
-          enum:
-            - preflight
-            - runtime_install
-            - timeout
-        message:
-          type: string
-        blocked_targets:
-          type: array
-          items:
-            $ref: "#/components/schemas/SkillInstallBlockedTarget"
     CredentialType:
       type: string
       enum:
@@ -11579,9 +11459,30 @@ components:
           type: string
         persona_memory_markdown:
           type: string
+        skills:
+          type: array
+          items:
+            type: string
+          description: >-
+            Skill slugs from the tenant skill registry to logically bind to
+            the employee at creation. Unknown slugs are rejected with 400.
+        mcp_servers:
+          type: array
+          items:
+            type: string
+          description: >-
+            MCP server keys from the tenant MCP registry to logically bind
+            to the employee at creation. Unknown keys are rejected with 400.
         capability_bindings:
           type: object
           additionalProperties: true
+          description: >-
+            Additional capability declarations (external_capabilities,
+            environment_variable_refs). The skills and mcp_servers keys are
+            deprecated here: when the top-level skills/mcp_servers fields are
+            absent they are still read for backward compatibility, but they
+            are always stripped from the stored config revision; logical
+            bindings are persisted in the binding tables instead.
         budget_policy:
           type: object
           additionalProperties: true
@@ -11921,11 +11822,41 @@ components:
         skills:
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/DigitalEmployeeCapabilityOptionItem"
         mcp_servers:
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/DigitalEmployeeCapabilityOptionItem"
+    DigitalEmployeeCapabilityOptionItem:
+      type: object
+      required:
+        - key
+        - label
+        - recommended
+        - available
+      properties:
+        key:
+          type: string
+          description: Skill slug or MCP server key.
+        id:
+          type: string
+          format: uuid
+          description: Registry ID; present only when available is true.
+        label:
+          type: string
+        description:
+          type: string
+        recommended:
+          type: boolean
+          description: Recommended by the selected employee type template.
+        available:
+          type: boolean
+          description: >-
+            True when the key exists in the tenant registry and can be
+            bound. Template-recommended keys missing from the registry are
+            returned with available=false and cannot be selected.
+        risk_level:
+          type: string
     DigitalEmployeeRuntimeProviderOption:
       type: object
       required:
@@ -12053,6 +11984,11 @@ components:
         capability_bindings:
           type: object
           additionalProperties: true
+          description: >-
+            Only external_capabilities and environment_variable_refs are
+            accepted. Requests carrying non-empty skills or mcp_servers
+            arrays are rejected with 400; skill and MCP logical bindings are
+            managed via the dedicated binding endpoints.
         budget_policy:
           type: object
           additionalProperties: true

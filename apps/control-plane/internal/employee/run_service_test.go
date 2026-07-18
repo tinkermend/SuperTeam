@@ -2269,7 +2269,16 @@ func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
 			RequiredEnvVars:  []string{"GITHUB_TOKEN"},
 			SourceScope:      "employee",
 		}},
+		"cmv1:sha256:test-fingerprint",
 	)
+
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got %#v", payload["metadata"])
+	}
+	if metadata["capability_manifest_version"] != "cmv1:sha256:test-fingerprint" {
+		t.Fatalf("expected capability_manifest_version in metadata, got %#v", metadata["capability_manifest_version"])
+	}
 
 	servers, ok := payload["mcp_servers"].([]map[string]any)
 	if !ok || len(servers) != 1 {

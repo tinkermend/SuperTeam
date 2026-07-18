@@ -144,6 +144,7 @@ async fn create_run(
         provider_auth_mode: "host".to_string(),
         mcp_config_path: None,
         skill_conflicts: Vec::new(),
+        skill_convergence: None,
         prompt: request.prompt,
         session_id: request.session_id,
         continue_session: request.continue_session,

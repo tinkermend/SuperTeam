@@ -386,6 +386,8 @@ type Querier interface {
 	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)
 	ListDigitalEmployeeMCPBindings(ctx context.Context, arg ListDigitalEmployeeMCPBindingsParams) ([]ListDigitalEmployeeMCPBindingsRow, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
+	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
+	// config revision JSON 不再承载 mcp_servers 声明)。
 	ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error)
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
 	ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error)

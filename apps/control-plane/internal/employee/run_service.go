@@ -601,7 +601,15 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 	preflightForPayload := preflight
 	preflightForPayload.SessionPolicy = sessionPolicyForPayload
 
-	payload := buildStartSessionPayload(req, objective, prompt, preflightForPayload, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP)
+	// The capability manifest fingerprint is only emitted when the skill
+	// lister actually resolved the manifest: it doubles as the runtime's
+	// prune fuse, so a CP misconfigured without a lister must never present
+	// an empty skill list as an authoritative "converge to nothing" manifest.
+	capabilityManifestVersion := ""
+	if s.skillLister != nil {
+		capabilityManifestVersion = computeCapabilityManifestFingerprint(deps.runtimeSkills, deps.runtimeMCP)
+	}
+	payload := buildStartSessionPayload(req, objective, prompt, preflightForPayload, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP, capabilityManifestVersion)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -1471,8 +1479,11 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload) map[string]any {
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload, capabilityManifestVersion string) map[string]any {
 	metadata := cloneMap(req.Metadata)
+	if capabilityManifestVersion != "" {
+		metadata["capability_manifest_version"] = capabilityManifestVersion
+	}
 	if metadata["source"] == "project_task_dispatch" {
 		metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()
 		version, _ := metadata["execution_context_packet_version"].(string)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -39,10 +40,6 @@ type RequiredToolsRepository interface {
 	ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error)
 }
 
-type SkillInstallationsRepository interface {
-	ListSkillInstallations(ctx context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error)
-}
-
 type ObjectStore interface {
 	PutObject(ctx context.Context, key string, body io.Reader, options storage.PutObjectOptions) (storage.ObjectRef, error)
 	DeleteObject(ctx context.Context, key string) error
@@ -51,46 +48,91 @@ type ObjectStore interface {
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
-type Installer interface {
-	InstallSkill(ctx context.Context, req InstallSkillRequest) (InstallSkillResult, error)
-}
-
 type Service struct {
 	repository  Repository
 	objectStore ObjectStore
-	installer   Installer
 }
 
 func NewService(repository Repository, objectStore ObjectStore) *Service {
 	return &Service{repository: repository, objectStore: objectStore}
 }
 
-func (s *Service) SetInstallService(installer Installer) {
-	s.installer = installer
-}
-
+// InstallSkill loads a skill onto a team or an employee as a pure logical
+// binding. Physical materialization is deferred to dispatch time, where the
+// runtime converges the employee home directory against the resolved
+// capability manifest; no runtime node participates in this call. Repeat
+// installs (including employee scope already covered by team inheritance)
+// are idempotent and reported via AlreadyBound.
 func (s *Service) InstallSkill(ctx context.Context, req InstallSkillRequest) (InstallSkillResult, error) {
-	if s == nil || s.installer == nil {
-		return InstallSkillResult{}, fmt.Errorf("%w: skill install service is not configured", ErrInvalidInput)
-	}
-	return s.installer.InstallSkill(ctx, req)
-}
-
-func (s *Service) ListSkillInstallations(ctx context.Context, req ListSkillInstallationsRequest) ([]SkillInstallation, error) {
 	if s == nil || s.repository == nil {
-		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+		return InstallSkillResult{}, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
 	}
 	if req.TenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+		return InstallSkillResult{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
 	if req.SkillID == uuid.Nil {
-		return nil, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+		return InstallSkillResult{}, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
 	}
-	repository, ok := s.repository.(SkillInstallationsRepository)
-	if !ok {
-		return nil, fmt.Errorf("%w: skill installation repository is not configured", ErrInvalidInput)
+	if _, err := s.repository.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID}); err != nil {
+		return InstallSkillResult{}, err
 	}
-	return repository.ListSkillInstallations(ctx, req)
+	result := InstallSkillResult{
+		SkillID:     req.SkillID,
+		TargetScope: req.TargetScope,
+		BoundAt:     time.Now().UTC(),
+	}
+	switch req.TargetScope {
+	case SkillInstallTargetTeam:
+		if req.TeamID == uuid.Nil {
+			return InstallSkillResult{}, fmt.Errorf("%w: team_id is required for team scope", ErrInvalidInput)
+		}
+		result.TeamID = req.TeamID
+		teamSkills, err := s.ListTeamSkills(ctx, ListTeamSkillsRequest{TenantID: req.TenantID, TeamID: req.TeamID})
+		if err != nil {
+			return InstallSkillResult{}, err
+		}
+		if containsSkillID(teamSkills, req.SkillID) {
+			result.AlreadyBound = true
+			return result, nil
+		}
+		if _, err := s.BindSkillToTeam(ctx, BindTeamSkillRequest{TenantID: req.TenantID, TeamID: req.TeamID, SkillID: req.SkillID}); err != nil {
+			return InstallSkillResult{}, err
+		}
+	case SkillInstallTargetEmployee:
+		if req.DigitalEmployeeID == uuid.Nil {
+			return InstallSkillResult{}, fmt.Errorf("%w: digital_employee_id is required for employee scope", ErrInvalidInput)
+		}
+		result.DigitalEmployeeID = req.DigitalEmployeeID
+		effective, err := s.ListEffectiveEmployeeSkills(ctx, ListEffectiveEmployeeSkillsRequest{TenantID: req.TenantID, DigitalEmployeeID: req.DigitalEmployeeID})
+		if err != nil {
+			return InstallSkillResult{}, err
+		}
+		for _, item := range effective {
+			if item.Skill.ID == req.SkillID {
+				result.AlreadyBound = true
+				return result, nil
+			}
+		}
+		if _, err := s.BindSkillToEmployee(ctx, BindEmployeeSkillRequest{TenantID: req.TenantID, DigitalEmployeeID: req.DigitalEmployeeID, SkillID: req.SkillID}); err != nil {
+			if errors.Is(err, ErrTeamAlreadyInherited) {
+				result.AlreadyBound = true
+				return result, nil
+			}
+			return InstallSkillResult{}, err
+		}
+	default:
+		return InstallSkillResult{}, fmt.Errorf("%w: target_scope must be team or employee", ErrInvalidInput)
+	}
+	return result, nil
+}
+
+func containsSkillID(skills []*Skill, skillID uuid.UUID) bool {
+	for _, item := range skills {
+		if item != nil && item.ID == skillID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error) {

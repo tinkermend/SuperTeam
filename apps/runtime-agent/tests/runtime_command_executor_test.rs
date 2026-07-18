@@ -1800,6 +1800,41 @@ EOF
 }
 
 #[tokio::test]
+async fn install_skills_command_falls_back_to_unsupported_outcome() {
+    // install_skills 已随技能纯逻辑绑定改造从 runtime 下线:收到该类型命令
+    // 必须走 Unsupported 兜底(不接受、不 panic),而不是恢复专属处理路径。
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = RuntimeConfig::default();
+    config.workspace.base_dir = temp.path().join("workspaces");
+    let executor = RuntimeCommandExecutor::new(config);
+
+    let command: RuntimeCommand = serde_json::from_value(json!({
+        "id": "cmd-install-skills",
+        "type": "install_skills",
+        "payload": {
+            "command_id": "cmd-install-skills",
+            "tenant_id": TENANT_ID,
+            "skill": {},
+            "targets": []
+        }
+    }))
+    .expect("runtime command with retired type still deserializes");
+    assert!(matches!(
+        command.command_type,
+        RuntimeCommandType::Unsupported(ref value) if value == "install_skills"
+    ));
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("unsupported command must not error or panic");
+
+    assert_eq!(outcome.command_id, "cmd-install-skills");
+    assert!(!outcome.accepted, "retired command type must be rejected");
+    assert!(outcome.run_id.is_none());
+}
+
+#[tokio::test]
 async fn provision_instance_materializes_team_employee_home() {
     let temp = tempfile::tempdir().unwrap();
     let mut config = RuntimeConfig::default();

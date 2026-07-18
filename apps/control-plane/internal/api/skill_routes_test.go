@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
@@ -234,35 +235,34 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 	if installResp.Code != http.StatusCreated {
 		t.Fatalf("expected install skill to succeed, got %d: %s", installResp.Code, installResp.Body.String())
 	}
-	if service.installReq.TenantID != expectedTenantID || service.installReq.SkillID != installSkillID || service.installReq.DigitalEmployeeID != installEmployeeID || service.installReq.ActorUserID != user.ID || service.installReq.Timeout != 7_000_000_000 {
+	if service.installReq.TenantID != expectedTenantID || service.installReq.SkillID != installSkillID || service.installReq.DigitalEmployeeID != installEmployeeID || service.installReq.ActorUserID != user.ID {
 		t.Fatalf("expected install skill request, got %#v", service.installReq)
+	}
+	var installBody struct {
+		SkillID           string `json:"skill_id"`
+		TargetScope       string `json:"target_scope"`
+		DigitalEmployeeID string `json:"digital_employee_id"`
+		AlreadyBound      bool   `json:"already_bound"`
+		BoundAt           string `json:"bound_at"`
+	}
+	if err := json.NewDecoder(installResp.Body).Decode(&installBody); err != nil {
+		t.Fatalf("decode install skill response: %v", err)
+	}
+	if installBody.SkillID != installSkillID.String() || installBody.TargetScope != "employee" || installBody.DigitalEmployeeID != installEmployeeID.String() || installBody.AlreadyBound || installBody.BoundAt == "" {
+		t.Fatalf("expected logical bind response, got %#v", installBody)
 	}
 	assertLastSkillAuthzCheck(t, authorizer, authz.ActionSkillInstall, authz.ResourceSkill, installSkillID.String(), expectedTenantID, nil)
 
-	listInstallationsReq := httptest.NewRequest(http.MethodGet, "/api/v1/skills/"+installSkillID.String()+"/installations", nil)
-	listInstallationsReq.AddCookie(cookie)
-	listInstallationsResp := httptest.NewRecorder()
-	server.ServeHTTP(listInstallationsResp, listInstallationsReq)
-	if listInstallationsResp.Code != http.StatusOK {
-		t.Fatalf("expected list skill installations to succeed, got %d: %s", listInstallationsResp.Code, listInstallationsResp.Body.String())
+	// The installations listing endpoint is retired with the eager-install
+	// machinery: physical materialization facts now live in dispatch
+	// attestations, not in a CP-side installation record.
+	retiredInstallationsReq := httptest.NewRequest(http.MethodGet, "/api/v1/skills/"+installSkillID.String()+"/installations", nil)
+	retiredInstallationsReq.AddCookie(cookie)
+	retiredInstallationsResp := httptest.NewRecorder()
+	server.ServeHTTP(retiredInstallationsResp, retiredInstallationsReq)
+	if retiredInstallationsResp.Code != http.StatusNotFound {
+		t.Fatalf("expected retired installations endpoint to return 404, got %d", retiredInstallationsResp.Code)
 	}
-	if service.listInstallationsReq.TenantID != expectedTenantID || service.listInstallationsReq.SkillID != installSkillID {
-		t.Fatalf("expected list skill installations request, got %#v", service.listInstallationsReq)
-	}
-	var installationRows []struct {
-		SkillID           string `json:"skill_id"`
-		DigitalEmployeeID string `json:"digital_employee_id"`
-		EmployeeName      string `json:"employee_name"`
-		ProviderType      string `json:"provider_type"`
-		InstalledPath     string `json:"installed_path"`
-	}
-	if err := json.NewDecoder(listInstallationsResp.Body).Decode(&installationRows); err != nil {
-		t.Fatalf("decode skill installations: %v", err)
-	}
-	if len(installationRows) != 1 || installationRows[0].SkillID != installSkillID.String() || installationRows[0].EmployeeName != "需求澄清 Agent" || installationRows[0].ProviderType != "codex" || installationRows[0].InstalledPath == "" {
-		t.Fatalf("expected installation row response, got %#v", installationRows)
-	}
-	assertLastSkillAuthzCheck(t, authorizer, authz.ActionSkillRead, authz.ResourceSkill, installSkillID.String(), expectedTenantID, nil)
 
 	deniedService := &routeSkillService{}
 	deniedAuthorizer := &routeAuthorizer{allowed: true, denyActions: map[string]bool{authz.ActionSkillInstall: true}}
@@ -286,28 +286,6 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 		t.Fatal("expected denied install route not to call service")
 	}
 	assertLastSkillAuthzCheck(t, deniedAuthorizer, authz.ActionSkillInstall, authz.ResourceSkill, installSkillID.String(), expectedTenantID, nil)
-
-	deniedListService := &routeSkillService{}
-	deniedListAuthorizer := &routeAuthorizer{allowed: true, denyActions: map[string]bool{authz.ActionSkillRead: true}}
-	deniedListServer := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
-		authService,
-		nil,
-		deniedListAuthorizer,
-	)
-	deniedListServer.SetSkillHandler(skill.NewHandler(deniedListService))
-	deniedListReq := httptest.NewRequest(http.MethodGet, "/api/v1/skills/"+installSkillID.String()+"/installations", nil)
-	deniedListReq.AddCookie(cookie)
-	deniedListResp := httptest.NewRecorder()
-	deniedListServer.ServeHTTP(deniedListResp, deniedListReq)
-	if deniedListResp.Code != http.StatusForbidden {
-		t.Fatalf("expected denied installation list to return 403, got %d: %s", deniedListResp.Code, deniedListResp.Body.String())
-	}
-	if deniedListService.listInstallationsCalled {
-		t.Fatal("expected denied installation list route not to call service")
-	}
-	assertLastSkillAuthzCheck(t, deniedListAuthorizer, authz.ActionSkillRead, authz.ResourceSkill, installSkillID.String(), expectedTenantID, nil)
 
 	employeeUnbindReq := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String()+"/skills/"+bindSkillID.String(), nil)
 	employeeUnbindReq.AddCookie(cookie)
@@ -377,9 +355,7 @@ type routeSkillService struct {
 	employeeBindReq         skill.BindEmployeeSkillRequest
 	employeeUnbindReq       skill.BindEmployeeSkillRequest
 	installReq              skill.InstallSkillRequest
-	listInstallationsReq    skill.ListSkillInstallationsRequest
 	installCalled           bool
-	listInstallationsCalled bool
 	teamBindErr             error
 	employeeBindErr         error
 	skillID                 uuid.UUID
@@ -500,36 +476,9 @@ func (s *routeSkillService) InstallSkill(_ context.Context, req skill.InstallSki
 		TargetScope:       req.TargetScope,
 		TeamID:            req.TeamID,
 		DigitalEmployeeID: req.DigitalEmployeeID,
-		InstalledCount:    1,
-		Installations: []skill.SkillInstallation{{
-			ID:                uuid.New(),
-			TenantID:          req.TenantID,
-			SkillID:           req.SkillID,
-			TargetScope:       req.TargetScope,
-			TeamID:            req.TeamID,
-			DigitalEmployeeID: req.DigitalEmployeeID,
-			ProviderType:      "codex",
-			InstalledPath:     "/home/agent/.agents/skills/diagnose",
-			InstalledBy:       req.ActorUserID,
-		}},
+		AlreadyBound:      false,
+		BoundAt:           time.Now().UTC(),
 	}, nil
-}
-
-func (s *routeSkillService) ListSkillInstallations(_ context.Context, req skill.ListSkillInstallationsRequest) ([]skill.SkillInstallation, error) {
-	s.listInstallationsCalled = true
-	s.listInstallationsReq = req
-	return []skill.SkillInstallation{{
-		ID:                uuid.New(),
-		TenantID:          req.TenantID,
-		SkillID:           req.SkillID,
-		TargetScope:       skill.SkillInstallTargetEmployee,
-		DigitalEmployeeID: uuid.New(),
-		EmployeeName:      "需求澄清 Agent",
-		RuntimeNodeID:     uuid.New(),
-		NodeID:            "node-a",
-		ProviderType:      "codex",
-		InstalledPath:     "/home/agent/.agents/skills/diagnose",
-	}}, nil
 }
 
 func assertLastSkillAuthzCheck(t *testing.T, authorizer *routeAuthorizer, action, resourceType, resourceID string, tenantID uuid.UUID, teamID *uuid.UUID) {

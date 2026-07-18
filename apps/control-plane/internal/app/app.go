@@ -488,8 +488,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
 	skillRepository := skill.NewPgRepository(stores.Postgres, q)
 	skillService := skill.NewService(skillRepository, stores.ObjectStore)
-	skillInstallService := skill.NewInstallService(skillRepository, runtimeCommands, skill.InstallServiceOptions{})
-	skillService.SetInstallService(skillInstallService)
 	runtimeService.SetRequiredToolsResolver(skillService)
 	employeeService, err := employee.NewService(employeeRepository)
 	if err != nil {
@@ -556,6 +554,55 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 
 	teamLendingRepository := teamlending.NewPgRepository(q)
 	capabilityRepository := capability.NewPgRepository(q)
+	var credentialSealer capability.CredentialSealer
+	credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY")
+	if credentialKey == "" {
+		credentialKey = cfg.Security.CredentialEncryptionKey
+	}
+	if credentialKey != "" {
+		credentialSealer, err = capability.NewAESGCMCredentialSealer(credentialKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
+
+	// The planning profile's capability view comes from the authoritative
+	// binding tables (team inheritance included), not from the retired
+	// config-revision skills/mcp_servers declaration.
+	planningEffectiveSkillSlugs := func(ctx context.Context, tenantID, employeeID uuid.UUID) ([]string, error) {
+		effective, err := skillService.ListEffectiveEmployeeSkills(ctx, skill.ListEffectiveEmployeeSkillsRequest{
+			TenantID:          tenantID,
+			DigitalEmployeeID: employeeID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		slugs := make([]string, 0, len(effective))
+		for _, item := range effective {
+			slugs = append(slugs, item.Skill.Slug)
+		}
+		return slugs, nil
+	}
+	planningEffectiveMCPServerKeys := func(ctx context.Context, tenantID, employeeID uuid.UUID) ([]string, error) {
+		servers, err := capabilityService.ListEffectiveMCPConfig(ctx, capability.EmployeeScopedRequest{
+			TenantID:          tenantID,
+			DigitalEmployeeID: employeeID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, 0, len(servers))
+		for _, server := range servers {
+			keys = append(keys, server.ServerKey)
+		}
+		return keys, nil
+	}
+	planningProfileSource := digitalEmployeePlanningProfileAdapter{
+		reader:                 employeeRepository,
+		effectiveSkillSlugs:    planningEffectiveSkillSlugs,
+		effectiveMCPServerKeys: planningEffectiveMCPServerKeys,
+	}
 
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
@@ -599,7 +646,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			projectTaskRunStarterAdapter{runService: runService},
 		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository}).
 			WithLendingGatekeeper(lendingGatekeeperAdapter{employees: employeeRepository, lending: teamLendingRepository}).
-			WithDigitalEmployeePlanningProfiles(digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}).
+			WithDigitalEmployeePlanningProfiles(planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)).
 			WithPreDispatchGateReaders(gateAdapter, gateAdapter)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		// Wire the adversarial-review judge client (same OpenAI-compatible seam as
@@ -627,7 +674,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	projectService.SetArtifactObjectStore(artifactObjectStoreAdapter{store: stores.ObjectStore})
 	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
-	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: digitalEmployeePlanningProfileAdapter{reader: employeeRepository, projectTaskRuns: projectTaskPreflights}})
+	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)})
 	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})
 	runService.SetProjectTaskNodeResolver(project.NewProjectTaskNodeResolverAdapter(projectService))
 	runService.SetChatAnchorProjectValidator(project.NewChatAnchorProjectValidatorAdapter(projectService))
@@ -642,18 +689,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
-	var credentialSealer capability.CredentialSealer
-	credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY")
-	if credentialKey == "" {
-		credentialKey = cfg.Security.CredentialEncryptionKey
-	}
-	if credentialKey != "" {
-		credentialSealer, err = capability.NewAESGCMCredentialSealer(credentialKey)
-		if err != nil {
-			return nil, err
-		}
-	}
-	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
 	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
 	scenarioTemplateService.SetVocabularyRepository(scenariotemplate.NewPgVocabularyRepository(q))
 	scenarioTemplateService.SetAuditRecorder(auditService)

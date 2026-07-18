@@ -76,10 +76,10 @@ pub struct SyncedSkill {
 }
 
 /// Materializes skills into the employee capability cache under the
-/// provider-specific skills root (目录与能力投影修订 spec §2), the same layout
-/// InstallSkills uses — provisioning and session-time materialization must
-/// agree on one path so checksum caching works across both. Per-item checksum
-/// markers make this an incremental no-op when the cache is already current.
+/// provider-specific skills root (目录与能力投影修订 spec §2) — provisioning and
+/// session-time convergence must agree on one path so checksum caching works
+/// across both. Per-item checksum markers make this an incremental no-op when
+/// the cache is already current.
 pub async fn materialize_provider_skills(
     agent_home_dir: &Path,
     provider_type: &str,
@@ -90,7 +90,7 @@ pub async fn materialize_provider_skills(
     let temp_root = agent_home_dir.join(".skill-tmp");
 
     for skill in skills {
-        let target_dir = crate::commands::install_skills::provider_skill_dir(
+        let target_dir = crate::skills_convergence::provider_skill_dir(
             agent_home_dir,
             provider_type,
             &skill.skill_key,

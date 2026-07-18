@@ -424,8 +424,32 @@ type TeamConfigCreateOption struct {
 
 type CapabilityOptions struct {
 	ProviderTypes []string
-	Skills        []string
-	MCPServers    []string
+	Skills        []CapabilityOptionItem
+	MCPServers    []CapabilityOptionItem
+}
+
+// CapabilityOptionItem is one selectable capability candidate for employee
+// creation. Key is the skill slug or MCP server key; Available marks whether
+// the key exists in the tenant registry (template-recommended keys missing
+// from the registry are returned with Available=false and cannot be bound).
+type CapabilityOptionItem struct {
+	Key         string
+	ID          *uuid.UUID
+	Label       string
+	Description string
+	Recommended bool
+	Available   bool
+	RiskLevel   string
+}
+
+// CapabilityRegistryOption is a bindable capability from the tenant registry
+// (skills table or mcp_servers table).
+type CapabilityRegistryOption struct {
+	ID          uuid.UUID
+	Key         string
+	Label       string
+	Description string
+	RiskLevel   string
 }
 
 type RuntimeProviderOption struct {
@@ -562,6 +586,8 @@ type CreateDigitalEmployeeRequest struct {
 	RiskLevel             string
 	Metadata              map[string]any
 	PersonaMemoryMarkdown string
+	Skills                []string
+	MCPServers            []string
 	CapabilityBindings    map[string]any
 	BudgetPolicy          map[string]any
 	ProviderType          string

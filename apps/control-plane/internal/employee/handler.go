@@ -325,6 +325,8 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		RiskLevel             string         `json:"risk_level"`
 		Metadata              map[string]any `json:"metadata"`
 		PersonaMemoryMarkdown string         `json:"persona_memory_markdown"`
+		Skills                []string       `json:"skills"`
+		MCPServers            []string       `json:"mcp_servers"`
 		CapabilityBindings    map[string]any `json:"capability_bindings"`
 		BudgetPolicy          map[string]any `json:"budget_policy"`
 		ProviderType          string         `json:"provider_type"`
@@ -351,6 +353,17 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 			Sensitive: sensitiveOrDefault(item.Sensitive),
 		})
 	}
+	// Backward compatibility: older clients declared skill/MCP selections
+	// inside capability_bindings. When the top-level fields are absent, read
+	// them from there; the keys are always stripped from the stored revision.
+	skills := req.Skills
+	if skills == nil {
+		skills = stringList(req.CapabilityBindings["skills"])
+	}
+	mcpServers := req.MCPServers
+	if mcpServers == nil {
+		mcpServers = stringList(req.CapabilityBindings["mcp_servers"])
+	}
 	employee, err := service.CreateDigitalEmployee(r.Context(), CreateDigitalEmployeeRequest{
 		TenantID:              tenantID,
 		TeamID:                req.TeamID,
@@ -366,6 +379,8 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		RiskLevel:             req.RiskLevel,
 		Metadata:              req.Metadata,
 		PersonaMemoryMarkdown: req.PersonaMemoryMarkdown,
+		Skills:                skills,
+		MCPServers:            mcpServers,
 		CapabilityBindings:    req.CapabilityBindings,
 		BudgetPolicy:          req.BudgetPolicy,
 		ProviderType:          req.ProviderType,
@@ -1187,9 +1202,19 @@ type employeeTypeOptionResponse struct {
 }
 
 type capabilityOptionsResponse struct {
-	ProviderTypes []string `json:"provider_types"`
-	Skills        []string `json:"skills"`
-	MCPServers    []string `json:"mcp_servers"`
+	ProviderTypes []string                       `json:"provider_types"`
+	Skills        []capabilityOptionItemResponse `json:"skills"`
+	MCPServers    []capabilityOptionItemResponse `json:"mcp_servers"`
+}
+
+type capabilityOptionItemResponse struct {
+	Key         string  `json:"key"`
+	ID          *string `json:"id,omitempty"`
+	Label       string  `json:"label"`
+	Description string  `json:"description,omitempty"`
+	Recommended bool    `json:"recommended"`
+	Available   bool    `json:"available"`
+	RiskLevel   string  `json:"risk_level,omitempty"`
 }
 
 type runtimeProviderOptionResponse struct {
@@ -1758,8 +1783,8 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 		EmployeeTypes: employeeTypes,
 		CapabilityOptions: capabilityOptionsResponse{
 			ProviderTypes: stringSliceForJSON(options.CapabilityOptions.ProviderTypes),
-			Skills:        stringSliceForJSON(options.CapabilityOptions.Skills),
-			MCPServers:    stringSliceForJSON(options.CapabilityOptions.MCPServers),
+			Skills:        capabilityOptionItemsForJSON(options.CapabilityOptions.Skills),
+			MCPServers:    capabilityOptionItemsForJSON(options.CapabilityOptions.MCPServers),
 		},
 		RuntimeProviderOptions: runtimeOptions,
 		CreationChecks:         creationChecks,
@@ -1778,6 +1803,22 @@ func stringSliceForJSON(values []string) []string {
 		return []string{}
 	}
 	return cloneStringSlice(values)
+}
+
+func capabilityOptionItemsForJSON(items []CapabilityOptionItem) []capabilityOptionItemResponse {
+	out := make([]capabilityOptionItemResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, capabilityOptionItemResponse{
+			Key:         item.Key,
+			ID:          uuidStringPtr(item.ID),
+			Label:       item.Label,
+			Description: item.Description,
+			Recommended: item.Recommended,
+			Available:   item.Available,
+			RiskLevel:   item.RiskLevel,
+		})
+	}
+	return out
 }
 
 func executionInstanceResponseFromDomain(instance *DigitalEmployeeExecutionInstance) executionInstanceResponse {

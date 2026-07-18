@@ -488,7 +488,6 @@ func (s *Server) registerRoutes() {
 				r.Get("/skills/{skillId}", s.skillHandler.GetSkill)
 				r.Delete("/skills/{skillId}", s.skillHandler.DeleteSkill)
 				r.Post("/skills/{skillId}/install", s.skillHandler.InstallSkill)
-				r.Get("/skills/{skillId}/installations", s.skillHandler.ListSkillInstallations)
 				r.Get("/teams/{teamId}/skills", s.skillHandler.ListTeamSkills)
 				r.Post("/teams/{teamId}/skills", s.skillHandler.BindTeamSkill)
 				r.Delete("/teams/{teamId}/skills/{skillId}", s.skillHandler.UnbindTeamSkill)

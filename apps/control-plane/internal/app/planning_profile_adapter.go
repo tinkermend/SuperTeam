@@ -40,6 +40,16 @@ type gateProjectTaskRunPreflightReader interface {
 type digitalEmployeePlanningProfileAdapter struct {
 	reader          digitalEmployeePlanningProfileReader
 	projectTaskRuns gateProjectTaskRunPreflightReader
+	// effectiveSkillSlugs / effectiveMCPServerKeys feed the planning profile's
+	// capability view from the authoritative binding tables (team inheritance
+	// included). The config revision JSON no longer carries skills/mcp_servers.
+	effectiveSkillSlugs    func(ctx context.Context, tenantID, employeeID uuid.UUID) ([]string, error)
+	effectiveMCPServerKeys func(ctx context.Context, tenantID, employeeID uuid.UUID) ([]string, error)
+}
+
+func planningProfileSourceWithPreflights(source digitalEmployeePlanningProfileAdapter, preflights gateProjectTaskRunPreflightReader) digitalEmployeePlanningProfileAdapter {
+	source.projectTaskRuns = preflights
+	return source
 }
 
 type preDispatchGateAdapter struct {
@@ -149,6 +159,9 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 			record.PersonaMemoryMarkdown = strings.TrimSpace(config.PersonaMemoryMarkdown)
 			record.CapabilityBindings = clonePlanningProfileMap(config.CapabilityBindings)
 		}
+		if err := a.applyEffectiveCapabilityBindings(ctx, tenantID, employeeID, &record); err != nil {
+			return nil, err
+		}
 		preflightApplied := false
 		if a.projectTaskRuns != nil && projectID != uuid.Nil {
 			preflight, err := a.projectTaskRuns.GetProjectTaskRunPreflight(ctx, tenantID, projectID, employeeID)
@@ -182,6 +195,50 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 		records[employeeID] = record
 	}
 	return records, nil
+}
+
+// applyEffectiveCapabilityBindings overlays the authoritative skill/MCP
+// bindings (binding tables, team inheritance included) onto the planning
+// profile's capability_bindings map, upgrading the planner's view from the
+// retired config-revision declaration to real effective bindings.
+func (a digitalEmployeePlanningProfileAdapter) applyEffectiveCapabilityBindings(ctx context.Context, tenantID, employeeID uuid.UUID, record *projectcoordination.DigitalEmployeePlanningProfileSourceRecord) error {
+	if a.effectiveSkillSlugs == nil && a.effectiveMCPServerKeys == nil {
+		return nil
+	}
+	bindings := record.CapabilityBindings
+	if bindings == nil {
+		bindings = map[string]any{}
+	}
+	if a.effectiveSkillSlugs != nil {
+		slugs, err := a.effectiveSkillSlugs(ctx, tenantID, employeeID)
+		if err != nil {
+			if !normalGateAbsence(err) {
+				return err
+			}
+		} else {
+			bindings["skills"] = stringsToAnyList(slugs)
+		}
+	}
+	if a.effectiveMCPServerKeys != nil {
+		keys, err := a.effectiveMCPServerKeys(ctx, tenantID, employeeID)
+		if err != nil {
+			if !normalGateAbsence(err) {
+				return err
+			}
+		} else {
+			bindings["mcp_servers"] = stringsToAnyList(keys)
+		}
+	}
+	record.CapabilityBindings = bindings
+	return nil
+}
+
+func stringsToAnyList(values []string) []any {
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	return out
 }
 
 func applyProjectTaskPreflightPlanningFacts(record *projectcoordination.DigitalEmployeePlanningProfileSourceRecord, preflight employee.StartProjectTaskRunPreflight) {
