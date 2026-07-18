@@ -897,7 +897,7 @@ func (s *Service) recordToNode(record NodeRecord) (*Node, error) {
 		}
 	}
 
-	return &Node{
+	node := &Node{
 		ID:                 record.ID,
 		NodeID:             record.NodeID,
 		Name:               record.Name,
@@ -909,7 +909,14 @@ func (s *Service) recordToNode(record NodeRecord) (*Node, error) {
 		LastHeartbeatAt:    timeFromTimestamptz(record.LastHeartbeatAt),
 		CreatedAt:          timeFromTimestamptz(record.CreatedAt),
 		UpdatedAt:          timeFromTimestamptz(record.UpdatedAt),
-	}, nil
+	}
+	// The stored status column is only flipped by the node's own heartbeat, so a
+	// dead node stays "online" forever. Derive the effective status from
+	// heartbeat freshness; never upgrade a stored offline to online here.
+	if node.Status == NodeStatusOnline && !node.IsOnline() {
+		node.Status = NodeStatusOffline
+	}
+	return node, nil
 }
 
 func (s *Service) statusToText(status *NodeStatus) pgtype.Text {

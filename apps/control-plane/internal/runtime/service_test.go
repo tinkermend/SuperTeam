@@ -447,6 +447,51 @@ func TestListNodes(t *testing.T) {
 
 		repo.AssertExpectations(t)
 	})
+
+	t.Run("reports stale online node as offline", func(t *testing.T) {
+		repo := new(MockRepository)
+		service, _ := NewService(repo)
+
+		providersJSON, _ := json.Marshal([]string{"claude-code"})
+		records := []NodeRecord{
+			{
+				ID:                 runtimeTestUUID(1),
+				NodeID:             "node-stale",
+				Name:               "Stale Node",
+				SupportedProviders: providersJSON,
+				MaxSlots:           4,
+				CurrentLoad:        0,
+				Status:             string(NodeStatusOnline),
+				Metadata:           []byte("{}"),
+				LastHeartbeatAt:    timestamptzFromTime(time.Now().Add(-2 * HeartbeatTimeout)),
+				CreatedAt:          timestamptzFromTime(time.Now()),
+				UpdatedAt:          timestamptzFromTime(time.Now()),
+			},
+			{
+				ID:                 runtimeTestUUID(2),
+				NodeID:             "node-fresh",
+				Name:               "Fresh Node",
+				SupportedProviders: providersJSON,
+				MaxSlots:           4,
+				CurrentLoad:        0,
+				Status:             string(NodeStatusOnline),
+				Metadata:           []byte("{}"),
+				LastHeartbeatAt:    timestamptzFromTime(time.Now()),
+				CreatedAt:          timestamptzFromTime(time.Now()),
+				UpdatedAt:          timestamptzFromTime(time.Now()),
+			},
+		}
+
+		repo.On("ListNodes", ctx, mock.AnythingOfType("ListNodesParams")).Return(records, nil)
+
+		nodes, err := service.ListNodes(ctx, ListNodesFilter{})
+		assert.NoError(t, err)
+		assert.Len(t, nodes, 2)
+		assert.Equal(t, NodeStatusOffline, nodes[0].Status)
+		assert.Equal(t, NodeStatusOnline, nodes[1].Status)
+
+		repo.AssertExpectations(t)
+	})
 }
 
 func TestListOnlineNodes(t *testing.T) {

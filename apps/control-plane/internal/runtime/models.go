@@ -382,9 +382,9 @@ type HeartbeatResponse struct {
 }
 
 // IsOnline checks if the node is online based on heartbeat
-// A node is considered online if it has sent a heartbeat within the last 60 seconds
+// A node is considered online if it has sent a heartbeat within HeartbeatTimeout
 func (n *Node) IsOnline() bool {
-	return time.Since(n.LastHeartbeatAt) <= 60*time.Second
+	return time.Since(n.LastHeartbeatAt) <= HeartbeatTimeout
 }
 
 // HasCapacity checks if the node has available slots
