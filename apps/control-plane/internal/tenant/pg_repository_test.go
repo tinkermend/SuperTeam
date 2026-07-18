@@ -39,7 +39,8 @@ func TestPgRepositoryDeleteTeamRollsBackWhenSoftDeleteFails(t *testing.T) {
 		},
 		queryRowFn: func(_ context.Context, sql string, args ...any) pgx.Row {
 			if sql == queries.SoftDeleteTeam {
-				if len(args) != 2 || args[0] != teamID || args[1] != tenantID {
+				// P2:软删带删除发起人(args[0]=delete_requested_by)。
+				if len(args) != 3 || args[1] != teamID || args[2] != tenantID {
 					t.Fatalf("unexpected soft delete args: %#v", args)
 				}
 				return stubRow{err: deleteErr}

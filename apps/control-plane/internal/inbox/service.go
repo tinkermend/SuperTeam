@@ -227,6 +227,10 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 		if req.SourceType != SourceTypeTeamLendingRequest {
 			return UpsertItemRequest{}, ErrInvalidItem
 		}
+	case ItemTypeTeamPendingDelete:
+		if req.SourceType != SourceTypeTeamPendingDelete {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
 	}
 	if req.SourceApprovalRequestID != nil && *req.SourceApprovalRequestID == uuid.Nil {
 		return UpsertItemRequest{}, ErrInvalidItem
@@ -364,7 +368,7 @@ func validScope(scope string) bool {
 
 func validItemType(itemType ItemType) bool {
 	switch itemType {
-	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamLending:
+	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamLending, ItemTypeTeamPendingDelete:
 		return true
 	default:
 		return false
@@ -373,7 +377,7 @@ func validItemType(itemType ItemType) bool {
 
 func validSourceType(sourceType SourceType) bool {
 	switch sourceType {
-	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamLendingRequest:
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamLendingRequest, SourceTypeTeamPendingDelete:
 		return true
 	default:
 		return false

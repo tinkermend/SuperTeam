@@ -2048,13 +2048,16 @@ func (e TeamMemberRoleRequestStatus) Valid() bool {
 
 // Defines values for TeamStatus.
 const (
-	TeamStatusActive TeamStatus = "active"
+	TeamStatusActive        TeamStatus = "active"
+	TeamStatusPendingDelete TeamStatus = "pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the TeamStatus enum.
 func (e TeamStatus) Valid() bool {
 	switch e {
 	case TeamStatusActive:
+		return true
+	case TeamStatusPendingDelete:
 		return true
 	default:
 		return false
@@ -3834,6 +3837,23 @@ type PatchScenarioTemplateRequest struct {
 
 // PatchScenarioTemplateRequestStatus defines model for PatchScenarioTemplateRequest.Status.
 type PatchScenarioTemplateRequestStatus string
+
+// PendingDeleteTeam defines model for PendingDeleteTeam.
+type PendingDeleteTeam struct {
+	Constitution      *map[string]interface{} `json:"constitution,omitempty"`
+	CreatedAt         *time.Time              `json:"created_at,omitempty"`
+	DeleteRequestedBy *openapi_types.UUID     `json:"delete_requested_by,omitempty"`
+	DeletedAt         time.Time               `json:"deleted_at"`
+	HumanOwnerUserIds *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
+	HumanOwners       *[]TeamHumanOwner       `json:"human_owners,omitempty"`
+	Id                openapi_types.UUID      `json:"id"`
+	Metadata          map[string]interface{}  `json:"metadata"`
+	Name              string                  `json:"name"`
+	Slug              string                  `json:"slug"`
+	Status            TeamStatus              `json:"status"`
+	TenantId          openapi_types.UUID      `json:"tenant_id"`
+	UpdatedAt         *time.Time              `json:"updated_at,omitempty"`
+}
 
 // PresignRuntimeArtifactRequest defines model for PresignRuntimeArtifactRequest.
 type PresignRuntimeArtifactRequest struct {
@@ -7615,6 +7635,9 @@ type ServerInterface interface {
 	// Create a tenant team
 	// (POST /api/v1/teams)
 	CreateTeam(w http.ResponseWriter, r *http.Request)
+	// List teams awaiting delete confirmation
+	// (GET /api/v1/teams/pending-deletes)
+	ListPendingDeleteTeams(w http.ResponseWriter, r *http.Request)
 	// Delete a team and release its digital employees
 	// (DELETE /api/v1/teams/{teamId})
 	DeleteTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -7627,6 +7650,9 @@ type ServerInterface interface {
 	// List team audit events
 	// (GET /api/v1/teams/{teamId}/audit)
 	ListTeamAuditEvents(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamAuditEventsParams)
+	// Confirm and physically delete a pending-delete team
+	// (POST /api/v1/teams/{teamId}/confirm-delete)
+	ConfirmTeamDelete(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// Update a tenant team's constitution
 	// (PATCH /api/v1/teams/{teamId}/constitution)
 	UpdateTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -7693,6 +7719,9 @@ type ServerInterface interface {
 	// Get the team management overview
 	// (GET /api/v1/teams/{teamId}/overview)
 	GetTeamOverview(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Restore a team from pending delete back to active
+	// (POST /api/v1/teams/{teamId}/restore)
+	RestorePendingDeleteTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// List team inherited skills
 	// (GET /api/v1/teams/{teamId}/skills)
 	ListTeamSkills(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -8827,6 +8856,12 @@ func (_ Unimplemented) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List teams awaiting delete confirmation
+// (GET /api/v1/teams/pending-deletes)
+func (_ Unimplemented) ListPendingDeleteTeams(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Delete a team and release its digital employees
 // (DELETE /api/v1/teams/{teamId})
 func (_ Unimplemented) DeleteTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
@@ -8848,6 +8883,12 @@ func (_ Unimplemented) UpdateTeam(w http.ResponseWriter, r *http.Request, teamId
 // List team audit events
 // (GET /api/v1/teams/{teamId}/audit)
 func (_ Unimplemented) ListTeamAuditEvents(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamAuditEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Confirm and physically delete a pending-delete team
+// (POST /api/v1/teams/{teamId}/confirm-delete)
+func (_ Unimplemented) ConfirmTeamDelete(w http.ResponseWriter, r *http.Request, teamId TeamId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8980,6 +9021,12 @@ func (_ Unimplemented) RemoveTeamMember(w http.ResponseWriter, r *http.Request, 
 // Get the team management overview
 // (GET /api/v1/teams/{teamId}/overview)
 func (_ Unimplemented) GetTeamOverview(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Restore a team from pending delete back to active
+// (POST /api/v1/teams/{teamId}/restore)
+func (_ Unimplemented) RestorePendingDeleteTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -15516,6 +15563,20 @@ func (siw *ServerInterfaceWrapper) CreateTeam(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ListPendingDeleteTeams operation middleware
+func (siw *ServerInterfaceWrapper) ListPendingDeleteTeams(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPendingDeleteTeams(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteTeam operation middleware
 func (siw *ServerInterfaceWrapper) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 
@@ -15640,6 +15701,32 @@ func (siw *ServerInterfaceWrapper) ListTeamAuditEvents(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListTeamAuditEvents(w, r, teamId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmTeamDelete operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmTeamDelete(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmTeamDelete(w, r, teamId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16397,6 +16484,32 @@ func (siw *ServerInterfaceWrapper) GetTeamOverview(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTeamOverview(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestorePendingDeleteTeam operation middleware
+func (siw *ServerInterfaceWrapper) RestorePendingDeleteTeam(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestorePendingDeleteTeam(w, r, teamId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17356,6 +17469,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/teams", wrapper.CreateTeam)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/pending-deletes", wrapper.ListPendingDeleteTeams)
+	})
+	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}", wrapper.DeleteTeam)
 	})
 	r.Group(func(r chi.Router) {
@@ -17366,6 +17482,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/audit", wrapper.ListTeamAuditEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/confirm-delete", wrapper.ConfirmTeamDelete)
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/api/v1/teams/{teamId}/constitution", wrapper.UpdateTeamConstitution)
@@ -17432,6 +17551,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/overview", wrapper.GetTeamOverview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/restore", wrapper.RestorePendingDeleteTeam)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/skills", wrapper.ListTeamSkills)

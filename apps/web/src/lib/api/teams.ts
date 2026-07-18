@@ -1,8 +1,9 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, patchJson, postJson } from "./client";
+import { buildApiUrl, deleteJson, getJson, parseJson, patchJson, postJson } from "./client";
 
-// 团队生命周期收敛：存活团队唯一状态 active；删除由服务端软删表达，不经 status。
-export type TeamStatus = "active";
+// 团队生命周期收敛：存活团队唯一状态 active；删除进入 pending_delete 待确认态
+// （全站不可见），管理员恢复或确认后才物理删除。
+export type TeamStatus = "active" | "pending_delete";
 export type GovernanceSummaryStatus =
   | "not_configured"
   | "draft_pending"
@@ -265,6 +266,39 @@ export function deleteTeam(
   teamId: string,
 ): Promise<void> {
   return deleteJson(options, teamPath(teamId), "delete team");
+}
+
+export type PendingDeleteTeam = Team & {
+  deleted_at: string;
+  delete_requested_by?: string;
+};
+
+export function listPendingDeleteTeams(
+  options: ApiClientOptions,
+): Promise<PendingDeleteTeam[]> {
+  return getJson<PendingDeleteTeam[]>(options, "/api/v1/teams/pending-deletes", "pending delete teams");
+}
+
+export function restorePendingDeleteTeam(
+  options: ApiClientOptions,
+  teamId: string,
+): Promise<Team> {
+  return postJson<Team>(options, teamPath(teamId, "/restore"), {}, "restore pending delete team");
+}
+
+export async function confirmTeamDelete(
+  options: ApiClientOptions,
+  teamId: string,
+): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, teamPath(teamId, "/confirm-delete")), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "POST",
+  });
+  if (!response.ok) {
+    await parseJson<unknown>(response, "confirm team delete");
+  }
 }
 
 export function updateTeamConstitution(

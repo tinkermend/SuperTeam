@@ -1209,6 +1209,18 @@ func (s *routeTeamService) DeleteTeam(_ context.Context, _ tenant.DeleteTeamRequ
 	return nil
 }
 
+func (s *routeTeamService) ListPendingDeleteTeams(_ context.Context, _ uuid.UUID) ([]tenant.PendingDeleteTeamRecord, error) {
+	return nil, nil
+}
+
+func (s *routeTeamService) RestorePendingDeleteTeam(_ context.Context, _, _, _ uuid.UUID) (*tenant.Team, error) {
+	return &tenant.Team{}, nil
+}
+
+func (s *routeTeamService) ConfirmTeamDelete(_ context.Context, _, _, _ uuid.UUID) error {
+	return nil
+}
+
 func (s *routeTeamService) ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*tenant.TeamMember, error) {
 	s.listMembersCalled = true
 	s.listMembersTenantID = tenantID

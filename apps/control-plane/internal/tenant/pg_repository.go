@@ -373,13 +373,14 @@ func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID, actorUs
 		return fmt.Errorf("soft delete team mcp bindings: %w", err)
 	}
 	if _, err := qtx.SoftDeleteTeam(ctx, queries.SoftDeleteTeamParams{
-		TeamID:   teamID,
-		TenantID: tenantID,
+		TeamID:            teamID,
+		TenantID:          tenantID,
+		DeleteRequestedBy: actorUserID,
 	}); err != nil {
 		return mapNoRows(err)
 	}
 	// 团队唯一退出路径是删除：审计与软删同事务，删除必有日志（生命周期收敛 spec §1）。
-	deleteDetails, err := json.Marshal(map[string]any{"team_id": teamID.String()})
+	deleteDetails, err := json.Marshal(map[string]any{"team_id": teamID.String(), "phase": "pending_delete"})
 	if err != nil {
 		return fmt.Errorf("marshal team delete audit details: %w", err)
 	}
@@ -400,6 +401,179 @@ func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID, actorUs
 	}
 	committed = true
 	return nil
+}
+
+// ListPendingDeleteTeams 待确认删除队列(按删除时间升序,滞留最久优先)。
+func (r *PgRepository) ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error) {
+	rows, err := r.q.ListPendingDeleteTeams(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]PendingDeleteTeamRecord, 0, len(rows))
+	for _, row := range rows {
+		record, err := pendingDeleteTeamRecordFromQuery(row)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+// ListStalePendingDeleteTeams 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
+func (r *PgRepository) ListStalePendingDeleteTeams(ctx context.Context, staleBefore time.Time) ([]PendingDeleteTeamRecord, error) {
+	rows, err := r.q.ListStalePendingDeleteTeams(ctx, pgtype.Timestamptz{Time: staleBefore, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]PendingDeleteTeamRecord, 0, len(rows))
+	for _, row := range rows {
+		record, err := pendingDeleteTeamRecordFromQuery(row)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+// RestorePendingDeleteTeam 恢复待确认删除的团队(status→active, deleted_at 清空),
+// 审计与状态翻转同事务;员工归属不回填(已入候岗,由人工重新编排)。
+func (r *PgRepository) RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (TeamRecord, error) {
+	if r.db == nil {
+		return TeamRecord{}, fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return TeamRecord{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	qtx := r.q.WithTx(tx)
+	team, err := qtx.RestorePendingDeleteTeam(ctx, queries.RestorePendingDeleteTeamParams{
+		TeamID:   teamID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return TeamRecord{}, mapNoRows(err)
+	}
+	restoreDetails, err := json.Marshal(map[string]any{"team_id": teamID.String(), "slug": team.Slug, "name": team.Name})
+	if err != nil {
+		return TeamRecord{}, fmt.Errorf("marshal team restore audit details: %w", err)
+	}
+	if _, err := qtx.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      actorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       "team.restore",
+		Details:      restoreDetails,
+	}); err != nil {
+		return TeamRecord{}, fmt.Errorf("record team restore audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamRecord{}, err
+	}
+	committed = true
+	return teamRecordFromQuery(team)
+}
+
+// ConfirmTeamDelete 确认物理删除:级联清理归属型数据、清引用型 team_id、删除团队行,
+// 审计带团队名/slug 快照(物理删后审计仍可读)。仅允许 pending_delete 态。
+func (r *PgRepository) ConfirmTeamDelete(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (TeamRecord, error) {
+	if r.db == nil {
+		return TeamRecord{}, fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return TeamRecord{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	qtx := r.q.WithTx(tx)
+	// 归属型数据物理清理(级联口径见 spec §2)。
+	if err := qtx.HardDeleteTeamMembers(ctx, queries.HardDeleteTeamMembersParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team members: %w", err)
+	}
+	if err := qtx.HardDeleteTeamMemberRoleRequests(ctx, queries.HardDeleteTeamMemberRoleRequestsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team member role requests: %w", err)
+	}
+	if err := qtx.DeleteTeamSkillBindings(ctx, queries.DeleteTeamSkillBindingsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team skill bindings: %w", err)
+	}
+	if err := qtx.HardDeleteTeamMCPBindings(ctx, queries.HardDeleteTeamMCPBindingsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team mcp bindings: %w", err)
+	}
+	if err := qtx.HardDeleteTeamMCPServers(ctx, queries.HardDeleteTeamMCPServersParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team mcp servers: %w", err)
+	}
+	if err := qtx.HardDeleteTeamLendingPolicies(ctx, queries.HardDeleteTeamLendingPoliciesParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team lending policies: %w", err)
+	}
+	if err := qtx.HardDeleteTeamLendingRequests(ctx, queries.HardDeleteTeamLendingRequestsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team lending requests: %w", err)
+	}
+	if err := qtx.HardDeleteTeamRuntimeNodeScopes(ctx, teamID); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team runtime node scopes: %w", err)
+	}
+	if err := qtx.HardDeleteTeamUserProjectTeamScopes(ctx, teamID); err != nil {
+		return TeamRecord{}, fmt.Errorf("delete team user project scopes: %w", err)
+	}
+	// 引用型 team_id 置 NULL(历史/审计型表保留悬空引用,可读性由审计快照兜底)。
+	if err := qtx.ClearProjectsTeamRef(ctx, queries.ClearProjectsTeamRefParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("clear projects team ref: %w", err)
+	}
+	if err := qtx.ClearDigitalEmployeesTeamRef(ctx, queries.ClearDigitalEmployeesTeamRefParams{TenantID: tenantID, TeamID: teamID}); err != nil {
+		return TeamRecord{}, fmt.Errorf("clear digital employees team ref: %w", err)
+	}
+	team, err := qtx.HardDeleteTeam(ctx, queries.HardDeleteTeamParams{TeamID: teamID, TenantID: tenantID})
+	if err != nil {
+		return TeamRecord{}, mapNoRows(err)
+	}
+	confirmDetails, err := json.Marshal(map[string]any{"team_id": teamID.String(), "slug": team.Slug, "name": team.Name, "phase": "confirmed"})
+	if err != nil {
+		return TeamRecord{}, fmt.Errorf("marshal team delete confirm audit details: %w", err)
+	}
+	if _, err := qtx.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      actorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       "team.delete.confirmed",
+		Details:      confirmDetails,
+	}); err != nil {
+		return TeamRecord{}, fmt.Errorf("record team delete confirm audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamRecord{}, err
+	}
+	committed = true
+	return teamRecordFromQuery(team)
+}
+
+func pendingDeleteTeamRecordFromQuery(team queries.TenantTeam) (PendingDeleteTeamRecord, error) {
+	record, err := teamRecordFromQuery(team)
+	if err != nil {
+		return PendingDeleteTeamRecord{}, err
+	}
+	pending := PendingDeleteTeamRecord{Team: record, DeletedAt: timeFromTimestamptz(team.DeletedAt)}
+	if team.DeleteRequestedBy.Valid {
+		requestedBy := team.DeleteRequestedBy.UUID
+		pending.DeleteRequestedBy = &requestedBy
+	}
+	return pending, nil
 }
 
 func (r *PgRepository) ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error) {

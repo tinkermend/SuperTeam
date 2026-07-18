@@ -2861,6 +2861,8 @@ type TenantTeam struct {
 	Constitution      []byte             `json:"constitution"`
 	// 团队说明，描述职责、服务对象或协作边界，最长 280 字符
 	Description string `json:"description"`
+	// 删除发起人(pending_delete 期间有值;恢复时清空)
+	DeleteRequestedBy uuid.NullUUID `json:"delete_requested_by"`
 }
 
 // 团队高权限角色变更申请表

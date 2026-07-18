@@ -1,4 +1,4 @@
-h1:+IUR29ylEzjGRfbLoZBbuNYdSi3nOvBlExDFzg4ZC3Y=
+h1:ALUWew/AejjpSrYxHaCyybbMXTbAp8Q7lz8VZSpCl2I=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -75,3 +75,4 @@ h1:+IUR29ylEzjGRfbLoZBbuNYdSi3nOvBlExDFzg4ZC3Y=
 075_team_delete_binding_cleanup.sql h1:DY+bldts0oCga7yxp0nldw64Op9Nx+ED34DZiKXkUcg=
 076_team_lifecycle_convergence.sql h1:p2keV5y8zvnsZO+swZv2mxuxMCTGzSEtseGx3ZJPrr4=
 077_team_description.sql h1:cCPXHHX7abGVhzg7C4xbbc85D1idBoW5unFMhTsiy/4=
+078_team_pending_delete.sql h1:F0nzyj7H0tVcB4WwIK7lgYb7gnvCa5C4uHOGOOB7BnM=

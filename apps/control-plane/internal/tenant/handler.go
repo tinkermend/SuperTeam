@@ -24,6 +24,9 @@ type HandlerService interface {
 	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team, error)
 	UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (*Team, error)
 	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
+	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error)
+	RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (*Team, error)
+	ConfirmTeamDelete(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error
 	ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamMember, error)
 	AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error)
 	BindTeamDigitalEmployee(ctx context.Context, req BindTeamDigitalEmployeeRequest) error
@@ -234,6 +237,66 @@ func (h *HTTPHandler) UpdateTeamConstitution(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
+}
+
+// 待确认删除队列:读与团队列表同权(tenant 级 team.read);恢复/确认两个决策动作
+// 走 team 级 team.delete(与删除同权)。spec 2026-07-18-team-lifecycle-convergence §2。
+func (h *HTTPHandler) ListPendingDeleteTeams(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeTenantTeamAction(w, r, authz.ActionTeamRead, "team pending delete list")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	records, err := service.ListPendingDeleteTeams(r.Context(), tenantID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, pendingDeleteTeamResponses(records))
+}
+
+func (h *HTTPHandler) RestorePendingDeleteTeam(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamDelete, "team pending delete restore")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	team, err := service.RestorePendingDeleteTeam(r.Context(), tenantID, teamID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
+}
+
+func (h *HTTPHandler) ConfirmTeamDelete(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamDelete, "team pending delete confirm")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.ConfirmTeamDelete(r.Context(), tenantID, teamID, middleware.GetUserID(r.Context())); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
@@ -814,6 +877,28 @@ func teamListItemResponses(teams []*TeamListItem) []teamListItemResponse {
 	responses := make([]teamListItemResponse, 0, len(teams))
 	for _, team := range teams {
 		responses = append(responses, teamListItemResponseFromDomain(team))
+	}
+	return responses
+}
+
+type pendingDeleteTeamResponse struct {
+	teamResponse
+	DeletedAt         string `json:"deleted_at"`
+	DeleteRequestedBy string `json:"delete_requested_by,omitempty"`
+}
+
+func pendingDeleteTeamResponses(records []PendingDeleteTeamRecord) []pendingDeleteTeamResponse {
+	responses := make([]pendingDeleteTeamResponse, 0, len(records))
+	for i := range records {
+		team := records[i].Team
+		response := pendingDeleteTeamResponse{
+			teamResponse: teamResponseFromDomain(&team),
+			DeletedAt:    records[i].DeletedAt.UTC().Format(time.RFC3339),
+		}
+		if records[i].DeleteRequestedBy != nil {
+			response.DeleteRequestedBy = records[i].DeleteRequestedBy.String()
+		}
+		responses = append(responses, response)
 	}
 	return responses
 }

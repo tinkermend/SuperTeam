@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const BindDigitalEmployeeToTeam = `-- name: BindDigitalEmployeeToTeam :one
@@ -35,6 +36,41 @@ func (q *Queries) BindDigitalEmployeeToTeam(ctx context.Context, arg BindDigital
 	return id, err
 }
 
+const ClearDigitalEmployeesTeamRef = `-- name: ClearDigitalEmployeesTeamRef :exec
+UPDATE digital_employees
+SET team_id = NULL, updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type ClearDigitalEmployeesTeamRefParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+// 兜底:软删时 UnbindTeamDigitalEmployees 已清存活员工;这里连已删员工的历史引用一并清。
+func (q *Queries) ClearDigitalEmployeesTeamRef(ctx context.Context, arg ClearDigitalEmployeesTeamRefParams) error {
+	_, err := q.db.Exec(ctx, ClearDigitalEmployeesTeamRef, arg.TenantID, arg.TeamID)
+	return err
+}
+
+const ClearProjectsTeamRef = `-- name: ClearProjectsTeamRef :exec
+UPDATE projects
+SET team_id = NULL, updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type ClearProjectsTeamRefParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) ClearProjectsTeamRef(ctx context.Context, arg ClearProjectsTeamRefParams) error {
+	_, err := q.db.Exec(ctx, ClearProjectsTeamRef, arg.TenantID, arg.TeamID)
+	return err
+}
+
 const DeleteTeamSkillBindings = `-- name: DeleteTeamSkillBindings :exec
 DELETE FROM team_skill_bindings
 WHERE tenant_id = $1::uuid
@@ -49,6 +85,247 @@ type DeleteTeamSkillBindingsParams struct {
 func (q *Queries) DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSkillBindingsParams) error {
 	_, err := q.db.Exec(ctx, DeleteTeamSkillBindings, arg.TenantID, arg.TeamID)
 	return err
+}
+
+const HardDeleteTeam = `-- name: HardDeleteTeam :one
+DELETE FROM tenant_teams
+WHERE id = $1::uuid
+  AND tenant_id = $2::uuid
+  AND status = 'pending_delete'
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description, delete_requested_by
+`
+
+type HardDeleteTeamParams struct {
+	TeamID   uuid.UUID `json:"team_id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
+
+// 仅允许物理删除待确认态团队;P1 前的遗留软删终态(status=active)不可经此路径删除。
+func (q *Queries) HardDeleteTeam(ctx context.Context, arg HardDeleteTeamParams) (TenantTeam, error) {
+	row := q.db.QueryRow(ctx, HardDeleteTeam, arg.TeamID, arg.TenantID)
+	var i TenantTeam
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.Metadata,
+		&i.ArchivedAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
+		&i.Constitution,
+		&i.Description,
+		&i.DeleteRequestedBy,
+	)
+	return i, err
+}
+
+const HardDeleteTeamLendingPolicies = `-- name: HardDeleteTeamLendingPolicies :exec
+DELETE FROM team_lending_policy
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type HardDeleteTeamLendingPoliciesParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) HardDeleteTeamLendingPolicies(ctx context.Context, arg HardDeleteTeamLendingPoliciesParams) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamLendingPolicies, arg.TenantID, arg.TeamID)
+	return err
+}
+
+const HardDeleteTeamLendingRequests = `-- name: HardDeleteTeamLendingRequests :exec
+DELETE FROM team_lending_request
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type HardDeleteTeamLendingRequestsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) HardDeleteTeamLendingRequests(ctx context.Context, arg HardDeleteTeamLendingRequestsParams) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamLendingRequests, arg.TenantID, arg.TeamID)
+	return err
+}
+
+const HardDeleteTeamMCPBindings = `-- name: HardDeleteTeamMCPBindings :exec
+DELETE FROM team_mcp_bindings
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type HardDeleteTeamMCPBindingsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) HardDeleteTeamMCPBindings(ctx context.Context, arg HardDeleteTeamMCPBindingsParams) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamMCPBindings, arg.TenantID, arg.TeamID)
+	return err
+}
+
+const HardDeleteTeamMCPServers = `-- name: HardDeleteTeamMCPServers :exec
+DELETE FROM team_mcp_servers
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type HardDeleteTeamMCPServersParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) HardDeleteTeamMCPServers(ctx context.Context, arg HardDeleteTeamMCPServersParams) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamMCPServers, arg.TenantID, arg.TeamID)
+	return err
+}
+
+const HardDeleteTeamMemberRoleRequests = `-- name: HardDeleteTeamMemberRoleRequests :exec
+DELETE FROM tenant_team_member_role_requests
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type HardDeleteTeamMemberRoleRequestsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) HardDeleteTeamMemberRoleRequests(ctx context.Context, arg HardDeleteTeamMemberRoleRequestsParams) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamMemberRoleRequests, arg.TenantID, arg.TeamID)
+	return err
+}
+
+const HardDeleteTeamMembers = `-- name: HardDeleteTeamMembers :exec
+DELETE FROM tenant_members
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type HardDeleteTeamMembersParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) HardDeleteTeamMembers(ctx context.Context, arg HardDeleteTeamMembersParams) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamMembers, arg.TenantID, arg.TeamID)
+	return err
+}
+
+const HardDeleteTeamRuntimeNodeScopes = `-- name: HardDeleteTeamRuntimeNodeScopes :exec
+DELETE FROM runtime_node_scopes
+WHERE team_id = $1::uuid
+`
+
+func (q *Queries) HardDeleteTeamRuntimeNodeScopes(ctx context.Context, teamID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamRuntimeNodeScopes, teamID)
+	return err
+}
+
+const HardDeleteTeamUserProjectTeamScopes = `-- name: HardDeleteTeamUserProjectTeamScopes :exec
+DELETE FROM user_project_team_scopes
+WHERE team_id = $1::uuid
+`
+
+func (q *Queries) HardDeleteTeamUserProjectTeamScopes(ctx context.Context, teamID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, HardDeleteTeamUserProjectTeamScopes, teamID)
+	return err
+}
+
+const ListPendingDeleteTeams = `-- name: ListPendingDeleteTeams :many
+SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description, delete_requested_by FROM tenant_teams
+WHERE tenant_id = $1::uuid
+  AND status = 'pending_delete'
+ORDER BY deleted_at ASC
+`
+
+func (q *Queries) ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error) {
+	rows, err := q.db.Query(ctx, ListPendingDeleteTeams, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TenantTeam{}
+	for rows.Next() {
+		var i TenantTeam
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Status,
+			&i.Metadata,
+			&i.ArchivedAt,
+			&i.DisabledAt,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.HumanOwnerUserIds,
+			&i.Constitution,
+			&i.Description,
+			&i.DeleteRequestedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListStalePendingDeleteTeams = `-- name: ListStalePendingDeleteTeams :many
+SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description, delete_requested_by FROM tenant_teams
+WHERE status = 'pending_delete'
+  AND deleted_at < $1::timestamptz
+ORDER BY deleted_at ASC
+LIMIT 100
+`
+
+// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
+func (q *Queries) ListStalePendingDeleteTeams(ctx context.Context, staleBefore pgtype.Timestamptz) ([]TenantTeam, error) {
+	rows, err := q.db.Query(ctx, ListStalePendingDeleteTeams, staleBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TenantTeam{}
+	for rows.Next() {
+		var i TenantTeam
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Status,
+			&i.Metadata,
+			&i.ArchivedAt,
+			&i.DisabledAt,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.HumanOwnerUserIds,
+			&i.Constitution,
+			&i.Description,
+			&i.DeleteRequestedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ReassignDigitalEmployeeTeam = `-- name: ReassignDigitalEmployeeTeam :one
@@ -79,23 +356,25 @@ func (q *Queries) ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignD
 	return i, err
 }
 
-const SoftDeleteTeam = `-- name: SoftDeleteTeam :one
+const RestorePendingDeleteTeam = `-- name: RestorePendingDeleteTeam :one
 UPDATE tenant_teams
-SET deleted_at = NOW(),
+SET status = 'active',
+    deleted_at = NULL,
+    delete_requested_by = NULL,
     updated_at = NOW()
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
-  AND deleted_at IS NULL
-RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description
+  AND status = 'pending_delete'
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description, delete_requested_by
 `
 
-type SoftDeleteTeamParams struct {
+type RestorePendingDeleteTeamParams struct {
 	TeamID   uuid.UUID `json:"team_id"`
 	TenantID uuid.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error) {
-	row := q.db.QueryRow(ctx, SoftDeleteTeam, arg.TeamID, arg.TenantID)
+func (q *Queries) RestorePendingDeleteTeam(ctx context.Context, arg RestorePendingDeleteTeamParams) (TenantTeam, error) {
+	row := q.db.QueryRow(ctx, RestorePendingDeleteTeam, arg.TeamID, arg.TenantID)
 	var i TenantTeam
 	err := row.Scan(
 		&i.ID,
@@ -112,6 +391,49 @@ func (q *Queries) SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) 
 		&i.HumanOwnerUserIds,
 		&i.Constitution,
 		&i.Description,
+		&i.DeleteRequestedBy,
+	)
+	return i, err
+}
+
+const SoftDeleteTeam = `-- name: SoftDeleteTeam :one
+UPDATE tenant_teams
+SET status = 'pending_delete',
+    deleted_at = NOW(),
+    delete_requested_by = $1::uuid,
+    updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description, delete_requested_by
+`
+
+type SoftDeleteTeamParams struct {
+	DeleteRequestedBy uuid.UUID `json:"delete_requested_by"`
+	TeamID            uuid.UUID `json:"team_id"`
+	TenantID          uuid.UUID `json:"tenant_id"`
+}
+
+// 删除进入待确认态:全站不可见(deleted_at),管理员恢复或确认后才物理删除。
+func (q *Queries) SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error) {
+	row := q.db.QueryRow(ctx, SoftDeleteTeam, arg.DeleteRequestedBy, arg.TeamID, arg.TenantID)
+	var i TenantTeam
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.Metadata,
+		&i.ArchivedAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
+		&i.Constitution,
+		&i.Description,
+		&i.DeleteRequestedBy,
 	)
 	return i, err
 }
