@@ -1084,7 +1084,8 @@ func TestBindTeamDigitalEmployeeRejectsInactiveTeam(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 	tenantID, teamID := uuid.New(), uuid.New()
-	repo.teams[teamID] = TeamRecord{ID: teamID, TenantID: tenantID, Status: TeamStatusDisabled}
+	// 生命周期收敛后不存在 disabled 常量；任何非 active 状态都应拒绝绑定。
+	repo.teams[teamID] = TeamRecord{ID: teamID, TenantID: tenantID, Status: TeamStatus("inactive")}
 
 	err = service.BindTeamDigitalEmployee(context.Background(), BindTeamDigitalEmployeeRequest{
 		TenantID:    tenantID,
