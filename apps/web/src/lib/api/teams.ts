@@ -1,7 +1,8 @@
 import type { ApiClientOptions } from "./client";
 import { deleteJson, getJson, patchJson, postJson } from "./client";
 
-export type TeamStatus = "active" | "disabled" | "archived";
+// 团队生命周期收敛：存活团队唯一状态 active；删除由服务端软删表达，不经 status。
+export type TeamStatus = "active";
 export type GovernanceSummaryStatus =
   | "not_configured"
   | "draft_pending"
@@ -16,9 +17,6 @@ export type TeamMemberRole =
 export type TeamMemberRoleRequestStatus = "pending" | "approved" | "rejected";
 export type AllowedTeamAction =
   | "team.update"
-  | "team.disable"
-  | "team.archive"
-  | "team.restore"
   | "team.delete"
   | "team.member.add"
   | "team.member.request_privileged_role"
@@ -257,42 +255,6 @@ export function updateTeam(
   input: UpdateTeamInput,
 ): Promise<Team> {
   return patchJson<Team>(options, teamPath(teamId), input, "update team");
-}
-
-export function disableTeam(
-  options: ApiClientOptions,
-  teamId: string,
-): Promise<Team> {
-  return postJson<Team>(
-    options,
-    teamPath(teamId, "/disable"),
-    {},
-    "disable team",
-  );
-}
-
-export function archiveTeam(
-  options: ApiClientOptions,
-  teamId: string,
-): Promise<Team> {
-  return postJson<Team>(
-    options,
-    teamPath(teamId, "/archive"),
-    {},
-    "archive team",
-  );
-}
-
-export function restoreTeam(
-  options: ApiClientOptions,
-  teamId: string,
-): Promise<Team> {
-  return postJson<Team>(
-    options,
-    teamPath(teamId, "/restore"),
-    {},
-    "restore team",
-  );
 }
 
 export function deleteTeam(

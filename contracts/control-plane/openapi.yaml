@@ -3080,45 +3080,6 @@ paths:
                   $ref: "#/components/schemas/TeamAuditEvent"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/teams/{teamId}/disable:
-    post:
-      operationId: disableTeam
-      summary: Disable a tenant team
-      parameters:
-        - $ref: "#/components/parameters/TeamId"
-      responses:
-        "200":
-          description: Team disabled
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Team"
-  /api/v1/teams/{teamId}/archive:
-    post:
-      operationId: archiveTeam
-      summary: Archive a tenant team
-      parameters:
-        - $ref: "#/components/parameters/TeamId"
-      responses:
-        "200":
-          description: Team archived
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Team"
-  /api/v1/teams/{teamId}/restore:
-    post:
-      operationId: restoreTeam
-      summary: Restore a tenant team to active
-      parameters:
-        - $ref: "#/components/parameters/TeamId"
-      responses:
-        "200":
-          description: Team restored
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Team"
   /api/v1/teams/{teamId}/constitution:
     patch:
       operationId: updateTeamConstitution
@@ -9263,8 +9224,6 @@ components:
       type: string
       enum:
         - active
-        - disabled
-        - archived
     AuditEvent:
       type: object
       required:
@@ -9354,9 +9313,6 @@ components:
       type: string
       enum:
         - team.update
-        - team.disable
-        - team.archive
-        - team.restore
         - team.delete
         - team.member.add
         - team.member.request_privileged_role

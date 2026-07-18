@@ -105,8 +105,6 @@ function labelWithOverrides(
 export function teamStatusLabel(status: string | undefined): string {
   return labelWithOverrides(status, {
     active: "活跃",
-    archived: "已归档",
-    disabled: "已禁用",
   });
 }
 

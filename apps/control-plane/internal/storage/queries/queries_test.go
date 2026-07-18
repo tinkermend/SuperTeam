@@ -1899,41 +1899,6 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 		assert.Equal(t, team.ID, ownerRows[0].ID)
 	}
 
-	archivedTeam, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:          tenantID,
-		Slug:              "archive-summary",
-		Name:              "归档团队",
-		Status:            "archived",
-		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
-		Metadata:          []byte(`{}`),
-	})
-	require.NoError(t, err)
-	_, err = testQueries.SetTenantTeamStatus(ctx, queries.SetTenantTeamStatusParams{
-		TenantID: tenantID,
-		ID:       archivedTeam.ID,
-		Status:   "archived",
-	})
-	require.NoError(t, err)
-
-	defaultRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
-		TenantID: tenantID,
-		Q:        pgtype.Text{String: "archive-summary", Valid: true},
-		Limit:    20,
-		Offset:   0,
-	})
-	require.NoError(t, err)
-	assert.Empty(t, defaultRows, "archived teams should be hidden from the default list")
-
-	archivedRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
-		TenantID: tenantID,
-		Status:   pgtype.Text{String: "archived", Valid: true},
-		Q:        pgtype.Text{String: "archive-summary", Valid: true},
-		Limit:    20,
-		Offset:   0,
-	})
-	require.NoError(t, err)
-	require.Len(t, archivedRows, 1)
-	assert.Equal(t, "archived", archivedRows[0].Status)
 }
 
 func TestTeamMemberRoleRequestQueries(t *testing.T) {

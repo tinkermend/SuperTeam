@@ -23,7 +23,6 @@ type HandlerService interface {
 	GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error)
 	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team, error)
 	UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (*Team, error)
-	ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequest) (*Team, error)
 	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
 	ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamMember, error)
 	AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error)
@@ -230,18 +229,6 @@ func (h *HTTPHandler) UpdateTeamConstitution(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
-}
-
-func (h *HTTPHandler) DisableTeam(w http.ResponseWriter, r *http.Request) {
-	h.changeTeamStatus(w, r, TeamStatusDisabled, authz.ActionTeamDisable, "team disable")
-}
-
-func (h *HTTPHandler) ArchiveTeam(w http.ResponseWriter, r *http.Request) {
-	h.changeTeamStatus(w, r, TeamStatusArchived, authz.ActionTeamArchive, "team archive")
-}
-
-func (h *HTTPHandler) RestoreTeam(w http.ResponseWriter, r *http.Request) {
-	h.changeTeamStatus(w, r, TeamStatusActive, authz.ActionTeamRestore, "team restore")
 }
 
 func (h *HTTPHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
@@ -461,9 +448,6 @@ func (h *HTTPHandler) ListTeamAudit(w http.ResponseWriter, r *http.Request) {
 
 var overviewActions = []string{
 	authz.ActionTeamUpdate,
-	authz.ActionTeamDisable,
-	authz.ActionTeamArchive,
-	authz.ActionTeamRestore,
 	authz.ActionTeamDelete,
 	authz.ActionTeamMemberAdd,
 	authz.ActionTeamMemberRequestPrivilegedRole,
@@ -478,30 +462,6 @@ var overviewActions = []string{
 	authz.ActionTeamLendingRequestDecide,
 }
 
-func (h *HTTPHandler) changeTeamStatus(w http.ResponseWriter, r *http.Request, status TeamStatus, action, auditReason string) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, action, auditReason)
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	team, err := service.ChangeTeamStatus(r.Context(), ChangeTeamStatusRequest{
-		TenantID: tenantID,
-		TeamID:   teamID,
-		Status:   status,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
-}
 
 func (h *HTTPHandler) decideTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, approve bool) {
 	teamID, ok := teamIDFromRequest(w, r)

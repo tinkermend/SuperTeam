@@ -570,9 +570,6 @@ components:
             - team.create
             - team.read
             - team.update
-            - team.disable
-            - team.archive
-            - team.restore
             - team.member.add
             - team.member.remove
             - team.member.change_role

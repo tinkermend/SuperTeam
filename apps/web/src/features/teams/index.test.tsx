@@ -166,7 +166,6 @@ function makeTeamSummary(index: number) {
 function createTeamsFetcher(
   options: {
     createStatus?: number;
-    disabledOverview?: boolean;
     extraRoutes?: ExtraRoutes;
     secondPageMode?: "empty" | "error" | "normal";
   } = {},
@@ -306,7 +305,7 @@ function createTeamsFetcher(
             tenant_id: "tenant-1",
             slug: "ops",
             name: "运维团队",
-            status: options.disabledOverview ? "disabled" : "active",
+            status: "active",
             constitution: governanceRevision.constitution,
             human_owner_user_ids: ["human-owner-1"],
             human_owners: [{user_id: "human-owner-1",
@@ -320,17 +319,14 @@ function createTeamsFetcher(
           capability_count: 12,
           pending_draft_count: 3,
           pending_item_count: 3,
-          allowed_actions: options.disabledOverview
-            ? ["team.restore"]
-            : [
-                "team.update",
-                "team.disable",
-                "team.archive",
-                "team.member.add",
-                "team.member.request_privileged_role",
-                "team.governance.edit",
-                "team.governance.approve",
-              ],
+          allowed_actions: [
+            "team.update",
+            "team.delete",
+            "team.member.add",
+            "team.member.request_privileged_role",
+            "team.governance.edit",
+            "team.governance.approve",
+          ],
           current_revision: governanceRevision,
         });
       }
@@ -359,7 +355,7 @@ function createTeamsFetcher(
           tenant_id: "tenant-1",
           slug: "ops",
           name: "运维团队",
-          status: options.disabledOverview ? "disabled" : "active",
+          status: "active",
           constitution: body,
           human_owner_user_ids: ["human-owner-1"],
         });
@@ -497,43 +493,8 @@ function createTeamsFetcher(
         );
       }
 
-      if (
-        url.pathname === "/api/v1/teams/team-1/disable" &&
-        method === "POST"
-      ) {
-        return jsonResponse({
-          id: "team-1",
-          tenant_id: "tenant-1",
-          slug: "ops",
-          name: "运维团队",
-          status: "disabled",
-        });
-      }
-
-      if (
-        url.pathname === "/api/v1/teams/team-1/archive" &&
-        method === "POST"
-      ) {
-        return jsonResponse({
-          id: "team-1",
-          tenant_id: "tenant-1",
-          slug: "ops",
-          name: "运维团队",
-          status: "archived",
-        });
-      }
-
-      if (
-        url.pathname === "/api/v1/teams/team-1/restore" &&
-        method === "POST"
-      ) {
-        return jsonResponse({
-          id: "team-1",
-          tenant_id: "tenant-1",
-          slug: "ops",
-          name: "运维团队",
-          status: "active",
-        });
+      if (url.pathname === "/api/v1/teams/team-1" && method === "DELETE") {
+        return new Response(null, { status: 204 });
       }
 
       if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
@@ -1007,12 +968,11 @@ describe("TeamDetailView", () => {
     }
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "禁用团队" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "归档团队" }))
-      .toBeVisible();
+    // 生命周期收敛：详情页只有删除一个生命周期动作，无归档/禁用/恢复。
+    await expect.element(screen.getByRole("button", { name: "删除团队" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "禁用团队" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "归档团队" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "恢复团队" })).not.toBeInTheDocument();
 
     expect(document.querySelectorAll('[data-slot="v3-tabs"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
@@ -1039,7 +999,7 @@ describe("TeamDetailView", () => {
       .not.toBeInTheDocument();
   });
 
-  it("calls lifecycle APIs from detail actions", async () => {
+  it("deletes the team through the confirm dialog from detail actions", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -1049,23 +1009,14 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await screen.getByRole("button", { name: "禁用团队" }).click();
+    await screen.getByRole("button", { name: "删除团队" }).click();
+    await screen.getByRole("button", { name: "确认删除" }).click();
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/disable",
+      "http://control-plane.local/api/v1/teams/team-1",
       expect.objectContaining({
         credentials: "include",
-        method: "POST",
-      }),
-    );
-
-    await screen.getByRole("button", { name: "归档团队" }).click();
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/archive",
-      expect.objectContaining({
-        credentials: "include",
-        method: "POST",
+        method: "DELETE",
       }),
     );
   });
@@ -1345,36 +1296,6 @@ describe("TeamDetailView", () => {
     await expect.element(screen.getByLabelText("审批策略")).not.toBeInTheDocument();
     await expect.element(screen.getByLabelText("原则")).not.toBeInTheDocument();
     await expect.element(screen.getByLabelText("Runtime 范围")).not.toBeInTheDocument();
-  });
-
-  it("does not show member or constitution actions for a disabled team", async () => {
-    const fetcher = createTeamsFetcher({ disabledOverview: true });
-    const screen = await renderWithQueryClient(
-      <TeamDetailView
-        apiBaseUrl="http://control-plane.local"
-        fetcher={fetcher}
-        teamId="team-1"
-      />,
-    );
-
-    await expect
-      .element(screen.getByRole("heading", { name: "运维团队" }))
-      .toBeVisible();
-    await expect.element(screen.getByText("已禁用")).toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "添加成员" }))
-      .not.toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("button", { name: "保存宪法" }))
-      .not.toBeInTheDocument();
-    await screen.getByRole("button", { name: "恢复团队" }).click();
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/restore",
-      expect.objectContaining({
-        credentials: "include",
-        method: "POST",
-      }),
-    );
   });
 
   it("renders overview roster and safe direct roles", async () => {

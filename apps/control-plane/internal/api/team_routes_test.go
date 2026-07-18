@@ -169,29 +169,6 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected update request for tenant/team/name, got %#v", service.updateReq)
 	}
 
-	for _, tt := range []struct {
-		name   string
-		path   string
-		status tenant.TeamStatus
-	}{
-		{name: "disable", path: "/disable", status: tenant.TeamStatusDisabled},
-		{name: "archive", path: "/archive", status: tenant.TeamStatusArchived},
-		{name: "restore", path: "/restore", status: tenant.TeamStatusActive},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+tt.path, nil)
-			req.AddCookie(cookie)
-			resp := httptest.NewRecorder()
-			server.ServeHTTP(resp, req)
-			if resp.Code != http.StatusOK {
-				t.Fatalf("expected %s to succeed, got %d: %s", tt.name, resp.Code, resp.Body.String())
-			}
-			if service.changeStatusReq.TenantID != expectedTenantID || service.changeStatusReq.TeamID.String() != created.Team.ID || service.changeStatusReq.Status != tt.status {
-				t.Fatalf("expected %s status request %#v, got %#v", tt.name, tt.status, service.changeStatusReq)
-			}
-		})
-	}
-
 	constitutionReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID+"/constitution", strings.NewReader(`{"hard_rules":["review before deploy"]}`))
 	constitutionReq.Header.Set("Content-Type", "application/json")
 	constitutionReq.AddCookie(cookie)
@@ -524,9 +501,6 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		{name: "get", method: http.MethodGet, path: "/api/v1/teams/" + teamID, action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "overview", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/overview", action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "update", method: http.MethodPatch, path: "/api/v1/teams/" + teamID, body: `{"slug":"platform","name":"Platform"}`, action: authz.ActionTeamUpdate, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "disable", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/disable", action: authz.ActionTeamDisable, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "archive", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/archive", action: authz.ActionTeamArchive, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "restore", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/restore", action: authz.ActionTeamRestore, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "update constitution", method: http.MethodPatch, path: "/api/v1/teams/" + teamID + "/constitution", body: `{"constitution":{"hard_rules":["review"]}}`, action: authz.ActionTeamGovernanceEdit, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "list members", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/members", action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "add member", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/members", body: `{"user_id":"` + uuid.New().String() + `","role":"member"}`, action: authz.ActionTeamMemberAdd, resourceType: authz.ResourceTeam, resourceID: teamID, targetRole: "member"},
@@ -813,7 +787,7 @@ func TestTeamOverviewAllowedActionsFilterDeniedDecisions(t *testing.T) {
 	authorizer := &routeAuthorizer{
 		allowed: true,
 		denyActions: map[string]bool{
-			authz.ActionTeamArchive: true,
+			authz.ActionTeamDelete: true,
 		},
 	}
 	server := NewServerWithAuthz(
@@ -844,8 +818,8 @@ func TestTeamOverviewAllowedActionsFilterDeniedDecisions(t *testing.T) {
 	if !containsString(body.AllowedActions, authz.ActionTeamUpdate) {
 		t.Fatalf("expected allowed team update action, got %#v", body.AllowedActions)
 	}
-	if containsString(body.AllowedActions, authz.ActionTeamArchive) {
-		t.Fatalf("expected denied archive action to be filtered, got %#v", body.AllowedActions)
+	if containsString(body.AllowedActions, authz.ActionTeamDelete) {
+		t.Fatalf("expected denied delete action to be filtered, got %#v", body.AllowedActions)
 	}
 }
 
@@ -1018,7 +992,6 @@ type routeTeamService struct {
 	createReq                  tenant.CreateTeamRequest
 	listReq                    tenant.ListTeamsRequest
 	updateReq                  tenant.UpdateTeamRequest
-	changeStatusReq            tenant.ChangeTeamStatusRequest
 	updateConstitution         map[string]any
 	addMemberReq               tenant.AddTeamMemberRequest
 	removeMemberReq            tenant.RemoveTeamMemberRequest
@@ -1044,7 +1017,6 @@ type routeTeamService struct {
 	getCalled                  bool
 	overviewCalled             bool
 	updateCalled               bool
-	changeStatusCalled         bool
 	updateConstitutionCalled   bool
 	auditCalled                bool
 	listMembersCalled          bool
@@ -1170,7 +1142,7 @@ func (s *routeTeamService) GetOverview(ctx context.Context, tenantID, teamID uui
 		PendingItemCount: 1,
 		AllowedActions: []tenant.AllowedTeamAction{
 			tenant.AllowedTeamAction(authz.ActionTeamUpdate),
-			tenant.AllowedTeamAction(authz.ActionTeamDisable),
+			tenant.AllowedTeamAction(authz.ActionTeamDelete),
 		},
 	}, nil
 }
@@ -1208,22 +1180,6 @@ func (s *routeTeamService) UpdateTeamConstitution(ctx context.Context, tenantID,
 		Metadata:     map[string]any{},
 		CreatedAt:    now,
 		UpdatedAt:    now,
-	}, nil
-}
-
-func (s *routeTeamService) ChangeTeamStatus(ctx context.Context, req tenant.ChangeTeamStatusRequest) (*tenant.Team, error) {
-	s.changeStatusCalled = true
-	s.changeStatusReq = req
-	now := time.Now().UTC()
-	return &tenant.Team{
-		ID:        req.TeamID,
-		TenantID:  req.TenantID,
-		Slug:      "platform",
-		Name:      "Platform",
-		Status:    req.Status,
-		Metadata:  map[string]any{},
-		CreatedAt: now,
-		UpdatedAt: now,
 	}, nil
 }
 
@@ -1373,7 +1329,6 @@ func (s *routeTeamService) called() bool {
 		s.getCalled ||
 		s.overviewCalled ||
 		s.updateCalled ||
-		s.changeStatusCalled ||
 		s.listMembersCalled ||
 		s.addMemberCalled ||
 		s.removeMemberCalled ||

@@ -14,19 +14,14 @@ var (
 
 type TeamStatus string
 
+// 团队生命周期收敛（spec 2026-07-18-team-lifecycle-convergence）：撤销归档/停用，
+// 存活团队唯一状态为 active；删除由 deleted_at 表达（软删+审计），不再经 status。
 const (
-	TeamStatusActive   TeamStatus = "active"
-	TeamStatusDisabled TeamStatus = "disabled"
-	TeamStatusArchived TeamStatus = "archived"
+	TeamStatusActive TeamStatus = "active"
 )
 
 func (s TeamStatus) IsValid() bool {
-	switch s {
-	case TeamStatusActive, TeamStatusDisabled, TeamStatusArchived:
-		return true
-	default:
-		return false
-	}
+	return s == TeamStatusActive
 }
 
 type GovernanceSummaryStatus string
@@ -194,12 +189,6 @@ type UpdateTeamConstitutionRequest struct {
 	TenantID     uuid.UUID
 	TeamID       uuid.UUID
 	Constitution map[string]any
-}
-
-type ChangeTeamStatusRequest struct {
-	TenantID uuid.UUID
-	TeamID   uuid.UUID
-	Status   TeamStatus
 }
 
 type AddTeamMemberRequest struct {
