@@ -1,7 +1,7 @@
 # 运行总览维度裁决 Spec：团队底座 + 项目覆盖层
 
 > 日期：2026-07-18
-> 状态：待评审
+> 状态：**已落地入 main（2026-07-18 14:31，GATE 六项 PASS）**，实施记录见文末 §7
 > 性质：对运行总览（`/run-overview`）的维度定位裁决 + 两期落地计划。不重构页面分组逻辑，底座保持团队维度，项目以覆盖层（透镜）形式叠加。
 > 关联：运行总览实时数据化（07-16, main 61648981）；项目运行详情 `project-operational-detail`（07-14 projects-dashboard spec）。
 
@@ -115,3 +115,14 @@
 1. 候岗区放 floor-1 固定位（挤占现有 8 工位布局需微调坐标）还是每层一个？——倾向 floor-1 单点，简单且语义是"全公司大厅"。
 2. 项目选择器只列"当前有活跃任务的项目"还是全部活跃项目？——倾向前者 + "显示全部"展开，控制列表长度。
 3. 同一员工在链路中承担多个任务节点时，连线是否合并同端点边？——倾向合并 + 徽标计数，避免重线。
+
+## 7. 实施记录（2026-07-18）
+
+P1+P2 一次落地入 main（merge 27911caf，feature commit 5c4c36f6），§6 三问题均按倾向执行。与 spec 的偏差与实况：
+
+- **候岗区坐标**：floor-1 左上区域实为会议室（既有布局测试禁放工位），改放画布右侧竖条空带（polygon 1520-1660 × 470-760，竖排 3 座，虚线卡面）。
+- **"零新后端"修正**：task-graph 端点强制 demand/coordination_job 域（服务端硬校验），不存在项目全量任务图。透镜与项目详情页同规则取最新 demand（`listProjectDemands limit 1` → `getProjectTaskGraph(demandId)`）。多 demand 项目的透镜只显示最新 demand 链路——若需全项目视图需后端新端点，暂不立项。
+- **路由**：`/run-overview` 补 `validateSearch`（employee/project 可选），项目详情页既有"在运行总览查看"链接（`?project=`）与之打通。
+- **GATE 结果**：P1-G1/G2、P2-G1/G2/G4/G5 真实浏览器 E2E 全 PASS（真实 CP+PG，fixture 直插锚点项目 4be304f7）。**P2-G3（跨楼层出口徽标）真实 E2E 环境阻塞**：并行会话清库后 teams 授权可见性残缺（admin 仅见默认团队），无法构造 9+ 团队的跨楼层布局；portal 投影/切层由 `runtime-overview-project-lens.test.ts` 单测覆盖。环境恢复后可补真实 GATE。
+- **E2E 新发现既有缺口（非本次引入）**：员工归属的团队若对当前用户不可见或非 active（teams API 不返回该团队），该员工既无团队工位也不入候岗区（候岗区只覆盖 `team_id` 为空者），地图上仍不可见且与汇总数字不一致。修复方向候选：候岗区兜底口径从"无 team_id"扩为"无可见工位"，或在地图角落加"不可见团队 N 人"计数。待立项。
+- **E2E fixture 留存**：锚点项目内 demand/任务/依赖/成员（id 前缀 `e2e1`/`e2e2`），task-c 已还原 pending；员工 5ad34075、17e3a6ee 移入默认团队（后者原属团队 38c325cf"abc"，该团队对 admin 不可见）。清理 SQL：按 id 前缀删 project_tasks/project_task_dependencies/project_demands 即可。
