@@ -198,6 +198,19 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 // gate's hold/release signal) and projectcoordination's
 // ensureDemandAcceptanceDecision (the demand_acceptance decision's
 // pending_criteria payload) so both read the identical rule.
+// EffectiveCriterionVerdicts 返回每条判据当前生效的 verdict(与收敛闸同一 fold 规则:
+// 人类判定最后一条覆盖、对抗/门禁聚合行优先于执行者自报)。无任何 verdict 的判据不
+// 出现在返回 map 中。供飞书卡内逐条签署后的进度覆盖渲染。
+func EffectiveCriterionVerdicts(criteria []DemandAcceptanceCriterion, verdicts []DemandCriterionVerdict) map[string]string {
+	out := map[string]string{}
+	for _, c := range criteria {
+		if verdict, _, _, has := criterionEffectiveVerdict(verdicts, c.CriterionID); has {
+			out[c.CriterionID] = verdict
+		}
+	}
+	return out
+}
+
 func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, verdicts []DemandCriterionVerdict) []string {
 	pending := make([]string, 0)
 	for _, c := range criteria {

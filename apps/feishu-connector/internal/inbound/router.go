@@ -18,6 +18,8 @@ import (
 type Messenger interface {
 	SendCard(ctx context.Context, openID, cardJSON string) (string, error)
 	SendText(ctx context.Context, openID, text string) (string, error)
+	// UpdateCard 整卡替换已发送卡(不通过理由经文本收讫后回头更新验收卡)。
+	UpdateCard(ctx context.Context, messageID, cardJSON string) error
 }
 
 // ControlPlane 是路由依赖的控制平面动作(cpclient 实现;测试用假实现)。
@@ -26,6 +28,7 @@ type ControlPlane interface {
 	MyProjects(ctx context.Context, obo cpclient.OnBehalfOf) ([]cpclient.MyProject, error)
 	SubmitDemand(ctx context.Context, obo cpclient.OnBehalfOf, req cpclient.SubmitDemandRequest) (*cpclient.SubmitDemandResponse, error)
 	ResolveDecision(ctx context.Context, obo cpclient.OnBehalfOf, decisionID string, req cpclient.ResolveDecisionRequest) (map[string]any, bool, error)
+	SignCriterion(ctx context.Context, obo cpclient.OnBehalfOf, demandID string, req cpclient.SignCriterionRequest) (*cpclient.SignCriterionOutcome, error)
 }
 
 type Router struct {
@@ -73,6 +76,10 @@ func (r *Router) HandleMessage(ctx context.Context, msg gateway.InboundMessage) 
 	state, hasSession := r.sessions.Get(msg.OpenID)
 	if hasSession && state.Stage == session.StageAwaitContent {
 		r.captureDemandContent(ctx, msg.OpenID, state, text)
+		return
+	}
+	if hasSession && state.Stage == session.StageAwaitRejectReason {
+		r.submitRejectReason(ctx, msg.OpenID, obo, state, text)
 		return
 	}
 
@@ -141,6 +148,8 @@ func (r *Router) HandleCardAction(ctx context.Context, action gateway.CardAction
 		return gateway.CardActionReply{ToastType: "info", ToastContent: "已取消"}
 	case "resolve_decision":
 		return r.onResolveDecision(ctx, action, obo)
+	case "sign_criterion":
+		return r.onSignCriterion(ctx, action, obo)
 	default:
 		return gateway.CardActionReply{}
 	}
@@ -244,6 +253,99 @@ func (r *Router) onResolveDecision(ctx context.Context, action gateway.CardActio
 		ToastContent: "已提交:" + decision,
 		NewCardJSON:  cards.DecisionResolvedCard(cardPayload, r.webOrigin),
 	}
+}
+
+// onSignCriterion 卡内逐条签署。「通过」直接签;「不通过」理由必填(要回灌返工),
+// 先入会话态等用户回文本,收讫后经 submitRejectReason 提交并回头更新原卡。
+func (r *Router) onSignCriterion(ctx context.Context, action gateway.CardAction, obo cpclient.OnBehalfOf) gateway.CardActionReply {
+	demandID, _ := action.Value["demand_id"].(string)
+	projectID, _ := action.Value["project_id"].(string)
+	decisionID, _ := action.Value["decision_id"].(string)
+	criterionID, _ := action.Value["criterion_id"].(string)
+	verdict, _ := action.Value["verdict"].(string)
+	statement, _ := action.Value["statement"].(string)
+	if demandID == "" || projectID == "" || criterionID == "" {
+		return gateway.CardActionReply{ToastType: "error", ToastContent: "卡片数据缺失"}
+	}
+	if verdict == "unsatisfied" {
+		r.sessions.Put(action.OpenID, session.FormState{
+			Stage:         session.StageAwaitRejectReason,
+			UserID:        obo.UserID,
+			ProjectID:     projectID,
+			DemandID:      demandID,
+			DecisionID:    decisionID,
+			CriterionID:   criterionID,
+			CriterionText: statement,
+			CardMessageID: action.MessageID,
+		})
+		go r.sendText(context.Background(), action.OpenID, "该判据将标记「不通过」,请直接回复不通过的理由(会回灌返工):\n判据:"+statement+"\n发送「取消」放弃。")
+		return gateway.CardActionReply{ToastType: "info", ToastContent: "请在对话中回复不通过理由"}
+	}
+	outcome, err := r.cp.SignCriterion(ctx, obo, demandID, cpclient.SignCriterionRequest{
+		ProjectID:   projectID,
+		DecisionID:  decisionID,
+		CriterionID: criterionID,
+		Verdict:     "satisfied",
+	})
+	if err != nil {
+		log.Printf("[inbound] sign criterion: %v", err)
+		return gateway.CardActionReply{ToastType: "error", ToastContent: "签署失败,请稍后再试或到 Console 处理"}
+	}
+	reply := gateway.CardActionReply{
+		ToastType:    "success",
+		ToastContent: fmt.Sprintf("已签署通过(%d/%d)", outcome.Signed, outcome.Total),
+	}
+	if outcome.DemandStatus == "completed" {
+		reply.ToastContent = "全部判据签署完成,需求验收通过"
+	}
+	if cardJSON := r.renderAcceptanceProgress(outcome, decisionID, projectID); cardJSON != "" {
+		reply.NewCardJSON = cardJSON
+	}
+	return reply
+}
+
+// submitRejectReason 收到不通过理由文本后提交签署并更新原验收卡。
+func (r *Router) submitRejectReason(ctx context.Context, openID string, obo cpclient.OnBehalfOf, state session.FormState, reason string) {
+	if reason == "" {
+		r.sendText(ctx, openID, "不通过理由不能为空,请直接回复理由;发送「取消」放弃。")
+		return
+	}
+	outcome, err := r.cp.SignCriterion(ctx, obo, state.DemandID, cpclient.SignCriterionRequest{
+		ProjectID:   state.ProjectID,
+		DecisionID:  state.DecisionID,
+		CriterionID: state.CriterionID,
+		Verdict:     "unsatisfied",
+		Reason:      reason,
+	})
+	if err != nil {
+		log.Printf("[inbound] sign criterion unsatisfied: %v", err)
+		r.sendText(ctx, openID, "签署失败,请稍后再试或到 Console 处理。会话保留,可直接重发理由。")
+		return
+	}
+	r.sessions.Clear(openID)
+	if state.CardMessageID != "" {
+		if cardJSON := r.renderAcceptanceProgress(outcome, state.DecisionID, state.ProjectID); cardJSON != "" {
+			if err := r.messenger.UpdateCard(ctx, state.CardMessageID, cardJSON); err != nil {
+				log.Printf("[inbound] update acceptance card: %v", err)
+			}
+		}
+	}
+	confirm := fmt.Sprintf("已记录「不通过」及理由(%d/%d 已签)。", outcome.Signed, outcome.Total)
+	if outcome.DemandStatus == "failed" {
+		confirm = "已记录「不通过」,需求验收未通过,理由将回灌返工。"
+	}
+	r.sendText(ctx, openID, confirm)
+}
+
+func (r *Router) renderAcceptanceProgress(outcome *cpclient.SignCriterionOutcome, decisionID, projectID string) string {
+	if outcome == nil || outcome.CardPayload == nil {
+		return ""
+	}
+	verdicts := outcome.CriterionVerdicts
+	if verdicts == nil {
+		verdicts = map[string]string{}
+	}
+	return cards.AcceptanceProgressCard(outcome.CardPayload, verdicts, outcome.Signed, outcome.Total, outcome.Remaining, outcome.DemandStatus, decisionID, projectID, r.webOrigin)
 }
 
 func (r *Router) sendText(ctx context.Context, openID, text string) {

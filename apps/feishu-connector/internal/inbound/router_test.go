@@ -18,6 +18,8 @@ type fakeCP struct {
 	resolved    []string
 	conflict    bool
 	resolveCard map[string]any
+	signed      []string
+	signOutcome *cpclient.SignCriterionOutcome
 }
 
 func (f *fakeCP) ResolveIdentity(_ context.Context, _, openID string) (*cpclient.Identity, error) {
@@ -38,9 +40,26 @@ func (f *fakeCP) ResolveDecision(_ context.Context, _ cpclient.OnBehalfOf, decis
 	return f.resolveCard, f.conflict, nil
 }
 
+func (f *fakeCP) SignCriterion(_ context.Context, _ cpclient.OnBehalfOf, demandID string, req cpclient.SignCriterionRequest) (*cpclient.SignCriterionOutcome, error) {
+	f.signed = append(f.signed, demandID+":"+req.CriterionID+":"+req.Verdict+":"+req.Reason)
+	if f.signOutcome != nil {
+		return f.signOutcome, nil
+	}
+	return &cpclient.SignCriterionOutcome{DemandStatus: "acceptance_pending", Signed: 1, Total: 2, Remaining: 1}, nil
+}
+
 type fakeMessenger struct {
-	texts []string
-	cards []string
+	texts   []string
+	cards   []string
+	updates map[string]string
+}
+
+func (m *fakeMessenger) UpdateCard(_ context.Context, messageID, card string) error {
+	if m.updates == nil {
+		m.updates = map[string]string{}
+	}
+	m.updates[messageID] = card
+	return nil
 }
 
 func (m *fakeMessenger) SendText(_ context.Context, _ string, text string) (string, error) {
@@ -179,6 +198,87 @@ func TestResolveDecisionActionAndConflict(t *testing.T) {
 	}
 	if reply.NewCardJSON == "" {
 		t.Fatalf("conflict reply must also replace the card")
+	}
+}
+
+// 卡内签署「通过」:直接提交并整卡重渲染进度。
+func TestSignCriterionSatisfiedRerendersProgress(t *testing.T) {
+	router, cp, _, _ := setup(true)
+	cp.signOutcome = &cpclient.SignCriterionOutcome{
+		DemandStatus: "acceptance_pending", Signed: 1, Total: 2, Remaining: 1,
+		CriterionVerdicts: map[string]string{"c1": "satisfied"},
+		CardPayload: map[string]any{
+			"decision_type": "demand_acceptance", "title": "需求验收:登录加固",
+			"context": map[string]any{
+				"demand_id": "d-1",
+				"pending_criteria_detail": []any{
+					map[string]any{"id": "c1", "statement": "接口通过安全扫描"},
+					map[string]any{"id": "c2", "statement": "限流开关可回滚"},
+				},
+			},
+		},
+	}
+	reply := router.HandleCardAction(context.Background(), gateway.CardAction{
+		AppConfigID: "cfg-1", OpenID: "ou_a", MessageID: "om_1",
+		Value: map[string]any{"action": "sign_criterion", "demand_id": "d-1", "project_id": "p-1", "decision_id": "dec-1", "criterion_id": "c1", "verdict": "satisfied"},
+	})
+	if reply.ToastType != "success" || len(cp.signed) != 1 || cp.signed[0] != "d-1:c1:satisfied:" {
+		t.Fatalf("sign failed: %#v signed=%v", reply, cp.signed)
+	}
+	// 重渲染:已签 ✅、未签保留按钮、进度行在卡上。
+	for _, want := range []string{"1/2", "✅", "接口通过安全扫描", "限流开关可回滚", "sign_criterion"} {
+		if !strings.Contains(reply.NewCardJSON, want) {
+			t.Fatalf("progress card missing %q:\n%s", want, reply.NewCardJSON)
+		}
+	}
+}
+
+// 卡内签署「不通过」:理由必填——先入会话态,回复文本后提交并回头更新原卡。
+func TestSignCriterionUnsatisfiedRequiresReason(t *testing.T) {
+	router, cp, messenger, sessions := setup(true)
+	cp.signOutcome = &cpclient.SignCriterionOutcome{
+		DemandStatus: "failed", Signed: 2, Total: 2, Remaining: 0,
+		CriterionVerdicts: map[string]string{"c2": "unsatisfied"},
+		CardPayload: map[string]any{
+			"decision_type": "demand_acceptance", "title": "需求验收:登录加固",
+			"context": map[string]any{"demand_id": "d-1", "pending_criteria_detail": []any{
+				map[string]any{"id": "c2", "statement": "限流开关可回滚"},
+			}},
+		},
+	}
+	reply := router.HandleCardAction(context.Background(), gateway.CardAction{
+		AppConfigID: "cfg-1", OpenID: "ou_a", MessageID: "om_1",
+		Value: map[string]any{"action": "sign_criterion", "demand_id": "d-1", "project_id": "p-1", "decision_id": "dec-1", "criterion_id": "c2", "verdict": "unsatisfied", "statement": "限流开关可回滚"},
+	})
+	if len(cp.signed) != 0 {
+		t.Fatalf("unsatisfied must not sign before reason, signed=%v", cp.signed)
+	}
+	if state, ok := sessions.Get("ou_a"); !ok || state.Stage != session.StageAwaitRejectReason || state.CardMessageID != "om_1" {
+		t.Fatalf("expected await-reason session, got %#v ok=%v", state, ok)
+	}
+	if reply.ToastType != "info" {
+		t.Fatalf("expected info toast, got %#v", reply)
+	}
+
+	// 空理由被拒
+	router.HandleMessage(context.Background(), msg(""))
+	if len(cp.signed) != 0 {
+		t.Fatalf("empty reason must not sign")
+	}
+	// 回复理由 → 提交 unsatisfied + 理由;原卡经 UpdateCard 更新为终态;会话清空。
+	router.HandleMessage(context.Background(), msg("回滚开关没接入配置中心"))
+	if len(cp.signed) != 1 || cp.signed[0] != "d-1:c2:unsatisfied:回滚开关没接入配置中心" {
+		t.Fatalf("expected unsatisfied sign with reason, signed=%v", cp.signed)
+	}
+	if card, ok := messenger.updates["om_1"]; !ok || !strings.Contains(card, "验收未通过") {
+		t.Fatalf("expected original card updated to failed state, updates=%v", messenger.updates)
+	}
+	if _, ok := sessions.Get("ou_a"); ok {
+		t.Fatalf("expected session cleared after reason submitted")
+	}
+	last := messenger.texts[len(messenger.texts)-1]
+	if !strings.Contains(last, "不通过") {
+		t.Fatalf("expected reject confirmation text, got %q", last)
 	}
 }
 

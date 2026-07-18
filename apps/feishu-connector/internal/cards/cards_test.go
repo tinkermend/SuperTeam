@@ -32,17 +32,34 @@ func TestPlanReviewCardHasApproveAndRequestChanges(t *testing.T) {
 	}
 }
 
-func TestDemandAcceptanceCardIsDeepLinkOnly(t *testing.T) {
+// 验收卡:不给一键整单批准(防橡皮图章),但每条判据可逐条签署,证据紧邻按钮。
+func TestDemandAcceptanceCardSignsPerCriterion(t *testing.T) {
 	cardJSON := DecisionCard(map[string]any{
 		"decision_type": "demand_acceptance",
 		"title":         "需求验收:登录加固",
+		"context": map[string]any{
+			"demand_id": "d-1",
+			"pending_criteria_detail": []any{
+				map[string]any{"id": "c1", "statement": "接口通过安全扫描", "evidence": []any{
+					map[string]any{"title": "安全扫描任务", "status": "completed", "conclusion": "扫描 0 高危"},
+				}},
+			},
+		},
 	}, "dec-2", "proj-1", "http://web.local:3000")
 	mustValid(t, cardJSON)
 	if strings.Contains(cardJSON, "resolve_decision") {
-		t.Fatalf("判据签署卡不得有卡内签署按钮(防橡皮图章):\n%s", cardJSON)
+		t.Fatalf("判据签署卡不得有整单一键批准(防橡皮图章):\n%s", cardJSON)
 	}
-	if !strings.Contains(cardJSON, "http://web.local:3000/inbox") {
-		t.Fatalf("expected deep link, got:\n%s", cardJSON)
+	for _, want := range []string{"sign_criterion", "satisfied", "unsatisfied", "接口通过安全扫描", "扫描 0 高危", "http://web.local:3000/inbox"} {
+		if !strings.Contains(cardJSON, want) {
+			t.Fatalf("acceptance card missing %q:\n%s", want, cardJSON)
+		}
+	}
+	// 无 context 时退化为深链卡,不渲染签署按钮。
+	bare := DecisionCard(map[string]any{"decision_type": "demand_acceptance", "title": "需求验收:登录加固"}, "dec-2", "proj-1", "http://web.local:3000")
+	mustValid(t, bare)
+	if strings.Contains(bare, "sign_criterion") {
+		t.Fatalf("bare acceptance card must not render sign buttons:\n%s", bare)
 	}
 }
 

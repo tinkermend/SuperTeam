@@ -204,6 +204,33 @@ type resolveDecisionResponse struct {
 	CardPayload map[string]any `json:"card_payload"`
 }
 
+type SignCriterionRequest struct {
+	ProjectID   string `json:"project_id"`
+	DecisionID  string `json:"decision_id,omitempty"`
+	CriterionID string `json:"criterion_id"`
+	Verdict     string `json:"verdict"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// SignCriterionOutcome 是卡内签署响应:进度 + 判据 verdict 覆盖 + 刷新卡快照。
+type SignCriterionOutcome struct {
+	DemandStatus      string            `json:"demand_status"`
+	Signed            int32             `json:"signed"`
+	Total             int32             `json:"total"`
+	Remaining         int32             `json:"remaining"`
+	CriterionVerdicts map[string]string `json:"criterion_verdicts"`
+	CardPayload       map[string]any    `json:"card_payload"`
+}
+
+// SignCriterion 卡内逐条签署验收判据(on-behalf-of)。409 = 需求不在待验收态。
+func (c *Client) SignCriterion(ctx context.Context, obo OnBehalfOf, demandID string, req SignCriterionRequest) (*SignCriterionOutcome, error) {
+	var out SignCriterionOutcome
+	if err := c.do(ctx, http.MethodPost, "/api/v1/connector/demands/"+demandID+"/criteria/sign", &obo, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ResolveDecision 回传决策;409 表示已由他人处理(调用方渲染对应卡态)。
 // cardPayload 是控制平面返回的决策卡快照(与 outbox 决策卡同源),供即时置换
 // 渲染保留详情的终态卡;两条路径都 best-effort,可能为 nil。

@@ -166,9 +166,8 @@ func listSection(title string, lines []string, maxItems int) map[string]any {
 	return mdBlock(content)
 }
 
-// decisionBodyElements 渲染决策卡信息区:项目/类型/风险/摘要+按决策类型展开的富上下文。
-// 决策卡与终态卡共用——批准之后卡片必须保留"批的是什么",不逼人回控制台。
-func decisionBodyElements(payload map[string]any) []map[string]any {
+// decisionHeadElements 渲染决策卡头部信息区:项目/类型/风险/摘要。
+func decisionHeadElements(payload map[string]any) []map[string]any {
 	decisionType, _ := payload["decision_type"].(string)
 	summary, _ := payload["summary"].(string)
 	risk, _ := payload["risk_level"].(string)
@@ -186,9 +185,99 @@ func decisionBodyElements(payload map[string]any) []map[string]any {
 	if summary != "" {
 		elements = append(elements, mdBlock(clamp(summary, 1200)))
 	}
+	return elements
+}
+
+// decisionBodyElements 渲染决策卡信息区:头部+按决策类型展开的富上下文(静态,无按钮)。
+// 决策卡与终态卡共用——批准之后卡片必须保留"批的是什么",不逼人回控制台。
+func decisionBodyElements(payload map[string]any) []map[string]any {
+	decisionType, _ := payload["decision_type"].(string)
+	elements := decisionHeadElements(payload)
 	context, _ := payload["context"].(map[string]any)
 	if context != nil {
 		elements = append(elements, decisionContextElements(decisionType, context, payload)...)
+	}
+	return elements
+}
+
+// verdictOverlay 宽容取 payload 里的判据 verdict 覆盖(JSON 往返后为 map[string]any)。
+func verdictOverlay(v any) map[string]string {
+	raw, _ := v.(map[string]any)
+	out := map[string]string{}
+	for key, value := range raw {
+		if s, ok := value.(string); ok {
+			out[key] = s
+		}
+	}
+	return out
+}
+
+// acceptanceSignElements 渲染验收判据区:每条判据一行(verdict 图标+证据摘录紧邻),
+// interactive 时未签条目后跟「通过/不通过」按钮——签署紧邻证据,防橡皮图章的卡内版。
+func acceptanceSignElements(payload map[string]any, verdicts map[string]string, interactive bool, decisionID, projectID string) []map[string]any {
+	context, _ := payload["context"].(map[string]any)
+	if context == nil {
+		return nil
+	}
+	demandID, _ := context["demand_id"].(string)
+	detail := mapSlice(context["pending_criteria_detail"])
+	if len(detail) == 0 {
+		if pending := strSlice(context["pending_criteria"]); len(pending) > 0 {
+			return []map[string]any{mdBlock(fmt.Sprintf("**待签署判据**:%d 条,明细见 Console。", len(pending)))}
+		}
+		return nil
+	}
+	elements := []map[string]any{mdBlock(fmt.Sprintf("**待签署判据(%d 条)**", len(detail)))}
+	const maxRows = 8
+	for i, criterion := range detail {
+		if i >= maxRows {
+			elements = append(elements, mdBlock(fmt.Sprintf("_…共 %d 条判据,其余到 Console 签署_", len(detail))))
+			break
+		}
+		id, _ := criterion["id"].(string)
+		statement, _ := criterion["statement"].(string)
+		verdict := verdicts[id]
+		icon := "☐"
+		switch verdict {
+		case "satisfied":
+			icon = "✅"
+		case "unsatisfied":
+			icon = "❌"
+		}
+		line := fmt.Sprintf("%s **%d. %s**", icon, i+1, clamp(statement, 120))
+		if method, _ := criterion["verification_method"].(string); method == "human_judgment" {
+			line += "(人工判断)"
+		}
+		for j, entry := range mapSlice(criterion["evidence"]) {
+			if j >= 2 {
+				break
+			}
+			taskTitle, _ := entry["title"].(string)
+			conclusion, _ := entry["conclusion"].(string)
+			if conclusion == "" {
+				status, _ := entry["status"].(string)
+				conclusion = "(任务 " + status + ",无结论摘录)"
+			}
+			line += fmt.Sprintf("\n> %s:%s", clamp(taskTitle, 40), clamp(conclusion, 140))
+		}
+		elements = append(elements, mdBlock(line))
+		if interactive && verdict == "" && demandID != "" && id != "" {
+			signValue := func(signVerdict string) map[string]any {
+				return map[string]any{
+					"action":       "sign_criterion",
+					"demand_id":    demandID,
+					"project_id":   projectID,
+					"decision_id":  decisionID,
+					"criterion_id": id,
+					"verdict":      signVerdict,
+					"statement":    clamp(statement, 80),
+				}
+			}
+			elements = append(elements, map[string]any{"tag": "action", "actions": []map[string]any{
+				actionButton(fmt.Sprintf("通过 %d", i+1), "primary", signValue("satisfied")),
+				actionButton(fmt.Sprintf("不通过 %d", i+1), "danger", signValue("unsatisfied")),
+			}})
+		}
 	}
 	return elements
 }
@@ -237,24 +326,8 @@ func decisionContextElements(decisionType string, context map[string]any, payloa
 			}
 		}
 	case "demand_acceptance":
-		detail := mapSlice(context["pending_criteria_detail"])
-		lines := make([]string, 0, len(detail))
-		for _, criterion := range detail {
-			statement, _ := criterion["statement"].(string)
-			if statement == "" {
-				continue
-			}
-			line := "☐ " + clamp(statement, 120)
-			if method, _ := criterion["verification_method"].(string); method == "human_judgment" {
-				line += "(人工判断)"
-			}
-			lines = append(lines, line)
-		}
-		if len(lines) > 0 {
-			sections = append(sections, listSection(fmt.Sprintf("待签署判据(%d 条)", len(lines)), lines, 10))
-		} else if pending := strSlice(context["pending_criteria"]); len(pending) > 0 {
-			sections = append(sections, mdBlock(fmt.Sprintf("**待签署判据**:%d 条,明细见 Console。", len(pending))))
-		}
+		// 静态渲染(终态卡等场景):同一判据行渲染器,无签署按钮。
+		sections = append(sections, acceptanceSignElements(payload, verdictOverlay(payload["criterion_verdicts"]), false, "", "")...)
 	case "planning_gap":
 		if gap, ok := context["gap"].(map[string]any); ok {
 			gapInfo := ""
@@ -323,15 +396,48 @@ func DecisionCard(payload map[string]any, decisionID, projectID, webOrigin strin
 			linkButton("查看详情", deepLink),
 		}
 	case "demand_acceptance":
-		// 判据签署必须紧邻证据——卡片只给信息与深链,不给一键签署。
-		actions = []map[string]any{linkButton("到 Console 逐条签署判据", deepLink)}
+		// 卡内逐条签署:判据原文与证据摘录就在卡上,签署紧邻证据(逐条按钮由
+		// acceptanceSignElements 渲染);深链只作完整证据血缘兜底,不给一键全过。
+		actions = []map[string]any{linkButton("在 Console 查看完整证据", deepLink)}
 	default:
 		actions = []map[string]any{linkButton("到 Console 处理", deepLink)}
 	}
 
-	elements := decisionBodyElements(payload)
+	var elements []map[string]any
+	if decisionType == "demand_acceptance" {
+		elements = decisionHeadElements(payload)
+		elements = append(elements, acceptanceSignElements(payload, verdictOverlay(payload["criterion_verdicts"]), true, decisionID, projectID)...)
+	} else {
+		elements = decisionBodyElements(payload)
+	}
 	elements = append(elements, map[string]any{"tag": "action", "actions": actions})
 	return card(header("待你处理:"+clamp(title, 80), riskTemplate(risk)), elements...)
+}
+
+// AcceptanceProgressCard 卡内签署一条后的整卡重渲染:签署进度+verdict 覆盖,
+// 未签条目保留按钮;需求收敛(completed/failed)后转终态样式无按钮。
+func AcceptanceProgressCard(payload map[string]any, verdicts map[string]string, signed, total, remaining int32, demandStatus, decisionID, projectID, webOrigin string) string {
+	title, _ := payload["title"].(string)
+	headerTitle := "验收签署中:" + clamp(title, 70)
+	template := "orange"
+	interactive := true
+	switch demandStatus {
+	case "completed":
+		headerTitle = "验收完成:" + clamp(title, 70)
+		template = "green"
+		interactive = false
+	case "failed":
+		headerTitle = "验收未通过:" + clamp(title, 70)
+		template = "red"
+		interactive = false
+	}
+	elements := []map[string]any{mdBlock(fmt.Sprintf("**签署进度**:%d/%d,剩余 %d 条", signed, total, remaining))}
+	elements = append(elements, decisionHeadElements(payload)...)
+	elements = append(elements, acceptanceSignElements(payload, verdicts, interactive, decisionID, projectID)...)
+	elements = append(elements, map[string]any{"tag": "action", "actions": []map[string]any{
+		linkButton("在 Console 查看完整证据", strings.TrimRight(webOrigin, "/") + "/inbox"),
+	}})
+	return card(header(headerTitle, template), elements...)
 }
 
 // DecisionResolvedCard 决策终态卡(即时置换与 card_update 整卡替换共用)。

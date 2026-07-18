@@ -11,11 +11,14 @@ import (
 type Stage string
 
 const (
-	StageIdle          Stage = "idle"
-	StagePickProject   Stage = "pick_project"
-	StagePickMode      Stage = "pick_mode"
-	StageAwaitContent  Stage = "await_content"
-	StageConfirm       Stage = "confirm"
+	StageIdle         Stage = "idle"
+	StagePickProject  Stage = "pick_project"
+	StagePickMode     Stage = "pick_mode"
+	StageAwaitContent Stage = "await_content"
+	StageConfirm      Stage = "confirm"
+	// StageAwaitRejectReason 卡内签署"不通过"后等待用户回复理由
+	// (理由必填——要回灌返工循环,不允许无理由驳回)。
+	StageAwaitRejectReason Stage = "await_reject_reason"
 )
 
 type FormState struct {
@@ -26,7 +29,13 @@ type FormState struct {
 	Mode        string
 	Title       string
 	Content     string
-	UpdatedAt   time.Time
+	// 卡内签署"不通过"流程的现场(StageAwaitRejectReason 使用)。
+	DemandID      string
+	DecisionID    string
+	CriterionID   string
+	CriterionText string
+	CardMessageID string
+	UpdatedAt     time.Time
 }
 
 type Store struct {

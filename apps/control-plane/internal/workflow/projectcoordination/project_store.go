@@ -3870,6 +3870,15 @@ func planningGapPayload(gap *PlanningGap) map[string]any {
 	}
 }
 
+// truncateRunes 按 rune 截断,避免多字节字符被拦腰斩断。
+func truncateRunes(text string, max int) string {
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	return string(runes[:max]) + "…"
+}
+
 // planningGapTitle builds the decision title "规划缺口：<诊断前80字>", truncating on
 // a rune boundary so multi-byte diagnosis text is never split mid-character.
 func planningGapTitle(diagnosis string) string {
@@ -3983,15 +3992,41 @@ func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenan
 		for _, id := range pendingCriteria {
 			pendingSet[id] = true
 		}
+		// 证据摘录 best-effort:签署必须紧邻证据——把判据 satisfied_by 对应任务的
+		// 最新结论摘录进 context,飞书卡内签署时证据就在判据旁。取数失败只降级
+		// 为无摘录,不阻断决策创建(投影不阻断业务)。
+		evidenceByTaskKey := map[string]map[string]any{}
+		if tasks, taskErr := s.listDemandSummaryTasks(ctx, tenantID, projectID, demandID); taskErr == nil {
+			for _, task := range tasks {
+				if task.PlannedTaskKey == nil || *task.PlannedTaskKey == "" {
+					continue
+				}
+				entry := map[string]any{"title": task.Title, "status": task.Status}
+				if result, resultErr := s.latestTaskResult(ctx, task); resultErr == nil && result != nil && result.Contract.Summary != "" {
+					entry["conclusion"] = truncateRunes(result.Contract.Summary, 200)
+				}
+				evidenceByTaskKey[*task.PlannedTaskKey] = entry
+			}
+		}
 		for _, criterion := range criteria {
 			if !pendingSet[criterion.CriterionID] {
 				continue
 			}
-			pendingCriteriaDetail = append(pendingCriteriaDetail, map[string]any{
+			detail := map[string]any{
 				"id":                  criterion.CriterionID,
 				"statement":           criterion.Statement,
 				"verification_method": criterion.VerificationMethod,
-			})
+			}
+			evidence := make([]map[string]any, 0, len(criterion.SatisfiedBy))
+			for _, taskKey := range criterion.SatisfiedBy {
+				if entry, ok := evidenceByTaskKey[taskKey]; ok {
+					evidence = append(evidence, entry)
+				}
+			}
+			if len(evidence) > 0 {
+				detail["evidence"] = evidence
+			}
+			pendingCriteriaDetail = append(pendingCriteriaDetail, detail)
 		}
 	}
 	projectRecord, err := s.repository.GetProject(ctx, tenantID, projectID)

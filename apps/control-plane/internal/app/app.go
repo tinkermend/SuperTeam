@@ -1047,6 +1047,54 @@ func (a feishuProjectGatewayAdapter) ResolveDecision(ctx context.Context, tenant
 	return false, err
 }
 
+// SignDemandCriterion on-behalf-of 逐条签署验收判据(卡内签署),签署后取全量判据
+// verdict 与刷新决策卡快照供飞书整卡重渲染。判权在 SignDemandCriterionVerdict 内部
+// (any-of-N 合格处理人)。
+func (a feishuProjectGatewayAdapter) SignDemandCriterion(ctx context.Context, req feishu.SignCriterionGatewayRequest) (*feishu.SignCriterionOutcome, error) {
+	result, err := a.projects.SignDemandCriterionVerdict(ctx, project.SignDemandCriterionVerdictRequest{
+		TenantID:    req.TenantID,
+		DemandID:    req.DemandID,
+		ActorUserID: req.ActorUserID,
+		CriterionID: req.CriterionID,
+		Verdict:     req.Verdict,
+		Reason:      req.Reason,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, project.ErrProjectDecisionForbidden):
+			return nil, feishu.ErrGatewayForbidden
+		case errors.Is(err, project.ErrProjectConflict):
+			return nil, feishu.ErrGatewayConflict
+		case errors.Is(err, project.ErrInvalidProject):
+			return nil, fmt.Errorf("%w: %v", feishu.ErrGatewayBadInput, err)
+		default:
+			return nil, err
+		}
+	}
+	outcome := &feishu.SignCriterionOutcome{
+		DemandStatus: string(result.DemandStatus),
+		Signed:       result.Signed,
+		Total:        result.Total,
+		Remaining:    result.Remaining,
+	}
+	// verdict 覆盖与卡快照 best-effort:取不到只降级为薄重渲染,不影响签署本身。
+	if revisions, listErr := a.repo.ListPlanRevisionsForDemand(ctx, req.TenantID, req.ProjectID, req.DemandID); listErr == nil {
+		if revisionID := project.CurrentEffectivePlanRevisionID(revisions); revisionID != uuid.Nil {
+			criteria, criteriaErr := a.repo.ListDemandAcceptanceCriteria(ctx, req.TenantID, req.DemandID, revisionID)
+			verdicts, verdictsErr := a.repo.ListDemandCriterionVerdicts(ctx, req.TenantID, req.DemandID, revisionID)
+			if criteriaErr == nil && verdictsErr == nil {
+				outcome.CriterionVerdicts = project.EffectiveCriterionVerdicts(criteria, verdicts)
+			}
+		}
+	}
+	if req.DecisionID != uuid.Nil {
+		if card, cardErr := a.DecisionCardSnapshot(ctx, req.TenantID, req.ProjectID, req.DecisionID); cardErr == nil {
+			outcome.CardPayload = card
+		}
+	}
+	return outcome, nil
+}
+
 // DecisionCardSnapshot 返回与 outbox decision_card 同源的决策卡投影,含终态信息;
 // 供 connector resolve 后即时渲染保留详情的终态卡。
 func (a feishuProjectGatewayAdapter) DecisionCardSnapshot(ctx context.Context, tenantID, projectID, decisionID uuid.UUID) (map[string]any, error) {
