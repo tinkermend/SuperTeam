@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, postJson, putJson } from "./client";
+import { buildApiUrl, deleteJson, getJson, parseJson, postJson, putJson } from "./client";
 
 export type DigitalEmployeeStatus =
   | "draft"
@@ -776,14 +776,22 @@ export async function createDigitalEmployee(
 export async function getDigitalEmployeeExecutionInstance(
   options: ApiClientOptions,
   employeeId: string,
-): Promise<DigitalEmployeeExecutionInstance> {
+): Promise<DigitalEmployeeExecutionInstance | null> {
   const encodedEmployeeId = encodePathSegment(employeeId);
-
-  return getJson<DigitalEmployeeExecutionInstance>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/execution-instance`,
-    "digital employee execution instance",
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/execution-instance`),
+    {
+      credentials: "include",
+      headers: { accept: "application/json" },
+      method: "GET",
+    },
   );
+  // 204 = 员工存在但尚无执行实例。
+  if (response.status === 204) {
+    return null;
+  }
+  return parseJson<DigitalEmployeeExecutionInstance>(response, "digital employee execution instance");
 }
 
 export function getDigitalEmployeeSchedulingReadiness(

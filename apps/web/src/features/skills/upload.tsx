@@ -354,6 +354,10 @@ function PackageStatusBand({
   const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const openFilePicker = () => {
+    inputRef.current?.click();
+  };
+
   const clearFile = () => {
     onFileChange(null);
     if (inputRef.current) {
@@ -409,24 +413,25 @@ function PackageStatusBand({
     </span>
   );
 
+  // 全部用 span：需要能合法嵌入 <button>（点击选择文件的可达性触发器）。
   const fileMeta = (
-    <div className="min-w-0 flex-1">
-      <p className="truncate text-base font-extrabold tracking-tight text-v3-ink">
+    <span className="block min-w-0 flex-1 text-left">
+      <span className="block truncate text-base font-extrabold tracking-tight text-v3-ink">
         {file?.name ?? "选择技能 zip 包"}
-      </p>
-      <p className="mt-0.5 text-sm text-v3-ink-2">
+      </span>
+      <span className="mt-0.5 block text-sm text-v3-ink-2">
         {file ? formatBytes(file.size) : "拖拽 ZIP 到此处，或点击选择，必须包含 SKILL.md"}
-      </p>
+      </span>
       {file ? (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-v3-ink-2">
+        <span className="mt-1 flex min-w-0 items-center gap-2 text-v3-ink-2">
           <span className="text-xs uppercase tracking-wide text-v3-ink-3">包名</span>
-          <p className="truncate text-sm font-semibold text-v3-ink">
+          <span className="truncate text-sm font-semibold text-v3-ink">
             {packageDisplayName || "选择 zip 后自动生成"}
-          </p>
+          </span>
           <span className="shrink-0 text-xs text-v3-ink-3">· 自动生成</span>
-        </div>
+        </span>
       ) : null}
-    </div>
+    </span>
   );
 
   return (
@@ -443,12 +448,15 @@ function PackageStatusBand({
       onDrop={acceptDroppedFile}
     >
       <Label className="sr-only" htmlFor="skill-upload-file">技能 zip 包</Label>
+      {/* 隐藏 input 只承载文件选择；tabIndex=-1 移出键盘焦点序列（sr-only 获焦时无可见焦点指示），
+          键盘/自动化统一走下方可见 <button> 触发 openFilePicker。 */}
       <input
         accept=".zip,application/zip"
         className="sr-only"
         id="skill-upload-file"
         onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
         ref={inputRef}
+        tabIndex={-1}
         type="file"
       />
       <div
@@ -461,15 +469,23 @@ function PackageStatusBand({
       >
         {file ? (
           <>
-            <label className="group shrink-0 cursor-pointer" htmlFor="skill-upload-file">{zipTile}</label>
+            <button
+              aria-label="更换技能 zip 包"
+              className="group shrink-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand focus-visible:ring-offset-2"
+              onClick={openFilePicker}
+              type="button"
+            >
+              {zipTile}
+            </button>
             {fileMeta}
             <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1.5">
-              <label
-                className="cursor-pointer rounded-lg bg-v3-brand-soft px-2.5 py-1.5 text-xs font-bold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft/80"
-                htmlFor="skill-upload-file"
+              <button
+                className="cursor-pointer rounded-lg bg-v3-brand-soft px-2.5 py-1.5 text-xs font-bold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand focus-visible:ring-offset-2"
+                onClick={openFilePicker}
+                type="button"
               >
                 更换
-              </label>
+              </button>
               <button
                 className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-v3-ink-3 transition-colors hover:bg-v3-card hover:text-v3-ink"
                 onClick={clearFile}
@@ -480,10 +496,14 @@ function PackageStatusBand({
             </div>
           </>
         ) : (
-          <label className="group flex min-w-0 flex-1 cursor-pointer items-center gap-4" htmlFor="skill-upload-file">
+          <button
+            className="group flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand focus-visible:ring-offset-2"
+            onClick={openFilePicker}
+            type="button"
+          >
             {zipTile}
             {fileMeta}
-          </label>
+          </button>
         )}
       </div>
       <div className="mt-4 border-t border-[color:var(--v3-signature-border)] pt-4">

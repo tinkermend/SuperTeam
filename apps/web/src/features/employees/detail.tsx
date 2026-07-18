@@ -84,22 +84,31 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
     queryFn: () => getDigitalEmployee(apiOptions, employeeId),
+    retry: (failureCount, error) =>
+      !(error instanceof ApiRequestError && error.status === 404) && failureCount < 3,
   });
+  // 员工不存在（已删除或路由过期）时停掉所有从属查询，避免对已删资源持续打 404。
+  const employeeNotFound =
+    employee.error instanceof ApiRequestError && employee.error.status === 404;
   const instance = useQuery({
+    enabled: !employeeNotFound,
     queryKey: ["digital-employee-execution-instance", employeeId],
     queryFn: () => getDigitalEmployeeExecutionInstance(apiOptions, employeeId),
     retry: false,
   });
   const schedulingReadiness = useQuery({
+    enabled: !employeeNotFound,
     queryKey: ["digital-employee-scheduling-readiness", employeeId],
     queryFn: () => getDigitalEmployeeSchedulingReadiness(apiOptions, employeeId),
     retry: false,
   });
   const runStats = useQuery({
+    enabled: !employeeNotFound,
     queryKey: ["digital-employee-run-stats", employeeId],
     queryFn: () => getDigitalEmployeeRunStats(apiOptions, employeeId),
   });
   const runs = useQuery({
+    enabled: !employeeNotFound,
     queryKey: ["digital-employee-runs", employeeId, { page, statusFilter, runKindFilter }] as const,
     queryFn: () =>
       listDigitalEmployeeRuns(apiOptions, employeeId, {
@@ -120,20 +129,25 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed the panel
   // (as computed props). The panel is now a pure presentational component.
   const skillsQuery = useQuery({
+    enabled: !employeeNotFound,
     queryKey: ["employee-skills", employeeId],
     queryFn: () => listEmployeeSkills(apiOptions, employeeId),
   });
   const mcpQuery = useQuery({
+    enabled: !employeeNotFound,
     queryKey: ["employee-effective-mcp", employeeId],
     queryFn: () => listEffectiveMcpConfig(apiOptions, employeeId),
   });
   const envVarsQuery = useQuery({
+    enabled: !employeeNotFound,
     queryKey: ["employee-environment-variables", employeeId],
     queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
   });
 
+  // 204/null = 员工存在但尚无执行实例；404 兜底旧后端行为。
   const instanceNotFound =
-    instance.error instanceof ApiRequestError && instance.error.status === 404;
+    (instance.isSuccess && instance.data === null) ||
+    (instance.error instanceof ApiRequestError && instance.error.status === 404);
   // EffectiveEmployeeSkill carries both `inherited` and `source_scope`; `inherited`
   // is the canonical flag for skill counting (matches Task 11 semantics).
   const personalSkillCount = skillsQuery.data?.filter((skill) => !skill.inherited).length ?? 0;
@@ -148,7 +162,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const hasActiveRun = runs.data?.items.some((item) => isActiveRun(item.status)) ?? false;
   const employeeCanRun = employee.data?.status === "ready" || employee.data?.status === "active";
   const executionInstanceCanRun =
-    instance.isSuccess && (instance.data.status === "ready" || instance.data.status === "active");
+    instance.isSuccess && (instance.data?.status === "ready" || instance.data?.status === "active");
   const executionRuntimeNodeId = instance.data?.runtime_node_id;
   const runtimeNode = runtimeOverview.data?.nodes.find(
     (node) => node.runtime_node_id === executionRuntimeNodeId,
@@ -164,7 +178,8 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
   const disabledReasons: string[] = [];
   if (hasActiveRun) disabledReasons.push("当前已有活跃运行");
-  if (!executionInstanceCanRun && instance.isSuccess) disabledReasons.push("执行实例当前不可执行");
+  if (!executionInstanceCanRun && instance.isSuccess && !instanceNotFound)
+    disabledReasons.push("执行实例当前不可执行");
   if (runtimeCommandChannelDisconnected) disabledReasons.push("Runtime 命令通道未连接，暂不能开始任务");
   if (instanceNotFound) {
     disabledReasons.push("项目运行时就绪度会决定 Runtime 节点，当前不能从员工详情直接开始任务");
@@ -196,16 +211,28 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       setDeleteBlocked(undefined);
     },
     onSuccess: async () => {
+      // 先离开详情页再清缓存：详情页还挂着时 invalidate 会立刻重取已删员工，打出 404。
+      await navigate({ to: "/employees" });
+      for (const key of [
+        "digital-employee",
+        "digital-employee-execution-instance",
+        "digital-employee-scheduling-readiness",
+        "digital-employee-run-stats",
+        "digital-employee-runs",
+        "employee-skills",
+        "employee-effective-mcp",
+        "employee-environment-variables",
+      ]) {
+        queryClient.removeQueries({ queryKey: [key, employeeId] });
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["digital-employees"] }),
-        queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["digital-employee-overview"] }),
         queryClient.invalidateQueries({ queryKey: ["digital-employees-overview"] }),
         queryClient.invalidateQueries({ queryKey: ["unassigned-digital-employees"] }),
         queryClient.invalidateQueries({ queryKey: ["digital-employee-create-options"] }),
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
       ]);
-      await navigate({ to: "/employees" });
     },
     onError: (error) => {
       if (isDeleteBlockedError(error)) {
@@ -241,7 +268,11 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         {employee.isLoading ? <p className="text-sm text-v3-ink-2">加载中</p> : null}
-        {employee.isError ? <p className="text-sm text-destructive">数字员工加载失败</p> : null}
+        {employeeNotFound ? (
+          <p className="text-sm text-v3-ink-2">该数字员工不存在或已被删除。</p>
+        ) : employee.isError ? (
+          <p className="text-sm text-destructive">数字员工加载失败</p>
+        ) : null}
 
         {employee.data ? (
           <div className="flex flex-col gap-4">
@@ -313,7 +344,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                       totalCount: envVarsQuery.data?.length ?? 0,
                       missingNames: missingEnvVars.map((item) => item.name),
                     }}
-                    executionInstance={instance.data}
+                    executionInstance={instance.data ?? undefined}
                     mcp={{
                       isLoading: mcpQuery.isLoading,
                       isError: mcpQuery.isError,

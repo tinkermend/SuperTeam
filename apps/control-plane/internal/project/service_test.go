@@ -6306,9 +6306,16 @@ func TestProjectGovernanceMissingRecordsReturnNotFound(t *testing.T) {
 	if !errors.Is(err, ErrProjectNotFound) {
 		t.Fatalf("expected missing evidence not found, got %v", err)
 	}
-	_, err = service.GetAcceptance(context.Background(), tenantID, projectID)
+	record, err := service.GetAcceptance(context.Background(), tenantID, projectID)
+	if err != nil {
+		t.Fatalf("expected no error for existing project without acceptance, got %v", err)
+	}
+	if record != nil {
+		t.Fatalf("expected nil acceptance record for existing project without acceptance, got %#v", record)
+	}
+	_, err = service.GetAcceptance(context.Background(), tenantID, uuid.New())
 	if !errors.Is(err, ErrProjectNotFound) {
-		t.Fatalf("expected missing acceptance not found, got %v", err)
+		t.Fatalf("expected missing project not found, got %v", err)
 	}
 	_, err = service.GetConfigRevision(context.Background(), tenantID, projectID, uuid.New())
 	if !errors.Is(err, ErrProjectNotFound) {

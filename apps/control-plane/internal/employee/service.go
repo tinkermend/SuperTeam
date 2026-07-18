@@ -1063,6 +1063,13 @@ func (s *Service) GetExecutionInstance(ctx context.Context, tenantID, employeeID
 		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
 	}
 	record, err := s.repository.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, tenantID, employeeID)
+	if errors.Is(err, ErrNotFound) {
+		// 无执行实例与员工不存在共用 ErrNotFound；员工存在时返回 nil 表示"尚无实例"。
+		if _, employeeErr := s.repository.GetDigitalEmployee(ctx, tenantID, employeeID); employeeErr != nil {
+			return nil, fmt.Errorf("get digital employee execution instance: %w", employeeErr)
+		}
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get digital employee execution instance: %w", err)
 	}

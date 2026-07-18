@@ -115,9 +115,11 @@ upserted_node AS (
         supported_providers = EXCLUDED.supported_providers,
         max_slots = EXCLUDED.max_slots,
         current_load = EXCLUDED.current_load,
-        status = EXCLUDED.status,
+        -- 审批是授权动作，不断言活性：保留节点已有的 status/心跳，
+        -- 在线与否只能由 runtime agent 自己的心跳决定。
+        status = runtime_nodes.status,
         metadata = EXCLUDED.metadata,
-        last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+        last_heartbeat_at = runtime_nodes.last_heartbeat_at,
         disabled_at = NULL,
         archived_at = NULL,
         updated_at = NOW()

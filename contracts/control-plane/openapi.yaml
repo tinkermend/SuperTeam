@@ -1880,6 +1880,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectAcceptanceRecord"
+        "204":
+          description: Project exists but no acceptance has been submitted yet
         "400":
           $ref: "#/components/responses/Error"
         "404":
@@ -3967,6 +3969,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeExecutionInstance"
+        "204":
+          description: Digital employee exists but has no execution instance yet
         "404":
           $ref: "#/components/responses/Error"
     put:

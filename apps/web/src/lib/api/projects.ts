@@ -1,8 +1,10 @@
 import type { ApiClientOptions } from "./client";
 import {
+  buildApiUrl,
   deleteJson,
   deleteJsonWithResponse,
   getJson,
+  parseJson,
   patchJson,
   postJson,
   postJsonWithoutBody,
@@ -1623,15 +1625,24 @@ export function createProjectAcceptance(
   );
 }
 
-export function getProjectAcceptance(
+export async function getProjectAcceptance(
   options: ApiClientOptions,
   projectId: string,
-): Promise<ProjectAcceptanceRecord> {
-  return getJson<ProjectAcceptanceRecord>(
-    options,
-    projectPath(projectId, "/acceptance"),
-    "project acceptance",
+): Promise<ProjectAcceptanceRecord | null> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, projectPath(projectId, "/acceptance")),
+    {
+      credentials: "include",
+      headers: { accept: "application/json" },
+      method: "GET",
+    },
   );
+  // 204 = 项目存在但尚未提交验收结论。
+  if (response.status === 204) {
+    return null;
+  }
+  return parseJson<ProjectAcceptanceRecord>(response, "project acceptance");
 }
 
 export function getProjectArchivePreview(
