@@ -121,6 +121,7 @@
 P1+P2 一次落地入 main（merge 27911caf，feature commit 5c4c36f6），§6 三问题均按倾向执行。与 spec 的偏差与实况：
 
 - **候岗区形态（15:10 修订，用户裁定）**：初版放 floor-1 右侧竖条空带（左上是会议室，布局测试禁放）被否——底图上无对应办公区语义、仅 3 座多数候岗员工仍不可见。终版为**独立"大厅"楼层**：仅有未归属员工时出现在楼层 tab（人数徽标"大厅 · N"），层内 10 座开放区候岗工位 + 溢出 +N；候岗员工与团队员工的透镜链自然跨层走出口徽标。**底图已到位（20:05，main 829e656c）**：用户提供 `floor-lobby-office-v4.png` 并将候岗区改为动态承载区（无固定 seatId、12 个 3×4 展示锚点、超出 +N）；终验揪修 1 个重构回归——透镜端点解算依赖 seatId 致候岗参与者的交接边 unlocated、跨层徽标消失，修法为锚点表提升到 layout 层导出、渲染与透镜共用同组锚点同序对应（锚点对应单测锁定）。
+- **demand 切换器已落地（20:18，main 5b8167c9）**：透镜摘要卡常驻"需求"行（单 demand 静态标注、多 demand 下拉切换），选定 demand 钉住不随新 demand 抢位（仅当前 demand 从列表消失才回落最新），切项目重置——P2 增强点"透镜 demand 选择"完结，真实 E2E 三 demand 切换往返 PASS。
 - **"零新后端"修正**：task-graph 端点强制 demand/coordination_job 域（服务端硬校验），不存在项目全量任务图。透镜与项目详情页同规则取最新 demand（`listProjectDemands limit 1` → `getProjectTaskGraph(demandId)`）。多 demand 项目的透镜只显示最新 demand 链路——若需全项目视图需后端新端点，暂不立项。
 - **路由**：`/run-overview` 补 `validateSearch`（employee/project 可选），项目详情页既有"在运行总览查看"链接（`?project=`）与之打通。
 - **GATE 结果**：P1-G1/G2、P2-G1/G2/G4/G5 真实浏览器 E2E 全 PASS（真实 CP+PG，fixture 直插锚点项目 4be304f7）。**P2-G3 于 15:05 补验 PASS**：大厅楼层改造后候岗参与者与团队参与者天然跨层——大厅层"自 1层"入口徽标点击切至 floor-1，同层边 + "转 大厅"出口徽标均正确（初版曾因 teams 授权可见性残缺无法构造跨楼层布局而阻塞，独立大厅层使该场景不再依赖多团队环境）。

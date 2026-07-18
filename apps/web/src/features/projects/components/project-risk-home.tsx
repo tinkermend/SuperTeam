@@ -432,7 +432,7 @@ function ProjectRiskQueueRow({
           className="block min-w-0 max-h-10 max-w-full line-clamp-2 break-words text-[12px] font-semibold leading-5 text-v3-ink"
           data-testid="project-queue-current-handler"
         >
-          {handler ?? "待调度"}
+          {project.status === "archived" ? "已归档" : handler ?? "待调度"}
         </span>
       </V3Td>
       <V3Td className="whitespace-nowrap px-3 py-2">
