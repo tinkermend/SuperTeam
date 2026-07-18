@@ -429,14 +429,20 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByRole("heading", { name: "罗明" })).toBeVisible();
   });
 
-  it("seats unassigned employees in the visible lobby with consistent headcount", async () => {
+  it("seats unassigned employees on a dedicated lobby floor with consistent headcount", async () => {
     const { fetcher } = createFetcher({ withUnassigned: true });
     const screen = await renderPage(fetcher);
+
+    // 大厅 tab 仅在有候岗员工时出现，并带人数徽标。
+    await expect.element(screen.getByRole("button", { name: /大厅/ })).toBeVisible();
+    expect(screen.container.querySelector("[data-runtime-lobby-count]")?.textContent).toContain("1");
+    await userEvent.click(screen.getByRole("button", { name: /大厅/ }));
+    await expect.poll(() => screen.container.querySelector("[data-runtime-map-scene]")?.getAttribute("data-runtime-map-scene")).toBe("lobby");
 
     await expect.element(screen.getByRole("heading", { name: "候岗区" })).toBeVisible();
     await expect.element(screen.getByText("待编入团队 1 名")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: /赵新/ })).toBeVisible();
-    expect(screen.container.querySelectorAll("[data-runtime-seat='unassigned']").length).toBe(3);
+    expect(screen.container.querySelectorAll("[data-runtime-seat='unassigned']").length).toBe(10);
 
     // 选中候岗员工：详情卡显示"未归属团队"。
     await userEvent.click(screen.getByRole("button", { name: /赵新/ }));
@@ -444,11 +450,12 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByText("未归属团队")).toBeVisible();
   });
 
-  it("hides the lobby when every employee belongs to a team", async () => {
+  it("hides the lobby floor when every employee belongs to a team", async () => {
     const { fetcher } = createFetcher();
     const screen = await renderPage(fetcher);
 
     await expect.element(screen.getByLabelText("运行总览地图画布")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /大厅/ })).not.toBeInTheDocument();
     expect(screen.container.querySelector("[data-runtime-lobby-callout]")).toBeNull();
   });
 

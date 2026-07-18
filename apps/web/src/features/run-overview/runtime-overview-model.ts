@@ -5,7 +5,8 @@ export const UNASSIGNED_TEAM_ID = "unassigned";
 
 export type RuntimeOverviewWorkspaceCapacity = 3 | 4 | 6 | 8 | 10;
 
-export type RuntimeOverviewFloorId = "floor-1" | "floor-2" | "floor-3";
+// "lobby" 是独立候岗楼层：只承载未归属团队的员工，无团队工位，仅在有候岗员工时出现在楼层列表。
+export type RuntimeOverviewFloorId = "floor-1" | "floor-2" | "floor-3" | "lobby";
 
 export type RuntimeOverviewSummary = {
   teamCount: number;

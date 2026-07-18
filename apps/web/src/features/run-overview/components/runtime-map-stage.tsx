@@ -25,6 +25,7 @@ const floorShortLabel: Record<RuntimeOverviewFloorId, string> = {
   "floor-1": "1层",
   "floor-2": "2层",
   "floor-3": "3层",
+  lobby: "大厅",
 };
 
 export function RuntimeMapStage({ activeFloorId, lens, onSelectEmployee, onSelectFloor, overview, selectedEmployeeId }: RuntimeMapStageProps) {

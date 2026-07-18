@@ -6,6 +6,7 @@ const teamIdsByFloor: Record<RuntimeOverviewFloorId, string[]> = {
   "floor-1": ["team-1", "team-2", "team-3", "team-4", "team-5", "team-6", "team-7", "team-8"],
   "floor-2": ["team-9", "team-10", "team-11", "team-12", "team-13", "team-14", "team-15", "team-16"],
   "floor-3": ["team-17", "team-18", "team-19", "team-20", "team-21", "team-22", "team-23", "team-24"],
+  lobby: [],
 };
 
 const teamCardBounds = {
@@ -32,7 +33,12 @@ describe("runtime overview floor layout", () => {
       }
     }
 
-    const capacities = layouts.flatMap((floor) => floor.layout.teamWorkspaces.map((workspace) => workspace.capacity));
+    // 团队工位容量口径不含大厅候岗工位。
+    const capacities = layouts.flatMap((floor) =>
+      floor.layout.teamWorkspaces
+        .filter((workspace) => workspace.teamId !== UNASSIGNED_TEAM_ID)
+        .map((workspace) => workspace.capacity),
+    );
     expect(capacities).toContain(3);
     expect(capacities.filter((capacity) => capacity === 10).length).toBeLessThanOrEqual(3);
   });
@@ -93,24 +99,24 @@ describe("runtime overview floor layout", () => {
     expect(cardBounds.bottom).toBeLessThanOrEqual(minSeatY - 24);
   });
 
-  it("appends a floor-one lobby workspace that is not a distributable team slot", () => {
+  it("hosts the lobby workspace on a dedicated 大厅 floor outside team distribution", () => {
     const layouts = buildFloorLayouts(teamIdsByFloor);
-    const [floorOne, floorTwo, floorThree] = layouts;
+    const lobbyFloor = layouts.find((floor) => floor.floorId === "lobby");
 
-    const lobby = floorOne.layout.teamWorkspaces.find((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID);
-    expect(lobby).toBeDefined();
+    expect(lobbyFloor).toBeDefined();
+    expect(lobbyFloor?.label).toBe("大厅");
+    expect(lobbyFloor?.teamIds).toEqual([]);
+    const lobby = lobbyFloor?.layout.teamWorkspaces.find((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID);
     expect(lobby?.decorationVariant).toBe("lobby");
-    expect(lobby?.seats.length).toBe(lobby?.capacity);
-    // 候岗区不是团队 slot：不进楼层团队清单、不进分配容量表、不计楼层容量。
-    expect(floorOne.teamIds).not.toContain(UNASSIGNED_TEAM_ID);
-    expect(floorTwo.layout.teamWorkspaces.some((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID)).toBe(false);
-    expect(floorThree.layout.teamWorkspaces.some((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID)).toBe(false);
-    const capacities = runtimeOverviewSlotCapacities();
-    expect(capacities["floor-1"].length).toBe(8);
-    const teamCapacityTotal = floorOne.layout.teamWorkspaces
-      .filter((workspace) => workspace.teamId !== UNASSIGNED_TEAM_ID)
-      .reduce((sum, workspace) => sum + workspace.capacity, 0);
-    expect(floorOne.summary.capacityTotal).toBe(teamCapacityTotal);
+    expect(lobby?.capacity).toBe(10);
+    expect(lobby?.seats.length).toBe(10);
+    // 候岗不进团队分配容量表、不计任何容量；其他楼层不含候岗工位。
+    expect(runtimeOverviewSlotCapacities().lobby).toEqual([]);
+    expect(lobbyFloor?.summary.capacityTotal).toBe(0);
+    for (const floor of layouts.filter((item) => item.floorId !== "lobby")) {
+      expect(floor.layout.teamWorkspaces.some((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID)).toBe(false);
+      expect(floor.label).toMatch(/^\d层$/);
+    }
   });
 
   it("keeps team summary cards from covering seat and avatar positions", () => {
