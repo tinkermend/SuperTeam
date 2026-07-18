@@ -35,6 +35,22 @@ func (q *Queries) BindDigitalEmployeeToTeam(ctx context.Context, arg BindDigital
 	return id, err
 }
 
+const DeleteTeamSkillBindings = `-- name: DeleteTeamSkillBindings :exec
+DELETE FROM team_skill_bindings
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type DeleteTeamSkillBindingsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSkillBindingsParams) error {
+	_, err := q.db.Exec(ctx, DeleteTeamSkillBindings, arg.TenantID, arg.TeamID)
+	return err
+}
+
 const SoftDeleteTeam = `-- name: SoftDeleteTeam :one
 UPDATE tenant_teams
 SET deleted_at = NOW(),
@@ -69,6 +85,25 @@ func (q *Queries) SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) 
 		&i.Constitution,
 	)
 	return i, err
+}
+
+const SoftDeleteTeamMCPBindings = `-- name: SoftDeleteTeamMCPBindings :exec
+UPDATE team_mcp_bindings
+SET deleted_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+  AND deleted_at IS NULL
+`
+
+type SoftDeleteTeamMCPBindingsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) SoftDeleteTeamMCPBindings(ctx context.Context, arg SoftDeleteTeamMCPBindingsParams) error {
+	_, err := q.db.Exec(ctx, SoftDeleteTeamMCPBindings, arg.TenantID, arg.TeamID)
+	return err
 }
 
 const UnbindTeamDigitalEmployees = `-- name: UnbindTeamDigitalEmployees :exec

@@ -188,6 +188,7 @@ type Querier interface {
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
 	DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error
+	DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSkillBindingsParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
@@ -540,6 +541,7 @@ type Querier interface {
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
 	SoftDeleteProjectMCPBindingsForProject(ctx context.Context, arg SoftDeleteProjectMCPBindingsForProjectParams) error
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
+	SoftDeleteTeamMCPBindings(ctx context.Context, arg SoftDeleteTeamMCPBindingsParams) error
 	// digital_employee_run_id 回填:dispatch 冲突路径可能留下 NULL 的 run 关联
 	// (命令已送达但派发簿记失败),导致 provider 事件按 run_id 关联不到 attempt
 	// 而静默不进 ledger(07-13 记档缺陷)。runtime 在 started 回写带 command_id,

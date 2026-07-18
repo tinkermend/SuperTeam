@@ -335,6 +335,18 @@ func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID uuid.UUI
 	}); err != nil {
 		return fmt.Errorf("unbind team employees: %w", err)
 	}
+	if err := qtx.DeleteTeamSkillBindings(ctx, queries.DeleteTeamSkillBindingsParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	}); err != nil {
+		return fmt.Errorf("delete team skill bindings: %w", err)
+	}
+	if err := qtx.SoftDeleteTeamMCPBindings(ctx, queries.SoftDeleteTeamMCPBindingsParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	}); err != nil {
+		return fmt.Errorf("soft delete team mcp bindings: %w", err)
+	}
 	if _, err := qtx.SoftDeleteTeam(ctx, queries.SoftDeleteTeamParams{
 		TeamID:   teamID,
 		TenantID: tenantID,

@@ -21,12 +21,18 @@ func TestPgRepositoryDeleteTeamRollsBackWhenSoftDeleteFails(t *testing.T) {
 
 	tx := &stubTx{
 		execFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			if sql == queries.UnbindTeamDigitalEmployees {
+			switch sql {
+			case queries.UnbindTeamDigitalEmployees:
 				unbindCalled = true
 				if len(args) != 2 || args[0] != teamID || args[1] != tenantID {
 					t.Fatalf("unexpected unbind args: %#v", args)
 				}
 				return pgconn.NewCommandTag("UPDATE 2"), nil
+			case queries.DeleteTeamSkillBindings, queries.SoftDeleteTeamMCPBindings:
+				if len(args) != 2 || args[0] != tenantID || args[1] != teamID {
+					t.Fatalf("unexpected binding cleanup args: %#v", args)
+				}
+				return pgconn.NewCommandTag("UPDATE 0"), nil
 			}
 			t.Fatalf("unexpected exec SQL: %s", sql)
 			return pgconn.CommandTag{}, nil
@@ -68,6 +74,70 @@ func TestPgRepositoryDeleteTeamRollsBackWhenSoftDeleteFails(t *testing.T) {
 	}
 	if !rollbackCalled {
 		t.Fatal("expected transaction rollback on soft delete failure")
+	}
+}
+
+func TestPgRepositoryDeleteTeamCleansBindingsBeforeSoftDelete(t *testing.T) {
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	var execOrder []string
+	commitCalled := false
+
+	tx := &stubTx{
+		execFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			switch sql {
+			case queries.UnbindTeamDigitalEmployees:
+				execOrder = append(execOrder, "unbind")
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			case queries.DeleteTeamSkillBindings:
+				if len(args) != 2 || args[0] != tenantID || args[1] != teamID {
+					t.Fatalf("unexpected skill binding cleanup args: %#v", args)
+				}
+				execOrder = append(execOrder, "skill")
+				return pgconn.NewCommandTag("DELETE 3"), nil
+			case queries.SoftDeleteTeamMCPBindings:
+				if len(args) != 2 || args[0] != tenantID || args[1] != teamID {
+					t.Fatalf("unexpected mcp binding cleanup args: %#v", args)
+				}
+				execOrder = append(execOrder, "mcp")
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			}
+			t.Fatalf("unexpected exec SQL: %s", sql)
+			return pgconn.CommandTag{}, nil
+		},
+		queryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			if sql != queries.SoftDeleteTeam {
+				t.Fatalf("unexpected query row SQL: %s", sql)
+			}
+			execOrder = append(execOrder, "soft-delete")
+			return stubRow{err: pgx.ErrNoRows}
+		},
+		commitFn: func(context.Context) error {
+			commitCalled = true
+			return nil
+		},
+	}
+
+	repo := &PgRepository{
+		q:  queries.New(nil),
+		db: stubBeginner{tx: tx},
+	}
+
+	err := repo.DeleteTeam(context.Background(), tenantID, teamID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected not found from soft delete no rows, got %v", err)
+	}
+	want := []string{"unbind", "skill", "mcp", "soft-delete"}
+	if len(execOrder) != len(want) {
+		t.Fatalf("unexpected exec order: %v", execOrder)
+	}
+	for i, step := range want {
+		if execOrder[i] != step {
+			t.Fatalf("unexpected exec order: %v", execOrder)
+		}
+	}
+	if commitCalled {
+		t.Fatal("expected no commit when soft delete finds no rows")
 	}
 }
 
