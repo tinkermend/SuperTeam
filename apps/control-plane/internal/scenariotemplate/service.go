@@ -299,7 +299,13 @@ func (s *Service) Patch(ctx context.Context, req PatchScenarioTemplateRequest) (
 	if description != existing.Description {
 		details["description"] = []string{existing.Description, description}
 	}
-	s.recordAudit(ctx, req.TenantID, updated.Key, "status", req.ActorUserID, details)
+	// Audit action mirrors what actually changed: only a status transition is a
+	// "status" action; name/description-only patches are a plain "update".
+	action := "update"
+	if status != existing.Status {
+		action = "status"
+	}
+	s.recordAudit(ctx, req.TenantID, updated.Key, action, req.ActorUserID, details)
 
 	return updated, nil
 }

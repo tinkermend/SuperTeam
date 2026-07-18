@@ -635,3 +635,50 @@ func TestCreateRejectsVersionlessObjectAcceptanceCriteria(t *testing.T) {
 		t.Fatalf("expected offending field named in error, got %v", err)
 	}
 }
+
+// TestPatchNameOnlyRecordsUpdateAuditAction: 07-17 rescue 快照捞回的孤本 WIP——
+// name-only patch 的审计 action 应为 "update" 而非 "status"（status 未变时）。
+func TestPatchNameOnlyRecordsUpdateAuditAction(t *testing.T) {
+	repo := newFakeRepository()
+	svc := NewService(repo)
+	auditRecorder := &fakeAuditRecorder{}
+	svc.SetAuditRecorder(auditRecorder)
+
+	tenantID := uuid.New()
+	if _, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+		Name:     "运维评审",
+		Spec:     goodSpec(""),
+	}); err != nil {
+		t.Fatalf("setup create failed: %v", err)
+	}
+
+	newName := "运维评审-v2"
+	updated, err := svc.Patch(context.Background(), PatchScenarioTemplateRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+		Name:     &newName,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated.Name != newName {
+		t.Fatalf("expected name %q, got %q", newName, updated.Name)
+	}
+
+	if len(auditRecorder.events) != 2 {
+		t.Fatalf("expected 2 audit events (create + update), got %d", len(auditRecorder.events))
+	}
+	patchEvent := auditRecorder.events[1]
+	if patchEvent.Action != "update" {
+		t.Fatalf("expected second audit event action=update, got %#v", patchEvent)
+	}
+	nameDiff, ok := patchEvent.Details["name"].([]string)
+	if !ok || len(nameDiff) != 2 || nameDiff[0] != "运维评审" || nameDiff[1] != newName {
+		t.Fatalf(`expected Details["name"] = ["运维评审","运维评审-v2"], got %#v`, patchEvent.Details)
+	}
+	if _, ok := patchEvent.Details["status"]; ok {
+		t.Fatalf("expected unchanged status to be absent from Details diff, got %#v", patchEvent.Details)
+	}
+}
