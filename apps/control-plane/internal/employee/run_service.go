@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"path"
 	"strings"
 	"time"
@@ -1094,6 +1095,64 @@ func isStalePreConfirmationRun(run *DigitalEmployeeRun) bool {
 		return false
 	}
 	return time.Since(run.UpdatedAt) > staleDispatchTTL
+}
+
+// StalePreConfirmationRunLister 是看门狗清扫的可选仓储能力(残债交接 §1 第 2
+// 层),按可选接口断言接入,既有测试 fake 不必实现。
+type StalePreConfirmationRunLister interface {
+	ListStalePreConfirmationRuns(ctx context.Context, staleBefore time.Time, limit int32) ([]*DigitalEmployeeRun, error)
+}
+
+// staleSweepBatchLimit 单轮清扫上限:看门狗周期跑,积压会在后续轮次消化,
+// 单轮限量避免一次性长事务扫全表。
+const staleSweepBatchLimit = 100
+
+// SweepStalePreConfirmationRuns 周期看门狗:清扫全租户停留在预确认态超过
+// staleDispatchTTL 的 run。与派发路径的按需 reap(同员工下一次派发时触发)互补:
+// runtime 整个死掉、命令未送达、员工此后无新派发时,只有这里能把占位 run 收走。
+// 逐条失败只记日志不中断——下一轮会重试。
+func (s *DigitalEmployeeRunService) SweepStalePreConfirmationRuns(ctx context.Context) int {
+	lister, ok := s.repository.(StalePreConfirmationRunLister)
+	if !ok {
+		return 0
+	}
+	runs, err := lister.ListStalePreConfirmationRuns(ctx, time.Now().Add(-staleDispatchTTL), staleSweepBatchLimit)
+	if err != nil {
+		log.Printf("stale run watchdog: list failed: %v", err)
+		return 0
+	}
+	reaped := 0
+	for _, run := range runs {
+		// 二次核验:列出与清扫之间 run 可能已被 runtime 回执推进。
+		if !isStalePreConfirmationRun(run) {
+			continue
+		}
+		// 系统清扫无触发用户,审计主体记零值 UUID(系统身份)。
+		if _, err := s.reapStaleRun(ctx, run.TenantID, uuid.Nil, run); err != nil {
+			log.Printf("stale run watchdog: reap %s failed: %v", run.ID, err)
+			continue
+		}
+		reaped++
+	}
+	if reaped > 0 {
+		log.Printf("stale run watchdog: reaped %d pre-confirmation runs", reaped)
+	}
+	return reaped
+}
+
+// StartStaleRunWatchdog 启动看门狗循环,ctx 取消即退出。interval 建议 1 分钟:
+// staleDispatchTTL(5 分钟)的判定精度足够,又不给数据库添扫描压力。
+func (s *DigitalEmployeeRunService) StartStaleRunWatchdog(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.SweepStalePreConfirmationRuns(ctx)
+		}
+	}
 }
 
 // reapStaleRun marks an abandoned pre-confirmation run as failed so it no longer

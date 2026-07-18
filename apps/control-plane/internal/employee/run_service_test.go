@@ -2979,3 +2979,70 @@ func TestRunServiceMCPListerReceivesProjectDimensionPerDispatchPath(t *testing.T
 		}
 	})
 }
+
+
+// watchdogRepository 组合既有 fake 并实现 StalePreConfirmationRunLister,
+// 供看门狗清扫单测使用。
+type watchdogRepository struct {
+	*fakeRunServiceRepository
+	staleRuns  []*DigitalEmployeeRun
+	listedWith time.Time
+}
+
+func (r *watchdogRepository) ListStalePreConfirmationRuns(_ context.Context, staleBefore time.Time, _ int32) ([]*DigitalEmployeeRun, error) {
+	r.listedWith = staleBefore
+	return r.staleRuns, nil
+}
+
+// TestSweepStalePreConfirmationRuns covers 残债交接 §1 第 2 层:周期看门狗把
+// 超时的预确认 run 清为 failed;已被 runtime 推进的 run(二次核验)不动;
+// 不支持 lister 的仓储零操作。
+func TestSweepStalePreConfirmationRuns(t *testing.T) {
+	base := newFakeRunServiceRepository()
+	stale := &DigitalEmployeeRun{
+		ID:                uuid.New(),
+		TenantID:          runServiceTenantID,
+		TaskID:            uuid.New(),
+		DigitalEmployeeID: runServiceEmployeeID,
+		Status:            DigitalEmployeeRunStatusDispatching,
+		UpdatedAt:         time.Now().Add(-2 * staleDispatchTTL),
+	}
+	fresh := &DigitalEmployeeRun{
+		ID:                uuid.New(),
+		TenantID:          runServiceTenantID,
+		TaskID:            uuid.New(),
+		DigitalEmployeeID: runServiceEmployeeID,
+		Status:            DigitalEmployeeRunStatusRunning,
+		UpdatedAt:         time.Now().Add(-2 * staleDispatchTTL),
+	}
+	base.runs = []*DigitalEmployeeRun{stale, fresh}
+	repo := &watchdogRepository{fakeRunServiceRepository: base, staleRuns: []*DigitalEmployeeRun{stale, fresh}}
+	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+	reaped := service.SweepStalePreConfirmationRuns(context.Background())
+
+	if reaped != 1 {
+		t.Fatalf("expected exactly the stale pre-confirmation run reaped, got %d", reaped)
+	}
+	if len(base.statusUpdates) != 1 {
+		t.Fatalf("expected one status update, got %d", len(base.statusUpdates))
+	}
+	update := base.statusUpdates[0]
+	if update.RunID != stale.ID || update.Status != DigitalEmployeeRunStatusFailed {
+		t.Fatalf("expected stale run failed, got %#v", update)
+	}
+	if update.ErrorCode == nil || *update.ErrorCode != "dispatch_stale" {
+		t.Fatalf("expected dispatch_stale error code, got %#v", update.ErrorCode)
+	}
+	if repo.listedWith.IsZero() {
+		t.Fatalf("expected lister consulted with a cutoff")
+	}
+}
+
+func TestSweepStalePreConfirmationRunsNoopWithoutLister(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+	if reaped := service.SweepStalePreConfirmationRuns(context.Background()); reaped != 0 {
+		t.Fatalf("expected zero reaped without lister support, got %d", reaped)
+	}
+}

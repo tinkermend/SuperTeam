@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"time"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
@@ -238,6 +240,23 @@ func (r *PgRunRepository) GetActiveRun(ctx context.Context, tenantID, employeeID
 		return nil, err
 	}
 	return digitalEmployeeRunFromQuery(run), nil
+}
+
+// ListStalePreConfirmationRuns 跨租户列出停留在 queued/dispatching 超过时限的
+// run,供看门狗周期清扫(残债交接 §1 第 2 层)。
+func (r *PgRunRepository) ListStalePreConfirmationRuns(ctx context.Context, staleBefore time.Time, limit int32) ([]*DigitalEmployeeRun, error) {
+	rows, err := r.q.ListStalePreConfirmationDigitalEmployeeRuns(ctx, queries.ListStalePreConfirmationDigitalEmployeeRunsParams{
+		StaleBefore: pgtype.Timestamptz{Time: staleBefore, Valid: true},
+		BatchLimit:  limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	runs := make([]*DigitalEmployeeRun, 0, len(rows))
+	for _, row := range rows {
+		runs = append(runs, digitalEmployeeRunFromQuery(row))
+	}
+	return runs, nil
 }
 
 func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error) {

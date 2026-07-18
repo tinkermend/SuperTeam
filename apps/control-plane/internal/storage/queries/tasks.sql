@@ -425,6 +425,16 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY tr.created_at DESC
 LIMIT 1;
 
+-- name: ListStalePreConfirmationDigitalEmployeeRuns :many
+-- 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
+-- run。running/cancelling 是真实活跃态,不在清扫范围。
+SELECT tr.*
+FROM task_runs tr
+WHERE tr.status IN ('queued', 'dispatching')
+  AND tr.updated_at < sqlc.arg('stale_before')::timestamptz
+ORDER BY tr.updated_at ASC
+LIMIT sqlc.arg('batch_limit')::int;
+
 -- name: GetDigitalEmployeeRun :one
 SELECT tr.*, t.run_kind, t.resume_of_run_id,
     t.chat_thread_id
