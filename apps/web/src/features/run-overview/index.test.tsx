@@ -71,11 +71,32 @@ function jsonResponse(body: unknown) {
   });
 }
 
+const emptyTaskGraph = {
+  nodes: [],
+  edges: [],
+  employees: [],
+  runs: [],
+  execution_summaries: [],
+  recent_events: [],
+  decision_requests: [],
+  blocking_facts: [],
+};
+
 function createFetcher({
   withActivity = true,
   withUnassigned = false,
-}: { withActivity?: boolean; withUnassigned?: boolean } = {}) {
+  withSecondDemand = false,
+  withGrowingDemands = false,
+}: {
+  withActivity?: boolean;
+  withUnassigned?: boolean;
+  // 第二个（更早的）demand：demand-1 为最新有链需求，demand-0 为无链需求。
+  withSecondDemand?: boolean;
+  // 首次返回单 demand，后续请求头部插入新 demand（模拟并行需求抢"最新"位）。
+  withGrowingDemands?: boolean;
+} = {}) {
   const requests: Array<{ pathname: string; search: string }> = [];
+  let demandCalls = 0;
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     requests.push({ pathname: url.pathname, search: url.search });
@@ -89,10 +110,24 @@ function createFetcher({
       return jsonResponse(teamListFixture);
     }
     if (/^\/api\/v1\/projects\/[^/]+\/demands$/.test(url.pathname)) {
-      return jsonResponse([{ id: "demand-1" }]);
+      demandCalls += 1;
+      if (withGrowingDemands && demandCalls > 1) {
+        return jsonResponse([
+          { id: "demand-new", title: "半路插入的新需求" },
+          { id: "demand-1", title: "链路需求" },
+        ]);
+      }
+      if (withSecondDemand) {
+        return jsonResponse([
+          { id: "demand-1", title: "链路需求" },
+          { id: "demand-0", title: "历史空需求" },
+        ]);
+      }
+      return jsonResponse([{ id: "demand-1", title: "链路需求" }]);
     }
     if (/^\/api\/v1\/projects\/[^/]+\/task-graph$/.test(url.pathname)) {
-      return jsonResponse(projectTaskGraphFixture);
+      const demandId = url.searchParams.get("demand_id");
+      return jsonResponse(demandId === "demand-1" ? projectTaskGraphFixture : emptyTaskGraph);
     }
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), { status: 404 });
   }) as unknown as typeof fetch;
@@ -494,6 +529,54 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByText("待派发 1")).toBeVisible();
     await expect.element(screen.getByText("项目透镜聚焦中 · 轮播已暂停")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: "查看项目详情" })).toBeVisible();
+  });
+
+  it("labels the lens with its demand and switches chains via the demand selector", async () => {
+    const { fetcher, requests } = createFetcher({ withSecondDemand: true });
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
+    await userEvent.click(option as HTMLElement);
+
+    // 默认选最新 demand（列表第一个）并显式标注；有第二个 demand 时出现切换器。
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
+    const demandRow = screen.container.querySelector("[data-runtime-lens-demand]");
+    expect(demandRow?.textContent).toContain("链路需求");
+
+    // 切到历史空需求：任务图按所选 demand 重新拉取，链路清空。
+    await userEvent.click(screen.getByRole("combobox", { name: "切换需求" }));
+    await userEvent.click(screen.getByRole("option", { name: "历史空需求" }));
+    await expect.poll(() =>
+      requests.some((request) => request.pathname.endsWith("/task-graph") && request.search.includes("demand-0")),
+    ).toBe(true);
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(0);
+    await expect.element(screen.getByText("参与 0 人")).toBeVisible();
+
+    // 切回链路需求：链路恢复。
+    await userEvent.click(screen.getByRole("combobox", { name: "切换需求" }));
+    await userEvent.click(screen.getByRole("option", { name: "链路需求" }));
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
+  });
+
+  it("pins the selected demand when a newer demand appears", async () => {
+    const { fetcher } = createFetcher({ withGrowingDemands: true });
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
+    await userEvent.click(option as HTMLElement);
+    await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
+
+    // 刷新拉到头部插入的新 demand：当前选中钉住不被抢位，链路不变。
+    await userEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await expect.poll(() =>
+      screen.container.querySelector("[data-runtime-lens-demand]")?.textContent ?? "",
+    ).toContain("链路需求");
+    expect(screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
+    // 新需求进入了切换器选项，但未自动选中。
+    await userEvent.click(screen.getByRole("combobox", { name: "切换需求" }));
+    await expect.element(screen.getByRole("option", { name: "半路插入的新需求" })).toBeVisible();
   });
 
   it("clears highlights and resumes the carousel when exiting the lens", async () => {

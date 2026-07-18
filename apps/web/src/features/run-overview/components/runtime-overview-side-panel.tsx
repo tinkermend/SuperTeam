@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { GlassCard, V3Button } from "@/components/superteam";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ProjectDemand } from "@/lib/api/projects";
 import type { RuntimeOverviewActivityItem, RuntimeOverviewDTO, RuntimeOverviewEmployee } from "../runtime-overview-model";
 import { aggregateLensProjectOptions, type ProjectLens } from "../runtime-overview-project-lens";
 import { formatCompactTokens, formatTime } from "../formatters";
@@ -20,6 +22,9 @@ export function RuntimeOverviewSidePanel({
   onSelectProject,
   lens,
   lensLoading,
+  demands,
+  selectedDemandId,
+  onSelectDemand,
 }: {
   overview: RuntimeOverviewDTO;
   // 优先使用 activity 端点数据；未加载/失败时回退 overview 内聚合的近似动态。
@@ -29,6 +34,10 @@ export function RuntimeOverviewSidePanel({
   onSelectProject?: (projectId?: string) => void;
   lens?: ProjectLens;
   lensLoading?: boolean;
+  // 透镜链路所属的需求：显式标注当前 demand，多 demand 时可切换。
+  demands?: ProjectDemand[];
+  selectedDemandId?: string;
+  onSelectDemand?: (demandId: string) => void;
 }) {
   const recentActivity = activity ?? overview.recentActivity;
   // 运行态分布：覆盖全部 7 种运行状态，过滤 0 值后可见行之和恒等于「数字员工」。
@@ -85,6 +94,9 @@ export function RuntimeOverviewSidePanel({
           onSelectProject={onSelectProject}
           lens={lens}
           lensLoading={lensLoading}
+          demands={demands}
+          selectedDemandId={selectedDemandId}
+          onSelectDemand={onSelectDemand}
         />
       ) : null}
       {recentActivity.length > 0 ? (
@@ -122,12 +134,18 @@ function ProjectLensBlock({
   onSelectProject,
   lens,
   lensLoading,
+  demands,
+  selectedDemandId,
+  onSelectDemand,
 }: {
   overview: RuntimeOverviewDTO;
   selectedProjectId?: string;
   onSelectProject: (projectId?: string) => void;
   lens?: ProjectLens;
   lensLoading?: boolean;
+  demands?: ProjectDemand[];
+  selectedDemandId?: string;
+  onSelectDemand?: (demandId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const options = useMemo(() => aggregateLensProjectOptions(overview), [overview]);
@@ -182,6 +200,7 @@ function ProjectLensBlock({
       ) : null}
       {selectedProjectId ? (
         <div className="v3-glass-inner mt-3 px-3 py-3 text-sm" data-runtime-lens-summary>
+          <DemandRow demands={demands} selectedDemandId={selectedDemandId} onSelectDemand={onSelectDemand} />
           {lens ? (
             <>
               <p className="flex flex-wrap gap-x-3 gap-y-1 text-v3-ink-2 tabular-nums">
@@ -205,6 +224,44 @@ function ProjectLensBlock({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// 透镜链路所属需求行：让"链路来自哪个 demand"始终显式可见——单需求静态标注，
+// 多需求提供切换（选定后由页面层钉住，不随新 demand 抢位）。
+function DemandRow({
+  demands,
+  selectedDemandId,
+  onSelectDemand,
+}: {
+  demands?: ProjectDemand[];
+  selectedDemandId?: string;
+  onSelectDemand?: (demandId: string) => void;
+}) {
+  if (!demands || demands.length === 0) return null;
+  const current = demands.find((demand) => demand.id === selectedDemandId) ?? demands[0];
+  return (
+    <div className="mb-2 flex items-center gap-2" data-runtime-lens-demand>
+      <span className="shrink-0 text-xs text-v3-ink-3">需求</span>
+      {demands.length > 1 && onSelectDemand ? (
+        <Select value={current.id} onValueChange={onSelectDemand}>
+          <SelectTrigger aria-label="切换需求" size="sm" className="h-7 min-w-0 flex-1 text-xs">
+            <SelectValue placeholder="选择需求" />
+          </SelectTrigger>
+          <SelectContent>
+            {demands.map((demand) => (
+              <SelectItem key={demand.id} value={demand.id}>
+                {demand.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <span className="min-w-0 truncate text-xs font-medium text-v3-ink" data-runtime-lens-demand-title>
+          {current.title}
+        </span>
+      )}
     </div>
   );
 }
