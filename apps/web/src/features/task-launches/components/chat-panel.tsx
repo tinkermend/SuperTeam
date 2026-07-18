@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowRightLeft,
@@ -26,7 +26,7 @@ import {
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
-import type { Project } from "@/lib/api/projects";
+import { listProjectMembers, type Project } from "@/lib/api/projects";
 import { LaunchChip } from "./task-launch-form";
 
 const ACTIVE_RUN_STATUSES = new Set<DigitalEmployeeRunStatus>([
@@ -135,7 +135,29 @@ export function ChatPanel({
     queryFn: () => listDigitalEmployees(apiOptions),
     queryKey: ["chat-employees"],
   });
-  const employees = employeesQuery.data ?? [];
+  // 参与门禁：chat 只能选锚点项目的 active digital_employee 成员，
+  // 与后端 createChatRun 的成员资格校验同口径。未选项目时不出候选。
+  const membersQuery = useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () => listProjectMembers(apiOptions, projectId),
+    queryKey: ["chat-project-members", projectId],
+  });
+  const memberEmployeeIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const member of membersQuery.data ?? []) {
+      if (member.principal_type === "digital_employee" && member.status === "active") {
+        ids.add(member.principal_id);
+      }
+    }
+    return ids;
+  }, [membersQuery.data]);
+  const employees = useMemo(
+    () =>
+      projectId
+        ? (employeesQuery.data ?? []).filter((employee) => memberEmployeeIds.has(employee.id))
+        : [],
+    [employeesQuery.data, memberEmployeeIds, projectId],
+  );
   const selectedEmployee = employees.find((employee) => employee.id === employeeId);
 
   useEffect(() => {
@@ -393,9 +415,9 @@ export function ChatPanel({
           </Select>
         </LaunchChip>
         <LaunchChip icon={<UserRound aria-hidden />} label="对话员工" required>
-          <Select value={employeeId} onValueChange={handleEmployeeChange}>
+          <Select disabled={!projectId} value={employeeId} onValueChange={handleEmployeeChange}>
             <SelectTrigger aria-label="对话员工" className="tl-chip-select">
-              <SelectValue placeholder="选择数字员工" />
+              <SelectValue placeholder={projectId ? "选择数字员工" : "请先选择项目"} />
             </SelectTrigger>
             <SelectContent>
               {employees.map((employee) => (
@@ -418,18 +440,30 @@ export function ChatPanel({
       </div>
 
       <div className="tl-chat-thread v3-glass-inner" data-testid="chat-thread">
-        {employeesQuery.isLoading ? <V3LoadingState label="加载数字员工…" /> : null}
-        {employeesQuery.isError ? (
+        {employeesQuery.isLoading || (Boolean(projectId) && membersQuery.isLoading) ? (
+          <V3LoadingState label="加载数字员工…" />
+        ) : null}
+        {employeesQuery.isError || membersQuery.isError ? (
           <V3ErrorState
             description="无法加载数字员工列表"
-            onRetry={() => employeesQuery.refetch()}
+            onRetry={() => {
+              void employeesQuery.refetch();
+              void membersQuery.refetch();
+            }}
           />
         ) : null}
-        {employeesQuery.isSuccess && employees.length === 0 ? (
+        {!projectId && employeesQuery.isSuccess ? (
+          <V3EmptyState
+            icon={<FolderOpen aria-hidden />}
+            title="请先选择项目"
+            description="对话按项目锚定，仅项目内的数字员工成员可参与对话"
+          />
+        ) : null}
+        {Boolean(projectId) && employeesQuery.isSuccess && membersQuery.isSuccess && employees.length === 0 ? (
           <V3EmptyState
             icon={<UserRound aria-hidden />}
-            title="暂无可对话的数字员工"
-            description="请先创建一名数字员工再发起对话"
+            title="该项目暂无可对话的数字员工成员"
+            description="请先在项目配置中把数字员工加入项目成员"
           />
         ) : null}
         {employeesQuery.isSuccess && employees.length > 0 && restoring ? (

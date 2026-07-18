@@ -249,6 +249,21 @@ function createTaskLaunchFetcherWithChat({
         },
       ]);
     }
+    // 参与门禁:chat 员工按项目成员过滤,emp-1 投影为锚点项目的 active 成员。
+    const membersMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/members$/);
+    if (membersMatch && method === "GET") {
+      return jsonResponse([
+        {
+          id: "member-1",
+          tenant_id: "tenant-1",
+          project_id: membersMatch[1],
+          principal_type: "digital_employee",
+          principal_id: "emp-1",
+          project_role: "executor",
+          status: "active",
+        },
+      ]);
+    }
     if (path === "/api/v1/digital-employees/emp-1/runs" && method === "GET") {
       // 会话恢复查询:页面级用例不预置历史会话,返回空列表。
       return jsonResponse({
@@ -626,6 +641,14 @@ describe("TaskLaunchView", () => {
 
     // anchor the chat conversation to the second project before asking anything
     await clickButton("生产巡检项目");
+    // 参与门禁：换锚点项目后成员列表与会话恢复各需一轮查询落定
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
 
     await typeInLabeledField("对话问题", "第二个项目怎么配置？");
     await clickButton("发送");
