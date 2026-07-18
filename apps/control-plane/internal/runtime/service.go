@@ -188,6 +188,9 @@ func (s *Service) ApproveEnrollment(ctx context.Context, req ApproveEnrollmentRe
 	if err != nil {
 		return nil, err
 	}
+	// 审批只授权接入，不断言活性：新建节点以 offline+无心跳落库，
+	// 已存在节点保留其真实 status/心跳（见 ApproveRuntimeEnrollmentWithNode 的
+	// ON CONFLICT 分支），在线状态只能由 agent 自己的心跳建立。
 	record, err := enrollmentRepo.ApproveRuntimeEnrollmentWithNode(ctx, ApproveRuntimeEnrollmentWithNodeParams{
 		TenantID:           tenantID,
 		EnrollmentID:       req.EnrollmentID,
@@ -196,9 +199,9 @@ func (s *Service) ApproveEnrollment(ctx context.Context, req ApproveEnrollmentRe
 		SupportedProviders: nodeRequest.SupportedProviders,
 		MaxSlots:           nodeRequest.MaxSlots,
 		CurrentLoad:        0,
-		NodeStatus:         string(NodeStatusOnline),
+		NodeStatus:         string(NodeStatusOffline),
 		Metadata:           nodeRequest.Metadata,
-		LastHeartbeatAt:    timestamptzFromTime(time.Now()),
+		LastHeartbeatAt:    pgtype.Timestamptz{},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to approve runtime enrollment: %w", err)

@@ -176,8 +176,20 @@ func TestApproveEnrollmentCreatesOrReusesRuntimeNode(t *testing.T) {
 	require.NotEqual(t, uuid.Nil, approved.RuntimeNodeID)
 	require.Contains(t, repo.nodes, repo.nodeKey(platform.DefaultTenantID, "runtime-approve"))
 
+	// 审批不得伪造活性：新建节点必须是 offline 且没有心跳，
+	// 在线状态只能由 agent 自己的心跳建立。
+	created := repo.nodes[repo.nodeKey(platform.DefaultTenantID, "runtime-approve")]
+	require.Equal(t, string(NodeStatusOffline), created.Status)
+	require.False(t, created.LastHeartbeatAt.Valid)
+
 	// Re-approving another pending enrollment with the same tenant/node should reuse the same runtime node.
 	firstNodeID := approved.RuntimeNodeID
+	// 给已有节点一个真实活性状态，审批复用时必须原样保留
+	liveHeartbeat := timestamptzFromTime(time.Now())
+	existingNode := repo.nodes[repo.nodeKey(platform.DefaultTenantID, "runtime-approve")]
+	existingNode.Status = string(NodeStatusOnline)
+	existingNode.LastHeartbeatAt = liveHeartbeat
+	repo.nodes[repo.nodeKey(platform.DefaultTenantID, "runtime-approve")] = existingNode
 	second := repo.seedEnrollment(platform.DefaultTenantID, "runtime-approve", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(52), bootstrapHash)
 	second.RequestPayload = mustRuntimePayload(t, "runtime-approve", "Runtime Approve Reused", []string{"codex"}, 2, nil)
 	repo.enrollmentsByID[second.ID] = second
@@ -189,6 +201,9 @@ func TestApproveEnrollmentCreatesOrReusesRuntimeNode(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, firstNodeID, approvedAgain.RuntimeNodeID)
+	reused := repo.nodes[repo.nodeKey(platform.DefaultTenantID, "runtime-approve")]
+	require.Equal(t, string(NodeStatusOnline), reused.Status)
+	require.Equal(t, liveHeartbeat, reused.LastHeartbeatAt)
 }
 
 func TestApproveEnrollmentDoesNotTakeOverCrossTenantNodeID(t *testing.T) {
@@ -688,9 +703,8 @@ func (f *enrollmentFake) ApproveRuntimeEnrollmentWithNode(_ context.Context, par
 		node.SupportedProviders = params.SupportedProviders
 		node.MaxSlots = params.MaxSlots
 		node.CurrentLoad = params.CurrentLoad
-		node.Status = params.NodeStatus
+		// 镜像真实 SQL 的 ON CONFLICT 语义：审批不覆盖已有节点的 status/心跳
 		node.Metadata = params.Metadata
-		node.LastHeartbeatAt = params.LastHeartbeatAt
 		f.nodes[key] = node
 	} else {
 		node = NodeRecord{
