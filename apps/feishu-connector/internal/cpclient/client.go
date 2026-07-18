@@ -75,7 +75,8 @@ func (c *Client) do(ctx context.Context, method, path string, obo *OnBehalfOf, p
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		// 64KB:409 冲突响应携带决策卡快照(card_payload),2KB 会截断富上下文。
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return &APIError{Status: resp.StatusCode, Body: string(raw)}
 	}
 	if out == nil {
@@ -198,15 +199,25 @@ type ResolveDecisionRequest struct {
 	Comment   string `json:"comment,omitempty"`
 }
 
+type resolveDecisionResponse struct {
+	Status      string         `json:"status"`
+	CardPayload map[string]any `json:"card_payload"`
+}
+
 // ResolveDecision 回传决策;409 表示已由他人处理(调用方渲染对应卡态)。
-func (c *Client) ResolveDecision(ctx context.Context, obo OnBehalfOf, decisionID string, req ResolveDecisionRequest) (conflict bool, err error) {
-	err = c.do(ctx, http.MethodPost, "/api/v1/connector/decisions/"+decisionID+"/resolve", &obo, req, nil)
+// cardPayload 是控制平面返回的决策卡快照(与 outbox 决策卡同源),供即时置换
+// 渲染保留详情的终态卡;两条路径都 best-effort,可能为 nil。
+func (c *Client) ResolveDecision(ctx context.Context, obo OnBehalfOf, decisionID string, req ResolveDecisionRequest) (cardPayload map[string]any, conflict bool, err error) {
+	var out resolveDecisionResponse
+	err = c.do(ctx, http.MethodPost, "/api/v1/connector/decisions/"+decisionID+"/resolve", &obo, req, &out)
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Status == http.StatusConflict {
-			return true, nil
+			var body resolveDecisionResponse
+			_ = json.Unmarshal([]byte(apiErr.Body), &body)
+			return body.CardPayload, true, nil
 		}
-		return false, err
+		return nil, false, err
 	}
-	return false, nil
+	return out.CardPayload, false, nil
 }

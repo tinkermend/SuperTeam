@@ -13,9 +13,9 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/capability"
-	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
@@ -368,9 +368,8 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/delete-preview", s.projectHandler.GetProjectDeletePreview)
 				r.Delete("/projects/{projectId}", s.projectHandler.DeleteProject)
 				r.Get("/projects/{projectId}/overview", s.projectHandler.GetOverview)
-				r.Get("/projects/{projectId}/runtime-placement", s.projectHandler.GetProjectRuntimePlacement)
-				r.Put("/projects/{projectId}/runtime-placement", s.projectHandler.PutProjectRuntimePlacement)
-				r.Delete("/projects/{projectId}/runtime-placement", s.projectHandler.ReleaseProjectRuntimePlacement)
+				r.Put("/projects/{projectId}/runtime-nodes/{runtimeNodeId}", s.projectHandler.AddProjectRuntimeNode)
+				r.Delete("/projects/{projectId}/runtime-nodes/{runtimeNodeId}", s.projectHandler.RemoveProjectRuntimeNode)
 				r.Get("/projects/{projectId}/runtime-readiness", s.projectHandler.GetProjectRuntimeReadiness)
 				r.Get("/projects/{projectId}/runtime-nodes", s.projectHandler.ListProjectRuntimeNodes)
 				r.Get("/projects/{projectId}/members", s.projectHandler.ListProjectMembers)
@@ -500,16 +499,6 @@ func (s *Server) registerRoutes() {
 		if s.capabilityHandler != nil {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
-				r.Get("/user-credentials", s.capabilityHandler.ListCredentials)
-				r.Post("/user-credentials", s.capabilityHandler.CreateCredential)
-				r.Get("/teams/{teamId}/mcp-servers", s.capabilityHandler.ListTeamMCPServers)
-				r.Post("/teams/{teamId}/mcp-servers", s.capabilityHandler.CreateTeamMCPServer)
-				r.Delete("/teams/{teamId}/mcp-servers/{serverId}", s.capabilityHandler.DeleteTeamMCPServer)
-				r.Get("/digital-employees/{employeeId}/mcp-bindings", s.capabilityHandler.ListEmployeeMCPBindings)
-				r.Post("/digital-employees/{employeeId}/mcp-bindings", s.capabilityHandler.CreateEmployeeMCPBinding)
-				r.Delete("/digital-employees/{employeeId}/mcp-bindings/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBinding)
-				r.Get("/digital-employees/{employeeId}/effective-mcp-servers", s.capabilityHandler.ListEffectiveMCPServers)
-
 				// MCP HTTP capability registry (migration 037).
 				r.Get("/mcp-servers", s.capabilityHandler.ListMCPServerDefinitions)
 				r.Post("/mcp-servers", s.capabilityHandler.CreateMCPServerDefinition)

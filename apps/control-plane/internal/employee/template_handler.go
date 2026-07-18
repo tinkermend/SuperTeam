@@ -10,50 +10,50 @@ import (
 )
 
 type employeeTemplateResponse struct {
-	ID                           string         `json:"id"`
-	TenantID                     string         `json:"tenant_id"`
-	Type                         string         `json:"type"`
-	Label                        string         `json:"label"`
-	Description                  string         `json:"description"`
-	DefaultRole                  string         `json:"default_role"`
-	RecommendedSkills            []string       `json:"recommended_skills"`
-	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	PersonaMemoryMarkdown        string         `json:"persona_memory_markdown"`
-	CapabilityBindings           map[string]any `json:"capability_bindings"`
-	BudgetPolicy                 map[string]any `json:"budget_policy"`
-	Metadata                     map[string]any `json:"metadata"`
-	Status                       string         `json:"status"`
-	IsSystem                     bool           `json:"is_system"`
-	CreatedAt                    string         `json:"created_at"`
-	UpdatedAt                    string         `json:"updated_at"`
+	ID                       string         `json:"id"`
+	TenantID                 string         `json:"tenant_id"`
+	Type                     string         `json:"type"`
+	Label                    string         `json:"label"`
+	Description              string         `json:"description"`
+	DefaultRole              string         `json:"default_role"`
+	RecommendedSkills        []string       `json:"recommended_skills"`
+	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
+	PersonaMemoryMarkdown    string         `json:"persona_memory_markdown"`
+	CapabilityBindings       map[string]any `json:"capability_bindings"`
+	BudgetPolicy             map[string]any `json:"budget_policy"`
+	Metadata                 map[string]any `json:"metadata"`
+	Status                   string         `json:"status"`
+	IsSystem                 bool           `json:"is_system"`
+	CreatedAt                string         `json:"created_at"`
+	UpdatedAt                string         `json:"updated_at"`
 }
 
 type createEmployeeTemplateRequest struct {
-	Type                         string         `json:"type"`
-	Label                        string         `json:"label"`
-	Description                  string         `json:"description"`
-	DefaultRole                  string         `json:"default_role"`
-	RecommendedSkills            []string       `json:"recommended_skills"`
-	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	PersonaMemoryMarkdown        string         `json:"persona_memory_markdown"`
-	CapabilityBindings           map[string]any `json:"capability_bindings"`
-	BudgetPolicy                 map[string]any `json:"budget_policy"`
-	Metadata                     map[string]any `json:"metadata"`
+	Type                     string         `json:"type"`
+	Label                    string         `json:"label"`
+	Description              string         `json:"description"`
+	DefaultRole              string         `json:"default_role"`
+	RecommendedSkills        []string       `json:"recommended_skills"`
+	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
+	PersonaMemoryMarkdown    string         `json:"persona_memory_markdown"`
+	CapabilityBindings       map[string]any `json:"capability_bindings"`
+	BudgetPolicy             map[string]any `json:"budget_policy"`
+	Metadata                 map[string]any `json:"metadata"`
 }
 
 type updateEmployeeTemplateRequest struct {
-	Label                        string         `json:"label"`
-	Description                  string         `json:"description"`
-	DefaultRole                  string         `json:"default_role"`
-	RecommendedSkills            []string       `json:"recommended_skills"`
-	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
-	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
-	PersonaMemoryMarkdown        string         `json:"persona_memory_markdown"`
-	CapabilityBindings           map[string]any `json:"capability_bindings"`
-	BudgetPolicy                 map[string]any `json:"budget_policy"`
-	Metadata                     map[string]any `json:"metadata"`
+	Label                    string         `json:"label"`
+	Description              string         `json:"description"`
+	DefaultRole              string         `json:"default_role"`
+	RecommendedSkills        []string       `json:"recommended_skills"`
+	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
+	PersonaMemoryMarkdown    string         `json:"persona_memory_markdown"`
+	CapabilityBindings       map[string]any `json:"capability_bindings"`
+	BudgetPolicy             map[string]any `json:"budget_policy"`
+	Metadata                 map[string]any `json:"metadata"`
 }
 
 type setEmployeeTemplateStatusRequest struct {
@@ -252,23 +252,23 @@ func employeeTemplateResponses(templates []EmployeeTemplateRecord) []employeeTem
 
 func employeeTemplateResponseFromDomain(t EmployeeTemplateRecord) employeeTemplateResponse {
 	return employeeTemplateResponse{
-		ID:                           t.ID.String(),
-		TenantID:                     t.TenantID.String(),
-		Type:                         t.Type,
-		Label:                        t.Label,
-		Description:                  t.Description,
-		DefaultRole:                  t.DefaultRole,
-		RecommendedSkills:            stringSliceForJSON(t.RecommendedSkills),
-		RecommendedMCPServers:        stringSliceForJSON(t.RecommendedMCPServers),
-		RecommendedProviderTypes:     stringSliceForJSON(t.RecommendedProviderTypes),
-		PersonaMemoryMarkdown:        t.PersonaMemoryMarkdown,
-		CapabilityBindings:           cloneMap(t.CapabilityBindings),
-		BudgetPolicy:                 cloneMap(t.BudgetPolicy),
-		Metadata:                     cloneMap(t.Metadata),
-		Status:                       t.Status,
-		IsSystem:                     t.IsSystem,
-		CreatedAt:                    timeString(t.CreatedAt),
-		UpdatedAt:                    timeString(t.UpdatedAt),
+		ID:                       t.ID.String(),
+		TenantID:                 t.TenantID.String(),
+		Type:                     t.Type,
+		Label:                    t.Label,
+		Description:              t.Description,
+		DefaultRole:              t.DefaultRole,
+		RecommendedSkills:        stringSliceForJSON(t.RecommendedSkills),
+		RecommendedMCPServers:    stringSliceForJSON(t.RecommendedMCPServers),
+		RecommendedProviderTypes: stringSliceForJSON(t.RecommendedProviderTypes),
+		PersonaMemoryMarkdown:    t.PersonaMemoryMarkdown,
+		CapabilityBindings:       cloneMap(t.CapabilityBindings),
+		BudgetPolicy:             cloneMap(t.BudgetPolicy),
+		Metadata:                 cloneMap(t.Metadata),
+		Status:                   t.Status,
+		IsSystem:                 t.IsSystem,
+		CreatedAt:                timeString(t.CreatedAt),
+		UpdatedAt:                timeString(t.UpdatedAt),
 	}
 }
 

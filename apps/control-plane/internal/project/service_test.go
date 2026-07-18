@@ -112,7 +112,7 @@ func TestGetProjectRuntimeReadinessReportsMissingPlacement(t *testing.T) {
 	require.False(t, readiness.EmployeeReadiness[0].CanDispatch)
 }
 
-func TestPutProjectRuntimePlacementRecordsPlacementEventAndReadiness(t *testing.T) {
+func TestAddProjectRuntimeNodeRecordsEventAndReadiness(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
 	require.NoError(t, err)
@@ -173,7 +173,7 @@ func TestPutProjectRuntimePlacementRecordsPlacementEventAndReadiness(t *testing.
 		connected: map[string]bool{nodeID: true},
 	})
 
-	placement, err := service.PutProjectRuntimePlacement(context.Background(), PutProjectRuntimePlacementRequest{
+	node, err := service.AddProjectRuntimeNode(context.Background(), ModifyProjectRuntimeNodeRequest{
 		TenantID:      tenantID,
 		ProjectID:     projectID,
 		RuntimeNodeID: runtimeNodeID,
@@ -181,15 +181,8 @@ func TestPutProjectRuntimePlacementRecordsPlacementEventAndReadiness(t *testing.
 		Reason:        "  bind for dispatch  ",
 	})
 	require.NoError(t, err)
-	require.Equal(t, runtimeNodeID, placement.RuntimeNodeID)
-	require.Equal(t, "bind for dispatch", placement.PlacementReason)
+	require.Equal(t, runtimeNodeID, node.RuntimeNodeID)
 	require.Equal(t, ProjectEventRuntimePlacementUpdated, repo.eventTypes[len(repo.eventTypes)-1])
-
-	// Readiness is now driven by the project's runtime eligibility set
-	// (project_runtime_nodes), not by project_placements — PutProjectRuntimePlacement
-	// alone (compat/display path) no longer makes a node dispatch-usable.
-	_, err = repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID)
-	require.NoError(t, err)
 
 	readiness, err := service.GetProjectRuntimeReadiness(context.Background(), tenantID, projectID)
 	require.NoError(t, err)
@@ -234,14 +227,6 @@ func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *test
 		Status:              "active",
 		DisplayNameSnapshot: strPtr("Codex executor"),
 	}}
-	repo.projectRuntimePlacements[projectID] = ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		RuntimeNodeID:   runtimeNodeID,
-		PlacementStatus: ProjectRuntimePlacementStateActive,
-		AssignedAt:      time.Now().UTC(),
-	}
 	// Readiness is driven by the runtime eligibility set (project_runtime_nodes),
 	// not by project_placements — register the same node there too so this
 	// fixture represents a project that is actually dispatch-eligible under the
@@ -326,14 +311,6 @@ func TestGetProjectRuntimeReadinessBlocksProviderTypeMissingEmployee(t *testing.
 		Status:              "active",
 		DisplayNameSnapshot: strPtr("No provider executor"),
 	}}
-	repo.projectRuntimePlacements[projectID] = ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		RuntimeNodeID:   runtimeNodeID,
-		PlacementStatus: ProjectRuntimePlacementStateActive,
-		AssignedAt:      time.Now().UTC(),
-	}
 	// Readiness is driven by the runtime eligibility set (project_runtime_nodes),
 	// not by project_placements — register the same node there too so this
 	// fixture represents a project that is actually dispatch-eligible under the
@@ -433,14 +410,6 @@ func TestGetProjectRuntimeReadinessDoesNotFallbackOverExplicitUnavailableCapabil
 		Status:              "active",
 		DisplayNameSnapshot: strPtr("Codex executor"),
 	}}
-	repo.projectRuntimePlacements[projectID] = ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		RuntimeNodeID:   runtimeNodeID,
-		PlacementStatus: ProjectRuntimePlacementStateActive,
-		AssignedAt:      time.Now().UTC(),
-	}
 	// Readiness is driven by the runtime eligibility set (project_runtime_nodes),
 	// not by project_placements — register the same node there too so this
 	// fixture represents a project that is actually dispatch-eligible under the
@@ -489,7 +458,7 @@ func TestGetProjectRuntimeReadinessDoesNotFallbackOverExplicitUnavailableCapabil
 	require.Equal(t, "provider_unavailable", readiness.EmployeeReadiness[0].ReasonCode)
 }
 
-func TestPutProjectRuntimePlacementRejectsRuntimeNodeOutsideTenant(t *testing.T) {
+func TestAddProjectRuntimeNodeRejectsRuntimeNodeOutsideTenant(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
 	require.NoError(t, err)
@@ -518,7 +487,7 @@ func TestPutProjectRuntimePlacementRejectsRuntimeNodeOutsideTenant(t *testing.T)
 		}},
 	})
 
-	placement, err := service.PutProjectRuntimePlacement(context.Background(), PutProjectRuntimePlacementRequest{
+	node, err := service.AddProjectRuntimeNode(context.Background(), ModifyProjectRuntimeNodeRequest{
 		TenantID:      tenantID,
 		ProjectID:     projectID,
 		RuntimeNodeID: runtimeNodeID,
@@ -527,8 +496,8 @@ func TestPutProjectRuntimePlacementRejectsRuntimeNodeOutsideTenant(t *testing.T)
 	})
 
 	require.ErrorIs(t, err, ErrProjectNotFound)
-	require.Nil(t, placement)
-	require.Empty(t, repo.projectRuntimePlacements)
+	require.Nil(t, node)
+	require.Empty(t, repo.projectRuntimeNodes)
 	require.NotContains(t, repo.eventTypes, ProjectEventRuntimePlacementUpdated)
 }
 
@@ -10601,7 +10570,7 @@ func TestDeleteProjectTerminatesThenCascades(t *testing.T) {
 	}
 	repo.deleteCascadeResult = ProjectDeleteCascadeResult{
 		MemberCount: 2, TaskCount: 3, DecisionCount: 1, ApprovalCount: 1,
-		InboxCount: 1, RuntimeNodeCount: 1, AffinityCount: 1, PlacementCount: 1,
+		InboxCount: 1, RuntimeNodeCount: 1, AffinityCount: 1,
 	}
 
 	err = service.DeleteProject(context.Background(), DeleteProjectRequest{
@@ -10740,7 +10709,6 @@ type memoryRepository struct {
 	executionLedgerEvents            []ExecutionLedgerEvent
 	projectTaskResults               []ProjectTaskResult
 	projectTaskAttestations          []ProjectTaskAttestation
-	projectRuntimePlacements         map[uuid.UUID]ProjectRuntimePlacement
 	transferRequests                 []TransferRequest
 	decisionRequests                 []DecisionRequest
 	planRevisions                    []PlanRevision
@@ -11053,7 +11021,6 @@ func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
 		projects:                   map[uuid.UUID]Project{},
 		members:                    map[uuid.UUID][]ProjectMember{},
-		projectRuntimePlacements:   map[uuid.UUID]ProjectRuntimePlacement{},
 		projectTeamScopes:          map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool{},
 		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
 		projectTaskRunWorkProducts: map[uuid.UUID][]any{},
@@ -11452,47 +11419,6 @@ func (r *memoryRepository) AreAllProjectDemandsTerminal(ctx context.Context, ten
 	return count > 0, nil
 }
 
-func (r *memoryRepository) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectRuntimePlacement, error) {
-	placement, ok := r.projectRuntimePlacements[projectID]
-	if !ok || placement.TenantID != tenantID || placement.PlacementStatus != ProjectRuntimePlacementStateActive {
-		return ProjectRuntimePlacement{}, ErrProjectNotFound
-	}
-	return placement, nil
-}
-
-func (r *memoryRepository) UpsertProjectPlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
-	if project, ok := r.projects[req.ProjectID]; !ok || project.TenantID != req.TenantID {
-		return ProjectRuntimePlacement{}, ErrProjectNotFound
-	}
-	now := time.Now()
-	placement := ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   req.RuntimeNodeID,
-		PlacementStatus: ProjectRuntimePlacementStateActive,
-		PlacementReason: req.Reason,
-		AssignedAt:      now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	r.projectRuntimePlacements[req.ProjectID] = placement
-	return placement, nil
-}
-
-func (r *memoryRepository) ReleaseProjectPlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
-	placement, ok := r.projectRuntimePlacements[req.ProjectID]
-	if !ok || placement.TenantID != req.TenantID || placement.PlacementStatus != ProjectRuntimePlacementStateActive {
-		return ProjectRuntimePlacement{}, ErrProjectNotFound
-	}
-	now := time.Now()
-	placement.PlacementStatus = ProjectRuntimePlacementStateReleased
-	placement.ReleasedAt = &now
-	placement.UpdatedAt = now
-	r.projectRuntimePlacements[req.ProjectID] = placement
-	return placement, nil
-}
-
 func (r *memoryRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
 	project, ok := r.projects[projectID]
 	if !ok || project.TenantID != tenantID {
@@ -11592,6 +11518,18 @@ func (r *memoryRepository) ListProjectRuntimeNodes(ctx context.Context, tenantID
 		}
 	}
 	return items, nil
+}
+
+func (r *memoryRepository) RemoveProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) error {
+	kept := make([]ProjectRuntimeNode, 0, len(r.projectRuntimeNodes[projectID]))
+	for _, node := range r.projectRuntimeNodes[projectID] {
+		if node.TenantID == tenantID && node.RuntimeNodeID == runtimeNodeID {
+			continue
+		}
+		kept = append(kept, node)
+	}
+	r.projectRuntimeNodes[projectID] = kept
+	return nil
 }
 
 func (r *memoryRepository) GetProjectEvent(ctx context.Context, tenantID, projectID, eventID uuid.UUID) (ProjectEvent, error) {

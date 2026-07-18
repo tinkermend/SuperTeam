@@ -110,11 +110,6 @@ DELETE FROM team_mcp_bindings
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND team_id = sqlc.arg('team_id')::uuid;
 
--- name: HardDeleteTeamMCPServers :exec
-DELETE FROM team_mcp_servers
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND team_id = sqlc.arg('team_id')::uuid;
-
 -- name: HardDeleteTeamLendingPolicies :exec
 DELETE FROM team_lending_policy
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid

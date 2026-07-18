@@ -1219,8 +1219,7 @@ type GetProjectTaskRunPreflightRow struct {
 // for that, see GetProjectTaskRunPreflightForNode. The node reported here is a
 // deterministic representative of the project's eligibility set (project_runtime_nodes):
 // the least-loaded online node, so an idle/degraded node doesn't look "ready" just
-// because it happens to sort first. project_placements is intentionally not consulted;
-// Plan B's node selection authority is the eligibility set, not the legacy single pin.
+// because it happens to sort first.
 func (q *Queries) GetProjectTaskRunPreflight(ctx context.Context, arg GetProjectTaskRunPreflightParams) (GetProjectTaskRunPreflightRow, error) {
 	row := q.db.QueryRow(ctx, GetProjectTaskRunPreflight, arg.ProjectID, arg.DigitalEmployeeID, arg.TenantID)
 	var i GetProjectTaskRunPreflightRow
@@ -3738,44 +3737,6 @@ func (q *Queries) SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg So
 		&i.ProviderType,
 	)
 	return i, err
-}
-
-const SoftDeleteDigitalEmployeeMCPBindingsForDelete = `-- name: SoftDeleteDigitalEmployeeMCPBindingsForDelete :many
-UPDATE digital_employee_mcp_bindings
-SET status = 'disabled',
-    disabled_at = COALESCE(disabled_at, $1::timestamptz),
-    deleted_at = COALESCE(deleted_at, $1::timestamptz),
-    updated_at = $1::timestamptz
-WHERE tenant_id = $2::uuid
-  AND digital_employee_id = $3::uuid
-  AND deleted_at IS NULL
-RETURNING id
-`
-
-type SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams struct {
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	TenantID          uuid.UUID          `json:"tenant_id"`
-	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
-}
-
-func (q *Queries) SoftDeleteDigitalEmployeeMCPBindingsForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, SoftDeleteDigitalEmployeeMCPBindingsForDelete, arg.DeletedAt, arg.TenantID, arg.DigitalEmployeeID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete = `-- name: SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete :many

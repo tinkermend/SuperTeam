@@ -17,9 +17,6 @@ type Repository interface {
 	ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
 	TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (Project, error)
 	AreAllProjectDemandsTerminal(ctx context.Context, tenantID, projectID uuid.UUID) (bool, error)
-	GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectRuntimePlacement, error)
-	UpsertProjectPlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error)
-	ReleaseProjectPlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error)
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
@@ -161,6 +158,7 @@ type Repository interface {
 	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error)
 	InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) (ProjectRuntimeNode, error)
 	ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error)
+	RemoveProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) error
 	GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID, runtimeNodeID uuid.UUID) (ProjectEmployeeNodeAffinity, error)
 	GetProjectForDelete(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
@@ -623,6 +621,10 @@ type ResolveDecisionRequestRepositoryRequest struct {
 	ID              uuid.UUID
 	StatusSnapshot  string
 	ResolvedEventID *uuid.UUID
+	// ResolvedByUserID/ResolutionComment 供飞书 card_update 终态卡呈现处理人与理由;
+	// 缺省(Nil/空)时终态卡不带该信息,不影响业务写。
+	ResolvedByUserID  uuid.UUID
+	ResolutionComment string
 }
 
 // CreateDemandConstraintExemptionRequest persists a DemandConstraintExemption.

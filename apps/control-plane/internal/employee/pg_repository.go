@@ -211,13 +211,6 @@ func (r *PgRepository) SoftDeleteDigitalEmployeeCascade(ctx context.Context, par
 	}
 	cascade.EnvironmentVariables = int64(len(envRows))
 
-	mcpRows, err := r.q.SoftDeleteDigitalEmployeeMCPBindingsForDelete(ctx, queries.SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
-	if err != nil {
-		return cascade, err
-	}
-	cascade.MCPBindings = int64(len(mcpRows))
-	cascade.MCPBindingIDs = appendUUIDs(cascade.MCPBindingIDs, mcpRows)
-
 	mcpV2Rows, err := r.q.SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx, queries.SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
 	if err != nil {
 		return cascade, err
@@ -2490,7 +2483,6 @@ func digitalEmployeeDeleteAuditDetails(params DigitalEmployeeDeleteAuditEventPar
 		"cascade_counts": map[string]any{
 			"execution_instances":   params.CascadeResult.ExecutionInstances,
 			"environment_variables": params.CascadeResult.EnvironmentVariables,
-			"mcp_bindings":          params.CascadeResult.MCPBindings,
 			"mcp_bindings_v2":       params.CascadeResult.MCPBindingsV2,
 			"skill_bindings":        params.CascadeResult.SkillBindings,
 			"config_revisions":      params.CascadeResult.ConfigRevisions,
@@ -2500,7 +2492,7 @@ func digitalEmployeeDeleteAuditDetails(params DigitalEmployeeDeleteAuditEventPar
 		"cleanup_candidates": map[string]any{
 			"agent_home_dir":     params.CascadeResult.AgentHomeDir,
 			"workspace_file_ids": uuidStrings(params.CascadeResult.WorkspaceFileIDs),
-			"mcp_binding_ids":    uuidStrings(append(params.CascadeResult.MCPBindingIDs, params.CascadeResult.MCPBindingV2IDs...)),
+			"mcp_binding_ids":    uuidStrings(params.CascadeResult.MCPBindingV2IDs),
 			"skill_binding_ids":  uuidStrings(params.CascadeResult.SkillBindingIDs),
 		},
 		"deleted_at": params.DeletedAt.UTC().Format(time.RFC3339Nano),

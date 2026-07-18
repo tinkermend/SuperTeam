@@ -88,14 +88,14 @@ func TestCreateEmployeeTemplateStoresFinalConfigDefaults(t *testing.T) {
 	tenantID := uuid.New()
 
 	created, err := svc.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
-		TenantID:                tenantID,
-		Type:                    "evidence_worker",
-		Label:                   "证据整理员工",
-		Description:             "整理证据",
-		DefaultRole:             "evidence_worker",
-		PersonaMemoryMarkdown:   "# 人格画像\n证据优先",
-		CapabilityBindings:      map[string]any{"skills": []any{"code-reading"}},
-		BudgetPolicy:            map[string]any{"daily_token_limit": float64(10000)},
+		TenantID:              tenantID,
+		Type:                  "evidence_worker",
+		Label:                 "证据整理员工",
+		Description:           "整理证据",
+		DefaultRole:           "evidence_worker",
+		PersonaMemoryMarkdown: "# 人格画像\n证据优先",
+		CapabilityBindings:    map[string]any{"skills": []any{"code-reading"}},
+		BudgetPolicy:          map[string]any{"daily_token_limit": float64(10000)},
 	})
 
 	require.NoError(t, err)
@@ -111,11 +111,11 @@ func TestCreateEmployeeTemplateNormalizesNilPolicyMaps(t *testing.T) {
 	tenantID := uuid.New()
 
 	_, err = svc.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
-		TenantID:            tenantID,
-		Type:                "custom_reviewer",
-		Label:               "自定义评审员",
-		CapabilityBindings:  nil,
-		BudgetPolicy:        nil,
+		TenantID:           tenantID,
+		Type:               "custom_reviewer",
+		Label:              "自定义评审员",
+		CapabilityBindings: nil,
+		BudgetPolicy:       nil,
 	})
 	require.NoError(t, err, "nil policy maps are allowed and normalized to {}")
 }

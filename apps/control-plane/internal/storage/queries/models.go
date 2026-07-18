@@ -199,8 +199,6 @@ type AuthSession struct {
 	ClientIp pgtype.Text `json:"client_ip"`
 	// 客户端 User-Agent
 	UserAgent pgtype.Text `json:"user_agent"`
-	// 会话撤销时间
-	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 	// 会话创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 会话最后更新时间
@@ -221,8 +219,6 @@ type AuthUser struct {
 	PasswordHash string `json:"password_hash"`
 	// 用户状态：active 表示启用，disabled 表示禁用
 	Status string `json:"status"`
-	// 用户最后登录时间
-	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
 	// 用户禁用时间
 	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// 用户软删除时间
@@ -440,7 +436,6 @@ type DigitalEmployeeEnvironmentVariable struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	Metadata          []byte             `json:"metadata"`
 }
 
 // 数字员工唯一执行实例表
@@ -484,36 +479,6 @@ type DigitalEmployeeExecutionInstance struct {
 	// 执行实例创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 执行实例最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-// 数字员工个人 MCP 服务器配置
-type DigitalEmployeeMcpBinding struct {
-	// 数字员工 MCP 配置主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 数字员工 MCP 所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 数字员工 ID
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 个人 MCP 显示名称，同一数字员工下未删除时唯一
-	Name string `json:"name"`
-	// 个人 MCP 远程 HTTP 地址
-	Url string `json:"url"`
-	// 引用的个人凭据 ID，由应用层校验归属和类型
-	CredentialID uuid.NullUUID `json:"credential_id"`
-	// 个人 MCP 状态，例如 active 或 disabled
-	Status string `json:"status"`
-	// 个人 MCP 扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 个人 MCP 禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
-	// 个人 MCP 软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 创建个人 MCP 的用户 ID
-	CreatedBy uuid.NullUUID `json:"created_by"`
-	// 个人 MCP 创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 个人 MCP 更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
@@ -1412,20 +1377,6 @@ type ProjectMember struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 项目到 Runtime 节点的动态亲和放置状态，不保存本地绝对路径。
-type ProjectPlacement struct {
-	ID              uuid.UUID          `json:"id"`
-	TenantID        uuid.UUID          `json:"tenant_id"`
-	ProjectID       uuid.UUID          `json:"project_id"`
-	RuntimeNodeID   uuid.UUID          `json:"runtime_node_id"`
-	PlacementStatus string             `json:"placement_status"`
-	PlacementReason pgtype.Text        `json:"placement_reason"`
-	AssignedAt      pgtype.Timestamptz `json:"assigned_at"`
-	ReleasedAt      pgtype.Timestamptz `json:"released_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 计划版本分解幂等声明表，保证 accepted PlanRevision 精确一次转换为 ProjectTask DAG。
 type ProjectPlanDecompositionClaim struct {
 	// 分解声明ID。
@@ -1650,14 +1601,8 @@ type ProjectTask struct {
 	WaitingReason pgtype.Text `json:"waiting_reason"`
 	// 任务等待的人类决策或请求ID。
 	WaitingRequestID uuid.NullUUID `json:"waiting_request_id"`
-	// 任务进入终态的原因。
-	TerminalReason pgtype.Text `json:"terminal_reason"`
 	// 任务进入终态时写入的项目事件ID。
 	TerminalEventID uuid.NullUUID `json:"terminal_event_id"`
-	// 取消任务的主体类型或来源。
-	CancelledBy pgtype.Text `json:"cancelled_by"`
-	// 标记任务失败的主体类型或来源。
-	FailedBy pgtype.Text `json:"failed_by"`
 	// 任务状态最近一次变化时间。
 	StatusChangedAt pgtype.Timestamptz `json:"status_changed_at"`
 	// 该任务最近一次 gate 结果ID。
@@ -1700,14 +1645,10 @@ type ProjectTaskAttempt struct {
 	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
 	// Runtime 租约最近续约时间。
 	RenewedAt pgtype.Timestamptz `json:"renewed_at"`
-	// 执行尝试被判定丢失的时间。
-	LostAt pgtype.Timestamptz `json:"lost_at"`
 	// 执行尝试开始时间。
 	StartedAt pgtype.Timestamptz `json:"started_at"`
 	// 执行尝试结束时间。
 	FinishedAt pgtype.Timestamptz `json:"finished_at"`
-	// 执行尝试超时时间。
-	TimeoutAt pgtype.Timestamptz `json:"timeout_at"`
 	// 执行失败后是否允许重试。
 	Retryable pgtype.Bool `json:"retryable"`
 	// 执行失败分类。
@@ -2553,8 +2494,6 @@ type TaskRun struct {
 	ProviderSessionID pgtype.Text `json:"provider_session_id"`
 	// 任务运行状态
 	Status string `json:"status"`
-	// 任务运行租约过期时间
-	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
 	// 任务运行开始时间
 	StartedAt pgtype.Timestamptz `json:"started_at"`
 	// 任务运行完成时间
@@ -2607,26 +2546,6 @@ type TaskRun struct {
 	ProviderType pgtype.Text `json:"provider_type"`
 	// Provider外部会话ID
 	ProviderSessionExternalID pgtype.Text `json:"provider_session_external_id"`
-}
-
-// 任务状态变更历史表
-type TaskStateHistory struct {
-	// 状态历史主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 所属任务 ID
-	TaskID uuid.UUID `json:"task_id"`
-	// 变更前任务状态
-	FromStatus pgtype.Text `json:"from_status"`
-	// 变更后任务状态
-	ToStatus string `json:"to_status"`
-	// 状态变更触发者
-	ChangedBy pgtype.Text `json:"changed_by"`
-	// 状态变更原因
-	Reason pgtype.Text `json:"reason"`
-	// 状态变更记录时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 团队借调策略：团队负责人设置本团队员工是否/在什么条件下可被项目借调（每团队一条 active）
@@ -2725,36 +2644,6 @@ type TeamMcpBinding struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 团队公共 MCP 服务器配置，团队下数字员工强制继承
-type TeamMcpServer struct {
-	// 团队 MCP 配置主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 团队 MCP 所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 团队 MCP 所属团队 ID
-	TeamID uuid.UUID `json:"team_id"`
-	// 团队 MCP 显示名称，同一团队下未删除时唯一
-	Name string `json:"name"`
-	// 团队 MCP 远程 HTTP 地址
-	Url string `json:"url"`
-	// 引用的个人凭据 ID，由应用层校验归属和类型
-	CredentialID uuid.NullUUID `json:"credential_id"`
-	// 团队 MCP 状态，例如 active 或 disabled
-	Status string `json:"status"`
-	// 团队 MCP 扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 团队 MCP 禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
-	// 团队 MCP 软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 创建团队 MCP 的用户 ID
-	CreatedBy uuid.NullUUID `json:"created_by"`
-	// 团队 MCP 创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 团队 MCP 更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 技能与团队归属绑定表
 type TeamSkillBinding struct {
 	// 技能团队绑定主键 UUID
@@ -2817,22 +2706,6 @@ type TenantMember struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 租户配置画像表
-type TenantProfile struct {
-	// 租户配置主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 配置键
-	ProfileKey string `json:"profile_key"`
-	// 配置值
-	ProfileValue []byte `json:"profile_value"`
-	// 配置创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 配置最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 租户团队表
 type TenantTeam struct {
 	// 团队主键 UUID
@@ -2892,36 +2765,6 @@ type TenantTeamMemberRoleRequest struct {
 	// 创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-// 个人凭据池，保存用户可复用的外部能力授权令牌密文
-type UserCredential struct {
-	// 个人凭据主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 凭据所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 凭据所属用户 ID
-	UserID uuid.UUID `json:"user_id"`
-	// 凭据显示名称，同一用户下未删除时唯一
-	Name string `json:"name"`
-	// 凭据类型，例如 mcp_token，由服务端注册表校验
-	CredentialType string `json:"credential_type"`
-	// 服务端封存后的凭据密文，API 永不返回明文
-	EncryptedValue string `json:"encrypted_value"`
-	// 凭据明文末尾四位或更短尾标，用于用户识别
-	LastFour string `json:"last_four"`
-	// 凭据状态，例如 active 或 disabled
-	Status string `json:"status"`
-	// 凭据扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 凭据禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
-	// 凭据软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 凭据创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 凭据更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 

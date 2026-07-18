@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -52,15 +53,22 @@ func expandFeishuRecipients(ownerID uuid.UUID, members []queries.ProjectMember, 
 	return recipients
 }
 
+// feishuProjectMeta 是收件人展开顺带取到的项目元信息,用于卡片自足呈现。
+type feishuProjectMeta struct {
+	OwnerID uuid.UUID
+	Name    string
+}
+
 // listFeishuRecipientsWithQueries 展开某项目的飞书收件人(合格处理人×绑定表)。
-func (r *PgRepository) listFeishuRecipientsWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID) ([]feishuRecipient, uuid.UUID, error) {
+func (r *PgRepository) listFeishuRecipientsWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID) ([]feishuRecipient, feishuProjectMeta, error) {
 	projectRow, err := q.GetProject(ctx, queries.GetProjectParams{TenantID: tenantID, ID: projectID})
 	if err != nil {
-		return nil, uuid.Nil, err
+		return nil, feishuProjectMeta{}, err
 	}
+	meta := feishuProjectMeta{OwnerID: projectRow.HumanOwnerUserID, Name: projectRow.Name}
 	members, err := q.ListProjectMembers(ctx, queries.ListProjectMembersParams{TenantID: tenantID, ProjectID: projectID})
 	if err != nil {
-		return nil, uuid.Nil, err
+		return nil, feishuProjectMeta{}, err
 	}
 	eligible := map[uuid.UUID]bool{projectRow.HumanOwnerUserID: true}
 	userIDs := []uuid.UUID{projectRow.HumanOwnerUserID}
@@ -75,22 +83,21 @@ func (r *PgRepository) listFeishuRecipientsWithQueries(ctx context.Context, q *q
 		AuthUserIds: userIDs,
 	})
 	if err != nil {
-		return nil, uuid.Nil, err
+		return nil, feishuProjectMeta{}, err
 	}
-	return expandFeishuRecipients(projectRow.HumanOwnerUserID, members, identities), projectRow.HumanOwnerUserID, nil
+	return expandFeishuRecipients(projectRow.HumanOwnerUserID, members, identities), meta, nil
 }
 
-// enqueueDecisionCardOutboxWithQueries 决策创建时展开收件人并入队审批卡。
-// 全员未绑定 → 单行 skipped_unbound 留痕(recipient=owner, open_id 空)。
-func (r *PgRepository) enqueueDecisionCardOutboxWithQueries(ctx context.Context, q *queries.Queries, decision DecisionRequest) error {
-	recipients, ownerID, err := r.listFeishuRecipientsWithQueries(ctx, q, decision.TenantID, decision.ProjectID)
-	if err != nil {
-		return err
-	}
+// BuildDecisionCardPayload 组装决策卡快照:业务快照字段 + approval 富上下文。
+// 富上下文(计划任务清单/验收判据/规划缺口等)best-effort:approval 行缺失或解析失败
+// 时静默降级为薄快照——投影永不阻断业务。导出供 connector resolve 端点即时置换复用,
+// 保证飞书终态卡与 outbox 决策卡同源同貌。
+func BuildDecisionCardPayload(ctx context.Context, q *queries.Queries, decision DecisionRequest, projectName string) map[string]any {
 	payload := map[string]any{
 		"decision_type":  decision.DecisionType,
 		"title":          decision.TitleSnapshot,
 		"project_id":     decision.ProjectID.String(),
+		"project_name":   projectName,
 		"plan_revision":  uuidPtrString(decision.PlanRevisionID),
 		"target_user_id": decision.TargetUserID.String(),
 	}
@@ -100,6 +107,61 @@ func (r *PgRepository) enqueueDecisionCardOutboxWithQueries(ctx context.Context,
 	if decision.RiskLevelSnapshot != nil {
 		payload["risk_level"] = *decision.RiskLevelSnapshot
 	}
+	approvalRow, err := q.GetApprovalRequest(ctx, queries.GetApprovalRequestParams{TenantID: decision.TenantID, ID: decision.ApprovalRequestID})
+	if err != nil || len(approvalRow.ContextPayload) == 0 {
+		return payload
+	}
+	var contextPayload map[string]any
+	if json.Unmarshal(approvalRow.ContextPayload, &contextPayload) != nil || len(contextPayload) == 0 {
+		return payload
+	}
+	payload["context"] = contextPayload
+	if names := resolveFeishuEmployeeNames(ctx, q, decision.TenantID, contextPayload); len(names) > 0 {
+		payload["employee_names"] = names
+	}
+	return payload
+}
+
+// resolveFeishuEmployeeNames 把计划任务里的 selected_employee_id 反查为展示名,
+// 让卡片能显示"谁来干"。best-effort,查不到就不带该条。
+func resolveFeishuEmployeeNames(ctx context.Context, q *queries.Queries, tenantID uuid.UUID, contextPayload map[string]any) map[string]string {
+	tasks, _ := contextPayload["tasks"].([]any)
+	names := map[string]string{}
+	const maxLookups = 15
+	for _, item := range tasks {
+		task, _ := item.(map[string]any)
+		rawID, _ := task["selected_employee_id"].(string)
+		if rawID == "" {
+			continue
+		}
+		if _, done := names[rawID]; done {
+			continue
+		}
+		if len(names) >= maxLookups {
+			break
+		}
+		employeeID, err := uuid.Parse(rawID)
+		if err != nil {
+			continue
+		}
+		employee, err := q.GetDigitalEmployee(ctx, queries.GetDigitalEmployeeParams{ID: employeeID, TenantID: tenantID})
+		if err != nil {
+			continue
+		}
+		names[rawID] = employee.Name
+	}
+	return names
+}
+
+// enqueueDecisionCardOutboxWithQueries 决策创建时展开收件人并入队审批卡。
+// 全员未绑定 → 单行 skipped_unbound 留痕(recipient=owner, open_id 空)。
+func (r *PgRepository) enqueueDecisionCardOutboxWithQueries(ctx context.Context, q *queries.Queries, decision DecisionRequest) error {
+	recipients, projectMeta, err := r.listFeishuRecipientsWithQueries(ctx, q, decision.TenantID, decision.ProjectID)
+	if err != nil {
+		return err
+	}
+	ownerID := projectMeta.OwnerID
+	payload := BuildDecisionCardPayload(ctx, q, decision, projectMeta.Name)
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -137,8 +199,9 @@ func (r *PgRepository) enqueueDecisionCardOutboxWithQueries(ctx context.Context,
 }
 
 // supersedeDecisionOutboxWithQueries 决策 resolve 后:pending 卡片作废,已发送的
-// 卡片按 feishu_message_id 入队更新(已处理态/已由他人处理态由 connector 渲染)。
-func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q *queries.Queries, decision DecisionRequest) error {
+// 卡片按 feishu_message_id 入队更新。card_update payload 以原卡快照为底合并终态
+// 信息——终态卡必须保留原始详情,飞书端不回控制台也能看清"批的是什么"。
+func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q *queries.Queries, decision DecisionRequest, resolvedBy uuid.UUID, comment string) error {
 	if err := q.SupersedePendingFeishuOutboxByResource(ctx, queries.SupersedePendingFeishuOutboxByResourceParams{
 		TenantID:     decision.TenantID,
 		ResourceType: feishuOutboxResourceDecision,
@@ -154,16 +217,31 @@ func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q
 	if err != nil {
 		return err
 	}
+	resolvedByName := r.lookupUserNameWithQueries(ctx, q, resolvedBy)
 	for _, row := range sentRows {
 		if !row.FeishuMessageID.Valid || row.FeishuMessageID.String == "" {
 			continue
 		}
-		payloadJSON, err := json.Marshal(map[string]any{
-			"decision_type":     decision.DecisionType,
-			"title":             decision.TitleSnapshot,
-			"resolved_status":   decision.StatusSnapshot,
-			"feishu_message_id": row.FeishuMessageID.String,
-		})
+		payload := map[string]any{}
+		// 原卡快照 best-effort 打底;历史行 payload 损坏时仍能发出薄终态卡。
+		_ = json.Unmarshal(row.Payload, &payload)
+		payload["decision_type"] = decision.DecisionType
+		payload["title"] = decision.TitleSnapshot
+		payload["resolved_status"] = decision.StatusSnapshot
+		payload["feishu_message_id"] = row.FeishuMessageID.String
+		if resolvedByName != "" {
+			payload["resolved_by_name"] = resolvedByName
+		}
+		if resolvedBy != uuid.Nil {
+			payload["resolved_by_user_id"] = resolvedBy.String()
+		}
+		if comment != "" {
+			payload["resolution_comment"] = comment
+		}
+		if decision.ResolvedAt != nil {
+			payload["resolved_at"] = decision.ResolvedAt.Format(time.RFC3339)
+		}
+		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			return err
 		}
@@ -183,13 +261,32 @@ func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q
 	return nil
 }
 
+// lookupUserNameWithQueries 反查用户展示名(display_name 缺省回落 username)。
+// best-effort:查不到返回空串,不阻断调用方。
+func (r *PgRepository) lookupUserNameWithQueries(ctx context.Context, q *queries.Queries, userID uuid.UUID) string {
+	if userID == uuid.Nil {
+		return ""
+	}
+	user, err := q.GetUserByID(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	if user.DisplayName.Valid && user.DisplayName.String != "" {
+		return user.DisplayName.String
+	}
+	return user.Username
+}
+
 // enqueueDemandResultNoticeWithQueries 需求终态(completed/failed)只读通知。
 // acceptance_pending 不发通知——它由 demand_acceptance 决策卡承载,避免双消息。
+// 通知带需求原文摘录与任务完成/失败清单——手机端不回控制台也能看清结果全貌;
+// 结论快照(project_demand_summaries)由 coordinator 在终态后异步补写,此刻取不到,
+// 故从同事务可见的任务事实取材。
 func (r *PgRepository) enqueueDemandResultNoticeWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, demandID uuid.UUID, status ProjectDemandStatus) error {
 	if status != ProjectDemandStatusCompleted && status != ProjectDemandStatusFailed {
 		return nil
 	}
-	recipients, _, err := r.listFeishuRecipientsWithQueries(ctx, q, tenantID, projectID)
+	recipients, projectMeta, err := r.listFeishuRecipientsWithQueries(ctx, q, tenantID, projectID)
 	if err != nil {
 		return err
 	}
@@ -200,12 +297,41 @@ func (r *PgRepository) enqueueDemandResultNoticeWithQueries(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	payloadJSON, err := json.Marshal(map[string]any{
-		"demand_id":  demandID.String(),
-		"title":      demand.Title,
-		"status":     string(status),
-		"project_id": projectID.String(),
-	})
+	payload := map[string]any{
+		"demand_id":    demandID.String(),
+		"title":        demand.Title,
+		"status":       string(status),
+		"project_id":   projectID.String(),
+		"project_name": projectMeta.Name,
+	}
+	if demand.Content.Valid && demand.Content.String != "" {
+		payload["content_excerpt"] = clampRunes(demand.Content.String, 300)
+	}
+	// 任务清单 best-effort:失败时点名失败任务,完成时给任务规模概览。
+	if tasks, err := q.ListProjectTasksByDemand(ctx, queries.ListProjectTasksByDemandParams{
+		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
+	}); err == nil && len(tasks) > 0 {
+		completed, failed := 0, 0
+		failedTitles := make([]string, 0, 3)
+		for _, task := range tasks {
+			switch task.Status {
+			case "completed":
+				completed++
+			case "failed":
+				failed++
+				if len(failedTitles) < 3 {
+					failedTitles = append(failedTitles, task.Title)
+				}
+			}
+		}
+		payload["task_total"] = len(tasks)
+		payload["task_completed"] = completed
+		payload["task_failed"] = failed
+		if len(failedTitles) > 0 {
+			payload["failed_task_titles"] = failedTitles
+		}
+	}
+	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -231,4 +357,12 @@ func uuidPtrString(id *uuid.UUID) string {
 		return ""
 	}
 	return id.String()
+}
+
+func clampRunes(text string, max int) string {
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	return string(runes[:max]) + "…"
 }

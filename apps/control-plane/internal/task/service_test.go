@@ -23,7 +23,6 @@ type mockRepository struct {
 	updateTaskStatusFunc           func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error)
 	updateTaskFunc                 func(ctx context.Context, params UpdateTaskParams) (TaskRecord, error)
 	deleteTaskFunc                 func(ctx context.Context, params DeleteTaskParams) error
-	createTaskStateHistoryFunc     func(ctx context.Context, params CreateTaskStateHistoryParams) error
 	createTaskEventFunc            func(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error)
 	getLatestTaskEventSequenceFunc func(ctx context.Context, params GetLatestTaskEventSequenceParams) (int32, error)
 }
@@ -68,13 +67,6 @@ func (m *mockRepository) DeleteTask(ctx context.Context, params DeleteTaskParams
 		return m.deleteTaskFunc(ctx, params)
 	}
 	return errors.New("not implemented")
-}
-
-func (m *mockRepository) CreateTaskStateHistory(ctx context.Context, params CreateTaskStateHistoryParams) error {
-	if m.createTaskStateHistoryFunc != nil {
-		return m.createTaskStateHistoryFunc(ctx, params)
-	}
-	return nil // State history is optional
 }
 
 func (m *mockRepository) CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error) {
@@ -486,9 +478,6 @@ func TestUpdateTaskStatus(t *testing.T) {
 					return tt.currentTask, nil
 				},
 				updateTaskStatusFunc: tt.mockUpdate,
-				createTaskStateHistoryFunc: func(ctx context.Context, params CreateTaskStateHistoryParams) error {
-					return nil
-				},
 			}
 			service, _ := NewService(repo)
 
@@ -570,9 +559,6 @@ func TestCancelTask(t *testing.T) {
 						Status:      params.Status,
 						CancelledAt: pgtype.Timestamptz{Time: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC), Valid: params.Status == string(TaskStatusCancelled)},
 					}, nil
-				},
-				createTaskStateHistoryFunc: func(ctx context.Context, params CreateTaskStateHistoryParams) error {
-					return nil
 				},
 			}
 			service, _ := NewService(repo)
@@ -666,9 +652,6 @@ func TestAssignTask(t *testing.T) {
 						Status:         params.Status.String,
 						AssignedNodeID: params.AssignedNodeID,
 					}, nil
-				},
-				createTaskStateHistoryFunc: func(ctx context.Context, params CreateTaskStateHistoryParams) error {
-					return nil
 				},
 			}
 			service, _ := NewService(repo)

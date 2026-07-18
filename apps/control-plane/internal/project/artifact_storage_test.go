@@ -146,8 +146,8 @@ func TestPresignArtifactContentRejectsForeignObjectRefs(t *testing.T) {
 	tenantID := uuid.New()
 
 	cases := []string{
-		"runtime-command://cmd-123",                 // 遗留自报引用,无内容
-		"s3://bucket/artifacts/" + tenantID.String(), // 非纯 key 形态
+		"runtime-command://cmd-123",                                                 // 遗留自报引用,无内容
+		"s3://bucket/artifacts/" + tenantID.String(),                                // 非纯 key 形态
 		fmt.Sprintf("artifacts/%s/sha256/%s", uuid.New(), strings.Repeat("ef", 32)), // 他租户前缀
 	}
 	for _, objectRef := range cases {

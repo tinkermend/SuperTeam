@@ -189,17 +189,6 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL
 RETURNING id;
 
--- name: SoftDeleteDigitalEmployeeMCPBindingsForDelete :many
-UPDATE digital_employee_mcp_bindings
-SET status = 'disabled',
-    disabled_at = COALESCE(disabled_at, sqlc.arg('deleted_at')::timestamptz),
-    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
-    updated_at = sqlc.arg('deleted_at')::timestamptz
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-  AND deleted_at IS NULL
-RETURNING id;
-
 -- name: SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete :many
 UPDATE digital_employee_mcp_bindings_v2
 SET status = 'disabled',
@@ -819,8 +808,7 @@ WHERE de.id = sqlc.arg('digital_employee_id')::uuid
 -- for that, see GetProjectTaskRunPreflightForNode. The node reported here is a
 -- deterministic representative of the project's eligibility set (project_runtime_nodes):
 -- the least-loaded online node, so an idle/degraded node doesn't look "ready" just
--- because it happens to sort first. project_placements is intentionally not consulted;
--- Plan B's node selection authority is the eligibility set, not the legacy single pin.
+-- because it happens to sort first.
 SELECT
     de.tenant_id,
     de.team_id,

@@ -211,39 +211,28 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	}
 
 	runtimeNodeID := uuid.New()
-	getPlacementReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/runtime-placement", nil)
-	getPlacementReq.AddCookie(cookie)
-	getPlacementResp := httptest.NewRecorder()
-	server.ServeHTTP(getPlacementResp, getPlacementReq)
-	if getPlacementResp.Code != http.StatusOK {
-		t.Fatalf("expected runtime placement get to succeed, got %d: %s", getPlacementResp.Code, getPlacementResp.Body.String())
+	addNodeReq := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+service.projectID.String()+"/runtime-nodes/"+runtimeNodeID.String(), strings.NewReader(`{"reason":"manual"}`))
+	addNodeReq.Header.Set("Content-Type", "application/json")
+	addNodeReq.AddCookie(cookie)
+	addNodeResp := httptest.NewRecorder()
+	server.ServeHTTP(addNodeResp, addNodeReq)
+	if addNodeResp.Code != http.StatusOK {
+		t.Fatalf("expected runtime node add to succeed, got %d: %s", addNodeResp.Code, addNodeResp.Body.String())
 	}
-	if service.getRuntimePlacementReq.TenantID != expectedTenantID || service.getRuntimePlacementReq.ProjectID != service.projectID {
-		t.Fatalf("expected runtime placement get request to use route ids, got %#v", service.getRuntimePlacementReq)
-	}
-
-	putPlacementReq := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+service.projectID.String()+"/runtime-placement", strings.NewReader(`{"runtime_node_id":"`+runtimeNodeID.String()+`","reason":"manual","expected_provider_types":["codex"]}`))
-	putPlacementReq.Header.Set("Content-Type", "application/json")
-	putPlacementReq.AddCookie(cookie)
-	putPlacementResp := httptest.NewRecorder()
-	server.ServeHTTP(putPlacementResp, putPlacementReq)
-	if putPlacementResp.Code != http.StatusOK {
-		t.Fatalf("expected runtime placement put to succeed, got %d: %s", putPlacementResp.Code, putPlacementResp.Body.String())
-	}
-	if service.putRuntimePlacementReq.TenantID != expectedTenantID || service.putRuntimePlacementReq.ProjectID != service.projectID || service.putRuntimePlacementReq.ActorUserID != user.ID || service.putRuntimePlacementReq.RuntimeNodeID != runtimeNodeID {
-		t.Fatalf("expected runtime placement put request from auth/path/body, got %#v", service.putRuntimePlacementReq)
+	if service.addRuntimeNodeReq.TenantID != expectedTenantID || service.addRuntimeNodeReq.ProjectID != service.projectID || service.addRuntimeNodeReq.ActorUserID != user.ID || service.addRuntimeNodeReq.RuntimeNodeID != runtimeNodeID {
+		t.Fatalf("expected runtime node add request from auth/path/body, got %#v", service.addRuntimeNodeReq)
 	}
 
-	deletePlacementReq := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+service.projectID.String()+"/runtime-placement", strings.NewReader(`{"reason":"done"}`))
-	deletePlacementReq.Header.Set("Content-Type", "application/json")
-	deletePlacementReq.AddCookie(cookie)
-	deletePlacementResp := httptest.NewRecorder()
-	server.ServeHTTP(deletePlacementResp, deletePlacementReq)
-	if deletePlacementResp.Code != http.StatusOK {
-		t.Fatalf("expected runtime placement delete to succeed, got %d: %s", deletePlacementResp.Code, deletePlacementResp.Body.String())
+	removeNodeReq := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+service.projectID.String()+"/runtime-nodes/"+runtimeNodeID.String(), strings.NewReader(`{"reason":"done"}`))
+	removeNodeReq.Header.Set("Content-Type", "application/json")
+	removeNodeReq.AddCookie(cookie)
+	removeNodeResp := httptest.NewRecorder()
+	server.ServeHTTP(removeNodeResp, removeNodeReq)
+	if removeNodeResp.Code != http.StatusNoContent {
+		t.Fatalf("expected runtime node remove to succeed, got %d: %s", removeNodeResp.Code, removeNodeResp.Body.String())
 	}
-	if service.releaseRuntimePlacementReq.TenantID != expectedTenantID || service.releaseRuntimePlacementReq.ProjectID != service.projectID || service.releaseRuntimePlacementReq.ActorUserID != user.ID || service.releaseRuntimePlacementReq.Reason != "done" {
-		t.Fatalf("expected runtime placement delete request from auth/path/body, got %#v", service.releaseRuntimePlacementReq)
+	if service.removeRuntimeNodeReq.TenantID != expectedTenantID || service.removeRuntimeNodeReq.ProjectID != service.projectID || service.removeRuntimeNodeReq.ActorUserID != user.ID || service.removeRuntimeNodeReq.Reason != "done" {
+		t.Fatalf("expected runtime node remove request from auth/path/body, got %#v", service.removeRuntimeNodeReq)
 	}
 
 	readinessReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/runtime-readiness", nil)
@@ -1326,9 +1315,8 @@ type routeProjectService struct {
 	overviewTenantID                  uuid.UUID
 	overviewProjectID                 uuid.UUID
 	overviewCalls                     int
-	getRuntimePlacementReq            project.GetProjectRuntimePlacementRequest
-	putRuntimePlacementReq            project.PutProjectRuntimePlacementRequest
-	releaseRuntimePlacementReq        project.ReleaseProjectRuntimePlacementRequest
+	addRuntimeNodeReq                 project.ModifyProjectRuntimeNodeRequest
+	removeRuntimeNodeReq              project.ModifyProjectRuntimeNodeRequest
 	runtimeReadinessTenantID          uuid.UUID
 	runtimeReadinessProjectID         uuid.UUID
 	eventsTenantID                    uuid.UUID
@@ -1396,42 +1384,19 @@ func (s *routeProjectService) GetProject(ctx context.Context, tenantID, projectI
 	return &projectValue, nil
 }
 
-func (s *routeProjectService) GetProjectRuntimePlacement(ctx context.Context, req project.GetProjectRuntimePlacementRequest) (*project.ProjectRuntimePlacement, error) {
-	s.getRuntimePlacementReq = req
-	return &project.ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   uuid.New(),
-		PlacementStatus: project.ProjectRuntimePlacementStateActive,
-		AssignedAt:      time.Now().UTC(),
+func (s *routeProjectService) AddProjectRuntimeNode(ctx context.Context, req project.ModifyProjectRuntimeNodeRequest) (*project.ProjectRuntimeNode, error) {
+	s.addRuntimeNodeReq = req
+	return &project.ProjectRuntimeNode{
+		ID:            uuid.New(),
+		TenantID:      req.TenantID,
+		ProjectID:     req.ProjectID,
+		RuntimeNodeID: req.RuntimeNodeID,
 	}, nil
 }
 
-func (s *routeProjectService) PutProjectRuntimePlacement(ctx context.Context, req project.PutProjectRuntimePlacementRequest) (*project.ProjectRuntimePlacement, error) {
-	s.putRuntimePlacementReq = req
-	return &project.ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   req.RuntimeNodeID,
-		PlacementStatus: project.ProjectRuntimePlacementStateActive,
-		PlacementReason: req.Reason,
-		AssignedAt:      time.Now().UTC(),
-	}, nil
-}
-
-func (s *routeProjectService) ReleaseProjectRuntimePlacement(ctx context.Context, req project.ReleaseProjectRuntimePlacementRequest) (*project.ProjectRuntimePlacement, error) {
-	s.releaseRuntimePlacementReq = req
-	now := time.Now().UTC()
-	return &project.ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   uuid.New(),
-		PlacementStatus: project.ProjectRuntimePlacementStateReleased,
-		ReleasedAt:      &now,
-	}, nil
+func (s *routeProjectService) RemoveProjectRuntimeNode(ctx context.Context, req project.ModifyProjectRuntimeNodeRequest) error {
+	s.removeRuntimeNodeReq = req
+	return nil
 }
 
 func (s *routeProjectService) GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectRuntimePlacementReadiness, error) {

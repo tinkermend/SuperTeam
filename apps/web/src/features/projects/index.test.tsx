@@ -674,36 +674,18 @@ function createProjectFetcher(
     }
 
     if (
-      url.pathname === "/api/v1/projects/project-1/runtime-placement" &&
+      url.pathname.startsWith("/api/v1/projects/project-1/runtime-nodes/") &&
       method === "PUT"
     ) {
-      const body = JSON.parse(String(init?.body));
-      return jsonResponse({
-        assigned_at: "2026-06-21T12:00:00Z",
-        created_at: "2026-06-21T12:00:00Z",
-        id: "placement-1",
-        placement_reason: body.reason,
-        placement_status: "active",
-        project_id: "project-1",
-        runtime_node_id: body.runtime_node_id,
-        updated_at: "2026-06-21T12:00:00Z",
-      });
+      const runtimeNodeId = url.pathname.split("/").pop();
+      return jsonResponse({ runtime_node_id: runtimeNodeId });
     }
 
     if (
-      url.pathname === "/api/v1/projects/project-1/runtime-placement" &&
+      url.pathname.startsWith("/api/v1/projects/project-1/runtime-nodes/") &&
       method === "DELETE"
     ) {
-      return jsonResponse({
-        assigned_at: "2026-06-21T12:00:00Z",
-        created_at: "2026-06-21T12:00:00Z",
-        id: "placement-1",
-        placement_status: "released",
-        project_id: "project-1",
-        released_at: "2026-06-21T12:10:00Z",
-        runtime_node_id: "runtime-node-1",
-        updated_at: "2026-06-21T12:10:00Z",
-      });
+      return new Response(null, { status: 204 });
     }
 
     if (url.pathname.endsWith("/overview") && method === "GET") {
@@ -1918,14 +1900,11 @@ describe("ProjectsView", () => {
     await vi.waitFor(() => {
       const putCall = fetchCalls(fetcher).find(([url, init]) => {
         return (
-          String(url).endsWith("/api/v1/projects/project-1/runtime-placement") &&
+          String(url).endsWith("/api/v1/projects/project-1/runtime-nodes/runtime-node-1") &&
           init?.method === "PUT"
         );
       });
       expect(putCall).toBeTruthy();
-      expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
-        runtime_node_id: "runtime-node-1",
-      });
     });
 
     await vi.waitFor(() => {

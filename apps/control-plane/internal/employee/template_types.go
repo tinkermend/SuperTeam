@@ -7,23 +7,23 @@ import (
 )
 
 type EmployeeTemplateRecord struct {
-	ID                           uuid.UUID
-	TenantID                     uuid.UUID
-	Type                         string
-	Label                        string
-	Description                  string
-	DefaultRole                  string
-	RecommendedSkills            []string
-	RecommendedMCPServers        []string
-	RecommendedProviderTypes     []string
-	PersonaMemoryMarkdown        string
-	CapabilityBindings           map[string]any
-	BudgetPolicy                 map[string]any
-	Metadata                     map[string]any
-	Status                       string
-	IsSystem                     bool
-	CreatedAt                    time.Time
-	UpdatedAt                    time.Time
+	ID                       uuid.UUID
+	TenantID                 uuid.UUID
+	Type                     string
+	Label                    string
+	Description              string
+	DefaultRole              string
+	RecommendedSkills        []string
+	RecommendedMCPServers    []string
+	RecommendedProviderTypes []string
+	PersonaMemoryMarkdown    string
+	CapabilityBindings       map[string]any
+	BudgetPolicy             map[string]any
+	Metadata                 map[string]any
+	Status                   string
+	IsSystem                 bool
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
 }
 
 // ToDefinition projects the persisted template into the EmployeeTypeDefinition
@@ -51,31 +51,31 @@ type ListEmployeeTemplatesParams struct {
 }
 
 type CreateEmployeeTemplateParams struct {
-	TenantID                     uuid.UUID
-	Type                         string
-	Label                        string
-	Description                  string
-	DefaultRole                  string
-	RecommendedSkills            []string
-	RecommendedMCPServers        []string
-	RecommendedProviderTypes     []string
-	PersonaMemoryMarkdown        string
-	CapabilityBindings           map[string]any
-	BudgetPolicy                 map[string]any
-	Metadata                     map[string]any
+	TenantID                 uuid.UUID
+	Type                     string
+	Label                    string
+	Description              string
+	DefaultRole              string
+	RecommendedSkills        []string
+	RecommendedMCPServers    []string
+	RecommendedProviderTypes []string
+	PersonaMemoryMarkdown    string
+	CapabilityBindings       map[string]any
+	BudgetPolicy             map[string]any
+	Metadata                 map[string]any
 }
 
 type UpdateEmployeeTemplateParams struct {
-	TenantID                     uuid.UUID
-	ID                           uuid.UUID
-	Label                        string
-	Description                  string
-	DefaultRole                  string
-	RecommendedSkills            []string
-	RecommendedMCPServers        []string
-	RecommendedProviderTypes     []string
-	PersonaMemoryMarkdown        string
-	CapabilityBindings           map[string]any
-	BudgetPolicy                 map[string]any
-	Metadata                     map[string]any
+	TenantID                 uuid.UUID
+	ID                       uuid.UUID
+	Label                    string
+	Description              string
+	DefaultRole              string
+	RecommendedSkills        []string
+	RecommendedMCPServers    []string
+	RecommendedProviderTypes []string
+	PersonaMemoryMarkdown    string
+	CapabilityBindings       map[string]any
+	BudgetPolicy             map[string]any
+	Metadata                 map[string]any
 }

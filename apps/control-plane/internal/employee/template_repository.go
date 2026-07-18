@@ -80,18 +80,18 @@ func (r *PgRepository) CreateEmployeeTemplate(ctx context.Context, params Create
 	}
 
 	row, err := r.q.CreateEmployeeTemplate(ctx, queries.CreateEmployeeTemplateParams{
-		TenantID:                     params.TenantID,
-		Type:                         params.Type,
-		Label:                        params.Label,
-		Description:                  params.Description,
-		DefaultRole:                  params.DefaultRole,
-		RecommendedSkills:            recommendedSkills,
-		RecommendedMcpServers:        recommendedMCPServers,
-		RecommendedProviderTypes:     recommendedProviderTypes,
-		PersonaMemoryMarkdown:        params.PersonaMemoryMarkdown,
-		CapabilityBindings:           capabilityBindings,
-		BudgetPolicy:                 budgetPolicy,
-		Metadata:                     metadata,
+		TenantID:                 params.TenantID,
+		Type:                     params.Type,
+		Label:                    params.Label,
+		Description:              params.Description,
+		DefaultRole:              params.DefaultRole,
+		RecommendedSkills:        recommendedSkills,
+		RecommendedMcpServers:    recommendedMCPServers,
+		RecommendedProviderTypes: recommendedProviderTypes,
+		PersonaMemoryMarkdown:    params.PersonaMemoryMarkdown,
+		CapabilityBindings:       capabilityBindings,
+		BudgetPolicy:             budgetPolicy,
+		Metadata:                 metadata,
 	})
 	if err != nil {
 		return EmployeeTemplateRecord{}, mapTemplateConstraintError(err)
@@ -126,18 +126,18 @@ func (r *PgRepository) UpdateEmployeeTemplate(ctx context.Context, params Update
 	}
 
 	row, err := r.q.UpdateEmployeeTemplate(ctx, queries.UpdateEmployeeTemplateParams{
-		TenantID:                     params.TenantID,
-		ID:                           params.ID,
-		Label:                        params.Label,
-		Description:                  params.Description,
-		DefaultRole:                  params.DefaultRole,
-		RecommendedSkills:            recommendedSkills,
-		RecommendedMcpServers:        recommendedMCPServers,
-		RecommendedProviderTypes:     recommendedProviderTypes,
-		PersonaMemoryMarkdown:        params.PersonaMemoryMarkdown,
-		CapabilityBindings:           capabilityBindings,
-		BudgetPolicy:                 budgetPolicy,
-		Metadata:                     metadata,
+		TenantID:                 params.TenantID,
+		ID:                       params.ID,
+		Label:                    params.Label,
+		Description:              params.Description,
+		DefaultRole:              params.DefaultRole,
+		RecommendedSkills:        recommendedSkills,
+		RecommendedMcpServers:    recommendedMCPServers,
+		RecommendedProviderTypes: recommendedProviderTypes,
+		PersonaMemoryMarkdown:    params.PersonaMemoryMarkdown,
+		CapabilityBindings:       capabilityBindings,
+		BudgetPolicy:             budgetPolicy,
+		Metadata:                 metadata,
 	})
 	if err != nil {
 		return EmployeeTemplateRecord{}, mapNoRows(err)
@@ -209,23 +209,23 @@ func employeeTemplateRecordFromRow(row queries.DigitalEmployeeTemplate) (Employe
 		return EmployeeTemplateRecord{}, err
 	}
 	return EmployeeTemplateRecord{
-		ID:                           row.ID,
-		TenantID:                     row.TenantID,
-		Type:                         row.Type,
-		Label:                        row.Label,
-		Description:                  row.Description,
-		DefaultRole:                  row.DefaultRole,
-		RecommendedSkills:            recommendedSkills,
-		RecommendedMCPServers:        recommendedMCPServers,
-		RecommendedProviderTypes:     recommendedProviderTypes,
-		PersonaMemoryMarkdown:        row.PersonaMemoryMarkdown,
-		CapabilityBindings:           capabilityBindings,
-		BudgetPolicy:                 budgetPolicy,
-		Metadata:                     metadata,
-		Status:                       row.Status,
-		IsSystem:                     row.IsSystem,
-		CreatedAt:                    timeFromTimestamptz(row.CreatedAt),
-		UpdatedAt:                    timeFromTimestamptz(row.UpdatedAt),
+		ID:                       row.ID,
+		TenantID:                 row.TenantID,
+		Type:                     row.Type,
+		Label:                    row.Label,
+		Description:              row.Description,
+		DefaultRole:              row.DefaultRole,
+		RecommendedSkills:        recommendedSkills,
+		RecommendedMCPServers:    recommendedMCPServers,
+		RecommendedProviderTypes: recommendedProviderTypes,
+		PersonaMemoryMarkdown:    row.PersonaMemoryMarkdown,
+		CapabilityBindings:       capabilityBindings,
+		BudgetPolicy:             budgetPolicy,
+		Metadata:                 metadata,
+		Status:                   row.Status,
+		IsSystem:                 row.IsSystem,
+		CreatedAt:                timeFromTimestamptz(row.CreatedAt),
+		UpdatedAt:                timeFromTimestamptz(row.UpdatedAt),
 	}, nil
 }
 

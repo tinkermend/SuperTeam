@@ -9,12 +9,12 @@ import (
 )
 
 var (
-	ErrInvalidProject               = errors.New("invalid project")
-	ErrInvalidProjectMember         = errors.New("invalid project member")
+	ErrInvalidProject       = errors.New("invalid project")
+	ErrInvalidProjectMember = errors.New("invalid project member")
 	// ErrTeamlessProjectMember means a digital_employee member has no team
 	// affiliation. Team affiliation is a precondition for project
 	// participation; teamless (lobby) employees must be bound to a team first.
-	ErrTeamlessProjectMember = errors.New("teamless digital employee cannot join project")
+	ErrTeamlessProjectMember        = errors.New("teamless digital employee cannot join project")
 	ErrProjectNotFound              = errors.New("project not found")
 	ErrProjectConflict              = errors.New("project conflict")
 	ErrProjectArchived              = errors.New("project archived")
@@ -102,7 +102,6 @@ type ProjectDeleteCascadeResult struct {
 	InboxCount       int
 	RuntimeNodeCount int
 	AffinityCount    int
-	PlacementCount   int
 }
 
 type DeleteProjectRequest struct {
@@ -149,10 +148,10 @@ const (
 type ProjectRole string
 
 const (
-	ProjectRoleOwner      ProjectRole = "owner"
-	ProjectRoleExecutor   ProjectRole = "executor"
-	ProjectRoleReviewer   ProjectRole = "reviewer"
-	ProjectRoleObserver   ProjectRole = "observer"
+	ProjectRoleOwner    ProjectRole = "owner"
+	ProjectRoleExecutor ProjectRole = "executor"
+	ProjectRoleReviewer ProjectRole = "reviewer"
+	ProjectRoleObserver ProjectRole = "observer"
 )
 
 type ReviewerSelectionReason string
@@ -186,54 +185,54 @@ const (
 	ProjectEventWorkflowCoordinationFailed       ProjectEventType = "workflow.coordination_failed"
 	ProjectEventTaskDispatchBlocked              ProjectEventType = "project_task.dispatch_blocked"
 
-	ProjectEventWorkflowSignaled                ProjectEventType = "workflow.signaled"
-	ProjectEventCoordinationJobCreated          ProjectEventType = "coordination_job.created"
-	ProjectEventRouteDecisionCreated            ProjectEventType = "route_decision.created"
-	ProjectEventTaskCreated                     ProjectEventType = "project_task.created"
-	ProjectEventTaskGraphPlanned                ProjectEventType = "project_task_graph.planned"
-	ProjectEventTaskDispatchGateChecked         ProjectEventType = "project_task.dispatch_gate.checked"
-	ProjectEventTaskDispatchGateBlocked         ProjectEventType = "project_task.dispatch_gate.blocked"
-	ProjectEventTaskDispatchGateWaitingHuman    ProjectEventType = "project_task.dispatch_gate.waiting_human"
-	ProjectEventTaskDispatchGateRetryLater      ProjectEventType = "project_task.dispatch_gate.retry_later"
-	ProjectEventTaskDispatchGateReplanRequired  ProjectEventType = "project_task.dispatch_gate.replan_required"
-	ProjectEventTaskDispatched                  ProjectEventType = "project_task.dispatched"
-	ProjectEventTaskDispatchFailed              ProjectEventType = "project_task.dispatch_failed"
-	ProjectEventTaskRetryScheduled              ProjectEventType = "project_task.retry_scheduled"
-	ProjectEventTaskAttemptLost                 ProjectEventType = "project_task.attempt_lost"
-	ProjectEventTaskRecoveryRequested           ProjectEventType = "project_task.recovery_requested"
-	ProjectEventTaskContractMissing             ProjectEventType = "project_task.contract_missing"
-	ProjectEventTaskWaitingHuman                ProjectEventType = "project_task.waiting_human"
-	ProjectEventTaskCancelled                   ProjectEventType = "project_task.cancelled"
-	ProjectEventTaskCompleted                   ProjectEventType = "project_task.completed"
-	ProjectEventTaskFailed                      ProjectEventType = "project_task.failed"
-	ProjectEventTaskResultSubmitted             ProjectEventType = "project_task.result.submitted"
-	ProjectEventTaskResultRecorded              ProjectEventType = "project_task.result.recorded"
-	ProjectEventTaskResultAccepted              ProjectEventType = "project_task.result.accepted"
-	ProjectEventTaskResultRejected              ProjectEventType = "project_task.result.rejected"
-	ProjectEventTaskResultBlocked               ProjectEventType = "project_task.result.blocked"
-	ProjectEventTaskResultRetryableFailed       ProjectEventType = "project_task.result.retryable_failed"
-	ProjectEventTaskResultFailedRetryable       ProjectEventType = ProjectEventTaskResultRetryableFailed
-	ProjectEventTaskResultValidationFailed      ProjectEventType = "project_task.result.validation_failed"
-	ProjectEventTaskRevisionRequested           ProjectEventType = "project_task.revision.requested"
-	ProjectEventTaskRevisionCreated             ProjectEventType = "project_task.revision.created"
-	ProjectEventTaskReplanRequested             ProjectEventType = "project_task.replan.requested"
-	ProjectEventDemandSummaryCreated            ProjectEventType = "demand.summary.created"
-	ProjectEventTransferRequested               ProjectEventType = "transfer.requested"
-	ProjectEventDecisionRequested               ProjectEventType = "decision.requested"
-	ProjectEventDecisionSubmitted               ProjectEventType = "decision.submitted"
-	ProjectEventEvidenceLinked                  ProjectEventType = "project.evidence.linked"
-	ProjectEventEvidenceVerified                ProjectEventType = "project.evidence.verified"
-	ProjectEventArtifactLinked                  ProjectEventType = "project.artifact.linked"
-	ProjectEventReportLinked                    ProjectEventType = "project.report.linked"
-	ProjectEventBudgetRecorded                  ProjectEventType = "project.budget.recorded"
-	ProjectEventAcceptanceSubmitted             ProjectEventType = "project.acceptance.submitted"
-	ProjectEventArchiveSnapshotCreated          ProjectEventType = "project.archive_snapshot.created"
-	ProjectEventArchiveRetentionPending         ProjectEventType = "project.archive.retention_pending"
-	ProjectEventLendingEmployeeSkipped          ProjectEventType = "project.lending.employee_skipped"
+	ProjectEventWorkflowSignaled               ProjectEventType = "workflow.signaled"
+	ProjectEventCoordinationJobCreated         ProjectEventType = "coordination_job.created"
+	ProjectEventRouteDecisionCreated           ProjectEventType = "route_decision.created"
+	ProjectEventTaskCreated                    ProjectEventType = "project_task.created"
+	ProjectEventTaskGraphPlanned               ProjectEventType = "project_task_graph.planned"
+	ProjectEventTaskDispatchGateChecked        ProjectEventType = "project_task.dispatch_gate.checked"
+	ProjectEventTaskDispatchGateBlocked        ProjectEventType = "project_task.dispatch_gate.blocked"
+	ProjectEventTaskDispatchGateWaitingHuman   ProjectEventType = "project_task.dispatch_gate.waiting_human"
+	ProjectEventTaskDispatchGateRetryLater     ProjectEventType = "project_task.dispatch_gate.retry_later"
+	ProjectEventTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
+	ProjectEventTaskDispatched                 ProjectEventType = "project_task.dispatched"
+	ProjectEventTaskDispatchFailed             ProjectEventType = "project_task.dispatch_failed"
+	ProjectEventTaskRetryScheduled             ProjectEventType = "project_task.retry_scheduled"
+	ProjectEventTaskAttemptLost                ProjectEventType = "project_task.attempt_lost"
+	ProjectEventTaskRecoveryRequested          ProjectEventType = "project_task.recovery_requested"
+	ProjectEventTaskContractMissing            ProjectEventType = "project_task.contract_missing"
+	ProjectEventTaskWaitingHuman               ProjectEventType = "project_task.waiting_human"
+	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
+	ProjectEventTaskCompleted                  ProjectEventType = "project_task.completed"
+	ProjectEventTaskFailed                     ProjectEventType = "project_task.failed"
+	ProjectEventTaskResultSubmitted            ProjectEventType = "project_task.result.submitted"
+	ProjectEventTaskResultRecorded             ProjectEventType = "project_task.result.recorded"
+	ProjectEventTaskResultAccepted             ProjectEventType = "project_task.result.accepted"
+	ProjectEventTaskResultRejected             ProjectEventType = "project_task.result.rejected"
+	ProjectEventTaskResultBlocked              ProjectEventType = "project_task.result.blocked"
+	ProjectEventTaskResultRetryableFailed      ProjectEventType = "project_task.result.retryable_failed"
+	ProjectEventTaskResultFailedRetryable      ProjectEventType = ProjectEventTaskResultRetryableFailed
+	ProjectEventTaskResultValidationFailed     ProjectEventType = "project_task.result.validation_failed"
+	ProjectEventTaskRevisionRequested          ProjectEventType = "project_task.revision.requested"
+	ProjectEventTaskRevisionCreated            ProjectEventType = "project_task.revision.created"
+	ProjectEventTaskReplanRequested            ProjectEventType = "project_task.replan.requested"
+	ProjectEventDemandSummaryCreated           ProjectEventType = "demand.summary.created"
+	ProjectEventTransferRequested              ProjectEventType = "transfer.requested"
+	ProjectEventDecisionRequested              ProjectEventType = "decision.requested"
+	ProjectEventDecisionSubmitted              ProjectEventType = "decision.submitted"
+	ProjectEventEvidenceLinked                 ProjectEventType = "project.evidence.linked"
+	ProjectEventEvidenceVerified               ProjectEventType = "project.evidence.verified"
+	ProjectEventArtifactLinked                 ProjectEventType = "project.artifact.linked"
+	ProjectEventReportLinked                   ProjectEventType = "project.report.linked"
+	ProjectEventBudgetRecorded                 ProjectEventType = "project.budget.recorded"
+	ProjectEventAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
+	ProjectEventArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
+	ProjectEventArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
+	ProjectEventLendingEmployeeSkipped         ProjectEventType = "project.lending.employee_skipped"
 	// ProjectEventTeamlessEmployeeSkipped is appended when a digital employee
 	// project member is excluded from the coordinator's executor pool because
 	// it has no team affiliation (participation gate).
-	ProjectEventTeamlessEmployeeSkipped ProjectEventType = "project.teamless.employee_skipped"
+	ProjectEventTeamlessEmployeeSkipped         ProjectEventType = "project.teamless.employee_skipped"
 	ProjectEventTaskUpstreamSupplementRejected  ProjectEventType = "project_task.upstream_supplement_rejected"
 	ProjectEventTaskUpstreamSupplementExhausted ProjectEventType = "project_task.upstream_supplement_exhausted"
 	ProjectEventDemandReplanningReopened        ProjectEventType = "demand.replanning_reopened"
@@ -467,46 +466,12 @@ const (
 	ProjectRuntimePlacementStatusContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
 )
 
-type ProjectRuntimePlacementState string
-
-const (
-	ProjectRuntimePlacementStateActive   ProjectRuntimePlacementState = "active"
-	ProjectRuntimePlacementStateReleased ProjectRuntimePlacementState = "released"
-	ProjectRuntimePlacementStateLost     ProjectRuntimePlacementState = "lost"
-)
-
-type ProjectRuntimePlacement struct {
-	ID              uuid.UUID                    `json:"id"`
-	TenantID        uuid.UUID                    `json:"tenant_id,omitempty"`
-	ProjectID       uuid.UUID                    `json:"project_id"`
-	RuntimeNodeID   uuid.UUID                    `json:"runtime_node_id"`
-	PlacementStatus ProjectRuntimePlacementState `json:"placement_status"`
-	PlacementReason string                       `json:"placement_reason,omitempty"`
-	AssignedAt      time.Time                    `json:"assigned_at,omitempty"`
-	ReleasedAt      *time.Time                   `json:"released_at,omitempty"`
-	CreatedAt       time.Time                    `json:"created_at,omitempty"`
-	UpdatedAt       time.Time                    `json:"updated_at,omitempty"`
-}
-
-type PutProjectRuntimePlacementRequest struct {
-	TenantID              uuid.UUID
-	ProjectID             uuid.UUID
-	RuntimeNodeID         uuid.UUID
-	ActorUserID           uuid.UUID
-	Reason                string
-	ExpectedProviderTypes []string
-}
-
-type GetProjectRuntimePlacementRequest struct {
-	TenantID  uuid.UUID
-	ProjectID uuid.UUID
-}
-
-type ReleaseProjectRuntimePlacementRequest struct {
-	TenantID    uuid.UUID
-	ProjectID   uuid.UUID
-	ActorUserID uuid.UUID
-	Reason      string
+type ModifyProjectRuntimeNodeRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	RuntimeNodeID uuid.UUID
+	ActorUserID   uuid.UUID
+	Reason        string
 }
 
 type ProjectRuntimePlacementReadiness struct {
@@ -666,10 +631,7 @@ type ProjectTask struct {
 	RetryNotBefore             *time.Time
 	WaitingReason              *string
 	WaitingRequestID           *uuid.UUID
-	TerminalReason             *string
 	TerminalEventID            *uuid.UUID
-	CancelledBy                *string
-	FailedBy                   *string
 	StatusChangedAt            time.Time
 	CreatedAt                  time.Time
 	UpdatedAt                  time.Time
@@ -887,10 +849,8 @@ type ProjectTaskAttempt struct {
 	LeaseToken                    string
 	LeaseExpiresAt                *time.Time
 	RenewedAt                     *time.Time
-	LostAt                        *time.Time
 	StartedAt                     *time.Time
 	FinishedAt                    *time.Time
-	TimeoutAt                     *time.Time
 	Retryable                     *bool
 	FailureFamily                 *string
 	FailureMessage                *string
@@ -898,11 +858,11 @@ type ProjectTaskAttempt struct {
 	DispatchGateResultID          *uuid.UUID
 	CreatedEventID                *uuid.UUID
 	TerminalEventID               *uuid.UUID
-	BudgetWallClockLimitSec       *int32
 	BudgetLastHeartbeatAt         *time.Time
 	BudgetConsumedWallClockSec    int32
 	BudgetConsumedTokens          int32
 	BudgetTrippedAt               *time.Time
+	BudgetWallClockLimitSec       *int32
 	BudgetTripReason              *string
 	CreatedAt                     time.Time
 	UpdatedAt                     time.Time
@@ -1316,9 +1276,9 @@ type ProjectEvidenceRef struct {
 }
 
 type ProjectArtifactRef struct {
-	ID              uuid.UUID
-	TenantID        uuid.UUID
-	ProjectID       uuid.UUID
+	ID            uuid.UUID
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
 	ProjectTaskID *uuid.UUID
 	// AttemptID/DigitalEmployeeID 是执行血缘:同一任务下多员工/多次 attempt
 	// 各自成行(去重发生在存储层,血缘保留在关系层);人工/项目级 artifact 为 nil。

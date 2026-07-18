@@ -281,7 +281,6 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 		RuntimeNodeID:             run.RuntimeNodeID,
 		ProviderSessionID:         run.ProviderSessionID,
 		Status:                    run.Status,
-		LeaseExpiresAt:            run.LeaseExpiresAt,
 		StartedAt:                 run.StartedAt,
 		CompletedAt:               run.CompletedAt,
 		FinishedAt:                run.FinishedAt,

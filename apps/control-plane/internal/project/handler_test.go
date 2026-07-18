@@ -168,113 +168,57 @@ func TestProjectHandlerMapsUpdateRepoBinding(t *testing.T) {
 	}
 }
 
-func TestGetProjectRuntimePlacement(t *testing.T) {
+func TestAddProjectRuntimeNode(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
 	projectID := uuid.New()
 	runtimeNodeID := uuid.New()
-	service := &handlerTestService{
-		runtimePlacement: &ProjectRuntimePlacement{
-			ID:              uuid.New(),
-			TenantID:        tenantID,
-			ProjectID:       projectID,
-			RuntimeNodeID:   runtimeNodeID,
-			PlacementStatus: ProjectRuntimePlacementStateActive,
-			PlacementReason: "manual bind",
-			AssignedAt:      time.Now().UTC(),
-		},
-	}
+	service := &handlerTestService{}
 	handler := newTestHandler(service)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/runtime-placement", nil)
-	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+projectID.String()+"/runtime-nodes/"+runtimeNodeID.String(), strings.NewReader(`{"reason":" bind for dispatch "}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "runtimeNodeId": runtimeNodeID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
 	resp := httptest.NewRecorder()
 
-	handler.GetProjectRuntimePlacement(resp, req)
+	handler.AddProjectRuntimeNode(resp, req)
 
 	if resp.Code != http.StatusOK {
-		t.Fatalf("expected runtime placement get to return 200, got %d: %s", resp.Code, resp.Body.String())
+		t.Fatalf("expected runtime node add to return 200, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if service.getRuntimePlacementReq.TenantID != tenantID || service.getRuntimePlacementReq.ProjectID != projectID {
-		t.Fatalf("expected runtime placement get ids, got %#v", service.getRuntimePlacementReq)
+	if service.addRuntimeNodeReq.TenantID != tenantID || service.addRuntimeNodeReq.ProjectID != projectID || service.addRuntimeNodeReq.ActorUserID != actorID || service.addRuntimeNodeReq.RuntimeNodeID != runtimeNodeID {
+		t.Fatalf("expected runtime node add request ids, got %#v", service.addRuntimeNodeReq)
 	}
-	var body projectRuntimePlacementResponse
+	if service.addRuntimeNodeReq.Reason != " bind for dispatch " {
+		t.Fatalf("expected reason forwarded, got %#v", service.addRuntimeNodeReq)
+	}
+	var body projectRuntimeNodeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode placement response: %v", err)
+		t.Fatalf("decode runtime node response: %v", err)
 	}
-	if body.RuntimeNodeID != runtimeNodeID || body.PlacementStatus != ProjectRuntimePlacementStateActive {
-		t.Fatalf("unexpected placement response: %#v", body)
+	if body.RuntimeNodeID != runtimeNodeID {
+		t.Fatalf("unexpected runtime node response: %#v", body)
 	}
 }
 
-func TestPutProjectRuntimePlacement(t *testing.T) {
+func TestRemoveProjectRuntimeNode(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
 	projectID := uuid.New()
 	runtimeNodeID := uuid.New()
 	service := &handlerTestService{}
 	handler := newTestHandler(service)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+projectID.String()+"/runtime-placement", strings.NewReader(`{
-		"runtime_node_id":"`+runtimeNodeID.String()+`",
-		"reason":" bind for dispatch ",
-		"expected_provider_types":["codex"]
-	}`))
-	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID.String()+"/runtime-nodes/"+runtimeNodeID.String(), strings.NewReader(""))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "runtimeNodeId": runtimeNodeID.String()})
 	req = withConsoleContext(req, tenantID, actorID)
 	resp := httptest.NewRecorder()
 
-	handler.PutProjectRuntimePlacement(resp, req)
+	handler.RemoveProjectRuntimeNode(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected runtime placement put to return 200, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected runtime node remove to return 204, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if service.putRuntimePlacementReq.TenantID != tenantID || service.putRuntimePlacementReq.ProjectID != projectID || service.putRuntimePlacementReq.ActorUserID != actorID || service.putRuntimePlacementReq.RuntimeNodeID != runtimeNodeID {
-		t.Fatalf("expected runtime placement put request ids, got %#v", service.putRuntimePlacementReq)
-	}
-	if service.putRuntimePlacementReq.Reason != " bind for dispatch " || len(service.putRuntimePlacementReq.ExpectedProviderTypes) != 1 || service.putRuntimePlacementReq.ExpectedProviderTypes[0] != "codex" {
-		t.Fatalf("expected runtime placement put body to be forwarded, got %#v", service.putRuntimePlacementReq)
-	}
-}
-
-func TestReleaseProjectRuntimePlacement(t *testing.T) {
-	tenantID := uuid.New()
-	actorID := uuid.New()
-	projectID := uuid.New()
-	service := &handlerTestService{}
-	handler := newTestHandler(service)
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID.String()+"/runtime-placement", strings.NewReader(`{"reason":"done"}`))
-	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
-	req = withConsoleContext(req, tenantID, actorID)
-	resp := httptest.NewRecorder()
-
-	handler.ReleaseProjectRuntimePlacement(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected runtime placement delete to return 200, got %d: %s", resp.Code, resp.Body.String())
-	}
-	if service.releaseRuntimePlacementReq.TenantID != tenantID || service.releaseRuntimePlacementReq.ProjectID != projectID || service.releaseRuntimePlacementReq.ActorUserID != actorID || service.releaseRuntimePlacementReq.Reason != "done" {
-		t.Fatalf("expected runtime placement release request, got %#v", service.releaseRuntimePlacementReq)
-	}
-}
-
-func TestReleaseProjectRuntimePlacementAcceptsEmptyBody(t *testing.T) {
-	tenantID := uuid.New()
-	actorID := uuid.New()
-	projectID := uuid.New()
-	service := &handlerTestService{}
-	handler := newTestHandler(service)
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID.String()+"/runtime-placement", strings.NewReader(""))
-	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
-	req = withConsoleContext(req, tenantID, actorID)
-	resp := httptest.NewRecorder()
-
-	handler.ReleaseProjectRuntimePlacement(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected empty-body runtime placement delete to return 200, got %d: %s", resp.Code, resp.Body.String())
-	}
-	if service.releaseRuntimePlacementReq.TenantID != tenantID || service.releaseRuntimePlacementReq.ProjectID != projectID || service.releaseRuntimePlacementReq.ActorUserID != actorID || service.releaseRuntimePlacementReq.Reason != "" {
-		t.Fatalf("expected runtime placement release request without reason, got %#v", service.releaseRuntimePlacementReq)
+	if service.removeRuntimeNodeReq.TenantID != tenantID || service.removeRuntimeNodeReq.ProjectID != projectID || service.removeRuntimeNodeReq.ActorUserID != actorID || service.removeRuntimeNodeReq.RuntimeNodeID != runtimeNodeID {
+		t.Fatalf("expected runtime node remove request ids, got %#v", service.removeRuntimeNodeReq)
 	}
 }
 
@@ -2340,10 +2284,8 @@ type handlerTestService struct {
 	createProjectTaskAttestationReq   CreateProjectTaskAttestationRequest
 	budgetHeartbeatReq                RecordProjectTaskAttemptBudgetHeartbeatRequest
 	budgetHeartbeatResult             *ProjectTaskAttemptBudgetHeartbeatResult
-	getRuntimePlacementReq            GetProjectRuntimePlacementRequest
-	putRuntimePlacementReq            PutProjectRuntimePlacementRequest
-	releaseRuntimePlacementReq        ReleaseProjectRuntimePlacementRequest
-	runtimePlacement                  *ProjectRuntimePlacement
+	addRuntimeNodeReq                 ModifyProjectRuntimeNodeRequest
+	removeRuntimeNodeReq              ModifyProjectRuntimeNodeRequest
 	runtimeReadiness                  *ProjectRuntimePlacementReadiness
 	runtimeReadinessTenantID          uuid.UUID
 	runtimeReadinessProjectID         uuid.UUID
@@ -2369,45 +2311,19 @@ func (s *handlerTestService) GetProject(ctx context.Context, tenantID, projectID
 	return &project, nil
 }
 
-func (s *handlerTestService) GetProjectRuntimePlacement(ctx context.Context, req GetProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
-	s.getRuntimePlacementReq = req
-	if s.runtimePlacement != nil {
-		return s.runtimePlacement, nil
-	}
-	return &ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   uuid.New(),
-		PlacementStatus: ProjectRuntimePlacementStateActive,
-		AssignedAt:      time.Now().UTC(),
+func (s *handlerTestService) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error) {
+	s.addRuntimeNodeReq = req
+	return &ProjectRuntimeNode{
+		ID:            uuid.New(),
+		TenantID:      req.TenantID,
+		ProjectID:     req.ProjectID,
+		RuntimeNodeID: req.RuntimeNodeID,
 	}, nil
 }
 
-func (s *handlerTestService) PutProjectRuntimePlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
-	s.putRuntimePlacementReq = req
-	return &ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   req.RuntimeNodeID,
-		PlacementStatus: ProjectRuntimePlacementStateActive,
-		PlacementReason: req.Reason,
-		AssignedAt:      time.Now().UTC(),
-	}, nil
-}
-
-func (s *handlerTestService) ReleaseProjectRuntimePlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
-	s.releaseRuntimePlacementReq = req
-	now := time.Now().UTC()
-	return &ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   uuid.New(),
-		PlacementStatus: ProjectRuntimePlacementStateReleased,
-		ReleasedAt:      &now,
-	}, nil
+func (s *handlerTestService) RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error {
+	s.removeRuntimeNodeReq = req
+	return nil
 }
 
 func (s *handlerTestService) GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error) {

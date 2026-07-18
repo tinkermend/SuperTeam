@@ -83,29 +83,29 @@ type DigitalEmployeeRun struct {
 	// ChatThreadID is the effective chat conversation id: non-nil for every
 	// chat run (the stored thread root, or the run's own id for a root turn),
 	// nil for task runs.
-	ChatThreadID *uuid.UUID
-	Status       DigitalEmployeeRunStatus
-	Result                    map[string]any
-	Diagnostic                map[string]any
-	LogRef                    *string
-	RawResultRef              *string
-	WorkProducts              []WorkProduct
-	SessionState              map[string]any
-	ErrorMessage              *string
-	ErrorCode                 *string
-	ErrorFamily               *string
-	ExitCode                  *int32
-	Signal                    *string
-	TimedOut                  bool
-	IdempotencyKey            *string
-	IdempotencyFingerprint    *string
-	TimeoutSec                *int32
-	GraceSec                  *int32
-	StartedAt                 time.Time
-	CompletedAt               *time.Time
-	FinishedAt                *time.Time
-	CreatedAt                 time.Time
-	UpdatedAt                 time.Time
+	ChatThreadID           *uuid.UUID
+	Status                 DigitalEmployeeRunStatus
+	Result                 map[string]any
+	Diagnostic             map[string]any
+	LogRef                 *string
+	RawResultRef           *string
+	WorkProducts           []WorkProduct
+	SessionState           map[string]any
+	ErrorMessage           *string
+	ErrorCode              *string
+	ErrorFamily            *string
+	ExitCode               *int32
+	Signal                 *string
+	TimedOut               bool
+	IdempotencyKey         *string
+	IdempotencyFingerprint *string
+	TimeoutSec             *int32
+	GraceSec               *int32
+	StartedAt              time.Time
+	CompletedAt            *time.Time
+	FinishedAt             *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 type DigitalEmployeeRunStats struct {

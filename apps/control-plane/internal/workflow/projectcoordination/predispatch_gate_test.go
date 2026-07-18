@@ -1135,22 +1135,6 @@ func (r *preDispatchGateRepositoryFake) GetProject(ctx context.Context, tenantID
 	return project.Project{}, project.ErrProjectNotFound
 }
 
-func (r *preDispatchGateRepositoryFake) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (project.ProjectRuntimePlacement, error) {
-	if r.missingActivePlacement {
-		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
-	}
-	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
-		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
-	}
-	return project.ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		RuntimeNodeID:   uuid.New(),
-		PlacementStatus: project.ProjectRuntimePlacementStateActive,
-	}, nil
-}
-
 // ListProjectRuntimeNodes mirrors GetActiveProjectPlacement's presence
 // semantics (missingActivePlacement gates both) so existing "no runtime bound"
 // scenarios exercise the new eligibility-set-based PlacementPresent check the

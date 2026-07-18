@@ -1,0 +1,2 @@
+# Go 构建产物(go build . 在模块根产出的可执行文件)
+/feishu-connector

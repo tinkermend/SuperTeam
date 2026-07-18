@@ -58,10 +58,10 @@ const (
 	// output. The platform appends the owner (plus downstream) rather than waiting
 	// on a human or bouncing back to the same employee.
 	TaskResultDecisionBlockedResolvableUpstream TaskResultDecision = "blocked_resolvable_upstream"
-	TaskResultDecisionFailedRetryable     TaskResultDecision = "failed_retryable"
-	TaskResultDecisionFailedRecovery      TaskResultDecision = "failed_recovery"
-	TaskResultDecisionCancelledTerminal   TaskResultDecision = "cancelled_terminal"
-	TaskResultDecisionReplanRequested     TaskResultDecision = "replan_requested"
+	TaskResultDecisionFailedRetryable           TaskResultDecision = "failed_retryable"
+	TaskResultDecisionFailedRecovery            TaskResultDecision = "failed_recovery"
+	TaskResultDecisionCancelledTerminal         TaskResultDecision = "cancelled_terminal"
+	TaskResultDecisionReplanRequested           TaskResultDecision = "replan_requested"
 )
 
 type TaskResultContract struct {
@@ -261,15 +261,15 @@ type TaskResultRevisionRequest struct {
 }
 
 type TaskResultBlocker struct {
-	Reason           string          `json:"reason,omitempty"`
-	ResolutionPrompt string          `json:"resolution_prompt,omitempty"`
-	RequiredBy       string          `json:"required_by,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	ResolutionPrompt string `json:"resolution_prompt,omitempty"`
+	RequiredBy       string `json:"required_by,omitempty"`
 	// MissingInputs are produces-keys the employee declares it needs but did not
 	// receive. Each must appear in this task's input_requirements.required_inputs
 	// (Plan 3); the platform resolves the owner by lookup, never by asking a model
 	// who is at fault. See the 2026-07-10 plan-phase refactor spec §4.6(a).
-	MissingInputs    []string        `json:"missing_inputs,omitempty"`
-	ContextRefs      []TaskResultRef `json:"context_refs,omitempty"`
+	MissingInputs []string        `json:"missing_inputs,omitempty"`
+	ContextRefs   []TaskResultRef `json:"context_refs,omitempty"`
 }
 
 type TaskResultFailure struct {

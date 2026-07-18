@@ -25,7 +25,7 @@ type ControlPlane interface {
 	ResolveIdentity(ctx context.Context, appConfigID, openID string) (*cpclient.Identity, error)
 	MyProjects(ctx context.Context, obo cpclient.OnBehalfOf) ([]cpclient.MyProject, error)
 	SubmitDemand(ctx context.Context, obo cpclient.OnBehalfOf, req cpclient.SubmitDemandRequest) (*cpclient.SubmitDemandResponse, error)
-	ResolveDecision(ctx context.Context, obo cpclient.OnBehalfOf, decisionID string, req cpclient.ResolveDecisionRequest) (bool, error)
+	ResolveDecision(ctx context.Context, obo cpclient.OnBehalfOf, decisionID string, req cpclient.ResolveDecisionRequest) (map[string]any, bool, error)
 }
 
 type Router struct {
@@ -208,7 +208,7 @@ func (r *Router) onResolveDecision(ctx context.Context, action gateway.CardActio
 			comment = strings.TrimSpace(v)
 		}
 	}
-	conflict, err := r.cp.ResolveDecision(ctx, obo, decisionID, cpclient.ResolveDecisionRequest{
+	cardPayload, conflict, err := r.cp.ResolveDecision(ctx, obo, decisionID, cpclient.ResolveDecisionRequest{
 		ProjectID: projectID,
 		Decision:  decision,
 		Comment:   comment,
@@ -217,21 +217,32 @@ func (r *Router) onResolveDecision(ctx context.Context, action gateway.CardActio
 		log.Printf("[inbound] resolve decision: %v", err)
 		return gateway.CardActionReply{ToastType: "error", ToastContent: "处理失败,请稍后再试或到 Console 处理"}
 	}
+	// 终态卡以控制平面快照为底(保留原卡全部详情);快照缺失时降级为本地已知字段。
 	title, _ := action.Value["title"].(string)
+	if cardPayload == nil {
+		cardPayload = map[string]any{"title": title}
+	}
 	if conflict {
 		// 已由他人(或本人此前)处理:同步置换为已处理卡,终结可点状态。
 		return gateway.CardActionReply{
 			ToastType:    "info",
 			ToastContent: "该决策已被处理",
-			NewCardJSON:  cards.DecisionResolvedCard(map[string]any{"title": title}),
+			NewCardJSON:  cards.DecisionResolvedCard(cardPayload, r.webOrigin),
 		}
 	}
 	// 点击瞬间同步置换已处理卡,消除按钮重复可点的时间窗;
 	// 其他收件人的卡由 outbox card_update 兜底更新(any-of-N)。
+	if _, ok := cardPayload["resolved_status"]; !ok {
+		cardPayload["resolved_status"] = decision
+	}
+	cardPayload["resolved_by_self"] = true
+	if comment != "" {
+		cardPayload["resolution_comment"] = comment
+	}
 	return gateway.CardActionReply{
 		ToastType:    "success",
 		ToastContent: "已提交:" + decision,
-		NewCardJSON:  cards.DecisionResolvedCard(map[string]any{"title": title, "resolved_status": decision}),
+		NewCardJSON:  cards.DecisionResolvedCard(cardPayload, r.webOrigin),
 	}
 }
 

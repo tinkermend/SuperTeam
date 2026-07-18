@@ -254,37 +254,6 @@ func (q *Queries) CreateProjectTaskAttestation(ctx context.Context, arg CreatePr
 	return i, err
 }
 
-const GetActiveProjectPlacement = `-- name: GetActiveProjectPlacement :one
-SELECT id, tenant_id, project_id, runtime_node_id, placement_status, placement_reason, assigned_at, released_at, created_at, updated_at
-FROM project_placements
-WHERE tenant_id = $1::uuid
-  AND project_id = $2::uuid
-  AND placement_status = 'active'
-`
-
-type GetActiveProjectPlacementParams struct {
-	TenantID  uuid.UUID `json:"tenant_id"`
-	ProjectID uuid.UUID `json:"project_id"`
-}
-
-func (q *Queries) GetActiveProjectPlacement(ctx context.Context, arg GetActiveProjectPlacementParams) (ProjectPlacement, error) {
-	row := q.db.QueryRow(ctx, GetActiveProjectPlacement, arg.TenantID, arg.ProjectID)
-	var i ProjectPlacement
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.ProjectID,
-		&i.RuntimeNodeID,
-		&i.PlacementStatus,
-		&i.PlacementReason,
-		&i.AssignedAt,
-		&i.ReleasedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const GetProjectRepoBinding = `-- name: GetProjectRepoBinding :one
 SELECT
     id,
@@ -403,77 +372,6 @@ func (q *Queries) ListProjectTaskAttestations(ctx context.Context, arg ListProje
 	return items, nil
 }
 
-const ReleaseProjectPlacement = `-- name: ReleaseProjectPlacement :one
-UPDATE project_placements
-SET
-    placement_status = 'released',
-    released_at = NOW(),
-    updated_at = NOW()
-WHERE tenant_id = $1::uuid
-  AND project_id = $2::uuid
-  AND placement_status = 'active'
-RETURNING id, tenant_id, project_id, runtime_node_id, placement_status, placement_reason, assigned_at, released_at, created_at, updated_at
-`
-
-type ReleaseProjectPlacementParams struct {
-	TenantID  uuid.UUID `json:"tenant_id"`
-	ProjectID uuid.UUID `json:"project_id"`
-}
-
-func (q *Queries) ReleaseProjectPlacement(ctx context.Context, arg ReleaseProjectPlacementParams) (ProjectPlacement, error) {
-	row := q.db.QueryRow(ctx, ReleaseProjectPlacement, arg.TenantID, arg.ProjectID)
-	var i ProjectPlacement
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.ProjectID,
-		&i.RuntimeNodeID,
-		&i.PlacementStatus,
-		&i.PlacementReason,
-		&i.AssignedAt,
-		&i.ReleasedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const ReleaseProjectPlacementsForDelete = `-- name: ReleaseProjectPlacementsForDelete :many
-UPDATE project_placements
-SET placement_status = 'released',
-    released_at = NOW(),
-    updated_at = NOW()
-WHERE tenant_id = $1::uuid
-  AND project_id = $2::uuid
-  AND placement_status = 'active'
-RETURNING id
-`
-
-type ReleaseProjectPlacementsForDeleteParams struct {
-	TenantID  uuid.UUID `json:"tenant_id"`
-	ProjectID uuid.UUID `json:"project_id"`
-}
-
-func (q *Queries) ReleaseProjectPlacementsForDelete(ctx context.Context, arg ReleaseProjectPlacementsForDeleteParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, ReleaseProjectPlacementsForDelete, arg.TenantID, arg.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const UpdateProjectTaskAttemptBudgetHeartbeat = `-- name: UpdateProjectTaskAttemptBudgetHeartbeat :one
 UPDATE project_task_attempts
 SET
@@ -499,7 +397,7 @@ WHERE tenant_id = $4::uuid
   AND id = $6::uuid
   AND $1::integer >= 0
   AND $2::integer >= 0
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
 `
 
 type UpdateProjectTaskAttemptBudgetHeartbeatParams struct {
@@ -536,10 +434,8 @@ func (q *Queries) UpdateProjectTaskAttemptBudgetHeartbeat(ctx context.Context, a
 		&i.LeaseToken,
 		&i.LeaseExpiresAt,
 		&i.RenewedAt,
-		&i.LostAt,
 		&i.StartedAt,
 		&i.FinishedAt,
-		&i.TimeoutAt,
 		&i.Retryable,
 		&i.FailureFamily,
 		&i.FailureMessage,
@@ -562,59 +458,6 @@ func (q *Queries) UpdateProjectTaskAttemptBudgetHeartbeat(ctx context.Context, a
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
-	)
-	return i, err
-}
-
-const UpsertProjectPlacement = `-- name: UpsertProjectPlacement :one
-INSERT INTO project_placements (
-    tenant_id,
-    project_id,
-    runtime_node_id,
-    placement_status,
-    placement_reason
-) VALUES (
-    $1::uuid,
-    $2::uuid,
-    $3::uuid,
-    'active',
-    $4::varchar
-)
-ON CONFLICT (tenant_id, project_id) WHERE placement_status = 'active'
-DO UPDATE SET
-    runtime_node_id = EXCLUDED.runtime_node_id,
-    placement_reason = EXCLUDED.placement_reason,
-    assigned_at = NOW(),
-    updated_at = NOW()
-RETURNING id, tenant_id, project_id, runtime_node_id, placement_status, placement_reason, assigned_at, released_at, created_at, updated_at
-`
-
-type UpsertProjectPlacementParams struct {
-	TenantID        uuid.UUID   `json:"tenant_id"`
-	ProjectID       uuid.UUID   `json:"project_id"`
-	RuntimeNodeID   uuid.UUID   `json:"runtime_node_id"`
-	PlacementReason pgtype.Text `json:"placement_reason"`
-}
-
-func (q *Queries) UpsertProjectPlacement(ctx context.Context, arg UpsertProjectPlacementParams) (ProjectPlacement, error) {
-	row := q.db.QueryRow(ctx, UpsertProjectPlacement,
-		arg.TenantID,
-		arg.ProjectID,
-		arg.RuntimeNodeID,
-		arg.PlacementReason,
-	)
-	var i ProjectPlacement
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.ProjectID,
-		&i.RuntimeNodeID,
-		&i.PlacementStatus,
-		&i.PlacementReason,
-		&i.AssignedAt,
-		&i.ReleasedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }

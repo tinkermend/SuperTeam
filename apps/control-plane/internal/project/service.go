@@ -391,23 +391,11 @@ func (s *Service) requireActiveProject(ctx context.Context, tenantID, projectID 
 	return project, nil
 }
 
-func (s *Service) GetProjectRuntimePlacement(ctx context.Context, req GetProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
-	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil {
-		return nil, ErrInvalidProject
-	}
-	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
-		return nil, err
-	}
-	placement, err := s.repository.GetActiveProjectPlacement(ctx, req.TenantID, req.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	return &placement, nil
-}
-
-func (s *Service) PutProjectRuntimePlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+// AddProjectRuntimeNode adds one runtime node to the project's eligibility set
+// (project_runtime_nodes) — the node-selection authority consulted by dispatch
+// and readiness. Idempotent on (project, node).
+func (s *Service) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error) {
 	req.Reason = strings.TrimSpace(req.Reason)
-	req.ExpectedProviderTypes = normalizeStringSet(req.ExpectedProviderTypes)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.RuntimeNodeID == uuid.Nil || req.ActorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
@@ -417,7 +405,7 @@ func (s *Service) PutProjectRuntimePlacement(ctx context.Context, req PutProject
 	if err := s.requireRuntimeNodeForTenant(ctx, req.TenantID, req.RuntimeNodeID); err != nil {
 		return nil, err
 	}
-	placement, err := s.repository.UpsertProjectPlacement(ctx, req)
+	node, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -429,27 +417,28 @@ func (s *Service) PutProjectRuntimePlacement(ctx context.Context, req PutProject
 		ActorID:   req.ActorUserID.String(),
 		Summary:   "项目 Runtime 绑定已更新",
 		Payload: map[string]any{
-			"runtime_node_id":         placement.RuntimeNodeID.String(),
-			"reason":                  placement.PlacementReason,
-			"expected_provider_types": append([]string(nil), req.ExpectedProviderTypes...),
+			"runtime_node_id": node.RuntimeNodeID.String(),
+			"reason":          req.Reason,
 		},
 	}); err != nil {
 		return nil, err
 	}
-	return &placement, nil
+	return &node, nil
 }
 
-func (s *Service) ReleaseProjectRuntimePlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error) {
+// RemoveProjectRuntimeNode removes one runtime node from the project's
+// eligibility set. Removing the last node leaves the project undispatchable
+// until a node is bound again — readiness surfaces that as blocking.
+func (s *Service) RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error {
 	req.Reason = strings.TrimSpace(req.Reason)
-	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ActorUserID == uuid.Nil {
-		return nil, ErrInvalidProject
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.RuntimeNodeID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return ErrInvalidProject
 	}
 	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
-		return nil, err
+		return err
 	}
-	placement, err := s.repository.ReleaseProjectPlacement(ctx, req)
-	if err != nil {
-		return nil, err
+	if err := s.repository.RemoveProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID); err != nil {
+		return err
 	}
 	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  req.TenantID,
@@ -459,13 +448,13 @@ func (s *Service) ReleaseProjectRuntimePlacement(ctx context.Context, req Releas
 		ActorID:   req.ActorUserID.String(),
 		Summary:   "项目 Runtime 绑定已释放",
 		Payload: map[string]any{
-			"runtime_node_id": placement.RuntimeNodeID.String(),
+			"runtime_node_id": req.RuntimeNodeID.String(),
 			"reason":          req.Reason,
 		},
 	}); err != nil {
-		return nil, err
+		return err
 	}
-	return &placement, nil
+	return nil
 }
 
 func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error) {
@@ -5673,11 +5662,13 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	resolved, err := s.repository.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		ID:              req.DecisionRequestID,
-		StatusSnapshot:  req.Decision,
-		ResolvedEventID: &event.ID,
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ID:                req.DecisionRequestID,
+		StatusSnapshot:    req.Decision,
+		ResolvedEventID:   &event.ID,
+		ResolvedByUserID:  req.DecidedByUserID,
+		ResolutionComment: req.Comment,
 	})
 	if err != nil {
 		return nil, err
@@ -6149,11 +6140,13 @@ func (s *Service) resolveDemandAcceptanceDecisionIfPending(ctx context.Context, 
 		return err
 	}
 	resolved, err := s.repository.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		ID:              decision.ID,
-		StatusSnapshot:  resolution,
-		ResolvedEventID: &event.ID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ID:                decision.ID,
+		StatusSnapshot:    resolution,
+		ResolvedEventID:   &event.ID,
+		ResolvedByUserID:  actorID,
+		ResolutionComment: reason,
 	})
 	if err != nil {
 		return err

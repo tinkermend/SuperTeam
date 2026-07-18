@@ -5894,7 +5894,6 @@ type projectStoreMemoryRepository struct {
 	decomposeAcceptedPlanRevisionRequests []project.DecomposeAcceptedPlanRevisionRequest
 	decisionRequests                      []project.DecisionRequest
 	createDecisionRequestErr              error
-	activePlacement                       *project.ProjectRuntimePlacement
 	missingActivePlacement                bool
 
 	acceptanceReady   bool
@@ -6032,25 +6031,6 @@ func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID,
 		return r.projectRecord, nil
 	}
 	return project.Project{}, project.ErrProjectNotFound
-}
-
-func (r *projectStoreMemoryRepository) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (project.ProjectRuntimePlacement, error) {
-	if r.missingActivePlacement {
-		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
-	}
-	if r.activePlacement != nil && r.activePlacement.TenantID == tenantID && r.activePlacement.ProjectID == projectID && r.activePlacement.PlacementStatus == project.ProjectRuntimePlacementStateActive {
-		return *r.activePlacement, nil
-	}
-	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
-		return project.ProjectRuntimePlacement{}, project.ErrProjectNotFound
-	}
-	return project.ProjectRuntimePlacement{
-		ID:              uuid.New(),
-		TenantID:        tenantID,
-		ProjectID:       projectID,
-		RuntimeNodeID:   uuid.New(),
-		PlacementStatus: project.ProjectRuntimePlacementStateActive,
-	}, nil
 }
 
 // ListProjectRuntimeNodes mirrors GetActiveProjectPlacement's presence

@@ -12,56 +12,6 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('project_id')::uuid
   AND deleted_at IS NULL;
 
--- name: UpsertProjectPlacement :one
-INSERT INTO project_placements (
-    tenant_id,
-    project_id,
-    runtime_node_id,
-    placement_status,
-    placement_reason
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('project_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
-    'active',
-    sqlc.narg('placement_reason')::varchar
-)
-ON CONFLICT (tenant_id, project_id) WHERE placement_status = 'active'
-DO UPDATE SET
-    runtime_node_id = EXCLUDED.runtime_node_id,
-    placement_reason = EXCLUDED.placement_reason,
-    assigned_at = NOW(),
-    updated_at = NOW()
-RETURNING *;
-
--- name: GetActiveProjectPlacement :one
-SELECT *
-FROM project_placements
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND project_id = sqlc.arg('project_id')::uuid
-  AND placement_status = 'active';
-
--- name: ReleaseProjectPlacement :one
-UPDATE project_placements
-SET
-    placement_status = 'released',
-    released_at = NOW(),
-    updated_at = NOW()
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND project_id = sqlc.arg('project_id')::uuid
-  AND placement_status = 'active'
-RETURNING *;
-
--- name: ReleaseProjectPlacementsForDelete :many
-UPDATE project_placements
-SET placement_status = 'released',
-    released_at = NOW(),
-    updated_at = NOW()
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND project_id = sqlc.arg('project_id')::uuid
-  AND placement_status = 'active'
-RETURNING id;
-
 -- name: CreateProjectTaskAttestation :one
 WITH input AS (
     SELECT

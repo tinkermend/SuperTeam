@@ -62,14 +62,12 @@ type SoftDeleteDigitalEmployeeCascadeParams struct {
 type DigitalEmployeeDeleteCascadeResult struct {
 	ExecutionInstances   int64
 	EnvironmentVariables int64
-	MCPBindings          int64
 	MCPBindingsV2        int64
 	SkillBindings        int64
 	ConfigRevisions      int64
 	WorkspaceFiles       int64
 	ProjectAffinities    int64
 	WorkspaceFileIDs     []uuid.UUID
-	MCPBindingIDs        []uuid.UUID
 	MCPBindingV2IDs      []uuid.UUID
 	SkillBindingIDs      []uuid.UUID
 	ExecutionInstanceID  *uuid.UUID

@@ -1007,63 +1007,6 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/projects/{projectId}/runtime-placement:
-    get:
-      operationId: getProjectRuntimePlacement
-      summary: Get active Runtime placement for a project
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      responses:
-        "200":
-          description: Project Runtime placement
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectRuntimePlacement"
-        "404":
-          $ref: "#/components/responses/Error"
-    put:
-      operationId: putProjectRuntimePlacement
-      summary: Bind a project to an active Runtime placement
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PutProjectRuntimePlacementRequest"
-      responses:
-        "200":
-          description: Updated Project Runtime placement
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectRuntimePlacement"
-        "400":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-        "409":
-          $ref: "#/components/responses/Error"
-    delete:
-      operationId: releaseProjectRuntimePlacement
-      summary: Release active Runtime placement for a project
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      responses:
-        "200":
-          description: Released Project Runtime placement
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectRuntimePlacement"
-        "400":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-        "409":
-          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/runtime-nodes:
     get:
       operationId: listProjectRuntimeNodes
@@ -1079,6 +1022,56 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProjectRuntimeNode"
+  /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}:
+    put:
+      operationId: addProjectRuntimeNode
+      summary: Add a Runtime node to the project eligibility set
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: runtimeNodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Runtime node bound to the project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRuntimeNode"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: removeProjectRuntimeNode
+      summary: Remove a Runtime node from the project eligibility set
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: runtimeNodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Runtime node removed from the project
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/runtime-readiness:
     get:
       operationId: getProjectRuntimeReadiness
@@ -2629,59 +2622,6 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/teams/{teamId}/mcp-servers:
-    get:
-      operationId: listTeamMCPServers
-      summary: List team MCP servers
-      parameters:
-        - $ref: "#/components/parameters/TeamId"
-      responses:
-        "200":
-          description: Team MCP server list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/MCPServer"
-        "403":
-          $ref: "#/components/responses/Error"
-    post:
-      operationId: createTeamMCPServer
-      summary: Create a team MCP server
-      parameters:
-        - $ref: "#/components/parameters/TeamId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateMCPServerRequest"
-      responses:
-        "201":
-          description: Team MCP server created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MCPServer"
-        "400":
-          $ref: "#/components/responses/Error"
-        "403":
-          $ref: "#/components/responses/Error"
-  /api/v1/teams/{teamId}/mcp-servers/{serverId}:
-    delete:
-      operationId: deleteTeamMCPServer
-      summary: Delete a team MCP server
-      parameters:
-        - $ref: "#/components/parameters/TeamId"
-        - $ref: "#/components/parameters/ServerId"
-      responses:
-        "204":
-          description: Team MCP server deleted
-        "403":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
   /api/v1/scenario-templates:
     get:
       operationId: listScenarioTemplates
@@ -3821,76 +3761,6 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/digital-employees/{employeeId}/mcp-bindings:
-    get:
-      operationId: listEmployeeMCPBindings
-      summary: List personal employee MCP bindings
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      responses:
-        "200":
-          description: Personal employee MCP binding list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/MCPServer"
-        "403":
-          $ref: "#/components/responses/Error"
-    post:
-      operationId: createEmployeeMCPBinding
-      summary: Create a personal employee MCP binding
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateMCPServerRequest"
-      responses:
-        "201":
-          description: Personal employee MCP binding created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MCPServer"
-        "400":
-          $ref: "#/components/responses/Error"
-        "403":
-          $ref: "#/components/responses/Error"
-  /api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId}:
-    delete:
-      operationId: deleteEmployeeMCPBinding
-      summary: Delete a personal employee MCP binding
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-        - $ref: "#/components/parameters/BindingId"
-      responses:
-        "204":
-          description: Personal employee MCP binding deleted
-        "403":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-  /api/v1/digital-employees/{employeeId}/effective-mcp-servers:
-    get:
-      operationId: listEffectiveMCPServers
-      summary: List merged team and personal MCP servers
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-      responses:
-        "200":
-          description: Effective employee MCP server list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/MCPServer"
-        "403":
-          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/config-revisions:
     post:
       operationId: createDigitalEmployeeConfigRevision
@@ -4215,47 +4085,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Skill"
-        "403":
-          $ref: "#/components/responses/Error"
-  /api/v1/user-credentials:
-    get:
-      operationId: listUserCredentials
-      summary: List current user credentials
-      parameters:
-        - name: credential_type
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/CredentialType"
-      responses:
-        "200":
-          description: User credential list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/UserCredential"
-        "403":
-          $ref: "#/components/responses/Error"
-    post:
-      operationId: createUserCredential
-      summary: Create a user credential
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateUserCredentialRequest"
-      responses:
-        "201":
-          description: User credential created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserCredential"
-        "400":
-          $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
   /api/v1/skills/uploads:
@@ -6293,62 +6122,6 @@ components:
         - capacity_full
         - workspace_pending
         - contract_mismatch
-    ProjectRuntimePlacementState:
-      type: string
-      enum:
-        - active
-        - released
-        - lost
-    ProjectRuntimePlacement:
-      type: object
-      required:
-        - id
-        - project_id
-        - runtime_node_id
-        - placement_status
-      properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        project_id:
-          type: string
-          format: uuid
-        runtime_node_id:
-          type: string
-          format: uuid
-        placement_status:
-          $ref: "#/components/schemas/ProjectRuntimePlacementState"
-        placement_reason:
-          type: string
-        assigned_at:
-          type: string
-          format: date-time
-        released_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    PutProjectRuntimePlacementRequest:
-      type: object
-      required:
-        - runtime_node_id
-      properties:
-        runtime_node_id:
-          type: string
-          format: uuid
-        reason:
-          type: string
-        expected_provider_types:
-          type: array
-          items:
-            type: string
     ProjectRuntimePlacementReadiness:
       type: object
       required:
@@ -10012,135 +9785,55 @@ components:
         bound_at:
           type: string
           format: date-time
-    CredentialType:
-      type: string
-      enum:
-        - mcp_token
-    UserCredential:
+        metadata:
+          type: object
+          additionalProperties: true
+    SkillInstallBlockedTarget:
       type: object
       required:
-        - id
-        - tenant_id
-        - user_id
-        - name
-        - credential_type
-        - last_four
-        - status
+        - reason_code
+        - message
       properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        user_id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        credential_type:
-          $ref: "#/components/schemas/CredentialType"
-        last_four:
-          type: string
-        status:
-          type: string
-        disabled_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    CreateUserCredentialRequest:
-      type: object
-      required:
-        - name
-        - credential_type
-        - credential_value
-      properties:
-        name:
-          type: string
-          minLength: 1
-        credential_type:
-          $ref: "#/components/schemas/CredentialType"
-        credential_value:
-          type: string
-          minLength: 1
-    MCPServer:
-      type: object
-      required:
-        - id
-        - tenant_id
-        - name
-        - url
-        - status
-        - source_scope
-        - inherited
-      properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        team_id:
-          type: string
-          format: uuid
         digital_employee_id:
           type: string
           format: uuid
-        name:
+        employee_name:
           type: string
-        url:
+        provider_type:
           type: string
-          format: uri
-        credential_id:
-          type: string
-          format: uuid
-        credential_name:
-          type: string
-        credential_type:
-          $ref: "#/components/schemas/CredentialType"
-        credential_last_four:
-          type: string
-        status:
-          type: string
-        source_scope:
-          type: string
-          enum:
-            - team
-            - employee
-        inherited:
-          type: boolean
-        created_by:
+        runtime_node_id:
           type: string
           format: uuid
-        disabled_at:
+        node_id:
           type: string
-          format: date-time
-        created_at:
+        reason_code:
           type: string
-          format: date-time
-        updated_at:
+        message:
           type: string
-          format: date-time
-    CreateMCPServerRequest:
+    InstallSkillErrorResponse:
       type: object
       required:
-        - name
-        - url
+        - error
+        - phase
+        - message
+        - blocked_targets
       properties:
-        name:
+        error:
           type: string
-          minLength: 1
-        url:
+          enum:
+            - skill_install_failed
+        phase:
           type: string
-          format: uri
-        credential_id:
+          enum:
+            - preflight
+            - runtime_install
+            - timeout
+        message:
           type: string
-          format: uuid
+        blocked_targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillInstallBlockedTarget"
     MCPTransport:
       type: string
       enum:

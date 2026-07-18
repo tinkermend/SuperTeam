@@ -1,4 +1,4 @@
-h1:WDMjWWS/6yTyANUpn9n5ngavghPG0Sh3Bp3uciqo5/g=
+h1:QqTEgBenKSKMm1shb1KdnrpUOfvbAnnsRxUoElO/kAM=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -77,3 +77,8 @@ h1:WDMjWWS/6yTyANUpn9n5ngavghPG0Sh3Bp3uciqo5/g=
 077_team_description.sql h1:cCPXHHX7abGVhzg7C4xbbc85D1idBoW5unFMhTsiy/4=
 078_team_pending_delete.sql h1:F0nzyj7H0tVcB4WwIK7lgYb7gnvCa5C4uHOGOOB7BnM=
 079_capability_binding_unification.sql h1:uMFGOrZJhH0eOAm4UQTg7TeuytqImmZKVViggXiYn70=
+080_drop_dual_layer_capability_legacy.sql h1:FPz1N1rQ+TST9IILQCMV0SezY9UAcWdmmmRIJ3dzY7Q=
+081_drop_project_placements.sql h1:GpJSr4wamOX63vc681ZJmezemjb1YhrEgg5WT9UH/xU=
+082_drop_dead_columns.sql h1:HtBpkJRddOo1di8qkvuuCo1Rg3Esaj3n5u8KVZ4r028=
+083_drop_tenant_profiles.sql h1:Pk6Uub/dpFqoTd/1GXv3vQbbays6UZyGwFlBDn9FaSg=
+084_drop_task_state_history.sql h1:HFrGriFQpSWS86UgBYeki1wpxNEraJ897RoFR8AMCmU=

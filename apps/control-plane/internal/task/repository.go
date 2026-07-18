@@ -18,7 +18,6 @@ type Repository interface {
 	DeleteTask(ctx context.Context, params DeleteTaskParams) error
 
 	// State history operations
-	CreateTaskStateHistory(ctx context.Context, params CreateTaskStateHistoryParams) error
 
 	// Event operations
 	CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error)
@@ -129,14 +128,4 @@ type UpdateTaskParams struct {
 	WorkspacePath  pgtype.Text
 	Params         []byte
 	ID             uuid.UUID
-}
-
-// CreateTaskStateHistoryParams represents parameters for creating state history
-type CreateTaskStateHistoryParams struct {
-	TenantID   uuid.NullUUID
-	TaskID     uuid.UUID
-	FromStatus pgtype.Text
-	ToStatus   string
-	ChangedBy  pgtype.Text
-	Reason     pgtype.Text
 }

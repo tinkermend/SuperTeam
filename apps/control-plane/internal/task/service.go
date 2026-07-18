@@ -190,22 +190,6 @@ func (s *Service) UpdateTaskStatus(ctx context.Context, req UpdateTaskStatusRequ
 		return nil, fmt.Errorf("failed to update task status: %w", err)
 	}
 
-	// Record state history
-	historyParams := CreateTaskStateHistoryParams{
-		TenantID:   uuid.NullUUID{UUID: currentTask.TenantID, Valid: currentTask.TenantID != uuid.Nil},
-		TaskID:     req.TaskID,
-		FromStatus: textFromString((*string)(&currentTask.Status)),
-		ToStatus:   string(req.NewStatus),
-		ChangedBy:  textFromString(req.ChangedBy),
-		Reason:     textFromString(req.Reason),
-	}
-
-	if err := s.repository.CreateTaskStateHistory(ctx, historyParams); err != nil {
-		// Log error but don't fail the operation
-		// In production, use proper logging
-		_ = err
-	}
-
 	return s.recordToTask(record), nil
 }
 
@@ -258,23 +242,6 @@ func (s *Service) AssignTask(ctx context.Context, req AssignTaskRequest) (*Task,
 	record, err := s.repository.UpdateTask(ctx, updateParams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to assign task: %w", err)
-	}
-
-	// Record state history if status changed
-	if currentTask.Status != TaskStatusClaimed {
-		historyParams := CreateTaskStateHistoryParams{
-			TenantID:   uuid.NullUUID{UUID: currentTask.TenantID, Valid: currentTask.TenantID != uuid.Nil},
-			TaskID:     req.TaskID,
-			FromStatus: textFromString((*string)(&currentTask.Status)),
-			ToStatus:   string(TaskStatusClaimed),
-			ChangedBy:  textFromString(&req.AssignedNodeID),
-			Reason:     textFromString(stringPtr("Task assigned to node")),
-		}
-
-		if err := s.repository.CreateTaskStateHistory(ctx, historyParams); err != nil {
-			// Log error but don't fail the operation
-			_ = err
-		}
 	}
 
 	return s.recordToTask(record), nil

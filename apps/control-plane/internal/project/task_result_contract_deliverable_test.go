@@ -11,11 +11,11 @@ func TestTaskResultDeliverableValueToleratesAnyJSONType(t *testing.T) {
 	cases := map[string]string{
 		`{"name":"报告","value":"纯文本"}`:                      "纯文本",
 		`{"name":"指标","value":{"cpu":"12%","mem":"3.1G"}}`: `{"cpu":"12%","mem":"3.1G"}`,
-		`{"name":"清单","value":[1,2,3]}`:                     `[1,2,3]`,
-		`{"name":"计数","value":42}`:                          `42`,
-		`{"name":"开关","value":true}`:                        `true`,
-		`{"name":"空值","value":null}`:                        ``,
-		`{"name":"缺省"}`:                                     ``,
+		`{"name":"清单","value":[1,2,3]}`:                    `[1,2,3]`,
+		`{"name":"计数","value":42}`:                         `42`,
+		`{"name":"开关","value":true}`:                       `true`,
+		`{"name":"空值","value":null}`:                       ``,
+		`{"name":"缺省"}`:                                    ``,
 	}
 	for input, want := range cases {
 		var deliverable TaskResultDeliverable

@@ -26,6 +26,10 @@ type ProjectGateway interface {
 	SubmitDemand(ctx context.Context, tenantID, projectID, userID uuid.UUID, title, content, mode string) (demandID uuid.UUID, status string, err error)
 	// ResolveDecision 返回 conflict=true 表示决策已由他人处理(异值终态)。
 	ResolveDecision(ctx context.Context, tenantID, projectID, decisionID, userID uuid.UUID, decision, comment string) (conflict bool, err error)
+	// DecisionCardSnapshot 返回决策卡投影 payload(与 outbox decision_card 同源),
+	// 供飞书端 resolve 后即时渲染保留详情的终态卡。仅在 resolve 出结果后内部调用,
+	// 不单独暴露为路由。
+	DecisionCardSnapshot(ctx context.Context, tenantID, projectID, decisionID uuid.UUID) (map[string]any, error)
 }
 
 var (
@@ -149,11 +153,21 @@ func (h *ConnectorHTTPHandler) ResolveDecision(w http.ResponseWriter, r *http.Re
 		writeConnectorBusinessError(w, err)
 		return
 	}
+	// 终态快照 best-effort:取不到不影响 resolve 结果,connector 侧降级为薄终态卡。
+	card, cardErr := h.projects.DecisionCardSnapshot(r.Context(), tenantID, projectID, decisionID)
 	if conflict {
-		http.Error(w, "decision already resolved by someone else", http.StatusConflict)
+		resp := map[string]any{"error": "decision already resolved by someone else"}
+		if cardErr == nil && card != nil {
+			resp["card_payload"] = card
+		}
+		writeJSON(w, http.StatusConflict, resp)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
+	resp := map[string]any{"status": "resolved"}
+	if cardErr == nil && card != nil {
+		resp["card_payload"] = card
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func writeConnectorBusinessError(w http.ResponseWriter, err error) {

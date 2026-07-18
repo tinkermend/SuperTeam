@@ -12,7 +12,7 @@ import {
   getProjectDemandLaunchDetail,
   getProjectOverview,
   getProjectPlanRevision,
-  getProjectRuntimePlacement,
+  addProjectRuntimeNode,
   getProjectRuntimeReadiness,
   getProjectTaskGraph,
   listProjectTaskDispatchGates,
@@ -22,8 +22,7 @@ import {
   listProjectRouteDecisions,
   listWorkflowInstances,
   patchProjectEvidence,
-  putProjectRuntimePlacement,
-  releaseProjectRuntimePlacement,
+  removeProjectRuntimeNode,
   replaceProjectMembers,
   resolveProjectDecision,
   submitProjectDemand,
@@ -190,78 +189,29 @@ describe("project API", () => {
     );
   });
 
-  it("getProjectRuntimePlacement encodes project id", async () => {
-    const placement = {
-      id: "placement-1",
-      project_id: "project 1/primary",
-      runtime_node_id: "runtime-node-1",
-      placement_status: "active",
-      placement_reason: "manual assignment",
-      assigned_at: "2026-07-05T01:00:00Z",
-      created_at: "2026-07-05T01:00:00Z",
-      updated_at: "2026-07-05T01:00:00Z",
-    };
+  it("addProjectRuntimeNode puts node binding with reason", async () => {
+    const binding = { runtime_node_id: "runtime-node-1" };
     const fetcher = vi.fn(
       async () =>
-        new Response(JSON.stringify(placement), {
+        new Response(JSON.stringify(binding), {
           headers: { "content-type": "application/json" },
           status: 200,
         }),
     );
 
     await expect(
-      getProjectRuntimePlacement(
+      addProjectRuntimeNode(
         { baseUrl: "http://control-plane.local", fetcher },
         "project 1/primary",
+        "runtime-node-1",
+        { reason: "manual assignment" },
       ),
-    ).resolves.toEqual(placement);
+    ).resolves.toEqual(binding);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-placement",
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-nodes/runtime-node-1",
       {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-  });
-
-  it("putProjectRuntimePlacement posts runtime node and reason", async () => {
-    const placement = {
-      id: "placement-1",
-      project_id: "project 1/primary",
-      runtime_node_id: "runtime-node-1",
-      placement_status: "active",
-      placement_reason: "manual assignment",
-      assigned_at: "2026-07-05T01:00:00Z",
-      created_at: "2026-07-05T01:00:00Z",
-      updated_at: "2026-07-05T01:00:00Z",
-    };
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(placement), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
-    const input = {
-      runtime_node_id: "runtime-node-1",
-      reason: "manual assignment",
-      expected_provider_types: ["codex", "claude"],
-    };
-
-    await expect(
-      putProjectRuntimePlacement(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "project 1/primary",
-        input,
-      ),
-    ).resolves.toEqual(placement);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-placement",
-      {
-        body: JSON.stringify(input),
+        body: JSON.stringify({ reason: "manual assignment" }),
         credentials: "include",
         headers: {
           accept: "application/json",
@@ -272,34 +222,19 @@ describe("project API", () => {
     );
   });
 
-  it("releaseProjectRuntimePlacement deletes active placement", async () => {
-    const placement = {
-      id: "placement-1",
-      project_id: "project 1/primary",
-      runtime_node_id: "runtime-node-1",
-      placement_status: "released",
-      assigned_at: "2026-07-05T01:00:00Z",
-      released_at: "2026-07-05T01:10:00Z",
-      created_at: "2026-07-05T01:00:00Z",
-      updated_at: "2026-07-05T01:10:00Z",
-    };
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(placement), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
+  it("removeProjectRuntimeNode deletes node binding", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
 
     await expect(
-      releaseProjectRuntimePlacement(
+      removeProjectRuntimeNode(
         { baseUrl: "http://control-plane.local", fetcher },
         "project 1/primary",
+        "runtime-node-1",
       ),
-    ).resolves.toEqual(placement);
+    ).resolves.toBeUndefined();
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-placement",
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/runtime-nodes/runtime-node-1",
       {
         credentials: "include",
         headers: { accept: "application/json" },

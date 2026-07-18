@@ -187,18 +187,6 @@ func (r *PgRepository) DeleteTask(ctx context.Context, params DeleteTaskParams) 
 	})
 }
 
-func (r *PgRepository) CreateTaskStateHistory(ctx context.Context, params CreateTaskStateHistoryParams) error {
-	_, err := r.q.CreateTaskStateHistory(ctx, queries.CreateTaskStateHistoryParams{
-		TenantID:   params.TenantID,
-		TaskID:     params.TaskID,
-		FromStatus: params.FromStatus,
-		ToStatus:   params.ToStatus,
-		ChangedBy:  params.ChangedBy,
-		Reason:     params.Reason,
-	})
-	return err
-}
-
 func (r *PgRepository) CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error) {
 	event, err := r.q.CreateTaskEvent(ctx, queries.CreateTaskEventParams{
 		TenantID:       params.TenantID,

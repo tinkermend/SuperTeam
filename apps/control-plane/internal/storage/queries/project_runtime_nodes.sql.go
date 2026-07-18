@@ -167,6 +167,24 @@ func (q *Queries) ListProjectRuntimeNodes(ctx context.Context, arg ListProjectRu
 	return items, nil
 }
 
+const RemoveProjectRuntimeNode = `-- name: RemoveProjectRuntimeNode :exec
+DELETE FROM project_runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND runtime_node_id = $3::uuid
+`
+
+type RemoveProjectRuntimeNodeParams struct {
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectID     uuid.UUID `json:"project_id"`
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+}
+
+func (q *Queries) RemoveProjectRuntimeNode(ctx context.Context, arg RemoveProjectRuntimeNodeParams) error {
+	_, err := q.db.Exec(ctx, RemoveProjectRuntimeNode, arg.TenantID, arg.ProjectID, arg.RuntimeNodeID)
+	return err
+}
+
 const UpsertProjectEmployeeNodeAffinity = `-- name: UpsertProjectEmployeeNodeAffinity :one
 INSERT INTO project_employee_node_affinity (tenant_id, project_id, digital_employee_id, runtime_node_id)
 VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid)

@@ -312,11 +312,8 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			provider_session_events,
 			provider_sessions,
 			digital_employee_execution_instances,
-			digital_employee_mcp_bindings,
 			digital_employee_config_revisions,
 			digital_employees,
-			team_mcp_servers,
-			user_credentials,
 			runtime_capabilities,
 			runtime_sessions,
 			runtime_enrollments,
@@ -325,9 +322,7 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			web_login_logs,
 			audit_events,
 				tenant_team_member_role_requests,
-				task_artifacts,
 				task_events,
-				task_state_history,
 				task_runs,
 				tasks,
 				user_project_team_scopes,
@@ -337,9 +332,7 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			runtime_nodes,
 			tenant_members,
 			auth_users,
-			tenant_team_config_revisions,
 			tenant_teams,
-			tenant_profiles,
 			tenants
 		RESTART IDENTITY CASCADE
 	`)
@@ -4770,6 +4763,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		NodeID:              "runtime-node-001",
 		RuntimeNodeID:       runtimeNodeID,
 		ProviderSessionID:   pgtype.Text{},
+		RunKind:             "task",
 		RunStatus:           "queued",
 		CommandID:           commandID,
 		DigitalEmployeeID:   digitalEmployeeID,
@@ -4801,6 +4795,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		NodeID:              "runtime-node-001",
 		RuntimeNodeID:       runtimeNodeID,
 		ProviderSessionID:   pgtype.Text{},
+		RunKind:             "task",
 		RunStatus:           "queued",
 		CommandID:           "cmd-run-loop-retry",
 		DigitalEmployeeID:   digitalEmployeeID,
@@ -4833,6 +4828,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		NodeID:              "runtime-node-001",
 		RuntimeNodeID:       runtimeNodeID,
 		ProviderSessionID:   pgtype.Text{},
+		RunKind:             "task",
 		RunStatus:           "queued",
 		CommandID:           "cmd-run-loop-conflict",
 		DigitalEmployeeID:   digitalEmployeeID,
@@ -5766,164 +5762,6 @@ func TestCreateRuntimeToken_DuplicateNodeID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, token1.ID, token2.ID)
 	assert.Equal(t, "hash2", token2.TokenHash)
-}
-
-func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
-	db := newQueriesTestDB(t)
-	q := queries.New(db)
-	tenantID := seedTestTenant(t, db)
-	userID := seedTestAuthUser(t, db, "capability-owner")
-	teamID := seedTestTeam(t, db, tenantID, "platform", "平台工程")
-	employeeID := seedTestDigitalEmployee(t, db, tenantID, teamID, userID, "capability-agent")
-
-	credential, err := q.CreateUserCredential(context.Background(), queries.CreateUserCredentialParams{
-		TenantID:       tenantID,
-		UserID:         userID,
-		Name:           "ops-token",
-		CredentialType: "mcp_token",
-		EncryptedValue: "sealed-token",
-		LastFour:       "7890",
-	})
-	if err != nil {
-		t.Fatalf("create credential: %v", err)
-	}
-
-	if _, err := q.CreateTeamMCPServer(context.Background(), queries.CreateTeamMCPServerParams{
-		TenantID:     tenantID,
-		TeamID:       teamID,
-		Name:         "ops-mcp",
-		Url:          "https://mcp.example.com",
-		CredentialID: uuidToPgtype(credential.ID),
-		CreatedBy:    uuidToPgtype(userID),
-	}); err != nil {
-		t.Fatalf("create team mcp: %v", err)
-	}
-
-	if _, err := q.CreateDigitalEmployeeMCPBinding(context.Background(), queries.CreateDigitalEmployeeMCPBindingParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Name:              "ops-mcp",
-		Url:               "https://mcp.example.com",
-		CredentialID:      uuidToPgtype(credential.ID),
-		CreatedBy:         uuidToPgtype(userID),
-	}); err != nil {
-		t.Fatalf("create duplicate employee mcp: %v", err)
-	}
-
-	if _, err := q.CreateDigitalEmployeeMCPBinding(context.Background(), queries.CreateDigitalEmployeeMCPBindingParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Name:              "personal-mcp",
-		Url:               "https://personal-mcp.example.com",
-		CredentialID:      uuidToPgtype(credential.ID),
-		CreatedBy:         uuidToPgtype(userID),
-	}); err != nil {
-		t.Fatalf("create employee mcp: %v", err)
-	}
-
-	merged, err := q.ListEffectiveMCPServersForEmployee(context.Background(), queries.ListEffectiveMCPServersForEmployeeParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-	})
-	if err != nil {
-		t.Fatalf("list effective mcp: %v", err)
-	}
-	if len(merged) != 2 {
-		t.Fatalf("expected duplicate employee mcp to be suppressed, got %d merged mcp servers: %#v", len(merged), merged)
-	}
-	require.Equal(t, "team", merged[0].SourceScope)
-	require.True(t, merged[0].Inherited)
-	require.True(t, merged[0].TeamID.Valid)
-	require.Equal(t, teamID, merged[0].TeamID.UUID)
-	require.Equal(t, "ops-token", merged[0].CredentialName)
-	require.Equal(t, "mcp_token", merged[0].CredentialType)
-	require.Equal(t, "7890", merged[0].CredentialLastFour)
-	requireNoEncryptedValueField(t, merged[0])
-
-	require.Equal(t, "employee", merged[1].SourceScope)
-	require.Equal(t, "personal-mcp", merged[1].Name)
-	require.False(t, merged[1].Inherited)
-	require.False(t, merged[1].TeamID.Valid)
-	require.Equal(t, "ops-token", merged[1].CredentialName)
-	require.Equal(t, "mcp_token", merged[1].CredentialType)
-	require.Equal(t, "7890", merged[1].CredentialLastFour)
-	requireNoEncryptedValueField(t, merged[1])
-
-	teamServers, err := q.ListTeamMCPServers(context.Background(), queries.ListTeamMCPServersParams{
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	require.NoError(t, err)
-	require.Len(t, teamServers, 1)
-	require.Equal(t, "ops-token", teamServers[0].CredentialName)
-	require.Equal(t, "mcp_token", teamServers[0].CredentialType)
-	require.Equal(t, "7890", teamServers[0].CredentialLastFour)
-	requireNoEncryptedValueField(t, teamServers[0])
-
-	employeeServers, err := q.ListDigitalEmployeeMCPBindings(context.Background(), queries.ListDigitalEmployeeMCPBindingsParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-	})
-	require.NoError(t, err)
-	require.Len(t, employeeServers, 2)
-	require.Equal(t, "ops-token", employeeServers[0].CredentialName)
-	require.Equal(t, "mcp_token", employeeServers[0].CredentialType)
-	require.Equal(t, "7890", employeeServers[0].CredentialLastFour)
-	requireNoEncryptedValueField(t, employeeServers[0])
-}
-
-func TestCapabilityQueriesListEffectiveMCPServersSkipsSoftDeletedEmployee(t *testing.T) {
-	db := newQueriesTestDB(t)
-	q := queries.New(db)
-	ctx := context.Background()
-	tenantID := seedTestTenant(t, db)
-	userID := seedTestAuthUser(t, db, "deleted-capability-owner")
-	teamID := seedTestTeam(t, db, tenantID, "deleted-platform", "删除校验团队")
-	employeeID := seedTestDigitalEmployee(t, db, tenantID, teamID, userID, "deleted-capability-agent")
-
-	credential, err := q.CreateUserCredential(ctx, queries.CreateUserCredentialParams{
-		TenantID:       tenantID,
-		UserID:         userID,
-		Name:           "deleted-ops-token",
-		CredentialType: "mcp_token",
-		EncryptedValue: "sealed-token",
-		LastFour:       "1234",
-	})
-	require.NoError(t, err)
-
-	_, err = q.CreateTeamMCPServer(ctx, queries.CreateTeamMCPServerParams{
-		TenantID:     tenantID,
-		TeamID:       teamID,
-		Name:         "deleted-team-mcp",
-		Url:          "https://deleted-team-mcp.example.com",
-		CredentialID: uuidToPgtype(credential.ID),
-		CreatedBy:    uuidToPgtype(userID),
-	})
-	require.NoError(t, err)
-
-	_, err = q.CreateDigitalEmployeeMCPBinding(ctx, queries.CreateDigitalEmployeeMCPBindingParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		Name:              "deleted-personal-mcp",
-		Url:               "https://deleted-personal-mcp.example.com",
-		CredentialID:      uuidToPgtype(credential.ID),
-		CreatedBy:         uuidToPgtype(userID),
-	})
-	require.NoError(t, err)
-
-	_, err = db.Exec(ctx, `
-		UPDATE digital_employees
-		SET deleted_at = NOW()
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, employeeID)
-	require.NoError(t, err)
-
-	merged, err := q.ListEffectiveMCPServersForEmployee(ctx, queries.ListEffectiveMCPServersForEmployeeParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-	})
-	require.NoError(t, err)
-	require.Empty(t, merged)
 }
 
 func seedProject(t *testing.T, db *pgxpool.Pool) (*queries.Queries, context.Context, uuid.UUID, uuid.UUID) {

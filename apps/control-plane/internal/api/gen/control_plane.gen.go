@@ -216,21 +216,6 @@ func (e CreateTeamRequestInitialMembersRole) Valid() bool {
 	}
 }
 
-// Defines values for CredentialType.
-const (
-	McpToken CredentialType = "mcp_token"
-)
-
-// Valid indicates whether the value is a known member of the CredentialType enum.
-func (e CredentialType) Valid() bool {
-	switch e {
-	case McpToken:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for DemandAcceptanceCriterionDetailJudgeType.
 const (
 	Adversarial DemandAcceptanceCriterionDetailJudgeType = "adversarial"
@@ -876,6 +861,42 @@ func (e InboxItemStatus) Valid() bool {
 	}
 }
 
+// Defines values for InstallSkillErrorResponseError.
+const (
+	SkillInstallFailed InstallSkillErrorResponseError = "skill_install_failed"
+)
+
+// Valid indicates whether the value is a known member of the InstallSkillErrorResponseError enum.
+func (e InstallSkillErrorResponseError) Valid() bool {
+	switch e {
+	case SkillInstallFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstallSkillErrorResponsePhase.
+const (
+	Preflight      InstallSkillErrorResponsePhase = "preflight"
+	RuntimeInstall InstallSkillErrorResponsePhase = "runtime_install"
+	Timeout        InstallSkillErrorResponsePhase = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the InstallSkillErrorResponsePhase enum.
+func (e InstallSkillErrorResponsePhase) Valid() bool {
+	switch e {
+	case Preflight:
+		return true
+	case RuntimeInstall:
+		return true
+	case Timeout:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InstallSkillRequestTargetScope.
 const (
 	InstallSkillRequestTargetScopeEmployee InstallSkillRequestTargetScope = "employee"
@@ -927,24 +948,6 @@ func (e MCPAuthStrategy) Valid() bool {
 	case HeadersEnv:
 		return true
 	case None:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for MCPServerSourceScope.
-const (
-	MCPServerSourceScopeEmployee MCPServerSourceScope = "employee"
-	MCPServerSourceScopeTeam     MCPServerSourceScope = "team"
-)
-
-// Valid indicates whether the value is a known member of the MCPServerSourceScope enum.
-func (e MCPServerSourceScope) Valid() bool {
-	switch e {
-	case MCPServerSourceScopeEmployee:
-		return true
-	case MCPServerSourceScopeTeam:
 		return true
 	default:
 		return false
@@ -1308,27 +1311,6 @@ func (e ProjectRole) Valid() bool {
 	case ProjectRoleOwner:
 		return true
 	case ProjectRoleReviewer:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ProjectRuntimePlacementState.
-const (
-	ProjectRuntimePlacementStateActive   ProjectRuntimePlacementState = "active"
-	ProjectRuntimePlacementStateLost     ProjectRuntimePlacementState = "lost"
-	ProjectRuntimePlacementStateReleased ProjectRuntimePlacementState = "released"
-)
-
-// Valid indicates whether the value is a known member of the ProjectRuntimePlacementState enum.
-func (e ProjectRuntimePlacementState) Valid() bool {
-	switch e {
-	case ProjectRuntimePlacementStateActive:
-		return true
-	case ProjectRuntimePlacementStateLost:
-		return true
-	case ProjectRuntimePlacementStateReleased:
 		return true
 	default:
 		return false
@@ -2189,19 +2171,19 @@ func (e ListInboxItemsParamsItemType) Valid() bool {
 
 // Defines values for ListTeamsParamsStatus.
 const (
-	Active   ListTeamsParamsStatus = "active"
-	Archived ListTeamsParamsStatus = "archived"
-	Disabled ListTeamsParamsStatus = "disabled"
+	ListTeamsParamsStatusActive   ListTeamsParamsStatus = "active"
+	ListTeamsParamsStatusArchived ListTeamsParamsStatus = "archived"
+	ListTeamsParamsStatusDisabled ListTeamsParamsStatus = "disabled"
 )
 
 // Valid indicates whether the value is a known member of the ListTeamsParamsStatus enum.
 func (e ListTeamsParamsStatus) Valid() bool {
 	switch e {
-	case Active:
+	case ListTeamsParamsStatusActive:
 		return true
-	case Archived:
+	case ListTeamsParamsStatusArchived:
 		return true
-	case Disabled:
+	case ListTeamsParamsStatusDisabled:
 		return true
 	default:
 		return false
@@ -2453,13 +2435,6 @@ type CreateMCPServerDefinitionRequest struct {
 	Url                string           `json:"url"`
 }
 
-// CreateMCPServerRequest defines model for CreateMCPServerRequest.
-type CreateMCPServerRequest struct {
-	CredentialId *openapi_types.UUID `json:"credential_id,omitempty"`
-	Name         string              `json:"name"`
-	Url          string              `json:"url"`
-}
-
 // CreateProjectAcceptanceRequest defines model for CreateProjectAcceptanceRequest.
 type CreateProjectAcceptanceRequest struct {
 	Conclusion      string                               `json:"conclusion"`
@@ -2628,16 +2603,6 @@ type CreateTeamRequest struct {
 
 // CreateTeamRequestInitialMembersRole defines model for CreateTeamRequest.InitialMembers.Role.
 type CreateTeamRequestInitialMembersRole string
-
-// CreateUserCredentialRequest defines model for CreateUserCredentialRequest.
-type CreateUserCredentialRequest struct {
-	CredentialType  CredentialType `json:"credential_type"`
-	CredentialValue string         `json:"credential_value"`
-	Name            string         `json:"name"`
-}
-
-// CredentialType defines model for CredentialType.
-type CredentialType string
 
 // DecideTeamLendingRequest defines model for DecideTeamLendingRequest.
 type DecideTeamLendingRequest struct {
@@ -3636,6 +3601,20 @@ type InboxSourceActionResult struct {
 	Status     string             `json:"status"`
 }
 
+// InstallSkillErrorResponse defines model for InstallSkillErrorResponse.
+type InstallSkillErrorResponse struct {
+	BlockedTargets []SkillInstallBlockedTarget    `json:"blocked_targets"`
+	Error          InstallSkillErrorResponseError `json:"error"`
+	Message        string                         `json:"message"`
+	Phase          InstallSkillErrorResponsePhase `json:"phase"`
+}
+
+// InstallSkillErrorResponseError defines model for InstallSkillErrorResponse.Error.
+type InstallSkillErrorResponseError string
+
+// InstallSkillErrorResponsePhase defines model for InstallSkillErrorResponse.Phase.
+type InstallSkillErrorResponsePhase string
+
 // InstallSkillRequest defines model for InstallSkillRequest.
 type InstallSkillRequest struct {
 	DigitalEmployeeId *openapi_types.UUID            `json:"digital_employee_id,omitempty"`
@@ -3656,6 +3635,7 @@ type InstallSkillResponse struct {
 	AlreadyBound      bool                            `json:"already_bound"`
 	BoundAt           time.Time                       `json:"bound_at"`
 	DigitalEmployeeId *openapi_types.UUID             `json:"digital_employee_id,omitempty"`
+	Metadata          *map[string]interface{}         `json:"metadata,omitempty"`
 	SkillId           openapi_types.UUID              `json:"skill_id"`
 	TargetScope       InstallSkillResponseTargetScope `json:"target_scope"`
 	TeamId            *openapi_types.UUID             `json:"team_id,omitempty"`
@@ -3703,30 +3683,6 @@ type MCPBinding struct {
 	UpdatedAt         *time.Time          `json:"updated_at,omitempty"`
 	Url               *string             `json:"url,omitempty"`
 }
-
-// MCPServer defines model for MCPServer.
-type MCPServer struct {
-	CreatedAt          *time.Time           `json:"created_at,omitempty"`
-	CreatedBy          *openapi_types.UUID  `json:"created_by,omitempty"`
-	CredentialId       *openapi_types.UUID  `json:"credential_id,omitempty"`
-	CredentialLastFour *string              `json:"credential_last_four,omitempty"`
-	CredentialName     *string              `json:"credential_name,omitempty"`
-	CredentialType     *CredentialType      `json:"credential_type,omitempty"`
-	DigitalEmployeeId  *openapi_types.UUID  `json:"digital_employee_id,omitempty"`
-	DisabledAt         *time.Time           `json:"disabled_at,omitempty"`
-	Id                 openapi_types.UUID   `json:"id"`
-	Inherited          bool                 `json:"inherited"`
-	Name               string               `json:"name"`
-	SourceScope        MCPServerSourceScope `json:"source_scope"`
-	Status             string               `json:"status"`
-	TeamId             *openapi_types.UUID  `json:"team_id,omitempty"`
-	TenantId           openapi_types.UUID   `json:"tenant_id"`
-	UpdatedAt          *time.Time           `json:"updated_at,omitempty"`
-	Url                string               `json:"url"`
-}
-
-// MCPServerSourceScope defines model for MCPServer.SourceScope.
-type MCPServerSourceScope string
 
 // MCPServerDefinition defines model for MCPServerDefinition.
 type MCPServerDefinition struct {
@@ -4359,20 +4315,6 @@ type ProjectRuntimeNode struct {
 	RuntimeNodeId openapi_types.UUID `json:"runtime_node_id"`
 }
 
-// ProjectRuntimePlacement defines model for ProjectRuntimePlacement.
-type ProjectRuntimePlacement struct {
-	AssignedAt      *time.Time                   `json:"assigned_at,omitempty"`
-	CreatedAt       *time.Time                   `json:"created_at,omitempty"`
-	Id              openapi_types.UUID           `json:"id"`
-	PlacementReason *string                      `json:"placement_reason,omitempty"`
-	PlacementStatus ProjectRuntimePlacementState `json:"placement_status"`
-	ProjectId       openapi_types.UUID           `json:"project_id"`
-	ReleasedAt      *time.Time                   `json:"released_at,omitempty"`
-	RuntimeNodeId   openapi_types.UUID           `json:"runtime_node_id"`
-	TenantId        *openapi_types.UUID          `json:"tenant_id,omitempty"`
-	UpdatedAt       *time.Time                   `json:"updated_at,omitempty"`
-}
-
 // ProjectRuntimePlacementReadiness defines model for ProjectRuntimePlacementReadiness.
 type ProjectRuntimePlacementReadiness struct {
 	BlockingReasons         *[]ProjectReadinessReason     `json:"blocking_reasons,omitempty"`
@@ -4385,9 +4327,6 @@ type ProjectRuntimePlacementReadiness struct {
 	RuntimeNodeId           *openapi_types.UUID           `json:"runtime_node_id,omitempty"`
 	RuntimeNodeName         *string                       `json:"runtime_node_name,omitempty"`
 }
-
-// ProjectRuntimePlacementState defines model for ProjectRuntimePlacementState.
-type ProjectRuntimePlacementState string
 
 // ProjectRuntimePlacementStatus defines model for ProjectRuntimePlacementStatus.
 type ProjectRuntimePlacementStatus string
@@ -4747,13 +4686,6 @@ type PutProjectMCPBindingsRequest struct {
 		CredentialEnvVar *string            `json:"credential_env_var,omitempty"`
 		McpServerId      openapi_types.UUID `json:"mcp_server_id"`
 	} `json:"items"`
-}
-
-// PutProjectRuntimePlacementRequest defines model for PutProjectRuntimePlacementRequest.
-type PutProjectRuntimePlacementRequest struct {
-	ExpectedProviderTypes *[]string          `json:"expected_provider_types,omitempty"`
-	Reason                *string            `json:"reason,omitempty"`
-	RuntimeNodeId         openapi_types.UUID `json:"runtime_node_id"`
 }
 
 // ReassignDigitalEmployeeTeamRequest defines model for ReassignDigitalEmployeeTeamRequest.
@@ -5213,6 +5145,17 @@ type SkillAgentBinding struct {
 	TeamName  *string             `json:"team_name,omitempty"`
 }
 
+// SkillInstallBlockedTarget defines model for SkillInstallBlockedTarget.
+type SkillInstallBlockedTarget struct {
+	DigitalEmployeeId *openapi_types.UUID `json:"digital_employee_id,omitempty"`
+	EmployeeName      *string             `json:"employee_name,omitempty"`
+	Message           string              `json:"message"`
+	NodeId            *string             `json:"node_id,omitempty"`
+	ProviderType      *string             `json:"provider_type,omitempty"`
+	ReasonCode        string              `json:"reason_code"`
+	RuntimeNodeId     *openapi_types.UUID `json:"runtime_node_id,omitempty"`
+}
+
 // SkillMCPDependency defines model for SkillMCPDependency.
 type SkillMCPDependency struct {
 	AuthStrategy MCPAuthStrategy    `json:"auth_strategy"`
@@ -5661,20 +5604,6 @@ type UpsertTeamLendingPolicy struct {
 	ProjectMatch      *map[string]interface{} `json:"project_match,omitempty"`
 }
 
-// UserCredential defines model for UserCredential.
-type UserCredential struct {
-	CreatedAt      *time.Time         `json:"created_at,omitempty"`
-	CredentialType CredentialType     `json:"credential_type"`
-	DisabledAt     *time.Time         `json:"disabled_at,omitempty"`
-	Id             openapi_types.UUID `json:"id"`
-	LastFour       string             `json:"last_four"`
-	Name           string             `json:"name"`
-	Status         string             `json:"status"`
-	TenantId       openapi_types.UUID `json:"tenant_id"`
-	UpdatedAt      *time.Time         `json:"updated_at,omitempty"`
-	UserId         openapi_types.UUID `json:"user_id"`
-}
-
 // WaitHumanProjectTaskAttemptRequest defines model for WaitHumanProjectTaskAttemptRequest.
 type WaitHumanProjectTaskAttemptRequest struct {
 	DigitalEmployeeId  openapi_types.UUID `json:"digital_employee_id"`
@@ -6083,6 +6012,11 @@ type ListProjectRouteDecisionsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// AddProjectRuntimeNodeJSONBody defines parameters for AddProjectRuntimeNode.
+type AddProjectRuntimeNodeJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
 // GetProjectTaskGraphParams defines parameters for GetProjectTaskGraph.
 type GetProjectTaskGraphParams struct {
 	CoordinationJobId *openapi_types.UUID `form:"coordination_job_id,omitempty" json:"coordination_job_id,omitempty"`
@@ -6260,11 +6194,6 @@ type BindTeamSkillJSONBody struct {
 	SkillId openapi_types.UUID `json:"skill_id"`
 }
 
-// ListUserCredentialsParams defines parameters for ListUserCredentials.
-type ListUserCredentialsParams struct {
-	CredentialType *CredentialType `form:"credential_type,omitempty" json:"credential_type,omitempty"`
-}
-
 // ListWorkflowInstancesParams defines parameters for ListWorkflowInstances.
 type ListWorkflowInstancesParams struct {
 	Q         *string                 `form:"q,omitempty" json:"q,omitempty"`
@@ -6309,9 +6238,6 @@ type UpsertEmployeeEnvironmentVariableJSONRequestBody = UpsertEnvironmentVariabl
 
 // UpsertDigitalEmployeeExecutionInstanceJSONRequestBody defines body for UpsertDigitalEmployeeExecutionInstance for application/json ContentType.
 type UpsertDigitalEmployeeExecutionInstanceJSONRequestBody = UpsertDigitalEmployeeExecutionInstanceRequest
-
-// CreateEmployeeMCPBindingJSONRequestBody defines body for CreateEmployeeMCPBinding for application/json ContentType.
-type CreateEmployeeMCPBindingJSONRequestBody = CreateMCPServerRequest
 
 // CreateEmployeeMCPBindingV2JSONRequestBody defines body for CreateEmployeeMCPBindingV2 for application/json ContentType.
 type CreateEmployeeMCPBindingV2JSONRequestBody = CreateMCPBindingRequest
@@ -6379,8 +6305,8 @@ type PutProjectMCPBindingsJSONRequestBody = PutProjectMCPBindingsRequest
 // ReplaceProjectMembersJSONRequestBody defines body for ReplaceProjectMembers for application/json ContentType.
 type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
 
-// PutProjectRuntimePlacementJSONRequestBody defines body for PutProjectRuntimePlacement for application/json ContentType.
-type PutProjectRuntimePlacementJSONRequestBody = PutProjectRuntimePlacementRequest
+// AddProjectRuntimeNodeJSONRequestBody defines body for AddProjectRuntimeNode for application/json ContentType.
+type AddProjectRuntimeNodeJSONRequestBody AddProjectRuntimeNodeJSONBody
 
 // AppendProviderSessionEventJSONRequestBody defines body for AppendProviderSessionEvent for application/json ContentType.
 type AppendProviderSessionEventJSONRequestBody = AppendProviderSessionEventRequest
@@ -6517,9 +6443,6 @@ type RevokeTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
 // CreateTeamMCPBindingJSONRequestBody defines body for CreateTeamMCPBinding for application/json ContentType.
 type CreateTeamMCPBindingJSONRequestBody = CreateMCPBindingRequest
 
-// CreateTeamMCPServerJSONRequestBody defines body for CreateTeamMCPServer for application/json ContentType.
-type CreateTeamMCPServerJSONRequestBody = CreateMCPServerRequest
-
 // CreateTeamMemberRoleRequestJSONRequestBody defines body for CreateTeamMemberRoleRequest for application/json ContentType.
 type CreateTeamMemberRoleRequestJSONRequestBody = CreateTeamMemberRoleRequest
 
@@ -6537,9 +6460,6 @@ type BindTeamSkillJSONRequestBody BindTeamSkillJSONBody
 
 // CreatePromptTemplateJSONRequestBody defines body for CreatePromptTemplate for application/json ContentType.
 type CreatePromptTemplateJSONRequestBody = CreatePromptTemplateRequest
-
-// CreateUserCredentialJSONRequestBody defines body for CreateUserCredential for application/json ContentType.
-type CreateUserCredentialJSONRequestBody = CreateUserCredentialRequest
 
 // AsAppendProviderSessionEventRequest0 returns the union data inside the AppendProviderSessionEventRequest as a AppendProviderSessionEventRequest0
 func (t AppendProviderSessionEventRequest) AsAppendProviderSessionEventRequest0() (AppendProviderSessionEventRequest0, error) {
@@ -7095,9 +7015,6 @@ type ServerInterface interface {
 	// List the effective MCP servers projected for a digital employee
 	// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-config)
 	ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// List merged team and personal MCP servers
-	// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
-	ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List employee environment variables
 	// (GET /api/v1/digital-employees/{employeeId}/environment-variables)
 	ListEmployeeEnvironmentVariables(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -7113,12 +7030,6 @@ type ServerInterface interface {
 	// Create or update the unique digital employee execution instance
 	// (PUT /api/v1/digital-employees/{employeeId}/execution-instance)
 	UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// List personal employee MCP bindings
-	// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings)
-	ListEmployeeMCPBindings(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// Create a personal employee MCP binding
-	// (POST /api/v1/digital-employees/{employeeId}/mcp-bindings)
-	CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List a digital employee's personal MCP bindings with env-var preflight
 	// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings-v2)
 	ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -7128,9 +7039,6 @@ type ServerInterface interface {
 	// Delete a digital employee personal MCP binding
 	// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
 	DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID)
-	// Delete a personal employee MCP binding
-	// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId})
-	DeleteEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId BindingId)
 	// List provider sessions for a digital employee
 	// (GET /api/v1/digital-employees/{employeeId}/provider-sessions)
 	ListProviderSessionsForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListProviderSessionsForDigitalEmployeeParams)
@@ -7335,15 +7243,12 @@ type ServerInterface interface {
 	// List eligible Runtime nodes for a project
 	// (GET /api/v1/projects/{projectId}/runtime-nodes)
 	ListProjectRuntimeNodes(w http.ResponseWriter, r *http.Request, projectId ProjectId)
-	// Release active Runtime placement for a project
-	// (DELETE /api/v1/projects/{projectId}/runtime-placement)
-	ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId)
-	// Get active Runtime placement for a project
-	// (GET /api/v1/projects/{projectId}/runtime-placement)
-	GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId)
-	// Bind a project to an active Runtime placement
-	// (PUT /api/v1/projects/{projectId}/runtime-placement)
-	PutProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Remove a Runtime node from the project eligibility set
+	// (DELETE /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId})
+	RemoveProjectRuntimeNode(w http.ResponseWriter, r *http.Request, projectId ProjectId, runtimeNodeId openapi_types.UUID)
+	// Add a Runtime node to the project eligibility set
+	// (PUT /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId})
+	AddProjectRuntimeNode(w http.ResponseWriter, r *http.Request, projectId ProjectId, runtimeNodeId openapi_types.UUID)
 	// Get project Runtime execution readiness
 	// (GET /api/v1/projects/{projectId}/runtime-readiness)
 	GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -7590,15 +7495,6 @@ type ServerInterface interface {
 	// Delete a team MCP binding
 	// (DELETE /api/v1/teams/{teamId}/mcp-bindings/{bindingId})
 	DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Request, teamId TeamId, bindingId openapi_types.UUID)
-	// List team MCP servers
-	// (GET /api/v1/teams/{teamId}/mcp-servers)
-	ListTeamMCPServers(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Create a team MCP server
-	// (POST /api/v1/teams/{teamId}/mcp-servers)
-	CreateTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Delete a team MCP server
-	// (DELETE /api/v1/teams/{teamId}/mcp-servers/{serverId})
-	DeleteTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId, serverId ServerId)
 	// List privileged team role requests
 	// (GET /api/v1/teams/{teamId}/member-role-requests)
 	ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamMemberRoleRequestsParams)
@@ -7644,12 +7540,6 @@ type ServerInterface interface {
 	// Apply a prompt template (increment use count)
 	// (POST /api/v1/templates/{id}/apply)
 	ApplyPromptTemplate(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
-	// List current user credentials
-	// (GET /api/v1/user-credentials)
-	ListUserCredentials(w http.ResponseWriter, r *http.Request, params ListUserCredentialsParams)
-	// Create a user credential
-	// (POST /api/v1/user-credentials)
-	CreateUserCredential(w http.ResponseWriter, r *http.Request)
 	// List visible workflow instances
 	// (GET /api/v1/workflow-instances)
 	ListWorkflowInstances(w http.ResponseWriter, r *http.Request, params ListWorkflowInstancesParams)
@@ -7866,12 +7756,6 @@ func (_ Unimplemented) ListEffectiveMCPConfig(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// List merged team and personal MCP servers
-// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
-func (_ Unimplemented) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // List employee environment variables
 // (GET /api/v1/digital-employees/{employeeId}/environment-variables)
 func (_ Unimplemented) ListEmployeeEnvironmentVariables(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
@@ -7902,18 +7786,6 @@ func (_ Unimplemented) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWri
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// List personal employee MCP bindings
-// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings)
-func (_ Unimplemented) ListEmployeeMCPBindings(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create a personal employee MCP binding
-// (POST /api/v1/digital-employees/{employeeId}/mcp-bindings)
-func (_ Unimplemented) CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // List a digital employee's personal MCP bindings with env-var preflight
 // (GET /api/v1/digital-employees/{employeeId}/mcp-bindings-v2)
 func (_ Unimplemented) ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
@@ -7929,12 +7801,6 @@ func (_ Unimplemented) CreateEmployeeMCPBindingV2(w http.ResponseWriter, r *http
 // Delete a digital employee personal MCP binding
 // (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
 func (_ Unimplemented) DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Delete a personal employee MCP binding
-// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId})
-func (_ Unimplemented) DeleteEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId BindingId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8346,21 +8212,15 @@ func (_ Unimplemented) ListProjectRuntimeNodes(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Release active Runtime placement for a project
-// (DELETE /api/v1/projects/{projectId}/runtime-placement)
-func (_ Unimplemented) ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+// Remove a Runtime node from the project eligibility set
+// (DELETE /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId})
+func (_ Unimplemented) RemoveProjectRuntimeNode(w http.ResponseWriter, r *http.Request, projectId ProjectId, runtimeNodeId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Get active Runtime placement for a project
-// (GET /api/v1/projects/{projectId}/runtime-placement)
-func (_ Unimplemented) GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Bind a project to an active Runtime placement
-// (PUT /api/v1/projects/{projectId}/runtime-placement)
-func (_ Unimplemented) PutProjectRuntimePlacement(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+// Add a Runtime node to the project eligibility set
+// (PUT /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId})
+func (_ Unimplemented) AddProjectRuntimeNode(w http.ResponseWriter, r *http.Request, projectId ProjectId, runtimeNodeId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8856,24 +8716,6 @@ func (_ Unimplemented) DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// List team MCP servers
-// (GET /api/v1/teams/{teamId}/mcp-servers)
-func (_ Unimplemented) ListTeamMCPServers(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create a team MCP server
-// (POST /api/v1/teams/{teamId}/mcp-servers)
-func (_ Unimplemented) CreateTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Delete a team MCP server
-// (DELETE /api/v1/teams/{teamId}/mcp-servers/{serverId})
-func (_ Unimplemented) DeleteTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId, serverId ServerId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // List privileged team role requests
 // (GET /api/v1/teams/{teamId}/member-role-requests)
 func (_ Unimplemented) ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamMemberRoleRequestsParams) {
@@ -8961,18 +8803,6 @@ func (_ Unimplemented) CreatePromptTemplate(w http.ResponseWriter, r *http.Reque
 // Apply a prompt template (increment use count)
 // (POST /api/v1/templates/{id}/apply)
 func (_ Unimplemented) ApplyPromptTemplate(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List current user credentials
-// (GET /api/v1/user-credentials)
-func (_ Unimplemented) ListUserCredentials(w http.ResponseWriter, r *http.Request, params ListUserCredentialsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create a user credential
-// (POST /api/v1/user-credentials)
-func (_ Unimplemented) CreateUserCredential(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10080,32 +9910,6 @@ func (siw *ServerInterfaceWrapper) ListEffectiveMCPConfig(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
-// ListEffectiveMCPServers operation middleware
-func (siw *ServerInterfaceWrapper) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListEffectiveMCPServers(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListEmployeeEnvironmentVariables operation middleware
 func (siw *ServerInterfaceWrapper) ListEmployeeEnvironmentVariables(w http.ResponseWriter, r *http.Request) {
 
@@ -10254,58 +10058,6 @@ func (siw *ServerInterfaceWrapper) UpsertDigitalEmployeeExecutionInstance(w http
 	handler.ServeHTTP(w, r)
 }
 
-// ListEmployeeMCPBindings operation middleware
-func (siw *ServerInterfaceWrapper) ListEmployeeMCPBindings(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListEmployeeMCPBindings(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateEmployeeMCPBinding operation middleware
-func (siw *ServerInterfaceWrapper) CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateEmployeeMCPBinding(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListEmployeeMCPBindingsV2 operation middleware
 func (siw *ServerInterfaceWrapper) ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request) {
 
@@ -10384,41 +10136,6 @@ func (siw *ServerInterfaceWrapper) DeleteEmployeeMCPBindingV2(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteEmployeeMCPBindingV2(w, r, employeeId, bindingId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteEmployeeMCPBinding operation middleware
-func (siw *ServerInterfaceWrapper) DeleteEmployeeMCPBinding(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "bindingId" -------------
-	var bindingId BindingId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", chi.URLParam(r, "bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bindingId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteEmployeeMCPBinding(w, r, employeeId, bindingId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13064,8 +12781,8 @@ func (siw *ServerInterfaceWrapper) ListProjectRuntimeNodes(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
-// ReleaseProjectRuntimePlacement operation middleware
-func (siw *ServerInterfaceWrapper) ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
+// RemoveProjectRuntimeNode operation middleware
+func (siw *ServerInterfaceWrapper) RemoveProjectRuntimeNode(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -13079,8 +12796,17 @@ func (siw *ServerInterfaceWrapper) ReleaseProjectRuntimePlacement(w http.Respons
 		return
 	}
 
+	// ------------- Path parameter "runtimeNodeId" -------------
+	var runtimeNodeId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runtimeNodeId", chi.URLParam(r, "runtimeNodeId"), &runtimeNodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runtimeNodeId", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReleaseProjectRuntimePlacement(w, r, projectId)
+		siw.Handler.RemoveProjectRuntimeNode(w, r, projectId, runtimeNodeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13090,8 +12816,8 @@ func (siw *ServerInterfaceWrapper) ReleaseProjectRuntimePlacement(w http.Respons
 	handler.ServeHTTP(w, r)
 }
 
-// GetProjectRuntimePlacement operation middleware
-func (siw *ServerInterfaceWrapper) GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
+// AddProjectRuntimeNode operation middleware
+func (siw *ServerInterfaceWrapper) AddProjectRuntimeNode(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -13105,34 +12831,17 @@ func (siw *ServerInterfaceWrapper) GetProjectRuntimePlacement(w http.ResponseWri
 		return
 	}
 
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetProjectRuntimePlacement(w, r, projectId)
-	}))
+	// ------------- Path parameter "runtimeNodeId" -------------
+	var runtimeNodeId openapi_types.UUID
 
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PutProjectRuntimePlacement operation middleware
-func (siw *ServerInterfaceWrapper) PutProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "projectId" -------------
-	var projectId ProjectId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	err = runtime.BindStyledParameterWithOptions("simple", "runtimeNodeId", chi.URLParam(r, "runtimeNodeId"), &runtimeNodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runtimeNodeId", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PutProjectRuntimePlacement(w, r, projectId)
+		siw.Handler.AddProjectRuntimeNode(w, r, projectId, runtimeNodeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15972,93 +15681,6 @@ func (siw *ServerInterfaceWrapper) DeleteTeamMCPBinding(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
-// ListTeamMCPServers operation middleware
-func (siw *ServerInterfaceWrapper) ListTeamMCPServers(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTeamMCPServers(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateTeamMCPServer operation middleware
-func (siw *ServerInterfaceWrapper) CreateTeamMCPServer(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateTeamMCPServer(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteTeamMCPServer operation middleware
-func (siw *ServerInterfaceWrapper) DeleteTeamMCPServer(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "serverId" -------------
-	var serverId ServerId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "serverId", chi.URLParam(r, "serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteTeamMCPServer(w, r, teamId, serverId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListTeamMemberRoleRequests operation middleware
 func (siw *ServerInterfaceWrapper) ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request) {
 
@@ -16532,53 +16154,6 @@ func (siw *ServerInterfaceWrapper) ApplyPromptTemplate(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
-// ListUserCredentials operation middleware
-func (siw *ServerInterfaceWrapper) ListUserCredentials(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListUserCredentialsParams
-
-	// ------------- Optional query parameter "credential_type" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "credential_type", r.URL.Query(), &params.CredentialType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "credential_type"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "credential_type", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListUserCredentials(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateUserCredential operation middleware
-func (siw *ServerInterfaceWrapper) CreateUserCredential(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateUserCredential(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListWorkflowInstances operation middleware
 func (siw *ServerInterfaceWrapper) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 
@@ -16894,9 +16469,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-mcp-config", wrapper.ListEffectiveMCPConfig)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-mcp-servers", wrapper.ListEffectiveMCPServers)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/environment-variables", wrapper.ListEmployeeEnvironmentVariables)
 	})
 	r.Group(func(r chi.Router) {
@@ -16912,12 +16484,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/execution-instance", wrapper.UpsertDigitalEmployeeExecutionInstance)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings", wrapper.ListEmployeeMCPBindings)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings", wrapper.CreateEmployeeMCPBinding)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2", wrapper.ListEmployeeMCPBindingsV2)
 	})
 	r.Group(func(r chi.Router) {
@@ -16925,9 +16491,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", wrapper.DeleteEmployeeMCPBindingV2)
-	})
-	r.Group(func(r chi.Router) {
-		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId}", wrapper.DeleteEmployeeMCPBinding)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/provider-sessions", wrapper.ListProviderSessionsForDigitalEmployee)
@@ -17134,13 +16697,10 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-nodes", wrapper.ListProjectRuntimeNodes)
 	})
 	r.Group(func(r chi.Router) {
-		r.Delete(options.BaseURL+"/api/v1/projects/{projectId}/runtime-placement", wrapper.ReleaseProjectRuntimePlacement)
+		r.Delete(options.BaseURL+"/api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}", wrapper.RemoveProjectRuntimeNode)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-placement", wrapper.GetProjectRuntimePlacement)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/runtime-placement", wrapper.PutProjectRuntimePlacement)
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}", wrapper.AddProjectRuntimeNode)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-readiness", wrapper.GetProjectRuntimeReadiness)
@@ -17389,15 +16949,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/mcp-bindings/{bindingId}", wrapper.DeleteTeamMCPBinding)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers", wrapper.ListTeamMCPServers)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers", wrapper.CreateTeamMCPServer)
-	})
-	r.Group(func(r chi.Router) {
-		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers/{serverId}", wrapper.DeleteTeamMCPServer)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/member-role-requests", wrapper.ListTeamMemberRoleRequests)
 	})
 	r.Group(func(r chi.Router) {
@@ -17441,12 +16992,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/templates/{id}/apply", wrapper.ApplyPromptTemplate)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/user-credentials", wrapper.ListUserCredentials)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/user-credentials", wrapper.CreateUserCredential)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/workflow-instances", wrapper.ListWorkflowInstances)

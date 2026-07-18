@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,9 +20,8 @@ import (
 type HandlerService interface {
 	CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error)
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (*Project, error)
-	GetProjectRuntimePlacement(ctx context.Context, req GetProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error)
-	PutProjectRuntimePlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error)
-	ReleaseProjectRuntimePlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (*ProjectRuntimePlacement, error)
+	AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error)
+	RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error
 	GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
@@ -311,23 +311,7 @@ func (h *HTTPHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (h *HTTPHandler) GetProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
-	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
-	if !ok {
-		return
-	}
-	placement, err := service.GetProjectRuntimePlacement(r.Context(), GetProjectRuntimePlacementRequest{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, projectRuntimePlacementResponseFromDomain(*placement))
-}
-
-func (h *HTTPHandler) PutProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
+func (h *HTTPHandler) AddProjectRuntimeNode(w http.ResponseWriter, r *http.Request) {
 	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectUpdate)
 	if !ok {
 		return
@@ -336,51 +320,62 @@ func (h *HTTPHandler) PutProjectRuntimePlacement(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	var body putProjectRuntimePlacementBody
-	if !decodeJSONBody(w, r, &body) {
-		return
-	}
-	placement, err := service.PutProjectRuntimePlacement(r.Context(), PutProjectRuntimePlacementRequest{
-		TenantID:              tenantID,
-		ProjectID:             projectID,
-		RuntimeNodeID:         body.RuntimeNodeID,
-		ActorUserID:           actorID,
-		Reason:                body.Reason,
-		ExpectedProviderTypes: body.ExpectedProviderTypes,
-	})
+	runtimeNodeID, err := uuid.Parse(chi.URLParam(r, "runtimeNodeId"))
 	if err != nil {
-		writeHandlerError(w, err)
+		http.Error(w, "invalid runtime node id", http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusOK, projectRuntimePlacementResponseFromDomain(*placement))
-}
-
-func (h *HTTPHandler) ReleaseProjectRuntimePlacement(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectUpdate)
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	var body releaseProjectRuntimePlacementBody
+	var body modifyProjectRuntimeNodeBody
 	if r.Body != nil && r.Body != http.NoBody {
 		if !decodeOptionalJSONBody(w, r, &body) {
 			return
 		}
 	}
-	placement, err := service.ReleaseProjectRuntimePlacement(r.Context(), ReleaseProjectRuntimePlacementRequest{
-		TenantID:    tenantID,
-		ProjectID:   projectID,
-		ActorUserID: actorID,
-		Reason:      body.Reason,
+	node, err := service.AddProjectRuntimeNode(r.Context(), ModifyProjectRuntimeNodeRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+		ActorUserID:   actorID,
+		Reason:        body.Reason,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, projectRuntimePlacementResponseFromDomain(*placement))
+	writeJSON(w, http.StatusOK, projectRuntimeNodeResponse{RuntimeNodeID: node.RuntimeNodeID})
+}
+
+func (h *HTTPHandler) RemoveProjectRuntimeNode(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectUpdate)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	runtimeNodeID, err := uuid.Parse(chi.URLParam(r, "runtimeNodeId"))
+	if err != nil {
+		http.Error(w, "invalid runtime node id", http.StatusBadRequest)
+		return
+	}
+	var body modifyProjectRuntimeNodeBody
+	if r.Body != nil && r.Body != http.NoBody {
+		if !decodeOptionalJSONBody(w, r, &body) {
+			return
+		}
+	}
+	if err := service.RemoveProjectRuntimeNode(r.Context(), ModifyProjectRuntimeNodeRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+		ActorUserID:   actorID,
+		Reason:        body.Reason,
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request) {
@@ -1761,6 +1756,8 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
+		// 500 兜底不能吞错误细节——留一条服务端日志供排障（响应体仍不泄露内部信息）。
+		log.Printf("project handler internal error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -1834,42 +1831,8 @@ func projectRuntimeNodeResponses(nodes []ProjectRuntimeNode) []projectRuntimeNod
 	return responses
 }
 
-type putProjectRuntimePlacementBody struct {
-	RuntimeNodeID         uuid.UUID `json:"runtime_node_id"`
-	Reason                string    `json:"reason"`
-	ExpectedProviderTypes []string  `json:"expected_provider_types"`
-}
-
-type releaseProjectRuntimePlacementBody struct {
+type modifyProjectRuntimeNodeBody struct {
 	Reason string `json:"reason"`
-}
-
-type projectRuntimePlacementResponse struct {
-	ID              uuid.UUID                    `json:"id"`
-	TenantID        uuid.UUID                    `json:"tenant_id,omitempty"`
-	ProjectID       uuid.UUID                    `json:"project_id"`
-	RuntimeNodeID   uuid.UUID                    `json:"runtime_node_id"`
-	PlacementStatus ProjectRuntimePlacementState `json:"placement_status"`
-	PlacementReason string                       `json:"placement_reason,omitempty"`
-	AssignedAt      time.Time                    `json:"assigned_at,omitempty"`
-	ReleasedAt      *time.Time                   `json:"released_at,omitempty"`
-	CreatedAt       time.Time                    `json:"created_at,omitempty"`
-	UpdatedAt       time.Time                    `json:"updated_at,omitempty"`
-}
-
-func projectRuntimePlacementResponseFromDomain(placement ProjectRuntimePlacement) projectRuntimePlacementResponse {
-	return projectRuntimePlacementResponse{
-		ID:              placement.ID,
-		TenantID:        placement.TenantID,
-		ProjectID:       placement.ProjectID,
-		RuntimeNodeID:   placement.RuntimeNodeID,
-		PlacementStatus: placement.PlacementStatus,
-		PlacementReason: placement.PlacementReason,
-		AssignedAt:      placement.AssignedAt,
-		ReleasedAt:      placement.ReleasedAt,
-		CreatedAt:       placement.CreatedAt,
-		UpdatedAt:       placement.UpdatedAt,
-	}
 }
 
 type updateProjectBody struct {

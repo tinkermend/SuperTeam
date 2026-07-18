@@ -27,8 +27,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/superteam/control-plane/internal/project"
-	pc "github.com/superteam/control-plane/internal/workflow/projectcoordination"
 	"github.com/superteam/control-plane/internal/storage/queries"
+	pc "github.com/superteam/control-plane/internal/workflow/projectcoordination"
 )
 
 const liveCriterion = "所有新增导出函数都有覆盖边界条件的单元测试，且测试真实断言行为"

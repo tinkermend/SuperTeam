@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/superteam/feishu-connector/internal/cpclient"
 )
@@ -120,20 +121,180 @@ func DemandReceiptCard(title, demandID, deepLink string) string {
 	)
 }
 
+// strSlice 宽容取字符串数组(payload 经 JSON 往返后为 []any)。
+func strSlice(v any) []string {
+	switch items := v.(type) {
+	case []string:
+		return items
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// mapSlice 宽容取对象数组。
+func mapSlice(v any) []map[string]any {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// listSection 把条目列表渲染成一个带标题的 markdown 区块,超过 maxItems 截断留痕。
+func listSection(title string, lines []string, maxItems int) map[string]any {
+	shown := lines
+	if len(shown) > maxItems {
+		shown = shown[:maxItems]
+	}
+	content := "**" + title + "**\n" + strings.Join(shown, "\n")
+	if len(lines) > maxItems {
+		content += fmt.Sprintf("\n_…共 %d 条,其余见 Console_", len(lines))
+	}
+	return mdBlock(content)
+}
+
+// decisionBodyElements 渲染决策卡信息区:项目/类型/风险/摘要+按决策类型展开的富上下文。
+// 决策卡与终态卡共用——批准之后卡片必须保留"批的是什么",不逼人回控制台。
+func decisionBodyElements(payload map[string]any) []map[string]any {
+	decisionType, _ := payload["decision_type"].(string)
+	summary, _ := payload["summary"].(string)
+	risk, _ := payload["risk_level"].(string)
+	projectName, _ := payload["project_name"].(string)
+
+	info := ""
+	if projectName != "" {
+		info = fmt.Sprintf("**项目**:%s\n", projectName)
+	}
+	info += fmt.Sprintf("**类型**:%s", decisionTypeLabel(decisionType))
+	if risk != "" {
+		info += fmt.Sprintf("  **风险**:%s", riskLabel(risk))
+	}
+	elements := []map[string]any{mdBlock(info)}
+	if summary != "" {
+		elements = append(elements, mdBlock(clamp(summary, 1200)))
+	}
+	context, _ := payload["context"].(map[string]any)
+	if context != nil {
+		elements = append(elements, decisionContextElements(decisionType, context, payload)...)
+	}
+	return elements
+}
+
+// decisionContextElements 按决策类型渲染富上下文区块;未知类型静默跳过(薄卡兜底)。
+func decisionContextElements(decisionType string, context map[string]any, payload map[string]any) []map[string]any {
+	var sections []map[string]any
+	switch decisionType {
+	case "plan_review":
+		employeeNames, _ := payload["employee_names"].(map[string]any)
+		tasks := mapSlice(context["tasks"])
+		lines := make([]string, 0, len(tasks))
+		for i, task := range tasks {
+			title, _ := task["title"].(string)
+			line := fmt.Sprintf("%d. %s", i+1, clamp(title, 60))
+			if employeeID, _ := task["selected_employee_id"].(string); employeeID != "" {
+				if name, _ := employeeNames[employeeID].(string); name != "" {
+					line += fmt.Sprintf("(%s)", name)
+				}
+			}
+			lines = append(lines, line)
+		}
+		if len(lines) > 0 {
+			sections = append(sections, listSection(fmt.Sprintf("计划任务(%d 项)", len(lines)), lines, 8))
+		}
+		criteria := mapSlice(context["plan_acceptance_criteria"])
+		criteriaLines := make([]string, 0, len(criteria))
+		for _, criterion := range criteria {
+			statement, _ := criterion["statement"].(string)
+			if statement == "" {
+				continue
+			}
+			criteriaLines = append(criteriaLines, "• "+clamp(statement, 100))
+		}
+		if len(criteriaLines) > 0 {
+			sections = append(sections, listSection("验收判据", criteriaLines, 8))
+		}
+		if riskAssessment, ok := context["risk_assessment"].(map[string]any); ok {
+			if keys := strSlice(riskAssessment["high_risk_task_keys"]); len(keys) > 0 {
+				sections = append(sections, mdBlock("**高风险任务**:"+clamp(strings.Join(keys, "、"), 200)))
+			}
+		}
+		if humanReview, ok := context["human_review"].(map[string]any); ok {
+			if reasons := strSlice(humanReview["reasons"]); len(reasons) > 0 {
+				sections = append(sections, mdBlock("**需人工确认原因**:"+clamp(strings.Join(reasons, ";"), 300)))
+			}
+		}
+	case "demand_acceptance":
+		detail := mapSlice(context["pending_criteria_detail"])
+		lines := make([]string, 0, len(detail))
+		for _, criterion := range detail {
+			statement, _ := criterion["statement"].(string)
+			if statement == "" {
+				continue
+			}
+			line := "☐ " + clamp(statement, 120)
+			if method, _ := criterion["verification_method"].(string); method == "human_judgment" {
+				line += "(人工判断)"
+			}
+			lines = append(lines, line)
+		}
+		if len(lines) > 0 {
+			sections = append(sections, listSection(fmt.Sprintf("待签署判据(%d 条)", len(lines)), lines, 10))
+		} else if pending := strSlice(context["pending_criteria"]); len(pending) > 0 {
+			sections = append(sections, mdBlock(fmt.Sprintf("**待签署判据**:%d 条,明细见 Console。", len(pending))))
+		}
+	case "planning_gap":
+		if gap, ok := context["gap"].(map[string]any); ok {
+			gapInfo := ""
+			if kind, _ := gap["constraint_kind"].(string); kind != "" {
+				gapInfo += "**缺口类型**:" + kind + "\n"
+			}
+			if roles := strSlice(gap["roles"]); len(roles) > 0 {
+				gapInfo += "**缺口角色**:" + clamp(strings.Join(roles, "、"), 150) + "\n"
+			}
+			if capabilities := strSlice(gap["required_capabilities"]); len(capabilities) > 0 {
+				gapInfo += "**所需能力**:" + clamp(strings.Join(capabilities, "、"), 200) + "\n"
+			}
+			if count, ok := gap["active_executor_count"].(float64); ok {
+				gapInfo += fmt.Sprintf("**当前可用执行者**:%d 个", int(count))
+			}
+			if gapInfo != "" {
+				sections = append(sections, mdBlock(strings.TrimRight(gapInfo, "\n")))
+			}
+		}
+	case "upstream_supplement_review":
+		if missing := strSlice(context["missing_inputs"]); len(missing) > 0 {
+			lines := make([]string, 0, len(missing))
+			for _, item := range missing {
+				lines = append(lines, "• "+clamp(item, 100))
+			}
+			sections = append(sections, listSection("缺失的上游输入", lines, 8))
+		}
+	case "task_failure_recovery", "project_task_iteration_exhausted":
+		if downstream := strSlice(context["downstream_task_ids"]); len(downstream) > 0 {
+			sections = append(sections, mdBlock(fmt.Sprintf("**影响范围**:%d 个下游任务已挂起,等待此决策。", len(downstream))))
+		}
+	}
+	return sections
+}
+
 // DecisionCard 审批卡:按决策类型分级渲染。payload 来自控制平面 outbox 快照。
 func DecisionCard(payload map[string]any, decisionID, projectID, webOrigin string) string {
 	decisionType, _ := payload["decision_type"].(string)
 	title, _ := payload["title"].(string)
-	summary, _ := payload["summary"].(string)
 	risk, _ := payload["risk_level"].(string)
-
-	info := fmt.Sprintf("**类型**:%s", decisionTypeLabel(decisionType))
-	if risk != "" {
-		info += fmt.Sprintf("\n**风险**:%s", risk)
-	}
-	if summary != "" {
-		info += "\n\n" + clamp(summary, 1500)
-	}
 	deepLink := webOrigin + "/inbox"
 
 	resolveValue := func(decision string) map[string]any {
@@ -168,41 +329,82 @@ func DecisionCard(payload map[string]any, decisionID, projectID, webOrigin strin
 		actions = []map[string]any{linkButton("到 Console 处理", deepLink)}
 	}
 
-	return card(
-		header("待你处理:"+clamp(title, 80), riskTemplate(risk)),
-		mdBlock(info),
-		map[string]any{"tag": "action", "actions": actions},
-	)
+	elements := decisionBodyElements(payload)
+	elements = append(elements, map[string]any{"tag": "action", "actions": actions})
+	return card(header("待你处理:"+clamp(title, 80), riskTemplate(risk)), elements...)
 }
 
-// DecisionResolvedCard 决策终态卡(card_update 整卡替换)。
-func DecisionResolvedCard(payload map[string]any) string {
+// DecisionResolvedCard 决策终态卡(即时置换与 card_update 整卡替换共用)。
+// 保留原卡全部信息区,只把按钮换成结果与深链——在飞书上就能看清"处理的是什么"。
+func DecisionResolvedCard(payload map[string]any, webOrigin string) string {
 	title, _ := payload["title"].(string)
 	status, _ := payload["resolved_status"].(string)
-	return card(
-		header("已处理:"+clamp(title, 80), "grey"),
-		mdBlock(fmt.Sprintf("该决策已处理,结论:**%s**。卡片按钮已失效;详情见 Console。", statusLabel(status))),
-	)
+
+	result := "**处理结果**:" + statusLabel(status)
+	if self, _ := payload["resolved_by_self"].(bool); self {
+		result += "(你处理的)"
+	} else if name, _ := payload["resolved_by_name"].(string); name != "" {
+		result += "\n**处理人**:" + name
+	}
+	if comment, _ := payload["resolution_comment"].(string); comment != "" {
+		result += "\n**说明**:" + clamp(comment, 300)
+	}
+	if resolvedAt, _ := payload["resolved_at"].(string); resolvedAt != "" {
+		if at, err := time.Parse(time.RFC3339, resolvedAt); err == nil {
+			result += "\n**处理时间**:" + at.Local().Format("2006-01-02 15:04")
+		}
+	}
+
+	elements := []map[string]any{mdBlock(result)}
+	elements = append(elements, decisionBodyElements(payload)...)
+	elements = append(elements, map[string]any{"tag": "action", "actions": []map[string]any{
+		linkButton("在 Console 查看", strings.TrimRight(webOrigin, "/") + "/inbox"),
+	}})
+	return card(header("已处理:"+clamp(title, 80), "grey"), elements...)
 }
 
-// ResultNoticeCard 需求终态只读通知。
+// ResultNoticeCard 需求终态只读通知:带需求原文摘录与任务完成/失败清单,
+// 手机端不回控制台也能看清结果全貌。
 func ResultNoticeCard(payload map[string]any, webOrigin string) string {
 	title, _ := payload["title"].(string)
 	status, _ := payload["status"].(string)
 	demandID, _ := payload["demand_id"].(string)
+	projectName, _ := payload["project_name"].(string)
 	template := "green"
 	label := "已完成"
 	if status == "failed" {
 		template = "red"
 		label = "未通过"
 	}
-	return card(
-		header(fmt.Sprintf("需求%s:%s", label, clamp(title, 70)), template),
-		mdBlock(fmt.Sprintf("**状态**:%s\n需求 ID:`%s`", status, demandID)),
-		map[string]any{"tag": "action", "actions": []map[string]any{
-			linkButton("查看详情", fmt.Sprintf("%s/workflows/%s", strings.TrimRight(webOrigin, "/"), demandID)),
-		}},
-	)
+
+	info := ""
+	if projectName != "" {
+		info = fmt.Sprintf("**项目**:%s\n", projectName)
+	}
+	if total, ok := payload["task_total"].(float64); ok && total > 0 {
+		completed, _ := payload["task_completed"].(float64)
+		failed, _ := payload["task_failed"].(float64)
+		info += fmt.Sprintf("**任务**:共 %d 项,完成 %d 项", int(total), int(completed))
+		if failed > 0 {
+			info += fmt.Sprintf(",失败 %d 项", int(failed))
+		}
+		info += "\n"
+	}
+	elements := []map[string]any{mdBlock(strings.TrimRight(info, "\n"))}
+	if excerpt, _ := payload["content_excerpt"].(string); excerpt != "" {
+		elements = append(elements, mdBlock("**需求内容**\n"+clamp(excerpt, 300)))
+	}
+	if failedTitles := strSlice(payload["failed_task_titles"]); len(failedTitles) > 0 {
+		lines := make([]string, 0, len(failedTitles))
+		for _, taskTitle := range failedTitles {
+			lines = append(lines, "• "+clamp(taskTitle, 80))
+		}
+		elements = append(elements, listSection("失败任务", lines, 3))
+	}
+	elements = append(elements, map[string]any{"tag": "action", "actions": []map[string]any{
+		linkButton("查看详情", fmt.Sprintf("%s/workflows/%s", strings.TrimRight(webOrigin, "/"), demandID)),
+	}})
+	return card(header(fmt.Sprintf("需求%s:%s", label, clamp(title, 70)), template), elements...)
 }
 
 func decisionTypeLabel(decisionType string) string {
@@ -215,11 +417,34 @@ func decisionTypeLabel(decisionType string) string {
 		return "需求验收(判据签署)"
 	case "clarification":
 		return "需求澄清"
+	case "task_failure_recovery":
+		return "任务失败恢复"
+	case "project_task_iteration_exhausted":
+		return "任务返工次数耗尽"
+	case "upstream_supplement_review":
+		return "上游输入补充评审"
+	case "project_acceptance":
+		return "项目验收"
+	case "project_task_recovery":
+		return "任务派发恢复"
 	default:
 		if decisionType == "" {
 			return "人类决策"
 		}
 		return decisionType
+	}
+}
+
+func riskLabel(risk string) string {
+	switch strings.ToLower(risk) {
+	case "high":
+		return "高"
+	case "medium":
+		return "中"
+	case "low":
+		return "低"
+	default:
+		return risk
 	}
 }
 

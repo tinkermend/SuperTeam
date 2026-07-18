@@ -39,8 +39,8 @@ func newConnectorTestServer(t *testing.T, tenantID uuid.UUID) *Server {
 
 type staticSealer struct{}
 
-func (staticSealer) Seal(plain string) (string, error)   { return "sealed:" + plain, nil }
-func (staticSealer) Open(sealed string) (string, error)  { return sealed[len("sealed:"):], nil }
+func (staticSealer) Seal(plain string) (string, error)  { return "sealed:" + plain, nil }
+func (staticSealer) Open(sealed string) (string, error) { return sealed[len("sealed:"):], nil }
 
 type connectorRouteRepo struct {
 	tenantID uuid.UUID

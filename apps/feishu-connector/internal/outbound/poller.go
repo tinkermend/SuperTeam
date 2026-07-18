@@ -79,7 +79,7 @@ func (p *Poller) deliver(ctx context.Context, item cpclient.OutboxItem) {
 			p.ack(ctx, item.ID, "", nil) // 无可更新目标,直接消化
 			return
 		}
-		err := p.messenger.UpdateCard(ctx, messageID, cards.DecisionResolvedCard(item.Payload))
+		err := p.messenger.UpdateCard(ctx, messageID, cards.DecisionResolvedCard(item.Payload, p.webOrigin))
 		p.ack(ctx, item.ID, messageID, err)
 	default:
 		log.Printf("[outbound] unknown outbox kind %q, acking to avoid poison-pill", item.Kind)

@@ -31,6 +31,7 @@ import {
   type UserProjectTeamScope,
 } from "@/lib/api";
 import {
+  addProjectRuntimeNode,
   archiveProject,
   createProject,
   createProjectAcceptance,
@@ -45,6 +46,7 @@ import {
   getProjectExecutionTrace,
   getProjectOverview,
   getProjectRuntimeReadiness,
+  removeProjectRuntimeNode,
   listProjectArchiveSnapshots,
   listProjectArtifacts,
   listProjectBudgetLedger,
@@ -64,8 +66,6 @@ import {
   listProjectTransferRequests,
   listWorkflowInstances,
   patchProjectEvidence,
-  putProjectRuntimePlacement,
-  releaseProjectRuntimePlacement,
   resolveProjectDecision,
   submitProjectDemand,
   type CreateProjectAcceptanceInput,
@@ -635,23 +635,19 @@ export function ProjectsView({
 
   const bindRuntimePlacementMutation = useMutation({
     mutationFn: (runtimeNodeId: string) =>
-      putProjectRuntimePlacement(apiOptions, effectiveProjectId as string, {
-        runtime_node_id: runtimeNodeId,
-        expected_provider_types: currentProjectRuntimeReadiness?.required_provider_types?.length
-          ? currentProjectRuntimeReadiness.required_provider_types
-          : undefined,
+      addProjectRuntimeNode(apiOptions, effectiveProjectId as string, runtimeNodeId, {
         reason: "project_runtime_placement_panel",
       }),
-    onSuccess: async (placement) => {
-      await invalidateRuntimePlacementSurfaces(placement.project_id || effectiveProjectId);
+    onSuccess: async () => {
+      await invalidateRuntimePlacementSurfaces(effectiveProjectId);
     },
   });
 
   const releaseRuntimePlacementMutation = useMutation({
-    mutationFn: () =>
-      releaseProjectRuntimePlacement(apiOptions, effectiveProjectId as string),
-    onSuccess: async (placement) => {
-      await invalidateRuntimePlacementSurfaces(placement.project_id || effectiveProjectId);
+    mutationFn: (runtimeNodeId: string) =>
+      removeProjectRuntimeNode(apiOptions, effectiveProjectId as string, runtimeNodeId),
+    onSuccess: async () => {
+      await invalidateRuntimePlacementSurfaces(effectiveProjectId);
     },
   });
 
@@ -1130,8 +1126,10 @@ export function ProjectsView({
                           }
                         }}
                         onReleaseRuntime={() => {
-                          if (effectiveProjectId) {
-                            releaseRuntimePlacementMutation.mutate();
+                          const boundNodeId =
+                            currentProjectRuntimeReadiness?.runtime_node_id ?? selectedRuntimeNodeId;
+                          if (effectiveProjectId && boundNodeId) {
+                            releaseRuntimePlacementMutation.mutate(boundNodeId);
                           }
                         }}
                         onSelectedRuntimeNodeIdChange={setSelectedRuntimeNodeId}

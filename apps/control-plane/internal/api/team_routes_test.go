@@ -209,80 +209,10 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 }
 
-func TestTeamMCPRoutesUseConsoleAuthAndCapabilityManage(t *testing.T) {
-	authService, err := auth.NewService(newRouteAuthRepo())
-	if err != nil {
-		t.Fatalf("new auth service: %v", err)
-	}
-	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
-	tenantID := platform.DefaultTenantID
-	teamID := uuid.New()
-	serverID := uuid.New()
-	service := &routeCapabilityService{
-		mcpServer: capability.MCPServer{
-			ID:             serverID,
-			TenantID:       tenantID,
-			TeamID:         &teamID,
-			Name:           "ops-mcp",
-			URL:            "https://mcp.example.com",
-			CredentialType: capability.CredentialTypeMCPToken,
-			Status:         "active",
-			SourceScope:    "team",
-		},
-	}
-	authorizer := newRecordingAuthorizer()
-	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
-	server.SetCapabilityHandler(capability.NewHandler(service))
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/mcp-servers", strings.NewReader(`{"name":"ops-mcp","url":"https://mcp.example.com"}`))
-	req.Header.Set("Content-Type", "application/json")
-	withConsoleSessionCookie(req, user.SessionToken)
-	resp := httptest.NewRecorder()
-	server.ServeHTTP(resp, req)
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("expected create team mcp to succeed, got %d: %s", resp.Code, resp.Body.String())
-	}
-	if service.createTeamReq.TenantID != tenantID || service.createTeamReq.UserID != user.User.ID || service.createTeamReq.TeamID != teamID {
-		t.Fatalf("unexpected create team mcp request: %#v", service.createTeamReq)
-	}
-
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/teams/"+teamID.String()+"/mcp-servers/"+serverID.String(), nil)
-	withConsoleSessionCookie(deleteReq, user.SessionToken)
-	deleteResp := httptest.NewRecorder()
-	server.ServeHTTP(deleteResp, deleteReq)
-	if deleteResp.Code != http.StatusNoContent {
-		t.Fatalf("expected delete team mcp to succeed, got %d: %s", deleteResp.Code, deleteResp.Body.String())
-	}
-	if service.deleteTeamReq.TenantID != tenantID || service.deleteTeamReq.TeamID != teamID || service.deleteTeamReq.ServerID != serverID {
-		t.Fatalf("unexpected delete team mcp request: %#v", service.deleteTeamReq)
-	}
-
-	if len(authorizer.checks) != 2 {
-		t.Fatalf("expected two authz checks, got %#v", authorizer.checks)
-	}
-	for _, check := range authorizer.checks {
-		if check.Action != authz.ActionTeamCapabilityManage || check.Resource.Type != authz.ResourceTeam || check.Resource.ID != teamID.String() || check.TeamID == nil || *check.TeamID != teamID {
-			t.Fatalf("unexpected team mcp authz check: %#v", check)
-		}
-	}
-}
-
 type routeCapabilityService struct {
-	credential       capability.Credential
-	mcpServer        capability.MCPServer
 	mcpDefinition    capability.MCPDefinition
 	mcpBinding       capability.MCPBinding
 	effectiveServers []capability.EffectiveMCPServer
-
-	createCredentialReq capability.CreateCredentialRequest
-	listCredentialsReq  capability.ListCredentialsRequest
-	createTeamReq       capability.CreateTeamMCPServerRequest
-	listTeamReq         capability.TeamScopedRequest
-	deleteTeamReq       capability.DeleteTeamMCPServerRequest
-	createEmployeeReq   capability.CreateEmployeeMCPBindingRequest
-	listEmployeeReq     capability.EmployeeScopedRequest
-	deleteEmployeeReq   capability.DeleteEmployeeMCPBindingRequest
-	effectiveReq        capability.EmployeeScopedRequest
 
 	createDefinitionReq        capability.CreateMCPServerDefinitionRequest
 	listDefinitionsReq         capability.ListMCPServerDefinitionsRequest
@@ -296,51 +226,6 @@ type routeCapabilityService struct {
 	listSkillDependenciesReq  capability.ListSkillMCPDependenciesRequest
 	replaceSkillDependencyReq capability.ReplaceSkillMCPDependenciesRequest
 	listDependentSkillsReq    capability.ListDependentSkillsRequest
-}
-
-func (s *routeCapabilityService) CreateCredential(ctx context.Context, req capability.CreateCredentialRequest) (capability.Credential, error) {
-	s.createCredentialReq = req
-	return s.credential, nil
-}
-
-func (s *routeCapabilityService) ListCredentials(ctx context.Context, req capability.ListCredentialsRequest) ([]capability.Credential, error) {
-	s.listCredentialsReq = req
-	return []capability.Credential{s.credential}, nil
-}
-
-func (s *routeCapabilityService) CreateTeamMCPServer(ctx context.Context, req capability.CreateTeamMCPServerRequest) (capability.MCPServer, error) {
-	s.createTeamReq = req
-	return s.mcpServer, nil
-}
-
-func (s *routeCapabilityService) ListTeamMCPServers(ctx context.Context, req capability.TeamScopedRequest) ([]capability.MCPServer, error) {
-	s.listTeamReq = req
-	return []capability.MCPServer{s.mcpServer}, nil
-}
-
-func (s *routeCapabilityService) DeleteTeamMCPServer(ctx context.Context, req capability.DeleteTeamMCPServerRequest) error {
-	s.deleteTeamReq = req
-	return nil
-}
-
-func (s *routeCapabilityService) CreateEmployeeMCPBinding(ctx context.Context, req capability.CreateEmployeeMCPBindingRequest) (capability.MCPServer, error) {
-	s.createEmployeeReq = req
-	return s.mcpServer, nil
-}
-
-func (s *routeCapabilityService) ListEmployeeMCPBindings(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error) {
-	s.listEmployeeReq = req
-	return []capability.MCPServer{s.mcpServer}, nil
-}
-
-func (s *routeCapabilityService) DeleteEmployeeMCPBinding(ctx context.Context, req capability.DeleteEmployeeMCPBindingRequest) error {
-	s.deleteEmployeeReq = req
-	return nil
-}
-
-func (s *routeCapabilityService) ListEffectiveMCPServers(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error) {
-	s.effectiveReq = req
-	return []capability.MCPServer{s.mcpServer}, nil
 }
 
 func (s *routeCapabilityService) CreateMCPServerDefinition(ctx context.Context, req capability.CreateMCPServerDefinitionRequest) (capability.MCPDefinition, error) {

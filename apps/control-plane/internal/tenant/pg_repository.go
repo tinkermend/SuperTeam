@@ -520,9 +520,6 @@ func (r *PgRepository) ConfirmTeamDelete(ctx context.Context, tenantID, teamID, 
 	if err := qtx.HardDeleteTeamMCPBindings(ctx, queries.HardDeleteTeamMCPBindingsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
 		return TeamRecord{}, fmt.Errorf("delete team mcp bindings: %w", err)
 	}
-	if err := qtx.HardDeleteTeamMCPServers(ctx, queries.HardDeleteTeamMCPServersParams{TenantID: tenantID, TeamID: teamID}); err != nil {
-		return TeamRecord{}, fmt.Errorf("delete team mcp servers: %w", err)
-	}
 	if err := qtx.HardDeleteTeamLendingPolicies(ctx, queries.HardDeleteTeamLendingPoliciesParams{TenantID: tenantID, TeamID: teamID}); err != nil {
 		return TeamRecord{}, fmt.Errorf("delete team lending policies: %w", err)
 	}

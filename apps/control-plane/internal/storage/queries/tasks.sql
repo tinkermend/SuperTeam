@@ -118,23 +118,6 @@ WHERE task_id = sqlc.arg('task_id')::uuid
   AND sequence_number = sqlc.arg('sequence_number')::integer
   AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid);
 
--- name: CreateTaskStateHistory :one
-INSERT INTO task_state_history (
-    tenant_id,
-    task_id,
-    from_status,
-    to_status,
-    changed_by,
-    reason
-) VALUES (
-    COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
-    sqlc.arg('task_id')::uuid,
-    sqlc.narg('from_status')::varchar,
-    sqlc.arg('to_status')::varchar,
-    sqlc.narg('changed_by')::varchar,
-    sqlc.narg('reason')::text
-) RETURNING *;
-
 -- name: CreateTaskRun :one
 INSERT INTO task_runs (
     tenant_id,
@@ -206,12 +189,6 @@ WHERE task_id = sqlc.arg('task_id')::uuid
   AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
 LIMIT 1;
-
--- name: ListTaskStateHistory :many
-SELECT * FROM task_state_history
-WHERE task_id = sqlc.arg('task_id')::uuid
-  AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-ORDER BY created_at DESC;
 
 -- name: UpdateTaskWorkspace :one
 UPDATE tasks

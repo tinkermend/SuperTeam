@@ -24,7 +24,6 @@ type User struct {
 	AvatarAssetID string           `db:"avatar_asset_id"`
 	CreatedAt     time.Time        `db:"created_at"`
 	UpdatedAt     time.Time        `db:"updated_at"`
-	LastLoginAt   *time.Time       `db:"last_login_at"`
 }
 
 // UserAvatarConfig 表示平台用户头像生成配置。当前只支持 DiceBear，但保留结构化扩展字段。

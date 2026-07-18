@@ -9,7 +9,7 @@ import (
 
 func TestRuntimeProviderQueriesDoNotRequireLegacyTeamProviderPolicy(t *testing.T) {
 	for name, query := range map[string]string{
-		"create_options":          queries.ListRuntimeProviderOptionsForDigitalEmployeeCreate,
+		"create_options":         queries.ListRuntimeProviderOptionsForDigitalEmployeeCreate,
 		"provisioning_preflight": queries.GetRuntimeProvisioningPreflight,
 	} {
 		normalized := strings.Join(strings.Fields(query), " ")

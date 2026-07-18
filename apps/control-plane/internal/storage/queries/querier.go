@@ -85,7 +85,6 @@ type Querier interface {
 	CreateDemandCriterionVerdict(ctx context.Context, arg CreateDemandCriterionVerdictParams) error
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (CreateDigitalEmployeeConfigRevisionRow, error)
-	CreateDigitalEmployeeMCPBinding(ctx context.Context, arg CreateDigitalEmployeeMCPBindingParams) (DigitalEmployeeMcpBinding, error)
 	CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDigitalEmployeeTaskRunParams) (CreateDigitalEmployeeTaskRunRow, error)
 	CreateDigitalEmployeeWorkspaceFile(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileParams) (DigitalEmployeeWorkspaceFile, error)
 	CreateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFileRevision, error)
@@ -160,21 +159,17 @@ type Querier interface {
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
 	CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
-	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
 	CreateTeamLendingRequest(ctx context.Context, arg CreateTeamLendingRequestParams) (TeamLendingRequest, error)
 	CreateTeamMCPBinding(ctx context.Context, arg CreateTeamMCPBindingParams) (TeamMcpBinding, error)
-	CreateTeamMCPServer(ctx context.Context, arg CreateTeamMCPServerParams) (TeamMcpServer, error)
 	CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
-	CreateUserCredential(ctx context.Context, arg CreateUserCredentialParams) (UserCredential, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
 	DeactivateProjectMembersForDelete(ctx context.Context, arg DeactivateProjectMembersForDeleteParams) ([]uuid.UUID, error)
 	DecideTeamMemberRoleRequest(ctx context.Context, arg DecideTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
-	DeleteDigitalEmployeeMCPBinding(ctx context.Context, arg DeleteDigitalEmployeeMCPBindingParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
 	DeleteExpiredCaptchaChallenges(ctx context.Context, before pgtype.Timestamptz) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
@@ -190,7 +185,6 @@ type Querier interface {
 	DeleteSkillMCPDependenciesForSkill(ctx context.Context, arg DeleteSkillMCPDependenciesForSkillParams) error
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
-	DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error
 	DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSkillBindingsParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
@@ -204,7 +198,6 @@ type Querier interface {
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)
-	GetActiveProjectPlacement(ctx context.Context, arg GetActiveProjectPlacementParams) (ProjectPlacement, error)
 	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
 	GetActiveRuntimeSessionByLookupHash(ctx context.Context, tokenLookupHash string) (GetActiveRuntimeSessionByLookupHashRow, error)
 	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
@@ -282,8 +275,7 @@ type Querier interface {
 	// for that, see GetProjectTaskRunPreflightForNode. The node reported here is a
 	// deterministic representative of the project's eligibility set (project_runtime_nodes):
 	// the least-loaded online node, so an idle/degraded node doesn't look "ready" just
-	// because it happens to sort first. project_placements is intentionally not consulted;
-	// Plan B's node selection authority is the eligibility set, not the legacy single pin.
+	// because it happens to sort first.
 	GetProjectTaskRunPreflight(ctx context.Context, arg GetProjectTaskRunPreflightParams) (GetProjectTaskRunPreflightRow, error)
 	// Dispatch preflight: the node has already been resolved by the Go-level
 	// three-layer resolver (internal/project.Service.ResolveProjectTaskNode), which
@@ -330,13 +322,11 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUser, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
-	GetUserCredential(ctx context.Context, arg GetUserCredentialParams) (UserCredential, error)
 	// 仅允许物理删除待确认态团队;P1 前的遗留软删终态(status=active)不可经此路径删除。
 	HardDeleteTeam(ctx context.Context, arg HardDeleteTeamParams) (TenantTeam, error)
 	HardDeleteTeamLendingPolicies(ctx context.Context, arg HardDeleteTeamLendingPoliciesParams) error
 	HardDeleteTeamLendingRequests(ctx context.Context, arg HardDeleteTeamLendingRequestsParams) error
 	HardDeleteTeamMCPBindings(ctx context.Context, arg HardDeleteTeamMCPBindingsParams) error
-	HardDeleteTeamMCPServers(ctx context.Context, arg HardDeleteTeamMCPServersParams) error
 	HardDeleteTeamMemberRoleRequests(ctx context.Context, arg HardDeleteTeamMemberRoleRequestsParams) error
 	HardDeleteTeamMembers(ctx context.Context, arg HardDeleteTeamMembersParams) error
 	HardDeleteTeamRuntimeNodeScopes(ctx context.Context, teamID uuid.UUID) error
@@ -384,7 +374,6 @@ type Querier interface {
 	ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error)
 	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
 	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)
-	ListDigitalEmployeeMCPBindings(ctx context.Context, arg ListDigitalEmployeeMCPBindingsParams) ([]ListDigitalEmployeeMCPBindingsRow, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
 	// config revision JSON 不再承载 mcp_servers 声明)。
@@ -402,7 +391,6 @@ type Querier interface {
 	// required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
 	// returned here.
 	ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error)
-	ListEffectiveMCPServersForEmployee(ctx context.Context, arg ListEffectiveMCPServersForEmployeeParams) ([]ListEffectiveMCPServersForEmployeeRow, error)
 	// 项目绑定的运行时投影行：只取活跃绑定 × 活跃注册表定义。缺失 env 判定由调用方
 	// 用目标员工的已配置 env 集合完成（与员工侧投影同一套过滤逻辑），凭据值不经此路。
 	ListEffectiveProjectMCPBindingsForRuntime(ctx context.Context, arg ListEffectiveProjectMCPBindingsForRuntimeParams) ([]ListEffectiveProjectMCPBindingsForRuntimeRow, error)
@@ -490,20 +478,17 @@ type Querier interface {
 	ListTaskEventsForRun(ctx context.Context, arg ListTaskEventsForRunParams) ([]TaskEvent, error)
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
 	ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsParams) ([]TaskRun, error)
-	ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
 	ListTeamLendingRequestsByProject(ctx context.Context, arg ListTeamLendingRequestsByProjectParams) ([]TeamLendingRequest, error)
 	ListTeamLendingRequestsByTeam(ctx context.Context, arg ListTeamLendingRequestsByTeamParams) ([]TeamLendingRequest, error)
 	ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error)
-	ListTeamMCPServers(ctx context.Context, arg ListTeamMCPServersParams) ([]ListTeamMCPServersRow, error)
 	ListTeamMemberRoleRequests(ctx context.Context, arg ListTeamMemberRoleRequestsParams) ([]TenantTeamMemberRoleRequest, error)
 	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
 	ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error)
 	ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams) ([]TenantTeam, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)
 	ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUnresolvedBlockersForTasksParams) ([]ListUnresolvedBlockersForTasksRow, error)
-	ListUserCredentials(ctx context.Context, arg ListUserCredentialsParams) ([]UserCredential, error)
 	ListUserProjectTeamScopeSummaries(ctx context.Context, arg ListUserProjectTeamScopeSummariesParams) ([]ListUserProjectTeamScopeSummariesRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
@@ -527,8 +512,7 @@ type Querier interface {
 	RejectProjectPlanRevision(ctx context.Context, arg RejectProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	RejectTeamLendingRequest(ctx context.Context, arg RejectTeamLendingRequestParams) (TeamLendingRequest, error)
-	ReleaseProjectPlacement(ctx context.Context, arg ReleaseProjectPlacementParams) (ProjectPlacement, error)
-	ReleaseProjectPlacementsForDelete(ctx context.Context, arg ReleaseProjectPlacementsForDeleteParams) ([]uuid.UUID, error)
+	RemoveProjectRuntimeNode(ctx context.Context, arg RemoveProjectRuntimeNodeParams) error
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
@@ -556,7 +540,6 @@ type Querier interface {
 	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams) ([]SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow, error)
 	SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
-	SoftDeleteDigitalEmployeeMCPBindingsForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
@@ -622,7 +605,6 @@ type Querier interface {
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, arg UpsertProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)
-	UpsertProjectPlacement(ctx context.Context, arg UpsertProjectPlacementParams) (ProjectPlacement, error)
 	UpsertProviderSessionByExternalID(ctx context.Context, arg UpsertProviderSessionByExternalIDParams) (ProviderSession, error)
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)

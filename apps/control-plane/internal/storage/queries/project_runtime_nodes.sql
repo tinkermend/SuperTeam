@@ -10,6 +10,12 @@ SELECT * FROM project_runtime_nodes
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
 ORDER BY created_at ASC;
 
+-- name: RemoveProjectRuntimeNode :exec
+DELETE FROM project_runtime_nodes
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid;
+
 -- name: UpsertProjectEmployeeNodeAffinity :one
 INSERT INTO project_employee_node_affinity (tenant_id, project_id, digital_employee_id, runtime_node_id)
 VALUES (sqlc.arg('tenant_id')::uuid, sqlc.arg('project_id')::uuid, sqlc.arg('digital_employee_id')::uuid, sqlc.arg('runtime_node_id')::uuid)

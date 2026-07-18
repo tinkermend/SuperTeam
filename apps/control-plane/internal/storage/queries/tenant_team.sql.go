@@ -172,22 +172,6 @@ func (q *Queries) HardDeleteTeamMCPBindings(ctx context.Context, arg HardDeleteT
 	return err
 }
 
-const HardDeleteTeamMCPServers = `-- name: HardDeleteTeamMCPServers :exec
-DELETE FROM team_mcp_servers
-WHERE tenant_id = $1::uuid
-  AND team_id = $2::uuid
-`
-
-type HardDeleteTeamMCPServersParams struct {
-	TenantID uuid.UUID `json:"tenant_id"`
-	TeamID   uuid.UUID `json:"team_id"`
-}
-
-func (q *Queries) HardDeleteTeamMCPServers(ctx context.Context, arg HardDeleteTeamMCPServersParams) error {
-	_, err := q.db.Exec(ctx, HardDeleteTeamMCPServers, arg.TenantID, arg.TeamID)
-	return err
-}
-
 const HardDeleteTeamMemberRoleRequests = `-- name: HardDeleteTeamMemberRoleRequests :exec
 DELETE FROM tenant_team_member_role_requests
 WHERE tenant_id = $1::uuid

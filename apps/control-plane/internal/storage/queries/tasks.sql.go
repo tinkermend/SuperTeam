@@ -265,7 +265,7 @@ created_run AS (
     WHERE digital_employee_id IS NOT NULL AND idempotency_key IS NOT NULL
     DO UPDATE SET updated_at = task_runs.updated_at
     WHERE task_runs.idempotency_fingerprint IS NOT DISTINCT FROM EXCLUDED.idempotency_fingerprint
-    RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
+    RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
 )
 SELECT
     existing_run.task_id,
@@ -618,7 +618,7 @@ INSERT INTO task_runs (
     $2::uuid,
     $3::varchar,
     $4::varchar
-) RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
+) RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
 `
 
 type CreateTaskRunParams struct {
@@ -644,7 +644,6 @@ func (q *Queries) CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (T
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,
@@ -675,56 +674,6 @@ func (q *Queries) CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (T
 	return i, err
 }
 
-const CreateTaskStateHistory = `-- name: CreateTaskStateHistory :one
-INSERT INTO task_state_history (
-    tenant_id,
-    task_id,
-    from_status,
-    to_status,
-    changed_by,
-    reason
-) VALUES (
-    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
-    $2::uuid,
-    $3::varchar,
-    $4::varchar,
-    $5::varchar,
-    $6::text
-) RETURNING id, tenant_id, task_id, from_status, to_status, changed_by, reason, created_at
-`
-
-type CreateTaskStateHistoryParams struct {
-	TenantID   uuid.NullUUID `json:"tenant_id"`
-	TaskID     uuid.UUID     `json:"task_id"`
-	FromStatus pgtype.Text   `json:"from_status"`
-	ToStatus   string        `json:"to_status"`
-	ChangedBy  pgtype.Text   `json:"changed_by"`
-	Reason     pgtype.Text   `json:"reason"`
-}
-
-func (q *Queries) CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error) {
-	row := q.db.QueryRow(ctx, CreateTaskStateHistory,
-		arg.TenantID,
-		arg.TaskID,
-		arg.FromStatus,
-		arg.ToStatus,
-		arg.ChangedBy,
-		arg.Reason,
-	)
-	var i TaskStateHistory
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.TaskID,
-		&i.FromStatus,
-		&i.ToStatus,
-		&i.ChangedBy,
-		&i.Reason,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const DeleteTask = `-- name: DeleteTask :exec
 UPDATE tasks
 SET deleted_at = COALESCE(deleted_at, NOW()), updated_at = NOW()
@@ -743,7 +692,7 @@ func (q *Queries) DeleteTask(ctx context.Context, arg DeleteTaskParams) error {
 }
 
 const GetActiveDigitalEmployeeRun = `-- name: GetActiveDigitalEmployeeRun :one
-SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.lease_expires_at, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
+SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 WHERE tr.tenant_id = $1::uuid
@@ -770,7 +719,6 @@ func (q *Queries) GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActive
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,
@@ -802,7 +750,7 @@ func (q *Queries) GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActive
 }
 
 const GetDigitalEmployeeRun = `-- name: GetDigitalEmployeeRun :one
-SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.lease_expires_at, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, t.run_kind, t.resume_of_run_id,
+SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, t.run_kind, t.resume_of_run_id,
     t.chat_thread_id
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
@@ -826,7 +774,6 @@ type GetDigitalEmployeeRunRow struct {
 	RuntimeNodeID             uuid.NullUUID      `json:"runtime_node_id"`
 	ProviderSessionID         pgtype.Text        `json:"provider_session_id"`
 	Status                    string             `json:"status"`
-	LeaseExpiresAt            pgtype.Timestamptz `json:"lease_expires_at"`
 	StartedAt                 pgtype.Timestamptz `json:"started_at"`
 	CompletedAt               pgtype.Timestamptz `json:"completed_at"`
 	FinishedAt                pgtype.Timestamptz `json:"finished_at"`
@@ -869,7 +816,6 @@ func (q *Queries) GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmplo
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,
@@ -904,7 +850,7 @@ func (q *Queries) GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmplo
 }
 
 const GetDigitalEmployeeRunByCommandID = `-- name: GetDigitalEmployeeRunByCommandID :one
-SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.lease_expires_at, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
+SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
 FROM task_runs tr
 WHERE tr.tenant_id = $1::uuid
   AND tr.command_id = $2::varchar
@@ -926,7 +872,6 @@ func (q *Queries) GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetD
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,
@@ -1046,7 +991,7 @@ func (q *Queries) GetLatestTaskEventSequence(ctx context.Context, arg GetLatestT
 }
 
 const GetLatestTaskRun = `-- name: GetLatestTaskRun :one
-SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
 WHERE task_id = $1::uuid
   AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
@@ -1069,7 +1014,6 @@ func (q *Queries) GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunPara
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,
@@ -1175,7 +1119,7 @@ func (q *Queries) GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (Tas
 }
 
 const GetTaskRun = `-- name: GetTaskRun :one
-SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
 WHERE id = $1::uuid
   AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
@@ -1196,7 +1140,6 @@ func (q *Queries) GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,
@@ -1268,7 +1211,7 @@ func (q *Queries) ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg 
 }
 
 const ListDigitalEmployeeRuns = `-- name: ListDigitalEmployeeRuns :many
-SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.lease_expires_at, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, t.run_kind, t.resume_of_run_id
+SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, t.run_kind, t.resume_of_run_id
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 WHERE tr.tenant_id = $1::uuid
@@ -1295,7 +1238,6 @@ type ListDigitalEmployeeRunsRow struct {
 	RuntimeNodeID             uuid.NullUUID      `json:"runtime_node_id"`
 	ProviderSessionID         pgtype.Text        `json:"provider_session_id"`
 	Status                    string             `json:"status"`
-	LeaseExpiresAt            pgtype.Timestamptz `json:"lease_expires_at"`
 	StartedAt                 pgtype.Timestamptz `json:"started_at"`
 	CompletedAt               pgtype.Timestamptz `json:"completed_at"`
 	FinishedAt                pgtype.Timestamptz `json:"finished_at"`
@@ -1349,7 +1291,6 @@ func (q *Queries) ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEm
 			&i.RuntimeNodeID,
 			&i.ProviderSessionID,
 			&i.Status,
-			&i.LeaseExpiresAt,
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.FinishedAt,
@@ -1612,7 +1553,7 @@ func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksPara
 }
 
 const ListStalePreConfirmationDigitalEmployeeRuns = `-- name: ListStalePreConfirmationDigitalEmployeeRuns :many
-SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.lease_expires_at, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
+SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id
 FROM task_runs tr
 WHERE tr.status IN ('queued', 'dispatching')
   AND tr.updated_at < $1::timestamptz
@@ -1644,7 +1585,6 @@ func (q *Queries) ListStalePreConfirmationDigitalEmployeeRuns(ctx context.Contex
 			&i.RuntimeNodeID,
 			&i.ProviderSessionID,
 			&i.Status,
-			&i.LeaseExpiresAt,
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.FinishedAt,
@@ -1784,7 +1724,7 @@ func (q *Queries) ListTaskEventsForRun(ctx context.Context, arg ListTaskEventsFo
 }
 
 const ListTaskRuns = `-- name: ListTaskRuns :many
-SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
 WHERE task_id = $1::uuid
   AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
@@ -1812,7 +1752,6 @@ func (q *Queries) ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]T
 			&i.RuntimeNodeID,
 			&i.ProviderSessionID,
 			&i.Status,
-			&i.LeaseExpiresAt,
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.FinishedAt,
@@ -1851,7 +1790,7 @@ func (q *Queries) ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]T
 }
 
 const ListTaskRunsByIDs = `-- name: ListTaskRunsByIDs :many
-SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
 WHERE id = ANY($1::uuid[])
   AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
@@ -1879,7 +1818,6 @@ func (q *Queries) ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsPa
 			&i.RuntimeNodeID,
 			&i.ProviderSessionID,
 			&i.Status,
-			&i.LeaseExpiresAt,
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.FinishedAt,
@@ -1906,47 +1844,6 @@ func (q *Queries) ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsPa
 			&i.TimedOut,
 			&i.ProviderType,
 			&i.ProviderSessionExternalID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const ListTaskStateHistory = `-- name: ListTaskStateHistory :many
-SELECT id, tenant_id, task_id, from_status, to_status, changed_by, reason, created_at FROM task_state_history
-WHERE task_id = $1::uuid
-  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-ORDER BY created_at DESC
-`
-
-type ListTaskStateHistoryParams struct {
-	TaskID   uuid.UUID     `json:"task_id"`
-	TenantID uuid.NullUUID `json:"tenant_id"`
-}
-
-func (q *Queries) ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error) {
-	rows, err := q.db.Query(ctx, ListTaskStateHistory, arg.TaskID, arg.TenantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TaskStateHistory{}
-	for rows.Next() {
-		var i TaskStateHistory
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.TaskID,
-			&i.FromStatus,
-			&i.ToStatus,
-			&i.ChangedBy,
-			&i.Reason,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2055,7 +1952,7 @@ SET status = $1::varchar,
     updated_at = NOW()
 WHERE tenant_id = $14::uuid
   AND id = $15::uuid
-RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
+RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
 `
 
 type UpdateDigitalEmployeeRunStatusParams struct {
@@ -2103,7 +2000,6 @@ func (q *Queries) UpdateDigitalEmployeeRunStatus(ctx context.Context, arg Update
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,
@@ -2257,7 +2153,7 @@ SET status = $1::varchar,
     updated_at = NOW()
 WHERE id = $2::uuid
   AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
+RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id
 `
 
 type UpdateTaskRunParams struct {
@@ -2277,7 +2173,6 @@ func (q *Queries) UpdateTaskRun(ctx context.Context, arg UpdateTaskRunParams) (T
 		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
-		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.FinishedAt,

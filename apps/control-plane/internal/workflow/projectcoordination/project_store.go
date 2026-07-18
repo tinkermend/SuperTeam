@@ -1103,12 +1103,12 @@ func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectI
 		// PlannedTaskKey all non-nil) passes and the judges re-fire on rework
 		// completion. Without this the rework's accepted_plan_revision_id is NULL and
 		// the self-iteration loop silently never closes.
-		AcceptedPlanRevisionID:    source.AcceptedPlanRevisionID,
-		ExpectedOutputs:           append([]any(nil), source.ExpectedOutputs...),
-		InputRequirements:         revisionInputRequirements(source, rev, sourceResultID, sourceResultSummary),
-		HandoffContract:           cloneAnyMap(source.HandoffContract),
-		PlannerMetadata:           revisionPlannerMetadata(source, sourceResultID),
-		BlockedByTaskIDs:          append([]uuid.UUID(nil), source.BlockedByTaskIDs...),
+		AcceptedPlanRevisionID: source.AcceptedPlanRevisionID,
+		ExpectedOutputs:        append([]any(nil), source.ExpectedOutputs...),
+		InputRequirements:      revisionInputRequirements(source, rev, sourceResultID, sourceResultSummary),
+		HandoffContract:        cloneAnyMap(source.HandoffContract),
+		PlannerMetadata:        revisionPlannerMetadata(source, sourceResultID),
+		BlockedByTaskIDs:       append([]uuid.UUID(nil), source.BlockedByTaskIDs...),
 	})
 	if err != nil {
 		return uuid.Nil, err
@@ -3966,6 +3966,9 @@ func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenan
 	}
 	revisionID := project.CurrentEffectivePlanRevisionID(revisions)
 	var pendingCriteria []string
+	// pendingCriteriaDetail 带判据原文与验证方式,供飞书验收卡自足呈现
+	// (pending_criteria 只有 ID,对手机端读者无信息量);保留原键不动老读者。
+	var pendingCriteriaDetail []map[string]any
 	if revisionID != uuid.Nil {
 		criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
 		if err != nil {
@@ -3976,6 +3979,20 @@ func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenan
 			return DecisionRequestResult{}, err
 		}
 		pendingCriteria = project.ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)
+		pendingSet := map[string]bool{}
+		for _, id := range pendingCriteria {
+			pendingSet[id] = true
+		}
+		for _, criterion := range criteria {
+			if !pendingSet[criterion.CriterionID] {
+				continue
+			}
+			pendingCriteriaDetail = append(pendingCriteriaDetail, map[string]any{
+				"id":                  criterion.CriterionID,
+				"statement":           criterion.Statement,
+				"verification_method": criterion.VerificationMethod,
+			})
+		}
 	}
 	projectRecord, err := s.repository.GetProject(ctx, tenantID, projectID)
 	if err != nil {
@@ -3996,9 +4013,11 @@ func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenan
 		RiskLevel:     "high",
 		Options:       []any{},
 		ContextPayload: map[string]any{
-			"demand_id":        demandID.String(),
-			"plan_revision_id": revisionID.String(),
-			"pending_criteria": pendingCriteria,
+			"demand_id":               demandID.String(),
+			"demand_title":            demand.Title,
+			"plan_revision_id":        revisionID.String(),
+			"pending_criteria":        pendingCriteria,
+			"pending_criteria_detail": pendingCriteriaDetail,
 		},
 	})
 	if err != nil {

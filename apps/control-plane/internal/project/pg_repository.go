@@ -437,15 +437,6 @@ func (r *PgRepository) softDeleteProjectCascadeWithQueries(ctx context.Context, 
 	}
 	cascade.AffinityCount = len(affinityRows)
 
-	placementRows, err := q.ReleaseProjectPlacementsForDelete(ctx, queries.ReleaseProjectPlacementsForDeleteParams{
-		TenantID:  params.TenantID,
-		ProjectID: params.ProjectID,
-	})
-	if err != nil {
-		return cascade, err
-	}
-	cascade.PlacementCount = len(placementRows)
-
 	if params.ActorUserID != uuid.Nil {
 		if err := createProjectDeleteAuditEventWithQueries(ctx, q, ProjectDeleteAuditEventParams{
 			TenantID:      params.TenantID,
@@ -479,39 +470,15 @@ func createProjectDeleteAuditEventWithQueries(ctx context.Context, q *queries.Qu
 	return err
 }
 
-func (r *PgRepository) GetActiveProjectPlacement(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectRuntimePlacement, error) {
-	row, err := r.q.GetActiveProjectPlacement(ctx, queries.GetActiveProjectPlacementParams{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-	})
-	if err != nil {
-		return ProjectRuntimePlacement{}, projectRepositoryError(err)
+func (r *PgRepository) RemoveProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) error {
+	if err := r.q.RemoveProjectRuntimeNode(ctx, queries.RemoveProjectRuntimeNodeParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+	}); err != nil {
+		return projectRepositoryError(err)
 	}
-	return projectRuntimePlacementFromRecord(row), nil
-}
-
-func (r *PgRepository) UpsertProjectPlacement(ctx context.Context, req PutProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
-	row, err := r.q.UpsertProjectPlacement(ctx, queries.UpsertProjectPlacementParams{
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RuntimeNodeID:   req.RuntimeNodeID,
-		PlacementReason: textOrNull(req.Reason),
-	})
-	if err != nil {
-		return ProjectRuntimePlacement{}, projectRepositoryError(err)
-	}
-	return projectRuntimePlacementFromRecord(row), nil
-}
-
-func (r *PgRepository) ReleaseProjectPlacement(ctx context.Context, req ReleaseProjectRuntimePlacementRequest) (ProjectRuntimePlacement, error) {
-	row, err := r.q.ReleaseProjectPlacement(ctx, queries.ReleaseProjectPlacementParams{
-		TenantID:  req.TenantID,
-		ProjectID: req.ProjectID,
-	})
-	if err != nil {
-		return ProjectRuntimePlacement{}, projectRepositoryError(err)
-	}
-	return projectRuntimePlacementFromRecord(row), nil
+	return nil
 }
 
 // TransitionProjectStatus moves a project's status forward only when its current
@@ -5221,7 +5188,7 @@ func (r *PgRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDe
 		return DecisionRequest{}, err
 	}
 	// resolve 后:pending 卡作废,已发送卡入队更新为已处理态。
-	if err := r.supersedeDecisionOutboxWithQueries(ctx, r.q, decision); err != nil {
+	if err := r.supersedeDecisionOutboxWithQueries(ctx, r.q, decision, req.ResolvedByUserID, req.ResolutionComment); err != nil {
 		return DecisionRequest{}, err
 	}
 	return decision, nil
@@ -6122,7 +6089,6 @@ func projectDeleteAuditDetails(params ProjectDeleteAuditEventParams) map[string]
 			"inbox":         params.CascadeResult.InboxCount,
 			"runtime_nodes": params.CascadeResult.RuntimeNodeCount,
 			"affinities":    params.CascadeResult.AffinityCount,
-			"placements":    params.CascadeResult.PlacementCount,
 		},
 	}
 }
@@ -6146,21 +6112,6 @@ func projectRepoBindingFromRecord(row queries.Project) (ProjectRepoBinding, erro
 		GitCredentialRef: ptrText(row.RepoGitCredentialRef),
 		Scope:            scope,
 	}, nil
-}
-
-func projectRuntimePlacementFromRecord(row queries.ProjectPlacement) ProjectRuntimePlacement {
-	return ProjectRuntimePlacement{
-		ID:              row.ID,
-		TenantID:        row.TenantID,
-		ProjectID:       row.ProjectID,
-		RuntimeNodeID:   row.RuntimeNodeID,
-		PlacementStatus: ProjectRuntimePlacementState(row.PlacementStatus),
-		PlacementReason: textValue(row.PlacementReason),
-		AssignedAt:      timeFromSQL(row.AssignedAt),
-		ReleasedAt:      ptrTime(row.ReleasedAt),
-		CreatedAt:       timeFromSQL(row.CreatedAt),
-		UpdatedAt:       timeFromSQL(row.UpdatedAt),
-	}
 }
 
 func projectTaskAttestationFromCreateRow(row queries.CreateProjectTaskAttestationRow) (ProjectTaskAttestation, error) {
@@ -6355,10 +6306,7 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		RetryNotBefore:             ptrTime(row.RetryNotBefore),
 		WaitingReason:              ptrText(row.WaitingReason),
 		WaitingRequestID:           ptrUUID(row.WaitingRequestID),
-		TerminalReason:             ptrText(row.TerminalReason),
 		TerminalEventID:            ptrUUID(row.TerminalEventID),
-		CancelledBy:                ptrText(row.CancelledBy),
-		FailedBy:                   ptrText(row.FailedBy),
 		StatusChangedAt:            row.StatusChangedAt.Time,
 		CreatedAt:                  row.CreatedAt.Time,
 		UpdatedAt:                  row.UpdatedAt.Time,
@@ -6444,10 +6392,8 @@ func projectTaskAttemptFromRecord(row queries.ProjectTaskAttempt) (ProjectTaskAt
 		LeaseToken:                    row.LeaseToken,
 		LeaseExpiresAt:                ptrTime(row.LeaseExpiresAt),
 		RenewedAt:                     ptrTime(row.RenewedAt),
-		LostAt:                        ptrTime(row.LostAt),
 		StartedAt:                     ptrTime(row.StartedAt),
 		FinishedAt:                    ptrTime(row.FinishedAt),
-		TimeoutAt:                     ptrTime(row.TimeoutAt),
 		Retryable:                     ptrBool(row.Retryable),
 		FailureFamily:                 ptrText(row.FailureFamily),
 		FailureMessage:                ptrText(row.FailureMessage),
@@ -6455,11 +6401,11 @@ func projectTaskAttemptFromRecord(row queries.ProjectTaskAttempt) (ProjectTaskAt
 		DispatchGateResultID:          ptrUUID(row.DispatchGateResultID),
 		CreatedEventID:                ptrUUID(row.CreatedEventID),
 		TerminalEventID:               ptrUUID(row.TerminalEventID),
-		BudgetWallClockLimitSec:       int32PtrFromSQL(row.BudgetWallClockLimitSec),
 		BudgetLastHeartbeatAt:         ptrTime(row.BudgetLastHeartbeatAt),
 		BudgetConsumedWallClockSec:    row.BudgetConsumedWallClockSec,
 		BudgetConsumedTokens:          row.BudgetConsumedTokens,
 		BudgetTrippedAt:               ptrTime(row.BudgetTrippedAt),
+		BudgetWallClockLimitSec:       int32PtrFromSQL(row.BudgetWallClockLimitSec),
 		BudgetTripReason:              ptrText(row.BudgetTripReason),
 		CreatedAt:                     row.CreatedAt.Time,
 		UpdatedAt:                     row.UpdatedAt.Time,

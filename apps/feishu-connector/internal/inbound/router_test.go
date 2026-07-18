@@ -12,11 +12,12 @@ import (
 )
 
 type fakeCP struct {
-	identities map[string]*cpclient.Identity
-	projects   []cpclient.MyProject
-	submitted  []cpclient.SubmitDemandRequest
-	resolved   []string
-	conflict   bool
+	identities  map[string]*cpclient.Identity
+	projects    []cpclient.MyProject
+	submitted   []cpclient.SubmitDemandRequest
+	resolved    []string
+	conflict    bool
+	resolveCard map[string]any
 }
 
 func (f *fakeCP) ResolveIdentity(_ context.Context, _, openID string) (*cpclient.Identity, error) {
@@ -32,9 +33,9 @@ func (f *fakeCP) SubmitDemand(_ context.Context, _ cpclient.OnBehalfOf, req cpcl
 	return &cpclient.SubmitDemandResponse{DemandID: "d-1", Title: req.Title, Status: "planning_pending"}, nil
 }
 
-func (f *fakeCP) ResolveDecision(_ context.Context, _ cpclient.OnBehalfOf, decisionID string, req cpclient.ResolveDecisionRequest) (bool, error) {
+func (f *fakeCP) ResolveDecision(_ context.Context, _ cpclient.OnBehalfOf, decisionID string, req cpclient.ResolveDecisionRequest) (map[string]any, bool, error) {
 	f.resolved = append(f.resolved, decisionID+":"+req.Decision)
-	return f.conflict, nil
+	return f.resolveCard, f.conflict, nil
 }
 
 type fakeMessenger struct {

@@ -3035,7 +3035,6 @@ func TestRunServiceMCPListerReceivesProjectDimensionPerDispatchPath(t *testing.T
 	})
 }
 
-
 // watchdogRepository 组合既有 fake 并实现 StalePreConfirmationRunLister,
 // 供看门狗清扫单测使用。
 type watchdogRepository struct {

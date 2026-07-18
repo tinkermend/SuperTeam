@@ -585,10 +585,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return slugs, nil
 	}
 	planningEffectiveMCPServerKeys := func(ctx context.Context, tenantID, employeeID uuid.UUID) ([]string, error) {
-		servers, err := capabilityService.ListEffectiveMCPConfig(ctx, capability.EmployeeScopedRequest{
-			TenantID:          tenantID,
-			DigitalEmployeeID: employeeID,
-		})
+		// 规划画像是系统上下文（无控制台用户），必须走 ForRuntime 口径——
+		// 控制台口径的 ListEffectiveMCPConfig 强制要求 user_id，会把项目
+		// runtime-readiness 直接打成 500。
+		servers, err := capabilityService.ListEffectiveMCPConfigForRuntime(ctx, tenantID, employeeID, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1045,4 +1045,25 @@ func (a feishuProjectGatewayAdapter) ResolveDecision(ctx context.Context, tenant
 		return false, fmt.Errorf("%w: %v", feishu.ErrGatewayBadInput, err)
 	}
 	return false, err
+}
+
+// DecisionCardSnapshot 返回与 outbox decision_card 同源的决策卡投影,含终态信息;
+// 供 connector resolve 后即时渲染保留详情的终态卡。
+func (a feishuProjectGatewayAdapter) DecisionCardSnapshot(ctx context.Context, tenantID, projectID, decisionID uuid.UUID) (map[string]any, error) {
+	decision, err := a.repo.GetDecisionRequest(ctx, tenantID, projectID, decisionID)
+	if err != nil {
+		return nil, err
+	}
+	projectName := ""
+	if projectRow, getErr := a.q.GetProject(ctx, queries.GetProjectParams{TenantID: tenantID, ID: projectID}); getErr == nil {
+		projectName = projectRow.Name
+	}
+	payload := project.BuildDecisionCardPayload(ctx, a.q, decision, projectName)
+	if decision.StatusSnapshot != "" && decision.StatusSnapshot != "pending" {
+		payload["resolved_status"] = decision.StatusSnapshot
+		if decision.ResolvedAt != nil {
+			payload["resolved_at"] = decision.ResolvedAt.Format(time.RFC3339)
+		}
+	}
+	return payload, nil
 }
