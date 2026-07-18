@@ -238,7 +238,7 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 	if run == nil {
-		return false, nil, s.recordProvisioningTerminal(ctx, identity, commandID, receipt, terminal, spec)
+		return false, nil, s.recordNonRunCommandTerminal(ctx, identity, commandID, receipt, terminal, spec)
 	}
 	wasTerminal := run.Status.IsTerminal()
 	projectionTerminal := terminal
@@ -335,119 +335,15 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 	return true, providerLedgerRequest, nil
 }
 
-func (s *DigitalEmployeeRunWritebackService) recordProvisioningTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
+// recordNonRunCommandTerminal handles terminal writebacks for command receipts
+// that never had a digital employee run. The provision_instance command was
+// retired together with the eager skill-install machinery, so the only live
+// non-run receipt kind left is the workspace file sync command.
+func (s *DigitalEmployeeRunWritebackService) recordNonRunCommandTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
 	if receipt != nil && receipt.CommandType == "sync_workspace_files" {
 		return s.recordWorkspaceSyncTerminal(ctx, identity, commandID, receipt, terminal, spec)
 	}
-	switch spec.status {
-	case DigitalEmployeeRunStatusCompleted:
-		return s.completeProvisioning(ctx, identity, commandID, receipt, terminal)
-	case DigitalEmployeeRunStatusFailed:
-		return s.failProvisioning(ctx, identity, commandID, receipt, terminal)
-	default:
-		return fmt.Errorf("%w: provisioning command only accepts completed or failed terminal writeback", ErrInvalidInput)
-	}
-}
-
-func (s *DigitalEmployeeRunWritebackService) CompleteProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
-	if terminal.Status != DigitalEmployeeRunStatusCompleted {
-		return fmt.Errorf("%w: provisioning complete writeback requires completed status", ErrInvalidInput)
-	}
-	identity, commandID, err := validateWritebackIdentity(identity, commandID)
-	if err != nil {
-		return err
-	}
-	return s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
-		txService := *s
-		txService.repository = repository
-		receipt, err := repository.GetCommandReceiptForUpdate(ctx, identity.TenantID, commandID)
-		if err != nil {
-			return fmt.Errorf("get provisioning command receipt: %w", err)
-		}
-		return txService.completeProvisioning(ctx, identity, commandID, receipt, terminal)
-	})
-}
-
-func (s *DigitalEmployeeRunWritebackService) FailProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
-	if terminal.Status != DigitalEmployeeRunStatusFailed {
-		return fmt.Errorf("%w: provisioning fail writeback requires failed status", ErrInvalidInput)
-	}
-	identity, commandID, err := validateWritebackIdentity(identity, commandID)
-	if err != nil {
-		return err
-	}
-	return s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
-		txService := *s
-		txService.repository = repository
-		receipt, err := repository.GetCommandReceiptForUpdate(ctx, identity.TenantID, commandID)
-		if err != nil {
-			return fmt.Errorf("get provisioning command receipt: %w", err)
-		}
-		return txService.failProvisioning(ctx, identity, commandID, receipt, terminal)
-	})
-}
-
-func (s *DigitalEmployeeRunWritebackService) completeProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
-	if err := validateProvisioningReceipt(identity, commandID, receipt); err != nil {
-		return err
-	}
-	if isTerminalReceiptStatus(receipt.Status) {
-		if receipt.Status == string(DigitalEmployeeRunStatusCompleted) {
-			return nil
-		}
-		return fmt.Errorf("%w: provisioning command receipt is already terminal with status %s", ErrConflict, receipt.Status)
-	}
-
-	instance, err := s.repository.UpdateExecutionInstanceStatus(ctx, identity.TenantID, receipt.ResourceID, ExecutionInstanceStatusReady, nil)
-	if err != nil {
-		return fmt.Errorf("mark execution instance ready: %w", err)
-	}
-	if _, err := s.repository.UpdateDigitalEmployeeStatus(ctx, identity.TenantID, instance.DigitalEmployeeID, DigitalEmployeeStatusReady); err != nil {
-		return fmt.Errorf("mark digital employee ready: %w", err)
-	}
-	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
-		TenantID:     identity.TenantID,
-		CommandID:    commandID,
-		Status:       string(DigitalEmployeeRunStatusCompleted),
-		Result:       terminalReceiptResult(terminal, DigitalEmployeeRunStatusCompleted),
-		ErrorMessage: nil,
-	}); err != nil {
-		return fmt.Errorf("update provisioning command receipt completed: %w", err)
-	}
-	return s.logRuntimeAudit(ctx, "digital_employee_instance_provisioned", receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), "employee.instance.provision")
-}
-
-func (s *DigitalEmployeeRunWritebackService) failProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
-	if err := validateProvisioningReceipt(identity, commandID, receipt); err != nil {
-		return err
-	}
-	if isTerminalReceiptStatus(receipt.Status) {
-		if receipt.Status == string(DigitalEmployeeRunStatusFailed) {
-			return nil
-		}
-		return fmt.Errorf("%w: provisioning command receipt is already terminal with status %s", ErrConflict, receipt.Status)
-	}
-
-	instance, err := s.repository.UpdateExecutionInstanceStatus(ctx, identity.TenantID, receipt.ResourceID, ExecutionInstanceStatusError, terminal.ErrorMessage)
-	if err != nil {
-		return fmt.Errorf("mark execution instance error: %w", err)
-	}
-	if err := s.repository.DeleteExecutionInstance(ctx, identity.TenantID, instance.ID); err != nil {
-		return fmt.Errorf("delete failed provisioning execution instance: %w", err)
-	}
-	if err := s.repository.DeleteDigitalEmployee(ctx, identity.TenantID, instance.DigitalEmployeeID); err != nil {
-		return fmt.Errorf("delete failed provisioning digital employee: %w", err)
-	}
-	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
-		TenantID:     identity.TenantID,
-		CommandID:    commandID,
-		Status:       string(DigitalEmployeeRunStatusFailed),
-		Result:       terminalReceiptResult(terminal, DigitalEmployeeRunStatusFailed),
-		ErrorMessage: terminal.ErrorMessage,
-	}); err != nil {
-		return fmt.Errorf("update provisioning command receipt failed: %w", err)
-	}
-	return s.logRuntimeAudit(ctx, "digital_employee_instance_provision_failed", receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), "employee.instance.provision_failed")
+	return fmt.Errorf("%w: command receipt does not belong to a digital employee run", ErrNotFound)
 }
 
 func (s *DigitalEmployeeRunWritebackService) recordWorkspaceSyncTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
@@ -739,22 +635,6 @@ func ensureRunRuntimeIdentity(identity RuntimeCommandWritebackIdentity, run *Dig
 	}
 	if run.RuntimeNodeID != identity.RuntimeNodeID || strings.TrimSpace(run.NodeID) != identity.NodeID {
 		return fmt.Errorf("%w: run runtime identity does not match authenticated runtime", ErrRuntimeIdentityMismatch)
-	}
-	return nil
-}
-
-func validateProvisioningReceipt(identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt) error {
-	if receipt == nil {
-		return fmt.Errorf("%w: provisioning command receipt is missing", ErrNotFound)
-	}
-	if receipt.TenantID != identity.TenantID || receipt.CommandID != commandID {
-		return fmt.Errorf("%w: provisioning command receipt does not match request", ErrInvalidInput)
-	}
-	if err := ensureReceiptRuntimeIdentity(identity, receipt); err != nil {
-		return err
-	}
-	if receipt.ResourceType != "digital_employee_execution_instance" || receipt.ResourceID == uuid.Nil {
-		return fmt.Errorf("%w: command receipt is not a digital employee execution instance provisioning command", ErrInvalidInput)
 	}
 	return nil
 }

@@ -98,11 +98,19 @@ type FetcherOptions = {
   initial?: EmployeeTemplate[];
   failStatus?: boolean;
   failDelete?: boolean;
+  registrySkillSlugs?: string[];
+  registryMcpKeys?: string[];
 };
 
 const TEMPLATES_PATH = "/api/v1/digital-employee-templates";
 
-function createTemplatesFetcher({ initial = [], failStatus = false, failDelete = false }: FetcherOptions = {}) {
+function createTemplatesFetcher({
+  initial = [],
+  failStatus = false,
+  failDelete = false,
+  registrySkillSlugs,
+  registryMcpKeys,
+}: FetcherOptions = {}) {
   let templates = [...initial];
   let nextId = 900;
 
@@ -114,6 +122,14 @@ function createTemplatesFetcher({ initial = [], failStatus = false, failDelete =
 
     if (path === TEMPLATES_PATH && method === "GET") {
       return jsonResponse(templates);
+    }
+
+    if (path === "/api/v1/skills" && method === "GET") {
+      return jsonResponse((registrySkillSlugs ?? []).map((slug) => ({ id: `skill-${slug}`, slug })));
+    }
+
+    if (path === "/api/v1/mcp-servers" && method === "GET") {
+      return jsonResponse((registryMcpKeys ?? []).map((key) => ({ id: `mcp-${key}`, server_key: key, status: "active" })));
     }
 
     if (path === TEMPLATES_PATH && method === "POST") {
@@ -244,6 +260,32 @@ describe("TemplateListView", () => {
     expect(screen.getByRole("button", { name: "删除" }).all()).toHaveLength(2);
     await expect.element(screen.getByRole("button", { name: "禁用" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "启用" })).toBeVisible();
+  });
+
+  it("flags template recommendations missing from the capability registries", async () => {
+    const fetcher = createTemplatesFetcher({
+      initial: [buildTemplate()],
+      // database-troubleshooting 未上架,postgres 已在 MCP 注册表。
+      registrySkillSlugs: ["other-skill"],
+      registryMcpKeys: ["postgres"],
+    });
+    const screen = await renderTemplateListView(fetcher);
+
+    await expect.element(screen.getByText("推荐未上架 1")).toBeVisible();
+  });
+
+  it("keeps the warning silent when all recommendations exist in the registries", async () => {
+    const fetcher = createTemplatesFetcher({
+      initial: [buildTemplate()],
+      registrySkillSlugs: ["database-troubleshooting"],
+      registryMcpKeys: ["postgres"],
+    });
+    const screen = await renderTemplateListView(fetcher);
+
+    await expect.element(screen.getByText("数据库管理员")).toBeVisible();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).not.toContain("推荐未上架");
+    });
   });
 
   it("renders an inviting empty state with a 新建模板 call to action", async () => {
@@ -396,6 +438,20 @@ describe("TemplateDetailView", () => {
     await expect
       .element(screen.getByRole("link", { name: "用此模板创建数字员工" }))
       .toHaveAttribute("href", "/employees/new?template=database_admin");
+  });
+
+  it("marks unlisted recommended keys with an 未上架 badge and registry links", async () => {
+    const fetcher = createTemplatesFetcher({
+      initial: [buildTemplate()],
+      registrySkillSlugs: [],
+      registryMcpKeys: ["postgres"],
+    });
+    const screen = await renderTemplateDetailView("database_admin", fetcher);
+
+    await expect.element(screen.getByText("推荐未上架 1")).toBeVisible();
+    await expect.element(screen.getByText("未上架", { exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "技能市场" })).toHaveAttribute("href", "/skills");
+    await expect.element(screen.getByRole("link", { name: "MCP 注册表" })).toHaveAttribute("href", "/mcp");
   });
 
   it("shows an unknown-template state with a return link", async () => {

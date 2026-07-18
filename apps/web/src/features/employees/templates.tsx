@@ -38,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { listMcpServerDefinitions } from "@/lib/api/capabilities";
 import {
   createEmployeeTemplate,
   deleteEmployeeTemplate,
@@ -46,6 +47,7 @@ import {
   updateEmployeeTemplate,
   type EmployeeTemplate,
 } from "@/lib/api/employee-templates";
+import { listSkills } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import {
   templateCapabilityPreview,
@@ -55,6 +57,7 @@ import {
   templateRisk,
   templateStatusLabel,
   templateStatusTone,
+  templateUnlistedRecommendations,
 } from "./template-utils";
 
 type TemplateViewProps = {
@@ -80,6 +83,7 @@ export function TemplateDetailPage({ templateType }: { templateType: string }) {
 
 export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
   const state = useTemplateCatalog(apiBaseUrl, fetcher);
+  const registryKeys = useCapabilityRegistryKeys(state.apiOptions);
   const templates = useMemo(
     () => [...state.templates].sort((left, right) => left.label.localeCompare(right.label)),
     [state.templates],
@@ -188,6 +192,11 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
                     <TemplateTableRow
                       key={template.id}
                       template={template}
+                      unlisted={templateUnlistedRecommendations(
+                        template,
+                        registryKeys.availableSkillKeys,
+                        registryKeys.availableMcpKeys,
+                      )}
                       onConfigure={() => setFormState({ mode: "edit", template })}
                       onToggleStatus={() => statusMutation.mutate(template)}
                       onDelete={() => setDeleteTarget(template)}
@@ -226,6 +235,7 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
 
 export function TemplateDetailView({ apiBaseUrl, fetcher, templateType }: TemplateDetailViewProps) {
   const state = useTemplateCatalog(apiBaseUrl, fetcher);
+  const registryKeys = useCapabilityRegistryKeys(state.apiOptions);
   const template = useMemo(
     () => state.templates.find((item) => item.type === templateType),
     [state.templates, templateType],
@@ -251,7 +261,14 @@ export function TemplateDetailView({ apiBaseUrl, fetcher, templateType }: Templa
             />
           </SoftCard>
         ) : (
-          <TemplateDetailContent template={template} />
+          <TemplateDetailContent
+            template={template}
+            unlisted={templateUnlistedRecommendations(
+              template,
+              registryKeys.availableSkillKeys,
+              registryKeys.availableMcpKeys,
+            )}
+          />
         )}
       </TemplateQuerySurface>
     </TemplateShell>
@@ -326,11 +343,13 @@ function TemplateQuerySurface({
 
 function TemplateTableRow({
   template,
+  unlisted,
   onConfigure,
   onDelete,
   onToggleStatus,
 }: {
   template: EmployeeTemplate;
+  unlisted: ReturnType<typeof templateUnlistedRecommendations>;
   onConfigure: () => void;
   onDelete: () => void;
   onToggleStatus: () => void;
@@ -362,7 +381,14 @@ function TemplateTableRow({
           {template.default_role}
         </code>
       </V3Td>
-      <V3Td>{templateCapabilityPreview(template)}</V3Td>
+      <V3Td>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="min-w-0">{templateCapabilityPreview(template)}</span>
+          {unlisted.total > 0 ? (
+            <StatusPill tone="warn">推荐未上架 {unlisted.total}</StatusPill>
+          ) : null}
+        </div>
+      </V3Td>
       <V3Td>{templateDefaultInjectionLine(template)}</V3Td>
       <V3Td>
         <StatusPill tone={templateStatusTone(template)}>{templateStatusLabel(template)}</StatusPill>
@@ -393,9 +419,17 @@ function TemplateTableRow({
   );
 }
 
-function TemplateDetailContent({ template }: { template: EmployeeTemplate }) {
+function TemplateDetailContent({
+  template,
+  unlisted,
+}: {
+  template: EmployeeTemplate;
+  unlisted: ReturnType<typeof templateUnlistedRecommendations>;
+}) {
   const capability = templateCapabilitySummary(template);
   const defaultInjection = templateDefaultInjectionSummary(template);
+  const unlistedSkillKeys = new Set(unlisted.skills);
+  const unlistedMcpKeys = new Set(unlisted.mcpServers);
 
   return (
     <MasterDetailLayout
@@ -433,14 +467,32 @@ function TemplateDetailContent({ template }: { template: EmployeeTemplate }) {
 
           <WorkSurface>
             <div className="border-b border-v3-line px-5 py-4">
-              <h3 className="text-[17px] font-bold text-v3-ink">模板能力</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[17px] font-bold text-v3-ink">模板能力</h3>
+                {unlisted.total > 0 ? (
+                  <StatusPill tone="warn">推荐未上架 {unlisted.total}</StatusPill>
+                ) : null}
+              </div>
               <p className="mt-1 text-[13px] text-v3-ink-2">
                 模板已定义的技能、MCP 与 Provider 能力，不代表默认全部启用。
               </p>
+              {unlisted.total > 0 ? (
+                <p className="mt-1 text-[13px] text-v3-ink-2">
+                  标注"未上架"的推荐项在注册表中不存在,创建向导中不可选:去
+                  <Link className="text-v3-brand hover:underline" to="/skills">
+                    技能市场
+                  </Link>
+                  或
+                  <Link className="text-v3-brand hover:underline" to="/mcp">
+                    MCP 注册表
+                  </Link>
+                  补齐,或从模板中移除该推荐。
+                </p>
+              ) : null}
             </div>
             <div className="grid gap-4 p-5 md:grid-cols-3">
-              <CapabilityBlock title="技能" values={capability.skills} />
-              <CapabilityBlock title="MCP" values={capability.mcpServers} />
+              <CapabilityBlock title="技能" values={capability.skills} unavailableKeys={unlistedSkillKeys} />
+              <CapabilityBlock title="MCP" values={capability.mcpServers} unavailableKeys={unlistedMcpKeys} />
               <CapabilityBlock title="Provider" values={capability.providerTypes} />
             </div>
           </WorkSurface>
@@ -512,19 +564,31 @@ function DetailFact({
   );
 }
 
-function CapabilityBlock({ title, values }: { title: string; values: string[] }) {
+function CapabilityBlock({
+  title,
+  unavailableKeys,
+  values,
+}: {
+  title: string;
+  unavailableKeys?: ReadonlySet<string>;
+  values: string[];
+}) {
   return (
     <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
       <p className="text-[12px] font-semibold text-v3-ink-3">{title}</p>
       {values.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-2">
           {values.map((value) => (
-            <code
-              key={value}
-              className="rounded-md bg-v3-card px-2 py-1 font-mono text-[12px] text-v3-ink"
-            >
-              {value}
-            </code>
+            <span className="inline-flex min-w-0 items-center gap-1" key={value}>
+              <code className="rounded-md bg-v3-card px-2 py-1 font-mono text-[12px] text-v3-ink">
+                {value}
+              </code>
+              {unavailableKeys?.has(value) ? (
+                <StatusPill showDot={false} tone="warn">
+                  未上架
+                </StatusPill>
+              ) : null}
+            </span>
           ))}
         </div>
       ) : (
@@ -543,6 +607,28 @@ function InjectionCount({ label, value }: { label: string; value: number }) {
       </p>
     </div>
   );
+}
+
+// useCapabilityRegistryKeys 提供治理告警用的注册表可用 key 集合。
+// 注册表接口失败或未返回前 sets 为 undefined,页面按"不告警"降级,不阻塞模板管理。
+function useCapabilityRegistryKeys(apiOptions: { baseUrl: string; fetcher?: typeof fetch }) {
+  const skillsQuery = useQuery({
+    queryKey: ["skills"],
+    queryFn: () => listSkills(apiOptions),
+  });
+  const mcpQuery = useQuery({
+    queryKey: ["mcp-server-definitions"],
+    queryFn: () => listMcpServerDefinitions(apiOptions),
+  });
+  const availableSkillKeys = useMemo(
+    () => (skillsQuery.data ? new Set(skillsQuery.data.map((skill) => skill.slug)) : undefined),
+    [skillsQuery.data],
+  );
+  const availableMcpKeys = useMemo(
+    () => (mcpQuery.data ? new Set(mcpQuery.data.filter((server) => server.status === "active").map((server) => server.server_key)) : undefined),
+    [mcpQuery.data],
+  );
+  return { availableSkillKeys, availableMcpKeys };
 }
 
 function useTemplateCatalog(apiBaseUrl: string, fetcher?: typeof fetch) {

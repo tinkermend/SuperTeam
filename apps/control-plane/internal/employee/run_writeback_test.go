@@ -772,35 +772,23 @@ func TestWritebackDuplicateEventAfterTerminalRunIsAcceptedIdempotently(t *testin
 	}
 }
 
-func TestWritebackCompleteProvisioningMarksInstanceAndEmployeeReady(t *testing.T) {
+func TestWritebackRejectsRetiredProvisioningReceipts(t *testing.T) {
+	// provision_instance 命令已随安装机件退役:无 run 的回执只有 workspace
+	// 同步一种,其余(含历史 provision 回执)一律 ErrNotFound,不再改写实例状态。
 	repo := newFakeRunWritebackRepository()
 	receipt := validProvisioningReceipt("provision-cmd-1")
 	repo.putReceipt(receipt)
 	repo.putExecutionInstance(validProvisioningInstance(receipt.ResourceID))
-	audit := &fakeWritebackAuditLogger{}
-	service := mustNewRunWritebackService(t, repo, audit)
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
 
-	if err := service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
+	err := service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
 		Status: DigitalEmployeeRunStatusCompleted,
-		Result: map[string]any{"agent_home_dir": "/srv/agents/code"},
-	}); err != nil {
-		t.Fatalf("complete provisioning: %v", err)
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected retired provisioning receipt to be rejected with ErrNotFound, got %v", err)
 	}
-
-	if len(repo.executionInstanceStatusUpdates) != 1 || repo.executionInstanceStatusUpdates[0].status != ExecutionInstanceStatusReady {
-		t.Fatalf("expected execution instance ready update, got %#v", repo.executionInstanceStatusUpdates)
-	}
-	if len(repo.employeeStatusUpdates) != 1 || repo.employeeStatusUpdates[0].status != DigitalEmployeeStatusReady {
-		t.Fatalf("expected employee ready update, got %#v", repo.employeeStatusUpdates)
-	}
-	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusCompleted) {
-		t.Fatalf("expected completed receipt update, got %#v", repo.receiptUpdates)
-	}
-	if _, ok := repo.receiptUpdates[0].Result["agent_home_dir"]; ok {
-		t.Fatalf("expected receipt result to omit agent_home_dir, got %#v", repo.receiptUpdates[0].Result)
-	}
-	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_instance_provisioned" {
-		t.Fatalf("expected provisioning audit event, got %#v", audit.events)
+	if len(repo.executionInstanceStatusUpdates) != 0 || len(repo.employeeStatusUpdates) != 0 || len(repo.receiptUpdates) != 0 {
+		t.Fatalf("expected no state mutations for retired provisioning receipt")
 	}
 }
 
@@ -854,43 +842,6 @@ func TestWritebackCompleteRedactsRuntimeLocalPathKeysRecursively(t *testing.T) {
 	}
 	if _, ok := repo.runUpdates[0].SessionState["employee_capability_dir"]; ok {
 		t.Fatalf("expected session state to omit employee_capability_dir, got %#v", repo.runUpdates[0].SessionState)
-	}
-}
-
-func TestWritebackFailProvisioningDeletesEmployeeAndInstance(t *testing.T) {
-	repo := newFakeRunWritebackRepository()
-	receipt := validProvisioningReceipt("provision-cmd-1")
-	repo.putReceipt(receipt)
-	instance := validProvisioningInstance(receipt.ResourceID)
-	repo.putExecutionInstance(instance)
-	audit := &fakeWritebackAuditLogger{}
-	service := mustNewRunWritebackService(t, repo, audit)
-	errorMessage := "runtime failed to create workspace"
-
-	if err := service.Fail(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
-		Status:       DigitalEmployeeRunStatusFailed,
-		ErrorMessage: &errorMessage,
-	}); err != nil {
-		t.Fatalf("fail provisioning: %v", err)
-	}
-
-	if len(repo.executionInstanceStatusUpdates) != 1 || repo.executionInstanceStatusUpdates[0].status != ExecutionInstanceStatusError {
-		t.Fatalf("expected execution instance error update, got %#v", repo.executionInstanceStatusUpdates)
-	}
-	if repo.executionInstanceStatusUpdates[0].errorMessage == nil || *repo.executionInstanceStatusUpdates[0].errorMessage != errorMessage {
-		t.Fatalf("expected execution instance error message, got %#v", repo.executionInstanceStatusUpdates[0].errorMessage)
-	}
-	if len(repo.deletedExecutionInstances) != 1 || repo.deletedExecutionInstances[0] != instance.ID {
-		t.Fatalf("expected execution instance deletion, got %#v", repo.deletedExecutionInstances)
-	}
-	if len(repo.deletedEmployees) != 1 || repo.deletedEmployees[0] != instance.DigitalEmployeeID {
-		t.Fatalf("expected employee deletion, got %#v", repo.deletedEmployees)
-	}
-	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusFailed) {
-		t.Fatalf("expected failed receipt update, got %#v", repo.receiptUpdates)
-	}
-	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_instance_provision_failed" {
-		t.Fatalf("expected provisioning failure audit event, got %#v", audit.events)
 	}
 }
 

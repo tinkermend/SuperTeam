@@ -122,8 +122,10 @@ pub struct RuntimeProjectWorkspacePayload {
     pub budget: Option<serde_json::Value>,
 }
 
+/// Payload for the `sync_workspace_files` workspace materialization command.
+/// (Formerly shared with the retired `provision_instance` command.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RuntimeProvisionInstanceCommandPayload {
+pub struct RuntimeWorkspaceSyncCommandPayload {
     pub command_id: String,
     pub tenant_id: String,
     #[serde(default)]
@@ -145,12 +147,9 @@ pub struct RuntimeProvisionInstanceCommandPayload {
     pub mcp_servers: Vec<RuntimeMCPServerPayload>,
 }
 
-impl RuntimeProvisionInstanceCommandPayload {
+impl RuntimeWorkspaceSyncCommandPayload {
     pub fn from_command(command: &RuntimeCommand) -> Result<Self> {
-        if !matches!(
-            command.command_type,
-            RuntimeCommandType::ProvisionInstance | RuntimeCommandType::SyncWorkspaceFiles
-        ) {
+        if !matches!(command.command_type, RuntimeCommandType::SyncWorkspaceFiles) {
             anyhow::bail!(
                 "runtime command type is not a workspace materialization operation: {:?}",
                 command.command_type
@@ -162,7 +161,7 @@ impl RuntimeProvisionInstanceCommandPayload {
         }
 
         let payload: Self = serde_json::from_value(command.payload.clone())
-            .context("invalid runtime provision instance command payload")?;
+            .context("invalid runtime workspace sync command payload")?;
         payload.validate(command)?;
         Ok(payload)
     }
@@ -588,10 +587,10 @@ mod tests {
     }
 
     #[test]
-    fn test_team_less_provision_payload_deserialize() {
+    fn test_team_less_workspace_sync_payload_deserialize() {
         let raw = r#"{"command_id":"cmd-test","tenant_id":"00000000-0000-4000-8000-000000000001","team_id":"","digital_employee_id":"35a3799b-7665-4913-9097-35ee53d30e74","execution_instance_id":"8e64dd8c-d70d-417d-b8bf-fe57a61f4205","runtime_node_id":"44444444-4444-4444-8444-444444444444","provider_type":"codex","agent_home_dir":"/tmp/workspaces/employees/35a3799b-7665-4913-9097-35ee53d30e74","workspace_files":[],"skills":[],"mcp_servers":[]}"#;
         let v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        let payload = serde_json::from_value::<RuntimeProvisionInstanceCommandPayload>(v).unwrap();
+        let payload = serde_json::from_value::<RuntimeWorkspaceSyncCommandPayload>(v).unwrap();
         assert_eq!(payload.team_id, Some(String::new()));
     }
 

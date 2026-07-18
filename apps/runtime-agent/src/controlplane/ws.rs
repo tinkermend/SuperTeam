@@ -110,7 +110,6 @@ mod tests {
     use crate::commands::executor::RuntimeCommandExecutor;
     use crate::config::RuntimeConfig;
     use crate::controlplane::ControlPlaneClient;
-    use crate::controlplane::models::{RuntimeCommand, RuntimeCommandType};
     use crate::runs::{RunSnapshot, RunStatus, RuntimeRunStore};
     use axum::extract::{Path as AxumPath, State};
     use axum::http::{HeaderMap, StatusCode};
@@ -481,6 +480,11 @@ printf '%s\n' '{"type":"result","result":"done"}'
 
         let complete = wait_for_writeback(capture.complete.clone()).await;
         assert_eq!(complete.command_id, "cmd-ws-start");
+        assert_eq!(
+            complete.authorization.as_deref(),
+            Some("Bearer session-token")
+        );
+        assert_eq!(complete.node_id.as_deref(), Some("node-1"));
         assert_eq!(complete.payload["status"], "completed");
         assert_eq!(
             complete.payload["provider_session_external_id"],
@@ -494,170 +498,6 @@ printf '%s\n' '{"type":"result","result":"done"}'
             events[0].payload["provider_session_external_id"],
             "session-from-ws-command"
         );
-
-        http_server.task.abort();
-    }
-
-    #[tokio::test]
-    async fn command_loop_executes_provision_instance_and_writes_completion() {
-        let temp = TempDir::new().expect("tempdir");
-        let capture = CommandWritebackCapture::default();
-        let http_server = serve_command_writebacks(capture.clone()).await;
-
-        let mut config = RuntimeConfig::new("node-1").expect("config");
-        config.runtime.control_plane_url = format!("http://{}", http_server.addr);
-        config.workspace.base_dir = temp.path().join("workspaces");
-        let agent_home_dir = config
-            .workspace
-            .base_dir
-            .join("teams")
-            .join(TEAM_ID)
-            .join("employees")
-            .join(DIGITAL_EMPLOYEE_ID);
-        let command_agent_home_dir = agent_home_dir.to_string_lossy().to_string();
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-        let ws_addr = listener.local_addr().expect("local addr");
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.expect("accept");
-            let callback = |request: &Request, response: Response| {
-                assert_eq!(request.uri().path(), "/api/v1/runtime/ws");
-                assert_eq!(
-                    request.headers().get("Authorization"),
-                    Some(&HeaderValue::from_static("Bearer session-token"))
-                );
-                Ok(response)
-            };
-            let mut socket = accept_hdr_async(stream, callback).await.expect("ws accept");
-            socket
-                .send(Message::Text(
-                    json!({
-                        "id": "cmd-provision",
-                        "type": "provision_instance",
-                        "payload": {
-                            "command_id": "cmd-provision",
-                            "tenant_id": TENANT_ID,
-                            "team_id": TEAM_ID,
-                            "digital_employee_id": DIGITAL_EMPLOYEE_ID,
-                            "execution_instance_id": EXECUTION_INSTANCE_ID,
-                            "runtime_node_id": RUNTIME_NODE_ID,
-                            "provider_type": "claude-code",
-                            "agent_home_dir": command_agent_home_dir,
-                            "workspace_files": [],
-                            "skills": [],
-                            "mcp_servers": []
-                        }
-                    })
-                    .to_string()
-                    .into(),
-                ))
-                .await
-                .expect("send provision_instance command");
-            tokio::time::sleep(Duration::from_millis(25)).await;
-            socket.close(None).await.expect("close socket");
-        });
-
-        let control_plane = ControlPlaneClient::with_session_token(
-            format!("http://{}", http_server.addr),
-            "session-token",
-            "node-1",
-        );
-        let executor =
-            RuntimeCommandExecutor::with_control_plane_client(config.clone(), control_plane);
-        let authorization = HeaderValue::from_static("Bearer session-token");
-        run_command_loop_once(
-            &executor,
-            &format!("ws://{ws_addr}/api/v1/runtime/ws"),
-            &authorization,
-        )
-        .await
-        .expect("command loop once");
-        server.await.expect("server task");
-
-        assert!(agent_home_dir.is_dir());
-        assert!(agent_home_dir.join(".claude").is_dir());
-        assert!(!agent_home_dir.join("state").exists());
-        assert!(!agent_home_dir.join("sessions").exists());
-        assert!(!agent_home_dir.join("runs").exists());
-
-        let complete = wait_for_writeback(capture.complete.clone()).await;
-        assert_eq!(complete.command_id, "cmd-provision");
-        assert_eq!(
-            complete.authorization.as_deref(),
-            Some("Bearer session-token")
-        );
-        assert_eq!(complete.node_id.as_deref(), Some("node-1"));
-        assert_eq!(complete.payload["status"], "completed");
-        assert_eq!(
-            complete.payload["result"]["provisioning_status"],
-            Value::String("ready".to_string())
-        );
-        assert!(complete.payload["result"].get("agent_home_dir").is_none());
-
-        http_server.task.abort();
-    }
-
-    #[tokio::test]
-    async fn provision_instance_failure_writes_failed_terminal() {
-        let temp = TempDir::new().expect("tempdir");
-        let capture = CommandWritebackCapture::default();
-        let http_server = serve_command_writebacks(capture.clone()).await;
-
-        let mut config = RuntimeConfig::new("node-1").expect("config");
-        config.runtime.control_plane_url = format!("http://{}", http_server.addr);
-        config.workspace.base_dir = temp.path().join("workspaces");
-        let bad_agent_home_dir = config
-            .workspace
-            .base_dir
-            .join("teams")
-            .join(TEAM_ID)
-            .join("employees")
-            .join("not-a-uuid")
-            .to_string_lossy()
-            .to_string();
-        let control_plane = ControlPlaneClient::with_session_token(
-            format!("http://{}", http_server.addr),
-            "session-token",
-            "node-1",
-        );
-        let executor = RuntimeCommandExecutor::with_control_plane_client(config, control_plane);
-
-        let error = executor
-            .handle_command(RuntimeCommand {
-                id: "cmd-provision-bad".to_string(),
-                command_type: RuntimeCommandType::ProvisionInstance,
-                payload: json!({
-                    "command_id": "cmd-provision-bad",
-                    "tenant_id": TENANT_ID,
-                    "team_id": TEAM_ID,
-                    "digital_employee_id": "not-a-uuid",
-                    "execution_instance_id": EXECUTION_INSTANCE_ID,
-                    "runtime_node_id": RUNTIME_NODE_ID,
-                    "provider_type": "claude-code",
-                    "agent_home_dir": bad_agent_home_dir,
-                    "workspace_files": [],
-                    "skills": [],
-                    "mcp_servers": []
-                }),
-            })
-            .await
-            .expect_err("invalid digital employee id should fail");
-        assert!(
-            error
-                .to_string()
-                .contains("digital_employee_id must be a UUID-like string")
-        );
-
-        let failed = wait_for_writeback(capture.fail.clone()).await;
-        assert_eq!(failed.command_id, "cmd-provision-bad");
-        assert_eq!(
-            failed.authorization.as_deref(),
-            Some("Bearer session-token")
-        );
-        assert_eq!(failed.node_id.as_deref(), Some("node-1"));
-        assert_eq!(failed.payload["status"], "failed");
-        assert_eq!(failed.payload["error_code"], "provision_instance_failed");
-        assert_eq!(failed.payload["error_family"], "runtime_provisioning");
 
         http_server.task.abort();
     }

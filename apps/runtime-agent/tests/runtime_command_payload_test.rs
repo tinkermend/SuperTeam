@@ -1,6 +1,6 @@
 use serde_json::json;
 use superteam_runtime_agent::commands::payload::{
-    RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload, SessionPolicyMode,
+    RuntimeSessionCommandPayload, RuntimeWorkspaceSyncCommandPayload, SessionPolicyMode,
 };
 use superteam_runtime_agent::controlplane::models::{RuntimeCommand, RuntimeCommandType};
 
@@ -306,12 +306,12 @@ fn resume_session_requires_explicit_provider_session_id_even_when_mode_is_new() 
 }
 
 #[test]
-fn parses_valid_provision_payload_with_generic_workspace_file() {
+fn parses_valid_workspace_sync_payload_with_generic_workspace_file() {
     let command = RuntimeCommand {
-        id: "cmd-provision".to_string(),
-        command_type: RuntimeCommandType::ProvisionInstance,
+        id: "cmd-sync".to_string(),
+        command_type: RuntimeCommandType::SyncWorkspaceFiles,
         payload: serde_json::json!({
-            "command_id": "cmd-provision",
+            "command_id": "cmd-sync",
             "tenant_id": "00000000-0000-4000-8000-000000000001",
             "team_id": "11111111-1111-4111-8111-111111111111",
             "digital_employee_id": "22222222-2222-4222-8222-222222222222",
@@ -336,7 +336,7 @@ fn parses_valid_provision_payload_with_generic_workspace_file() {
         }),
     };
 
-    let parsed = RuntimeProvisionInstanceCommandPayload::from_command(&command).unwrap();
+    let parsed = RuntimeWorkspaceSyncCommandPayload::from_command(&command).unwrap();
     assert_eq!(
         parsed.team_id.as_deref(),
         Some("11111111-1111-4111-8111-111111111111")
@@ -347,8 +347,8 @@ fn parses_valid_provision_payload_with_generic_workspace_file() {
 }
 
 #[test]
-fn rejects_instruction_workspace_files_in_provision_payload() {
-    let mut payload = valid_provision_payload("cmd-instruction-workspace-file");
+fn rejects_instruction_workspace_files_in_workspace_sync_payload() {
+    let mut payload = valid_workspace_sync_payload("cmd-instruction-workspace-file");
     payload["workspace_files"] = serde_json::json!([{
         "file_id": "55555555-5555-4555-8555-555555555555",
         "revision_id": "66666666-6666-4666-8666-666666666666",
@@ -364,45 +364,45 @@ fn rejects_instruction_workspace_files_in_provision_payload() {
 
     let command = RuntimeCommand {
         id: "cmd-instruction-workspace-file".to_string(),
-        command_type: RuntimeCommandType::ProvisionInstance,
+        command_type: RuntimeCommandType::SyncWorkspaceFiles,
         payload,
     };
-    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
         .expect_err("instruction workspace files must be rejected");
 
     assert!(error.to_string().contains("instruction workspace file"));
 }
 
 #[test]
-fn parses_team_less_provision_payload() {
-    let mut payload = valid_provision_payload("cmd-team-less");
+fn parses_team_less_workspace_sync_payload() {
+    let mut payload = valid_workspace_sync_payload("cmd-team-less");
     payload["team_id"] = json!("");
     payload["agent_home_dir"] =
         json!("/tmp/workspaces/employees/22222222-2222-4222-8222-222222222222");
     let command = RuntimeCommand {
         id: "cmd-team-less".to_string(),
-        command_type: RuntimeCommandType::ProvisionInstance,
+        command_type: RuntimeCommandType::SyncWorkspaceFiles,
         payload,
     };
 
-    let parsed = RuntimeProvisionInstanceCommandPayload::from_command(&command)
-        .expect("team-less provision payload should parse");
+    let parsed = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
+        .expect("team-less workspace sync payload should parse");
 
     assert_eq!(parsed.team_id.as_deref(), Some(""));
     assert!(parsed.agent_home_dir.contains("/employees/"));
 }
 
 #[test]
-fn rejects_blank_team_id_in_provision_payload() {
-    let mut payload = valid_provision_payload("cmd-blank-team");
+fn rejects_blank_team_id_in_workspace_sync_payload() {
+    let mut payload = valid_workspace_sync_payload("cmd-blank-team");
     payload["team_id"] = json!(" ");
     let command = RuntimeCommand {
         id: "cmd-blank-team".to_string(),
-        command_type: RuntimeCommandType::ProvisionInstance,
+        command_type: RuntimeCommandType::SyncWorkspaceFiles,
         payload,
     };
 
-    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
         .expect_err("blank team_id should fail");
 
     assert!(
@@ -413,8 +413,8 @@ fn rejects_blank_team_id_in_provision_payload() {
 }
 
 #[test]
-fn parses_provision_payload_with_effective_capabilities() {
-    let mut payload = valid_provision_payload("cmd-capabilities");
+fn parses_workspace_sync_payload_with_effective_capabilities() {
+    let mut payload = valid_workspace_sync_payload("cmd-capabilities");
     payload["skills"] = json!([
         {
             "skill_id": "77777777-7777-4777-8777-777777777777",
@@ -449,12 +449,12 @@ fn parses_provision_payload_with_effective_capabilities() {
     ]);
     let command = RuntimeCommand {
         id: "cmd-capabilities".to_string(),
-        command_type: RuntimeCommandType::ProvisionInstance,
+        command_type: RuntimeCommandType::SyncWorkspaceFiles,
         payload,
     };
 
-    let parsed = RuntimeProvisionInstanceCommandPayload::from_command(&command)
-        .expect("provision payload with effective capabilities");
+    let parsed = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
+        .expect("workspace sync payload with effective capabilities");
 
     assert_eq!(parsed.skills.len(), 2);
     assert_eq!(parsed.skills[0].skill_key, "database-troubleshooting");
@@ -473,11 +473,11 @@ fn parses_provision_payload_with_effective_capabilities() {
 }
 
 #[test]
-fn parses_persona_memory_and_capability_bindings_for_provision_payload() {
+fn parses_persona_memory_and_capability_bindings_for_workspace_sync_payload() {
     let mut command = RuntimeCommand {
         id: "cmd-persona".to_string(),
-        command_type: RuntimeCommandType::ProvisionInstance,
-        payload: valid_provision_payload("cmd-persona"),
+        command_type: RuntimeCommandType::SyncWorkspaceFiles,
+        payload: valid_workspace_sync_payload("cmd-persona"),
     };
     command.payload["persona_memory_markdown"] = serde_json::json!("# 人格画像\n证据优先");
     command.payload["capability_bindings"] = serde_json::json!({
@@ -487,7 +487,7 @@ fn parses_persona_memory_and_capability_bindings_for_provision_payload() {
         "environment_variable_refs": ["PG_DSN"]
     });
 
-    let payload = RuntimeProvisionInstanceCommandPayload::from_command(&command).unwrap();
+    let payload = RuntimeWorkspaceSyncCommandPayload::from_command(&command).unwrap();
 
     assert_eq!(
         payload.persona_memory_markdown.as_deref(),
@@ -499,7 +499,7 @@ fn parses_persona_memory_and_capability_bindings_for_provision_payload() {
     );
 }
 
-fn valid_provision_payload(command_id: &str) -> serde_json::Value {
+fn valid_workspace_sync_payload(command_id: &str) -> serde_json::Value {
     serde_json::json!({
         "command_id": command_id,
         "tenant_id": "00000000-0000-4000-8000-000000000001",
@@ -530,6 +530,22 @@ fn parses_sync_workspace_files_command_type() {
 }
 
 #[test]
+fn parses_provision_instance_command_type_as_unsupported() {
+    // provision_instance 命令已随 CP 侧下发点全数移除而下线:该标签必须落入
+    // Unsupported 兜底,而不是恢复为专属枚举分支。
+    let raw = serde_json::json!({
+        "id": "cmd-provision",
+        "type": "provision_instance",
+        "payload": {}
+    });
+    let command: RuntimeCommand = serde_json::from_value(raw).unwrap();
+    assert!(matches!(
+        command.command_type,
+        RuntimeCommandType::Unsupported(ref value) if value == "provision_instance"
+    ));
+}
+
+#[test]
 fn parses_install_skills_command_type_as_unsupported() {
     // install_skills 命令已随技能纯逻辑绑定改造下线:该标签必须落入
     // Unsupported 兜底,而不是恢复为专属枚举分支。
@@ -550,10 +566,10 @@ fn rejects_unknown_command_type_for_workspace_materialization_payload() {
     let command = RuntimeCommand {
         id: "cmd-unknown".to_string(),
         command_type: RuntimeCommandType::Unsupported("unknown".to_string()),
-        payload: valid_provision_payload("cmd-unknown"),
+        payload: valid_workspace_sync_payload("cmd-unknown"),
     };
 
-    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
         .expect_err("unknown command type must not be accepted as workspace materialization");
 
     assert!(
@@ -568,10 +584,10 @@ fn rejects_empty_command_type_for_workspace_materialization_payload() {
     let command = RuntimeCommand {
         id: "cmd-empty".to_string(),
         command_type: RuntimeCommandType::Unsupported(String::new()),
-        payload: valid_provision_payload("cmd-empty"),
+        payload: valid_workspace_sync_payload("cmd-empty"),
     };
 
-    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+    let error = RuntimeWorkspaceSyncCommandPayload::from_command(&command)
         .expect_err("empty command type must not be accepted as sync_workspace_files");
 
     assert!(

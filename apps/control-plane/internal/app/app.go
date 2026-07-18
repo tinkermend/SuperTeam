@@ -28,7 +28,6 @@ import (
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
-	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
@@ -751,8 +750,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
-	genericCommandWritebackService := runtimecommand.NewWritebackService(runRepository)
-	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(handlers.NewRuntimeCommandWritebackRouter(runWritebackService, genericCommandWritebackService))
+	// 通用 runtime 命令回执写回(runtimecommand 包)随 install_skills 命令一并
+	// 退役:会话命令回执由 runWritebackService 独家承接。
+	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
 	inboxHandler := inbox.NewHandler(inboxService)
 	auditHandler := audit.NewHandler(auditService)

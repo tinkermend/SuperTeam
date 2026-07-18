@@ -8,8 +8,8 @@ use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::payload::{
-    RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload,
-    RuntimeStopSessionCommandPayload, SessionPolicyMode, metadata_string,
+    RuntimeSessionCommandPayload, RuntimeStopSessionCommandPayload,
+    RuntimeWorkspaceSyncCommandPayload, SessionPolicyMode, metadata_string,
 };
 use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, RuntimeRunBinding};
 use crate::config::RuntimeConfig;
@@ -25,7 +25,6 @@ use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
 use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest, ProviderRunHandle};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
-use crate::skills::materialize_provider_skills;
 use crate::workspace_files::{
     WorkspaceMaterializationPlan, atomic_write, materialize_workspace, provider_home_kind,
 };
@@ -231,7 +230,6 @@ impl RuntimeCommandExecutor {
             | RuntimeCommandType::SendInput => self.handle_input_command(command).await,
             RuntimeCommandType::StopSession => self.handle_stop_command(command).await,
             RuntimeCommandType::EnsureInstance => self.handle_ensure_instance(command),
-            RuntimeCommandType::ProvisionInstance => self.handle_provision_instance(command).await,
             RuntimeCommandType::SyncWorkspaceFiles => {
                 self.handle_sync_workspace_files(command).await
             }
@@ -607,116 +605,11 @@ impl RuntimeCommandExecutor {
         })
     }
 
-    async fn handle_provision_instance(
-        &self,
-        command: RuntimeCommand,
-    ) -> anyhow::Result<RuntimeCommandOutcome> {
-        let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
-            Ok(payload) => payload,
-            Err(error) => {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_provisioning_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-        let provider_home = match provider_home_kind(&payload.provider_type) {
-            Ok(provider_home) => provider_home,
-            Err(error) => {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_provisioning_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-        let result = match materialize_workspace(WorkspaceMaterializationPlan {
-            agent_home_dir: PathBuf::from(&payload.agent_home_dir),
-            provider_home,
-            files: payload.workspace_files,
-        }) {
-            Ok(result) => result,
-            Err(error) => {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_provisioning_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-        if let Err(error) = materialize_persona_memory(
-            &result.agent_home_dir,
-            payload.persona_memory_markdown.as_deref(),
-        ) {
-            let error = self.recorded_error(&command.id, error);
-            let message = error.to_string();
-            self.write_provisioning_failure(&command.id, message)
-                .await?;
-            return Err(error);
-        }
-
-        if !payload.skills.is_empty() {
-            if let Some(control_plane_client) = &self.control_plane {
-                let fetcher =
-                    crate::skills::PresignSkillArchiveFetcher::new(control_plane_client.clone());
-                if let Err(error) = materialize_provider_skills(
-                    &PathBuf::from(&payload.agent_home_dir),
-                    &payload.provider_type,
-                    &payload.skills,
-                    &fetcher,
-                )
-                .await
-                {
-                    let error = self.recorded_error(&command.id, error);
-                    let message = error.to_string();
-                    self.write_provisioning_failure(&command.id, message)
-                        .await?;
-                    return Err(error);
-                }
-            } else {
-                let error = self.recorded_error(
-                    &command.id,
-                    anyhow::anyhow!(
-                        "skills require a control plane client for presigned downloads"
-                    ),
-                );
-                let message = error.to_string();
-                self.write_provisioning_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        }
-
-        // MCP home config is session-scoped since the skill-mcp-dependency spec
-        // (2026-07-15): it is injected by ensure_command_instance at session start and
-        // rolled back at session end. Provisioning no longer materializes it; the
-        // payload field is accepted and ignored for backward compatibility.
-
-        if let Some(control_plane) = &self.control_plane {
-            control_plane
-                .complete_runtime_command(
-                    &command.id,
-                    &provisioning_completed_terminal(
-                        &result.agent_home_dir,
-                        &self.config.workspace.base_dir,
-                    ),
-                )
-                .await?;
-        }
-
-        Ok(RuntimeCommandOutcome {
-            command_id: command.id,
-            accepted: true,
-            run_id: None,
-        })
-    }
-
     async fn handle_sync_workspace_files(
         &self,
         command: RuntimeCommand,
     ) -> anyhow::Result<RuntimeCommandOutcome> {
-        let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
+        let payload = match RuntimeWorkspaceSyncCommandPayload::from_command(&command) {
             Ok(payload) => payload,
             Err(error) => {
                 let error = self.recorded_error(&command.id, error);
@@ -793,19 +686,6 @@ impl RuntimeCommandExecutor {
             digital_employee_id: request.digital_employee_id,
         })
         .map_err(|error| self.recorded_error(&command.id, error))
-    }
-
-    async fn write_provisioning_failure(
-        &self,
-        command_id: &str,
-        error_message: String,
-    ) -> anyhow::Result<()> {
-        if let Some(control_plane) = &self.control_plane {
-            control_plane
-                .fail_runtime_command(command_id, &provisioning_failed_terminal(error_message))
-                .await?;
-        }
-        Ok(())
     }
 
     async fn write_workspace_sync_failure(
@@ -1295,47 +1175,6 @@ fn spawn_project_task_budget_heartbeat(
         }
     });
     stop
-}
-
-fn provisioning_completed_terminal(
-    _agent_home_dir: &Path,
-    _workspace_base_dir: &Path,
-) -> RuntimeCommandTerminalWriteback {
-    let mut result = HashMap::new();
-    result.insert(
-        "provisioning_status".to_string(),
-        serde_json::Value::String("ready".to_string()),
-    );
-
-    RuntimeCommandTerminalWriteback {
-        status: "completed".to_string(),
-        summary: Some("digital employee execution instance provisioned".to_string()),
-        result: Some(result),
-        diagnostic: None,
-        provider_session_external_id: None,
-        session_state_patch: None,
-        log_ref: None,
-        raw_result_ref: None,
-        error_message: None,
-        error_code: None,
-        error_family: None,
-    }
-}
-
-fn provisioning_failed_terminal(error_message: String) -> RuntimeCommandTerminalWriteback {
-    RuntimeCommandTerminalWriteback {
-        status: "failed".to_string(),
-        summary: None,
-        result: None,
-        diagnostic: None,
-        provider_session_external_id: None,
-        session_state_patch: None,
-        log_ref: None,
-        raw_result_ref: None,
-        error_message: Some(error_message),
-        error_code: Some("provision_instance_failed".to_string()),
-        error_family: Some("runtime_provisioning".to_string()),
-    }
 }
 
 fn workspace_sync_completed_terminal(
@@ -4092,22 +3931,6 @@ mod tests {
         assert_eq!(
             body.idempotency_key,
             "project-task-attempt:66666666-6666-4666-8666-666666666666:attestation:provider_start:cmd-project-task"
-        );
-    }
-
-    #[test]
-    fn provisioning_terminal_result_omits_local_runtime_paths() {
-        let terminal = provisioning_completed_terminal(
-            Path::new("/runtime/agent/home"),
-            Path::new("/runtime/workspaces"),
-        );
-        let result = terminal.result.expect("terminal result");
-
-        assert!(result.get("agent_home_dir").is_none());
-        assert!(result.get("workspace_base_dir").is_none());
-        assert_eq!(
-            result.get("provisioning_status"),
-            Some(&serde_json::Value::String("ready".to_string()))
         );
     }
 

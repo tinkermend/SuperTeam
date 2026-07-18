@@ -219,32 +219,6 @@ fn workspace_file_with_hash(content: &str, content_hash: &str) -> serde_json::Va
     file
 }
 
-fn provision_command(
-    command_id: &str,
-    team_id: &str,
-    employee_id: &str,
-    agent_home_dir: &str,
-    content: &str,
-) -> RuntimeCommand {
-    RuntimeCommand {
-        id: command_id.to_string(),
-        command_type: RuntimeCommandType::ProvisionInstance,
-        payload: json!({
-            "command_id": command_id,
-            "tenant_id": "00000000-0000-4000-8000-000000000001",
-            "team_id": team_id,
-            "digital_employee_id": employee_id,
-            "execution_instance_id": EXECUTION_INSTANCE_ID,
-            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
-            "provider_type": "claude-code",
-            "agent_home_dir": agent_home_dir,
-            "workspace_files": [workspace_file(content)],
-            "skills": [],
-            "mcp_servers": []
-        }),
-    }
-}
-
 fn start_session_command_with_home(
     command_id: &str,
     team_id: &str,
@@ -1835,72 +1809,67 @@ async fn install_skills_command_falls_back_to_unsupported_outcome() {
 }
 
 #[tokio::test]
-async fn provision_instance_materializes_team_employee_home() {
+async fn provision_instance_command_falls_back_to_unsupported_outcome() {
+    // provision_instance 已随 CP 侧下发点全数移除从 runtime 下线:收到该类型
+    // 命令必须走 Unsupported 兜底(不接受、不 panic),而不是恢复专属处理路径。
     let temp = tempfile::tempdir().unwrap();
     let mut config = RuntimeConfig::default();
     config.workspace.base_dir = temp.path().join("workspaces");
-    let executor = RuntimeCommandExecutor::new(config.clone());
+    let executor = RuntimeCommandExecutor::new(config);
 
-    let team_id = "11111111-1111-4111-8111-111111111111";
-    let employee_id = "22222222-2222-4222-8222-222222222222";
-    let home = config
-        .workspace
-        .base_dir
-        .join("teams")
-        .join(team_id)
-        .join("employees")
-        .join(employee_id);
-    let content = "# Execution Contract\n";
-    let command = provision_command(
-        "cmd-provision",
-        team_id,
-        employee_id,
-        home.to_str().unwrap(),
-        content,
-    );
+    let command: RuntimeCommand = serde_json::from_value(json!({
+        "id": "cmd-provision",
+        "type": "provision_instance",
+        "payload": {
+            "command_id": "cmd-provision",
+            "tenant_id": TENANT_ID,
+            "team_id": TEAM_ID,
+            "digital_employee_id": DIGITAL_EMPLOYEE_ID,
+            "execution_instance_id": EXECUTION_INSTANCE_ID,
+            "runtime_node_id": RUNTIME_NODE_ID,
+            "provider_type": "claude-code",
+            "agent_home_dir": "/tmp/unused",
+            "workspace_files": [],
+            "skills": [],
+            "mcp_servers": []
+        }
+    }))
+    .expect("runtime command with retired type still deserializes");
+    assert!(matches!(
+        command.command_type,
+        RuntimeCommandType::Unsupported(ref value) if value == "provision_instance"
+    ));
 
-    executor
+    let outcome = executor
         .handle_command(command)
         .await
-        .expect("provision accepted");
+        .expect("unsupported command must not error or panic");
 
-    assert_eq!(
-        std::fs::read_to_string(home.join("context.md")).unwrap(),
-        content
-    );
-    assert!(home.join(".claude").is_dir());
-    assert!(!home.join("state").exists());
+    assert_eq!(outcome.command_id, "cmd-provision");
+    assert!(!outcome.accepted, "retired command type must be rejected");
+    assert!(outcome.run_id.is_none());
 }
 
 #[tokio::test]
-async fn provision_instance_projects_persona_memory_into_employee_home() {
-    let temp = tempfile::tempdir().unwrap();
+async fn sync_workspace_files_projects_persona_memory_into_employee_home() {
+    let temp = TempDir::new().expect("tempdir");
     let mut config = RuntimeConfig::default();
     config.workspace.base_dir = temp.path().join("workspaces");
     let executor = RuntimeCommandExecutor::new(config.clone());
+    let home = employee_home(&temp);
 
-    let team_id = "11111111-1111-4111-8111-111111111111";
-    let employee_id = "22222222-2222-4222-8222-222222222222";
-    let home = config
-        .workspace
-        .base_dir
-        .join("teams")
-        .join(team_id)
-        .join("employees")
-        .join(employee_id);
-    let mut command = provision_command(
-        "cmd-provision-persona",
-        team_id,
-        employee_id,
-        home.to_str().unwrap(),
-        "# Execution Contract\n",
-    );
-    command.payload["persona_memory_markdown"] = json!("# 人格画像\n证据优先");
+    let mut payload =
+        workspace_materialization_payload("cmd-sync-persona", &home, "# Execution Contract\n");
+    payload["persona_memory_markdown"] = json!("# 人格画像\n证据优先");
 
     executor
-        .handle_command(command)
+        .handle_command(RuntimeCommand {
+            id: "cmd-sync-persona".to_string(),
+            command_type: RuntimeCommandType::SyncWorkspaceFiles,
+            payload,
+        })
         .await
-        .expect("provision accepted");
+        .expect("sync_workspace_files accepted");
 
     assert_eq!(
         std::fs::read_to_string(home.join("人格记忆.md")).unwrap(),
@@ -1909,35 +1878,29 @@ async fn provision_instance_projects_persona_memory_into_employee_home() {
 }
 
 #[tokio::test]
-async fn provision_instance_preserves_persona_memory_content_verbatim() {
-    let temp = tempfile::tempdir().unwrap();
+async fn sync_workspace_files_preserves_persona_memory_content_verbatim() {
+    let temp = TempDir::new().expect("tempdir");
     let mut config = RuntimeConfig::default();
     config.workspace.base_dir = temp.path().join("workspaces");
     let executor = RuntimeCommandExecutor::new(config.clone());
+    let home = employee_home(&temp);
 
-    let team_id = "11111111-1111-4111-8111-111111111111";
-    let employee_id = "22222222-2222-4222-8222-222222222222";
-    let home = config
-        .workspace
-        .base_dir
-        .join("teams")
-        .join(team_id)
-        .join("employees")
-        .join(employee_id);
     let persona_memory_markdown = " \n\n# 人格画像\n证据优先\n\n ";
-    let mut command = provision_command(
-        "cmd-provision-persona-verbatim",
-        team_id,
-        employee_id,
-        home.to_str().unwrap(),
+    let mut payload = workspace_materialization_payload(
+        "cmd-sync-persona-verbatim",
+        &home,
         "# Execution Contract\n",
     );
-    command.payload["persona_memory_markdown"] = json!(persona_memory_markdown);
+    payload["persona_memory_markdown"] = json!(persona_memory_markdown);
 
     executor
-        .handle_command(command)
+        .handle_command(RuntimeCommand {
+            id: "cmd-sync-persona-verbatim".to_string(),
+            command_type: RuntimeCommandType::SyncWorkspaceFiles,
+            payload,
+        })
         .await
-        .expect("provision accepted");
+        .expect("sync_workspace_files accepted");
 
     assert_eq!(
         std::fs::read_to_string(home.join("人格记忆.md")).unwrap(),
@@ -2545,7 +2508,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
 }
 
 #[tokio::test]
-async fn provision_failure_records_rejection_when_fail_writeback_fails() {
+async fn workspace_sync_failure_records_rejection_when_fail_writeback_fails() {
     let temp = tempfile::tempdir().unwrap();
     let http_server = serve_failing_command_failures().await;
     let fake_claude = make_script(
@@ -2562,11 +2525,11 @@ printf '%s\n' '{"type":"result","result":"unused"}'
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
 
-    let command_id = "cmd-provision-writeback-fails";
+    let command_id = "cmd-sync-writeback-fails";
     let error = executor
         .handle_command(RuntimeCommand {
             id: command_id.to_string(),
-            command_type: RuntimeCommandType::ProvisionInstance,
+            command_type: RuntimeCommandType::SyncWorkspaceFiles,
             payload: json!({
                 "command_id": command_id,
                 "tenant_id": TENANT_ID,
@@ -2582,7 +2545,7 @@ printf '%s\n' '{"type":"result","result":"unused"}'
             }),
         })
         .await
-        .expect_err("invalid provision payload should reject");
+        .expect_err("invalid workspace sync payload should reject");
 
     assert!(
         error.to_string().contains("Fail runtime command failed"),
