@@ -112,6 +112,14 @@ type ChatAnchorProjectValidator interface {
 	ValidateChatAnchorProject(ctx context.Context, tenantID, projectID uuid.UUID) error
 }
 
+// ChatParticipantValidator optionally extends ChatAnchorProjectValidator with
+// the participation gate: a chat run may only be driven by a digital employee
+// that is an active digital_employee member of the anchor project. The
+// production adapter always implements it; fakes without it skip the check.
+type ChatParticipantValidator interface {
+	ValidateChatParticipant(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) error
+}
+
 // ChatAnchorProjectGitResolver optionally extends ChatAnchorProjectValidator
 // (目录与能力投影修订 spec §4): the chat anchor gains filesystem semantics, so
 // dispatch needs the anchor project's repo binding to seed a readonly worktree.

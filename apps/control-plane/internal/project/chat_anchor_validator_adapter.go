@@ -45,6 +45,26 @@ func (a ChatAnchorProjectValidatorAdapter) ValidateChatAnchorProject(ctx context
 	return nil
 }
 
+// ValidateChatParticipant implements employee.ChatParticipantValidator
+// (团队归属参与门禁): a chat run may only be driven by an active
+// digital_employee member of the anchor project.
+func (a ChatAnchorProjectValidatorAdapter) ValidateChatParticipant(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) error {
+	members, err := a.service.repository.ListProjectMembers(ctx, tenantID, projectID)
+	if err != nil {
+		return fmt.Errorf("list project members for chat participant gate: %w", err)
+	}
+	for _, member := range members {
+		if member.PrincipalType != PrincipalTypeDigitalEmployee || member.PrincipalID != digitalEmployeeID {
+			continue
+		}
+		if member.Status != "active" {
+			return fmt.Errorf("%w: 该数字员工在项目中的成员状态不是 active，无法发起对话", employee.ErrInvalidInput)
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: 该数字员工不是该项目的成员，无法发起对话", employee.ErrInvalidInput)
+}
+
 // ChatAnchorProjectGit implements employee.ChatAnchorProjectGitResolver
 // (目录与能力投影修订 spec §4): chat dispatch seeds a readonly worktree from the
 // anchor project's repo binding, so it needs the same project_git metadata

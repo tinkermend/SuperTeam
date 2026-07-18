@@ -269,6 +269,11 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 	if err := s.chatAnchorValidator.ValidateChatAnchorProject(ctx, req.TenantID, projectID); err != nil {
 		return nil, err
 	}
+	if participantValidator, ok := s.chatAnchorValidator.(ChatParticipantValidator); ok {
+		if err := participantValidator.ValidateChatParticipant(ctx, req.TenantID, projectID, req.DigitalEmployeeID); err != nil {
+			return nil, err
+		}
+	}
 
 	resolvedNodeID, err := s.nodeResolver.ResolveProjectTaskNode(ctx, ResolveProjectTaskNodeRequest{
 		TenantID:          req.TenantID,
