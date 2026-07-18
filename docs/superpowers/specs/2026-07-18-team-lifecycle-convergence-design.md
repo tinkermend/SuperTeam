@@ -56,12 +56,19 @@
 - 删除团队 → 团队从列表消失、其员工出现在运行总览候岗大厅、审计日志有记录、技能/MCP 绑定清理（复用 9434338f 的验证面）。
 - 存量悬空员工清理后，运行总览画面与汇总数字一致。
 
-## 2. P2：审核确认制（后续立项实施）
+## 2. P2：审核确认制（已立项，2026-07-18 用户拍板细化）
 
-- 删除进入 `pending_delete`：全站不可见（与现软删同效），但进入管理员"待确认删除"队列。
-- 管理员两个动作：**恢复**（团队回 active，员工归属是否回填待定——倾向不回填，员工已进候岗由人工重新编排）与**确认删除**（物理删除行 + 级联清理，操作与结果落审计日志）。
-- 未确认的 pending_delete 团队长期滞留策略（提醒/超时自动确认/永不自动）留到 P2 细化时拍板。
-- 与审批中心/收件箱的集成形态（是否走既有 approval_requests）P2 拍板。
+- **状态机**：`DELETE /teams/{id}` 改为置 `status='pending_delete'` + `deleted_at`（全站不可见，读侧无需改动——`deleted_at` 过滤已覆盖）。管理员两个动作：
+  - **恢复** `POST /teams/{id}/restore`（P1 删除的端点以新语义重生）：`status→active`、`deleted_at→NULL`，审计 `team.restore`；员工归属**不回填**（已进候岗，由人工重新编排）。
+  - **确认删除** `POST /teams/{id}/confirm-delete`：物理删除 + 级联清理 + 审计 `team.delete.confirmed`（details 含团队名/slug 快照，保证物理删后审计可读）。
+- **队列** `GET /teams/pending-deletes`：管理员待确认列表（团队管理页专区承载，**不走 approval_requests**——删除确认是管理员单方决策，非 any-of-N 审批流）。三操作与队列读复用 `team.delete` 权限位，不新增 action。
+- **滞留策略（用户拍板 = 永不自动 + 超时催办）**：pending_delete 永不因超时自动物理删除（删除不可逆，不由"不作为"触发，与人类守门姿态一致）；超 7 天未处理由 CP 周期任务（复用 watchdog 模式）投递收件箱催办，每 7 天至多一次（幂等防重复）。
+- **物理删除级联口径**（19 张含 team_id 表分两类）：
+  - 归属型物理清理：tenant_members、tenant_team_member_role_requests、team_skill_bindings、team_mcp_bindings（含已软删行）、team_mcp_servers、team_lending_policy/request、runtime_node_scopes、user_project_team_scopes。
+  - 引用型置 NULL：digital_employees.team_id（兜底，软删时已清）、projects.team_id。
+  - 历史/审计型保留悬空 UUID（无外键，故意保留）：execution_ledger_events、tasks、task_prompt_templates、project_plan_revisions、inbox_items、skill_installations、digital_employee_*——可读性由确认删除审计的快照 details 兜底。
+- **存量口径**：P1 前已软删的团队（status=active + deleted_at 置位）视为**遗留终态**，不进待确认队列（队列判别 = `status='pending_delete'`），P2 语义只对新删除生效。
+- **迁移 077**：CHECK 约束重建为 `status IN ('active','pending_delete')`。
 
 ## 3. 非目标
 
