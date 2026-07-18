@@ -140,7 +140,7 @@ function renderDialog(props: Partial<StaffGapDialogProps> = {}) {
         gap={{
           active_executor_count: 1,
           constraint_kind: "role_independence",
-          options: ["restaff", "exempt", "lending"],
+          options: ["restaff", "exempt"],
           required_capabilities: ["code_review"],
           roles: ["reviewer", "developer"],
         }}

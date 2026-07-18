@@ -146,7 +146,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 				// role_independence structural-gap escalation (the only production
 				// source of ErrNoSuitableEmployee — see enforceRoleIndependence).
 				// structuralGapForPlan recovers the same actionable, details-carrying
-				// gap error (ways-out hints: restaff/exempt/lending) for this plan so
+				// gap error (ways-out hints: restaff/exempt) for this plan so
 				// the caller gets a PlanningGap it can attach, not just err's message.
 				if gap := structuralGapForPlan(snapshot, plan); gap != nil {
 					return RouteDecisionPlan{}, gap

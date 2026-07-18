@@ -183,16 +183,8 @@ func (f fakeRunRepository) ListRunEvents(context.Context, uuid.UUID, uuid.UUID, 
 	return nil, employee.ErrInvalidInput
 }
 
-func (f fakeRunRepository) ListWorkspaceFilesForSync(context.Context, uuid.UUID, uuid.UUID) ([]employee.WorkspaceFileForSyncRecord, error) {
-	return nil, employee.ErrInvalidInput
-}
-
 func (f fakeRunRepository) GetLatestDigitalEmployeeConfigRevision(context.Context, uuid.UUID, uuid.UUID) (employee.EmployeeConfigInput, error) {
 	return employee.EmployeeConfigInput{}, employee.ErrInvalidInput
-}
-
-func (f fakeRunRepository) UpsertWorkspaceFileSync(context.Context, employee.UpsertWorkspaceFileSyncParams) error {
-	return employee.ErrInvalidInput
 }
 
 func (f fakeRunRepository) CreateRun(context.Context, employee.CreateRunRecordRequest) (*employee.DigitalEmployeeRun, error) {

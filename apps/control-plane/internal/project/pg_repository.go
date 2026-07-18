@@ -1289,6 +1289,9 @@ func (r *PgRepository) linkProjectTaskLatestResultWithQueries(ctx context.Contex
 func (r *PgRepository) recordProjectTaskResultForWritebackWithQueries(ctx context.Context, q *queries.Queries, req RecordProjectTaskResultRequest, result ProjectTaskWritebackResult) (ProjectTaskResult, error) {
 	req.ExecutionSummaryID = &result.Summary.ID
 	req.CreatedEventID = &result.Event.ID
+	// 契约落库前回填声明式交付物血缘(v2 spec §3):deliverables[].ref 从
+	// 相对路径/文件名改写为 artifact_ref_id,读侧拿到的契约自带血缘。
+	req.Contract = resolveDeclaredDeliverableRefs(req.Contract, result.DeclaredArtifactRefs)
 	taskResult, err := r.recordProjectTaskResultWithQueries(ctx, q, req)
 	if err != nil {
 		return ProjectTaskResult{}, err
@@ -3927,24 +3930,26 @@ func evidenceRowForArtifactType(artifactType string, isEvidence bool) (string, E
 //
 // 零真证据 → 返回错误 → 整个 completion 回滚:数字员工不能只交一份自述就把
 // 任务标完成(spec §4.4 第 4 步)。
-func (r *PgRepository) materializeAttemptEvidenceWithQueries(ctx context.Context, q *queries.Queries, req CompleteProjectTaskAttemptRequest, projectID uuid.UUID, taskID uuid.UUID, summaryID uuid.UUID) error {
+func (r *PgRepository) materializeAttemptEvidenceWithQueries(ctx context.Context, q *queries.Queries, req CompleteProjectTaskAttemptRequest, projectID uuid.UUID, taskID uuid.UUID, summaryID uuid.UUID) (map[string]uuid.UUID, error) {
 	verifiedEvidenceCount := 0
+	// 声明式交付物血缘(v2 spec §3):relative_path 与文件名 → artifact_ref_id。
+	declaredRefs := map[string]uuid.UUID{}
 
 	for _, raw := range req.ArtifactRefs {
 		if uploaded, ok := parseUploadedArtifactRef(raw); ok {
 			objectKey := fmt.Sprintf("artifacts/%s/sha256/%s", req.TenantID, uploaded.Sha256)
 			if r.artifactObjectVerifier == nil {
-				return fmt.Errorf("%w: artifact object verifier is not configured", ErrInvalidProjectEvidence)
+				return nil, fmt.Errorf("%w: artifact object verifier is not configured", ErrInvalidProjectEvidence)
 			}
 			exists, sizeBytes, err := r.artifactObjectVerifier(ctx, objectKey)
 			if err != nil {
-				return fmt.Errorf("verify artifact object %s: %w", objectKey, err)
+				return nil, fmt.Errorf("verify artifact object %s: %w", objectKey, err)
 			}
 			if !exists {
-				return fmt.Errorf("%w: artifact object %s does not exist in object store", ErrInvalidProjectEvidence, objectKey)
+				return nil, fmt.Errorf("%w: artifact object %s does not exist in object store", ErrInvalidProjectEvidence, objectKey)
 			}
 			if uploaded.SizeBytes > 0 && sizeBytes != uploaded.SizeBytes {
-				return fmt.Errorf("%w: artifact object %s size mismatch (declared %d, stored %d)", ErrInvalidProjectEvidence, objectKey, uploaded.SizeBytes, sizeBytes)
+				return nil, fmt.Errorf("%w: artifact object %s size mismatch (declared %d, stored %d)", ErrInvalidProjectEvidence, objectKey, uploaded.SizeBytes, sizeBytes)
 			}
 			artifact, err := r.createArtifactRefWithQueries(ctx, q, CreateArtifactRefRequest{
 				TenantID:          req.TenantID,
@@ -3962,7 +3967,15 @@ func (r *PgRepository) materializeAttemptEvidenceWithQueries(ctx context.Context
 				Metadata:          uploaded.Raw,
 			})
 			if err != nil {
-				return fmt.Errorf("materialize artifact ref %s: %w", objectKey, err)
+				return nil, fmt.Errorf("materialize artifact ref %s: %w", objectKey, err)
+			}
+			if uploaded.Type == "declared" {
+				if relative, ok := uploaded.Raw["relative_path"].(string); ok && strings.TrimSpace(relative) != "" {
+					declaredRefs[strings.TrimSpace(relative)] = artifact.ID
+				}
+				if uploaded.Name != "" {
+					declaredRefs[uploaded.Name] = artifact.ID
+				}
 			}
 			evidenceType, status := evidenceRowForArtifactType(uploaded.Type, uploaded.IsEvidence)
 			if _, err := r.createEvidenceRefWithQueries(ctx, q, CreateEvidenceRefRequest{
@@ -3980,7 +3993,7 @@ func (r *PgRepository) materializeAttemptEvidenceWithQueries(ctx context.Context
 				VerificationStatus: status,
 				Metadata:           map[string]any{"artifact_type": uploaded.Type, "truncated": uploaded.Truncated},
 			}); err != nil {
-				return fmt.Errorf("materialize evidence for artifact %s: %w", objectKey, err)
+				return nil, fmt.Errorf("materialize evidence for artifact %s: %w", objectKey, err)
 			}
 			if uploaded.IsEvidence {
 				verifiedEvidenceCount++
@@ -4005,7 +4018,7 @@ func (r *PgRepository) materializeAttemptEvidenceWithQueries(ctx context.Context
 			Checksum:          parsed.Checksum,
 			RetentionStatus:   "pending",
 		}); err != nil {
-			return fmt.Errorf("materialize self-reported artifact ref: %w", err)
+			return nil, fmt.Errorf("materialize self-reported artifact ref: %w", err)
 		}
 	}
 
@@ -4036,14 +4049,14 @@ func (r *PgRepository) materializeAttemptEvidenceWithQueries(ctx context.Context
 			VerificationStatus: EvidenceVerificationStatusSubmitted,
 			Metadata:           entry,
 		}); err != nil {
-			return fmt.Errorf("materialize evidence ref %s: %w", sourceRef, err)
+			return nil, fmt.Errorf("materialize evidence ref %s: %w", sourceRef, err)
 		}
 	}
 
 	if verifiedEvidenceCount == 0 {
-		return fmt.Errorf("%w: completion carries no verifiable evidence artifact (execution transcript missing)", ErrInvalidProjectEvidence)
+		return nil, fmt.Errorf("%w: completion carries no verifiable evidence artifact (execution transcript missing)", ErrInvalidProjectEvidence)
 	}
-	return nil
+	return declaredRefs, nil
 }
 
 func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
@@ -4111,7 +4124,8 @@ func (r *PgRepository) completeProjectTaskAttemptWritebackWithQueries(ctx contex
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
-	if err := r.materializeAttemptEvidenceWithQueries(ctx, q, req, task.ProjectID, task.ID, summary.ID); err != nil {
+	declaredRefs, err := r.materializeAttemptEvidenceWithQueries(ctx, q, req, task.ProjectID, task.ID, summary.ID)
+	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
 	finishParams := queries.FinishProjectTaskAttemptParams{
@@ -4140,7 +4154,7 @@ func (r *PgRepository) completeProjectTaskAttemptWritebackWithQueries(ctx contex
 			return ProjectTaskWritebackResult{}, err
 		}
 	}
-	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
+	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, DeclaredArtifactRefs: declaredRefs}, nil
 }
 
 func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {
@@ -4205,7 +4219,8 @@ func (r *PgRepository) completeProjectTaskAttemptAcceptanceWritebackWithQueries(
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
-	if err := r.materializeAttemptEvidenceWithQueries(ctx, q, req.Complete, req.Task.ProjectID, req.Task.ID, summary.ID); err != nil {
+	declaredRefs, err := r.materializeAttemptEvidenceWithQueries(ctx, q, req.Complete, req.Task.ProjectID, req.Task.ID, summary.ID)
+	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
 	finishParams := queries.FinishProjectTaskAttemptParams{
@@ -4245,7 +4260,7 @@ func (r *PgRepository) completeProjectTaskAttemptAcceptanceWritebackWithQueries(
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
-	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, Decision: decision}, nil
+	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, Decision: decision, DeclaredArtifactRefs: declaredRefs}, nil
 }
 
 func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {

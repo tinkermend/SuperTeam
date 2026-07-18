@@ -110,47 +110,6 @@ type CreateConfigRevisionParams struct {
 	ApprovedAt            *time.Time
 }
 
-type CreateWorkspaceFileParams struct {
-	TenantID          uuid.UUID
-	TeamID            *uuid.UUID
-	DigitalEmployeeID uuid.UUID
-	Path              string
-	FileRole          string
-	MimeType          string
-	SyncPolicy        string
-	Status            string
-	Metadata          map[string]any
-	CreatedBy         *uuid.UUID
-}
-
-type CreateWorkspaceFileRevisionParams struct {
-	TenantID       uuid.UUID
-	FileID         uuid.UUID
-	RevisionNumber int32
-	ContentText    string
-	ContentHash    string
-	SizeBytes      int32
-	StorageBackend string
-	ObjectKey      *string
-	CreatedBy      *uuid.UUID
-	ChangeNote     *string
-	Metadata       map[string]any
-}
-
-type UpsertWorkspaceFileSyncParams struct {
-	TenantID            uuid.UUID
-	DigitalEmployeeID   uuid.UUID
-	ExecutionInstanceID uuid.UUID
-	FileID              uuid.UUID
-	RevisionID          uuid.UUID
-	RuntimeNodeID       uuid.UUID
-	Status              string
-	SyncedHash          *string
-	ErrorMessage        *string
-	LastCommandID       *string
-	LastSyncedAt        *time.Time
-}
-
 type DigitalEmployeeRecord struct {
 	ID               uuid.UUID
 	TenantID         uuid.UUID
@@ -211,59 +170,4 @@ type DigitalEmployeeConfigRevisionRecord struct {
 	ArchivedAt            *time.Time
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
-}
-
-type WorkspaceFileRecord struct {
-	ID                uuid.UUID
-	TenantID          uuid.UUID
-	TeamID            *uuid.UUID
-	DigitalEmployeeID uuid.UUID
-	Path              string
-	FileRole          string
-	MimeType          string
-	SyncPolicy        string
-	CurrentRevisionID *uuid.UUID
-	Status            string
-	Metadata          map[string]any
-	CreatedBy         *uuid.UUID
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	ArchivedAt        *time.Time
-	DeletedAt         *time.Time
-}
-
-type WorkspaceFileRevisionRecord struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	FileID         uuid.UUID
-	RevisionNumber int32
-	ContentText    string
-	ContentHash    string
-	SizeBytes      int32
-	StorageBackend string
-	ObjectKey      *string
-	CreatedBy      *uuid.UUID
-	CreatedAt      time.Time
-	ChangeNote     *string
-	Metadata       map[string]any
-}
-
-type WorkspaceFileForSyncRecord struct {
-	FileID            uuid.UUID
-	TenantID          uuid.UUID
-	TeamID            *uuid.UUID
-	DigitalEmployeeID uuid.UUID
-	Path              string
-	FileRole          string
-	MimeType          string
-	SyncPolicy        string
-	FileMetadata      map[string]any
-	RevisionID        uuid.UUID
-	RevisionNumber    int32
-	ContentText       string
-	ContentHash       string
-	SizeBytes         int32
-	StorageBackend    string
-	ObjectKey         *string
-	RevisionMetadata  map[string]any
 }

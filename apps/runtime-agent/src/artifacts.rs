@@ -34,6 +34,14 @@ pub const MAX_ATTACHMENT_FILE_BYTES: u64 = 5 * 1024 * 1024;
 pub const MAX_ATTACHMENT_COUNT: usize = 20;
 pub const MAX_ATTACHMENT_TOTAL_BYTES: u64 = 50 * 1024 * 1024;
 
+/// Declared deliverables (声明式交付物 v2 spec §2): files the agent writes
+/// into the workspace `deliverables/` directory under the dispatch contract.
+/// Single-file cap matches the control plane presign hard limit.
+pub const DELIVERABLES_DIR: &str = "deliverables";
+pub const MAX_DECLARED_FILE_BYTES: u64 = MAX_ARTIFACT_FILE_BYTES as u64;
+pub const MAX_DECLARED_COUNT: usize = 20;
+pub const MAX_DECLARED_TOTAL_BYTES: u64 = 100 * 1024 * 1024;
+
 /// Extension whitelist (输出附件 spec §1.2, 用户拍板 2026-07-19). Files the
 /// attempt newly created that match land as `execution_output` attachments.
 const ATTACHMENT_EXTENSIONS: &[(&str, &str)] = &[
@@ -244,6 +252,15 @@ pub async fn collect_attachments(
         if attachment_content_type(&relative).is_none() || has_excluded_component(&relative) {
             continue;
         }
+        // deliverables/ 归声明式管道(v2 spec §2),兜底附件管道不重复采集。
+        if Path::new(&relative)
+            .components()
+            .next()
+            .and_then(|component| component.as_os_str().to_str())
+            == Some(DELIVERABLES_DIR)
+        {
+            continue;
+        }
         let absolute = workspace.join(&relative);
         let Ok(metadata) = tokio::fs::metadata(&absolute).await else {
             continue;
@@ -326,6 +343,144 @@ pub async fn collect_attachments(
     }
 
     collection
+}
+
+/// Collects declared deliverables from the workspace `deliverables/` dir
+/// (声明式交付物 v2 spec §2): every regular file inside, no extension
+/// whitelist — the declared directory IS the whitelist. Hidden path
+/// components are still excluded. `artifact_type=declared`,
+/// `is_evidence=true` (the control plane maps it to a submitted
+/// declared_output evidence row). Not redacted, like attachments.
+pub async fn collect_declared_deliverables(workspace: &Path) -> AttachmentCollection {
+    let mut collection = AttachmentCollection::default();
+    let root = workspace.join(DELIVERABLES_DIR);
+    if !root.is_dir() {
+        return collection;
+    }
+
+    let mut eligible: Vec<(String, u64, std::time::SystemTime)> = Vec::new();
+    for relative in snapshot_workspace_files(&root) {
+        if has_excluded_component(&relative) {
+            continue;
+        }
+        let full_relative = format!("{DELIVERABLES_DIR}/{relative}");
+        let Ok(metadata) = tokio::fs::metadata(root.join(&relative)).await else {
+            continue;
+        };
+        if metadata.len() > MAX_DECLARED_FILE_BYTES {
+            collection.skipped.push(SkippedAttachment {
+                relative_path: full_relative,
+                reason: format!(
+                    "file is {} bytes, exceeds the {}MiB declared deliverable cap",
+                    metadata.len(),
+                    MAX_DECLARED_FILE_BYTES / (1024 * 1024)
+                ),
+            });
+            continue;
+        }
+        let modified = metadata
+            .modified()
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        eligible.push((full_relative, metadata.len(), modified));
+    }
+
+    eligible.sort_by(|a, b| b.2.cmp(&a.2));
+
+    let mut total_bytes = 0u64;
+    for (relative, size, _) in eligible {
+        if collection.attachments.len() >= MAX_DECLARED_COUNT {
+            collection.skipped.push(SkippedAttachment {
+                relative_path: relative,
+                reason: format!("declared deliverable count cap ({MAX_DECLARED_COUNT}) reached"),
+            });
+            continue;
+        }
+        if total_bytes + size > MAX_DECLARED_TOTAL_BYTES {
+            collection.skipped.push(SkippedAttachment {
+                relative_path: relative,
+                reason: format!(
+                    "total declared deliverable cap ({}MiB) reached",
+                    MAX_DECLARED_TOTAL_BYTES / (1024 * 1024)
+                ),
+            });
+            continue;
+        }
+        let bytes = match tokio::fs::read(workspace.join(&relative)).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                collection.skipped.push(SkippedAttachment {
+                    relative_path: relative,
+                    reason: format!("read failed: {error}"),
+                });
+                continue;
+            }
+        };
+        if bytes.len() as u64 > MAX_DECLARED_FILE_BYTES {
+            collection.skipped.push(SkippedAttachment {
+                relative_path: relative,
+                reason: format!(
+                    "file grew to {} bytes, exceeds the {}MiB declared deliverable cap",
+                    bytes.len(),
+                    MAX_DECLARED_FILE_BYTES / (1024 * 1024)
+                ),
+            });
+            continue;
+        }
+        total_bytes += bytes.len() as u64;
+        let content_type =
+            attachment_content_type(&relative).unwrap_or("application/octet-stream");
+        let name = Path::new(&relative)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| relative.clone());
+        collection.attachments.push(CollectedAttachment {
+            artifact: build_artifact("declared", name, content_type, true, false, 0, bytes),
+            relative_path: relative,
+        });
+    }
+
+    collection
+}
+
+/// Uploads declared deliverables with the SAME all-or-nothing semantics as
+/// evidence (v2 spec §2): a contract-promised deliverable must not be claimed
+/// without landing in the store, so any upload failure fails the completion.
+/// Skip notes (caps) stay best-effort self-report rows.
+pub async fn upload_declared_deliverables(
+    control_plane: &ControlPlaneClient,
+    collection: AttachmentCollection,
+) -> Result<Vec<serde_json::Value>> {
+    let http = reqwest::Client::new();
+    let mut refs = Vec::new();
+    for attachment in collection.attachments {
+        let object_key = upload_one(control_plane, &http, &attachment.artifact)
+            .await
+            .with_context(|| format!("upload declared deliverable {}", attachment.relative_path))?;
+        refs.push(serde_json::json!({
+            "type": attachment.artifact.artifact_type,
+            "name": attachment.artifact.name,
+            "ref": object_key,
+            "sha256": attachment.artifact.sha256,
+            "size_bytes": attachment.artifact.bytes.len() as i64,
+            "content_type": attachment.artifact.content_type,
+            "truncated": false,
+            "is_evidence": true,
+            "redaction_count": 0,
+            "relative_path": attachment.relative_path,
+        }));
+    }
+    for skip in collection.skipped {
+        eprintln!(
+            "declared deliverable skipped: {} ({})",
+            skip.relative_path, skip.reason
+        );
+        refs.push(serde_json::json!({
+            "type": "declared_skipped",
+            "ref": skip.relative_path.clone(),
+            "title": format!("{} — {}", skip.relative_path, skip.reason),
+        }));
+    }
+    Ok(refs)
 }
 
 /// Uploads attachments best-effort (spec §1.5): a failed attachment becomes a
@@ -801,6 +956,73 @@ mod tests {
             .map(|attachment| attachment.relative_path.as_str())
             .collect();
         assert_eq!(paths, vec!["new-report.md"]);
+    }
+
+    #[tokio::test]
+    async fn declared_deliverables_collects_all_files_regardless_of_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("deliverables/sub")).unwrap();
+        std::fs::write(root.join("deliverables/report.html"), "<h1>r</h1>").unwrap();
+        std::fs::write(root.join("deliverables/data.bin"), [1u8; 8]).unwrap(); // 无扩展名白名单限制
+        std::fs::write(root.join("deliverables/sub/extra.csv"), "a,b").unwrap();
+        std::fs::write(root.join("deliverables/.hidden.md"), "no").unwrap(); // 隐藏仍排除
+        std::fs::write(root.join("stray.md"), "not declared").unwrap(); // 目录外不属声明管道
+
+        let collection = collect_declared_deliverables(root).await;
+        let mut paths: Vec<&str> = collection
+            .attachments
+            .iter()
+            .map(|attachment| attachment.relative_path.as_str())
+            .collect();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                "deliverables/data.bin",
+                "deliverables/report.html",
+                "deliverables/sub/extra.csv"
+            ]
+        );
+        let report = collection
+            .attachments
+            .iter()
+            .find(|attachment| attachment.relative_path == "deliverables/report.html")
+            .unwrap();
+        assert_eq!(report.artifact.artifact_type, "declared");
+        assert!(report.artifact.is_evidence);
+        let bin = collection
+            .attachments
+            .iter()
+            .find(|attachment| attachment.relative_path == "deliverables/data.bin")
+            .unwrap();
+        assert_eq!(bin.artifact.content_type, "application/octet-stream");
+    }
+
+    #[tokio::test]
+    async fn declared_dir_absent_collects_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let collection = collect_declared_deliverables(dir.path()).await;
+        assert!(collection.attachments.is_empty());
+        assert!(collection.skipped.is_empty());
+    }
+
+    #[tokio::test]
+    async fn attachments_exclude_deliverables_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root).await;
+        std::fs::create_dir_all(root.join("deliverables")).unwrap();
+        std::fs::write(root.join("deliverables/report.md"), "declared").unwrap();
+        std::fs::write(root.join("loose.md"), "attachment").unwrap();
+
+        let collection = collect_attachments(root, None).await;
+        let paths: Vec<&str> = collection
+            .attachments
+            .iter()
+            .map(|attachment| attachment.relative_path.as_str())
+            .collect();
+        assert_eq!(paths, vec!["loose.md"]);
     }
 
     #[tokio::test]

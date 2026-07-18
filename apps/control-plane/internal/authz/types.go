@@ -83,10 +83,6 @@ const (
 	ActionTeamCapabilityUnbind            = "team.capability.unbind"
 	ActionTeamCapabilityManage            = "team.capability.manage"
 	ActionTeamAuditRead                   = "team.audit.read"
-	ActionTeamLendingPolicyRead           = "team.lending.policy.read"
-	ActionTeamLendingPolicyEdit           = "team.lending.policy.edit"
-	ActionTeamLendingRequestRead          = "team.lending.request.read"
-	ActionTeamLendingRequestDecide        = "team.lending.request.decide"
 
 	ActionProjectCreate           = "project.create"
 	ActionProjectRead             = "project.read"

@@ -656,7 +656,7 @@ describe("WorkflowView", () => {
       gap: {
         active_executor_count: 1,
         constraint_kind: "role_independence",
-        options: ["restaff", "exempt", "lending"],
+        options: ["restaff", "exempt"],
         required_capabilities: ["code_review"],
         roles: ["reviewer", "developer"],
       },
@@ -667,7 +667,7 @@ describe("WorkflowView", () => {
     };
   }
 
-  it("renders a staffing gap panel with three actions when the blocking fact carries a structural gap", async () => {
+  it("renders a staffing gap panel with staffing and exempt actions when the blocking fact carries a structural gap", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
         demandStatus: "failed",
@@ -683,9 +683,6 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("所需能力：code_review")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "从标准模板补员" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "豁免并重规划" })).toBeVisible();
-    await expect
-      .element(screen.getByRole("link", { name: "发起借调" }))
-      .toHaveAttribute("href", "/projects/project-1/config");
   });
 
   it("disables both staffing and exempt actions when the fact carries no decision id", async () => {
@@ -703,7 +700,6 @@ describe("WorkflowView", () => {
       .element(screen.getByRole("button", { name: "从标准模板补员" }))
       .toBeDisabled();
     await expect.element(screen.getByRole("button", { name: "豁免并重规划" })).toBeDisabled();
-    await expect.element(screen.getByRole("link", { name: "发起借调" })).toBeVisible();
   });
 
   it("does not render the gap panel when the blocking fact carries no structural gap", async () => {

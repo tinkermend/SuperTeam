@@ -232,9 +232,6 @@ impl RuntimeCommandExecutor {
             RuntimeCommandType::StopSession => self.handle_stop_command(command).await,
             RuntimeCommandType::EnsureInstance => self.handle_ensure_instance(command),
             RuntimeCommandType::ProvisionInstance => self.handle_provision_instance(command).await,
-            RuntimeCommandType::SyncWorkspaceFiles => {
-                self.handle_sync_workspace_files(command).await
-            }
             RuntimeCommandType::Unsupported(_) => Ok(RuntimeCommandOutcome {
                 command_id: command.id,
                 accepted: false,
@@ -634,7 +631,6 @@ impl RuntimeCommandExecutor {
         let result = match materialize_workspace(WorkspaceMaterializationPlan {
             agent_home_dir: PathBuf::from(&payload.agent_home_dir),
             provider_home,
-            files: payload.workspace_files,
         }) {
             Ok(result) => result,
             Err(error) => {
@@ -712,68 +708,6 @@ impl RuntimeCommandExecutor {
         })
     }
 
-    async fn handle_sync_workspace_files(
-        &self,
-        command: RuntimeCommand,
-    ) -> anyhow::Result<RuntimeCommandOutcome> {
-        let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
-            Ok(payload) => payload,
-            Err(error) => {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_workspace_sync_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-        let provider_home = match provider_home_kind(&payload.provider_type) {
-            Ok(provider_home) => provider_home,
-            Err(error) => {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_workspace_sync_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-        let result = match materialize_workspace(WorkspaceMaterializationPlan {
-            agent_home_dir: PathBuf::from(&payload.agent_home_dir),
-            provider_home,
-            files: payload.workspace_files,
-        }) {
-            Ok(result) => result,
-            Err(error) => {
-                let error = self.recorded_error(&command.id, error);
-                let message = error.to_string();
-                self.write_workspace_sync_failure(&command.id, message)
-                    .await?;
-                return Err(error);
-            }
-        };
-        if let Err(error) = materialize_persona_memory(
-            &result.agent_home_dir,
-            payload.persona_memory_markdown.as_deref(),
-        ) {
-            let error = self.recorded_error(&command.id, error);
-            let message = error.to_string();
-            self.write_workspace_sync_failure(&command.id, message)
-                .await?;
-            return Err(error);
-        }
-        if let Some(control_plane) = &self.control_plane {
-            control_plane
-                .complete_runtime_command(
-                    &command.id,
-                    &workspace_sync_completed_terminal(&result.agent_home_dir, result.synced_files),
-                )
-                .await?;
-        }
-        Ok(RuntimeCommandOutcome {
-            command_id: command.id,
-            accepted: true,
-            run_id: None,
-        })
-    }
 
     fn ensure_instance_from_command(
         &self,
@@ -808,18 +742,6 @@ impl RuntimeCommandExecutor {
         Ok(())
     }
 
-    async fn write_workspace_sync_failure(
-        &self,
-        command_id: &str,
-        error_message: String,
-    ) -> anyhow::Result<()> {
-        if let Some(control_plane) = &self.control_plane {
-            control_plane
-                .fail_runtime_command(command_id, &workspace_sync_failed_terminal(error_message))
-                .await?;
-        }
-        Ok(())
-    }
 
     async fn write_command_failure(
         &self,
@@ -993,7 +915,6 @@ impl RuntimeCommandExecutor {
         materialize_workspace(WorkspaceMaterializationPlan {
             agent_home_dir: agent_home_dir.to_path_buf(),
             provider_home,
-            files: payload.workspace_files.clone(),
         })?;
 
         let project_workspace = payload.project_workspace();
@@ -1338,29 +1259,6 @@ fn provisioning_failed_terminal(error_message: String) -> RuntimeCommandTerminal
     }
 }
 
-fn workspace_sync_completed_terminal(
-    _agent_home_dir: &Path,
-    synced_files: Vec<crate::workspace_files::SyncedWorkspaceFile>,
-) -> RuntimeCommandTerminalWriteback {
-    let mut result = HashMap::new();
-    result.insert(
-        "synced_files".to_string(),
-        serde_json::to_value(synced_files).unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
-    );
-    RuntimeCommandTerminalWriteback {
-        status: "completed".to_string(),
-        summary: Some("digital employee workspace files synced".to_string()),
-        result: Some(result),
-        diagnostic: None,
-        provider_session_external_id: None,
-        session_state_patch: None,
-        log_ref: None,
-        raw_result_ref: None,
-        error_message: None,
-        error_code: None,
-        error_family: None,
-    }
-}
 
 fn workspace_sync_failed_terminal(error_message: String) -> RuntimeCommandTerminalWriteback {
     RuntimeCommandTerminalWriteback {
@@ -1593,6 +1491,9 @@ impl RuntimeCommandWritebackSink {
                 // 上传失败 → 整个 completion 失败,任务不得声称拥有从未落库的证据。
                 let mut collected_refs =
                     self.collect_and_upload_artifacts(summary.as_deref()).await?;
+                // 声明式交付物与证据同格整批失败(v2 spec §2):契约承诺的
+                // 交付物不允许"声称交付了但没落库"。
+                collected_refs.extend(self.collect_and_upload_declared().await?);
                 // 输出附件是 best-effort(输出附件 spec §1.5):单个附件失败
                 // 降级为可见的 skip note,绝不拖垮 completion。
                 collected_refs.extend(self.collect_and_upload_attachments().await);
@@ -1637,6 +1538,22 @@ impl RuntimeCommandWritebackSink {
         )
         .await;
         crate::artifacts::upload_artifacts(&self.client, artifacts).await
+    }
+
+    /// Collects and uploads declared deliverables from `deliverables/`
+    /// (v2 spec §2). Upload failure fails the completion, like evidence.
+    async fn collect_and_upload_declared(&self) -> anyhow::Result<Vec<serde_json::Value>> {
+        let Some(context) = &self.artifact_collection else {
+            return Ok(Vec::new());
+        };
+        let Some(workspace) = &context.workspace_path else {
+            return Ok(Vec::new());
+        };
+        let collection = crate::artifacts::collect_declared_deliverables(workspace).await;
+        if collection.attachments.is_empty() && collection.skipped.is_empty() {
+            return Ok(Vec::new());
+        }
+        crate::artifacts::upload_declared_deliverables(&self.client, collection).await
     }
 
     /// Collects and uploads `execution_output` attachments best-effort.
@@ -3212,7 +3129,6 @@ mod tests {
             agent_home_dir: Some("/tmp/runtime-agent-test".to_string()),
             persona_memory_markdown: None,
             capability_bindings: serde_json::json!({}),
-            workspace_files: Vec::new(),
             skills: Vec::new(),
             mcp_servers: Vec::new(),
             environment: Vec::new(),
@@ -4109,16 +4025,6 @@ mod tests {
             result.get("provisioning_status"),
             Some(&serde_json::Value::String("ready".to_string()))
         );
-    }
-
-    #[test]
-    fn workspace_sync_terminal_result_omits_agent_home_path() {
-        let terminal =
-            workspace_sync_completed_terminal(Path::new("/runtime/agent/home"), Vec::new());
-        let result = terminal.result.expect("terminal result");
-
-        assert!(result.get("agent_home_dir").is_none());
-        assert!(result.get("synced_files").is_some());
     }
 
     #[test]

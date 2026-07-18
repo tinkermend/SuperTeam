@@ -439,25 +439,6 @@ function createTeamsFetcher(
         ]);
       }
 
-      if (
-        url.pathname === "/api/v1/teams/team-1/member-role-requests" &&
-        method === "GET"
-      ) {
-        return jsonResponse([
-          {
-            id: "request-admin",
-            tenant_id: "tenant-1",
-            team_id: "team-1",
-            target_user_id: "candidate-admin",
-            requested_role: "admin",
-            requested_by: "owner-user",
-            status: "pending",
-            reason: "需要维护成员配置",
-            decision_reason: "",
-          },
-        ]);
-      }
-
       if (url.pathname === "/api/v1/teams/team-1/members" && method === "POST") {
         return jsonResponse(
           {
@@ -471,26 +452,6 @@ function createTeamsFetcher(
             account_status: "active",
             role: "member",
             membership_status: "active",
-          },
-          201,
-        );
-      }
-
-      if (
-        url.pathname === "/api/v1/teams/team-1/member-role-requests" &&
-        method === "POST"
-      ) {
-        return jsonResponse(
-          {
-            id: "request-viewer-admin",
-            tenant_id: "tenant-1",
-            team_id: "team-1",
-            target_user_id: "viewer-user",
-            requested_role: "admin",
-            requested_by: "owner-user",
-            status: "pending",
-            reason: "需要维护团队治理",
-            decision_reason: "",
           },
           201,
         );

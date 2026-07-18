@@ -894,109 +894,6 @@ func TestWritebackFailProvisioningDeletesEmployeeAndInstance(t *testing.T) {
 	}
 }
 
-func TestCompleteWorkspaceSyncCommandUpdatesFileSyncProjection(t *testing.T) {
-	repo := newFakeRunWritebackRepository()
-	receipt := validWorkspaceSyncReceipt("cmd-sync")
-	repo.putReceipt(receipt)
-	service, err := NewDigitalEmployeeRunWritebackService(repo, nil)
-	if err != nil {
-		t.Fatalf("new writeback service: %v", err)
-	}
-
-	err = service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
-		Status: DigitalEmployeeRunStatusCompleted,
-		Result: map[string]any{
-			"synced_files": []any{map[string]any{
-				"file_id":      "55555555-5555-4555-8555-555555555555",
-				"revision_id":  "66666666-6666-4666-8666-666666666666",
-				"path":         "context.md",
-				"content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("complete sync command: %v", err)
-	}
-	if len(repo.workspaceFileSyncUpserts) != 1 {
-		t.Fatalf("expected one sync projection upsert, got %d", len(repo.workspaceFileSyncUpserts))
-	}
-	upsert := repo.workspaceFileSyncUpserts[0]
-	if upsert.Status != "synced" || upsert.SyncedHash == nil || *upsert.SyncedHash != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
-		t.Fatalf("unexpected sync projection upsert: %#v", upsert)
-	}
-	if len(repo.executionInstanceStatusUpdates) != 0 || len(repo.deletedEmployees) != 0 {
-		t.Fatalf("workspace sync completion must not mutate provisioning lifecycle state")
-	}
-}
-
-func TestFailWorkspaceSyncCommandUpdatesFileSyncProjectionWithoutDeletingEmployee(t *testing.T) {
-	repo := newFakeRunWritebackRepository()
-	receipt := validWorkspaceSyncReceipt("cmd-sync-failed")
-	repo.putReceipt(receipt)
-	audit := &fakeWritebackAuditLogger{}
-	service, err := NewDigitalEmployeeRunWritebackService(repo, audit)
-	if err != nil {
-		t.Fatalf("new writeback service: %v", err)
-	}
-	message := "workspace file hash mismatch"
-
-	err = service.Fail(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
-		Status:       DigitalEmployeeRunStatusFailed,
-		ErrorMessage: &message,
-		Result: map[string]any{
-			"failed_files": []any{map[string]any{
-				"file_id":     "55555555-5555-4555-8555-555555555555",
-				"revision_id": "66666666-6666-4666-8666-666666666666",
-			}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("fail sync command: %v", err)
-	}
-	if len(repo.workspaceFileSyncUpserts) != 1 {
-		t.Fatalf("expected one failed sync projection upsert, got %d", len(repo.workspaceFileSyncUpserts))
-	}
-	upsert := repo.workspaceFileSyncUpserts[0]
-	if upsert.Status != "failed" || upsert.ErrorMessage == nil || *upsert.ErrorMessage != message {
-		t.Fatalf("unexpected failed sync projection upsert: %#v", upsert)
-	}
-	if len(repo.deletedExecutionInstances) != 0 || len(repo.deletedEmployees) != 0 {
-		t.Fatalf("workspace sync failure must not delete provisioned employee facts")
-	}
-	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_workspace_files_sync_failed" || audit.events[0].action != "employee.workspace.sync_failed" {
-		t.Fatalf("expected failed workspace sync audit event, got %#v", audit.events)
-	}
-}
-
-func TestCompleteWorkspaceSyncRejectsMismatchedFileRevisionPair(t *testing.T) {
-	repo := newFakeRunWritebackRepository()
-	receipt := validWorkspaceSyncReceipt("cmd-sync-mismatch")
-	repo.putReceipt(receipt)
-	service, err := NewDigitalEmployeeRunWritebackService(repo, nil)
-	if err != nil {
-		t.Fatalf("new writeback service: %v", err)
-	}
-
-	err = service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
-		Status: DigitalEmployeeRunStatusCompleted,
-		Result: map[string]any{
-			"synced_files": []any{map[string]any{
-				"file_id":      "77777777-7777-4777-8777-777777777777",
-				"revision_id":  "66666666-6666-4666-8666-666666666666",
-				"path":         "context.md",
-				"content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			}},
-		},
-	})
-
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected ErrInvalidInput for mismatched file/revision pair, got %v", err)
-	}
-	if len(repo.workspaceFileSyncUpserts) != 0 || len(repo.receiptUpdates) != 0 {
-		t.Fatalf("expected mismatched sync result to reject before writes, upserts=%#v receipts=%#v", repo.workspaceFileSyncUpserts, repo.receiptUpdates)
-	}
-}
-
 func mustNewRunWritebackService(t *testing.T, repo DigitalEmployeeRunRepository, audit AuditLogger, recorders ...RuntimeEventRecorder) *DigitalEmployeeRunWritebackService {
 	t.Helper()
 	service, err := NewDigitalEmployeeRunWritebackService(repo, audit, recorders...)
@@ -1079,33 +976,6 @@ func validProvisioningReceipt(commandID string) *RuntimeCommandReceipt {
 	}
 }
 
-func validWorkspaceSyncReceipt(commandID string) *RuntimeCommandReceipt {
-	return &RuntimeCommandReceipt{
-		ID:            uuid.New(),
-		TenantID:      runWritebackTenantID,
-		CommandID:     commandID,
-		CommandType:   "sync_workspace_files",
-		RuntimeNodeID: runWritebackRuntimeNodeID,
-		NodeID:        "runtime-node-1",
-		ResourceType:  "digital_employee_workspace_sync",
-		ResourceID:    runWritebackExecutionInstanceID,
-		Status:        "dispatched",
-		Payload: map[string]any{
-			"command_id":            commandID,
-			"digital_employee_id":   runWritebackEmployeeID.String(),
-			"execution_instance_id": runWritebackExecutionInstanceID.String(),
-			"workspace_files": []any{map[string]any{
-				"file_id":     "55555555-5555-4555-8555-555555555555",
-				"revision_id": "66666666-6666-4666-8666-666666666666",
-				"path":        "context.md",
-			}},
-		},
-		Result:    map[string]any{},
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}
-}
-
 func validProvisioningInstance(instanceID uuid.UUID) DigitalEmployeeExecutionInstanceRecord {
 	return DigitalEmployeeExecutionInstanceRecord{
 		ID:                instanceID,
@@ -1143,7 +1013,6 @@ type fakeRunWritebackRepository struct {
 	providerSessionUpserts          []UpsertProviderSessionRequest
 	runUpdates                      []UpdateRunStatusRequest
 	receiptUpdates                  []UpdateRuntimeCommandReceiptRequest
-	workspaceFileSyncUpserts        []UpsertWorkspaceFileSyncParams
 	executionInstanceStatusUpdates  []fakeExecutionInstanceStatusUpdate
 	employeeStatusUpdates           []fakeEmployeeStatusUpdate
 	deletedExecutionInstances       []uuid.UUID
@@ -1292,15 +1161,6 @@ func (f *fakeRunWritebackRepository) HasRunEventSequence(_ context.Context, tena
 
 func (f *fakeRunWritebackRepository) ListRunEvents(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int32, int32) ([]RuntimeCommandEventWriteback, error) {
 	return nil, nil
-}
-
-func (f *fakeRunWritebackRepository) ListWorkspaceFilesForSync(context.Context, uuid.UUID, uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
-	return nil, nil
-}
-
-func (f *fakeRunWritebackRepository) UpsertWorkspaceFileSync(_ context.Context, params UpsertWorkspaceFileSyncParams) error {
-	f.workspaceFileSyncUpserts = append(f.workspaceFileSyncUpserts, params)
-	return nil
 }
 
 func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) (bool, error) {

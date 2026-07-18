@@ -1,17 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   addTeamMember,
-  approveTeamMemberRoleRequest,
   createTeam,
-  createTeamMemberRoleRequest,
   deleteTeam,
   getTeamOverview,
   listTeamAuditEvents,
-  listTeamMemberRoleRequests,
   listTeamMembers,
   listTeamSummaries,
   listTeams,
-  rejectTeamMemberRoleRequest,
   removeTeamMember,
   updateTeam,
   updateTeamConstitution,
@@ -493,114 +489,4 @@ describe("team API", () => {
     );
   });
 
-  it("manages privileged role requests", async () => {
-    const roleRequest = {
-      id: "request 1/primary",
-      tenant_id: "22222222-2222-4222-8222-222222222222",
-      team_id: "11111111-1111-4111-8111-111111111111",
-      target_user_id: "33333333-3333-4333-8333-333333333333",
-      requested_role: "admin",
-      requested_by: "44444444-4444-4444-8444-444444444444",
-      status: "pending",
-      reason: "需要维护成员",
-      decision_reason: "",
-    };
-    const fetcher = vi.fn(
-      async (_input: RequestInfo | URL, init?: RequestInit) =>
-        new Response(
-          JSON.stringify(init?.method === "GET" ? [roleRequest] : roleRequest),
-          {
-            headers: { "content-type": "application/json" },
-            status: init?.method === "POST" ? 201 : 200,
-          },
-        ),
-    ) as unknown as typeof fetch;
-
-    await expect(
-      listTeamMemberRoleRequests(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "team 1/primary",
-        "pending",
-      ),
-    ).resolves.toEqual([roleRequest]);
-    await expect(
-      createTeamMemberRoleRequest(
-        {
-          baseUrl: "http://control-plane.local",
-          fetcher,
-        },
-        "team 1/primary",
-        {
-          reason: "需要维护成员",
-          requested_role: "admin",
-          target_user_id: "33333333-3333-4333-8333-333333333333",
-        },
-      ),
-    ).resolves.toEqual(roleRequest);
-    await expect(
-      approveTeamMemberRoleRequest(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "team 1/primary",
-        "request 1/primary",
-        { decision_reason: "同意" },
-      ),
-    ).resolves.toEqual(roleRequest);
-    await expect(
-      rejectTeamMemberRoleRequest(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "team 1/primary",
-        "request 1/primary",
-        { decision_reason: "权限过高" },
-      ),
-    ).resolves.toEqual(roleRequest);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/member-role-requests?status=pending",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/member-role-requests",
-      {
-        body: JSON.stringify({
-          reason: "需要维护成员",
-          requested_role: "admin",
-          target_user_id: "33333333-3333-4333-8333-333333333333",
-        }),
-        credentials: "include",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/member-role-requests/request%201%2Fprimary/approve",
-      {
-        body: JSON.stringify({ decision_reason: "同意" }),
-        credentials: "include",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
-    );
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/member-role-requests/request%201%2Fprimary/reject",
-      {
-        body: JSON.stringify({ decision_reason: "权限过高" }),
-        credentials: "include",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
-    );
-  });
 });

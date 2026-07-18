@@ -5,8 +5,6 @@ import {
   createMcpServerDefinition,
   deleteMcpServerDefinition,
   listMcpServerDefinitions,
-  type McpServer,
-  type UserCredential,
 } from "./capabilities";
 
 function jsonResponse(body: unknown, status = 200) {

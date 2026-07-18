@@ -511,20 +511,11 @@ func (r *PgRepository) ConfirmTeamDelete(ctx context.Context, tenantID, teamID, 
 	if err := qtx.HardDeleteTeamMembers(ctx, queries.HardDeleteTeamMembersParams{TenantID: tenantID, TeamID: teamID}); err != nil {
 		return TeamRecord{}, fmt.Errorf("delete team members: %w", err)
 	}
-	if err := qtx.HardDeleteTeamMemberRoleRequests(ctx, queries.HardDeleteTeamMemberRoleRequestsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
-		return TeamRecord{}, fmt.Errorf("delete team member role requests: %w", err)
-	}
 	if err := qtx.DeleteTeamSkillBindings(ctx, queries.DeleteTeamSkillBindingsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
 		return TeamRecord{}, fmt.Errorf("delete team skill bindings: %w", err)
 	}
 	if err := qtx.HardDeleteTeamMCPBindings(ctx, queries.HardDeleteTeamMCPBindingsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
 		return TeamRecord{}, fmt.Errorf("delete team mcp bindings: %w", err)
-	}
-	if err := qtx.HardDeleteTeamLendingPolicies(ctx, queries.HardDeleteTeamLendingPoliciesParams{TenantID: tenantID, TeamID: teamID}); err != nil {
-		return TeamRecord{}, fmt.Errorf("delete team lending policies: %w", err)
-	}
-	if err := qtx.HardDeleteTeamLendingRequests(ctx, queries.HardDeleteTeamLendingRequestsParams{TenantID: tenantID, TeamID: teamID}); err != nil {
-		return TeamRecord{}, fmt.Errorf("delete team lending requests: %w", err)
 	}
 	if err := qtx.HardDeleteTeamRuntimeNodeScopes(ctx, teamID); err != nil {
 		return TeamRecord{}, fmt.Errorf("delete team runtime node scopes: %w", err)
@@ -642,122 +633,6 @@ func (r *PgRepository) CountTeamOwners(ctx context.Context, tenantID, teamID uui
 		TenantID: tenantID,
 		TeamID:   teamID,
 	})
-}
-
-func (r *PgRepository) CreateTeamMemberRoleRequest(ctx context.Context, params CreateTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
-	request, err := r.q.CreateTeamMemberRoleRequest(ctx, queries.CreateTeamMemberRoleRequestParams{
-		TenantID:      params.TenantID,
-		TeamID:        params.TeamID,
-		TargetUserID:  params.TargetUserID,
-		RequestedRole: params.RequestedRole,
-		RequestedBy:   params.RequestedBy,
-		Reason:        params.Reason,
-	})
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, mapConstraintError(err)
-	}
-	return roleRequestRecordFromQuery(request), nil
-}
-
-func (r *PgRepository) GetTeamMemberRoleRequest(ctx context.Context, tenantID, teamID, requestID uuid.UUID) (TeamMemberRoleRequestRecord, error) {
-	request, err := r.q.GetTeamMemberRoleRequest(ctx, queries.GetTeamMemberRoleRequestParams{
-		ID:       requestID,
-		TenantID: tenantID,
-		TeamID:   teamID,
-	})
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
-	}
-	return roleRequestRecordFromQuery(request), nil
-}
-
-func (r *PgRepository) ListTeamMemberRoleRequests(ctx context.Context, params ListTeamMemberRoleRequestsParams) ([]TeamMemberRoleRequestRecord, error) {
-	requests, err := r.q.ListTeamMemberRoleRequests(ctx, queries.ListTeamMemberRoleRequestsParams{
-		TenantID: params.TenantID,
-		TeamID:   params.TeamID,
-		Status:   textFromRoleRequestStatus(params.Status),
-		Offset:   params.Offset,
-		Limit:    params.Limit,
-	})
-	if err != nil {
-		return nil, err
-	}
-	records := make([]TeamMemberRoleRequestRecord, 0, len(requests))
-	for _, request := range requests {
-		records = append(records, roleRequestRecordFromQuery(request))
-	}
-	return records, nil
-}
-
-func (r *PgRepository) ApproveTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
-	if r.db == nil {
-		return r.approveTeamMemberRoleRequestWithQueries(ctx, r.q, params)
-	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, err
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback(ctx)
-		}
-	}()
-	record, err := r.approveTeamMemberRoleRequestWithQueries(ctx, r.q.WithTx(tx), params)
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return TeamMemberRoleRequestRecord{}, err
-	}
-	committed = true
-	return record, nil
-}
-
-func (r *PgRepository) approveTeamMemberRoleRequestWithQueries(ctx context.Context, q *queries.Queries, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
-	pending, err := q.GetTeamMemberRoleRequest(ctx, queries.GetTeamMemberRoleRequestParams{
-		ID:       params.RequestID,
-		TenantID: params.TenantID,
-		TeamID:   params.TeamID,
-	})
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
-	}
-	if _, err := q.AddTeamMember(ctx, queries.AddTeamMemberParams{
-		TenantID: pending.TenantID,
-		TeamID:   pending.TeamID,
-		UserID:   pending.TargetUserID,
-		Role:     pending.RequestedRole,
-	}); err != nil {
-		return TeamMemberRoleRequestRecord{}, mapConstraintError(err)
-	}
-	decided, err := q.DecideTeamMemberRoleRequest(ctx, queries.DecideTeamMemberRoleRequestParams{
-		ID:             params.RequestID,
-		TenantID:       params.TenantID,
-		TeamID:         params.TeamID,
-		Status:         string(TeamMemberRoleRequestStatusApproved),
-		DecidedBy:      params.DecidedBy,
-		DecisionReason: params.DecisionReason,
-	})
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
-	}
-	return roleRequestRecordFromQuery(decided), nil
-}
-
-func (r *PgRepository) DecideTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
-	request, err := r.q.DecideTeamMemberRoleRequest(ctx, queries.DecideTeamMemberRoleRequestParams{
-		ID:             params.RequestID,
-		TenantID:       params.TenantID,
-		TeamID:         params.TeamID,
-		Status:         string(params.Status),
-		DecidedBy:      params.DecidedBy,
-		DecisionReason: params.DecisionReason,
-	})
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
-	}
-	return roleRequestRecordFromQuery(request), nil
 }
 
 func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
@@ -1038,24 +913,6 @@ func avatarFromValues(username, provider, style, seed string, options []byte) *U
 	return avatar
 }
 
-func roleRequestRecordFromQuery(request queries.TenantTeamMemberRoleRequest) TeamMemberRoleRequestRecord {
-	return TeamMemberRoleRequestRecord{
-		ID:             request.ID,
-		TenantID:       request.TenantID,
-		TeamID:         request.TeamID,
-		TargetUserID:   request.TargetUserID,
-		RequestedRole:  request.RequestedRole,
-		RequestedBy:    request.RequestedBy,
-		Status:         TeamMemberRoleRequestStatus(request.Status),
-		Reason:         request.Reason,
-		DecidedBy:      uuidPtrFromNull(request.DecidedBy),
-		DecidedAt:      timePtrFromTimestamptz(request.DecidedAt),
-		DecisionReason: request.DecisionReason,
-		CreatedAt:      timeFromTimestamptz(request.CreatedAt),
-		UpdatedAt:      timeFromTimestamptz(request.UpdatedAt),
-	}
-}
-
 func mapNoRows(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -1105,13 +962,6 @@ func textFromString(value string) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: value, Valid: true}
-}
-
-func textFromRoleRequestStatus(status TeamMemberRoleRequestStatus) pgtype.Text {
-	if status == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: string(status), Valid: true}
 }
 
 func stringFromText(value pgtype.Text) string {

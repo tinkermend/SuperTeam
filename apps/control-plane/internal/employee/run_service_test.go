@@ -2468,7 +2468,6 @@ type fakeRunServiceRepository struct {
 	statusUpdates                         []UpdateRunStatusRequest
 	events                                []CreateRunEventRecordRequest
 	runEvents                             []RuntimeCommandEventWriteback
-	workspaceFilesForSync                 []WorkspaceFileForSyncRecord
 	listRunEventsTaskID                   uuid.UUID
 	listRunEventsRunID                    uuid.UUID
 	commandReceipt                        *RuntimeCommandReceipt
@@ -2594,16 +2593,6 @@ func (f *fakeRunServiceRepository) ListRunEvents(_ context.Context, _ uuid.UUID,
 	return f.runEvents, nil
 }
 
-func (f *fakeRunServiceRepository) ListWorkspaceFilesForSync(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
-	out := make([]WorkspaceFileForSyncRecord, 0, len(f.workspaceFilesForSync))
-	for _, file := range f.workspaceFilesForSync {
-		if file.TenantID == tenantID && file.DigitalEmployeeID == digitalEmployeeID {
-			out = append(out, file)
-		}
-	}
-	return out, nil
-}
-
 func (f *fakeRunServiceRepository) GetLatestDigitalEmployeeConfigRevision(context.Context, uuid.UUID, uuid.UUID) (EmployeeConfigInput, error) {
 	return f.latestConfigInput, nil
 }
@@ -2618,10 +2607,6 @@ func (f *fakeRunServiceRepository) ListRuntimeCapabilitiesForNode(context.Contex
 
 func (f *fakeRunServiceRepository) ListRuntimeEnvironmentVariablesForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]RuntimeEnvironmentVariablePayload, error) {
 	return f.runtimeEnv, nil
-}
-
-func (f *fakeRunServiceRepository) UpsertWorkspaceFileSync(context.Context, UpsertWorkspaceFileSyncParams) error {
-	return nil
 }
 
 func (f *fakeRunServiceRepository) CreateRun(_ context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {

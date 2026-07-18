@@ -572,6 +572,10 @@ type ProjectTaskWritebackResult struct {
 	Event    ProjectEvent
 	Summary  ExecutionSummary
 	Decision DecisionRequest
+	// DeclaredArtifactRefs 物化阶段产出的声明式交付物血缘(v2 spec §3):
+	// relative_path 与文件名 → project_artifact_refs.id,用于契约落库前
+	// 把 deliverables[].ref 回填为 artifact_ref_id。
+	DeclaredArtifactRefs map[string]uuid.UUID
 }
 
 type ProjectTaskAttemptWritebackResult struct {

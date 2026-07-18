@@ -231,13 +231,6 @@ func (r *PgRepository) SoftDeleteDigitalEmployeeCascade(ctx context.Context, par
 	}
 	cascade.ConfigRevisions = int64(len(configRows))
 
-	workspaceRows, err := r.q.SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx, queries.SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
-	if err != nil {
-		return cascade, err
-	}
-	cascade.WorkspaceFiles = int64(len(workspaceRows))
-	cascade.WorkspaceFileIDs = appendUUIDs(cascade.WorkspaceFileIDs, workspaceRows)
-
 	affinityRows, err := r.q.DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete(ctx, queries.DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID})
 	if err != nil {
 		return cascade, err
@@ -796,122 +789,6 @@ func (r *PgRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx conte
 	return executionInstanceRecordFromQuery(instance)
 }
 
-func (r *PgRepository) CreateWorkspaceFile(ctx context.Context, params CreateWorkspaceFileParams) (WorkspaceFileRecord, error) {
-	metadata, err := jsonbFromMap(params.Metadata, "metadata")
-	if err != nil {
-		return WorkspaceFileRecord{}, err
-	}
-	row, err := r.q.CreateDigitalEmployeeWorkspaceFile(ctx, queries.CreateDigitalEmployeeWorkspaceFileParams{
-		TenantID:          params.TenantID,
-		TeamID:            nullUUIDFromPtr(params.TeamID),
-		DigitalEmployeeID: params.DigitalEmployeeID,
-		Path:              params.Path,
-		FileRole:          params.FileRole,
-		MimeType:          params.MimeType,
-		SyncPolicy:        params.SyncPolicy,
-		Status:            params.Status,
-		Metadata:          metadata,
-		CreatedBy:         nullUUIDFromPtr(params.CreatedBy),
-	})
-	if err != nil {
-		return WorkspaceFileRecord{}, err
-	}
-	return workspaceFileRecordFromQuery(row)
-}
-
-func (r *PgRepository) CreateWorkspaceFileRevision(ctx context.Context, params CreateWorkspaceFileRevisionParams) (WorkspaceFileRevisionRecord, error) {
-	metadata, err := jsonbFromMap(params.Metadata, "metadata")
-	if err != nil {
-		return WorkspaceFileRevisionRecord{}, err
-	}
-	row, err := r.q.CreateDigitalEmployeeWorkspaceFileRevision(ctx, queries.CreateDigitalEmployeeWorkspaceFileRevisionParams{
-		TenantID:       params.TenantID,
-		FileID:         params.FileID,
-		RevisionNumber: params.RevisionNumber,
-		ContentText:    textFromPtr(&params.ContentText),
-		ContentHash:    params.ContentHash,
-		SizeBytes:      params.SizeBytes,
-		StorageBackend: params.StorageBackend,
-		ObjectKey:      textFromPtr(params.ObjectKey),
-		CreatedBy:      nullUUIDFromPtr(params.CreatedBy),
-		ChangeNote:     textFromPtr(params.ChangeNote),
-		Metadata:       metadata,
-	})
-	if err != nil {
-		return WorkspaceFileRevisionRecord{}, err
-	}
-	return workspaceFileRevisionRecordFromQuery(row)
-}
-
-func (r *PgRepository) ActivateWorkspaceFileRevision(ctx context.Context, tenantID, fileID, revisionID uuid.UUID) (WorkspaceFileRecord, error) {
-	row, err := r.q.ActivateDigitalEmployeeWorkspaceFileRevision(ctx, queries.ActivateDigitalEmployeeWorkspaceFileRevisionParams{
-		TenantID:   tenantID,
-		FileID:     fileID,
-		RevisionID: revisionID,
-	})
-	if err != nil {
-		return WorkspaceFileRecord{}, mapNoRows(err)
-	}
-	return workspaceFileRecordFromQuery(row)
-}
-
-func (r *PgRepository) GetWorkspaceFileByPath(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, filePath string) (WorkspaceFileRecord, error) {
-	row, err := r.q.GetDigitalEmployeeWorkspaceFileByPath(ctx, queries.GetDigitalEmployeeWorkspaceFileByPathParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: digitalEmployeeID,
-		Path:              filePath,
-	})
-	if err != nil {
-		return WorkspaceFileRecord{}, mapNoRows(err)
-	}
-	return workspaceFileRecordFromQuery(row)
-}
-
-func (r *PgRepository) GetNextWorkspaceFileRevisionNumber(ctx context.Context, tenantID, fileID uuid.UUID) (int32, error) {
-	return r.q.GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx, queries.GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams{
-		TenantID: tenantID,
-		FileID:   fileID,
-	})
-}
-
-func (r *PgRepository) ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
-	rows, err := r.q.ListCurrentDigitalEmployeeWorkspaceFiles(ctx, queries.ListCurrentDigitalEmployeeWorkspaceFilesParams{
-		TenantID:          req.TenantID,
-		DigitalEmployeeID: req.DigitalEmployeeID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	records := make([]WorkspaceFile, 0, len(rows))
-	for _, row := range rows {
-		record, err := workspaceFileFromCurrentRow(row)
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	return records, nil
-}
-
-func (r *PgRepository) ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
-	rows, err := r.q.ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx, queries.ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams{
-		TenantID:          tenantID,
-		DigitalEmployeeID: digitalEmployeeID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	records := make([]WorkspaceFileForSyncRecord, 0, len(rows))
-	for _, row := range rows {
-		record, err := workspaceFileForSyncRecordFromQuery(row)
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	return records, nil
-}
-
 func (r *PgRepository) ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableRecord, error) {
 	store, err := r.envSQLStore()
 	if err != nil {
@@ -1031,22 +908,6 @@ func (r *PgRepository) envSQLStore() (queries.DBTX, error) {
 		return nil, fmt.Errorf("%w: employee repository sql store is required", ErrInvalidInput)
 	}
 	return r.sql, nil
-}
-
-func (r *PgRepository) UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error {
-	return r.q.UpsertDigitalEmployeeWorkspaceFileSync(ctx, queries.UpsertDigitalEmployeeWorkspaceFileSyncParams{
-		TenantID:            params.TenantID,
-		DigitalEmployeeID:   params.DigitalEmployeeID,
-		ExecutionInstanceID: params.ExecutionInstanceID,
-		FileID:              params.FileID,
-		RevisionID:          params.RevisionID,
-		RuntimeNodeID:       params.RuntimeNodeID,
-		Status:              params.Status,
-		SyncedHash:          textFromPtr(params.SyncedHash),
-		ErrorMessage:        textFromPtr(params.ErrorMessage),
-		LastCommandID:       textFromPtr(params.LastCommandID),
-		LastSyncedAt:        timestamptzFromPtr(params.LastSyncedAt),
-	})
 }
 
 func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error) {
@@ -2072,114 +1933,6 @@ func int32PtrFromJSONString(value string) *int32 {
 	return &copied
 }
 
-func workspaceFileRecordFromQuery(row queries.DigitalEmployeeWorkspaceFile) (WorkspaceFileRecord, error) {
-	metadata, err := mapFromJSONB(row.Metadata, "metadata")
-	if err != nil {
-		return WorkspaceFileRecord{}, err
-	}
-	return WorkspaceFileRecord{
-		ID:                row.ID,
-		TenantID:          row.TenantID,
-		TeamID:            uuidPtrFromNullUUID(row.TeamID),
-		DigitalEmployeeID: row.DigitalEmployeeID,
-		Path:              row.Path,
-		FileRole:          row.FileRole,
-		MimeType:          row.MimeType,
-		SyncPolicy:        row.SyncPolicy,
-		CurrentRevisionID: uuidPtrFromNull(row.CurrentRevisionID),
-		Status:            row.Status,
-		Metadata:          metadata,
-		CreatedBy:         uuidPtrFromNull(row.CreatedBy),
-		CreatedAt:         timeFromTimestamptz(row.CreatedAt),
-		UpdatedAt:         timeFromTimestamptz(row.UpdatedAt),
-		ArchivedAt:        timePtrFromTimestamptz(row.ArchivedAt),
-		DeletedAt:         timePtrFromTimestamptz(row.DeletedAt),
-	}, nil
-}
-
-func workspaceFileRevisionRecordFromQuery(row queries.DigitalEmployeeWorkspaceFileRevision) (WorkspaceFileRevisionRecord, error) {
-	metadata, err := mapFromJSONB(row.Metadata, "metadata")
-	if err != nil {
-		return WorkspaceFileRevisionRecord{}, err
-	}
-	return WorkspaceFileRevisionRecord{
-		ID:             row.ID,
-		TenantID:       row.TenantID,
-		FileID:         row.FileID,
-		RevisionNumber: row.RevisionNumber,
-		ContentText:    textValue(row.ContentText),
-		ContentHash:    row.ContentHash,
-		SizeBytes:      row.SizeBytes,
-		StorageBackend: row.StorageBackend,
-		ObjectKey:      stringPtrFromText(row.ObjectKey),
-		CreatedBy:      uuidPtrFromNull(row.CreatedBy),
-		CreatedAt:      timeFromTimestamptz(row.CreatedAt),
-		ChangeNote:     stringPtrFromText(row.ChangeNote),
-		Metadata:       metadata,
-	}, nil
-}
-
-func workspaceFileForSyncRecordFromQuery(row queries.ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow) (WorkspaceFileForSyncRecord, error) {
-	fileMetadata, err := mapFromJSONB(row.FileMetadata, "file_metadata")
-	if err != nil {
-		return WorkspaceFileForSyncRecord{}, err
-	}
-	revisionMetadata, err := mapFromJSONB(row.RevisionMetadata, "revision_metadata")
-	if err != nil {
-		return WorkspaceFileForSyncRecord{}, err
-	}
-	return WorkspaceFileForSyncRecord{
-		FileID:            row.FileID,
-		TenantID:          row.TenantID,
-		TeamID:            uuidPtrFromNullUUID(row.TeamID),
-		DigitalEmployeeID: row.DigitalEmployeeID,
-		Path:              row.Path,
-		FileRole:          row.FileRole,
-		MimeType:          row.MimeType,
-		SyncPolicy:        row.SyncPolicy,
-		FileMetadata:      fileMetadata,
-		RevisionID:        row.RevisionID,
-		RevisionNumber:    row.RevisionNumber,
-		ContentText:       textValue(row.ContentText),
-		ContentHash:       row.ContentHash,
-		SizeBytes:         row.SizeBytes,
-		StorageBackend:    row.StorageBackend,
-		ObjectKey:         stringPtrFromText(row.ObjectKey),
-		RevisionMetadata:  revisionMetadata,
-	}, nil
-}
-
-func workspaceFileFromCurrentRow(row queries.ListCurrentDigitalEmployeeWorkspaceFilesRow) (WorkspaceFile, error) {
-	if _, err := mapFromJSONB(row.FileMetadata, "file_metadata"); err != nil {
-		return WorkspaceFile{}, err
-	}
-	if _, err := mapFromJSONB(row.RevisionMetadata, "revision_metadata"); err != nil {
-		return WorkspaceFile{}, err
-	}
-	return WorkspaceFile{
-		ID:                row.FileID,
-		TenantID:          row.TenantID,
-		TeamID:            uuidPtrFromNullUUID(row.TeamID),
-		DigitalEmployeeID: row.DigitalEmployeeID,
-		Path:              row.Path,
-		FileRole:          row.FileRole,
-		MimeType:          row.MimeType,
-		SyncPolicy:        row.SyncPolicy,
-		Status:            row.Status,
-		CurrentRevisionID: row.RevisionID,
-		RevisionNumber:    row.RevisionNumber,
-		Content:           textValue(row.ContentText),
-		ContentHash:       row.ContentHash,
-		SizeBytes:         row.SizeBytes,
-		StorageBackend:    row.StorageBackend,
-		ObjectKey:         stringPtrFromText(row.ObjectKey),
-		CreatedBy:         uuidPtrFromNull(row.CreatedBy),
-		ChangeNote:        stringPtrFromText(row.ChangeNote),
-		CreatedAt:         timeFromTimestamptz(row.FileCreatedAt),
-		UpdatedAt:         timeFromTimestamptz(row.FileUpdatedAt),
-	}, nil
-}
-
 type environmentVariableScanner interface {
 	Scan(dest ...any) error
 }
@@ -2486,14 +2239,12 @@ func digitalEmployeeDeleteAuditDetails(params DigitalEmployeeDeleteAuditEventPar
 			"mcp_bindings_v2":       params.CascadeResult.MCPBindingsV2,
 			"skill_bindings":        params.CascadeResult.SkillBindings,
 			"config_revisions":      params.CascadeResult.ConfigRevisions,
-			"workspace_files":       params.CascadeResult.WorkspaceFiles,
 			"project_affinities":    params.CascadeResult.ProjectAffinities,
 		},
 		"cleanup_candidates": map[string]any{
-			"agent_home_dir":     params.CascadeResult.AgentHomeDir,
-			"workspace_file_ids": uuidStrings(params.CascadeResult.WorkspaceFileIDs),
-			"mcp_binding_ids":    uuidStrings(params.CascadeResult.MCPBindingV2IDs),
-			"skill_binding_ids":  uuidStrings(params.CascadeResult.SkillBindingIDs),
+			"agent_home_dir":    params.CascadeResult.AgentHomeDir,
+			"mcp_binding_ids":   uuidStrings(params.CascadeResult.MCPBindingV2IDs),
+			"skill_binding_ids": uuidStrings(params.CascadeResult.SkillBindingIDs),
 		},
 		"deleted_at": params.DeletedAt.UTC().Format(time.RFC3339Nano),
 	}

@@ -24,7 +24,7 @@ type ProjectStore struct {
 	inbox             project.DecisionInboxProjector
 	runStarter        ProjectTaskRunStarter
 	readiness         DigitalEmployeeReadinessChecker
-	lending           LendingGatekeeper
+	teamBoundary      TeamBoundaryGatekeeper
 	scenarioTemplates ScenarioTemplateSource
 	profileSource     DigitalEmployeePlanningProfileSource
 	clock             clockFunc
@@ -97,10 +97,10 @@ func (s *ProjectStore) WithDigitalEmployeeReadiness(checker DigitalEmployeeReadi
 	return s
 }
 
-// WithLendingGatekeeper attaches a team-lending gate used to exclude borrowed digital
-// employees from a foreign team that the project has no effective lending grant for.
-func (s *ProjectStore) WithLendingGatekeeper(gatekeeper LendingGatekeeper) *ProjectStore {
-	s.lending = gatekeeper
+// WithTeamBoundaryGatekeeper attaches the team-boundary gate used to exclude digital
+// employees from foreign teams out of the project's executor pool.
+func (s *ProjectStore) WithTeamBoundaryGatekeeper(gatekeeper TeamBoundaryGatekeeper) *ProjectStore {
+	s.teamBoundary = gatekeeper
 	return s
 }
 
@@ -176,19 +176,13 @@ func (s *ProjectStore) planningProfileRecords(ctx context.Context, tenantID, pro
 	return records
 }
 
-// lendingEligibleEmployeeIDs applies the team-lending gate to candidate digital-employee
-// IDs. It returns the set of eligible IDs and a map of skipped employee -> the foreign
-// team they were borrowed from without a grant. A nil eligible set means "do not filter"
-// (no gatekeeper, no candidates, or a lookup error) so behavior stays backward-compatible.
-// ownTeamID is the project's own team (may be nil). Like the readiness check, lending
-// lookups fail open: a gate error must not strand planning, since the authoritative
-// lending enforcement remains the approval workflow.
-func (s *ProjectStore) lendingEligibleEmployeeIDs(ctx context.Context, tenantID, projectID uuid.UUID, ownTeamID *uuid.UUID, employeeTeams map[uuid.UUID]uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, map[uuid.UUID]uuid.UUID) {
-	if s.lending == nil || ownTeamID == nil || employeeTeams == nil || len(employeeIDs) == 0 {
-		return nil, nil
-	}
-	grantedTeams, err := s.lending.EffectiveLendingTeams(ctx, tenantID, projectID)
-	if err != nil {
+// teamBoundaryEligibleEmployeeIDs applies the team-boundary gate to candidate
+// digital-employee IDs. It returns the set of eligible IDs and a map of skipped
+// employee -> the foreign team they belong to. A nil eligible set means "do not
+// filter" (no gatekeeper or no candidates) so behavior stays backward-compatible.
+// ownTeamID is the project's own team (may be nil).
+func (s *ProjectStore) teamBoundaryEligibleEmployeeIDs(ownTeamID *uuid.UUID, employeeTeams map[uuid.UUID]uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, map[uuid.UUID]uuid.UUID) {
+	if s.teamBoundary == nil || ownTeamID == nil || employeeTeams == nil || len(employeeIDs) == 0 {
 		return nil, nil
 	}
 	eligible := make(map[uuid.UUID]bool, len(employeeIDs))
@@ -198,17 +192,13 @@ func (s *ProjectStore) lendingEligibleEmployeeIDs(ctx context.Context, tenantID,
 		switch {
 		case !hasTeam || team == uuid.Nil:
 			// Teamless employees never reach this gate: the participation
-			// gate ahead of it already skipped them. Kept eligible here so
-			// the lending gate stays a pure borrowed-resource check.
+			// gate ahead of it already skipped them.
 			eligible[id] = true
-		case ownTeamID != nil && team == *ownTeamID:
-			// Project's own team → eligible without a lending grant.
-			eligible[id] = true
-		case grantedTeams[team]:
-			// Foreign team with an effective lending grant → eligible.
+		case team == *ownTeamID:
+			// Project's own team → eligible.
 			eligible[id] = true
 		default:
-			// Foreign team without a grant → gated out of the executor pool.
+			// Foreign team → gated out of the executor pool (借调机制已下线).
 			skipped[id] = team
 		}
 	}
@@ -216,18 +206,18 @@ func (s *ProjectStore) lendingEligibleEmployeeIDs(ctx context.Context, tenantID,
 }
 
 // candidateTeamAssignments resolves the candidates' owning teams for the
-// team-affiliation participation gate. Resolution order: the lending
+// team-affiliation participation gate. Resolution order: the team-boundary
 // gatekeeper's resolver when wired, else the project repository's
 // MemberTeamAssignmentResolver. The second return is false when no source is
-// available or the lookup failed — the gate then fails open (like the lending
-// gate) so a transient error never strands planning; the authoritative gate
-// remains the member-write validation in the project service.
+// available or the lookup failed — the gate then fails open so a transient
+// error never strands planning; the authoritative gate remains the
+// member-write validation in the project service.
 func (s *ProjectStore) candidateTeamAssignments(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, bool) {
 	if len(employeeIDs) == 0 {
 		return map[uuid.UUID]uuid.UUID{}, true
 	}
-	if s.lending != nil {
-		teams, err := s.lending.ResolveEmployeeTeams(ctx, tenantID, employeeIDs)
+	if s.teamBoundary != nil {
+		teams, err := s.teamBoundary.ResolveEmployeeTeams(ctx, tenantID, employeeIDs)
 		if err != nil {
 			return nil, false
 		}
@@ -272,10 +262,10 @@ func (s *ProjectStore) recordTeamlessSkips(ctx context.Context, tenantID, projec
 	}
 }
 
-// recordLendingSkips emits a best-effort coordination event for each digital employee
-// excluded from the pool for lacking an effective team-lending grant. Failures are ignored
-// so observability writes never block planning.
-func (s *ProjectStore) recordLendingSkips(ctx context.Context, tenantID, projectID, demandID uuid.UUID, skipped map[uuid.UUID]uuid.UUID) {
+// recordTeamBoundarySkips emits a best-effort coordination event for each digital
+// employee excluded from the pool for belonging to a foreign team. Failures are
+// ignored so observability writes never block planning.
+func (s *ProjectStore) recordTeamBoundarySkips(ctx context.Context, tenantID, projectID, demandID uuid.UUID, skipped map[uuid.UUID]uuid.UUID) {
 	if s.repository == nil || len(skipped) == 0 {
 		return
 	}
@@ -285,7 +275,7 @@ func (s *ProjectStore) recordLendingSkips(ctx context.Context, tenantID, project
 			projectID,
 			project.ProjectEventLendingEmployeeSkipped,
 			"project_coordinator",
-			"数字员工因缺少有效团队借调授权被排除出可执行池",
+			"数字员工属于其他团队，被排除出可执行池（跨团队借调机制已下线）",
 			map[string]any{
 				"digital_employee_id": employeeID.String(),
 				"team_id":             teamID.String(),
@@ -325,16 +315,14 @@ type DigitalEmployeePlanningProfileSource interface {
 	PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error)
 }
 
-// LendingGatekeeper enforces team-lending grants when the coordinator builds its executor
-// pool. A digital employee whose owning team differs from the project's own team is only
-// eligible if the project holds an effective (approved/auto_approved) lending grant for
-// that team; employees with no team, or in the project's own team, are never gated.
-type LendingGatekeeper interface {
+// TeamBoundaryGatekeeper enforces the project's team boundary when the coordinator
+// builds its executor pool: a digital employee whose owning team differs from the
+// project's own team is excluded (团队借调机制已下线，跨团队员工一律不可用)；
+// employees with no team, or in the project's own team, are never gated here.
+type TeamBoundaryGatekeeper interface {
 	// ResolveEmployeeTeams maps the given digital-employee IDs to their owning team.
 	// Employees with no owning team are omitted from the result.
 	ResolveEmployeeTeams(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error)
-	// EffectiveLendingTeams returns the set of teams the project may currently borrow from.
-	EffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
 type recoveryDependencyRepository interface {
@@ -381,7 +369,7 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		candidateIDs = append(candidateIDs, member.PrincipalID)
 	}
 	// Team-affiliation participation gate: a teamless (lobby) digital employee is
-	// never an eligible executor, regardless of lending. Fails open only when the
+	// never an eligible executor. Fails open only when the
 	// team lookup itself is unavailable (the member-write gate remains authoritative).
 	employeeTeams, teamsResolved := s.candidateTeamAssignments(ctx, input.TenantID, candidateIDs)
 	teamlessSkipped := make(map[uuid.UUID]bool)
@@ -393,18 +381,17 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		}
 	}
 	s.recordTeamlessSkips(ctx, input.TenantID, input.ProjectID, input.DemandID, teamlessSkipped)
-	// Team-lending gate: a borrowed employee from a foreign team is only an eligible executor
-	// if the project holds an effective lending grant for that team. Ungranted ones are
-	// silently excluded from the pool and recorded as skipped (best-effort audit event).
-	lendingEligible, lendingSkipped := s.lendingEligibleEmployeeIDs(ctx, input.TenantID, input.ProjectID, projectRecord.TeamID, employeeTeams, candidateIDs)
-	s.recordLendingSkips(ctx, input.TenantID, input.ProjectID, input.DemandID, lendingSkipped)
+	// Team-boundary gate: employees from a foreign team are excluded from the executor
+	// pool (跨团队借调机制已下线)，excluded ones recorded as skipped (best-effort audit event).
+	boundaryEligible, boundarySkipped := s.teamBoundaryEligibleEmployeeIDs(projectRecord.TeamID, employeeTeams, candidateIDs)
+	s.recordTeamBoundarySkips(ctx, input.TenantID, input.ProjectID, input.DemandID, boundarySkipped)
 	eligibleCandidates := make([]project.ProjectMember, 0, len(candidates))
 	eligibleCandidateIDs := make([]uuid.UUID, 0, len(candidates))
 	for _, member := range candidates {
 		if teamlessSkipped[member.PrincipalID] {
 			continue
 		}
-		if lendingEligible != nil && !lendingEligible[member.PrincipalID] {
+		if boundaryEligible != nil && !boundaryEligible[member.PrincipalID] {
 			continue
 		}
 		eligibleCandidates = append(eligibleCandidates, member)
@@ -3431,7 +3418,8 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"result_contract.status 使用 completed；summary 填写结论；" +
 		"acceptance_results 必须逐条覆盖 handoff_contract.acceptance_criteria，status 使用 passed 并带 evidence_refs；" +
 		"evidence_refs/verification 用于说明已读取或验证的证据。" +
-		"result_contract 必须含 deliverables 数组，逐项覆盖 produces 列出的每个产出名（每项含 name 与 value 或 ref）；produces 为空时可省略。\n" +
+		"result_contract 必须含 deliverables 数组，逐项覆盖 produces 列出的每个产出名（每项含 name 与 value 或 ref）；produces 为空时可省略。" +
+		"文件形态的交付物必须写入工作目录 deliverables/ 目录，并在对应项的 ref 填相对路径（如 deliverables/report.html）；纯值型交付物（结论、数字、链接）用 value。\n" +
 		"upstream_results 是你直接上游任务的真实产出，优先复用其中的值与引用，不要重做上游已完成的工作。\n" +
 		"请按项目任务要求执行，并直接输出结论、证据、工件引用、不确定性和 result_contract。" +
 		"你只需要给出最终答案；Runtime Agent 会在本轮结束后记录该答案。"
