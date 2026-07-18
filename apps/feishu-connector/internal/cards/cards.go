@@ -497,6 +497,21 @@ func ResultNoticeCard(payload map[string]any, webOrigin string) string {
 		info += "\n"
 	}
 	elements := []map[string]any{mdBlock(strings.TrimRight(info, "\n"))}
+	// 执行结论置顶:员工交付的收尾结论是结果通知的正文,不是脚注。
+	if conclusions := mapSlice(payload["task_conclusions"]); len(conclusions) > 0 {
+		if len(conclusions) == 1 {
+			conclusion, _ := conclusions[0]["conclusion"].(string)
+			elements = append(elements, mdBlock("**执行结论**\n"+clamp(conclusion, 800)))
+		} else {
+			text := "**执行结论**"
+			for _, entry := range conclusions {
+				taskTitle, _ := entry["title"].(string)
+				conclusion, _ := entry["conclusion"].(string)
+				text += fmt.Sprintf("\n**%s**\n%s", clamp(taskTitle, 60), clamp(conclusion, 400))
+			}
+			elements = append(elements, mdBlock(text))
+		}
+	}
 	if excerpt, _ := payload["content_excerpt"].(string); excerpt != "" {
 		elements = append(elements, mdBlock("**需求内容**\n"+clamp(excerpt, 300)))
 	}

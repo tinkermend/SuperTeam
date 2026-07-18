@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -261,6 +262,37 @@ func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q
 	return nil
 }
 
+// latestTaskResultSummaryWithQueries 取任务最终 result 契约里的结论文本(summary)。
+// best-effort:取不到返回空串。契约入库时已过脱敏链路,可直接投影。
+func (r *PgRepository) latestTaskResultSummaryWithQueries(ctx context.Context, q *queries.Queries, task queries.ProjectTask) string {
+	if !task.LatestTaskResultID.Valid || task.LatestTaskResultID.UUID == uuid.Nil {
+		return ""
+	}
+	results, err := q.ListProjectTaskResults(ctx, queries.ListProjectTaskResultsParams{
+		TenantID:      task.TenantID,
+		ProjectID:     task.ProjectID,
+		ProjectTaskID: task.ID,
+		Limit:         20,
+		Offset:        0,
+	})
+	if err != nil {
+		return ""
+	}
+	for _, row := range results {
+		if row.ID != task.LatestTaskResultID.UUID {
+			continue
+		}
+		var contract struct {
+			Summary string `json:"summary"`
+		}
+		if json.Unmarshal(row.ContractPayload, &contract) == nil {
+			return contract.Summary
+		}
+		return ""
+	}
+	return ""
+}
+
 // lookupUserNameWithQueries 反查用户展示名(display_name 缺省回落 username)。
 // best-effort:查不到返回空串,不阻断调用方。
 func (r *PgRepository) lookupUserNameWithQueries(ctx context.Context, q *queries.Queries, userID uuid.UUID) string {
@@ -307,12 +339,21 @@ func (r *PgRepository) enqueueDemandResultNoticeWithQueries(ctx context.Context,
 	if demand.Content.Valid && demand.Content.String != "" {
 		payload["content_excerpt"] = clampRunes(demand.Content.String, 300)
 	}
-	// 任务清单 best-effort:失败时点名失败任务,完成时给任务规模概览。
+	// 任务清单与执行结论 best-effort:失败时点名失败任务;把各任务最终 result 的
+	// 结论文本(员工交付的收尾结论,已脱敏)推进卡片——收到结果通知就能看到"做出了
+	// 什么",不用回控制台。需求级结论快照由 coordinator 终态后异步补写,此刻取不到,
+	// 任务级结论在同事务里是现成的。
 	if tasks, err := q.ListProjectTasksByDemand(ctx, queries.ListProjectTasksByDemandParams{
 		TenantID: tenantID, ProjectID: projectID, DemandID: demandID,
 	}); err == nil && len(tasks) > 0 {
 		completed, failed := 0, 0
 		failedTitles := make([]string, 0, 3)
+		type taskConclusion struct {
+			title      string
+			conclusion string
+			updatedAt  time.Time
+		}
+		conclusions := make([]taskConclusion, 0, len(tasks))
 		for _, task := range tasks {
 			switch task.Status {
 			case "completed":
@@ -323,12 +364,30 @@ func (r *PgRepository) enqueueDemandResultNoticeWithQueries(ctx context.Context,
 					failedTitles = append(failedTitles, task.Title)
 				}
 			}
+			if summary := r.latestTaskResultSummaryWithQueries(ctx, q, task); summary != "" {
+				conclusions = append(conclusions, taskConclusion{title: task.Title, conclusion: summary, updatedAt: task.UpdatedAt.Time})
+			}
 		}
 		payload["task_total"] = len(tasks)
 		payload["task_completed"] = completed
 		payload["task_failed"] = failed
 		if len(failedTitles) > 0 {
 			payload["failed_task_titles"] = failedTitles
+		}
+		if len(conclusions) > 0 {
+			// 最后完成的任务在前——多任务需求里它最接近"最终答案"。
+			sort.Slice(conclusions, func(i, j int) bool { return conclusions[i].updatedAt.After(conclusions[j].updatedAt) })
+			if len(conclusions) > 3 {
+				conclusions = conclusions[:3]
+			}
+			entries := make([]map[string]any, 0, len(conclusions))
+			for _, c := range conclusions {
+				entries = append(entries, map[string]any{
+					"title":      c.title,
+					"conclusion": clampRunes(c.conclusion, 800),
+				})
+			}
+			payload["task_conclusions"] = entries
 		}
 	}
 	payloadJSON, err := json.Marshal(payload)
