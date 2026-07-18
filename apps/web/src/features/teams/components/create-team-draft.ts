@@ -1,3 +1,4 @@
+import { pinyin } from "pinyin-pro";
 import { DEFAULT_TEAM_ROLE_ICON_KEY } from "@/components/superteam/team-role-icon-catalog";
 import type { UserSummary } from "@/lib/api/auth";
 import type { DigitalEmployee } from "@/lib/api/employees";
@@ -29,9 +30,15 @@ export const emptyCreateTeamDraft: CreateTeamDraft = {
   slugTouched: false,
 };
 
-/** 把团队名称规整为 URL/接口安全的 slug；非 ASCII 字符会被去除。 */
+/** 把团队名称规整为 URL/接口安全的 slug；中文逐字转拼音，其余非 ASCII 字符去除。 */
 export function slugify(value: string): string {
-  return value
+  const transliterated = pinyin(value, {
+    nonZh: "consecutive",
+    toneType: "none",
+    type: "array",
+    v: true,
+  }).join("-");
+  return transliterated
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
