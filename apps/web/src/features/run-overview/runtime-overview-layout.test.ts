@@ -26,7 +26,8 @@ describe("runtime overview floor layout", () => {
     const allowedCapacities = new Set([3, 4, 6, 8, 10]);
 
     for (const floor of layouts) {
-      for (const workspace of floor.layout.teamWorkspaces) {
+      for (const workspace of floor.layout.teamWorkspaces.filter((item) => item.teamId !== UNASSIGNED_TEAM_ID)) {
+        if (workspace.capacity === null) continue;
         expect(allowedCapacities.has(workspace.capacity)).toBe(true);
         expect(workspace.capacity).toBe(workspace.seats.length);
         expect(workspace.capacity).toBeGreaterThanOrEqual(3);
@@ -108,9 +109,9 @@ describe("runtime overview floor layout", () => {
     expect(lobbyFloor?.teamIds).toEqual([]);
     const lobby = lobbyFloor?.layout.teamWorkspaces.find((workspace) => workspace.teamId === UNASSIGNED_TEAM_ID);
     expect(lobby?.decorationVariant).toBe("lobby");
-    expect(lobby?.capacity).toBe(10);
-    expect(lobby?.seats.length).toBe(10);
-    // 候岗不进团队分配容量表、不计任何容量；其他楼层不含候岗工位。
+    expect(lobby?.capacity).toBeNull();
+    expect(lobby?.seats).toEqual([]);
+    // 候岗不进团队分配容量表、不设固定座位；其他楼层不含候岗区。
     expect(runtimeOverviewSlotCapacities().lobby).toEqual([]);
     expect(lobbyFloor?.summary.capacityTotal).toBe(0);
     for (const floor of layouts.filter((item) => item.floorId !== "lobby")) {

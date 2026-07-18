@@ -46,7 +46,8 @@ export type RuntimeOverviewSeat = {
 
 export type RuntimeOverviewTeamWorkspace = {
   teamId: string;
-  capacity: RuntimeOverviewWorkspaceCapacity;
+  // 团队工位才有容量；大厅候岗区是动态承载区，不设物理席位容量。
+  capacity: RuntimeOverviewWorkspaceCapacity | null;
   polygon: Array<{ x: number; y: number }>;
   cardAnchor: { x: number; y: number };
   calloutTarget: { x: number; y: number };

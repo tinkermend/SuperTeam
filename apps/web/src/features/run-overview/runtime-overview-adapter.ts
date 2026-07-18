@@ -69,7 +69,8 @@ export function buildRuntimeOverview(input: BuildRuntimeOverviewInput): RuntimeO
     const floorId = floorIdByTeamId.get(teamId) ?? workspace?.floorId ?? "floor-1";
     const teamItems = employeesByTeam.get(teamId) ?? [];
     const seatIndex = teamItems.findIndex((employee) => employee.identity_summary.id === item.identity_summary.id);
-    const seat = seatIndex >= 0 ? workspace?.workspace.seats[seatIndex] : undefined;
+    // 候岗区是动态承载区，不分配固定 seatId；地图由 LobbyWorkspaceRenderer 按在场人数排布。
+    const seat = teamId === UNASSIGNED_TEAM_ID ? undefined : seatIndex >= 0 ? workspace?.workspace.seats[seatIndex] : undefined;
     return employeePresenceFromItem(item, floorId, seat?.seatId);
   });
   const capacityUsed = overviewTeams.reduce((sum, team) => sum + team.capacityUsed, 0);

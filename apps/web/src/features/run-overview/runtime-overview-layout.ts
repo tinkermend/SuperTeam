@@ -15,8 +15,7 @@ const floorBackgrounds: Record<RuntimeOverviewFloorId, string> = {
   "floor-1": "/images/run-overview/floor-1-office-v4.png",
   "floor-2": "/images/run-overview/floor-2-office-v4.png",
   "floor-3": "/images/run-overview/floor-3-office-v4.png",
-  // TODO: 换成专属大厅底图 floor-lobby-office-v4.png（等待素材），当前临时复用 floor-1。
-  lobby: "/images/run-overview/floor-1-office-v4.png",
+  lobby: "/images/run-overview/floor-lobby-office-v4.png",
 };
 
 const floorTeamSlots: Record<RuntimeOverviewFloorId, RuntimeOverviewTeamSlot[]> = {
@@ -50,20 +49,39 @@ const floorTeamSlots: Record<RuntimeOverviewFloorId, RuntimeOverviewTeamSlot[]> 
     workspace([225, 675, 500, 675, 500, 790, 225, 790], 265, 555, "data", 3, { x: 260, y: 732, dx: 78, dy: 0 }),
     workspace([630, 640, 1085, 640, 1085, 805, 630, 805], 1099, 669, "lab", 10, { x: 690, y: 694, dx: 76, dy: 64, columns: 5 }),
   ],
-  // 大厅层没有团队 slot：不参与团队分配，只有下方的候岗工位。
+  // 大厅层没有团队 slot：不参与团队分配，只有一块动态候岗承载区。
   lobby: [],
 };
 
-// 候岗工位：大厅层内唯一的工位，10 座开放区网格（几何复用 floor-1 中下部开放办公区，
-// 该区域的卡片间距/呼出线/座位热区均已被布局测试覆盖）。不是团队 slot、不计任何容量口径。
-// TODO: 专属大厅底图到位后按图微调 polygon 与座位坐标。
-const lobbySlot = workspace([630, 640, 1085, 640, 1085, 805, 630, 805], 455, 515, "lobby", 10, {
-  x: 690,
-  y: 694,
-  dx: 76,
-  dy: 64,
-  columns: 5,
-});
+// 候岗大厅的 12 个展示锚点：3 × 4 的宽间距候岗舱。只限制地图同时展示的头像数量，
+// 不表达容量。LobbyWorkspaceRenderer（渲染）与项目透镜（连线端点解算）共用同一组锚点，
+// 保证透镜连线/跨层出口徽标落在头像实际位置上。
+export const runtimeOverviewLobbyPositions: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 480, y: 360 },
+  { x: 713, y: 360 },
+  { x: 945, y: 360 },
+  { x: 1175, y: 360 },
+  { x: 480, y: 520 },
+  { x: 713, y: 520 },
+  { x: 945, y: 520 },
+  { x: 1175, y: 520 },
+  { x: 480, y: 682 },
+  { x: 713, y: 682 },
+  { x: 945, y: 682 },
+  { x: 1175, y: 682 },
+];
+
+// 候岗区承载尚未编入团队的数字员工。它是可伸缩的待编组场，
+// 不是团队工位，也不以固定座位数表达容量；头像由 LobbyWorkspaceRenderer 按人数动态排布。
+const lobbyWorkspace: RuntimeOverviewTeamWorkspace = {
+  teamId: UNASSIGNED_TEAM_ID,
+  capacity: null,
+  polygon: toPoints([120, 310, 1515, 310, 1515, 700, 120, 700]),
+  cardAnchor: { x: 120, y: 460 },
+  calloutTarget: { x: 480, y: 486 },
+  decorationVariant: "lobby",
+  seats: [],
+};
 
 const floorConnectorPaths: Record<RuntimeOverviewFloorId, RuntimeOverviewFloor["layout"]["paths"]> = {
   "floor-1": [
@@ -90,7 +108,10 @@ const floorConnectorPaths: Record<RuntimeOverviewFloorId, RuntimeOverviewFloor["
 };
 
 type SeatGrid = { x: number; y: number; dx: number; dy: number; columns?: number; rotation?: number };
-type RuntimeOverviewTeamSlot = Omit<RuntimeOverviewTeamWorkspace, "teamId" | "seats"> & { seatGrid: SeatGrid };
+type RuntimeOverviewTeamSlot = Omit<RuntimeOverviewTeamWorkspace, "teamId" | "seats" | "capacity"> & {
+  capacity: RuntimeOverviewWorkspaceCapacity;
+  seatGrid: SeatGrid;
+};
 
 function workspace(
   polygonValues: number[],
@@ -163,12 +184,7 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
       }];
     });
     if (floorId === "lobby") {
-      const { seatGrid, ...lobbyWorkspace } = lobbySlot;
-      workspaces.push({
-        ...lobbyWorkspace,
-        teamId: UNASSIGNED_TEAM_ID,
-        seats: buildSeats(UNASSIGNED_TEAM_ID, lobbyWorkspace.capacity, seatGrid),
-      });
+      workspaces.push(lobbyWorkspace);
     }
     return {
       floorId,
@@ -180,7 +196,7 @@ export function buildFloorLayouts(teamIdsByFloor: Record<RuntimeOverviewFloorId,
         capacityUsed: 0,
         capacityTotal: workspaces
           .filter((workspace) => workspace.teamId !== UNASSIGNED_TEAM_ID)
-          .reduce((sum, workspace) => sum + workspace.capacity, 0),
+          .reduce((sum, workspace) => sum + (workspace.capacity ?? 0), 0),
       },
       layout: {
         backgroundImageUrl: floorBackgrounds[floorId],

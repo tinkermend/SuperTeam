@@ -440,9 +440,9 @@ describe("RunOverviewView", () => {
     await expect.poll(() => screen.container.querySelector("[data-runtime-map-scene]")?.getAttribute("data-runtime-map-scene")).toBe("lobby");
 
     await expect.element(screen.getByRole("heading", { name: "候岗区" })).toBeVisible();
-    await expect.element(screen.getByText("待编入团队 1 名")).toBeVisible();
+    await expect.element(screen.getByText("待编组 1 名")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: /赵新/ })).toBeVisible();
-    expect(screen.container.querySelectorAll("[data-runtime-seat='unassigned']").length).toBe(10);
+    expect(screen.container.querySelectorAll("[data-runtime-seat='unassigned']").length).toBe(1);
 
     // 选中候岗员工：详情卡显示"未归属团队"。
     await userEvent.click(screen.getByRole("button", { name: /赵新/ }));

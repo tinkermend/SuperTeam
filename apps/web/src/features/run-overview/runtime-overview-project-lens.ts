@@ -1,5 +1,6 @@
 import type { ProjectTaskGraph, ProjectTaskGraphNode } from "@/lib/api/projects";
 import type { RuntimeOverviewDTO, RuntimeOverviewFloorId } from "./runtime-overview-model";
+import { runtimeOverviewLobbyPositions } from "./runtime-overview-layout";
 
 // 项目透镜：把项目任务图投影成地图上的"参与者高亮 + 座位间交接连线"。
 // 连线语义是任务依赖/交接，不承诺执行时序（并行分支下依赖边 ≠ 实际先后）。
@@ -128,7 +129,16 @@ function seatLocationsByEmployee(overview: RuntimeOverviewDTO): Map<string, Seat
     }
   }
   const byEmployee = new Map<string, SeatLocation>();
+  // 候岗员工没有 seatId：按其在大厅在场顺序对应 LobbyWorkspaceRenderer 的展示锚点
+  // （同源同序），使连线端点落在头像实际位置；超出锚点数的溢出员工保持无定位。
+  let lobbyIndex = 0;
   for (const employee of overview.employees) {
+    if (employee.floorId === "lobby") {
+      const anchor = runtimeOverviewLobbyPositions[lobbyIndex];
+      lobbyIndex += 1;
+      if (anchor) byEmployee.set(employee.employeeId, { x: anchor.x, y: anchor.y, floorId: "lobby" });
+      continue;
+    }
     if (!employee.seatId) continue;
     const location = seatById.get(employee.seatId);
     if (location) byEmployee.set(employee.employeeId, location);

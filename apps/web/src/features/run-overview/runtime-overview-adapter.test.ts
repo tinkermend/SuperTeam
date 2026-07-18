@@ -432,7 +432,7 @@ describe("buildRuntimeOverview", () => {
     expect(mapped?.avatarAsset?.url).toMatch(/^\/images\/digital-employee-avatars\/engineer-[mf]-\d{2}-256\.webp$/);
   });
 
-  it("seats unassigned employees in the floor-one lobby without touching team capacity", () => {
+  it("places unassigned employees in the dynamic lobby without touching team capacity", () => {
     const withUnassigned = {
       ...employees,
       items: [...employees.items, unassignedEmployee("emp-free-1", "赵新")],
@@ -449,7 +449,7 @@ describe("buildRuntimeOverview", () => {
     const mapped = overview.employees.find((item) => item.employeeId === "emp-free-1");
     expect(mapped?.teamId).toBe("unassigned");
     expect(mapped?.floorId).toBe("lobby");
-    expect(mapped?.seatId).toBe("unassigned-seat-1");
+    expect(mapped?.seatId).toBeUndefined();
     // 大厅层仅在有候岗员工时出现。
     expect(overview.floors.some((floor) => floor.floorId === "lobby")).toBe(true);
     expect(base.floors.some((floor) => floor.floorId === "lobby")).toBe(false);
@@ -459,7 +459,7 @@ describe("buildRuntimeOverview", () => {
     expect(overview.teams.some((team) => team.teamId === "unassigned")).toBe(false);
   });
 
-  it("leaves lobby overflow employees visible in the list but without a seat", () => {
+  it("keeps every unassigned employee in the lobby without assigning fixed seats", () => {
     const lobbyCrowd = Array.from({ length: 11 }, (_, index) => unassignedEmployee(`emp-free-${index + 1}`, `候岗${index + 1}`));
     const overview = buildRuntimeOverview({
       activeFloorId: "floor-1",
@@ -468,9 +468,7 @@ describe("buildRuntimeOverview", () => {
       teams,
     });
 
-    const seatIds = overview.employees.map((item) => item.seatId);
-    expect(seatIds.slice(0, 10)).toEqual(Array.from({ length: 10 }, (_, index) => `unassigned-seat-${index + 1}`));
-    expect(seatIds[10]).toBeUndefined();
+    expect(overview.employees.every((item) => item.floorId === "lobby" && item.seatId === undefined)).toBe(true);
   });
 });
 

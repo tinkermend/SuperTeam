@@ -8,6 +8,7 @@ import {
   projectLensForFloor,
 } from "./runtime-overview-project-lens";
 import { projectTaskGraphFixture } from "./runtime-overview-fixtures";
+import { runtimeOverviewLobbyPositions } from "./runtime-overview-layout";
 
 function graph(partial: Partial<ProjectTaskGraph>): ProjectTaskGraph {
   return {
@@ -245,6 +246,36 @@ describe("projectLensForFloor", () => {
 
   it("lists the floors hosting lens participants", () => {
     expect(lensParticipantFloorIds(lens, overview).sort()).toEqual(["floor-1", "floor-2"]);
+  });
+
+  it("anchors seatless lobby employees to the shared lobby display positions", () => {
+    // 候岗员工无 seatId：端点取大厅展示锚点（与 LobbyWorkspaceRenderer 同源同序）。
+    const lobbyEmployees = [
+      overviewEmployee("emp-a", "floor-1", "s1"),
+      { ...overviewEmployee("emp-lobby-1", "lobby", undefined), teamId: "unassigned" },
+      { ...overviewEmployee("emp-lobby-2", "lobby", undefined), teamId: "unassigned" },
+    ];
+    const lobbyOverview = overviewWith([floors[0]], lobbyEmployees);
+    const lobbyLens = buildProjectLens(
+      "project-1",
+      graph({
+        nodes: [node("a", "completed", "emp-a"), node("b", "running", "emp-lobby-2")],
+        edges: [edge("a", "b")],
+      }),
+    );
+
+    const floorOne = projectLensForFloor(lobbyLens, lobbyOverview, "floor-1");
+    expect(floorOne.unlocatedEdgeCount).toBe(0);
+    expect(floorOne.portals).toHaveLength(1);
+    expect(floorOne.portals[0]).toMatchObject({ targetFloorId: "lobby", direction: "outgoing" });
+
+    const lobbyFloor = projectLensForFloor(lobbyLens, lobbyOverview, "lobby");
+    expect(lobbyFloor.portals).toHaveLength(1);
+    // emp-lobby-2 是大厅在场第 2 人 → 锚点取共享锚点表第 2 位。
+    expect(lobbyFloor.portals[0].at).toEqual({
+      x: runtimeOverviewLobbyPositions[1].x,
+      y: runtimeOverviewLobbyPositions[1].y,
+    });
   });
 });
 
