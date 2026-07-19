@@ -28,6 +28,7 @@ SuperTeam 把 AI 执行能力、流程调度、人类审批、上下文、工件
 
 - `contracts/provider/` 目前只有散文 README，没有机器可读 schema；事实上的 Provider 协议活在 `apps/runtime-agent/src/providers/` 的 Rust 类型里。这与"协议必须语言无关"相悖，属待偿债务，不是可依赖的先例。
 - 契约验证只覆盖 `contracts/control-plane/openapi.yaml`（见 `scripts/verify-foundation-contracts.mjs`）；`contracts/runtime/openapi.yaml` 与 `contracts/provider/` 未纳入。改这两处契约时，"走契约验证流程"目前无自动化可依，需人工核对下游生成物。
+- 数字员工的运行落点在项目派发时动态解析，员工本身不绑固定 Runtime/执行实例（退役方向见 spec `2026-07-19-dei-execution-instance-retirement.md`）。但 `digital_employee_execution_instances`（dei）表、`ln` 就绪视图（migration 022/047）、overview SQL 里的 dei 字段读取仍在，属退役中的旧模型残留；`ln` 视图注释自称的"is_runtime_ready 与 overview runnable 一致"已随 runnable 判据改造而过时。勿据这些残留反推"员工绑固定 Runtime"的旧模型；dei 完全退役后删除本条。
 
 ## 协作模型
 
