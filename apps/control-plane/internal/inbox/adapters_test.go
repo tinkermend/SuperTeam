@@ -666,6 +666,14 @@ func (r *approvalActionRepository) CreateApprovalDecision(_ context.Context, inp
 	}, nil
 }
 
+func (r *approvalActionRepository) ListPermissionApprovals(_ context.Context, _ approval.ListPermissionApprovalsInput) ([]approval.ApprovalRequest, error) {
+	return nil, nil
+}
+
+func (r *approvalActionRepository) PermissionApprovalSummary(_ context.Context, _ approval.PermissionApprovalSummaryInput) (approval.PermissionApprovalSummary, error) {
+	return approval.PermissionApprovalSummary{}, nil
+}
+
 type projectActionRepository struct {
 	project.Repository
 	project        project.Project
