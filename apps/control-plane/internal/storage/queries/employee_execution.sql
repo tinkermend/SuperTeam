@@ -1503,12 +1503,16 @@ skill_counts AS (
     WHERE sab.status = 'enabled'
     GROUP BY sab.tenant_id, sab.digital_employee_id
 ),
+-- 员工级人工等待判据(2026-07-19 收窄):任务上任一未决决策请求都计入,不再按
+-- 决策类型死词表('task_failure_recovery','route_review'——这两个字符串与实际
+-- 创建的类型早已脱节,导致这一腿永远不触发)过滤;唯一排除 project_acceptance,
+-- 它是项目级 guard,不构成员工级 waiting_human(见 operational_status.go)。
 pending_employee_decisions AS (
     SELECT
         pt.tenant_id,
         pt.assigned_digital_employee_id AS digital_employee_id,
         count(*) FILTER (
-            WHERE pdr.decision_type IN ('task_failure_recovery', 'route_review')
+            WHERE pdr.decision_type <> 'project_acceptance'
         ) > 0 AS has_employee_scoped_human_blocker,
         count(*) FILTER (
             WHERE pdr.decision_type = 'project_acceptance'
@@ -1520,21 +1524,20 @@ pending_employee_decisions AS (
     JOIN overview_args args ON args.tenant_id = pt.tenant_id
     WHERE pt.assigned_digital_employee_id IS NOT NULL
       AND pdr.status_snapshot IN ('pending', 'requested')
-      AND pdr.decision_type IN ('task_failure_recovery', 'route_review', 'project_acceptance')
     GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
 ),
 employee_operational_facts AS (
     SELECT
         de.tenant_id,
         de.id AS digital_employee_id,
+        -- 待确认判据收窄(2026-07-19):只认"此刻真的在等人"——任务状态已是
+        -- waiting_human/pending_review,或任务上挂着未决决策请求(ped)。
+        -- requires_human_approval 且未到审批点的任务(planned/blocked/running)
+        -- 不再点亮待确认:到达审批点时任务自身会转 waiting_human。
         (
             coalesce(ped.has_employee_scoped_human_blocker, false)
             OR count(pt.id) FILTER (
-                WHERE (
-                    pt.requires_human_approval
-                    AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
-                )
-                   OR pt.status IN ('waiting_human', 'pending_review')
+                WHERE pt.status IN ('waiting_human', 'pending_review')
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
@@ -1983,12 +1986,16 @@ employee_config_states AS (
     JOIN overview_args args ON args.tenant_id = decr.tenant_id
     ORDER BY decr.tenant_id, decr.digital_employee_id, decr.revision_number DESC, decr.updated_at DESC
 ),
+-- 员工级人工等待判据(2026-07-19 收窄):任务上任一未决决策请求都计入,不再按
+-- 决策类型死词表('task_failure_recovery','route_review'——这两个字符串与实际
+-- 创建的类型早已脱节,导致这一腿永远不触发)过滤;唯一排除 project_acceptance,
+-- 它是项目级 guard,不构成员工级 waiting_human(见 operational_status.go)。
 pending_employee_decisions AS (
     SELECT
         pt.tenant_id,
         pt.assigned_digital_employee_id AS digital_employee_id,
         count(*) FILTER (
-            WHERE pdr.decision_type IN ('task_failure_recovery', 'route_review')
+            WHERE pdr.decision_type <> 'project_acceptance'
         ) > 0 AS has_employee_scoped_human_blocker,
         count(*) FILTER (
             WHERE pdr.decision_type = 'project_acceptance'
@@ -2000,21 +2007,20 @@ pending_employee_decisions AS (
     JOIN overview_args args ON args.tenant_id = pt.tenant_id
     WHERE pt.assigned_digital_employee_id IS NOT NULL
       AND pdr.status_snapshot IN ('pending', 'requested')
-      AND pdr.decision_type IN ('task_failure_recovery', 'route_review', 'project_acceptance')
     GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
 ),
 employee_operational_facts AS (
     SELECT
         de.tenant_id,
         de.id AS digital_employee_id,
+        -- 待确认判据收窄(2026-07-19):只认"此刻真的在等人"——任务状态已是
+        -- waiting_human/pending_review,或任务上挂着未决决策请求(ped)。
+        -- requires_human_approval 且未到审批点的任务(planned/blocked/running)
+        -- 不再点亮待确认:到达审批点时任务自身会转 waiting_human。
         (
             coalesce(ped.has_employee_scoped_human_blocker, false)
             OR count(pt.id) FILTER (
-                WHERE (
-                    pt.requires_human_approval
-                    AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
-                )
-                   OR pt.status IN ('waiting_human', 'pending_review')
+                WHERE pt.status IN ('waiting_human', 'pending_review')
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,

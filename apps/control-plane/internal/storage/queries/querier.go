@@ -365,11 +365,19 @@ type Querier interface {
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
 	// config revision JSON 不再承载 mcp_servers 声明)。
+	// 员工级人工等待判据(2026-07-19 收窄):任务上任一未决决策请求都计入,不再按
+	// 决策类型死词表('task_failure_recovery','route_review'——这两个字符串与实际
+	// 创建的类型早已脱节,导致这一腿永远不触发)过滤;唯一排除 project_acceptance,
+	// 它是项目级 guard,不构成员工级 waiting_human(见 operational_status.go)。
 	// 跨视图一致性(P2 3.3b):working 状态的权威成因。取每个员工当前 running/in_progress
 	// 的 project_task(与 operational_has_working_task 同源),携其所属项目名,供座位卡精确
 	// 显示"正在 X 项目做 Y 任务"并深链——替代前端从 latest_run(task_runs 另一数据源)+
 	// project_summary 聚合的启发式拼接(可能指向不同的工作)。多条时取最近更新的一条。
 	ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error)
+	// 员工级人工等待判据(2026-07-19 收窄):任务上任一未决决策请求都计入,不再按
+	// 决策类型死词表('task_failure_recovery','route_review'——这两个字符串与实际
+	// 创建的类型早已脱节,导致这一腿永远不触发)过滤;唯一排除 project_acceptance,
+	// 它是项目级 guard,不构成员工级 waiting_human(见 operational_status.go)。
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
 	ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error)
 	ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEmployeeRunsParams) ([]ListDigitalEmployeeRunsRow, error)
@@ -526,6 +534,12 @@ type Querier interface {
 	ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error)
 	RejectProjectPlanRevision(ctx context.Context, arg RejectProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
+	// 人类解决任务等待(批准继续)后,任务回到 planned 由协调线程走正常派发管线
+	// (gate 评估 + run 启动 + attempt 创建)。直接由释放方创建 queued attempt 是
+	// 死路:没有 run,runtime 永远不会来领,最终被 stale-queued 看门狗回收。
+	// 旧执行的 run 绑定必须一并清除:DispatchProjectTask 对带 run 绑定且已有
+	// dispatched 事件的任务按"已派发"幂等短路,残留绑定会让重派发静默 no-op。
+	ReleaseProjectTaskWaitingHumanForRedispatch(ctx context.Context, arg ReleaseProjectTaskWaitingHumanForRedispatchParams) (ProjectTask, error)
 	RemoveProjectRuntimeNode(ctx context.Context, arg RemoveProjectRuntimeNodeParams) error
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
@@ -566,6 +580,11 @@ type Querier interface {
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
 	SupersedePendingFeishuOutboxByResource(ctx context.Context, arg SupersedePendingFeishuOutboxByResourceParams) error
+	// 人类解决等待、任务转入重派发或终态时,旧 waiting_human attempt 必须先出让
+	// 活跃位(uq_project_task_attempts_active 把 waiting_human 计入活跃),终态取
+	// cancelled(被人类决策取代,词表内唯一贴切的终态)。attempt 已被其他恢复路径
+	// 置为终态(如 lost)时命中 0 行,属合法情形,调用方不视为错误。
+	SupersedeWaitingHumanProjectTaskAttempt(ctx context.Context, arg SupersedeWaitingHumanProjectTaskAttemptParams) (int64, error)
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
 	TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error
 	// Forward-guarded project status transition: only applied when the current status
