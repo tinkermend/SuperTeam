@@ -52,6 +52,7 @@ type Container struct {
 	RuntimeService                 *runtimepkg.Service
 	EmployeeService                *employee.Service
 	ProjectService                 *project.Service
+	SystemConfig                   systemconfig.Reader
 	ApprovalService                *approval.Service
 	InboxService                   *inbox.Service
 	ArtifactService                *artifact.Service
@@ -774,6 +775,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		RuntimeService:                 runtimeService,
 		EmployeeService:                employeeService,
 		ProjectService:                 projectService,
+		SystemConfig:                   systemConfigService,
 		ApprovalService:                approvalService,
 		InboxService:                   inboxService,
 		ArtifactService:                artifactService,
@@ -848,6 +850,10 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 	if container.TenantService != nil && container.InboxService != nil {
 		// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒)。
 		go startTeamPendingDeleteReminder(ctx, container.TenantService, container.InboxService)
+	}
+	if container.ProjectService != nil && container.SystemConfig != nil {
+		// 僵尸任务收敛看门狗(卡死任务收敛 spec P1):孤儿 running 任务兜底 + 既有 attempt 恢复接线。
+		go startStuckTaskReconciler(ctx, container.ProjectService, container.SystemConfig)
 	}
 	stopWatching := make(chan struct{})
 	go func() {

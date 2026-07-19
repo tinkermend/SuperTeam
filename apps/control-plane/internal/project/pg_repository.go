@@ -4477,6 +4477,39 @@ func (r *PgRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Context
 	return attempts, nil
 }
 
+// ListStuckOrphanProjectTasks lists project tasks stuck in running/in_progress
+// with no active attempt older than staleBefore, across all tenants. See the
+// query comment for provenance; the stuck-task reconciler reaps each row.
+func (r *PgRepository) ListStuckOrphanProjectTasks(ctx context.Context, staleBefore time.Time, limit int32) ([]ProjectTask, error) {
+	rows, err := r.q.ListStuckOrphanProjectTasks(ctx, queries.ListStuckOrphanProjectTasksParams{
+		StaleBefore: pgtype.Timestamptz{Time: staleBefore, Valid: true},
+		BatchLimit:  limit,
+	})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	tasks := make([]ProjectTask, 0, len(rows))
+	for _, row := range rows {
+		task, err := taskFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
+// ListTenantsWithRecoverableProjectTaskAttempts returns the distinct tenants that
+// currently have a queued-but-unstarted or lease-expired running attempt, so the
+// reconciler can drive the per-tenant attempt sweeps only where there is work.
+func (r *PgRepository) ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	tenants, err := r.q.ListTenantsWithRecoverableProjectTaskAttempts(ctx, pgtype.Timestamptz{Time: now, Valid: true})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	return tenants, nil
+}
+
 func (r *PgRepository) RecoverProjectTaskDispatchFailure(ctx context.Context, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task dispatch recovery", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
 		task, err := q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: req.TenantID, ID: req.ProjectTaskID})

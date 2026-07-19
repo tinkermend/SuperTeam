@@ -6192,6 +6192,118 @@ func (q *Queries) ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg Li
 	return items, nil
 }
 
+const ListStuckOrphanProjectTasks = `-- name: ListStuckOrphanProjectTasks :many
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_event_id, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id, plan_iteration FROM project_tasks
+WHERE status IN ('running', 'in_progress')
+  AND current_attempt_id IS NULL
+  AND updated_at < $1::timestamptz
+ORDER BY updated_at ASC
+LIMIT $2::integer
+`
+
+type ListStuckOrphanProjectTasksParams struct {
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	BatchLimit  int32              `json:"batch_limit"`
+}
+
+// 僵尸/孤儿任务:停留在 running/in_progress 但没有当前活跃 attempt(current_attempt_id
+// 为空),且已滞留超过阈值。正常派发会在秒级内建 attempt 并回填 current_attempt_id,
+// 故长时间 running 而无 attempt 的任务只可能是 runtime 整体失联未落 attempt、协调线程
+// 死亡、或异常/夹具数据直插。跨租户列出交由看门狗逐条系统收敛(置 failed + 发失败信号,
+// 由协调线程开失败恢复决策卡)。阈值(stale_before)由调用方按系统配置 task.stuck_running_timeout 计算。
+func (q *Queries) ListStuckOrphanProjectTasks(ctx context.Context, arg ListStuckOrphanProjectTasksParams) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListStuckOrphanProjectTasks, arg.StaleBefore, arg.BatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.PlannedTaskKey,
+			&i.TaskKind,
+			&i.StageIndex,
+			&i.ExpectedOutputs,
+			&i.InputRequirements,
+			&i.HandoffContract,
+			&i.PlannerMetadata,
+			&i.CurrentAttemptID,
+			&i.AcceptedPlanRevisionID,
+			&i.DecompositionClaimKey,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.RetryNotBefore,
+			&i.WaitingReason,
+			&i.WaitingRequestID,
+			&i.TerminalEventID,
+			&i.StatusChangedAt,
+			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
+			&i.PlanIteration,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListTenantsWithRecoverableProjectTaskAttempts = `-- name: ListTenantsWithRecoverableProjectTaskAttempts :many
+SELECT DISTINCT pta.tenant_id
+FROM project_task_attempts pta
+JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_task_id
+WHERE (pta.status = 'queued' AND pt.status = 'queued' AND pta.started_at IS NULL)
+   OR (pta.status = 'running' AND pt.status = 'running'
+       AND pta.lease_expires_at IS NOT NULL
+       AND pta.lease_expires_at < $1::timestamptz)
+`
+
+// 跨租户列出"存在可恢复卡死 attempt"的租户,供看门狗逐租户调用 per-tenant 的
+// SweepStaleQueuedProjectTaskAttempts / SweepExpiredRunningProjectTaskAttempts。
+// 阈值放宽以避免漏选(per-tenant sweep 内部再按精确阈值过滤,过选无害):
+// 只要有 queued attempt 未开始、或 running attempt 租约已过期即入选。
+func (q *Queries) ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now pgtype.Timestamptz) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, ListTenantsWithRecoverableProjectTaskAttempts, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var tenant_id uuid.UUID
+		if err := rows.Scan(&tenant_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tenant_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListUnresolvedBlockersForTasks = `-- name: ListUnresolvedBlockersForTasks :many
 SELECT
     d.dependent_task_id,

@@ -27,6 +27,7 @@ const (
 	KeyRuntimeSessionTTLSeconds           = "runtime.session_ttl_seconds"
 	KeyRuntimeHeartbeatTimeoutSeconds     = "runtime.heartbeat_timeout_seconds"
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
+	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
 )
 
 // registry 是配置项注册表:非封闭枚举,新增配置项 = 此处加一条 + 使用点接入,
@@ -164,6 +165,18 @@ var registry = []Definition{
 		DefaultValue: 12 * 3600,
 		MinValue:     3600,
 		MaxValue:     7 * 24 * 3600,
+	},
+	{
+		Key:    KeyTaskStuckRunningTimeoutSeconds,
+		Domain: DomainExecution,
+		Label:  "僵尸任务收敛超时",
+		Description: "项目任务停留在\"执行中\"但无任何活跃执行尝试(无 attempt/无 run)超过该秒数,系统看门狗判定为卡死并置为失败,触发失败恢复决策卡转人工。" +
+			"用于兜底 runtime 整个失联、协调线程死亡或异常数据导致的任务永久卡 running;仅在控制平面内部判定,不下发 runtime。" +
+			"下界防止误判正在派发的正常任务,上界防止卡死任务长期占用员工\"工作中\"状态。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 15 * 60,
+		MinValue:     2 * 60,
+		MaxValue:     6 * 3600,
 	},
 }
 

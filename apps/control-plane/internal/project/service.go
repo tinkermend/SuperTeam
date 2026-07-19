@@ -5173,6 +5173,145 @@ func (s *Service) SweepExpiredRunningProjectTaskAttempts(ctx context.Context, re
 	return s.recoverAttemptCandidates(ctx, attempts, FailureFamilyRuntimeLeaseLost, "Runtime lease expired before terminal writeback", now)
 }
 
+// stuckOrphanReapSummary is the human-facing reason recorded when the reconciler
+// reaps an orphaned running task (no active attempt). It surfaces on the failure
+// recovery decision card so a human understands why the task was failed.
+const stuckOrphanReapSummary = "任务长时间停留在执行中但没有任何活跃执行(无 attempt、无 run),系统看门狗判定为卡死并置为失败,转人工确认。"
+
+// StuckOrphanProjectTaskLister is the optional repository capability the stuck-task
+// reconciler needs. Asserted at call time so existing repository fakes need not
+// implement it.
+type StuckOrphanProjectTaskLister interface {
+	ListStuckOrphanProjectTasks(ctx context.Context, staleBefore time.Time, limit int32) ([]ProjectTask, error)
+}
+
+// SweepStuckOrphanProjectTasks reaps project tasks stuck in running/in_progress
+// with no active attempt older than staleBefore, across all tenants. Each reap
+// writes the task to failed (system actor) and signals the coordinator, which —
+// via SignalWithStart — is transparently (re)started to hold downstream and open
+// a task_failure_recovery decision. Per-row failures are logged and skipped; the
+// next tick retries. Returns the number of tasks reaped.
+func (s *Service) SweepStuckOrphanProjectTasks(ctx context.Context, staleBefore time.Time, limit int32) (int, error) {
+	lister, ok := s.repository.(StuckOrphanProjectTaskLister)
+	if !ok {
+		return 0, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	tasks, err := lister.ListStuckOrphanProjectTasks(ctx, staleBefore, limit)
+	if err != nil {
+		return 0, err
+	}
+	reaped := 0
+	for _, task := range tasks {
+		if err := s.reapStuckOrphanProjectTask(ctx, task); err != nil {
+			slog.Default().Warn("stuck task reconciler: reap orphan task failed", "project_task_id", task.ID, "error", err)
+			continue
+		}
+		reaped++
+	}
+	if reaped > 0 {
+		slog.Default().Info("stuck task reconciler: reaped orphaned running tasks", "count", reaped)
+	}
+	return reaped, nil
+}
+
+// reapStuckOrphanProjectTask fails a single orphaned running task via the generic
+// failure writeback (system actor, no runtime binding assumed) and signals the
+// coordinator. It does not go through taskAndProjectForWriteback because orphans
+// have neither a runtime node nor a bound run.
+func (s *Service) reapStuckOrphanProjectTask(ctx context.Context, task ProjectTask) error {
+	projectRecord, err := s.repository.GetProject(ctx, task.TenantID, task.ProjectID)
+	if err != nil {
+		return err
+	}
+	writebackRepository, err := s.projectTaskWritebackRepository()
+	if err != nil {
+		return err
+	}
+	result, err := writebackRepository.FailProjectTaskWriteback(ctx, FailProjectTaskWritebackRequest{
+		Task: task,
+		Event: AppendProjectEventRequest{
+			TenantID:     task.TenantID,
+			ProjectID:    task.ProjectID,
+			EventType:    ProjectEventTaskFailed,
+			ActorType:    "system",
+			ActorID:      uuid.Nil.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(task.ID.String()),
+			Summary:      "僵尸任务收敛",
+			Payload: map[string]any{
+				"project_task_id": task.ID.String(),
+				"failure_summary": stuckOrphanReapSummary,
+				"reaped_by":       "stuck_task_reconciler",
+				"prior_status":    task.Status,
+			},
+		},
+		// Orphan guard: only reap tasks still in the stuck states. If a concurrent
+		// dispatch advanced the task between list and write, the optimistic guard
+		// misses and the reap is skipped (returned as ErrProjectConflict).
+		AllowedCurrentStatuses: []string{ProjectTaskStatusRunning, "in_progress"},
+	})
+	if err != nil {
+		return err
+	}
+	return s.coordinator.SignalEmployeeTaskFailed(ctx, EmployeeTaskFailedSignal{
+		TenantID:       task.TenantID,
+		ProjectID:      task.ProjectID,
+		ProjectTaskID:  task.ID,
+		FailureSummary: stuckOrphanReapSummary,
+		FailedEventID:  result.Event.ID,
+		WorkflowID:     projectRecord.CoordinationWorkflowID,
+	})
+}
+
+// RecoverableProjectTaskAttemptTenantLister is the optional repository capability
+// the reconciler needs to drive the per-tenant attempt sweeps across all tenants.
+type RecoverableProjectTaskAttemptTenantLister interface {
+	ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+}
+
+// SweepStuckProjectTaskAttemptsAllTenants drives the two existing per-tenant
+// attempt recovery sweeps (stale-queued dispatch never acked, and lease-expired
+// running attempts abandoned by a dead runtime — the "task stuck running with no
+// self-healing" defect) across every tenant that currently has recoverable work.
+// Each recovered attempt is failed-then-retried-or-parked by the existing
+// recovery machinery. Per-tenant errors are logged and skipped. Returns the total
+// number of attempts recovered.
+func (s *Service) SweepStuckProjectTaskAttemptsAllTenants(ctx context.Context, now time.Time) (int, error) {
+	lister, ok := s.repository.(RecoverableProjectTaskAttemptTenantLister)
+	if !ok {
+		return 0, nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	tenants, err := lister.ListTenantsWithRecoverableProjectTaskAttempts(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	recovered := 0
+	for _, tenantID := range tenants {
+		queued, err := s.SweepStaleQueuedProjectTaskAttempts(ctx, SweepProjectTaskAttemptRecoveryRequest{TenantID: tenantID, Now: now})
+		if err != nil {
+			slog.Default().Warn("stuck task reconciler: sweep stale queued attempts failed", "tenant_id", tenantID, "error", err)
+		} else {
+			recovered += len(queued.RecoveredAttemptIDs)
+		}
+		running, err := s.SweepExpiredRunningProjectTaskAttempts(ctx, SweepProjectTaskAttemptRecoveryRequest{TenantID: tenantID, Now: now})
+		if err != nil {
+			slog.Default().Warn("stuck task reconciler: sweep expired running attempts failed", "tenant_id", tenantID, "error", err)
+		} else {
+			recovered += len(running.RecoveredAttemptIDs)
+		}
+	}
+	if recovered > 0 {
+		slog.Default().Info("stuck task reconciler: recovered stuck project task attempts", "count", recovered)
+	}
+	return recovered, nil
+}
+
 func (s *Service) recoverAttemptCandidates(ctx context.Context, attempts []ProjectTaskAttempt, failureFamily, summary string, now time.Time) (SweepProjectTaskAttemptRecoveryResult, error) {
 	result := SweepProjectTaskAttemptRecoveryResult{
 		RecoveredAttemptIDs: []uuid.UUID{},

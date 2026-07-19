@@ -1471,6 +1471,32 @@ WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY pta.lease_expires_at ASC
 LIMIT sqlc.arg('limit')::integer;
 
+-- name: ListStuckOrphanProjectTasks :many
+-- 僵尸/孤儿任务:停留在 running/in_progress 但没有当前活跃 attempt(current_attempt_id
+-- 为空),且已滞留超过阈值。正常派发会在秒级内建 attempt 并回填 current_attempt_id,
+-- 故长时间 running 而无 attempt 的任务只可能是 runtime 整体失联未落 attempt、协调线程
+-- 死亡、或异常/夹具数据直插。跨租户列出交由看门狗逐条系统收敛(置 failed + 发失败信号,
+-- 由协调线程开失败恢复决策卡)。阈值(stale_before)由调用方按系统配置 task.stuck_running_timeout 计算。
+SELECT * FROM project_tasks
+WHERE status IN ('running', 'in_progress')
+  AND current_attempt_id IS NULL
+  AND updated_at < sqlc.arg('stale_before')::timestamptz
+ORDER BY updated_at ASC
+LIMIT sqlc.arg('batch_limit')::integer;
+
+-- name: ListTenantsWithRecoverableProjectTaskAttempts :many
+-- 跨租户列出"存在可恢复卡死 attempt"的租户,供看门狗逐租户调用 per-tenant 的
+-- SweepStaleQueuedProjectTaskAttempts / SweepExpiredRunningProjectTaskAttempts。
+-- 阈值放宽以避免漏选(per-tenant sweep 内部再按精确阈值过滤,过选无害):
+-- 只要有 queued attempt 未开始、或 running attempt 租约已过期即入选。
+SELECT DISTINCT pta.tenant_id
+FROM project_task_attempts pta
+JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_task_id
+WHERE (pta.status = 'queued' AND pt.status = 'queued' AND pta.started_at IS NULL)
+   OR (pta.status = 'running' AND pt.status = 'running'
+       AND pta.lease_expires_at IS NOT NULL
+       AND pta.lease_expires_at < sqlc.arg('now')::timestamptz);
+
 -- name: StartProjectTaskAttempt :one
 -- digital_employee_run_id 回填:dispatch 冲突路径可能留下 NULL 的 run 关联
 -- (命令已送达但派发簿记失败),导致 provider 事件按 run_id 关联不到 attempt
