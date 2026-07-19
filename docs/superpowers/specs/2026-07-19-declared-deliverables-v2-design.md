@@ -1,7 +1,7 @@
 # 声明式交付物闭环 v2 Spec:deliverables/ 约定目录 + 平台核对 + Ref 血缘回填
 
 > 日期:2026-07-19
-> 状态:设计定稿,实施中
+> 状态:**已完结,GATE 全项真实 E2E PASS(2026-07-19 12:59,详见 CHANGELOG;代码随 8359a52f 入 main,归属见 CHANGELOG 澄清)**。实测注记:§5.3 缺交付物的实际路由是人类澄清(waiting_human+clarification)而非自动返工——平台对契约缺口的既定姿态,自动返工环属对抗评审线,符合预期;验收判据文本匹配启发式(autonomy 线残债)会在 planner 生成长句判据时拦截 completion,与本线正交,建议随对抗评审线偿还。
 > 上游:输出附件 v1(`2026-07-19-execution-output-attachments-design.md`,已完结)+ 遗留立项 §3(`...-followups.md`,用户批准开工)
 > 一句话:v1 是"兜底捕获,人眼分辨";v2 让交付物由契约声明、由平台核对、可从判据血缘直达文件。
 
