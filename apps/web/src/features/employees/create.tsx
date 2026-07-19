@@ -85,9 +85,7 @@ type WizardDraft = {
     mcp_servers: string[];
     skills: string[];
   };
-  context_policy: Record<string, unknown>;
   daily_token_limit: string;
-  approval_policy: Record<string, unknown>;
   employee_type: string;
   avatar_asset_id: string;
   name: string;
@@ -121,14 +119,12 @@ type CreateEmployeeViewProps = {
 };
 
 const emptyDraft: WizardDraft = {
-  approval_policy: {},
   capability_bindings: {},
   creation_mode: "template",
   capability_binding_draft: {
     mcp_servers: [],
     skills: [],
   },
-  context_policy: {},
   daily_token_limit: "",
   employee_type: "",
   avatar_asset_id: "",
@@ -253,11 +249,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           avatar_asset_id: draft.avatar_asset_id,
           role: draft.role.trim(),
           ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
-          approval_policy: draft.approval_policy,
           budget_policy: budgetPolicyFromDraft(draft),
           ...capabilitySelectionFromDraft(draft, createOptions.data),
           capability_bindings: capabilityBindingsFromDraft(draft),
-          context_policy: draft.context_policy,
           persona_memory_markdown: draft.persona_memory_markdown.trim(),
           risk_level: draft.risk_level,
           provider_type: draft.provider_type,
@@ -1136,8 +1130,6 @@ function ConfirmCreationStep({
   onSubmit: () => void;
 }) {
   const environmentVariableCount = draft.environment_variables.filter((row) => row.name.trim() && row.value).length;
-  const contextPolicySummary = formatJsonSummary(draft.context_policy);
-  const approvalPolicySummary = formatJsonSummary(draft.approval_policy);
 
   return (
     <GlassCard className="flex flex-col">
@@ -1186,10 +1178,6 @@ function ConfirmCreationStep({
               value={draft.daily_token_limit.trim() ? `${draft.daily_token_limit.trim()} Token` : "无预算上限"}
             />
             <InlineSummary label="环境变量" value={`${environmentVariableCount} 个`} />
-          </div>
-          <div className="mt-3 grid gap-2">
-            <JsonReadOnlyCard label="上下文策略" value={contextPolicySummary} />
-            <JsonReadOnlyCard label="审批策略" value={approvalPolicySummary} />
           </div>
         </section>
       </div>
@@ -1436,17 +1424,7 @@ function CapabilityStep({
         onToggle={(value) => toggle("mcp_servers", value)}
         values={extensionCapabilityOptions.mcp_servers}
       />
-      <section className="grid gap-4 rounded-[14px] border border-v3-line bg-v3-card p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="grid gap-4">
-          <div>
-            <h3 className="text-sm font-semibold text-v3-ink">默认策略</h3>
-            <p className="mt-1 text-xs text-v3-ink-3">模板默认的上下文与审批策略会随本次创建一起提交。</p>
-          </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            <JsonReadOnlyCard label="上下文策略" value={formatJsonSummary(draft.context_policy)} />
-            <JsonReadOnlyCard label="审批策略" value={formatJsonSummary(draft.approval_policy)} />
-          </div>
-        </div>
+      <section className="rounded-[14px] border border-v3-line bg-v3-card p-4 lg:max-w-md">
         <Field error={errors.daily_token_limit} label="每日 Token 预算上限">
           <Input
             aria-invalid={Boolean(errors.daily_token_limit)}
@@ -1755,8 +1733,6 @@ const labelId: Record<string, string> = {
   "人格记忆.md": "persona-memory-markdown",
   能力绑定: "capability-bindings",
   名称: "employee-name",
-  上下文策略: "context-policy",
-  审批策略: "approval-policy",
   归属团队: "employee-team",
   职责定位: "employee-role",
   风险等级: "employee-risk",
@@ -1777,10 +1753,8 @@ function applyTypeDefaults(
 
   return {
     ...current,
-    approval_policy: policyDefaults?.approval_policy ?? {},
     capability_bindings: capabilityBindingDefaults(typeOption.capability_bindings),
     capability_binding_draft: recommendedCapabilitySelection(typeOption, options),
-    context_policy: {},
     daily_token_limit: dailyTokenLimit,
     employee_type: typeOption.type,
     persona_memory_markdown: typeOption.persona_memory_markdown ?? "",
@@ -1793,13 +1767,11 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
   return {
     ...current,
     creation_mode: "blank_custom",
-    approval_policy: {},
     capability_bindings: {},
     capability_binding_draft: {
       mcp_servers: [],
       skills: [],
     },
-    context_policy: {},
     employee_type: BLANK_CUSTOM_EMPLOYEE_TYPE,
     persona_memory_markdown: "",
     risk_level: "medium",
@@ -1932,10 +1904,6 @@ function parseDailyTokenLimit(rawValue: string) {
     return { error: "每日 Token 预算上限必须是正整数" };
   }
   return { value: parsed };
-}
-
-function formatJsonSummary(value: Record<string, unknown>) {
-  return JSON.stringify(value, null, 2);
 }
 
 function formatCapabilityBindingsPreview(

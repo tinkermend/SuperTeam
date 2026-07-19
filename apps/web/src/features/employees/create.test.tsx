@@ -597,8 +597,10 @@ describe("CreateEmployeeView", () => {
     expect(screen.getByText("能力与策略").query()).toBeNull();
     await expect.element(screen.getByLabelText("人格记忆.md")).toBeVisible();
     await expect.element(screen.getByLabelText("能力绑定")).toBeVisible();
-    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue("{}");
-    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "required": true\n}');
+    // 员工个体不承载上下文/审批策略，创建页不再出现"默认策略"只读块。
+    expect(document.body.textContent).not.toContain("默认策略");
+    expect(document.body.textContent).not.toContain("上下文策略");
+    expect(document.body.textContent).not.toContain("审批策略");
     await expect.element(screen.getByLabelText("每日 Token 预算上限")).toBeVisible();
   });
 
@@ -724,11 +726,12 @@ describe("CreateEmployeeView", () => {
       // 模板推荐(∩注册表可选)默认预勾选,团队继承的 sql-review/postgres 不重复提交。
       skills: ["incident-diagnosis"],
       mcp_servers: [],
-      context_policy: {},
-      approval_policy: { required: true },
       provider_type: "codex",
       environment_variables: [],
     });
+    // 员工个体不承载策略：创建请求不再提交 context_policy/approval_policy。
+    expect(body).not.toHaveProperty("context_policy");
+    expect(body).not.toHaveProperty("approval_policy");
     // 技能/MCP 已迁到顶层逻辑绑定字段,capability_bindings 不再承载。
     expect(body.capability_bindings).toEqual({});
     expect(body).not.toHaveProperty("role_profile");
@@ -889,8 +892,6 @@ describe("CreateEmployeeView", () => {
       persona_memory_markdown: "# 自定义人格\n谨慎执行",
       skills: [],
       mcp_servers: [],
-      context_policy: {},
-      approval_policy: {},
       provider_type: "codex",
       environment_variables: [],
       metadata: { creation_mode: "blank_custom" },
@@ -928,12 +929,12 @@ describe("CreateEmployeeView", () => {
     });
     expect(body.skills).toEqual(["incident-diagnosis"]);
     expect(body.mcp_servers).toEqual([]);
-    expect(body.context_policy).toEqual({});
-    expect(body.approval_policy).toEqual({ required: true });
+    expect(body).not.toHaveProperty("context_policy");
+    expect(body).not.toHaveProperty("approval_policy");
     expect(body.metadata).toBeUndefined();
   });
 
-  it("shows policy defaults again on the confirm step", async () => {
+  it("omits policy readouts on the confirm step and keeps budget summary", async () => {
     const screen = await renderCreateEmployeeView();
 
     await enterConfiguration(screen);
@@ -943,8 +944,8 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await enterConfirmCreation(screen);
 
-    await expect.element(screen.getByLabelText("上下文策略")).toHaveValue("{}");
-    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "required": true\n}');
+    expect(document.body.textContent).not.toContain("上下文策略");
+    expect(document.body.textContent).not.toContain("审批策略");
     expect(document.body.textContent).toContain("200000 Token");
   });
 
@@ -958,7 +959,6 @@ describe("CreateEmployeeView", () => {
 
     await expect.element(screen.getByText("团队继承能力", { exact: true })).toBeVisible();
     expect(document.body.textContent).toContain("中");
-    await expect.element(screen.getByLabelText("审批策略")).toHaveValue('{\n  "required": true\n}');
   });
 
   it("excludes 团队继承能力 from submitted 员工扩展能力", async () => {
