@@ -481,7 +481,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               </div>
 
               <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4">
-                <div className="min-h-0 rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
+                <div className="min-h-0">
                   {shouldShowConfigureLoading ? (
                     <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-v3-ink-3">
                       <Loader2 className="size-4 animate-spin" />
@@ -1220,7 +1220,7 @@ function IdentityStep({
   const isBlankCustom = draft.creation_mode === "blank_custom";
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-lg font-semibold text-v3-ink">身份</h2>
         <p className="text-sm text-v3-ink-3">确定团队、名称和职责定位。负责人由后端按当前登录身份注入。</p>
@@ -1273,7 +1273,7 @@ function IdentityStep({
           </select>
         </Field>
       </div>
-      <div className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm">
+      <div className="rounded-v3-inner bg-v3-card-soft p-3 text-sm">
         <div className="font-semibold text-v3-ink">
           {isBlankCustom ? BLANK_CUSTOM_TITLE : selectedType?.label ?? "专业模板"}
         </div>
@@ -1303,9 +1303,12 @@ function AvatarSelection({
   selectedAssetId: string;
 }) {
   return (
-    <fieldset className="rounded-[14px] border border-v3-line p-3">
-      <legend className="px-1 text-sm font-medium text-v3-ink">头像</legend>
-      <div className="mt-3 flex flex-wrap gap-3">
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <span className="text-sm font-semibold text-v3-ink">头像</span>
+        <span className="text-xs text-v3-ink-3">每个头像只能被一名数字员工使用，已占用的不再显示。</span>
+      </div>
+      <div className="flex flex-wrap gap-3">
         {assets.map((asset) => {
           const selected = asset.id === selectedAssetId;
           return (
@@ -1328,7 +1331,7 @@ function AvatarSelection({
         <p className="mt-2 text-sm text-v3-ink-3">头像库已全部被现有数字员工占用，请先扩充头像库再创建。</p>
       ) : null}
       {error ? <span className="mt-2 block text-sm text-v3-danger">{error}</span> : null}
-    </fieldset>
+    </div>
   );
 }
 
@@ -1365,15 +1368,17 @@ function CapabilityStep({
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-lg font-semibold text-v3-ink">能力</h2>
         <p className="text-sm text-v3-ink-3">团队基线能力只读继承；这里只为员工补充个人技能和 MCP。</p>
       </div>
-      <section className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
-        <div className="text-sm font-semibold text-v3-ink">团队继承能力</div>
-        <p className="mt-1 text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</p>
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
+      <section className="rounded-v3-inner bg-v3-card-soft px-3.5 py-3">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-sm font-semibold text-v3-ink">团队继承能力</span>
+          <span className="text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
           <CapabilityReadOnlyList label="技能" values={inheritedCapabilities.skills} />
           <CapabilityReadOnlyList label="MCP Server" values={inheritedCapabilities.mcp_servers} />
         </div>
@@ -1424,7 +1429,7 @@ function CapabilityStep({
           value={draft.persona_memory_markdown}
         />
       </Field>
-      <section className="rounded-[14px] border border-v3-line bg-v3-card p-4 lg:max-w-md">
+      <section className="lg:max-w-md">
         <Field error={errors.daily_token_limit} label="每日 Token 预算上限">
           <Input
             aria-invalid={Boolean(errors.daily_token_limit)}
@@ -1443,17 +1448,15 @@ function CapabilityStep({
 
 function CapabilityReadOnlyList({ label, values }: { label: string; values: string[] }) {
   return (
-    <div className="rounded-[12px] border border-v3-line bg-v3-card p-3">
-      <div className="text-xs text-v3-ink-3">{label}</div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {values.length === 0 ? <span className="text-sm text-v3-ink-3">无</span> : null}
-        {values.map((value) => (
-          <Badge key={value} variant="secondary">
-            {value}
-          </Badge>
-        ))}
-      </div>
-    </div>
+    <span className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-v3-ink-3">{label}</span>
+      {values.length === 0 ? <span className="text-sm text-v3-ink-3">无</span> : null}
+      {values.map((value) => (
+        <Badge key={value} variant="secondary">
+          {value}
+        </Badge>
+      ))}
+    </span>
   );
 }
 
@@ -1471,9 +1474,12 @@ function CapabilityGroup({
   values: DigitalEmployeeCapabilityOptionItem[];
 }) {
   return (
-    <fieldset className="rounded-[14px] border border-v3-line p-3">
-      <legend className="px-1 text-sm font-medium text-v3-ink">{label}</legend>
-      <div className="mt-3 grid gap-2.5 md:grid-cols-2">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-medium text-v3-ink">{label}</span>
+        <span className="text-xs text-v3-ink-3 tabular-nums">已选 {checkedValues.length}</span>
+      </div>
+      <div className="grid gap-2 md:grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
         {values.map((item) => {
           const checked = checkedValues.includes(item.key);
           const disabled = !item.available;
@@ -1519,9 +1525,9 @@ function CapabilityGroup({
             </label>
           );
         })}
-        {values.length === 0 ? <div className="md:col-span-2">{emptyState}</div> : null}
+        {values.length === 0 ? <div className="md:col-span-full">{emptyState}</div> : null}
       </div>
-    </fieldset>
+    </div>
   );
 }
 
@@ -1560,7 +1566,7 @@ function ProviderStep({
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-lg font-semibold text-v3-ink">Provider 类型</h2>
         <p className="text-sm text-v3-ink-3">数字员工必须选择一个 Provider 类型；Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
@@ -1579,12 +1585,12 @@ function ProviderStep({
         </div>
       </RadioGroup>
       {providers.length === 0 ? (
-        <p className="rounded-[14px] border border-dashed border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">
+        <p className="rounded-v3-inner border border-dashed border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">
           当前创建选项没有返回可选 Provider 类型。
         </p>
       ) : null}
       {error ? <p className="text-sm text-v3-danger">{error}</p> : null}
-      <section className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
+      <section className="rounded-v3-inner bg-v3-card-soft p-3.5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-medium text-v3-ink">员工环境变量</h3>
@@ -1670,7 +1676,7 @@ function ProviderOption({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-[14px] border p-3 text-sm transition-colors",
+        "flex cursor-pointer items-start gap-3 rounded-v3-inner border p-3 text-sm transition-colors",
         selected
           ? "border-v3-brand/40 bg-v3-brand-soft"
           : "border-v3-line bg-v3-card hover:bg-v3-card-soft",
