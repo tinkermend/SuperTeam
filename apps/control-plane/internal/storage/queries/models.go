@@ -494,12 +494,8 @@ type DigitalEmployeeMcpBindingsV2 struct {
 	McpServerID uuid.UUID `json:"mcp_server_id"`
 	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
 	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
-	// 绑定状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// 绑定扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// 绑定禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// 绑定软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建绑定的用户 ID
@@ -510,7 +506,6 @@ type DigitalEmployeeMcpBindingsV2 struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 数字员工 runtime 就绪读视图,is_runtime_ready 与 overview runnable 判定一致,供协调器执行人选择过滤
 type DigitalEmployeeRuntimeReadiness struct {
 	TenantID          uuid.UUID `json:"tenant_id"`
 	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
@@ -729,12 +724,8 @@ type McpServer struct {
 	ToolAllowlist []string `json:"tool_allowlist"`
 	// MCP 风险等级
 	RiskLevel string `json:"risk_level"`
-	// MCP 状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// MCP 扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// MCP 禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// MCP 软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建 MCP 定义的用户 ID
@@ -1237,12 +1228,8 @@ type ProjectMcpBinding struct {
 	McpServerID uuid.UUID `json:"mcp_server_id"`
 	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
 	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
-	// 绑定状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// 绑定扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// 绑定禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// 绑定软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建绑定的用户 ID
@@ -1925,8 +1912,6 @@ type RuntimeCapability struct {
 	Metadata []byte `json:"metadata"`
 	// Runtime 能力最近上报时间
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
-	// Runtime 能力禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// Runtime 能力归档时间
 	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
 	// Runtime 能力首次上报时间
@@ -2439,12 +2424,8 @@ type TeamMcpBinding struct {
 	McpServerID uuid.UUID `json:"mcp_server_id"`
 	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
 	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
-	// 绑定状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// 绑定扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// 绑定禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// 绑定软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建绑定的用户 ID

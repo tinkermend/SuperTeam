@@ -440,7 +440,7 @@ func (q *Queries) GetActiveRuntimeSessionByLookupHash(ctx context.Context, token
 }
 
 const GetRuntimeCapability = `-- name: GetRuntimeCapability :one
-SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
 FROM runtime_capabilities
 WHERE tenant_id = $1::uuid
   AND runtime_node_id = $2::uuid
@@ -482,7 +482,6 @@ func (q *Queries) GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabi
 		&i.HealthStatus,
 		&i.Metadata,
 		&i.LastSeenAt,
-		&i.DisabledAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -612,7 +611,7 @@ func (q *Queries) ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID u
 }
 
 const ListRuntimeCapabilities = `-- name: ListRuntimeCapabilities :many
-SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
 FROM runtime_capabilities
 WHERE tenant_id = $1::uuid
   AND runtime_node_id = $2::uuid
@@ -652,7 +651,6 @@ func (q *Queries) ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCa
 			&i.HealthStatus,
 			&i.Metadata,
 			&i.LastSeenAt,
-			&i.DisabledAt,
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1095,7 +1093,7 @@ ON CONFLICT (tenant_id, runtime_node_id, capability_type, capability_key) DO UPD
     metadata = EXCLUDED.metadata,
     last_seen_at = EXCLUDED.last_seen_at,
     updated_at = NOW()
-RETURNING id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+RETURNING id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
 `
 
 type UpsertRuntimeCapabilityParams struct {
@@ -1155,7 +1153,6 @@ func (q *Queries) UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntime
 		&i.HealthStatus,
 		&i.Metadata,
 		&i.LastSeenAt,
-		&i.DisabledAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,

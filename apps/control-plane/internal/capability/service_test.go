@@ -39,7 +39,6 @@ func (r *serviceRepo) CreateMCPServerDefinition(_ context.Context, req CreateMCP
 		URL:             req.URL,
 		AuthStrategy:    req.AuthStrategy,
 		RequiredEnvVars: req.RequiredEnvVars,
-		Status:          "active",
 	}, nil
 }
 
@@ -63,7 +62,7 @@ func (r *serviceRepo) DeleteMCPServerDefinition(context.Context, DeleteMCPServer
 
 func (r *serviceRepo) CreateTeamMCPBinding(_ context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error) {
 	teamID := req.TeamID
-	return MCPBinding{ID: uuid.New(), TenantID: req.TenantID, TeamID: &teamID, MCPServerID: req.MCPServerID, Status: "active", SourceScope: "team"}, nil
+	return MCPBinding{ID: uuid.New(), TenantID: req.TenantID, TeamID: &teamID, MCPServerID: req.MCPServerID, SourceScope: "team"}, nil
 }
 
 func (r *serviceRepo) ListTeamMCPBindings(context.Context, TeamScopedRequest) ([]MCPBinding, error) {
@@ -78,7 +77,7 @@ func (r *serviceRepo) CreateEmployeeMCPBindingV2(_ context.Context, req CreateEm
 	r.createdV2Binding = req
 	r.createdV2BindingHit = true
 	employeeID := req.DigitalEmployeeID
-	return MCPBinding{ID: uuid.New(), TenantID: req.TenantID, DigitalEmployeeID: &employeeID, MCPServerID: req.MCPServerID, Status: "active", SourceScope: "employee"}, nil
+	return MCPBinding{ID: uuid.New(), TenantID: req.TenantID, DigitalEmployeeID: &employeeID, MCPServerID: req.MCPServerID, SourceScope: "employee"}, nil
 }
 
 func (r *serviceRepo) ListEmployeeMCPBindingsV2(context.Context, EmployeeScopedRequest) ([]MCPBinding, error) {
@@ -112,7 +111,6 @@ func (r *serviceRepo) PutProjectMCPBindings(_ context.Context, tenantID, project
 			ProjectID:        &pid,
 			MCPServerID:      item.MCPServerID,
 			CredentialEnvVar: item.CredentialEnvVar,
-			Status:           "active",
 			SourceScope:      "project",
 		})
 	}
@@ -165,7 +163,6 @@ func (r *serviceRepo) seedDefinition(tenantID uuid.UUID, serverKey string) uuid.
 		TenantID:  tenantID,
 		Name:      serverKey,
 		ServerKey: serverKey,
-		Status:    "active",
 	}
 	return id
 }
@@ -317,7 +314,6 @@ func TestServiceCreateEmployeeMCPBindingV2ComputesMissingEnvPreflight(t *testing
 			URL:             "https://api.githubcopilot.com/mcp/",
 			AuthStrategy:    MCPAuthStrategyBearerEnv,
 			RequiredEnvVars: []string{"GITHUB_TOKEN"},
-			Status:          "active",
 		},
 		configuredEnvVars: nil, // employee has not configured GITHUB_TOKEN
 	}
@@ -341,28 +337,6 @@ func TestServiceCreateEmployeeMCPBindingV2ComputesMissingEnvPreflight(t *testing
 	}
 	if binding.PreflightStatus() != MCPBindingStatusBlockedMissingEnv {
 		t.Fatalf("expected blocked_missing_env, got %q", binding.PreflightStatus())
-	}
-}
-
-func TestServiceCreateEmployeeMCPBindingV2RejectsDisabledMCP(t *testing.T) {
-	tenantID := uuid.New()
-	serverID := uuid.New()
-	repo := &serviceRepo{
-		mcpDefinition: MCPDefinition{ID: serverID, TenantID: tenantID, Status: "disabled"},
-	}
-	svc := NewService(repo, nil)
-
-	_, err := svc.CreateEmployeeMCPBindingV2(context.Background(), CreateEmployeeMCPBindingV2Request{
-		TenantID:          tenantID,
-		DigitalEmployeeID: uuid.New(),
-		UserID:            uuid.New(),
-		MCPServerID:       serverID,
-	})
-	if err == nil || !strings.Contains(err.Error(), "not active") {
-		t.Fatalf("expected not-active error, got %v", err)
-	}
-	if repo.createdV2BindingHit {
-		t.Fatalf("disabled mcp must not create a binding")
 	}
 }
 
@@ -494,8 +468,6 @@ func TestServicePutProjectMCPBindingsRejectsInvalidItems(t *testing.T) {
 	tenantID := uuid.New()
 	repo := &serviceRepo{}
 	activeID := repo.seedDefinition(tenantID, "github-mcp")
-	disabledID := uuid.New()
-	repo.definitions[disabledID] = MCPDefinition{ID: disabledID, TenantID: tenantID, ServerKey: "disabled-mcp", Status: "disabled"}
 	service := NewService(repo, nil)
 
 	tests := []struct {
@@ -517,11 +489,6 @@ func TestServicePutProjectMCPBindingsRejectsInvalidItems(t *testing.T) {
 			name:    "unknown server",
 			items:   []ProjectMCPBindingInput{{MCPServerID: uuid.New()}},
 			wantErr: "not found",
-		},
-		{
-			name:    "inactive server",
-			items:   []ProjectMCPBindingInput{{MCPServerID: disabledID}},
-			wantErr: "mcp server is not active",
 		},
 		{
 			name:    "invalid credential env var",

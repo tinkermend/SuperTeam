@@ -531,14 +531,8 @@ func (s *Service) EvaluateEmployeeSkillMCPDependencies(ctx context.Context, req 
 }
 
 func (s *Service) requireActiveMCPDefinition(ctx context.Context, tenantID, serverID uuid.UUID) (MCPDefinition, error) {
-	definition, err := s.repository.GetMCPServerDefinition(ctx, tenantID, serverID)
-	if err != nil {
-		return MCPDefinition{}, err
-	}
-	if definition.Status != "active" {
-		return MCPDefinition{}, fmt.Errorf("%w: mcp server is not active", ErrInvalidInput)
-	}
-	return definition, nil
+	// 注册表定义只有创建/删除两态（迁移 087）：Get 按 deleted_at 过滤，取到即活跃。
+	return s.repository.GetMCPServerDefinition(ctx, tenantID, serverID)
 }
 
 func (s *Service) missingEnvVarsForEmployee(ctx context.Context, tenantID, employeeID uuid.UUID, required []string) ([]string, error) {

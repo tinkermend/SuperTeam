@@ -112,7 +112,6 @@ func (r *PgRepository) CreateTeamMCPBinding(ctx context.Context, req CreateTeamM
 		TeamID:           &teamID,
 		MCPServerID:      row.McpServerID,
 		CredentialEnvVar: row.CredentialEnvVar.String,
-		Status:           row.Status,
 		SourceScope:      "team",
 		CreatedAt:        timeFromTimestamptz(row.CreatedAt),
 		UpdatedAt:        timeFromTimestamptz(row.UpdatedAt),
@@ -139,7 +138,6 @@ func (r *PgRepository) ListTeamMCPBindings(ctx context.Context, req TeamScopedRe
 			TeamID:           &teamID,
 			MCPServerID:      row.McpServerID,
 			CredentialEnvVar: row.CredentialEnvVar.String,
-			Status:           row.Status,
 			ServerName:       row.ServerName,
 			ServerKey:        row.ServerKey,
 			URL:              row.Url,
@@ -188,7 +186,6 @@ func (r *PgRepository) CreateEmployeeMCPBindingV2(ctx context.Context, req Creat
 		DigitalEmployeeID: &employeeID,
 		MCPServerID:       row.McpServerID,
 		CredentialEnvVar:  row.CredentialEnvVar.String,
-		Status:            row.Status,
 		SourceScope:       "employee",
 		CreatedAt:         timeFromTimestamptz(row.CreatedAt),
 		UpdatedAt:         timeFromTimestamptz(row.UpdatedAt),
@@ -215,7 +212,6 @@ func (r *PgRepository) ListEmployeeMCPBindingsV2(ctx context.Context, req Employ
 			DigitalEmployeeID: &employeeID,
 			MCPServerID:       row.McpServerID,
 			CredentialEnvVar:  row.CredentialEnvVar.String,
-			Status:            row.Status,
 			ServerName:        row.ServerName,
 			ServerKey:         row.ServerKey,
 			URL:               row.Url,
@@ -291,7 +287,6 @@ func (r *PgRepository) ListProjectMCPBindings(ctx context.Context, req ProjectSc
 			ProjectID:        &projectID,
 			MCPServerID:      row.McpServerID,
 			CredentialEnvVar: row.CredentialEnvVar.String,
-			Status:           row.Status,
 			ServerName:       row.ServerName,
 			ServerKey:        row.ServerKey,
 			URL:              row.Url,
@@ -421,7 +416,6 @@ func mcpDefinitionFromQuery(row queries.McpServer) MCPDefinition {
 		ProviderVisibility: unmarshalProviderVisibility(row.ProviderVisibility),
 		ToolAllowlist:      row.ToolAllowlist,
 		RiskLevel:          row.RiskLevel,
-		Status:             row.Status,
 		CreatedBy:          uuidPtrFromNull(row.CreatedBy),
 		CreatedAt:          timeFromTimestamptz(row.CreatedAt),
 		UpdatedAt:          timeFromTimestamptz(row.UpdatedAt),
@@ -471,7 +465,7 @@ func (r *PgRepository) ListSkillMCPDependencies(ctx context.Context, tenantID, s
 	}
 	deps := make([]SkillMCPDependency, 0, len(rows))
 	for _, row := range rows {
-		deps = append(deps, skillMCPDependencyFromRow(row.ID, row.TenantID, row.SkillID, row.McpServerID, row.Note, timeFromTimestamptz(row.CreatedAt), row.ServerKey, row.ServerName, row.AuthStrategy, row.RiskLevel, row.ServerStatus))
+		deps = append(deps, skillMCPDependencyFromRow(row.ID, row.TenantID, row.SkillID, row.McpServerID, row.Note, timeFromTimestamptz(row.CreatedAt), row.ServerKey, row.ServerName, row.AuthStrategy, row.RiskLevel))
 	}
 	return deps, nil
 }
@@ -525,16 +519,16 @@ func (r *PgRepository) ListSkillMCPDependenciesForSkills(ctx context.Context, te
 	}
 	deps := make([]SkillMCPDependency, 0, len(rows))
 	for _, row := range rows {
-		deps = append(deps, skillMCPDependencyFromRow(row.ID, row.TenantID, row.SkillID, row.McpServerID, row.Note, timeFromTimestamptz(row.CreatedAt), row.ServerKey, row.ServerName, row.AuthStrategy, row.RiskLevel, row.ServerStatus))
+		deps = append(deps, skillMCPDependencyFromRow(row.ID, row.TenantID, row.SkillID, row.McpServerID, row.Note, timeFromTimestamptz(row.CreatedAt), row.ServerKey, row.ServerName, row.AuthStrategy, row.RiskLevel))
 	}
 	return deps, nil
 }
 
-func skillMCPDependencyFromRow(id, tenantID, skillID, serverID uuid.UUID, note string, createdAt time.Time, serverKey, serverName, authStrategy, riskLevel, serverStatus string) SkillMCPDependency {
+func skillMCPDependencyFromRow(id, tenantID, skillID, serverID uuid.UUID, note string, createdAt time.Time, serverKey, serverName, authStrategy, riskLevel string) SkillMCPDependency {
 	return SkillMCPDependency{
 		ID: id, TenantID: tenantID, SkillID: skillID, MCPServerID: serverID,
 		Note: note, CreatedAt: createdAt, ServerKey: serverKey, ServerName: serverName,
-		AuthStrategy: MCPAuthStrategy(authStrategy), RiskLevel: riskLevel, ServerStatus: serverStatus,
+		AuthStrategy: MCPAuthStrategy(authStrategy), RiskLevel: riskLevel,
 	}
 }
 

@@ -191,9 +191,7 @@ RETURNING id;
 
 -- name: SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete :many
 UPDATE digital_employee_mcp_bindings_v2
-SET status = 'disabled',
-    disabled_at = COALESCE(disabled_at, sqlc.arg('deleted_at')::timestamptz),
-    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
+SET deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
     updated_at = sqlc.arg('deleted_at')::timestamptz
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
@@ -288,7 +286,6 @@ WHERE de.id = sqlc.arg('digital_employee_id')::uuid
         AND rc.available = true
         AND rc.status = 'healthy'
         AND rc.health_status = 'healthy'
-        AND rc.disabled_at IS NULL
         AND rc.archived_at IS NULL
   )
 ON CONFLICT (tenant_id, digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
@@ -741,7 +738,6 @@ SELECT
           AND rc.available = true
           AND rc.status = 'healthy'
           AND rc.health_status = 'healthy'
-          AND rc.disabled_at IS NULL
           AND rc.archived_at IS NULL
     ) AS provider_healthy
 FROM digital_employees de
@@ -850,7 +846,6 @@ LEFT JOIN LATERAL (
       AND rc.available = true
       AND rc.status = 'healthy'
       AND rc.health_status = 'healthy'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
     LIMIT 1
@@ -862,7 +857,6 @@ LEFT JOIN LATERAL (
       AND rc.runtime_node_id = rn.id
       AND rc.capability_type = 'workspace'
       AND rc.available = true
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY
       CASE WHEN rc.capability_key = 'base-dir' THEN 0 ELSE 1 END,
@@ -978,7 +972,6 @@ LEFT JOIN LATERAL (
       AND rc.available = true
       AND rc.status = 'healthy'
       AND rc.health_status = 'healthy'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
     LIMIT 1
@@ -990,7 +983,6 @@ LEFT JOIN LATERAL (
       AND rc.runtime_node_id = rn.id
       AND rc.capability_type = 'workspace'
       AND rc.available = true
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY
       CASE WHEN rc.capability_key = 'base-dir' THEN 0 ELSE 1 END,
@@ -1195,7 +1187,6 @@ provider_capabilities AS (
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
 ),
@@ -1397,7 +1388,6 @@ provider_capabilities AS (
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
 ),
@@ -1941,7 +1931,6 @@ provider_capabilities AS (
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
 ),

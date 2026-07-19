@@ -384,10 +384,7 @@ ORDER BY s.slug ASC
 	}
 	mcpServers := make([]string, 0, len(mcpRows))
 	for _, row := range mcpRows {
-		if strings.EqualFold(strings.TrimSpace(row.Status), "active") &&
-			strings.EqualFold(strings.TrimSpace(row.ServerStatus), "active") {
-			mcpServers = append(mcpServers, row.ServerKey)
-		}
+		mcpServers = append(mcpServers, row.ServerKey)
 	}
 
 	return TeamBaseline{

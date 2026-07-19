@@ -1,4 +1,4 @@
-h1:V3130z1RR1OgzclgQPKJJWTOi0NAHSQKGfsvSMxG3w4=
+h1:2DeiTD6pGEIdl1cKH81rAtGuix9Xt1mLus9lW3wmadc=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -84,4 +84,5 @@ h1:V3130z1RR1OgzclgQPKJJWTOi0NAHSQKGfsvSMxG3w4=
 084_drop_task_state_history.sql h1:HFrGriFQpSWS86UgBYeki1wpxNEraJ897RoFR8AMCmU=
 085_drop_retired_feature_tables.sql h1:suSsTuEumPJ5ZYR2stk+pq8IMGpSjn7sfvI1FWX0TKU=
 086_drop_skill_installations.sql h1:sT3hNc+V6pY+SngW54CPDlQ3lJzeIFL7JP4V3s+2220=
-087_create_system_config_overrides.sql h1:dlIm8qwG4ZbvixZ4kTrrVqGeDddr+tE9hAbEQpD+nCI=
+087_drop_mcp_disable_columns.sql h1:2fAtHvqkLEvMQ4YxEqhjTKxiVA89XDmp30/ehhlWfeI=
+088_create_system_config_overrides.sql h1:NR9R7qwuxRnMVk1ZfO6y+vzbJNc3uhboU0XZF15rl2Y=
