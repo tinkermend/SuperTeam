@@ -431,7 +431,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         {teams.isError ? (
           <Alert className="mb-4" variant="destructive">
             <AlertTitle>团队列表加载失败</AlertTitle>
-            <AlertDescription>{getErrorMessage(teams.error)}</AlertDescription>
+            <AlertDescription>{getErrorMessage(teams.error, "加载团队列表失败，请稍后重试。")}</AlertDescription>
           </Alert>
         ) : null}
         {!teams.isLoading && !teams.isError && teamOptions.length === 0 ? (
@@ -449,7 +449,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         {avatarAssets.isError ? (
           <Alert className="mb-4" variant="destructive">
             <AlertTitle>头像库加载失败</AlertTitle>
-            <AlertDescription>{getErrorMessage(avatarAssets.error)}</AlertDescription>
+            <AlertDescription>{getErrorMessage(avatarAssets.error, "加载头像库失败，请稍后重试。")}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -535,7 +535,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               </div>
 
               {createEmployee.isError ? (
-                <p className="px-4 text-sm text-v3-danger">{getErrorMessage(createEmployee.error)}</p>
+                <p className="px-4 text-sm text-v3-danger">{getErrorMessage(createEmployee.error, CREATE_EMPLOYEE_FALLBACK_MESSAGE)}</p>
               ) : null}
               <div
                 className="flex justify-between gap-3 border-t border-[color:var(--v3-aurora-hairline)] p-4"
@@ -1229,7 +1229,7 @@ function ConfirmCreationStep({
         </section>
       </div>
       {createError ? (
-        <p className="px-4 pb-2 text-sm text-v3-danger">{getErrorMessage(createError)}</p>
+        <p className="px-4 pb-2 text-sm text-v3-danger">{getErrorMessage(createError, CREATE_EMPLOYEE_FALLBACK_MESSAGE)}</p>
       ) : null}
       <div className="flex justify-between gap-3 border-t border-[color:var(--v3-aurora-hairline)] p-4">
         <V3Button disabled={creating} onClick={onBack} type="button" variant="glass">
@@ -2099,8 +2099,11 @@ function checkStatusLabel(status: string) {
   return "阻断";
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "请求失败";
+// getErrorMessage 统一走 apiErrorMessage：结构化 coded error 展示后端权威中文，
+// 未结构化时用调用方给定的中文兜底，绝不透传英文错误壳（如 "request failed
+// with status 500"）。加载类横幅与创建横幅共用此出口。
+function getErrorMessage(error: unknown, fallback = "请求失败，请稍后重试。") {
+  return apiErrorMessage(error, fallback);
 }
 
 // 后端未返回结构化 code 时的兜底文案；有 code 时用后端权威中文 message（apiErrorMessage）。
