@@ -420,6 +420,7 @@ type Project struct {
 	Goal                   string
 	Status                 ProjectStatus
 	HumanOwnerUserID       uuid.UUID
+	HumanOwnerUserIDs      []uuid.UUID
 	CoordinationWorkflowID string
 	CoordinationStatus     string
 	CoordinationPolicy     map[string]any

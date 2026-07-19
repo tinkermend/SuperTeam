@@ -779,6 +779,8 @@ type Project struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 项目绑定的场景模板 key，可空 = generic 兜底（行为同无模板）
 	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
+	// 项目人类负责人ID集合(平级,至少一个;任一可审批/验收/兜底路由)
+	HumanOwnerUserIds []uuid.UUID `json:"human_owner_user_ids"`
 }
 
 // 项目验收记录表，保存人类验收结论、证据引用和未解决风险

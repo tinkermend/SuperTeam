@@ -93,6 +93,7 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		Goal:                   textOrNull(req.Goal),
 		Status:                 string(ProjectStatusRunning),
 		HumanOwnerUserID:       req.HumanOwnerUserID,
+		HumanOwnerUserIds:      []uuid.UUID{req.HumanOwnerUserID},
 		CoordinationWorkflowID: textOrNull(workflowID),
 		CoordinationStatus:     textOrNull("registered"),
 		CoordinationPolicy:     coordinationPolicy,
@@ -281,6 +282,7 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 		Description:          textOrNull(req.Description),
 		Goal:                 textOrNull(req.Goal),
 		HumanOwnerUserID:     nullUUIDIfNotNil(req.HumanOwnerUserID),
+		HumanOwnerUserIds:    mirrorHumanOwnerIDs(req.HumanOwnerUserID),
 		CoordinationPolicy:   coordinationPolicy,
 		ApprovalPolicy:       approvalPolicy,
 		EvidencePolicy:       evidencePolicy,
@@ -6203,6 +6205,7 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		Goal:                   textValue(row.Goal),
 		Status:                 ProjectStatus(row.Status),
 		HumanOwnerUserID:       row.HumanOwnerUserID,
+		HumanOwnerUserIDs:      row.HumanOwnerUserIds,
 		CoordinationWorkflowID: textValue(row.CoordinationWorkflowID),
 		CoordinationStatus:     textValue(row.CoordinationStatus),
 		CoordinationPolicy:     coordinationPolicy,
@@ -7685,6 +7688,15 @@ func nullUUIDIfNotNil(value uuid.UUID) uuid.NullUUID {
 		return uuid.NullUUID{}
 	}
 	return uuid.NullUUID{UUID: value, Valid: true}
+}
+
+// mirrorHumanOwnerIDs 过渡期(双写)用:单值负责人更新时同步镜像到 human_owner_user_ids
+// 数组(narg,nil 表示 COALESCE 保持原值)。多负责人输入落地后由服务端直接传数组取代。
+func mirrorHumanOwnerIDs(value uuid.UUID) []uuid.UUID {
+	if value == uuid.Nil {
+		return nil
+	}
+	return []uuid.UUID{value}
 }
 
 func ptrUUID(value uuid.NullUUID) *uuid.UUID {

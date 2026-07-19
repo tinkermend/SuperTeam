@@ -1,4 +1,4 @@
-h1:43hkaivWG6KklUvkU/5KTC7vtUm5fQq9qyjKHV7G+80=
+h1:tzUE2oEjDO+dFW76f7jqfZJ+FnYt1pJlO6YcfzzqRis=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -89,3 +89,4 @@ h1:43hkaivWG6KklUvkU/5KTC7vtUm5fQq9qyjKHV7G+80=
 20260719094919_inbox_items_updated_cursor_index.sql h1:ReCaJ5221IKzNwGRqEN2DynAlJxpkamkdsGIkKBlrSo=
 20260719121500_avatar_asset_exclusive.sql h1:PFc28SxFqQvbbdhnbqWifpvnZ/dVabMRDEtQe9Va/Ek=
 20260719124500_drop_employee_policy_columns.sql h1:2EbSgjcdhrMzpHXxk/O233URy5zm49TdN58uMwz9FPA=
+20260720014621_project_multiple_human_owners.sql h1:K9Asz3Cbw54taceCydlfmjL0X51aRDHU0tb9LRtvpoY=
