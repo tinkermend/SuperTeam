@@ -230,6 +230,12 @@ function createConfigFetcher(
     if (url.pathname === "/api/v1/projects/project-1/members" && method === "PUT") {
       return jsonResponse(latestConfig().members);
     }
+    if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (url.pathname === "/api/auth/users" && method === "GET") {
+      return jsonResponse({ items: [] });
+    }
     if (url.pathname === "/api/v1/projects/project-1/tasks" && method === "GET") {
       return jsonResponse([
         {
@@ -300,6 +306,12 @@ async function renderConfigWithClient(fetcher: typeof fetch) {
   );
 
   return { queryClient, screen };
+}
+
+async function openMembersJsonEditor(screen: Awaited<ReturnType<typeof renderConfig>>) {
+  await userEvent.click(
+    screen.getByRole("button", { name: /高级：成员完整替换 JSON/ }),
+  );
 }
 
 describe("ProjectConfigView", () => {
@@ -397,7 +409,7 @@ describe("ProjectConfigView", () => {
     expect(container.querySelectorAll('[data-slot="v3-tab"]').length).toBeGreaterThan(
       0,
     );
-    await userEvent.fill(screen.getByLabelText("人类 Owner 用户 ID"), "human-owner-2");
+    await userEvent.fill(screen.getByLabelText("项目负责人"), "human-owner-2");
     await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
     await expect.element(screen.getByLabelText("协调策略 JSON")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("协调策略 JSON"), '{"cadence":"hourly"}');
@@ -423,6 +435,7 @@ describe("ProjectConfigView", () => {
     const screen = await renderConfig(fetcher);
 
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await openMembersJsonEditor(screen);
     await userEvent.fill(
       screen.getByLabelText("项目成员 JSON"),
       JSON.stringify([
@@ -467,6 +480,7 @@ describe("ProjectConfigView", () => {
       .toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await openMembersJsonEditor(screen);
     await userEvent.fill(screen.getByLabelText("项目成员 JSON"), "[]");
 
     await expect
@@ -501,6 +515,7 @@ describe("ProjectConfigView", () => {
       '{"cadence":"hourly"}',
     );
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await openMembersJsonEditor(screen);
     await userEvent.fill(
       screen.getByLabelText("项目成员 JSON"),
       JSON.stringify([
@@ -519,6 +534,7 @@ describe("ProjectConfigView", () => {
       .element(screen.getByLabelText("协调策略 JSON"))
       .toHaveValue('{"cadence":"hourly"}');
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await openMembersJsonEditor(screen);
     await expect
       .element(screen.getByLabelText("项目成员 JSON"))
       .toHaveValue(
@@ -541,21 +557,28 @@ describe("ProjectConfigView", () => {
       .element(screen.getByRole("button", { name: "保存配置" }))
       .toBeDisabled();
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await openMembersJsonEditor(screen);
     await expect
       .element(screen.getByRole("button", { name: "保存成员池" }))
       .toBeDisabled();
   });
 
-  it("renders member pool and task history as v3 work surfaces", async () => {
+  it("renders humanized members and task history as v3 work surfaces", async () => {
     const fetcher = createConfigFetcher();
     const screen = await renderConfig(fetcher);
 
-    await userEvent.click(screen.getByRole("tab", { name: "数字员工池" }));
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
 
     expect(
       screen.container.querySelector('[data-slot="v3-work-surface"]'),
     ).toBeTruthy();
-    expect(screen.container.querySelector('[data-slot="v3-table"]')).toBeTruthy();
+    await expect
+      .element(screen.getByRole("heading", { name: "人类成员" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "数字员工" }))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("负责人甲").first()).toBeInTheDocument();
     await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "任务历史" }));

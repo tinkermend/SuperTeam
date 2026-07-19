@@ -9,19 +9,27 @@ import {
   Archive,
   Bot,
   Check,
+  ChevronDown,
   ClipboardList,
-  FileArchive,
+  ExternalLink,
   GitBranch,
-  ShieldCheck,
   UserRound,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   IconTile,
+  ObjectRef,
   SoftCard,
   StatusPill,
   V3Button,
@@ -33,7 +41,11 @@ import {
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
+import { EmployeeAvatar } from "@/features/employees/avatar";
+import { employeeAvatarAsset } from "@/features/employees/avatar-library";
+import { listUsers } from "@/lib/api/auth";
 import type { ApiClientOptions } from "@/lib/api/client";
+import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
 import {
   getProjectConfig,
   getProjectConfigRevision,
@@ -43,11 +55,18 @@ import {
   updateProjectConfig,
   type ProjectConfig,
   type ProjectConfigRevision,
+  type ProjectMember,
   type ProjectMemberInput,
   type ProjectTask,
   type UpdateProjectConfigInput,
 } from "@/lib/api/projects";
-import { projectStatusLabel, statusLabel as genericStatusLabel, taskStatusLabel } from "@/lib/status-labels";
+import {
+  principalTypeLabel,
+  projectRoleLabel,
+  projectStatusLabel,
+  statusLabel as genericStatusLabel,
+  taskStatusLabel,
+} from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectManagementShell } from "./project-management-shell";
 import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
@@ -113,6 +132,33 @@ export function ProjectConfigView({
     queryFn: () => listProjectConfigRevisions(apiOptions, projectId, { limit: 20 }),
     placeholderData: keepPreviousData,
   });
+  const employeesQuery = useQuery({
+    queryKey: ["digital-employees"],
+    queryFn: () => listDigitalEmployees(apiOptions),
+    placeholderData: keepPreviousData,
+  });
+  const employeeById = useMemo(() => {
+    const map = new Map<string, DigitalEmployee>();
+    for (const employee of employeesQuery.data ?? []) {
+      map.set(employee.id, employee);
+    }
+    return map;
+  }, [employeesQuery.data]);
+  const usersQuery = useQuery({
+    queryKey: ["auth-users", "member-name-lookup"],
+    queryFn: () => listUsers({ ...apiOptions, limit: 200 }),
+    placeholderData: keepPreviousData,
+  });
+  const userNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const user of usersQuery.data?.items ?? []) {
+      const name = user.display_name?.trim() || user.username?.trim();
+      if (name) {
+        map.set(user.id, name);
+      }
+    }
+    return map;
+  }, [usersQuery.data]);
 
   const [draft, setDraft] = useState<ConfigDraft>(() => emptyConfigDraft());
   const [memberDraft, setMemberDraft] = useState<MemberDraft>({ members: "[]" });
@@ -207,6 +253,28 @@ export function ProjectConfigView({
 
   const config = configQuery.data;
   const isArchived = config?.project.status === "archived";
+
+  const resolvePrincipalName = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const member of config?.members ?? []) {
+      const name =
+        member.display_name_snapshot?.trim() ||
+        (member.principal_type === "digital_employee"
+          ? employeeById.get(member.principal_id)?.name
+          : userNameById.get(member.principal_id));
+      if (name) {
+        byId.set(member.principal_id, name);
+      }
+    }
+    return (id: string | undefined | null): string | undefined => {
+      if (!id) return undefined;
+      const key = id.trim();
+      return byId.get(key) ?? userNameById.get(key);
+    };
+  }, [config?.members, employeeById, userNameById]);
+  const ownerName = config
+    ? resolvePrincipalName(config.project.human_owner_user_id)
+    : undefined;
 
   const updateMutation = useMutation({
     mutationFn: (input: UpdateProjectConfigInput) =>
@@ -303,7 +371,7 @@ export function ProjectConfigView({
   return (
     <ProjectManagementShell
       title="项目配置"
-      description="成员、数字员工池、协调策略、审批规则和证据归档"
+      description="成员、MCP 绑定、协调策略与配置修订历史"
       back={
         <ShellPageHeaderBack
           ariaLabel="返回项目运行详情"
@@ -381,6 +449,7 @@ export function ProjectConfigView({
             revisions={projectConfigRevisions}
             selectedRevision={selectedRevision}
             selectedRevisionId={selectedRevisionId}
+            resolveUserName={resolvePrincipalName}
             onSelectRevision={(revisionId) =>
               setRevisionSelection({ projectId, revisionId })
             }
@@ -393,11 +462,8 @@ export function ProjectConfigView({
             >
               <ProjectConfigTab value="overview">概览</ProjectConfigTab>
               <ProjectConfigTab value="members">成员</ProjectConfigTab>
-              <ProjectConfigTab value="digital">数字员工池</ProjectConfigTab>
               <ProjectConfigTab value="mcp">MCP 绑定</ProjectConfigTab>
               <ProjectConfigTab value="coordination">协调策略</ProjectConfigTab>
-              <ProjectConfigTab value="approval">审批规则</ProjectConfigTab>
-              <ProjectConfigTab value="evidence">证据归档</ProjectConfigTab>
               <ProjectConfigTab value="history">任务历史</ProjectConfigTab>
             </TabsList>
 
@@ -416,7 +482,7 @@ export function ProjectConfigView({
                       }
                     />
                   </Field>
-                  <Field label="人类 Owner 用户 ID">
+                  <Field label="项目负责人">
                     <Input
                       disabled={configFieldsDisabled}
                       value={draft.humanOwnerUserID}
@@ -427,6 +493,10 @@ export function ProjectConfigView({
                         }))
                       }
                     />
+                    <span className="mt-1 flex items-center gap-1.5 text-[12px] text-v3-ink-3">
+                      当前：
+                      <ObjectRef id={draft.humanOwnerUserID} name={ownerName} />
+                    </span>
                   </Field>
                   <Field label="目标">
                     <Textarea
@@ -460,23 +530,36 @@ export function ProjectConfigView({
             </TabsContent>
 
             <TabsContent value="members">
-              <MemberJsonPanel
-                disabled={isArchived || isMembersSaving}
-                error={memberError || replaceMembersMutation.error?.message}
-                isSaving={isMembersSaving}
-                members={memberDraft.members}
-                showWorkflowImpactNotice={isMembersDirty}
-                onMembersChange={updateMemberDraft}
-                onSave={saveMembers}
-              />
-            </TabsContent>
-
-            <TabsContent value="digital">
-              <MembersPanel
-                icon={<Bot />}
-                title="数字员工池"
-                members={config.digital_employee_pool}
-              />
+              <div className="grid gap-4">
+                <MembersHumanizedPanel
+                  digitalMembers={config.digital_employee_pool}
+                  employeeById={employeeById}
+                  humanMembers={config.human_roles}
+                  ownerUserID={config.project.human_owner_user_id}
+                  resolveName={resolvePrincipalName}
+                />
+                <Collapsible className="grid gap-3">
+                  <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-[14px] border border-v3-line bg-v3-card px-5 py-3 text-left shadow-v3">
+                    <div className="flex items-center gap-2">
+                      <UserRound className="size-4 text-v3-ink-3" />
+                      <span className="font-semibold text-v3-ink">高级：成员完整替换 JSON</span>
+                      <span className="text-[12px] text-v3-ink-3">按 principal_id 全量覆盖，仅供排障</span>
+                    </div>
+                    <ChevronDown className="size-4 text-v3-ink-3 transition-transform group-data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <MemberJsonPanel
+                      disabled={isArchived || isMembersSaving}
+                      error={memberError || replaceMembersMutation.error?.message}
+                      isSaving={isMembersSaving}
+                      members={memberDraft.members}
+                      showWorkflowImpactNotice={isMembersDirty}
+                      onMembersChange={updateMemberDraft}
+                      onSave={saveMembers}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
             </TabsContent>
 
             <TabsContent value="mcp">
@@ -488,37 +571,11 @@ export function ProjectConfigView({
             </TabsContent>
 
             <TabsContent value="coordination">
-              <PolicyPanel
+              <CoordinationPolicyPanel
                 disabled={configFieldsDisabled}
-                icon={<GitBranch />}
-                label="协调策略 JSON"
                 value={draft.coordinationPolicy}
                 onChange={(value) =>
                   updateDraft((current) => ({ ...current, coordinationPolicy: value }))
-                }
-              />
-            </TabsContent>
-
-            <TabsContent value="approval">
-              <PolicyPanel
-                disabled={configFieldsDisabled}
-                icon={<ShieldCheck />}
-                label="审批规则 JSON"
-                value={draft.approvalPolicy}
-                onChange={(value) =>
-                  updateDraft((current) => ({ ...current, approvalPolicy: value }))
-                }
-              />
-            </TabsContent>
-
-            <TabsContent value="evidence">
-              <PolicyPanel
-                disabled={configFieldsDisabled}
-                icon={<FileArchive />}
-                label="证据归档 JSON"
-                value={draft.evidencePolicy}
-                onChange={(value) =>
-                  updateDraft((current) => ({ ...current, evidencePolicy: value }))
                 }
               />
             </TabsContent>
@@ -680,33 +737,128 @@ function ProjectConfigTab({
   );
 }
 
-function PolicyPanel({
+function CoordinationPolicyPanel({
   disabled,
-  icon,
-  label,
   onChange,
   value,
 }: {
   disabled?: boolean;
-  icon: ReactNode;
-  label: string;
   onChange: (value: string) => void;
   value: string;
 }) {
+  const parsed = useMemo<Record<string, unknown> | null>(() => {
+    try {
+      const result = JSON.parse(value || "{}") as unknown;
+      if (!result || typeof result !== "object" || Array.isArray(result)) {
+        return null;
+      }
+      return result as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }, [value]);
+  const invalid = parsed === null;
+
+  function setKey(key: string, next: unknown) {
+    const base: Record<string, unknown> = { ...(parsed ?? {}) };
+    if (next === undefined) {
+      delete base[key];
+    } else {
+      base[key] = next;
+    }
+    onChange(JSON.stringify(base, null, 2));
+  }
+
+  const requireReview = parsed?.require_human_review_for_new_demands === true;
+  const maxIterationsRaw = parsed?.max_plan_iterations;
+  const maxIterations =
+    typeof maxIterationsRaw === "number" && Number.isFinite(maxIterationsRaw)
+      ? String(maxIterationsRaw)
+      : "";
+  const controlsDisabled = disabled || invalid;
+
   return (
-    <SoftCard className="p-5">
-      <div className="mb-4 flex items-center gap-2">
-        <span className="text-v3-brand [&_svg]:size-4">{icon}</span>
-        <h3 className="font-semibold text-v3-ink">{label}</h3>
-      </div>
-      <Textarea
-        aria-label={label}
-        className="min-h-[280px] font-mono text-xs"
-        disabled={disabled}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </SoftCard>
+    <div className="grid gap-4">
+      <SoftCard className="p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-v3-brand [&_svg]:size-4">
+            <GitBranch />
+          </span>
+          <h3 className="font-semibold text-v3-ink">协调策略</h3>
+        </div>
+        <p className="mb-4 text-sm text-v3-ink-2">
+          驱动项目协调线程的规划与门禁行为，保存后对后续新任务生效。
+        </p>
+        {invalid ? (
+          <Alert className="mb-4 border-v3-warn/30 bg-v3-warn-soft text-v3-ink">
+            <GitBranch className="text-v3-warn" />
+            <AlertTitle>协调策略 JSON 无法解析</AlertTitle>
+            <AlertDescription>请在下方「高级」区修正 JSON 后再使用上方开关。</AlertDescription>
+          </Alert>
+        ) : null}
+        <div className="grid gap-4">
+          <label className="flex items-start justify-between gap-4 rounded-[12px] border border-v3-line bg-v3-card-soft p-4">
+            <div className="min-w-0">
+              <span className="text-[13px] font-semibold text-v3-ink">新需求需人工复核</span>
+              <p className="mt-0.5 text-[12px] text-v3-ink-3">
+                开启后，协调线程对新提交需求强制人工复核，并将新任务标记为需审批。
+              </p>
+            </div>
+            <Switch
+              aria-label="新需求需人工复核"
+              checked={requireReview}
+              disabled={controlsDisabled}
+              onCheckedChange={(next) =>
+                setKey("require_human_review_for_new_demands", next)
+              }
+            />
+          </label>
+          <div className="grid gap-2 rounded-[12px] border border-v3-line bg-v3-card-soft p-4">
+            <span className="text-[13px] font-semibold text-v3-ink">最大规划迭代次数</span>
+            <p className="text-[12px] text-v3-ink-3">
+              对抗式返工的规划迭代上限（正整数）；留空使用平台默认。
+            </p>
+            <Input
+              className="max-w-[200px]"
+              disabled={controlsDisabled}
+              inputMode="numeric"
+              min={1}
+              type="number"
+              value={maxIterations}
+              onChange={(event) => {
+                const raw = event.target.value.trim();
+                if (!raw) {
+                  setKey("max_plan_iterations", undefined);
+                  return;
+                }
+                const parsedNumber = Number(raw);
+                if (!Number.isInteger(parsedNumber) || parsedNumber < 1) {
+                  return;
+                }
+                setKey("max_plan_iterations", parsedNumber);
+              }}
+            />
+          </div>
+        </div>
+      </SoftCard>
+      <SoftCard className="p-5">
+        <div className="mb-1.5 flex items-center gap-2">
+          <GitBranch className="size-4 text-v3-ink-3" />
+          <h3 className="font-semibold text-v3-ink">完整协调策略 JSON</h3>
+        </div>
+        <p className="mb-3 text-[12px] text-v3-ink-3">
+          上方开关会同步写入此处；其它识别键（adversarial_review_judges / review_gate_conditions /
+          selection_score_threshold 等）在此直接编辑。
+        </p>
+        <Textarea
+          aria-label="协调策略 JSON"
+          className="min-h-[240px] font-mono text-xs"
+          disabled={disabled}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </SoftCard>
+    </div>
   );
 }
 
@@ -759,13 +911,66 @@ function MemberJsonPanel({
   );
 }
 
-function MembersPanel({
+function MembersHumanizedPanel({
+  digitalMembers,
+  employeeById,
+  humanMembers,
+  ownerUserID,
+  resolveName,
+}: {
+  digitalMembers: ProjectMember[];
+  employeeById: Map<string, DigitalEmployee>;
+  humanMembers: ProjectMember[];
+  ownerUserID: string;
+  resolveName: (id: string | undefined | null) => string | undefined;
+}) {
+  return (
+    <div className="grid gap-4">
+      <MemberGroup
+        count={humanMembers.length}
+        emptyLabel="暂无人类成员"
+        icon={<UserRound />}
+        title="人类成员"
+      >
+        {humanMembers.map((member) => (
+          <ConfigMemberRow
+            key={member.id}
+            isOwner={member.principal_id === ownerUserID}
+            member={member}
+            resolvedName={resolveName(member.principal_id)}
+          />
+        ))}
+      </MemberGroup>
+      <MemberGroup
+        count={digitalMembers.length}
+        emptyLabel="暂无数字员工"
+        icon={<Bot />}
+        title="数字员工"
+      >
+        {digitalMembers.map((member) => (
+          <ConfigMemberRow
+            key={member.id}
+            employee={employeeById.get(member.principal_id)}
+            member={member}
+            resolvedName={resolveName(member.principal_id)}
+          />
+        ))}
+      </MemberGroup>
+    </div>
+  );
+}
+
+function MemberGroup({
+  children,
+  count,
+  emptyLabel,
   icon,
-  members,
   title,
 }: {
+  children: ReactNode;
+  count: number;
+  emptyLabel: string;
   icon: ReactNode;
-  members: ProjectConfig["members"];
   title: string;
 }) {
   return (
@@ -775,50 +980,81 @@ function MembersPanel({
           <span className="text-v3-brand [&_svg]:size-4">{icon}</span>
           <h3 className="font-semibold text-v3-ink">{title}</h3>
         </div>
-        <StatusPill tone="mute">{members.length} 个</StatusPill>
+        <StatusPill tone="mute">{count} 个</StatusPill>
       </div>
-      <V3Table>
-        <thead>
-          <tr>
-            <V3Th>成员</V3Th>
-            <V3Th>角色</V3Th>
-            <V3Th>类型</V3Th>
-            <V3Th>状态</V3Th>
-          </tr>
-        </thead>
-        <tbody>
-          {members.length === 0 ? (
-            <tr>
-              <V3Td colSpan={4}>
-                <V3EmptyState title="暂无成员" />
-              </V3Td>
-            </tr>
-          ) : (
-            members.map((member) => (
-              <V3Tr key={member.id}>
-                <V3Td className="min-w-[220px]">
-                  <p className="truncate font-bold text-v3-ink">
-                    {member.display_name_snapshot || member.principal_id}
-                  </p>
-                  <p className="mt-0.5 truncate font-mono text-[12px] text-v3-ink-3">
-                    {member.principal_id}
-                  </p>
-                </V3Td>
-                <V3Td className="whitespace-nowrap text-v3-ink-2">
-                  {member.project_role}
-                </V3Td>
-                <V3Td className="whitespace-nowrap text-v3-ink-2">
-                  {member.principal_type}
-                </V3Td>
-                <V3Td>
-                  <StatusPill tone="mute">{genericStatusLabel(member.status)}</StatusPill>
-                </V3Td>
-              </V3Tr>
-            ))
-          )}
-        </tbody>
-      </V3Table>
+      {count === 0 ? (
+        <V3EmptyState title={emptyLabel} />
+      ) : (
+        <div className="divide-y divide-v3-line">{children}</div>
+      )}
     </WorkSurface>
+  );
+}
+
+function ConfigMemberRow({
+  employee,
+  isOwner,
+  member,
+  resolvedName,
+}: {
+  employee?: DigitalEmployee;
+  isOwner?: boolean;
+  member: ProjectMember;
+  resolvedName?: string;
+}) {
+  const isDigital = member.principal_type === "digital_employee";
+  const name =
+    member.display_name_snapshot?.trim() || employee?.name || resolvedName || undefined;
+  const description = employee?.description?.trim();
+  return (
+    <div className="flex items-start gap-3 p-4">
+      {isDigital ? (
+        <EmployeeAvatar
+          asset={employeeAvatarAsset({
+            id: member.principal_id,
+            metadata: employee?.metadata,
+          })}
+          name={name || member.principal_id}
+          size="sm"
+        />
+      ) : (
+        <IconTile tone="brand" size="sm">
+          <UserRound />
+        </IconTile>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 font-bold text-v3-ink">
+            <ObjectRef id={member.principal_id} name={name} />
+          </span>
+          {isOwner ? <StatusPill tone="info">负责人</StatusPill> : null}
+          <StatusPill tone="mute">{projectRoleLabel(member.project_role)}</StatusPill>
+        </div>
+        {description ? (
+          <p className="mt-1 line-clamp-2 text-sm text-v3-ink-2">{description}</p>
+        ) : null}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-v3-ink-3">
+          <span>{principalTypeLabel(member.principal_type)}</span>
+          <span aria-hidden>·</span>
+          <span>{genericStatusLabel(member.status)}</span>
+          <span aria-hidden>·</span>
+          <span>加入于 {member.created_at ? formatDateTime(member.created_at) : "—"}</span>
+          {isDigital ? (
+            <>
+              <span aria-hidden>·</span>
+              <Link
+                className="inline-flex items-center gap-1 text-v3-brand hover:underline"
+                params={{ employeeId: member.principal_id }}
+                to="/employees/$employeeId"
+              >
+                查看详情
+                <ExternalLink className="size-3" />
+              </Link>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 

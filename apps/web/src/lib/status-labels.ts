@@ -152,6 +152,37 @@ export function riskLevelLabel(level: string | undefined): string {
   return RISK_LEVEL_LABELS[normalized] ?? level;
 }
 
+const PROJECT_ROLE_LABELS: Record<string, string> = {
+  executor: "执行者",
+  leader: "负责人",
+  member: "成员",
+  observer: "观察者",
+  owner: "负责人",
+  reviewer: "评审者",
+};
+
+export function projectRoleLabel(role: string | undefined): string {
+  if (!role) {
+    return "未知";
+  }
+  const normalized = role.trim().toLowerCase();
+  return PROJECT_ROLE_LABELS[normalized] ?? role;
+}
+
+const PRINCIPAL_TYPE_LABELS: Record<string, string> = {
+  digital_employee: "数字员工",
+  human_user: "人类成员",
+  team: "团队",
+};
+
+export function principalTypeLabel(type: string | undefined): string {
+  if (!type) {
+    return "未知";
+  }
+  const normalized = type.trim().toLowerCase();
+  return PRINCIPAL_TYPE_LABELS[normalized] ?? type;
+}
+
 const DELETE_BLOCKER_TYPE_LABELS: Record<string, string> = {
   project_task: "项目任务",
   run: "执行运行",

@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
 import { FileArchive, GitBranch, History, ShieldCheck } from "lucide-react";
 import {
   IconTile,
+  ObjectRef,
   SoftCard,
   StatusPill,
   V3Button,
@@ -18,6 +20,7 @@ type ProjectConfigRevisionHistoryProps = {
   selectedRevision?: ProjectConfigRevision;
   selectedRevisionId?: string;
   onSelectRevision: (revisionId: string) => void;
+  resolveUserName?: (id: string | null | undefined) => string | undefined;
 };
 
 const policySections = [
@@ -47,6 +50,7 @@ export function ProjectConfigRevisionHistory({
   selectedRevision,
   selectedRevisionId,
   onSelectRevision,
+  resolveUserName,
 }: ProjectConfigRevisionHistoryProps) {
   const sortedRevisions = [...revisions].sort(
     (left, right) => (right.revision_number ?? 0) - (left.revision_number ?? 0),
@@ -131,6 +135,7 @@ export function ProjectConfigRevisionHistory({
             {selectedRevision ? (
               <RevisionDetail
                 isDetailLoading={isDetailLoading}
+                resolveUserName={resolveUserName}
                 revision={selectedRevision}
               />
             ) : (
@@ -145,9 +150,11 @@ export function ProjectConfigRevisionHistory({
 
 function RevisionDetail({
   isDetailLoading,
+  resolveUserName,
   revision,
 }: {
   isDetailLoading?: boolean;
+  resolveUserName?: (id: string | null | undefined) => string | undefined;
   revision: ProjectConfigRevision;
 }) {
   const changedSections = revisionChangedSections(revision);
@@ -174,7 +181,19 @@ function RevisionDetail({
         </div>
         <dl className="grid gap-1 text-xs text-v3-ink-2 sm:grid-cols-2 lg:min-w-80">
           <RevisionMeta label="创建时间" value={formatDateTime(revision.created_at)} />
-          <RevisionMeta label="创建人" value={revision.created_by_user_id || "未记录"} />
+          <RevisionMeta
+            label="创建人"
+            value={
+              revision.created_by_user_id ? (
+                <ObjectRef
+                  id={revision.created_by_user_id}
+                  name={resolveUserName?.(revision.created_by_user_id)}
+                />
+              ) : (
+                "未记录"
+              )
+            }
+          />
           <RevisionMeta label="策略指纹" value={revision.policy_fingerprint || "未记录"} />
           <RevisionMeta label="事件 ID" value={revision.created_event_id || "未记录"} />
         </dl>
@@ -220,7 +239,7 @@ function RevisionDetail({
   );
 }
 
-function RevisionMeta({ label, value }: { label: string; value: string }) {
+function RevisionMeta({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0 rounded-md border border-v3-line bg-v3-card-soft px-2.5 py-2">
       <dt>{label}</dt>
