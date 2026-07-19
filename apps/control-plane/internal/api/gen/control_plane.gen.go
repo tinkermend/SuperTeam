@@ -3493,15 +3493,21 @@ type InboxItem struct {
 	SourceApprovalRequestId *openapi_types.UUID    `json:"source_approval_request_id,omitempty"`
 	SourceId                openapi_types.UUID     `json:"source_id"`
 	SourceProjectId         *openapi_types.UUID    `json:"source_project_id,omitempty"`
-	SourceTaskId            *openapi_types.UUID    `json:"source_task_id,omitempty"`
-	SourceType              InboxItemSourceType    `json:"source_type"`
-	Status                  InboxItemStatus        `json:"status"`
-	Summary                 *string                `json:"summary,omitempty"`
-	TargetUserId            openapi_types.UUID     `json:"target_user_id"`
-	TeamId                  *openapi_types.UUID    `json:"team_id,omitempty"`
-	TenantId                openapi_types.UUID     `json:"tenant_id"`
-	Title                   string                 `json:"title"`
-	UpdatedAt               time.Time              `json:"updated_at"`
+
+	// SourceProjectName 来源项目名称(读时批量补名;来源已删除时缺省)
+	SourceProjectName *string             `json:"source_project_name,omitempty"`
+	SourceTaskId      *openapi_types.UUID `json:"source_task_id,omitempty"`
+
+	// SourceTaskName 来源任务标题(读时批量补名;来源已删除时缺省)
+	SourceTaskName *string             `json:"source_task_name,omitempty"`
+	SourceType     InboxItemSourceType `json:"source_type"`
+	Status         InboxItemStatus     `json:"status"`
+	Summary        *string             `json:"summary,omitempty"`
+	TargetUserId   openapi_types.UUID  `json:"target_user_id"`
+	TeamId         *openapi_types.UUID `json:"team_id,omitempty"`
+	TenantId       openapi_types.UUID  `json:"tenant_id"`
+	Title          string              `json:"title"`
+	UpdatedAt      time.Time           `json:"updated_at"`
 }
 
 // InboxItemItemType defines model for InboxItem.ItemType.
@@ -7000,6 +7006,9 @@ type ServerInterface interface {
 	// Execute an inbox item action
 	// (POST /api/v1/inbox/items/{itemId}/actions)
 	ExecuteInboxAction(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID)
+	// Stream inbox change notifications via SSE
+	// (GET /api/v1/inbox/stream)
+	StreamInboxChanges(w http.ResponseWriter, r *http.Request)
 	// List tenant MCP HTTP capability definitions
 	// (GET /api/v1/mcp-servers)
 	ListMCPServerDefinitions(w http.ResponseWriter, r *http.Request)
@@ -7795,6 +7804,12 @@ func (_ Unimplemented) ListInboxItems(w http.ResponseWriter, r *http.Request, pa
 // Execute an inbox item action
 // (POST /api/v1/inbox/items/{itemId}/actions)
 func (_ Unimplemented) ExecuteInboxAction(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Stream inbox change notifications via SSE
+// (GET /api/v1/inbox/stream)
+func (_ Unimplemented) StreamInboxChanges(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10765,6 +10780,20 @@ func (siw *ServerInterfaceWrapper) ExecuteInboxAction(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ExecuteInboxAction(w, r, itemId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamInboxChanges operation middleware
+func (siw *ServerInterfaceWrapper) StreamInboxChanges(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamInboxChanges(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16005,6 +16034,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/inbox/items/{itemId}/actions", wrapper.ExecuteInboxAction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/inbox/stream", wrapper.StreamInboxChanges)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/mcp-servers", wrapper.ListMCPServerDefinitions)

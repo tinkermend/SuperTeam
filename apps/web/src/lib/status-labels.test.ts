@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  deleteBlockerTypeLabel,
   employeeStatusLabel,
   governanceStatusLabel,
   projectStatusLabel,
+  riskLevelLabel,
   statusLabel,
   teamStatusLabel,
 } from "./status-labels";
@@ -18,6 +20,39 @@ describe("statusLabel", () => {
     expect(statusLabel("  READY ")).toBe("就绪");
     expect(statusLabel(undefined)).toBe("未知");
     expect(statusLabel("totally_unknown")).toBe("totally_unknown");
+  });
+
+  it("covers approval and decision resolution codes", () => {
+    expect(statusLabel("approved")).toBe("已批准");
+    expect(statusLabel("request_changes")).toBe("要求修改");
+    expect(statusLabel("restaffed")).toBe("已补员");
+    expect(statusLabel("exempted")).toBe("已豁免");
+    expect(statusLabel("needs_more_evidence")).toBe("需要补充证据");
+  });
+
+  it("covers node and engine health codes", () => {
+    expect(statusLabel("online")).toBe("在线");
+    expect(statusLabel("offline")).toBe("离线");
+    expect(statusLabel("ok")).toBe("正常");
+  });
+});
+
+describe("riskLevelLabel", () => {
+  it("maps risk levels and falls back to raw value", () => {
+    expect(riskLevelLabel("high")).toBe("高风险");
+    expect(riskLevelLabel("medium")).toBe("中风险");
+    expect(riskLevelLabel("low")).toBe("低风险");
+    expect(riskLevelLabel("blocked")).toBe("阻断");
+    expect(riskLevelLabel(undefined)).toBe("未知");
+    expect(riskLevelLabel("custom")).toBe("custom");
+  });
+});
+
+describe("deleteBlockerTypeLabel", () => {
+  it("maps blocker types", () => {
+    expect(deleteBlockerTypeLabel("run")).toBe("执行运行");
+    expect(deleteBlockerTypeLabel("project_task")).toBe("项目任务");
+    expect(deleteBlockerTypeLabel(undefined)).toBe("未知");
   });
 });
 

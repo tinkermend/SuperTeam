@@ -3,7 +3,7 @@ import { Handle, Position } from "@xyflow/react";
 import { Bot, GitBranch, ShieldCheck } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SoftCard, StatusPill } from "@/components/superteam";
-import { runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
+import { riskLevelLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import type {
   WorkflowAttachmentNodeData,
@@ -83,7 +83,7 @@ export function WorkflowTaskNode({
             tone={nodeRiskTone(data.riskLevel)}
           >
             <ShieldCheck className="size-3.5 shrink-0" />
-            <span className="truncate">风险 {data.riskLevel}</span>
+            <span className="truncate">风险 {riskLevelLabel(data.riskLevel)}</span>
           </StatusPill>
         ) : null}
         {data.runStatus ? (

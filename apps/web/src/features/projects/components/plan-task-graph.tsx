@@ -11,7 +11,7 @@ import type {
   ProjectTaskGraphEmployee,
   ProjectTaskGraphStageSummary,
 } from "@/lib/api/projects";
-import { taskStatusLabel } from "@/lib/status-labels";
+import { riskLevelLabel, taskStatusLabel } from "@/lib/status-labels";
 
 /**
  * PlanTaskGraph renders a coordination plan as a stage-grouped task list with
@@ -119,7 +119,7 @@ export function PlanTaskGraph({
                       </span>
                       {node.risk_level ? (
                         <StatusPill tone={riskTone(node.risk_level)}>
-                          {`风险：${node.risk_level}`}
+                          {`风险：${riskLevelLabel(node.risk_level)}`}
                         </StatusPill>
                       ) : null}
                       {node.requires_human_approval ? (

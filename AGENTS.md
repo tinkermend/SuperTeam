@@ -43,6 +43,7 @@ SuperTeam 把 AI 执行能力、流程调度、人类审批、上下文、工件
 - 启停用 `scripts/dev-services.sh start|status|restart|stop`；默认 `all` 含 Temporal、Control Plane、Web、Runtime Agent，OpenFGA 需单独管理。联调前后先 `status` 确认实际状态，代码变更后优先定向 `restart <service>`（脚本只管理自己写入 pid 文件的进程）。`start|restart control-plane` 会先自动执行 Atlas 迁移，仅在明确需要时用 `SUPERTEAM_DEV_SKIP_MIGRATIONS=1` 跳过。
 - 数据库表设计、字段类型、UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 规则统一遵循 `DATABASE_DESIGN.md`。生产迁移唯一目录是 `apps/control-plane/internal/storage/migrations/`；变更后必须更新 `atlas.sum`，并用 `make -C apps/control-plane migrate-validate` 校验（本地非 Docker dev 库可覆盖 `DEV_URL`）。
 - 代码发现优先使用 codebase-memory-mcp：`search_graph` 查符号、`trace_path` 追调用、`get_code_snippet` 读实现，复杂模式用 `query_graph` / `get_architecture`；工具不可用、结果不足或搜索字符串/配置/非代码文件时才回退 `rg` / 文件读取。
+- 平台面向中文用户且不做 i18n：前端用户可见的状态/枚举一律经 `apps/web/src/lib/status-labels.ts` 映射为中文，缺键补词表而非在组件内翻译；业务对象指称显示名称（必要时"名称 (id)"），不得裸 UUID，名称由服务端读路径批量补名。细则见 `DESIGN.md`「面向用户文本与枚举显示」，护栏测试 `status-labels.guard.test.ts`。
 - 前端页面、布局或样式变更前必须阅读 `DESIGN.md`；改设计系统或原型后跑 `verify:design-system` / `verify:design-prototypes`。Web 测试走 `corepack pnpm verify:web`（只跑测试时 `corepack pnpm --filter @superteam/web test`），禁止 `npx playwright install` 或 `npx vitest run`。Web 内部跳转必须用 TanStack Router 的 `Link` 或 `navigate`；只有外链、下载、同页锚点或明确需要整页刷新才允许原生 `<a href>` / `window.location`。
 - 不要盲目猜测；存在无法从本地上下文确认且影响架构或业务判断的不确定点时，先与人类沟通。
 

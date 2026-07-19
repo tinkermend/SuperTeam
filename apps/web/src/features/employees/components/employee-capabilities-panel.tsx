@@ -53,6 +53,7 @@ import {
   upsertEmployeeEnvironmentVariable,
   type DigitalEmployeeEnvironmentVariableSummary,
 } from "@/lib/api/employees";
+import { statusLabel } from "@/lib/status-labels";
 
 type EmployeeCapabilitiesPanelProps = {
   apiOptions: ApiClientOptions;
@@ -689,7 +690,7 @@ function EffectiveMcpRegistrySection({
                   {server.source_scope === "team" ? "团队继承" : "个人"}
                 </StatusPill>
                 <StatusPill tone={tone as Extract<V3Tone, "ok" | "warn">}>
-                  {blocked ? "缺少环境变量" : server.status}
+                  {blocked ? "缺少环境变量" : statusLabel(server.status)}
                 </StatusPill>
               </div>
             </div>
@@ -771,7 +772,7 @@ function EmployeeMcpBindingsSection({
               <div className="min-w-0">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <p className="truncate text-sm font-medium">{binding.server_name ?? binding.server_key}</p>
-                  <StatusPill tone={blocked ? "warn" : "ok"}>{binding.status}</StatusPill>
+                  <StatusPill tone={blocked ? "warn" : "ok"}>{statusLabel(binding.status)}</StatusPill>
                 </div>
                 <p className="truncate font-mono text-xs text-muted-foreground">{binding.url ?? binding.server_key}</p>
                 {binding.credential_env_var ? (

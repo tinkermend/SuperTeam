@@ -58,6 +58,7 @@ import {
   riskLabel,
   riskTone,
 } from "./inbox-item-list";
+import { sourceRefLabel } from "../source-ref";
 
 export type InboxFilterKey = "status" | "item_type" | "risk_level" | "project_id" | "target_user_id";
 export type InboxUuidFilterKey = Extract<InboxFilterKey, "project_id" | "target_user_id">;
@@ -79,7 +80,6 @@ type InboxShellProps = {
   data?: InboxListResponse;
   error: Error | null;
   filters: InboxListFilters;
-  isFetching: boolean;
   isLoading: boolean;
   mutationError: Error | null;
   onAction: (item: InboxItem, action: InboxAction) => void;
@@ -96,7 +96,6 @@ export function InboxShell({
   data,
   error,
   filters,
-  isFetching,
   isLoading,
   mutationError,
   onAction,
@@ -160,10 +159,6 @@ export function InboxShell({
             <p className="font-bold">操作未完成</p>
             <p className="mt-1 text-v3-ink-2">{mutationError.message}</p>
           </div>
-        ) : null}
-
-        {isFetching && hasItems ? (
-          <StatusPill tone="info" className="w-fit shrink-0">正在刷新</StatusPill>
         ) : null}
 
         {/* 工作台：三栏在桌面端填满视口，各自内部滚动；移动端整列纵向滚动 */}
@@ -443,7 +438,9 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
           {item.source_task_id ? (
             <>
               <dt className="font-semibold text-v3-ink-3">关联任务</dt>
-              <dd className="min-w-0 truncate font-mono text-xs text-v3-ink-2">{item.source_task_id}</dd>
+              <dd className="min-w-0 truncate text-xs font-semibold text-v3-ink-2">
+                {sourceRefLabel(item.source_task_name, item.source_task_id)}
+              </dd>
             </>
           ) : null}
         </dl>
@@ -562,7 +559,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
     refs.push({
       key: "project",
       icon: <FolderKanban className="size-4 shrink-0 text-v3-ink-3" />,
-      label: `关联项目 · ${formatContext(item) ?? item.source_project_id}`,
+      label: `关联项目 · ${item.source_project_name ?? formatContext(item) ?? item.source_project_id}`,
       meta: "source_project_id ↗",
       href: `/projects/${encodeURIComponent(item.source_project_id)}`,
     });
@@ -572,7 +569,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
     refs.push({
       key: "task",
       icon: <FileText className="size-4 shrink-0 text-v3-ink-3" />,
-      label: `关联任务 ${item.source_task_id}`,
+      label: `关联任务 · ${item.source_task_name ?? item.source_task_id}`,
       meta: "source_task_id ↗",
       href: resolveInboxHref(item),
     });

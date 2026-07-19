@@ -172,8 +172,13 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
 }
 
 export function formatContext(item: InboxItem) {
-  const projectName = readContextText(item.context, ["project_name", "project", "project_title"]);
-  const sourceName = readContextText(item.context, ["source_title", "approval_title", "task_title"]);
+  // 服务端读时补名优先于 context 快照;两者都缺时才回退裸 id。
+  const projectName =
+    item.source_project_name ??
+    readContextText(item.context, ["project_name", "project", "project_title"]);
+  const sourceName =
+    readContextText(item.context, ["source_title", "approval_title", "task_title"]) ??
+    item.source_task_name;
 
   if (projectName && sourceName) {
     return `${projectName} / ${sourceName}`;

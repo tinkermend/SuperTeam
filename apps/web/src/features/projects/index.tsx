@@ -30,6 +30,7 @@ import {
   listUserProjectTeamScopes,
   type UserProjectTeamScope,
 } from "@/lib/api";
+import { deleteBlockerTypeLabel, statusLabel } from "@/lib/status-labels";
 import {
   addProjectRuntimeNode,
   archiveProject,
@@ -1409,7 +1410,7 @@ function ProjectDeleteBlockerItem({ blocker }: { blocker: ProjectDeleteBlocker }
     <li className="rounded-v3-inner border border-v3-danger/25 bg-v3-card px-3 py-2 text-v3-ink">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{blocker.title}</span>
-        <StatusPill tone="danger">{`${blocker.type} · ${blocker.status}`}</StatusPill>
+        <StatusPill tone="danger">{`${deleteBlockerTypeLabel(blocker.type)} · ${statusLabel(blocker.status)}`}</StatusPill>
       </div>
       <p className="mt-1 break-all font-mono text-[11px] text-v3-ink-3">id {blocker.id}</p>
     </li>

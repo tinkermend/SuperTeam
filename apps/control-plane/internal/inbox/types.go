@@ -69,18 +69,22 @@ type Item struct {
 	SourceProjectID         *uuid.UUID
 	SourceTaskID            *uuid.UUID
 	SourceApprovalRequestID *uuid.UUID
-	Title                   string
-	Summary                 *string
-	RiskLevel               *string
-	Priority                *string
-	Status                  Status
-	Actions                 []Action
-	ContextPayload          map[string]any
-	DeepLink                map[string]any
-	ResolvedAt              *time.Time
-	LastActivityAt          time.Time
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	// SourceProjectName/SourceTaskName 是读时批量补名的展示字段,不落库;
+	// 来源已删除或跨租户时为 nil。
+	SourceProjectName *string
+	SourceTaskName    *string
+	Title             string
+	Summary           *string
+	RiskLevel         *string
+	Priority          *string
+	Status            Status
+	Actions           []Action
+	ContextPayload    map[string]any
+	DeepLink          map[string]any
+	ResolvedAt        *time.Time
+	LastActivityAt    time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type UpsertItemRequest struct {
@@ -133,6 +137,23 @@ type Badge struct {
 	MineOpenCount int64
 	TeamOpenCount int64
 	HighRiskCount int64
+}
+
+// PeekChangeRequest 是 SSE 脏通知探测的入参:探测 actor 可见范围内 (updated_at, id)
+// 游标之后是否有变更行。TeamViewAllowed 由调用方(handler)判权后传入,与 GetBadge 的
+// includeTeam 同一授权投影约定。
+type PeekChangeRequest struct {
+	TenantID        uuid.UUID
+	ActorUserID     uuid.UUID
+	TeamViewAllowed bool
+	CursorUpdatedAt time.Time
+	CursorID        uuid.UUID
+}
+
+// ChangeCursor 是变更游标:可见范围内最新变更行的 (updated_at, id)。
+type ChangeCursor struct {
+	UpdatedAt time.Time
+	ID        uuid.UUID
 }
 
 type ExecuteActionRequest struct {

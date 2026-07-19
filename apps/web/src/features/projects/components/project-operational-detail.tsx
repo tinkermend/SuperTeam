@@ -802,7 +802,7 @@ export function ProjectOperationalDetail({
 
             {businessBlocker ? (
               <SoftCard className="overflow-hidden">
-                <PanelHeader icon={<CircleDot />} title="当前阻塞" meta={businessBlocker.status} />
+                <PanelHeader icon={<CircleDot />} title="当前阻塞" meta={statusLabel(businessBlocker.status)} />
                 <div className="grid gap-2 p-4">
                   <p className="text-sm font-semibold text-v3-ink">{businessBlocker.title}</p>
                   <p className="text-xs leading-5 text-v3-ink-2">{businessBlocker.description}</p>
@@ -1281,7 +1281,7 @@ function AdvancedWorkflow({
       <PanelHeader
         icon={<GitBranch />}
         title="协调线程"
-        meta={overview?.coordination_workflow.status || project.coordination_status}
+        meta={statusLabel(overview?.coordination_workflow.status || project.coordination_status)}
       />
       <div className="p-4">
         <p className="truncate text-sm font-medium">

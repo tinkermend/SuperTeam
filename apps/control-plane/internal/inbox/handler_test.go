@@ -307,6 +307,62 @@ func TestHandlerBadgeAuthorizerErrorReturnsInternalServerError(t *testing.T) {
 	}
 }
 
+func TestHandlerStreamItemsEmitsChangeFramesAndAdvancesCursor(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	changedAt := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	changedID := uuid.New()
+	service := &handlerService{
+		peekCursors: []*ChangeCursor{{UpdatedAt: changedAt, ID: changedID}},
+	}
+	handler := NewHandler(service)
+	handler.streamInterval = 2 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/inbox/stream", nil).WithContext(ctx)
+	req = withConsoleIdentity(req, tenantID, userID)
+	resp := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		handler.StreamItems(resp, req)
+		close(done)
+	}()
+	// 等到预置变更消费完且至少再探测一次(验证游标推进),再取消请求结束流。
+	deadline := time.After(2 * time.Second)
+	for {
+		if len(service.peekReqs) >= 2 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("stream did not poll twice in time")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-done
+
+	body := resp.Body.String()
+	if !strings.Contains(body, "event: inbox-changed") {
+		t.Fatalf("expected inbox-changed frame, got body: %q", body)
+	}
+	if resp.Header().Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("expected SSE content type, got %q", resp.Header().Get("Content-Type"))
+	}
+	first := service.peekReqs[0]
+	if first.TenantID != tenantID || first.ActorUserID != userID {
+		t.Fatalf("expected peek to use console identity, got %#v", first)
+	}
+	if first.TeamViewAllowed {
+		t.Fatal("expected team view disallowed without authorizer")
+	}
+	second := service.peekReqs[1]
+	if !second.CursorUpdatedAt.Equal(changedAt) || second.CursorID != changedID {
+		t.Fatalf("expected cursor advanced to (%s,%s), got (%s,%s)", changedAt, changedID, second.CursorUpdatedAt, second.CursorID)
+	}
+}
+
 func TestHandlerExecuteActionRejectsWrongUser(t *testing.T) {
 	service := &handlerService{executeErr: ErrActionForbidden}
 	handler := NewHandler(service)
@@ -434,6 +490,9 @@ type handlerService struct {
 	executeItem      Item
 	executeResult    SourceActionResult
 	executeErr       error
+	peekReqs         []PeekChangeRequest
+	peekCursors      []*ChangeCursor
+	peekErr          error
 }
 
 func (s *handlerService) ListItems(_ context.Context, req ListItemsRequest) (ListItemsResult, error) {
@@ -457,6 +516,20 @@ func (s *handlerService) GetBadge(_ context.Context, tenantID, actorUserID uuid.
 func (s *handlerService) ExecuteAction(_ context.Context, req ExecuteActionRequest) (Item, SourceActionResult, error) {
 	s.executeReq = req
 	return s.executeItem, s.executeResult, s.executeErr
+}
+
+// PeekChanges 按调用次序弹出预置游标(耗尽后返回 nil,即"无变更")。
+func (s *handlerService) PeekChanges(_ context.Context, req PeekChangeRequest) (*ChangeCursor, error) {
+	s.peekReqs = append(s.peekReqs, req)
+	if s.peekErr != nil {
+		return nil, s.peekErr
+	}
+	if len(s.peekCursors) == 0 {
+		return nil, nil
+	}
+	cursor := s.peekCursors[0]
+	s.peekCursors = s.peekCursors[1:]
+	return cursor, nil
 }
 
 func withConsoleIdentity(req *http.Request, tenantID, userID uuid.UUID) *http.Request {

@@ -12,6 +12,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatInboxActionLabel } from "./action-format";
 import { riskLabel } from "./inbox-item-list";
+import { sourceRefLabel } from "../source-ref";
 
 type InboxActionDialogProps = {
   action: InboxAction | null;
@@ -115,8 +116,18 @@ function InboxActionContextSummary({ item }: { item: InboxItem }) {
         {item.risk_level ? (
           <ContextPair label="风险等级" value={riskLabel[item.risk_level] ?? item.risk_level} />
         ) : null}
-        {item.source_project_id ? <ContextPair label="来源项目" value={item.source_project_id} /> : null}
-        {item.source_task_id ? <ContextPair label="来源任务" value={item.source_task_id} /> : null}
+        {item.source_project_id ? (
+          <ContextPair
+            label="来源项目"
+            value={sourceRefLabel(item.source_project_name, item.source_project_id) ?? item.source_project_id}
+          />
+        ) : null}
+        {item.source_task_id ? (
+          <ContextPair
+            label="来源任务"
+            value={sourceRefLabel(item.source_task_name, item.source_task_id) ?? item.source_task_id}
+          />
+        ) : null}
         {item.source_approval_request_id ? (
           <ContextPair label="审批请求" value={item.source_approval_request_id} />
         ) : null}

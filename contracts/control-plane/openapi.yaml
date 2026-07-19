@@ -2062,6 +2062,24 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /api/v1/inbox/stream:
+    get:
+      operationId: streamInboxChanges
+      summary: Stream inbox change notifications via SSE
+      description: Server-Sent Events 流:服务端以秒级游标轮询探测 actor 可见范围内的收件箱变更,推送 event:inbox-changed 脏通知(data 为 {"updated_at":...},客户端收到后应重新拉取列表与角标),空闲期定期发送注释行保活。
+      responses:
+        "200":
+          description: SSE stream of inbox change notifications
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /api/v1/inbox/badge:
     get:
       operationId: getInboxBadge
@@ -4924,6 +4942,12 @@ components:
         source_approval_request_id:
           type: string
           format: uuid
+        source_project_name:
+          type: string
+          description: 来源项目名称(读时批量补名;来源已删除时缺省)
+        source_task_name:
+          type: string
+          description: 来源任务标题(读时批量补名;来源已删除时缺省)
         title:
           type: string
         summary:

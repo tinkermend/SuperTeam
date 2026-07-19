@@ -99,6 +99,53 @@ func (r *PgRepository) CountHighRiskOpenItems(ctx context.Context, tenantID uuid
 	})
 }
 
+func (r *PgRepository) PeekChange(ctx context.Context, req PeekChangeRequest) (*ChangeCursor, error) {
+	row, err := r.q.PeekInboxChange(ctx, queries.PeekInboxChangeParams{
+		TenantID:        req.TenantID,
+		TeamViewAllowed: req.TeamViewAllowed,
+		ActorUserID:     req.ActorUserID,
+		CursorUpdatedAt: timestamptz(req.CursorUpdatedAt),
+		CursorID:        req.CursorID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &ChangeCursor{UpdatedAt: timeFromTimestamptz(row.UpdatedAt), ID: row.ID}, nil
+}
+
+func (r *PgRepository) ProjectNames(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := r.q.ListInboxProjectNames(ctx, queries.ListInboxProjectNamesParams{TenantID: tenantID, Ids: ids})
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[uuid.UUID]string, len(rows))
+	for _, row := range rows {
+		names[row.ID] = row.Name
+	}
+	return names, nil
+}
+
+func (r *PgRepository) ProjectTaskTitles(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := r.q.ListInboxProjectTaskTitles(ctx, queries.ListInboxProjectTaskTitlesParams{TenantID: tenantID, Ids: ids})
+	if err != nil {
+		return nil, err
+	}
+	titles := make(map[uuid.UUID]string, len(rows))
+	for _, row := range rows {
+		titles[row.ID] = row.Title
+	}
+	return titles, nil
+}
+
 func upsertParams(req UpsertItemRequest) (queries.UpsertInboxItemParams, error) {
 	actionSchema, contextPayload, deepLink, err := marshalItemJSON(req)
 	if err != nil {

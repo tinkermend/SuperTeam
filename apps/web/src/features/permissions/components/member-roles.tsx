@@ -14,6 +14,7 @@ import {
   V3Tr,
   WorkSurface,
 } from "@/components/superteam";
+import { statusLabel } from "@/lib/status-labels";
 
 type MemberRolesProps = {
   apiOptions: ApiClientOptions;
@@ -97,7 +98,7 @@ function formatMemberships(member: AuthzMemberRecord) {
   return member.memberships
     .map((membership) => {
       const scope = membership.team_id ? `team:${membership.team_id}` : `tenant:${membership.tenant_id}`;
-      return `${membership.role} / ${scope} / ${membership.status}`;
+      return `${membership.role} / ${scope} / ${statusLabel(membership.status)}`;
     })
     .join("; ");
 }

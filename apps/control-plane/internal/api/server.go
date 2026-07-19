@@ -419,6 +419,7 @@ func (s *Server) registerRoutes() {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
 				r.Get("/inbox/items", s.inboxHandler.ListItems)
+				r.Get("/inbox/stream", s.inboxHandler.StreamItems)
 				r.Get("/inbox/badge", s.inboxHandler.GetBadge)
 				r.Post("/inbox/items/{itemId}/actions", s.inboxHandler.ExecuteAction)
 			})

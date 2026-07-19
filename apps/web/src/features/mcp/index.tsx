@@ -28,6 +28,7 @@ import {
   type McpServerDefinition,
 } from "@/lib/api/capabilities";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { statusLabel } from "@/lib/status-labels";
 import { RegisterMcpDialog } from "./register-dialog";
 
 type MetricTone = V3Tone;
@@ -251,7 +252,7 @@ function McpDefinitionRow({
         )}
       </V3Td>
       <V3Td>
-        <StatusPill tone={tone}>{row.status}</StatusPill>
+        <StatusPill tone={tone}>{statusLabel(row.status)}</StatusPill>
       </V3Td>
       <V3Td>
         <V3Button

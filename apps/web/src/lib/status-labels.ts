@@ -8,6 +8,7 @@ const STATUS_LABELS: Record<string, string> = {
   acceptance: "验收中",
   accepted: "已接受",
   active: "启用中",
+  approved: "已批准",
   archived: "已归档",
   assigned: "已分派",
   blocked: "已阻塞",
@@ -23,10 +24,16 @@ const STATUS_LABELS: Record<string, string> = {
   done: "已完成",
   draft: "草稿",
   error: "异常",
+  exempted: "已豁免",
   failed: "失败",
+  held: "已拦截",
   in_progress: "进行中",
   linked: "已关联",
   needs_more_evidence: "需要补充证据",
+  not_applicable: "不适用",
+  offline: "离线",
+  ok: "正常",
+  online: "在线",
   open: "待处理",
   partially_accepted: "部分接受",
   paused: "已暂停",
@@ -40,8 +47,10 @@ const STATUS_LABELS: Record<string, string> = {
   ready: "就绪",
   rejected: "已拒绝",
   replan_required: "需要重新计划",
+  request_changes: "要求修改",
   requested: "已请求",
   resolved: "已解决",
+  restaffed: "已补员",
   retry_later: "稍后重试",
   retained: "已保留",
   retention_pending: "保留待处理",
@@ -126,4 +135,31 @@ export function employeeStatusLabel(status: string | undefined): string {
 
 export function projectStatusLabel(status: string | undefined): string {
   return statusLabel(status);
+}
+
+const RISK_LEVEL_LABELS: Record<string, string> = {
+  blocked: "阻断",
+  high: "高风险",
+  low: "低风险",
+  medium: "中风险",
+};
+
+export function riskLevelLabel(level: string | undefined): string {
+  if (!level) {
+    return "未知";
+  }
+  const normalized = level.trim().toLowerCase();
+  return RISK_LEVEL_LABELS[normalized] ?? level;
+}
+
+const DELETE_BLOCKER_TYPE_LABELS: Record<string, string> = {
+  project_task: "项目任务",
+  run: "执行运行",
+};
+
+export function deleteBlockerTypeLabel(type: string | undefined): string {
+  if (!type) {
+    return "未知";
+  }
+  return DELETE_BLOCKER_TYPE_LABELS[type] ?? type;
 }

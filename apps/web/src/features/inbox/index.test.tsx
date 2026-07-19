@@ -470,6 +470,39 @@ describe("InboxView", () => {
     );
   });
 
+  it("refetches the inbox list when the SSE stream pushes inbox-changed", async () => {
+    const fetcher = createInboxFetcher();
+    const listeners: Record<string, () => void> = {};
+    const fakeSource = {
+      addEventListener: (type: string, listener: () => void) => {
+        listeners[type] = listener;
+      },
+      removeEventListener: () => {},
+      close: () => {},
+    } as unknown as EventSource;
+    const streamUrls: string[] = [];
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <InboxView
+          apiBaseUrl="http://control-plane.local"
+          fetcher={fetcher}
+          eventSourceFactory={(url) => {
+            streamUrls.push(url);
+            return fakeSource;
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    // 先等首查询渲染完成,再触发推送,确保 invalidate 不会与在途首查询去重。
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    expect(streamUrls).toEqual(["http://control-plane.local/api/v1/inbox/stream"]);
+    const before = inboxRequestUrls(fetcher).length;
+
+    listeners["inbox-changed"]?.();
+    await expect.poll(() => inboxRequestUrls(fetcher).length).toBeGreaterThan(before);
+  });
+
   it("keeps existing data while switching to team inbox", async () => {
     const fetcher = createInboxFetcher({ slowTeamView: true });
     const screen = await renderInboxView(fetcher);
@@ -478,7 +511,6 @@ describe("InboxView", () => {
     await userEvent.click(screen.getByRole("tab", { name: "团队待办" }));
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
-    await expect.element(screen.getByText("正在刷新")).toBeVisible();
     await expect.element(screen.getByText("团队发布窗口确认")).toBeVisible();
   });
 

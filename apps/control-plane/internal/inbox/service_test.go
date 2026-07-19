@@ -828,6 +828,72 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 	}
 }
 
+func TestServiceListItemsEnrichesSourceNames(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	deletedProjectID := uuid.New()
+	repo.projectNames[projectID] = "官网重构"
+	repo.taskTitles[taskID] = "首页视觉稿"
+
+	if _, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		SourceTaskID:    &taskID,
+		Title:           "可解析来源",
+		LastActivityAt:  time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert resolvable: %v", err)
+	}
+	if _, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &deletedProjectID,
+		Title:           "来源项目已删除",
+		LastActivityAt:  time.Now().UTC().Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("upsert dangling: %v", err)
+	}
+
+	result, err := service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		View:        ViewMine,
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(result.Items))
+	}
+	resolvable := result.Items[0]
+	if resolvable.SourceProjectName == nil || *resolvable.SourceProjectName != "官网重构" {
+		t.Fatalf("expected project name enriched, got %#v", resolvable.SourceProjectName)
+	}
+	if resolvable.SourceTaskName == nil || *resolvable.SourceTaskName != "首页视觉稿" {
+		t.Fatalf("expected task name enriched, got %#v", resolvable.SourceTaskName)
+	}
+	dangling := result.Items[1]
+	if dangling.SourceProjectName != nil {
+		t.Fatalf("expected dangling project name nil, got %q", *dangling.SourceProjectName)
+	}
+}
+
 func TestServiceListItemsNilStatusReturnsAllStatuses(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -910,6 +976,8 @@ type memoryRepository struct {
 	itemsByID                   map[uuid.UUID]Item
 	itemsBySource               map[string]uuid.UUID
 	itemsByApproval             map[uuid.UUID]uuid.UUID
+	projectNames                map[uuid.UUID]string
+	taskTitles                  map[uuid.UUID]string
 	upsertItemCalls             int
 	upsertByApprovalSourceCalls int
 }
@@ -919,7 +987,35 @@ func newMemoryRepository() *memoryRepository {
 		itemsByID:       map[uuid.UUID]Item{},
 		itemsBySource:   map[string]uuid.UUID{},
 		itemsByApproval: map[uuid.UUID]uuid.UUID{},
+		projectNames:    map[uuid.UUID]string{},
+		taskTitles:      map[uuid.UUID]string{},
 	}
+}
+
+func (r *memoryRepository) ProjectNames(_ context.Context, _ uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	names := map[uuid.UUID]string{}
+	for _, id := range ids {
+		if name, ok := r.projectNames[id]; ok {
+			names[id] = name
+		}
+	}
+	return names, nil
+}
+
+func (r *memoryRepository) ProjectTaskTitles(_ context.Context, _ uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	titles := map[uuid.UUID]string{}
+	for _, id := range ids {
+		if title, ok := r.taskTitles[id]; ok {
+			titles[id] = title
+		}
+	}
+	return titles, nil
 }
 
 func (r *memoryRepository) UpsertItem(_ context.Context, req UpsertItemRequest) (Item, error) {
@@ -1018,6 +1114,34 @@ func (r *memoryRepository) CountOpenItems(_ context.Context, tenantID uuid.UUID,
 		count++
 	}
 	return count, nil
+}
+
+// PeekChange 的内存实现只覆盖 target_user_id 直配与 team 放宽两个分支;
+// any-of-N 项目成员可见分支依赖 project_members 表,由真实 PG E2E 覆盖。
+func (r *memoryRepository) PeekChange(_ context.Context, req PeekChangeRequest) (*ChangeCursor, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var latest *ChangeCursor
+	for _, item := range r.itemsByID {
+		if item.TenantID != req.TenantID {
+			continue
+		}
+		if !req.TeamViewAllowed && item.TargetUserID != req.ActorUserID {
+			continue
+		}
+		afterCursor := item.UpdatedAt.After(req.CursorUpdatedAt) ||
+			(item.UpdatedAt.Equal(req.CursorUpdatedAt) && item.ID.String() > req.CursorID.String())
+		if !afterCursor {
+			continue
+		}
+		newer := latest == nil || item.UpdatedAt.After(latest.UpdatedAt) ||
+			(item.UpdatedAt.Equal(latest.UpdatedAt) && item.ID.String() > latest.ID.String())
+		if newer {
+			latest = &ChangeCursor{UpdatedAt: item.UpdatedAt, ID: item.ID}
+		}
+	}
+	return latest, nil
 }
 
 func (r *memoryRepository) CountHighRiskOpenItems(_ context.Context, tenantID uuid.UUID, targetUserID *uuid.UUID) (int64, error) {

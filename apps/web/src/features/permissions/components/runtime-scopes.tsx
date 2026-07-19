@@ -30,6 +30,7 @@ import {
   V3Tr,
   WorkSurface,
 } from "@/components/superteam";
+import { statusLabel } from "@/lib/status-labels";
 
 type RuntimeScopesProps = {
   apiOptions: ApiClientOptions;
@@ -251,7 +252,7 @@ function renderNodeRows(node: RuntimeScopeNode, onToggleScope: (scope: RuntimeSc
       <V3Tr key={`${node.runtime_node_id}-empty`}>
         <V3Td>{formatNode(node)}</V3Td>
         <V3Td>
-          <StatusPill tone={node.status === "online" ? "ok" : "mute"}>{node.status}</StatusPill>
+          <StatusPill tone={node.status === "online" ? "ok" : "mute"}>{statusLabel(node.status)}</StatusPill>
         </V3Td>
         <V3Td colSpan={4} className="text-v3-ink-3">
           暂无范围

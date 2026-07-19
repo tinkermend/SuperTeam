@@ -16,6 +16,7 @@ import {
   WorkSurface,
   type V3Tone,
 } from "@/components/superteam";
+import { statusLabel } from "@/lib/status-labels";
 
 type AuthorizationOverviewProps = {
   apiOptions: ApiClientOptions;
@@ -194,7 +195,7 @@ function formatRate(value: number) {
 }
 
 function engineStatusDescription(engine: { status: string; recent_diff_count: number }) {
-  return `${engine.status} · 近 24h diff ${formatNumber(engine.recent_diff_count)}`;
+  return `${statusLabel(engine.status)} · 近 24h diff ${formatNumber(engine.recent_diff_count)}`;
 }
 
 function engineDetails(engine: {

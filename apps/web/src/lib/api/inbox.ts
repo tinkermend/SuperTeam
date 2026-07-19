@@ -30,6 +30,8 @@ export type InboxItem = {
   source_project_id?: string;
   source_task_id?: string;
   source_approval_request_id?: string;
+  source_project_name?: string;
+  source_task_name?: string;
   title: string;
   summary?: string;
   status: InboxStatus;

@@ -35,6 +35,7 @@ import {
   riskLabel,
   riskTone,
 } from "@/features/inbox/components/inbox-item-list";
+import { statusLabel } from "@/lib/status-labels";
 
 type ApprovalsCenterViewProps = {
   apiBaseUrl: string;
@@ -150,9 +151,19 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
-              <FilterChip label="状态" value={filters.status ?? "open"} />
-              {filters.risk_level ? <FilterChip label="风险" value={filters.risk_level} /> : null}
-              {filters.project_id ? <FilterChip label="项目" value={filters.project_id} /> : null}
+              <FilterChip label="状态" value={statusLabel(filters.status ?? "open")} />
+              {filters.risk_level ? (
+                <FilterChip label="风险" value={riskLabel[filters.risk_level] ?? filters.risk_level} />
+              ) : null}
+              {filters.project_id ? (
+                <FilterChip
+                  label="项目"
+                  value={
+                    items.find((entry) => entry.source_project_id === filters.project_id)
+                      ?.source_project_name ?? filters.project_id
+                  }
+                />
+              ) : null}
             </div>
           </div>
 
@@ -222,7 +233,7 @@ function ApprovalRow({
             </StatusPill>
           ) : null}
           <StatusPill tone={item.status === "open" ? "warn" : "mute"}>
-            {item.status === "open" ? "开放" : item.status}
+            {statusLabel(item.status)}
           </StatusPill>
         </div>
         <p className="mt-1 line-clamp-2 text-sm text-v3-ink-2">

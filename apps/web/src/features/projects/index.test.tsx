@@ -2787,7 +2787,7 @@ describe("ProjectsView", () => {
 
     await expect.element(screen.getByText("该项目仍有进行中的任务，完成或取消后再删除。")).toBeVisible();
     await expect.element(screen.getByText("运行中的接入任务")).toBeVisible();
-    await expect.element(screen.getByText("project_task · running")).toBeVisible();
+    await expect.element(screen.getByText("项目任务 · 运行中")).toBeVisible();
     expect(routerMock.navigate).not.toHaveBeenCalled();
   });
 

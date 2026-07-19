@@ -101,7 +101,59 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	if err != nil {
 		return ListItemsResult{}, err
 	}
+	if err := s.enrichSourceNames(ctx, req.TenantID, items); err != nil {
+		return ListItemsResult{}, err
+	}
 	return ListItemsResult{Items: items, Limit: req.Limit, Offset: req.Offset, HasMore: hasMore, OpenCount: openCount, HighRiskCount: highRiskCount}, nil
+}
+
+// enrichSourceNames 就地为 items 批量补 source_project_name/source_task_name。
+// 名称是展示字段:来源行已删除时保持 nil,由前端回退显示 id。
+func (s *Service) enrichSourceNames(ctx context.Context, tenantID uuid.UUID, items []Item) error {
+	projectIDs := make([]uuid.UUID, 0, len(items))
+	taskIDs := make([]uuid.UUID, 0, len(items))
+	seenProjects := map[uuid.UUID]struct{}{}
+	seenTasks := map[uuid.UUID]struct{}{}
+	for _, item := range items {
+		if item.SourceProjectID != nil {
+			if _, ok := seenProjects[*item.SourceProjectID]; !ok {
+				seenProjects[*item.SourceProjectID] = struct{}{}
+				projectIDs = append(projectIDs, *item.SourceProjectID)
+			}
+		}
+		if item.SourceTaskID != nil {
+			if _, ok := seenTasks[*item.SourceTaskID]; !ok {
+				seenTasks[*item.SourceTaskID] = struct{}{}
+				taskIDs = append(taskIDs, *item.SourceTaskID)
+			}
+		}
+	}
+	if len(projectIDs) == 0 && len(taskIDs) == 0 {
+		return nil
+	}
+	projectNames, err := s.repository.ProjectNames(ctx, tenantID, projectIDs)
+	if err != nil {
+		return err
+	}
+	taskTitles, err := s.repository.ProjectTaskTitles(ctx, tenantID, taskIDs)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if items[i].SourceProjectID != nil {
+			if name, ok := projectNames[*items[i].SourceProjectID]; ok {
+				value := name
+				items[i].SourceProjectName = &value
+			}
+		}
+		if items[i].SourceTaskID != nil {
+			if title, ok := taskTitles[*items[i].SourceTaskID]; ok {
+				value := title
+				items[i].SourceTaskName = &value
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) GetBadge(ctx context.Context, tenantID, actorUserID uuid.UUID, includeTeam bool) (Badge, error) {
@@ -126,6 +178,15 @@ func (s *Service) GetBadge(ctx context.Context, tenantID, actorUserID uuid.UUID,
 		}
 	}
 	return Badge{MineOpenCount: mine, TeamOpenCount: team, HighRiskCount: high}, nil
+}
+
+// PeekChanges 探测 actor 可见范围内游标之后的最新变更;无变更返回 nil。
+// req.TeamViewAllowed 的授权由调用方负责(同 GetBadge 的 includeTeam 约定)。
+func (s *Service) PeekChanges(ctx context.Context, req PeekChangeRequest) (*ChangeCursor, error) {
+	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return nil, ErrInvalidItem
+	}
+	return s.repository.PeekChange(ctx, req)
 }
 
 func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (Item, SourceActionResult, error) {
@@ -182,6 +243,11 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 	}
 	if updated.Status == StatusOpen {
 		return updated, result, ErrProjectionNotApplied
+	}
+	// 补名失败不影响动作结果:动作在来源侧已成功,名称缺失由前端回退显示 id。
+	single := []Item{updated}
+	if err := s.enrichSourceNames(ctx, req.TenantID, single); err == nil {
+		updated = single[0]
 	}
 	return updated, result, nil
 }

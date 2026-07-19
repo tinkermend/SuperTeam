@@ -707,9 +707,9 @@ describe("EmployeeDetailView", () => {
 
     await expect.element(screen.getByText("该数字员工仍有排队或执行中的工作，停止或完成后再删除。")).toBeVisible();
     await expect.element(screen.getByText("运行中的实现任务")).toBeVisible();
-    await expect.element(screen.getByText("run · running")).toBeVisible();
+    await expect.element(screen.getByText("执行运行 · 运行中")).toBeVisible();
     await expect.element(screen.getByText("项目内待办")).toBeVisible();
-    await expect.element(screen.getByText("project_task · in_progress")).toBeVisible();
+    await expect.element(screen.getByText("项目任务 · 进行中")).toBeVisible();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

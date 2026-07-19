@@ -30,6 +30,7 @@ import {
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/use-auth";
+import { statusLabel } from "@/lib/status-labels";
 
 const apiBaseUrl = resolveControlPlaneUrl();
 
@@ -155,7 +156,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
           </span>
         }
         actions={
-          <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{user.status}</StatusPill>
+          <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{statusLabel(user.status)}</StatusPill>
         }
       />
       <Main width="contained" className="min-w-0 overflow-x-hidden">

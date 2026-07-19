@@ -236,6 +236,32 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     )
   );
 
+-- name: PeekInboxChange :one
+-- 收件箱 SSE 脏通知探测:返回 actor 可见范围内、(updated_at, id) 游标之后最新的一条变更行。
+-- 可见性谓词必须与 ListInboxItems 的 target_user_id 分支同口径(含 any-of-N 项目决策成员可见);
+-- team_view_allowed(具团队读权)时放宽到全租户。只取最新一行:两次探测间的多条变更折叠为一次通知。
+SELECT id, updated_at FROM inbox_items
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND (
+    sqlc.arg('team_view_allowed')::boolean
+    OR target_user_id = sqlc.arg('actor_user_id')::uuid
+    OR (
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = sqlc.arg('actor_user_id')::uuid
+      )
+    )
+  )
+  AND (updated_at, id) > (sqlc.arg('cursor_updated_at')::timestamptz, sqlc.arg('cursor_id')::uuid)
+ORDER BY updated_at DESC, id DESC
+LIMIT 1;
+
 -- name: CancelInboxItemsForProjectDelete :many
 UPDATE inbox_items
 SET status = 'cancelled',
@@ -245,3 +271,15 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND source_project_id = sqlc.arg('project_id')::uuid
   AND status = 'open'
 RETURNING id;
+
+-- name: ListInboxProjectNames :many
+-- 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。
+SELECT id, name FROM projects
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: ListInboxProjectTaskTitles :many
+-- 收件箱来源补名:批量取项目任务标题。
+SELECT id, title FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = ANY(sqlc.arg('ids')::uuid[]);

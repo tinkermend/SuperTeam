@@ -388,6 +388,10 @@ type Querier interface {
 	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
 	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
+	// 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。
+	ListInboxProjectNames(ctx context.Context, arg ListInboxProjectNamesParams) ([]ListInboxProjectNamesRow, error)
+	// 收件箱来源补名:批量取项目任务标题。
+	ListInboxProjectTaskTitles(ctx context.Context, arg ListInboxProjectTaskTitlesParams) ([]ListInboxProjectTaskTitlesRow, error)
 	ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UUID) ([]McpServer, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
@@ -498,6 +502,10 @@ type Querier interface {
 	// Used by heartbeat to persist capability self-reports (e.g.
 	// supports_platform_limits) only when the value changes.
 	PatchRuntimeNodeMetadata(ctx context.Context, arg PatchRuntimeNodeMetadataParams) (RuntimeNode, error)
+	// 收件箱 SSE 脏通知探测:返回 actor 可见范围内、(updated_at, id) 游标之后最新的一条变更行。
+	// 可见性谓词必须与 ListInboxItems 的 target_user_id 分支同口径(含 any-of-N 项目决策成员可见);
+	// team_view_allowed(具团队读权)时放宽到全租户。只取最新一行:两次探测间的多条变更折叠为一次通知。
+	PeekInboxChange(ctx context.Context, arg PeekInboxChangeParams) (PeekInboxChangeRow, error)
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
 	ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error)

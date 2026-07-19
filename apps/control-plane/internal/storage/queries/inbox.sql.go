@@ -291,6 +291,133 @@ func (q *Queries) ListInboxItems(ctx context.Context, arg ListInboxItemsParams) 
 	return items, nil
 }
 
+const ListInboxProjectNames = `-- name: ListInboxProjectNames :many
+SELECT id, name FROM projects
+WHERE tenant_id = $1::uuid
+  AND id = ANY($2::uuid[])
+`
+
+type ListInboxProjectNamesParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Ids      []uuid.UUID `json:"ids"`
+}
+
+type ListInboxProjectNamesRow struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+// 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。
+func (q *Queries) ListInboxProjectNames(ctx context.Context, arg ListInboxProjectNamesParams) ([]ListInboxProjectNamesRow, error) {
+	rows, err := q.db.Query(ctx, ListInboxProjectNames, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInboxProjectNamesRow{}
+	for rows.Next() {
+		var i ListInboxProjectNamesRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListInboxProjectTaskTitles = `-- name: ListInboxProjectTaskTitles :many
+SELECT id, title FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND id = ANY($2::uuid[])
+`
+
+type ListInboxProjectTaskTitlesParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Ids      []uuid.UUID `json:"ids"`
+}
+
+type ListInboxProjectTaskTitlesRow struct {
+	ID    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+}
+
+// 收件箱来源补名:批量取项目任务标题。
+func (q *Queries) ListInboxProjectTaskTitles(ctx context.Context, arg ListInboxProjectTaskTitlesParams) ([]ListInboxProjectTaskTitlesRow, error) {
+	rows, err := q.db.Query(ctx, ListInboxProjectTaskTitles, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInboxProjectTaskTitlesRow{}
+	for rows.Next() {
+		var i ListInboxProjectTaskTitlesRow
+		if err := rows.Scan(&i.ID, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const PeekInboxChange = `-- name: PeekInboxChange :one
+SELECT id, updated_at FROM inbox_items
+WHERE tenant_id = $1::uuid
+  AND (
+    $2::boolean
+    OR target_user_id = $3::uuid
+    OR (
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = $3::uuid
+      )
+    )
+  )
+  AND (updated_at, id) > ($4::timestamptz, $5::uuid)
+ORDER BY updated_at DESC, id DESC
+LIMIT 1
+`
+
+type PeekInboxChangeParams struct {
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	TeamViewAllowed bool               `json:"team_view_allowed"`
+	ActorUserID     uuid.UUID          `json:"actor_user_id"`
+	CursorUpdatedAt pgtype.Timestamptz `json:"cursor_updated_at"`
+	CursorID        uuid.UUID          `json:"cursor_id"`
+}
+
+type PeekInboxChangeRow struct {
+	ID        uuid.UUID          `json:"id"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 收件箱 SSE 脏通知探测:返回 actor 可见范围内、(updated_at, id) 游标之后最新的一条变更行。
+// 可见性谓词必须与 ListInboxItems 的 target_user_id 分支同口径(含 any-of-N 项目决策成员可见);
+// team_view_allowed(具团队读权)时放宽到全租户。只取最新一行:两次探测间的多条变更折叠为一次通知。
+func (q *Queries) PeekInboxChange(ctx context.Context, arg PeekInboxChangeParams) (PeekInboxChangeRow, error) {
+	row := q.db.QueryRow(ctx, PeekInboxChange,
+		arg.TenantID,
+		arg.TeamViewAllowed,
+		arg.ActorUserID,
+		arg.CursorUpdatedAt,
+		arg.CursorID,
+	)
+	var i PeekInboxChangeRow
+	err := row.Scan(&i.ID, &i.UpdatedAt)
+	return i, err
+}
+
 const UpsertInboxItem = `-- name: UpsertInboxItem :one
 INSERT INTO inbox_items (
     tenant_id,

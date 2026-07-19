@@ -18,12 +18,21 @@ type HandlerService interface {
 	ListItems(ctx context.Context, req ListItemsRequest) (ListItemsResult, error)
 	GetBadge(ctx context.Context, tenantID, actorUserID uuid.UUID, includeTeam bool) (Badge, error)
 	ExecuteAction(ctx context.Context, req ExecuteActionRequest) (Item, SourceActionResult, error)
+	PeekChanges(ctx context.Context, req PeekChangeRequest) (*ChangeCursor, error)
 }
 
 type HTTPHandler struct {
 	service    HandlerService
 	authorizer authz.Authorizer
+	// streamInterval 覆盖 SSE 探测间隔,零值用 defaultStreamInterval;测试注入用。
+	streamInterval time.Duration
 }
+
+const defaultStreamInterval = 2 * time.Second
+const streamKeepaliveEvery = 8 // 每 N 个空探测发一次注释行保活(2s 间隔 ≈ 16s 一次)
+// 流启动游标回拨量:updated_at 由 DB NOW() 生成,与应用时钟可能有偏差。宁可多推一次
+// 脏通知(客户端只是多一次 refetch),不漏掉建流瞬间落库的变更。
+const streamCursorSlack = 5 * time.Second
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
@@ -90,6 +99,89 @@ func (h *HTTPHandler) GetBadge(w http.ResponseWriter, r *http.Request) {
 		TeamOpenCount: badge.TeamOpenCount,
 		HighRiskCount: badge.HighRiskCount,
 	})
+}
+
+// StreamItems 以 SSE 推送收件箱脏通知:服务端按短间隔用 (updated_at, id) 游标探测 actor
+// 可见范围内是否有变更,有则写一帧 event: inbox-changed(客户端收到后走既有 ListItems 重拉,
+// 授权与筛选不在流内复刻);空探测期间定期发注释行保活。团队可见范围在建流时判权一次,
+// 存续期内不重判(断线重连后生效,与页面打开期间不重判权限的现状一致)。
+func (h *HTTPHandler) StreamItems(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, ok := consoleIdentity(w, r)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	teamViewAllowed, err := h.canReadTeamInbox(r.Context(), tenantID, actorID, "inbox change stream read")
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	flusher, canFlush := w.(http.Flusher)
+	if !canFlush {
+		writeJSONError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	interval := h.streamInterval
+	if interval <= 0 {
+		interval = defaultStreamInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	cursorAt := time.Now().UTC().Add(-streamCursorSlack)
+	cursorID := uuid.Nil
+	idleTicks := 0
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		}
+		change, err := service.PeekChanges(r.Context(), PeekChangeRequest{
+			TenantID:        tenantID,
+			ActorUserID:     actorID,
+			TeamViewAllowed: teamViewAllowed,
+			CursorUpdatedAt: cursorAt,
+			CursorID:        cursorID,
+		})
+		if err != nil {
+			// 探测失败(含连接被取消)即结束流,客户端 EventSource 会自动重连。
+			return
+		}
+		if change == nil {
+			idleTicks++
+			if idleTicks >= streamKeepaliveEvery {
+				idleTicks = 0
+				if _, writeErr := w.Write([]byte(": keepalive\n\n")); writeErr != nil {
+					return
+				}
+				flusher.Flush()
+			}
+			continue
+		}
+		idleTicks = 0
+		cursorAt, cursorID = change.UpdatedAt, change.ID
+		payload, marshalErr := json.Marshal(map[string]string{
+			"updated_at": change.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		})
+		if marshalErr != nil {
+			continue
+		}
+		if _, writeErr := w.Write([]byte("event: inbox-changed\ndata: " + string(payload) + "\n\n")); writeErr != nil {
+			return
+		}
+		flusher.Flush()
+	}
 }
 
 func (h *HTTPHandler) ExecuteAction(w http.ResponseWriter, r *http.Request) {
@@ -332,6 +424,8 @@ type itemResponse struct {
 	SourceProjectID         *string        `json:"source_project_id,omitempty"`
 	SourceTaskID            *string        `json:"source_task_id,omitempty"`
 	SourceApprovalRequestID *string        `json:"source_approval_request_id,omitempty"`
+	SourceProjectName       *string        `json:"source_project_name,omitempty"`
+	SourceTaskName          *string        `json:"source_task_name,omitempty"`
 	Title                   string         `json:"title"`
 	Summary                 *string        `json:"summary,omitempty"`
 	RiskLevel               *string        `json:"risk_level,omitempty"`
@@ -374,6 +468,8 @@ func itemResponseFromDomain(item Item) itemResponse {
 		SourceProjectID:         optionalUUIDString(item.SourceProjectID),
 		SourceTaskID:            optionalUUIDString(item.SourceTaskID),
 		SourceApprovalRequestID: optionalUUIDString(item.SourceApprovalRequestID),
+		SourceProjectName:       item.SourceProjectName,
+		SourceTaskName:          item.SourceTaskName,
 		Title:                   item.Title,
 		Summary:                 item.Summary,
 		RiskLevel:               item.RiskLevel,

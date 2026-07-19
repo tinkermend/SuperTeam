@@ -91,6 +91,10 @@ func (s *routeInboxService) GetBadge(_ context.Context, tenantID, actorUserID uu
 	return s.badge, nil
 }
 
+func (s *routeInboxService) PeekChanges(_ context.Context, _ inbox.PeekChangeRequest) (*inbox.ChangeCursor, error) {
+	return nil, nil
+}
+
 func (s *routeInboxService) ExecuteAction(_ context.Context, req inbox.ExecuteActionRequest) (inbox.Item, inbox.SourceActionResult, error) {
 	s.executeReq = req
 	return inbox.Item{}, inbox.SourceActionResult{}, nil
