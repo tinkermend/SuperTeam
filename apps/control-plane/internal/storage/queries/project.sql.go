@@ -7615,6 +7615,90 @@ func (q *Queries) RejectProjectPlanRevision(ctx context.Context, arg RejectProje
 	return i, err
 }
 
+const ReleaseProjectTaskWaitingHumanForRedispatch = `-- name: ReleaseProjectTaskWaitingHumanForRedispatch :one
+UPDATE project_tasks
+SET status = 'planned',
+    current_attempt_id = NULL,
+    digital_employee_run_id = NULL,
+    runtime_task_id = NULL,
+    retry_not_before = $1::timestamptz,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE($2::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND id = $5::uuid
+  AND status = 'waiting_human'
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_event_id, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id, plan_iteration
+`
+
+type ReleaseProjectTaskWaitingHumanForRedispatchParams struct {
+	RetryNotBefore pgtype.Timestamptz `json:"retry_not_before"`
+	LatestEventID  uuid.NullUUID      `json:"latest_event_id"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
+	ProjectID      uuid.UUID          `json:"project_id"`
+	ID             uuid.UUID          `json:"id"`
+}
+
+// 人类解决任务等待(批准继续)后,任务回到 planned 由协调线程走正常派发管线
+// (gate 评估 + run 启动 + attempt 创建)。直接由释放方创建 queued attempt 是
+// 死路:没有 run,runtime 永远不会来领,最终被 stale-queued 看门狗回收。
+// 旧执行的 run 绑定必须一并清除:DispatchProjectTask 对带 run 绑定且已有
+// dispatched 事件的任务按"已派发"幂等短路,残留绑定会让重派发静默 no-op。
+func (q *Queries) ReleaseProjectTaskWaitingHumanForRedispatch(ctx context.Context, arg ReleaseProjectTaskWaitingHumanForRedispatchParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, ReleaseProjectTaskWaitingHumanForRedispatch,
+		arg.RetryNotBefore,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalEventID,
+		&i.StatusChangedAt,
+		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
+		&i.PlanIteration,
+	)
+	return i, err
+}
+
 const RenewProjectTaskAttemptLease = `-- name: RenewProjectTaskAttemptLease :one
 UPDATE project_task_attempts
 SET lease_expires_at = $1::timestamptz,
@@ -8387,6 +8471,35 @@ func (q *Queries) SupersedeOpenProjectPlanRevisions(ctx context.Context, arg Sup
 		arg.DemandID,
 	)
 	return err
+}
+
+const SupersedeWaitingHumanProjectTaskAttempt = `-- name: SupersedeWaitingHumanProjectTaskAttempt :execrows
+UPDATE project_task_attempts
+SET status = 'cancelled',
+    finished_at = COALESCE(finished_at, NOW()),
+    failure_message = COALESCE($1::text, failure_message),
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND status = 'waiting_human'
+`
+
+type SupersedeWaitingHumanProjectTaskAttemptParams struct {
+	FailureMessage pgtype.Text `json:"failure_message"`
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ID             uuid.UUID   `json:"id"`
+}
+
+// 人类解决等待、任务转入重派发或终态时,旧 waiting_human attempt 必须先出让
+// 活跃位(uq_project_task_attempts_active 把 waiting_human 计入活跃),终态取
+// cancelled(被人类决策取代,词表内唯一贴切的终态)。attempt 已被其他恢复路径
+// 置为终态(如 lost)时命中 0 行,属合法情形,调用方不视为错误。
+func (q *Queries) SupersedeWaitingHumanProjectTaskAttempt(ctx context.Context, arg SupersedeWaitingHumanProjectTaskAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, SupersedeWaitingHumanProjectTaskAttempt, arg.FailureMessage, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const TransitionProjectStatus = `-- name: TransitionProjectStatus :one

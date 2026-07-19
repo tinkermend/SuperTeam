@@ -1779,6 +1779,64 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 	}
 }
 
+// applyTaskHumanWaitRelease releases a project task parked waiting_human by a
+// task-wait decision card (recovery / clarification / mid-execution approval
+// family). approved → the paused attempt yields and the task goes back to
+// planned, returned as ready for a normal dispatch round (gate + run start —
+// queuing an attempt directly would strand it: no run means the runtime never
+// picks it up). rejected → mark the task failed. Any other resolution leaves
+// the task waiting. Idempotent: a task no longer waiting (already released or
+// terminal) is a no-op, so signal retries are safe.
+func (s *ProjectStore) applyTaskHumanWaitRelease(ctx context.Context, input ApplyPreDispatchGateDecisionInput, decision project.DecisionRequest) (ApplyPreDispatchGateDecisionResult, error) {
+	var markFailed bool
+	switch strings.ToLower(strings.TrimSpace(input.Decision)) {
+	case "approved":
+	case "rejected":
+		markFailed = true
+	default:
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	if decision.ProjectTaskID == nil || *decision.ProjectTaskID == uuid.Nil {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, *decision.ProjectTaskID)
+	if err != nil {
+		return ApplyPreDispatchGateDecisionResult{}, err
+	}
+	if task.ProjectID != input.ProjectID {
+		return ApplyPreDispatchGateDecisionResult{}, project.ErrProjectNotFound
+	}
+	if task.Status != project.ProjectTaskStatusWaitingHuman {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	// The stuck-attempt watchdog parks tasks without linking waiting_request_id;
+	// a linked wait must match the resolved decision, an unlinked one is claimable.
+	if task.WaitingRequestID != nil && *task.WaitingRequestID != decision.ID {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	releaseRepository, ok := s.repository.(project.ProjectTaskHumanWaitReleaseRepository)
+	if !ok {
+		return ApplyPreDispatchGateDecisionResult{}, ErrActivityStoreRequired
+	}
+	result, err := releaseRepository.ReleaseProjectTaskHumanWaitForRedispatch(ctx, project.ReleaseProjectTaskHumanWaitRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ProjectTaskID:     task.ID,
+		DecisionRequestID: decision.ID,
+		MarkFailed:        markFailed,
+	})
+	if err != nil {
+		if errors.Is(err, project.ErrProjectConflict) {
+			return ApplyPreDispatchGateDecisionResult{}, nil
+		}
+		return ApplyPreDispatchGateDecisionResult{}, err
+	}
+	if result.ReadyForDispatch {
+		return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: []uuid.UUID{task.ID}}, nil
+	}
+	return ApplyPreDispatchGateDecisionResult{}, nil
+}
+
 func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHumanDecisionRouteInput) (HumanDecisionRouteResult, error) {
 	if s.repository == nil {
 		return HumanDecisionRouteResult{}, ErrActivityStoreRequired

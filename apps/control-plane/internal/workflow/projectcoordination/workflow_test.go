@@ -1733,6 +1733,68 @@ func TestProjectCoordinatorRedispatchesApprovedPreDispatchGateDecision(t *testin
 	}, store.dispatchInputs[0])
 }
 
+// Recovery cards (project_task_recovery) flow through the DEFAULT decision
+// route — same activity type as pre-dispatch gate decisions — so long-lived
+// coordinator histories replay unchanged; the release itself is discriminated
+// inside the ApplyPreDispatchGateDecision activity (see applyTaskRecoveryRelease).
+// This test pins the workflow-level contract: released ready tasks get dispatched.
+func TestProjectCoordinatorDispatchesReleasedTaskRecoveryDecision(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	decisionRequestID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:           CoordinationSnapshot{ProjectID: projectID},
+		dispatchEvent:      uuid.New(),
+		gateDecisionTaskID: &taskID,
+	}
+	store.humanDecisionRoutes = map[uuid.UUID]HumanDecisionRouteResult{
+		decisionRequestID: {
+			Decision: ProjectDecisionSnapshot{
+				ID:             decisionRequestID,
+				ProjectID:      projectID,
+				DecisionType:   "project_task_recovery",
+				StatusSnapshot: "approved",
+				ProjectTaskID:  taskID,
+			},
+		},
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: decisionRequestID,
+			Decision:          "approved",
+			ResolvedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{"LoadHumanDecisionRoute", "ApplyPreDispatchGateDecision", "DispatchProjectTask"}, store.calls)
+	require.Len(t, store.applyPreDispatchGateInputs, 1)
+	require.Equal(t, decisionRequestID, store.applyPreDispatchGateInputs[0].DecisionRequestID)
+	require.Equal(t, "approved", store.applyPreDispatchGateInputs[0].Decision)
+	require.Len(t, store.dispatchInputs, 1)
+	require.Equal(t, DispatchProjectTaskInput{
+		TenantID:       store.dispatchInputs[0].TenantID,
+		ProjectID:      projectID,
+		TaskID:         taskID,
+		DispatchReason: project.DispatchReasonHumanResolved,
+	}, store.dispatchInputs[0])
+}
+
 func TestProjectCoordinatorKeepsNonGateDecisionObservedOnly(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()

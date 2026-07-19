@@ -277,6 +277,27 @@ func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input A
 	if err != nil {
 		return ApplyPreDispatchGateDecisionResult{}, err
 	}
+	// Task human-wait cards (recovery from dispatch failure / watchdog, plus
+	// mid-execution clarification-family waits) route through this activity's
+	// default workflow path; the release is discriminated HERE on decision-type
+	// data rather than by a workflow-level case, because a GetVersion fence is
+	// sticky per execution and would pin long-lived coordinators (whose
+	// histories already carry such signals) to the old dead-end path until
+	// continue-as-new. Activity executions are never replayed, so live signals
+	// gain the release immediately. project_task_acceptance is NOT released
+	// here — Service.resolveProjectTaskWaitDecision completes it; a gate-linked
+	// project_task_approval keeps the original gate re-dispatch below.
+	switch decision.DecisionType {
+	case "project_task_recovery", "project_task_runtime_recovery",
+		"project_task_clarification", "project_task_missing_context",
+		"project_task_permission", "project_task_plan_invalid",
+		"project_task_budget_approval", "project_task_human_wait":
+		return s.applyTaskHumanWaitRelease(ctx, input, decision)
+	case "project_task_approval":
+		if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID == uuid.Nil {
+			return s.applyTaskHumanWaitRelease(ctx, input, decision)
+		}
+	}
 	if !preDispatchGateDecisionResolvedForDispatch(decision, input.Decision) {
 		return ApplyPreDispatchGateDecisionResult{}, nil
 	}

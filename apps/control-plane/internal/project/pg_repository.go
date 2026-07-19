@@ -4671,6 +4671,100 @@ func (r *PgRepository) recoverDispatchFailureFailedWithQueries(ctx context.Conte
 	return ProjectTaskWritebackResult{Task: updated, Event: event}, nil
 }
 
+// ReleaseProjectTaskHumanWaitForRedispatch releases a task parked
+// waiting_human once a human resolves its wait decision from the inbox.
+// Approved: the paused attempt (if any) yields its active slot and the task
+// returns to planned — the caller (coordinator) then runs the normal dispatch
+// pipeline (gate + run start + attempt). MarkFailed ends the task instead.
+func (r *PgRepository) ReleaseProjectTaskHumanWaitForRedispatch(ctx context.Context, req ReleaseProjectTaskHumanWaitRequest) (ReleaseProjectTaskHumanWaitResult, error) {
+	return withProjectQueries(ctx, r, "project task human wait release", func(q *queries.Queries) (ReleaseProjectTaskHumanWaitResult, error) {
+		row, err := q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: req.TenantID, ID: req.ProjectTaskID})
+		if err != nil {
+			return ReleaseProjectTaskHumanWaitResult{}, projectRepositoryError(err)
+		}
+		task, err := taskFromRecord(row)
+		if err != nil {
+			return ReleaseProjectTaskHumanWaitResult{}, err
+		}
+		if task.ProjectID != req.ProjectID {
+			return ReleaseProjectTaskHumanWaitResult{}, ErrProjectNotFound
+		}
+		if task.Status != ProjectTaskStatusWaitingHuman {
+			return ReleaseProjectTaskHumanWaitResult{}, ErrProjectConflict
+		}
+		if task.CurrentAttemptID != nil {
+			if _, err := q.SupersedeWaitingHumanProjectTaskAttempt(ctx, queries.SupersedeWaitingHumanProjectTaskAttemptParams{
+				TenantID:       req.TenantID,
+				ID:             *task.CurrentAttemptID,
+				FailureMessage: textOrNull("人类已解决任务等待，attempt 由决策处理取代"),
+			}); err != nil {
+				return ReleaseProjectTaskHumanWaitResult{}, projectRepositoryError(err)
+			}
+		}
+		if req.MarkFailed {
+			event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+				TenantID:     req.TenantID,
+				ProjectID:    req.ProjectID,
+				EventType:    ProjectEventTaskFailed,
+				ActorType:    "project_coordinator",
+				ActorID:      task.ID.String(),
+				ResourceType: strPtr("project_task"),
+				ResourceID:   strPtr(task.ID.String()),
+				Summary:      "人类已驳回任务等待请求，任务标记失败",
+				Payload: map[string]any{
+					"project_task_id":     task.ID.String(),
+					"decision_request_id": req.DecisionRequestID.String(),
+				},
+			})
+			if err != nil {
+				return ReleaseProjectTaskHumanWaitResult{}, err
+			}
+			updated, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, task.ID, ProjectTaskStatusFailed, &event.ID, []string{ProjectTaskStatusWaitingHuman})
+			if err != nil {
+				return ReleaseProjectTaskHumanWaitResult{}, err
+			}
+			if updated.DemandID != nil {
+				if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, updated.TenantID, updated.ProjectID, *updated.DemandID); err != nil {
+					return ReleaseProjectTaskHumanWaitResult{}, err
+				}
+			}
+			return ReleaseProjectTaskHumanWaitResult{Task: updated, Event: event}, nil
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    req.ProjectID,
+			EventType:    ProjectEventTaskRetryScheduled,
+			ActorType:    "project_coordinator",
+			ActorID:      task.ID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(task.ID.String()),
+			Summary:      "人类已批准任务等待请求，任务重新排队分派",
+			Payload: map[string]any{
+				"project_task_id":     task.ID.String(),
+				"decision_request_id": req.DecisionRequestID.String(),
+			},
+		})
+		if err != nil {
+			return ReleaseProjectTaskHumanWaitResult{}, err
+		}
+		releasedRow, err := q.ReleaseProjectTaskWaitingHumanForRedispatch(ctx, queries.ReleaseProjectTaskWaitingHumanForRedispatchParams{
+			RetryNotBefore: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+			LatestEventID:  nullUUID(&event.ID),
+			TenantID:       req.TenantID,
+			ProjectID:      req.ProjectID,
+			ID:             task.ID,
+		})
+		if err != nil {
+			return ReleaseProjectTaskHumanWaitResult{}, projectRepositoryError(err)
+		}
+		released, err := taskFromRecord(releasedRow)
+		if err != nil {
+			return ReleaseProjectTaskHumanWaitResult{}, err
+		}
+		return ReleaseProjectTaskHumanWaitResult{Task: released, Event: event, ReadyForDispatch: true}, nil
+	})
+}
+
 func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, q *queries.Queries, req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
 	retryAttemptID := req.RetryAttemptID
 	if retryAttemptID == uuid.Nil {
@@ -4851,6 +4945,18 @@ func (r *PgRepository) resumeProjectTaskAfterHumanWaitWithQueries(ctx context.Co
 	}
 	if req.Task.AssignedDigitalEmployeeID == nil {
 		return ProjectTask{}, ErrProjectTaskForbidden
+	}
+	// The paused attempt still holds the task's active-attempt slot
+	// (uq_project_task_attempts_active counts waiting_human as active); it must
+	// yield before the retry attempt can be queued.
+	if req.CurrentAttempt.Status == ProjectTaskAttemptStatusWaitingHuman {
+		if _, err := q.SupersedeWaitingHumanProjectTaskAttempt(ctx, queries.SupersedeWaitingHumanProjectTaskAttemptParams{
+			TenantID:       req.Task.TenantID,
+			ID:             req.CurrentAttempt.ID,
+			FailureMessage: textOrNull("人类已解决等待，改由新 attempt 恢复执行"),
+		}); err != nil {
+			return ProjectTask{}, projectRepositoryError(err)
+		}
 	}
 	attemptReq := QueueProjectTaskRequest{
 		TenantID:                      req.Task.TenantID,

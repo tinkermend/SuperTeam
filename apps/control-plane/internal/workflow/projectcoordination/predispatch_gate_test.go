@@ -508,6 +508,67 @@ func TestProjectStoreApplyPreDispatchGateDecisionIgnoresNonApprovalGateDecision(
 	require.Empty(t, result.ReadyTaskIDs)
 }
 
+func TestProjectStoreApplyPreDispatchGateDecisionReleasesRecoveryWait(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	decisionID := uuid.New()
+	taskIDCopy := taskID
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "Dispatch failure parked task",
+			Status:                    project.ProjectTaskStatusWaitingHuman,
+			AssignedDigitalEmployeeID: &employeeID,
+			WaitingRequestID:          &decisionID,
+			AttemptCount:              0,
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &taskIDCopy,
+			TargetUserID:   uuid.New(),
+			DecisionType:   "project_task_recovery",
+			TitleSnapshot:  "分派失败恢复",
+			StatusSnapshot: "approved",
+		}},
+		recoveryReleaseResult: project.ReleaseProjectTaskHumanWaitResult{ReadyForDispatch: true},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{})
+
+	result, err := store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{taskID}, result.ReadyTaskIDs)
+	require.NotNil(t, repo.recoveryReleaseReq)
+	require.Equal(t, decisionID, repo.recoveryReleaseReq.DecisionRequestID)
+	require.False(t, repo.recoveryReleaseReq.MarkFailed)
+
+	// rejected → mark failed, nothing to dispatch
+	repo.recoveryReleaseReq = nil
+	repo.recoveryReleaseResult = project.ReleaseProjectTaskHumanWaitResult{}
+	result, err = store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "rejected",
+	})
+	require.NoError(t, err)
+	require.Empty(t, result.ReadyTaskIDs)
+	require.NotNil(t, repo.recoveryReleaseReq)
+	require.True(t, repo.recoveryReleaseReq.MarkFailed)
+}
+
 func TestProjectStoreRunPreDispatchGateFailsClosedWhenApprovalsMissing(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1118,6 +1179,13 @@ type preDispatchGateRepositoryFake struct {
 	directDecisionCalls    int
 	missingActivePlacement bool
 	lastMoveWaitingReq     *project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest
+	recoveryReleaseReq     *project.ReleaseProjectTaskHumanWaitRequest
+	recoveryReleaseResult  project.ReleaseProjectTaskHumanWaitResult
+}
+
+func (r *preDispatchGateRepositoryFake) ReleaseProjectTaskHumanWaitForRedispatch(ctx context.Context, req project.ReleaseProjectTaskHumanWaitRequest) (project.ReleaseProjectTaskHumanWaitResult, error) {
+	r.recoveryReleaseReq = &req
+	return r.recoveryReleaseResult, nil
 }
 
 func preDispatchBlockerKeys(blockers []project.PreDispatchGateBlocker) []string {

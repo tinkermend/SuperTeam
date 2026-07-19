@@ -5785,7 +5785,7 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	}
 	if decision.StatusSnapshot != "pending" {
 		if decision.StatusSnapshot == req.Decision {
-			if err := s.resolveProjectTaskAcceptanceDecision(ctx, decision, req); err != nil {
+			if err := s.resolveProjectTaskWaitDecision(ctx, decision, req); err != nil {
 				return nil, err
 			}
 			return &decision, nil
@@ -5845,7 +5845,7 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 			return nil, err
 		}
 	}
-	if err := s.resolveProjectTaskAcceptanceDecision(ctx, resolved, req); err != nil {
+	if err := s.resolveProjectTaskWaitDecision(ctx, resolved, req); err != nil {
 		return nil, err
 	}
 	if err := s.coordinator.SignalHumanDecisionSubmitted(ctx, HumanDecisionSubmittedSignal{
@@ -5986,7 +5986,16 @@ func planRevisionAvailableExitDeliverables(payload map[string]any) []string {
 	return deliverables
 }
 
-func (s *Service) resolveProjectTaskAcceptanceDecision(ctx context.Context, decision DecisionRequest, req ResolveDecisionRequest) error {
+// resolveProjectTaskWaitDecision completes a task parked waiting_human for
+// acceptance once its project_task_acceptance decision is approved. All OTHER
+// task-wait decision types (recovery / clarification / mid-execution approval
+// family) are deliberately NOT handled here: their release runs inside the
+// coordinator's ApplyPreDispatchGateDecision activity (data-driven
+// discriminator, see applyTaskHumanWaitRelease), which re-dispatches through
+// the normal gate + run-start pipeline — releasing them service-side by
+// queuing an attempt directly strands the task (no run means the runtime
+// never picks it up).
+func (s *Service) resolveProjectTaskWaitDecision(ctx context.Context, decision DecisionRequest, req ResolveDecisionRequest) error {
 	if decision.DecisionType != "project_task_acceptance" || req.Decision != "approved" || decision.ProjectTaskID == nil {
 		return nil
 	}

@@ -551,6 +551,31 @@ type RecoverProjectTaskDispatchFailureWritebackRequest struct {
 	Action         ProjectTaskRecoveryAction
 }
 
+// ProjectTaskHumanWaitReleaseRepository is the transaction boundary for
+// releasing a task parked waiting_human once a human resolves its wait
+// decision card (recovery / clarification / mid-execution approval family)
+// from the inbox.
+type ProjectTaskHumanWaitReleaseRepository interface {
+	ReleaseProjectTaskHumanWaitForRedispatch(ctx context.Context, req ReleaseProjectTaskHumanWaitRequest) (ReleaseProjectTaskHumanWaitResult, error)
+}
+
+type ReleaseProjectTaskHumanWaitRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	ProjectTaskID     uuid.UUID
+	DecisionRequestID uuid.UUID
+	MarkFailed        bool
+}
+
+// ReleaseProjectTaskHumanWaitResult: ReadyForDispatch is true when the task
+// went back to planned and needs a coordinator dispatch round; false when the
+// task was marked failed.
+type ReleaseProjectTaskHumanWaitResult struct {
+	Task             ProjectTask
+	Event            ProjectEvent
+	ReadyForDispatch bool
+}
+
 type CompleteProjectTaskAttemptAcceptanceWritebackRequest struct {
 	Task     ProjectTask
 	Attempt  ProjectTaskAttempt

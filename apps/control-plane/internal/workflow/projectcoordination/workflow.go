@@ -384,6 +384,14 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		}
 		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "human decision submitted")
 	default:
+		// project_task_recovery / project_task_runtime_recovery cards also land
+		// here: their release is decided INSIDE the ApplyPreDispatchGateDecision
+		// activity (a data-driven discriminator). A workflow-level case would
+		// need a GetVersion fence, and GetVersion is sticky per execution — a
+		// long-lived coordinator whose history already carries one such signal
+		// would stay pinned to the dead-end path until continue-as-new. Routing
+		// through the same activity type keeps replay byte-identical while live
+		// activity executions gain the release behavior immediately.
 		readyTaskIDs, err := applyPreDispatchGateDecision(ctx, input.TenantID, projectID, signal)
 		if err != nil {
 			return err

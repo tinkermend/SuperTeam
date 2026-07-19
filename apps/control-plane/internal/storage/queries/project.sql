@@ -1553,6 +1553,43 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status IN ('queued', 'running')
 RETURNING *;
 
+-- name: ReleaseProjectTaskWaitingHumanForRedispatch :one
+-- 人类解决任务等待(批准继续)后,任务回到 planned 由协调线程走正常派发管线
+-- (gate 评估 + run 启动 + attempt 创建)。直接由释放方创建 queued attempt 是
+-- 死路:没有 run,runtime 永远不会来领,最终被 stale-queued 看门狗回收。
+-- 旧执行的 run 绑定必须一并清除:DispatchProjectTask 对带 run 绑定且已有
+-- dispatched 事件的任务按"已派发"幂等短路,残留绑定会让重派发静默 no-op。
+UPDATE project_tasks
+SET status = 'planned',
+    current_attempt_id = NULL,
+    digital_employee_run_id = NULL,
+    runtime_task_id = NULL,
+    retry_not_before = sqlc.arg('retry_not_before')::timestamptz,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'waiting_human'
+RETURNING *;
+
+-- name: SupersedeWaitingHumanProjectTaskAttempt :execrows
+-- 人类解决等待、任务转入重派发或终态时,旧 waiting_human attempt 必须先出让
+-- 活跃位(uq_project_task_attempts_active 把 waiting_human 计入活跃),终态取
+-- cancelled(被人类决策取代,词表内唯一贴切的终态)。attempt 已被其他恢复路径
+-- 置为终态(如 lost)时命中 0 行,属合法情形,调用方不视为错误。
+UPDATE project_task_attempts
+SET status = 'cancelled',
+    finished_at = COALESCE(finished_at, NOW()),
+    failure_message = COALESCE(sqlc.narg('failure_message')::text, failure_message),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'waiting_human';
+
 -- name: UpdateProjectTaskStatus :one
 UPDATE project_tasks
 SET status = sqlc.arg('status')::varchar,
