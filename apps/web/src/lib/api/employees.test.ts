@@ -116,7 +116,7 @@ describe("digital employee API", () => {
         error_count: 0,
         high_risk_count: 0,
         ready_count: 1,
-        pending_runtime_binding_count: 2,
+        needs_configuration_count: 2,
         pending_config_approval_count: 0,
         failed_recent_run_count: 0,
         operational_status_counts: {
@@ -130,7 +130,7 @@ describe("digital employee API", () => {
         },
       },
       queue_summary: {
-        pending_runtime_binding_count: 2,
+        needs_configuration_count: 2,
         stale_config_count: 0,
         failed_recent_run_count: 0,
       },
@@ -145,6 +145,7 @@ describe("digital employee API", () => {
             owner_display_name: "王工",
             employee_type: "requirements_analyst",
             employee_type_label: "需求分析",
+            provider_type: "codex",
             name: "需求分析员工",
             role: "requirements_analyst",
             status: "active",
@@ -228,9 +229,7 @@ describe("digital employee API", () => {
         employee_types: [],
         statuses: [],
         providers: [],
-        runtime_nodes: [],
         risk_levels: [],
-        execution_statuses: [{ value: "missing", label: "未绑定 Runtime" }],
         run_statuses: [{ value: "none", label: "暂无运行" }],
       },
       pagination: { limit: 25, offset: 5, total_count: 1 },
@@ -255,9 +254,7 @@ describe("digital employee API", () => {
           status: "active",
           employee_type: "requirements_analyst",
           provider_type: "codex",
-          runtime_node_id: "runtime-1",
           risk_level: "medium",
-          execution_status: "missing",
           run_status: "none",
           limit: 25,
           offset: 5,
@@ -266,10 +263,10 @@ describe("digital employee API", () => {
     ).resolves.toEqual(overview);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/overview?q=%E9%9C%80%E6%B1%82&team_id=team-1&status=active&employee_type=requirements_analyst&provider_type=codex&runtime_node_id=runtime-1&risk_level=medium&execution_status=missing&run_status=none&limit=25&offset=5",
+      "http://control-plane.local/api/v1/digital-employees/overview?q=%E9%9C%80%E6%B1%82&team_id=team-1&status=active&employee_type=requirements_analyst&provider_type=codex&risk_level=medium&run_status=none&limit=25&offset=5",
       expect.objectContaining({ credentials: "include", method: "GET" }),
     );
-    expect(overview.queue_summary.pending_runtime_binding_count).toBe(2);
+    expect(overview.queue_summary.needs_configuration_count).toBe(2);
     expect(overview.summary.operational_status_counts.working).toBe(1);
     expect(overview.items[0].workbench_status).toBe("ready");
     expect(overview.items[0].operational_state).toEqual({

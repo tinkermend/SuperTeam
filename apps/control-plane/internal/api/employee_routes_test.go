@@ -495,10 +495,9 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 	server.SetEmployeeHandler(employee.NewHandler(service))
 
 	teamID := uuid.New()
-	runtimeNodeID := uuid.New()
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/api/v1/digital-employees/overview?q=%E9%9C%80%E6%B1%82&team_id="+teamID.String()+"&status=active&employee_type=requirements_analyst&provider_type=codex&runtime_node_id="+runtimeNodeID.String()+"&risk_level=medium&execution_status=missing&run_status=none&limit=25&offset=5",
+		"/api/v1/digital-employees/overview?q=%E9%9C%80%E6%B1%82&team_id="+teamID.String()+"&status=active&employee_type=requirements_analyst&provider_type=codex&risk_level=medium&run_status=none&limit=25&offset=5",
 		nil,
 	)
 	withConsoleSessionCookie(req, user.SessionToken)
@@ -518,10 +517,7 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 	if service.overviewReq.Status != employee.DigitalEmployeeStatusActive ||
 		service.overviewReq.EmployeeType != "requirements_analyst" ||
 		service.overviewReq.ProviderType != "codex" ||
-		service.overviewReq.RuntimeNodeID == nil ||
-		*service.overviewReq.RuntimeNodeID != runtimeNodeID ||
 		service.overviewReq.RiskLevel != "medium" ||
-		service.overviewReq.ExecutionStatus != employee.OverviewExecutionStatusMissing ||
 		service.overviewReq.RunStatus != employee.OverviewRunStatusNone ||
 		service.overviewReq.Limit != 25 ||
 		service.overviewReq.Offset != 5 {
@@ -537,13 +533,13 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 			ErrorCount                 int32            `json:"error_count"`
 			HighRiskCount              int32            `json:"high_risk_count"`
 			ReadyCount                 int32            `json:"ready_count"`
-			PendingRuntimeBindingCount int32            `json:"pending_runtime_binding_count"`
+			NeedsConfigurationCount    int32            `json:"needs_configuration_count"`
 			PendingConfigApprovalCount int32            `json:"pending_config_approval_count"`
 			FailedRecentRunCount       int32            `json:"failed_recent_run_count"`
 			OperationalStatusCounts    map[string]int32 `json:"operational_status_counts"`
 		} `json:"summary"`
 		QueueSummary struct {
-			PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
+			NeedsConfigurationCount int32 `json:"needs_configuration_count"`
 			StaleConfigCount           int32 `json:"stale_config_count"`
 			FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
 		} `json:"queue_summary"`
@@ -600,10 +596,6 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 				Value string `json:"value"`
 				Label string `json:"label"`
 			} `json:"teams"`
-			ExecutionStatuses []struct {
-				Value string `json:"value"`
-				Label string `json:"label"`
-			} `json:"execution_statuses"`
 			RunStatuses []struct {
 				Value string `json:"value"`
 				Label string `json:"label"`
@@ -630,7 +622,7 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 		t.Fatalf("unexpected overview summary: %#v", body.Summary)
 	}
 	if body.Summary.ReadyCount != 1 ||
-		body.Summary.PendingRuntimeBindingCount != 0 ||
+		body.Summary.NeedsConfigurationCount != 0 ||
 		body.Summary.PendingConfigApprovalCount != 0 ||
 		body.Summary.FailedRecentRunCount != 0 {
 		t.Fatalf("unexpected workbench summary: %#v", body.Summary)
@@ -638,7 +630,7 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 	if body.Summary.OperationalStatusCounts == nil || body.Summary.OperationalStatusCounts["idle"] < 1 {
 		t.Fatalf("expected operational status counts with idle count, got %#v", body.Summary.OperationalStatusCounts)
 	}
-	if body.QueueSummary.PendingRuntimeBindingCount != 0 || body.QueueSummary.StaleConfigCount != 0 || body.QueueSummary.FailedRecentRunCount != 0 {
+	if body.QueueSummary.NeedsConfigurationCount != 0 || body.QueueSummary.StaleConfigCount != 0 || body.QueueSummary.FailedRecentRunCount != 0 {
 		t.Fatalf("unexpected queue summary: %#v", body.QueueSummary)
 	}
 	if len(body.Items) != 1 || body.Items[0].IdentitySummary.Name != "需求分析员工" || body.Items[0].ExecutionSummary.ProviderType != "codex" {
@@ -670,9 +662,6 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 	}
 	if len(body.Filters.Teams) != 1 || body.Filters.Teams[0].Label != "产品组" {
 		t.Fatalf("expected team filters, got %#v", body.Filters.Teams)
-	}
-	if len(body.Filters.ExecutionStatuses) == 0 || body.Filters.ExecutionStatuses[0].Value == "" {
-		t.Fatalf("expected execution status filters, got %#v", body.Filters.ExecutionStatuses)
 	}
 	if len(body.Filters.Providers) != 1 || body.Filters.Providers[0].Value != "codex" || len(body.Filters.ProviderTypes) != 0 {
 		t.Fatalf("expected providers filter key only, got providers=%#v provider_types=%#v", body.Filters.Providers, body.Filters.ProviderTypes)
@@ -2107,8 +2096,8 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 	finishedAt := now.Add(10 * time.Minute)
 	costAmount := 12.34
 	return &employee.DigitalEmployeeOverview{
-		Summary:      employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0, ReadyCount: 1, PendingRuntimeBindingCount: 0, PendingConfigApprovalCount: 0, FailedRecentRunCount: 0, OperationalStatusCounts: map[employee.DigitalEmployeeOperationalStatus]int32{employee.DigitalEmployeeOperationalStatusIdle: 1}},
-		QueueSummary: employee.DigitalEmployeeOverviewQueueSummary{PendingRuntimeBindingCount: 0, StaleConfigCount: 0, FailedRecentRunCount: 0},
+		Summary:      employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0, ReadyCount: 1, NeedsConfigurationCount: 0, PendingConfigApprovalCount: 0, FailedRecentRunCount: 0, OperationalStatusCounts: map[employee.DigitalEmployeeOperationalStatus]int32{employee.DigitalEmployeeOperationalStatusIdle: 1}},
+		QueueSummary: employee.DigitalEmployeeOverviewQueueSummary{NeedsConfigurationCount: 0, StaleConfigCount: 0, FailedRecentRunCount: 0},
 		Items: []employee.DigitalEmployeeOverviewItem{{
 			IdentitySummary:   employee.DigitalEmployeeIdentitySummary{ID: employeeID, TenantID: req.TenantID, TeamID: &teamID, TeamName: "产品组", OwnerUserID: ownerID, OwnerDisplayName: "王佩", EmployeeType: "requirements_analyst", EmployeeTypeLabel: "需求分析", Name: "需求分析员工", Role: "requirements_analyst", Description: stringPtr("负责需求拆解和交付风险识别"), Status: employee.DigitalEmployeeStatusActive, RiskLevel: "medium"},
 			ExecutionSummary:  employee.DigitalEmployeeExecutionSummary{ExecutionInstanceID: &executionInstanceID, Status: employee.OverviewExecutionStatusReady, RuntimeNodeID: &runtimeNodeID, NodeID: "runtime-cn-01", RuntimeName: "cn-01", RuntimeStatus: "online", ProviderType: "codex", ProviderStatus: "healthy", HealthStatus: "healthy", AgentHomeDirAvailable: true},
@@ -2123,7 +2112,7 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 				{Label: "等待结果回写", Status: "completed", OccurredAt: &finishedAt},
 			},
 		}},
-		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, Providers: []employee.OverviewFilterOption{{Value: "codex", Label: "Codex"}}, ExecutionStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewExecutionStatusMissing), Label: "未绑定 Runtime"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
+		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, Providers: []employee.OverviewFilterOption{{Value: "codex", Label: "Codex"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
 		Pagination: employee.OverviewPagination{Limit: req.Limit, Offset: req.Offset, TotalCount: 1},
 	}
 }

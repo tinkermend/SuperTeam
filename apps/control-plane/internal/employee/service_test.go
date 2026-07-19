@@ -418,7 +418,6 @@ func employeeTypeOptionExists(items []EmployeeTypeDefinition, employeeType strin
 func TestEmployeeServiceGetOverviewAppliesDefaultsAndFilters(t *testing.T) {
 	tenantID := uuid.New()
 	teamID := uuid.New()
-	runtimeNodeID := uuid.New()
 	repo := &overviewRepositoryStub{
 		overview: &DigitalEmployeeOverview{
 			Summary:    DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1},
@@ -431,16 +430,14 @@ func TestEmployeeServiceGetOverviewAppliesDefaultsAndFilters(t *testing.T) {
 	require.NoError(t, err)
 
 	overview, err := service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
-		TenantID:        tenantID,
-		Query:           "  需求  ",
-		TeamID:          &teamID,
-		Status:          DigitalEmployeeStatusActive,
-		EmployeeType:    "requirements_analyst",
-		ProviderType:    "codex",
-		RuntimeNodeID:   &runtimeNodeID,
-		RiskLevel:       "medium",
-		ExecutionStatus: OverviewExecutionStatusMissing,
-		RunStatus:       OverviewRunStatusNone,
+		TenantID:     tenantID,
+		Query:        "  需求  ",
+		TeamID:       &teamID,
+		Status:       DigitalEmployeeStatusActive,
+		EmployeeType: "requirements_analyst",
+		ProviderType: "codex",
+		RiskLevel:    "medium",
+		RunStatus:    OverviewRunStatusNone,
 	})
 
 	require.NoError(t, err)
@@ -448,7 +445,6 @@ func TestEmployeeServiceGetOverviewAppliesDefaultsAndFilters(t *testing.T) {
 	require.Equal(t, int32(0), repo.req.Offset)
 	require.Equal(t, "需求", repo.req.Query)
 	require.Equal(t, teamID, *repo.req.TeamID)
-	require.Equal(t, runtimeNodeID, *repo.req.RuntimeNodeID)
 	require.Equal(t, int32(50), overview.Pagination.Limit)
 }
 
@@ -456,24 +452,15 @@ func TestEmployeeServiceGetOverviewRejectsInvalidFilters(t *testing.T) {
 	service, err := NewService(&overviewRepositoryStub{})
 	require.NoError(t, err)
 	_, err = service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
-		TenantID:        uuid.New(),
-		Status:          DigitalEmployeeStatus("retired"),
-		ExecutionStatus: OverviewExecutionStatusReady,
-		RunStatus:       OverviewRunStatusNone,
+		TenantID:  uuid.New(),
+		Status:    DigitalEmployeeStatus("retired"),
+		RunStatus: OverviewRunStatusNone,
 	})
 	require.ErrorIs(t, err, ErrInvalidInput)
 
 	_, err = service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
-		TenantID:        uuid.New(),
-		ExecutionStatus: OverviewExecutionStatus("lost"),
-		RunStatus:       OverviewRunStatusNone,
-	})
-	require.ErrorIs(t, err, ErrInvalidInput)
-
-	_, err = service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
-		TenantID:        uuid.New(),
-		ExecutionStatus: OverviewExecutionStatusMissing,
-		RunStatus:       OverviewRunStatus("paused"),
+		TenantID:  uuid.New(),
+		RunStatus: OverviewRunStatus("paused"),
 	})
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
@@ -2701,6 +2688,10 @@ func (r *memoryRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(_ con
 		return DigitalEmployeeExecutionInstanceRecord{}, ErrNotFound
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) GetDigitalEmployeeOperationalState(_ context.Context, _, _ uuid.UUID) (DigitalEmployeeOperationalState, error) {
+	return DigitalEmployeeOperationalState{Status: DigitalEmployeeOperationalStatusIdle, Reasons: []DigitalEmployeeOperationalReason{}}, nil
 }
 
 func (r *memoryRepository) GetDigitalEmployeeOperationalSignals(_ context.Context, _ uuid.UUID, _ []uuid.UUID) (map[uuid.UUID]OperationalSignals, error) {

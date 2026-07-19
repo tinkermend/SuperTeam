@@ -3380,22 +3380,11 @@ paths:
           required: false
           schema:
             type: string
-        - name: runtime_node_id
-          in: query
-          required: false
-          schema:
-            type: string
-            format: uuid
         - name: risk_level
           in: query
           required: false
           schema:
             type: string
-        - name: execution_status
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/DigitalEmployeeOverviewExecutionStatus"
         - name: run_status
           in: query
           required: false
@@ -10204,7 +10193,7 @@ components:
         - error_count
         - high_risk_count
         - ready_count
-        - pending_runtime_binding_count
+        - needs_configuration_count
         - pending_config_approval_count
         - failed_recent_run_count
         - operational_status_counts
@@ -10221,6 +10210,7 @@ components:
         waiting_runtime_count:
           type: integer
           format: int32
+          description: 身份 Provider 在租户内暂无在线可用 Runtime 能力的员工数
         error_count:
           type: integer
           format: int32
@@ -10230,9 +10220,10 @@ components:
         ready_count:
           type: integer
           format: int32
-        pending_runtime_binding_count:
+        needs_configuration_count:
           type: integer
           format: int32
+          description: 待配置员工数（身份未就绪或配置未审批生效；Runtime 由项目派发时动态解析，不再按员工级绑定统计）
         pending_config_approval_count:
           type: integer
           format: int32
@@ -10247,11 +10238,11 @@ components:
     DigitalEmployeeOverviewQueueSummary:
       type: object
       required:
-        - pending_runtime_binding_count
+        - needs_configuration_count
         - stale_config_count
         - failed_recent_run_count
       properties:
-        pending_runtime_binding_count:
+        needs_configuration_count:
           type: integer
           format: int32
         stale_config_count:
@@ -10408,9 +10399,10 @@ components:
           format: date-time
     DigitalEmployeeWorkbenchStatus:
       type: string
+      description: 工作台就绪态。判据为身份状态与配置治理（Runtime 由项目派发时动态解析，不参与判定）
       enum:
         - ready
-        - pending_binding
+        - needs_configuration
         - error
     DigitalEmployeeRecentEventSummary:
       type: object
@@ -10435,6 +10427,7 @@ components:
         - owner_display_name
         - employee_type
         - employee_type_label
+        - provider_type
         - name
         - role
         - status
@@ -10460,6 +10453,9 @@ components:
           type: string
         employee_type_label:
           type: string
+        provider_type:
+          type: string
+          description: 身份级主 Provider 类型（如 claude/codex/opencode），由服务端 Provider 注册表校验；与运行期落点无关
         name:
           type: string
         role:
@@ -10609,9 +10605,7 @@ components:
         - employee_types
         - statuses
         - providers
-        - runtime_nodes
         - risk_levels
-        - execution_statuses
         - run_statuses
       properties:
         teams:
@@ -10630,15 +10624,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OverviewFilterOption"
-        runtime_nodes:
-          type: array
-          items:
-            $ref: "#/components/schemas/OverviewFilterOption"
         risk_levels:
-          type: array
-          items:
-            $ref: "#/components/schemas/OverviewFilterOption"
-        execution_statuses:
           type: array
           items:
             $ref: "#/components/schemas/OverviewFilterOption"

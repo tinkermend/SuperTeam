@@ -251,31 +251,37 @@ func TestOverviewSummarySQLCountsStaleConfigQueue(t *testing.T) {
 	require.Contains(t, normalizedSQL, "governance_status IN ('missing', 'pending_approval', 'stale') ))::integer AS stale_config_count")
 }
 
-func TestOverviewSummarySQLSeparatesRuntimeBindingAndConfigQueues(t *testing.T) {
+func TestOverviewSummarySQLNeedsConfigurationIsIdentityAndGovernanceOnly(t *testing.T) {
 	normalizedSQL := normalizeSQL(queries.GetDigitalEmployeeOverviewSummary)
-	runtimeBindingExpr := summaryAggregateExpression(t, normalizedSQL, "pending_runtime_binding_count")
+	needsConfigExpr := summaryAggregateExpression(t, normalizedSQL, "needs_configuration_count")
 	configExpr := summaryAggregateExpression(t, normalizedSQL, "pending_config_approval_count")
 	staleConfigExpr := summaryAggregateExpression(t, normalizedSQL, "stale_config_count")
 
-	require.Contains(t, runtimeBindingExpr, "execution_status IN ('missing', 'provisioning')")
-	require.Contains(t, runtimeBindingExpr, "runtime_node_id IS NULL")
-	require.Contains(t, runtimeBindingExpr, "provider_type = ''")
-	require.Contains(t, runtimeBindingExpr, "agent_home_dir_available = false")
-	require.NotContains(t, runtimeBindingExpr, "governance_status")
+	// 待配置只看身份与治理;员工级 Runtime 绑定已废弃,不得回流进判据。
+	require.Contains(t, needsConfigExpr, "employee_status NOT IN ('ready', 'active')")
+	require.Contains(t, needsConfigExpr, "governance_status <> 'approved'")
+	require.NotContains(t, needsConfigExpr, "runtime_node_id")
+	require.NotContains(t, needsConfigExpr, "execution_status")
+	require.NotContains(t, needsConfigExpr, "agent_home_dir")
 	require.Contains(t, configExpr, "governance_status IN ('missing', 'pending_approval', 'stale')")
 	require.Contains(t, staleConfigExpr, "governance_status IN ('missing', 'pending_approval', 'stale')")
 }
 
-func TestOverviewSummarySQLRequiresDispatchReadyAgentHome(t *testing.T) {
+func TestOverviewSummarySQLDropsEmployeeExecutionInstanceDependency(t *testing.T) {
 	normalizedSQL := normalizeSQL(queries.GetDigitalEmployeeOverviewSummary)
 
-	require.Contains(t, normalizedSQL, "(NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available")
-	require.Contains(t, normalizedSQL, "agent_home_dir_available = true")
+	require.NotContains(t, normalizedSQL, "digital_employee_execution_instances")
+	require.Contains(t, normalizedSQL, "available_provider_types")
+	runnableExpr := summaryAggregateExpression(t, normalizedSQL, "runnable_count")
+	require.Contains(t, runnableExpr, "tenant_provider_available = true")
 }
 
-func TestOverviewItemsSQLCarriesProviderAvailabilityForWorkbenchStatus(t *testing.T) {
+func TestOverviewItemsSQLCarriesIdentityProviderAndTenantAvailability(t *testing.T) {
 	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewItems)
 
+	require.Contains(t, normalizedSQL, "de.provider_type AS identity_provider_type")
+	require.Contains(t, normalizedSQL, "AS tenant_provider_available")
+	// execution_summary 展示字段仍保留(运行落点观察用),但不再参与工作台判定。
 	require.Contains(t, normalizedSQL, "COALESCE(pc.available, false)::boolean AS provider_available")
 }
 
@@ -312,22 +318,21 @@ func TestOverviewOperationalFactsSQL(t *testing.T) {
 		"AS status",
 		"AS employee_type",
 		"AS provider_type",
-		"AS runtime_node_id",
 		"AS risk_level",
-		"AS execution_status",
 		"AS run_status",
 		"args.q IS NULL",
 		"args.team_id IS NULL",
 		"args.status IS NULL",
 		"args.employee_type IS NULL",
 		"args.provider_type IS NULL",
-		"args.runtime_node_id IS NULL",
 		"args.risk_level IS NULL",
-		"args.execution_status IS NULL",
 		"args.run_status IS NULL",
 	} {
 		require.Contains(t, normalizedSQL, expected)
 	}
+	// 员工级 Runtime 绑定维度已废弃,facts 过滤参数不得再含这两轴。
+	require.NotContains(t, normalizedSQL, "args.runtime_node_id")
+	require.NotContains(t, normalizedSQL, "args.execution_status")
 
 	upperSQL := strings.ToUpper(normalizedSQL)
 	require.NotContains(t, upperSQL, " LIMIT ")
@@ -346,7 +351,6 @@ func TestOverviewFiltersFromQueryMapsStableLabels(t *testing.T) {
 
 	require.Equal(t, []OverviewFilterOption{{Value: "active", Label: "活跃中"}}, filters.Statuses)
 	require.Equal(t, []OverviewFilterOption{{Value: "medium", Label: "中风险"}}, filters.RiskLevels)
-	require.Equal(t, []OverviewFilterOption{{Value: "missing", Label: "未绑定 Runtime"}}, filters.ExecutionStatuses)
 	require.Equal(t, []OverviewFilterOption{{Value: "none", Label: "暂无运行"}}, filters.RunStatuses)
 	require.Equal(t, []OverviewFilterOption{
 		{Value: "codex", Label: "Codex"},
@@ -387,41 +391,49 @@ func TestOverviewItemFromQueryHandlesMissingEffectiveConfig(t *testing.T) {
 	require.Equal(t, "missing", item.GovernanceSummary.Status)
 }
 
-func TestOverviewItemFromQueryTreatsMissingAgentHomeAsPendingBinding(t *testing.T) {
+// 员工级 Runtime 绑定(dei)残留字段不再影响工作台判定:无绑定/无家目录/绑定级
+// provider 不可用/执行实例 disabled 的员工,只要身份与治理就绪即为 ready。
+func TestOverviewItemFromQueryIgnoresLegacyExecutionInstanceFacts(t *testing.T) {
 	row := baseOverviewItemRow()
+	row.ExecutionInstanceID = uuid.NullUUID{}
+	row.ExecutionStatus = "missing"
+	row.RuntimeNodeID = uuid.NullUUID{}
+	row.NodeID = ""
+	row.RuntimeStatus = "offline"
 	row.AgentHomeDirAvailable = false
-
-	item := overviewItemFromQuery(row, map[string]string{})
-
-	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
-}
-
-func TestOverviewItemFromQueryTreatsUnavailableProviderAsError(t *testing.T) {
-	row := baseOverviewItemRow()
 	row.ProviderAvailable = false
 
 	item := overviewItemFromQuery(row, map[string]string{})
 
-	require.Equal(t, WorkbenchStatusError, item.WorkbenchStatus)
+	require.Equal(t, WorkbenchStatusReady, item.WorkbenchStatus)
 }
 
-func TestOverviewItemFromQueryTreatsDisabledExecutionAsError(t *testing.T) {
+func TestOverviewItemFromQueryTreatsTenantProviderUnavailableAsError(t *testing.T) {
 	row := baseOverviewItemRow()
-	row.ExecutionStatus = "disabled"
+	row.TenantProviderAvailable = false
 
 	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, WorkbenchStatusError, item.WorkbenchStatus)
 }
 
-func TestOverviewItemFromQueryTreatsPendingGovernanceAsPendingBinding(t *testing.T) {
+func TestOverviewItemFromQueryTreatsDisabledIdentityAsError(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.Status = "disabled"
+
+	item := overviewItemFromQuery(row, map[string]string{})
+
+	require.Equal(t, WorkbenchStatusError, item.WorkbenchStatus)
+}
+
+func TestOverviewItemFromQueryTreatsPendingGovernanceAsNeedsConfiguration(t *testing.T) {
 	row := baseOverviewItemRow()
 	row.GovernanceStatus = "pending_approval"
 
 	item := overviewItemFromQuery(row, map[string]string{})
 
 	require.Equal(t, "pending_approval", item.GovernanceSummary.Status)
-	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
+	require.Equal(t, WorkbenchStatusNeedsConfiguration, item.WorkbenchStatus)
 }
 
 func TestOverviewItemFromQueryMapsWorkbenchBudgetAndEvents(t *testing.T) {
@@ -525,17 +537,12 @@ func TestOverviewItemFromQueryMapsLatestTaskFailure(t *testing.T) {
 
 func TestOverviewItemFromQueryMapsConfigurationBeforeUnavailable(t *testing.T) {
 	row := baseOverviewItemRow()
-	row.ExecutionInstanceID = uuid.NullUUID{}
-	row.ExecutionStatus = string(OverviewExecutionStatusMissing)
-	row.RuntimeNodeID = uuid.NullUUID{}
-	row.NodeID = ""
-	row.ProviderType = ""
-	row.RuntimeStatus = "offline"
-	row.AgentHomeDirAvailable = false
+	row.GovernanceStatus = "missing"
+	row.TenantProviderAvailable = false
 
 	item := overviewItemFromQuery(row, map[string]string{})
 
-	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
+	require.Equal(t, WorkbenchStatusNeedsConfiguration, item.WorkbenchStatus)
 	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusNeedsConfiguration, false, []DigitalEmployeeOperationalReason{
 		{Code: "configuration_missing", Message: "缺少执行所需配置"},
 	})
@@ -740,6 +747,8 @@ func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {
 		RuntimeName:                              "Runtime 1",
 		RuntimeStatus:                            "online",
 		ProviderType:                             "codex",
+		IdentityProviderType:                     "codex",
+		TenantProviderAvailable:                  true,
 		ProviderAvailable:                        true,
 		ProviderStatus:                           "healthy",
 		HealthStatus:                             "healthy",

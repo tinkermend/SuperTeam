@@ -52,7 +52,7 @@ type EmployeesFetcherOptions = {
   projectAcceptancePendingOnly?: boolean;
   queueSummary?: {
     failed_recent_run_count: number;
-    pending_runtime_binding_count: number;
+    needs_configuration_count: number;
     stale_config_count: number;
   };
   totalCount?: number;
@@ -67,7 +67,7 @@ function createEmployeesFetcher({
   projectAcceptancePendingOnly = false,
   queueSummary = {
     failed_recent_run_count: 1,
-    pending_runtime_binding_count: 2,
+    needs_configuration_count: 2,
     stale_config_count: 4,
   },
   totalCount = 18,
@@ -120,6 +120,7 @@ function createEmployeesFetcher({
           owner_display_name: "王产品",
           employee_type: "requirements_analyst",
           employee_type_label: "需求分析",
+          provider_type: "claude-code",
           name: offset === 0 ? "需求分析员工" : `需求分析员工第${pageNumber}页`,
           role: "需求分析师",
           description: "负责需求拆解和交付风险识别",
@@ -183,12 +184,14 @@ function createEmployeesFetcher({
           limit_exceeded: false,
         },
       };
+      // 待配置员工:配置未审批生效(治理判据),同时刻意保留"无 Runtime 绑定"的遗留
+      // 执行实例残留——它不应再影响工作台状态或 Provider 行(身份级 provider 仍应显示)。
       const unboundItem = {
         ...readyItem,
-        workbench_status: "pending_binding",
+        workbench_status: "needs_configuration",
         operational_state: {
           status: "needs_configuration",
-          reasons: [{ code: "runtime_binding_missing", message: "等待绑定 Runtime Agent" }],
+          reasons: [{ code: "configuration_missing", message: "缺少执行所需配置" }],
           can_dispatch: false,
         },
         recent_events: [],
@@ -198,8 +201,13 @@ function createEmployeesFetcher({
           team_name: "平台组",
           employee_type: "platform_operator",
           employee_type_label: "平台运维",
-          name: "待绑定员工",
+          provider_type: "codex",
+          name: "待配置员工",
           role: "平台运维",
+        },
+        governance_summary: {
+          ...readyItem.governance_summary,
+          status: "pending_approval",
         },
         execution_summary: {
           ...readyItem.execution_summary,
@@ -209,7 +217,7 @@ function createEmployeesFetcher({
           node_id: "",
           runtime_name: "",
           runtime_status: "",
-          provider_type: "codex",
+          provider_type: "",
           provider_status: "",
           health_status: "missing",
           agent_home_dir_available: false,
@@ -229,7 +237,7 @@ function createEmployeesFetcher({
       return new Response(
         JSON.stringify({
           queue_summary: {
-            pending_runtime_binding_count: queueSummary.pending_runtime_binding_count,
+            needs_configuration_count: queueSummary.needs_configuration_count,
             stale_config_count: queueSummary.stale_config_count,
             failed_recent_run_count: queueSummary.failed_recent_run_count,
           },
@@ -241,7 +249,7 @@ function createEmployeesFetcher({
             error_count: 1,
             high_risk_count: 3,
             ready_count: 14,
-            pending_runtime_binding_count: queueSummary.pending_runtime_binding_count,
+            needs_configuration_count: queueSummary.needs_configuration_count,
             pending_config_approval_count: queueSummary.stale_config_count,
             failed_recent_run_count: queueSummary.failed_recent_run_count,
             operational_status_counts: {
@@ -263,9 +271,7 @@ function createEmployeesFetcher({
               { value: "ready", label: "就绪" },
             ],
             providers: [{ value: "codex", label: "codex" }],
-            runtime_nodes: [{ value: "33333333-3333-4333-8333-333333333333", label: "runtime-cn-01" }],
             risk_levels: [{ value: "medium", label: "中风险" }],
-            execution_statuses: [{ value: "active", label: "执行中" }],
             run_statuses: [{ value: "running", label: "运行中" }],
           },
           pagination: {
@@ -318,7 +324,7 @@ describe("EmployeesView", () => {
 
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
     await expect.element(screen.getByText("就绪").first()).toBeVisible();
-    await expect.element(screen.getByText("待绑定").first()).toBeVisible();
+    await expect.element(screen.getByText("待配置").first()).toBeVisible();
     await expect.element(screen.getByText("异常").first()).toBeVisible();
     await expect.element(screen.getByText("配置待审批")).toBeVisible();
     await expect.element(screen.getByText("运行失败").first()).toBeVisible();
@@ -329,12 +335,12 @@ describe("EmployeesView", () => {
       "/images/digital-employee-avatars/engineer-f-01-256.webp",
     );
     await expect.element(screen.getByText("产品组").first()).toBeVisible();
-    await expect.element(screen.getByText("local-dev-node · Claude Code").first()).toBeVisible();
+    await expect.element(screen.getByText("Claude Code").first()).toBeVisible();
     await expect.element(screen.getByText("成功 · 2 分钟前")).toBeVisible();
     await expect.element(screen.getByText("无预算上限")).toBeVisible();
     await expect.element(screen.getByText("待处理队列")).toBeVisible();
     await expect.element(screen.getByText("最近运行失败")).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "绑定" })).toHaveAttribute("href", "/runtime");
+    await expect.element(screen.getByRole("link", { name: "处理" })).toHaveAttribute("href", "/approvals");
     await expect.element(screen.getByRole("link", { name: "审批" })).toHaveAttribute("href", "/approvals");
     await expect.element(screen.getByRole("link", { exact: true, name: "查看" })).toHaveAttribute("href", "/run-overview");
     await expect.element(screen.getByText("命令已下发")).toBeVisible();
@@ -373,13 +379,13 @@ describe("EmployeesView", () => {
       createEmployeesFetcher({
         queueSummary: {
           failed_recent_run_count: 0,
-          pending_runtime_binding_count: 0,
+          needs_configuration_count: 0,
           stale_config_count: 0,
         },
       }),
     );
 
-    await expect.element(screen.getByRole("button", { name: "绑定" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "处理" })).toBeDisabled();
     await expect.element(screen.getByRole("button", { name: "审批" })).toBeDisabled();
     await expect.element(screen.getByRole("button", { name: "查看" })).toBeDisabled();
   });
@@ -396,13 +402,15 @@ describe("EmployeesView", () => {
     expect(main?.textContent).toContain("创建数字员工");
   });
 
-  it("renders unbound employees as waiting for runtime binding", async () => {
+  it("renders needs-configuration employees with identity provider instead of runtime binding", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
-    const unboundArticle = employeeArticle(screen, "待绑定员工");
+    const unboundArticle = employeeArticle(screen, "待配置员工");
 
     await expect.element(unboundArticle).toBeVisible();
-    expect(unboundArticle.element().textContent).toContain("工作台：待绑定");
-    expect(unboundArticle.element().textContent).toContain("等待绑定 Runtime Agent");
+    expect(unboundArticle.element().textContent).toContain("工作台：待配置");
+    // 身份级 provider 始终可显示;不得再出现"等待绑定 Runtime Agent"占位。
+    expect(unboundArticle.element().textContent).toContain("Codex");
+    expect(unboundArticle.element().textContent).not.toContain("等待绑定 Runtime Agent");
   });
 
   it("renders waiting-human operational status from the API state", async () => {
@@ -442,7 +450,7 @@ describe("EmployeesView", () => {
   it("selects employees from the card surface without visible selection text", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
     const readyArticle = screen.getByRole("article", { name: "员工 需求分析员工" });
-    const unboundArticle = screen.getByRole("article", { name: "员工 待绑定员工" });
+    const unboundArticle = screen.getByRole("article", { name: "员工 待配置员工" });
 
     await expect.element(readyArticle).toHaveAttribute("aria-selected", "true");
     expect(readyArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(1);
