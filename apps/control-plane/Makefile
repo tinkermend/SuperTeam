@@ -1,4 +1,4 @@
-.PHONY: generate generate-sqlc generate-openapi test build clean migrate-up migrate-down migrate-status migrate-validate
+.PHONY: generate generate-sqlc generate-openapi test build clean migrate-up migrate-down migrate-status migrate-validate new-migration
 
 # Throwaway dev DB used by migrate-validate to replay migrations. Standard CI has a docker
 # daemon; override for local podman etc: make migrate-validate DEV_URL=postgres://...:5432/dev?sslmode=disable
@@ -44,6 +44,14 @@ clean:
 	rm -f internal/authzcenter/generated.go
 	rm -f coverage.out
 	@echo "Clean complete"
+
+# Create a new empty migration with a UTC-timestamp version (updates atlas.sum).
+# Timestamp versions avoid the sequential-number collisions that concurrent
+# branches hit with hand-picked NNN_ prefixes; legacy 001-088 files sort first
+# lexicographically, so mixing is safe. Usage: make new-migration NAME=add_foo_table
+new-migration:
+	@test -n "$(NAME)" || (echo "ERROR: NAME not set. Usage: make new-migration NAME=snake_case_description" && exit 1)
+	atlas migrate new $(NAME) --dir file://internal/storage/migrations
 
 # Database migrations
 migrate-up:

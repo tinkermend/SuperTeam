@@ -385,7 +385,8 @@ CREATE UNIQUE INDEX uq_task_events_run_sequence
 
 当前默认策略：除非用户在本次任务中明确要求 `rebuild-only`、重写初始 schema，或确认当前数据库可丢弃并重建，否则所有新增表、字段、索引、注释和数据结构变更都必须创建新的 forward migration，不得修改已存在于 `atlas.sum` 的迁移文件。
 
-- 普通功能开发必须使用下一个编号的 forward migration，例如 `003_team_governance.sql`。
+- 新迁移文件名使用 **UTC 时间戳版本号**，用 `make -C apps/control-plane new-migration NAME=snake_case_描述` 生成（内部走 `atlas migrate new`，产出如 `20260719133045_snake_case_描述.sql` 并自动更新 `atlas.sum`）。不要手工挑选顺序编号：三位顺序号是无分配机制的全局计数器，并发分支必然撞号（2026-07-19 一天内撞号两次的实际教训）。
+- 存量 `001`–`088` 顺序号迁移保持原名不动；Atlas 按版本字符串字典序排序，所有时间戳版本天然排在存量顺序号之后，混用安全。
 - 不得在普通功能开发中修改 `001_initial.sql` 或其他已共享迁移。
 - 早期 UUID-first 基础重构允许重写初始 schema 并重建开发库，但这是例外流程，不是默认迁移策略。
 - 启用 rebuild-only 例外前，必须在 plan 或 issue 中写明重建原因、备份命令、重建命令和验证命令，并确认没有需要保留的数据或已完成备份。
