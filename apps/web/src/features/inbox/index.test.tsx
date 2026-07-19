@@ -290,6 +290,27 @@ describe("InboxView", () => {
     await expect.element(screen.getByRole("link", { name: "查看流程编排" })).toBeVisible();
   });
 
+  // 已处理事项(如经飞书批准)在"已处理"过滤下选中:详情必须呈终态,不得再渲染
+  // "待我处理"徽标与可执行按钮(回归:详情面板曾写死待办态)。
+  it("renders resolved items as settled: no pending badge, no action buttons", async () => {
+    const resolvedItem = makeInboxItem({
+      status: "resolved",
+      resolved_at: "2026-07-19T05:05:00Z",
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: resolvedItem }));
+
+    await userEvent.click(screen.getByText("需要确认客户侧 Runtime 节点接入证据。"));
+    await expect.element(screen.getByRole("heading", { name: "确认客户 Runtime 接入" })).toBeVisible();
+
+    await expect.element(screen.getByText("已处理", { exact: true }).first()).toBeVisible();
+    expect(screen.getByText("待我处理").query()).toBeNull();
+    expect(screen.getByRole("button", { name: "同意" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
+    await expect.element(screen.getByText("处理耗时").first()).toBeVisible();
+    await expect.element(screen.getByText(/该事项已处理/)).toBeVisible();
+    expect(screen.getByText(/进行中/).query()).toBeNull();
+  });
+
   it("opens item details when clicking the pending item row body", async () => {
     const screen = await renderInboxView();
 

@@ -411,8 +411,17 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
               {riskLabel[item.risk_level] ?? item.risk_level}
             </StatusPill>
           ) : null}
-          <StatusPill tone={view === "mine" ? "warn" : "mute"}>
-            {view === "mine" ? "待我处理" : "团队只读"}
+          {/* 状态徽标必须看 item.status——"已处理"过滤下选中的事项不再是待办 */}
+          <StatusPill
+            tone={item.status === "resolved" ? "ok" : item.status === "cancelled" ? "mute" : view === "mine" ? "warn" : "mute"}
+          >
+            {item.status === "resolved"
+              ? "已处理"
+              : item.status === "cancelled"
+                ? "已取消"
+                : view === "mine"
+                  ? "待我处理"
+                  : "团队只读"}
           </StatusPill>
         </div>
       </div>
@@ -449,7 +458,9 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
       <section className="border-b border-v3-line px-5 py-4">
         <h3 className="flex items-center gap-2 text-[13px] font-extrabold text-v3-ink">
           过程记录
-          <span className="font-mono text-[10px] font-semibold text-v3-ink-3">2 时间点 · 进行中</span>
+          <span className="font-mono text-[10px] font-semibold text-v3-ink-3">
+            {item.status === "open" ? "2 时间点 · 进行中" : `${item.resolved_at ? 3 : 2} 时间点 · 已完结`}
+          </span>
         </h3>
         <div className="mt-3 flex flex-col gap-3.5">
           <TimelineItem
@@ -466,13 +477,27 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
             description="来源对象更新了上下文快照。"
             timestamp={`${formatRelativeTime(item.last_activity_at)} · last_activity_at`}
           />
-          <TimelineItem
-            dot={<Clock className="size-3" />}
-            dotClassName="bg-v3-brand-soft text-v3-brand"
-            title="等待人类决策"
-            description="选择同意、驳回或要求补证后将推动流程进入下一节点。"
-            timestamp="进行中"
-          />
+          {item.status === "open" ? (
+            <TimelineItem
+              dot={<Clock className="size-3" />}
+              dotClassName="bg-v3-brand-soft text-v3-brand"
+              title="等待人类决策"
+              description="选择同意、驳回或要求补证后将推动流程进入下一节点。"
+              timestamp="进行中"
+            />
+          ) : (
+            <TimelineItem
+              dot={<CheckCircle2 className="size-3" />}
+              dotClassName="bg-v3-ok-soft text-v3-ok"
+              title={item.status === "resolved" ? "已处理" : "已取消"}
+              description={
+                item.status === "resolved"
+                  ? "决策已提交，流程已推进到下一节点。"
+                  : "事项已取消，无需再处理。"
+              }
+              timestamp={item.resolved_at ? `${formatDateTime(item.resolved_at)} · resolved_at` : "—"}
+            />
+          )}
         </div>
       </section>
 
@@ -656,25 +681,31 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
 
   return (
     <div className="flex min-h-0 flex-col gap-3 xl:h-full xl:overflow-y-auto">
-      {/* 已等待时长 — 数据真实性修正 #5：前端基于 created_at 计算，非 SLA 超时倒计时 */}
+      {/* 已等待/处理耗时 — 数据真实性修正 #5:open 用 now-created_at;终态用 resolved_at-created_at */}
       <SoftCard className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
           <Clock aria-hidden className="size-3.5" />
-          已等待时长
+          {item.status === "open" ? "已等待时长" : "处理耗时"}
         </div>
         <div className="px-4 py-3.5">
-          <WaitTimeRing waitMs={waitMs} riskLevel={item.risk_level} />
+          <WaitTimeRing waitMs={waitMs} riskLevel={item.risk_level} settled={item.status !== "open"} />
         </div>
       </SoftCard>
 
-      {/* 可执行动作 */}
+      {/* 可执行动作 — 仅 open 事项渲染按钮;终态事项动作已失效 */}
       <SoftCard className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
           <Zap aria-hidden className="size-3.5" />
           可执行动作
         </div>
         <div className="px-4 py-3.5">
-          {view === "mine" && actions.length > 0 ? (
+          {item.status !== "open" ? (
+            <p className="text-[13px] font-semibold text-v3-ink-2">
+              {item.status === "resolved"
+                ? `该事项已处理${item.resolved_at ? `（${formatDateTime(item.resolved_at)}）` : ""}，动作已失效。`
+                : "该事项已取消，无需处理。"}
+            </p>
+          ) : view === "mine" && actions.length > 0 ? (
             <>
               <div className="grid grid-cols-2 gap-2">
                 {actions.map((action) => (
@@ -729,11 +760,12 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
   );
 }
 
-function WaitTimeRing({ waitMs, riskLevel }: { waitMs: number; riskLevel?: string }) {
+function WaitTimeRing({ waitMs, riskLevel, settled }: { waitMs: number; riskLevel?: string; settled?: boolean }) {
   const clamped = Math.max(0, waitMs);
   const totalHours = clamped / 3600000;
   const ringPercentage = Math.min(100, Math.max(0, (totalHours / 24) * 100));
-  const isUrgent = riskLevel === "blocked" || riskLevel === "high";
+  // 终态事项没有紧迫度可言,统一降为非紧急配色。
+  const isUrgent = !settled && (riskLevel === "blocked" || riskLevel === "high");
   const ringColor = isUrgent ? "var(--v3-danger)" : "var(--v3-warn)";
   const ringSoft = isUrgent ? "var(--v3-danger-soft)" : "var(--v3-warn-soft)";
   const shortLabel = totalHours >= 1 ? `${Math.floor(totalHours)}h` : `${Math.floor(clamped / 60000)}m`;
@@ -764,13 +796,14 @@ function WaitTimeRing({ waitMs, riskLevel }: { waitMs: number; riskLevel?: strin
             isUrgent ? "text-v3-danger-text" : "text-v3-warn-text",
           )}
         >
-          已等待
+          {settled ? "处理耗时" : "已等待"}
         </p>
         <p className="mt-0.5 text-lg font-extrabold tabular-nums text-v3-ink">
           {formatElapsedDuration(clamped)}
         </p>
         <p className="mt-0.5 text-[11px] text-v3-ink-3">
-          基于 created_at 计算{isUrgent ? " · 阻断级建议尽快处理" : ""}
+          {settled ? "created_at 至 resolved_at" : "基于 created_at 计算"}
+          {isUrgent ? " · 阻断级建议尽快处理" : ""}
         </p>
       </div>
     </div>
@@ -879,6 +912,11 @@ function formatKiNumber(item: InboxItem): string {
 function computeWaitMs(item: InboxItem): number {
   const created = new Date(item.created_at).getTime();
   if (Number.isNaN(created)) return 0;
+  // 终态事项的时长在处理时刻定格(处理耗时),不再随当前时间增长。
+  if (item.status !== "open" && item.resolved_at) {
+    const resolved = new Date(item.resolved_at).getTime();
+    if (!Number.isNaN(resolved)) return Math.max(0, resolved - created);
+  }
   return Math.max(0, Date.now() - created);
 }
 
