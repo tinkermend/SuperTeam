@@ -8225,6 +8225,7 @@ components:
       required:
         - task_id
         - summary
+        - deliverables
       properties:
         task_id:
           type: string
@@ -8232,6 +8233,30 @@ components:
         summary:
           type: string
           description: 该任务最新执行结论；无执行摘要时为空字符串
+        deliverables:
+          type: array
+          description: >-
+            该任务产出的可取回声明式交付物（声明式交付物 v2 §4 P2）：人在判据卡
+            即可点开预览，无需跳工件页。只含 declared 且内容寻址、平台已核对存在的行。
+          items:
+            $ref: "#/components/schemas/DemandCriterionDeliverable"
+    DemandCriterionDeliverable:
+      type: object
+      required:
+        - artifact_ref_id
+        - title
+      properties:
+        artifact_ref_id:
+          type: string
+          format: uuid
+          description: 走 GET /api/v1/artifacts/{artifact_ref_id}/content 预览或下载
+        title:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
     DemandAcceptanceCriterionDetail:
       type: object
       required:

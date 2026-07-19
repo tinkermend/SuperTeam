@@ -2089,6 +2089,9 @@ func (s *Service) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenant
 		}
 	}
 	latestSummaryByTask := make(map[uuid.UUID]ExecutionSummary)
+	// declaredByTask 是每个满足任务的可取回声明式交付物,挂在其 TaskSummary 下,
+	// 让人在判据卡即可点开预览(v2 §4 P2,证据紧邻签署按钮)。
+	declaredByTask := make(map[uuid.UUID][]DemandCriterionDeliverable)
 	if len(taskIDs) > 0 {
 		summaries, summErr := s.repository.ListExecutionSummariesByTaskIDs(ctx, tenantID, demand.ProjectID, taskIDs)
 		if summErr != nil {
@@ -2099,6 +2102,24 @@ func (s *Service) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenant
 			if !ok || summary.CreatedAt.After(existing.CreatedAt) {
 				latestSummaryByTask[summary.ProjectTaskID] = summary
 			}
+		}
+		declaredRefs, declErr := s.repository.ListDeclaredArtifactsByTaskIDs(ctx, tenantID, demand.ProjectID, taskIDs)
+		if declErr != nil {
+			return nil, declErr
+		}
+		for _, ref := range declaredRefs {
+			if ref.ProjectTaskID == nil {
+				continue
+			}
+			deliverable := DemandCriterionDeliverable{
+				ArtifactRefID: ref.ID.String(),
+				Title:         ref.Title,
+				SizeBytes:     ref.SizeBytes,
+			}
+			if ref.ContentType != nil {
+				deliverable.ContentType = *ref.ContentType
+			}
+			declaredByTask[*ref.ProjectTaskID] = append(declaredByTask[*ref.ProjectTaskID], deliverable)
 		}
 	}
 
@@ -2132,10 +2153,14 @@ func (s *Service) ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenant
 					summaryText = summary.Conclusion
 				}
 			}
-			detail.TaskSummaries = append(detail.TaskSummaries, DemandCriterionTaskSummary{
+			taskSummary := DemandCriterionTaskSummary{
 				TaskID:  taskIDText,
 				Summary: summaryText,
-			})
+			}
+			if taskID, ok := resolveSatisfiedByTaskID(raw); ok {
+				taskSummary.Deliverables = declaredByTask[taskID]
+			}
+			detail.TaskSummaries = append(detail.TaskSummaries, taskSummary)
 		}
 		details = append(details, detail)
 	}

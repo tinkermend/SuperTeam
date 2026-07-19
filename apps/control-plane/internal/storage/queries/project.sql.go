@@ -4647,6 +4647,65 @@ func (q *Queries) ListProjectDecisionRequests(ctx context.Context, arg ListProje
 	return items, nil
 }
 
+const ListProjectDeclaredArtifactsByTaskIDs = `-- name: ListProjectDeclaredArtifactsByTaskIDs :many
+SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at, attempt_id, digital_employee_id FROM project_artifact_refs
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND project_task_id = ANY($3::uuid[])
+  AND artifact_type = 'declared'
+  AND object_ref LIKE 'artifacts/%'
+ORDER BY created_at ASC
+`
+
+type ListProjectDeclaredArtifactsByTaskIDsParams struct {
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectID      uuid.UUID   `json:"project_id"`
+	ProjectTaskIds []uuid.UUID `json:"project_task_ids"`
+}
+
+// 验收判据卡深链(声明式交付物 v2 §4 P2):按任务批量取 declared 交付物,
+// 只返回内容寻址(artifacts/ 前缀=可经平台取回)的行;declared_skipped
+// 与外部引用天然被排除,不下发不可点击的 chip。
+func (q *Queries) ListProjectDeclaredArtifactsByTaskIDs(ctx context.Context, arg ListProjectDeclaredArtifactsByTaskIDsParams) ([]ProjectArtifactRef, error) {
+	rows, err := q.db.Query(ctx, ListProjectDeclaredArtifactsByTaskIDs, arg.TenantID, arg.ProjectID, arg.ProjectTaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectArtifactRef{}
+	for rows.Next() {
+		var i ProjectArtifactRef
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.ArtifactID,
+			&i.ArtifactType,
+			&i.Title,
+			&i.ObjectRef,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.Checksum,
+			&i.RetentionStatus,
+			&i.RetentionHoldID,
+			&i.Metadata,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AttemptID,
+			&i.DigitalEmployeeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectDeleteRunBlockers = `-- name: ListProjectDeleteRunBlockers :many
 SELECT
     'run'::text AS blocker_type,

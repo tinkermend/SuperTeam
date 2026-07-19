@@ -398,6 +398,10 @@ type Querier interface {
 	ListProjectConfigRevisions(ctx context.Context, arg ListProjectConfigRevisionsParams) ([]ProjectConfigRevision, error)
 	ListProjectCoordinationJobs(ctx context.Context, arg ListProjectCoordinationJobsParams) ([]ProjectCoordinationJob, error)
 	ListProjectDecisionRequests(ctx context.Context, arg ListProjectDecisionRequestsParams) ([]ProjectDecisionRequest, error)
+	// 验收判据卡深链(声明式交付物 v2 §4 P2):按任务批量取 declared 交付物,
+	// 只返回内容寻址(artifacts/ 前缀=可经平台取回)的行;declared_skipped
+	// 与外部引用天然被排除,不下发不可点击的 chip。
+	ListProjectDeclaredArtifactsByTaskIDs(ctx context.Context, arg ListProjectDeclaredArtifactsByTaskIDsParams) ([]ProjectArtifactRef, error)
 	ListProjectDeleteRunBlockers(ctx context.Context, arg ListProjectDeleteRunBlockersParams) ([]ListProjectDeleteRunBlockersRow, error)
 	ListProjectDeleteTaskBlockers(ctx context.Context, arg ListProjectDeleteTaskBlockersParams) ([]ListProjectDeleteTaskBlockersRow, error)
 	ListProjectDemands(ctx context.Context, arg ListProjectDemandsParams) ([]ProjectDemand, error)

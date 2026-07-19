@@ -1317,9 +1317,17 @@ export function getProjectDemandLaunchDetail(
   );
 }
 
+export type DemandCriterionDeliverable = {
+  artifact_ref_id: string;
+  title: string;
+  content_type?: string;
+  size_bytes?: number;
+};
+
 export type DemandCriterionTaskSummary = {
   task_id: string;
   summary: string;
+  deliverables: DemandCriterionDeliverable[];
 };
 
 export type DemandAcceptanceCriterionDetail = {

@@ -1873,8 +1873,16 @@ type resolveDecisionBody struct {
 }
 
 type demandCriterionTaskSummaryResponse struct {
-	TaskID  string `json:"task_id"`
-	Summary string `json:"summary"`
+	TaskID       string                                `json:"task_id"`
+	Summary      string                                `json:"summary"`
+	Deliverables []demandCriterionDeliverableResponse `json:"deliverables"`
+}
+
+type demandCriterionDeliverableResponse struct {
+	ArtifactRefID string `json:"artifact_ref_id"`
+	Title         string `json:"title"`
+	ContentType   string `json:"content_type,omitempty"`
+	SizeBytes     *int64 `json:"size_bytes,omitempty"`
 }
 
 type demandAcceptanceCriterionDetailResponse struct {
@@ -1908,7 +1916,20 @@ func demandAcceptanceCriteriaResponseFromDomain(detail DemandAcceptanceCriteriaD
 		}
 		summaries := make([]demandCriterionTaskSummaryResponse, 0, len(c.TaskSummaries))
 		for _, s := range c.TaskSummaries {
-			summaries = append(summaries, demandCriterionTaskSummaryResponse{TaskID: s.TaskID, Summary: s.Summary})
+			deliverables := make([]demandCriterionDeliverableResponse, 0, len(s.Deliverables))
+			for _, d := range s.Deliverables {
+				deliverables = append(deliverables, demandCriterionDeliverableResponse{
+					ArtifactRefID: d.ArtifactRefID,
+					Title:         d.Title,
+					ContentType:   d.ContentType,
+					SizeBytes:     d.SizeBytes,
+				})
+			}
+			summaries = append(summaries, demandCriterionTaskSummaryResponse{
+				TaskID:       s.TaskID,
+				Summary:      s.Summary,
+				Deliverables: deliverables,
+			})
 		}
 		criteria = append(criteria, demandAcceptanceCriterionDetailResponse{
 			CriterionID:        c.CriterionID,

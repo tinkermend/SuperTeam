@@ -11,17 +11,25 @@ import {
 import { MarkdownProse, V3ErrorState, V3LoadingState } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import { buildApiUrl } from "@/lib/api/client";
-import {
-  getArtifactContentText,
-  type ProjectArtifactRef,
-} from "@/lib/api/projects";
+import { getArtifactContentText } from "@/lib/api/projects";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
 export type ArtifactPreviewKind = "html" | "markdown" | "text";
 
+/**
+ * 预览 Sheet 需要的最小工件形状:content 端点按 id 取回,只用 id/title/
+ * content_type。工件面板传 ProjectArtifactRef(超集),验收判据卡传交付物
+ * 血缘(v2 §4 P2),都满足此接口,不必耦合完整工件类型。
+ */
+export type PreviewableArtifact = {
+  id: string;
+  title: string;
+  content_type?: string | null;
+};
+
 /** 可预览的 content_type → 渲染方式;其余类型只提供下载。 */
 export function artifactPreviewKind(
-  artifact: ProjectArtifactRef,
+  artifact: PreviewableArtifact,
 ): ArtifactPreviewKind | null {
   const contentType = (artifact.content_type ?? "").split(";")[0]?.trim();
   switch (contentType) {
@@ -45,7 +53,7 @@ export function artifactContentHref(artifactId: string): string {
 
 type ArtifactPreviewSheetProps = {
   /** 当前预览的工件;null 时关闭。 */
-  artifact: ProjectArtifactRef | null;
+  artifact: PreviewableArtifact | null;
   onClose: () => void;
 };
 
@@ -65,7 +73,7 @@ export function ArtifactPreviewSheet({
   );
 }
 
-function ArtifactPreviewBody({ artifact }: { artifact: ProjectArtifactRef }) {
+function ArtifactPreviewBody({ artifact }: { artifact: PreviewableArtifact }) {
   const kind = artifactPreviewKind(artifact);
   return (
     <>
@@ -101,7 +109,7 @@ function ArtifactTextPreview({
   artifact,
   kind,
 }: {
-  artifact: ProjectArtifactRef;
+  artifact: PreviewableArtifact;
   kind: ArtifactPreviewKind;
 }) {
   const apiOptions = useMemo<ApiClientOptions>(

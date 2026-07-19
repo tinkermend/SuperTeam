@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileCheck2 } from "lucide-react";
+import { Download, Eye, FileCheck2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -17,7 +17,14 @@ import {
   getDemandAcceptanceCriteria,
   signDemandCriterionVerdict,
   type DemandAcceptanceCriterionDetail,
+  type DemandCriterionDeliverable,
 } from "@/lib/api/projects";
+import {
+  ArtifactPreviewSheet,
+  artifactContentHref,
+  artifactPreviewKind,
+  type PreviewableArtifact,
+} from "@/features/projects/components/artifact-preview-sheet";
 
 const ACCEPTANCE_PENDING = "acceptance_pending";
 
@@ -77,15 +84,76 @@ type SignHandler = (
   reason: string,
 ) => void;
 
+function deliverableToPreviewable(
+  deliverable: DemandCriterionDeliverable,
+): PreviewableArtifact {
+  return {
+    id: deliverable.artifact_ref_id,
+    title: deliverable.title,
+    content_type: deliverable.content_type,
+  };
+}
+
+function DeliverableChips({
+  deliverables,
+  onPreview,
+}: {
+  deliverables: DemandCriterionDeliverable[];
+  onPreview: (artifact: PreviewableArtifact) => void;
+}) {
+  if (deliverables.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {deliverables.map((deliverable) => {
+        const previewable = deliverableToPreviewable(deliverable);
+        const canPreview = artifactPreviewKind(previewable) != null;
+        return (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-v3-pill border border-v3-line bg-v3-card px-2 py-0.5 text-[11px] text-v3-ink-2"
+            key={deliverable.artifact_ref_id}
+          >
+            <span className="max-w-[180px] truncate font-medium text-v3-ink" title={deliverable.title}>
+              {deliverable.title}
+            </span>
+            {canPreview ? (
+              <button
+                className="inline-flex items-center gap-0.5 text-v3-brand hover:underline"
+                onClick={() => onPreview(previewable)}
+                type="button"
+              >
+                <Eye aria-hidden className="size-3" />
+                预览
+              </button>
+            ) : null}
+            <a
+              className="inline-flex items-center gap-0.5 text-v3-brand hover:underline"
+              href={artifactContentHref(deliverable.artifact_ref_id)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <Download aria-hidden className="size-3" />
+              下载
+            </a>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function CriterionRow({
   criterion,
   demandStatus,
   onSign,
+  onPreview,
   isSigning,
 }: {
   criterion: DemandAcceptanceCriterionDetail;
   demandStatus: string;
   onSign?: SignHandler;
+  onPreview: (artifact: PreviewableArtifact) => void;
   isSigning?: boolean;
 }) {
   const [reason, setReason] = useState("");
@@ -141,11 +209,15 @@ function CriterionRow({
           </summary>
           <div className="divide-y divide-v3-line border-t border-v3-line">
             {criterion.task_summaries.map((summary, index) => (
-              <div className="grid gap-1 px-3 py-2" key={`${summary.task_id}-${index}`}>
+              <div className="grid gap-1.5 px-3 py-2" key={`${summary.task_id}-${index}`}>
                 <span className="font-mono text-[11px] text-v3-ink-3">{summary.task_id}</span>
                 <p className="text-xs leading-relaxed text-v3-ink-2">
                   {summary.summary.trim() ? summary.summary : "该任务尚无执行结论"}
                 </p>
+                <DeliverableChips
+                  deliverables={summary.deliverables ?? []}
+                  onPreview={onPreview}
+                />
               </div>
             ))}
           </div>
@@ -206,6 +278,8 @@ export function CriteriaPanelView({
   onSign,
   isSigning,
 }: CriteriaPanelViewProps) {
+  const [previewArtifact, setPreviewArtifact] =
+    useState<PreviewableArtifact | null>(null);
   return (
     <SoftCard className="grid gap-3 p-4">
       <div className="flex items-center gap-2">
@@ -230,11 +304,17 @@ export function CriteriaPanelView({
               demandStatus={demandStatus}
               isSigning={isSigning}
               key={criterion.criterion_id}
+              onPreview={setPreviewArtifact}
               onSign={onSign}
             />
           ))}
         </div>
       )}
+
+      <ArtifactPreviewSheet
+        artifact={previewArtifact}
+        onClose={() => setPreviewArtifact(null)}
+      />
     </SoftCard>
   );
 }

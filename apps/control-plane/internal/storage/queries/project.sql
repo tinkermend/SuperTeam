@@ -1632,6 +1632,18 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
 ORDER BY created_at DESC;
 
+-- name: ListProjectDeclaredArtifactsByTaskIDs :many
+-- 验收判据卡深链(声明式交付物 v2 §4 P2):按任务批量取 declared 交付物,
+-- 只返回内容寻址(artifacts/ 前缀=可经平台取回)的行;declared_skipped
+-- 与外部引用天然被排除,不下发不可点击的 chip。
+SELECT * FROM project_artifact_refs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+  AND artifact_type = 'declared'
+  AND object_ref LIKE 'artifacts/%'
+ORDER BY created_at ASC;
+
 -- name: ListProjectTaskGraphNodeTimings :many
 SELECT
   pta.project_task_id AS project_task_id,
