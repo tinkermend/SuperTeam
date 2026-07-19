@@ -6,6 +6,7 @@ export * from "./employees";
 export * from "./feishu";
 export * from "./health";
 export * from "./inbox";
+export * from "./permission-approvals";
 export * from "./projects";
 export * from "./runtime";
 export * from "./tasks";

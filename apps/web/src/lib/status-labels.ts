@@ -183,6 +183,60 @@ export function principalTypeLabel(type: string | undefined): string {
   return PRINCIPAL_TYPE_LABELS[normalized] ?? type;
 }
 
+const PERMISSION_RESOURCE_TYPE_LABELS: Record<string, string> = {
+  digital_employee_config_revision: "数字员工配置修订",
+  team_privileged_role_request: "团队特权角色申请",
+};
+
+export function permissionResourceTypeLabel(type: string | undefined): string {
+  if (!type) {
+    return "未知";
+  }
+  const normalized = type.trim().toLowerCase();
+  return PERMISSION_RESOURCE_TYPE_LABELS[normalized] ?? type;
+}
+
+const PERMISSION_CATEGORY_LABELS: Record<string, string> = {
+  permission: "权限审批",
+  project_task: "任务验收",
+};
+
+export function permissionCategoryLabel(category: string | undefined): string {
+  if (!category) {
+    return "未知";
+  }
+  const normalized = category.trim().toLowerCase();
+  return PERMISSION_CATEGORY_LABELS[normalized] ?? category;
+}
+
+const PERMISSION_DECISION_LABELS: Record<string, string> = {
+  approved: "同意",
+  rejected: "驳回",
+  needs_more_evidence: "要求补证",
+};
+
+export function permissionDecisionLabel(decision: string | undefined): string {
+  if (!decision) {
+    return "未知";
+  }
+  const normalized = decision.trim().toLowerCase();
+  return PERMISSION_DECISION_LABELS[normalized] ?? decision;
+}
+
+const PRIVILEGED_ROLE_LABELS: Record<string, string> = {
+  admin: "管理员",
+  approver: "审批人",
+  owner: "负责人",
+};
+
+export function privilegedRoleLabel(role: string | undefined): string {
+  if (!role) {
+    return "未知";
+  }
+  const normalized = role.trim().toLowerCase();
+  return PRIVILEGED_ROLE_LABELS[normalized] ?? role;
+}
+
 const DELETE_BLOCKER_TYPE_LABELS: Record<string, string> = {
   project_task: "项目任务",
   run: "执行运行",

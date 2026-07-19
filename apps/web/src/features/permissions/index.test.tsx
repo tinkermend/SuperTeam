@@ -189,14 +189,14 @@ async function expectV3Surface() {
 }
 
 describe("PermissionsCenter", () => {
-  it("renders five tabs", async () => {
+  it("renders six tabs", async () => {
     const screen = await renderPermissionsCenter();
 
     await expect.element(screen.getByRole("heading", { name: "权限中心" })).toBeVisible();
 
-    const tabNames = ["授权概览", "授权审计", "Runtime 范围", "成员角色", "权限诊断"];
+    const tabNames = ["授权概览", "权限审批", "授权审计", "Runtime 范围", "成员角色", "权限诊断"];
     await vi.waitFor(() => {
-      expect(screen.getByRole("tab").elements()).toHaveLength(5);
+      expect(screen.getByRole("tab").elements()).toHaveLength(6);
     });
 
     for (const tabName of tabNames) {
