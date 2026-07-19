@@ -52,6 +52,11 @@ func (s *fakeTemplateHandlerService) CreateDigitalEmployee(ctx context.Context, 
 	return nil, nil
 }
 
+func (s *fakeTemplateHandlerService) ListAvatarAssets(ctx context.Context, tenantID uuid.UUID) ([]DigitalEmployeeAvatarAsset, error) {
+	return ListDigitalEmployeeAvatarAssets(), nil
+}
+
+
 func (s *fakeTemplateHandlerService) ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error) {
 	return nil, nil
 }

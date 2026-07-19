@@ -373,9 +373,43 @@ func emptyPolicyDefaults() PolicyDefaults {
 	}
 }
 
+// ListAvatarAssets returns the built-in avatar library with per-tenant
+// in-use flags: an asset already assigned to a live digital employee is
+// exclusive and cannot be picked again at creation time.
+func (s *Service) ListAvatarAssets(ctx context.Context, tenantID uuid.UUID) ([]DigitalEmployeeAvatarAsset, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	used, err := s.repository.ListUsedAvatarAssetIDs(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list used avatar asset ids: %w", err)
+	}
+	assets := ListDigitalEmployeeAvatarAssets()
+	for i := range assets {
+		if _, ok := used[assets[i].ID]; ok {
+			assets[i].InUse = true
+		}
+	}
+	return assets, nil
+}
+
+func (s *Service) ensureAvatarAssetAvailable(ctx context.Context, tenantID uuid.UUID, avatarAssetID string) error {
+	used, err := s.repository.ListUsedAvatarAssetIDs(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("list used avatar asset ids: %w", err)
+	}
+	if _, ok := used[avatarAssetID]; ok {
+		return fmt.Errorf("%w: avatar_asset_id %q already in use", ErrConflict, avatarAssetID)
+	}
+	return nil
+}
+
 func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error) {
 	normalized, definition, err := s.normalizeCreateDigitalEmployeeRequest(ctx, req)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureAvatarAssetAvailable(ctx, normalized.TenantID, normalized.AvatarAssetID); err != nil {
 		return nil, err
 	}
 	teamLess := normalized.TeamID == nil

@@ -2671,10 +2671,13 @@ type DigitalEmployeeActivityItem struct {
 
 // DigitalEmployeeAvatarAsset defines model for DigitalEmployeeAvatarAsset.
 type DigitalEmployeeAvatarAsset struct {
-	AgeRange     string `json:"age_range"`
-	Gender       string `json:"gender"`
-	Id           string `json:"id"`
-	ImageUrl     string `json:"image_url"`
+	AgeRange string `json:"age_range"`
+	Gender   string `json:"gender"`
+	Id       string `json:"id"`
+	ImageUrl string `json:"image_url"`
+
+	// InUse 该头像是否已被本租户的在册数字员工占用；头像独占，占用中的头像不可再被创建选用。
+	InUse        bool   `json:"in_use"`
 	Label        string `json:"label"`
 	License      string `json:"license"`
 	Source       string `json:"source"`

@@ -282,6 +282,7 @@ function createWizardFetcher({
   pendingCreateOptionsForTeamId,
   teamConfigOverrides,
   templateCapabilityBindingsOverrides,
+  avatarAssets = [avatarAsset],
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -296,6 +297,7 @@ function createWizardFetcher({
   pendingCreateOptionsForTeamId?: string;
   teamConfigOverrides?: Record<string, unknown>;
   templateCapabilityBindingsOverrides?: Record<string, unknown>;
+  avatarAssets?: Array<typeof avatarAsset & { in_use?: boolean }>;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -338,7 +340,7 @@ function createWizardFetcher({
     }
 
     if (url.pathname === "/api/v1/digital-employee-avatar-assets" && method === "GET") {
-      return jsonResponse([avatarAsset]);
+      return jsonResponse(avatarAssets);
     }
 
     if (url.pathname === "/api/v1/digital-employees" && method === "POST") {
@@ -1138,6 +1140,27 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await expect.element(screen.getByRole("button", { name: "工程师头像 M01" })).toHaveClass("size-20");
+  });
+
+  it("hides avatars already used by existing employees and auto-selects the first free one", async () => {
+    const usedAvatar = { ...avatarAsset, in_use: true };
+    const freeAvatar = {
+      ...avatarAsset,
+      id: "engineer-m-02",
+      label: "工程师头像 M02",
+      image_url: "/images/digital-employee-avatars/engineer-m-02.webp",
+      thumbnail_url: "/images/digital-employee-avatars/engineer-m-02-256.webp",
+    };
+    const screen = await renderCreateEmployeeView(
+      createWizardFetcher({ avatarAssets: [usedAvatar, freeAvatar] }),
+    );
+
+    await enterConfiguration(screen);
+    await expect.element(screen.getByRole("button", { name: "工程师头像 M02" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.container.querySelector('img[alt="工程师头像 M01"]')).toBeNull();
   });
 
   it("auto-selects a provider even when multiple runtimes are available", async () => {

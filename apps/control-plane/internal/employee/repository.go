@@ -23,6 +23,7 @@ type Repository interface {
 	AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error)
 	EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error
 	GetTeamBaseline(ctx context.Context, tenantID, teamID uuid.UUID) (TeamBaseline, error)
+	ListUsedAvatarAssetIDs(ctx context.Context, tenantID uuid.UUID) (map[string]struct{}, error)
 	ListSkillCapabilityOptions(ctx context.Context, tenantID uuid.UUID) ([]CapabilityRegistryOption, error)
 	ListMCPCapabilityOptions(ctx context.Context, tenantID uuid.UUID) ([]CapabilityRegistryOption, error)
 	ResolveSkillIDsBySlugs(ctx context.Context, tenantID uuid.UUID, slugs []string) (map[string]uuid.UUID, error)

@@ -761,6 +761,36 @@ func TestCreateDigitalEmployeeSupportsTeamLessCreation(t *testing.T) {
 	}
 }
 
+func TestCreateDigitalEmployeeRejectsAvatarAlreadyInUse(t *testing.T) {
+	svc, _, _, req := newCreateDigitalEmployeeReadyFixture(t)
+
+	first, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create first digital employee: %v", err)
+	}
+
+	req.Name = req.Name + "-复用头像"
+	if _, err := svc.CreateDigitalEmployee(context.Background(), req); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict for reused avatar %q, got %v", first.Metadata["avatar_asset_id"], err)
+	}
+
+	assets, err := svc.ListAvatarAssets(context.Background(), req.TenantID)
+	if err != nil {
+		t.Fatalf("list avatar assets: %v", err)
+	}
+	usedFlagged := false
+	for _, asset := range assets {
+		if asset.ID == req.AvatarAssetID {
+			usedFlagged = asset.InUse
+		} else if asset.InUse {
+			t.Fatalf("unexpected in_use flag on %q", asset.ID)
+		}
+	}
+	if !usedFlagged {
+		t.Fatalf("expected avatar %q flagged in_use", req.AvatarAssetID)
+	}
+}
+
 func TestCreateDigitalEmployeePersistsInitialEnvironmentVariablesInTransaction(t *testing.T) {
 	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
 	svc.SetEnvironmentCodec(testCreateFlowEnvironmentCodec(t))
@@ -2556,6 +2586,19 @@ func (r *memoryRepository) GetTeamBaseline(_ context.Context, tenantID, teamID u
 		Skills:       append([]string(nil), baseline.Skills...),
 		MCPServers:   append([]string(nil), baseline.MCPServers...),
 	}, nil
+}
+
+func (r *memoryRepository) ListUsedAvatarAssetIDs(_ context.Context, tenantID uuid.UUID) (map[string]struct{}, error) {
+	used := make(map[string]struct{})
+	for _, employee := range r.employees {
+		if employee.TenantID != tenantID {
+			continue
+		}
+		if assetID, ok := employee.Metadata["avatar_asset_id"].(string); ok && assetID != "" {
+			used[assetID] = struct{}{}
+		}
+	}
+	return used, nil
 }
 
 func (r *memoryRepository) ListSkillCapabilityOptions(_ context.Context, _ uuid.UUID) ([]CapabilityRegistryOption, error) {

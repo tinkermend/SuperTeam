@@ -17,6 +17,7 @@ import (
 
 type HandlerService interface {
 	GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error)
+	ListAvatarAssets(ctx context.Context, tenantID uuid.UUID) ([]DigitalEmployeeAvatarAsset, error)
 	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
 	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
@@ -111,10 +112,20 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *HTTPHandler) ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee avatar assets read"); !ok {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee avatar assets read")
+	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, ListDigitalEmployeeAvatarAssets())
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	assets, err := service.ListAvatarAssets(r.Context(), tenantID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, assets)
 }
 
 func (h *HTTPHandler) GetOverview(w http.ResponseWriter, r *http.Request) {

@@ -17,6 +17,7 @@ type DigitalEmployeeAvatarAsset struct {
 	Source       string `json:"source"`
 	License      string `json:"license"`
 	Status       string `json:"status"`
+	InUse        bool   `json:"in_use"`
 }
 
 func ListDigitalEmployeeAvatarAssets() []DigitalEmployeeAvatarAsset {

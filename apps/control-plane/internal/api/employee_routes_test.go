@@ -1670,6 +1670,10 @@ type routeEmployeeService struct {
 	overviewErr                      error
 }
 
+func (s *routeEmployeeService) ListAvatarAssets(ctx context.Context, tenantID uuid.UUID) ([]employee.DigitalEmployeeAvatarAsset, error) {
+	return employee.ListDigitalEmployeeAvatarAssets(), nil
+}
+
 func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employee.CreateOptionsRequest) (*employee.CreateOptions, error) {
 	s.createOptionsReq = req
 	if s.createOptionsErr != nil {

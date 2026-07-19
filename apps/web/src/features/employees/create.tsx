@@ -176,6 +176,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     queryKey: ["digital-employee-avatar-assets"],
     queryFn: () => listDigitalEmployeeAvatarAssets({ baseUrl: apiBaseUrl, fetcher }),
   });
+  // 头像独占：已被在册员工占用的头像不进入候选。
+  const availableAvatarAssets = useMemo(
+    () => (avatarAssets.data ?? []).filter((asset) => asset.status === "active" && !asset.in_use),
+    [avatarAssets.data],
+  );
 
   const selectedType = useMemo(
     () => createOptions.data?.employee_types.find((item) => item.type === draft.employee_type),
@@ -209,11 +214,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }, [createOptions.data, requestedTemplate, templateQueryHandled]);
 
   useEffect(() => {
-    const firstAvatar = avatarAssets.data?.find((asset) => asset.status === "active");
+    const firstAvatar = availableAvatarAssets[0];
     if (!draft.avatar_asset_id && firstAvatar) {
       setDraft((current) => ({ ...current, avatar_asset_id: firstAvatar.id }));
     }
-  }, [avatarAssets.data, draft.avatar_asset_id]);
+  }, [availableAvatarAssets, draft.avatar_asset_id]);
 
   useEffect(() => {
     const candidateProviders = providerCandidates(createOptions.data);
@@ -462,8 +467,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         ) : null}
 
         {flowStep === "configure" ? (
-          <div className="grid gap-4 xl:h-[calc(100vh-220px)] xl:min-h-[560px] xl:grid-cols-[minmax(0,1fr)_340px]">
-            <section className="flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+            <section className="flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3 xl:max-h-[calc(100vh-220px)] xl:min-h-[560px]">
               <div className="border-b border-v3-line p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex items-center gap-2.5">
@@ -491,7 +496,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   ) : null}
                   {isIdentityStepReady ? (
                     <IdentityStep
-                      avatarAssets={avatarAssets.data ?? []}
+                      avatarAssets={availableAvatarAssets}
                       draft={draft}
                       errors={errors}
                       selectedType={selectedType}
@@ -1331,7 +1336,9 @@ function AvatarSelection({
           );
         })}
       </div>
-      {assets.length === 0 ? <p className="mt-2 text-sm text-v3-ink-3">暂无可选头像</p> : null}
+      {assets.length === 0 ? (
+        <p className="mt-2 text-sm text-v3-ink-3">头像库已全部被现有数字员工占用，请先扩充头像库再创建。</p>
+      ) : null}
       {error ? <span className="mt-2 block text-sm text-v3-danger">{error}</span> : null}
     </fieldset>
   );

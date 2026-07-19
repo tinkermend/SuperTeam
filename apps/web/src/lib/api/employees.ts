@@ -21,6 +21,8 @@ export type DigitalEmployeeAvatarAsset = {
   source: string;
   license: string;
   status: string;
+  /** 头像独占：已被在册数字员工占用的头像不可再选（仅创建选项接口返回）。 */
+  in_use?: boolean;
 };
 
 export type DigitalEmployee = {

@@ -394,6 +394,37 @@ ORDER BY s.slug ASC
 	}, nil
 }
 
+func (r *PgRepository) ListUsedAvatarAssetIDs(ctx context.Context, tenantID uuid.UUID) (map[string]struct{}, error) {
+	if r.sql == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.sql.Query(ctx, `
+SELECT DISTINCT COALESCE(metadata->>'avatar_asset_id', metadata->'avatar'->>'id') AS avatar_asset_id
+FROM digital_employees
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+  AND COALESCE(metadata->>'avatar_asset_id', metadata->'avatar'->>'id') IS NOT NULL
+`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	used := make(map[string]struct{})
+	for rows.Next() {
+		var assetID string
+		if err := rows.Scan(&assetID); err != nil {
+			return nil, err
+		}
+		if assetID != "" {
+			used[assetID] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return used, nil
+}
+
 func (r *PgRepository) ListSkillCapabilityOptions(ctx context.Context, tenantID uuid.UUID) ([]CapabilityRegistryOption, error) {
 	if r.sql == nil {
 		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
