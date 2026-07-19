@@ -18,6 +18,7 @@ import {
   resolveProjectDecision,
   type ProjectEvent,
   type ProjectTaskGraph,
+  type WorkflowInstanceScope,
 } from "@/lib/api/projects";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
@@ -37,10 +38,13 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
   );
+  // 河道口径：默认只显示运行中（active，服务端排除已归档项目与 completed/cancelled 终态）；
+  // "已归档/已完成"页签切到 archived 回看历史，避免遗留/终态数据无限堆积挤占在跑的实例。
+  const [scope, setScope] = useState<WorkflowInstanceScope>("active");
   const listQuery = useQuery({
     placeholderData: keepPreviousData,
-    queryFn: () => listWorkflowInstances(apiOptions, { limit: 50, offset: 0 }),
-    queryKey: ["workflow-instances", apiBaseUrl],
+    queryFn: () => listWorkflowInstances(apiOptions, { limit: 50, offset: 0, scope }),
+    queryKey: ["workflow-instances", apiBaseUrl, scope],
     refetchInterval: 5000,
   });
   const instances = listQuery.data ?? [];
@@ -122,6 +126,8 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
           instances={instances}
           isError={listQuery.isError}
           isLoading={listQuery.isLoading}
+          onScopeChange={setScope}
+          scope={scope}
         />
       </WorkflowShell>
     );

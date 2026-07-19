@@ -235,6 +235,15 @@ func (h *HTTPHandler) ListWorkflowInstances(w http.ResponseWriter, r *http.Reque
 		status := WorkflowInstanceStatus(raw)
 		req.Status = &status
 	}
+	if raw := r.URL.Query().Get("scope"); raw != "" {
+		switch raw {
+		case "active", "archived", "all":
+			req.Scope = raw
+		default:
+			http.Error(w, "invalid scope", http.StatusBadRequest)
+			return
+		}
+	}
 	items, err := service.ListWorkflowInstances(r.Context(), req)
 	if err != nil {
 		writeHandlerError(w, err)

@@ -342,8 +342,10 @@ type ListWorkflowInstancesRequest struct {
 	Query       string
 	ProjectID   *uuid.UUID
 	Status      *WorkflowInstanceStatus
-	Limit       int32
-	Offset      int32
+	// Scope 控制河道口径：active（默认，未归档且非终态）、archived（已归档或终态）、all（不过滤）。
+	Scope  string
+	Limit  int32
+	Offset int32
 }
 
 type WorkflowInstanceProgress struct {

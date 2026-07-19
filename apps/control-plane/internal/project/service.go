@@ -768,6 +768,13 @@ func (s *Service) ListWorkflowInstances(ctx context.Context, req ListWorkflowIns
 		return nil, ErrInvalidProject
 	}
 	req.Query = strings.TrimSpace(req.Query)
+	switch req.Scope {
+	case "active", "archived", "all":
+		// 已是合法口径。
+	default:
+		// 默认只显示运行中：未归档且非终态。
+		req.Scope = "active"
+	}
 	req.Limit, req.Offset = normalizeWorkflowInstancePagination(req.Limit, req.Offset)
 	items, err := s.repository.ListWorkflowInstances(ctx, req)
 	if err != nil {

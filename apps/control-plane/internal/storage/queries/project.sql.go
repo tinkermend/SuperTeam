@@ -6396,6 +6396,7 @@ WITH visible_demands AS (
         d.id AS demand_id,
         d.project_id,
         p.name AS project_name,
+        p.archived_at AS project_archived_at,
         d.title,
         d.submitted_by_user_id,
         d.status AS demand_status,
@@ -6408,31 +6409,31 @@ WITH visible_demands AS (
         COALESCE(d.updated_at, d.created_at) AS demand_updated_at
     FROM project_demands d
     JOIN projects p ON p.tenant_id = d.tenant_id AND p.id = d.project_id
-    WHERE d.tenant_id = $3::uuid
+    WHERE d.tenant_id = $4::uuid
       AND p.deleted_at IS NULL
-      AND ($4::uuid IS NULL OR d.project_id = $4::uuid)
+      AND ($5::uuid IS NULL OR d.project_id = $5::uuid)
       AND (
-        $5::text IS NULL
-        OR d.title ILIKE '%' || $5::text || '%'
-        OR COALESCE(d.content, '') ILIKE '%' || $5::text || '%'
-        OR p.name ILIKE '%' || $5::text || '%'
+        $6::text IS NULL
+        OR d.title ILIKE '%' || $6::text || '%'
+        OR COALESCE(d.content, '') ILIKE '%' || $6::text || '%'
+        OR p.name ILIKE '%' || $6::text || '%'
       )
       AND (
-        p.human_owner_user_id = $6::uuid
+        p.human_owner_user_id = $7::uuid
         OR EXISTS (
           SELECT 1
           FROM project_members pm
           WHERE pm.tenant_id = p.tenant_id
             AND pm.project_id = p.id
             AND pm.principal_type = 'human_user'
-            AND pm.principal_id = $6::uuid
+            AND pm.principal_id = $7::uuid
             AND pm.status = 'active'
         )
       )
 ),
 demand_read_model AS (
     SELECT
-        vd.demand_id, vd.project_id, vd.project_name, vd.title, vd.submitted_by_user_id, vd.demand_status, vd.created_at, vd.source_refs, vd.sla_due_at_parts, vd.demand_updated_at,
+        vd.demand_id, vd.project_id, vd.project_name, vd.project_archived_at, vd.title, vd.submitted_by_user_id, vd.demand_status, vd.created_at, vd.source_refs, vd.sla_due_at_parts, vd.demand_updated_at,
         CASE
           WHEN vd.sla_due_at_parts IS NOT NULL
            AND vd.sla_due_at_parts[1]::int BETWEEN 1 AND 9999
@@ -6475,7 +6476,7 @@ task_counts AS (
         MAX(NULLIF(risk_level, '')) FILTER (WHERE status NOT IN ('completed', 'done', 'success', 'cancelled')) AS active_risk_level,
         MAX(updated_at) AS task_updated_at
     FROM project_tasks
-    WHERE tenant_id = $3::uuid
+    WHERE tenant_id = $4::uuid
       AND demand_id IS NOT NULL
     GROUP BY tenant_id, project_id, demand_id
 ),
@@ -6495,7 +6496,7 @@ decision_counts AS (
       ON rd.tenant_id = dr.tenant_id
      AND rd.project_id = dr.project_id
      AND rd.coordination_job_id = dr.coordination_job_id
-    WHERE dr.tenant_id = $3::uuid
+    WHERE dr.tenant_id = $4::uuid
       AND COALESCE(pt.demand_id, rd.demand_id) IS NOT NULL
     GROUP BY dr.tenant_id, dr.project_id, COALESCE(pt.demand_id, rd.demand_id)
 ),
@@ -6511,7 +6512,7 @@ latest_jobs AS (
       ON rd.tenant_id = j.tenant_id
      AND rd.project_id = j.project_id
      AND rd.coordination_job_id = j.id
-    WHERE j.tenant_id = $3::uuid
+    WHERE j.tenant_id = $4::uuid
       AND rd.demand_id IS NOT NULL
     ORDER BY j.tenant_id, j.project_id, rd.demand_id, j.created_at DESC
 ),
@@ -6544,7 +6545,7 @@ latest_events AS (
           ON rd.tenant_id = pe.tenant_id
          AND rd.project_id = pe.project_id
          AND rd.coordination_job_id::text = pe.resource_id
-        WHERE pe.tenant_id = $3::uuid
+        WHERE pe.tenant_id = $4::uuid
     ) e
     WHERE demand_id IS NOT NULL
     ORDER BY e.tenant_id, e.project_id, demand_id, e.created_at DESC
@@ -6571,7 +6572,7 @@ decision_blockers AS (
           ON rd.tenant_id = dr.tenant_id
          AND rd.project_id = dr.project_id
          AND rd.coordination_job_id = dr.coordination_job_id
-        WHERE dr.tenant_id = $3::uuid
+        WHERE dr.tenant_id = $4::uuid
           AND dr.status_snapshot IN ('pending', 'requested')
     ) item
     WHERE item.demand_id IS NOT NULL
@@ -6587,7 +6588,7 @@ task_blockers AS (
         id AS blocker_resource_id,
         updated_at AS blocker_updated_at
     FROM project_tasks
-    WHERE tenant_id = $3::uuid
+    WHERE tenant_id = $4::uuid
       AND demand_id IS NOT NULL
       AND (
         requires_human_approval
@@ -6603,7 +6604,8 @@ task_blockers AS (
         END ASC,
         updated_at DESC,
         id DESC
-)
+),
+instances AS (
 SELECT
     vd.demand_id,
     vd.project_id,
@@ -6687,7 +6689,8 @@ SELECT
     le.event_occurred_at::timestamptz AS recent_event_occurred_at,
     COALESCE(db.blocker_type, tb.blocker_type, '')::text AS current_blocker_type,
     COALESCE(db.blocker_title, tb.blocker_title, '')::text AS current_blocker_title,
-    COALESCE(db.blocker_resource_id, tb.blocker_resource_id, '00000000-0000-0000-0000-000000000000'::uuid) AS current_blocker_resource_id
+    COALESCE(db.blocker_resource_id, tb.blocker_resource_id, '00000000-0000-0000-0000-000000000000'::uuid) AS current_blocker_resource_id,
+    vd.project_archived_at
 FROM demand_read_model vd
 LEFT JOIN task_counts tc
   ON tc.project_id = vd.project_id
@@ -6707,20 +6710,36 @@ LEFT JOIN decision_blockers db
 LEFT JOIN task_blockers tb
   ON tb.project_id = vd.project_id
  AND tb.demand_id = vd.demand_id
+)
+SELECT demand_id, project_id, project_name, title, submitted_by_user_id, submitted_by_display_name, status, status_reason, created_at, updated_at, selected_coordination_job_id, total_nodes, completed_nodes, running_nodes, blocked_nodes, waiting_human_nodes, planned_nodes, failed_nodes, cancelled_nodes, priority_value, priority_label, priority_source, risk_level, risk_label, risk_source, sla_due_at, sla_remaining_seconds, sla_breached, sla_label, sla_source, recent_event_type, recent_event_summary, recent_event_occurred_at, current_blocker_type, current_blocker_title, current_blocker_resource_id, project_archived_at
+FROM instances
+WHERE (
+    $1::text = 'all'
+    OR (
+      $1::text = 'active'
+      AND project_archived_at IS NULL
+      AND status NOT IN ('completed', 'cancelled')
+    )
+    OR (
+      $1::text = 'archived'
+      AND (project_archived_at IS NOT NULL OR status IN ('completed', 'cancelled'))
+    )
+)
 ORDER BY
-    CASE
-      WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 1
-      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 2
-      WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 3
-      WHEN COALESCE(tc.cancelled_nodes, 0) > 0 OR vd.demand_status = 'cancelled' THEN 6
-      WHEN tc.completed_nodes = tc.total_nodes THEN 5
+    CASE status
+      WHEN 'waiting_human' THEN 1
+      WHEN 'failed' THEN 2
+      WHEN 'running' THEN 3
+      WHEN 'cancelled' THEN 6
+      WHEN 'completed' THEN 5
       ELSE 4
     END ASC,
     updated_at DESC
-LIMIT $2 OFFSET $1
+LIMIT $3 OFFSET $2
 `
 
 type ListWorkflowInstancesParams struct {
+	Scope       string        `json:"scope"`
 	Offset      int32         `json:"offset"`
 	Limit       int32         `json:"limit"`
 	TenantID    uuid.UUID     `json:"tenant_id"`
@@ -6766,10 +6785,17 @@ type ListWorkflowInstancesRow struct {
 	CurrentBlockerType        string             `json:"current_blocker_type"`
 	CurrentBlockerTitle       string             `json:"current_blocker_title"`
 	CurrentBlockerResourceID  uuid.UUID          `json:"current_blocker_resource_id"`
+	ProjectArchivedAt         pgtype.Timestamptz `json:"project_archived_at"`
 }
 
+// scope 语义（默认 active）：
+//
+//	active   = 未归档项目 且 非终态实例（排除 completed/cancelled；failed 仍属"需要介入"保留在运行视图）
+//	archived = 已归档项目 或 终态实例（completed/cancelled），供"已归档/已完成"页签回看
+//	all      = 不过滤（调试/兜底）
 func (q *Queries) ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error) {
 	rows, err := q.db.Query(ctx, ListWorkflowInstances,
+		arg.Scope,
 		arg.Offset,
 		arg.Limit,
 		arg.TenantID,
@@ -6821,6 +6847,7 @@ func (q *Queries) ListWorkflowInstances(ctx context.Context, arg ListWorkflowIns
 			&i.CurrentBlockerType,
 			&i.CurrentBlockerTitle,
 			&i.CurrentBlockerResourceID,
+			&i.ProjectArchivedAt,
 		); err != nil {
 			return nil, err
 		}

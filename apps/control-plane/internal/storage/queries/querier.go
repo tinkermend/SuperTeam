@@ -512,6 +512,10 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
 	ListWebOperationLogs(ctx context.Context, arg ListWebOperationLogsParams) ([]WebOperationLog, error)
+	// scope 语义（默认 active）：
+	//   active   = 未归档项目 且 非终态实例（排除 completed/cancelled；failed 仍属"需要介入"保留在运行视图）
+	//   archived = 已归档项目 或 终态实例（completed/cancelled），供"已归档/已完成"页签回看
+	//   all      = 不过滤（调试/兜底）
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
 	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error)

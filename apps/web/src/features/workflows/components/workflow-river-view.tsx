@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Activity, AlertTriangle, CheckCircle2, Clock3, Gauge, GitBranch, Timer } from "lucide-react";
 import {
@@ -9,18 +9,26 @@ import {
   V3ErrorState,
   V3LoadingState,
   V3MetricCard,
+  V3Segmented,
   WorkSurface,
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import { compareIsoDesc, formatDateTime, formatRelativeTime as formatSharedRelativeTime } from "@/lib/format-time";
-import type { WorkflowInstanceSummary } from "@/lib/api/projects";
+import type { WorkflowInstanceScope, WorkflowInstanceSummary } from "@/lib/api/projects";
 import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
 
 type WorkflowRiverViewProps = {
   instances: WorkflowInstanceSummary[];
   isError: boolean;
   isLoading: boolean;
+  scope: WorkflowInstanceScope;
+  onScopeChange: (scope: WorkflowInstanceScope) => void;
 };
+
+const scopeTabs: Array<{ label: string; value: WorkflowInstanceScope }> = [
+  { label: "运行中", value: "active" },
+  { label: "已归档", value: "archived" },
+];
 
 type RiverCategory = "attention" | "active" | "done";
 
@@ -62,6 +70,8 @@ export function WorkflowRiverView({
   instances,
   isError,
   isLoading,
+  scope,
+  onScopeChange,
 }: WorkflowRiverViewProps) {
   const [filter, setFilter] = useState<RiverFilter>("all");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -69,34 +79,49 @@ export function WorkflowRiverView({
   const toggleGroup = (key: string) =>
     setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  // 口径页签始终渲染（含空/加载/错误态），否则"已归档"为空时用户无法切回"运行中"。
+  const scopeTabBar = (
+    <V3Segmented options={scopeTabs} onChange={onScopeChange} value={scope} />
+  );
+  const wrap = (children: ReactNode) => (
+    <div className="flex min-w-0 flex-col gap-5">
+      {scopeTabBar}
+      {children}
+    </div>
+  );
+
   if (isError && instances.length === 0) {
-    return (
+    return wrap(
       <SoftCard className="p-5">
         <V3ErrorState
           description="暂时无法读取流程编排入口，请稍后重试。"
           title="流程实例加载失败"
         />
-      </SoftCard>
+      </SoftCard>,
     );
   }
 
   if (isLoading && instances.length === 0) {
-    return (
+    return wrap(
       <SoftCard>
         <V3LoadingState label="正在加载流程实例" />
-      </SoftCard>
+      </SoftCard>,
     );
   }
 
   if (instances.length === 0) {
-    return (
+    return wrap(
       <SoftCard>
         <V3EmptyState
-          description="有需求进入协调线程后，会在这里显示全局流程状态。"
+          description={
+            scope === "archived"
+              ? "还没有已归档或已完成（含已取消）的流程实例。"
+              : "当前没有运行中的流程实例。有需求进入协调线程后，会在这里显示全局流程状态。"
+          }
           icon={<GitBranch />}
-          title="暂无可见流程实例"
+          title={scope === "archived" ? "暂无归档流程实例" : "暂无运行中流程实例"}
         />
-      </SoftCard>
+      </SoftCard>,
     );
   }
 
@@ -137,6 +162,7 @@ export function WorkflowRiverView({
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
+      {scopeTabBar}
       {/* 指标带 */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <V3MetricCard

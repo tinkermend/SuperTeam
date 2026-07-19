@@ -920,10 +920,13 @@ export type ListProjectsFilters = {
   offset?: number;
 };
 
+export type WorkflowInstanceScope = "active" | "archived" | "all";
+
 export type ListWorkflowInstancesFilters = {
   q?: string;
   projectId?: string;
   status?: WorkflowInstanceStatus;
+  scope?: WorkflowInstanceScope;
   limit?: number;
   offset?: number;
 };
@@ -985,6 +988,9 @@ function workflowInstancesPath(filters: ListWorkflowInstancesFilters = {}): stri
   }
   if (filters.status) {
     params.set("status", filters.status);
+  }
+  if (filters.scope) {
+    params.set("scope", filters.scope);
   }
   if (filters.limit !== undefined) {
     params.set("limit", String(filters.limit));

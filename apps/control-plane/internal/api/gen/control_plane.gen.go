@@ -587,9 +587,9 @@ func (e DigitalEmployeeStatus) Valid() bool {
 
 // Defines values for DigitalEmployeeWorkbenchStatus.
 const (
-	DigitalEmployeeWorkbenchStatusError          DigitalEmployeeWorkbenchStatus = "error"
-	DigitalEmployeeWorkbenchStatusPendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
-	DigitalEmployeeWorkbenchStatusReady          DigitalEmployeeWorkbenchStatus = "ready"
+	DigitalEmployeeWorkbenchStatusError              DigitalEmployeeWorkbenchStatus = "error"
+	DigitalEmployeeWorkbenchStatusNeedsConfiguration DigitalEmployeeWorkbenchStatus = "needs_configuration"
+	DigitalEmployeeWorkbenchStatusReady              DigitalEmployeeWorkbenchStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the DigitalEmployeeWorkbenchStatus enum.
@@ -597,7 +597,7 @@ func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
 	switch e {
 	case DigitalEmployeeWorkbenchStatusError:
 		return true
-	case DigitalEmployeeWorkbenchStatusPendingBinding:
+	case DigitalEmployeeWorkbenchStatusNeedsConfiguration:
 		return true
 	case DigitalEmployeeWorkbenchStatusReady:
 		return true
@@ -2133,6 +2133,27 @@ func (e ListTeamsParamsStatus) Valid() bool {
 	}
 }
 
+// Defines values for ListWorkflowInstancesParamsScope.
+const (
+	Active   ListWorkflowInstancesParamsScope = "active"
+	All      ListWorkflowInstancesParamsScope = "all"
+	Archived ListWorkflowInstancesParamsScope = "archived"
+)
+
+// Valid indicates whether the value is a known member of the ListWorkflowInstancesParamsScope enum.
+func (e ListWorkflowInstancesParamsScope) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case All:
+		return true
+	case Archived:
+		return true
+	default:
+		return false
+	}
+}
+
 // AddTeamMemberRequest defines model for AddTeamMemberRequest.
 type AddTeamMemberRequest struct {
 	Role   AddTeamMemberRequestRole `json:"role"`
@@ -2876,12 +2897,15 @@ type DigitalEmployeeIdentitySummary struct {
 	Name              string                      `json:"name"`
 	OwnerDisplayName  string                      `json:"owner_display_name"`
 	OwnerUserId       openapi_types.UUID          `json:"owner_user_id"`
-	RiskLevel         string                      `json:"risk_level"`
-	Role              string                      `json:"role"`
-	Status            DigitalEmployeeStatus       `json:"status"`
-	TeamId            *openapi_types.UUID         `json:"team_id,omitempty"`
-	TeamName          string                      `json:"team_name"`
-	TenantId          openapi_types.UUID          `json:"tenant_id"`
+
+	// ProviderType 身份级主 Provider 类型（如 claude/codex/opencode），由服务端 Provider 注册表校验；与运行期落点无关
+	ProviderType string                `json:"provider_type"`
+	RiskLevel    string                `json:"risk_level"`
+	Role         string                `json:"role"`
+	Status       DigitalEmployeeStatus `json:"status"`
+	TeamId       *openapi_types.UUID   `json:"team_id,omitempty"`
+	TeamName     string                `json:"team_name"`
+	TenantId     openapi_types.UUID    `json:"tenant_id"`
 }
 
 // DigitalEmployeeLatestRunSummary defines model for DigitalEmployeeLatestRunSummary.
@@ -2928,14 +2952,12 @@ type DigitalEmployeeOverviewExecutionStatus string
 
 // DigitalEmployeeOverviewFilters defines model for DigitalEmployeeOverviewFilters.
 type DigitalEmployeeOverviewFilters struct {
-	EmployeeTypes     []OverviewFilterOption `json:"employee_types"`
-	ExecutionStatuses []OverviewFilterOption `json:"execution_statuses"`
-	Providers         []OverviewFilterOption `json:"providers"`
-	RiskLevels        []OverviewFilterOption `json:"risk_levels"`
-	RunStatuses       []OverviewFilterOption `json:"run_statuses"`
-	RuntimeNodes      []OverviewFilterOption `json:"runtime_nodes"`
-	Statuses          []OverviewFilterOption `json:"statuses"`
-	Teams             []OverviewFilterOption `json:"teams"`
+	EmployeeTypes []OverviewFilterOption `json:"employee_types"`
+	Providers     []OverviewFilterOption `json:"providers"`
+	RiskLevels    []OverviewFilterOption `json:"risk_levels"`
+	RunStatuses   []OverviewFilterOption `json:"run_statuses"`
+	Statuses      []OverviewFilterOption `json:"statuses"`
+	Teams         []OverviewFilterOption `json:"teams"`
 }
 
 // DigitalEmployeeOverviewItem defines model for DigitalEmployeeOverviewItem.
@@ -2948,16 +2970,18 @@ type DigitalEmployeeOverviewItem struct {
 	OperationalState  DigitalEmployeeOperationalState  `json:"operational_state"`
 
 	// ProjectSummary 数字员工的项目关联情况（活跃成员身份或任务分派均算关联）
-	ProjectSummary  DigitalEmployeeProjectSummary       `json:"project_summary"`
-	RecentEvents    []DigitalEmployeeRecentEventSummary `json:"recent_events"`
-	WorkbenchStatus DigitalEmployeeWorkbenchStatus      `json:"workbench_status"`
+	ProjectSummary DigitalEmployeeProjectSummary       `json:"project_summary"`
+	RecentEvents   []DigitalEmployeeRecentEventSummary `json:"recent_events"`
+
+	// WorkbenchStatus 工作台就绪态。判据为身份状态与配置治理（Runtime 由项目派发时动态解析，不参与判定）
+	WorkbenchStatus DigitalEmployeeWorkbenchStatus `json:"workbench_status"`
 }
 
 // DigitalEmployeeOverviewQueueSummary defines model for DigitalEmployeeOverviewQueueSummary.
 type DigitalEmployeeOverviewQueueSummary struct {
-	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
-	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
-	StaleConfigCount           int32 `json:"stale_config_count"`
+	FailedRecentRunCount    int32 `json:"failed_recent_run_count"`
+	NeedsConfigurationCount int32 `json:"needs_configuration_count"`
+	StaleConfigCount        int32 `json:"stale_config_count"`
 }
 
 // DigitalEmployeeOverviewRunStatus defines model for DigitalEmployeeOverviewRunStatus.
@@ -2965,17 +2989,21 @@ type DigitalEmployeeOverviewRunStatus string
 
 // DigitalEmployeeOverviewSummary defines model for DigitalEmployeeOverviewSummary.
 type DigitalEmployeeOverviewSummary struct {
-	ErrorCount                 int32            `json:"error_count"`
-	FailedRecentRunCount       int32            `json:"failed_recent_run_count"`
-	HighRiskCount              int32            `json:"high_risk_count"`
+	ErrorCount           int32 `json:"error_count"`
+	FailedRecentRunCount int32 `json:"failed_recent_run_count"`
+	HighRiskCount        int32 `json:"high_risk_count"`
+
+	// NeedsConfigurationCount 待配置员工数（身份未就绪或配置未审批生效；Runtime 由项目派发时动态解析，不再按员工级绑定统计）
+	NeedsConfigurationCount    int32            `json:"needs_configuration_count"`
 	OperationalStatusCounts    map[string]int32 `json:"operational_status_counts"`
 	PendingConfigApprovalCount int32            `json:"pending_config_approval_count"`
-	PendingRuntimeBindingCount int32            `json:"pending_runtime_binding_count"`
 	ReadyCount                 int32            `json:"ready_count"`
 	RunnableCount              int32            `json:"runnable_count"`
 	RunningCount               int32            `json:"running_count"`
 	TotalCount                 int32            `json:"total_count"`
-	WaitingRuntimeCount        int32            `json:"waiting_runtime_count"`
+
+	// WaitingRuntimeCount 身份 Provider 在租户内暂无在线可用 Runtime 能力的员工数
+	WaitingRuntimeCount int32 `json:"waiting_runtime_count"`
 }
 
 // DigitalEmployeePolicyDefaults defines model for DigitalEmployeePolicyDefaults.
@@ -3195,7 +3223,7 @@ type DigitalEmployeeTypeOption struct {
 	Type                     string                  `json:"type"`
 }
 
-// DigitalEmployeeWorkbenchStatus defines model for DigitalEmployeeWorkbenchStatus.
+// DigitalEmployeeWorkbenchStatus 工作台就绪态。判据为身份状态与配置治理（Runtime 由项目派发时动态解析，不参与判定）
 type DigitalEmployeeWorkbenchStatus string
 
 // DispatchGateBlocker defines model for DispatchGateBlocker.
@@ -5785,17 +5813,15 @@ type GetDigitalEmployeeOverviewParams struct {
 	Q *string `form:"q,omitempty" json:"q,omitempty"`
 
 	// OperationalStatus 按计算态运行状态过滤，逗号分隔多值（working,error,waiting_human,queued,idle,unavailable,needs_configuration）
-	OperationalStatus *string                                 `form:"operational_status,omitempty" json:"operational_status,omitempty"`
-	TeamId            *openapi_types.UUID                     `form:"team_id,omitempty" json:"team_id,omitempty"`
-	Status            *DigitalEmployeeStatus                  `form:"status,omitempty" json:"status,omitempty"`
-	EmployeeType      *string                                 `form:"employee_type,omitempty" json:"employee_type,omitempty"`
-	ProviderType      *string                                 `form:"provider_type,omitempty" json:"provider_type,omitempty"`
-	RuntimeNodeId     *openapi_types.UUID                     `form:"runtime_node_id,omitempty" json:"runtime_node_id,omitempty"`
-	RiskLevel         *string                                 `form:"risk_level,omitempty" json:"risk_level,omitempty"`
-	ExecutionStatus   *DigitalEmployeeOverviewExecutionStatus `form:"execution_status,omitempty" json:"execution_status,omitempty"`
-	RunStatus         *DigitalEmployeeOverviewRunStatus       `form:"run_status,omitempty" json:"run_status,omitempty"`
-	Limit             *Limit                                  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset            *Offset                                 `form:"offset,omitempty" json:"offset,omitempty"`
+	OperationalStatus *string                           `form:"operational_status,omitempty" json:"operational_status,omitempty"`
+	TeamId            *openapi_types.UUID               `form:"team_id,omitempty" json:"team_id,omitempty"`
+	Status            *DigitalEmployeeStatus            `form:"status,omitempty" json:"status,omitempty"`
+	EmployeeType      *string                           `form:"employee_type,omitempty" json:"employee_type,omitempty"`
+	ProviderType      *string                           `form:"provider_type,omitempty" json:"provider_type,omitempty"`
+	RiskLevel         *string                           `form:"risk_level,omitempty" json:"risk_level,omitempty"`
+	RunStatus         *DigitalEmployeeOverviewRunStatus `form:"run_status,omitempty" json:"run_status,omitempty"`
+	Limit             *Limit                            `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset            *Offset                           `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListProviderSessionsForDigitalEmployeeParams defines parameters for ListProviderSessionsForDigitalEmployee.
@@ -6126,9 +6152,15 @@ type ListWorkflowInstancesParams struct {
 	Q         *string                 `form:"q,omitempty" json:"q,omitempty"`
 	ProjectId *openapi_types.UUID     `form:"project_id,omitempty" json:"project_id,omitempty"`
 	Status    *WorkflowInstanceStatus `form:"status,omitempty" json:"status,omitempty"`
-	Limit     *Limit                  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset    *Offset                 `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Scope 河道口径。active（默认）只返回未归档项目的运行中实例（排除 completed/cancelled 终态）； archived 返回已归档项目或终态实例，供"已归档/已完成"页签回看；all 不过滤。
+	Scope  *ListWorkflowInstancesParamsScope `form:"scope,omitempty" json:"scope,omitempty"`
+	Limit  *Limit                            `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset                           `form:"offset,omitempty" json:"offset,omitempty"`
 }
+
+// ListWorkflowInstancesParamsScope defines parameters for ListWorkflowInstances.
+type ListWorkflowInstancesParamsScope string
 
 // UpsertFeishuAppConfigJSONRequestBody defines body for UpsertFeishuAppConfig for application/json ContentType.
 type UpsertFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
@@ -9605,19 +9637,6 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployeeOverview(w http.ResponseWri
 		return
 	}
 
-	// ------------- Optional query parameter "runtime_node_id" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "runtime_node_id", r.URL.Query(), &params.RuntimeNodeId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "runtime_node_id"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runtime_node_id", Err: err})
-		}
-		return
-	}
-
 	// ------------- Optional query parameter "risk_level" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "risk_level", r.URL.Query(), &params.RiskLevel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -9627,19 +9646,6 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployeeOverview(w http.ResponseWri
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "risk_level"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "risk_level", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "execution_status" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "execution_status", r.URL.Query(), &params.ExecutionStatus, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "execution_status"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "execution_status", Err: err})
 		}
 		return
 	}
@@ -15683,6 +15689,19 @@ func (siw *ServerInterfaceWrapper) ListWorkflowInstances(w http.ResponseWriter, 
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "scope" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scope", r.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
 		}
 		return
 	}

@@ -856,6 +856,16 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WorkflowInstanceStatus"
+        - name: scope
+          in: query
+          required: false
+          description: >-
+            河道口径。active（默认）只返回未归档项目的运行中实例（排除 completed/cancelled 终态）；
+            archived 返回已归档项目或终态实例，供"已归档/已完成"页签回看；all 不过滤。
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:

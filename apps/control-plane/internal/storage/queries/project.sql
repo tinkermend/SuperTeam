@@ -66,6 +66,7 @@ WITH visible_demands AS (
         d.id AS demand_id,
         d.project_id,
         p.name AS project_name,
+        p.archived_at AS project_archived_at,
         d.title,
         d.submitted_by_user_id,
         d.status AS demand_status,
@@ -273,7 +274,8 @@ task_blockers AS (
         END ASC,
         updated_at DESC,
         id DESC
-)
+),
+instances AS (
 SELECT
     vd.demand_id,
     vd.project_id,
@@ -357,7 +359,8 @@ SELECT
     le.event_occurred_at::timestamptz AS recent_event_occurred_at,
     COALESCE(db.blocker_type, tb.blocker_type, '')::text AS current_blocker_type,
     COALESCE(db.blocker_title, tb.blocker_title, '')::text AS current_blocker_title,
-    COALESCE(db.blocker_resource_id, tb.blocker_resource_id, '00000000-0000-0000-0000-000000000000'::uuid) AS current_blocker_resource_id
+    COALESCE(db.blocker_resource_id, tb.blocker_resource_id, '00000000-0000-0000-0000-000000000000'::uuid) AS current_blocker_resource_id,
+    vd.project_archived_at
 FROM demand_read_model vd
 LEFT JOIN task_counts tc
   ON tc.project_id = vd.project_id
@@ -377,13 +380,32 @@ LEFT JOIN decision_blockers db
 LEFT JOIN task_blockers tb
   ON tb.project_id = vd.project_id
  AND tb.demand_id = vd.demand_id
+)
+-- scope 语义（默认 active）：
+--   active   = 未归档项目 且 非终态实例（排除 completed/cancelled；failed 仍属"需要介入"保留在运行视图）
+--   archived = 已归档项目 或 终态实例（completed/cancelled），供"已归档/已完成"页签回看
+--   all      = 不过滤（调试/兜底）
+SELECT *
+FROM instances
+WHERE (
+    sqlc.arg('scope')::text = 'all'
+    OR (
+      sqlc.arg('scope')::text = 'active'
+      AND project_archived_at IS NULL
+      AND status NOT IN ('completed', 'cancelled')
+    )
+    OR (
+      sqlc.arg('scope')::text = 'archived'
+      AND (project_archived_at IS NOT NULL OR status IN ('completed', 'cancelled'))
+    )
+)
 ORDER BY
-    CASE
-      WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 1
-      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 2
-      WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 3
-      WHEN COALESCE(tc.cancelled_nodes, 0) > 0 OR vd.demand_status = 'cancelled' THEN 6
-      WHEN tc.completed_nodes = tc.total_nodes THEN 5
+    CASE status
+      WHEN 'waiting_human' THEN 1
+      WHEN 'failed' THEN 2
+      WHEN 'running' THEN 3
+      WHEN 'cancelled' THEN 6
+      WHEN 'completed' THEN 5
       ELSE 4
     END ASC,
     updated_at DESC

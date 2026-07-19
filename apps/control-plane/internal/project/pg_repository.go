@@ -139,6 +139,7 @@ func (r *PgRepository) ListWorkflowInstances(ctx context.Context, req ListWorkfl
 		ActorUserID: req.ActorUserID,
 		ProjectID:   nullUUID(req.ProjectID),
 		Q:           textOrNull(req.Query),
+		Scope:       req.Scope,
 		Limit:       req.Limit,
 		Offset:      req.Offset,
 	})

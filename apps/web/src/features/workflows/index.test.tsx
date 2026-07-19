@@ -419,7 +419,7 @@ describe("WorkflowView", () => {
 
     const urls = requestedUrls(fetcher);
     expect(urls).toEqual([
-      "http://control-plane.local/api/v1/workflow-instances?limit=50&offset=0",
+      "http://control-plane.local/api/v1/workflow-instances?scope=active&limit=50&offset=0",
     ]);
     expect(urls.some((url) => url.includes("/project-demands/"))).toBe(false);
     expect(urls.some((url) => url.includes("/task-graph"))).toBe(false);
@@ -1038,7 +1038,7 @@ describe("WorkflowView", () => {
 
     await expect.element(screen.getByRole("link", { name: /支付成功率下降/ })).toBeVisible();
     expect(requestedUrls(fetcher)).toEqual([
-      "http://control-plane.local/api/v1/workflow-instances?limit=50&offset=0",
+      "http://control-plane.local/api/v1/workflow-instances?scope=active&limit=50&offset=0",
     ]);
 
     expect(mocks.navigate).not.toHaveBeenCalled();
