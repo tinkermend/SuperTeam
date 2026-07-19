@@ -724,57 +724,10 @@ func TestRemoveTeamMemberRejectsLastOwner(t *testing.T) {
 	}
 }
 
-func TestApprovePrivilegedRoleRequestAddsRole(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewServiceWithoutAuditForTest(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	requestID := uuid.New()
-	targetUserID := uuid.New()
-	decidedBy := uuid.New()
-	repo.roleRequests[requestID] = TeamMemberRoleRequestRecord{
-		ID:            requestID,
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		TargetUserID:  targetUserID,
-		RequestedRole: TeamRoleAdmin,
-		RequestedBy:   uuid.New(),
-		Status:        TeamMemberRoleRequestStatusPending,
-		Reason:        "需要维护成员",
-		CreatedAt:     time.Now().UTC(),
-		UpdatedAt:     time.Now().UTC(),
-	}
-
-	request, err := svc.ApproveRoleRequest(context.Background(), DecideRoleRequestRequest{
-		TenantID:       tenantID,
-		TeamID:         teamID,
-		RequestID:      requestID,
-		DecidedBy:      decidedBy,
-		DecisionReason: "允许",
-	})
-	if err != nil {
-		t.Fatalf("approve role request: %v", err)
-	}
-
-	if request.Status != TeamMemberRoleRequestStatusApproved {
-		t.Fatalf("expected approved request, got %q", request.Status)
-	}
-	if !repo.addTeamMemberCalled {
-		t.Fatalf("expected approval to add requested team role")
-	}
-	if repo.lastAddTeamMemberParams.UserID != targetUserID || repo.lastAddTeamMemberParams.Role != TeamRoleAdmin {
-		t.Fatalf("expected admin role add for target user, got %#v", repo.lastAddTeamMemberParams)
-	}
-}
-
 type memoryRepository struct {
 	teams                       map[uuid.UUID]TeamRecord
 	teamSummaries               map[uuid.UUID]TeamListItemRecord
 	teamMembers                 map[uuid.UUID]TeamMemberRecord
-	roleRequests                map[uuid.UUID]TeamMemberRoleRequestRecord
 	activeUsers                 map[uuid.UUID]bool
 	auditEvents                 []memoryAuditEvent
 	createTeamCalled            bool
@@ -785,7 +738,6 @@ type memoryRepository struct {
 	updateTeamCalled            bool
 	addTeamMemberCalled         bool
 	disableTeamMemberCalled     bool
-	decideRoleRequestCalled     bool
 	lastListTeamSummariesParams ListTeamSummariesParams
 	lastAddTeamMemberParams     AddTeamMemberParams
 	createdTeamWithMembers      CreateTeamWithInitialMembersParams
@@ -805,7 +757,6 @@ func newMemoryRepository() *memoryRepository {
 		teams:         map[uuid.UUID]TeamRecord{},
 		teamSummaries: map[uuid.UUID]TeamListItemRecord{},
 		teamMembers:   map[uuid.UUID]TeamMemberRecord{},
-		roleRequests:  map[uuid.UUID]TeamMemberRoleRequestRecord{},
 		activeUsers:   map[uuid.UUID]bool{},
 		auditEvents:   []memoryAuditEvent{},
 	}
@@ -1075,75 +1026,6 @@ func (r *memoryRepository) CountTeamOwners(_ context.Context, tenantID, teamID u
 		}
 	}
 	return count, nil
-}
-
-func (r *memoryRepository) CreateTeamMemberRoleRequest(_ context.Context, params CreateTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
-	now := time.Now().UTC()
-	record := TeamMemberRoleRequestRecord{
-		ID:            uuid.New(),
-		TenantID:      params.TenantID,
-		TeamID:        params.TeamID,
-		TargetUserID:  params.TargetUserID,
-		RequestedRole: params.RequestedRole,
-		RequestedBy:   params.RequestedBy,
-		Status:        TeamMemberRoleRequestStatusPending,
-		Reason:        params.Reason,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-	r.roleRequests[record.ID] = record
-	return record, nil
-}
-
-func (r *memoryRepository) GetTeamMemberRoleRequest(_ context.Context, tenantID, teamID, requestID uuid.UUID) (TeamMemberRoleRequestRecord, error) {
-	record, ok := r.roleRequests[requestID]
-	if !ok || record.TenantID != tenantID || record.TeamID != teamID || record.Status != TeamMemberRoleRequestStatusPending {
-		return TeamMemberRoleRequestRecord{}, ErrNotFound
-	}
-	return record, nil
-}
-
-func (r *memoryRepository) ListTeamMemberRoleRequests(_ context.Context, params ListTeamMemberRoleRequestsParams) ([]TeamMemberRoleRequestRecord, error) {
-	records := make([]TeamMemberRoleRequestRecord, 0, len(r.roleRequests))
-	for _, record := range r.roleRequests {
-		if record.TenantID == params.TenantID && record.TeamID == params.TeamID && (params.Status == "" || record.Status == params.Status) {
-			records = append(records, record)
-		}
-	}
-	return records, nil
-}
-
-func (r *memoryRepository) ApproveTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
-	pending, err := r.GetTeamMemberRoleRequest(ctx, params.TenantID, params.TeamID, params.RequestID)
-	if err != nil {
-		return TeamMemberRoleRequestRecord{}, err
-	}
-	if _, err := r.AddTeamMember(ctx, AddTeamMemberParams{
-		TenantID: pending.TenantID,
-		TeamID:   pending.TeamID,
-		UserID:   pending.TargetUserID,
-		Role:     pending.RequestedRole,
-	}); err != nil {
-		return TeamMemberRoleRequestRecord{}, err
-	}
-	params.Status = TeamMemberRoleRequestStatusApproved
-	return r.DecideTeamMemberRoleRequest(ctx, params)
-}
-
-func (r *memoryRepository) DecideTeamMemberRoleRequest(_ context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
-	r.decideRoleRequestCalled = true
-	record, ok := r.roleRequests[params.RequestID]
-	if !ok || record.TenantID != params.TenantID || record.TeamID != params.TeamID || record.Status != TeamMemberRoleRequestStatusPending {
-		return TeamMemberRoleRequestRecord{}, ErrNotFound
-	}
-	now := time.Now().UTC()
-	record.Status = params.Status
-	record.DecidedBy = &params.DecidedBy
-	record.DecidedAt = &now
-	record.DecisionReason = params.DecisionReason
-	record.UpdatedAt = now
-	r.roleRequests[record.ID] = record
-	return record, nil
 }
 
 type fakeTeamAuditReader struct{}

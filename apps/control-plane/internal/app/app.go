@@ -12,24 +12,23 @@ import (
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/artifact"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
-	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/capability"
-	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
-	"github.com/superteam/control-plane/internal/runtimecommand"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
@@ -37,7 +36,6 @@ import (
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/task"
-	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
 	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
 	temporalclient "go.temporal.io/sdk/client"
@@ -62,7 +60,6 @@ type Container struct {
 	SkillService                   *skill.Service
 	CapabilityService              *capability.Service
 	TenantService                  *tenant.Service
-	TeamLendingService             *teamlending.Service
 	AuditService                   *audit.Service
 	RuntimeCommands                *runtimepkg.ConnectionRegistry
 	AuthService                    *auth.Service
@@ -82,7 +79,6 @@ type Container struct {
 	CapabilityHandler              *capability.HTTPHandler
 	PromptTemplateHandler          *prompttemplate.HTTPHandler
 	TenantHandler                  *tenant.HTTPHandler
-	TeamLendingHandler             *teamlending.HTTPHandler
 	AuthzHandler                   *authzcenter.HTTPHandler
 	Server                         *api.Server
 }
@@ -260,21 +256,14 @@ func (a digitalEmployeeReadinessAdapter) AreRuntimeReady(ctx context.Context, te
 	return a.repository.AreRuntimeReady(ctx, tenantID, employeeIDs)
 }
 
-// lendingTeamsResolver resolves the set of teams a project may currently borrow from
-// (effective approved/auto_approved lending grants). Satisfied by teamlending's repository.
-type lendingTeamsResolver interface {
-	ListEffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) ([]uuid.UUID, error)
-}
-
-// lendingGatekeeperAdapter implements projectcoordination.LendingGatekeeper: it resolves
-// each digital employee's owning team and the project's effective lending grants so the
-// coordinator can exclude borrowed employees from foreign, ungranted teams.
-type lendingGatekeeperAdapter struct {
+// teamBoundaryGatekeeperAdapter implements projectcoordination.TeamBoundaryGatekeeper:
+// it resolves each digital employee's owning team so the coordinator can exclude
+// employees from foreign teams（借调机制已下线）.
+type teamBoundaryGatekeeperAdapter struct {
 	employees employee.Repository
-	lending   lendingTeamsResolver
 }
 
-func (a lendingGatekeeperAdapter) ResolveEmployeeTeams(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+func (a teamBoundaryGatekeeperAdapter) ResolveEmployeeTeams(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
 	teams := make(map[uuid.UUID]uuid.UUID, len(employeeIDs))
 	for _, id := range employeeIDs {
 		if id == uuid.Nil {
@@ -289,20 +278,6 @@ func (a lendingGatekeeperAdapter) ResolveEmployeeTeams(ctx context.Context, tena
 		}
 	}
 	return teams, nil
-}
-
-func (a lendingGatekeeperAdapter) EffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) (map[uuid.UUID]bool, error) {
-	teamIDs, err := a.lending.ListEffectiveLendingTeams(ctx, tenantID, projectID)
-	if err != nil {
-		return nil, err
-	}
-	granted := make(map[uuid.UUID]bool, len(teamIDs))
-	for _, teamID := range teamIDs {
-		if teamID != uuid.Nil {
-			granted[teamID] = true
-		}
-	}
-	return granted, nil
 }
 
 func runStartRetryable(err error) bool {
@@ -398,53 +373,6 @@ func (l projectArtifactLocker) LockProjectArtifacts(ctx context.Context, tenantI
 		ArtifactIDs: result.ArtifactIDs,
 		EventID:     &event.ID,
 	}, err
-}
-
-// teamLendingInboxProjector 把待裁决的团队借调请求投影到团队负责人 inbox（D3）。
-// inbox 仅作通知/提醒（无 inbox 内可执行动作）；裁决发生在团队详情「借调」tab。
-type teamLendingInboxProjector struct {
-	service *inbox.Service
-}
-
-func (p teamLendingInboxProjector) upsert(ctx context.Context, item teamlending.LendingInboxItem, status inbox.Status) error {
-	if p.service == nil || len(item.OwnerUserIDs) == 0 {
-		return nil
-	}
-	teamID := item.TeamID
-	projectID := item.ProjectID
-	title := item.Title
-	if title == "" {
-		// 裁决（resolve）路径不重传标题，给一个非空兜底以满足 inbox 校验。
-		title = "团队借调请求"
-	}
-	_, err := p.service.UpsertItem(ctx, inbox.UpsertItemRequest{
-		TenantID:        item.TenantID,
-		TeamID:          &teamID,
-		TargetUserID:    item.OwnerUserIDs[0],
-		Scope:           "team",
-		ItemType:        inbox.ItemTypeTeamLending,
-		SourceType:      inbox.SourceTypeTeamLendingRequest,
-		SourceID:        item.RequestID,
-		SourceProjectID: &projectID,
-		Title:           title,
-		Summary:         item.Summary,
-		RiskLevel:       item.RiskLevel,
-		Status:          status,
-		DeepLink: map[string]any{
-			"route":      "/teams/" + item.TeamID.String(),
-			"tab":        "lending",
-			"request_id": item.RequestID.String(),
-		},
-	})
-	return err
-}
-
-func (p teamLendingInboxProjector) UpsertLendingRequest(ctx context.Context, item teamlending.LendingInboxItem) error {
-	return p.upsert(ctx, item, inbox.StatusOpen)
-}
-
-func (p teamLendingInboxProjector) ResolveLendingRequest(ctx context.Context, item teamlending.LendingInboxItem) error {
-	return p.upsert(ctx, item, inbox.StatusResolved)
 }
 
 func strPtr(value string) *string {
@@ -563,7 +491,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	runWritebackService.WithExecutionLedgerRecorder(providerEventLedgerRecorder{repository: providerLedgerRepository})
 
-	teamLendingRepository := teamlending.NewPgRepository(q)
 	capabilityRepository := capability.NewPgRepository(q)
 	var credentialSealer capability.CredentialSealer
 	credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY")
@@ -656,7 +583,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			decisionProjector,
 			projectTaskRunStarterAdapter{runService: runService},
 		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository}).
-			WithLendingGatekeeper(lendingGatekeeperAdapter{employees: employeeRepository, lending: teamLendingRepository}).
+			WithTeamBoundaryGatekeeper(teamBoundaryGatekeeperAdapter{employees: employeeRepository}).
 			WithDigitalEmployeePlanningProfiles(planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)).
 			WithPreDispatchGateReaders(gateAdapter, gateAdapter)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
@@ -712,11 +639,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runService.SetSkillMCPDependencyLister(skillMCPDependencyListerAdapter{capability: capabilityService})
 	capabilityService.SetEmployeeRuntimeSkillLister(employeeRuntimeSkillListerAdapter{skills: skillService})
 
-	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
-	if err != nil {
-		return nil, err
-	}
-
 	authRepository := auth.NewPgRepository(q, stores.Postgres)
 	authService, err := auth.NewService(authRepository, auth.WithCaptchaEnabled(cfg.Auth.CaptchaEnabled))
 	if err != nil {
@@ -767,8 +689,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
-	genericCommandWritebackService := runtimecommand.NewWritebackService(runRepository)
-	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(handlers.NewRuntimeCommandWritebackRouter(runWritebackService, genericCommandWritebackService))
+	// 通用 runtime 命令回执写回(runtimecommand 包)随 install_skills 命令一并
+	// 退役:会话命令回执由 runWritebackService 独家承接。
+	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
 	inboxHandler := inbox.NewHandler(inboxService)
 	auditHandler := audit.NewHandler(auditService)
@@ -783,7 +706,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	promptTemplateHandler := prompttemplate.NewHandler(promptTemplateService, authService, authorizer)
 	tenantHandler := tenant.NewHandler(tenantService)
 	costHandler := cost.NewHTTPHandler(cost.NewService(cost.NewPgRepository(stores.Postgres)))
-	teamLendingHandler := teamlending.NewHandler(teamLendingService)
 	serviceAuthCore := serviceauth.NewService(serviceauth.NewPgRepository(q))
 	serviceTokenHandler := serviceauth.NewHTTPHandler(serviceAuthCore)
 	feishuService := feishu.NewService(feishu.NewPgRepository(q), credentialSealer)
@@ -811,7 +733,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
-	server.SetTeamLendingHandler(teamLendingHandler)
 	server.SetEmployeeHandler(employeeHandler)
 	server.SetCostHandler(costHandler)
 	server.SetInboxHandler(inboxHandler)
@@ -841,7 +762,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		SkillService:                   skillService,
 		CapabilityService:              capabilityService,
 		TenantService:                  tenantService,
-		TeamLendingService:             teamLendingService,
 		AuditService:                   auditService,
 		RuntimeCommands:                runtimeCommands,
 		AuthService:                    authService,
@@ -861,7 +781,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		CapabilityHandler:              capabilityHandler,
 		PromptTemplateHandler:          promptTemplateHandler,
 		TenantHandler:                  tenantHandler,
-		TeamLendingHandler:             teamLendingHandler,
 		AuthzHandler:                   authzCenterHandler,
 		Server:                         server,
 	}, nil

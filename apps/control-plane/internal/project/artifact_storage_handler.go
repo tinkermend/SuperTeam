@@ -19,6 +19,8 @@ type artifactStorageService interface {
 	PresignRuntimeRawLogUpload(ctx context.Context, req PresignRuntimeRawLogRequest) (PresignRuntimeRawLogResult, error)
 	GetArtifactRef(ctx context.Context, tenantID, artifactRefID uuid.UUID) (ProjectArtifactRef, error)
 	PresignArtifactContent(ctx context.Context, ref ProjectArtifactRef) (string, error)
+	// 下载 presign TTL 经系统配置中心可配,format=json 响应的 expires_at 与之对齐。
+	artifactContentGetTTL(ctx context.Context, tenantID uuid.UUID) time.Duration
 }
 
 func (h *HTTPHandler) artifactStorageServiceFromRequest(w http.ResponseWriter) (artifactStorageService, bool) {
@@ -173,7 +175,22 @@ func (h *HTTPHandler) GetArtifactContent(w http.ResponseWriter, r *http.Request)
 		writeHandlerError(w, err)
 		return
 	}
+	// format=json:返回 presigned URL 本体供浏览器两步取回。302 的 fetch
+	// 跨域重定向会把 Origin 置为 null(redirect taint),迫使对象存储 CORS
+	// 放行 null origin;两步取回下第二跳请求 Origin 干净,桶只需常规放行。
+	if r.URL.Query().Get("format") == "json" {
+		writeJSON(w, http.StatusOK, artifactContentLocationResponse{
+			URL:       url,
+			ExpiresAt: time.Now().Add(service.artifactContentGetTTL(r.Context(), ref.TenantID)).UTC().Format(time.RFC3339),
+		})
+		return
+	}
 	http.Redirect(w, r, url, http.StatusFound)
+}
+
+type artifactContentLocationResponse struct {
+	URL       string `json:"url"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 func formatPresignExpiry(t time.Time) string {

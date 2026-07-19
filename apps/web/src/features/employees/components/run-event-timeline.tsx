@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { StatusPill, type V3Tone } from "@/components/superteam";
+import { MarkdownProse, StatusPill, type V3Tone } from "@/components/superteam";
 import type { DigitalEmployeeRunEvent } from "@/lib/api/employees";
 
 type RunEventTimelineProps = {
@@ -62,6 +62,22 @@ export function RunEventTimeline({ events, limitReached }: RunEventTimelineProps
 function stringField(payload: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = payload?.[key];
   return typeof value === "string" ? value : undefined;
+}
+
+const SUMMARY_EXCERPT_LIMIT = 120;
+
+// marker 行的 detail 是单行元信息小字,完整正文已在正文块按 Markdown 渲染;
+// 这里只留去掉 Markdown 语法符号的单行摘录,避免原始 ## / ** 直接可见。
+function summaryExcerpt(summary: string | undefined): string | undefined {
+  if (!summary) return undefined;
+  const flattened = summary
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!flattened) return undefined;
+  return flattened.length > SUMMARY_EXCERPT_LIMIT ? `${flattened.slice(0, SUMMARY_EXCERPT_LIMIT)}…` : flattened;
 }
 
 function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
@@ -148,7 +164,7 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
         break;
       }
       case "turn_completed": {
-        const summary = stringField(payload, "summary");
+        const summary = summaryExcerpt(stringField(payload, "summary"));
         // usage 目前不入 payload(runtime 侧丢弃),防御性读取以兼容未来回写。
         const usage = payload.usage;
         const totalTokens =
@@ -224,7 +240,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
     case "text":
       return (
         <TimelineCard events={item.events}>
-          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-v3-ink">{item.text}</p>
+          <MarkdownProse className="break-words">{item.text}</MarkdownProse>
         </TimelineCard>
       );
     case "tool":

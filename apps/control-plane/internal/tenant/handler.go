@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -31,10 +30,6 @@ type HandlerService interface {
 	AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error)
 	BindTeamDigitalEmployee(ctx context.Context, req BindTeamDigitalEmployeeRequest) error
 	RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error
-	CreateRoleRequest(ctx context.Context, req CreateRoleRequestRequest) (*TeamMemberRoleRequest, error)
-	ListRoleRequests(ctx context.Context, tenantID, teamID uuid.UUID, status TeamMemberRoleRequestStatus, limit, offset int32) ([]*TeamMemberRoleRequest, error)
-	ApproveRoleRequest(ctx context.Context, req DecideRoleRequestRequest) (*TeamMemberRoleRequest, error)
-	RejectRoleRequest(ctx context.Context, req DecideRoleRequestRequest) (*TeamMemberRoleRequest, error)
 	ListTeamAuditEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*audit.Event, error)
 }
 
@@ -450,81 +445,6 @@ func (h *HTTPHandler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *HTTPHandler) CreateTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		TargetUserID  uuid.UUID `json:"target_user_id"`
-		RequestedRole string    `json:"requested_role"`
-		Reason        string    `json:"reason"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	tenantID, ok := h.authorizeTeamActionWithContext(w, r, teamID, authz.ActionTeamMemberRequestPrivilegedRole, "team member privileged role request", map[string]any{"target_role": req.RequestedRole})
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	requestedBy := middleware.GetUserID(r.Context())
-	request, err := service.CreateRoleRequest(r.Context(), CreateRoleRequestRequest{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		TargetUserID:  req.TargetUserID,
-		RequestedRole: req.RequestedRole,
-		RequestedBy:   requestedBy,
-		Reason:        req.Reason,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, roleRequestResponseFromDomain(request))
-}
-
-func (h *HTTPHandler) ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamRead, "team member privileged role requests read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	limit, ok := nonNegativeInt32QueryParam(w, r, "limit")
-	if !ok {
-		return
-	}
-	offset, ok := nonNegativeInt32QueryParam(w, r, "offset")
-	if !ok {
-		return
-	}
-	requests, err := service.ListRoleRequests(r.Context(), tenantID, teamID, TeamMemberRoleRequestStatus(r.URL.Query().Get("status")), limit, offset)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, roleRequestResponses(requests))
-}
-
-func (h *HTTPHandler) ApproveTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request) {
-	h.decideTeamMemberRoleRequest(w, r, true)
-}
-
-func (h *HTTPHandler) RejectTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request) {
-	h.decideTeamMemberRoleRequest(w, r, false)
-}
-
 func (h *HTTPHandler) ListTeamAudit(w http.ResponseWriter, r *http.Request) {
 	teamID, ok := teamIDFromRequest(w, r)
 	if !ok {
@@ -564,58 +484,6 @@ var overviewActions = []string{
 	authz.ActionTeamCapabilityBind,
 	authz.ActionTeamCapabilityUnbind,
 	authz.ActionTeamAuditRead,
-	authz.ActionTeamLendingPolicyRead,
-	authz.ActionTeamLendingPolicyEdit,
-	authz.ActionTeamLendingRequestRead,
-	authz.ActionTeamLendingRequestDecide,
-}
-
-func (h *HTTPHandler) decideTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, approve bool) {
-	teamID, ok := teamIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	requestID, ok := roleRequestIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		DecisionReason string `json:"decision_reason"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamMemberApprovePrivilegedRole, "team member privileged role decide")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	decidedBy := middleware.GetUserID(r.Context())
-	decisionReq := DecideRoleRequestRequest{
-		TenantID:       tenantID,
-		TeamID:         teamID,
-		RequestID:      requestID,
-		DecidedBy:      decidedBy,
-		DecisionReason: req.DecisionReason,
-	}
-	var (
-		request *TeamMemberRoleRequest
-		err     error
-	)
-	if approve {
-		request, err = service.ApproveRoleRequest(r.Context(), decisionReq)
-	} else {
-		request, err = service.RejectRoleRequest(r.Context(), decisionReq)
-	}
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, roleRequestResponseFromDomain(request))
 }
 
 func (h *HTTPHandler) allowedTeamActions(r *http.Request, tenantID, teamID uuid.UUID) []AllowedTeamAction {
@@ -784,22 +652,6 @@ type userAvatarResponse struct {
 	Style    string         `json:"style"`
 	Seed     string         `json:"seed"`
 	Options  map[string]any `json:"options,omitempty"`
-}
-
-type roleRequestResponse struct {
-	ID             string                      `json:"id"`
-	TenantID       string                      `json:"tenant_id"`
-	TeamID         string                      `json:"team_id"`
-	TargetUserID   string                      `json:"target_user_id"`
-	RequestedRole  string                      `json:"requested_role"`
-	RequestedBy    string                      `json:"requested_by"`
-	Status         TeamMemberRoleRequestStatus `json:"status"`
-	Reason         string                      `json:"reason"`
-	DecidedBy      *string                     `json:"decided_by,omitempty"`
-	DecidedAt      *string                     `json:"decided_at,omitempty"`
-	DecisionReason string                      `json:"decision_reason"`
-	CreatedAt      string                      `json:"created_at,omitempty"`
-	UpdatedAt      string                      `json:"updated_at,omitempty"`
 }
 
 type teamAuditEventResponse struct {
@@ -1019,32 +871,6 @@ func teamMemberResponseFromDomain(member *TeamMember) teamMemberResponse {
 		CreatedAt:        timeString(member.CreatedAt),
 		UpdatedAt:        timeString(member.UpdatedAt),
 	}
-}
-
-func roleRequestResponseFromDomain(request *TeamMemberRoleRequest) roleRequestResponse {
-	return roleRequestResponse{
-		ID:             request.ID.String(),
-		TenantID:       request.TenantID.String(),
-		TeamID:         request.TeamID.String(),
-		TargetUserID:   request.TargetUserID.String(),
-		RequestedRole:  request.RequestedRole,
-		RequestedBy:    request.RequestedBy.String(),
-		Status:         request.Status,
-		Reason:         request.Reason,
-		DecidedBy:      uuidStringPtr(request.DecidedBy),
-		DecidedAt:      timeStringPtr(request.DecidedAt),
-		DecisionReason: request.DecisionReason,
-		CreatedAt:      timeString(request.CreatedAt),
-		UpdatedAt:      timeString(request.UpdatedAt),
-	}
-}
-
-func roleRequestResponses(requests []*TeamMemberRoleRequest) []roleRequestResponse {
-	responses := make([]roleRequestResponse, 0, len(requests))
-	for _, request := range requests {
-		responses = append(responses, roleRequestResponseFromDomain(request))
-	}
-	return responses
 }
 
 func firstContext(values []map[string]any) map[string]any {

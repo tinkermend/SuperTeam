@@ -14,14 +14,11 @@ import (
 type Querier interface {
 	AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error
 	AcceptProjectPlanRevision(ctx context.Context, arg AcceptProjectPlanRevisionParams) (ProjectPlanRevision, error)
-	ActivateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg ActivateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFile, error)
 	ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
-	// 仅 pending（manual/超纲转人工）请求可被人工通过；通过时落定授予额度。
-	ApproveTeamLendingRequest(ctx context.Context, arg ApproveTeamLendingRequestParams) (TeamLendingRequest, error)
 	ArchiveDigitalEmployeeConfigRevisionsForDelete(ctx context.Context, arg ArchiveDigitalEmployeeConfigRevisionsForDeleteParams) ([]uuid.UUID, error)
 	ArchiveProject(ctx context.Context, arg ArchiveProjectParams) (Project, error)
 	AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error)
@@ -86,8 +83,6 @@ type Querier interface {
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (CreateDigitalEmployeeConfigRevisionRow, error)
 	CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDigitalEmployeeTaskRunParams) (CreateDigitalEmployeeTaskRunRow, error)
-	CreateDigitalEmployeeWorkspaceFile(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileParams) (DigitalEmployeeWorkspaceFile, error)
-	CreateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFileRevision, error)
 	CreateEmployeeMCPBindingV2(ctx context.Context, arg CreateEmployeeMCPBindingV2Params) (DigitalEmployeeMcpBindingsV2, error)
 	CreateEmployeeTemplate(ctx context.Context, arg CreateEmployeeTemplateParams) (DigitalEmployeeTemplate, error)
 	CreateExecutionLedgerEvent(ctx context.Context, arg CreateExecutionLedgerEventParams) (ExecutionLedgerEvent, error)
@@ -159,15 +154,12 @@ type Querier interface {
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
 	CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
-	CreateTeamLendingRequest(ctx context.Context, arg CreateTeamLendingRequestParams) (TeamLendingRequest, error)
 	CreateTeamMCPBinding(ctx context.Context, arg CreateTeamMCPBindingParams) (TeamMcpBinding, error)
-	CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
 	DeactivateProjectMembersForDelete(ctx context.Context, arg DeactivateProjectMembersForDeleteParams) ([]uuid.UUID, error)
-	DecideTeamMemberRoleRequest(ctx context.Context, arg DecideTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
@@ -223,7 +215,6 @@ type Querier interface {
 	GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error)
 	GetDigitalEmployeeRunStats(ctx context.Context, arg GetDigitalEmployeeRunStatsParams) (GetDigitalEmployeeRunStatsRow, error)
 	GetDigitalEmployeeSchedulingSkillCounts(ctx context.Context, arg GetDigitalEmployeeSchedulingSkillCountsParams) (GetDigitalEmployeeSchedulingSkillCountsRow, error)
-	GetDigitalEmployeeWorkspaceFileByPath(ctx context.Context, arg GetDigitalEmployeeWorkspaceFileByPathParams) (DigitalEmployeeWorkspaceFile, error)
 	GetEmployeeTemplateByID(ctx context.Context, arg GetEmployeeTemplateByIDParams) (DigitalEmployeeTemplate, error)
 	GetEmployeeTemplateByType(ctx context.Context, arg GetEmployeeTemplateByTypeParams) (DigitalEmployeeTemplate, error)
 	GetFeishuAppConfig(ctx context.Context, arg GetFeishuAppConfigParams) (FeishuAppConfig, error)
@@ -241,7 +232,6 @@ type Querier interface {
 	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
 	GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDefinitionParams) (McpServer, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeConfigRevisionNumberParams) (int32, error)
-	GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error)
 	GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, arg GetPendingDemandAcceptanceDecisionByPlanRevisionParams) (ProjectDecisionRequest, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
 	GetProjectArtifactRef(ctx context.Context, arg GetProjectArtifactRefParams) (ProjectArtifactRef, error)
@@ -314,10 +304,7 @@ type Querier interface {
 	GetTask(ctx context.Context, arg GetTaskParams) (Task, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
 	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
-	GetTeamLendingPolicy(ctx context.Context, arg GetTeamLendingPolicyParams) (TeamLendingPolicy, error)
-	GetTeamLendingRequest(ctx context.Context, arg GetTeamLendingRequestParams) (TeamLendingRequest, error)
 	GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (GetTeamMemberRow, error)
-	GetTeamMemberRoleRequest(ctx context.Context, arg GetTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	GetTenantTeam(ctx context.Context, arg GetTenantTeamParams) (TenantTeam, error)
 	GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSummaryParams) (GetTenantTeamSummaryRow, error)
 	GetUser(ctx context.Context, id uuid.UUID) (AuthUser, error)
@@ -326,10 +313,7 @@ type Querier interface {
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
 	// 仅允许物理删除待确认态团队;P1 前的遗留软删终态(status=active)不可经此路径删除。
 	HardDeleteTeam(ctx context.Context, arg HardDeleteTeamParams) (TenantTeam, error)
-	HardDeleteTeamLendingPolicies(ctx context.Context, arg HardDeleteTeamLendingPoliciesParams) error
-	HardDeleteTeamLendingRequests(ctx context.Context, arg HardDeleteTeamLendingRequestsParams) error
 	HardDeleteTeamMCPBindings(ctx context.Context, arg HardDeleteTeamMCPBindingsParams) error
-	HardDeleteTeamMemberRoleRequests(ctx context.Context, arg HardDeleteTeamMemberRoleRequestsParams) error
 	HardDeleteTeamMembers(ctx context.Context, arg HardDeleteTeamMembersParams) error
 	HardDeleteTeamRuntimeNodeScopes(ctx context.Context, teamID uuid.UUID) error
 	HardDeleteTeamUserProjectTeamScopes(ctx context.Context, teamID uuid.UUID) error
@@ -355,8 +339,6 @@ type Querier interface {
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
 	ListCapabilityVocabulary(ctx context.Context, tenantID uuid.UUID) ([]CapabilityVocabulary, error)
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error)
-	ListCurrentDigitalEmployeeWorkspaceFiles(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesRow, error)
-	ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error)
 	ListDemandAcceptanceCriteria(ctx context.Context, arg ListDemandAcceptanceCriteriaParams) ([]DemandAcceptanceCriterium, error)
 	ListDemandConstraintExemptionsByDemand(ctx context.Context, arg ListDemandConstraintExemptionsByDemandParams) ([]ProjectDemandConstraintExemption, error)
 	// id 次键让排序全序化：收敛闸的"最新人类判定优先"用切片顺序（最后一条覆盖）实现，
@@ -386,8 +368,6 @@ type Querier interface {
 	ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListDigitalEmployeeRunsDetailedParams) ([]ListDigitalEmployeeRunsDetailedRow, error)
 	ListDigitalEmployeeTeamAssignments(ctx context.Context, arg ListDigitalEmployeeTeamAssignmentsParams) ([]ListDigitalEmployeeTeamAssignmentsRow, error)
 	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
-	// 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
-	ListEffectiveLendingTeamsForProject(ctx context.Context, arg ListEffectiveLendingTeamsForProjectParams) ([]uuid.UUID, error)
 	// Effective MCP bindings for an employee: team-inherited plus personal, joined to the
 	// registry definition. The caller computes missing required env vars by intersecting
 	// required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
@@ -483,10 +463,7 @@ type Querier interface {
 	ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsParams) ([]TaskRun, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
-	ListTeamLendingRequestsByProject(ctx context.Context, arg ListTeamLendingRequestsByProjectParams) ([]TeamLendingRequest, error)
-	ListTeamLendingRequestsByTeam(ctx context.Context, arg ListTeamLendingRequestsByTeamParams) ([]TeamLendingRequest, error)
 	ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error)
-	ListTeamMemberRoleRequests(ctx context.Context, arg ListTeamMemberRoleRequestsParams) ([]TenantTeamMemberRoleRequest, error)
 	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
 	ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error)
 	ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams) ([]TenantTeam, error)
@@ -514,7 +491,6 @@ type Querier interface {
 	ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error)
 	RejectProjectPlanRevision(ctx context.Context, arg RejectProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
-	RejectTeamLendingRequest(ctx context.Context, arg RejectTeamLendingRequestParams) (TeamLendingRequest, error)
 	RemoveProjectRuntimeNode(ctx context.Context, arg RemoveProjectRuntimeNodeParams) error
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
@@ -529,8 +505,6 @@ type Querier interface {
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
 	RevokeRuntimeSession(ctx context.Context, arg RevokeRuntimeSessionParams) (RuntimeSession, error)
 	RevokeServiceToken(ctx context.Context, arg RevokeServiceTokenParams) (AuthServiceToken, error)
-	// 已生效（approved/auto_approved）的借调可被团队负责人撤销。
-	RevokeTeamLendingRequest(ctx context.Context, arg RevokeTeamLendingRequestParams) (TeamLendingRequest, error)
 	RevokeUserProjectTeamScopes(ctx context.Context, arg RevokeUserProjectTeamScopesParams) error
 	RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
@@ -544,7 +518,6 @@ type Querier interface {
 	SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams) ([]SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow, error)
 	SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
 	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
-	SoftDeleteDigitalEmployeeWorkspaceFilesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeWorkspaceFilesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
 	SoftDeleteProjectMCPBindingsForProject(ctx context.Context, arg SoftDeleteProjectMCPBindingsForProjectParams) error
@@ -603,7 +576,6 @@ type Querier interface {
 	UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, arg UpsertDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
-	UpsertDigitalEmployeeWorkspaceFileSync(ctx context.Context, arg UpsertDigitalEmployeeWorkspaceFileSyncParams) error
 	UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuAppConfigParams) (FeishuAppConfig, error)
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
@@ -613,10 +585,6 @@ type Querier interface {
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	UpsertRuntimeNodeForTenant(ctx context.Context, arg UpsertRuntimeNodeForTenantParams) (RuntimeNode, error)
 	UpsertSystemConfigOverride(ctx context.Context, arg UpsertSystemConfigOverrideParams) (SystemConfigOverride, error)
-	// 团队借调查询：供给侧策略（每团队一条 active，upsert）+ 需求侧借调请求生命周期。
-	// D1 团队级 (project, team) 粒度；D2 超纲强制转人工；D3 请求自带 status。
-	// 每团队一条 active 策略：存在则更新，不存在则插入。
-	UpsertTeamLendingPolicy(ctx context.Context, arg UpsertTeamLendingPolicyParams) (TeamLendingPolicy, error)
 	UpsertUserProjectTeamScope(ctx context.Context, arg UpsertUserProjectTeamScopeParams) (UserProjectTeamScope, error)
 	UserHasActiveProjectTeamScope(ctx context.Context, arg UserHasActiveProjectTeamScopeParams) (bool, error)
 	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)

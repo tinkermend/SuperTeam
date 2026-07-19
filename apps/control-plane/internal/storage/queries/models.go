@@ -541,104 +541,6 @@ type DigitalEmployeeTemplate struct {
 	BudgetPolicy []byte `json:"budget_policy"`
 }
 
-// 数字员工工作目录受控文件身份表
-type DigitalEmployeeWorkspaceFile struct {
-	// 受控文件主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 文件所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 文件所属数字员工团队 ID；无团队数字员工为空
-	TeamID uuid.NullUUID `json:"team_id"`
-	// 文件所属数字员工 ID
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 数字员工根目录下的安全相对路径
-	Path string `json:"path"`
-	// 文件角色，例如 entrypoint、supporting_doc、provider_config 或 generated，由应用层注册表校验
-	FileRole string `json:"file_role"`
-	// 文件 MIME 类型
-	MimeType string `json:"mime_type"`
-	// 同步策略，例如 auto、manual 或 disabled，由应用层注册表校验
-	SyncPolicy string `json:"sync_policy"`
-	// 当前激活的文件版本 ID
-	CurrentRevisionID uuid.NullUUID `json:"current_revision_id"`
-	// 文件状态，例如 active、archived 或 deleted
-	Status string `json:"status"`
-	// 文件扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 创建文件的用户 ID，系统创建时可为空
-	CreatedBy uuid.NullUUID `json:"created_by"`
-	// 文件创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 文件更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	// 文件归档时间
-	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
-	// 文件软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-}
-
-// 数字员工工作目录受控文件内容版本表
-type DigitalEmployeeWorkspaceFileRevision struct {
-	// 文件版本主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 文件版本所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 所属受控文件 ID
-	FileID uuid.UUID `json:"file_id"`
-	// 文件内递增版本号
-	RevisionNumber int32 `json:"revision_number"`
-	// DB 存储模式下的文本正文
-	ContentText pgtype.Text `json:"content_text"`
-	// 文件正文 SHA-256 十六进制校验值
-	ContentHash string `json:"content_hash"`
-	// 文件正文 UTF-8 字节数
-	SizeBytes int32 `json:"size_bytes"`
-	// 正文存储后端，首版使用 db，预留 object_store
-	StorageBackend string `json:"storage_backend"`
-	// 对象存储模式下的对象键
-	ObjectKey pgtype.Text `json:"object_key"`
-	// 创建版本的用户 ID，系统创建时可为空
-	CreatedBy uuid.NullUUID `json:"created_by"`
-	// 文件版本创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 版本变更说明
-	ChangeNote pgtype.Text `json:"change_note"`
-	// 文件版本扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-}
-
-// 数字员工工作目录文件同步状态投影表
-type DigitalEmployeeWorkspaceFileSync struct {
-	// 同步状态主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 同步状态所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 同步状态所属数字员工 ID
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 同步目标执行实例 ID
-	ExecutionInstanceID uuid.UUID `json:"execution_instance_id"`
-	// 同步的受控文件 ID
-	FileID uuid.UUID `json:"file_id"`
-	// 同步目标文件版本 ID
-	RevisionID uuid.UUID `json:"revision_id"`
-	// 同步目标 Runtime 节点 ID
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
-	// 同步状态，例如 pending、synced 或 failed
-	Status string `json:"status"`
-	// Runtime 回写的已同步文件校验值
-	SyncedHash pgtype.Text `json:"synced_hash"`
-	// 同步失败时的错误摘要
-	ErrorMessage pgtype.Text `json:"error_message"`
-	// 最后一次同步命令 ID
-	LastCommandID pgtype.Text `json:"last_command_id"`
-	// 最后同步成功时间
-	LastSyncedAt pgtype.Timestamptz `json:"last_synced_at"`
-	// 同步状态创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 同步状态更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 执行账本事件表，记录项目任务执行、Provider、工具、MCP、外部能力和证据链的统一审计索引。
 type ExecutionLedgerEvent struct {
 	// 执行账本事件主键 UUID。
@@ -2339,44 +2241,6 @@ type SkillAgentBinding struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 已冻结(2026-07-19 能力绑定统一):物理安装事实由派发时 runtime 懒收敛 + attestation 承载,本表停写停读留存追溯,待另行 drop
-type SkillInstallation struct {
-	// 技能物理安装记录 ID
-	ID uuid.UUID `json:"id"`
-	// 安装记录所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 被安装的技能包 ID
-	SkillID uuid.UUID `json:"skill_id"`
-	// 安装请求目标范围，team 表示团队批量安装，employee 表示单个数字员工安装
-	TargetScope string `json:"target_scope"`
-	// 团队批量安装来源团队 ID，单员工安装时可为空
-	TeamID uuid.NullUUID `json:"team_id"`
-	// 实际写入技能目录的数字员工 ID
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 执行本次物理安装的 Runtime 节点 ID
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
-	// Provider 类型，由服务端注册表和安装前置校验控制
-	ProviderType string `json:"provider_type"`
-	// Runtime Agent 实际写入的 provider 官方技能目录
-	InstalledPath string `json:"installed_path"`
-	// 安装时使用的技能 zip 包 SHA256 校验值
-	ArchiveChecksumSha256 string `json:"archive_checksum_sha256"`
-	// 安装事实状态；此表只保存 installed 成功记录
-	Status string `json:"status"`
-	// 触发安装的人类用户 ID 或系统操作者 ID
-	InstalledBy uuid.NullUUID `json:"installed_by"`
-	// Runtime 确认物理安装成功的时间
-	InstalledAt pgtype.Timestamptz `json:"installed_at"`
-	// 安装命令、Runtime 回执和排障扩展信息
-	Metadata []byte `json:"metadata"`
-	// 安装记录创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 安装记录最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	// 安装记录软删除时间；为空表示当前有效
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-}
-
 type SkillMcpDependency struct {
 	ID          uuid.UUID          `json:"id"`
 	TenantID    uuid.UUID          `json:"tenant_id"`
@@ -2563,74 +2427,6 @@ type TaskRun struct {
 	ProviderSessionExternalID pgtype.Text `json:"provider_session_external_id"`
 }
 
-// 团队借调策略：团队负责人设置本团队员工是否/在什么条件下可被项目借调（每团队一条 active）
-type TeamLendingPolicy struct {
-	// 借调策略 UUID
-	ID uuid.UUID `json:"id"`
-	// 租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 所属团队 ID（供给侧）
-	TeamID uuid.UUID `json:"team_id"`
-	// 是否允许本团队员工被项目借调
-	AllowLending bool `json:"allow_lending"`
-	// 审批模式：auto 符合策略自动放行；manual 每次借调需团队负责人审批
-	ApprovalMode string `json:"approval_mode"`
-	// 单次借调预算上限；请求超过则强制转人工审批
-	BudgetCeiling pgtype.Numeric `json:"budget_ceiling"`
-	// 可被借调时允许的能力/runtime scope 天花板，不可超出团队治理外壳
-	CapabilityCeiling []byte `json:"capability_ceiling"`
-	// 可被哪些项目调用的匹配条件（标签 / owner 范围等，registry-first）
-	ProjectMatch []byte `json:"project_match"`
-	// 策略状态：active 生效，archived 历史版本
-	Status string `json:"status"`
-	// 创建该策略的用户 ID
-	CreatedByUserID uuid.NullUUID `json:"created_by_user_id"`
-	// 最后更新该策略的用户 ID
-	UpdatedByUserID uuid.NullUUID `json:"updated_by_user_id"`
-	// 创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-// 团队借调请求：项目向团队申请借调数字员工，团队负责人裁决（D1 团队级 (project, team) 授权）
-type TeamLendingRequest struct {
-	// 借调请求 UUID
-	ID uuid.UUID `json:"id"`
-	// 租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 被借调的团队 ID（供给侧）
-	TeamID uuid.UUID `json:"team_id"`
-	// 发起借调的项目 ID（需求侧）
-	ProjectID uuid.UUID `json:"project_id"`
-	// 请求状态：pending 待审批，auto_approved 策略自动放行，approved 人工通过，rejected 驳回，revoked 撤销
-	Status string `json:"status"`
-	// 发起借调的用户 ID（项目负责人）
-	RequestedByUserID uuid.UUID `json:"requested_by_user_id"`
-	// 借调事由
-	RequestReason string `json:"request_reason"`
-	// 申请的借调预算
-	RequestedBudget pgtype.Numeric `json:"requested_budget"`
-	// 申请使用的能力范围
-	RequestedCapability []byte `json:"requested_capability"`
-	// 实际授予的借调预算（≤ 策略天花板）
-	GrantedBudget pgtype.Numeric `json:"granted_budget"`
-	// 实际授予的能力范围（≤ 策略天花板）
-	GrantedCapability []byte `json:"granted_capability"`
-	// 是否因超出策略预算/能力天花板而强制转人工审批
-	IsException bool `json:"is_exception"`
-	// 裁决该请求的团队负责人用户 ID
-	DecidedByUserID uuid.NullUUID `json:"decided_by_user_id"`
-	// 裁决时间
-	DecidedAt pgtype.Timestamptz `json:"decided_at"`
-	// 裁决说明
-	DecisionReason string `json:"decision_reason"`
-	// 创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 团队对注册表 MCP 的绑定，团队下数字员工继承
 type TeamMcpBinding struct {
 	// 团队 MCP 绑定主键 UUID
@@ -2751,36 +2547,6 @@ type TenantTeam struct {
 	Description string `json:"description"`
 	// 删除发起人(pending_delete 期间有值;恢复时清空)
 	DeleteRequestedBy uuid.NullUUID `json:"delete_requested_by"`
-}
-
-// 团队高权限角色变更申请表
-type TenantTeamMemberRoleRequest struct {
-	// 角色变更申请ID
-	ID uuid.UUID `json:"id"`
-	// 租户ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 团队ID
-	TeamID uuid.UUID `json:"team_id"`
-	// 目标用户ID
-	TargetUserID uuid.UUID `json:"target_user_id"`
-	// 申请授予的团队角色
-	RequestedRole string `json:"requested_role"`
-	// 申请人用户ID
-	RequestedBy uuid.UUID `json:"requested_by"`
-	// 申请状态：pending、approved、rejected
-	Status string `json:"status"`
-	// 申请原因
-	Reason string `json:"reason"`
-	// 审批人用户ID
-	DecidedBy uuid.NullUUID `json:"decided_by"`
-	// 审批时间
-	DecidedAt pgtype.Timestamptz `json:"decided_at"`
-	// 审批说明
-	DecisionReason string `json:"decision_reason"`
-	// 创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 平台用户与飞书身份绑定(open_id 一人一绑,双向唯一)

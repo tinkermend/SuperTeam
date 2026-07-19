@@ -100,7 +100,7 @@ func TestStructuralGapErrorCarriesDetails(t *testing.T) {
 	require.Equal(t, []string{"reviewer", "developer"}, gap.Roles)
 	require.ElementsMatch(t, []string{"code_review", "code_implementation"}, gap.RequiredCapabilities)
 	require.Equal(t, 1, gap.ActiveExecutorCount)
-	require.Equal(t, []string{"restaff", "exempt", "lending"}, gap.Options)
+	require.Equal(t, []string{"restaff", "exempt"}, gap.Options)
 }
 
 func TestPlanDemandRoutePassesThroughNonFamilyErrorsRetryable(t *testing.T) {

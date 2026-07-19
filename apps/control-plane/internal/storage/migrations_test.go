@@ -2229,3 +2229,10 @@ func TestMigration079CapabilityBindingUnification(t *testing.T) {
 		assertMigrationContains(t, sql, expected)
 	}
 }
+
+func TestMigration086DropsSkillInstallations(t *testing.T) {
+	pool, schemaName := applyAllMigrations(t)
+
+	assertTableAbsent(t, pool, schemaName, "skill_installations")
+	assertTableExists(t, pool, schemaName, "skill_agent_bindings")
+}

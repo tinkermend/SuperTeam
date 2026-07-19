@@ -192,9 +192,12 @@ func TestResultNoticeCardRichContent(t *testing.T) {
 		"task_completed":     float64(2),
 		"task_failed":        float64(1),
 		"failed_task_titles": []any{"压测报告生成"},
+		"task_conclusions": []any{
+			map[string]any{"title": "限流改造", "conclusion": "已将限流阈值迁移至租户配置中心,回归测试 12 例全绿"},
+		},
 	}, "http://web.local:3000")
 	mustValid(t, cardJSON)
-	for _, want := range []string{"支付网关", "按租户动态配置", "失败任务", "压测报告生成", "共 3 项"} {
+	for _, want := range []string{"支付网关", "按租户动态配置", "失败任务", "压测报告生成", "共 3 项", "执行结论", "回归测试 12 例全绿"} {
 		if !strings.Contains(cardJSON, want) {
 			t.Fatalf("result notice missing %q:\n%s", want, cardJSON)
 		}

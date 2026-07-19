@@ -141,8 +141,6 @@ pub struct RuntimeCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeCommandType {
     EnsureInstance,
-    ProvisionInstance,
-    SyncWorkspaceFiles,
     StartSession,
     ResumeSession,
     SendInput,
@@ -366,8 +364,6 @@ impl<'de> Deserialize<'de> for RuntimeCommandType {
         let value = String::deserialize(deserializer)?;
         Ok(match value.as_str() {
             "ensure_instance" => Self::EnsureInstance,
-            "provision_instance" => Self::ProvisionInstance,
-            "sync_workspace_files" => Self::SyncWorkspaceFiles,
             "start_session" => Self::StartSession,
             "resume_session" => Self::ResumeSession,
             "send_input" => Self::SendInput,

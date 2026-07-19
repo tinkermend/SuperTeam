@@ -78,12 +78,12 @@ func OpenFGATupleForProjectTeamScope(tenantID, userID, teamID uuid.UUID, status 
 
 func openFGARelationForAction(action string) (string, bool) {
 	switch action {
-	case ActionConsoleAccess, ActionTenantAccess, ActionTeamAccess, ActionTeamRead, ActionTeamGovernanceRead, ActionTeamLendingPolicyRead, ActionTeamLendingRequestRead:
+	case ActionConsoleAccess, ActionTenantAccess, ActionTeamAccess, ActionTeamRead, ActionTeamGovernanceRead:
 		return OpenFGARelationViewer, true
 	case ActionRuntimeScopeManage, ActionAuthzCenterRead, ActionUserProjectTeamScopeRead, ActionUserProjectTeamScopeManage, ActionEmployeeCreate, ActionEmployeeDelete, ActionTeamCreate,
 		ActionTeamUpdate, ActionTeamDelete, ActionTeamMemberAdd, ActionTeamMemberRemove, ActionTeamMemberChangeRole,
 		ActionTeamMemberRequestPrivilegedRole, ActionTeamCapabilityBind, ActionTeamCapabilityUnbind, ActionTeamCapabilityManage, ActionTeamAuditRead,
-		ActionTeamLendingPolicyEdit, ActionTeamLendingRequestDecide, ActionSkillInstall:
+		ActionSkillInstall:
 		return OpenFGARelationAdmin, true
 	case ActionTeamMemberApprovePrivilegedRole:
 		return OpenFGARelationOwner, true

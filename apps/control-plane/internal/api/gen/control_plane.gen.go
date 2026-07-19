@@ -72,6 +72,24 @@ func (e AllowedTeamAction) Valid() bool {
 	}
 }
 
+// Defines values for ConnectorSignDemandCriterionRequestVerdict.
+const (
+	ConnectorSignDemandCriterionRequestVerdictSatisfied   ConnectorSignDemandCriterionRequestVerdict = "satisfied"
+	ConnectorSignDemandCriterionRequestVerdictUnsatisfied ConnectorSignDemandCriterionRequestVerdict = "unsatisfied"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorSignDemandCriterionRequestVerdict enum.
+func (e ConnectorSignDemandCriterionRequestVerdict) Valid() bool {
+	switch e {
+	case ConnectorSignDemandCriterionRequestVerdictSatisfied:
+		return true
+	case ConnectorSignDemandCriterionRequestVerdictUnsatisfied:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorSubmitDemandRequestCoordinationMode.
 const (
 	ConnectorSubmitDemandRequestCoordinationModeLoop ConnectorSubmitDemandRequestCoordinationMode = "loop"
@@ -177,27 +195,6 @@ func (e CreatePromptTemplateRequestScope) Valid() bool {
 	}
 }
 
-// Defines values for CreateTeamMemberRoleRequestRequestedRole.
-const (
-	CreateTeamMemberRoleRequestRequestedRoleAdmin    CreateTeamMemberRoleRequestRequestedRole = "admin"
-	CreateTeamMemberRoleRequestRequestedRoleApprover CreateTeamMemberRoleRequestRequestedRole = "approver"
-	CreateTeamMemberRoleRequestRequestedRoleOwner    CreateTeamMemberRoleRequestRequestedRole = "owner"
-)
-
-// Valid indicates whether the value is a known member of the CreateTeamMemberRoleRequestRequestedRole enum.
-func (e CreateTeamMemberRoleRequestRequestedRole) Valid() bool {
-	switch e {
-	case CreateTeamMemberRoleRequestRequestedRoleAdmin:
-		return true
-	case CreateTeamMemberRoleRequestRequestedRoleApprover:
-		return true
-	case CreateTeamMemberRoleRequestRequestedRoleOwner:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for CreateTeamRequestInitialMembersRole.
 const (
 	CreateTeamRequestInitialMembersRoleMember CreateTeamRequestInitialMembersRole = "member"
@@ -218,22 +215,22 @@ func (e CreateTeamRequestInitialMembersRole) Valid() bool {
 
 // Defines values for DemandAcceptanceCriterionDetailJudgeType.
 const (
-	Adversarial DemandAcceptanceCriterionDetailJudgeType = "adversarial"
-	Executor    DemandAcceptanceCriterionDetailJudgeType = "executor"
-	Human       DemandAcceptanceCriterionDetailJudgeType = "human"
-	ReviewGate  DemandAcceptanceCriterionDetailJudgeType = "review_gate"
+	DemandAcceptanceCriterionDetailJudgeTypeAdversarial DemandAcceptanceCriterionDetailJudgeType = "adversarial"
+	DemandAcceptanceCriterionDetailJudgeTypeExecutor    DemandAcceptanceCriterionDetailJudgeType = "executor"
+	DemandAcceptanceCriterionDetailJudgeTypeHuman       DemandAcceptanceCriterionDetailJudgeType = "human"
+	DemandAcceptanceCriterionDetailJudgeTypeReviewGate  DemandAcceptanceCriterionDetailJudgeType = "review_gate"
 )
 
 // Valid indicates whether the value is a known member of the DemandAcceptanceCriterionDetailJudgeType enum.
 func (e DemandAcceptanceCriterionDetailJudgeType) Valid() bool {
 	switch e {
-	case Adversarial:
+	case DemandAcceptanceCriterionDetailJudgeTypeAdversarial:
 		return true
-	case Executor:
+	case DemandAcceptanceCriterionDetailJudgeTypeExecutor:
 		return true
-	case Human:
+	case DemandAcceptanceCriterionDetailJudgeTypeHuman:
 		return true
-	case ReviewGate:
+	case DemandAcceptanceCriterionDetailJudgeTypeReviewGate:
 		return true
 	default:
 		return false
@@ -1064,25 +1061,25 @@ func (e ProjectDeleteBlockerType) Valid() bool {
 
 // Defines values for ProjectDemandSourceType.
 const (
-	ProjectDemandSourceTypeDocument ProjectDemandSourceType = "document"
-	ProjectDemandSourceTypeGithub   ProjectDemandSourceType = "github"
-	ProjectDemandSourceTypeLog      ProjectDemandSourceType = "log"
-	ProjectDemandSourceTypeManual   ProjectDemandSourceType = "manual"
-	ProjectDemandSourceTypeTicket   ProjectDemandSourceType = "ticket"
+	Document ProjectDemandSourceType = "document"
+	Github   ProjectDemandSourceType = "github"
+	Log      ProjectDemandSourceType = "log"
+	Manual   ProjectDemandSourceType = "manual"
+	Ticket   ProjectDemandSourceType = "ticket"
 )
 
 // Valid indicates whether the value is a known member of the ProjectDemandSourceType enum.
 func (e ProjectDemandSourceType) Valid() bool {
 	switch e {
-	case ProjectDemandSourceTypeDocument:
+	case Document:
 		return true
-	case ProjectDemandSourceTypeGithub:
+	case Github:
 		return true
-	case ProjectDemandSourceTypeLog:
+	case Log:
 		return true
-	case ProjectDemandSourceTypeManual:
+	case Manual:
 		return true
-	case ProjectDemandSourceTypeTicket:
+	case Ticket:
 		return true
 	default:
 		return false
@@ -1514,22 +1511,22 @@ func (e RuntimeCommandWritebackAcceptedStatus) Valid() bool {
 
 // Defines values for RuntimeEnrollmentStatus.
 const (
-	RuntimeEnrollmentStatusApproved RuntimeEnrollmentStatus = "approved"
-	RuntimeEnrollmentStatusPending  RuntimeEnrollmentStatus = "pending"
-	RuntimeEnrollmentStatusRejected RuntimeEnrollmentStatus = "rejected"
-	RuntimeEnrollmentStatusRevoked  RuntimeEnrollmentStatus = "revoked"
+	Approved RuntimeEnrollmentStatus = "approved"
+	Pending  RuntimeEnrollmentStatus = "pending"
+	Rejected RuntimeEnrollmentStatus = "rejected"
+	Revoked  RuntimeEnrollmentStatus = "revoked"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeEnrollmentStatus enum.
 func (e RuntimeEnrollmentStatus) Valid() bool {
 	switch e {
-	case RuntimeEnrollmentStatusApproved:
+	case Approved:
 		return true
-	case RuntimeEnrollmentStatusPending:
+	case Pending:
 		return true
-	case RuntimeEnrollmentStatusRejected:
+	case Rejected:
 		return true
-	case RuntimeEnrollmentStatusRevoked:
+	case Revoked:
 		return true
 	default:
 		return false
@@ -1700,16 +1697,16 @@ func (e SetEmployeeTemplateStatusRequestStatus) Valid() bool {
 
 // Defines values for SignDemandCriterionVerdictRequestVerdict.
 const (
-	Satisfied   SignDemandCriterionVerdictRequestVerdict = "satisfied"
-	Unsatisfied SignDemandCriterionVerdictRequestVerdict = "unsatisfied"
+	SignDemandCriterionVerdictRequestVerdictSatisfied   SignDemandCriterionVerdictRequestVerdict = "satisfied"
+	SignDemandCriterionVerdictRequestVerdictUnsatisfied SignDemandCriterionVerdictRequestVerdict = "unsatisfied"
 )
 
 // Valid indicates whether the value is a known member of the SignDemandCriterionVerdictRequestVerdict enum.
 func (e SignDemandCriterionVerdictRequestVerdict) Valid() bool {
 	switch e {
-	case Satisfied:
+	case SignDemandCriterionVerdictRequestVerdictSatisfied:
 		return true
-	case Unsatisfied:
+	case SignDemandCriterionVerdictRequestVerdictUnsatisfied:
 		return true
 	default:
 		return false
@@ -1839,114 +1836,27 @@ func (e TaskStatus) Valid() bool {
 	}
 }
 
-// Defines values for TeamLendingApprovalMode.
-const (
-	TeamLendingApprovalModeAuto   TeamLendingApprovalMode = "auto"
-	TeamLendingApprovalModeManual TeamLendingApprovalMode = "manual"
-)
-
-// Valid indicates whether the value is a known member of the TeamLendingApprovalMode enum.
-func (e TeamLendingApprovalMode) Valid() bool {
-	switch e {
-	case TeamLendingApprovalModeAuto:
-		return true
-	case TeamLendingApprovalModeManual:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TeamLendingRequestStatus.
-const (
-	TeamLendingRequestStatusApproved     TeamLendingRequestStatus = "approved"
-	TeamLendingRequestStatusAutoApproved TeamLendingRequestStatus = "auto_approved"
-	TeamLendingRequestStatusPending      TeamLendingRequestStatus = "pending"
-	TeamLendingRequestStatusRejected     TeamLendingRequestStatus = "rejected"
-	TeamLendingRequestStatusRevoked      TeamLendingRequestStatus = "revoked"
-)
-
-// Valid indicates whether the value is a known member of the TeamLendingRequestStatus enum.
-func (e TeamLendingRequestStatus) Valid() bool {
-	switch e {
-	case TeamLendingRequestStatusApproved:
-		return true
-	case TeamLendingRequestStatusAutoApproved:
-		return true
-	case TeamLendingRequestStatusPending:
-		return true
-	case TeamLendingRequestStatusRejected:
-		return true
-	case TeamLendingRequestStatusRevoked:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for TeamMemberRole.
 const (
-	TeamMemberRoleAdmin    TeamMemberRole = "admin"
-	TeamMemberRoleApprover TeamMemberRole = "approver"
-	TeamMemberRoleMember   TeamMemberRole = "member"
-	TeamMemberRoleOwner    TeamMemberRole = "owner"
-	TeamMemberRoleViewer   TeamMemberRole = "viewer"
+	Admin    TeamMemberRole = "admin"
+	Approver TeamMemberRole = "approver"
+	Member   TeamMemberRole = "member"
+	Owner    TeamMemberRole = "owner"
+	Viewer   TeamMemberRole = "viewer"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRole enum.
 func (e TeamMemberRole) Valid() bool {
 	switch e {
-	case TeamMemberRoleAdmin:
+	case Admin:
 		return true
-	case TeamMemberRoleApprover:
+	case Approver:
 		return true
-	case TeamMemberRoleMember:
+	case Member:
 		return true
-	case TeamMemberRoleOwner:
+	case Owner:
 		return true
-	case TeamMemberRoleViewer:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TeamMemberRoleRequestRequestedRole.
-const (
-	TeamMemberRoleRequestRequestedRoleAdmin    TeamMemberRoleRequestRequestedRole = "admin"
-	TeamMemberRoleRequestRequestedRoleApprover TeamMemberRoleRequestRequestedRole = "approver"
-	TeamMemberRoleRequestRequestedRoleOwner    TeamMemberRoleRequestRequestedRole = "owner"
-)
-
-// Valid indicates whether the value is a known member of the TeamMemberRoleRequestRequestedRole enum.
-func (e TeamMemberRoleRequestRequestedRole) Valid() bool {
-	switch e {
-	case TeamMemberRoleRequestRequestedRoleAdmin:
-		return true
-	case TeamMemberRoleRequestRequestedRoleApprover:
-		return true
-	case TeamMemberRoleRequestRequestedRoleOwner:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TeamMemberRoleRequestStatus.
-const (
-	Approved TeamMemberRoleRequestStatus = "approved"
-	Pending  TeamMemberRoleRequestStatus = "pending"
-	Rejected TeamMemberRoleRequestStatus = "rejected"
-)
-
-// Valid indicates whether the value is a known member of the TeamMemberRoleRequestStatus enum.
-func (e TeamMemberRoleRequestStatus) Valid() bool {
-	switch e {
-	case Approved:
-		return true
-	case Pending:
-		return true
-	case Rejected:
+	case Viewer:
 		return true
 	default:
 		return false
@@ -2058,6 +1968,21 @@ func (e WorkflowInstanceStatus) Valid() bool {
 	case WorkflowInstanceStatusUnknown:
 		return true
 	case WorkflowInstanceStatusWaitingHuman:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetArtifactContentParamsFormat.
+const (
+	Json GetArtifactContentParamsFormat = "json"
+)
+
+// Valid indicates whether the value is a known member of the GetArtifactContentParamsFormat enum.
+func (e GetArtifactContentParamsFormat) Valid() bool {
+	switch e {
+	case Json:
 		return true
 	default:
 		return false
@@ -2220,6 +2145,14 @@ type AppendProviderSessionEventRequest0 = interface{}
 // AppendProviderSessionEventRequest1 defines model for .
 type AppendProviderSessionEventRequest1 = interface{}
 
+// ArtifactContentLocation defines model for ArtifactContentLocation.
+type ArtifactContentLocation struct {
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+
+	// Url 短时 presigned GET URL,浏览器应以无凭证模式直接拉取
+	Url string `json:"url"`
+}
+
 // AuditEvent defines model for AuditEvent.
 type AuditEvent struct {
 	Action       string                 `json:"action"`
@@ -2309,6 +2242,18 @@ type ConnectorResolveDecisionRequest struct {
 	Decision  string             `json:"decision"`
 	ProjectId openapi_types.UUID `json:"project_id"`
 }
+
+// ConnectorSignDemandCriterionRequest defines model for ConnectorSignDemandCriterionRequest.
+type ConnectorSignDemandCriterionRequest struct {
+	CriterionId string                                     `json:"criterion_id"`
+	DecisionId  *openapi_types.UUID                        `json:"decision_id,omitempty"`
+	ProjectId   openapi_types.UUID                         `json:"project_id"`
+	Reason      *string                                    `json:"reason,omitempty"`
+	Verdict     ConnectorSignDemandCriterionRequestVerdict `json:"verdict"`
+}
+
+// ConnectorSignDemandCriterionRequestVerdict defines model for ConnectorSignDemandCriterionRequest.Verdict.
+type ConnectorSignDemandCriterionRequestVerdict string
 
 // ConnectorSubmitDemandRequest defines model for ConnectorSubmitDemandRequest.
 type ConnectorSubmitDemandRequest struct {
@@ -2469,14 +2414,6 @@ type CreateProjectEvidenceRequest struct {
 	Title              string                  `json:"title"`
 }
 
-// CreateProjectLendingRequest defines model for CreateProjectLendingRequest.
-type CreateProjectLendingRequest struct {
-	RequestReason       *string                 `json:"request_reason,omitempty"`
-	RequestedBudget     *string                 `json:"requested_budget,omitempty"`
-	RequestedCapability *map[string]interface{} `json:"requested_capability,omitempty"`
-	TeamId              openapi_types.UUID      `json:"team_id"`
-}
-
 // CreateProjectRequest defines model for CreateProjectRequest.
 type CreateProjectRequest struct {
 	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
@@ -2576,16 +2513,6 @@ type CreateTaskRequest struct {
 	WorkspacePath *string                 `json:"workspace_path,omitempty"`
 }
 
-// CreateTeamMemberRoleRequest defines model for CreateTeamMemberRoleRequest.
-type CreateTeamMemberRoleRequest struct {
-	Reason        *string                                  `json:"reason,omitempty"`
-	RequestedRole CreateTeamMemberRoleRequestRequestedRole `json:"requested_role"`
-	TargetUserId  openapi_types.UUID                       `json:"target_user_id"`
-}
-
-// CreateTeamMemberRoleRequestRequestedRole defines model for CreateTeamMemberRoleRequest.RequestedRole.
-type CreateTeamMemberRoleRequestRequestedRole string
-
 // CreateTeamRequest defines model for CreateTeamRequest.
 type CreateTeamRequest struct {
 	Description               *string               `json:"description,omitempty"`
@@ -2603,20 +2530,6 @@ type CreateTeamRequest struct {
 
 // CreateTeamRequestInitialMembersRole defines model for CreateTeamRequest.InitialMembers.Role.
 type CreateTeamRequestInitialMembersRole string
-
-// DecideTeamLendingRequest defines model for DecideTeamLendingRequest.
-type DecideTeamLendingRequest struct {
-	DecisionReason *string `json:"decision_reason,omitempty"`
-
-	// GrantedBudget Override granted budget on approve (decimal string).
-	GrantedBudget     *string                 `json:"granted_budget,omitempty"`
-	GrantedCapability *map[string]interface{} `json:"granted_capability,omitempty"`
-}
-
-// DecideTeamMemberRoleRequest defines model for DecideTeamMemberRoleRequest.
-type DecideTeamMemberRoleRequest struct {
-	DecisionReason *string `json:"decision_reason,omitempty"`
-}
 
 // DemandAcceptanceCriteriaDetail defines model for DemandAcceptanceCriteriaDetail.
 type DemandAcceptanceCriteriaDetail struct {
@@ -5379,52 +5292,6 @@ type TeamHumanOwner struct {
 	Username    string             `json:"username"`
 }
 
-// TeamLendingApprovalMode defines model for TeamLendingApprovalMode.
-type TeamLendingApprovalMode string
-
-// TeamLendingPolicy defines model for TeamLendingPolicy.
-type TeamLendingPolicy struct {
-	AllowLending bool                    `json:"allow_lending"`
-	ApprovalMode TeamLendingApprovalMode `json:"approval_mode"`
-
-	// BudgetCeiling Decimal budget ceiling as a string; empty means no ceiling.
-	BudgetCeiling     *string                `json:"budget_ceiling,omitempty"`
-	CapabilityCeiling map[string]interface{} `json:"capability_ceiling"`
-	CreatedAt         *time.Time             `json:"created_at,omitempty"`
-	CreatedByUserId   *openapi_types.UUID    `json:"created_by_user_id,omitempty"`
-	Id                openapi_types.UUID     `json:"id"`
-	ProjectMatch      map[string]interface{} `json:"project_match"`
-	Status            string                 `json:"status"`
-	TeamId            openapi_types.UUID     `json:"team_id"`
-	TenantId          openapi_types.UUID     `json:"tenant_id"`
-	UpdatedAt         *time.Time             `json:"updated_at,omitempty"`
-	UpdatedByUserId   *openapi_types.UUID    `json:"updated_by_user_id,omitempty"`
-}
-
-// TeamLendingRequest defines model for TeamLendingRequest.
-type TeamLendingRequest struct {
-	CreatedAt           *time.Time               `json:"created_at,omitempty"`
-	DecidedAt           *time.Time               `json:"decided_at,omitempty"`
-	DecidedByUserId     *openapi_types.UUID      `json:"decided_by_user_id,omitempty"`
-	DecisionReason      string                   `json:"decision_reason"`
-	GrantedBudget       *string                  `json:"granted_budget,omitempty"`
-	GrantedCapability   map[string]interface{}   `json:"granted_capability"`
-	Id                  openapi_types.UUID       `json:"id"`
-	IsException         bool                     `json:"is_exception"`
-	ProjectId           openapi_types.UUID       `json:"project_id"`
-	RequestReason       string                   `json:"request_reason"`
-	RequestedBudget     *string                  `json:"requested_budget,omitempty"`
-	RequestedByUserId   openapi_types.UUID       `json:"requested_by_user_id"`
-	RequestedCapability map[string]interface{}   `json:"requested_capability"`
-	Status              TeamLendingRequestStatus `json:"status"`
-	TeamId              openapi_types.UUID       `json:"team_id"`
-	TenantId            openapi_types.UUID       `json:"tenant_id"`
-	UpdatedAt           *time.Time               `json:"updated_at,omitempty"`
-}
-
-// TeamLendingRequestStatus defines model for TeamLendingRequestStatus.
-type TeamLendingRequestStatus string
-
 // TeamListItem defines model for TeamListItem.
 type TeamListItem struct {
 	CapabilityCount      int32                   `json:"capability_count"`
@@ -5467,29 +5334,6 @@ type TeamMember struct {
 
 // TeamMemberRole defines model for TeamMemberRole.
 type TeamMemberRole string
-
-// TeamMemberRoleRequest defines model for TeamMemberRoleRequest.
-type TeamMemberRoleRequest struct {
-	CreatedAt      *time.Time                         `json:"created_at,omitempty"`
-	DecidedAt      *time.Time                         `json:"decided_at,omitempty"`
-	DecidedBy      *openapi_types.UUID                `json:"decided_by,omitempty"`
-	DecisionReason string                             `json:"decision_reason"`
-	Id             openapi_types.UUID                 `json:"id"`
-	Reason         string                             `json:"reason"`
-	RequestedBy    openapi_types.UUID                 `json:"requested_by"`
-	RequestedRole  TeamMemberRoleRequestRequestedRole `json:"requested_role"`
-	Status         TeamMemberRoleRequestStatus        `json:"status"`
-	TargetUserId   openapi_types.UUID                 `json:"target_user_id"`
-	TeamId         openapi_types.UUID                 `json:"team_id"`
-	TenantId       openapi_types.UUID                 `json:"tenant_id"`
-	UpdatedAt      *time.Time                         `json:"updated_at,omitempty"`
-}
-
-// TeamMemberRoleRequestRequestedRole defines model for TeamMemberRoleRequest.RequestedRole.
-type TeamMemberRoleRequestRequestedRole string
-
-// TeamMemberRoleRequestStatus defines model for TeamMemberRoleRequestStatus.
-type TeamMemberRoleRequestStatus string
 
 // TeamOverview defines model for TeamOverview.
 type TeamOverview struct {
@@ -5623,15 +5467,6 @@ type UpsertFeishuAppConfigRequest struct {
 
 	// AppSecret Sealed with AES-GCM at rest; never echoed back.
 	AppSecret string `json:"app_secret"`
-}
-
-// UpsertTeamLendingPolicy defines model for UpsertTeamLendingPolicy.
-type UpsertTeamLendingPolicy struct {
-	AllowLending      bool                    `json:"allow_lending"`
-	ApprovalMode      TeamLendingApprovalMode `json:"approval_mode"`
-	BudgetCeiling     *string                 `json:"budget_ceiling,omitempty"`
-	CapabilityCeiling *map[string]interface{} `json:"capability_ceiling,omitempty"`
-	ProjectMatch      *map[string]interface{} `json:"project_match,omitempty"`
 }
 
 // WaitHumanProjectTaskAttemptRequest defines model for WaitHumanProjectTaskAttemptRequest.
@@ -5799,6 +5634,15 @@ type TaskId = openapi_types.UUID
 
 // TeamId defines model for TeamId.
 type TeamId = openapi_types.UUID
+
+// GetArtifactContentParams defines parameters for GetArtifactContent.
+type GetArtifactContentParams struct {
+	// Format 默认 302 重定向到 presigned URL;format=json 时改为 200 返回 presigned URL 本体,供浏览器两步取回(避免 fetch 跨域重定向的 Origin taint 迫使对象存储 CORS 放行 null origin)。
+	Format *GetArtifactContentParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// GetArtifactContentParamsFormat defines parameters for GetArtifactContent.
+type GetArtifactContentParamsFormat string
 
 // ListAuditEventsParams defines parameters for ListAuditEvents.
 type ListAuditEventsParams struct {
@@ -6016,13 +5860,6 @@ type GetProjectExecutionTraceParams struct {
 	Offset        *Offset             `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// ListProjectLendingRequestsParams defines parameters for ListProjectLendingRequests.
-type ListProjectLendingRequestsParams struct {
-	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *Offset                   `form:"offset,omitempty" json:"offset,omitempty"`
-	Status *TeamLendingRequestStatus `form:"status,omitempty" json:"status,omitempty"`
-}
-
 // ListProjectPlanRevisionsParams defines parameters for ListProjectPlanRevisions.
 type ListProjectPlanRevisionsParams struct {
 	DemandId *openapi_types.UUID `form:"demand_id,omitempty" json:"demand_id,omitempty"`
@@ -6199,20 +6036,6 @@ type ListTeamAuditEventsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// ListTeamLendingRequestsParams defines parameters for ListTeamLendingRequests.
-type ListTeamLendingRequestsParams struct {
-	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *Offset                   `form:"offset,omitempty" json:"offset,omitempty"`
-	Status *TeamLendingRequestStatus `form:"status,omitempty" json:"status,omitempty"`
-}
-
-// ListTeamMemberRoleRequestsParams defines parameters for ListTeamMemberRoleRequests.
-type ListTeamMemberRoleRequestsParams struct {
-	Limit  *Limit                       `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *Offset                      `form:"offset,omitempty" json:"offset,omitempty"`
-	Status *TeamMemberRoleRequestStatus `form:"status,omitempty" json:"status,omitempty"`
-}
-
 // ListTeamMembersParams defines parameters for ListTeamMembers.
 type ListTeamMembersParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -6244,6 +6067,9 @@ type ConnectorResolveDecisionJSONRequestBody = ConnectorResolveDecisionRequest
 
 // ConnectorSubmitDemandJSONRequestBody defines body for ConnectorSubmitDemand for application/json ContentType.
 type ConnectorSubmitDemandJSONRequestBody = ConnectorSubmitDemandRequest
+
+// ConnectorSignDemandCriterionJSONRequestBody defines body for ConnectorSignDemandCriterion for application/json ContentType.
+type ConnectorSignDemandCriterionJSONRequestBody = ConnectorSignDemandCriterionRequest
 
 // ConnectorAckOutboxJSONRequestBody defines body for ConnectorAckOutbox for application/json ContentType.
 type ConnectorAckOutboxJSONRequestBody = FeishuOutboxAckRequest
@@ -6325,9 +6151,6 @@ type CreateProjectEvidenceJSONRequestBody = CreateProjectEvidenceRequest
 
 // PatchProjectEvidenceJSONRequestBody defines body for PatchProjectEvidence for application/json ContentType.
 type PatchProjectEvidenceJSONRequestBody = PatchProjectEvidenceRequest
-
-// CreateProjectLendingRequestJSONRequestBody defines body for CreateProjectLendingRequest for application/json ContentType.
-type CreateProjectLendingRequestJSONRequestBody = CreateProjectLendingRequest
 
 // PutProjectMCPBindingsJSONRequestBody defines body for PutProjectMCPBindings for application/json ContentType.
 type PutProjectMCPBindingsJSONRequestBody = PutProjectMCPBindingsRequest
@@ -6461,29 +6284,8 @@ type UpdateTeamConstitutionJSONRequestBody = UpdateTeamConstitutionRequest
 // BindTeamDigitalEmployeeJSONRequestBody defines body for BindTeamDigitalEmployee for application/json ContentType.
 type BindTeamDigitalEmployeeJSONRequestBody = BindTeamDigitalEmployeeRequest
 
-// UpsertTeamLendingPolicyJSONRequestBody defines body for UpsertTeamLendingPolicy for application/json ContentType.
-type UpsertTeamLendingPolicyJSONRequestBody = UpsertTeamLendingPolicy
-
-// ApproveTeamLendingRequestJSONRequestBody defines body for ApproveTeamLendingRequest for application/json ContentType.
-type ApproveTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
-
-// RejectTeamLendingRequestJSONRequestBody defines body for RejectTeamLendingRequest for application/json ContentType.
-type RejectTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
-
-// RevokeTeamLendingRequestJSONRequestBody defines body for RevokeTeamLendingRequest for application/json ContentType.
-type RevokeTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
-
 // CreateTeamMCPBindingJSONRequestBody defines body for CreateTeamMCPBinding for application/json ContentType.
 type CreateTeamMCPBindingJSONRequestBody = CreateMCPBindingRequest
-
-// CreateTeamMemberRoleRequestJSONRequestBody defines body for CreateTeamMemberRoleRequest for application/json ContentType.
-type CreateTeamMemberRoleRequestJSONRequestBody = CreateTeamMemberRoleRequest
-
-// ApproveTeamMemberRoleRequestJSONRequestBody defines body for ApproveTeamMemberRoleRequest for application/json ContentType.
-type ApproveTeamMemberRoleRequestJSONRequestBody = DecideTeamMemberRoleRequest
-
-// RejectTeamMemberRoleRequestJSONRequestBody defines body for RejectTeamMemberRoleRequest for application/json ContentType.
-type RejectTeamMemberRoleRequestJSONRequestBody = DecideTeamMemberRoleRequest
 
 // AddTeamMemberJSONRequestBody defines body for AddTeamMember for application/json ContentType.
 type AddTeamMemberJSONRequestBody = AddTeamMemberRequest
@@ -6966,7 +6768,7 @@ type ServerInterface interface {
 	RevokeServiceToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID)
 	// Retrieve an artifact's raw content via presigned redirect
 	// (GET /api/v1/artifacts/{artifactRefId}/content)
-	GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID)
+	GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID, params GetArtifactContentParams)
 	// List audit events by project resource
 	// (GET /api/v1/audit/events)
 	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
@@ -6985,6 +6787,9 @@ type ServerInterface interface {
 	// Submit a demand on behalf of the bound user (source_type is fixed to feishu)
 	// (POST /api/v1/connector/demands)
 	ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request)
+	// Sign one acceptance criterion on behalf of the bound user (in-card sign-off); returns progress, criterion verdicts and a refreshed decision card snapshot
+	// (POST /api/v1/connector/demands/{demandId}/criteria/sign)
+	ConnectorSignDemandCriterion(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
 	// Resolve a Feishu open_id to its bound platform user
 	// (GET /api/v1/connector/identity)
 	ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams)
@@ -7240,12 +7045,6 @@ type ServerInterface interface {
 	// Get project execution trace
 	// (GET /api/v1/projects/{projectId}/execution-trace)
 	GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectExecutionTraceParams)
-	// List lending requests raised by a project (demand side)
-	// (GET /api/v1/projects/{projectId}/lending-requests)
-	ListProjectLendingRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectLendingRequestsParams)
-	// Create a lending request from a project (demand side)
-	// (POST /api/v1/projects/{projectId}/lending-requests)
-	CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// List project MCP bindings to registered MCP servers
 	// (GET /api/v1/projects/{projectId}/mcp-bindings)
 	ListProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -7510,24 +7309,6 @@ type ServerInterface interface {
 	// Bind an unassigned (lobby) digital employee into the team
 	// (POST /api/v1/teams/{teamId}/digital-employees)
 	BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Read the team lending policy
-	// (GET /api/v1/teams/{teamId}/lending-policy)
-	GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Create or update the team lending policy
-	// (PUT /api/v1/teams/{teamId}/lending-policy)
-	UpsertTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// List lending requests targeting a team (supply-side approval view)
-	// (GET /api/v1/teams/{teamId}/lending-requests)
-	ListTeamLendingRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamLendingRequestsParams)
-	// Approve a pending lending request
-	// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/approve)
-	ApproveTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
-	// Reject a pending lending request
-	// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/reject)
-	RejectTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
-	// Revoke an approved or auto-approved lending request
-	// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/revoke)
-	RevokeTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
 	// List team MCP bindings to registered MCP servers
 	// (GET /api/v1/teams/{teamId}/mcp-bindings)
 	ListTeamMCPBindings(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -7537,18 +7318,6 @@ type ServerInterface interface {
 	// Delete a team MCP binding
 	// (DELETE /api/v1/teams/{teamId}/mcp-bindings/{bindingId})
 	DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Request, teamId TeamId, bindingId openapi_types.UUID)
-	// List privileged team role requests
-	// (GET /api/v1/teams/{teamId}/member-role-requests)
-	ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamMemberRoleRequestsParams)
-	// Create a privileged team role request
-	// (POST /api/v1/teams/{teamId}/member-role-requests)
-	CreateTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, teamId TeamId)
-	// Approve a privileged team role request
-	// (POST /api/v1/teams/{teamId}/member-role-requests/{requestId}/approve)
-	ApproveTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
-	// Reject a privileged team role request
-	// (POST /api/v1/teams/{teamId}/member-role-requests/{requestId}/reject)
-	RejectTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
 	// List team human members
 	// (GET /api/v1/teams/{teamId}/members)
 	ListTeamMembers(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamMembersParams)
@@ -7632,7 +7401,7 @@ func (_ Unimplemented) RevokeServiceToken(w http.ResponseWriter, r *http.Request
 
 // Retrieve an artifact's raw content via presigned redirect
 // (GET /api/v1/artifacts/{artifactRefId}/content)
-func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID) {
+func (_ Unimplemented) GetArtifactContent(w http.ResponseWriter, r *http.Request, artifactRefId openapi_types.UUID, params GetArtifactContentParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7669,6 +7438,12 @@ func (_ Unimplemented) ConnectorResolveDecision(w http.ResponseWriter, r *http.R
 // Submit a demand on behalf of the bound user (source_type is fixed to feishu)
 // (POST /api/v1/connector/demands)
 func (_ Unimplemented) ConnectorSubmitDemand(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Sign one acceptance criterion on behalf of the bound user (in-card sign-off); returns progress, criterion verdicts and a refreshed decision card snapshot
+// (POST /api/v1/connector/demands/{demandId}/criteria/sign)
+func (_ Unimplemented) ConnectorSignDemandCriterion(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8179,18 +7954,6 @@ func (_ Unimplemented) ListProjectExecutionSummaries(w http.ResponseWriter, r *h
 // Get project execution trace
 // (GET /api/v1/projects/{projectId}/execution-trace)
 func (_ Unimplemented) GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectExecutionTraceParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List lending requests raised by a project (demand side)
-// (GET /api/v1/projects/{projectId}/lending-requests)
-func (_ Unimplemented) ListProjectLendingRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectLendingRequestsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create a lending request from a project (demand side)
-// (POST /api/v1/projects/{projectId}/lending-requests)
-func (_ Unimplemented) CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8722,42 +8485,6 @@ func (_ Unimplemented) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Read the team lending policy
-// (GET /api/v1/teams/{teamId}/lending-policy)
-func (_ Unimplemented) GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create or update the team lending policy
-// (PUT /api/v1/teams/{teamId}/lending-policy)
-func (_ Unimplemented) UpsertTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List lending requests targeting a team (supply-side approval view)
-// (GET /api/v1/teams/{teamId}/lending-requests)
-func (_ Unimplemented) ListTeamLendingRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamLendingRequestsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Approve a pending lending request
-// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/approve)
-func (_ Unimplemented) ApproveTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Reject a pending lending request
-// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/reject)
-func (_ Unimplemented) RejectTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Revoke an approved or auto-approved lending request
-// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/revoke)
-func (_ Unimplemented) RevokeTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // List team MCP bindings to registered MCP servers
 // (GET /api/v1/teams/{teamId}/mcp-bindings)
 func (_ Unimplemented) ListTeamMCPBindings(w http.ResponseWriter, r *http.Request, teamId TeamId) {
@@ -8773,30 +8500,6 @@ func (_ Unimplemented) CreateTeamMCPBinding(w http.ResponseWriter, r *http.Reque
 // Delete a team MCP binding
 // (DELETE /api/v1/teams/{teamId}/mcp-bindings/{bindingId})
 func (_ Unimplemented) DeleteTeamMCPBinding(w http.ResponseWriter, r *http.Request, teamId TeamId, bindingId openapi_types.UUID) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List privileged team role requests
-// (GET /api/v1/teams/{teamId}/member-role-requests)
-func (_ Unimplemented) ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamMemberRoleRequestsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create a privileged team role request
-// (POST /api/v1/teams/{teamId}/member-role-requests)
-func (_ Unimplemented) CreateTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, teamId TeamId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Approve a privileged team role request
-// (POST /api/v1/teams/{teamId}/member-role-requests/{requestId}/approve)
-func (_ Unimplemented) ApproveTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Reject a privileged team role request
-// (POST /api/v1/teams/{teamId}/member-role-requests/{requestId}/reject)
-func (_ Unimplemented) RejectTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8998,8 +8701,24 @@ func (siw *ServerInterfaceWrapper) GetArtifactContent(w http.ResponseWriter, r *
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetArtifactContentParams
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetArtifactContent(w, r, artifactRefId)
+		siw.Handler.GetArtifactContent(w, r, artifactRefId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9218,6 +8937,32 @@ func (siw *ServerInterfaceWrapper) ConnectorSubmitDemand(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ConnectorSubmitDemand(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorSignDemandCriterion operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorSignDemandCriterion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "demandId" -------------
+	var demandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "demandId", chi.URLParam(r, "demandId"), &demandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demandId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorSignDemandCriterion(w, r, demandId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12378,100 +12123,6 @@ func (siw *ServerInterfaceWrapper) GetProjectExecutionTrace(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
-// ListProjectLendingRequests operation middleware
-func (siw *ServerInterfaceWrapper) ListProjectLendingRequests(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "projectId" -------------
-	var projectId ProjectId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListProjectLendingRequestsParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "status" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListProjectLendingRequests(w, r, projectId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateProjectLendingRequest operation middleware
-func (siw *ServerInterfaceWrapper) CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "projectId" -------------
-	var projectId ProjectId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateProjectLendingRequest(w, r, projectId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListProjectMCPBindings operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
 
@@ -15495,231 +15146,6 @@ func (siw *ServerInterfaceWrapper) BindTeamDigitalEmployee(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
-// GetTeamLendingPolicy operation middleware
-func (siw *ServerInterfaceWrapper) GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetTeamLendingPolicy(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpsertTeamLendingPolicy operation middleware
-func (siw *ServerInterfaceWrapper) UpsertTeamLendingPolicy(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpsertTeamLendingPolicy(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListTeamLendingRequests operation middleware
-func (siw *ServerInterfaceWrapper) ListTeamLendingRequests(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListTeamLendingRequestsParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "status" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTeamLendingRequests(w, r, teamId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ApproveTeamLendingRequest operation middleware
-func (siw *ServerInterfaceWrapper) ApproveTeamLendingRequest(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "requestId" -------------
-	var requestId RequestId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ApproveTeamLendingRequest(w, r, teamId, requestId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RejectTeamLendingRequest operation middleware
-func (siw *ServerInterfaceWrapper) RejectTeamLendingRequest(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "requestId" -------------
-	var requestId RequestId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RejectTeamLendingRequest(w, r, teamId, requestId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RevokeTeamLendingRequest operation middleware
-func (siw *ServerInterfaceWrapper) RevokeTeamLendingRequest(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "requestId" -------------
-	var requestId RequestId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RevokeTeamLendingRequest(w, r, teamId, requestId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListTeamMCPBindings operation middleware
 func (siw *ServerInterfaceWrapper) ListTeamMCPBindings(w http.ResponseWriter, r *http.Request) {
 
@@ -15798,170 +15224,6 @@ func (siw *ServerInterfaceWrapper) DeleteTeamMCPBinding(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteTeamMCPBinding(w, r, teamId, bindingId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListTeamMemberRoleRequests operation middleware
-func (siw *ServerInterfaceWrapper) ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListTeamMemberRoleRequestsParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "status" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTeamMemberRoleRequests(w, r, teamId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateTeamMemberRoleRequest operation middleware
-func (siw *ServerInterfaceWrapper) CreateTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateTeamMemberRoleRequest(w, r, teamId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ApproveTeamMemberRoleRequest operation middleware
-func (siw *ServerInterfaceWrapper) ApproveTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "requestId" -------------
-	var requestId RequestId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ApproveTeamMemberRoleRequest(w, r, teamId, requestId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RejectTeamMemberRoleRequest operation middleware
-func (siw *ServerInterfaceWrapper) RejectTeamMemberRoleRequest(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "teamId" -------------
-	var teamId TeamId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "requestId" -------------
-	var requestId RequestId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RejectTeamMemberRoleRequest(w, r, teamId, requestId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16532,6 +15794,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/connector/demands", wrapper.ConnectorSubmitDemand)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/demands/{demandId}/criteria/sign", wrapper.ConnectorSignDemandCriterion)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/connector/identity", wrapper.ConnectorResolveIdentity)
 	})
 	r.Group(func(r chi.Router) {
@@ -16785,12 +16050,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/execution-trace", wrapper.GetProjectExecutionTrace)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/lending-requests", wrapper.ListProjectLendingRequests)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/lending-requests", wrapper.CreateProjectLendingRequest)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/mcp-bindings", wrapper.ListProjectMCPBindings)
@@ -17057,24 +16316,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/digital-employees", wrapper.BindTeamDigitalEmployee)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/lending-policy", wrapper.GetTeamLendingPolicy)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/teams/{teamId}/lending-policy", wrapper.UpsertTeamLendingPolicy)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests", wrapper.ListTeamLendingRequests)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests/{requestId}/approve", wrapper.ApproveTeamLendingRequest)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests/{requestId}/reject", wrapper.RejectTeamLendingRequest)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests/{requestId}/revoke", wrapper.RevokeTeamLendingRequest)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/mcp-bindings", wrapper.ListTeamMCPBindings)
 	})
 	r.Group(func(r chi.Router) {
@@ -17082,18 +16323,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/mcp-bindings/{bindingId}", wrapper.DeleteTeamMCPBinding)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/member-role-requests", wrapper.ListTeamMemberRoleRequests)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/member-role-requests", wrapper.CreateTeamMemberRoleRequest)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/member-role-requests/{requestId}/approve", wrapper.ApproveTeamMemberRoleRequest)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/member-role-requests/{requestId}/reject", wrapper.RejectTeamMemberRoleRequest)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/members", wrapper.ListTeamMembers)

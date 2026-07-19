@@ -138,63 +138,6 @@ func (q *Queries) CountTeamOwners(ctx context.Context, arg CountTeamOwnersParams
 	return column_1, err
 }
 
-const CreateTeamMemberRoleRequest = `-- name: CreateTeamMemberRoleRequest :one
-INSERT INTO tenant_team_member_role_requests (
-    tenant_id,
-    team_id,
-    target_user_id,
-    requested_role,
-    requested_by,
-    reason
-)
-VALUES (
-    $1::uuid,
-    $2::uuid,
-    $3::uuid,
-    $4::varchar,
-    $5::uuid,
-    $6::text
-)
-RETURNING id, tenant_id, team_id, target_user_id, requested_role, requested_by, status, reason, decided_by, decided_at, decision_reason, created_at, updated_at
-`
-
-type CreateTeamMemberRoleRequestParams struct {
-	TenantID      uuid.UUID `json:"tenant_id"`
-	TeamID        uuid.UUID `json:"team_id"`
-	TargetUserID  uuid.UUID `json:"target_user_id"`
-	RequestedRole string    `json:"requested_role"`
-	RequestedBy   uuid.UUID `json:"requested_by"`
-	Reason        string    `json:"reason"`
-}
-
-func (q *Queries) CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error) {
-	row := q.db.QueryRow(ctx, CreateTeamMemberRoleRequest,
-		arg.TenantID,
-		arg.TeamID,
-		arg.TargetUserID,
-		arg.RequestedRole,
-		arg.RequestedBy,
-		arg.Reason,
-	)
-	var i TenantTeamMemberRoleRequest
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.TeamID,
-		&i.TargetUserID,
-		&i.RequestedRole,
-		&i.RequestedBy,
-		&i.Status,
-		&i.Reason,
-		&i.DecidedBy,
-		&i.DecidedAt,
-		&i.DecisionReason,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const CreateTenantTeam = `-- name: CreateTenantTeam :one
 INSERT INTO tenant_teams (tenant_id, slug, name, description, status, human_owner_user_ids, metadata)
 VALUES (
@@ -246,59 +189,6 @@ func (q *Queries) CreateTenantTeam(ctx context.Context, arg CreateTenantTeamPara
 		&i.Constitution,
 		&i.Description,
 		&i.DeleteRequestedBy,
-	)
-	return i, err
-}
-
-const DecideTeamMemberRoleRequest = `-- name: DecideTeamMemberRoleRequest :one
-UPDATE tenant_team_member_role_requests
-SET
-  status = $1::varchar,
-  decided_by = $2::uuid,
-  decided_at = NOW(),
-  decision_reason = $3::text,
-  updated_at = NOW()
-WHERE id = $4::uuid
-  AND tenant_id = $5::uuid
-  AND team_id = $6::uuid
-  AND status = 'pending'
-  AND $1::varchar IN ('approved', 'rejected')
-RETURNING id, tenant_id, team_id, target_user_id, requested_role, requested_by, status, reason, decided_by, decided_at, decision_reason, created_at, updated_at
-`
-
-type DecideTeamMemberRoleRequestParams struct {
-	Status         string    `json:"status"`
-	DecidedBy      uuid.UUID `json:"decided_by"`
-	DecisionReason string    `json:"decision_reason"`
-	ID             uuid.UUID `json:"id"`
-	TenantID       uuid.UUID `json:"tenant_id"`
-	TeamID         uuid.UUID `json:"team_id"`
-}
-
-func (q *Queries) DecideTeamMemberRoleRequest(ctx context.Context, arg DecideTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error) {
-	row := q.db.QueryRow(ctx, DecideTeamMemberRoleRequest,
-		arg.Status,
-		arg.DecidedBy,
-		arg.DecisionReason,
-		arg.ID,
-		arg.TenantID,
-		arg.TeamID,
-	)
-	var i TenantTeamMemberRoleRequest
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.TeamID,
-		&i.TargetUserID,
-		&i.RequestedRole,
-		&i.RequestedBy,
-		&i.Status,
-		&i.Reason,
-		&i.DecidedBy,
-		&i.DecidedAt,
-		&i.DecisionReason,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -462,42 +352,6 @@ func (q *Queries) GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (G
 	return i, err
 }
 
-const GetTeamMemberRoleRequest = `-- name: GetTeamMemberRoleRequest :one
-SELECT id, tenant_id, team_id, target_user_id, requested_role, requested_by, status, reason, decided_by, decided_at, decision_reason, created_at, updated_at
-FROM tenant_team_member_role_requests
-WHERE id = $1::uuid
-  AND tenant_id = $2::uuid
-  AND team_id = $3::uuid
-  AND status = 'pending'
-`
-
-type GetTeamMemberRoleRequestParams struct {
-	ID       uuid.UUID `json:"id"`
-	TenantID uuid.UUID `json:"tenant_id"`
-	TeamID   uuid.UUID `json:"team_id"`
-}
-
-func (q *Queries) GetTeamMemberRoleRequest(ctx context.Context, arg GetTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error) {
-	row := q.db.QueryRow(ctx, GetTeamMemberRoleRequest, arg.ID, arg.TenantID, arg.TeamID)
-	var i TenantTeamMemberRoleRequest
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.TeamID,
-		&i.TargetUserID,
-		&i.RequestedRole,
-		&i.RequestedBy,
-		&i.Status,
-		&i.Reason,
-		&i.DecidedBy,
-		&i.DecidedAt,
-		&i.DecisionReason,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const GetTenantTeam = `-- name: GetTenantTeam :one
 SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description, delete_requested_by
 FROM tenant_teams
@@ -646,64 +500,6 @@ func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSum
 		&i.RiskSummary,
 	)
 	return i, err
-}
-
-const ListTeamMemberRoleRequests = `-- name: ListTeamMemberRoleRequests :many
-SELECT id, tenant_id, team_id, target_user_id, requested_role, requested_by, status, reason, decided_by, decided_at, decision_reason, created_at, updated_at
-FROM tenant_team_member_role_requests
-WHERE tenant_id = $1::uuid
-  AND team_id = $2::uuid
-  AND ($3::varchar IS NULL OR status = $3::varchar)
-ORDER BY created_at DESC, id DESC
-LIMIT $5 OFFSET $4
-`
-
-type ListTeamMemberRoleRequestsParams struct {
-	TenantID uuid.UUID   `json:"tenant_id"`
-	TeamID   uuid.UUID   `json:"team_id"`
-	Status   pgtype.Text `json:"status"`
-	Offset   int32       `json:"offset"`
-	Limit    int32       `json:"limit"`
-}
-
-func (q *Queries) ListTeamMemberRoleRequests(ctx context.Context, arg ListTeamMemberRoleRequestsParams) ([]TenantTeamMemberRoleRequest, error) {
-	rows, err := q.db.Query(ctx, ListTeamMemberRoleRequests,
-		arg.TenantID,
-		arg.TeamID,
-		arg.Status,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TenantTeamMemberRoleRequest{}
-	for rows.Next() {
-		var i TenantTeamMemberRoleRequest
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.TeamID,
-			&i.TargetUserID,
-			&i.RequestedRole,
-			&i.RequestedBy,
-			&i.Status,
-			&i.Reason,
-			&i.DecidedBy,
-			&i.DecidedAt,
-			&i.DecisionReason,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const ListTeamMembers = `-- name: ListTeamMembers :many

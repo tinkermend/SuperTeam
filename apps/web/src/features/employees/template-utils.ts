@@ -109,6 +109,35 @@ export function templateCapabilityPreview(typeOption: DigitalEmployeeTypeOption)
   ].filter(Boolean).join(" · ") || "无模板能力";
 }
 
+export type TemplateUnlistedRecommendations = {
+  skills: string[];
+  mcpServers: string[];
+  total: number;
+};
+
+// templateUnlistedRecommendations 汇总模板推荐(recommended_* ∪ capability_bindings)
+// 中注册表里不存在的 key——它们在创建向导中会以"未上架"禁选展示,这里让模板
+// 管理员在治理侧看到同一口径的缺口。注册表尚未加载(sets 为 undefined)时不告警。
+export function templateUnlistedRecommendations(
+  typeOption: DigitalEmployeeTypeOption,
+  availableSkillKeys: ReadonlySet<string> | undefined,
+  availableMcpKeys: ReadonlySet<string> | undefined,
+): TemplateUnlistedRecommendations {
+  const capability = templateCapabilitySummary(typeOption);
+  const injection = templateDefaultInjectionSummary(typeOption);
+  const skills = availableSkillKeys
+    ? dedupe([...capability.skills, ...injection.skills]).filter((key) => !availableSkillKeys.has(key))
+    : [];
+  const mcpServers = availableMcpKeys
+    ? dedupe([...capability.mcpServers, ...injection.mcpServers]).filter((key) => !availableMcpKeys.has(key))
+    : [];
+  return { skills, mcpServers, total: skills.length + mcpServers.length };
+}
+
+function dedupe(values: string[]) {
+  return Array.from(new Set(values));
+}
+
 export function findTemplateByType(
   options: DigitalEmployeeCreateOptions | undefined,
   templateType: string | undefined,

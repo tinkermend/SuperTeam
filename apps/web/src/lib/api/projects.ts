@@ -1553,25 +1553,35 @@ export function listProjectArtifacts(
 }
 
 /**
- * 拉取工件文本内容用于预览:经 302 跟随到对象存储 presigned URL。
- * 跨域腿依赖 bucket CORS 允许 web origin(输出附件 spec §3)。
+ * 拉取工件文本内容用于预览,两步取回:①credentialed 向控制面拿 presigned
+ * URL(format=json);②无凭证直取对象存储。不用 302 跟随——fetch 跨域重定向
+ * 会把 Origin 置为 null(redirect taint),迫使桶 CORS 放行 null origin;
+ * 两步取回下第二跳 Origin 干净,桶只需放行常规 web origin。
  */
 export async function getArtifactContentText(
   options: ApiClientOptions,
   artifactRefId: string,
 ): Promise<string> {
   const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(
+  const locationResponse = await fetcher(
     buildApiUrl(
       options.baseUrl,
-      `/api/v1/artifacts/${encodeURIComponent(artifactRefId)}/content`,
+      `/api/v1/artifacts/${encodeURIComponent(artifactRefId)}/content?format=json`,
     ),
     { credentials: "include", method: "GET" },
   );
-  if (!response.ok) {
-    throw new ApiRequestError("artifact content", response.status);
+  const location = await parseJson<{ url: string }>(
+    locationResponse,
+    "artifact content location",
+  );
+  const contentResponse = await fetcher(location.url, {
+    credentials: "omit",
+    method: "GET",
+  });
+  if (!contentResponse.ok) {
+    throw new ApiRequestError("artifact content", contentResponse.status);
   }
-  return response.text();
+  return contentResponse.text();
 }
 
 export function listProjectReports(

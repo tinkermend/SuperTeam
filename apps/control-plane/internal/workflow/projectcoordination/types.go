@@ -526,7 +526,7 @@ type PlanningGap struct {
 	Roles                []string `json:"roles,omitempty"`                 // [reviewer developer]
 	RequiredCapabilities []string `json:"required_capabilities,omitempty"` // union of the constrained roles' required_capabilities
 	ActiveExecutorCount  int      `json:"active_executor_count"`
-	Options              []string `json:"options"` // [restaff exempt lending]
+	Options              []string `json:"options"` // [restaff exempt]
 }
 
 // RejectDemandPlanningInput terminally rejects a demand whose route could not be

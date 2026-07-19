@@ -29,11 +29,6 @@ type Repository interface {
 	BindTeamDigitalEmployee(ctx context.Context, params BindTeamDigitalEmployeeParams) error
 	DisableTeamMemberRole(ctx context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error)
 	CountTeamOwners(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error)
-	CreateTeamMemberRoleRequest(ctx context.Context, params CreateTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error)
-	GetTeamMemberRoleRequest(ctx context.Context, tenantID, teamID, requestID uuid.UUID) (TeamMemberRoleRequestRecord, error)
-	ListTeamMemberRoleRequests(ctx context.Context, params ListTeamMemberRoleRequestsParams) ([]TeamMemberRoleRequestRecord, error)
-	ApproveTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error)
-	DecideTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error)
 }
 
 type CreateTeamParams struct {
@@ -107,32 +102,6 @@ type DisableTeamMemberRoleParams struct {
 	MembershipID uuid.UUID
 }
 
-type CreateTeamMemberRoleRequestParams struct {
-	TenantID      uuid.UUID
-	TeamID        uuid.UUID
-	TargetUserID  uuid.UUID
-	RequestedRole string
-	RequestedBy   uuid.UUID
-	Reason        string
-}
-
-type ListTeamMemberRoleRequestsParams struct {
-	TenantID uuid.UUID
-	TeamID   uuid.UUID
-	Status   TeamMemberRoleRequestStatus
-	Offset   int32
-	Limit    int32
-}
-
-type DecideTeamMemberRoleRequestParams struct {
-	TenantID       uuid.UUID
-	TeamID         uuid.UUID
-	RequestID      uuid.UUID
-	Status         TeamMemberRoleRequestStatus
-	DecidedBy      uuid.UUID
-	DecisionReason string
-}
-
 type TeamRecord = Team
 
 // PendingDeleteTeamRecord 待确认删除队列条目:附带删除时间(滞留时长)与发起人。
@@ -145,5 +114,3 @@ type PendingDeleteTeamRecord struct {
 type TeamListItemRecord = TeamListItem
 
 type TeamMemberRecord = TeamMember
-
-type TeamMemberRoleRequestRecord = TeamMemberRoleRequest
