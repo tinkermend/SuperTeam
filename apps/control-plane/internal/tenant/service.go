@@ -403,6 +403,28 @@ func (s *Service) ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUI
 	return members, nil
 }
 
+// GrantTeamMemberRole grants a privileged team role after permission-center
+// approval (S2 apply seam). Unlike AddTeamMember it accepts privileged roles —
+// the human approval IS the gate. It is idempotent (AddTeamMember upserts the
+// role row), so a retried apply is safe.
+func (s *Service) GrantTeamMemberRole(ctx context.Context, in GrantTeamRoleInput) error {
+	if in.TenantID == uuid.Nil || in.TeamID == uuid.Nil || in.TargetUserID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id, team_id and target_user_id are required", ErrInvalidInput)
+	}
+	role, err := normalizeTeamRole(in.Role, "")
+	if err != nil {
+		return err
+	}
+	if !isPrivilegedTeamRole(role) {
+		return fmt.Errorf("%w: GrantTeamMemberRole only grants privileged roles", ErrInvalidInput)
+	}
+	in.Role = role
+	if _, err := s.repository.GrantTeamMemberRole(ctx, in); err != nil {
+		return fmt.Errorf("grant team member role: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

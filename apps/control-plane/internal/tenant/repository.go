@@ -26,6 +26,7 @@ type Repository interface {
 	ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error)
 	GetTeamMember(ctx context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error)
 	AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error)
+	GrantTeamMemberRole(ctx context.Context, in GrantTeamRoleInput) (TeamMemberRecord, error)
 	BindTeamDigitalEmployee(ctx context.Context, params BindTeamDigitalEmployeeParams) error
 	DisableTeamMemberRole(ctx context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error)
 	CountTeamOwners(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error)

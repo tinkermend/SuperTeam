@@ -17,6 +17,7 @@ import (
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
+	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
@@ -41,6 +42,7 @@ type Server struct {
 	employeeHandler                *employee.HTTPHandler
 	costHandler                    *cost.HTTPHandler
 	inboxHandler                   *inbox.HTTPHandler
+	permissionHandler              *permission.HTTPHandler
 	projectHandler                 *project.HTTPHandler
 	promptTemplateHandler          *prompttemplate.HTTPHandler
 	scenarioTemplateHandler        *scenariotemplate.HTTPHandler
@@ -151,6 +153,11 @@ func (s *Server) SetInboxHandler(inboxHandler *inbox.HTTPHandler) {
 	if inboxHandler != nil {
 		inboxHandler.SetAuthorizer(s.authorizer)
 	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetPermissionHandler(permissionHandler *permission.HTTPHandler) {
+	s.permissionHandler = permissionHandler
 	s.registerRoutes()
 }
 
@@ -422,6 +429,15 @@ func (s *Server) registerRoutes() {
 				r.Get("/inbox/stream", s.inboxHandler.StreamItems)
 				r.Get("/inbox/badge", s.inboxHandler.GetBadge)
 				r.Post("/inbox/items/{itemId}/actions", s.inboxHandler.ExecuteAction)
+			})
+		}
+
+		if s.permissionHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/permission-approvals", s.permissionHandler.ListApprovals)
+				r.Post("/permission-approvals/{id}/decision", s.permissionHandler.Decide)
+				r.Post("/teams/{teamId}/privileged-role-requests", s.permissionHandler.RequestPrivilegedRole)
 			})
 		}
 

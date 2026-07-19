@@ -1006,6 +1006,24 @@ func (r *memoryRepository) AddTeamMember(_ context.Context, params AddTeamMember
 	return record, nil
 }
 
+func (r *memoryRepository) GrantTeamMemberRole(_ context.Context, in GrantTeamRoleInput) (TeamMemberRecord, error) {
+	now := time.Now().UTC()
+	record := TeamMemberRecord{
+		MembershipID:     uuid.New(),
+		TenantID:         in.TenantID,
+		TeamID:           in.TeamID,
+		UserID:           in.TargetUserID,
+		Username:         "member",
+		AccountStatus:    "active",
+		Role:             in.Role,
+		MembershipStatus: "active",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	r.teamMembers[record.MembershipID] = record
+	return record, nil
+}
+
 func (r *memoryRepository) DisableTeamMemberRole(_ context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error) {
 	r.disableTeamMemberCalled = true
 	record, ok := r.teamMembers[params.MembershipID]

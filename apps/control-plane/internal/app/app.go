@@ -25,6 +25,7 @@ import (
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
+	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
@@ -32,9 +33,9 @@ import (
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
-	"github.com/superteam/control-plane/internal/systemconfig"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
+	"github.com/superteam/control-plane/internal/systemconfig"
 	"github.com/superteam/control-plane/internal/task"
 	"github.com/superteam/control-plane/internal/tenant"
 	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
@@ -647,6 +648,24 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 	tenantService.SetSystemConfigReader(systemConfigService)
+
+	// 权限中心「权限审批」域: reads the approval domain directly (category=permission),
+	// never via the inbox. Generic subject registry (D5) — S2 (team privileged role)
+	// wired end-to-end; S1 (employee config revision) slot registered with a nil
+	// activator until the employee-config spec delivers ActivateConfigRevision (§10.1).
+	// TODO(permission-center): requester_name 补名 — wire a user display-name resolver
+	// (currently nil → frontend falls back to id).
+	permissionRegistry := permission.NewRegistry()
+	permissionRegistry.Register(permission.NewTeamRoleSubject(tenantService))
+	permissionRegistry.Register(permission.NewEmployeeConfigSubject(nil))
+	permissionService, err := permission.NewService(approvalService, permissionRegistry, nil)
+	if err != nil {
+		return nil, err
+	}
+	permissionRouter := permission.NewApproverRouter(tenantService)
+	permissionRoleProducer := permission.NewPrivilegedRoleProducer(approvalService, permissionRouter, permissionRegistry, nil)
+	permissionHandler := permission.NewHandler(permissionService, permissionRoleProducer)
+
 	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
 	scenarioTemplateService.SetVocabularyRepository(scenariotemplate.NewPgVocabularyRepository(q))
 	scenarioTemplateService.SetAuditRecorder(auditService)
@@ -759,6 +778,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetEmployeeHandler(employeeHandler)
 	server.SetCostHandler(costHandler)
 	server.SetInboxHandler(inboxHandler)
+	server.SetPermissionHandler(permissionHandler)
 	server.SetAuditHandler(auditHandler)
 	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)

@@ -616,6 +616,45 @@ func (r *PgRepository) AddTeamMember(ctx context.Context, params AddTeamMemberPa
 	return teamMemberRecordFromTenantMember(member)
 }
 
+// GrantTeamMemberRole grants a privileged role to a member AFTER permission-center
+// approval (S2 apply). tenant_members is a multi-role model (unique key includes
+// role), so this adds/reactivates the role row and records a team audit event.
+func (r *PgRepository) GrantTeamMemberRole(ctx context.Context, in GrantTeamRoleInput) (TeamMemberRecord, error) {
+	member, err := r.q.AddTeamMember(ctx, queries.AddTeamMemberParams{
+		TenantID: in.TenantID,
+		TeamID:   in.TeamID,
+		UserID:   in.TargetUserID,
+		Role:     in.Role,
+	})
+	if err != nil {
+		return TeamMemberRecord{}, mapConstraintError(err)
+	}
+	details, err := json.Marshal(map[string]any{
+		"team_id":        in.TeamID.String(),
+		"membership_id":  member.ID.String(),
+		"target_user_id": in.TargetUserID.String(),
+		"role":           in.Role,
+		"granted_by":     in.GrantedBy.String(),
+		"via":            "permission_center_approval",
+	})
+	if err != nil {
+		return TeamMemberRecord{}, err
+	}
+	if _, err := r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: in.TenantID, Valid: in.TenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      in.GrantedBy.String(),
+		ResourceType: pgtype.Text{String: "team_member", Valid: true},
+		ResourceID:   pgtype.Text{String: member.ID.String(), Valid: true},
+		Action:       "team.member.grant_privileged_role",
+		Details:      details,
+	}); err != nil {
+		return TeamMemberRecord{}, err
+	}
+	return teamMemberRecordFromTenantMember(member)
+}
+
 func (r *PgRepository) DisableTeamMemberRole(ctx context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error) {
 	member, err := r.q.DisableTeamMemberRole(ctx, queries.DisableTeamMemberRoleParams{
 		MembershipID: params.MembershipID,

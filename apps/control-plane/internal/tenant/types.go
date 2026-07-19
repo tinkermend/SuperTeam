@@ -52,6 +52,36 @@ const (
 	TeamRoleViewer   = "viewer"
 )
 
+// RoleDisplayName returns the Chinese display name for a team role (backend-side,
+// used in approval titles/audit; the frontend has its own status-labels table).
+func RoleDisplayName(role string) string {
+	switch role {
+	case TeamRoleOwner:
+		return "负责人"
+	case TeamRoleAdmin:
+		return "管理员"
+	case TeamRoleApprover:
+		return "审批人"
+	case TeamRoleMember:
+		return "成员"
+	case TeamRoleViewer:
+		return "观察者"
+	default:
+		return role
+	}
+}
+
+// GrantTeamRoleInput is the approval-gated privileged-role grant (S2 apply seam):
+// it grants a privileged role AFTER permission-center approval, bypassing the
+// direct-assignment rejection in AddTeamMember.
+type GrantTeamRoleInput struct {
+	TenantID     uuid.UUID
+	TeamID       uuid.UUID
+	TargetUserID uuid.UUID
+	Role         string
+	GrantedBy    uuid.UUID
+}
+
 const (
 	MaxTeamDescriptionLength = 280
 )
