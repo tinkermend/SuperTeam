@@ -111,7 +111,6 @@ describe('sidebarData', () => {
     )?.items
 
     expect(platformItems?.map((item) => item.title)).toEqual([
-      '审批中心',
       'Runtime 节点',
       '权限中心',
       '成本管理',
@@ -121,11 +120,11 @@ describe('sidebarData', () => {
       '系统配置',
     ])
     expect(platformItems?.[0]).toMatchObject({
-      title: '审批中心',
-      url: '/approvals',
+      title: 'Runtime 节点',
+      url: '/runtime',
       iconTone: 'neutral',
     })
-    expect(platformItems?.[3]).toMatchObject({
+    expect(platformItems?.[2]).toMatchObject({
       title: '成本管理',
       url: '/costs',
       iconTone: 'neutral',

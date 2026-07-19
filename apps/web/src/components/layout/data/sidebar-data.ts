@@ -17,7 +17,6 @@ import {
   SendHorizontal,
   Server,
   Settings2,
-  ShieldCheck,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -129,12 +128,6 @@ export function buildSidebarData({
       {
         title: "治理平台",
         items: [
-          {
-            title: "审批中心",
-            url: "/approvals",
-            icon: ShieldCheck,
-            iconTone: "neutral",
-          },
           {
             title: "Runtime 节点",
             url: "/runtime",

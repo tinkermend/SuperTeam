@@ -274,10 +274,10 @@ describe('SearchProvider and CommandMenu', () => {
     await openCommandPalette()
 
     await act(async () => {
-      getByText('审批中心').click()
+      getByText('Runtime 节点').click()
     })
 
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/approvals' })
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/runtime' })
     await vi.waitFor(() => {
       expect(queryByPlaceholder(COMMAND_MENU_PLACEHOLDER)).toBeNull()
     })
