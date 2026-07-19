@@ -727,8 +727,9 @@ func TestCreateDigitalEmployeeRejectsTeamOverCapacityBeforeTransaction(t *testin
 
 	_, err := svc.CreateDigitalEmployee(context.Background(), req)
 
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input, got %v", err)
+	// 容量满属资源冲突而非入参错误：409，前端据关键词映射中文提示。
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
 	}
 	if err == nil || !strings.Contains(err.Error(), "digital employee capacity") {
 		t.Fatalf("expected digital employee capacity error, got %v", err)

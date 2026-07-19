@@ -53,8 +53,7 @@ const (
 )
 
 const (
-	MaxDigitalEmployeesPerTeam = 10
-	MaxTeamDescriptionLength   = 280
+	MaxTeamDescriptionLength = 280
 )
 
 type ValidationIssue struct {

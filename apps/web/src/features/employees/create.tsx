@@ -51,13 +51,13 @@ import {
   getDigitalEmployeeCreateOptions,
   listDigitalEmployeeAvatarAssets,
 } from "@/lib/api/employees";
+import { ApiRequestError } from "@/lib/api/client";
 import { listTeams } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { providerDisplayName } from "./provider-label";
 import {
   findTemplateByType,
-  firstPreferredEmployeeType,
   orderedEmployeeTypes,
   riskSortValue,
   stringList,
@@ -181,21 +181,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     () => createOptions.data?.employee_types.find((item) => item.type === draft.employee_type),
     [createOptions.data?.employee_types, draft.employee_type],
   );
+  // 团队容量预检（来自 create-options）：满员团队在身份步即拦截，不再走完三步才失败。
+  const teamCapacityCheck = createOptions.data?.creation_checks.find((check) => check.key === "team_capacity");
+  const teamCapacityBlocked = teamCapacityCheck?.status === "blocked";
   const blankCustom = draft.creation_mode === "blank_custom";
-
-  useEffect(() => {
-    const optionsData = createOptions.data;
-    const employeeTypes = optionsData?.employee_types ?? [];
-    const firstType = firstPreferredEmployeeType(employeeTypes);
-    if (!firstType) return;
-    setDraft((current) => {
-      if (current.creation_mode !== "template") return current;
-      if (!current.employee_type || !employeeTypes.some((item) => item.type === current.employee_type)) {
-        return applyTypeDefaults(current, firstType, optionsData);
-      }
-      return current;
-    });
-  }, [createOptions.data, draft.creation_mode, draft.employee_type]);
 
   useEffect(() => {
     const optionsData = createOptions.data;
@@ -234,31 +223,40 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   }, [createOptions.data]);
 
   const createEmployee = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!draft.provider_type) {
         throw new Error("请选择 Provider 类型");
       }
 
-      return createDigitalEmployee(
-        { baseUrl: apiBaseUrl, fetcher },
-        {
-          team_id: draft.team_id || undefined,
-          employee_type: draft.employee_type,
-          name: draft.name.trim(),
-          avatar_asset_id: draft.avatar_asset_id,
-          role: draft.role.trim(),
-          ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
-          budget_policy: budgetPolicyFromDraft(draft),
-          ...capabilitySelectionFromDraft(draft, createOptions.data),
-          capability_bindings: capabilityBindingsFromDraft(draft),
-          persona_memory_markdown: draft.persona_memory_markdown.trim(),
-          risk_level: draft.risk_level,
-          provider_type: draft.provider_type,
-          environment_variables: draft.environment_variables
-            .filter((row) => row.name.trim() && row.value)
-            .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive })),
-        },
-      );
+      try {
+        return await createDigitalEmployee(
+          { baseUrl: apiBaseUrl, fetcher },
+          {
+            team_id: draft.team_id || undefined,
+            employee_type: draft.employee_type,
+            name: draft.name.trim(),
+            avatar_asset_id: draft.avatar_asset_id,
+            role: draft.role.trim(),
+            ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
+            budget_policy: budgetPolicyFromDraft(draft),
+            ...capabilitySelectionFromDraft(draft, createOptions.data),
+            capability_bindings: capabilityBindingsFromDraft(draft),
+            persona_memory_markdown: draft.persona_memory_markdown.trim(),
+            risk_level: draft.risk_level,
+            provider_type: draft.provider_type,
+            environment_variables: draft.environment_variables
+              .filter((row) => row.name.trim() && row.value)
+              .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive })),
+          },
+        );
+      } catch (err) {
+        // 中文化落在 mutationFn 层：横幅与全局失败 toast（main.tsx onError 透传
+        // error.message）共用同一份措辞，不在多处各映射一遍。
+        if (err instanceof ApiRequestError) {
+          err.message = createEmployeeErrorMessage(err);
+        }
+        throw err;
+      }
     },
     onSuccess: (employee) => {
       void navigate({
@@ -277,10 +275,18 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     avatarAssets.isLoading ||
     (currentStep !== "身份" && createOptions.isLoading);
 
+  // 提交失败横幅不粘滞：任何草稿修改或步骤移动后清除上一次的失败状态。
+  function clearCreateError() {
+    if (createEmployee.isError) {
+      createEmployee.reset();
+    }
+  }
+
   function updateDraft(patch: Partial<WizardDraft>) {
     if (flowStep === "configure") {
       setDraftTouched(true);
     }
+    clearCreateError();
     setDraft((current) => ({ ...current, ...patch }));
   }
 
@@ -309,6 +315,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     const nextErrors = validateStep(currentStep, draft);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) {
+      clearCreateError();
       setStepIndex((current) => Math.min(current + 1, configSteps.length - 1));
     }
   }
@@ -356,6 +363,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
   function requestCreationModeChange(nextMode: CreationMode) {
     if (nextMode === draft.creation_mode) {
+      // 从"返回创建方式"回来后点击当前激活路径＝继续配置，草稿保留。
+      if (nextMode === "blank_custom" && flowStep === "template") {
+        setFlowStep("configure");
+      }
       return;
     }
     if (draftTouched && !window.confirm("更换创建路径会重置当前配置草稿，是否继续？")) {
@@ -440,7 +451,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           </Alert>
         ) : null}
 
-        <CreationStageProgress flowStep={flowStep} />
+        <CreationStageProgress
+          flowStep={flowStep}
+          onNavigate={(stage) => {
+            clearCreateError();
+            setFlowStep(stage);
+          }}
+        />
 
         {flowStep === "template" ? (
           <div className="grid gap-4 xl:h-[calc(100vh-220px)] xl:min-h-[560px] xl:grid-cols-[260px_minmax(0,1fr)]">
@@ -493,6 +510,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       draft={draft}
                       errors={errors}
                       selectedType={selectedType}
+                      teamCapacityError={teamCapacityBlocked ? teamCapacityCheck?.message : undefined}
                       teamOptions={teamOptions}
                       onSelectAvatar={(avatarAssetId) => updateDraft({ avatar_asset_id: avatarAssetId })}
                       onSelectTeam={requestTeamChange}
@@ -522,13 +540,20 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 data-testid="employee-configure-actions"
               >
                 <V3Button
-                  disabled={stepIndex === 0 || createEmployee.isPending}
-                  onClick={() => setStepIndex((current) => Math.max(current - 1, 0))}
+                  disabled={createEmployee.isPending}
+                  onClick={() => {
+                    clearCreateError();
+                    if (stepIndex === 0) {
+                      setFlowStep("template");
+                      return;
+                    }
+                    setStepIndex((current) => Math.max(current - 1, 0));
+                  }}
                   type="button"
                   variant="glass"
                 >
                   <ChevronLeft className="size-4" />
-                  上一步
+                  {stepIndex === 0 ? "返回创建方式" : "上一步"}
                 </V3Button>
                 {stepIndex < configSteps.length - 1 ? (
                   <V3Button
@@ -536,7 +561,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       createOptions.isLoading ||
                       createOptions.isError ||
                       avatarAssets.isLoading ||
-                      avatarAssets.isError
+                      avatarAssets.isError ||
+                      teamCapacityBlocked
                     }
                     onClick={nextStep}
                     type="button"
@@ -552,6 +578,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       createOptions.isError ||
                       avatarAssets.isLoading ||
                       avatarAssets.isError ||
+                      teamCapacityBlocked ||
                       !draft.avatar_asset_id ||
                       !draft.provider_type
                     }
@@ -589,8 +616,14 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   );
 }
 
-function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
-  const stages = [
+function CreationStageProgress({
+  flowStep,
+  onNavigate,
+}: {
+  flowStep: CreateFlowStep;
+  onNavigate?: (stage: CreateFlowStep) => void;
+}) {
+  const stages: Array<{ key: CreateFlowStep; title: string; description: string }> = [
     { key: "template", title: "创建方式", description: "选择模板或自定义身份" },
     { key: "configure", title: "完成配置", description: "补齐身份、能力和 Provider" },
     { key: "confirm", title: "确认创建", description: "核对本次创建明细" },
@@ -604,9 +637,20 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
         {stages.map((stage, index) => {
           const active = index === normalizedActiveIndex;
           const done = index < normalizedActiveIndex;
+          const navigable = done && Boolean(onNavigate);
+          const StageTag = navigable ? "button" : "div";
 
           return (
-            <div className="flex items-center gap-3" key={stage.title}>
+            <StageTag
+              className={cn(
+                "flex items-center gap-3 text-left",
+                navigable && "cursor-pointer rounded-[12px] transition-opacity hover:opacity-80",
+              )}
+              key={stage.title}
+              {...(navigable
+                ? { type: "button" as const, onClick: () => onNavigate?.(stage.key), "aria-label": `返回${stage.title}` }
+                : {})}
+            >
               <span
                 className={cn(
                   "flex size-8 shrink-0 items-center justify-center rounded-[11px] text-[13px] font-bold tabular-nums transition-colors",
@@ -632,7 +676,7 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
                   )}
                 />
               ) : null}
-            </div>
+            </StageTag>
           );
         })}
       </div>
@@ -1204,6 +1248,7 @@ function IdentityStep({
   draft,
   errors,
   selectedType,
+  teamCapacityError,
   teamOptions,
   onSelectTeam,
   onSelectAvatar,
@@ -1213,6 +1258,7 @@ function IdentityStep({
   draft: WizardDraft;
   errors: ValidationErrors;
   selectedType?: DigitalEmployeeTypeOption;
+  teamCapacityError?: string;
   teamOptions: Array<{ id: string; name: string }>;
   onSelectTeam: (value: string) => void;
   onSelectAvatar: (value: string) => void;
@@ -1227,7 +1273,7 @@ function IdentityStep({
         <p className="text-sm text-v3-ink-3">确定团队、名称和职责定位。负责人由后端按当前登录身份注入。</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="归属团队" error={errors.team_id}>
+        <Field label="归属团队" error={errors.team_id ?? teamCapacityError}>
           <select
             aria-invalid={Boolean(errors.team_id)}
             className={selectClassName}
@@ -2053,4 +2099,23 @@ function checkStatusLabel(status: string) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "请求失败";
+}
+
+// createEmployeeErrorMessage 把创建接口的英文错误按关键词映射为中文提示；
+// 治本（后端结构化 {code,message}）已单独立项，见 TODO.md。
+function createEmployeeErrorMessage(error: unknown) {
+  const raw = error instanceof Error ? error.message : "";
+  if (raw.includes("name already exists")) {
+    return "该名称已被使用，请更换名称后重试。";
+  }
+  if (raw.includes("avatar") && (raw.includes("in use") || raw.includes("already"))) {
+    return "该头像已被其他数字员工使用，请重新选择头像。";
+  }
+  if (raw.includes("capacity exceeded")) {
+    return "团队数字员工数已达上限，请在系统配置调大上限或更换团队。";
+  }
+  if (raw.includes("status 401") || raw.includes("status 403")) {
+    return "没有权限创建数字员工，请联系管理员。";
+  }
+  return "创建失败，请稍后重试；若持续出现请联系管理员。";
 }

@@ -401,6 +401,10 @@ async function renderCreateEmployeeView(fetcher = createWizardFetcher(), routerS
 
 async function enterConfiguration(screen: Awaited<ReturnType<typeof renderCreateEmployeeView>>) {
   await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
+  // 模板不再自动选中（用户须显式选择）；深链等场景已带选中则不重复点选。
+  if (!screen.getByRole("button", { name: /^已选择.*模板$/ }).query()) {
+    await userEvent.click(screen.getByRole("button", { name: "选择数据库管理员模板" }));
+  }
   await expect.element(screen.getByRole("button", { name: "进入完成配置" })).toBeEnabled();
   await userEvent.click(screen.getByRole("button", { name: "进入完成配置" }));
   await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
@@ -464,7 +468,8 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "已选择数据库管理员模板" })).toBeVisible();
+    // 模板默认不自动选中，等待用户显式点选。
+    await expect.element(screen.getByRole("button", { name: "选择数据库管理员模板" })).toBeVisible();
 
     const createOptionsCalls = (fetcher as unknown as { mock: { calls: FetchMockCall[] } }).mock.calls.filter(
       ([input, init]) =>
@@ -510,7 +515,7 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView();
 
     await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "已选择数据库管理员模板" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "选择数据库管理员模板" })).toBeVisible();
 
     const tableText = findTemplateSelectionTableText();
     expect(tableText).toContain("模板");
@@ -612,7 +617,7 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "返回" }));
+    await userEvent.click(screen.getByRole("button", { name: "返回", exact: true }));
 
     expect(confirm).toHaveBeenCalledWith("更换创建路径会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
@@ -625,7 +630,7 @@ describe("CreateEmployeeView", () => {
 
     await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
-    await userEvent.click(screen.getByRole("button", { name: "返回" }));
+    await userEvent.click(screen.getByRole("button", { name: "返回", exact: true }));
 
     expect(confirm).toHaveBeenCalledWith("更换创建路径会重置当前配置草稿，是否继续？");
     await expect.element(screen.getByRole("heading", { name: "选择内置模板" })).toBeVisible();
@@ -845,6 +850,7 @@ describe("CreateEmployeeView", () => {
   it("does not show capability boundary as a template configuration summary blocker", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ includeCapabilityBoundaryBlock: true }));
 
+    await userEvent.click(screen.getByRole("button", { name: "选择数据库管理员模板" }));
     await userEvent.click(screen.getByRole("button", { name: "进入完成配置" }));
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
 
@@ -1242,6 +1248,7 @@ describe("CreateEmployeeView", () => {
   it("shows runtime provider summary without blocking configuration when there are no bindable options", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeAvailability: "none" }));
 
+    await userEvent.click(screen.getByRole("button", { name: "选择数据库管理员模板" }));
     await expect.element(screen.getByRole("button", { name: "进入完成配置" })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: "进入完成配置" }));
     await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();

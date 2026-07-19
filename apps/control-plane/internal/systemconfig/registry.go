@@ -7,9 +7,10 @@ import (
 
 // 领域标签:前端按此分 tab,新增 domain 前端零改动(未知 domain 落"其他")。
 const (
-	DomainArtifact  = "artifact"
-	DomainExecution = "execution"
-	DomainSecurity  = "security"
+	DomainArtifact     = "artifact"
+	DomainExecution    = "execution"
+	DomainSecurity     = "security"
+	DomainOrganization = "organization"
 )
 
 // 各配置项 key。使用点经 Reader 取值时引用这些常量。
@@ -28,6 +29,7 @@ const (
 	KeyRuntimeHeartbeatTimeoutSeconds     = "runtime.heartbeat_timeout_seconds"
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
+	KeyEmployeeMaxPerTeam                 = "employee.max_per_team"
 )
 
 // registry 是配置项注册表:非封闭枚举,新增配置项 = 此处加一条 + 使用点接入,
@@ -177,6 +179,17 @@ var registry = []Definition{
 		DefaultValue: 15 * 60,
 		MinValue:     2 * 60,
 		MaxValue:     6 * 3600,
+	},
+	{
+		Key:    KeyEmployeeMaxPerTeam,
+		Domain: DomainOrganization,
+		Label:  "单团队数字员工上限",
+		Description: "一个团队内在册数字员工的最大数量;创建选项按此做容量预检,超限的入队创建与建团初始成员列表被拒绝。" +
+			"历史超限团队不受影响(只拦新增),调大即可继续向该团队补员。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 10,
+		MinValue:     1,
+		MaxValue:     500,
 	},
 }
 

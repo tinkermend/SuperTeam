@@ -11,11 +11,27 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/audit"
+	"github.com/superteam/control-plane/internal/systemconfig"
 )
 
 type Service struct {
-	repository  Repository
-	auditReader TeamAuditReader
+	repository   Repository
+	auditReader  TeamAuditReader
+	systemConfig systemconfig.Reader
+}
+
+// SetSystemConfigReader 注入配置中心读取器；未注入（测试）时使用注册表默认值。
+func (s *Service) SetSystemConfigReader(reader systemconfig.Reader) {
+	s.systemConfig = reader
+}
+
+// maxDigitalEmployeesPerTeam 单团队数字员工上限（employee.max_per_team），
+// 与数字员工创建侧共用同一配置事实源。
+func (s *Service) maxDigitalEmployeesPerTeam(ctx context.Context, tenantID uuid.UUID) int {
+	if s.systemConfig == nil {
+		return int(systemconfig.DefaultFor(systemconfig.KeyEmployeeMaxPerTeam))
+	}
+	return int(s.systemConfig.Int64(ctx, tenantID, systemconfig.KeyEmployeeMaxPerTeam))
 }
 
 type TeamAuditReader interface {
@@ -77,7 +93,7 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	if !status.IsValid() {
 		return nil, fmt.Errorf("%w: invalid team status", ErrInvalidInput)
 	}
-	if len(req.InitialDigitalEmployeeIDs) > MaxDigitalEmployeesPerTeam {
+	if len(req.InitialDigitalEmployeeIDs) > s.maxDigitalEmployeesPerTeam(ctx, req.TenantID) {
 		return nil, fmt.Errorf("%w: digital employee capacity exceeded", ErrInvalidInput)
 	}
 	initialMembers, err := normalizeInitialMembers(req.HumanOwnerUserIDs, req.InitialMembers)

@@ -11,12 +11,26 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/skill"
-	"github.com/superteam/control-plane/internal/tenant"
+	"github.com/superteam/control-plane/internal/systemconfig"
 )
 
 type Service struct {
-	repository Repository
-	envCodec   *EnvironmentValueCodec
+	repository   Repository
+	envCodec     *EnvironmentValueCodec
+	systemConfig systemconfig.Reader
+}
+
+// SetSystemConfigReader 注入配置中心读取器；未注入（测试）时使用注册表默认值。
+func (s *Service) SetSystemConfigReader(reader systemconfig.Reader) {
+	s.systemConfig = reader
+}
+
+// maxDigitalEmployeesPerTeam 单团队在册数字员工上限（配置中心 employee.max_per_team）。
+func (s *Service) maxDigitalEmployeesPerTeam(ctx context.Context, tenantID uuid.UUID) int32 {
+	if s.systemConfig == nil {
+		return int32(systemconfig.DefaultFor(systemconfig.KeyEmployeeMaxPerTeam))
+	}
+	return int32(s.systemConfig.Int64(ctx, tenantID, systemconfig.KeyEmployeeMaxPerTeam))
 }
 
 const defaultProvisioningPollInterval = 250 * time.Millisecond
@@ -142,18 +156,56 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	}
 	capabilityOptions := capabilityOptionsForCreate(employeeTypes, registrySkills, registryMCPServers)
 
+	creationChecks := createOptionChecks(
+		teamConfigOption,
+		employeeTypes,
+		capabilityOptions,
+		runtimeOptions,
+	)
+	if !teamLess {
+		capacityCheck, err := s.teamCapacityCheck(ctx, req.TenantID, *req.TeamID)
+		if err != nil {
+			return nil, err
+		}
+		creationChecks = append(creationChecks, capacityCheck)
+	}
+
 	return &CreateOptions{
 		TeamConfig:             teamConfigOption,
 		EmployeeTypes:          employeeTypes,
 		CapabilityOptions:      capabilityOptions,
 		RuntimeProviderOptions: append([]RuntimeProviderOption(nil), runtimeOptions...),
-		CreationChecks: createOptionChecks(
-			teamConfigOption,
-			employeeTypes,
-			capabilityOptions,
-			runtimeOptions,
-		),
-		PolicyDefaults: emptyPolicyDefaults(),
+		CreationChecks:         creationChecks,
+		PolicyDefaults:         emptyPolicyDefaults(),
+	}, nil
+}
+
+// teamCapacityCheck 团队容量预检：满员时 blocked，让创建向导在选完团队的
+// 那一刻即可见，而不是走完三步在最终提交时才失败。
+func (s *Service) teamCapacityCheck(ctx context.Context, tenantID, teamID uuid.UUID) (CreateOptionCheck, error) {
+	overview, err := s.repository.GetDigitalEmployeeOverview(ctx, GetDigitalEmployeeOverviewRequest{
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Limit:    1,
+	})
+	if err != nil {
+		return CreateOptionCheck{}, fmt.Errorf("get digital employee overview: %w", err)
+	}
+	limit := s.maxDigitalEmployeesPerTeam(ctx, tenantID)
+	count := overview.Pagination.TotalCount
+	if count >= limit {
+		return CreateOptionCheck{
+			Key:     "team_capacity",
+			Label:   "团队容量",
+			Status:  "blocked",
+			Message: fmt.Sprintf("团队已满员（%d/%d），请在系统配置调大上限或更换团队。", count, limit),
+		}, nil
+	}
+	return CreateOptionCheck{
+		Key:     "team_capacity",
+		Label:   "团队容量",
+		Status:  "passed",
+		Message: fmt.Sprintf("已有 %d / 上限 %d", count, limit),
 	}, nil
 }
 
@@ -222,7 +274,7 @@ func createOptionChecks(
 			Key:     "employee_templates",
 			Label:   "专业模板",
 			Status:  checkStatus(len(employeeTypes) > 0, false),
-			Message: fmt.Sprintf("%d 个可用模板", len(employeeTypes)),
+			Message: fmt.Sprintf("%d 个可用模板", countRealTemplates(employeeTypes)),
 		},
 		{
 			Key:     "capability_policy",
@@ -237,6 +289,18 @@ func createOptionChecks(
 			Message: runtimeProviderCreateOptionMessage(availableRuntimeCount, len(runtimeOptions), inactiveRuntimeSessionCount),
 		},
 	}
+}
+
+// countRealTemplates 排除 custom_agent 哨兵（空白自定义的内部类型），
+// 与模板选择表格的口径一致。
+func countRealTemplates(employeeTypes []EmployeeTypeDefinition) int {
+	count := 0
+	for _, definition := range employeeTypes {
+		if definition.Type != "custom_agent" {
+			count++
+		}
+	}
+	return count
 }
 
 func runtimeProviderCreateOptionMessage(availableRuntimeCount, totalRuntimeCount, inactiveRuntimeSessionCount int) string {
@@ -462,8 +526,8 @@ func (s *Service) ensureTeamDigitalEmployeeCapacity(ctx context.Context, tenantI
 	if err != nil {
 		return fmt.Errorf("get digital employee overview: %w", err)
 	}
-	if overview.Pagination.TotalCount >= tenant.MaxDigitalEmployeesPerTeam {
-		return fmt.Errorf("%w: digital employee capacity exceeded", ErrInvalidInput)
+	if overview.Pagination.TotalCount >= s.maxDigitalEmployeesPerTeam(ctx, tenantID) {
+		return fmt.Errorf("%w: digital employee capacity exceeded", ErrConflict)
 	}
 	return nil
 }

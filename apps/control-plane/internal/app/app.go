@@ -446,6 +446,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	employeeService.SetSystemConfigReader(systemConfigService)
 	envCodec, err := employee.NewEnvironmentValueCodec(employee.EnvironmentValueCodecConfig{
 		Keys:        cfg.EmployeeEnv.Keys,
 		ActiveKeyID: cfg.EmployeeEnv.ActiveKeyID,
@@ -645,6 +646,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	tenantService.SetSystemConfigReader(systemConfigService)
 	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
 	scenarioTemplateService.SetVocabularyRepository(scenariotemplate.NewPgVocabularyRepository(q))
 	scenarioTemplateService.SetAuditRecorder(auditService)

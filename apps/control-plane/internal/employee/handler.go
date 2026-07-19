@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1370,8 +1371,11 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrConflict):
-		http.Error(w, "conflict", http.StatusConflict)
+		// 带出错误文本（重名/头像占用/容量满等均为受控措辞），前端据关键词映射中文提示。
+		http.Error(w, err.Error(), http.StatusConflict)
 	default:
+		// 500 兜底必须留下服务端痕迹：此前吞错导致迁移087残留只能逐条SQL手试定位。
+		log.Printf("digital employee handler error: %+v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
