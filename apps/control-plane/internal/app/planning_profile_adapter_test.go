@@ -27,7 +27,6 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 				Role:             "数据库分析",
 				Status:           employee.DigitalEmployeeStatusActive,
 				PermissionPolicy: map[string]any{"grants": []any{"database.read:dev_database"}},
-				ContextPolicy:    map[string]any{"max_context_classification": "internal"},
 			},
 		},
 		configs: map[uuid.UUID]employee.EmployeeConfigInput{
@@ -76,7 +75,6 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 		"mcp_servers":           []any{"postgres-readonly"},
 	}, record.CapabilityBindings)
 	require.Equal(t, map[string]any{"grants": []any{"database.read:dev_database"}}, record.PermissionPolicy)
-	require.Equal(t, map[string]any{"max_context_classification": "internal"}, record.ContextPolicy)
 	require.Equal(t, map[string]any{
 		"in_flight_tasks": int32(2),
 		"available_slots": int32(0),

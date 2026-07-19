@@ -40,7 +40,6 @@ func (r EmployeeTemplateRecord) ToDefinition() EmployeeTypeDefinition {
 		PersonaMemoryMarkdown:    r.PersonaMemoryMarkdown,
 		CapabilityBindings:       cloneEmployeeTypeMap(r.CapabilityBindings),
 		BudgetPolicy:             cloneEmployeeTypeMap(r.BudgetPolicy),
-		DefaultApprovalPolicy:    map[string]any{},
 		Metadata:                 cloneEmployeeTypeMap(r.Metadata),
 	}
 }

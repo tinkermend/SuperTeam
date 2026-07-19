@@ -2474,8 +2474,6 @@ func (r *memoryRepository) CreateDigitalEmployee(_ context.Context, params Creat
 		Description:      params.Description,
 		Status:           params.Status,
 		PermissionPolicy: cloneMap(params.PermissionPolicy),
-		ContextPolicy:    cloneMap(params.ContextPolicy),
-		ApprovalPolicy:   cloneMap(params.ApprovalPolicy),
 		RiskLevel:        params.RiskLevel,
 		Metadata:         cloneMap(params.Metadata),
 		CreatedAt:        now,
@@ -2996,8 +2994,6 @@ func cloneEmployeeRecordMap(values map[uuid.UUID]DigitalEmployeeRecord) map[uuid
 		record.TeamID = validUUIDPtr(record.TeamID)
 		record.Description = cloneStringPtrForTest(record.Description)
 		record.PermissionPolicy = cloneMap(record.PermissionPolicy)
-		record.ContextPolicy = cloneMap(record.ContextPolicy)
-		record.ApprovalPolicy = cloneMap(record.ApprovalPolicy)
 		record.Metadata = cloneMap(record.Metadata)
 		record.DisabledAt = cloneTimePtr(record.DisabledAt)
 		record.ArchivedAt = cloneTimePtr(record.ArchivedAt)

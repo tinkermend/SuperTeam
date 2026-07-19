@@ -213,8 +213,6 @@ type DigitalEmployee struct {
 	Description           *string
 	Status                DigitalEmployeeStatus
 	PermissionPolicy      map[string]any
-	ContextPolicy         map[string]any
-	ApprovalPolicy        map[string]any
 	RiskLevel             string
 	Metadata              map[string]any
 	PersonaMemoryMarkdown string
@@ -337,7 +335,6 @@ type EmployeeTypeDefinition struct {
 	PersonaMemoryMarkdown    string
 	CapabilityBindings       map[string]any
 	BudgetPolicy             map[string]any
-	DefaultApprovalPolicy    map[string]any
 	Metadata                 map[string]any
 }
 
@@ -522,8 +519,6 @@ type CreateDigitalEmployeeRequest struct {
 	Role                  string
 	Description           *string
 	PermissionPolicy      map[string]any
-	ContextPolicy         map[string]any
-	ApprovalPolicy        map[string]any
 	RiskLevel             string
 	Metadata              map[string]any
 	PersonaMemoryMarkdown string

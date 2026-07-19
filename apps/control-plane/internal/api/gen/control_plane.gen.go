@@ -2306,13 +2306,11 @@ type CreateDigitalEmployeeConfigRevisionRequestStatus string
 
 // CreateDigitalEmployeeRequest defines model for CreateDigitalEmployeeRequest.
 type CreateDigitalEmployeeRequest struct {
-	ApprovalPolicy *map[string]interface{} `json:"approval_policy,omitempty"`
-	AvatarAssetId  string                  `json:"avatar_asset_id"`
-	BudgetPolicy   *map[string]interface{} `json:"budget_policy,omitempty"`
+	AvatarAssetId string                  `json:"avatar_asset_id"`
+	BudgetPolicy  *map[string]interface{} `json:"budget_policy,omitempty"`
 
 	// CapabilityBindings Additional capability declarations (external_capabilities, environment_variable_refs). The skills and mcp_servers keys are deprecated here: when the top-level skills/mcp_servers fields are absent they are still read for backward compatibility, but they are always stripped from the stored config revision; logical bindings are persisted in the binding tables instead.
 	CapabilityBindings   *map[string]interface{} `json:"capability_bindings,omitempty"`
-	ContextPolicy        *map[string]interface{} `json:"context_policy,omitempty"`
 	Description          *string                 `json:"description,omitempty"`
 	EmployeeType         string                  `json:"employee_type"`
 	EnvironmentVariables *[]struct {
@@ -2616,11 +2614,9 @@ type DependentSkill struct {
 // DigitalEmployee defines model for DigitalEmployee.
 type DigitalEmployee struct {
 	AllowedActions        *[]string               `json:"allowed_actions,omitempty"`
-	ApprovalPolicy        map[string]interface{}  `json:"approval_policy"`
 	ArchivedAt            *time.Time              `json:"archived_at,omitempty"`
 	BudgetPolicy          map[string]interface{}  `json:"budget_policy"`
 	CapabilityBindings    map[string]interface{}  `json:"capability_bindings"`
-	ContextPolicy         map[string]interface{}  `json:"context_policy"`
 	CreatedAt             *time.Time              `json:"created_at,omitempty"`
 	Description           *string                 `json:"description,omitempty"`
 	DisabledAt            *time.Time              `json:"disabled_at,omitempty"`

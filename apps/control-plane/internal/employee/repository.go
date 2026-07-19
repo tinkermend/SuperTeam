@@ -69,8 +69,6 @@ type CreateDigitalEmployeeParams struct {
 	Description      *string
 	Status           DigitalEmployeeStatus
 	PermissionPolicy map[string]any
-	ContextPolicy    map[string]any
-	ApprovalPolicy   map[string]any
 	RiskLevel        string
 	Metadata         map[string]any
 }
@@ -123,8 +121,6 @@ type DigitalEmployeeRecord struct {
 	Description      *string
 	Status           DigitalEmployeeStatus
 	PermissionPolicy map[string]any
-	ContextPolicy    map[string]any
-	ApprovalPolicy   map[string]any
 	RiskLevel        string
 	Metadata         map[string]any
 	DisabledAt       *time.Time

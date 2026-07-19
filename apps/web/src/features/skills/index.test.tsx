@@ -196,8 +196,6 @@ const employeesFixture = [
     role: "需求澄清",
     status: "active",
     permission_policy: {},
-    context_policy: {},
-    approval_policy: {},
     risk_level: "low",
   },
   {
@@ -210,8 +208,6 @@ const employeesFixture = [
     role: "项目协调",
     status: "ready",
     permission_policy: {},
-    context_policy: {},
-    approval_policy: {},
     risk_level: "medium",
   },
 ];

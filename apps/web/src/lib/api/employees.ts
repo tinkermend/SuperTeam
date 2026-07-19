@@ -37,8 +37,6 @@ export type DigitalEmployee = {
   description?: string;
   status: DigitalEmployeeStatus;
   permission_policy: Record<string, unknown>;
-  context_policy: Record<string, unknown>;
-  approval_policy: Record<string, unknown>;
   persona_memory_markdown?: string;
   capability_bindings?: CapabilityBindings;
   budget_policy?: BudgetPolicy;
@@ -542,8 +540,6 @@ export type CreateDigitalEmployeeInput = {
   role?: string;
   description?: string;
   permission_policy?: Record<string, unknown>;
-  context_policy?: Record<string, unknown>;
-  approval_policy?: Record<string, unknown>;
   risk_level?: string;
   metadata?: Record<string, unknown>;
   persona_memory_markdown?: string;

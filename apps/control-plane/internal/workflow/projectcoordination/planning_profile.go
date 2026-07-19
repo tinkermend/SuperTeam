@@ -22,7 +22,6 @@ type DigitalEmployeePlanningProfile struct {
 	ToolBindings        []PlanningToolBinding       `json:"tool_bindings,omitempty"`
 	RuntimeRequirements PlanningRuntimeRequirements `json:"runtime_requirements"`
 	Permissions         []PlanningPermission        `json:"permissions,omitempty"`
-	ContextPolicy       PlanningContextPolicy       `json:"context_policy"`
 	LoadState           PlanningLoadState           `json:"load_state"`
 	ReliabilitySignals  PlanningReliabilitySignals  `json:"reliability_signals"`
 	ProfileFreshness    PlanningProfileFreshness    `json:"profile_freshness"`
@@ -71,10 +70,6 @@ type PlanningPermission struct {
 	Status   string `json:"status"`
 }
 
-type PlanningContextPolicy struct {
-	MaxContextClassification string `json:"max_context_classification,omitempty"`
-}
-
 type PlanningLoadState struct {
 	AvailableSlots int  `json:"available_slots,omitempty"`
 	InFlightTasks  int  `json:"in_flight_tasks,omitempty"`
@@ -105,7 +100,6 @@ type DigitalEmployeePlanningProfileSourceRecord struct {
 	EmployeeStatus        string         `json:"employee_status,omitempty"`
 	CapabilityBindings    map[string]any `json:"capability_bindings,omitempty"`
 	PermissionPolicy      map[string]any `json:"permission_policy,omitempty"`
-	ContextPolicy         map[string]any `json:"context_policy,omitempty"`
 	RuntimeNodeID         uuid.UUID      `json:"runtime_node_id,omitempty"`
 	ProviderType          string         `json:"provider_type,omitempty"`
 	ExecutionStatus       string         `json:"execution_status,omitempty"`
@@ -152,7 +146,6 @@ func BuildDigitalEmployeePlanningProfile(member project.ProjectMember, source Di
 		ToolBindings:        buildPlanningToolBindings(source.CapabilityBindings),
 		RuntimeRequirements: buildPlanningRuntimeRequirements(source, runtimeReady, sourceMissing),
 		Permissions:         buildPlanningPermissions(source.PermissionPolicy),
-		ContextPolicy:       buildPlanningContextPolicy(source.ContextPolicy),
 		LoadState:           buildPlanningLoadState(source.LoadState),
 		ReliabilitySignals:  buildPlanningReliabilitySignals(source.ReliabilitySignals),
 		ProfileFreshness:    buildPlanningProfileFreshness(source, sourceMissing),
@@ -338,12 +331,6 @@ func buildPlanningPermissions(permissionPolicy map[string]any) []PlanningPermiss
 		})
 	}
 	return permissions
-}
-
-func buildPlanningContextPolicy(contextPolicy map[string]any) PlanningContextPolicy {
-	return PlanningContextPolicy{
-		MaxContextClassification: normalizePlanningString(stringFromMap(contextPolicy, "max_context_classification")),
-	}
 }
 
 func buildPlanningLoadState(loadState map[string]any) PlanningLoadState {
@@ -555,9 +542,6 @@ func planningProfileSourceHasFacts(source DigitalEmployeePlanningProfileSourceRe
 		return true
 	}
 	if len(buildPlanningPermissions(source.PermissionPolicy)) > 0 {
-		return true
-	}
-	if buildPlanningContextPolicy(source.ContextPolicy).MaxContextClassification != "" {
 		return true
 	}
 	loadState := buildPlanningLoadState(source.LoadState)

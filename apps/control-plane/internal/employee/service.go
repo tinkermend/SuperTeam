@@ -585,10 +585,10 @@ func isSupportedDigitalEmployeeProviderType(providerType string) bool {
 	return ok
 }
 
-func defaultRiskLevelForEmployeeType(definition EmployeeTypeDefinition) string {
-	if value, ok := definition.DefaultApprovalPolicy["min_risk_for_human"].(string); ok && riskRank(value) > 0 {
-		return strings.ToLower(strings.TrimSpace(value))
-	}
+// defaultRiskLevelForEmployeeType 恒返回 medium：曾经的 min_risk_for_human
+// 推导依赖模板 DefaultApprovalPolicy，而该字段在 ToDefinition 中恒为空，属
+// 已证实的死路径（员工个体策略字段随迁移 20260719124500 一并下线）。
+func defaultRiskLevelForEmployeeType(EmployeeTypeDefinition) string {
 	return "medium"
 }
 
@@ -806,8 +806,6 @@ func createDigitalEmployeeParams(req CreateDigitalEmployeeRequest) CreateDigital
 		Description:      req.Description,
 		Status:           DigitalEmployeeStatusDraft,
 		PermissionPolicy: cloneMap(req.PermissionPolicy),
-		ContextPolicy:    cloneMap(req.ContextPolicy),
-		ApprovalPolicy:   cloneMap(req.ApprovalPolicy),
 		RiskLevel:        req.RiskLevel,
 		Metadata:         cloneMap(req.Metadata),
 	}
@@ -1315,8 +1313,6 @@ func employeeFromRecord(record DigitalEmployeeRecord) *DigitalEmployee {
 		Description:        trimOptionalString(record.Description),
 		Status:             record.Status,
 		PermissionPolicy:   cloneMap(record.PermissionPolicy),
-		ContextPolicy:      cloneMap(record.ContextPolicy),
-		ApprovalPolicy:     cloneMap(record.ApprovalPolicy),
 		RiskLevel:          record.RiskLevel,
 		Metadata:           cloneMap(record.Metadata),
 		CapabilityBindings: map[string]any{},

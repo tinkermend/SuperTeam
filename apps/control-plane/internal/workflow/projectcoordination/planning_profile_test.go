@@ -104,7 +104,6 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 		PermissionPolicy: map[string]any{
 			"grants": []any{"database.read:dev_database"},
 		},
-		ContextPolicy:   map[string]any{"max_context_classification": "internal"},
 		RuntimeNodeID:   runtimeNodeID,
 		ProviderType:    "codex",
 		ExecutionStatus: "ready",
@@ -131,7 +130,6 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 	require.Equal(t, "ready", profile.RuntimeRequirements.ProviderStatus)
 	require.Equal(t, runtimeNodeID.String(), profile.RuntimeRequirements.RuntimeNodeID)
 	require.Equal(t, []PlanningPermission{{Scope: "database.read", Resource: "dev_database", Status: "granted"}}, profile.Permissions)
-	require.Equal(t, "internal", profile.ContextPolicy.MaxContextClassification)
 	require.Equal(t, PlanningLoadState{AvailableSlots: 3, InFlightTasks: 2, Lendable: true}, profile.LoadState)
 	require.Equal(t, PlanningReliabilitySignals{RecentSuccessCount: 7, RecentFailureCount: 1, RecentHumanRejectCount: 2}, profile.ReliabilitySignals)
 	require.Equal(t, "ready", profile.ProfileFreshness.SourceState)

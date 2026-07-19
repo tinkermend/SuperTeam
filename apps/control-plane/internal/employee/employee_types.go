@@ -17,7 +17,6 @@ func customAgentEmployeeTypeDefinition() EmployeeTypeDefinition {
 		PersonaMemoryMarkdown:    "",
 		CapabilityBindings:       map[string]any{},
 		BudgetPolicy:             map[string]any{},
-		DefaultApprovalPolicy:    map[string]any{},
 		Metadata: map[string]any{
 			"creation_mode": "blank_custom",
 			"system_type":   true,

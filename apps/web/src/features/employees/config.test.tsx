@@ -52,8 +52,6 @@ const employee = {
   description: "负责需求拆解和交付风险识别",
   status: "active" as const,
   permission_policy: {},
-  context_policy: {},
-  approval_policy: {},
   persona_memory_markdown: "# 人格画像\n证据优先",
   capability_bindings: {
     skills: ["incident-diagnosis"],

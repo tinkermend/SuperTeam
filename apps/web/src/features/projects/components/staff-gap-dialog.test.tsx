@@ -93,8 +93,6 @@ const avatarAsset: DigitalEmployeeAvatarAsset = {
 };
 
 const createdEmployee: DigitalEmployee = {
-  approval_policy: {},
-  context_policy: {},
   employee_type: "standard_code_reviewer",
   id: "employee-new-1",
   name: "审查员-ab12",

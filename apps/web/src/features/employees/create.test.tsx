@@ -354,8 +354,6 @@ function createWizardFetcher({
           role: "database_admin",
           status: "ready",
           permission_policy: {},
-          context_policy: {},
-          approval_policy: {},
           risk_level: "high",
         },
         201,

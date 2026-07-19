@@ -363,10 +363,6 @@ type DigitalEmployee struct {
 	Status string `json:"status"`
 	// 数字员工权限策略快照
 	PermissionPolicy []byte `json:"permission_policy"`
-	// 数字员工上下文注入策略快照
-	ContextPolicy []byte `json:"context_policy"`
-	// 数字员工人类审批策略快照
-	ApprovalPolicy []byte `json:"approval_policy"`
 	// 数字员工默认风险等级
 	RiskLevel string `json:"risk_level"`
 	// 数字员工扩展元数据

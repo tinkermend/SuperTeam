@@ -165,8 +165,6 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		"role":"database_admin",
 		"description":"Manages database operations",
 		"permission_policy":{"allowed_actions":["read_context"]},
-		"context_policy":{"scope":"task"},
-		"approval_policy":{"required_for":["deploy"]},
 		"risk_level":"medium",
 		"metadata":{"source":"route-test"},
 		"persona_memory_markdown":"# Database administrator",
@@ -214,8 +212,6 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		EmployeeType     string         `json:"employee_type"`
 		ProviderType     string         `json:"provider_type"`
 		PermissionPolicy map[string]any `json:"permission_policy"`
-		ContextPolicy    map[string]any `json:"context_policy"`
-		ApprovalPolicy   map[string]any `json:"approval_policy"`
 	}
 	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
 		t.Fatalf("decode created employee: %v", err)
@@ -229,8 +225,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "database_admin" || created.ProviderType != "codex" {
 		t.Fatalf("expected response owner/type/provider %s/database_admin/codex, got %#v", user.ID, created)
 	}
-	if created.PermissionPolicy == nil || created.ContextPolicy == nil || created.ApprovalPolicy == nil {
-		t.Fatalf("expected policy objects in response, got %#v", created)
+	if created.PermissionPolicy == nil {
+		t.Fatalf("expected permission policy object in response, got %#v", created)
 	}
 
 	removedCreateFieldReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(`{"employee_type":"database_admin","name":"Legacy runtime placement","avatar_asset_id":"engineer-m-01","provider_type":"codex","runtime_node_id":"`+runtimeNodeID.String()+`"}`))
@@ -1748,8 +1744,6 @@ func (s *routeEmployeeService) CreateDigitalEmployee(ctx context.Context, req em
 		Role:             req.Role,
 		Status:           employee.DigitalEmployeeStatusReady,
 		PermissionPolicy: req.PermissionPolicy,
-		ContextPolicy:    req.ContextPolicy,
-		ApprovalPolicy:   req.ApprovalPolicy,
 		RiskLevel:        req.RiskLevel,
 		Metadata:         req.Metadata,
 		CreatedAt:        now,
@@ -1778,8 +1772,6 @@ func (s *routeEmployeeService) ListDigitalEmployees(ctx context.Context, req emp
 		Role:             "database_admin",
 		Status:           employee.DigitalEmployeeStatusReady,
 		PermissionPolicy: map[string]any{},
-		ContextPolicy:    map[string]any{},
-		ApprovalPolicy:   map[string]any{},
 		RiskLevel:        "medium",
 		Metadata:         map[string]any{},
 		CreatedAt:        now,
@@ -1816,8 +1808,6 @@ func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID,
 		Role:             "database_admin",
 		Status:           employee.DigitalEmployeeStatusReady,
 		PermissionPolicy: map[string]any{},
-		ContextPolicy:    map[string]any{},
-		ApprovalPolicy:   map[string]any{},
 		RiskLevel:        "medium",
 		Metadata:         map[string]any{},
 		CreatedAt:        now,
@@ -1874,8 +1864,6 @@ func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.Up
 		Role:             "database_admin",
 		Status:           req.Status,
 		PermissionPolicy: map[string]any{},
-		ContextPolicy:    map[string]any{},
-		ApprovalPolicy:   map[string]any{},
 		RiskLevel:        "medium",
 		Metadata:         map[string]any{},
 		CreatedAt:        now,

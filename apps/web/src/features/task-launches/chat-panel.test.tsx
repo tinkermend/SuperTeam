@@ -137,8 +137,6 @@ function jsonResponse(body: unknown, status = 200) {
 
 function makeEmployee(): DigitalEmployee {
   return {
-    approval_policy: {},
-    context_policy: {},
     employee_type: "generalist",
     id: "emp-1",
     name: "Ada",

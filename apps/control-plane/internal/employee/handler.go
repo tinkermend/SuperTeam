@@ -331,8 +331,6 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		Role                  string         `json:"role"`
 		Description           *string        `json:"description"`
 		PermissionPolicy      map[string]any `json:"permission_policy"`
-		ContextPolicy         map[string]any `json:"context_policy"`
-		ApprovalPolicy        map[string]any `json:"approval_policy"`
 		RiskLevel             string         `json:"risk_level"`
 		Metadata              map[string]any `json:"metadata"`
 		PersonaMemoryMarkdown string         `json:"persona_memory_markdown"`
@@ -385,8 +383,6 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		Role:                  req.Role,
 		Description:           req.Description,
 		PermissionPolicy:      req.PermissionPolicy,
-		ContextPolicy:         req.ContextPolicy,
-		ApprovalPolicy:        req.ApprovalPolicy,
 		RiskLevel:             req.RiskLevel,
 		Metadata:              req.Metadata,
 		PersonaMemoryMarkdown: req.PersonaMemoryMarkdown,
@@ -939,8 +935,6 @@ type digitalEmployeeResponse struct {
 	Description           *string               `json:"description,omitempty"`
 	Status                DigitalEmployeeStatus `json:"status"`
 	PermissionPolicy      map[string]any        `json:"permission_policy"`
-	ContextPolicy         map[string]any        `json:"context_policy"`
-	ApprovalPolicy        map[string]any        `json:"approval_policy"`
 	RiskLevel             string                `json:"risk_level"`
 	Metadata              map[string]any        `json:"metadata"`
 	PersonaMemoryMarkdown string                `json:"persona_memory_markdown"`
@@ -1441,8 +1435,6 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		Description:           employee.Description,
 		Status:                employee.Status,
 		PermissionPolicy:      cloneMap(employee.PermissionPolicy),
-		ContextPolicy:         cloneMap(employee.ContextPolicy),
-		ApprovalPolicy:        cloneMap(employee.ApprovalPolicy),
 		RiskLevel:             employee.RiskLevel,
 		Metadata:              cloneMap(employee.Metadata),
 		PersonaMemoryMarkdown: employee.PersonaMemoryMarkdown,

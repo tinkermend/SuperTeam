@@ -33,8 +33,6 @@ describe("digital employee API", () => {
         role: "database_admin",
         status: "draft",
         permission_policy: { mode: "least_privilege" },
-        context_policy: { mode: "task_slice" },
-        approval_policy: { high_risk: "required" },
         risk_level: "medium",
       },
     ] satisfies DigitalEmployee[];
@@ -77,8 +75,6 @@ describe("digital employee API", () => {
         role: "database_admin",
         status: "draft",
         permission_policy: { mode: "least_privilege" },
-        context_policy: { mode: "task_slice" },
-        approval_policy: { high_risk: "required" },
         risk_level: "medium",
       },
     ] satisfies DigitalEmployee[];
@@ -412,8 +408,6 @@ describe("digital employee API", () => {
       role: "database_admin",
       status: "ready",
       permission_policy: { mode: "least_privilege" },
-      context_policy: { mode: "task_slice" },
-      approval_policy: { high_risk: "required" },
       risk_level: "medium",
     } satisfies DigitalEmployee;
     const fetcher = vi.fn(
@@ -438,8 +432,6 @@ describe("digital employee API", () => {
           role: "database_admin",
           description: "负责数据库变更和恢复验证",
           permission_policy: { mode: "least_privilege" },
-          context_policy: { mode: "task_slice" },
-          approval_policy: { high_risk: "required" },
           risk_level: "medium",
           metadata: { source: "web" },
           persona_memory_markdown: "# 人格画像\n证据优先",
@@ -466,8 +458,6 @@ describe("digital employee API", () => {
           role: "database_admin",
           description: "负责数据库变更和恢复验证",
           permission_policy: { mode: "least_privilege" },
-          context_policy: { mode: "task_slice" },
-          approval_policy: { high_risk: "required" },
           risk_level: "medium",
           metadata: { source: "web" },
           persona_memory_markdown: "# 人格画像\n证据优先",
@@ -544,8 +534,6 @@ describe("digital employee API", () => {
       role: "database_admin",
       status: "active",
       permission_policy: { mode: "least_privilege" },
-      context_policy: { mode: "task_slice" },
-      approval_policy: { high_risk: "required" },
       risk_level: "medium",
     } satisfies DigitalEmployee;
     const fetcher = vi.fn(

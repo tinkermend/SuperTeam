@@ -10685,8 +10685,6 @@ components:
         - role
         - status
         - permission_policy
-        - context_policy
-        - approval_policy
         - risk_level
         - persona_memory_markdown
         - capability_bindings
@@ -10717,12 +10715,6 @@ components:
         status:
           $ref: "#/components/schemas/DigitalEmployeeStatus"
         permission_policy:
-          type: object
-          additionalProperties: true
-        context_policy:
-          type: object
-          additionalProperties: true
-        approval_policy:
           type: object
           additionalProperties: true
         risk_level:
@@ -10960,12 +10952,6 @@ components:
         description:
           type: string
         permission_policy:
-          type: object
-          additionalProperties: true
-        context_policy:
-          type: object
-          additionalProperties: true
-        approval_policy:
           type: object
           additionalProperties: true
         risk_level:

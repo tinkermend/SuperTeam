@@ -148,7 +148,6 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 			EmployeeStatus:    string(employeeRecord.Status),
 			ProviderType:      employeeRecord.ProviderType,
 			PermissionPolicy:  clonePlanningProfileMap(employeeRecord.PermissionPolicy),
-			ContextPolicy:     clonePlanningProfileMap(employeeRecord.ContextPolicy),
 		}
 		config, err := a.reader.GetLatestDigitalEmployeeConfigRevision(ctx, tenantID, employeeID)
 		if err != nil {

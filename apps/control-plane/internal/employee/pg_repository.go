@@ -66,14 +66,6 @@ func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateD
 	if err != nil {
 		return DigitalEmployeeRecord{}, err
 	}
-	contextPolicy, err := jsonbFromMap(params.ContextPolicy, "context_policy")
-	if err != nil {
-		return DigitalEmployeeRecord{}, err
-	}
-	approvalPolicy, err := jsonbFromMap(params.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return DigitalEmployeeRecord{}, err
-	}
 	metadata, err := jsonbFromMap(params.Metadata, "metadata")
 	if err != nil {
 		return DigitalEmployeeRecord{}, err
@@ -90,8 +82,6 @@ func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateD
 		Description:      textFromPtr(params.Description),
 		Status:           string(params.Status),
 		PermissionPolicy: permissionPolicy,
-		ContextPolicy:    contextPolicy,
-		ApprovalPolicy:   approvalPolicy,
 		RiskLevel:        params.RiskLevel,
 		Metadata:         metadata,
 	})
@@ -2017,14 +2007,6 @@ func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEm
 	if err != nil {
 		return DigitalEmployeeRecord{}, err
 	}
-	contextPolicy, err := mapFromJSONB(employee.ContextPolicy, "context_policy")
-	if err != nil {
-		return DigitalEmployeeRecord{}, err
-	}
-	approvalPolicy, err := mapFromJSONB(employee.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return DigitalEmployeeRecord{}, err
-	}
 	metadata, err := mapFromJSONB(employee.Metadata, "metadata")
 	if err != nil {
 		return DigitalEmployeeRecord{}, err
@@ -2041,8 +2023,6 @@ func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEm
 		Description:      stringPtrFromText(employee.Description),
 		Status:           DigitalEmployeeStatus(employee.Status),
 		PermissionPolicy: permissionPolicy,
-		ContextPolicy:    contextPolicy,
-		ApprovalPolicy:   approvalPolicy,
 		RiskLevel:        employee.RiskLevel,
 		Metadata:         metadata,
 		DisabledAt:       timePtrFromTimestamptz(employee.DisabledAt),

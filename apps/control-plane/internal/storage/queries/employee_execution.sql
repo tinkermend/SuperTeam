@@ -10,8 +10,6 @@ INSERT INTO digital_employees (
     description,
     status,
     permission_policy,
-    context_policy,
-    approval_policy,
     risk_level,
     metadata
 ) VALUES (
@@ -25,8 +23,6 @@ INSERT INTO digital_employees (
     sqlc.narg('description')::text,
     sqlc.arg('status')::varchar,
     COALESCE(sqlc.arg('permission_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('context_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('approval_policy')::jsonb, '{}'::jsonb),
     sqlc.arg('risk_level')::varchar,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
 ) RETURNING *;
