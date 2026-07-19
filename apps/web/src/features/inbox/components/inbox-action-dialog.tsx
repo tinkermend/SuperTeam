@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ExecuteInboxActionInput, InboxAction, InboxItem } from "@/lib/api/inbox";
-import { V3Button, V3ErrorState } from "@/components/superteam";
+import { ObjectIdChip, ObjectRef, StatusPill, V3Button, V3ErrorState } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { formatInboxActionLabel } from "./action-format";
-import { riskLabel } from "./inbox-item-list";
-import { sourceRefLabel } from "../source-ref";
+import { riskLabel, riskTone } from "./inbox-item-list";
 
 type InboxActionDialogProps = {
   action: InboxAction | null;
@@ -31,27 +30,37 @@ export function InboxActionDialog({
   open,
   pending = false,
 }: InboxActionDialogProps) {
-  const inFlightRef = useRef(false);
+  // in-flight 记录按(事项,动作)键而非布尔:弹窗组件跨事项复用,布尔 ref 会把
+  // 上一事项的在飞状态泄漏给下一事项(按钮永久禁用);键不匹配即自然失效。
+  const inFlightKeyRef = useRef<string | null>(null);
+  // 当前键镜像:提交发出后用户可能切换事项或关闭弹窗,迟到的失败不得回写到别的事项上。
+  const currentKeyRef = useRef<string | null>(null);
   const [comment, setComment] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const currentKey = open && item && action ? `${item.id}:${action.key}` : null;
+  currentKeyRef.current = currentKey;
   const requiresComment = Boolean(action?.requires_comment);
-  const isSubmitting = pending || inFlightRef.current;
+  const isSubmitting = pending || (currentKey !== null && inFlightKeyRef.current === currentKey);
   const canSubmit = Boolean(action && item && (!requiresComment || comment.trim()));
 
   useEffect(() => {
     if (open) {
       setComment("");
       setSubmitError(null);
-      inFlightRef.current = false;
     }
   }, [open, item?.id, action?.key]);
 
   const submit = async () => {
-    if (!action || !item || !canSubmit || isSubmitting) {
+    if (!action || !item || !canSubmit || pending) {
       return;
     }
 
-    inFlightRef.current = true;
+    const submittedKey = currentKeyRef.current;
+    // 同键同步防重:双击在父层状态更新前到达时,第二次直接落空。
+    if (!submittedKey || inFlightKeyRef.current === submittedKey) {
+      return;
+    }
+    inFlightKeyRef.current = submittedKey;
     setSubmitError(null);
 
     try {
@@ -61,8 +70,14 @@ export function InboxActionDialog({
         payload: {},
       });
     } catch (error) {
-      inFlightRef.current = false;
-      setSubmitError(error instanceof Error ? error.message : "操作提交失败");
+      // 用户已切换到其他事项或关闭弹窗:失败由页面横幅承接,不写进当前弹窗。
+      if (currentKeyRef.current === submittedKey) {
+        setSubmitError(error instanceof Error ? error.message : "操作提交失败");
+      }
+    } finally {
+      if (inFlightKeyRef.current === submittedKey) {
+        inFlightKeyRef.current = null;
+      }
     }
   };
 
@@ -94,9 +109,14 @@ export function InboxActionDialog({
             <p className="text-xs font-semibold text-v3-danger">该动作需要填写处理意见。</p>
           ) : null}
         </div>
+        {isSubmitting ? (
+          <p className="text-xs leading-5 text-v3-ink-3">
+            正在提交，关闭弹窗后提交会在后台继续，可先处理其他事项。
+          </p>
+        ) : null}
         <DialogFooter>
-          <V3Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            取消
+          <V3Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            {isSubmitting ? "关闭" : "取消"}
           </V3Button>
           <V3Button type="button" onClick={submit} disabled={!canSubmit || isSubmitting}>
             {isSubmitting ? "提交中" : "提交"}
@@ -112,24 +132,28 @@ function InboxActionContextSummary({ item }: { item: InboxItem }) {
 
   return (
     <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
-      <div className="grid gap-2 text-xs sm:grid-cols-2">
+      <div className="grid gap-3 text-xs sm:grid-cols-2">
         {item.risk_level ? (
-          <ContextPair label="风险等级" value={riskLabel[item.risk_level] ?? item.risk_level} />
+          <ContextField label="风险等级">
+            <StatusPill tone={riskTone[item.risk_level] ?? "mute"} className="px-2 py-0.5 text-[11px]">
+              {riskLabel[item.risk_level] ?? item.risk_level}
+            </StatusPill>
+          </ContextField>
         ) : null}
         {item.source_project_id ? (
-          <ContextPair
-            label="来源项目"
-            value={sourceRefLabel(item.source_project_name, item.source_project_id) ?? item.source_project_id}
-          />
+          <ContextField label="来源项目">
+            <ObjectRef name={item.source_project_name} id={item.source_project_id} />
+          </ContextField>
         ) : null}
         {item.source_task_id ? (
-          <ContextPair
-            label="来源任务"
-            value={sourceRefLabel(item.source_task_name, item.source_task_id) ?? item.source_task_id}
-          />
+          <ContextField label="来源任务">
+            <ObjectRef name={item.source_task_name} id={item.source_task_id} />
+          </ContextField>
         ) : null}
         {item.source_approval_request_id ? (
-          <ContextPair label="审批请求" value={item.source_approval_request_id} />
+          <ContextField label="审批请求">
+            <ObjectIdChip id={item.source_approval_request_id} />
+          </ContextField>
         ) : null}
       </div>
       {item.summary ? (
@@ -141,9 +165,11 @@ function InboxActionContextSummary({ item }: { item: InboxItem }) {
       {contextRows.length > 0 ? (
         <div className="mt-3 border-t border-v3-line pt-3">
           <div className="text-xs font-semibold text-v3-ink-2">上下文摘要</div>
-          <div className="mt-2 grid gap-1.5">
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
             {contextRows.map((row) => (
-              <ContextPair key={row.label} label={row.label} value={row.value} />
+              <ContextField key={row.label} label={row.label}>
+                <span className="min-w-0 break-words">{row.value}</span>
+              </ContextField>
             ))}
           </div>
         </div>
@@ -152,11 +178,12 @@ function InboxActionContextSummary({ item }: { item: InboxItem }) {
   );
 }
 
-function ContextPair({ label, value }: { label: string; value: string }) {
+/** 键值字段：标签在上、值在下左对齐，长值折行仍齐整（替代旧 justify-between 右对齐形态）。 */
+function ContextField({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <div className="flex min-w-0 items-start justify-between gap-3">
-      <span className="shrink-0 font-semibold text-v3-ink-2">{label}</span>
-      <span className="min-w-0 break-words text-right font-medium text-v3-ink">{value}</span>
+    <div className="min-w-0 space-y-1">
+      <div className="font-semibold text-v3-ink-2">{label}</div>
+      <div className="min-w-0 text-[13px] leading-5 font-medium text-v3-ink">{children}</div>
     </div>
   );
 }

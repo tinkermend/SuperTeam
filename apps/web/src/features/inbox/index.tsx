@@ -72,7 +72,6 @@ export function InboxPage({ fetcher }: InboxPageProps = {}) {
 
 export function InboxView({ apiBaseUrl, fetcher, eventSourceFactory }: InboxViewProps) {
   const queryClient = useQueryClient();
-  const actionInFlightRef = useRef(false);
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
@@ -85,6 +84,12 @@ export function InboxView({ apiBaseUrl, fetcher, eventSourceFactory }: InboxView
     ...EMPTY_UUID_FILTER_DRAFTS,
   }));
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
+  // 提交按事项并行:记录在飞事项 id,弹窗仅在"当前事项在飞"时置提交中,不同事项互不阻塞。
+  const [pendingItemIds, setPendingItemIds] = useState<ReadonlySet<string>>(() => new Set());
+  // 弹窗已切走或关闭后失败的后台提交,升级到页面横幅提示,不静默丢失。
+  const [backgroundActionError, setBackgroundActionError] = useState<Error | null>(null);
+  const selectedActionRef = useRef<SelectedAction | null>(null);
+  selectedActionRef.current = selectedAction;
   const uuidFilterErrors = useMemo(
     () => ({
       project_id: getUuidFilterError(uuidFilterDrafts.project_id),
@@ -145,14 +150,32 @@ export function InboxView({ apiBaseUrl, fetcher, eventSourceFactory }: InboxView
       itemId: string;
       input: ExecuteInboxActionInput;
     }) => executeInboxAction(apiOptions, itemId, input),
-    onSuccess: () => {
-      actionInFlightRef.current = false;
-      setSelectedAction(null);
+    onMutate: ({ itemId }) => {
+      setPendingItemIds((current) => {
+        const next = new Set(current);
+        next.add(itemId);
+        return next;
+      });
+    },
+    onSuccess: (_data, { itemId }) => {
+      // 只关掉本次提交对应的弹窗;用户已切到别的事项时不打断。
+      setSelectedAction((current) => (current && current.item.id === itemId ? null : current));
       void queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-badge"] });
     },
-    onError: () => {
-      actionInFlightRef.current = false;
+    onError: (error, { itemId }) => {
+      // 弹窗仍停在该事项时错误由弹窗内联展示;否则升级到页面横幅。
+      const current = selectedActionRef.current;
+      if (!current || current.item.id !== itemId) {
+        setBackgroundActionError(error);
+      }
+    },
+    onSettled: (_data, _error, { itemId }) => {
+      setPendingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(itemId);
+        return next;
+      });
     },
   });
 
@@ -162,9 +185,9 @@ export function InboxView({ apiBaseUrl, fetcher, eventSourceFactory }: InboxView
         data={inboxQuery.data}
         error={inboxQuery.error}
         isLoading={inboxQuery.isLoading}
-        mutationError={selectedAction ? null : actionMutation.error}
+        mutationError={backgroundActionError}
         onAction={(item, action) => {
-          actionMutation.reset();
+          setBackgroundActionError(null);
           setSelectedAction({ action, item });
         }}
         onFilterChange={handleFilterChange}
@@ -185,23 +208,24 @@ export function InboxView({ apiBaseUrl, fetcher, eventSourceFactory }: InboxView
         action={selectedAction?.action ?? null}
         item={selectedAction?.item ?? null}
         onOpenChange={(open) => {
-          if (!open && !actionMutation.isPending) {
+          // 提交中也允许关闭:提交在后台继续,结果由 onSuccess/onError 按事项归属处理。
+          if (!open) {
             setSelectedAction(null);
           }
         }}
         onSubmit={(input) => {
-          if (!selectedAction || actionInFlightRef.current) {
+          const current = selectedActionRef.current;
+          if (!current || pendingItemIds.has(current.item.id)) {
             return Promise.resolve();
           }
 
-          actionInFlightRef.current = true;
           return actionMutation.mutateAsync({
             input,
-            itemId: selectedAction.item.id,
+            itemId: current.item.id,
           });
         }}
         open={Boolean(selectedAction)}
-        pending={actionMutation.isPending}
+        pending={selectedAction ? pendingItemIds.has(selectedAction.item.id) : false}
       />
     </>
   );

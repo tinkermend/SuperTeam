@@ -126,8 +126,11 @@ function createDeferred<T>() {
 function createInboxFetcher(
   options: {
     actionDelay?: Promise<void>;
+    actionDelays?: Record<string, Promise<void>>;
     actionStatus?: number;
+    actionStatuses?: Record<string, number>;
     mineItem?: InboxItem;
+    mineItems?: InboxItem[];
     slowTeamView?: boolean;
     teamItem?: InboxItem;
   } = {},
@@ -164,19 +167,25 @@ function createInboxFetcher(
         );
       }
 
-      return jsonResponse(makeListResponse([options.mineItem ?? makeInboxItem()]));
+      return jsonResponse(
+        makeListResponse(options.mineItems ?? [options.mineItem ?? makeInboxItem()]),
+      );
     }
 
-    if (url.pathname === "/api/v1/inbox/items/inbox-item-1/actions" && method === "POST") {
-      if (options.actionDelay) {
-        await options.actionDelay;
+    const actionMatch = url.pathname.match(/^\/api\/v1\/inbox\/items\/([^/]+)\/actions$/);
+    if (actionMatch && method === "POST") {
+      const itemId = decodeURIComponent(actionMatch[1]);
+      const delay = options.actionDelays?.[itemId] ?? options.actionDelay;
+      if (delay) {
+        await delay;
       }
-      if (options.actionStatus && options.actionStatus >= 400) {
-        return jsonResponse({ error: "上游审批服务暂时不可用" }, options.actionStatus);
+      const status = options.actionStatuses?.[itemId] ?? options.actionStatus;
+      if (status && status >= 400) {
+        return jsonResponse({ error: "上游审批服务暂时不可用" }, status);
       }
 
       return jsonResponse({
-        item: makeInboxItem({ status: "resolved" }),
+        item: makeInboxItem({ id: itemId, status: "resolved" }),
         source_result: {
           source_id: "approval-1",
           source_type: "approval_request",
@@ -563,6 +572,61 @@ describe("InboxView", () => {
     await expect.element(dialog.getByText("上下文摘要")).toBeVisible();
     await expect.element(dialog.getByText("客户接入项目")).toBeVisible();
     await expect.element(dialog.getByText("上游审批服务暂时不可用")).toBeVisible();
+  });
+
+  // 修复回归:此前页面级单飞锁会把第二条事项的提交静默吞掉(弹窗永远"提交中",
+  // 再被第一条的成功回调顺带关闭)。现在提交按事项并行,第二条必须真实发出。
+  it("submits actions for different items concurrently without dropping the second", async () => {
+    const deferred = createDeferred<void>();
+    const itemA = makeInboxItem();
+    const itemB = makeInboxItem({
+      id: "inbox-item-2",
+      source_id: "approval-2",
+      summary: "第二条待批事项。",
+      title: "确认二号任务",
+    });
+    const fetcher = createInboxFetcher({
+      actionDelays: { "inbox-item-1": deferred.promise },
+      mineItems: [itemA, itemB],
+    });
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：确认客户 Runtime 接入" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
+    await userEvent.click(screen.getByRole("button", { name: "提交" }));
+
+    // 第一条仍在提交:弹窗可直接关闭,提交在后台继续。
+    await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：确认二号任务" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
+    await userEvent.click(screen.getByRole("button", { name: "提交" }));
+
+    await vi.waitFor(() => {
+      const posts = fetcher.requests
+        .filter((request) => request.method === "POST")
+        .map((request) => request.pathname);
+      expect(posts).toContain("/api/v1/inbox/items/inbox-item-2/actions");
+      expect(posts).toContain("/api/v1/inbox/items/inbox-item-1/actions");
+    });
+    deferred.resolve();
+  });
+
+  it("surfaces background submission failures after the dialog was closed", async () => {
+    const deferred = createDeferred<void>();
+    const fetcher = createInboxFetcher({ actionDelay: deferred.promise, actionStatus: 500 });
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：确认客户 Runtime 接入" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
+    await userEvent.click(screen.getByRole("button", { name: "提交" }));
+    await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+    deferred.resolve();
+
+    // 弹窗已关:失败不静默,升级到页面横幅。
+    await expect.element(screen.getByText("操作未完成")).toBeVisible();
+    await expect.element(screen.getByText("上游审批服务暂时不可用")).toBeVisible();
   });
 
   it("guards rapid duplicate action submissions", async () => {

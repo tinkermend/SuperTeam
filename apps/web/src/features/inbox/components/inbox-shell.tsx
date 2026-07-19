@@ -22,6 +22,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  ObjectRef,
   SoftCard,
   StatusPill,
   V3Button,
@@ -58,7 +59,6 @@ import {
   riskLabel,
   riskTone,
 } from "./inbox-item-list";
-import { sourceRefLabel } from "../source-ref";
 
 export type InboxFilterKey = "status" | "item_type" | "risk_level" | "project_id" | "target_user_id";
 export type InboxUuidFilterKey = Extract<InboxFilterKey, "project_id" | "target_user_id">;
@@ -438,8 +438,8 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
           {item.source_task_id ? (
             <>
               <dt className="font-semibold text-v3-ink-3">关联任务</dt>
-              <dd className="min-w-0 truncate text-xs font-semibold text-v3-ink-2">
-                {sourceRefLabel(item.source_task_name, item.source_task_id)}
+              <dd className="min-w-0 text-xs font-semibold text-v3-ink-2">
+                <ObjectRef name={item.source_task_name} id={item.source_task_id} />
               </dd>
             </>
           ) : null}

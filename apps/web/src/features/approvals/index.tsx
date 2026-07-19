@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   keepPreviousData,
   useMutation,
@@ -63,6 +63,12 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
     [apiBaseUrl, fetcher],
   );
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
+  // 与收件箱同一套按事项并行模式:在飞按事项 id 记录,不同事项互不阻塞;
+  // 弹窗已切走或关闭后失败的后台提交升级到页面横幅,不静默丢失。
+  const [pendingItemIds, setPendingItemIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [backgroundActionError, setBackgroundActionError] = useState<Error | null>(null);
+  const selectedActionRef = useRef<SelectedAction | null>(null);
+  selectedActionRef.current = selectedAction;
   const filters = useMemo<InboxListFilters>(() => {
     const next: InboxListFilters = {
       item_type: "project_decision",
@@ -96,11 +102,33 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
       input: ExecuteInboxActionInput;
       itemId: string;
     }) => executeInboxAction(apiOptions, itemId, input),
-    onSuccess: () => {
-      setSelectedAction(null);
+    onMutate: ({ itemId }) => {
+      setPendingItemIds((current) => {
+        const next = new Set(current);
+        next.add(itemId);
+        return next;
+      });
+    },
+    onSuccess: (_data, { itemId }) => {
+      // 只关掉本次提交对应的弹窗;用户已切到别的事项时不打断。
+      setSelectedAction((current) => (current && current.item.id === itemId ? null : current));
       void queryClient.invalidateQueries({ queryKey: ["approvals-center"] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-badge"] });
+    },
+    onError: (error, { itemId }) => {
+      // 弹窗仍停在该事项时错误由弹窗内联展示;否则升级到页面横幅。
+      const current = selectedActionRef.current;
+      if (!current || current.item.id !== itemId) {
+        setBackgroundActionError(error);
+      }
+    },
+    onSettled: (_data, _error, { itemId }) => {
+      setPendingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(itemId);
+        return next;
+      });
     },
   });
 
@@ -116,6 +144,15 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
         subtitle="聚合项目决策和审批事项，按状态、风险和项目来源筛选处理。"
       />
       <Main width="wide" className="space-y-5 text-v3-ink">
+        {backgroundActionError ? (
+          <div
+            className="rounded-v3-inner bg-v3-danger-soft p-4 text-sm text-v3-danger"
+            role="alert"
+          >
+            <p className="font-bold">操作未完成</p>
+            <p className="mt-1 text-v3-ink-2">{backgroundActionError.message}</p>
+          </div>
+        ) : null}
         {data ? (
           <section className="grid gap-4 sm:grid-cols-3">
             <V3MetricCard
@@ -179,7 +216,7 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
                   item={item}
                   key={item.id}
                   onAction={(action) => {
-                    actionMutation.reset();
+                    setBackgroundActionError(null);
                     setSelectedAction({ action, item });
                   }}
                 />
@@ -193,21 +230,23 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
         action={selectedAction?.action ?? null}
         item={selectedAction?.item ?? null}
         onOpenChange={(open) => {
-          if (!open && !actionMutation.isPending) {
+          // 提交中也允许关闭:提交在后台继续,结果由 onSuccess/onError 按事项归属处理。
+          if (!open) {
             setSelectedAction(null);
           }
         }}
         onSubmit={(input) => {
-          if (!selectedAction) {
+          const current = selectedActionRef.current;
+          if (!current || pendingItemIds.has(current.item.id)) {
             return Promise.resolve();
           }
           return actionMutation.mutateAsync({
             input,
-            itemId: selectedAction.item.id,
+            itemId: current.item.id,
           });
         }}
         open={Boolean(selectedAction)}
-        pending={actionMutation.isPending}
+        pending={selectedAction ? pendingItemIds.has(selectedAction.item.id) : false}
       />
     </>
   );
