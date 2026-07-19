@@ -9279,6 +9279,80 @@ func TestListDemandAcceptanceCriteriaDetailResolvesTaskSummariesByPlannedKey(t *
 	require.Equal(t, "已按 branch+commit 交付并通过验证", got.TaskSummaries[0].Summary)
 }
 
+// TestListDemandAcceptanceCriteriaDetailSurfacesDeclaredDeliverables proves the
+// v2 §4 P2 deep-link: a satisfied task's retrievable declared deliverables ride
+// under its TaskSummary so the human can preview them beside the sign button;
+// non-declared, non-retrievable, and other tasks' artifacts are excluded.
+func TestListDemandAcceptanceCriteriaDetailSurfacesDeclaredDeliverables(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, NoopCoordinatorSignalClient{}, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	plannedKey := "develop"
+	c1 := DemandAcceptanceCriterion{
+		CriterionID:        "c1",
+		Statement:          "报告已交付",
+		VerificationMethod: "human_judgment",
+		Severity:           demandAcceptanceCriterionSeverityBlocking,
+		SatisfiedBy:        []string{plannedKey},
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{c1})
+
+	taskID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:             taskID,
+		TenantID:       f.tenantID,
+		ProjectID:      f.projectID,
+		DemandID:       &f.demandID,
+		PlannedTaskKey: &plannedKey,
+		Title:          "开发任务",
+		Status:         ProjectTaskStatusCompleted,
+		UpdatedAt:      time.Now().UTC(),
+	})
+	htmlType := "text/html"
+	var size int64 = 462
+	declaredID := uuid.New()
+	repo.artifactRefs = append(repo.artifactRefs,
+		ProjectArtifactRef{
+			ID: declaredID, TenantID: f.tenantID, ProjectID: f.projectID, ProjectTaskID: &taskID,
+			ArtifactType: "declared", Title: "report.html", ObjectRef: "artifacts/t/sha256/aa",
+			ContentType: &htmlType, SizeBytes: &size,
+		},
+		// 兜底附件不是 declared,不应出现。
+		ProjectArtifactRef{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, ProjectTaskID: &taskID,
+			ArtifactType: "execution_output", Title: "notes.md", ObjectRef: "artifacts/t/sha256/bb",
+		},
+		// declared 但非内容寻址(不可取回),排除。
+		ProjectArtifactRef{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, ProjectTaskID: &taskID,
+			ArtifactType: "declared", Title: "external", ObjectRef: "https://x/y",
+		},
+		// 别的任务的 declared,不串到本判据。
+		ProjectArtifactRef{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, ProjectTaskID: ptrUUIDValue(uuid.New()),
+			ArtifactType: "declared", Title: "other.html", ObjectRef: "artifacts/t/sha256/cc",
+		},
+	)
+
+	detail, err := service.ListDemandAcceptanceCriteriaDetail(context.Background(), f.tenantID, f.demandID)
+	if err != nil {
+		t.Fatalf("list acceptance criteria: %v", err)
+	}
+	require.Len(t, detail.Criteria, 1)
+	require.Len(t, detail.Criteria[0].TaskSummaries, 1)
+	deliverables := detail.Criteria[0].TaskSummaries[0].Deliverables
+	require.Len(t, deliverables, 1, "only the retrievable declared deliverable of this task")
+	require.Equal(t, declaredID.String(), deliverables[0].ArtifactRefID)
+	require.Equal(t, "report.html", deliverables[0].Title)
+	require.Equal(t, "text/html", deliverables[0].ContentType)
+	require.NotNil(t, deliverables[0].SizeBytes)
+	require.Equal(t, int64(462), *deliverables[0].SizeBytes)
+}
+
 func TestListDemandAcceptanceCriteriaDetailReturnsEmptyWhenNoOpenRevision(t *testing.T) {
 	repo := newMemoryRepository()
 	approvals := &fakeApprovalResolver{}
@@ -12517,6 +12591,29 @@ func (r *memoryRepository) ListExecutionSummariesByTaskIDs(ctx context.Context, 
 		}
 		if _, ok := taskIDSet[summary.ProjectTaskID]; ok {
 			filtered = append(filtered, summary)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) ListDeclaredArtifactsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectArtifactRef, error) {
+	taskIDSet := make(map[uuid.UUID]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskIDSet[taskID] = struct{}{}
+	}
+	filtered := make([]ProjectArtifactRef, 0, len(r.artifactRefs))
+	for _, ref := range r.artifactRefs {
+		if ref.TenantID != tenantID || ref.ProjectID != projectID {
+			continue
+		}
+		if ref.ArtifactType != "declared" || !strings.HasPrefix(ref.ObjectRef, "artifacts/") {
+			continue
+		}
+		if ref.ProjectTaskID == nil {
+			continue
+		}
+		if _, ok := taskIDSet[*ref.ProjectTaskID]; ok {
+			filtered = append(filtered, ref)
 		}
 	}
 	return filtered, nil

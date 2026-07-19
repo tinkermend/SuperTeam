@@ -175,7 +175,9 @@ describe("CriteriaPanelView", () => {
           criterion({
             criterion_id: "c1",
             satisfied_by: ["task-1"],
-            task_summaries: [{ task_id: "task-1", summary: "已交付并通过回归" }],
+            task_summaries: [
+              { task_id: "task-1", summary: "已交付并通过回归", deliverables: [] },
+            ],
           }),
         ]}
         demandStatus="acceptance_pending"
@@ -184,5 +186,47 @@ describe("CriteriaPanelView", () => {
     );
 
     await expect.element(screen.getByText("已交付并通过回归")).toBeInTheDocument();
+  });
+
+  it("surfaces declared deliverables as preview/download chips beside the task summary", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({
+            criterion_id: "c1",
+            satisfied_by: ["task-1"],
+            task_summaries: [
+              {
+                task_id: "task-1",
+                summary: "报告已交付",
+                deliverables: [
+                  {
+                    artifact_ref_id: "art-html",
+                    title: "report.html",
+                    content_type: "text/html",
+                    size_bytes: 462,
+                  },
+                  {
+                    artifact_ref_id: "art-bin",
+                    title: "data.bin",
+                    content_type: "application/octet-stream",
+                  },
+                ],
+              },
+            ],
+          }),
+        ]}
+        demandStatus="acceptance_pending"
+        onSign={vi.fn()}
+      />,
+    );
+
+    // 交付物随任务产出折叠块展开可见。
+    await userEvent.click(screen.getByText(/查看满足任务产出/));
+    await expect.element(screen.getByText("report.html")).toBeInTheDocument();
+    await expect.element(screen.getByText("data.bin")).toBeInTheDocument();
+    // 两个交付物各一个下载链接 + 仅 HTML 一个预览按钮。
+    expect(screen.getByRole("link", { name: /下载/ }).all()).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /预览/ }).all()).toHaveLength(1);
   });
 });

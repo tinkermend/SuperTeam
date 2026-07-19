@@ -3600,6 +3600,23 @@ func (r *PgRepository) ListExecutionSummariesByTaskIDs(ctx context.Context, tena
 	return r.listProjectExecutionSummariesByTaskIDs(ctx, tenantID, projectID, taskIDs)
 }
 
+// ListDeclaredArtifactsByTaskIDs batches the retrievable declared deliverables
+// of the given tasks for the acceptance panel deep-link (v2 §4 P2).
+func (r *PgRepository) ListDeclaredArtifactsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectArtifactRef, error) {
+	if len(taskIDs) == 0 {
+		return []ProjectArtifactRef{}, nil
+	}
+	rows, err := r.q.ListProjectDeclaredArtifactsByTaskIDs(ctx, queries.ListProjectDeclaredArtifactsByTaskIDsParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskIds: taskIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return artifactRefsFromRecords(rows)
+}
+
 func (r *PgRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
 	return r.createTransferRequestWithQueries(ctx, r.q, req)
 }

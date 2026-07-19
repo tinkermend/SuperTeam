@@ -2585,8 +2585,20 @@ type DemandAcceptanceCriterionDetailJudgeType string
 // DemandAcceptanceCriterionDetailVerdict 生效判定（人类优先于执行者/对抗聚合/检测门聚合）；pending 仅出现于 review_gate 判据的完成时占位（检测器出结论前保持 HOLD）；escalate_human 仅出现于 adversarial_review 判据的对抗聚合（判官预算耗尽升级人类）；无任何判定时为 null
 type DemandAcceptanceCriterionDetailVerdict string
 
+// DemandCriterionDeliverable defines model for DemandCriterionDeliverable.
+type DemandCriterionDeliverable struct {
+	// ArtifactRefId 走 GET /api/v1/artifacts/{artifact_ref_id}/content 预览或下载
+	ArtifactRefId openapi_types.UUID `json:"artifact_ref_id"`
+	ContentType   *string            `json:"content_type,omitempty"`
+	SizeBytes     *int64             `json:"size_bytes,omitempty"`
+	Title         string             `json:"title"`
+}
+
 // DemandCriterionTaskSummary defines model for DemandCriterionTaskSummary.
 type DemandCriterionTaskSummary struct {
+	// Deliverables 该任务产出的可取回声明式交付物（声明式交付物 v2 §4 P2）：人在判据卡 即可点开预览，无需跳工件页。只含 declared 且内容寻址、平台已核对存在的行。
+	Deliverables []DemandCriterionDeliverable `json:"deliverables"`
+
 	// Summary 该任务最新执行结论；无执行摘要时为空字符串
 	Summary string `json:"summary"`
 

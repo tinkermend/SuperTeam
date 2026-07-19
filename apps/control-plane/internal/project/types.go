@@ -1459,6 +1459,19 @@ type DemandAdversarialJudgement struct {
 type DemandCriterionTaskSummary struct {
 	TaskID  string
 	Summary string
+	// Deliverables 是该任务产出的声明式交付物(声明式交付物 v2 §4 P2):
+	// 只含内容寻址、平台已核对存在的 declared 工件,人在判据卡即可点开预览,
+	// 无需跳到工件 tab 自己找(证据紧邻签署按钮)。
+	Deliverables []DemandCriterionDeliverable
+}
+
+// DemandCriterionDeliverable is one retrievable declared deliverable of a
+// satisfied task, minimal fields for a preview/download chip.
+type DemandCriterionDeliverable struct {
+	ArtifactRefID string
+	Title         string
+	ContentType   string
+	SizeBytes     *int64
 }
 
 // DemandAcceptanceCriterionDetail is one snapshotted acceptance criterion
