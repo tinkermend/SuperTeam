@@ -2274,6 +2274,7 @@ type projectMemberResponse struct {
 	DisplayNameSnapshot *string        `json:"display_name_snapshot,omitempty"`
 	Status              string         `json:"status"`
 	Settings            map[string]any `json:"settings"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 type projectTaskResponse struct {
@@ -3058,6 +3059,7 @@ func memberResponses(members []ProjectMember) []projectMemberResponse {
 			DisplayNameSnapshot: member.DisplayNameSnapshot,
 			Status:              member.Status,
 			Settings:            mapOrEmpty(member.Settings),
+			CreatedAt:           timeValue(member.CreatedAt),
 		})
 	}
 	return responses

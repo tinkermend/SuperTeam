@@ -184,6 +184,7 @@ export type ProjectMember = {
   display_name_snapshot?: string;
   status: string;
   settings: Record<string, unknown>;
+  created_at?: string;
 };
 
 export type ProjectMemberInput = {

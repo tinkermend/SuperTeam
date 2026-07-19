@@ -4171,6 +4171,8 @@ type ProjectExecutionTraceSummary struct {
 
 // ProjectMember defines model for ProjectMember.
 type ProjectMember struct {
+	// CreatedAt 成员加入项目时间
+	CreatedAt           time.Time              `json:"created_at"`
 	DisplayNameSnapshot *string                `json:"display_name_snapshot,omitempty"`
 	Id                  openapi_types.UUID     `json:"id"`
 	PrincipalId         openapi_types.UUID     `json:"principal_id"`

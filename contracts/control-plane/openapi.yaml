@@ -6234,6 +6234,7 @@ components:
         - project_role
         - status
         - settings
+        - created_at
       properties:
         id:
           type: string
@@ -6258,6 +6259,10 @@ components:
         settings:
           type: object
           additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+          description: 成员加入项目时间
     ProjectMemberInput:
       type: object
       required:
