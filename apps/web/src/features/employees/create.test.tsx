@@ -594,7 +594,9 @@ describe("CreateEmployeeView", () => {
     expect(screen.getByText("角色配置").query()).toBeNull();
     expect(screen.getByText("能力与策略").query()).toBeNull();
     await expect.element(screen.getByLabelText("人格记忆.md")).toBeVisible();
-    await expect.element(screen.getByLabelText("能力绑定")).toBeVisible();
+    // "能力绑定"伪输入框已删：技能/MCP 计数由右侧画像摘要承载，
+    // 模板带出的外部能力/环境变量引用并入"员工扩展能力"说明行（空时不显示）。
+    expect(document.body.textContent).not.toContain("能力绑定");
     // 员工个体不承载上下文/审批策略，创建页不再出现"默认策略"只读块。
     expect(document.body.textContent).not.toContain("默认策略");
     expect(document.body.textContent).not.toContain("上下文策略");

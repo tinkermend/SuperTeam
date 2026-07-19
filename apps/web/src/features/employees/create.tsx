@@ -1345,7 +1345,7 @@ function CapabilityStep({
 }) {
   const capabilityOptions = options?.capability_options;
   const inheritedCapabilities = inheritedCapabilityBindings(options);
-  const capabilityBindingsPreview = formatCapabilityBindingsPreview(draft, options);
+  const templateBindingsSummary = formatTemplateBindingsSummary(draft);
   const extensionCapabilityOptions = {
     mcp_servers: withoutInheritedItems(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.mcp_servers),
     skills: withoutInheritedItems(capabilityOptions?.skills ?? [], inheritedCapabilities.skills),
@@ -1378,21 +1378,12 @@ function CapabilityStep({
           <CapabilityReadOnlyList label="MCP Server" values={inheritedCapabilities.mcp_servers} />
         </div>
       </section>
-      <section className="rounded-[14px] border border-v3-line bg-v3-card p-3">
+      <div>
         <div className="text-sm font-semibold text-v3-ink">员工扩展能力</div>
-        <p className="mt-1 text-xs text-v3-ink-3">这里只提交员工个人扩展项。</p>
-      </section>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Field label="人格记忆.md">
-          <Textarea
-            className="min-h-[220px] border-v3-line bg-v3-card font-mono text-xs text-v3-ink"
-            id="persona-memory-markdown"
-            onChange={(event) => onUpdate({ persona_memory_markdown: event.target.value })}
-            placeholder="# 人格画像"
-            value={draft.persona_memory_markdown}
-          />
-        </Field>
-        <JsonReadOnlyCard label="能力绑定" value={capabilityBindingsPreview} />
+        <p className="mt-1 text-xs text-v3-ink-3">
+          这里只提交员工个人扩展项。
+          {templateBindingsSummary ? `模板另带出：${templateBindingsSummary}。` : null}
+        </p>
       </div>
       <CapabilityGroup
         checkedValues={draft.capability_binding_draft.skills}
@@ -1424,6 +1415,15 @@ function CapabilityStep({
         onToggle={(value) => toggle("mcp_servers", value)}
         values={extensionCapabilityOptions.mcp_servers}
       />
+      <Field label="人格记忆.md">
+        <Textarea
+          className="min-h-[160px] border-v3-line bg-v3-card font-mono text-xs text-v3-ink"
+          id="persona-memory-markdown"
+          onChange={(event) => onUpdate({ persona_memory_markdown: event.target.value })}
+          placeholder="# 人格画像"
+          value={draft.persona_memory_markdown}
+        />
+      </Field>
       <section className="rounded-[14px] border border-v3-line bg-v3-card p-4 lg:max-w-md">
         <Field error={errors.daily_token_limit} label="每日 Token 预算上限">
           <Input
@@ -1437,24 +1437,6 @@ function CapabilityStep({
           <p className="text-xs text-v3-ink-3">留空表示不设置每日预算上限；填写时必须为正整数。</p>
         </Field>
       </section>
-    </div>
-  );
-}
-
-function JsonReadOnlyCard({ label, value }: { label: string; value: string }) {
-  const id = `${labelId[label] ?? label}-readonly`;
-
-  return (
-    <div className="rounded-[12px] border border-v3-line bg-v3-card p-3">
-      <Label className="text-v3-ink" htmlFor={id}>
-        {label}
-      </Label>
-      <textarea
-        className="mt-2 min-h-[84px] w-full rounded-xl border border-v3-line bg-v3-card-soft px-3 py-2 font-mono text-xs text-v3-ink outline-none"
-        id={id}
-        readOnly
-        value={value}
-      />
     </div>
   );
 }
@@ -1731,7 +1713,6 @@ function Field({
 
 const labelId: Record<string, string> = {
   "人格记忆.md": "persona-memory-markdown",
-  能力绑定: "capability-bindings",
   名称: "employee-name",
   归属团队: "employee-team",
   职责定位: "employee-role",
@@ -1906,18 +1887,17 @@ function parseDailyTokenLimit(rawValue: string) {
   return { value: parsed };
 }
 
-function formatCapabilityBindingsPreview(
-  draft: WizardDraft,
-  options: DigitalEmployeeCreateOptions | undefined,
-) {
-  const selection = capabilitySelectionFromDraft(draft, options);
+// formatTemplateBindingsSummary 汇总模板带出的、本步不可编辑的逻辑绑定
+// （外部能力/环境变量引用）；两者皆空时返回空串不占版面。
+// 技能/MCP 计数不在此重复——右侧"画像摘要"实时展示。
+function formatTemplateBindingsSummary(draft: WizardDraft) {
   const bindings = capabilityBindingsFromDraft(draft);
-  return [
-    `技能：${selection.skills.length}`,
-    `MCP Server：${selection.mcp_servers.length}`,
-    `外部能力：${stringList(bindings.external_capabilities).length}`,
-    `环境变量引用：${stringList(bindings.environment_variable_refs).length}`,
-  ].join("\n");
+  const parts: string[] = [];
+  const externalCount = stringList(bindings.external_capabilities).length;
+  const envRefCount = stringList(bindings.environment_variable_refs).length;
+  if (externalCount > 0) parts.push(`外部能力 ${externalCount}`);
+  if (envRefCount > 0) parts.push(`环境变量引用 ${envRefCount}`);
+  return parts.join(" · ");
 }
 
 function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
