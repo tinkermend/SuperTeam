@@ -146,7 +146,7 @@ func (q *Queries) GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigit
 
 const GetProjectAuthzFacts = `-- name: GetProjectAuthzFacts :one
 SELECT
-  p.human_owner_user_id,
+  p.human_owner_user_ids,
   EXISTS(
     SELECT 1 FROM project_members pm
     WHERE pm.project_id = p.id AND pm.principal_id = $1::uuid
@@ -168,9 +168,9 @@ type GetProjectAuthzFactsParams struct {
 }
 
 type GetProjectAuthzFactsRow struct {
-	HumanOwnerUserID uuid.UUID     `json:"human_owner_user_id"`
-	IsMember         bool          `json:"is_member"`
-	TeamID           uuid.NullUUID `json:"team_id"`
+	HumanOwnerUserIds []uuid.UUID   `json:"human_owner_user_ids"`
+	IsMember          bool          `json:"is_member"`
+	TeamID            uuid.NullUUID `json:"team_id"`
 }
 
 func (q *Queries) GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzFactsParams) (GetProjectAuthzFactsRow, error) {
@@ -181,7 +181,7 @@ func (q *Queries) GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzF
 		arg.ProjectID,
 	)
 	var i GetProjectAuthzFactsRow
-	err := row.Scan(&i.HumanOwnerUserID, &i.IsMember, &i.TeamID)
+	err := row.Scan(&i.HumanOwnerUserIds, &i.IsMember, &i.TeamID)
 	return i, err
 }
 

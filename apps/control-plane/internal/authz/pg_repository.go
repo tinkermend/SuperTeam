@@ -107,9 +107,9 @@ func (r *PgRepository) GetProjectAuthzFacts(ctx context.Context, params ProjectA
 		teamID = &row.TeamID.UUID
 	}
 	return ProjectAuthzFacts{
-		HumanOwnerUserID: row.HumanOwnerUserID,
-		IsMember:         row.IsMember,
-		TeamID:           teamID,
+		HumanOwnerUserIDs: row.HumanOwnerUserIds,
+		IsMember:          row.IsMember,
+		TeamID:            teamID,
 	}, nil
 }
 
