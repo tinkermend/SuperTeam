@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
@@ -95,9 +96,26 @@ func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateD
 		Metadata:         metadata,
 	})
 	if err != nil {
-		return DigitalEmployeeRecord{}, err
+		return DigitalEmployeeRecord{}, mapDigitalEmployeeConstraintError(err)
 	}
 	return digitalEmployeeRecordFromQuery(employee)
+}
+
+// mapDigitalEmployeeConstraintError 把 digital_employees 上的唯一约束冲突映射为
+// ErrConflict(409)，避免以 500 裸奔：重名（uq_digital_employees_active_name）
+// 与头像独占（uq_digital_employees_avatar_asset）。
+func mapDigitalEmployeeConstraintError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		switch pgErr.ConstraintName {
+		case "uq_digital_employees_active_name":
+			return fmt.Errorf("%w: digital employee name already exists", ErrConflict)
+		case "uq_digital_employees_avatar_asset":
+			return fmt.Errorf("%w: avatar asset already in use", ErrConflict)
+		}
+		return fmt.Errorf("%w: %s", ErrConflict, pgErr.ConstraintName)
+	}
+	return err
 }
 
 func (r *PgRepository) ListDigitalEmployees(ctx context.Context, params ListDigitalEmployeesParams) ([]DigitalEmployeeRecord, error) {
