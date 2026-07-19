@@ -30,7 +30,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   GlassCard,
   IconTile,
-  SoftCard,
   StatusPill,
   V3Button,
   WorkSurface,
@@ -462,8 +461,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
         {flowStep === "configure" ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-            <section className="flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3 xl:max-h-[calc(100vh-220px)] xl:min-h-[560px]">
-              <div className="border-b border-v3-line p-4">
+            <GlassCard className="flex min-w-0 flex-col xl:max-h-[calc(100vh-220px)] xl:min-h-[560px]">
+              <div className="border-b border-[color:var(--v3-aurora-hairline)] p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex items-center gap-2.5">
                     <IconTile tone="brand" size="sm">
@@ -519,14 +518,14 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 <p className="px-4 text-sm text-v3-danger">{getErrorMessage(createEmployee.error)}</p>
               ) : null}
               <div
-                className="sticky bottom-0 z-10 flex justify-between gap-3 border-t border-v3-line bg-v3-card p-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)]"
+                className="flex justify-between gap-3 border-t border-[color:var(--v3-aurora-hairline)] p-4"
                 data-testid="employee-configure-actions"
               >
                 <V3Button
                   disabled={stepIndex === 0 || createEmployee.isPending}
                   onClick={() => setStepIndex((current) => Math.max(current - 1, 0))}
                   type="button"
-                  variant="outline"
+                  variant="glass"
                 >
                   <ChevronLeft className="size-4" />
                   上一步
@@ -564,7 +563,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   </V3Button>
                 )}
               </div>
-            </section>
+            </GlassCard>
 
             <CreationPreflightPanel
               draft={draft}
@@ -600,7 +599,7 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
   const normalizedActiveIndex = activeIndex === -1 ? 2 : activeIndex;
 
   return (
-    <SoftCard className="mb-4 px-4 py-3.5">
+    <GlassCard className="mb-4 px-4 py-3.5">
       <div className="grid gap-3 md:grid-cols-3">
         {stages.map((stage, index) => {
           const active = index === normalizedActiveIndex;
@@ -637,7 +636,7 @@ function CreationStageProgress({ flowStep }: { flowStep: CreateFlowStep }) {
           );
         })}
       </div>
-    </SoftCard>
+    </GlassCard>
   );
 }
 
@@ -778,8 +777,8 @@ function TemplateSelectionPanel({
   }, [employeeTypes, riskFilter, templateQuery]);
 
   return (
-    <section className="@container/template flex min-w-0 flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
-      <div className="border-b border-v3-line p-4">
+    <GlassCard className="@container/template flex min-w-0 flex-col">
+      <div className="border-b border-[color:var(--v3-aurora-hairline)] p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-2.5">
             <IconTile tone="brand" size="sm">
@@ -872,7 +871,7 @@ function TemplateSelectionPanel({
           </WorkSurface>
         </div>
       )}
-      <div className="border-t border-v3-line px-4 py-3.5">
+      <div className="border-t border-[color:var(--v3-aurora-hairline)] px-4 py-3.5">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -893,7 +892,7 @@ function TemplateSelectionPanel({
         </div>
       </div>
       {selectedType ? <span className="sr-only">当前选择：{selectedType.label}</span> : null}
-    </section>
+    </GlassCard>
   );
 }
 
@@ -978,7 +977,7 @@ function displayablePreflightChecks<T extends { key: string }>(checks: T[]) {
 
 function InlineSummary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[12px] border border-v3-line bg-v3-card px-3 py-2">
+    <div className="v3-glass-inner flex items-center justify-between gap-3 px-3 py-2">
       <span className="text-v3-ink-3">{label}</span>
       <span className="max-w-[180px] truncate font-medium text-v3-ink">{value}</span>
     </div>
@@ -989,7 +988,7 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
   const currentIndex = configSteps.indexOf(currentStep);
 
   return (
-    <div className="flex flex-wrap gap-1 rounded-[14px] bg-v3-card-soft p-1.5">
+    <div className="v3-glass-inner flex flex-wrap gap-1 p-1.5">
         {configSteps.map((step, index) => {
           const active = step === currentStep;
           const done = index < currentIndex;
@@ -1034,8 +1033,9 @@ function CreationPreflightPanel({
   const providers = providerCandidates(options);
 
   return (
-    <aside className="grid content-start gap-4">
-      <GlassCard className="p-4">
+    <aside className="grid content-start">
+      <GlassCard className="divide-y divide-[color:var(--v3-aurora-hairline)]">
+      <section className="p-4">
         <div className="mb-3 flex items-center gap-2">
           <IconTile tone="ok" size="sm">
             <ShieldCheck />
@@ -1047,11 +1047,11 @@ function CreationPreflightPanel({
         </div>
         <div className="grid gap-2">
           {checks.length === 0 ? (
-            <p className="rounded-[12px] border border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">等待创建候选加载。</p>
+            <p className="v3-glass-inner p-3 text-sm text-v3-ink-3">等待创建候选加载。</p>
           ) : (
             checks.map((check) => (
               <div
-                className="flex items-start gap-2 rounded-[12px] border border-v3-line bg-v3-card-inner p-3"
+                className="v3-glass-inner flex items-start gap-2 p-3"
                 key={check.key}
               >
                 <span className={cn("mt-1 size-2 shrink-0 rounded-full", checkDotClassName(check.status))} />
@@ -1066,9 +1066,9 @@ function CreationPreflightPanel({
             ))
           )}
         </div>
-      </GlassCard>
+      </section>
 
-      <GlassCard className="p-4">
+      <section className="p-4">
         <div className="mb-3 flex items-center gap-2">
           <IconTile tone="artifact" size="sm">
             <Gauge />
@@ -1094,9 +1094,9 @@ function CreationPreflightPanel({
             value={draft.provider_type ? providerDisplayName(draft.provider_type) : `${providers.length} 个候选`}
           />
         </div>
-      </GlassCard>
+      </section>
 
-      <section className="rounded-[14px] border border-v3-line bg-v3-card-soft p-4 text-xs leading-5 text-v3-ink-3">
+      <section className="p-4 text-xs leading-5 text-v3-ink-3">
         <div className="mb-2 flex items-center gap-2 font-semibold text-v3-ink">
           <Cpu className="size-4 text-v3-brand" />
           创建后事实
@@ -1108,6 +1108,7 @@ function CreationPreflightPanel({
           <div>4. 进入 ready，等待任务调度</div>
         </div>
       </section>
+      </GlassCard>
     </aside>
   );
 }
@@ -1133,7 +1134,7 @@ function ConfirmCreationStep({
 
   return (
     <GlassCard className="flex flex-col">
-      <div className="border-b border-v3-line p-4">
+      <div className="border-b border-[color:var(--v3-aurora-hairline)] p-4">
         <div className="flex items-center gap-2.5">
           <IconTile tone="brand" size="sm">
             <ClipboardCheck />
@@ -1147,7 +1148,7 @@ function ConfirmCreationStep({
         </div>
       </div>
       <div className="grid gap-4 p-4 lg:grid-cols-2">
-        <section className="rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
+        <section className="v3-glass-inner p-4">
           <h3 className="text-sm font-semibold text-v3-ink">身份与模板</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
@@ -1161,7 +1162,7 @@ function ConfirmCreationStep({
           </div>
         </section>
 
-        <section className="rounded-[14px] border border-v3-line bg-v3-card-inner p-4">
+        <section className="v3-glass-inner p-4">
           <h3 className="text-sm font-semibold text-v3-ink">能力与 Provider 类型</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
@@ -1184,7 +1185,7 @@ function ConfirmCreationStep({
       {createError ? (
         <p className="px-4 pb-2 text-sm text-v3-danger">{getErrorMessage(createError)}</p>
       ) : null}
-      <div className="flex justify-between gap-3 border-t border-v3-line p-4">
+      <div className="flex justify-between gap-3 border-t border-[color:var(--v3-aurora-hairline)] p-4">
         <V3Button disabled={creating} onClick={onBack} type="button" variant="glass">
           <ChevronLeft className="size-4" />
           返回配置
@@ -1273,7 +1274,7 @@ function IdentityStep({
           </select>
         </Field>
       </div>
-      <div className="rounded-v3-inner bg-v3-card-soft p-3 text-sm">
+      <div className="v3-glass-inner p-3 text-sm">
         <div className="font-semibold text-v3-ink">
           {isBlankCustom ? BLANK_CUSTOM_TITLE : selectedType?.label ?? "专业模板"}
         </div>
@@ -1373,7 +1374,7 @@ function CapabilityStep({
         <h2 className="text-lg font-semibold text-v3-ink">能力</h2>
         <p className="text-sm text-v3-ink-3">团队基线能力只读继承；这里只为员工补充个人技能和 MCP。</p>
       </div>
-      <section className="rounded-v3-inner bg-v3-card-soft px-3.5 py-3">
+      <section className="v3-glass-inner px-3.5 py-3">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="text-sm font-semibold text-v3-ink">团队继承能力</span>
           <span className="text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</span>
@@ -1533,7 +1534,7 @@ function CapabilityGroup({
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[12px] border border-v3-line bg-v3-card p-3">
+    <div className="v3-glass-inner p-3">
       <div className="text-xs text-v3-ink-3">{label}</div>
       <div className="mt-1 text-sm font-medium text-v3-ink">{value}</div>
     </div>
@@ -1590,7 +1591,7 @@ function ProviderStep({
         </p>
       ) : null}
       {error ? <p className="text-sm text-v3-danger">{error}</p> : null}
-      <section className="rounded-v3-inner bg-v3-card-soft p-3.5">
+      <section className="v3-glass-inner p-3.5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-medium text-v3-ink">员工环境变量</h3>

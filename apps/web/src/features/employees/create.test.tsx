@@ -445,15 +445,17 @@ describe("CreateEmployeeView", () => {
     expect(document.body.textContent).not.toContain("即将创建");
   });
 
-  it("keeps the configure step actions fixed to the viewport bottom", async () => {
+  it("keeps the configure step actions visible outside the scrollable step content", async () => {
     const screen = await renderCreateEmployeeView();
 
     await enterConfiguration(screen);
 
+    // 画布是固定高度+内部滚动的玻璃卡，操作条是滚动区之外的兄弟节点，
+    // 不随步骤内容滚动，无需 sticky 即始终可见。
     const actions = document.body.querySelector('[data-testid="employee-configure-actions"]');
     expect(actions).toBeTruthy();
-    expect(actions).toHaveClass("sticky");
-    expect(actions).toHaveClass("bottom-0");
+    expect(actions?.parentElement?.className ?? "").toContain("v3-glass");
+    expect(actions?.className).toContain("border-t");
     await expect.element(screen.getByRole("button", { name: "下一步" })).toBeVisible();
   });
 
