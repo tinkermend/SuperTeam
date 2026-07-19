@@ -299,6 +299,15 @@ pub struct ProjectTaskWaitHumanWriteback {
     pub raw_log: Option<crate::raw_log::RawLogSummary>,
 }
 
+/// 终态项目任务尝试写回的类别。持久重试队列按此在恢复时分派到正确的 CP 端点。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectTaskAttemptWritebackKind {
+    Complete,
+    Fail,
+    WaitHuman,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectTaskAttestationWriteback {
     pub project_id: String,

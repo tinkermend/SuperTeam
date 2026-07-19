@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use std::time::Duration;
 
@@ -11,8 +11,9 @@ use super::models::{
     PresignArtifactUploadRequest, PresignDownloadResponse, PresignRawLogUploadRequest,
     PresignSkillArchiveDownloadRequest, PresignUploadResponse, ProjectTaskAttestationWriteback,
     ProjectTaskBudgetHeartbeatResponse, ProjectTaskBudgetHeartbeatWriteback,
-    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskStartWriteback,
-    ProjectTaskWaitHumanWriteback, RegisterNodeRequest, RegisterNodeResponse,
+    ProjectTaskAttemptWritebackKind, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
+    ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RegisterNodeRequest,
+    RegisterNodeResponse,
     RuntimeCapabilitiesRequest, RuntimeCapabilityInput, RuntimeCapabilityResponse,
     RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse,
 };
@@ -39,6 +40,28 @@ pub struct RuntimeAuthorization {
     pub header: http::HeaderValue,
     pub generation: u64,
 }
+
+/// 控制平面返回非成功且非鉴权失效状态时的类型化错误,携 HTTP 状态码。
+/// 写回持久重试 worker 通过 `downcast_ref::<RuntimeApiError>()` 取状态码分类:
+/// `status.is_client_error()`(4xx)视为确定性失败(丢弃),否则退避重试。
+#[derive(Debug)]
+pub struct RuntimeApiError {
+    pub operation: &'static str,
+    pub status: StatusCode,
+    pub body: String,
+}
+
+impl std::fmt::Display for RuntimeApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} failed with status {}: {}",
+            self.operation, self.status, self.body
+        )
+    }
+}
+
+impl std::error::Error for RuntimeApiError {}
 
 impl ControlPlaneClient {
     /// Create a new Control Plane client
@@ -524,6 +547,49 @@ impl ControlPlaneClient {
         Ok(())
     }
 
+    /// 按类别重发一个已持久化的终态写回原始请求体(持久重试 worker 用)。请求体已含
+    /// idempotency_key/lease_token/runtime_node_id,原样重放即幂等;不重跑采集/上传。
+    pub async fn resend_project_task_attempt_writeback(
+        &self,
+        kind: ProjectTaskAttemptWritebackKind,
+        attempt_id: &str,
+        body: &serde_json::Value,
+    ) -> Result<()> {
+        let url = match kind {
+            ProjectTaskAttemptWritebackKind::Complete => {
+                self.project_task_attempt_complete_url(attempt_id)
+            }
+            ProjectTaskAttemptWritebackKind::Fail => {
+                self.project_task_attempt_fail_url(attempt_id)
+            }
+            ProjectTaskAttemptWritebackKind::WaitHuman => {
+                self.project_task_attempt_wait_human_url(attempt_id)
+            }
+        };
+        let (request, auth) = self.runtime_request(Method::POST, &url, false).await?;
+
+        let response = request
+            .json(body)
+            .send()
+            .await
+            .context("Failed to resend project task attempt writeback")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(self
+                .runtime_error(
+                    "Resend project task attempt writeback",
+                    status,
+                    body,
+                    Some(auth.generation),
+                )
+                .await);
+        }
+
+        Ok(())
+    }
+
     pub async fn create_project_task_attestation(
         &self,
         writeback: &ProjectTaskAttestationWriteback,
@@ -774,7 +840,15 @@ impl ControlPlaneClient {
             }
             .into()
         } else {
-            anyhow!("{} failed with status {}: {}", operation, status, body)
+            // 返回可 downcast 的类型化错误,携 HTTP 状态码,供写回持久重试 worker 分类:
+            // 4xx(含 409 attempt 已终态/租约失配)= 确定性不可成功 → 丢弃队列项;
+            // 5xx/网络/超时 = 瞬时 → 退避重试。Display 保持原格式,既有日志不变。
+            RuntimeApiError {
+                operation,
+                status,
+                body,
+            }
+            .into()
         }
     }
 

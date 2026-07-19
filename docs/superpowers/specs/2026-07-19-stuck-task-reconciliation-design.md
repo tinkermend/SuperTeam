@@ -89,7 +89,9 @@ runtime-agent 写回 CP 失败（400/失联）时，结果落本地持久队列�
 - 3.3c 项目措辞一致:删除 project-operational-detail 里的局部 `projectPhaseLabel` 映射(违反 DESIGN 词表单一源且与状态胶囊不一致:running→执行中 vs 运行中),阶段格改用 `projectStatusLabel`。真实浏览器 E2E:项目页状态胶囊与"当前阶段"格均"运行中","执行中"不再出现。
 - 门禁:verify:control-plane 全绿;web typecheck 净 + 定向测试 367 全过。
 
-**未实施(优先级已下降)**:3.2 runtime 侧写回持久重试(Rust runtime-agent):CP 侧安全网已证明能兜住 runtime 死亡,此项降为"减少僵尸产生 + 结果不丢"优化,非紧急,TODO 记后续。3.3a 员工详情页第三套算法(hasActiveRun 只门禁启动按钮、不驱动徽标、用户不可见分叉,统一需后端补单员工 facts)——低性价比,用户拍板不做。
+**已落地 + 测试 + 真实 smoke(3.2 runtime 写回持久重试)**:runtime-agent 终态写回(complete/wait-human/fail)POST 瞬时失败不再 `eprintln!` 吞掉——落盘到 `.superteam/writeback-queue/`,后台 worker(daemon 挂载,启动即扫 + 每 15s)按退避重放。分类:2xx→重放成功删项(结果不丢);4xx(含 409 attempt 已终态/租约失配,多为 P1 看门狗已恢复)→确定性丢弃不无限重试;5xx/网络→保留重试,超 24h 兜底放弃(P1 覆盖)。client 加可 downcast 的 `RuntimeApiError{status}` 供分类。与 P1 互补:短瞬时失败 P3 重放保住结果,长失联 P1 恢复 + 迟到写回拿 409 丢弃。集成测试 4 项(202 flush / 409 discard / 500 retain / daemon worker 启动恢复)+ 真实 smoke(running daemon worker → 真实 CP 400 → 判定 superseded 丢弃,队列清空);verify:runtime-agent 全绿(lib 133 + 集成)。
+
+**未实施**:3.3a 员工详情页第三套算法(hasActiveRun 只门禁启动按钮、不驱动徽标、用户不可见分叉,统一需后端补单员工 facts)——低性价比,用户拍板不做。
 
 ## 6. 关联
 

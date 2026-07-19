@@ -84,6 +84,16 @@ impl RuntimeDaemon {
             heartbeat_loop(heartbeat_client, heartbeat_config).await;
         });
 
+        // 写回持久重试 worker(遗留缺陷#1):重放 executor 落盘的失败终态写回。启动即扫一轮
+        // 补偿上次进程遗留的未发写回,此后每 15s 巡检;单项超 24h 兜底放弃(CP 侧看门狗覆盖)。
+        crate::writeback_queue::spawn_writeback_retry_worker(
+            crate::writeback_queue::queue_dir(&self.config),
+            control_plane.clone(),
+            Duration::from_secs(15),
+            Duration::from_secs(24 * 60 * 60),
+            tokio_util::sync::CancellationToken::new(),
+        );
+
         std::future::pending::<()>().await;
         #[allow(unreachable_code)]
         Ok(())

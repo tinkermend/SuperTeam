@@ -5,5 +5,4 @@
 
 - [ ] 2026-07-19 飞书剩余联调 7 项(结果结论卡/卡内签署/any-of-N 双人/投影不阻塞/通讯录反查/换绑/重推幂等)——照 `docs/superpowers/manual-test-plans/2026-07-19-feishu-remaining-verification.md` 逐项执行,双人项需先备第二个真人飞书账号
 - [ ] 2026-07-19 飞书 App Secret 轮换(明文曾出现在历史对话)——见同上手册末节
-- [ ] 2026-07-19 runtime 写回持久重试(Rust runtime-agent):写回 400/失联时结果落本地持久队列重试,避免结果丢失致任务被恢复为失败——非紧急(CP 侧 attempt 看门狗已证明能兜住 runtime 死亡),属"减少僵尸产生+结果不丢"优化。设计见 `docs/superpowers/specs/2026-07-19-stuck-task-reconciliation-design.md` §3.2
 - [ ] 2026-07-19 生产桶 CORS 引导命令(不急,后续推进)——`apps/control-plane/cmd/bucket-cors/` 幂等 bootstrap(复用 CP S3 配置,origins 走 env,--check 模式),淘汰 dev 一次性脚本;规则模板与背景见 `docs/superpowers/specs/2026-07-19-execution-output-attachments-followups.md` §2

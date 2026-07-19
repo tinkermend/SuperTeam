@@ -21,4 +21,5 @@ pub mod skills;
 pub mod skills_convergence;
 pub mod tools;
 pub mod workspace_cleanup;
+pub mod writeback_queue;
 pub mod workspace_files;

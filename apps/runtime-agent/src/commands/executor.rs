@@ -60,6 +60,8 @@ struct RuntimeCommandWritebackSink {
     /// Inputs for artifact collection at completion (证据地基 spec §4.1);
     /// None on sinks that never complete (e.g. the stop-command failure sink).
     artifact_collection: Option<ArtifactCollectionContext>,
+    /// 终态写回瞬时失败时落盘重试(遗留缺陷#1);后台 worker 重放。
+    writeback_queue: Arc<crate::writeback_queue::WritebackQueue>,
 }
 
 /// What the sink needs to collect the attempt's artifacts when it completes.
@@ -173,6 +175,9 @@ pub struct RuntimeCommandExecutor {
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
     control_plane: Option<ControlPlaneClient>,
+    /// 终态写回失败时的本地持久重试队列(遗留缺陷#1):写回 POST 瞬时失败不再吞掉,
+    /// 落盘由后台 worker 重放,避免结果丢失致任务卡 running。
+    writeback_queue: Arc<crate::writeback_queue::WritebackQueue>,
     /// Per-home 收敛互斥:同一员工家目录上的两条并发命令不得同时收敛
     /// (物化 + prune 互删防护)。
     capability_locks: Arc<std::sync::Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>>,
@@ -194,11 +199,15 @@ impl RuntimeCommandExecutor {
     }
 
     pub fn new(config: RuntimeConfig) -> Self {
+        let writeback_queue = Arc::new(crate::writeback_queue::WritebackQueue::new(
+            crate::writeback_queue::queue_dir(&config),
+        ));
         Self {
             runs: RuntimeRunStore::new(config.runs.log_dir.clone()),
             registry: RuntimeCommandRegistry::default(),
             config,
             control_plane: None,
+            writeback_queue,
             capability_locks: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
@@ -396,6 +405,7 @@ impl RuntimeCommandExecutor {
                         ))
                     },
                 }),
+                writeback_queue: self.writeback_queue.clone(),
             });
         if let Some(writeback) = &writeback {
             if let Err(error) = writeback.start_project_task().await {
@@ -547,6 +557,7 @@ impl RuntimeCommandExecutor {
                     usage_tokens: Arc::new(AtomicI64::new(0)),
                     raw_log: Arc::new(std::sync::Mutex::new(None)),
                     artifact_collection: None,
+                    writeback_queue: self.writeback_queue.clone(),
                 }
                 .fail_project_task("operator cancelled")
                 .await?;
@@ -1301,16 +1312,25 @@ impl RuntimeCommandWritebackSink {
             .await?;
         if let Some(project_task) = &self.project_task {
             let raw_log = self.raw_log.lock().ok().and_then(|guard| guard.clone());
-            let result = if let Some(mut writeback) = project_task_wait_human_writeback(
-                project_task,
-                &self.command_id,
-                summary.as_deref(),
-                provider_session_id.as_deref(),
-            ) {
+            // 捕获 (发送结果, 写回类别, 原始请求体) —— 失败时把请求体落盘由后台 worker
+            // 重放(遗留缺陷#1),而不是像以前那样吞掉丢失结果。body 已含幂等键/租约令牌。
+            let (result, kind, body) = if let Some(mut writeback) =
+                project_task_wait_human_writeback(
+                    project_task,
+                    &self.command_id,
+                    summary.as_deref(),
+                    provider_session_id.as_deref(),
+                ) {
                 writeback.raw_log = raw_log;
-                self.client
+                let result = self
+                    .client
                     .wait_human_project_task_attempt(&project_task.attempt_id, &writeback)
-                    .await
+                    .await;
+                (
+                    result,
+                    crate::controlplane::models::ProjectTaskAttemptWritebackKind::WaitHuman,
+                    serde_json::to_value(&writeback).ok(),
+                )
             } else {
                 // 采集+上传发生在 complete writeback 之前(证据地基 spec §3.4):
                 // 控制平面收到 result 时对象已在存储中,可在同一事务里物化。
@@ -1331,18 +1351,60 @@ impl RuntimeCommandWritebackSink {
                 );
                 writeback.raw_log = raw_log;
                 merge_collected_artifact_refs(&mut writeback, collected_refs);
-                self.client
+                let result = self
+                    .client
                     .complete_project_task_attempt(&project_task.attempt_id, &writeback)
-                    .await
+                    .await;
+                (
+                    result,
+                    crate::controlplane::models::ProjectTaskAttemptWritebackKind::Complete,
+                    serde_json::to_value(&writeback).ok(),
+                )
             };
             if let Err(error) = result {
+                self.enqueue_failed_writeback(project_task, kind, body, error)
+                    .await;
+            }
+        }
+        Ok(())
+    }
+
+    /// 终态写回 POST 失败的统一善后:能序列化请求体就落盘由重试 worker 重放(遗留缺陷#1),
+    /// 否则只能记日志(理论上不发生——写回体都是纯数据)。采集/上传已在此前成功,重放只重发 HTTP。
+    async fn enqueue_failed_writeback(
+        &self,
+        project_task: &ProjectTaskWritebackContext,
+        kind: crate::controlplane::models::ProjectTaskAttemptWritebackKind,
+        body: Option<serde_json::Value>,
+        error: anyhow::Error,
+    ) {
+        match body {
+            Some(body) => {
                 eprintln!(
-                    "Project task writeback failed for command {} project_task {}: {}",
+                    "Project task writeback failed for command {} project_task {}: {}; \
+                     persisted for durable retry",
+                    self.command_id, project_task.project_task_id, error
+                );
+                if let Err(enqueue_error) = self
+                    .writeback_queue
+                    .enqueue(kind, &project_task.attempt_id, body)
+                    .await
+                {
+                    eprintln!(
+                        "Failed to persist writeback for attempt {} (result may be lost, \
+                         CP-side watchdog will recover): {enqueue_error}",
+                        project_task.attempt_id
+                    );
+                }
+            }
+            None => {
+                eprintln!(
+                    "Project task writeback failed and body could not be serialized for retry \
+                     (command {} project_task {}): {}",
                     self.command_id, project_task.project_task_id, error
                 );
             }
         }
-        Ok(())
     }
 
     /// Collects the attempt's artifacts and uploads them through presigned
@@ -1405,12 +1467,21 @@ impl RuntimeCommandWritebackSink {
             let mut writeback =
                 project_task_fail_writeback(project_task, &self.command_id, error_message);
             writeback.raw_log = self.raw_log.lock().ok().and_then(|guard| guard.clone());
-            self.client
-                .fail_project_task_attempt(
-                    &project_task.attempt_id,
-                    &writeback,
+            if let Err(error) = self
+                .client
+                .fail_project_task_attempt(&project_task.attempt_id, &writeback)
+                .await
+            {
+                // 失败写回同样落盘重试(遗留缺陷#1):否则 CP 侧看不到失败,任务卡 running。
+                // 落盘后视为已善后返回 Ok,不把瞬时写回失败上抛拖垮 drain 早退路径。
+                self.enqueue_failed_writeback(
+                    project_task,
+                    crate::controlplane::models::ProjectTaskAttemptWritebackKind::Fail,
+                    serde_json::to_value(&writeback).ok(),
+                    error,
                 )
-                .await?;
+                .await;
+            }
         }
         Ok(())
     }
