@@ -45,6 +45,7 @@ SuperTeam 把 AI 执行能力、流程调度、人类审批、上下文、工件
 - 代码发现优先使用 codebase-memory-mcp：`search_graph` 查符号、`trace_path` 追调用、`get_code_snippet` 读实现，复杂模式用 `query_graph` / `get_architecture`；工具不可用、结果不足或搜索字符串/配置/非代码文件时才回退 `rg` / 文件读取。
 - 平台面向中文用户且不做 i18n：前端用户可见的状态/枚举一律经 `apps/web/src/lib/status-labels.ts` 映射为中文，缺键补词表而非在组件内翻译；业务对象指称显示名称（必要时"名称 (id)"），不得裸 UUID，名称由服务端读路径批量补名。细则见 `DESIGN.md`「面向用户文本与枚举显示」，护栏测试 `status-labels.guard.test.ts`。
 - 前端页面、布局或样式变更前必须阅读 `DESIGN.md`；改设计系统或原型后跑 `verify:design-system` / `verify:design-prototypes`。Web 测试走 `corepack pnpm verify:web`（只跑测试时 `corepack pnpm --filter @superteam/web test`），禁止 `npx playwright install` 或 `npx vitest run`。Web 内部跳转必须用 TanStack Router 的 `Link` 或 `navigate`；只有外链、下载、同页锚点或明确需要整页刷新才允许原生 `<a href>` / `window.location`。
+- 多个会话/agent 可能**共享同一工作树（checkout）**并各自持有未提交改动；此时 git 操作必须防止互相踩踏与丢工作：**只用显式路径 `git add <path>`，禁止 `git add -A`/`git add .`**（会连带暂存其他会话的文件）；**禁止在共享工作树切换或删除分支**（`checkout`/`switch`/`branch -D` 会移动所有会话的 HEAD，可孤立他人提交），跨分支搬运只用 ref 手术（`git update-ref`，或独立 worktree + `cherry-pick`），切换用 `git symbolic-ref`；**提交前用 `git symbolic-ref HEAD` 复核当前分支**（并发下先前的状态快照会过期），提交后确认工作树仍保留他人未提交改动。与其他会话的未提交改动**交织在同一文件**（含 sqlc/OpenAPI 生成物、`CHANGELOG.md` 等）时，只暂存自己的 hunk（`git apply --cached` 或 plumbing），**不得整文件提交**；无法干净切分时改用独立 worktree 隔离后再提交。
 - 不要盲目猜测；存在无法从本地上下文确认且影响架构或业务判断的不确定点时，先与人类沟通。
 
 ## 验证与收尾
@@ -53,5 +54,5 @@ SuperTeam 把 AI 执行能力、流程调度、人类审批、上下文、工件
 - **无法验证时标记为阻塞**并说明缺失依赖（服务未启动、认证缺失、Provider 不可用、迁移未准备、环境不安全），不得以“未做真实链路验证”的状态交付，除非人类明确把范围限定为纯单层局部验证。
 - **轻量验证例外**：纯文案替换、单个低风险样式对齐、设计规范/宪法补充等不改变交互、数据提交、路由、接口、状态流、权限、持久化或运行链路的局部变更，只需 `rg` 回查、`git diff --check`，必要时跑受影响的定向测试；不重启服务、不跑全量测试、不做端到端验证。
 - **延后工作进根目录 `TODO.md`**：人类明确决定放到后面做的事，一行一条（日期+事项+参考文档），完成即删行。收尾检查不得把其中条目当作当次任务的遗漏；新的延后决定必须写入该文件并附操作文档，不能只留在对话里。
-- 任务收尾前使用项目内 skill `$superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）。
+- 任务收尾前必须走项目内收尾门禁 `superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）：Codex 会话用 skill `$superteam-completion-check` 调用；不支持该 skill 的会话（如 Claude Code）直接 `Read` 该 SKILL.md 并照其步骤执行——两种方式等效，门禁本身不可跳过。
 - 分支收尾：合并到 `main` 后，基于 `main` 当前代码完成端到端真实验证，通过后再删除分支和 worktree。验证阻塞时不得删除分支或声明完成。
