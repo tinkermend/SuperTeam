@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { GlassCard, StatusPill, V3Button } from "@/components/superteam";
-import type { RuntimeOverviewEmployee, RuntimeOverviewEmployeeProject, RuntimeOverviewTeam } from "../runtime-overview-model";
+import type { RuntimeOverviewEmployee, RuntimeOverviewTeam } from "../runtime-overview-model";
 import { formatDurationSince, formatNumber, formatTime } from "../formatters";
 import {
   employeeStatusDotClass as statusDotClass,
@@ -119,11 +119,19 @@ function StatusBlock({ employee }: { employee: RuntimeOverviewEmployee }) {
   );
 }
 
-function currentProjectOf(employee: RuntimeOverviewEmployee): RuntimeOverviewEmployeeProject | undefined {
-  return (
+// 当前任务所属项目:优先用后端权威 current_work(currentTask.projectId,保证与正在做的
+// 那件任务同源),回退到项目聚合启发式(workingTaskCount>0 → activeTaskCount>0)。
+function currentProjectOf(employee: RuntimeOverviewEmployee): { projectId: string; name: string } | undefined {
+  if (employee.currentTask?.projectId) {
+    return {
+      projectId: employee.currentTask.projectId,
+      name: employee.currentTask.projectName?.trim() || employee.currentTask.projectId,
+    };
+  }
+  const heuristic =
     employee.projects.find((project) => project.workingTaskCount > 0) ??
-    employee.projects.find((project) => project.activeTaskCount > 0)
-  );
+    employee.projects.find((project) => project.activeTaskCount > 0);
+  return heuristic ? { projectId: heuristic.projectId, name: heuristic.name } : undefined;
 }
 
 function CurrentTaskBlock({ employee }: { employee: RuntimeOverviewEmployee }) {

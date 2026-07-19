@@ -521,6 +521,15 @@ export type DigitalEmployeeOverviewItem = {
     usage_percent_today?: number | null;
     limit_exceeded: boolean;
   };
+  // working 状态的权威成因:当前 running/in_progress 的项目任务及其所属项目(与后端
+  // operational working 判定同源)。用于座位卡精确显示"正在 X 项目做 Y 任务"并深链,
+  // 替代从 latest_run(另一数据源)+ project_summary 聚合的启发式拼接。无正在执行任务时为 null。
+  current_work?: {
+    project_id: string;
+    project_name: string;
+    project_task_id: string;
+    project_task_name: string;
+  } | null;
 };
 
 export type RunPagination = {

@@ -2359,6 +2359,23 @@ employee_operational_facts AS (
         ped.has_employee_scoped_human_blocker,
         ped.has_project_acceptance_blocker
 ),
+employee_working_task AS (
+    SELECT DISTINCT ON (pt.tenant_id, pt.assigned_digital_employee_id)
+        pt.tenant_id,
+        pt.assigned_digital_employee_id AS digital_employee_id,
+        pt.id AS project_task_id,
+        pt.title AS project_task_title,
+        pt.project_id,
+        p.name AS project_name
+    FROM project_tasks pt
+    JOIN overview_args args ON args.tenant_id = pt.tenant_id
+    LEFT JOIN projects p
+      ON p.id = pt.project_id
+     AND p.tenant_id = pt.tenant_id
+    WHERE pt.assigned_digital_employee_id IS NOT NULL
+      AND pt.status IN ('running', 'in_progress')
+    ORDER BY pt.tenant_id, pt.assigned_digital_employee_id, pt.updated_at DESC
+),
 overview_rows AS (
     SELECT
         de.id,
@@ -2420,6 +2437,10 @@ overview_rows AS (
         coalesce(eof.operational_has_working_task, false)::boolean AS operational_has_working_task,
         coalesce(eof.operational_has_active_work, false)::boolean AS operational_has_active_work,
         coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure,
+        ewt.project_id AS working_project_id,
+        COALESCE(ewt.project_name, '')::text AS working_project_name,
+        ewt.project_task_id AS working_project_task_id,
+        COALESCE(ewt.project_task_title, '')::text AS working_project_task_title,
         de.created_at,
         de.updated_at
     FROM digital_employees de
@@ -2463,11 +2484,14 @@ overview_rows AS (
     LEFT JOIN employee_operational_facts eof
       ON eof.tenant_id = de.tenant_id
      AND eof.digital_employee_id = de.id
+    LEFT JOIN employee_working_task ewt
+      ON ewt.tenant_id = de.tenant_id
+     AND ewt.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
 filtered_rows AS (
-    SELECT overview_rows.id, overview_rows.tenant_id, overview_rows.team_id, overview_rows.team_name, overview_rows.owner_user_id, overview_rows.owner_display_name, overview_rows.employee_type, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.status, overview_rows.risk_level, overview_rows.metadata, overview_rows.execution_instance_id, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.node_id, overview_rows.runtime_name, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.provider_available, overview_rows.provider_status, overview_rows.health_status, overview_rows.agent_home_dir_available, overview_rows.latest_run_id, overview_rows.latest_run_task_id, overview_rows.latest_run_status, overview_rows.latest_run_title, overview_rows.latest_run_started_at, overview_rows.latest_run_finished_at, overview_rows.latest_run_updated_at, overview_rows.latest_run_duration_sec, overview_rows.latest_run_token_usage, overview_rows.latest_run_error_message, overview_rows.latest_run_error_family, overview_rows.latest_run_error_code, overview_rows.effective_config_id, overview_rows.governance_status, overview_rows.daily_token_limit_text, overview_rows.team_revision_number, overview_rows.employee_revision_number, overview_rows.skills_count, overview_rows.mcp_servers_count, overview_rows.constitution_ref, overview_rows.today_budget_usage_tokens, overview_rows.budget_usage_tokens_30d, overview_rows.budget_run_count_30d, overview_rows.operational_has_employee_scoped_human_blocker, overview_rows.operational_has_project_acceptance_blocker, overview_rows.operational_has_queued_work, overview_rows.operational_has_working_task, overview_rows.operational_has_active_work, overview_rows.operational_has_task_failure, overview_rows.created_at, overview_rows.updated_at
+    SELECT overview_rows.id, overview_rows.tenant_id, overview_rows.team_id, overview_rows.team_name, overview_rows.owner_user_id, overview_rows.owner_display_name, overview_rows.employee_type, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.status, overview_rows.risk_level, overview_rows.metadata, overview_rows.execution_instance_id, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.node_id, overview_rows.runtime_name, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.provider_available, overview_rows.provider_status, overview_rows.health_status, overview_rows.agent_home_dir_available, overview_rows.latest_run_id, overview_rows.latest_run_task_id, overview_rows.latest_run_status, overview_rows.latest_run_title, overview_rows.latest_run_started_at, overview_rows.latest_run_finished_at, overview_rows.latest_run_updated_at, overview_rows.latest_run_duration_sec, overview_rows.latest_run_token_usage, overview_rows.latest_run_error_message, overview_rows.latest_run_error_family, overview_rows.latest_run_error_code, overview_rows.effective_config_id, overview_rows.governance_status, overview_rows.daily_token_limit_text, overview_rows.team_revision_number, overview_rows.employee_revision_number, overview_rows.skills_count, overview_rows.mcp_servers_count, overview_rows.constitution_ref, overview_rows.today_budget_usage_tokens, overview_rows.budget_usage_tokens_30d, overview_rows.budget_run_count_30d, overview_rows.operational_has_employee_scoped_human_blocker, overview_rows.operational_has_project_acceptance_blocker, overview_rows.operational_has_queued_work, overview_rows.operational_has_working_task, overview_rows.operational_has_active_work, overview_rows.operational_has_task_failure, overview_rows.working_project_id, overview_rows.working_project_name, overview_rows.working_project_task_id, overview_rows.working_project_task_title, overview_rows.created_at, overview_rows.updated_at
     FROM overview_rows
     CROSS JOIN overview_args args
     WHERE (
@@ -2488,7 +2512,7 @@ filtered_rows AS (
       AND (args.employee_ids IS NULL OR overview_rows.id = ANY(args.employee_ids))
 ),
 paged_rows AS (
-    SELECT id, tenant_id, team_id, team_name, owner_user_id, owner_display_name, employee_type, name, role, description, status, risk_level, metadata, execution_instance_id, execution_status, runtime_node_id, node_id, runtime_name, runtime_status, runtime_disabled_at, runtime_archived_at, provider_type, provider_available, provider_status, health_status, agent_home_dir_available, latest_run_id, latest_run_task_id, latest_run_status, latest_run_title, latest_run_started_at, latest_run_finished_at, latest_run_updated_at, latest_run_duration_sec, latest_run_token_usage, latest_run_error_message, latest_run_error_family, latest_run_error_code, effective_config_id, governance_status, daily_token_limit_text, team_revision_number, employee_revision_number, skills_count, mcp_servers_count, constitution_ref, today_budget_usage_tokens, budget_usage_tokens_30d, budget_run_count_30d, operational_has_employee_scoped_human_blocker, operational_has_project_acceptance_blocker, operational_has_queued_work, operational_has_working_task, operational_has_active_work, operational_has_task_failure, created_at, updated_at
+    SELECT id, tenant_id, team_id, team_name, owner_user_id, owner_display_name, employee_type, name, role, description, status, risk_level, metadata, execution_instance_id, execution_status, runtime_node_id, node_id, runtime_name, runtime_status, runtime_disabled_at, runtime_archived_at, provider_type, provider_available, provider_status, health_status, agent_home_dir_available, latest_run_id, latest_run_task_id, latest_run_status, latest_run_title, latest_run_started_at, latest_run_finished_at, latest_run_updated_at, latest_run_duration_sec, latest_run_token_usage, latest_run_error_message, latest_run_error_family, latest_run_error_code, effective_config_id, governance_status, daily_token_limit_text, team_revision_number, employee_revision_number, skills_count, mcp_servers_count, constitution_ref, today_budget_usage_tokens, budget_usage_tokens_30d, budget_run_count_30d, operational_has_employee_scoped_human_blocker, operational_has_project_acceptance_blocker, operational_has_queued_work, operational_has_working_task, operational_has_active_work, operational_has_task_failure, working_project_id, working_project_name, working_project_task_id, working_project_task_title, created_at, updated_at
     FROM filtered_rows
     ORDER BY created_at DESC, id
     LIMIT (SELECT limit_value FROM overview_args)
@@ -2667,6 +2691,10 @@ SELECT
     pr.operational_has_working_task,
     pr.operational_has_active_work,
     pr.operational_has_task_failure,
+    pr.working_project_id,
+    pr.working_project_name,
+    pr.working_project_task_id,
+    pr.working_project_task_title,
     COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json,
     COALESCE(ep.project_count, 0)::integer AS project_count,
     COALESCE(ep.projects_json, '[]'::jsonb) AS projects_json
@@ -2752,6 +2780,10 @@ type ListDigitalEmployeeOverviewItemsRow struct {
 	OperationalHasWorkingTask                bool               `json:"operational_has_working_task"`
 	OperationalHasActiveWork                 bool               `json:"operational_has_active_work"`
 	OperationalHasTaskFailure                bool               `json:"operational_has_task_failure"`
+	WorkingProjectID                         uuid.NullUUID      `json:"working_project_id"`
+	WorkingProjectName                       string             `json:"working_project_name"`
+	WorkingProjectTaskID                     uuid.NullUUID      `json:"working_project_task_id"`
+	WorkingProjectTaskTitle                  string             `json:"working_project_task_title"`
 	RecentEventsJson                         []byte             `json:"recent_events_json"`
 	ProjectCount                             int32              `json:"project_count"`
 	ProjectsJson                             []byte             `json:"projects_json"`
@@ -2759,6 +2791,10 @@ type ListDigitalEmployeeOverviewItemsRow struct {
 
 // mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
 // config revision JSON 不再承载 mcp_servers 声明)。
+// 跨视图一致性(P2 3.3b):working 状态的权威成因。取每个员工当前 running/in_progress
+// 的 project_task(与 operational_has_working_task 同源),携其所属项目名,供座位卡精确
+// 显示"正在 X 项目做 Y 任务"并深链——替代前端从 latest_run(task_runs 另一数据源)+
+// project_summary 聚合的启发式拼接(可能指向不同的工作)。多条时取最近更新的一条。
 func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error) {
 	rows, err := q.db.Query(ctx, ListDigitalEmployeeOverviewItems,
 		arg.TenantID,
@@ -2838,6 +2874,10 @@ func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg List
 			&i.OperationalHasWorkingTask,
 			&i.OperationalHasActiveWork,
 			&i.OperationalHasTaskFailure,
+			&i.WorkingProjectID,
+			&i.WorkingProjectName,
+			&i.WorkingProjectTaskID,
+			&i.WorkingProjectTaskTitle,
 			&i.RecentEventsJson,
 			&i.ProjectCount,
 			&i.ProjectsJson,

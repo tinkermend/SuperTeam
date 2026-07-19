@@ -985,6 +985,16 @@ type digitalEmployeeOverviewItemResponse struct {
 	OperationalState  digitalEmployeeOperationalStateResponse     `json:"operational_state"`
 	RecentEvents      []digitalEmployeeRecentEventSummaryResponse `json:"recent_events"`
 	ProjectSummary    digitalEmployeeProjectSummaryResponse       `json:"project_summary"`
+	CurrentWork       *digitalEmployeeCurrentWorkResponse         `json:"current_work"`
+}
+
+// digitalEmployeeCurrentWorkResponse 是 working 状态的权威成因(当前 running 的项目任务)。
+// 携名称与 id:前端显示名称、深链用 id(对象指称用名称,遵循中文优先显示规范)。
+type digitalEmployeeCurrentWorkResponse struct {
+	ProjectID       string `json:"project_id"`
+	ProjectName     string `json:"project_name"`
+	ProjectTaskID   string `json:"project_task_id"`
+	ProjectTaskName string `json:"project_task_name"`
 }
 
 type digitalEmployeeActivityResponse struct {
@@ -1552,9 +1562,22 @@ func overviewItemResponses(items []DigitalEmployeeOverviewItem) []digitalEmploye
 			OperationalState:  operationalStateResponseFromDomain(item.OperationalState),
 			RecentEvents:      recentEventSummaryResponses(item.RecentEvents),
 			ProjectSummary:    projectSummaryResponseFromDomain(item.ProjectSummary),
+			CurrentWork:       currentWorkResponseFromDomain(item.CurrentWork),
 		})
 	}
 	return responses
+}
+
+func currentWorkResponseFromDomain(work *DigitalEmployeeCurrentWork) *digitalEmployeeCurrentWorkResponse {
+	if work == nil {
+		return nil
+	}
+	return &digitalEmployeeCurrentWorkResponse{
+		ProjectID:       work.ProjectID.String(),
+		ProjectName:     work.ProjectName,
+		ProjectTaskID:   work.ProjectTaskID.String(),
+		ProjectTaskName: work.ProjectTaskName,
+	}
 }
 
 func projectSummaryResponseFromDomain(summary DigitalEmployeeProjectSummary) digitalEmployeeProjectSummaryResponse {

@@ -128,6 +128,10 @@ export type RuntimeOverviewEmployee = {
     taskId: string;
     title: string;
     priority?: "low" | "medium" | "high";
+    // working 成因所属项目(来自后端权威 current_work);用于座位卡精确深链到该项目。
+    // 缺省(如仅有 latest_run 兜底)时无项目关联,座位卡回退到项目聚合启发式。
+    projectId?: string;
+    projectName?: string;
   };
   runtime?: {
     nodeId?: string;

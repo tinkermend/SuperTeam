@@ -1574,6 +1574,27 @@ employee_operational_facts AS (
         ped.has_employee_scoped_human_blocker,
         ped.has_project_acceptance_blocker
 ),
+-- 跨视图一致性(P2 3.3b):working 状态的权威成因。取每个员工当前 running/in_progress
+-- 的 project_task(与 operational_has_working_task 同源),携其所属项目名,供座位卡精确
+-- 显示"正在 X 项目做 Y 任务"并深链——替代前端从 latest_run(task_runs 另一数据源)+
+-- project_summary 聚合的启发式拼接(可能指向不同的工作)。多条时取最近更新的一条。
+employee_working_task AS (
+    SELECT DISTINCT ON (pt.tenant_id, pt.assigned_digital_employee_id)
+        pt.tenant_id,
+        pt.assigned_digital_employee_id AS digital_employee_id,
+        pt.id AS project_task_id,
+        pt.title AS project_task_title,
+        pt.project_id,
+        p.name AS project_name
+    FROM project_tasks pt
+    JOIN overview_args args ON args.tenant_id = pt.tenant_id
+    LEFT JOIN projects p
+      ON p.id = pt.project_id
+     AND p.tenant_id = pt.tenant_id
+    WHERE pt.assigned_digital_employee_id IS NOT NULL
+      AND pt.status IN ('running', 'in_progress')
+    ORDER BY pt.tenant_id, pt.assigned_digital_employee_id, pt.updated_at DESC
+),
 overview_rows AS (
     SELECT
         de.id,
@@ -1635,6 +1656,10 @@ overview_rows AS (
         coalesce(eof.operational_has_working_task, false)::boolean AS operational_has_working_task,
         coalesce(eof.operational_has_active_work, false)::boolean AS operational_has_active_work,
         coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure,
+        ewt.project_id AS working_project_id,
+        COALESCE(ewt.project_name, '')::text AS working_project_name,
+        ewt.project_task_id AS working_project_task_id,
+        COALESCE(ewt.project_task_title, '')::text AS working_project_task_title,
         de.created_at,
         de.updated_at
     FROM digital_employees de
@@ -1678,6 +1703,9 @@ overview_rows AS (
     LEFT JOIN employee_operational_facts eof
       ON eof.tenant_id = de.tenant_id
      AND eof.digital_employee_id = de.id
+    LEFT JOIN employee_working_task ewt
+      ON ewt.tenant_id = de.tenant_id
+     AND ewt.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
@@ -1882,6 +1910,10 @@ SELECT
     pr.operational_has_working_task,
     pr.operational_has_active_work,
     pr.operational_has_task_failure,
+    pr.working_project_id,
+    pr.working_project_name,
+    pr.working_project_task_id,
+    pr.working_project_task_title,
     COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json,
     COALESCE(ep.project_count, 0)::integer AS project_count,
     COALESCE(ep.projects_json, '[]'::jsonb) AS projects_json

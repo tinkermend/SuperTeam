@@ -365,6 +365,10 @@ type Querier interface {
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
 	// config revision JSON 不再承载 mcp_servers 声明)。
+	// 跨视图一致性(P2 3.3b):working 状态的权威成因。取每个员工当前 running/in_progress
+	// 的 project_task(与 operational_has_working_task 同源),携其所属项目名,供座位卡精确
+	// 显示"正在 X 项目做 Y 任务"并深链——替代前端从 latest_run(task_runs 另一数据源)+
+	// project_summary 聚合的启发式拼接(可能指向不同的工作)。多条时取最近更新的一条。
 	ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error)
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
 	ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error)

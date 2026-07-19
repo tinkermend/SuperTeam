@@ -195,13 +195,23 @@ function employeePresenceFromItem(item: DigitalEmployeeOverviewItem, floorId: Ru
     statusReasons: item.operational_state.reasons.map((reason) => reason.message),
     statusSince: statusSinceFromItem(item),
     latestRunErrorMessage: latestRun?.error_message || undefined,
-    currentTask: latestRun
+    // 优先用后端权威 current_work(与 working 判定同源的 project_task,携所属项目),
+    // 保证"显示的任务/项目 = 员工正在做的那件工作";无正在执行任务时回退 latest_run(仅任务、无项目)。
+    currentTask: item.current_work
       ? {
-          taskId: latestRun.task_id,
-          title: latestRun.title,
+          taskId: item.current_work.project_task_id,
+          title: item.current_work.project_task_name,
           priority: item.identity_summary.risk_level === "high" ? "high" : "medium",
+          projectId: item.current_work.project_id,
+          projectName: item.current_work.project_name,
         }
-      : undefined,
+      : latestRun
+        ? {
+            taskId: latestRun.task_id,
+            title: latestRun.title,
+            priority: item.identity_summary.risk_level === "high" ? "high" : "medium",
+          }
+        : undefined,
     runtime: {
       nodeId: item.execution_summary.node_id,
       providerType: item.execution_summary.provider_type,

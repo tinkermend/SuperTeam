@@ -1440,6 +1440,16 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow, labe
 		budgetUsageValue = *budgetUsage
 	}
 
+	var currentWork *DigitalEmployeeCurrentWork
+	if row.WorkingProjectTaskID.Valid && row.WorkingProjectTaskID.UUID != uuid.Nil {
+		currentWork = &DigitalEmployeeCurrentWork{
+			ProjectID:       row.WorkingProjectID.UUID,
+			ProjectName:     row.WorkingProjectName,
+			ProjectTaskID:   row.WorkingProjectTaskID.UUID,
+			ProjectTaskName: row.WorkingProjectTaskTitle,
+		}
+	}
+
 	return DigitalEmployeeOverviewItem{
 		IdentitySummary: DigitalEmployeeIdentitySummary{
 			ID:                row.ID,
@@ -1496,6 +1506,7 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow, labe
 			ProjectCount: row.ProjectCount,
 			Projects:     projectLinksFromJSON(row.ProjectsJson),
 		},
+		CurrentWork: currentWork,
 	}
 }
 

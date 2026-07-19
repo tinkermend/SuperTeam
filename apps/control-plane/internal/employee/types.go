@@ -663,6 +663,18 @@ type DigitalEmployeeOverviewItem struct {
 	OperationalState  DigitalEmployeeOperationalState
 	RecentEvents      []DigitalEmployeeRecentEventSummary
 	ProjectSummary    DigitalEmployeeProjectSummary
+	// CurrentWork 是 working 状态的权威成因(当前 running/in_progress 的 project_task
+	// 及其所属项目),供座位卡精确显示"正在 X 项目做 Y 任务"并深链。仅当员工确有该任务时非空。
+	CurrentWork *DigitalEmployeeCurrentWork
+}
+
+// DigitalEmployeeCurrentWork 标注员工当前正在执行的项目任务(与 operational
+// working 判定同源的 project_task),替代前端从 latest_run + project 聚合的启发式拼接。
+type DigitalEmployeeCurrentWork struct {
+	ProjectID       uuid.UUID
+	ProjectName     string
+	ProjectTaskID   uuid.UUID
+	ProjectTaskName string
 }
 
 // DigitalEmployeeProjectSummary 描述数字员工与项目的关联情况：

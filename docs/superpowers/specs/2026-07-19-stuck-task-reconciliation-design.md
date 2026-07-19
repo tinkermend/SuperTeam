@@ -84,9 +84,12 @@ runtime-agent 写回 CP 失败（400/失联）时，结果落本地持久队列�
 
 **已落地 + 真实 E2E 验证(遗留缺陷#1 attempt 路径)**:两个既有 attempt 恢复 sweep 由看门狗 `SweepStuckProjectTaskAttemptsAllTenants` 逐租户驱动。E2E:直插 running task + running attempt(lease_expires_at 过期 10min,attempt_count=1),看门狗 1min tick → 日志 `recovered ... count=1` → attempt 置 `lost`、task 转 `waiting_human`(reason runtime_recovery)→ 开 `project_task_recovery` 卡(pending)→ 收件箱 API `open` → overview P2a测试员 `waiting_human`/`running_count=0`;清夹具后回 idle。**至此遗留缺陷#1(runtime 死亡致任务卡 running 无自愈)在 CP 侧已被证明治好。**
 
-**未实施(优先级已下降)**:
-- 3.2 runtime 侧写回持久重试(Rust runtime-agent):CP 侧安全网已证明能兜住 runtime 死亡(租约过期→恢复→转人工),故此项从"治本核心"降为"减少僵尸产生 + 让结果不丢(任务可成功而非被恢复为失败)"的优化,非紧急。TODO 记为后续。
-- 3.3 P2 跨视图一致性统一出口(员工详情页第三套算法归一 / working 可解释来源 / 项目措辞):对应用户最初观察面,待推进。
+**已落地 + 真实 E2E 验证(P2 3.3b + 3.3c)**:
+- 3.3b working 权威可解释:overview items SQL 新增 `employee_working_task` CTE,取每个员工当前 running/in_progress 的 project_task(与 working 判定同源)携所属项目名,经 item.current_work(project_id/name + project_task_id/name)下发。前端座位卡 `currentProjectOf` 优先用权威 current_work(替代 latest_run+project_summary 启发式拼接)。真实浏览器 E2E:唯一 working 员工 P2a测试员,座位卡"所属项目"深链 href = current_work.project_id(4be304f7),与 API 权威值精确一致。
+- 3.3c 项目措辞一致:删除 project-operational-detail 里的局部 `projectPhaseLabel` 映射(违反 DESIGN 词表单一源且与状态胶囊不一致:running→执行中 vs 运行中),阶段格改用 `projectStatusLabel`。真实浏览器 E2E:项目页状态胶囊与"当前阶段"格均"运行中","执行中"不再出现。
+- 门禁:verify:control-plane 全绿;web typecheck 净 + 定向测试 367 全过。
+
+**未实施(优先级已下降)**:3.2 runtime 侧写回持久重试(Rust runtime-agent):CP 侧安全网已证明能兜住 runtime 死亡,此项降为"减少僵尸产生 + 结果不丢"优化,非紧急,TODO 记后续。3.3a 员工详情页第三套算法(hasActiveRun 只门禁启动按钮、不驱动徽标、用户不可见分叉,统一需后端补单员工 facts)——低性价比,用户拍板不做。
 
 ## 6. 关联
 

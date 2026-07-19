@@ -312,7 +312,7 @@ export function ProjectOperationalDetail({
           <FactTile
             icon={<GitBranch />}
             label="当前阶段"
-            value={projectPhaseLabel(currentPhase)}
+            value={projectStatusLabel(currentPhase)}
           />
           <FactTile
             icon={<UserRound />}
@@ -1983,18 +1983,6 @@ function ownerMembers(members: ProjectMember[], fallbackOwnerID: string) {
       tenant_id: "",
     },
   ];
-}
-
-function projectPhaseLabel(phase: string) {
-  const labels: Record<string, string> = {
-    acceptance: "待确认结果",
-    archived: "已关闭",
-    configuring: "配置中",
-    draft: "待配置",
-    paused: "已暂停",
-    running: "执行中",
-  };
-  return labels[phase] ?? phase;
 }
 
 function demandStatusLabel(status: string) {
