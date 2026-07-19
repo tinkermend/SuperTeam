@@ -93,7 +93,7 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		Goal:                   textOrNull(req.Goal),
 		Status:                 string(ProjectStatusRunning),
 		HumanOwnerUserID:       req.HumanOwnerUserID,
-		HumanOwnerUserIds:      []uuid.UUID{req.HumanOwnerUserID},
+		HumanOwnerUserIds:      humanOwnerUserIDsForCreate(req),
 		CoordinationWorkflowID: textOrNull(workflowID),
 		CoordinationStatus:     textOrNull("registered"),
 		CoordinationPolicy:     coordinationPolicy,
@@ -7697,6 +7697,14 @@ func mirrorHumanOwnerIDs(value uuid.UUID) []uuid.UUID {
 		return nil
 	}
 	return []uuid.UUID{value}
+}
+
+// humanOwnerUserIDsForCreate 取服务端归一化后的负责人数组;为空时兜底为单标量(防御)。
+func humanOwnerUserIDsForCreate(req CreateProjectRequest) []uuid.UUID {
+	if len(req.HumanOwnerUserIDs) > 0 {
+		return req.HumanOwnerUserIDs
+	}
+	return []uuid.UUID{req.HumanOwnerUserID}
 }
 
 func ptrUUID(value uuid.NullUUID) *uuid.UUID {

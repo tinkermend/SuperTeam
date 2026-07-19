@@ -5974,6 +5974,7 @@ components:
         - goal
         - status
         - human_owner_user_id
+        - human_owner_user_ids
         - coordination_workflow_id
         - coordination_status
         - coordination_policy
@@ -6001,6 +6002,12 @@ components:
         human_owner_user_id:
           type: string
           format: uuid
+        human_owner_user_ids:
+          type: array
+          description: 项目人类负责人ID集合(平级,至少一个)
+          items:
+            type: string
+            format: uuid
         coordination_workflow_id:
           type: string
         coordination_status:
@@ -8083,6 +8090,12 @@ components:
         human_owner_user_id:
           type: string
           format: uuid
+        human_owner_user_ids:
+          type: array
+          description: 项目人类负责人ID集合(平级,至少一个);与 human_owner_user_id 二选一或并用,服务端归一化去重
+          items:
+            type: string
+            format: uuid
         members:
           type: array
           items:

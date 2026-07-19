@@ -1573,6 +1573,7 @@ type CreateProjectRequest struct {
 	Description        string
 	Goal               string
 	HumanOwnerUserID   uuid.UUID
+	HumanOwnerUserIDs  []uuid.UUID
 	Members            []ProjectMemberInput
 	CoordinationPolicy map[string]any
 	ApprovalPolicy     map[string]any

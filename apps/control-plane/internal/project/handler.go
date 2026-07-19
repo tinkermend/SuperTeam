@@ -273,6 +273,7 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		Description:         req.Description,
 		Goal:                req.Goal,
 		HumanOwnerUserID:    req.HumanOwnerUserID,
+		HumanOwnerUserIDs:   req.HumanOwnerUserIDs,
 		Members:             req.Members,
 		CoordinationPolicy:  req.CoordinationPolicy,
 		ApprovalPolicy:      req.ApprovalPolicy,
@@ -1819,6 +1820,7 @@ type createProjectBody struct {
 	Description         string                   `json:"description"`
 	Goal                string                   `json:"goal"`
 	HumanOwnerUserID    uuid.UUID                `json:"human_owner_user_id"`
+	HumanOwnerUserIDs   []uuid.UUID              `json:"human_owner_user_ids"`
 	Members             []ProjectMemberInput     `json:"members"`
 	CoordinationPolicy  map[string]any           `json:"coordination_policy"`
 	ApprovalPolicy      map[string]any           `json:"approval_policy"`
@@ -2160,6 +2162,7 @@ type projectResponse struct {
 	Goal                   string                     `json:"goal"`
 	Status                 ProjectStatus              `json:"status"`
 	HumanOwnerUserID       string                     `json:"human_owner_user_id"`
+	HumanOwnerUserIDs      []string                   `json:"human_owner_user_ids"`
 	CoordinationWorkflowID string                     `json:"coordination_workflow_id"`
 	CoordinationStatus     string                     `json:"coordination_status"`
 	CoordinationPolicy     map[string]any             `json:"coordination_policy"`
@@ -2907,6 +2910,14 @@ func projectResponses(projects []Project) []projectResponse {
 	return responses
 }
 
+func uuidsToStrings(ids []uuid.UUID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
+}
+
 func projectResponseFromDomain(project Project) projectResponse {
 	return projectResponse{
 		ID:                     project.ID.String(),
@@ -2917,6 +2928,7 @@ func projectResponseFromDomain(project Project) projectResponse {
 		Goal:                   project.Goal,
 		Status:                 project.Status,
 		HumanOwnerUserID:       project.HumanOwnerUserID.String(),
+		HumanOwnerUserIDs:      uuidsToStrings(project.HumanOwnerUserIDs),
 		CoordinationWorkflowID: project.CoordinationWorkflowID,
 		CoordinationStatus:     project.CoordinationStatus,
 		CoordinationPolicy:     mapOrEmpty(project.CoordinationPolicy),

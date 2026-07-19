@@ -199,9 +199,13 @@ func (s *Service) SetDigitalEmployeePlanningProfileSource(source DigitalEmployee
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Goal = strings.TrimSpace(req.Goal)
-	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil || req.HumanOwnerUserID == uuid.Nil || req.Name == "" || req.Goal == "" {
+	owners := normalizeHumanOwners(req.HumanOwnerUserID, req.HumanOwnerUserIDs, req.Members)
+	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil || len(owners) == 0 || req.Name == "" || req.Goal == "" {
 		return nil, ErrInvalidProject
 	}
+	// 多负责人:owners[0] 作为过渡期单标量镜像(primary),数组为权威。
+	req.HumanOwnerUserIDs = owners
+	req.HumanOwnerUserID = owners[0]
 	if err := validateMembers(req.Members); err != nil {
 		return nil, err
 	}
@@ -250,7 +254,7 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 			return nil, err
 		}
 	}
-	members, err := s.repository.ReplaceProjectMembers(ctx, req.TenantID, project.ID, ensureOwnerMember(req))
+	members, err := s.repository.ReplaceProjectMembers(ctx, req.TenantID, project.ID, ensureOwnerMembers(req))
 	if err != nil {
 		return nil, err
 	}
@@ -7393,18 +7397,49 @@ func validateMembers(members []ProjectMemberInput) error {
 	return nil
 }
 
-func ensureOwnerMember(req CreateProjectRequest) []ProjectMemberInput {
-	members := append([]ProjectMemberInput{}, req.Members...)
-	for _, member := range members {
-		if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == req.HumanOwnerUserID && member.ProjectRole == ProjectRoleOwner {
-			return members
+// normalizeHumanOwners 归一化项目人类负责人集合:scalar(primary,置首以稳定 owners[0])
+// ∪ 显式数组 ∪ req.Members 中 owner 角色的人类成员,去重去空。返回可能为空(交由调用方校验 ≥1)。
+func normalizeHumanOwners(primary uuid.UUID, ids []uuid.UUID, members []ProjectMemberInput) []uuid.UUID {
+	seen := map[uuid.UUID]bool{}
+	out := make([]uuid.UUID, 0, len(ids)+1)
+	add := func(id uuid.UUID) {
+		if id != uuid.Nil && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
 		}
 	}
-	return append(members, ProjectMemberInput{
-		PrincipalType: PrincipalTypeHumanUser,
-		PrincipalID:   req.HumanOwnerUserID,
-		ProjectRole:   ProjectRoleOwner,
-	})
+	add(primary)
+	for _, id := range ids {
+		add(id)
+	}
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.ProjectRole == ProjectRoleOwner {
+			add(member.PrincipalID)
+		}
+	}
+	return out
+}
+
+// ensureOwnerMembers 确保每个负责人都作为 owner 角色的人类成员出现在成员集合里(平级)。
+func ensureOwnerMembers(req CreateProjectRequest) []ProjectMemberInput {
+	members := append([]ProjectMemberInput{}, req.Members...)
+	for _, ownerID := range req.HumanOwnerUserIDs {
+		present := false
+		for _, member := range members {
+			if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == ownerID && member.ProjectRole == ProjectRoleOwner {
+				present = true
+				break
+			}
+		}
+		if !present {
+			members = append(members, ProjectMemberInput{
+				PrincipalType: PrincipalTypeHumanUser,
+				PrincipalID:   ownerID,
+				ProjectRole:   ProjectRoleOwner,
+			})
+		}
+	}
+	return members
 }
 
 func normalizePagination(limit, offset int32) (int32, int32) {
