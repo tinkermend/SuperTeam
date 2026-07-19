@@ -24,6 +24,16 @@ const (
 	ApprovalStatusCancelled         ApprovalStatus = "cancelled"
 )
 
+// ApprovalCategory splits the shared approval_requests fact table into two
+// domains: permission approvals surface ONLY in the 权限中心 (never projected to
+// the inbox), project_task approvals keep flowing through the inbox as before.
+type ApprovalCategory string
+
+const (
+	ApprovalCategoryPermission  ApprovalCategory = "permission"
+	ApprovalCategoryProjectTask ApprovalCategory = "project_task"
+)
+
 type ApprovalDecision string
 
 const (
@@ -59,6 +69,7 @@ type ApprovalRequest struct {
 	Summary        *string
 	RiskLevel      *string
 	Status         ApprovalStatus
+	Category       ApprovalCategory
 	Options        []any
 	ContextPayload map[string]any
 	CreatedAt      time.Time
@@ -93,8 +104,34 @@ type CreateRequestInput struct {
 	Title          string
 	Summary        string
 	RiskLevel      string
+	Category       ApprovalCategory
 	Options        []any
 	ContextPayload map[string]any
+}
+
+// ListPermissionApprovalsInput filters the permission-center read path. A nil
+// pointer means "no filter"; TargetUserID is set for view=mine, nil for view=team.
+type ListPermissionApprovalsInput struct {
+	TenantID     uuid.UUID
+	Status       *string
+	RiskLevel    *string
+	ResourceType *string
+	TargetUserID *uuid.UUID
+	Limit        int32
+	Offset       int32
+}
+
+// PermissionApprovalSummaryInput scopes the metric-card totals (view=mine sets
+// TargetUserID, view=team leaves it nil).
+type PermissionApprovalSummaryInput struct {
+	TenantID     uuid.UUID
+	TargetUserID *uuid.UUID
+}
+
+type PermissionApprovalSummary struct {
+	OpenCount     int64
+	HighRiskCount int64
+	BlockedCount  int64
 }
 
 type ResolveRequestInput struct {

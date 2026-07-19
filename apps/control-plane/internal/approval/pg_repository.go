@@ -30,6 +30,10 @@ func (r *PgRepository) CreateApprovalRequest(ctx context.Context, input CreateRe
 	if err != nil {
 		return ApprovalRequest{}, err
 	}
+	category := input.Category
+	if category == "" {
+		category = ApprovalCategoryProjectTask
+	}
 	row, err := r.q.CreateApprovalRequest(ctx, queries.CreateApprovalRequestParams{
 		TenantID:       input.TenantID,
 		ResourceType:   input.ResourceType,
@@ -42,6 +46,7 @@ func (r *PgRepository) CreateApprovalRequest(ctx context.Context, input CreateRe
 		Summary:        textOrNull(input.Summary),
 		RiskLevel:      textOrNull(input.RiskLevel),
 		Status:         string(status),
+		Category:       string(category),
 		Options:        options,
 		ContextPayload: payload,
 	})
@@ -49,6 +54,49 @@ func (r *PgRepository) CreateApprovalRequest(ctx context.Context, input CreateRe
 		return ApprovalRequest{}, err
 	}
 	return requestFromRecord(row)
+}
+
+func (r *PgRepository) ListPermissionApprovals(ctx context.Context, input ListPermissionApprovalsInput) ([]ApprovalRequest, error) {
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.q.ListPermissionApprovals(ctx, queries.ListPermissionApprovalsParams{
+		TenantID:     input.TenantID,
+		Status:       textPtrOrNull(input.Status),
+		RiskLevel:    textPtrOrNull(input.RiskLevel),
+		ResourceType: textPtrOrNull(input.ResourceType),
+		TargetUserID: nullUUID(input.TargetUserID),
+		Limit:        limit,
+		Offset:       input.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	requests := make([]ApprovalRequest, 0, len(rows))
+	for _, row := range rows {
+		request, err := requestFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, nil
+}
+
+func (r *PgRepository) PermissionApprovalSummary(ctx context.Context, input PermissionApprovalSummaryInput) (PermissionApprovalSummary, error) {
+	row, err := r.q.PermissionApprovalSummary(ctx, queries.PermissionApprovalSummaryParams{
+		TenantID:     input.TenantID,
+		TargetUserID: nullUUID(input.TargetUserID),
+	})
+	if err != nil {
+		return PermissionApprovalSummary{}, err
+	}
+	return PermissionApprovalSummary{
+		OpenCount:     row.OpenCount,
+		HighRiskCount: row.HighRiskCount,
+		BlockedCount:  row.BlockedCount,
+	}, nil
 }
 
 func (r *PgRepository) GetApprovalRequest(ctx context.Context, tenantID, requestID uuid.UUID) (ApprovalRequest, error) {
@@ -129,6 +177,7 @@ func requestFromRecord(row queries.ApprovalRequest) (ApprovalRequest, error) {
 		Summary:        ptrText(row.Summary),
 		RiskLevel:      ptrText(row.RiskLevel),
 		Status:         ApprovalStatus(row.Status),
+		Category:       ApprovalCategory(row.Category),
 		Options:        options,
 		ContextPayload: payload,
 		CreatedAt:      row.CreatedAt.Time,
@@ -159,6 +208,15 @@ func textOrNull(value string) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: value, Valid: true}
+}
+
+// textPtrOrNull maps an optional filter (*string) to pgtype.Text; nil/empty means
+// "no filter" (SQL narg IS NULL).
+func textPtrOrNull(value *string) pgtype.Text {
+	if value == nil || *value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *value, Valid: true}
 }
 
 func ptrText(value pgtype.Text) *string {

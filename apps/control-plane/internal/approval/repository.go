@@ -12,4 +12,6 @@ type Repository interface {
 	GetApprovalRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (ApprovalRequest, error)
 	ResolveApprovalRequest(ctx context.Context, input ResolveRequestInput, status ApprovalStatus) (ApprovalRequest, error)
 	CreateApprovalDecision(ctx context.Context, input ResolveRequestInput) (ApprovalDecisionRecord, error)
+	ListPermissionApprovals(ctx context.Context, input ListPermissionApprovalsInput) ([]ApprovalRequest, error)
+	PermissionApprovalSummary(ctx context.Context, input PermissionApprovalSummaryInput) (PermissionApprovalSummary, error)
 }

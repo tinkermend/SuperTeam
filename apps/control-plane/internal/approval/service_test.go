@@ -304,6 +304,7 @@ func (r *memoryRepository) CreateApprovalRequest(_ context.Context, input Create
 		Summary:        optionalString(input.Summary),
 		RiskLevel:      optionalString(input.RiskLevel),
 		Status:         status,
+		Category:       categoryOrDefault(input.Category),
 		Options:        input.Options,
 		ContextPayload: input.ContextPayload,
 		CreatedAt:      now,
@@ -311,6 +312,61 @@ func (r *memoryRepository) CreateApprovalRequest(_ context.Context, input Create
 	}
 	r.requests[request.ID] = request
 	return request, nil
+}
+
+func categoryOrDefault(c ApprovalCategory) ApprovalCategory {
+	if c == "" {
+		return ApprovalCategoryProjectTask
+	}
+	return c
+}
+
+func (r *memoryRepository) ListPermissionApprovals(_ context.Context, input ListPermissionApprovalsInput) ([]ApprovalRequest, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var out []ApprovalRequest
+	for _, request := range r.requests {
+		if request.TenantID != input.TenantID || request.Category != ApprovalCategoryPermission {
+			continue
+		}
+		if input.Status != nil && string(request.Status) != *input.Status {
+			continue
+		}
+		if input.ResourceType != nil && request.ResourceType != *input.ResourceType {
+			continue
+		}
+		if input.TargetUserID != nil && request.TargetUserID != *input.TargetUserID {
+			continue
+		}
+		out = append(out, request)
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) PermissionApprovalSummary(_ context.Context, input PermissionApprovalSummaryInput) (PermissionApprovalSummary, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var summary PermissionApprovalSummary
+	for _, request := range r.requests {
+		if request.TenantID != input.TenantID || request.Category != ApprovalCategoryPermission {
+			continue
+		}
+		if input.TargetUserID != nil && request.TargetUserID != *input.TargetUserID {
+			continue
+		}
+		switch request.Status {
+		case ApprovalStatusPending:
+			summary.OpenCount++
+			if request.RiskLevel != nil && (*request.RiskLevel == "high" || *request.RiskLevel == "critical") {
+				summary.HighRiskCount++
+			}
+		case ApprovalStatusNeedsMoreEvidence:
+			summary.BlockedCount++
+		}
+	}
+	return summary, nil
 }
 
 func (r *memoryRepository) GetApprovalRequest(_ context.Context, tenantID, requestID uuid.UUID) (ApprovalRequest, error) {

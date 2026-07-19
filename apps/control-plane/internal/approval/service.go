@@ -50,12 +50,30 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if err != nil {
 		return nil, err
 	}
-	if s.inbox != nil {
+	// Domain separation (D2): permission approvals surface ONLY in the 权限中心,
+	// never projected to the inbox. project_task approvals keep flowing to inbox.
+	if s.inbox != nil && request.Category != ApprovalCategoryPermission {
 		if err := s.inbox.UpsertApprovalRequest(ctx, request); err != nil {
 			return nil, err
 		}
 	}
 	return &request, nil
+}
+
+// ListPermissionApprovals reads the permission-center queue directly from the
+// approval domain (category=permission), bypassing the inbox projection entirely.
+func (s *Service) ListPermissionApprovals(ctx context.Context, input ListPermissionApprovalsInput) ([]ApprovalRequest, error) {
+	if input.TenantID == uuid.Nil {
+		return nil, ErrInvalidApprovalRequest
+	}
+	return s.repository.ListPermissionApprovals(ctx, input)
+}
+
+func (s *Service) PermissionApprovalSummary(ctx context.Context, input PermissionApprovalSummaryInput) (PermissionApprovalSummary, error) {
+	if input.TenantID == uuid.Nil {
+		return PermissionApprovalSummary{}, ErrInvalidApprovalRequest
+	}
+	return s.repository.PermissionApprovalSummary(ctx, input)
 }
 
 func (s *Service) GetRequest(ctx context.Context, tenantID, requestID uuid.UUID) (*ApprovalRequest, error) {
