@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/apierror"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -1353,6 +1354,10 @@ func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, b
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
+	// 结构化 coded error 优先：输出 {code, message}，前端按 code 展示权威中文。
+	if apierror.Write(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ErrRuntimeUnavailable), errors.Is(err, ErrProviderUnavailable):
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)

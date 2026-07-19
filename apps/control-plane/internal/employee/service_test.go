@@ -714,12 +714,9 @@ func TestCreateDigitalEmployeeRejectsTeamOverCapacityBeforeTransaction(t *testin
 
 	_, err := svc.CreateDigitalEmployee(context.Background(), req)
 
-	// 容量满属资源冲突而非入参错误：409，前端据关键词映射中文提示。
-	if !errors.Is(err, ErrConflict) {
-		t.Fatalf("expected conflict, got %v", err)
-	}
-	if err == nil || !strings.Contains(err.Error(), "digital employee capacity") {
-		t.Fatalf("expected digital employee capacity error, got %v", err)
+	// 容量满返回结构化 coded error（employee.team_capacity_exceeded, 409）。
+	if !errors.Is(err, ErrEmployeeTeamCapacityExceeded) {
+		t.Fatalf("expected team capacity conflict, got %v", err)
 	}
 	if repo.lastOverviewRequest.TeamID == nil || *repo.lastOverviewRequest.TeamID != *req.TeamID {
 		t.Fatalf("expected capacity check to query target team overview, got %#v", repo.lastOverviewRequest)
@@ -758,8 +755,8 @@ func TestCreateDigitalEmployeeRejectsAvatarAlreadyInUse(t *testing.T) {
 	}
 
 	req.Name = req.Name + "-复用头像"
-	if _, err := svc.CreateDigitalEmployee(context.Background(), req); !errors.Is(err, ErrConflict) {
-		t.Fatalf("expected ErrConflict for reused avatar %q, got %v", first.Metadata["avatar_asset_id"], err)
+	if _, err := svc.CreateDigitalEmployee(context.Background(), req); !errors.Is(err, ErrEmployeeAvatarInUse) {
+		t.Fatalf("expected avatar conflict for reused avatar %q, got %v", first.Metadata["avatar_asset_id"], err)
 	}
 
 	assets, err := svc.ListAvatarAssets(context.Background(), req.TenantID)

@@ -52,6 +52,7 @@ import {
   listDigitalEmployeeAvatarAssets,
 } from "@/lib/api/employees";
 import { ApiRequestError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/api-error";
 import { listTeams } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
@@ -251,9 +252,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         );
       } catch (err) {
         // 中文化落在 mutationFn 层：横幅与全局失败 toast（main.tsx onError 透传
-        // error.message）共用同一份措辞，不在多处各映射一遍。
+        // error.message）共用后端权威中文 message（apiErrorMessage 读 coded error），
+        // 不再靠英文错误文本关键词匹配。
         if (err instanceof ApiRequestError) {
-          err.message = createEmployeeErrorMessage(err);
+          err.message = apiErrorMessage(err, CREATE_EMPLOYEE_FALLBACK_MESSAGE);
         }
         throw err;
       }
@@ -2101,21 +2103,5 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "请求失败";
 }
 
-// createEmployeeErrorMessage 把创建接口的英文错误按关键词映射为中文提示；
-// 治本（后端结构化 {code,message}）已单独立项，见 TODO.md。
-function createEmployeeErrorMessage(error: unknown) {
-  const raw = error instanceof Error ? error.message : "";
-  if (raw.includes("name already exists")) {
-    return "该名称已被使用，请更换名称后重试。";
-  }
-  if (raw.includes("avatar") && (raw.includes("in use") || raw.includes("already"))) {
-    return "该头像已被其他数字员工使用，请重新选择头像。";
-  }
-  if (raw.includes("capacity exceeded")) {
-    return "团队数字员工数已达上限，请在系统配置调大上限或更换团队。";
-  }
-  if (raw.includes("status 401") || raw.includes("status 403")) {
-    return "没有权限创建数字员工，请联系管理员。";
-  }
-  return "创建失败，请稍后重试；若持续出现请联系管理员。";
-}
+// 后端未返回结构化 code 时的兜底文案；有 code 时用后端权威中文 message（apiErrorMessage）。
+const CREATE_EMPLOYEE_FALLBACK_MESSAGE = "创建失败，请稍后重试；若持续出现请联系管理员。";

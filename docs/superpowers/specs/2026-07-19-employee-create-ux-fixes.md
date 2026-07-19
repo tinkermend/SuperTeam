@@ -2,7 +2,17 @@
 
 日期：2026-07-19 · 状态：实施中 · 来源：创建流程浏览器 walkthrough 发现的 7 项遗留（见记忆 employee-create-page-overhaul）
 
-排除项：错误体结构化 `{code,message}` 治本（跨全 handler，单独立项，见 TODO.md）。
+排除项（原）：错误体结构化 `{code,message}` 治本——**已单独实现**，见下「② 治本落地」。
+
+## ② 治本落地：结构化错误码（apierror）
+
+**机制层（新建，可复用于全 handler）**：
+- 后端 `internal/apierror`：`Error{Code, Status, Message, cause}` + `New/WithCause/Is/Write`。`Write` 输出 `{code, message}` JSON（`application/json`），`Is` 按 code 匹配（WithCause 副本/包装仍匹配原型）。message 是 zh-first 权威用户文本单一源。
+- 前端 `lib/api/api-error.ts`：`apiErrorMessage(error, fallback)` 有 code 时取后端 `error.detail`（=message），否则 fallback；`apiErrorCode` 取 code。**不再对 `.message` 英文壳做关键词匹配**。
+
+**员工创建链路示范落地**：`internal/employee/api_errors.go` 定义 `ErrEmployeeNameConflict` / `ErrEmployeeAvatarInUse` / `ErrEmployeeTeamCapacityExceeded`（code + 409 + 中文）；pg_repository 唯一索引冲突、service 头像前置/容量检查返回它们；`writeHandlerError` 先 `apierror.Write` 命中即输出结构化。create.tsx mutationFn 用 `apiErrorMessage`，横幅与全局 toast 共用后端中文。
+
+**其余 handler 增量迁移**：存量 `http.Error` 纯文本错误按需迁移，不要求一次性全改；新错误直接用 apierror。这是全 handler 铺开的机制底座，非一次性重构。
 
 ## 修复清单
 

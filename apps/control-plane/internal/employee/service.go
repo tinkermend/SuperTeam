@@ -461,7 +461,7 @@ func (s *Service) ensureAvatarAssetAvailable(ctx context.Context, tenantID uuid.
 		return fmt.Errorf("list used avatar asset ids: %w", err)
 	}
 	if _, ok := used[avatarAssetID]; ok {
-		return fmt.Errorf("%w: avatar_asset_id %q already in use", ErrConflict, avatarAssetID)
+		return ErrEmployeeAvatarInUse
 	}
 	return nil
 }
@@ -525,7 +525,7 @@ func (s *Service) ensureTeamDigitalEmployeeCapacity(ctx context.Context, tenantI
 		return fmt.Errorf("get digital employee overview: %w", err)
 	}
 	if overview.Pagination.TotalCount >= s.maxDigitalEmployeesPerTeam(ctx, tenantID) {
-		return fmt.Errorf("%w: digital employee capacity exceeded", ErrConflict)
+		return ErrEmployeeTeamCapacityExceeded
 	}
 	return nil
 }

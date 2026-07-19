@@ -99,9 +99,9 @@ func mapDigitalEmployeeConstraintError(err error) error {
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		switch pgErr.ConstraintName {
 		case "uq_digital_employees_active_name":
-			return fmt.Errorf("%w: digital employee name already exists", ErrConflict)
+			return ErrEmployeeNameConflict.WithCause(err)
 		case "uq_digital_employees_avatar_asset":
-			return fmt.Errorf("%w: avatar asset already in use", ErrConflict)
+			return ErrEmployeeAvatarInUse.WithCause(err)
 		}
 		return fmt.Errorf("%w: %s", ErrConflict, pgErr.ConstraintName)
 	}
