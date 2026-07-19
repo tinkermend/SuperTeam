@@ -72,7 +72,6 @@ import { ProjectManagementShell } from "./project-management-shell";
 import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
-import { ProjectMcpBindingsPanel } from "./project-mcp-bindings-panel";
 
 type ProjectConfigViewProps = {
   apiBaseUrl: string;
@@ -371,7 +370,7 @@ export function ProjectConfigView({
   return (
     <ProjectManagementShell
       title="项目配置"
-      description="成员、MCP 绑定、协调策略与配置修订历史"
+      description="成员、协调策略与配置修订历史"
       back={
         <ShellPageHeaderBack
           ariaLabel="返回项目运行详情"
@@ -462,7 +461,6 @@ export function ProjectConfigView({
             >
               <ProjectConfigTab value="overview">概览</ProjectConfigTab>
               <ProjectConfigTab value="members">成员</ProjectConfigTab>
-              <ProjectConfigTab value="mcp">MCP 绑定</ProjectConfigTab>
               <ProjectConfigTab value="coordination">协调策略</ProjectConfigTab>
               <ProjectConfigTab value="history">任务历史</ProjectConfigTab>
             </TabsList>
@@ -560,14 +558,6 @@ export function ProjectConfigView({
                   </CollapsibleContent>
                 </Collapsible>
               </div>
-            </TabsContent>
-
-            <TabsContent value="mcp">
-              <ProjectMcpBindingsPanel
-                apiOptions={apiOptions}
-                disabled={isArchived}
-                projectId={projectId}
-              />
             </TabsContent>
 
             <TabsContent value="coordination">
