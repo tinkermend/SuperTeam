@@ -845,7 +845,14 @@ func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConf
 		return nil, err
 	}
 	if req.Members != nil {
+		ownerIDs := ownerMemberIDs(*req.Members)
+		if len(ownerIDs) == 0 {
+			return nil, ErrProjectRequiresHumanOwner
+		}
 		if _, err := s.repository.ReplaceProjectMembers(ctx, req.TenantID, req.ProjectID, *req.Members); err != nil {
+			return nil, err
+		}
+		if err := s.repository.SetProjectHumanOwners(ctx, req.TenantID, req.ProjectID, ownerIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -1232,8 +1239,16 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 	if err := s.validateMemberTeamAssignments(ctx, tenantID, members); err != nil {
 		return nil, err
 	}
+	ownerIDs := ownerMemberIDs(members)
+	if len(ownerIDs) == 0 {
+		return nil, ErrProjectRequiresHumanOwner
+	}
 	replaced, err := s.repository.ReplaceProjectMembers(ctx, tenantID, projectID, members)
 	if err != nil {
+		return nil, err
+	}
+	// 多负责人:成员即负责人事实源,按新 owner 集合重同步 human_owner_user_ids。
+	if err := s.repository.SetProjectHumanOwners(ctx, tenantID, projectID, ownerIDs); err != nil {
 		return nil, err
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
@@ -7415,6 +7430,20 @@ func normalizeHumanOwners(primary uuid.UUID, ids []uuid.UUID, members []ProjectM
 	for _, member := range members {
 		if member.PrincipalType == PrincipalTypeHumanUser && member.ProjectRole == ProjectRoleOwner {
 			add(member.PrincipalID)
+		}
+	}
+	return out
+}
+
+// ownerMemberIDs 取成员集合里 owner 角色的人类成员 principal_id(去重去空),即项目负责人集合。
+func ownerMemberIDs(members []ProjectMemberInput) []uuid.UUID {
+	seen := map[uuid.UUID]bool{}
+	out := make([]uuid.UUID, 0, len(members))
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.ProjectRole == ProjectRoleOwner &&
+			member.PrincipalID != uuid.Nil && !seen[member.PrincipalID] {
+			seen[member.PrincipalID] = true
+			out = append(out, member.PrincipalID)
 		}
 	}
 	return out

@@ -49,6 +49,16 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
   AND deleted_at IS NULL;
 
+-- name: SetProjectHumanOwners :exec
+-- 多负责人:成员变更后按 owner 角色人类成员重同步负责人集合(数组权威,scalar=首个过渡镜像)。
+UPDATE projects
+SET human_owner_user_ids = sqlc.arg('human_owner_user_ids')::uuid[],
+    human_owner_user_id = sqlc.arg('human_owner_user_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL;
+
 -- name: ListProjects :many
 SELECT * FROM projects
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid

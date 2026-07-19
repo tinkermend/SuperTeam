@@ -1755,7 +1755,7 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTeamlessProjectMember):
 		http.Error(w, "数字员工必须先归属团队才能加入项目："+strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrTeamlessProjectMember.Error()+":")), http.StatusBadRequest)
-	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
+	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrProjectRequiresHumanOwner), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, "not found", http.StatusNotFound)

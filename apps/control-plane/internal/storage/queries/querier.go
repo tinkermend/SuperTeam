@@ -569,6 +569,8 @@ type Querier interface {
 	ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProjectTaskRetryParams) (ProjectTask, error)
 	SetEmployeeTemplateStatus(ctx context.Context, arg SetEmployeeTemplateStatusParams) (DigitalEmployeeTemplate, error)
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
+	// 多负责人:成员变更后按 owner 角色人类成员重同步负责人集合(数组权威,scalar=首个过渡镜像)。
+	SetProjectHumanOwners(ctx context.Context, arg SetProjectHumanOwnersParams) error
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)
 	SkillExistsForTenant(ctx context.Context, arg SkillExistsForTenantParams) (bool, error)
 	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)

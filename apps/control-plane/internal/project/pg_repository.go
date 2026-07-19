@@ -120,6 +120,22 @@ func (r *PgRepository) GetProject(ctx context.Context, tenantID, projectID uuid.
 	return projectFromRecord(row)
 }
 
+// SetProjectHumanOwners 重同步项目负责人集合(数组权威 + scalar=首个过渡镜像)。
+func (r *PgRepository) SetProjectHumanOwners(ctx context.Context, tenantID, projectID uuid.UUID, ownerIDs []uuid.UUID) error {
+	if len(ownerIDs) == 0 {
+		return ErrProjectRequiresHumanOwner
+	}
+	if err := r.q.SetProjectHumanOwners(ctx, queries.SetProjectHumanOwnersParams{
+		TenantID:          tenantID,
+		ID:                projectID,
+		HumanOwnerUserIds: ownerIDs,
+		HumanOwnerUserID:  ownerIDs[0],
+	}); err != nil {
+		return projectRepositoryError(err)
+	}
+	return nil
+}
+
 func (r *PgRepository) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {
 	rows, err := r.q.ListProjects(ctx, queries.ListProjectsParams{
 		TenantID: req.TenantID,
