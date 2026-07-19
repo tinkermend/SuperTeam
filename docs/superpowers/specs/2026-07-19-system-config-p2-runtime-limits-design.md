@@ -1,7 +1,7 @@
 # 系统配置中心 P2：runtime 平台限额下发 + 心跳超时可配（设计立项）
 
 日期：2026-07-19
-状态：立项定稿，未实施
+状态：已实施入 main（00437cc6 / merge daa17d24，§8 六项真实 E2E 全 PASS，见 CHANGELOG 2026-07-19 14:14）
 前置：P1 已入 main（df52809c，spec `2026-07-19-system-config-center-design.md`）
 
 ## 1. 背景与问题
