@@ -1496,9 +1496,7 @@ mcp_counts AS (
       ON m.id = demb.mcp_server_id
      AND m.tenant_id = demb.tenant_id
      AND m.deleted_at IS NULL
-     AND m.status = 'active'
     WHERE demb.deleted_at IS NULL
-      AND demb.status = 'active'
     GROUP BY demb.tenant_id, demb.digital_employee_id
 ),
 skill_counts AS (
