@@ -37,10 +37,20 @@ const (
 // SessionTTLResolver 返回某租户的 runtime 会话 TTL。
 type SessionTTLResolver func(ctx context.Context, tenantID uuid.UUID) time.Duration
 
+// HeartbeatTimeoutResolver 返回某租户的心跳超时阈值(节点在线判定窗口)。
+// 与 SessionTTLResolver 同理由 app 装配层以闭包注入。
+type HeartbeatTimeoutResolver func(ctx context.Context, tenantID uuid.UUID) time.Duration
+
+// PlatformLimitsResolver 返回某租户在系统配置中心的生效限额快照,
+// 用于组装心跳响应的 platform_limits 字段。
+type PlatformLimitsResolver func(ctx context.Context, tenantID uuid.UUID) PlatformLimits
+
 type Service struct {
-	repository            Repository
-	requiredToolsResolver RequiredToolsResolver
-	sessionTTLResolver    SessionTTLResolver
+	repository               Repository
+	requiredToolsResolver    RequiredToolsResolver
+	sessionTTLResolver       SessionTTLResolver
+	heartbeatTimeoutResolver HeartbeatTimeoutResolver
+	platformLimitsResolver   PlatformLimitsResolver
 }
 
 type RequiredToolsResolver interface {
@@ -64,11 +74,27 @@ func (s *Service) SetSessionTTLResolver(resolver SessionTTLResolver) {
 	s.sessionTTLResolver = resolver
 }
 
+func (s *Service) SetHeartbeatTimeoutResolver(resolver HeartbeatTimeoutResolver) {
+	s.heartbeatTimeoutResolver = resolver
+}
+
+func (s *Service) SetPlatformLimitsResolver(resolver PlatformLimitsResolver) {
+	s.platformLimitsResolver = resolver
+}
+
 func (s *Service) sessionTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {
 	if s.sessionTTLResolver == nil {
 		return RuntimeSessionTTL
 	}
 	return s.sessionTTLResolver(ctx, tenantID)
+}
+
+// heartbeatTimeout 解析某租户生效的心跳超时;未注入(测试)回退默认常量。
+func (s *Service) heartbeatTimeout(ctx context.Context, tenantID uuid.UUID) time.Duration {
+	if s.heartbeatTimeoutResolver == nil {
+		return HeartbeatTimeout
+	}
+	return s.heartbeatTimeoutResolver(ctx, tenantOrDefault(tenantID))
 }
 
 func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*EnrollHelloResponse, error) {
@@ -544,7 +570,7 @@ func (s *Service) GetOverview(ctx context.Context, filter RuntimeOverviewFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count runtime nodes: %w", err)
 	}
-	onlineNodes, err := overviewRepo.CountOnlineRuntimeNodesForTenant(ctx, tenantID, time.Now().Add(-HeartbeatTimeout))
+	onlineNodes, err := overviewRepo.CountOnlineRuntimeNodesForTenant(ctx, tenantID, time.Now().Add(-s.heartbeatTimeout(ctx, tenantID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to count online runtime nodes: %w", err)
 	}
@@ -593,7 +619,7 @@ func (s *Service) GetOverview(ctx context.Context, filter RuntimeOverviewFilter)
 	}
 	nodes := make([]*Node, 0, len(nodeRecords))
 	for _, record := range nodeRecords {
-		node, err := s.recordToNode(record)
+		node, err := s.recordToNode(ctx, record)
 		if err != nil {
 			continue
 		}
@@ -714,7 +740,7 @@ func (s *Service) RegisterNode(ctx context.Context, req RegisterNodeRequest) (*N
 			return nil, fmt.Errorf("failed to update status: %w", err)
 		}
 
-		return s.recordToNode(record)
+		return s.recordToNode(ctx, record)
 	}
 
 	// Node doesn't exist, create it
@@ -734,7 +760,7 @@ func (s *Service) RegisterNode(ctx context.Context, req RegisterNodeRequest) (*N
 		return nil, fmt.Errorf("failed to create node: %w", err)
 	}
 
-	return s.recordToNode(record)
+	return s.recordToNode(ctx, record)
 }
 
 // UpdateHeartbeat updates the heartbeat and load of a node
@@ -765,15 +791,31 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatReques
 		return nil, fmt.Errorf("failed to update load: %w", err)
 	}
 
+	// 能力自报落节点 metadata(版本偏斜护栏依据),只在值变化时写一次,
+	// 避免每 30s 心跳都产生一行 metadata UPDATE。
+	if supportsPlatformLimitsFromMetadata(record.Metadata) != req.SupportsPlatformLimits {
+		patch, marshalErr := json.Marshal(map[string]bool{metadataKeySupportsPlatformLimits: req.SupportsPlatformLimits})
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to serialize platform limits capability patch: %w", marshalErr)
+		}
+		record, err = s.repository.PatchNodeMetadata(ctx, PatchNodeMetadataParams{
+			NodeID: req.NodeID,
+			Patch:  patch,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to patch node metadata: %w", err)
+		}
+	}
+
 	// Determine status based on heartbeat
-	node, err := s.recordToNode(record)
+	node, err := s.recordToNode(ctx, record)
 	if err != nil {
 		return nil, err
 	}
 
 	// Update status if needed
 	expectedStatus := NodeStatusOnline
-	if !node.IsOnline() {
+	if !node.IsOnlineAt(s.heartbeatTimeout(ctx, req.TenantID)) {
 		expectedStatus = NodeStatusOffline
 	}
 
@@ -785,7 +827,7 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatReques
 		if err != nil {
 			return nil, fmt.Errorf("failed to update status: %w", err)
 		}
-		node, err = s.recordToNode(record)
+		node, err = s.recordToNode(ctx, record)
 		if err != nil {
 			return nil, err
 		}
@@ -796,10 +838,46 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatReques
 		return nil, err
 	}
 
-	return &HeartbeatResponse{
+	resp := &HeartbeatResponse{
 		Node:          node,
 		RequiredTools: requiredTools,
-	}, nil
+	}
+	if s.platformLimitsResolver != nil {
+		limits := s.platformLimitsResolver(ctx, tenantOrDefault(req.TenantID))
+		resp.PlatformLimits = &limits
+	}
+	return resp, nil
+}
+
+// metadataKeySupportsPlatformLimits 是节点 metadata 里的能力自报字段,
+// 由心跳请求写入,presign 版本偏斜护栏据此识别旧协议节点。
+const metadataKeySupportsPlatformLimits = "supports_platform_limits"
+
+func supportsPlatformLimitsFromMetadata(metadata []byte) bool {
+	if len(metadata) == 0 {
+		return false
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &decoded); err != nil {
+		return false
+	}
+	var supports bool
+	if raw, ok := decoded[metadataKeySupportsPlatformLimits]; ok {
+		_ = json.Unmarshal(raw, &supports)
+	}
+	return supports
+}
+
+// HasOnlineLegacyLimitNodes 报告租户内是否存在"在线但未自报支持限额下发"的节点。
+// 工件 presign 的版本偏斜护栏(P2 spec §5)据此决定是否把上限 clamp 回旧硬编码值。
+func (s *Service) HasOnlineLegacyLimitNodes(ctx context.Context, tenantID uuid.UUID) (bool, error) {
+	tenant := tenantOrDefault(tenantID)
+	threshold := time.Now().Add(-s.heartbeatTimeout(ctx, tenant))
+	count, err := s.repository.CountOnlineNodesWithoutPlatformLimits(ctx, tenant, timestamptzFromTime(threshold))
+	if err != nil {
+		return false, fmt.Errorf("failed to count legacy limit nodes: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (s *Service) requiredTools(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error) {
@@ -845,7 +923,7 @@ func (s *Service) GetNode(ctx context.Context, nodeID string) (*Node, error) {
 		return nil, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	return s.recordToNode(record)
+	return s.recordToNode(ctx, record)
 }
 
 // ListNodes lists all nodes with optional filters
@@ -871,7 +949,7 @@ func (s *Service) ListNodes(ctx context.Context, filter ListNodesFilter) ([]*Nod
 
 	nodes := make([]*Node, 0, len(records))
 	for _, record := range records {
-		node, err := s.recordToNode(record)
+		node, err := s.recordToNode(ctx, record)
 		if err != nil {
 			// Skip invalid nodes
 			continue
@@ -883,8 +961,9 @@ func (s *Service) ListNodes(ctx context.Context, filter ListNodesFilter) ([]*Nod
 }
 
 // ListOnlineNodes lists all online nodes (heartbeat within threshold)
+// 该查询不带租户轴,阈值按默认租户解析(节点表当前为单默认租户)。
 func (s *Service) ListOnlineNodes(ctx context.Context) ([]*Node, error) {
-	threshold := time.Now().Add(-HeartbeatTimeout)
+	threshold := time.Now().Add(-s.heartbeatTimeout(ctx, platform.DefaultTenantID))
 	records, err := s.repository.ListOnlineNodes(ctx, timestamptzFromTime(threshold))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list online nodes: %w", err)
@@ -892,7 +971,7 @@ func (s *Service) ListOnlineNodes(ctx context.Context) ([]*Node, error) {
 
 	nodes := make([]*Node, 0, len(records))
 	for _, record := range records {
-		node, err := s.recordToNode(record)
+		node, err := s.recordToNode(ctx, record)
 		if err != nil {
 			// Skip invalid nodes
 			continue
@@ -905,7 +984,7 @@ func (s *Service) ListOnlineNodes(ctx context.Context) ([]*Node, error) {
 
 // Helper methods
 
-func (s *Service) recordToNode(record NodeRecord) (*Node, error) {
+func (s *Service) recordToNode(ctx context.Context, record NodeRecord) (*Node, error) {
 	// Deserialize supported providers
 	var supportedProviders []string
 	if err := json.Unmarshal(record.SupportedProviders, &supportedProviders); err != nil {
@@ -936,7 +1015,7 @@ func (s *Service) recordToNode(record NodeRecord) (*Node, error) {
 	// The stored status column is only flipped by the node's own heartbeat, so a
 	// dead node stays "online" forever. Derive the effective status from
 	// heartbeat freshness; never upgrade a stored offline to online here.
-	if node.Status == NodeStatusOnline && !node.IsOnline() {
+	if node.Status == NodeStatusOnline && !node.IsOnlineAt(s.heartbeatTimeout(ctx, record.TenantID)) {
 		node.Status = NodeStatusOffline
 	}
 	return node, nil

@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -34,19 +35,46 @@ const (
 )
 
 // ArtifactMaxFileSizeBytes 单文件上限默认值,单一定义在 systemconfig 注册表;
-// 生效值可被系统配置中心覆盖(P1 只允许调低,与 runtime 采集侧硬限额对齐)。
+// 生效值可被系统配置中心覆盖,并经心跳下发到 runtime(P2)。
 var ArtifactMaxFileSizeBytes = systemconfig.DefaultFor(systemconfig.KeyArtifactMaxFileSizeBytes)
+
+// legacyArtifactMaxFileSizeBytes 是不支持限额下发的旧 runtime 的采集侧硬编码上限。
+// 版本偏斜护栏(P2 spec §5):租户内存在在线旧节点时 presign 按此收紧,
+// 保证"调高上限"最坏只是暂未生效,永不静默丢文件。
+const legacyArtifactMaxFileSizeBytes = int64(10 * 1024 * 1024)
 
 // SetSystemConfigReader 注入配置中心读取器;未注入(测试)时使用注册表默认值。
 func (s *Service) SetSystemConfigReader(reader systemconfig.Reader) {
 	s.systemConfig = reader
 }
 
+// SetLegacyLimitNodesChecker 注入"租户内是否存在在线且不支持限额下发节点"的
+// 探测闭包(app 装配层由 runtime service 提供)。
+func (s *Service) SetLegacyLimitNodesChecker(checker func(ctx context.Context, tenantID uuid.UUID) (bool, error)) {
+	s.legacyLimitNodesChecker = checker
+}
+
 func (s *Service) artifactMaxFileSizeBytes(ctx context.Context, tenantID uuid.UUID) int64 {
 	if s.systemConfig == nil {
 		return systemconfig.DefaultFor(systemconfig.KeyArtifactMaxFileSizeBytes)
 	}
-	return s.systemConfig.Int64(ctx, tenantID, systemconfig.KeyArtifactMaxFileSizeBytes)
+	effective := s.systemConfig.Int64(ctx, tenantID, systemconfig.KeyArtifactMaxFileSizeBytes)
+	if effective <= legacyArtifactMaxFileSizeBytes || s.legacyLimitNodesChecker == nil {
+		return effective
+	}
+	hasLegacy, err := s.legacyLimitNodesChecker(ctx, tenantID)
+	if err != nil {
+		// 探测失败按保守路径 clamp:宁可暂时收紧,不冒静默丢文件的风险。
+		slog.Default().Warn("artifact presign: legacy limit node probe failed, clamping to legacy cap",
+			"tenant_id", tenantID, "error", err)
+		return legacyArtifactMaxFileSizeBytes
+	}
+	if hasLegacy {
+		slog.Default().Warn("artifact presign: online legacy runtime without platform limits support, clamping max file size",
+			"tenant_id", tenantID, "effective_bytes", effective, "clamped_bytes", legacyArtifactMaxFileSizeBytes)
+		return legacyArtifactMaxFileSizeBytes
+	}
+	return effective
 }
 
 func (s *Service) artifactPresignUploadTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {

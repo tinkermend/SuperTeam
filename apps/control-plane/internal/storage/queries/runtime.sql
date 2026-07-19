@@ -79,6 +79,30 @@ WHERE node_id = $1
   AND archived_at IS NULL
 RETURNING *;
 
+-- PatchRuntimeNodeMetadata merges a JSON object into node metadata (jsonb ||).
+-- Used by heartbeat to persist capability self-reports (e.g.
+-- supports_platform_limits) only when the value changes.
+-- name: PatchRuntimeNodeMetadata :one
+UPDATE runtime_nodes
+SET metadata = COALESCE(metadata, '{}'::jsonb) || sqlc.arg('patch')::jsonb,
+    updated_at = NOW()
+WHERE node_id = sqlc.arg('node_id')::varchar
+  AND archived_at IS NULL
+RETURNING *;
+
+-- CountOnlineLegacyLimitRuntimeNodesForTenant counts online nodes that have
+-- not self-reported supports_platform_limits. The artifact presign version-skew
+-- guard clamps the file-size cap while any such node is online.
+-- name: CountOnlineLegacyLimitRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = 'online'
+  AND last_heartbeat_at > sqlc.arg('last_heartbeat_at')::timestamptz
+  AND disabled_at IS NULL
+  AND archived_at IS NULL
+  AND COALESCE(metadata->>'supports_platform_limits', '') <> 'true';
+
 -- name: UpdateRuntimeNodeLoad :one
 UPDATE runtime_nodes
 SET current_load = $2, updated_at = NOW()

@@ -563,6 +563,7 @@ async fn daemon_shared_auth_resumes_business_requests_after_reenroll() {
         .heartbeat(HeartbeatRequest {
             current_load: 0,
             status: NodeStatus::Online,
+            supports_platform_limits: true,
         })
         .await;
     assert!(first_result.is_err());
@@ -573,6 +574,7 @@ async fn daemon_shared_auth_resumes_business_requests_after_reenroll() {
         .heartbeat(HeartbeatRequest {
             current_load: 0,
             status: NodeStatus::Online,
+            supports_platform_limits: true,
         })
         .await
         .expect("second heartbeat");

@@ -198,6 +198,37 @@ func (r *PgRepository) UpdateHeartbeat(ctx context.Context, params UpdateHeartbe
 	}, nil
 }
 
+func (r *PgRepository) PatchNodeMetadata(ctx context.Context, params PatchNodeMetadataParams) (NodeRecord, error) {
+	node, err := r.q.PatchRuntimeNodeMetadata(ctx, queries.PatchRuntimeNodeMetadataParams{
+		NodeID: params.NodeID,
+		Patch:  params.Patch,
+	})
+	if err != nil {
+		return NodeRecord{}, err
+	}
+	return NodeRecord{
+		ID:                 node.ID,
+		TenantID:           node.TenantID,
+		NodeID:             node.NodeID,
+		Name:               node.Name,
+		SupportedProviders: node.SupportedProviders,
+		MaxSlots:           node.MaxSlots,
+		CurrentLoad:        node.CurrentLoad,
+		Status:             node.Status,
+		Metadata:           node.Metadata,
+		LastHeartbeatAt:    node.LastHeartbeatAt,
+		CreatedAt:          node.CreatedAt,
+		UpdatedAt:          node.UpdatedAt,
+	}, nil
+}
+
+func (r *PgRepository) CountOnlineNodesWithoutPlatformLimits(ctx context.Context, tenantID uuid.UUID, heartbeatThreshold pgtype.Timestamptz) (int64, error) {
+	return r.q.CountOnlineLegacyLimitRuntimeNodesForTenant(ctx, queries.CountOnlineLegacyLimitRuntimeNodesForTenantParams{
+		TenantID:        tenantID,
+		LastHeartbeatAt: heartbeatThreshold,
+	})
+}
+
 func (r *PgRepository) UpdateLoad(ctx context.Context, params UpdateLoadParams) (NodeRecord, error) {
 	node, err := r.q.UpdateRuntimeNodeLoad(ctx, queries.UpdateRuntimeNodeLoadParams{
 		NodeID:      params.NodeID,

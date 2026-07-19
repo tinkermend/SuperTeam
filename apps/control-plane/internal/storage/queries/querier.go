@@ -53,6 +53,10 @@ type Querier interface {
 	CountDigitalEmployeeRunsDetailed(ctx context.Context, arg CountDigitalEmployeeRunsDetailedParams) (int64, error)
 	CountHighRiskInboxItems(ctx context.Context, arg CountHighRiskInboxItemsParams) (int64, error)
 	CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error)
+	// CountOnlineLegacyLimitRuntimeNodesForTenant counts online nodes that have
+	// not self-reported supports_platform_limits. The artifact presign version-skew
+	// guard clamps the file-size cap while any such node is online.
+	CountOnlineLegacyLimitRuntimeNodesForTenant(ctx context.Context, arg CountOnlineLegacyLimitRuntimeNodesForTenantParams) (int64, error)
 	CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error)
 	// Aggregates a project's demands into total / non-terminal counts so the coordinator
 	// can decide whether the whole project is ready for human acceptance.
@@ -486,6 +490,10 @@ type Querier interface {
 	MoveProjectTaskDispatchFailureToWaitingHuman(ctx context.Context, arg MoveProjectTaskDispatchFailureToWaitingHumanParams) (ProjectTask, error)
 	MoveProjectTaskToWaitingHuman(ctx context.Context, arg MoveProjectTaskToWaitingHumanParams) (ProjectTask, error)
 	NextProjectPlanRevisionNumber(ctx context.Context, arg NextProjectPlanRevisionNumberParams) (int32, error)
+	// PatchRuntimeNodeMetadata merges a JSON object into node metadata (jsonb ||).
+	// Used by heartbeat to persist capability self-reports (e.g.
+	// supports_platform_limits) only when the value changes.
+	PatchRuntimeNodeMetadata(ctx context.Context, arg PatchRuntimeNodeMetadataParams) (RuntimeNode, error)
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
 	ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error)

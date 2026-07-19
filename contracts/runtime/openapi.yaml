@@ -259,3 +259,58 @@ components:
           type: string
         code:
           type: string
+    # --- Control-plane heartbeat sideband (schema fragments) -----------------
+    # The CP<->runtime heartbeat protocol is NOT yet fully described here (known
+    # debt: it lives in the Go handler and Rust controlplane/models.rs). The
+    # fragments below document only the fields added by the system-config P2
+    # platform-limits delivery so the wire shape has a language-neutral record;
+    # keep them in sync with contracts/control-plane/openapi.yaml
+    # (RuntimeHeartbeatRequest / RuntimeHeartbeatResponse / PlatformLimits).
+    HeartbeatPlatformLimitsRequestFields:
+      type: object
+      description: >-
+        Fields the Runtime Agent adds to the control-plane heartbeat request
+        body (POST /api/v1/runtime/heartbeat).
+      properties:
+        supports_platform_limits:
+          type: boolean
+          default: false
+          description: >-
+            Capability self-report (system-config P2 §5): this agent consumes
+            the platform_limits snapshot from heartbeat responses. Missing or
+            false marks a legacy agent; the control plane then clamps artifact
+            presign to the legacy 10MiB cap for the tenant.
+    HeartbeatPlatformLimits:
+      type: object
+      description: >-
+        Platform limits snapshot carried in the control-plane heartbeat
+        response as `platform_limits` (system-config P2 §3). Every limit field
+        is optional; the agent falls back to its local hardcoded default for
+        any missing field, so version skew on either side never breaks
+        collection. Effective per-task: running tasks keep the values read at
+        task start.
+      properties:
+        version:
+          type: string
+          description: >-
+            Stable fingerprint ("plv1:sha256:<hex>") over the ordered limit
+            values; the agent skips re-applying when unchanged and logs one
+            info line (old -> new) on change.
+        artifact_max_file_size_bytes:
+          type: integer
+          format: int64
+        attachment_max_file_size_bytes:
+          type: integer
+          format: int64
+        attachment_max_count:
+          type: integer
+          format: int64
+        attachment_total_max_bytes:
+          type: integer
+          format: int64
+        skill_archive_max_bytes:
+          type: integer
+          format: int64
+        skill_archive_max_file_count:
+          type: integer
+          format: int64

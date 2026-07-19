@@ -125,11 +125,13 @@ pub struct ArtifactCollectionInputs<'a> {
 /// plane's zero-evidence gate then rejects the completion (spec §5).
 pub async fn collect_artifacts(inputs: &ArtifactCollectionInputs<'_>) -> Vec<CollectedArtifact> {
     let mut collected = Vec::with_capacity(3);
+    // 平台限额快照按任务粒度取一次(P2 spec §3):任务内各工件用同一生效值。
+    let artifact_max_file_bytes = crate::platform_limits::current().artifact_max_file_bytes;
 
     match tokio::fs::read(&inputs.raw_log_path).await {
         Ok(raw) if !raw.is_empty() => {
             let (redacted, redaction_count) = redact_transcript(&raw, inputs.environment);
-            let (body, truncated) = truncate_keep_tail(redacted, MAX_ARTIFACT_FILE_BYTES);
+            let (body, truncated) = truncate_keep_tail(redacted, artifact_max_file_bytes);
             collected.push(build_artifact(
                 "execution_transcript",
                 "raw.jsonl".to_string(),
@@ -156,7 +158,7 @@ pub async fn collect_artifacts(inputs: &ArtifactCollectionInputs<'_>) -> Vec<Col
         match git_diff_head(workspace).await {
             Ok(Some(diff)) => {
                 let (redacted, redaction_count) = redact_transcript(&diff, inputs.environment);
-                let (body, truncated) = truncate_keep_head(redacted, MAX_ARTIFACT_FILE_BYTES);
+                let (body, truncated) = truncate_keep_head(redacted, artifact_max_file_bytes);
                 collected.push(build_artifact(
                     "diff",
                     "changes.diff".to_string(),
@@ -178,7 +180,7 @@ pub async fn collect_artifacts(inputs: &ArtifactCollectionInputs<'_>) -> Vec<Col
         let trimmed = conclusion.trim();
         if !trimmed.is_empty() {
             let (body, truncated) =
-                truncate_keep_head(trimmed.as_bytes().to_vec(), MAX_ARTIFACT_FILE_BYTES);
+                truncate_keep_head(trimmed.as_bytes().to_vec(), artifact_max_file_bytes);
             collected.push(build_artifact(
                 "conclusion",
                 "conclusion.md".to_string(),
@@ -233,6 +235,11 @@ pub async fn collect_attachments(
     baseline: Option<&std::collections::BTreeSet<String>>,
 ) -> AttachmentCollection {
     let mut collection = AttachmentCollection::default();
+    // 平台限额快照按任务粒度取一次(P2 spec §3)。
+    let limits = crate::platform_limits::current();
+    let max_attachment_file_bytes = limits.attachment_max_file_bytes;
+    let max_attachment_count = limits.attachment_max_count;
+    let max_attachment_total_bytes = limits.attachment_total_max_bytes;
 
     let candidates = match git_untracked_files(workspace).await {
         Some(paths) => paths,
@@ -268,13 +275,13 @@ pub async fn collect_attachments(
         if !metadata.is_file() {
             continue;
         }
-        if metadata.len() > MAX_ATTACHMENT_FILE_BYTES {
+        if metadata.len() > max_attachment_file_bytes {
             collection.skipped.push(SkippedAttachment {
                 relative_path: relative,
                 reason: format!(
                     "file is {} bytes, exceeds the {}MiB attachment cap",
                     metadata.len(),
-                    MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)
+                    max_attachment_file_bytes / (1024 * 1024)
                 ),
             });
             continue;
@@ -290,19 +297,19 @@ pub async fn collect_attachments(
 
     let mut total_bytes = 0u64;
     for (relative, size, _) in eligible {
-        if collection.attachments.len() >= MAX_ATTACHMENT_COUNT {
+        if collection.attachments.len() >= max_attachment_count {
             collection.skipped.push(SkippedAttachment {
                 relative_path: relative,
-                reason: format!("attachment count cap ({MAX_ATTACHMENT_COUNT}) reached"),
+                reason: format!("attachment count cap ({max_attachment_count}) reached"),
             });
             continue;
         }
-        if total_bytes + size > MAX_ATTACHMENT_TOTAL_BYTES {
+        if total_bytes + size > max_attachment_total_bytes {
             collection.skipped.push(SkippedAttachment {
                 relative_path: relative,
                 reason: format!(
                     "total attachment cap ({}MiB) reached",
-                    MAX_ATTACHMENT_TOTAL_BYTES / (1024 * 1024)
+                    max_attachment_total_bytes / (1024 * 1024)
                 ),
             });
             continue;
@@ -318,13 +325,13 @@ pub async fn collect_attachments(
             }
         };
         // Re-check after the read: the file may have grown since stat.
-        if bytes.len() as u64 > MAX_ATTACHMENT_FILE_BYTES {
+        if bytes.len() as u64 > max_attachment_file_bytes {
             collection.skipped.push(SkippedAttachment {
                 relative_path: relative,
                 reason: format!(
                     "file grew to {} bytes, exceeds the {}MiB attachment cap",
                     bytes.len(),
-                    MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)
+                    max_attachment_file_bytes / (1024 * 1024)
                 ),
             });
             continue;
@@ -357,6 +364,9 @@ pub async fn collect_declared_deliverables(workspace: &Path) -> AttachmentCollec
     if !root.is_dir() {
         return collection;
     }
+    // 单文件上限跟随工件上限快照(与 CP presign 校验同源,P2 spec §3);
+    // 数量/总量上限仍是本地常量(未纳入注册表)。
+    let max_declared_file_bytes = crate::platform_limits::current().artifact_max_file_bytes as u64;
 
     let mut eligible: Vec<(String, u64, std::time::SystemTime)> = Vec::new();
     for relative in snapshot_workspace_files(&root) {
@@ -367,13 +377,13 @@ pub async fn collect_declared_deliverables(workspace: &Path) -> AttachmentCollec
         let Ok(metadata) = tokio::fs::metadata(root.join(&relative)).await else {
             continue;
         };
-        if metadata.len() > MAX_DECLARED_FILE_BYTES {
+        if metadata.len() > max_declared_file_bytes {
             collection.skipped.push(SkippedAttachment {
                 relative_path: full_relative,
                 reason: format!(
                     "file is {} bytes, exceeds the {}MiB declared deliverable cap",
                     metadata.len(),
-                    MAX_DECLARED_FILE_BYTES / (1024 * 1024)
+                    max_declared_file_bytes / (1024 * 1024)
                 ),
             });
             continue;
@@ -415,13 +425,13 @@ pub async fn collect_declared_deliverables(workspace: &Path) -> AttachmentCollec
                 continue;
             }
         };
-        if bytes.len() as u64 > MAX_DECLARED_FILE_BYTES {
+        if bytes.len() as u64 > max_declared_file_bytes {
             collection.skipped.push(SkippedAttachment {
                 relative_path: relative,
                 reason: format!(
                     "file grew to {} bytes, exceeds the {}MiB declared deliverable cap",
                     bytes.len(),
-                    MAX_DECLARED_FILE_BYTES / (1024 * 1024)
+                    max_declared_file_bytes / (1024 * 1024)
                 ),
             });
             continue;

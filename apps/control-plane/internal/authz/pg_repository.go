@@ -25,10 +25,26 @@ type QueryStore interface {
 
 type PgRepository struct {
 	q QueryStore
+	// heartbeatTimeout 解析 runtime scope 活性窗口的心跳超时。
+	// authz 不 import systemconfig(会成环),由 app 装配层注入;
+	// 未注入回退 runtimepkg.HeartbeatTimeout 常量。
+	heartbeatTimeout func(ctx context.Context, tenantID uuid.UUID) time.Duration
 }
 
 func NewPgRepository(q QueryStore) *PgRepository {
 	return &PgRepository{q: q}
+}
+
+// SetHeartbeatTimeoutResolver 注入心跳超时解析闭包(app 装配层接线)。
+func (r *PgRepository) SetHeartbeatTimeoutResolver(resolver func(ctx context.Context, tenantID uuid.UUID) time.Duration) {
+	r.heartbeatTimeout = resolver
+}
+
+func (r *PgRepository) heartbeatTimeoutFor(ctx context.Context, tenantID uuid.UUID) time.Duration {
+	if r.heartbeatTimeout == nil {
+		return runtimepkg.HeartbeatTimeout
+	}
+	return r.heartbeatTimeout(ctx, tenantID)
 }
 
 func (r *PgRepository) GetActiveTenantMembership(ctx context.Context, params TenantMembershipParams) (Membership, error) {
@@ -107,7 +123,7 @@ func (r *PgRepository) RuntimeNodeCoversTaskScope(ctx context.Context, params Ru
 		TeamID:             teamID,
 		TaskID:             params.TaskID,
 		NodeID:             params.NodeID,
-		LastHeartbeatAfter: timestamptz(time.Now().Add(-runtimepkg.HeartbeatTimeout)),
+		LastHeartbeatAfter: timestamptz(time.Now().Add(-r.heartbeatTimeoutFor(ctx, params.TenantID))),
 	})
 }
 

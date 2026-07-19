@@ -14,13 +14,19 @@ const (
 
 // 各配置项 key。使用点经 Reader 取值时引用这些常量。
 const (
-	KeyArtifactMaxFileSizeBytes      = "artifact.max_file_size_bytes"
-	KeyArtifactPresignUploadTTL      = "artifact.presign_upload_ttl_seconds"
-	KeyArtifactContentGetTTL         = "artifact.content_get_ttl_seconds"
-	KeySkillUploadMaxBytes           = "skill.upload_max_bytes"
-	KeySkillArchivePresignTTL        = "skill.archive_presign_ttl_seconds"
-	KeyRuntimeSessionTTLSeconds      = "runtime.session_ttl_seconds"
-	KeyAuthSessionTTLSeconds         = "auth.session_ttl_seconds"
+	KeyArtifactMaxFileSizeBytes           = "artifact.max_file_size_bytes"
+	KeyArtifactPresignUploadTTL           = "artifact.presign_upload_ttl_seconds"
+	KeyArtifactContentGetTTL              = "artifact.content_get_ttl_seconds"
+	KeyArtifactAttachmentMaxFileSizeBytes = "artifact.attachment_max_file_size_bytes"
+	KeyArtifactAttachmentMaxCount         = "artifact.attachment_max_count"
+	KeyArtifactAttachmentTotalMaxBytes    = "artifact.attachment_total_max_bytes"
+	KeySkillUploadMaxBytes                = "skill.upload_max_bytes"
+	KeySkillArchivePresignTTL             = "skill.archive_presign_ttl_seconds"
+	KeySkillArchiveUnpackMaxBytes         = "skill.archive_unpack_max_bytes"
+	KeySkillArchiveUnpackMaxFileCount     = "skill.archive_unpack_max_file_count"
+	KeyRuntimeSessionTTLSeconds           = "runtime.session_ttl_seconds"
+	KeyRuntimeHeartbeatTimeoutSeconds     = "runtime.heartbeat_timeout_seconds"
+	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 )
 
 // registry 是配置项注册表:非封闭枚举,新增配置项 = 此处加一条 + 使用点接入,
@@ -30,12 +36,12 @@ var registry = []Definition{
 		Key:    KeyArtifactMaxFileSizeBytes,
 		Domain: DomainArtifact,
 		Label:  "单个工件大小上限",
-		Description: "runtime 回传单个工件(含报告文件)的最大字节数,超限的 presign 请求被拒绝。" +
-			"P1 上限锁定 10MiB:runtime 采集侧为独立硬编码限额,配置下发通道(P2)落地前只允许调低,防止调高后 runtime 静默丢文件。",
+		Description: "runtime 回传单个工件(含报告文件与声明式交付物)的最大字节数,超限的 presign 请求被拒绝。" +
+			"生效值经心跳下发到 runtime(P2);租户内存在不支持限额下发的在线旧 runtime 时,presign 按 10MiB 收紧(版本偏斜护栏),避免静默丢文件。",
 		ValueType:    ValueTypeBytes,
 		DefaultValue: 10 * 1024 * 1024,
 		MinValue:     1 * 1024 * 1024,
-		MaxValue:     10 * 1024 * 1024,
+		MaxValue:     100 * 1024 * 1024,
 	},
 	{
 		Key:          KeyArtifactPresignUploadTTL,
@@ -58,6 +64,37 @@ var registry = []Definition{
 		MaxValue:     3600,
 	},
 	{
+		Key:    KeyArtifactAttachmentMaxFileSizeBytes,
+		Domain: DomainArtifact,
+		Label:  "单个附件大小上限",
+		Description: "runtime 兜底采集的输出附件单文件最大字节数,超限文件跳过并留 execution_output_skipped 痕。" +
+			"经心跳下发到 runtime,收敛粒度为下一次任务。",
+		ValueType:    ValueTypeBytes,
+		DefaultValue: 5 * 1024 * 1024,
+		MinValue:     1 * 1024 * 1024,
+		MaxValue:     10 * 1024 * 1024,
+	},
+	{
+		Key:          KeyArtifactAttachmentMaxCount,
+		Domain:       DomainArtifact,
+		Label:        "附件数量上限",
+		Description:  "单次执行兜底采集的输出附件最大个数,超出部分跳过并留痕。经心跳下发到 runtime。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 20,
+		MinValue:     1,
+		MaxValue:     100,
+	},
+	{
+		Key:          KeyArtifactAttachmentTotalMaxBytes,
+		Domain:       DomainArtifact,
+		Label:        "附件总大小上限",
+		Description:  "单次执行兜底采集的输出附件合计最大字节数,超出部分跳过并留痕。经心跳下发到 runtime。",
+		ValueType:    ValueTypeBytes,
+		DefaultValue: 50 * 1024 * 1024,
+		MinValue:     10 * 1024 * 1024,
+		MaxValue:     200 * 1024 * 1024,
+	},
+	{
 		Key:          KeySkillUploadMaxBytes,
 		Domain:       DomainArtifact,
 		Label:        "技能包上传大小上限",
@@ -76,6 +113,37 @@ var registry = []Definition{
 		DefaultValue: 15 * 60,
 		MinValue:     60,
 		MaxValue:     3600,
+	},
+	{
+		Key:          KeySkillArchiveUnpackMaxBytes,
+		Domain:       DomainArtifact,
+		Label:        "技能包解包大小上限",
+		Description:  "runtime 物化技能时允许的归档最大字节数,超限拒绝解包。经心跳下发到 runtime。",
+		ValueType:    ValueTypeBytes,
+		DefaultValue: 200 * 1024 * 1024,
+		MinValue:     50 * 1024 * 1024,
+		MaxValue:     500 * 1024 * 1024,
+	},
+	{
+		Key:          KeySkillArchiveUnpackMaxFileCount,
+		Domain:       DomainArtifact,
+		Label:        "技能包解包文件数上限",
+		Description:  "runtime 物化技能时允许的归档最大文件条目数,超限拒绝解包。经心跳下发到 runtime。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 10000,
+		MinValue:     100,
+		MaxValue:     50000,
+	},
+	{
+		Key:    KeyRuntimeHeartbeatTimeoutSeconds,
+		Domain: DomainExecution,
+		Label:  "Runtime 心跳超时",
+		Description: "节点最近一次心跳距今超过该秒数即判离线,影响\"节点在线\"判定、调度候选与 runtime scope 授权的活性窗口。" +
+			"调大意味着离线节点更晚被判离线;上限 600 秒防止把僵尸节点长期当在线。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 60,
+		MinValue:     10,
+		MaxValue:     600,
 	},
 	{
 		Key:          KeyRuntimeSessionTTLSeconds,
@@ -117,7 +185,7 @@ func buildRegistryIndex() map[string]Definition {
 			panic(fmt.Sprintf("systemconfig: definition %q default out of bounds", def.Key))
 		}
 		switch def.ValueType {
-		case ValueTypeBytes, ValueTypeDurationSeconds:
+		case ValueTypeBytes, ValueTypeDurationSeconds, ValueTypeInt:
 		default:
 			panic(fmt.Sprintf("systemconfig: definition %q has unknown value type %q", def.Key, def.ValueType))
 		}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -111,6 +112,14 @@ func (m *mockSchedulerRepository) TryAcquireNodeSlot(ctx context.Context, nodeID
 
 func (m *mockSchedulerRepository) UpdateStatus(ctx context.Context, params UpdateStatusParams) (NodeRecord, error) {
 	return NodeRecord{}, nil
+}
+
+func (m *mockSchedulerRepository) PatchNodeMetadata(ctx context.Context, params PatchNodeMetadataParams) (NodeRecord, error) {
+	return NodeRecord{}, nil
+}
+
+func (m *mockSchedulerRepository) CountOnlineNodesWithoutPlatformLimits(ctx context.Context, tenantID uuid.UUID, threshold pgtype.Timestamptz) (int64, error) {
+	return 0, nil
 }
 
 func (m *mockSchedulerRepository) DeleteNode(ctx context.Context, nodeID string) error {

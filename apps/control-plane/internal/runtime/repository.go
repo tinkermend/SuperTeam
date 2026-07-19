@@ -22,6 +22,11 @@ type Repository interface {
 	// node is full, offline, stale, or archived.
 	TryAcquireNodeSlot(ctx context.Context, nodeID string, heartbeatThreshold pgtype.Timestamptz) (NodeRecord, error)
 	UpdateStatus(ctx context.Context, params UpdateStatusParams) (NodeRecord, error)
+	// PatchNodeMetadata merges a JSON object into the node metadata (jsonb ||).
+	PatchNodeMetadata(ctx context.Context, params PatchNodeMetadataParams) (NodeRecord, error)
+	// CountOnlineNodesWithoutPlatformLimits 数出租户内在线且未自报
+	// supports_platform_limits 的节点(工件上限版本偏斜护栏)。
+	CountOnlineNodesWithoutPlatformLimits(ctx context.Context, tenantID uuid.UUID, heartbeatThreshold pgtype.Timestamptz) (int64, error)
 	DeleteNode(ctx context.Context, nodeID string) error
 }
 
@@ -116,6 +121,12 @@ type UpdateHeartbeatParams struct {
 type UpdateLoadParams struct {
 	NodeID      string
 	CurrentLoad int32
+}
+
+// PatchNodeMetadataParams merges Patch (a JSON object) into node metadata.
+type PatchNodeMetadataParams struct {
+	NodeID string
+	Patch  []byte
 }
 
 // UpdateStatusParams represents parameters for updating status

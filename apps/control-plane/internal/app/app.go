@@ -427,6 +427,20 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runtimeService.SetSessionTTLResolver(func(ctx context.Context, tenantID uuid.UUID) time.Duration {
 		return systemConfigService.Duration(ctx, tenantID, systemconfig.KeyRuntimeSessionTTLSeconds)
 	})
+	runtimeService.SetHeartbeatTimeoutResolver(func(ctx context.Context, tenantID uuid.UUID) time.Duration {
+		return systemConfigService.Duration(ctx, tenantID, systemconfig.KeyRuntimeHeartbeatTimeoutSeconds)
+	})
+	// 平台限额快照(P2):心跳响应把系统配置中心生效值下发给 runtime。
+	runtimeService.SetPlatformLimitsResolver(func(ctx context.Context, tenantID uuid.UUID) runtimepkg.PlatformLimits {
+		return runtimepkg.PlatformLimits{
+			ArtifactMaxFileSizeBytes:   systemConfigService.Int64(ctx, tenantID, systemconfig.KeyArtifactMaxFileSizeBytes),
+			AttachmentMaxFileSizeBytes: systemConfigService.Int64(ctx, tenantID, systemconfig.KeyArtifactAttachmentMaxFileSizeBytes),
+			AttachmentMaxCount:         systemConfigService.Int64(ctx, tenantID, systemconfig.KeyArtifactAttachmentMaxCount),
+			AttachmentTotalMaxBytes:    systemConfigService.Int64(ctx, tenantID, systemconfig.KeyArtifactAttachmentTotalMaxBytes),
+			SkillArchiveMaxBytes:       systemConfigService.Int64(ctx, tenantID, systemconfig.KeySkillArchiveUnpackMaxBytes),
+			SkillArchiveMaxFileCount:   systemConfigService.Int64(ctx, tenantID, systemconfig.KeySkillArchiveUnpackMaxFileCount),
+		}
+	})
 	employeeService, err := employee.NewService(employeeRepository)
 	if err != nil {
 		return nil, err
@@ -612,6 +626,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	projectService.SetArtifactObjectStore(artifactObjectStoreAdapter{store: stores.ObjectStore})
 	projectService.SetSystemConfigReader(systemConfigService)
+	// 工件上限版本偏斜护栏(P2 spec §5):租户内存在在线旧协议节点时 presign clamp。
+	projectService.SetLegacyLimitNodesChecker(runtimeService.HasOnlineLegacyLimitNodes)
 	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
 	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)})
 	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})
@@ -649,6 +665,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return systemConfigService.Duration(ctx, platform.DefaultTenantID, systemconfig.KeyAuthSessionTTLSeconds)
 	})
 	authzRepository := authz.NewPgRepository(q)
+	// runtime scope 活性窗口跟随可配心跳超时(authz 不 import systemconfig,闭包注入)。
+	authzRepository.SetHeartbeatTimeoutResolver(func(ctx context.Context, tenantID uuid.UUID) time.Duration {
+		return systemConfigService.Duration(ctx, tenantID, systemconfig.KeyRuntimeHeartbeatTimeoutSeconds)
+	})
 	authzRecorder := authz.NewOperationLogDecisionRecorder(q)
 	dbAuthorizer := authz.NewDBAuthorizer(authzRepository, authzRecorder)
 	var authorizer authz.Authorizer = dbAuthorizer

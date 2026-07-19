@@ -98,7 +98,7 @@ export function EditSystemConfigDialog({
         >
           <label className="flex flex-col gap-1.5">
             <span className="text-sm text-muted-foreground">
-              取值（{unit.label}），范围 {minInUnit} – {maxInUnit}
+              取值{unit.label ? `（${unit.label}）` : ""}，范围 {minInUnit} – {maxInUnit}
             </span>
             <div className="flex items-center gap-2">
               <input

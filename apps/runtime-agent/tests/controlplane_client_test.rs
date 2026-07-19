@@ -36,6 +36,7 @@ fn test_heartbeat_request_serialization() {
     let req = HeartbeatRequest {
         current_load: 2,
         status: NodeStatus::Online,
+            supports_platform_limits: true,
     };
 
     let json = serde_json::to_string(&req).unwrap();
@@ -268,6 +269,7 @@ async fn test_heartbeat_integration() {
     let heartbeat_req = HeartbeatRequest {
         current_load: 1,
         status: NodeStatus::Online,
+            supports_platform_limits: true,
     };
 
     let result = client.heartbeat(heartbeat_req).await;
@@ -314,6 +316,7 @@ async fn controlplane_client_heartbeat_sends_runtime_identity_headers() {
         .heartbeat(HeartbeatRequest {
             current_load: 0,
             status: NodeStatus::Online,
+            supports_platform_limits: true,
         })
         .await
         .unwrap();
@@ -370,6 +373,7 @@ async fn shared_runtime_auth_client_uses_latest_token_for_each_request() {
         .heartbeat(HeartbeatRequest {
             current_load: 0,
             status: NodeStatus::Online,
+            supports_platform_limits: true,
         })
         .await
         .unwrap();
@@ -380,6 +384,7 @@ async fn shared_runtime_auth_client_uses_latest_token_for_each_request() {
         .heartbeat(HeartbeatRequest {
             current_load: 0,
             status: NodeStatus::Online,
+            supports_platform_limits: true,
         })
         .await
         .unwrap();
@@ -420,6 +425,7 @@ async fn controlplane_client_classifies_runtime_auth_unauthorized() {
         .heartbeat(HeartbeatRequest {
             current_load: 0,
             status: NodeStatus::Online,
+            supports_platform_limits: true,
         })
         .await
         .expect_err("heartbeat should fail");

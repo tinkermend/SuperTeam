@@ -536,10 +536,22 @@ async fn heartbeat_loop(client: ControlPlaneClient, config: RuntimeConfig) {
         let req = HeartbeatRequest {
             current_load: 0,
             status: NodeStatus::Online,
+            // 能力自报(P2 spec §5):本 agent 消费 platform_limits 快照。
+            supports_platform_limits: true,
         };
 
         match client.heartbeat(req).await {
             Ok(response) => {
+                // 平台限额快照:指纹没变则不动;变更时留一条 info 痕(old→new)。
+                if let Some(snapshot) = response.platform_limits.as_ref() {
+                    if let Some(previous) = crate::platform_limits::apply(snapshot) {
+                        println!(
+                            "Platform limits snapshot updated: {} -> {}",
+                            previous,
+                            snapshot.version.as_deref().unwrap_or("unversioned")
+                        );
+                    }
+                }
                 let required_tools = normalize_tool_set(response.required_tools);
                 if required_tools != last_required_tools {
                     let probe_tools = merge_tool_sets(&config.tools.probe_names, &required_tools);

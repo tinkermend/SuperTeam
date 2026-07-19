@@ -586,6 +586,33 @@ func (f *enrollmentFake) UpdateStatus(_ context.Context, params UpdateStatusPara
 	return record, nil
 }
 
+func (f *enrollmentFake) PatchNodeMetadata(_ context.Context, params PatchNodeMetadataParams) (NodeRecord, error) {
+	key := f.nodeKey(platform.DefaultTenantID, params.NodeID)
+	record := f.nodes[key]
+	merged := map[string]json.RawMessage{}
+	if len(record.Metadata) > 0 {
+		_ = json.Unmarshal(record.Metadata, &merged)
+	}
+	var patch map[string]json.RawMessage
+	if err := json.Unmarshal(params.Patch, &patch); err != nil {
+		return NodeRecord{}, err
+	}
+	for k, v := range patch {
+		merged[k] = v
+	}
+	data, err := json.Marshal(merged)
+	if err != nil {
+		return NodeRecord{}, err
+	}
+	record.Metadata = data
+	f.nodes[key] = record
+	return record, nil
+}
+
+func (f *enrollmentFake) CountOnlineNodesWithoutPlatformLimits(context.Context, uuid.UUID, pgtype.Timestamptz) (int64, error) {
+	return 0, nil
+}
+
 func (f *enrollmentFake) DeleteNode(context.Context, string) error {
 	return nil
 }

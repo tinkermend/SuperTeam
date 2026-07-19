@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/superteam/control-plane/internal/platform"
 )
 
 var (
@@ -15,7 +17,8 @@ var (
 
 // Scheduler handles task scheduling to runtime nodes
 type Scheduler struct {
-	repository Repository
+	repository               Repository
+	heartbeatTimeoutResolver HeartbeatTimeoutResolver
 }
 
 // NewScheduler creates a new scheduler instance
@@ -26,6 +29,21 @@ func NewScheduler(repository Repository) (*Scheduler, error) {
 	return &Scheduler{
 		repository: repository,
 	}, nil
+}
+
+// SetHeartbeatTimeoutResolver 注入心跳超时解析闭包(app 装配层接线,
+// 与 Service 同法);未注入回退默认常量。
+func (s *Scheduler) SetHeartbeatTimeoutResolver(resolver HeartbeatTimeoutResolver) {
+	s.heartbeatTimeoutResolver = resolver
+}
+
+// heartbeatTimeout 解析调度用的心跳超时。SelectNode 是跨租户候选查询,
+// 无租户轴,按默认租户解析(节点表当前为单默认租户)。
+func (s *Scheduler) heartbeatTimeout(ctx context.Context) time.Duration {
+	if s.heartbeatTimeoutResolver == nil {
+		return HeartbeatTimeout
+	}
+	return s.heartbeatTimeoutResolver(ctx, platform.DefaultTenantID)
 }
 
 // SelectNode selects the best available node for a given provider type.
@@ -45,7 +63,7 @@ func (s *Scheduler) SelectNode(ctx context.Context, providerType string) (*Node,
 	}
 
 	// Get all online nodes (used only to order candidates; no lock taken here)
-	threshold := time.Now().Add(-HeartbeatTimeout)
+	threshold := time.Now().Add(-s.heartbeatTimeout(ctx))
 	thresholdTs := timestamptzFromTime(threshold)
 	nodes, err := s.repository.ListOnlineNodes(ctx, thresholdTs)
 	if err != nil {
@@ -56,7 +74,7 @@ func (s *Scheduler) SelectNode(ctx context.Context, providerType string) (*Node,
 	// at acquire time, so we don't pre-filter by HasCapacity here.
 	var candidates []*Node
 	for _, record := range nodes {
-		node, err := s.recordToNode(record)
+		node, err := s.recordToNode(ctx, record)
 		if err != nil {
 			continue
 		}
@@ -81,7 +99,7 @@ func (s *Scheduler) SelectNode(ctx context.Context, providerType string) (*Node,
 	for _, node := range candidates {
 		record, err := s.repository.TryAcquireNodeSlot(ctx, node.NodeID, thresholdTs)
 		if err == nil {
-			return s.recordToNode(record)
+			return s.recordToNode(ctx, record)
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
@@ -107,8 +125,9 @@ func sortCandidatesByLoad(candidates []*Node) {
 }
 
 // Helper method to convert record to node
-func (s *Scheduler) recordToNode(record NodeRecord) (*Node, error) {
-	// Use the same conversion logic as Service
-	svc := &Service{repository: s.repository}
-	return svc.recordToNode(record)
+func (s *Scheduler) recordToNode(ctx context.Context, record NodeRecord) (*Node, error) {
+	// Use the same conversion logic as Service, carrying the resolver so the
+	// derived-status freshness check uses the configured timeout.
+	svc := &Service{repository: s.repository, heartbeatTimeoutResolver: s.heartbeatTimeoutResolver}
+	return svc.recordToNode(ctx, record)
 }

@@ -42,6 +42,18 @@ type runtimeNodeResponse struct {
 	LastHeartbeatAt         string                 `json:"last_heartbeat_at,omitempty"`
 	CreatedAt               string                 `json:"created_at,omitempty"`
 	UpdatedAt               string                 `json:"updated_at,omitempty"`
+	// PlatformLimits 只在心跳响应中出现:平台限额快照下发通道(P2 spec §3)。
+	PlatformLimits *platformLimitsResponse `json:"platform_limits,omitempty"`
+}
+
+type platformLimitsResponse struct {
+	Version                    string `json:"version"`
+	ArtifactMaxFileSizeBytes   int64  `json:"artifact_max_file_size_bytes"`
+	AttachmentMaxFileSizeBytes int64  `json:"attachment_max_file_size_bytes"`
+	AttachmentMaxCount         int64  `json:"attachment_max_count"`
+	AttachmentTotalMaxBytes    int64  `json:"attachment_total_max_bytes"`
+	SkillArchiveMaxBytes       int64  `json:"skill_archive_max_bytes"`
+	SkillArchiveMaxFileCount   int64  `json:"skill_archive_max_file_count"`
 }
 
 type runtimeEnrollmentResponse struct {
@@ -215,6 +227,18 @@ func newRuntimeHeartbeatResponse(resp *runtime.HeartbeatResponse) runtimeNodeRes
 	response.RequiredTools = append([]string(nil), resp.RequiredTools...)
 	if response.RequiredTools == nil {
 		response.RequiredTools = []string{}
+	}
+	if resp.PlatformLimits != nil {
+		limits := *resp.PlatformLimits
+		response.PlatformLimits = &platformLimitsResponse{
+			Version:                    limits.Fingerprint(),
+			ArtifactMaxFileSizeBytes:   limits.ArtifactMaxFileSizeBytes,
+			AttachmentMaxFileSizeBytes: limits.AttachmentMaxFileSizeBytes,
+			AttachmentMaxCount:         limits.AttachmentMaxCount,
+			AttachmentTotalMaxBytes:    limits.AttachmentTotalMaxBytes,
+			SkillArchiveMaxBytes:       limits.SkillArchiveMaxBytes,
+			SkillArchiveMaxFileCount:   limits.SkillArchiveMaxFileCount,
+		}
 	}
 	return response
 }

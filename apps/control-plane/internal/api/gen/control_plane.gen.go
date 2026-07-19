@@ -1635,18 +1635,36 @@ func (e RuntimeEventType) Valid() bool {
 	}
 }
 
+// Defines values for RuntimeHeartbeatResponseStatus.
+const (
+	RuntimeHeartbeatResponseStatusOffline RuntimeHeartbeatResponseStatus = "offline"
+	RuntimeHeartbeatResponseStatusOnline  RuntimeHeartbeatResponseStatus = "online"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeHeartbeatResponseStatus enum.
+func (e RuntimeHeartbeatResponseStatus) Valid() bool {
+	switch e {
+	case RuntimeHeartbeatResponseStatusOffline:
+		return true
+	case RuntimeHeartbeatResponseStatusOnline:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuntimeNodeStatus.
 const (
-	Offline RuntimeNodeStatus = "offline"
-	Online  RuntimeNodeStatus = "online"
+	RuntimeNodeStatusOffline RuntimeNodeStatus = "offline"
+	RuntimeNodeStatusOnline  RuntimeNodeStatus = "online"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeNodeStatus enum.
 func (e RuntimeNodeStatus) Valid() bool {
 	switch e {
-	case Offline:
+	case RuntimeNodeStatusOffline:
 		return true
-	case Online:
+	case RuntimeNodeStatusOnline:
 		return true
 	default:
 		return false
@@ -3667,6 +3685,19 @@ type PendingDeleteTeam struct {
 	UpdatedAt         *time.Time              `json:"updated_at,omitempty"`
 }
 
+// PlatformLimits Effective platform limits snapshot resolved from the system config registry for the node's tenant. All limit fields are optional on the wire; agents keep their local hardcoded defaults for any missing field, so version skew on either side never breaks collection.
+type PlatformLimits struct {
+	ArtifactMaxFileSizeBytes   *int64 `json:"artifact_max_file_size_bytes,omitempty"`
+	AttachmentMaxCount         *int64 `json:"attachment_max_count,omitempty"`
+	AttachmentMaxFileSizeBytes *int64 `json:"attachment_max_file_size_bytes,omitempty"`
+	AttachmentTotalMaxBytes    *int64 `json:"attachment_total_max_bytes,omitempty"`
+	SkillArchiveMaxBytes       *int64 `json:"skill_archive_max_bytes,omitempty"`
+	SkillArchiveMaxFileCount   *int64 `json:"skill_archive_max_file_count,omitempty"`
+
+	// Version Stable fingerprint ("plv1:sha256:<hex>") over the ordered limit values; agents skip re-applying when unchanged.
+	Version *string `json:"version,omitempty"`
+}
+
 // PresignRuntimeArtifactRequest defines model for PresignRuntimeArtifactRequest.
 type PresignRuntimeArtifactRequest struct {
 	ContentType *string `json:"content_type,omitempty"`
@@ -4861,7 +4892,33 @@ type RuntimeEventType string
 type RuntimeHeartbeatRequest struct {
 	CurrentLoad int32   `json:"current_load"`
 	Status      *string `json:"status,omitempty"`
+
+	// SupportsPlatformLimits Capability self-report (system-config P2 §5): the agent consumes the platform_limits snapshot carried in heartbeat responses. While any online node in the tenant lacks this flag, artifact presign clamps the file-size cap back to the legacy 10MiB hard limit.
+	SupportsPlatformLimits *bool `json:"supports_platform_limits,omitempty"`
 }
+
+// RuntimeHeartbeatResponse defines model for RuntimeHeartbeatResponse.
+type RuntimeHeartbeatResponse struct {
+	CommandChannelConnected *bool                   `json:"command_channel_connected,omitempty"`
+	CreatedAt               *time.Time              `json:"created_at,omitempty"`
+	CurrentLoad             int32                   `json:"current_load"`
+	LastHeartbeatAt         *time.Time              `json:"last_heartbeat_at,omitempty"`
+	MaxSlots                int32                   `json:"max_slots"`
+	Metadata                *map[string]interface{} `json:"metadata,omitempty"`
+	Name                    string                  `json:"name"`
+	NodeId                  string                  `json:"node_id"`
+
+	// PlatformLimits Effective platform limits snapshot resolved from the system config registry for the node's tenant. All limit fields are optional on the wire; agents keep their local hardcoded defaults for any missing field, so version skew on either side never breaks collection.
+	PlatformLimits     *PlatformLimits                `json:"platform_limits,omitempty"`
+	RequiredTools      *[]string                      `json:"required_tools,omitempty"`
+	RuntimeNodeId      *openapi_types.UUID            `json:"runtime_node_id,omitempty"`
+	Status             RuntimeHeartbeatResponseStatus `json:"status"`
+	SupportedProviders []string                       `json:"supported_providers"`
+	UpdatedAt          *time.Time                     `json:"updated_at,omitempty"`
+}
+
+// RuntimeHeartbeatResponseStatus defines model for RuntimeHeartbeatResponse.Status.
+type RuntimeHeartbeatResponseStatus string
 
 // RuntimeNode defines model for RuntimeNode.
 type RuntimeNode struct {
@@ -5164,7 +5221,7 @@ type SystemConfigItem struct {
 	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
 	UpdatedByName  *string    `json:"updated_by_name,omitempty"`
 
-	// ValueType bytes | duration_seconds (registry-validated, not a closed enum)
+	// ValueType bytes | duration_seconds | int (registry-validated, not a closed enum)
 	ValueType string `json:"value_type"`
 }
 

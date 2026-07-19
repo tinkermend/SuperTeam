@@ -130,7 +130,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RuntimeNode"
+                $ref: "#/components/schemas/RuntimeHeartbeatResponse"
   /api/v1/runtime/tasks/claim:
     post:
       operationId: claimRuntimeTask
@@ -4424,7 +4424,7 @@ components:
           type: string
         value_type:
           type: string
-          description: bytes | duration_seconds (registry-validated, not a closed enum)
+          description: bytes | duration_seconds | int (registry-validated, not a closed enum)
         default_value:
           type: integer
           format: int64
@@ -5229,6 +5229,55 @@ components:
           format: int32
         status:
           type: string
+        supports_platform_limits:
+          type: boolean
+          default: false
+          description: >-
+            Capability self-report (system-config P2 §5): the agent consumes the
+            platform_limits snapshot carried in heartbeat responses. While any
+            online node in the tenant lacks this flag, artifact presign clamps
+            the file-size cap back to the legacy 10MiB hard limit.
+    RuntimeHeartbeatResponse:
+      description: >-
+        Heartbeat response: the node projection plus the platform limits
+        snapshot delivery channel (system-config P2 §3).
+      allOf:
+        - $ref: "#/components/schemas/RuntimeNode"
+        - type: object
+          properties:
+            platform_limits:
+              $ref: "#/components/schemas/PlatformLimits"
+    PlatformLimits:
+      type: object
+      description: >-
+        Effective platform limits snapshot resolved from the system config
+        registry for the node's tenant. All limit fields are optional on the
+        wire; agents keep their local hardcoded defaults for any missing field,
+        so version skew on either side never breaks collection.
+      properties:
+        version:
+          type: string
+          description: >-
+            Stable fingerprint ("plv1:sha256:<hex>") over the ordered limit
+            values; agents skip re-applying when unchanged.
+        artifact_max_file_size_bytes:
+          type: integer
+          format: int64
+        attachment_max_file_size_bytes:
+          type: integer
+          format: int64
+        attachment_max_count:
+          type: integer
+          format: int64
+        attachment_total_max_bytes:
+          type: integer
+          format: int64
+        skill_archive_max_bytes:
+          type: integer
+          format: int64
+        skill_archive_max_file_count:
+          type: integer
+          format: int64
     RuntimeEnrollmentStatus:
       type: string
       enum:

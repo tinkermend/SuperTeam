@@ -472,8 +472,9 @@ func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		CurrentLoad int32  `json:"current_load"`
-		Status      string `json:"status"`
+		CurrentLoad            int32  `json:"current_load"`
+		Status                 string `json:"status"`
+		SupportsPlatformLimits bool   `json:"supports_platform_limits"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -482,9 +483,10 @@ func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.runtimeService.UpdateHeartbeat(r.Context(), runtime.UpdateHeartbeatRequest{
-		TenantID:    middleware.GetTenantID(r.Context()),
-		NodeID:      nodeID,
-		CurrentLoad: req.CurrentLoad,
+		TenantID:               middleware.GetTenantID(r.Context()),
+		NodeID:                 nodeID,
+		CurrentLoad:            req.CurrentLoad,
+		SupportsPlatformLimits: req.SupportsPlatformLimits,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

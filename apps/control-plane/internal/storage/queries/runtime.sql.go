@@ -12,6 +12,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CountOnlineLegacyLimitRuntimeNodesForTenant = `-- name: CountOnlineLegacyLimitRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND status = 'online'
+  AND last_heartbeat_at > $2::timestamptz
+  AND disabled_at IS NULL
+  AND archived_at IS NULL
+  AND COALESCE(metadata->>'supports_platform_limits', '') <> 'true'
+`
+
+type CountOnlineLegacyLimitRuntimeNodesForTenantParams struct {
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	LastHeartbeatAt pgtype.Timestamptz `json:"last_heartbeat_at"`
+}
+
+// CountOnlineLegacyLimitRuntimeNodesForTenant counts online nodes that have
+// not self-reported supports_platform_limits. The artifact presign version-skew
+// guard clamps the file-size cap while any such node is online.
+func (q *Queries) CountOnlineLegacyLimitRuntimeNodesForTenant(ctx context.Context, arg CountOnlineLegacyLimitRuntimeNodesForTenantParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountOnlineLegacyLimitRuntimeNodesForTenant, arg.TenantID, arg.LastHeartbeatAt)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const CountOnlineRuntimeNodesForTenant = `-- name: CountOnlineRuntimeNodesForTenant :one
 SELECT COUNT(*)::bigint
 FROM runtime_nodes
@@ -378,6 +404,45 @@ func (q *Queries) ListRuntimeNodesForTenant(ctx context.Context, arg ListRuntime
 		return nil, err
 	}
 	return items, nil
+}
+
+const PatchRuntimeNodeMetadata = `-- name: PatchRuntimeNodeMetadata :one
+UPDATE runtime_nodes
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+    updated_at = NOW()
+WHERE node_id = $2::varchar
+  AND archived_at IS NULL
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
+`
+
+type PatchRuntimeNodeMetadataParams struct {
+	Patch  []byte `json:"patch"`
+	NodeID string `json:"node_id"`
+}
+
+// PatchRuntimeNodeMetadata merges a JSON object into node metadata (jsonb ||).
+// Used by heartbeat to persist capability self-reports (e.g.
+// supports_platform_limits) only when the value changes.
+func (q *Queries) PatchRuntimeNodeMetadata(ctx context.Context, arg PatchRuntimeNodeMetadataParams) (RuntimeNode, error) {
+	row := q.db.QueryRow(ctx, PatchRuntimeNodeMetadata, arg.Patch, arg.NodeID)
+	var i RuntimeNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.NodeID,
+		&i.Name,
+		&i.SupportedProviders,
+		&i.MaxSlots,
+		&i.CurrentLoad,
+		&i.Status,
+		&i.Metadata,
+		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const TryAcquireRuntimeNodeSlot = `-- name: TryAcquireRuntimeNodeSlot :one

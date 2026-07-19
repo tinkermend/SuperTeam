@@ -18,10 +18,12 @@ var (
 	ErrInvalidValue = errors.New("invalid system config value")
 )
 
-// 值类型:P1 全部为数值型;bool/string 待有真实配置项时再扩展。
+// 值类型:全部为数值型;bool/string 待有真实配置项时再扩展。
+// int 是纯计数型(P2 新增),前端编辑弹窗对其免单位换算。
 const (
 	ValueTypeBytes           = "bytes"
 	ValueTypeDurationSeconds = "duration_seconds"
+	ValueTypeInt             = "int"
 )
 
 // Definition 是一个配置项的注册表定义。数值以 int64 承载。

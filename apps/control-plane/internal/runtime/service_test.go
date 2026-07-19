@@ -81,6 +81,16 @@ func (m *MockRepository) UpdateStatus(ctx context.Context, params UpdateStatusPa
 	return args.Get(0).(NodeRecord), args.Error(1)
 }
 
+func (m *MockRepository) PatchNodeMetadata(ctx context.Context, params PatchNodeMetadataParams) (NodeRecord, error) {
+	args := m.Called(ctx, params)
+	return args.Get(0).(NodeRecord), args.Error(1)
+}
+
+func (m *MockRepository) CountOnlineNodesWithoutPlatformLimits(ctx context.Context, tenantID uuid.UUID, heartbeatThreshold pgtype.Timestamptz) (int64, error) {
+	args := m.Called(ctx, tenantID, heartbeatThreshold)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockRepository) DeleteNode(ctx context.Context, nodeID string) error {
 	args := m.Called(ctx, nodeID)
 	return args.Error(0)

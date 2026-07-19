@@ -30,6 +30,7 @@ type Service struct {
 	scenarioTemplates         ScenarioTemplateResolver
 	artifactObjectStore       ArtifactObjectStore
 	systemConfig              systemconfig.Reader
+	legacyLimitNodesChecker   func(ctx context.Context, tenantID uuid.UUID) (bool, error)
 }
 
 // ScenarioTemplateResolver is the narrow view of the scenario template

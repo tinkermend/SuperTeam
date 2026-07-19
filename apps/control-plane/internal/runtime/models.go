@@ -1,6 +1,9 @@
 package runtime
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -377,14 +380,49 @@ type Node struct {
 }
 
 type HeartbeatResponse struct {
-	Node          *Node
-	RequiredTools []string
+	Node           *Node
+	RequiredTools  []string
+	PlatformLimits *PlatformLimits
+}
+
+// PlatformLimits 是经心跳下发给 runtime 的平台限额快照(P2 spec §3)。
+// 值来源=系统配置中心生效值,由 app 装配层以 PlatformLimitsResolver 闭包注入
+// (runtime 包被 api/middleware 反向依赖,不能 import systemconfig)。
+type PlatformLimits struct {
+	ArtifactMaxFileSizeBytes  int64
+	AttachmentMaxFileSizeBytes int64
+	AttachmentMaxCount        int64
+	AttachmentTotalMaxBytes   int64
+	SkillArchiveMaxBytes      int64
+	SkillArchiveMaxFileCount  int64
+}
+
+// Fingerprint 返回对限额有序序列化的稳定指纹,runtime 据此判断"没变就不动"。
+func (l PlatformLimits) Fingerprint() string {
+	canonical := fmt.Sprintf(
+		"artifact_max_file_size_bytes=%d;attachment_max_file_size_bytes=%d;attachment_max_count=%d;attachment_total_max_bytes=%d;skill_archive_max_bytes=%d;skill_archive_max_file_count=%d",
+		l.ArtifactMaxFileSizeBytes,
+		l.AttachmentMaxFileSizeBytes,
+		l.AttachmentMaxCount,
+		l.AttachmentTotalMaxBytes,
+		l.SkillArchiveMaxBytes,
+		l.SkillArchiveMaxFileCount,
+	)
+	sum := sha256.Sum256([]byte(canonical))
+	return "plv1:sha256:" + hex.EncodeToString(sum[:])
 }
 
 // IsOnline checks if the node is online based on heartbeat
-// A node is considered online if it has sent a heartbeat within HeartbeatTimeout
+// A node is considered online if it has sent a heartbeat within HeartbeatTimeout.
+// 需要按配置生效值判定时用 IsOnlineAt;本便捷形态固定用默认超时。
 func (n *Node) IsOnline() bool {
-	return time.Since(n.LastHeartbeatAt) <= HeartbeatTimeout
+	return n.IsOnlineAt(HeartbeatTimeout)
+}
+
+// IsOnlineAt 按调用方解析出的超时阈值判定在线;model 方法不做 IO,
+// 阈值由调用方经 systemconfig(HeartbeatTimeoutResolver)解析后传入。
+func (n *Node) IsOnlineAt(timeout time.Duration) bool {
+	return time.Since(n.LastHeartbeatAt) <= timeout
 }
 
 // HasCapacity checks if the node has available slots
@@ -416,6 +454,9 @@ type UpdateHeartbeatRequest struct {
 	TenantID    uuid.UUID
 	NodeID      string
 	CurrentLoad int32
+	// SupportsPlatformLimits 是节点能力自报(版本偏斜护栏 P2 spec §5):
+	// 新 agent 声明自己会消费心跳下发的 platform_limits 快照。
+	SupportsPlatformLimits bool
 }
 
 // ListNodesFilter represents filters for listing nodes

@@ -44,6 +44,16 @@ describe("unitFor", () => {
     });
     expect(unitFor(ttl)).toEqual({ label: "分钟", factor: 60 });
   });
+
+  it("int 纯计数型免单位换算(P2 注册表新增类型)", () => {
+    const count = item({
+      value_type: "int",
+      default_value: 20,
+      min_value: 1,
+      max_value: 100,
+    });
+    expect(unitFor(count)).toEqual({ label: "", factor: 1 });
+  });
 });
 
 describe("formatConfigValue", () => {
@@ -54,5 +64,10 @@ describe("formatConfigValue", () => {
     expect(formatConfigValue(ttl, 90)).toBe("90 秒");
     expect(formatConfigValue(item({}), 10 * MIB)).toBe("10 MiB");
     expect(formatConfigValue(item({}), 1.5 * MIB)).toBe("1.5 MiB");
+  });
+
+  it("int 纯计数型原样展示", () => {
+    const count = item({ value_type: "int", default_value: 20 });
+    expect(formatConfigValue(count, 20)).toBe("20");
   });
 });

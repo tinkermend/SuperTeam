@@ -9,8 +9,10 @@ use zip::ZipArchive;
 
 use crate::commands::payload::RuntimeSkillPayload;
 
-const MAX_ARCHIVE_SIZE: u64 = 200 * 1024 * 1024;
-const MAX_FILE_COUNT: usize = 10_000;
+/// Unpack caps; defaults for the platform-limits snapshot (P2 spec §4),
+/// used verbatim when the control plane has not delivered a snapshot.
+pub const MAX_ARCHIVE_SIZE: u64 = 200 * 1024 * 1024;
+pub const MAX_FILE_COUNT: usize = 10_000;
 
 /// Fetches a skill archive's bytes. The only production implementation goes
 /// through control-plane-issued presigned GET URLs (证据地基 spec §8 修订 1:
@@ -102,11 +104,13 @@ pub async fn materialize_skill_to_dir(
 
     let archive_bytes = fetcher.fetch(skill).await?;
 
-    if archive_bytes.len() as u64 > MAX_ARCHIVE_SIZE {
+    // 解包限额走平台限额快照(P2 spec §3),快照缺失时即本地默认常量。
+    let limits = crate::platform_limits::current();
+    if archive_bytes.len() as u64 > limits.skill_archive_max_bytes {
         anyhow::bail!(
             "skill archive exceeds size limit: {} > {} bytes",
             archive_bytes.len(),
-            MAX_ARCHIVE_SIZE
+            limits.skill_archive_max_bytes
         );
     }
 
@@ -125,11 +129,11 @@ pub async fn materialize_skill_to_dir(
     let mut archive = ZipArchive::new(cursor)
         .with_context(|| format!("invalid zip archive for skill {}", skill.skill_key))?;
 
-    if archive.len() > MAX_FILE_COUNT {
+    if archive.len() > limits.skill_archive_max_file_count {
         anyhow::bail!(
             "skill archive exceeds file count limit: {} > {}",
             archive.len(),
-            MAX_FILE_COUNT
+            limits.skill_archive_max_file_count
         );
     }
 

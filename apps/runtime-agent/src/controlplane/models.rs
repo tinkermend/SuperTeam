@@ -423,6 +423,29 @@ pub struct RegisterNodeResponse {
 pub struct HeartbeatRequest {
     pub current_load: i32,
     pub status: NodeStatus,
+    /// 能力自报(平台限额下发 P2 spec §5):声明本 agent 消费心跳携带的
+    /// platform_limits 快照,控制平面据此解除工件上限的版本偏斜 clamp。
+    pub supports_platform_limits: bool,
+}
+
+/// 平台限额快照(P2 spec §3),控制平面经心跳响应下发。
+/// 字段全部可选:CP 老版本不发时保持本地默认值,任何一侧缺失都不破坏现状。
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct PlatformLimits {
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub artifact_max_file_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub attachment_max_file_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub attachment_max_count: Option<u64>,
+    #[serde(default)]
+    pub attachment_total_max_bytes: Option<u64>,
+    #[serde(default)]
+    pub skill_archive_max_bytes: Option<u64>,
+    #[serde(default)]
+    pub skill_archive_max_file_count: Option<u64>,
 }
 
 /// Heartbeat response
@@ -440,6 +463,9 @@ pub struct HeartbeatResponse {
     pub last_heartbeat_at: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// 平台限额快照;CP 老版本不携带该字段(serde default → None)。
+    #[serde(default)]
+    pub platform_limits: Option<PlatformLimits>,
 }
 
 /// 证据地基(spec 2026-07-09 §8 修订 1):runtime 零对象存储凭证,
