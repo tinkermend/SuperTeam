@@ -1422,7 +1422,6 @@ provider_capability AS (
       AND available = true
       AND status = 'healthy'
       AND health_status = 'healthy'
-      AND disabled_at IS NULL
       AND archived_at IS NULL
     ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
     LIMIT 1
@@ -1435,7 +1434,6 @@ workspace_capability AS (
       AND capability_type = 'workspace'
       AND capability_key = 'base-dir'
       AND available = true
-      AND disabled_at IS NULL
       AND archived_at IS NULL
     ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
     LIMIT 1
@@ -1589,7 +1587,6 @@ WITH provider_capability AS (
       AND available = true
       AND status = 'healthy'
       AND health_status = 'healthy'
-      AND disabled_at IS NULL
       AND archived_at IS NULL
     ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
     LIMIT 1
@@ -1602,7 +1599,6 @@ workspace_capability AS (
       AND capability_type = 'workspace'
       AND capability_key = 'base-dir'
       AND available = true
-      AND disabled_at IS NULL
       AND archived_at IS NULL
     ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
     LIMIT 1
@@ -3340,7 +3336,6 @@ provider_capabilities AS (
     FROM runtime_capabilities
     WHERE tenant_id = $1::uuid
       AND capability_type = 'provider'
-      AND disabled_at IS NULL
       AND archived_at IS NULL
     ORDER BY tenant_id, runtime_node_id, provider_type, last_seen_at DESC NULLS LAST, updated_at DESC
 )
@@ -3486,7 +3481,6 @@ provider_capabilities AS (
     FROM runtime_capabilities
     WHERE tenant_id = $1::uuid
       AND capability_type = 'provider'
-      AND disabled_at IS NULL
       AND archived_at IS NULL
     ORDER BY tenant_id, runtime_node_id, provider_type, last_seen_at DESC NULLS LAST, updated_at DESC
 )

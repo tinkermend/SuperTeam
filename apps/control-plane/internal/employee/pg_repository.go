@@ -421,7 +421,6 @@ SELECT id, server_key, name, COALESCE(description, ''), COALESCE(risk_level, '')
 FROM mcp_servers
 WHERE tenant_id = $1
   AND deleted_at IS NULL
-  AND status = 'active'
 ORDER BY server_key ASC
 `, tenantID)
 	if err != nil {
@@ -480,7 +479,6 @@ FROM mcp_servers
 WHERE tenant_id = $1
   AND server_key = ANY($2)
   AND deleted_at IS NULL
-  AND status = 'active'
 `, tenantID, keys)
 	if err != nil {
 		return nil, err
@@ -537,7 +535,7 @@ func (r *PgRepository) BindMCPServersToEmployee(ctx context.Context, tenantID, e
 INSERT INTO digital_employee_mcp_bindings_v2 (tenant_id, digital_employee_id, mcp_server_id)
 VALUES ($1, $2, $3)
 ON CONFLICT (tenant_id, digital_employee_id, mcp_server_id) WHERE deleted_at IS NULL
-DO UPDATE SET status = 'active', disabled_at = NULL, updated_at = NOW()
+DO UPDATE SET updated_at = NOW()
 `, tenantID, employeeID, serverID); err != nil {
 			return err
 		}
