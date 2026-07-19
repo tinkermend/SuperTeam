@@ -203,7 +203,6 @@ func TestHandlerReplaceSkillMCPDependenciesUsesManageAction(t *testing.T) {
 				ServerName:   "Ops MCP",
 				AuthStrategy: MCPAuthStrategy("bearer"),
 				RiskLevel:    "low",
-				ServerStatus: "active",
 			},
 		},
 	}
@@ -314,7 +313,6 @@ func TestHandlerListSkillMCPDependenciesReturnsRecordsWithReadAction(t *testing.
 				ServerName:   "Ops MCP",
 				AuthStrategy: MCPAuthStrategy("bearer"),
 				RiskLevel:    "medium",
-				ServerStatus: "active",
 			},
 		},
 	}
@@ -539,7 +537,6 @@ func TestHandlerProjectMCPBindingRoutesUseProjectConfigActions(t *testing.T) {
 			ProjectID:   &projectID,
 			MCPServerID: serverID,
 			ServerKey:   "github-mcp",
-			Status:      "active",
 			SourceScope: "project",
 		},
 	}

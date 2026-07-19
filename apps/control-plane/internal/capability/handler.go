@@ -624,9 +624,11 @@ func mcpDefinitionResponseFromDomain(item MCPDefinition) mcpDefinitionResponse {
 		ProviderVisibility: item.ProviderVisibility,
 		ToolAllowlist:      nonNilStrings(item.ToolAllowlist),
 		RiskLevel:          item.RiskLevel,
-		Status:             item.Status,
-		CreatedAt:          formatTime(item.CreatedAt),
-		UpdatedAt:          formatTime(item.UpdatedAt),
+		// 注册表定义只有创建/删除两态（迁移 087）：可见即 active，常量投影
+		// 保持 Web /mcp 页零改动。
+		Status:    MCPBindingStatusActive,
+		CreatedAt: formatTime(item.CreatedAt),
+		UpdatedAt: formatTime(item.UpdatedAt),
 	}
 }
 
@@ -737,8 +739,10 @@ func skillMCPDependencyResponses(deps []SkillMCPDependency) []skillMCPDependency
 		out = append(out, skillMCPDependencyResponse{
 			ID: d.ID.String(), SkillID: d.SkillID.String(), MCPServerID: d.MCPServerID.String(),
 			Note: d.Note, ServerKey: d.ServerKey, ServerName: d.ServerName,
-			AuthStrategy: string(d.AuthStrategy), RiskLevel: d.RiskLevel, ServerStatus: d.ServerStatus,
-			CreatedAt: formatTime(d.CreatedAt),
+			AuthStrategy: string(d.AuthStrategy), RiskLevel: d.RiskLevel,
+			// 依赖的注册表项可见即 active（迁移 087 删除禁用生命周期），常量投影保 Web 兼容。
+			ServerStatus: MCPBindingStatusActive,
+			CreatedAt:    formatTime(d.CreatedAt),
 		})
 	}
 	return out

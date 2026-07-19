@@ -132,7 +132,7 @@ func (q *Queries) CreateRuntimeEvent(ctx context.Context, arg CreateRuntimeEvent
 }
 
 const ListRuntimeCapabilitiesForNode = `-- name: ListRuntimeCapabilitiesForNode :many
-SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.disabled_at, rc.archived_at, rc.created_at, rc.updated_at
+SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.archived_at, rc.created_at, rc.updated_at
 FROM runtime_capabilities rc
 JOIN runtime_nodes rn
   ON rn.id = rc.runtime_node_id
@@ -177,7 +177,6 @@ func (q *Queries) ListRuntimeCapabilitiesForNode(ctx context.Context, arg ListRu
 			&i.HealthStatus,
 			&i.Metadata,
 			&i.LastSeenAt,
-			&i.DisabledAt,
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,

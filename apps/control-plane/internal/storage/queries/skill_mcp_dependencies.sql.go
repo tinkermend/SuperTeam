@@ -93,8 +93,7 @@ func (q *Queries) ListDependentSkillsForMCPServer(ctx context.Context, arg ListD
 
 const ListSkillMCPDependencies = `-- name: ListSkillMCPDependencies :many
 SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
-       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
-       m.status AS server_status
+       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level
 FROM skill_mcp_dependencies d
 JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = $1::uuid
@@ -118,7 +117,6 @@ type ListSkillMCPDependenciesRow struct {
 	ServerName   string             `json:"server_name"`
 	AuthStrategy string             `json:"auth_strategy"`
 	RiskLevel    string             `json:"risk_level"`
-	ServerStatus string             `json:"server_status"`
 }
 
 func (q *Queries) ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error) {
@@ -141,7 +139,6 @@ func (q *Queries) ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCP
 			&i.ServerName,
 			&i.AuthStrategy,
 			&i.RiskLevel,
-			&i.ServerStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -155,8 +152,7 @@ func (q *Queries) ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCP
 
 const ListSkillMCPDependenciesForSkills = `-- name: ListSkillMCPDependenciesForSkills :many
 SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
-       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
-       m.status AS server_status
+       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level
 FROM skill_mcp_dependencies d
 JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = $1::uuid
@@ -180,7 +176,6 @@ type ListSkillMCPDependenciesForSkillsRow struct {
 	ServerName   string             `json:"server_name"`
 	AuthStrategy string             `json:"auth_strategy"`
 	RiskLevel    string             `json:"risk_level"`
-	ServerStatus string             `json:"server_status"`
 }
 
 func (q *Queries) ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error) {
@@ -203,7 +198,6 @@ func (q *Queries) ListSkillMCPDependenciesForSkills(ctx context.Context, arg Lis
 			&i.ServerName,
 			&i.AuthStrategy,
 			&i.RiskLevel,
-			&i.ServerStatus,
 		); err != nil {
 			return nil, err
 		}

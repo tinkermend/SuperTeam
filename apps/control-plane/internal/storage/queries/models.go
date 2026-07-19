@@ -494,12 +494,8 @@ type DigitalEmployeeMcpBindingsV2 struct {
 	McpServerID uuid.UUID `json:"mcp_server_id"`
 	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
 	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
-	// 绑定状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// 绑定扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// 绑定禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// 绑定软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建绑定的用户 ID
@@ -729,12 +725,8 @@ type McpServer struct {
 	ToolAllowlist []string `json:"tool_allowlist"`
 	// MCP 风险等级
 	RiskLevel string `json:"risk_level"`
-	// MCP 状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// MCP 扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// MCP 禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// MCP 软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建 MCP 定义的用户 ID
@@ -1237,12 +1229,8 @@ type ProjectMcpBinding struct {
 	McpServerID uuid.UUID `json:"mcp_server_id"`
 	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
 	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
-	// 绑定状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// 绑定扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// 绑定禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// 绑定软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建绑定的用户 ID
@@ -1925,8 +1913,6 @@ type RuntimeCapability struct {
 	Metadata []byte `json:"metadata"`
 	// Runtime 能力最近上报时间
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
-	// Runtime 能力禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// Runtime 能力归档时间
 	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
 	// Runtime 能力首次上报时间
@@ -2241,44 +2227,6 @@ type SkillAgentBinding struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 已冻结(2026-07-19 能力绑定统一):物理安装事实由派发时 runtime 懒收敛 + attestation 承载,本表停写停读留存追溯,待另行 drop
-type SkillInstallation struct {
-	// 技能物理安装记录 ID
-	ID uuid.UUID `json:"id"`
-	// 安装记录所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 被安装的技能包 ID
-	SkillID uuid.UUID `json:"skill_id"`
-	// 安装请求目标范围，team 表示团队批量安装，employee 表示单个数字员工安装
-	TargetScope string `json:"target_scope"`
-	// 团队批量安装来源团队 ID，单员工安装时可为空
-	TeamID uuid.NullUUID `json:"team_id"`
-	// 实际写入技能目录的数字员工 ID
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 执行本次物理安装的 Runtime 节点 ID
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
-	// Provider 类型，由服务端注册表和安装前置校验控制
-	ProviderType string `json:"provider_type"`
-	// Runtime Agent 实际写入的 provider 官方技能目录
-	InstalledPath string `json:"installed_path"`
-	// 安装时使用的技能 zip 包 SHA256 校验值
-	ArchiveChecksumSha256 string `json:"archive_checksum_sha256"`
-	// 安装事实状态；此表只保存 installed 成功记录
-	Status string `json:"status"`
-	// 触发安装的人类用户 ID 或系统操作者 ID
-	InstalledBy uuid.NullUUID `json:"installed_by"`
-	// Runtime 确认物理安装成功的时间
-	InstalledAt pgtype.Timestamptz `json:"installed_at"`
-	// 安装命令、Runtime 回执和排障扩展信息
-	Metadata []byte `json:"metadata"`
-	// 安装记录创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 安装记录最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	// 安装记录软删除时间；为空表示当前有效
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-}
-
 type SkillMcpDependency struct {
 	ID          uuid.UUID          `json:"id"`
 	TenantID    uuid.UUID          `json:"tenant_id"`
@@ -2462,12 +2410,8 @@ type TeamMcpBinding struct {
 	McpServerID uuid.UUID `json:"mcp_server_id"`
 	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
 	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
-	// 绑定状态，例如 active 或 disabled
-	Status string `json:"status"`
 	// 绑定扩展元数据 JSON
 	Metadata []byte `json:"metadata"`
-	// 绑定禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 	// 绑定软删除时间
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 创建绑定的用户 ID

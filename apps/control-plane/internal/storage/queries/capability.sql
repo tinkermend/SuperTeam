@@ -86,8 +86,7 @@ SELECT
     m.transport,
     m.auth_strategy,
     m.required_env_vars,
-    m.risk_level,
-    m.status AS server_status
+    m.risk_level
 FROM team_mcp_bindings tb
 JOIN mcp_servers m ON m.id = tb.mcp_server_id
     AND m.tenant_id = tb.tenant_id
@@ -133,8 +132,7 @@ SELECT
     m.transport,
     m.auth_strategy,
     m.required_env_vars,
-    m.risk_level,
-    m.status AS server_status
+    m.risk_level
 FROM digital_employee_mcp_bindings_v2 eb
 JOIN mcp_servers m ON m.id = eb.mcp_server_id
     AND m.tenant_id = eb.tenant_id
@@ -185,17 +183,14 @@ SELECT
     m.tool_allowlist,
     m.risk_level,
     tb.credential_env_var,
-    'team'::text AS source_scope,
-    tb.status AS binding_status
+    'team'::text AS source_scope
 FROM target_employee
 JOIN team_mcp_bindings tb ON tb.tenant_id = target_employee.tenant_id
     AND tb.team_id = target_employee.team_id
     AND tb.deleted_at IS NULL
-    AND tb.status = 'active'
 JOIN mcp_servers m ON m.id = tb.mcp_server_id
     AND m.tenant_id = tb.tenant_id
     AND m.deleted_at IS NULL
-    AND m.status = 'active'
 UNION ALL
 SELECT
     m.id AS server_id,
@@ -210,17 +205,14 @@ SELECT
     m.tool_allowlist,
     m.risk_level,
     eb.credential_env_var,
-    'employee'::text AS source_scope,
-    eb.status AS binding_status
+    'employee'::text AS source_scope
 FROM target_employee
 JOIN digital_employee_mcp_bindings_v2 eb ON eb.tenant_id = target_employee.tenant_id
     AND eb.digital_employee_id = target_employee.digital_employee_id
     AND eb.deleted_at IS NULL
-    AND eb.status = 'active'
 JOIN mcp_servers m ON m.id = eb.mcp_server_id
     AND m.tenant_id = eb.tenant_id
     AND m.deleted_at IS NULL
-    AND m.status = 'active'
 WHERE NOT EXISTS (
     SELECT 1
     FROM team_mcp_bindings team_duplicate
@@ -228,7 +220,6 @@ WHERE NOT EXISTS (
       AND team_duplicate.team_id = target_employee.team_id
       AND team_duplicate.mcp_server_id = eb.mcp_server_id
       AND team_duplicate.deleted_at IS NULL
-      AND team_duplicate.status = 'active'
 )
 ORDER BY source_scope ASC, name ASC;
 
@@ -264,8 +255,7 @@ SELECT
     m.transport,
     m.auth_strategy,
     m.required_env_vars,
-    m.risk_level,
-    m.status AS server_status
+    m.risk_level
 FROM project_mcp_bindings pb
 JOIN mcp_servers m ON m.id = pb.mcp_server_id
     AND m.tenant_id = pb.tenant_id
@@ -297,15 +287,12 @@ SELECT
     m.tool_allowlist,
     m.risk_level,
     pb.credential_env_var,
-    'project'::text AS source_scope,
-    pb.status AS binding_status
+    'project'::text AS source_scope
 FROM project_mcp_bindings pb
 JOIN mcp_servers m ON m.id = pb.mcp_server_id
     AND m.tenant_id = pb.tenant_id
     AND m.deleted_at IS NULL
-    AND m.status = 'active'
 WHERE pb.tenant_id = sqlc.arg('tenant_id')::uuid
   AND pb.project_id = sqlc.arg('project_id')::uuid
   AND pb.deleted_at IS NULL
-  AND pb.status = 'active'
 ORDER BY m.name ASC;

@@ -29,7 +29,7 @@ VALUES (
     COALESCE($5::jsonb, '{}'::jsonb),
     $6::uuid
 )
-RETURNING id, tenant_id, digital_employee_id, mcp_server_id, credential_env_var, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+RETURNING id, tenant_id, digital_employee_id, mcp_server_id, credential_env_var, metadata, deleted_at, created_by, created_at, updated_at
 `
 
 type CreateEmployeeMCPBindingV2Params struct {
@@ -57,9 +57,7 @@ func (q *Queries) CreateEmployeeMCPBindingV2(ctx context.Context, arg CreateEmpl
 		&i.DigitalEmployeeID,
 		&i.McpServerID,
 		&i.CredentialEnvVar,
-		&i.Status,
 		&i.Metadata,
-		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -102,7 +100,7 @@ VALUES (
     COALESCE($13::jsonb, '{}'::jsonb),
     $14::uuid
 )
-RETURNING id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+RETURNING id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, metadata, deleted_at, created_by, created_at, updated_at
 `
 
 type CreateMCPServerDefinitionParams struct {
@@ -157,9 +155,7 @@ func (q *Queries) CreateMCPServerDefinition(ctx context.Context, arg CreateMCPSe
 		&i.ProviderVisibility,
 		&i.ToolAllowlist,
 		&i.RiskLevel,
-		&i.Status,
 		&i.Metadata,
-		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -186,7 +182,7 @@ VALUES (
     COALESCE($5::jsonb, '{}'::jsonb),
     $6::uuid
 )
-RETURNING id, tenant_id, project_id, mcp_server_id, credential_env_var, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+RETURNING id, tenant_id, project_id, mcp_server_id, credential_env_var, metadata, deleted_at, created_by, created_at, updated_at
 `
 
 type CreateProjectMCPBindingParams struct {
@@ -217,9 +213,7 @@ func (q *Queries) CreateProjectMCPBinding(ctx context.Context, arg CreateProject
 		&i.ProjectID,
 		&i.McpServerID,
 		&i.CredentialEnvVar,
-		&i.Status,
 		&i.Metadata,
-		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -245,7 +239,7 @@ VALUES (
     COALESCE($5::jsonb, '{}'::jsonb),
     $6::uuid
 )
-RETURNING id, tenant_id, team_id, mcp_server_id, credential_env_var, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+RETURNING id, tenant_id, team_id, mcp_server_id, credential_env_var, metadata, deleted_at, created_by, created_at, updated_at
 `
 
 type CreateTeamMCPBindingParams struct {
@@ -273,9 +267,7 @@ func (q *Queries) CreateTeamMCPBinding(ctx context.Context, arg CreateTeamMCPBin
 		&i.TeamID,
 		&i.McpServerID,
 		&i.CredentialEnvVar,
-		&i.Status,
 		&i.Metadata,
-		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -343,7 +335,7 @@ func (q *Queries) DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBin
 }
 
 const GetMCPServerDefinition = `-- name: GetMCPServerDefinition :one
-SELECT id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+SELECT id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, metadata, deleted_at, created_by, created_at, updated_at
 FROM mcp_servers
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
@@ -372,9 +364,7 @@ func (q *Queries) GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDe
 		&i.ProviderVisibility,
 		&i.ToolAllowlist,
 		&i.RiskLevel,
-		&i.Status,
 		&i.Metadata,
-		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -438,17 +428,14 @@ SELECT
     m.tool_allowlist,
     m.risk_level,
     tb.credential_env_var,
-    'team'::text AS source_scope,
-    tb.status AS binding_status
+    'team'::text AS source_scope
 FROM target_employee
 JOIN team_mcp_bindings tb ON tb.tenant_id = target_employee.tenant_id
     AND tb.team_id = target_employee.team_id
     AND tb.deleted_at IS NULL
-    AND tb.status = 'active'
 JOIN mcp_servers m ON m.id = tb.mcp_server_id
     AND m.tenant_id = tb.tenant_id
     AND m.deleted_at IS NULL
-    AND m.status = 'active'
 UNION ALL
 SELECT
     m.id AS server_id,
@@ -463,17 +450,14 @@ SELECT
     m.tool_allowlist,
     m.risk_level,
     eb.credential_env_var,
-    'employee'::text AS source_scope,
-    eb.status AS binding_status
+    'employee'::text AS source_scope
 FROM target_employee
 JOIN digital_employee_mcp_bindings_v2 eb ON eb.tenant_id = target_employee.tenant_id
     AND eb.digital_employee_id = target_employee.digital_employee_id
     AND eb.deleted_at IS NULL
-    AND eb.status = 'active'
 JOIN mcp_servers m ON m.id = eb.mcp_server_id
     AND m.tenant_id = eb.tenant_id
     AND m.deleted_at IS NULL
-    AND m.status = 'active'
 WHERE NOT EXISTS (
     SELECT 1
     FROM team_mcp_bindings team_duplicate
@@ -481,7 +465,6 @@ WHERE NOT EXISTS (
       AND team_duplicate.team_id = target_employee.team_id
       AND team_duplicate.mcp_server_id = eb.mcp_server_id
       AND team_duplicate.deleted_at IS NULL
-      AND team_duplicate.status = 'active'
 )
 ORDER BY source_scope ASC, name ASC
 `
@@ -505,7 +488,6 @@ type ListEffectiveMCPBindingsV2ForEmployeeRow struct {
 	RiskLevel         string      `json:"risk_level"`
 	CredentialEnvVar  pgtype.Text `json:"credential_env_var"`
 	SourceScope       string      `json:"source_scope"`
-	BindingStatus     string      `json:"binding_status"`
 }
 
 // Effective MCP bindings for an employee: team-inherited plus personal, joined to the
@@ -535,7 +517,6 @@ func (q *Queries) ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg
 			&i.RiskLevel,
 			&i.CredentialEnvVar,
 			&i.SourceScope,
-			&i.BindingStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -560,17 +541,14 @@ SELECT
     m.tool_allowlist,
     m.risk_level,
     pb.credential_env_var,
-    'project'::text AS source_scope,
-    pb.status AS binding_status
+    'project'::text AS source_scope
 FROM project_mcp_bindings pb
 JOIN mcp_servers m ON m.id = pb.mcp_server_id
     AND m.tenant_id = pb.tenant_id
     AND m.deleted_at IS NULL
-    AND m.status = 'active'
 WHERE pb.tenant_id = $1::uuid
   AND pb.project_id = $2::uuid
   AND pb.deleted_at IS NULL
-  AND pb.status = 'active'
 ORDER BY m.name ASC
 `
 
@@ -592,7 +570,6 @@ type ListEffectiveProjectMCPBindingsForRuntimeRow struct {
 	RiskLevel        string      `json:"risk_level"`
 	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
 	SourceScope      string      `json:"source_scope"`
-	BindingStatus    string      `json:"binding_status"`
 }
 
 // 项目绑定的运行时投影行：只取活跃绑定 × 活跃注册表定义。缺失 env 判定由调用方
@@ -619,7 +596,6 @@ func (q *Queries) ListEffectiveProjectMCPBindingsForRuntime(ctx context.Context,
 			&i.RiskLevel,
 			&i.CredentialEnvVar,
 			&i.SourceScope,
-			&i.BindingStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -633,15 +609,14 @@ func (q *Queries) ListEffectiveProjectMCPBindingsForRuntime(ctx context.Context,
 
 const ListEmployeeMCPBindingsV2 = `-- name: ListEmployeeMCPBindingsV2 :many
 SELECT
-    eb.id, eb.tenant_id, eb.digital_employee_id, eb.mcp_server_id, eb.credential_env_var, eb.status, eb.metadata, eb.disabled_at, eb.deleted_at, eb.created_by, eb.created_at, eb.updated_at,
+    eb.id, eb.tenant_id, eb.digital_employee_id, eb.mcp_server_id, eb.credential_env_var, eb.metadata, eb.deleted_at, eb.created_by, eb.created_at, eb.updated_at,
     m.name AS server_name,
     m.server_key,
     m.url,
     m.transport,
     m.auth_strategy,
     m.required_env_vars,
-    m.risk_level,
-    m.status AS server_status
+    m.risk_level
 FROM digital_employee_mcp_bindings_v2 eb
 JOIN mcp_servers m ON m.id = eb.mcp_server_id
     AND m.tenant_id = eb.tenant_id
@@ -663,9 +638,7 @@ type ListEmployeeMCPBindingsV2Row struct {
 	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
 	McpServerID       uuid.UUID          `json:"mcp_server_id"`
 	CredentialEnvVar  pgtype.Text        `json:"credential_env_var"`
-	Status            string             `json:"status"`
 	Metadata          []byte             `json:"metadata"`
-	DisabledAt        pgtype.Timestamptz `json:"disabled_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	CreatedBy         uuid.NullUUID      `json:"created_by"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
@@ -677,7 +650,6 @@ type ListEmployeeMCPBindingsV2Row struct {
 	AuthStrategy      string             `json:"auth_strategy"`
 	RequiredEnvVars   []string           `json:"required_env_vars"`
 	RiskLevel         string             `json:"risk_level"`
-	ServerStatus      string             `json:"server_status"`
 }
 
 func (q *Queries) ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmployeeMCPBindingsV2Params) ([]ListEmployeeMCPBindingsV2Row, error) {
@@ -695,9 +667,7 @@ func (q *Queries) ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmploye
 			&i.DigitalEmployeeID,
 			&i.McpServerID,
 			&i.CredentialEnvVar,
-			&i.Status,
 			&i.Metadata,
-			&i.DisabledAt,
 			&i.DeletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -709,7 +679,6 @@ func (q *Queries) ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmploye
 			&i.AuthStrategy,
 			&i.RequiredEnvVars,
 			&i.RiskLevel,
-			&i.ServerStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -722,7 +691,7 @@ func (q *Queries) ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmploye
 }
 
 const ListMCPServerDefinitions = `-- name: ListMCPServerDefinitions :many
-SELECT id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, status, metadata, disabled_at, deleted_at, created_by, created_at, updated_at
+SELECT id, tenant_id, name, server_key, description, transport, url, auth_strategy, required_env_vars, optional_env_vars, provider_visibility, tool_allowlist, risk_level, metadata, deleted_at, created_by, created_at, updated_at
 FROM mcp_servers
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
@@ -752,9 +721,7 @@ func (q *Queries) ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UU
 			&i.ProviderVisibility,
 			&i.ToolAllowlist,
 			&i.RiskLevel,
-			&i.Status,
 			&i.Metadata,
-			&i.DisabledAt,
 			&i.DeletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -772,15 +739,14 @@ func (q *Queries) ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UU
 
 const ListProjectMCPBindings = `-- name: ListProjectMCPBindings :many
 SELECT
-    pb.id, pb.tenant_id, pb.project_id, pb.mcp_server_id, pb.credential_env_var, pb.status, pb.metadata, pb.disabled_at, pb.deleted_at, pb.created_by, pb.created_at, pb.updated_at,
+    pb.id, pb.tenant_id, pb.project_id, pb.mcp_server_id, pb.credential_env_var, pb.metadata, pb.deleted_at, pb.created_by, pb.created_at, pb.updated_at,
     m.name AS server_name,
     m.server_key,
     m.url,
     m.transport,
     m.auth_strategy,
     m.required_env_vars,
-    m.risk_level,
-    m.status AS server_status
+    m.risk_level
 FROM project_mcp_bindings pb
 JOIN mcp_servers m ON m.id = pb.mcp_server_id
     AND m.tenant_id = pb.tenant_id
@@ -802,9 +768,7 @@ type ListProjectMCPBindingsRow struct {
 	ProjectID        uuid.UUID          `json:"project_id"`
 	McpServerID      uuid.UUID          `json:"mcp_server_id"`
 	CredentialEnvVar pgtype.Text        `json:"credential_env_var"`
-	Status           string             `json:"status"`
 	Metadata         []byte             `json:"metadata"`
-	DisabledAt       pgtype.Timestamptz `json:"disabled_at"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	CreatedBy        uuid.NullUUID      `json:"created_by"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
@@ -816,7 +780,6 @@ type ListProjectMCPBindingsRow struct {
 	AuthStrategy     string             `json:"auth_strategy"`
 	RequiredEnvVars  []string           `json:"required_env_vars"`
 	RiskLevel        string             `json:"risk_level"`
-	ServerStatus     string             `json:"server_status"`
 }
 
 func (q *Queries) ListProjectMCPBindings(ctx context.Context, arg ListProjectMCPBindingsParams) ([]ListProjectMCPBindingsRow, error) {
@@ -834,9 +797,7 @@ func (q *Queries) ListProjectMCPBindings(ctx context.Context, arg ListProjectMCP
 			&i.ProjectID,
 			&i.McpServerID,
 			&i.CredentialEnvVar,
-			&i.Status,
 			&i.Metadata,
-			&i.DisabledAt,
 			&i.DeletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -848,7 +809,6 @@ func (q *Queries) ListProjectMCPBindings(ctx context.Context, arg ListProjectMCP
 			&i.AuthStrategy,
 			&i.RequiredEnvVars,
 			&i.RiskLevel,
-			&i.ServerStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -862,15 +822,14 @@ func (q *Queries) ListProjectMCPBindings(ctx context.Context, arg ListProjectMCP
 
 const ListTeamMCPBindings = `-- name: ListTeamMCPBindings :many
 SELECT
-    tb.id, tb.tenant_id, tb.team_id, tb.mcp_server_id, tb.credential_env_var, tb.status, tb.metadata, tb.disabled_at, tb.deleted_at, tb.created_by, tb.created_at, tb.updated_at,
+    tb.id, tb.tenant_id, tb.team_id, tb.mcp_server_id, tb.credential_env_var, tb.metadata, tb.deleted_at, tb.created_by, tb.created_at, tb.updated_at,
     m.name AS server_name,
     m.server_key,
     m.url,
     m.transport,
     m.auth_strategy,
     m.required_env_vars,
-    m.risk_level,
-    m.status AS server_status
+    m.risk_level
 FROM team_mcp_bindings tb
 JOIN mcp_servers m ON m.id = tb.mcp_server_id
     AND m.tenant_id = tb.tenant_id
@@ -892,9 +851,7 @@ type ListTeamMCPBindingsRow struct {
 	TeamID           uuid.UUID          `json:"team_id"`
 	McpServerID      uuid.UUID          `json:"mcp_server_id"`
 	CredentialEnvVar pgtype.Text        `json:"credential_env_var"`
-	Status           string             `json:"status"`
 	Metadata         []byte             `json:"metadata"`
-	DisabledAt       pgtype.Timestamptz `json:"disabled_at"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	CreatedBy        uuid.NullUUID      `json:"created_by"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
@@ -906,7 +863,6 @@ type ListTeamMCPBindingsRow struct {
 	AuthStrategy     string             `json:"auth_strategy"`
 	RequiredEnvVars  []string           `json:"required_env_vars"`
 	RiskLevel        string             `json:"risk_level"`
-	ServerStatus     string             `json:"server_status"`
 }
 
 func (q *Queries) ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error) {
@@ -924,9 +880,7 @@ func (q *Queries) ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindin
 			&i.TeamID,
 			&i.McpServerID,
 			&i.CredentialEnvVar,
-			&i.Status,
 			&i.Metadata,
-			&i.DisabledAt,
 			&i.DeletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -938,7 +892,6 @@ func (q *Queries) ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindin
 			&i.AuthStrategy,
 			&i.RequiredEnvVars,
 			&i.RiskLevel,
-			&i.ServerStatus,
 		); err != nil {
 			return nil, err
 		}

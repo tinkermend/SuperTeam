@@ -1,7 +1,6 @@
 -- name: ListSkillMCPDependencies :many
 SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
-       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
-       m.status AS server_status
+       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level
 FROM skill_mcp_dependencies d
 JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
@@ -28,8 +27,7 @@ ORDER BY s.slug ASC;
 
 -- name: ListSkillMCPDependenciesForSkills :many
 SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
-       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level,
-       m.status AS server_status
+       m.server_key, m.name AS server_name, m.auth_strategy, m.risk_level
 FROM skill_mcp_dependencies d
 JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.deleted_at IS NULL AND m.tenant_id = d.tenant_id
 WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid

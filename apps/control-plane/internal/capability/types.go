@@ -46,8 +46,8 @@ const (
 )
 
 // MCPBindingStatusBlockedMissingEnv is a derived (not stored) preflight status that marks a
-// binding whose MCP requires env vars the target employee has not configured. The DB status
-// stays "active"; Runtime projection excludes blocked bindings.
+// binding whose MCP requires env vars the target employee has not configured; Runtime
+// projection excludes blocked bindings. 无存储 status（迁移 087 删除禁用生命周期）。
 const (
 	MCPBindingStatusActive            = "active"
 	MCPBindingStatusBlockedMissingEnv = "blocked_missing_env"
@@ -68,7 +68,6 @@ type MCPDefinition struct {
 	ProviderVisibility map[string]bool
 	ToolAllowlist      []string
 	RiskLevel          string
-	Status             string
 	CreatedBy          *uuid.UUID
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
@@ -87,7 +86,6 @@ type MCPBinding struct {
 	ProjectID         *uuid.UUID
 	MCPServerID       uuid.UUID
 	CredentialEnvVar  string
-	Status            string
 	ServerName        string
 	ServerKey         string
 	URL               string
@@ -102,14 +100,13 @@ type MCPBinding struct {
 }
 
 // PreflightStatus returns the derived binding status accounting for missing env vars.
+// 存储态 status 已随"禁用"生命周期一并删除（迁移 087）：绑定要么活着要么已删，
+// 这里只剩 env 预检一种派生判定。
 func (b MCPBinding) PreflightStatus() string {
 	if len(b.MissingEnvVars) > 0 {
 		return MCPBindingStatusBlockedMissingEnv
 	}
-	if b.Status == "" {
-		return MCPBindingStatusActive
-	}
-	return b.Status
+	return MCPBindingStatusActive
 }
 
 // EffectiveMCPServer is one resolved effective MCP server for an employee, ready for runtime
@@ -151,7 +148,6 @@ type SkillMCPDependency struct {
 	ServerName   string
 	AuthStrategy MCPAuthStrategy
 	RiskLevel    string
-	ServerStatus string
 }
 
 // DependentSkill is a reverse lookup row: an active skill depending on an MCP definition.

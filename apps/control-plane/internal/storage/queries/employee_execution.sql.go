@@ -628,7 +628,6 @@ provider_capabilities AS (
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
 ),
@@ -888,7 +887,6 @@ SELECT
           AND rc.available = true
           AND rc.status = 'healthy'
           AND rc.health_status = 'healthy'
-          AND rc.disabled_at IS NULL
           AND rc.archived_at IS NULL
     ) AS provider_healthy
 FROM digital_employees de
@@ -1093,7 +1091,7 @@ JOIN LATERAL (
     LIMIT 1
 ) rn ON TRUE
 LEFT JOIN LATERAL (
-    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.disabled_at, rc.archived_at, rc.created_at, rc.updated_at
+    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.archived_at, rc.created_at, rc.updated_at
     FROM runtime_capabilities rc
     WHERE rc.tenant_id = de.tenant_id
       AND rc.runtime_node_id = rn.id
@@ -1102,19 +1100,17 @@ LEFT JOIN LATERAL (
       AND rc.available = true
       AND rc.status = 'healthy'
       AND rc.health_status = 'healthy'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
     LIMIT 1
 ) provider_capability ON TRUE
 LEFT JOIN LATERAL (
-    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.disabled_at, rc.archived_at, rc.created_at, rc.updated_at
+    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.archived_at, rc.created_at, rc.updated_at
     FROM runtime_capabilities rc
     WHERE rc.tenant_id = de.tenant_id
       AND rc.runtime_node_id = rn.id
       AND rc.capability_type = 'workspace'
       AND rc.available = true
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY
       CASE WHEN rc.capability_key = 'base-dir' THEN 0 ELSE 1 END,
@@ -1263,7 +1259,7 @@ JOIN runtime_nodes rn
  AND rn.disabled_at IS NULL
  AND rn.archived_at IS NULL
 LEFT JOIN LATERAL (
-    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.disabled_at, rc.archived_at, rc.created_at, rc.updated_at
+    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.archived_at, rc.created_at, rc.updated_at
     FROM runtime_capabilities rc
     WHERE rc.tenant_id = de.tenant_id
       AND rc.runtime_node_id = rn.id
@@ -1272,19 +1268,17 @@ LEFT JOIN LATERAL (
       AND rc.available = true
       AND rc.status = 'healthy'
       AND rc.health_status = 'healthy'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
     LIMIT 1
 ) provider_capability ON TRUE
 LEFT JOIN LATERAL (
-    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.disabled_at, rc.archived_at, rc.created_at, rc.updated_at
+    SELECT rc.id, rc.tenant_id, rc.runtime_node_id, rc.capability_type, rc.capability_key, rc.provider_type, rc.provider_version, rc.binary_path, rc.available, rc.workspace_base_dir, rc.capacity, rc.labels, rc.status, rc.details, rc.health_status, rc.metadata, rc.last_seen_at, rc.archived_at, rc.created_at, rc.updated_at
     FROM runtime_capabilities rc
     WHERE rc.tenant_id = de.tenant_id
       AND rc.runtime_node_id = rn.id
       AND rc.capability_type = 'workspace'
       AND rc.available = true
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY
       CASE WHEN rc.capability_key = 'base-dir' THEN 0 ELSE 1 END,
@@ -1419,7 +1413,7 @@ WITH active_team_config AS (
     LIMIT 1
 ),
 provider_capability AS (
-    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
     FROM runtime_capabilities
     WHERE tenant_id = $2::uuid
       AND runtime_node_id = $1::uuid
@@ -1434,7 +1428,7 @@ provider_capability AS (
     LIMIT 1
 ),
 workspace_capability AS (
-    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
     FROM runtime_capabilities
     WHERE tenant_id = $2::uuid
       AND runtime_node_id = $1::uuid
@@ -1586,7 +1580,7 @@ func (q *Queries) GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRu
 
 const GetRuntimeProvisioningPreflightTeamLess = `-- name: GetRuntimeProvisioningPreflightTeamLess :one
 WITH provider_capability AS (
-    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
     FROM runtime_capabilities
     WHERE tenant_id = $2::uuid
       AND runtime_node_id = $1::uuid
@@ -1601,7 +1595,7 @@ WITH provider_capability AS (
     LIMIT 1
 ),
 workspace_capability AS (
-    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
     FROM runtime_capabilities
     WHERE tenant_id = $2::uuid
       AND runtime_node_id = $1::uuid
@@ -2189,7 +2183,6 @@ provider_capabilities AS (
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
 ),
@@ -2904,7 +2897,6 @@ provider_capabilities AS (
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
-      AND rc.disabled_at IS NULL
       AND rc.archived_at IS NULL
     ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
 ),
@@ -3346,7 +3338,7 @@ runtime_sessions_active AS (
 ),
 provider_capabilities AS (
     SELECT DISTINCT ON (tenant_id, runtime_node_id, provider_type)
-        id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+        id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
     FROM runtime_capabilities
     WHERE tenant_id = $1::uuid
       AND capability_type = 'provider'
@@ -3492,7 +3484,7 @@ WITH runtime_sessions_active AS (
 ),
 provider_capabilities AS (
     SELECT DISTINCT ON (tenant_id, runtime_node_id, provider_type)
-        id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+        id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, archived_at, created_at, updated_at
     FROM runtime_capabilities
     WHERE tenant_id = $1::uuid
       AND capability_type = 'provider'
@@ -3727,9 +3719,7 @@ func (q *Queries) SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg So
 
 const SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete = `-- name: SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete :many
 UPDATE digital_employee_mcp_bindings_v2
-SET status = 'disabled',
-    disabled_at = COALESCE(disabled_at, $1::timestamptz),
-    deleted_at = COALESCE(deleted_at, $1::timestamptz),
+SET deleted_at = COALESCE(deleted_at, $1::timestamptz),
     updated_at = $1::timestamptz
 WHERE tenant_id = $2::uuid
   AND digital_employee_id = $3::uuid
@@ -3937,7 +3927,6 @@ WHERE de.id = $11::uuid
         AND rc.available = true
         AND rc.status = 'healthy'
         AND rc.health_status = 'healthy'
-        AND rc.disabled_at IS NULL
         AND rc.archived_at IS NULL
   )
 ON CONFLICT (tenant_id, digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
