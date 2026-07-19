@@ -75,6 +75,7 @@ INSERT INTO approval_requests (
     summary,
     risk_level,
     status,
+    category,
     options,
     context_payload
 ) VALUES (
@@ -89,9 +90,10 @@ INSERT INTO approval_requests (
     $9::text,
     $10::varchar,
     $11::varchar,
-    COALESCE($12::jsonb, '[]'::jsonb),
-    COALESCE($13::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at
+    $12::varchar,
+    COALESCE($13::jsonb, '[]'::jsonb),
+    COALESCE($14::jsonb, '{}'::jsonb)
+) RETURNING id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at, category
 `
 
 type CreateApprovalRequestParams struct {
@@ -106,6 +108,7 @@ type CreateApprovalRequestParams struct {
 	Summary        pgtype.Text   `json:"summary"`
 	RiskLevel      pgtype.Text   `json:"risk_level"`
 	Status         string        `json:"status"`
+	Category       string        `json:"category"`
 	Options        []byte        `json:"options"`
 	ContextPayload []byte        `json:"context_payload"`
 }
@@ -123,6 +126,7 @@ func (q *Queries) CreateApprovalRequest(ctx context.Context, arg CreateApprovalR
 		arg.Summary,
 		arg.RiskLevel,
 		arg.Status,
+		arg.Category,
 		arg.Options,
 		arg.ContextPayload,
 	)
@@ -145,12 +149,13 @@ func (q *Queries) CreateApprovalRequest(ctx context.Context, arg CreateApprovalR
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ResolvedAt,
+		&i.Category,
 	)
 	return i, err
 }
 
 const GetApprovalRequest = `-- name: GetApprovalRequest :one
-SELECT id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at FROM approval_requests
+SELECT id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at, category FROM approval_requests
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -181,12 +186,13 @@ func (q *Queries) GetApprovalRequest(ctx context.Context, arg GetApprovalRequest
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ResolvedAt,
+		&i.Category,
 	)
 	return i, err
 }
 
 const GetApprovalRequestByResource = `-- name: GetApprovalRequestByResource :one
-SELECT id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at FROM approval_requests
+SELECT id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at, category FROM approval_requests
 WHERE tenant_id = $1::uuid
   AND resource_type = $2::varchar
   AND resource_id = $3::uuid
@@ -222,6 +228,7 @@ func (q *Queries) GetApprovalRequestByResource(ctx context.Context, arg GetAppro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ResolvedAt,
+		&i.Category,
 	)
 	return i, err
 }
@@ -267,6 +274,123 @@ func (q *Queries) ListApprovalDecisionsForRequest(ctx context.Context, arg ListA
 	return items, nil
 }
 
+const ListPermissionApprovals = `-- name: ListPermissionApprovals :many
+SELECT id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at, category FROM approval_requests
+WHERE tenant_id = $1::uuid
+  AND category = 'permission'
+  AND (
+    $2::varchar IS NULL
+    OR status = $2::varchar
+  )
+  AND (
+    $3::varchar IS NULL
+    OR risk_level = $3::varchar
+  )
+  AND (
+    $4::varchar IS NULL
+    OR resource_type = $4::varchar
+  )
+  AND (
+    $5::uuid IS NULL
+    OR target_user_id = $5::uuid
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $7 OFFSET $6
+`
+
+type ListPermissionApprovalsParams struct {
+	TenantID     uuid.UUID     `json:"tenant_id"`
+	Status       pgtype.Text   `json:"status"`
+	RiskLevel    pgtype.Text   `json:"risk_level"`
+	ResourceType pgtype.Text   `json:"resource_type"`
+	TargetUserID uuid.NullUUID `json:"target_user_id"`
+	Offset       int32         `json:"offset"`
+	Limit        int32         `json:"limit"`
+}
+
+// Permission-center read path: reads the approval domain directly (never via the
+// inbox projection). view=mine → target_user_id = actor; view=team → target_user_id NULL.
+func (q *Queries) ListPermissionApprovals(ctx context.Context, arg ListPermissionApprovalsParams) ([]ApprovalRequest, error) {
+	rows, err := q.db.Query(ctx, ListPermissionApprovals,
+		arg.TenantID,
+		arg.Status,
+		arg.RiskLevel,
+		arg.ResourceType,
+		arg.TargetUserID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApprovalRequest{}
+	for rows.Next() {
+		var i ApprovalRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.RequesterType,
+			&i.RequesterID,
+			&i.TargetUserID,
+			&i.DecisionType,
+			&i.Title,
+			&i.Summary,
+			&i.RiskLevel,
+			&i.Status,
+			&i.Options,
+			&i.ContextPayload,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+			&i.Category,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const PermissionApprovalSummary = `-- name: PermissionApprovalSummary :one
+SELECT
+    COUNT(*) FILTER (WHERE status = 'pending')::bigint AS open_count,
+    COUNT(*) FILTER (WHERE status = 'pending' AND risk_level IN ('high', 'critical'))::bigint AS high_risk_count,
+    COUNT(*) FILTER (WHERE status = 'needs_more_evidence')::bigint AS blocked_count
+FROM approval_requests
+WHERE tenant_id = $1::uuid
+  AND category = 'permission'
+  AND (
+    $2::uuid IS NULL
+    OR target_user_id = $2::uuid
+  )
+`
+
+type PermissionApprovalSummaryParams struct {
+	TenantID     uuid.UUID     `json:"tenant_id"`
+	TargetUserID uuid.NullUUID `json:"target_user_id"`
+}
+
+type PermissionApprovalSummaryRow struct {
+	OpenCount     int64 `json:"open_count"`
+	HighRiskCount int64 `json:"high_risk_count"`
+	BlockedCount  int64 `json:"blocked_count"`
+}
+
+// Metric-card totals over the view scope (independent of the status filter):
+// open = pending, high_risk = pending & high/critical, blocked = needs_more_evidence.
+func (q *Queries) PermissionApprovalSummary(ctx context.Context, arg PermissionApprovalSummaryParams) (PermissionApprovalSummaryRow, error) {
+	row := q.db.QueryRow(ctx, PermissionApprovalSummary, arg.TenantID, arg.TargetUserID)
+	var i PermissionApprovalSummaryRow
+	err := row.Scan(&i.OpenCount, &i.HighRiskCount, &i.BlockedCount)
+	return i, err
+}
+
 const ResolveApprovalRequest = `-- name: ResolveApprovalRequest :one
 UPDATE approval_requests
 SET status = $1::varchar,
@@ -275,7 +399,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND status = 'pending'
-RETURNING id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at
+RETURNING id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at, category
 `
 
 type ResolveApprovalRequestParams struct {
@@ -305,6 +429,7 @@ func (q *Queries) ResolveApprovalRequest(ctx context.Context, arg ResolveApprova
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ResolvedAt,
+		&i.Category,
 	)
 	return i, err
 }

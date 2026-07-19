@@ -11,6 +11,7 @@ INSERT INTO approval_requests (
     summary,
     risk_level,
     status,
+    category,
     options,
     context_payload
 ) VALUES (
@@ -25,9 +26,50 @@ INSERT INTO approval_requests (
     sqlc.narg('summary')::text,
     sqlc.narg('risk_level')::varchar,
     sqlc.arg('status')::varchar,
+    sqlc.arg('category')::varchar,
     COALESCE(sqlc.narg('options')::jsonb, '[]'::jsonb),
     COALESCE(sqlc.narg('context_payload')::jsonb, '{}'::jsonb)
 ) RETURNING *;
+
+-- name: ListPermissionApprovals :many
+-- Permission-center read path: reads the approval domain directly (never via the
+-- inbox projection). view=mine → target_user_id = actor; view=team → target_user_id NULL.
+SELECT * FROM approval_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND category = 'permission'
+  AND (
+    sqlc.narg('status')::varchar IS NULL
+    OR status = sqlc.narg('status')::varchar
+  )
+  AND (
+    sqlc.narg('risk_level')::varchar IS NULL
+    OR risk_level = sqlc.narg('risk_level')::varchar
+  )
+  AND (
+    sqlc.narg('resource_type')::varchar IS NULL
+    OR resource_type = sqlc.narg('resource_type')::varchar
+  )
+  AND (
+    sqlc.narg('target_user_id')::uuid IS NULL
+    OR target_user_id = sqlc.narg('target_user_id')::uuid
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: PermissionApprovalSummary :one
+-- Metric-card totals over the view scope (independent of the status filter):
+-- open = pending, high_risk = pending & high/critical, blocked = needs_more_evidence.
+SELECT
+    COUNT(*) FILTER (WHERE status = 'pending')::bigint AS open_count,
+    COUNT(*) FILTER (WHERE status = 'pending' AND risk_level IN ('high', 'critical'))::bigint AS high_risk_count,
+    COUNT(*) FILTER (WHERE status = 'needs_more_evidence')::bigint AS blocked_count
+FROM approval_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND category = 'permission'
+  AND (
+    sqlc.narg('target_user_id')::uuid IS NULL
+    OR target_user_id = sqlc.narg('target_user_id')::uuid
+  );
 
 -- name: GetApprovalRequest :one
 SELECT * FROM approval_requests

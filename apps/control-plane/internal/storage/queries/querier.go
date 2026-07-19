@@ -416,6 +416,9 @@ type Querier interface {
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error)
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
+	// Permission-center read path: reads the approval domain directly (never via the
+	// inbox projection). view=mine → target_user_id = actor; view=team → target_user_id NULL.
+	ListPermissionApprovals(ctx context.Context, arg ListPermissionApprovalsParams) ([]ApprovalRequest, error)
 	ListProjectArchiveSnapshots(ctx context.Context, arg ListProjectArchiveSnapshotsParams) ([]ProjectArchiveSnapshot, error)
 	ListProjectArtifactRefs(ctx context.Context, arg ListProjectArtifactRefsParams) ([]ProjectArtifactRef, error)
 	ListProjectBudgetLedger(ctx context.Context, arg ListProjectBudgetLedgerParams) ([]ProjectBudgetLedger, error)
@@ -537,6 +540,9 @@ type Querier interface {
 	// 可见性谓词必须与 ListInboxItems 的 target_user_id 分支同口径(含 any-of-N 项目决策成员可见);
 	// team_view_allowed(具团队读权)时放宽到全租户。只取最新一行:两次探测间的多条变更折叠为一次通知。
 	PeekInboxChange(ctx context.Context, arg PeekInboxChangeParams) (PeekInboxChangeRow, error)
+	// Metric-card totals over the view scope (independent of the status filter):
+	// open = pending, high_risk = pending & high/critical, blocked = needs_more_evidence.
+	PermissionApprovalSummary(ctx context.Context, arg PermissionApprovalSummaryParams) (PermissionApprovalSummaryRow, error)
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
 	ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error)

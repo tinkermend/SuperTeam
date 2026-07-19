@@ -2143,6 +2143,134 @@ paths:
           $ref: "#/components/responses/Error"
         "500":
           $ref: "#/components/responses/Error"
+  /api/v1/permission-approvals:
+    get:
+      operationId: listPermissionApprovals
+      summary: List permission-approval requests (权限中心 · 权限审批)
+      description: 权限中心「权限审批」域读路径,直读审批域(category=permission),与收件箱彻底分离。view=mine 为「我是候选审批人」的待办,view=team 为作用域内全部。
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - team
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending
+              - approved
+              - rejected
+              - needs_more_evidence
+              - cancelled
+        - name: risk_level
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Permission-approval list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionApprovalListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /api/v1/permission-approvals/{id}/decision:
+    post:
+      operationId: decidePermissionApproval
+      summary: Decide a permission-approval request (同意 / 驳回 / 要求补证)
+      description: 走审批决策服务并触发主体 apply(幂等副作用)。approved 触发主体授予动作,rejected/needs_more_evidence 关闭或退回。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionApprovalDecisionRequest"
+      responses:
+        "200":
+          description: Permission-approval decided
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionApproval"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/privileged-role-requests:
+    post:
+      operationId: requestTeamPrivilegedRole
+      summary: Request a privileged team role (S2 · 特权角色申请)
+      description: 成员申请特权角色(approver/admin/owner)→ 创建 category=permission 的审批请求,路由到团队 approver;批准后由权限中心 apply 授予角色。
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestPrivilegedRoleRequest"
+      responses:
+        "201":
+          description: Privileged-role approval request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionApproval"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /api/v1/teams:
     get:
       operationId: listTeams
@@ -5077,6 +5205,175 @@ components:
           $ref: "#/components/schemas/InboxItem"
         source_result:
           $ref: "#/components/schemas/InboxSourceActionResult"
+    PermissionApprovalAction:
+      type: object
+      required:
+        - key
+        - label
+      properties:
+        key:
+          type: string
+          description: 决策动词(approved / rejected / needs_more_evidence)
+        label:
+          type: string
+        tone:
+          type: string
+          description: positive / destructive / neutral(前端按钮语气)
+    PermissionApproval:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - category
+        - resource_type
+        - resource_id
+        - requester_type
+        - decision_type
+        - title
+        - status
+        - actions
+        - context
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum:
+            - permission
+            - project_task
+        resource_type:
+          type: string
+          description: 审批主体资源类型(digital_employee_config_revision / team_privileged_role_request)
+        resource_id:
+          type: string
+          format: uuid
+        requester_type:
+          type: string
+        requester_id:
+          type: string
+          format: uuid
+        requester_name:
+          type: string
+          description: 申请人显示名(读时补名;缺省回落 id)
+        target_user_id:
+          type: string
+          format: uuid
+          description: 当前解析出的主审批人(v1 单人路由;team 视图不据此过滤)
+        decision_type:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        risk_level:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - rejected
+            - needs_more_evidence
+            - cancelled
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionApprovalAction"
+        context:
+          type: object
+          additionalProperties: true
+          description: 上下文载荷(申请的权限项、当前 vs 变更后 diff、申请人等)
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+    PermissionApprovalListResponse:
+      type: object
+      required:
+        - items
+        - pagination
+        - summary
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionApproval"
+        pagination:
+          type: object
+          required:
+            - limit
+            - offset
+            - has_more
+          properties:
+            limit:
+              type: integer
+              format: int32
+            offset:
+              type: integer
+              format: int32
+            has_more:
+              type: boolean
+        summary:
+          type: object
+          required:
+            - open_count
+            - high_risk_count
+            - blocked_count
+          properties:
+            open_count:
+              type: integer
+              format: int64
+            high_risk_count:
+              type: integer
+              format: int64
+            blocked_count:
+              type: integer
+              format: int64
+    PermissionApprovalDecisionRequest:
+      type: object
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum:
+            - approved
+            - rejected
+            - needs_more_evidence
+        note:
+          type: string
+        evidence_refs:
+          type: array
+          items:
+            type: string
+    RequestPrivilegedRoleRequest:
+      type: object
+      required:
+        - target_user_id
+        - requested_role
+      properties:
+        target_user_id:
+          type: string
+          format: uuid
+        requested_role:
+          type: string
+          enum:
+            - approver
+            - admin
+            - owner
+        reason:
+          type: string
     Task:
       type: object
       required:

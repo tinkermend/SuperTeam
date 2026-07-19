@@ -67,6 +67,8 @@ type ApprovalRequest struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 审批处理完成时间
 	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+	// 审批分类:permission(操作权限审批,走权限中心,不投影收件箱) | project_task(项目任务/验收,走收件箱);存量回填 project_task
+	Category string `json:"category"`
 }
 
 // 工件保留锁表，记录归档、审计和人工决策产生的工件保留要求

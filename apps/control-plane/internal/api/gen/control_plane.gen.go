@@ -987,6 +987,72 @@ func (e PatchScenarioTemplateRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for PermissionApprovalCategory.
+const (
+	PermissionApprovalCategoryPermission  PermissionApprovalCategory = "permission"
+	PermissionApprovalCategoryProjectTask PermissionApprovalCategory = "project_task"
+)
+
+// Valid indicates whether the value is a known member of the PermissionApprovalCategory enum.
+func (e PermissionApprovalCategory) Valid() bool {
+	switch e {
+	case PermissionApprovalCategoryPermission:
+		return true
+	case PermissionApprovalCategoryProjectTask:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PermissionApprovalStatus.
+const (
+	PermissionApprovalStatusApproved          PermissionApprovalStatus = "approved"
+	PermissionApprovalStatusCancelled         PermissionApprovalStatus = "cancelled"
+	PermissionApprovalStatusNeedsMoreEvidence PermissionApprovalStatus = "needs_more_evidence"
+	PermissionApprovalStatusPending           PermissionApprovalStatus = "pending"
+	PermissionApprovalStatusRejected          PermissionApprovalStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the PermissionApprovalStatus enum.
+func (e PermissionApprovalStatus) Valid() bool {
+	switch e {
+	case PermissionApprovalStatusApproved:
+		return true
+	case PermissionApprovalStatusCancelled:
+		return true
+	case PermissionApprovalStatusNeedsMoreEvidence:
+		return true
+	case PermissionApprovalStatusPending:
+		return true
+	case PermissionApprovalStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PermissionApprovalDecisionRequestDecision.
+const (
+	PermissionApprovalDecisionRequestDecisionApproved          PermissionApprovalDecisionRequestDecision = "approved"
+	PermissionApprovalDecisionRequestDecisionNeedsMoreEvidence PermissionApprovalDecisionRequestDecision = "needs_more_evidence"
+	PermissionApprovalDecisionRequestDecisionRejected          PermissionApprovalDecisionRequestDecision = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the PermissionApprovalDecisionRequestDecision enum.
+func (e PermissionApprovalDecisionRequestDecision) Valid() bool {
+	switch e {
+	case PermissionApprovalDecisionRequestDecisionApproved:
+		return true
+	case PermissionApprovalDecisionRequestDecisionNeedsMoreEvidence:
+		return true
+	case PermissionApprovalDecisionRequestDecisionRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PresignRuntimeRawLogRequestObject.
 const (
 	Manifest PresignRuntimeRawLogRequestObject = "manifest"
@@ -1443,6 +1509,27 @@ func (e ProjectTaskAttestationStatus) Valid() bool {
 	}
 }
 
+// Defines values for RequestPrivilegedRoleRequestRequestedRole.
+const (
+	RequestPrivilegedRoleRequestRequestedRoleAdmin    RequestPrivilegedRoleRequestRequestedRole = "admin"
+	RequestPrivilegedRoleRequestRequestedRoleApprover RequestPrivilegedRoleRequestRequestedRole = "approver"
+	RequestPrivilegedRoleRequestRequestedRoleOwner    RequestPrivilegedRoleRequestRequestedRole = "owner"
+)
+
+// Valid indicates whether the value is a known member of the RequestPrivilegedRoleRequestRequestedRole enum.
+func (e RequestPrivilegedRoleRequestRequestedRole) Valid() bool {
+	switch e {
+	case RequestPrivilegedRoleRequestRequestedRoleAdmin:
+		return true
+	case RequestPrivilegedRoleRequestRequestedRoleApprover:
+		return true
+	case RequestPrivilegedRoleRequestRequestedRoleOwner:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ResolveProjectDecisionRequestDecision.
 const (
 	ResolveProjectDecisionRequestDecisionApproved          ResolveProjectDecisionRequestDecision = "approved"
@@ -1511,22 +1598,22 @@ func (e RuntimeCommandWritebackAcceptedStatus) Valid() bool {
 
 // Defines values for RuntimeEnrollmentStatus.
 const (
-	Approved RuntimeEnrollmentStatus = "approved"
-	Pending  RuntimeEnrollmentStatus = "pending"
-	Rejected RuntimeEnrollmentStatus = "rejected"
-	Revoked  RuntimeEnrollmentStatus = "revoked"
+	RuntimeEnrollmentStatusApproved RuntimeEnrollmentStatus = "approved"
+	RuntimeEnrollmentStatusPending  RuntimeEnrollmentStatus = "pending"
+	RuntimeEnrollmentStatusRejected RuntimeEnrollmentStatus = "rejected"
+	RuntimeEnrollmentStatusRevoked  RuntimeEnrollmentStatus = "revoked"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeEnrollmentStatus enum.
 func (e RuntimeEnrollmentStatus) Valid() bool {
 	switch e {
-	case Approved:
+	case RuntimeEnrollmentStatusApproved:
 		return true
-	case Pending:
+	case RuntimeEnrollmentStatusPending:
 		return true
-	case Rejected:
+	case RuntimeEnrollmentStatusRejected:
 		return true
-	case Revoked:
+	case RuntimeEnrollmentStatusRevoked:
 		return true
 	default:
 		return false
@@ -1856,25 +1943,25 @@ func (e TaskStatus) Valid() bool {
 
 // Defines values for TeamMemberRole.
 const (
-	Admin    TeamMemberRole = "admin"
-	Approver TeamMemberRole = "approver"
-	Member   TeamMemberRole = "member"
-	Owner    TeamMemberRole = "owner"
-	Viewer   TeamMemberRole = "viewer"
+	TeamMemberRoleAdmin    TeamMemberRole = "admin"
+	TeamMemberRoleApprover TeamMemberRole = "approver"
+	TeamMemberRoleMember   TeamMemberRole = "member"
+	TeamMemberRoleOwner    TeamMemberRole = "owner"
+	TeamMemberRoleViewer   TeamMemberRole = "viewer"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRole enum.
 func (e TeamMemberRole) Valid() bool {
 	switch e {
-	case Admin:
+	case TeamMemberRoleAdmin:
 		return true
-	case Approver:
+	case TeamMemberRoleApprover:
 		return true
-	case Member:
+	case TeamMemberRoleMember:
 		return true
-	case Owner:
+	case TeamMemberRoleOwner:
 		return true
-	case Viewer:
+	case TeamMemberRoleViewer:
 		return true
 	default:
 		return false
@@ -2106,6 +2193,51 @@ func (e ListInboxItemsParamsItemType) Valid() bool {
 	case ListInboxItemsParamsItemTypeApproval:
 		return true
 	case ListInboxItemsParamsItemTypeProjectDecision:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPermissionApprovalsParamsView.
+const (
+	ListPermissionApprovalsParamsViewMine ListPermissionApprovalsParamsView = "mine"
+	ListPermissionApprovalsParamsViewTeam ListPermissionApprovalsParamsView = "team"
+)
+
+// Valid indicates whether the value is a known member of the ListPermissionApprovalsParamsView enum.
+func (e ListPermissionApprovalsParamsView) Valid() bool {
+	switch e {
+	case ListPermissionApprovalsParamsViewMine:
+		return true
+	case ListPermissionApprovalsParamsViewTeam:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPermissionApprovalsParamsStatus.
+const (
+	ListPermissionApprovalsParamsStatusApproved          ListPermissionApprovalsParamsStatus = "approved"
+	ListPermissionApprovalsParamsStatusCancelled         ListPermissionApprovalsParamsStatus = "cancelled"
+	ListPermissionApprovalsParamsStatusNeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
+	ListPermissionApprovalsParamsStatusPending           ListPermissionApprovalsParamsStatus = "pending"
+	ListPermissionApprovalsParamsStatusRejected          ListPermissionApprovalsParamsStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the ListPermissionApprovalsParamsStatus enum.
+func (e ListPermissionApprovalsParamsStatus) Valid() bool {
+	switch e {
+	case ListPermissionApprovalsParamsStatusApproved:
+		return true
+	case ListPermissionApprovalsParamsStatusCancelled:
+		return true
+	case ListPermissionApprovalsParamsStatusNeedsMoreEvidence:
+		return true
+	case ListPermissionApprovalsParamsStatusPending:
+		return true
+	case ListPermissionApprovalsParamsStatusRejected:
 		return true
 	default:
 		return false
@@ -3730,6 +3862,78 @@ type PendingDeleteTeam struct {
 	UpdatedAt         *time.Time              `json:"updated_at,omitempty"`
 }
 
+// PermissionApproval defines model for PermissionApproval.
+type PermissionApproval struct {
+	Actions  []PermissionApprovalAction `json:"actions"`
+	Category PermissionApprovalCategory `json:"category"`
+
+	// Context 上下文载荷(申请的权限项、当前 vs 变更后 diff、申请人等)
+	Context      map[string]interface{} `json:"context"`
+	CreatedAt    time.Time              `json:"created_at"`
+	DecisionType string                 `json:"decision_type"`
+	Id           openapi_types.UUID     `json:"id"`
+	RequesterId  *openapi_types.UUID    `json:"requester_id,omitempty"`
+
+	// RequesterName 申请人显示名(读时补名;缺省回落 id)
+	RequesterName *string            `json:"requester_name,omitempty"`
+	RequesterType string             `json:"requester_type"`
+	ResolvedAt    *time.Time         `json:"resolved_at,omitempty"`
+	ResourceId    openapi_types.UUID `json:"resource_id"`
+
+	// ResourceType 审批主体资源类型(digital_employee_config_revision / team_privileged_role_request)
+	ResourceType string                   `json:"resource_type"`
+	RiskLevel    *string                  `json:"risk_level,omitempty"`
+	Status       PermissionApprovalStatus `json:"status"`
+	Summary      *string                  `json:"summary,omitempty"`
+
+	// TargetUserId 当前解析出的主审批人(v1 单人路由;team 视图不据此过滤)
+	TargetUserId *openapi_types.UUID `json:"target_user_id,omitempty"`
+	TenantId     openapi_types.UUID  `json:"tenant_id"`
+	Title        string              `json:"title"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+}
+
+// PermissionApprovalCategory defines model for PermissionApproval.Category.
+type PermissionApprovalCategory string
+
+// PermissionApprovalStatus defines model for PermissionApproval.Status.
+type PermissionApprovalStatus string
+
+// PermissionApprovalAction defines model for PermissionApprovalAction.
+type PermissionApprovalAction struct {
+	// Key 决策动词(approved / rejected / needs_more_evidence)
+	Key   string `json:"key"`
+	Label string `json:"label"`
+
+	// Tone positive / destructive / neutral(前端按钮语气)
+	Tone *string `json:"tone,omitempty"`
+}
+
+// PermissionApprovalDecisionRequest defines model for PermissionApprovalDecisionRequest.
+type PermissionApprovalDecisionRequest struct {
+	Decision     PermissionApprovalDecisionRequestDecision `json:"decision"`
+	EvidenceRefs *[]string                                 `json:"evidence_refs,omitempty"`
+	Note         *string                                   `json:"note,omitempty"`
+}
+
+// PermissionApprovalDecisionRequestDecision defines model for PermissionApprovalDecisionRequest.Decision.
+type PermissionApprovalDecisionRequestDecision string
+
+// PermissionApprovalListResponse defines model for PermissionApprovalListResponse.
+type PermissionApprovalListResponse struct {
+	Items      []PermissionApproval `json:"items"`
+	Pagination struct {
+		HasMore bool  `json:"has_more"`
+		Limit   int32 `json:"limit"`
+		Offset  int32 `json:"offset"`
+	} `json:"pagination"`
+	Summary struct {
+		BlockedCount  int64 `json:"blocked_count"`
+		HighRiskCount int64 `json:"high_risk_count"`
+		OpenCount     int64 `json:"open_count"`
+	} `json:"summary"`
+}
+
 // PlatformLimits Effective platform limits snapshot resolved from the system config registry for the node's tenant. All limit fields are optional on the wire; agents keep their local hardcoded defaults for any missing field, so version skew on either side never breaks collection.
 type PlatformLimits struct {
 	ArtifactMaxFileSizeBytes   *int64 `json:"artifact_max_file_size_bytes,omitempty"`
@@ -4726,6 +4930,16 @@ type ReplaceSkillMCPDependenciesRequest struct {
 		Note        *string            `json:"note,omitempty"`
 	} `json:"items"`
 }
+
+// RequestPrivilegedRoleRequest defines model for RequestPrivilegedRoleRequest.
+type RequestPrivilegedRoleRequest struct {
+	Reason        *string                                   `json:"reason,omitempty"`
+	RequestedRole RequestPrivilegedRoleRequestRequestedRole `json:"requested_role"`
+	TargetUserId  openapi_types.UUID                        `json:"target_user_id"`
+}
+
+// RequestPrivilegedRoleRequestRequestedRole defines model for RequestPrivilegedRoleRequest.RequestedRole.
+type RequestPrivilegedRoleRequestRequestedRole string
 
 // RequestProjectTaskTransferRequest defines model for RequestProjectTaskTransferRequest.
 type RequestProjectTaskTransferRequest struct {
@@ -5883,6 +6097,22 @@ type ListInboxItemsParamsStatus string
 // ListInboxItemsParamsItemType defines parameters for ListInboxItems.
 type ListInboxItemsParamsItemType string
 
+// ListPermissionApprovalsParams defines parameters for ListPermissionApprovals.
+type ListPermissionApprovalsParams struct {
+	View         *ListPermissionApprovalsParamsView   `form:"view,omitempty" json:"view,omitempty"`
+	Status       *ListPermissionApprovalsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	RiskLevel    *string                              `form:"risk_level,omitempty" json:"risk_level,omitempty"`
+	ResourceType *string                              `form:"resource_type,omitempty" json:"resource_type,omitempty"`
+	Limit        *Limit                               `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset       *Offset                              `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListPermissionApprovalsParamsView defines parameters for ListPermissionApprovals.
+type ListPermissionApprovalsParamsView string
+
+// ListPermissionApprovalsParamsStatus defines parameters for ListPermissionApprovals.
+type ListPermissionApprovalsParamsStatus string
+
 // ListProjectsParams defines parameters for ListProjects.
 type ListProjectsParams struct {
 	Limit  *Limit         `form:"limit,omitempty" json:"limit,omitempty"`
@@ -6230,6 +6460,9 @@ type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
 // CreateMCPServerDefinitionJSONRequestBody defines body for CreateMCPServerDefinition for application/json ContentType.
 type CreateMCPServerDefinitionJSONRequestBody = CreateMCPServerDefinitionRequest
 
+// DecidePermissionApprovalJSONRequestBody defines body for DecidePermissionApproval for application/json ContentType.
+type DecidePermissionApprovalJSONRequestBody = PermissionApprovalDecisionRequest
+
 // SignDemandCriterionVerdictJSONRequestBody defines body for SignDemandCriterionVerdict for application/json ContentType.
 type SignDemandCriterionVerdictJSONRequestBody = SignDemandCriterionVerdictRequest
 
@@ -6397,6 +6630,9 @@ type CreateTeamMCPBindingJSONRequestBody = CreateMCPBindingRequest
 
 // AddTeamMemberJSONRequestBody defines body for AddTeamMember for application/json ContentType.
 type AddTeamMemberJSONRequestBody = AddTeamMemberRequest
+
+// RequestTeamPrivilegedRoleJSONRequestBody defines body for RequestTeamPrivilegedRole for application/json ContentType.
+type RequestTeamPrivilegedRoleJSONRequestBody = RequestPrivilegedRoleRequest
 
 // BindTeamSkillJSONRequestBody defines body for BindTeamSkill for application/json ContentType.
 type BindTeamSkillJSONRequestBody BindTeamSkillJSONBody
@@ -7054,6 +7290,12 @@ type ServerInterface interface {
 	// List active skills depending on an MCP server definition
 	// (GET /api/v1/mcp-servers/{serverId}/dependent-skills)
 	ListMCPServerDependentSkills(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// List permission-approval requests (权限中心 · 权限审批)
+	// (GET /api/v1/permission-approvals)
+	ListPermissionApprovals(w http.ResponseWriter, r *http.Request, params ListPermissionApprovalsParams)
+	// Decide a permission-approval request (同意 / 驳回 / 要求补证)
+	// (POST /api/v1/permission-approvals/{id}/decision)
+	DecidePermissionApproval(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// List a demand's snapshotted acceptance criteria with resolved verdicts and evidence
 	// (GET /api/v1/project-demands/{demandId}/acceptance-criteria)
 	ListDemandAcceptanceCriteria(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -7441,6 +7683,9 @@ type ServerInterface interface {
 	// Get the team management overview
 	// (GET /api/v1/teams/{teamId}/overview)
 	GetTeamOverview(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Request a privileged team role (S2 · 特权角色申请)
+	// (POST /api/v1/teams/{teamId}/privileged-role-requests)
+	RequestTeamPrivilegedRole(w http.ResponseWriter, r *http.Request, teamId openapi_types.UUID)
 	// Restore a team from pending delete back to active
 	// (POST /api/v1/teams/{teamId}/restore)
 	RestorePendingDeleteTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -7867,6 +8112,18 @@ func (_ Unimplemented) DeleteMCPServerDefinition(w http.ResponseWriter, r *http.
 // List active skills depending on an MCP server definition
 // (GET /api/v1/mcp-servers/{serverId}/dependent-skills)
 func (_ Unimplemented) ListMCPServerDependentSkills(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List permission-approval requests (权限中心 · 权限审批)
+// (GET /api/v1/permission-approvals)
+func (_ Unimplemented) ListPermissionApprovals(w http.ResponseWriter, r *http.Request, params ListPermissionApprovalsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Decide a permission-approval request (同意 / 驳回 / 要求补证)
+// (POST /api/v1/permission-approvals/{id}/decision)
+func (_ Unimplemented) DecidePermissionApproval(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8641,6 +8898,12 @@ func (_ Unimplemented) RemoveTeamMember(w http.ResponseWriter, r *http.Request, 
 // Get the team management overview
 // (GET /api/v1/teams/{teamId}/overview)
 func (_ Unimplemented) GetTeamOverview(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Request a privileged team role (S2 · 特权角色申请)
+// (POST /api/v1/teams/{teamId}/privileged-role-requests)
+func (_ Unimplemented) RequestTeamPrivilegedRole(w http.ResponseWriter, r *http.Request, teamId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10881,6 +11144,130 @@ func (siw *ServerInterfaceWrapper) ListMCPServerDependentSkills(w http.ResponseW
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListMCPServerDependentSkills(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPermissionApprovals operation middleware
+func (siw *ServerInterfaceWrapper) ListPermissionApprovals(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPermissionApprovalsParams
+
+	// ------------- Optional query parameter "view" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "view", r.URL.Query(), &params.View, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "view"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "view", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "risk_level" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "risk_level", r.URL.Query(), &params.RiskLevel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "risk_level"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "risk_level", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "resource_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "resource_type", r.URL.Query(), &params.ResourceType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "resource_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "resource_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPermissionApprovals(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DecidePermissionApproval operation middleware
+func (siw *ServerInterfaceWrapper) DecidePermissionApproval(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DecidePermissionApproval(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -15480,6 +15867,32 @@ func (siw *ServerInterfaceWrapper) GetTeamOverview(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// RequestTeamPrivilegedRole operation middleware
+func (siw *ServerInterfaceWrapper) RequestTeamPrivilegedRole(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestTeamPrivilegedRole(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RestorePendingDeleteTeam operation middleware
 func (siw *ServerInterfaceWrapper) RestorePendingDeleteTeam(w http.ResponseWriter, r *http.Request) {
 
@@ -16071,6 +16484,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/mcp-servers/{serverId}/dependent-skills", wrapper.ListMCPServerDependentSkills)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/permission-approvals", wrapper.ListPermissionApprovals)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/permission-approvals/{id}/decision", wrapper.DecidePermissionApproval)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/acceptance-criteria", wrapper.ListDemandAcceptanceCriteria)
 	})
 	r.Group(func(r chi.Router) {
@@ -16456,6 +16875,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/overview", wrapper.GetTeamOverview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/privileged-role-requests", wrapper.RequestTeamPrivilegedRole)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/restore", wrapper.RestorePendingDeleteTeam)
