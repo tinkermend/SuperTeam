@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -55,9 +56,6 @@ func (s *Service) GetOverview(ctx context.Context, req GetDigitalEmployeeOvervie
 	req.Query = strings.TrimSpace(req.Query)
 	if req.Status != "" && !req.Status.IsValid() {
 		return nil, fmt.Errorf("%w: invalid status", ErrInvalidInput)
-	}
-	if !req.ExecutionStatus.IsValid() {
-		return nil, fmt.Errorf("%w: invalid execution_status", ErrInvalidInput)
 	}
 	if !req.RunStatus.IsValid() {
 		return nil, fmt.Errorf("%w: invalid run_status", ErrInvalidInput)
@@ -1041,6 +1039,13 @@ func (s *Service) GetDigitalEmployee(ctx context.Context, tenantID, employeeID u
 	employee := employeeFromRecord(record)
 	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
 		return nil, err
+	}
+	// 附上与总览/列表同源的 operational_state(跨视图一致性 P2 3.3a);裁决失败不阻断
+	// 员工读取,仅记录并留空(前端回退到既有本地判断),避免详情页因运行态查询挂掉打不开。
+	if state, stateErr := s.repository.GetDigitalEmployeeOperationalState(ctx, tenantID, employeeID); stateErr != nil {
+		slog.Default().Warn("attach operational state failed", "employee_id", employeeID, "error", stateErr)
+	} else {
+		employee.OperationalState = &state
 	}
 	return employee, nil
 }

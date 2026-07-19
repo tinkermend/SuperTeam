@@ -57,6 +57,9 @@ export type DigitalEmployee = {
   allowed_actions?: string[];
   created_at?: string;
   updated_at?: string;
+  // 与运行总览/员工列表同源的运行态裁决(跨视图一致性 P2 3.3a);详情页据此判断忙碌,
+  // 取代前端本地基于 runs 列表的 hasActiveRun。后端单员工读路径填充,缺省时前端回退本地判断。
+  operational_state?: DigitalEmployeeOperationalState;
 };
 
 export type DigitalEmployeeDeleteBlocker = {
@@ -348,7 +351,7 @@ export type BudgetPolicy = {
 
 export type DigitalEmployeeWorkbenchStatus =
   | "ready"
-  | "pending_binding"
+  | "needs_configuration"
   | "error";
 
 export type DigitalEmployeeOperationalStatus =
@@ -428,13 +431,13 @@ export type DigitalEmployeeOverview = {
     error_count: number;
     high_risk_count: number;
     ready_count: number;
-    pending_runtime_binding_count: number;
+    needs_configuration_count: number;
     pending_config_approval_count: number;
     failed_recent_run_count: number;
     operational_status_counts: Partial<Record<DigitalEmployeeOperationalStatus, number>>;
   };
   queue_summary: {
-    pending_runtime_binding_count: number;
+    needs_configuration_count: number;
     stale_config_count: number;
     failed_recent_run_count: number;
   };
@@ -444,9 +447,7 @@ export type DigitalEmployeeOverview = {
     employee_types: OverviewFilterOption[];
     statuses: OverviewFilterOption[];
     providers: OverviewFilterOption[];
-    runtime_nodes: OverviewFilterOption[];
     risk_levels: OverviewFilterOption[];
-    execution_statuses: OverviewFilterOption[];
     run_statuses: OverviewFilterOption[];
   };
   pagination: {
@@ -470,6 +471,8 @@ export type DigitalEmployeeOverviewItem = {
     owner_display_name: string;
     employee_type: string;
     employee_type_label: string;
+    /** 身份级主 Provider 类型(claude/codex/opencode);运行落点由项目派发动态解析,与本字段无关 */
+    provider_type: string;
     name: string;
     role: string;
     description?: string;
@@ -621,9 +624,7 @@ export type DigitalEmployeeOverviewFilters = {
   status?: DigitalEmployeeStatus;
   employee_type?: string;
   provider_type?: string;
-  runtime_node_id?: string;
   risk_level?: string;
-  execution_status?: DigitalEmployeeOverviewExecutionStatus;
   run_status?: DigitalEmployeeOverviewRunStatus;
   limit?: number;
   offset?: number;

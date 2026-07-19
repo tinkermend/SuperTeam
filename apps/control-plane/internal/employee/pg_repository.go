@@ -1156,16 +1156,14 @@ func pgFloat8Ptr(value pgtype.Float8) *float64 {
 
 func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
 	summaryParams := queries.GetDigitalEmployeeOverviewSummaryParams{
-		TenantID:        req.TenantID,
-		Q:               textFromOptionalString(req.Query),
-		TeamID:          nullUUIDFromPtr(req.TeamID),
-		Status:          textFromOptionalString(string(req.Status)),
-		EmployeeType:    textFromOptionalString(req.EmployeeType),
-		ProviderType:    textFromOptionalString(req.ProviderType),
-		RuntimeNodeID:   nullUUIDFromPtr(req.RuntimeNodeID),
-		RiskLevel:       textFromOptionalString(req.RiskLevel),
-		ExecutionStatus: textFromOptionalString(string(req.ExecutionStatus)),
-		RunStatus:       textFromOptionalString(string(req.RunStatus)),
+		TenantID:     req.TenantID,
+		Q:            textFromOptionalString(req.Query),
+		TeamID:       nullUUIDFromPtr(req.TeamID),
+		Status:       textFromOptionalString(string(req.Status)),
+		EmployeeType: textFromOptionalString(req.EmployeeType),
+		ProviderType: textFromOptionalString(req.ProviderType),
+		RiskLevel:    textFromOptionalString(req.RiskLevel),
+		RunStatus:    textFromOptionalString(string(req.RunStatus)),
 	}
 	summary, err := r.q.GetDigitalEmployeeOverviewSummary(ctx, summaryParams)
 	if err != nil {
@@ -1173,16 +1171,14 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 	}
 
 	operationalFactRows, err := r.q.ListDigitalEmployeeOverviewOperationalFacts(ctx, queries.ListDigitalEmployeeOverviewOperationalFactsParams{
-		TenantID:        req.TenantID,
-		Q:               summaryParams.Q,
-		TeamID:          summaryParams.TeamID,
-		Status:          summaryParams.Status,
-		EmployeeType:    summaryParams.EmployeeType,
-		ProviderType:    summaryParams.ProviderType,
-		RuntimeNodeID:   summaryParams.RuntimeNodeID,
-		RiskLevel:       summaryParams.RiskLevel,
-		ExecutionStatus: summaryParams.ExecutionStatus,
-		RunStatus:       summaryParams.RunStatus,
+		TenantID:     req.TenantID,
+		Q:            summaryParams.Q,
+		TeamID:       summaryParams.TeamID,
+		Status:       summaryParams.Status,
+		EmployeeType: summaryParams.EmployeeType,
+		ProviderType: summaryParams.ProviderType,
+		RiskLevel:    summaryParams.RiskLevel,
+		RunStatus:    summaryParams.RunStatus,
 	})
 	if err != nil {
 		return nil, err
@@ -1214,19 +1210,17 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 	}
 
 	itemRows, err := r.q.ListDigitalEmployeeOverviewItems(ctx, queries.ListDigitalEmployeeOverviewItemsParams{
-		TenantID:        req.TenantID,
-		Q:               summaryParams.Q,
-		TeamID:          summaryParams.TeamID,
-		Status:          summaryParams.Status,
-		EmployeeType:    summaryParams.EmployeeType,
-		ProviderType:    summaryParams.ProviderType,
-		RuntimeNodeID:   summaryParams.RuntimeNodeID,
-		RiskLevel:       summaryParams.RiskLevel,
-		ExecutionStatus: summaryParams.ExecutionStatus,
-		RunStatus:       summaryParams.RunStatus,
-		EmployeeIds:     operationalFilterIDs,
-		Limit:           req.Limit,
-		Offset:          req.Offset,
+		TenantID:     req.TenantID,
+		Q:            summaryParams.Q,
+		TeamID:       summaryParams.TeamID,
+		Status:       summaryParams.Status,
+		EmployeeType: summaryParams.EmployeeType,
+		ProviderType: summaryParams.ProviderType,
+		RiskLevel:    summaryParams.RiskLevel,
+		RunStatus:    summaryParams.RunStatus,
+		EmployeeIds:  operationalFilterIDs,
+		Limit:        req.Limit,
+		Offset:       req.Offset,
 	})
 	if err != nil {
 		return nil, err
@@ -1254,15 +1248,15 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 			ErrorCount:                 summary.ErrorCount,
 			HighRiskCount:              summary.HighRiskCount,
 			ReadyCount:                 summary.ReadyCount,
-			PendingRuntimeBindingCount: summary.PendingRuntimeBindingCount,
+			NeedsConfigurationCount:    summary.NeedsConfigurationCount,
 			PendingConfigApprovalCount: summary.PendingConfigApprovalCount,
 			FailedRecentRunCount:       summary.FailedRecentRunCount,
 			OperationalStatusCounts:    overviewOperationalStatusCountsFromStates(operationalStates),
 		},
 		QueueSummary: DigitalEmployeeOverviewQueueSummary{
-			PendingRuntimeBindingCount: summary.PendingRuntimeBindingCount,
-			StaleConfigCount:           summary.StaleConfigCount,
-			FailedRecentRunCount:       summary.FailedRecentRunCount,
+			NeedsConfigurationCount: summary.NeedsConfigurationCount,
+			StaleConfigCount:        summary.StaleConfigCount,
+			FailedRecentRunCount:    summary.FailedRecentRunCount,
 		},
 		Items:   items,
 		Filters: overviewFiltersFromQuery(filterRows, labelsByType),
@@ -1327,8 +1321,9 @@ func (r *PgRepository) GetDigitalEmployeeActivity(ctx context.Context, req GetDi
 }
 
 // AreRuntimeReady reports which of the given digital employees are runtime-ready,
-// using the digital_employee_runtime_readiness view whose predicate matches the
-// overview "runnable" classification exactly.
+// using the digital_employee_runtime_readiness view. 注意:该视图仍基于已废弃的
+// 员工级执行实例绑定(dei),与总览新的 runnable 判据(身份+治理+租户级 provider
+// 可用性)不再一致;它只作为协调线程缺少项目级 reader 时的兜底,待清偿。
 func (r *PgRepository) AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
 	if len(employeeIDs) == 0 {
 		return map[uuid.UUID]bool{}, nil
@@ -1394,19 +1389,10 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow, labe
 	usagePercent := overviewUsagePercent(row.TodayBudgetUsageTokens, dailyTokenLimit)
 	recentEvents := recentEventsFromJSON(row.RecentEventsJson)
 	workbenchInput := overviewWorkbenchStatusInput{
-		IdentityStatus:        DigitalEmployeeStatus(row.Status),
-		ExecutionStatus:       executionStatus,
-		RuntimeStatus:         row.RuntimeStatus,
-		RuntimeDisabled:       row.RuntimeDisabledAt.Valid,
-		RuntimeArchived:       row.RuntimeArchivedAt.Valid,
-		NodeID:                row.NodeID,
-		ProviderType:          row.ProviderType,
-		ProviderAvailable:     row.ProviderAvailable,
-		ProviderStatus:        row.ProviderStatus,
-		HealthStatus:          row.HealthStatus,
-		AgentHomeDirAvailable: row.AgentHomeDirAvailable,
-		GovernanceStatus:      row.GovernanceStatus,
-		RunStatus:             latestRunStatus,
+		IdentityStatus:          DigitalEmployeeStatus(row.Status),
+		GovernanceStatus:        row.GovernanceStatus,
+		TenantProviderAvailable: row.TenantProviderAvailable,
+		RunStatus:               latestRunStatus,
 	}
 	workbenchStatus := overviewWorkbenchStatus(workbenchInput)
 	operationalState := overviewOperationalStateFromInput(workbenchInput, workbenchStatus, latestRunStatus, row.LatestRunErrorFamily, overviewOperationalFacts{
@@ -1460,6 +1446,7 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow, labe
 			OwnerDisplayName:  row.OwnerDisplayName,
 			EmployeeType:      row.EmployeeType,
 			EmployeeTypeLabel: overviewEmployeeTypeLabel(row.EmployeeType, labelsByType),
+			ProviderType:      row.IdentityProviderType,
 			Name:              row.Name,
 			Role:              row.Role,
 			Description:       stringPtrFromPgText(row.Description),
@@ -1519,22 +1506,30 @@ type overviewOperationalFacts struct {
 	HasTaskFailure                bool
 }
 
+// GetDigitalEmployeeOperationalState 复用总览的 operational facts + Go 状态机,为单个
+// 员工裁决与总览/列表完全同源的 operational_state(跨视图一致性 P2 3.3a)。员工存在但无
+// 关联工作时状态机兜底 idle;员工不存在(已删)返回零值。
+func (r *PgRepository) GetDigitalEmployeeOperationalState(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeOperationalState, error) {
+	rows, err := r.q.ListDigitalEmployeeOverviewOperationalFacts(ctx, queries.ListDigitalEmployeeOverviewOperationalFactsParams{
+		TenantID:   tenantID,
+		EmployeeID: uuid.NullUUID{UUID: employeeID, Valid: true},
+	})
+	if err != nil {
+		return DigitalEmployeeOperationalState{}, err
+	}
+	if len(rows) == 0 {
+		return DigitalEmployeeOperationalState{}, nil
+	}
+	return overviewOperationalStateFromFactsRow(rows[0]), nil
+}
+
 func overviewOperationalStateFromFactsRow(row queries.ListDigitalEmployeeOverviewOperationalFactsRow) DigitalEmployeeOperationalState {
 	latestRunStatus := overviewRunStatus(row.LatestRunStatus)
 	workbenchInput := overviewWorkbenchStatusInput{
-		IdentityStatus:        DigitalEmployeeStatus(row.Status),
-		ExecutionStatus:       overviewExecutionStatus(row.ExecutionStatus),
-		RuntimeStatus:         row.RuntimeStatus,
-		RuntimeDisabled:       row.RuntimeDisabledAt.Valid,
-		RuntimeArchived:       row.RuntimeArchivedAt.Valid,
-		NodeID:                row.NodeID,
-		ProviderType:          row.ProviderType,
-		ProviderAvailable:     row.ProviderAvailable,
-		ProviderStatus:        row.ProviderStatus,
-		HealthStatus:          row.HealthStatus,
-		AgentHomeDirAvailable: row.AgentHomeDirAvailable,
-		GovernanceStatus:      row.GovernanceStatus,
-		RunStatus:             latestRunStatus,
+		IdentityStatus:          DigitalEmployeeStatus(row.Status),
+		GovernanceStatus:        row.GovernanceStatus,
+		TenantProviderAvailable: row.TenantProviderAvailable,
+		RunStatus:               latestRunStatus,
 	}
 	return overviewOperationalStateFromInput(workbenchInput, overviewWorkbenchStatus(workbenchInput), latestRunStatus, row.LatestRunErrorFamily, overviewOperationalFacts{
 		HasEmployeeScopedHumanBlocker: row.OperationalHasEmployeeScopedHumanBlocker,
@@ -1556,8 +1551,8 @@ func overviewOperationalStateFromInput(workbenchInput overviewWorkbenchStatusInp
 
 	return ResolveDigitalEmployeeOperationalState(DigitalEmployeeOperationalInput{
 		DispatchReady:                 baseDispatchReady,
-		ConfigurationMissing:          !baseDispatchReady && workbenchStatus == WorkbenchStatusPendingBinding,
-		RuntimeUnavailable:            workbenchInput.RuntimeDisabled || workbenchInput.RuntimeArchived || strings.TrimSpace(workbenchInput.RuntimeStatus) != "online",
+		ConfigurationMissing:          !baseDispatchReady && workbenchStatus == WorkbenchStatusNeedsConfiguration,
+		RuntimeUnavailable:            !workbenchInput.TenantProviderAvailable,
 		HasProviderFailure:            hasRunProviderFailure,
 		HasTaskFailure:                facts.HasTaskFailure || (hasRunFailed && !hasRunProviderFailure),
 		HasActiveWork:                 facts.HasActiveWork || hasRunQueued || hasRunWorking,
@@ -1582,14 +1577,12 @@ func avatarAssetFromOverviewMetadata(metadata []byte) *DigitalEmployeeAvatarAsse
 
 func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOptionsRow, labelsByType map[string]string) DigitalEmployeeOverviewFilters {
 	filters := DigitalEmployeeOverviewFilters{
-		Teams:             []OverviewFilterOption{},
-		Statuses:          []OverviewFilterOption{},
-		EmployeeTypes:     []OverviewFilterOption{},
-		Providers:         []OverviewFilterOption{},
-		RuntimeNodes:      []OverviewFilterOption{},
-		RiskLevels:        []OverviewFilterOption{},
-		ExecutionStatuses: []OverviewFilterOption{},
-		RunStatuses:       []OverviewFilterOption{},
+		Teams:         []OverviewFilterOption{},
+		Statuses:      []OverviewFilterOption{},
+		EmployeeTypes: []OverviewFilterOption{},
+		Providers:     []OverviewFilterOption{},
+		RiskLevels:    []OverviewFilterOption{},
+		RunStatuses:   []OverviewFilterOption{},
 	}
 	for _, row := range rows {
 		value := strings.TrimSpace(row.Value)
@@ -1611,12 +1604,8 @@ func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOp
 			filters.Statuses = append(filters.Statuses, option)
 		case "provider":
 			filters.Providers = append(filters.Providers, option)
-		case "runtime_node":
-			filters.RuntimeNodes = append(filters.RuntimeNodes, option)
 		case "risk_level":
 			filters.RiskLevels = append(filters.RiskLevels, option)
-		case "execution_status":
-			filters.ExecutionStatuses = append(filters.ExecutionStatuses, option)
 		case "run_status":
 			filters.RunStatuses = append(filters.RunStatuses, option)
 		}
@@ -1786,63 +1775,33 @@ func overviewRunStatus(value string) OverviewRunStatus {
 	}
 }
 
+// overviewWorkbenchStatusInput 只含身份与治理判据(外加租户级 provider 可用性)。
+// 员工级 Runtime 绑定(digital_employee_execution_instances)已废弃,运行落点由
+// 项目派发时动态解析,不参与工作台判定——否则未绑定的新员工会被恒判"待配置"。
 type overviewWorkbenchStatusInput struct {
-	IdentityStatus        DigitalEmployeeStatus
-	ExecutionStatus       OverviewExecutionStatus
-	RuntimeStatus         string
-	RuntimeDisabled       bool
-	RuntimeArchived       bool
-	NodeID                string
-	ProviderType          string
-	ProviderAvailable     bool
-	ProviderStatus        string
-	HealthStatus          string
-	AgentHomeDirAvailable bool
-	GovernanceStatus      string
-	RunStatus             OverviewRunStatus
+	IdentityStatus   DigitalEmployeeStatus
+	GovernanceStatus string
+	// TenantProviderAvailable: 租户内是否存在任一在线 Runtime 节点提供该员工的
+	// 身份级 provider 能力。false 时员工无处可派发。
+	TenantProviderAvailable bool
+	RunStatus               OverviewRunStatus
 }
 
 func overviewWorkbenchStatus(input overviewWorkbenchStatusInput) WorkbenchStatus {
 	if input.IdentityStatus == DigitalEmployeeStatusDisabled ||
 		input.IdentityStatus == DigitalEmployeeStatusError ||
-		input.ExecutionStatus == OverviewExecutionStatusDisabled ||
-		input.ExecutionStatus == OverviewExecutionStatusError ||
 		input.RunStatus == OverviewRunStatusFailed ||
 		input.RunStatus == OverviewRunStatusTimedOut {
 		return WorkbenchStatusError
 	}
-	if input.ExecutionStatus == OverviewExecutionStatusMissing ||
-		input.ExecutionStatus == OverviewExecutionStatusProvisioning ||
-		strings.TrimSpace(input.RuntimeStatus) == "" ||
-		strings.TrimSpace(input.NodeID) == "" ||
-		strings.TrimSpace(input.ProviderType) == "" ||
-		!input.AgentHomeDirAvailable {
-		return WorkbenchStatusPendingBinding
-	}
-	if input.GovernanceStatus == "missing" ||
-		input.GovernanceStatus == "pending_approval" ||
-		input.GovernanceStatus == "stale" {
-		return WorkbenchStatusPendingBinding
+	if input.GovernanceStatus != "approved" {
+		return WorkbenchStatusNeedsConfiguration
 	}
 	if input.IdentityStatus != DigitalEmployeeStatusReady &&
 		input.IdentityStatus != DigitalEmployeeStatusActive {
-		return WorkbenchStatusPendingBinding
+		return WorkbenchStatusNeedsConfiguration
 	}
-	if input.ExecutionStatus != OverviewExecutionStatusReady &&
-		input.ExecutionStatus != OverviewExecutionStatusActive {
-		return WorkbenchStatusPendingBinding
-	}
-	if input.GovernanceStatus != "approved" {
-		return WorkbenchStatusPendingBinding
-	}
-	if input.RuntimeDisabled ||
-		input.RuntimeArchived ||
-		strings.TrimSpace(input.RuntimeStatus) != "online" {
-		return WorkbenchStatusError
-	}
-	if !input.ProviderAvailable ||
-		strings.TrimSpace(input.ProviderStatus) != "healthy" ||
-		strings.TrimSpace(input.HealthStatus) != "healthy" {
+	if !input.TenantProviderAvailable {
 		return WorkbenchStatusError
 	}
 	return WorkbenchStatusReady

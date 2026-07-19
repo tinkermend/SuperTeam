@@ -50,6 +50,7 @@ import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { EmployeeAvatar } from "./avatar";
 import { overviewAvatarAsset } from "./avatar-library";
+import { operationalStatusLabel, operationalStatusPresentation } from "./operational-status";
 import { providerDisplayName } from "./provider-label";
 
 const DEFAULT_STATUS_OPTIONS: OverviewFilterOption[] = [
@@ -64,46 +65,6 @@ const DEFAULT_PAGE_SIZE = 12;
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
 
 type FilterKey = Exclude<keyof DigitalEmployeeOverviewFilters, "limit" | "offset">;
-
-const operationalStatusLabel: Record<DigitalEmployeeOperationalStatus, string> = {
-  working: "工作中",
-  idle: "空闲",
-  queued: "排队",
-  waiting_human: "待人工确认",
-  error: "异常",
-  unavailable: "不可用",
-  needs_configuration: "待配置",
-};
-
-const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, V3Tone> = {
-  working: "info",
-  idle: "ok",
-  queued: "warn",
-  waiting_human: "warn",
-  error: "danger",
-  unavailable: "mute",
-  needs_configuration: "mute",
-};
-
-type OperationalStatusPresentation = {
-  label: string;
-  tone: V3Tone;
-};
-
-function operationalStatusPresentation(status?: string): OperationalStatusPresentation {
-  if (isKnownOperationalStatus(status)) {
-    return {
-      label: operationalStatusLabel[status],
-      tone: operationalStatusTone[status],
-    };
-  }
-
-  return { label: "状态未知", tone: "mute" };
-}
-
-function isKnownOperationalStatus(status?: string): status is DigitalEmployeeOperationalStatus {
-  return typeof status === "string" && Object.prototype.hasOwnProperty.call(operationalStatusLabel, status);
-}
 
 export function EmployeesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -284,8 +245,8 @@ function GalleryTrendStrip({ overview }: { overview: DigitalEmployeeOverview }) 
       <TrendStatCard
         icon={<LinkIcon />}
         iconTone="warn"
-        label="待绑定"
-        value={formatNumber(overview.summary.pending_runtime_binding_count)}
+        label="待配置"
+        value={formatNumber(overview.summary.needs_configuration_count)}
         accentGradient="from-amber-400 to-amber-600"
       />
       <TrendStatCard
@@ -485,12 +446,6 @@ function GalleryFilterBar({
               onValueChange={onFilterChange("employee_type")}
             />
             <FilterSelect
-              label="执行"
-              value={filters.execution_status ?? "all"}
-              options={filterOptions?.execution_statuses ?? []}
-              onValueChange={onFilterChange("execution_status")}
-            />
-            <FilterSelect
               label="最近任务"
               value={filters.run_status ?? "all"}
               options={filterOptions?.run_statuses ?? []}
@@ -575,7 +530,7 @@ function AvatarGalleryCard({
             Provider
           </span>
           <span className="truncate text-right font-semibold text-v3-ink">
-            {runtimeProviderLine(item)}
+            {identityProviderLine(item)}
           </span>
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -736,11 +691,11 @@ function GalleryRail({
           <h2 className="font-semibold">待处理队列</h2>
         </div>
         <QueueRow
-          action="绑定"
-          label="待绑定 Runtime"
+          action="处理"
+          label="待配置"
           tone="warn"
-          to="/runtime"
-          value={overview.queue_summary.pending_runtime_binding_count}
+          to="/approvals"
+          value={overview.queue_summary.needs_configuration_count}
         />
         <QueueRow
           action="审批"
@@ -835,8 +790,8 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
           <span className="font-semibold text-v3-ink">{workbenchStatusLabel(item.workbench_status)}</span>
         </div>
         <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
-          <span className="text-v3-ink-3">绑定</span>
-          <span className="text-right font-semibold text-v3-ink">{runtimeProviderLine(item)}</span>
+          <span className="text-v3-ink-3">Provider</span>
+          <span className="text-right font-semibold text-v3-ink">{identityProviderLine(item)}</span>
         </div>
       </div>
       <div className="flex flex-col gap-2">
@@ -941,18 +896,16 @@ function formatNumber(value: number | undefined | null) {
 }
 
 function workbenchStatusLabel(status: DigitalEmployeeWorkbenchStatus) {
-  return status === "ready" ? "就绪" : status === "pending_binding" ? "待绑定" : "异常";
+  return status === "ready" ? "就绪" : status === "needs_configuration" ? "待配置" : "异常";
 }
 
-function runtimeProviderLine(item: DigitalEmployeeOverviewItem) {
-  const execution = item.execution_summary;
-  if (item.workbench_status === "pending_binding" || !execution.runtime_node_id) {
-    return "等待绑定 Runtime Agent";
+/** Provider 行显示身份级 agent 能力(claude/codex/opencode);运行落点由项目派发时动态解析,不在卡片上展示 Runtime 节点。 */
+function identityProviderLine(item: DigitalEmployeeOverviewItem) {
+  const providerType = item.identity_summary.provider_type;
+  if (!providerType) {
+    return "-";
   }
-
-  const runtime = execution.node_id || execution.runtime_name || "Runtime Agent";
-  const provider = providerDisplayName(execution.provider_type);
-  return `${runtime} · ${provider}`;
+  return providerDisplayName(providerType);
 }
 
 function latestRunCompact(item: DigitalEmployeeOverviewItem) {

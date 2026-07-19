@@ -42,6 +42,7 @@ import { EmployeeDetailHeader } from "./components/employee-detail-header";
 import { EmployeeMetricsStrip } from "./components/employee-metrics-strip";
 import { EmployeeRunHistoryTable } from "./components/employee-run-history-table";
 import { RunDetailDrawer } from "./components/run-detail-drawer";
+import { isBusyOperationalStatus } from "./operational-status";
 import { SchedulingReadinessPanel } from "./components/scheduling-readiness-panel";
 import { StartTaskDrawer } from "./components/start-task-drawer";
 import { providerDisplayName } from "./provider-label";
@@ -161,6 +162,10 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const missingEnvVars = envVarsQuery.data?.filter((item) => !item.configured) ?? [];
 
   const hasActiveRun = runs.data?.items.some((item) => isActiveRun(item.status)) ?? false;
+  // 忙碌判定与运行总览/员工列表同源:优先用后端 operational_state(working/queued=忙),
+  // 消除详情页此前基于 runs 列表本地各算一套(第三套算法)。后端未返回时回退本地 hasActiveRun。
+  const operationalStatus = employee.data?.operational_state?.status;
+  const isBusy = operationalStatus ? isBusyOperationalStatus(operationalStatus) : hasActiveRun;
   const employeeCanRun = employee.data?.status === "ready" || employee.data?.status === "active";
   const executionInstanceCanRun =
     instance.isSuccess && (instance.data?.status === "ready" || instance.data?.status === "active");
@@ -174,11 +179,11 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     employeeCanRun &&
     executionInstanceCanRun &&
     runs.isSuccess &&
-    !hasActiveRun &&
+    !isBusy &&
     !runtimeCommandChannelDisconnected;
 
   const disabledReasons: string[] = [];
-  if (hasActiveRun) disabledReasons.push("当前已有活跃运行");
+  if (isBusy) disabledReasons.push("当前有进行中的工作，暂不能开始新任务");
   if (!executionInstanceCanRun && instance.isSuccess && !instanceNotFound)
     disabledReasons.push("执行实例当前不可执行");
   if (runtimeCommandChannelDisconnected) disabledReasons.push("Runtime 命令通道未连接，暂不能开始任务");

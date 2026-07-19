@@ -778,21 +778,17 @@ const (
 func overviewRequestFromQuery(tenantID uuid.UUID, r *http.Request) (GetDigitalEmployeeOverviewRequest, string) {
 	query := r.URL.Query()
 	req := GetDigitalEmployeeOverviewRequest{
-		TenantID:        tenantID,
-		Query:           strings.TrimSpace(query.Get("q")),
-		Status:          DigitalEmployeeStatus(strings.TrimSpace(query.Get("status"))),
-		EmployeeType:    strings.TrimSpace(query.Get("employee_type")),
-		ProviderType:    strings.TrimSpace(query.Get("provider_type")),
-		RiskLevel:       strings.TrimSpace(query.Get("risk_level")),
-		ExecutionStatus: OverviewExecutionStatus(strings.TrimSpace(query.Get("execution_status"))),
-		RunStatus:       OverviewRunStatus(strings.TrimSpace(query.Get("run_status"))),
-		Limit:           defaultOverviewPageLimit,
+		TenantID:     tenantID,
+		Query:        strings.TrimSpace(query.Get("q")),
+		Status:       DigitalEmployeeStatus(strings.TrimSpace(query.Get("status"))),
+		EmployeeType: strings.TrimSpace(query.Get("employee_type")),
+		ProviderType: strings.TrimSpace(query.Get("provider_type")),
+		RiskLevel:    strings.TrimSpace(query.Get("risk_level")),
+		RunStatus:    OverviewRunStatus(strings.TrimSpace(query.Get("run_status"))),
+		Limit:        defaultOverviewPageLimit,
 	}
 	if req.Status != "" && !req.Status.IsValid() {
 		return GetDigitalEmployeeOverviewRequest{}, "invalid status"
-	}
-	if !req.ExecutionStatus.IsValid() {
-		return GetDigitalEmployeeOverviewRequest{}, "invalid execution_status"
 	}
 	if !req.RunStatus.IsValid() {
 		return GetDigitalEmployeeOverviewRequest{}, "invalid run_status"
@@ -816,13 +812,6 @@ func overviewRequestFromQuery(tenantID uuid.UUID, r *http.Request) (GetDigitalEm
 			return GetDigitalEmployeeOverviewRequest{}, "invalid team_id"
 		}
 		req.TeamID = &teamID
-	}
-	if rawRuntimeNodeID := strings.TrimSpace(query.Get("runtime_node_id")); rawRuntimeNodeID != "" {
-		runtimeNodeID, err := uuid.Parse(rawRuntimeNodeID)
-		if err != nil || runtimeNodeID == uuid.Nil {
-			return GetDigitalEmployeeOverviewRequest{}, "invalid runtime_node_id"
-		}
-		req.RuntimeNodeID = &runtimeNodeID
 	}
 	if rawLimit := strings.TrimSpace(query.Get("limit")); rawLimit != "" {
 		limit, err := strconv.ParseInt(rawLimit, 10, 32)
@@ -946,6 +935,8 @@ type digitalEmployeeResponse struct {
 	AllowedActions        []string              `json:"allowed_actions,omitempty"`
 	CreatedAt             string                `json:"created_at,omitempty"`
 	UpdatedAt             string                `json:"updated_at,omitempty"`
+	// 与总览/列表同源的运行态(跨视图一致性 P2 3.3a);详情页据此判断忙碌,不再本地各算一套。
+	OperationalState *digitalEmployeeOperationalStateResponse `json:"operational_state,omitempty"`
 }
 
 type digitalEmployeeOverviewResponse struct {
@@ -964,16 +955,16 @@ type digitalEmployeeOverviewSummaryResponse struct {
 	ErrorCount                 int32            `json:"error_count"`
 	HighRiskCount              int32            `json:"high_risk_count"`
 	ReadyCount                 int32            `json:"ready_count"`
-	PendingRuntimeBindingCount int32            `json:"pending_runtime_binding_count"`
+	NeedsConfigurationCount    int32            `json:"needs_configuration_count"`
 	PendingConfigApprovalCount int32            `json:"pending_config_approval_count"`
 	FailedRecentRunCount       int32            `json:"failed_recent_run_count"`
 	OperationalStatusCounts    map[string]int32 `json:"operational_status_counts"`
 }
 
 type digitalEmployeeOverviewQueueSummaryResponse struct {
-	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
-	StaleConfigCount           int32 `json:"stale_config_count"`
-	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+	NeedsConfigurationCount int32 `json:"needs_configuration_count"`
+	StaleConfigCount        int32 `json:"stale_config_count"`
+	FailedRecentRunCount    int32 `json:"failed_recent_run_count"`
 }
 
 type digitalEmployeeOverviewItemResponse struct {
@@ -1081,6 +1072,7 @@ type digitalEmployeeIdentitySummaryResponse struct {
 	OwnerDisplayName  string                      `json:"owner_display_name"`
 	EmployeeType      string                      `json:"employee_type"`
 	EmployeeTypeLabel string                      `json:"employee_type_label"`
+	ProviderType      string                      `json:"provider_type"`
 	Name              string                      `json:"name"`
 	Role              string                      `json:"role"`
 	Description       *string                     `json:"description,omitempty"`
@@ -1144,14 +1136,12 @@ type digitalEmployeeRecentEventSummaryResponse struct {
 }
 
 type digitalEmployeeOverviewFiltersResponse struct {
-	Teams             []overviewFilterOptionResponse `json:"teams"`
-	Statuses          []overviewFilterOptionResponse `json:"statuses"`
-	EmployeeTypes     []overviewFilterOptionResponse `json:"employee_types"`
-	Providers         []overviewFilterOptionResponse `json:"providers"`
-	RuntimeNodes      []overviewFilterOptionResponse `json:"runtime_nodes"`
-	RiskLevels        []overviewFilterOptionResponse `json:"risk_levels"`
-	ExecutionStatuses []overviewFilterOptionResponse `json:"execution_statuses"`
-	RunStatuses       []overviewFilterOptionResponse `json:"run_statuses"`
+	Teams         []overviewFilterOptionResponse `json:"teams"`
+	Statuses      []overviewFilterOptionResponse `json:"statuses"`
+	EmployeeTypes []overviewFilterOptionResponse `json:"employee_types"`
+	Providers     []overviewFilterOptionResponse `json:"providers"`
+	RiskLevels    []overviewFilterOptionResponse `json:"risk_levels"`
+	RunStatuses   []overviewFilterOptionResponse `json:"run_statuses"`
 }
 
 type overviewFilterOptionResponse struct {
@@ -1437,7 +1427,7 @@ func employeeResponses(employees []*DigitalEmployee) []digitalEmployeeResponse {
 }
 
 func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeResponse {
-	return digitalEmployeeResponse{
+	response := digitalEmployeeResponse{
 		ID:                    employee.ID.String(),
 		TenantID:              employee.TenantID.String(),
 		TeamID:                uuidStringPtr(employee.TeamID),
@@ -1459,6 +1449,11 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		CreatedAt:             timeString(employee.CreatedAt),
 		UpdatedAt:             timeString(employee.UpdatedAt),
 	}
+	if employee.OperationalState != nil {
+		state := operationalStateResponseFromDomain(*employee.OperationalState)
+		response.OperationalState = &state
+	}
+	return response
 }
 
 func schedulingReadinessResponseFromDomain(readiness *DigitalEmployeeSchedulingReadiness) schedulingReadinessResponse {
@@ -1537,15 +1532,15 @@ func overviewResponseFromDomain(overview *DigitalEmployeeOverview) digitalEmploy
 			ErrorCount:                 overview.Summary.ErrorCount,
 			HighRiskCount:              overview.Summary.HighRiskCount,
 			ReadyCount:                 overview.Summary.ReadyCount,
-			PendingRuntimeBindingCount: overview.Summary.PendingRuntimeBindingCount,
+			NeedsConfigurationCount:    overview.Summary.NeedsConfigurationCount,
 			PendingConfigApprovalCount: overview.Summary.PendingConfigApprovalCount,
 			FailedRecentRunCount:       overview.Summary.FailedRecentRunCount,
 			OperationalStatusCounts:    operationalStatusCountsResponseFromDomain(overview.Summary.OperationalStatusCounts),
 		},
 		QueueSummary: digitalEmployeeOverviewQueueSummaryResponse{
-			PendingRuntimeBindingCount: overview.QueueSummary.PendingRuntimeBindingCount,
-			StaleConfigCount:           overview.QueueSummary.StaleConfigCount,
-			FailedRecentRunCount:       overview.QueueSummary.FailedRecentRunCount,
+			NeedsConfigurationCount: overview.QueueSummary.NeedsConfigurationCount,
+			StaleConfigCount:        overview.QueueSummary.StaleConfigCount,
+			FailedRecentRunCount:    overview.QueueSummary.FailedRecentRunCount,
 		},
 		Items:      overviewItemResponses(overview.Items),
 		Filters:    overviewFiltersResponseFromDomain(overview.Filters),
@@ -1641,6 +1636,7 @@ func identitySummaryResponseFromDomain(summary DigitalEmployeeIdentitySummary) d
 		OwnerDisplayName:  summary.OwnerDisplayName,
 		EmployeeType:      summary.EmployeeType,
 		EmployeeTypeLabel: summary.EmployeeTypeLabel,
+		ProviderType:      summary.ProviderType,
 		Name:              summary.Name,
 		Role:              summary.Role,
 		Description:       summary.Description,
@@ -1723,14 +1719,12 @@ func recentEventSummaryResponses(events []DigitalEmployeeRecentEventSummary) []d
 
 func overviewFiltersResponseFromDomain(filters DigitalEmployeeOverviewFilters) digitalEmployeeOverviewFiltersResponse {
 	return digitalEmployeeOverviewFiltersResponse{
-		Teams:             overviewFilterOptionResponses(filters.Teams),
-		Statuses:          overviewFilterOptionResponses(filters.Statuses),
-		EmployeeTypes:     overviewFilterOptionResponses(filters.EmployeeTypes),
-		Providers:         overviewFilterOptionResponses(filters.Providers),
-		RuntimeNodes:      overviewFilterOptionResponses(filters.RuntimeNodes),
-		RiskLevels:        overviewFilterOptionResponses(filters.RiskLevels),
-		ExecutionStatuses: overviewFilterOptionResponses(filters.ExecutionStatuses),
-		RunStatuses:       overviewFilterOptionResponses(filters.RunStatuses),
+		Teams:         overviewFilterOptionResponses(filters.Teams),
+		Statuses:      overviewFilterOptionResponses(filters.Statuses),
+		EmployeeTypes: overviewFilterOptionResponses(filters.EmployeeTypes),
+		Providers:     overviewFilterOptionResponses(filters.Providers),
+		RiskLevels:    overviewFilterOptionResponses(filters.RiskLevels),
+		RunStatuses:   overviewFilterOptionResponses(filters.RunStatuses),
 	}
 }
 

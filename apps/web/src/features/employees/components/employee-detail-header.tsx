@@ -4,6 +4,7 @@ import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
 import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
 import { employeeStatusLabel } from "@/lib/status-labels";
 import { EmployeeAvatar } from "../avatar";
+import { operationalStatusPresentation } from "../operational-status";
 import { providerDisplayName } from "../provider-label";
 
 type EmployeeDetailHeaderProps = {
@@ -41,6 +42,10 @@ export function EmployeeDetailHeader({
 }: EmployeeDetailHeaderProps) {
   const avatarAsset = avatarAssetFromMetadata(employee.metadata);
   const canDelete = Boolean(onDelete && employee.allowed_actions?.includes("employee.delete"));
+  // 运行态徽标:与运行总览/员工列表同源(operational_state),让详情页与其它视图口径一致。
+  const operationalStatus = employee.operational_state
+    ? operationalStatusPresentation(employee.operational_state.status)
+    : null;
 
   return (
     <div className="flex flex-col gap-4 rounded-v3-card border border-v3-line bg-v3-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
@@ -54,6 +59,9 @@ export function EmployeeDetailHeader({
             <StatusPill tone={statusTone[employee.status] ?? "mute"}>
               {employeeStatusLabel(employee.status)}
             </StatusPill>
+            {operationalStatus ? (
+              <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
+            ) : null}
           </div>
           <p className="mt-1 truncate text-[13px] text-v3-ink-2">
             数字员工身份 · Provider {providerDisplayName(employee.provider_type)} · 生效上下文与历史执行记录

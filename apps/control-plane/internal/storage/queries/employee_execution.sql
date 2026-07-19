@@ -1161,24 +1161,26 @@ WITH overview_args AS (
         NULLIF(BTRIM(sqlc.narg('status')::text), '') AS status,
         NULLIF(BTRIM(sqlc.narg('employee_type')::text), '') AS employee_type,
         NULLIF(BTRIM(sqlc.narg('provider_type')::text), '') AS provider_type,
-        sqlc.narg('runtime_node_id')::uuid AS runtime_node_id,
         NULLIF(BTRIM(sqlc.narg('risk_level')::text), '') AS risk_level,
-        NULLIF(BTRIM(sqlc.narg('execution_status')::text), '') AS execution_status,
         NULLIF(BTRIM(sqlc.narg('run_status')::text), '') AS run_status
 ),
-provider_capabilities AS (
-    SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
-        rc.tenant_id,
-        rc.runtime_node_id,
-        rc.provider_type,
-        rc.status,
-        rc.health_status,
-        rc.available
+-- 租户内当前具备在线可用 Runtime 能力的 provider 集合。员工不再绑定 Runtime
+-- (运行落点由项目派发时动态解析),就绪判据只看"租户内是否有任一在线节点提供该 provider"。
+available_provider_types AS (
+    SELECT DISTINCT rc.provider_type
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    JOIN runtime_nodes rn
+      ON rn.id = rc.runtime_node_id
+     AND rn.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
       AND rc.archived_at IS NULL
-    ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+      AND rc.available = true
+      AND rc.status = 'healthy'
+      AND rc.health_status = 'healthy'
+      AND rn.status = 'online'
+      AND rn.disabled_at IS NULL
+      AND rn.archived_at IS NULL
 ),
 latest_runs AS (
     SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
@@ -1218,32 +1220,13 @@ overview_rows AS (
         de.status AS employee_status,
         de.employee_type,
         de.risk_level,
-        COALESCE(dei.status, 'missing')::text AS execution_status,
-        dei.runtime_node_id,
-        rn.status AS runtime_status,
-        rn.disabled_at AS runtime_disabled_at,
-        rn.archived_at AS runtime_archived_at,
-        COALESCE(dei.provider_type, '')::text AS provider_type,
-        (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
-        COALESCE(pc.available, false)::boolean AS provider_available,
-        COALESCE(pc.status, '')::text AS provider_status,
-        COALESCE(pc.health_status, '')::text AS provider_health_status,
+        de.provider_type,
+        (de.provider_type IN (SELECT apt.provider_type FROM available_provider_types apt))::boolean AS tenant_provider_available,
         COALESCE(lr.status, 'none')::text AS run_status,
         ecs.effective_config_id,
         COALESCE(ecs.governance_status, 'missing')::text AS governance_status
     FROM digital_employees de
     CROSS JOIN overview_args args
-    LEFT JOIN digital_employee_execution_instances dei
-     ON dei.tenant_id = de.tenant_id
-     AND dei.digital_employee_id = de.id
-     AND dei.deleted_at IS NULL
-    LEFT JOIN runtime_nodes rn
-      ON rn.id = dei.runtime_node_id
-     AND rn.tenant_id = dei.tenant_id
-    LEFT JOIN provider_capabilities pc
-      ON pc.tenant_id = dei.tenant_id
-     AND pc.runtime_node_id = dei.runtime_node_id
-     AND pc.provider_type = dei.provider_type
     LEFT JOIN latest_runs lr
       ON lr.tenant_id = de.tenant_id
      AND lr.digital_employee_id = de.id
@@ -1267,78 +1250,41 @@ filtered_rows AS (
       AND (args.status IS NULL OR overview_rows.employee_status = args.status)
       AND (args.employee_type IS NULL OR overview_rows.employee_type = args.employee_type)
       AND (args.provider_type IS NULL OR overview_rows.provider_type = args.provider_type)
-      AND (args.runtime_node_id IS NULL OR overview_rows.runtime_node_id = args.runtime_node_id)
       AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
-      AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
       AND (args.run_status IS NULL OR overview_rows.run_status = args.run_status)
 )
 SELECT
     COUNT(*)::integer AS total_count,
     (COUNT(*) FILTER (
         WHERE employee_status IN ('ready', 'active')
-          AND execution_status IN ('ready', 'active')
           AND effective_config_id IS NOT NULL
-          AND runtime_node_id IS NOT NULL
-          AND runtime_status = 'online'
-          AND runtime_disabled_at IS NULL
-          AND runtime_archived_at IS NULL
-          AND agent_home_dir_available = true
           AND governance_status = 'approved'
-          AND provider_available = true
-          AND provider_status = 'healthy'
-          AND provider_health_status = 'healthy'
+          AND tenant_provider_available = true
     ))::integer AS runnable_count,
     (COUNT(*) FILTER (
         WHERE run_status IN ('queued', 'dispatching', 'running', 'cancelling')
     ))::integer AS running_count,
     (COUNT(*) FILTER (
-        WHERE execution_status IN ('missing', 'provisioning')
+        WHERE tenant_provider_available = false
     ))::integer AS waiting_runtime_count,
     (COUNT(*) FILTER (
         WHERE employee_status IN ('disabled', 'error')
-           OR execution_status IN ('disabled', 'error')
            OR run_status IN ('failed', 'timed_out')
-           OR (
-               runtime_node_id IS NOT NULL
-               AND (
-                   runtime_status <> 'online'
-                   OR runtime_disabled_at IS NOT NULL
-                   OR runtime_archived_at IS NOT NULL
-               )
-           )
-           OR (
-               provider_type <> ''
-               AND (
-                   provider_available = false
-                   OR provider_status <> 'healthy'
-                   OR provider_health_status <> 'healthy'
-               )
-           )
     ))::integer AS error_count,
     (COUNT(*) FILTER (
         WHERE risk_level IN ('high', 'critical')
     ))::integer AS high_risk_count,
     (COUNT(*) FILTER (
         WHERE employee_status IN ('ready', 'active')
-          AND execution_status IN ('ready', 'active')
           AND effective_config_id IS NOT NULL
-          AND runtime_node_id IS NOT NULL
-          AND runtime_status = 'online'
-          AND runtime_disabled_at IS NULL
-          AND runtime_archived_at IS NULL
-          AND agent_home_dir_available = true
           AND governance_status = 'approved'
-          AND provider_available = true
-          AND provider_status = 'healthy'
-          AND provider_health_status = 'healthy'
+          AND tenant_provider_available = true
           AND run_status NOT IN ('failed', 'timed_out')
     ))::integer AS ready_count,
     (COUNT(*) FILTER (
-        WHERE execution_status IN ('missing', 'provisioning')
-           OR runtime_node_id IS NULL
-           OR provider_type = ''
-           OR agent_home_dir_available = false
-    ))::integer AS pending_runtime_binding_count,
+        WHERE employee_status NOT IN ('ready', 'active')
+           OR governance_status <> 'approved'
+    ))::integer AS needs_configuration_count,
     (COUNT(*) FILTER (
         WHERE governance_status IN ('missing', 'pending_approval', 'stale')
     ))::integer AS pending_config_approval_count,
@@ -1359,13 +1305,28 @@ WITH overview_args AS (
         NULLIF(BTRIM(sqlc.narg('status')::text), '') AS status,
         NULLIF(BTRIM(sqlc.narg('employee_type')::text), '') AS employee_type,
         NULLIF(BTRIM(sqlc.narg('provider_type')::text), '') AS provider_type,
-        sqlc.narg('runtime_node_id')::uuid AS runtime_node_id,
         NULLIF(BTRIM(sqlc.narg('risk_level')::text), '') AS risk_level,
-        NULLIF(BTRIM(sqlc.narg('execution_status')::text), '') AS execution_status,
         NULLIF(BTRIM(sqlc.narg('run_status')::text), '') AS run_status,
         sqlc.narg('employee_ids')::uuid[] AS employee_ids,
         sqlc.arg('limit')::integer AS limit_value,
         sqlc.arg('offset')::integer AS offset_value
+),
+-- 租户内当前具备在线可用 Runtime 能力的 provider 集合(判据说明见 GetDigitalEmployeeOverviewSummary)。
+available_provider_types AS (
+    SELECT DISTINCT rc.provider_type
+    FROM runtime_capabilities rc
+    JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    JOIN runtime_nodes rn
+      ON rn.id = rc.runtime_node_id
+     AND rn.tenant_id = rc.tenant_id
+    WHERE rc.capability_type = 'provider'
+      AND rc.archived_at IS NULL
+      AND rc.available = true
+      AND rc.status = 'healthy'
+      AND rc.health_status = 'healthy'
+      AND rn.status = 'online'
+      AND rn.disabled_at IS NULL
+      AND rn.archived_at IS NULL
 ),
 provider_capabilities AS (
     SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
@@ -1622,6 +1583,8 @@ overview_rows AS (
         rn.disabled_at AS runtime_disabled_at,
         rn.archived_at AS runtime_archived_at,
         COALESCE(dei.provider_type, '')::text AS provider_type,
+        de.provider_type AS identity_provider_type,
+        (de.provider_type IN (SELECT apt.provider_type FROM available_provider_types apt))::boolean AS tenant_provider_available,
         COALESCE(pc.available, false)::boolean AS provider_available,
         COALESCE(pc.status, 'unknown')::text AS provider_status,
         COALESCE(pc.health_status, 'unknown')::text AS health_status,
@@ -1725,10 +1688,8 @@ filtered_rows AS (
       AND (args.team_id IS NULL OR overview_rows.team_id = args.team_id)
       AND (args.status IS NULL OR overview_rows.status = args.status)
       AND (args.employee_type IS NULL OR overview_rows.employee_type = args.employee_type)
-      AND (args.provider_type IS NULL OR overview_rows.provider_type = args.provider_type)
-      AND (args.runtime_node_id IS NULL OR overview_rows.runtime_node_id = args.runtime_node_id)
+      AND (args.provider_type IS NULL OR overview_rows.identity_provider_type = args.provider_type)
       AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
-      AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
       AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
       -- operational_status 过滤：计算态由 Go 状态机在 operational facts 上裁决后，以命中 ID 集合下推。
       AND (args.employee_ids IS NULL OR overview_rows.id = ANY(args.employee_ids))
@@ -1880,6 +1841,8 @@ SELECT
     pr.runtime_disabled_at,
     pr.runtime_archived_at,
     pr.provider_type,
+    pr.identity_provider_type,
+    pr.tenant_provider_available,
     pr.provider_available,
     pr.provider_status,
     pr.health_status,
@@ -1938,24 +1901,28 @@ WITH overview_args AS (
         NULLIF(BTRIM(sqlc.narg('status')::text), '') AS status,
         NULLIF(BTRIM(sqlc.narg('employee_type')::text), '') AS employee_type,
         NULLIF(BTRIM(sqlc.narg('provider_type')::text), '') AS provider_type,
-        sqlc.narg('runtime_node_id')::uuid AS runtime_node_id,
         NULLIF(BTRIM(sqlc.narg('risk_level')::text), '') AS risk_level,
-        NULLIF(BTRIM(sqlc.narg('execution_status')::text), '') AS execution_status,
-        NULLIF(BTRIM(sqlc.narg('run_status')::text), '') AS run_status
+        NULLIF(BTRIM(sqlc.narg('run_status')::text), '') AS run_status,
+        -- 跨视图一致性(P2 3.3a):按单个员工 id 收敛,让员工详情页复用与总览同源的
+        -- operational_state 裁决(而非前端本地 hasActiveRun)。总览调用传 NULL 不过滤。
+        sqlc.narg('employee_id')::uuid AS employee_id
 ),
-provider_capabilities AS (
-    SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
-        rc.tenant_id,
-        rc.runtime_node_id,
-        rc.provider_type,
-        rc.status,
-        rc.health_status,
-        rc.available
+-- 租户内当前具备在线可用 Runtime 能力的 provider 集合(判据说明见 GetDigitalEmployeeOverviewSummary)。
+available_provider_types AS (
+    SELECT DISTINCT rc.provider_type
     FROM runtime_capabilities rc
     JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    JOIN runtime_nodes rn
+      ON rn.id = rc.runtime_node_id
+     AND rn.tenant_id = rc.tenant_id
     WHERE rc.capability_type = 'provider'
       AND rc.archived_at IS NULL
-    ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+      AND rc.available = true
+      AND rc.status = 'healthy'
+      AND rc.health_status = 'healthy'
+      AND rn.status = 'online'
+      AND rn.disabled_at IS NULL
+      AND rn.archived_at IS NULL
 ),
 latest_runs AS (
     SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
@@ -2070,17 +2037,8 @@ overview_rows AS (
         de.status,
         de.employee_type,
         de.risk_level,
-        COALESCE(dei.status, 'missing')::text AS execution_status,
-        dei.runtime_node_id,
-        COALESCE(rn.node_id, '')::text AS node_id,
-        COALESCE(rn.status, '')::text AS runtime_status,
-        rn.disabled_at AS runtime_disabled_at,
-        rn.archived_at AS runtime_archived_at,
-        COALESCE(dei.provider_type, '')::text AS provider_type,
-        (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
-        COALESCE(pc.available, false)::boolean AS provider_available,
-        COALESCE(pc.status, '')::text AS provider_status,
-        COALESCE(pc.health_status, '')::text AS health_status,
+        de.provider_type,
+        (de.provider_type IN (SELECT apt.provider_type FROM available_provider_types apt))::boolean AS tenant_provider_available,
         COALESCE(lr.status, 'none')::text AS latest_run_status,
         COALESCE(lr.error_family, '')::text AS latest_run_error_family,
         COALESCE(lr.error_code, '')::text AS latest_run_error_code,
@@ -2094,17 +2052,6 @@ overview_rows AS (
         coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure
     FROM digital_employees de
     CROSS JOIN overview_args args
-    LEFT JOIN digital_employee_execution_instances dei
-     ON dei.tenant_id = de.tenant_id
-     AND dei.digital_employee_id = de.id
-     AND dei.deleted_at IS NULL
-    LEFT JOIN runtime_nodes rn
-      ON rn.id = dei.runtime_node_id
-     AND rn.tenant_id = dei.tenant_id
-    LEFT JOIN provider_capabilities pc
-      ON pc.tenant_id = dei.tenant_id
-     AND pc.runtime_node_id = dei.runtime_node_id
-     AND pc.provider_type = dei.provider_type
     LEFT JOIN latest_runs lr
       ON lr.tenant_id = de.tenant_id
      AND lr.digital_employee_id = de.id
@@ -2131,25 +2078,15 @@ filtered_rows AS (
       AND (args.status IS NULL OR overview_rows.status = args.status)
       AND (args.employee_type IS NULL OR overview_rows.employee_type = args.employee_type)
       AND (args.provider_type IS NULL OR overview_rows.provider_type = args.provider_type)
-      AND (args.runtime_node_id IS NULL OR overview_rows.runtime_node_id = args.runtime_node_id)
       AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
-      AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
       AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
+      AND (args.employee_id IS NULL OR overview_rows.id = args.employee_id)
 )
 SELECT
     id,
     status,
-    execution_status,
-    runtime_node_id,
-    node_id,
-    runtime_status,
-    runtime_disabled_at,
-    runtime_archived_at,
     provider_type,
-    provider_available,
-    provider_status,
-    health_status,
-    agent_home_dir_available,
+    tenant_provider_available,
     latest_run_status,
     latest_run_error_family,
     latest_run_error_code,
@@ -2187,10 +2124,7 @@ employee_rows AS (
         de.employee_type,
         de.status,
         de.risk_level,
-        COALESCE(dei.provider_type, '')::text AS provider_type,
-        dei.runtime_node_id,
-        COALESCE(rn.name, rn.node_id, '')::text AS runtime_name,
-        COALESCE(dei.status, 'missing')::text AS execution_status,
+        de.provider_type,
         COALESCE(lr.status, 'none')::text AS run_status
     FROM digital_employees de
     CROSS JOIN overview_args args
@@ -2198,13 +2132,6 @@ employee_rows AS (
       ON tt.id = de.team_id
      AND tt.tenant_id = de.tenant_id
      AND tt.deleted_at IS NULL
-    LEFT JOIN digital_employee_execution_instances dei
-      ON dei.tenant_id = de.tenant_id
-     AND dei.digital_employee_id = de.id
-     AND dei.deleted_at IS NULL
-    LEFT JOIN runtime_nodes rn
-      ON rn.id = dei.runtime_node_id
-     AND rn.tenant_id = dei.tenant_id
     LEFT JOIN latest_runs lr
       ON lr.tenant_id = de.tenant_id
      AND lr.digital_employee_id = de.id
@@ -2250,29 +2177,11 @@ FROM (
     UNION ALL
 
     SELECT DISTINCT
-        'runtime_node'::text AS filter_type,
-        COALESCE(runtime_node_id::text, '')::text AS value,
-        runtime_name AS label
-    FROM employee_rows
-    WHERE runtime_node_id IS NOT NULL
-
-    UNION ALL
-
-    SELECT DISTINCT
         'risk_level'::text AS filter_type,
         risk_level::text AS value,
         risk_level::text AS label
     FROM employee_rows
     WHERE NULLIF(risk_level, '') IS NOT NULL
-
-    UNION ALL
-
-    SELECT DISTINCT
-        'execution_status'::text AS filter_type,
-        execution_status AS value,
-        execution_status AS label
-    FROM employee_rows
-    WHERE NULLIF(execution_status, '') IS NOT NULL
 
     UNION ALL
 

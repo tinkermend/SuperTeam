@@ -222,6 +222,9 @@ type DigitalEmployee struct {
 	ArchivedAt            *time.Time
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	// OperationalState 是与运行总览/员工列表完全同源的运行态裁决(跨视图一致性 P2 3.3a):
+	// 详情页据此判断"是否忙碌",消除此前前端本地 hasActiveRun 的第三套口径。仅单员工读路径填充。
+	OperationalState *DigitalEmployeeOperationalState
 }
 
 type EnvironmentVariableStatus string
@@ -602,22 +605,22 @@ func (s OverviewRunStatus) IsValid() bool {
 type WorkbenchStatus string
 
 const (
-	WorkbenchStatusReady          WorkbenchStatus = "ready"
-	WorkbenchStatusPendingBinding WorkbenchStatus = "pending_binding"
-	WorkbenchStatusError          WorkbenchStatus = "error"
+	WorkbenchStatusReady WorkbenchStatus = "ready"
+	// WorkbenchStatusNeedsConfiguration: 身份未就绪或配置未审批生效。
+	// Runtime 由项目派发时动态解析,不参与工作台判定(员工级 Runtime 绑定已废弃)。
+	WorkbenchStatusNeedsConfiguration WorkbenchStatus = "needs_configuration"
+	WorkbenchStatusError              WorkbenchStatus = "error"
 )
 
 type GetDigitalEmployeeOverviewRequest struct {
-	TenantID        uuid.UUID
-	Query           string
-	TeamID          *uuid.UUID
-	Status          DigitalEmployeeStatus
-	EmployeeType    string
-	ProviderType    string
-	RuntimeNodeID   *uuid.UUID
-	RiskLevel       string
-	ExecutionStatus OverviewExecutionStatus
-	RunStatus       OverviewRunStatus
+	TenantID     uuid.UUID
+	Query        string
+	TeamID       *uuid.UUID
+	Status       DigitalEmployeeStatus
+	EmployeeType string
+	ProviderType string
+	RiskLevel    string
+	RunStatus    OverviewRunStatus
 	// OperationalStatus 按计算态运行状态过滤（如轮播只拉非空闲员工）。
 	// 状态在 operational facts 上由 Go 状态机裁决后回填为 ID 过滤条件，非 SQL 直接判定。
 	OperationalStatus []DigitalEmployeeOperationalStatus
@@ -641,16 +644,16 @@ type DigitalEmployeeOverviewSummary struct {
 	ErrorCount                 int32
 	HighRiskCount              int32
 	ReadyCount                 int32
-	PendingRuntimeBindingCount int32
+	NeedsConfigurationCount    int32
 	PendingConfigApprovalCount int32
 	FailedRecentRunCount       int32
 	OperationalStatusCounts    map[DigitalEmployeeOperationalStatus]int32
 }
 
 type DigitalEmployeeOverviewQueueSummary struct {
-	PendingRuntimeBindingCount int32
-	StaleConfigCount           int32
-	FailedRecentRunCount       int32
+	NeedsConfigurationCount int32
+	StaleConfigCount        int32
+	FailedRecentRunCount    int32
 }
 
 type DigitalEmployeeOverviewItem struct {
@@ -704,12 +707,15 @@ type DigitalEmployeeIdentitySummary struct {
 	OwnerDisplayName  string
 	EmployeeType      string
 	EmployeeTypeLabel string
-	Name              string
-	Role              string
-	Description       *string
-	Status            DigitalEmployeeStatus
-	RiskLevel         string
-	AvatarAsset       *DigitalEmployeeAvatarAsset
+	// ProviderType 是身份级主 Provider 类型(如 claude/codex/opencode),
+	// 与运行期落点无关;运行落点见 ExecutionSummary(遗留员工级绑定)。
+	ProviderType string
+	Name         string
+	Role         string
+	Description  *string
+	Status       DigitalEmployeeStatus
+	RiskLevel    string
+	AvatarAsset  *DigitalEmployeeAvatarAsset
 }
 
 type DigitalEmployeeExecutionSummary struct {
@@ -767,14 +773,12 @@ type DigitalEmployeeRecentEventSummary struct {
 }
 
 type DigitalEmployeeOverviewFilters struct {
-	Teams             []OverviewFilterOption
-	Statuses          []OverviewFilterOption
-	EmployeeTypes     []OverviewFilterOption
-	Providers         []OverviewFilterOption
-	RuntimeNodes      []OverviewFilterOption
-	RiskLevels        []OverviewFilterOption
-	ExecutionStatuses []OverviewFilterOption
-	RunStatuses       []OverviewFilterOption
+	Teams         []OverviewFilterOption
+	Statuses      []OverviewFilterOption
+	EmployeeTypes []OverviewFilterOption
+	Providers     []OverviewFilterOption
+	RiskLevels    []OverviewFilterOption
+	RunStatuses   []OverviewFilterOption
 }
 
 type OverviewFilterOption struct {

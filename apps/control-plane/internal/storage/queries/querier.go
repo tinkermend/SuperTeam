@@ -213,6 +213,8 @@ type Querier interface {
 	GetDigitalEmployeeExecutionInstance(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceByEmployeeIDParams) (DigitalEmployeeExecutionInstance, error)
 	GetDigitalEmployeeForDelete(ctx context.Context, arg GetDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
+	// 租户内当前具备在线可用 Runtime 能力的 provider 集合。员工不再绑定 Runtime
+	// (运行落点由项目派发时动态解析),就绪判据只看"租户内是否有任一在线节点提供该 provider"。
 	GetDigitalEmployeeOverviewSummary(ctx context.Context, arg GetDigitalEmployeeOverviewSummaryParams) (GetDigitalEmployeeOverviewSummaryRow, error)
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (GetDigitalEmployeeRunRow, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
@@ -363,6 +365,7 @@ type Querier interface {
 	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
 	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
+	// 租户内当前具备在线可用 Runtime 能力的 provider 集合(判据说明见 GetDigitalEmployeeOverviewSummary)。
 	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
 	// config revision JSON 不再承载 mcp_servers 声明)。
 	// 员工级人工等待判据(2026-07-19 收窄):任务上任一未决决策请求都计入,不再按
@@ -374,6 +377,7 @@ type Querier interface {
 	// 显示"正在 X 项目做 Y 任务"并深链——替代前端从 latest_run(task_runs 另一数据源)+
 	// project_summary 聚合的启发式拼接(可能指向不同的工作)。多条时取最近更新的一条。
 	ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error)
+	// 租户内当前具备在线可用 Runtime 能力的 provider 集合(判据说明见 GetDigitalEmployeeOverviewSummary)。
 	// 员工级人工等待判据(2026-07-19 收窄):任务上任一未决决策请求都计入,不再按
 	// 决策类型死词表('task_failure_recovery','route_review'——这两个字符串与实际
 	// 创建的类型早已脱节,导致这一腿永远不触发)过滤;唯一排除 project_acceptance,
