@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/employee"
@@ -1887,6 +1888,10 @@ func (s *routeEmployeeService) BindExecutionInstance(ctx context.Context, req em
 	s.bindCalled = true
 	s.bindReq = req
 	return nil, fmt.Errorf("%w: digital employees are not runtime-bound; bind runtime nodes to projects and dispatch project tasks instead", employee.ErrInvalidInput)
+}
+
+func (s *routeEmployeeService) SubmitPermissionChange(ctx context.Context, req employee.SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error) {
+	return nil, employee.ErrPermissionApprovalNotConfigured
 }
 
 func (s *routeEmployeeService) CreateConfigRevision(ctx context.Context, req employee.CreateDigitalEmployeeConfigRevisionRequest) (*employee.DigitalEmployeeConfigRevision, error) {

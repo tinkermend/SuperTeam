@@ -3727,6 +3727,57 @@ func (q *Queries) UpdateDigitalEmployeeExecutionInstanceStatus(ctx context.Conte
 	return i, err
 }
 
+const UpdateDigitalEmployeeRolePermission = `-- name: UpdateDigitalEmployeeRolePermission :one
+UPDATE digital_employees
+SET role = $1::varchar,
+    permission_policy = COALESCE($2::jsonb, '{}'::jsonb),
+    updated_at = NOW()
+WHERE id = $3::uuid
+  AND tenant_id = $4::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
+`
+
+type UpdateDigitalEmployeeRolePermissionParams struct {
+	Role             string    `json:"role"`
+	PermissionPolicy []byte    `json:"permission_policy"`
+	ID               uuid.UUID `json:"id"`
+	TenantID         uuid.UUID `json:"tenant_id"`
+}
+
+// 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
+// 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。
+func (q *Queries) UpdateDigitalEmployeeRolePermission(ctx context.Context, arg UpdateDigitalEmployeeRolePermissionParams) (DigitalEmployee, error) {
+	row := q.db.QueryRow(ctx, UpdateDigitalEmployeeRolePermission,
+		arg.Role,
+		arg.PermissionPolicy,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i DigitalEmployee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Role,
+		&i.Description,
+		&i.Status,
+		&i.PermissionPolicy,
+		&i.RiskLevel,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.EmployeeType,
+		&i.ProviderType,
+	)
+	return i, err
+}
+
 const UpdateDigitalEmployeeStatus = `-- name: UpdateDigitalEmployeeStatus :one
 UPDATE digital_employees
 SET status = $1::varchar,

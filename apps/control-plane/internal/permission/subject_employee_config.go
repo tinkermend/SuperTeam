@@ -23,12 +23,14 @@ var ErrConfigActivatorNotReady = errors.New(
 
 // ActivateConfigRevisionInput is the apply-seam contract (§4.4). The employee
 // domain owns the implementation: draft→active + role/permission 写回员工行 + 审计,
-// idempotent.
+// idempotent. ContextPayload 透传审批请求承载的 target role/permission_policy(方案2:权限变更
+// 不进 config_revision,目标值随审批请求承载),activator 从中取值写回员工行。
 type ActivateConfigRevisionInput struct {
-	TenantID    uuid.UUID
-	EmployeeID  uuid.UUID
-	RevisionID  uuid.UUID
-	ActivatedBy uuid.UUID
+	TenantID       uuid.UUID
+	EmployeeID     uuid.UUID
+	RevisionID     uuid.UUID
+	ActivatedBy    uuid.UUID
+	ContextPayload map[string]any
 }
 
 // ConfigRevisionActivator is implemented by the employee domain (employee-config
@@ -63,9 +65,10 @@ func (s *employeeConfigSubject) Apply(ctx context.Context, in ApplyInput) error 
 	}
 	employeeID, _ := uuidFromPayload(in.Request.ContextPayload, "employee_id")
 	return s.activator.ActivateConfigRevision(ctx, ActivateConfigRevisionInput{
-		TenantID:    in.Request.TenantID,
-		EmployeeID:  employeeID,
-		RevisionID:  revisionID,
-		ActivatedBy: in.DecidedBy,
+		TenantID:       in.Request.TenantID,
+		EmployeeID:     employeeID,
+		RevisionID:     revisionID,
+		ActivatedBy:    in.DecidedBy,
+		ContextPayload: in.Request.ContextPayload,
 	})
 }

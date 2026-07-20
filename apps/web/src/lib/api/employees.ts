@@ -894,6 +894,36 @@ export function createDigitalEmployeeConfigRevision(
   );
 }
 
+export type SubmitPermissionChangeInput = {
+  /** 不改 role 时省略。 */
+  role?: string;
+  /** 不改 permission_policy 时省略;形状 {grants?: string[], allowed_actions?: string[]}。 */
+  permission_policy?: Record<string, unknown>;
+};
+
+export type SubmitPermissionChangeResponse = {
+  id: string;
+  resource_type: string;
+  status: string;
+  category: string;
+  target_user_id: string;
+};
+
+/** 提交 role/permission_policy 治理变更 → 产生权限中心审批请求,批准后写回员工行。 */
+export function submitEmployeePermissionChange(
+  options: ApiClientOptions,
+  employeeId: string,
+  input: SubmitPermissionChangeInput,
+): Promise<SubmitPermissionChangeResponse> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  return postJson<SubmitPermissionChangeResponse>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/permission-changes`,
+    input,
+    "submit employee permission change",
+  );
+}
+
 export function createDigitalEmployeeRun(
   options: ApiClientOptions,
   employeeId: string,

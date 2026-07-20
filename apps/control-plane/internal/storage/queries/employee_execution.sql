@@ -117,6 +117,18 @@ WHERE id = sqlc.arg('id')::uuid
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: UpdateDigitalEmployeeRolePermission :one
+-- 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
+-- 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。
+UPDATE digital_employees
+SET role = sqlc.arg('role')::varchar,
+    permission_policy = COALESCE(sqlc.arg('permission_policy')::jsonb, '{}'::jsonb),
+    updated_at = NOW()
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
+RETURNING *;
+
 -- name: ListDigitalEmployeeDeleteRunBlockers :many
 SELECT
     'run'::text AS blocker_type,

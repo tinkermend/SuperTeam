@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pencil, Save, ShieldCheck, X } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Eye, Pencil, Save, Send, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Main } from "@/components/layout/main";
 import {
@@ -11,12 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployeeConfigRevision,
   getDigitalEmployee,
+  submitEmployeePermissionChange,
   type CapabilityBindings,
   type CreateDigitalEmployeeConfigRevisionInput,
   type DigitalEmployee,
+  type SubmitPermissionChangeInput,
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { riskLevelLabel, statusLabel } from "@/lib/status-labels";
@@ -257,7 +261,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
               <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
             </section>
 
-            <PermissionTierSection employee={employee.data} />
+            <PermissionTierSection apiOptions={apiOptions} employee={employee.data} />
           </>
         ) : null}
       </Main>
@@ -307,43 +311,152 @@ function TierHeading({ title, hint }: { title: string; hint: string }) {
   );
 }
 
-function PermissionTierSection({ employee }: { employee: DigitalEmployee }) {
+function PermissionTierSection({
+  apiOptions,
+  employee,
+}: {
+  apiOptions: ApiClientOptions;
+  employee: DigitalEmployee;
+}) {
+  const queryClient = useQueryClient();
   const permissionPolicy = employee.permission_policy ?? {};
-  const grants = stringArray(permissionPolicy.grants);
-  const allowedActions = stringArray((permissionPolicy as Record<string, unknown>).allowed_actions);
+  const currentGrants = stringArray(permissionPolicy.grants);
+  const currentAllowedActions = stringArray(
+    (permissionPolicy as Record<string, unknown>).allowed_actions,
+  );
+
+  const [role, setRole] = useState(employee.role ?? "");
+  const [grants, setGrants] = useState<string[]>(currentGrants);
+  const [allowedActions, setAllowedActions] = useState<string[]>(currentAllowedActions);
+  const [dirty, setDirty] = useState(false);
+  const [hydratedEmployeeId, setHydratedEmployeeId] = useState(employee.id);
+
+  // 员工切换/服务端数据刷新后重水合(与即时层同思路,但避免覆盖在编辑内容)。
+  useEffect(() => {
+    if (hydratedEmployeeId === employee.id && dirty) return;
+    setRole(employee.role ?? "");
+    setGrants(stringArray((employee.permission_policy ?? {}).grants));
+    setAllowedActions(
+      stringArray(((employee.permission_policy ?? {}) as Record<string, unknown>).allowed_actions),
+    );
+    setDirty(false);
+    setHydratedEmployeeId(employee.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee.id, employee.role, employee.permission_policy]);
+
+  const submitChange = useMutation({
+    mutationFn: (input: SubmitPermissionChangeInput) =>
+      submitEmployeePermissionChange(apiOptions, employee.id, input),
+    onSuccess: () => {
+      setDirty(false);
+      queryClient.invalidateQueries({ queryKey: ["digital-employee", employee.id] });
+    },
+  });
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const input: SubmitPermissionChangeInput = {};
+    if (role.trim() && role.trim() !== employee.role) {
+      input.role = role.trim();
+    }
+    const policyChanged =
+      !sameStringArray(grants, currentGrants) ||
+      !sameStringArray(allowedActions, currentAllowedActions);
+    if (policyChanged) {
+      input.permission_policy = {
+        ...permissionPolicy,
+        grants,
+        allowed_actions: allowedActions,
+      };
+    }
+    if (!input.role && !input.permission_policy) return;
+    submitChange.mutate(input);
+  };
 
   return (
     <section className="space-y-3">
       <TierHeading title="权限审批配置" hint="变更需权限中心审批，批准后生效" />
-      <SoftCard className="space-y-4 p-5">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-v3-ink-2" />
-          <span className="text-sm font-semibold text-v3-ink">角色与权限</span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ReadonlyField label="角色（role）" value={employee.role || "未设置"} />
-          <ReadonlyField label="资源授权（grants）" value={grants.length ? grants.join("、") : "无"} />
-        </div>
-        <ReadonlyField
-          label="动作白名单（allowed_actions）"
-          value={allowedActions.length ? allowedActions.join("、") : "未收敛（走 provider 沙箱默认）"}
-        />
-        <p className="text-xs text-v3-ink-3">
-          角色 / 权限的编辑与「提交权限变更 → 权限中心审批 → 激活写回」链路，随后端阶段（阶段 4）接入；
-          当前为只读呈现。
-        </p>
-      </SoftCard>
+      <form onSubmit={handleSubmit}>
+        <SoftCard className="space-y-4 p-5">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-4 text-v3-ink-2" />
+            <span className="text-sm font-semibold text-v3-ink">角色与权限</span>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="permission-role" className="text-xs text-v3-ink-3">
+              角色（role）· 当前：{employee.role || "未设置"}
+            </Label>
+            <Input
+              id="permission-role"
+              value={role}
+              onChange={(event) => {
+                setRole(event.target.value);
+                setDirty(true);
+              }}
+            />
+          </div>
+          <ChipsEditor
+            label="资源授权（grants）· scope:resource 形式"
+            placeholder="例如 database.read:dev_db，回车添加"
+            values={grants}
+            onChange={(next) => {
+              setGrants(next);
+              setDirty(true);
+            }}
+          />
+          <ChipsEditor
+            label="动作白名单（allowed_actions）· 员工可执行动作上限，留空不收敛"
+            placeholder="例如 code.write，回车添加"
+            values={allowedActions}
+            onChange={(next) => {
+              setAllowedActions(next);
+              setDirty(true);
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={!dirty || submitChange.isPending}>
+              <Send />
+              提交权限变更
+            </Button>
+            {submitChange.isSuccess ? (
+              <p className="text-sm text-green-600">
+                已提交，待权限中心审批。
+                <Link className="ml-1 underline" to="/permissions">
+                  去权限中心
+                </Link>
+              </p>
+            ) : null}
+            {submitChange.isError ? (
+              <p className="text-sm text-destructive">
+                {submitPermissionErrorMessage(submitChange.error)}
+              </p>
+            ) : null}
+          </div>
+          <p className="text-xs text-v3-ink-3">
+            提交后生成权限审批请求，由团队审批人在权限中心批准后写回生效；员工有进行中工作时会被拒绝提交。
+          </p>
+        </SoftCard>
+      </form>
     </section>
   );
 }
 
-function ReadonlyField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[11px] text-v3-ink-3">{label}</p>
-      <p className="break-words text-sm font-medium text-v3-ink">{value}</p>
-    </div>
-  );
+function sameStringArray(a: string[], b: string[]) {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function submitPermissionErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("active work")) {
+    return "员工当前有进行中的工作，请等待完成后再提交权限变更。";
+  }
+  if (message.includes("not configured")) {
+    return "权限审批链路未配置，请联系管理员。";
+  }
+  if (message.includes("team")) {
+    return "员工需先归属团队才能提交权限变更。";
+  }
+  return "提交失败，请稍后重试。";
 }
 
 function ChipsEditor({

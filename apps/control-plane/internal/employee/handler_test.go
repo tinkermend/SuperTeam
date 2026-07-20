@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -116,6 +117,10 @@ func (s *fakeTemplateHandlerService) BindExecutionInstance(ctx context.Context, 
 }
 
 func (s *fakeTemplateHandlerService) CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error) {
+	return nil, nil
+}
+
+func (s *fakeTemplateHandlerService) SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error) {
 	return nil, nil
 }
 

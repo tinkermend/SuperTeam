@@ -620,6 +620,9 @@ type Querier interface {
 	TryAcquireRuntimeNodeSlot(ctx context.Context, arg TryAcquireRuntimeNodeSlotParams) (RuntimeNode, error)
 	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
 	UpdateDigitalEmployeeExecutionInstanceStatus(ctx context.Context, arg UpdateDigitalEmployeeExecutionInstanceStatusParams) (DigitalEmployeeExecutionInstance, error)
+	// 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
+	// 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。
+	UpdateDigitalEmployeeRolePermission(ctx context.Context, arg UpdateDigitalEmployeeRolePermissionParams) (DigitalEmployee, error)
 	UpdateDigitalEmployeeRunStatus(ctx context.Context, arg UpdateDigitalEmployeeRunStatusParams) (TaskRun, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDigitalEmployeeStatusParams) (DigitalEmployee, error)
 	UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployeeTemplateParams) (DigitalEmployeeTemplate, error)

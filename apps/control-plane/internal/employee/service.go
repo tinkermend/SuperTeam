@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/approval"
+	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/systemconfig"
 )
@@ -19,11 +21,23 @@ type Service struct {
 	repository   Repository
 	envCodec     *EnvironmentValueCodec
 	systemConfig systemconfig.Reader
+	// 权限审批接缝(方案2):提交治理变更产生 category=permission 审批请求;
+	// 批准时权限中心调 ActivateConfigRevision 写回员工行。均为可选,未注入(测试)时提交即返回 ErrPermissionApprovalNotConfigured。
+	approvals *approval.Service
+	router    *permission.ApproverRouter
 }
 
 // SetSystemConfigReader 注入配置中心读取器；未注入（测试）时使用注册表默认值。
 func (s *Service) SetSystemConfigReader(reader systemconfig.Reader) {
 	s.systemConfig = reader
+}
+
+// SetPermissionApprovalDependencies 注入权限审批接缝:产生 role/permission 治理审批请求(approvals)
+// + 解析团队审批人(router)。由 app.go 在 approvalService/permissionRouter 构造后调用(setter 注入,
+// 与 SetSystemConfigReader 同模式,避免构造顺序耦合)。
+func (s *Service) SetPermissionApprovalDependencies(approvals *approval.Service, router *permission.ApproverRouter) {
+	s.approvals = approvals
+	s.router = router
 }
 
 // maxDigitalEmployeesPerTeam 单团队在册数字员工上限（配置中心 employee.max_per_team）。
@@ -40,6 +54,20 @@ var supportedDigitalEmployeeProviderTypes = map[string]struct{}{
 	"claude-code": {},
 	"opencode":    {},
 	"codex":       {},
+}
+
+// supportedDigitalEmployeeRoles 收敛提交治理变更时可接受的 role(防任意 role)。
+// TODO: 以后改为从 employee type 注册表的 DefaultRole 动态取,当前封闭集合是务实过渡。
+var supportedDigitalEmployeeRoles = map[string]struct{}{
+	"requirements_analyst": {},
+	"backend_engineer":     {},
+	"frontend_engineer":    {},
+	"qa_engineer":          {},
+	"code_reviewer":        {},
+	"devops_engineer":      {},
+	"postgres_operator":    {},
+	"finance_reviewer":     {},
+	"e2e-capability-probe": {},
 }
 
 func NewService(repository Repository) (*Service, error) {
@@ -1257,6 +1285,183 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 		return nil, txErr
 	}
 	return configRevisionFromRecord(record), nil
+}
+
+// SubmitPermissionChange 提交 role/permission_policy 治理变更:校验→解析审批人→产生 category=permission
+// 审批请求(目标值随 ContextPayload 承载)。批准时权限中心调 ActivateConfigRevision 写回员工行。
+// 方案2:权限变更不进 config_revision;目标值由审批请求承载。
+func (s *Service) SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error) {
+	if s.approvals == nil || s.router == nil {
+		return nil, ErrPermissionApprovalNotConfigured
+	}
+	if req.TenantID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and digital_employee_id are required", ErrInvalidInput)
+	}
+	if req.Role == nil && req.PermissionPolicy == nil {
+		return nil, ErrPermissionChangeEmpty
+	}
+	if req.Role != nil {
+		if trimmed := strings.TrimSpace(*req.Role); trimmed == "" {
+			return nil, fmt.Errorf("%w: role must not be blank", ErrInvalidInput)
+		} else if !s.isValidRole(trimmed) {
+			return nil, fmt.Errorf("%w: role not recognized", ErrInvalidInput)
+		}
+	}
+
+	employee, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, fmt.Errorf("get digital employee: %w", err)
+	}
+	if employee.TeamID == nil {
+		return nil, fmt.Errorf("%w: employee must belong to a team before permission change", ErrInvalidInput)
+	}
+	// 提交即拒护栏(务实版):员工当前有进行中工作,role 变更影响在役执行,拒绝提交。
+	// 完整在役项目 SoD/role_independence 校验需跨 project 域,作为后续独立项。
+	if busy, _ := s.employeeBusy(ctx, req.TenantID, req.DigitalEmployeeID); busy {
+		return nil, ErrPermissionChangeBusy
+	}
+
+	approver, err := s.router.ResolveTeamApprover(ctx, req.TenantID, *employee.TeamID, req.RequesterUserID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve team approver: %w", err)
+	}
+
+	// 目标值 + current/after diff 随 ContextPayload 承载,供权限中心弹窗渲染 + 批准时写回。
+	payload := map[string]any{
+		"employee_id":         req.DigitalEmployeeID.String(),
+		"employee_name":       employee.Name,
+		"current_role":        employee.Role,
+		"requested_by":        req.RequesterUserID.String(),
+	}
+	if req.Role != nil {
+		payload["target_role"] = *req.Role
+	}
+	if req.PermissionPolicy != nil {
+		payload["target_permission_policy"] = req.PermissionPolicy
+		// 保留当前 permission_policy 供 diff 渲染(map 克隆避免引用)。
+		payload["current_permission_policy"] = cloneMap(employee.PermissionPolicy)
+	}
+
+	risk := "high"
+	summary := permissionChangeSummary(employee.Role, employee.Name, req.Role, req.PermissionPolicy != nil)
+	return s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       req.TenantID,
+		ResourceType:   permission.ResourceTypeEmployeeConfigRevision,
+		ResourceID:     req.DigitalEmployeeID,
+		RequesterType:  "human_user",
+		RequesterID:    &req.RequesterUserID,
+		TargetUserID:   approver,
+		DecisionType:   "approved",
+		Title:          fmt.Sprintf("审批数字员工 %s 的权限变更", employee.Name),
+		Summary:        summary,
+		RiskLevel:      risk,
+		Category:       approval.ApprovalCategoryPermission,
+		ContextPayload: payload,
+	})
+}
+
+// ActivateConfigRevision 实现权限中心接缝 permission.ConfigRevisionActivator:
+// 权限审批批准时调用,把 ContextPayload 承载的目标 role/permission_policy 写回员工行(幂等)。
+func (s *Service) ActivateConfigRevision(ctx context.Context, in permission.ActivateConfigRevisionInput) error {
+	if in.TenantID == uuid.Nil || in.EmployeeID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id and employee_id are required", ErrInvalidInput)
+	}
+	role, hasRole := stringFromPayload(in.ContextPayload, "target_role")
+	permissionPolicy, hasPolicy := mapFromPayload(in.ContextPayload, "target_permission_policy")
+	if !hasRole && !hasPolicy {
+		return fmt.Errorf("%w: permission approval payload carries no target role/policy", ErrInvalidInput)
+	}
+	// 单侧变更时,另一侧从员工行回填,避免把未变更侧覆盖为空(UPDATE 两列都写)。
+	targetRole := role
+	if !hasRole || !hasPolicy {
+		employee, err := s.repository.GetDigitalEmployee(ctx, in.TenantID, in.EmployeeID)
+		if err != nil {
+			return fmt.Errorf("get digital employee for activation: %w", err)
+		}
+		if !hasRole {
+			targetRole = employee.Role
+		}
+		if !hasPolicy {
+			permissionPolicy = cloneMap(employee.PermissionPolicy)
+		}
+	}
+	if _, err := s.repository.UpdateDigitalEmployeeRolePermission(ctx, in.TenantID, in.EmployeeID, targetRole, permissionPolicy); err != nil {
+		return fmt.Errorf("write back role/permission on activation: %w", err)
+	}
+	return nil
+}
+
+// isValidRole 校验 role 在已知 employee type 默认角色集合内(防任意 role)。
+func (s *Service) isValidRole(role string) bool {
+	_, ok := supportedDigitalEmployeeRoles[role]
+	return ok
+}
+
+// employeeBusy 报告员工是否有进行中工作(派发运行态)。完整在役项目占用校验见后续独立项。
+func (s *Service) employeeBusy(ctx context.Context, tenantID, employeeID uuid.UUID) (bool, error) {
+	state, err := s.repository.GetDigitalEmployeeOperationalState(ctx, tenantID, employeeID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return state.Status == DigitalEmployeeOperationalStatusWorking || state.Status == DigitalEmployeeOperationalStatusQueued, nil
+}
+
+func permissionChangeSummary(currentRole, name string, role *string, hasPolicy bool) string {
+	parts := []string{}
+	if role != nil {
+		if currentRole == *role {
+			parts = append(parts, fmt.Sprintf("角色保持 %s", *role))
+		} else {
+			parts = append(parts, fmt.Sprintf("角色 %s → %s", currentRole, *role))
+		}
+	}
+	if hasPolicy {
+		parts = append(parts, "更新权限策略(permission_policy)")
+	}
+	if len(parts) == 0 {
+		return name
+	}
+	return name + ":" + strings.Join(parts, "、")
+}
+
+func stringFromPayload(payload map[string]any, key string) (string, bool) {
+	value, ok := payload[key]
+	if !ok {
+		return "", false
+	}
+	str, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	return str, true
+}
+
+func mapFromPayload(payload map[string]any, key string) (map[string]any, bool) {
+	value, ok := payload[key]
+	if !ok {
+		return nil, false
+	}
+	m, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return m, true
+}
+
+// ConfigRevisionActivatorAdapter 把 employee.Service 包成 permission.ConfigRevisionActivator。
+type ConfigRevisionActivatorAdapter struct {
+	service *Service
+}
+
+func NewConfigRevisionActivatorAdapter(service *Service) *ConfigRevisionActivatorAdapter {
+	return &ConfigRevisionActivatorAdapter{service: service}
+}
+
+func (a *ConfigRevisionActivatorAdapter) ActivateConfigRevision(ctx context.Context, in permission.ActivateConfigRevisionInput) error {
+	return a.service.ActivateConfigRevision(ctx, in)
 }
 
 // rejectLegacyCapabilityBindingKeys blocks config revisions that still try to

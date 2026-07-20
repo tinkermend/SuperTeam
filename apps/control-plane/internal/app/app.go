@@ -657,12 +657,14 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	// (currently nil → frontend falls back to id).
 	permissionRegistry := permission.NewRegistry()
 	permissionRegistry.Register(permission.NewTeamRoleSubject(tenantService))
-	permissionRegistry.Register(permission.NewEmployeeConfigSubject(nil))
+	permissionRegistry.Register(permission.NewEmployeeConfigSubject(employee.NewConfigRevisionActivatorAdapter(employeeService)))
 	permissionService, err := permission.NewService(approvalService, permissionRegistry, nil)
 	if err != nil {
 		return nil, err
 	}
 	permissionRouter := permission.NewApproverRouter(tenantService)
+	// 接通员工域权限审批接缝:提交治理变更产生审批请求 + 批准写回员工行。
+	employeeService.SetPermissionApprovalDependencies(approvalService, permissionRouter)
 	permissionRoleProducer := permission.NewPrivilegedRoleProducer(approvalService, permissionRouter, permissionRegistry, nil)
 	permissionHandler := permission.NewHandler(permissionService, permissionRoleProducer)
 

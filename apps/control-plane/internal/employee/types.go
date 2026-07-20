@@ -9,6 +9,13 @@ import (
 
 var (
 	ErrInvalidInput                 = errors.New("invalid employee input")
+	// ErrPermissionApprovalNotConfigured:权限审批接缝未注入(SetPermissionApprovalDependencies 未调用),
+	// 不能提交 role/permission 治理变更。即时字段(persona/能力/预算)不受影响。
+	ErrPermissionApprovalNotConfigured = errors.New("employee permission approval not configured")
+	// ErrPermissionChangeEmpty:提交的治理变更既无 role 也无 permission_policy 改动。
+	ErrPermissionChangeEmpty = errors.New("empty employee permission change")
+	// ErrPermissionChangeBusy:员工当前有进行中工作,role 变更可能影响在役执行,提交即拒(护栏务实版)。
+	ErrPermissionChangeBusy = errors.New("employee has active work; resolve before permission change")
 	ErrNotFound                     = errors.New("employee not found")
 	ErrConflict                     = errors.New("employee conflict")
 	ErrDigitalEmployeeDeleteBlocked = errors.New("digital employee delete blocked")
@@ -541,6 +548,17 @@ type CreateDigitalEmployeeConfigRevisionRequest struct {
 	BudgetPolicy          map[string]any
 	Status                ConfigRevisionStatus
 	ApprovedBy            *uuid.UUID
+}
+
+// SubmitPermissionChangeRequest 提交 role/permission_policy 治理变更(方案2:不进 config_revision)。
+// 变更目标随审批请求 ContextPayload 承载;批准后由 ActivateConfigRevision 写回员工行。
+// Role 为 nil 表示不改 role;PermissionPolicy 为 nil 表示不改 permission_policy。
+type SubmitPermissionChangeRequest struct {
+	TenantID         uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	RequesterUserID  uuid.UUID
+	Role             *string
+	PermissionPolicy map[string]any
 }
 
 type PreviewEffectiveConfigRequest struct {

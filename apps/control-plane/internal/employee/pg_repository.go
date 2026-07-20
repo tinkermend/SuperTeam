@@ -710,6 +710,23 @@ func (r *PgRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID
 	return digitalEmployeeRecordFromQuery(employee)
 }
 
+func (r *PgRepository) UpdateDigitalEmployeeRolePermission(ctx context.Context, tenantID, employeeID uuid.UUID, role string, permissionPolicy map[string]any) (DigitalEmployeeRecord, error) {
+	policyBytes, err := jsonbFromMap(permissionPolicy, "permission_policy")
+	if err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+	employee, err := r.q.UpdateDigitalEmployeeRolePermission(ctx, queries.UpdateDigitalEmployeeRolePermissionParams{
+		Role:             role,
+		PermissionPolicy: policyBytes,
+		ID:               employeeID,
+		TenantID:         tenantID,
+	})
+	if err != nil {
+		return DigitalEmployeeRecord{}, mapNoRows(err)
+	}
+	return digitalEmployeeRecordFromQuery(employee)
+}
+
 func (r *PgRepository) UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error) {
 	workspacePolicy, err := jsonbFromMap(params.WorkspacePolicy, "workspace_policy")
 	if err != nil {

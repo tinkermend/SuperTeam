@@ -349,6 +349,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.GetDigitalEmployeeExecutionInstance)
 				r.Put("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.UpsertDigitalEmployeeExecutionInstance)
 				r.Post("/digital-employees/{employeeId}/config-revisions", s.employeeHandler.CreateDigitalEmployeeConfigRevision)
+				r.Post("/digital-employees/{employeeId}/permission-changes", s.employeeHandler.SubmitPermissionChange)
 				r.Post("/digital-employees/{employeeId}/runs", s.employeeHandler.CreateDigitalEmployeeRun)
 				r.Get("/digital-employees/{employeeId}/runs", s.employeeHandler.ListDigitalEmployeeRuns)
 				r.Get("/digital-employees/{employeeId}/run-stats", s.employeeHandler.GetDigitalEmployeeRunStats)

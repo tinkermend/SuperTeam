@@ -2659,6 +2659,18 @@ func (r *memoryRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenant
 	return record, nil
 }
 
+func (r *memoryRepository) UpdateDigitalEmployeeRolePermission(_ context.Context, tenantID, employeeID uuid.UUID, role string, permissionPolicy map[string]any) (DigitalEmployeeRecord, error) {
+	record, ok := r.employees[employeeID]
+	if !ok || record.TenantID != tenantID {
+		return DigitalEmployeeRecord{}, ErrNotFound
+	}
+	record.Role = role
+	record.PermissionPolicy = cloneMap(permissionPolicy)
+	record.UpdatedAt = time.Now().UTC()
+	r.employees[employeeID] = record
+	return record, nil
+}
+
 func (r *memoryRepository) UpsertDigitalEmployeeExecutionInstance(_ context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error) {
 	if params.TenantID == uuid.Nil || params.DigitalEmployeeID == uuid.Nil {
 		return DigitalEmployeeExecutionInstanceRecord{}, errors.New("tenant and employee are required")

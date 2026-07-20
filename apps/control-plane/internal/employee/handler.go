@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/apierror"
+	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -34,6 +35,7 @@ type HandlerService interface {
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
 	BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
+	SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error)
 	GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error)
 	ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID) ([]EmployeeTemplateRecord, error)
 	GetEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) (EmployeeTemplateRecord, error)
@@ -750,6 +752,49 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 		return
 	}
 	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
+}
+
+// SubmitPermissionChange 提交 role/permission_policy 治理变更 → 产生权限中心审批请求。
+// 方案2:权限变更不进 config_revision,目标值随审批请求 ContextPayload 承载,批准时写回员工行。
+func (h *HTTPHandler) SubmitPermissionChange(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigCreate, &employeeID, "employee permission change submit")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Role             *string              `json:"role"`
+		PermissionPolicy map[string]any       `json:"permission_policy"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	approvalReq, err := service.SubmitPermissionChange(r.Context(), SubmitPermissionChangeRequest{
+		TenantID:         tenantID,
+		DigitalEmployeeID: employeeID,
+		RequesterUserID:  middleware.GetUserID(r.Context()),
+		Role:             req.Role,
+		PermissionPolicy: req.PermissionPolicy,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":             approvalReq.ID,
+		"resource_type":  approvalReq.ResourceType,
+		"status":         approvalReq.Status,
+		"category":       approvalReq.Category,
+		"target_user_id": approvalReq.TargetUserID,
+	})
 }
 
 func firstLegacyEmployeeConfigField(raw map[string]json.RawMessage) (string, bool) {
