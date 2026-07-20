@@ -163,6 +163,7 @@ export type Project = {
   goal: string;
   status: ProjectStatus;
   human_owner_user_id: string;
+  human_owner_user_ids?: string[];
   coordination_workflow_id: string;
   coordination_status: string;
   coordination_policy: Record<string, unknown>;
