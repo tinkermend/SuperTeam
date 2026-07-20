@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, FileClock, Play, Settings, Trash2 } from "lucide-react";
 import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
-import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
+import type { DigitalEmployee } from "@/lib/api/employees";
 import { employeeStatusLabel } from "@/lib/status-labels";
 import { EmployeeAvatar } from "../avatar";
+import { employeeAvatarAsset } from "../avatar-library";
 import { operationalStatusPresentation } from "../operational-status";
 import { providerDisplayName } from "../provider-label";
 
@@ -21,24 +22,12 @@ const statusTone: Record<string, V3Tone> = {
   error: "danger",
 };
 
-// EmployeeAvatar.asset 期望 DigitalEmployeeAvatarAsset | null | undefined，而
-// employee.metadata?.avatar 在类型上是 Record<string, unknown> | undefined——
-// 两者结构相同但 TS 不能自动兼容，用 as never 会掩盖真实类型问题，因此在这里显式收窄。
-function avatarAssetFromMetadata(
-  metadata: DigitalEmployee["metadata"],
-): DigitalEmployeeAvatarAsset | undefined {
-  const avatar = metadata?.avatar;
-  return avatar && typeof avatar === "object"
-    ? (avatar as DigitalEmployeeAvatarAsset)
-    : undefined;
-}
-
 export function EmployeeDetailHeader({
   employee,
   onDelete,
   onStartTask,
 }: EmployeeDetailHeaderProps) {
-  const avatarAsset = avatarAssetFromMetadata(employee.metadata);
+  const avatarAsset = employeeAvatarAsset(employee);
   const canDelete = Boolean(onDelete && employee.allowed_actions?.includes("employee.delete"));
   // 运行态徽标:与运行总览/员工列表同源(operational_state),让详情页与其它视图口径一致。
   const operationalStatus = employee.operational_state

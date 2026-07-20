@@ -71,4 +71,56 @@ describe("EmployeeDetailHeader", () => {
 
     await expect.element(screen.getByRole("button", { name: "删除员工" })).not.toBeInTheDocument();
   });
+
+  it("renders a stable avatar image even when metadata.avatar is missing", async () => {
+    const screen = await render(
+      <EmployeeDetailHeader employee={employee} onStartTask={vi.fn()} />,
+    );
+
+    const avatar = screen.getByAltText("后端实现员 的头像");
+    await expect.element(avatar).toBeVisible();
+    expect(avatar.element().getAttribute("src")).toMatch(
+      /\/images\/digital-employee-avatars\/.+-256\.webp$/,
+    );
+  });
+
+  it("prefers the built-in asset resolved from metadata.avatar.id", async () => {
+    const screen = await render(
+      <EmployeeDetailHeader
+        employee={{
+          ...employee,
+          metadata: {
+            avatar: {
+              id: "engineer-f-01",
+            },
+          },
+        }}
+        onStartTask={vi.fn()}
+      />,
+    );
+
+    const avatar = screen.getByAltText("后端实现员 的头像");
+    await expect
+      .element(avatar)
+      .toHaveAttribute("src", "/images/digital-employee-avatars/engineer-f-01-256.webp");
+  });
+
+  it("resolves the built-in asset from top-level metadata.avatar_asset_id", async () => {
+    const screen = await render(
+      <EmployeeDetailHeader
+        employee={{
+          ...employee,
+          metadata: {
+            avatar_asset_id: "engineer-m-02",
+          },
+        }}
+        onStartTask={vi.fn()}
+      />,
+    );
+
+    const avatar = screen.getByAltText("后端实现员 的头像");
+    await expect
+      .element(avatar)
+      .toHaveAttribute("src", "/images/digital-employee-avatars/engineer-m-02-256.webp");
+  });
 });

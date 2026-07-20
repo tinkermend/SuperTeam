@@ -21,6 +21,12 @@ export function stableAvatarAsset(seed: string): DigitalEmployeeAvatarAsset {
 }
 
 function avatarAssetFromMetadata(metadata: DigitalEmployee["metadata"]): DigitalEmployeeAvatarAsset | undefined {
+  // 与后端 AvatarAssetFromMetadata 对齐：先认顶层 avatar_asset_id，再认嵌套 avatar。
+  const fromTopLevelID = avatarAssetById(stringValue(metadata?.avatar_asset_id));
+  if (fromTopLevelID) {
+    return fromTopLevelID;
+  }
+
   const avatar = metadata?.avatar;
   if (!isAvatarRecord(avatar)) {
     return undefined;
