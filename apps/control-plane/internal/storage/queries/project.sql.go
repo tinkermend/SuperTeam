@@ -8261,6 +8261,34 @@ func (q *Queries) SetProjectDecisionRequestDispatchGate(ctx context.Context, arg
 	return i, err
 }
 
+const SetProjectHumanOwners = `-- name: SetProjectHumanOwners :exec
+UPDATE projects
+SET human_owner_user_ids = $1::uuid[],
+    human_owner_user_id = $2::uuid,
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND id = $4::uuid
+  AND deleted_at IS NULL
+`
+
+type SetProjectHumanOwnersParams struct {
+	HumanOwnerUserIds []uuid.UUID `json:"human_owner_user_ids"`
+	HumanOwnerUserID  uuid.UUID   `json:"human_owner_user_id"`
+	TenantID          uuid.UUID   `json:"tenant_id"`
+	ID                uuid.UUID   `json:"id"`
+}
+
+// 多负责人:成员变更后按 owner 角色人类成员重同步负责人集合(数组权威,scalar=首个过渡镜像)。
+func (q *Queries) SetProjectHumanOwners(ctx context.Context, arg SetProjectHumanOwnersParams) error {
+	_, err := q.db.Exec(ctx, SetProjectHumanOwners,
+		arg.HumanOwnerUserIds,
+		arg.HumanOwnerUserID,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
+}
+
 const SetProjectTaskAttemptDispatchGate = `-- name: SetProjectTaskAttemptDispatchGate :one
 UPDATE project_task_attempts
 SET dispatch_gate_result_id = $1::uuid,

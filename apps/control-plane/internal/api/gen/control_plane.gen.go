@@ -2591,10 +2591,13 @@ type CreateProjectRequest struct {
 	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
 	Goal               string                  `json:"goal"`
 	HumanOwnerUserId   openapi_types.UUID      `json:"human_owner_user_id"`
-	Members            *[]ProjectMemberInput   `json:"members,omitempty"`
-	Name               string                  `json:"name"`
-	RepoBinding        *ProjectRepoBinding     `json:"repo_binding,omitempty"`
-	RuntimeNodeIds     []openapi_types.UUID    `json:"runtime_node_ids"`
+
+	// HumanOwnerUserIds 项目人类负责人ID集合(平级,至少一个);与 human_owner_user_id 二选一或并用,服务端归一化去重
+	HumanOwnerUserIds *[]openapi_types.UUID `json:"human_owner_user_ids,omitempty"`
+	Members           *[]ProjectMemberInput `json:"members,omitempty"`
+	Name              string                `json:"name"`
+	RepoBinding       *ProjectRepoBinding   `json:"repo_binding,omitempty"`
+	RuntimeNodeIds    []openapi_types.UUID  `json:"runtime_node_ids"`
 
 	// ScenarioTemplateKey 绑定的场景模板 key；缺省为 generic 兜底（行为同无模板）
 	ScenarioTemplateKey *string             `json:"scenario_template_key,omitempty"`
@@ -3990,14 +3993,17 @@ type Project struct {
 	EvidencePolicy         map[string]interface{} `json:"evidence_policy"`
 	Goal                   string                 `json:"goal"`
 	HumanOwnerUserId       openapi_types.UUID     `json:"human_owner_user_id"`
-	Id                     openapi_types.UUID     `json:"id"`
-	Name                   string                 `json:"name"`
-	RepoBinding            ProjectRepoBinding     `json:"repo_binding"`
-	ScenarioTemplateKey    *string                `json:"scenario_template_key,omitempty"`
-	Status                 ProjectStatus          `json:"status"`
-	TeamId                 *openapi_types.UUID    `json:"team_id,omitempty"`
-	TenantId               openapi_types.UUID     `json:"tenant_id"`
-	UpdatedAt              *time.Time             `json:"updated_at,omitempty"`
+
+	// HumanOwnerUserIds 项目人类负责人ID集合(平级,至少一个)
+	HumanOwnerUserIds   []openapi_types.UUID `json:"human_owner_user_ids"`
+	Id                  openapi_types.UUID   `json:"id"`
+	Name                string               `json:"name"`
+	RepoBinding         ProjectRepoBinding   `json:"repo_binding"`
+	ScenarioTemplateKey *string              `json:"scenario_template_key,omitempty"`
+	Status              ProjectStatus        `json:"status"`
+	TeamId              *openapi_types.UUID  `json:"team_id,omitempty"`
+	TenantId            openapi_types.UUID   `json:"tenant_id"`
+	UpdatedAt           *time.Time           `json:"updated_at,omitempty"`
 }
 
 // ProjectAcceptanceRecord defines model for ProjectAcceptanceRecord.
