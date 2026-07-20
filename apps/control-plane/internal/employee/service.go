@@ -1184,19 +1184,20 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if req.DigitalEmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
-	status := req.Status
-	if status == "" {
-		status = ConfigRevisionStatusDraft
-	}
-	if status != ConfigRevisionStatusDraft {
-		return nil, fmt.Errorf("%w: invalid config revision status", ErrInvalidInput)
-	}
 	if err := rejectLegacyCapabilityBindingKeys(req.CapabilityBindings); err != nil {
 		return nil, err
 	}
-	if _, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID); err != nil {
+	employee, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
 		return nil, fmt.Errorf("get digital employee: %w", err)
 	}
+	// 员工配置页 spec §6.2(A2 前身):当前修订只承载非权限治理字段(persona/能力/预算),保存即生效——
+	// 创建即 active(自动批准),配合派发只认 active(GetCurrent)后才真正生效。待迁移为修订加 role/
+	// permission_policy 列后,再把这些权限项分支为 draft→权限中心审批→ActivateConfigRevision 翻 active。
+	// 自动批准人固定为员工 owner:客户端提供的 approved_by 一律忽略(防伪造审批人),
+	// 与 handler 剥离 approved_by 的既有安全护栏一致。
+	approvedBy := employee.OwnerUserID
+	approvedAt := time.Now().UTC()
 	var latestConfig *EmployeeConfigInput
 	latest, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, req.TenantID, req.DigitalEmployeeID)
 	if err != nil {
@@ -1224,21 +1225,36 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if err != nil {
 		return nil, err
 	}
-	nextRevision, err := s.repository.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return nil, fmt.Errorf("get next digital employee config revision number: %w", err)
-	}
-	record, err := s.repository.CreateDigitalEmployeeConfigRevision(ctx, CreateConfigRevisionParams{
+	params := CreateConfigRevisionParams{
 		TenantID:              req.TenantID,
 		DigitalEmployeeID:     req.DigitalEmployeeID,
-		RevisionNumber:        nextRevision,
 		PersonaMemoryMarkdown: personaMemoryMarkdown,
 		CapabilityBindings:    capabilityBindings,
 		BudgetPolicy:          budgetPolicy,
-		Status:                status,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create digital employee config revision: %w", err)
+		Status:                ConfigRevisionStatusActive,
+		ApprovedBy:            &approvedBy,
+		ApprovedAt:            &approvedAt,
+	}
+	// 非权限治理字段保存即生效:同事务归档旧 active 让位,再创建新 active,原子维持「每员工至多一条
+	// active」不变式(偏唯一索引 uq_digital_employee_config_revisions_active)。
+	var record DigitalEmployeeConfigRevisionRecord
+	if txErr := s.repository.WithTransaction(ctx, func(txRepo Repository) error {
+		nextRevision, err := txRepo.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, req.DigitalEmployeeID)
+		if err != nil {
+			return fmt.Errorf("get next digital employee config revision number: %w", err)
+		}
+		params.RevisionNumber = nextRevision
+		if err := txRepo.ArchivePriorActiveConfigRevisions(ctx, req.TenantID, req.DigitalEmployeeID); err != nil {
+			return fmt.Errorf("archive prior active config revision: %w", err)
+		}
+		created, err := txRepo.CreateDigitalEmployeeConfigRevision(ctx, params)
+		if err != nil {
+			return fmt.Errorf("create digital employee config revision: %w", err)
+		}
+		record = created
+		return nil
+	}); txErr != nil {
+		return nil, txErr
 	}
 	return configRevisionFromRecord(record), nil
 }

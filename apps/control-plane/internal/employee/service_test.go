@@ -1271,7 +1271,7 @@ func TestServiceValidation(t *testing.T) {
 	}
 }
 
-func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
+func TestCreateConfigRevisionAutoActivatesAndRevisionNumber(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
 	if err != nil {
@@ -1280,15 +1280,17 @@ func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
 	tenantID := uuid.New()
 	employeeID := uuid.New()
 	teamID := uuid.New()
+	ownerID := uuid.New()
 	spoofedApproverID := uuid.New()
 	repo.nextConfigRevisionNumber = 3
 	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:       employeeID,
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		Name:     "Finance reviewer",
-		Role:     "finance_reviewer",
-		Status:   DigitalEmployeeStatusDraft,
+		ID:          employeeID,
+		TenantID:    tenantID,
+		TeamID:      &teamID,
+		OwnerUserID: ownerID,
+		Name:        "Finance reviewer",
+		Role:        "finance_reviewer",
+		Status:      DigitalEmployeeStatusActive,
 	}
 
 	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
@@ -1304,20 +1306,25 @@ func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
 	if revision.RevisionNumber != 3 {
 		t.Fatalf("expected revision number 3, got %d", revision.RevisionNumber)
 	}
-	if revision.Status != ConfigRevisionStatusDraft {
-		t.Fatalf("expected draft status, got %q", revision.Status)
+	// 非权限治理字段(persona/能力/预算)保存即生效:创建即 active 自动批准。
+	if revision.Status != ConfigRevisionStatusActive {
+		t.Fatalf("expected active status, got %q", revision.Status)
 	}
-	if revision.ApprovedAt != nil {
-		t.Fatalf("expected draft revision approved_at to be nil, got %v", revision.ApprovedAt)
+	if revision.ApprovedAt == nil {
+		t.Fatalf("expected auto-activated revision approved_at to be set, got nil")
 	}
-	if revision.ApprovedBy != nil {
-		t.Fatalf("expected draft revision approved_by to be nil, got %#v", revision.ApprovedBy)
+	// 审批人固定为 owner;客户端伪造的 approved_by 必须被忽略。
+	if revision.ApprovedBy == nil || *revision.ApprovedBy != ownerID {
+		t.Fatalf("expected approved_by to be owner %s, got %#v", ownerID, revision.ApprovedBy)
 	}
-	if repo.createdConfigRevision.Status != ConfigRevisionStatusDraft {
-		t.Fatalf("expected repository draft status, got %q", repo.createdConfigRevision.Status)
+	if revision.ApprovedBy != nil && *revision.ApprovedBy == spoofedApproverID {
+		t.Fatalf("spoofed approved_by must not be honored")
 	}
-	if repo.createdConfigRevision.ApprovedBy != nil || repo.createdConfigRevision.ApprovedAt != nil {
-		t.Fatalf("expected repository draft approval metadata to be cleared, got %#v/%#v", repo.createdConfigRevision.ApprovedBy, repo.createdConfigRevision.ApprovedAt)
+	if repo.createdConfigRevision.Status != ConfigRevisionStatusActive {
+		t.Fatalf("expected repository active status, got %q", repo.createdConfigRevision.Status)
+	}
+	if repo.createdConfigRevision.ApprovedBy == nil || *repo.createdConfigRevision.ApprovedBy != ownerID || repo.createdConfigRevision.ApprovedAt == nil {
+		t.Fatalf("expected repository auto-approval metadata (owner), got %#v/%#v", repo.createdConfigRevision.ApprovedBy, repo.createdConfigRevision.ApprovedAt)
 	}
 	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(25000) {
 		t.Fatalf("expected repository budget policy from request, got %#v", repo.createdConfigRevision.BudgetPolicy)
@@ -2769,6 +2776,11 @@ func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context
 		BudgetPolicy:          cloneMap(record.BudgetPolicy),
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) ArchivePriorActiveConfigRevisions(_ context.Context, _, _ uuid.UUID) error {
+	// 内存 fake 不建模 per-config status/归档,归档为 no-op(用例只断言新建修订字段)。
+	return nil
 }
 
 func (r *memoryRepository) GetDigitalEmployeeConfigRevision(_ context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {

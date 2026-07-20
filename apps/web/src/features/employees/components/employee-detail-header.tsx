@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Blocks, FileClock, Play, Settings, Trash2 } from "lucide-react";
+import { ArrowLeft, FileClock, Play, Settings, Trash2 } from "lucide-react";
 import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
 import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
 import { employeeStatusLabel } from "@/lib/status-labels";
@@ -11,7 +11,6 @@ type EmployeeDetailHeaderProps = {
   employee: DigitalEmployee;
   onDelete?: () => void;
   onStartTask: () => void;
-  onManageCapabilities: () => void;
 };
 
 const statusTone: Record<string, V3Tone> = {
@@ -38,7 +37,6 @@ export function EmployeeDetailHeader({
   employee,
   onDelete,
   onStartTask,
-  onManageCapabilities,
 }: EmployeeDetailHeaderProps) {
   const avatarAsset = avatarAssetFromMetadata(employee.metadata);
   const canDelete = Boolean(onDelete && employee.allowed_actions?.includes("employee.delete"));
@@ -78,10 +76,6 @@ export function EmployeeDetailHeader({
             <ArrowLeft className="size-4" />
             返回列表
           </Link>
-        </V3Button>
-        <V3Button onClick={onManageCapabilities} type="button" variant="outline">
-          <Blocks className="size-4" />
-          管理技能与 MCP
         </V3Button>
         <V3Button asChild variant="outline">
           <Link params={{ employeeId: employee.id }} to="/employees/$employeeId/config">

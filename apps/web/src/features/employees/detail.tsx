@@ -12,7 +12,6 @@ import { MasterDetailLayout, SoftCard, StatusPill } from "@/components/superteam
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ApiRequestError } from "@/lib/api/client";
 import { listEffectiveMcpConfig } from "@/lib/api/capabilities";
 import {
@@ -37,7 +36,6 @@ import { listEmployeeSkills } from "@/lib/api/skills";
 import { getRuntimeOverview } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { EffectiveContextPanel } from "./components/effective-context-panel";
-import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
 import { EmployeeDetailHeader } from "./components/employee-detail-header";
 import { EmployeeMetricsStrip } from "./components/employee-metrics-strip";
 import { EmployeeRunHistoryTable } from "./components/employee-run-history-table";
@@ -77,7 +75,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const [selectedRun, setSelectedRun] = useState<DigitalEmployeeRunListItem | undefined>(undefined);
   const [runDrawerOpen, setRunDrawerOpen] = useState(false);
   const [startTaskOpen, setStartTaskOpen] = useState(false);
-  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteBlocked, setDeleteBlocked] =
@@ -293,7 +290,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
             <EmployeeDetailHeader
               employee={employee.data}
               onDelete={() => setDeleteDialogOpen(true)}
-              onManageCapabilities={() => setCapabilitiesOpen(true)}
               onStartTask={() => setStartTaskOpen(true)}
             />
 
@@ -358,7 +354,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                       inheritedCount: inheritedMcpCount,
                       totalCount: mcpQuery.data?.length ?? 0,
                     }}
-                    onManageCapabilities={() => setCapabilitiesOpen(true)}
                     skills={{
                       isLoading: skillsQuery.isLoading,
                       isError: skillsQuery.isError,
@@ -394,17 +389,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         open={runDrawerOpen}
         run={selectedRun}
       />
-
-      <Sheet onOpenChange={setCapabilitiesOpen} open={capabilitiesOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl" side="right">
-          <SheetHeader>
-            <SheetTitle>管理技能与 MCP</SheetTitle>
-          </SheetHeader>
-          <div className="px-4 pb-6">
-            <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
-          </div>
-        </SheetContent>
-      </Sheet>
 
       {employee.data ? (
         <ConfirmDialog

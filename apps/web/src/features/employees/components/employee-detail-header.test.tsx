@@ -26,12 +26,10 @@ const employee = {
 describe("EmployeeDetailHeader", () => {
   it("renders name, status and triggers start task", async () => {
     const onStartTask = vi.fn();
-    const onManageCapabilities = vi.fn();
     const screen = await render(
       <EmployeeDetailHeader
         employee={employee}
         onDelete={vi.fn()}
-        onManageCapabilities={onManageCapabilities}
         onStartTask={onStartTask}
       />,
     );
@@ -51,7 +49,6 @@ describe("EmployeeDetailHeader", () => {
       <EmployeeDetailHeader
         employee={{ ...employee, allowed_actions: ["employee.delete"] }}
         onDelete={onDelete}
-        onManageCapabilities={vi.fn()}
         onStartTask={vi.fn()}
       />,
     );
@@ -68,7 +65,6 @@ describe("EmployeeDetailHeader", () => {
       <EmployeeDetailHeader
         employee={{ ...employee, allowed_actions: ["employee.run.create"] }}
         onDelete={vi.fn()}
-        onManageCapabilities={vi.fn()}
         onStartTask={vi.fn()}
       />,
     );

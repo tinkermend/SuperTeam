@@ -463,6 +463,18 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 }
 
 func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight) (*DigitalEmployeeRun, error) {
+	// P-enforce(员工配置页 spec §5/E3):员工级 permission_policy.allowed_actions 是可执行动作的
+	// 上限,与运行请求的 allowed_actions 取交集后注入下游 payload(runtime 已强制 allowed_actions);
+	// 员工白名单为空表示不额外收敛。createAndDispatchRun 是 direct/chat/project-task 三条派发路径的
+	// 漏斗,故在此处一次性收敛即全覆盖。permission_policy 读取为可选能力,未实现的仓库跳过。
+	if reader, ok := s.repository.(EmployeePermissionPolicyReader); ok {
+		permissionPolicy, err := reader.GetDigitalEmployeePermissionPolicy(ctx, req.TenantID, req.DigitalEmployeeID)
+		if err != nil {
+			return nil, fmt.Errorf("get employee permission policy: %w", err)
+		}
+		req.AllowedActions = effectiveAllowedActions(req.AllowedActions, permissionPolicy)
+	}
+
 	idempotencyKey := trimmedOptionalValue(req.IdempotencyKey)
 	fingerprint, err := computeRunIdempotencyFingerprint(req, objective, prompt, preflight)
 	if err != nil {
@@ -693,11 +705,35 @@ type SkillDependencyEvaluation struct {
 	MissingEnv   []string
 }
 
-func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID, preflight RunPreflight) (startSessionDependencies, error) {
-	var deps startSessionDependencies
+// dispatchEffectiveConfig 解析派发用的生效配置:优先 active-only(GetCurrent),这是治理 gate 的
+// 承重读取。无 active 修订属异常(createInitialActiveConfigRevision 保证每个员工至少一条 active),
+// 明确失败而非静默用空配置派发(员工配置页 spec §6.2/A 兜底②)。
+func (s *DigitalEmployeeRunService) dispatchEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
+	if reader, ok := s.repository.(ConfigRevisionCurrentReader); ok {
+		configInput, err := reader.GetCurrentDigitalEmployeeConfigRevision(ctx, tenantID, digitalEmployeeID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return EmployeeConfigInput{}, fmt.Errorf("%w: employee has no active config revision to dispatch", ErrInvalidInput)
+			}
+			return EmployeeConfigInput{}, fmt.Errorf("get active employee config revision: %w", err)
+		}
+		return configInput, nil
+	}
+	// 兼容回退:未实现 active-only 读取的仓库(仅测试 fake)读最新修订。
 	configInput, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, tenantID, digitalEmployeeID)
 	if err != nil {
-		return deps, fmt.Errorf("get latest employee config revision: %w", err)
+		return EmployeeConfigInput{}, fmt.Errorf("get latest employee config revision: %w", err)
+	}
+	return configInput, nil
+}
+
+func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID, preflight RunPreflight) (startSessionDependencies, error) {
+	var deps startSessionDependencies
+	// 派发生效配置只认已生效(active)修订(员工配置页 spec §6.2/A):草案治理修订未批不得生效,
+	// 否则审批 gate 形同虚设。生产 PgRunRepository 恒走 active-only;未实现该可选接口的仓库回退。
+	configInput, err := s.dispatchEffectiveConfig(ctx, tenantID, digitalEmployeeID)
+	if err != nil {
+		return deps, err
 	}
 	deps.configInput = configInput
 	if s.skillLister != nil {
@@ -1422,6 +1458,32 @@ func sameIdempotentRun(run *DigitalEmployeeRun, idempotencyKey *string, fingerpr
 		return false
 	}
 	return *run.IdempotencyKey == *idempotencyKey && *run.IdempotencyFingerprint == fingerprint
+}
+
+// effectiveAllowedActions 按员工 permission_policy.allowed_actions 收敛运行请求的 allowed_actions
+// (员工配置页 spec E3,取交集,员工为动作上限):
+//   - 员工白名单为空/缺失 → 不额外约束,返回请求原值;
+//   - 员工白名单非空、请求为空(请求侧不约束) → 收敛到员工白名单;
+//   - 两者非空 → 交集(保留请求侧顺序)。
+func effectiveAllowedActions(requested []string, permissionPolicy map[string]any) []string {
+	ceiling := stringList(permissionPolicy["allowed_actions"])
+	if len(ceiling) == 0 {
+		return requested
+	}
+	if len(requested) == 0 {
+		return ceiling
+	}
+	allowed := make(map[string]struct{}, len(ceiling))
+	for _, action := range ceiling {
+		allowed[action] = struct{}{}
+	}
+	result := make([]string, 0, len(requested))
+	for _, action := range requested {
+		if _, ok := allowed[action]; ok {
+			result = append(result, action)
+		}
+	}
+	return result
 }
 
 func computeRunIdempotencyFingerprint(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight) (string, error) {

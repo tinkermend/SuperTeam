@@ -12,6 +12,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ArchivePriorActiveDigitalEmployeeConfigRevisions = `-- name: ArchivePriorActiveDigitalEmployeeConfigRevisions :exec
+UPDATE digital_employee_config_revisions
+SET status = 'archived',
+    archived_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+  AND status = 'active'
+  AND archived_at IS NULL
+`
+
+type ArchivePriorActiveDigitalEmployeeConfigRevisionsParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+// 归档某员工当前所有已生效(active、未归档)修订,让位给新激活的修订。
+// 配合偏唯一索引 uq_digital_employee_config_revisions_active(每员工至多一条 active 未归档)。
+func (q *Queries) ArchivePriorActiveDigitalEmployeeConfigRevisions(ctx context.Context, arg ArchivePriorActiveDigitalEmployeeConfigRevisionsParams) error {
+	_, err := q.db.Exec(ctx, ArchivePriorActiveDigitalEmployeeConfigRevisions, arg.TenantID, arg.DigitalEmployeeID)
+	return err
+}
+
 const CreateDigitalEmployeeConfigRevision = `-- name: CreateDigitalEmployeeConfigRevision :one
 INSERT INTO digital_employee_config_revisions (
     tenant_id,

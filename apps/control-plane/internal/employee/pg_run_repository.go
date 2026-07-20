@@ -65,8 +65,43 @@ func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employe
 	return runPreflightFromQuery(preflight)
 }
 
+// GetDigitalEmployeePermissionPolicy 取员工行 permission_policy(P-enforce 的 allowed_actions
+// 上限来源)。复用现有 GetDigitalEmployee(SELECT *),无需新增查询/重生成。
+func (r *PgRunRepository) GetDigitalEmployeePermissionPolicy(ctx context.Context, tenantID, employeeID uuid.UUID) (map[string]any, error) {
+	employee, err := r.q.GetDigitalEmployee(ctx, queries.GetDigitalEmployeeParams{
+		ID:       employeeID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return mapFromJSONB(employee.PermissionPolicy, "permission_policy")
+}
+
 func (r *PgRunRepository) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
 	revision, err := r.q.GetLatestDigitalEmployeeConfigRevision(ctx, queries.GetLatestDigitalEmployeeConfigRevisionParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return EmployeeConfigInput{}, mapNoRows(err)
+	}
+
+	return employeeConfigInputFromQuery(digitalEmployeeConfigRevisionQueryAdapter{
+		id:                    revision.ID,
+		tenantID:              revision.TenantID,
+		digitalEmployeeID:     revision.DigitalEmployeeID,
+		revisionNumber:        revision.RevisionNumber,
+		personaMemoryMarkdown: revision.PersonaMemoryMarkdown,
+		capabilityBindings:    revision.CapabilityBindings,
+		budgetPolicy:          revision.BudgetPolicy,
+	})
+}
+
+// GetCurrentDigitalEmployeeConfigRevision 读取已生效(status=active、未归档)的最新修订,是派发解析
+// 生效配置的承重读取(治理 gate)。查询 GetCurrentDigitalEmployeeConfigRevision 已存在,无需新增。
+func (r *PgRunRepository) GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
+	revision, err := r.q.GetCurrentDigitalEmployeeConfigRevision(ctx, queries.GetCurrentDigitalEmployeeConfigRevisionParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: digitalEmployeeID,
 	})

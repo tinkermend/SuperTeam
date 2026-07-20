@@ -17,7 +17,6 @@ type EffectiveContextPanelProps = {
     totalCount: number;
     missingNames: string[];
   };
-  onManageCapabilities: () => void;
 };
 
 export function EffectiveContextPanel({
@@ -27,7 +26,6 @@ export function EffectiveContextPanel({
   skills,
   mcp,
   envVars,
-  onManageCapabilities,
 }: EffectiveContextPanelProps) {
   return (
     <SoftCard className="flex flex-col gap-5 p-5">
@@ -57,9 +55,6 @@ export function EffectiveContextPanel({
             </IconTile>
             技能
           </p>
-          <V3Button onClick={onManageCapabilities} size="sm" variant="ghost">
-            管理
-          </V3Button>
         </div>
         {skills.isLoading ? (
           <p className="text-xs text-v3-ink-3">加载中</p>
@@ -121,9 +116,6 @@ export function EffectiveContextPanel({
             </IconTile>
             环境变量
           </p>
-          <V3Button onClick={onManageCapabilities} size="sm" variant="ghost">
-            查看详情
-          </V3Button>
         </div>
         {envVars.isLoading ? (
           <p className="text-xs text-v3-ink-3">加载中</p>
