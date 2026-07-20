@@ -67,6 +67,7 @@ import {
   listProjectTransferRequests,
   listWorkflowInstances,
   patchProjectEvidence,
+  dismissProjectTask,
   resolveProjectDecision,
   submitProjectDemand,
   type CreateProjectAcceptanceInput,
@@ -721,6 +722,22 @@ export function ProjectsView({
     },
   });
 
+  const dismissTaskMutation = useMutation({
+    mutationFn: (taskId: string) =>
+      dismissProjectTask(apiOptions, effectiveProjectId as string, taskId),
+    onSuccess: async (task) => {
+      const projectId = task.project_id || effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project-tasks", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-task-graph", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-risk-signals"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+    },
+  });
+
   const createEvidenceMutation = useMutation({
     mutationFn: (input: CreateProjectEvidenceInput) =>
       createProjectEvidence(apiOptions, effectiveProjectId as string, input),
@@ -1117,6 +1134,12 @@ export function ProjectsView({
                           decision,
                           targetExitDeliverable,
                         });
+                      }
+                    }}
+                    dismissTaskPending={dismissTaskMutation.isPending}
+                    onDismissTask={(taskId) => {
+                      if (effectiveProjectId) {
+                        dismissTaskMutation.mutate(taskId);
                       }
                     }}
                     onSubmitDemand={() => setDemandOpen(true)}

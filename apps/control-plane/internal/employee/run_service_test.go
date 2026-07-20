@@ -2657,6 +2657,30 @@ func (f *fakeRunServiceRepository) UpdateRunStatus(_ context.Context, req Update
 	return cloneRun(run), nil
 }
 
+func (f *fakeRunServiceRepository) AcknowledgeRunFailure(_ context.Context, tenantID, runID, _ uuid.UUID) (*DigitalEmployeeRun, error) {
+	var run *DigitalEmployeeRun
+	if f.createdRun != nil && f.createdRun.ID == runID && f.createdRun.TenantID == tenantID {
+		run = f.createdRun
+	} else if f.activeRun != nil && f.activeRun.ID == runID && f.activeRun.TenantID == tenantID {
+		run = f.activeRun
+	} else if f.run != nil && f.run.ID == runID && f.run.TenantID == tenantID {
+		run = f.run
+	} else {
+		for _, listedRun := range f.runs {
+			if listedRun.ID == runID && listedRun.TenantID == tenantID {
+				run = listedRun
+				break
+			}
+		}
+	}
+	if run == nil {
+		return nil, ErrNotFound
+	}
+	now := time.Now().UTC()
+	run.FailureAcknowledgedAt = &now
+	return cloneRun(run), nil
+}
+
 func (f *fakeRunServiceRepository) HasRunEventSequence(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int32) (bool, error) {
 	return false, nil
 }

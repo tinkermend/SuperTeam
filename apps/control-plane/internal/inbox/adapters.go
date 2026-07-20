@@ -200,6 +200,10 @@ func statusFromDecisionSnapshot(status string) Status {
 	if status == project.PlanningGapDecisionRestaffed || status == project.PlanningGapDecisionExempted {
 		return StatusResolved
 	}
+	// task_failure_recovery explicit actions also close the card.
+	if status == "retry" || status == "cancel_downstream" || status == "reassign" {
+		return StatusResolved
+	}
 	switch approval.ApprovalStatus(status) {
 	case approval.ApprovalStatusPending:
 		return StatusOpen

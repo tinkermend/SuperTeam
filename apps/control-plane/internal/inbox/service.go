@@ -21,6 +21,10 @@ type ProjectDecisionActionResolver interface {
 	ResolveProjectDecisionAction(ctx context.Context, req SourceActionRequest) (SourceActionResult, error)
 }
 
+type RunRecoveryActionResolver interface {
+	ResolveRunRecoveryAction(ctx context.Context, req SourceActionRequest) (SourceActionResult, error)
+}
+
 type SourceActionRequest struct {
 	TenantID        uuid.UUID
 	ActorUserID     uuid.UUID
@@ -32,9 +36,10 @@ type SourceActionRequest struct {
 }
 
 type Service struct {
-	repository Repository
-	approvals  ApprovalActionResolver
-	decisions  ProjectDecisionActionResolver
+	repository   Repository
+	approvals    ApprovalActionResolver
+	decisions    ProjectDecisionActionResolver
+	runRecovery  RunRecoveryActionResolver
 }
 
 func NewService(repository Repository) (*Service, error) {
@@ -50,6 +55,10 @@ func (s *Service) SetApprovalActionResolver(resolver ApprovalActionResolver) {
 
 func (s *Service) SetProjectDecisionActionResolver(resolver ProjectDecisionActionResolver) {
 	s.decisions = resolver
+}
+
+func (s *Service) SetRunRecoveryActionResolver(resolver RunRecoveryActionResolver) {
+	s.runRecovery = resolver
 }
 
 func (s *Service) UpsertItem(ctx context.Context, req UpsertItemRequest) (Item, error) {
@@ -228,6 +237,11 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 			return item, SourceActionResult{}, ErrSourceUnavailable
 		}
 		result, err = s.decisions.ResolveProjectDecisionAction(ctx, sourceReq)
+	case SourceTypeDigitalEmployeeRun:
+		if s.runRecovery == nil {
+			return item, SourceActionResult{}, ErrSourceUnavailable
+		}
+		result, err = s.runRecovery.ResolveRunRecoveryAction(ctx, sourceReq)
 	default:
 		return item, SourceActionResult{}, ErrSourceUnavailable
 	}
@@ -291,6 +305,10 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 		}
 	case ItemTypeTeamPendingDelete:
 		if req.SourceType != SourceTypeTeamPendingDelete {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
+	case ItemTypeDigitalEmployeeRunRecovery:
+		if req.SourceType != SourceTypeDigitalEmployeeRun {
 			return UpsertItemRequest{}, ErrInvalidItem
 		}
 	}
@@ -360,6 +378,12 @@ func normalizeActions(actions []Action) ([]Action, error) {
 }
 
 func DefaultActions(itemType ItemType) []Action {
+	if itemType == ItemTypeDigitalEmployeeRunRecovery {
+		return []Action{
+			{Key: "retry", Label: "重试", Tone: "positive"},
+			{Key: "acknowledge", Label: "确认关闭", Tone: "warning"},
+		}
+	}
 	actions := []Action{
 		{Key: "approved", Label: "同意", Tone: "positive"},
 		{Key: "rejected", Label: "驳回", Tone: "destructive", RequiresComment: true},
@@ -386,6 +410,28 @@ func DecisionActions(decisionType string) []Action {
 			{Key: "restaffed", Label: "已补员，重新规划", Tone: "positive", Metadata: map[string]any{"decision": "restaffed"}},
 			{Key: "exempted", Label: "豁免约束并重规划", Tone: "positive", Metadata: map[string]any{"decision": "exempted"}},
 			{Key: "rejected", Label: "关闭", Tone: "destructive", Metadata: map[string]any{"decision": "rejected"}},
+		}
+	case "task_failure_recovery":
+		// 失败恢复需要显式 recovery_action;裸 approved 无法驱动 retry。
+		// 改派需要选择新员工,收件箱快动作暂不暴露(项目详情可后续补选择器)。
+		return []Action{
+			{
+				Key:   "retry",
+				Label: "重试任务",
+				Tone:  "positive",
+				Metadata: map[string]any{
+					"decision": "retry",
+				},
+			},
+			{
+				Key:             "cancel_downstream",
+				Label:           "取消下游",
+				Tone:            "destructive",
+				RequiresComment: true,
+				Metadata: map[string]any{
+					"decision": "cancel_downstream",
+				},
+			},
 		}
 	case "demand_acceptance":
 		// demand_acceptance items are a pure deep-link: signing individual
@@ -426,7 +472,7 @@ func validScope(scope string) bool {
 
 func validItemType(itemType ItemType) bool {
 	switch itemType {
-	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete:
+	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete, ItemTypeDigitalEmployeeRunRecovery:
 		return true
 	default:
 		return false
@@ -435,7 +481,7 @@ func validItemType(itemType ItemType) bool {
 
 func validSourceType(sourceType SourceType) bool {
 	switch sourceType {
-	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete:
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete, SourceTypeDigitalEmployeeRun:
 		return true
 	default:
 		return false

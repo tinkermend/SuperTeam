@@ -126,6 +126,8 @@ type ProjectOperationalDetailProps = {
     decision: string,
     targetExitDeliverable?: string,
   ) => void;
+  onDismissTask?: (taskId: string) => void;
+  dismissTaskPending?: boolean;
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
   planRevisions: ProjectPlanRevision[];
@@ -182,6 +184,8 @@ export function ProjectOperationalDetail({
   onPatchEvidence,
   onRetryExecutionTrace,
   onResolveDecision,
+  onDismissTask,
+  dismissTaskPending,
   onSubmitDemand,
   overview,
   planRevisions,
@@ -231,7 +235,9 @@ export function ProjectOperationalDetail({
     (decision) => decision.decision_type !== "plan_review",
   );
   const businessBlocker = projectBusinessBlocker(dispatchGates ?? []);
-  const activeTasks = overview?.active_tasks?.length ? overview.active_tasks : tasks;
+  const activeTasks = (overview?.active_tasks?.length ? overview.active_tasks : tasks).filter(
+    (task) => !task.dismissed_at,
+  );
   const recentEvents = overview?.recent_events?.length ? overview.recent_events : events;
   const currentPhase = overview?.status_summary.current_phase || project.status;
   const latestPlanReviewDecision = decisionRequests.find(
@@ -966,7 +972,12 @@ export function ProjectOperationalDetail({
         </TabsContent>
 
         <TabsContent className="m-0" value="tasks">
-          <ProjectTasksPanel tasks={activeTasks} />
+          <ProjectTasksPanel
+            decisionRequests={decisionRequests}
+            dismissTaskPending={dismissTaskPending}
+            onDismissTask={onDismissTask}
+            tasks={tasks}
+          />
         </TabsContent>
 
         <TabsContent className="m-0" value="artifacts">
@@ -1520,27 +1531,41 @@ function ProjectTaskLink({ task }: { task: ProjectTask }) {
   return <p className="min-w-0 truncate text-sm font-medium">{task.title}</p>;
 }
 
-function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
+function ProjectTasksPanel({
+  decisionRequests,
+  dismissTaskPending,
+  onDismissTask,
+  tasks,
+}: {
+  decisionRequests?: ProjectDecisionRequest[];
+  dismissTaskPending?: boolean;
+  onDismissTask?: (taskId: string) => void;
+  tasks: ProjectTask[];
+}) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [employeeFilter, setEmployeeFilter] = useState("all");
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => !task.dismissed_at),
+    [tasks],
+  );
   const employeeIds = useMemo(
     () =>
       Array.from(
         new Set(
-          tasks
+          visibleTasks
             .map((task) => task.assigned_digital_employee_id)
             .filter((value): value is string => Boolean(value)),
         ),
       ),
-    [tasks],
+    [visibleTasks],
   );
   const statuses = useMemo(
-    () => Array.from(new Set(tasks.map((task) => task.status))).filter(Boolean),
-    [tasks],
+    () => Array.from(new Set(visibleTasks.map((task) => task.status))).filter(Boolean),
+    [visibleTasks],
   );
   const filteredTasks = useMemo(
     () =>
-      tasks
+      visibleTasks
         .filter(
           (task) =>
             (statusFilter === "all" || task.status === statusFilter) &&
@@ -1552,7 +1577,7 @@ function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
             right.updated_at ?? right.created_at,
           ),
         ),
-    [employeeFilter, statusFilter, tasks],
+    [employeeFilter, statusFilter, visibleTasks],
   );
 
   return (
@@ -1600,7 +1625,7 @@ function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
             <V3Th>状态</V3Th>
             <V3Th>员工</V3Th>
             <V3Th>更新</V3Th>
-            <V3Th>项目上下文</V3Th>
+            <V3Th>操作</V3Th>
           </tr>
         </thead>
         <tbody>
@@ -1613,6 +1638,17 @@ function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
           ) : (
             filteredTasks.map((task) => {
               const activityAt = task.updated_at ?? task.created_at;
+              const canDismiss =
+                Boolean(onDismissTask) &&
+                !task.dismissed_at &&
+                (task.status === "failed" || task.status === "cancelled") &&
+                !(decisionRequests ?? []).some(
+                  (decision) =>
+                    decision.project_task_id === task.id &&
+                    ["pending", "requested", "waiting", "open"].includes(
+                      (decision.status_snapshot ?? "").toLowerCase(),
+                    ),
+                );
               return (
               <V3Tr key={task.id}>
                 <V3Td className="min-w-[220px]">
@@ -1646,7 +1682,28 @@ function ProjectTasksPanel({ tasks }: { tasks: ProjectTask[] }) {
                     "—"
                   )}
                 </V3Td>
-                <V3Td className="font-mono text-xs text-v3-ink-2">{task.project_id}</V3Td>
+                <V3Td>
+                  {canDismiss ? (
+                    <V3Button
+                      disabled={dismissTaskPending}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `确认清理任务「${task.title}」？清理后不再出现在待处理与风险中，历史与审计仍保留。`,
+                          )
+                        ) {
+                          onDismissTask?.(task.id);
+                        }
+                      }}
+                    >
+                      清理任务
+                    </V3Button>
+                  ) : (
+                    <span className="text-xs text-v3-ink-3">—</span>
+                  )}
+                </V3Td>
               </V3Tr>
               );
             })
@@ -1811,14 +1868,24 @@ function DecisionRequestActions({
     return null;
   }
 
-  const actions = [
-    { ariaLabel: `批准 ${decision.title_snapshot}`, label: "批准", value: "approved" },
-    {
-      ariaLabel: `要求补证 ${decision.title_snapshot}`,
-      label: "要求补证",
-      value: "needs_more_evidence",
-    },
-  ];
+  const actions =
+    decision.decision_type === "task_failure_recovery"
+      ? [
+          { ariaLabel: `重试 ${decision.title_snapshot}`, label: "重试任务", value: "retry" },
+          {
+            ariaLabel: `取消下游 ${decision.title_snapshot}`,
+            label: "取消下游",
+            value: "cancel_downstream",
+          },
+        ]
+      : [
+          { ariaLabel: `批准 ${decision.title_snapshot}`, label: "批准", value: "approved" },
+          {
+            ariaLabel: `要求补证 ${decision.title_snapshot}`,
+            label: "要求补证",
+            value: "needs_more_evidence",
+          },
+        ];
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -1828,7 +1895,7 @@ function DecisionRequestActions({
           key={action.value}
           size="sm"
           type="button"
-          variant={action.value === "approved" ? "primary" : "outline"}
+          variant={action.value === "retry" || action.value === "approved" ? "primary" : "outline"}
           onClick={() => onResolveDecision(decision.id, action.value)}
         >
           {action.label}

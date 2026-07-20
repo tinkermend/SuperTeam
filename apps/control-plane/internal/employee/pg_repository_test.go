@@ -663,15 +663,17 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 	normalizedSQL := normalizeSQL(sql)
 	terminalGuard := "pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')"
 	// 待确认判据收窄(2026-07-19):员工级 human blocker 只认"此刻真的在等人"——
-	// 任务状态 waiting_human/pending_review,或任务上有未决决策请求(除项目级
-	// project_acceptance 外全部计入,旧的 task_failure_recovery/route_review
-	// 死词表已删除)。requires_human_approval 非终态子句不再点亮待确认。
+	// 任务状态 waiting_human/pending_review、未决决策请求,或开放的
+	// digital_employee_run_recovery 收件箱事项。requires_human_approval 非终态
+	// 子句不再点亮待确认。
 	pendingDecisionFilter := "AND pdr.status_snapshot IN ('pending', 'requested')"
 	employeeBlockerDecisionFilter := "count(*) FILTER ( WHERE pdr.decision_type <> 'project_acceptance' ) > 0 AS has_employee_scoped_human_blocker"
-	waitingStatusBlocker := "coalesce(ped.has_employee_scoped_human_blocker, false) OR count(pt.id) FILTER ( WHERE pt.status IN ('waiting_human', 'pending_review') ) > 0 ) AS operational_has_employee_scoped_human_blocker"
+	waitingStatusBlocker := "ii.item_type = 'digital_employee_run_recovery'"
 	joinStatusNarrowing := "AND ( pt.status IN ('pending', 'planned', 'queued', 'blocked', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed') OR ( pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed') ) )"
 	queuedTaskStatusNarrowing := "count(pt.id) FILTER (WHERE pt.status IN ('queued')) > 0 AS operational_has_queued_work"
 	queuedTaskStatusBroadening := "count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'queued', 'blocked', 'assigned')) > 0 AS operational_has_queued_work"
+	stickyFailureConvergence := "AND pdr.decision_type IN ( 'task_failure_recovery', 'project_task_recovery', 'project_task_runtime_recovery' )"
+	acknowledgedLatestRun := "WHEN lr.status IN ('failed', 'timed_out') AND lr.failure_acknowledged_at IS NOT NULL THEN 'none'"
 
 	for _, expected := range []string{
 		"employee_operational_facts",
@@ -687,8 +689,11 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 		pendingDecisionFilter,
 		employeeBlockerDecisionFilter,
 		waitingStatusBlocker,
+		"pt.status IN ('waiting_human', 'pending_review')",
 		joinStatusNarrowing,
 		queuedTaskStatusNarrowing,
+		stickyFailureConvergence,
+		acknowledgedLatestRun,
 		"completed",
 		"done",
 		"success",
@@ -699,7 +704,6 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 	}
 	require.NotContains(t, normalizedSQL, queuedTaskStatusBroadening)
 	require.NotContains(t, normalizedSQL, "pt.status IN ('planned', 'assigned')")
-	require.NotContains(t, normalizedSQL, "'task_failure_recovery'")
 	require.NotContains(t, normalizedSQL, "'route_review'")
 	// 员工级 blocker 不再由 rha 非终态子句驱动:terminalGuard 只应剩
 	// join 条件与 active_work 两处。

@@ -80,6 +80,7 @@ type DigitalEmployeeRunService struct {
 	skillMCPDependencyLister SkillMCPDependencyLister
 	nodeResolver             ProjectTaskNodeResolver
 	chatAnchorValidator      ChatAnchorProjectValidator
+	failureInbox             RunFailureInboxProjector
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {

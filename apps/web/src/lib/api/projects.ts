@@ -224,6 +224,8 @@ export type ProjectTask = {
   input_requirements?: Record<string, unknown>;
   handoff_contract?: Record<string, unknown>;
   planner_metadata?: Record<string, unknown>;
+  dismissed_at?: string;
+  dismissed_by?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -1248,6 +1250,18 @@ export function listProjectTasks(
     options,
     projectPath(projectId, `/tasks${taskQuery(filters)}`),
     "project tasks",
+  );
+}
+
+export function dismissProjectTask(
+  options: ApiClientOptions,
+  projectId: string,
+  taskId: string,
+): Promise<ProjectTask> {
+  return postJsonWithoutBody<ProjectTask>(
+    options,
+    projectPath(projectId, `/tasks/${encodeURIComponent(taskId)}/dismiss`),
+    "dismiss project task",
   );
 }
 

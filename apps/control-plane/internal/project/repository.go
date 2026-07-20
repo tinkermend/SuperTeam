@@ -21,6 +21,7 @@ type Repository interface {
 	SetProjectHumanOwners(ctx context.Context, tenantID, projectID uuid.UUID, ownerIDs []uuid.UUID) error
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
+	DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error)
 	AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error)
 	GetProjectEvent(ctx context.Context, tenantID, projectID, eventID uuid.UUID) (ProjectEvent, error)
 	GetProjectEventByTypeAndActor(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (ProjectEvent, error)

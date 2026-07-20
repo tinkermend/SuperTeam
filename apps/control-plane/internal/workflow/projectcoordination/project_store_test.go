@@ -3869,9 +3869,29 @@ func TestParseFailureRecoveryAction(t *testing.T) {
 			wantError: project.ErrInvalidProject,
 		},
 		{
-			name:      "approved unknown action rejected",
-			decision:  "approved",
-			payload:   map[string]any{"recovery_action": "replace_subgraph"},
+			name:     "bare approved defaults to retry",
+			decision: "approved",
+			want:     FailureRecoveryAction{Action: "retry"},
+		},
+		{
+			name:     "direct retry",
+			decision: "retry",
+			want:     FailureRecoveryAction{Action: "retry"},
+		},
+		{
+			name:     "direct cancel downstream",
+			decision: "cancel_downstream",
+			want:     FailureRecoveryAction{Action: "cancel_downstream"},
+		},
+		{
+			name:     "approved unknown recovery_action defaults to retry",
+			decision: "approved",
+			payload:  map[string]any{"recovery_action": "replace_subgraph"},
+			want:     FailureRecoveryAction{Action: "retry"},
+		},
+		{
+			name:      "unknown decision rejected",
+			decision:  "replace_subgraph",
 			wantError: project.ErrInvalidProject,
 		},
 	}

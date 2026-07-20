@@ -530,6 +530,10 @@ SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
+  AND (
+    COALESCE(sqlc.narg('include_dismissed')::boolean, false) = true
+    OR dismissed_at IS NULL
+  )
 ORDER BY updated_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -538,6 +542,7 @@ SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND demand_id = sqlc.arg('demand_id')::uuid
+  AND dismissed_at IS NULL
 ORDER BY updated_at DESC
 LIMIT sqlc.arg('limit');
 
@@ -546,7 +551,28 @@ SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND demand_id = sqlc.arg('demand_id')::uuid
+  AND dismissed_at IS NULL
 ORDER BY stage_index ASC NULLS LAST, created_at ASC;
+
+-- name: DismissProjectTask :one
+-- 仅终态 failed/cancelled、尚未了结、且无 pending/requested 决策时可清理。
+UPDATE project_tasks pt
+SET dismissed_at = NOW(),
+    dismissed_by = sqlc.arg('dismissed_by')::uuid,
+    updated_at = NOW()
+WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pt.project_id = sqlc.arg('project_id')::uuid
+  AND pt.id = sqlc.arg('id')::uuid
+  AND pt.status IN ('failed', 'cancelled')
+  AND pt.dismissed_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM project_decision_requests pdr
+    WHERE pdr.tenant_id = pt.tenant_id
+      AND pdr.project_task_id = pt.id
+      AND COALESCE(pdr.status_snapshot, '') IN ('pending', 'requested', 'waiting', 'open')
+  )
+RETURNING pt.*;
 
 -- name: CreateProjectTask :one
 INSERT INTO project_tasks (
@@ -1041,6 +1067,7 @@ SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND coordination_job_id = sqlc.arg('coordination_job_id')::uuid
+  AND dismissed_at IS NULL
 ORDER BY stage_index ASC NULLS LAST, created_at ASC;
 
 -- name: ListProjectTasksByAcceptedPlanRevision :many
@@ -1049,6 +1076,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND demand_id = sqlc.arg('demand_id')::uuid
   AND accepted_plan_revision_id = sqlc.arg('accepted_plan_revision_id')::uuid
+  AND dismissed_at IS NULL
 ORDER BY stage_index ASC NULLS LAST, created_at ASC;
 
 -- name: CreateProjectPlanRevision :one

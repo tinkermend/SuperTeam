@@ -1,9 +1,25 @@
+import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { RunDetailDrawer } from "./run-detail-drawer";
 import type { DigitalEmployeeRunListItem } from "@/lib/api/employees";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    params,
+    to,
+  }: {
+    children: ReactNode;
+    params?: Record<string, string>;
+    to: string;
+  }) => {
+    const href = params?.projectId ? to.replace("$projectId", params.projectId) : to;
+    return <a href={href}>{children}</a>;
+  },
+}));
 
 const employeeId = "11111111-1111-4111-8111-111111111111";
 
@@ -271,5 +287,82 @@ describe("RunDetailDrawer", () => {
     expect(screen.getByText(/"detail": "b"/).query()).toBeNull();
     expect(screen.getByText(/"detail": "a"/).query()).toBeNull();
     expect(screen.getByText(/"event_type": "turn_started"/).query()).toBeNull();
+  });
+
+  it("hides recover actions for project-linked failed runs", async () => {
+    const projectLinkedFailedRun: DigitalEmployeeRunListItem = {
+      ...runningRun,
+      status: "failed",
+      error_message: "provider exited",
+      project_id: "4e90dc0b-db29-46b7-bb87-1227f79101a0",
+      project_name: "多owner决策可见性E2E",
+      task_title: "执行 echo 命令",
+      run_kind: "task",
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/events")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse({ error: "unhandled" }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={projectLinkedFailedRun}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "重试" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "确认关闭" }).query()).toBeNull();
+    await expect.element(screen.getByText(/此运行属于项目任务/)).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "多owner决策可见性E2E" })).toBeVisible();
+  });
+
+  it("shows retry and acknowledge actions for a failed standalone run", async () => {
+    const failedRun: DigitalEmployeeRunListItem = {
+      ...runningRun,
+      status: "failed",
+      error_message: "provider exited",
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      if (url.pathname.endsWith("/events") && method === "GET") {
+        return jsonResponse([]);
+      }
+      if (url.pathname.endsWith("/acknowledge-failure") && method === "POST") {
+        return jsonResponse({
+          ...failedRun,
+          failure_acknowledged_at: "2026-07-20T12:00:00Z",
+        });
+      }
+      return jsonResponse({ error: "unhandled" }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={failedRun}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("button", { name: "重试" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "确认关闭" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "确认关闭" }));
+    await expect.element(screen.getByText("失败已确认关闭")).toBeVisible();
   });
 });

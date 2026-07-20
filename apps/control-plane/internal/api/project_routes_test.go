@@ -1467,6 +1467,10 @@ func (s *routeProjectService) ListProjectTasks(ctx context.Context, tenantID, pr
 	return nil, nil
 }
 
+func (s *routeProjectService) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*project.ProjectTask, error) {
+	return &project.ProjectTask{ID: taskID, TenantID: tenantID, ProjectID: projectID, Title: "dismissed", Status: "failed"}, nil
+}
+
 func (s *routeProjectService) GetProjectTaskGraph(ctx context.Context, req project.GetProjectTaskGraphRequest) (*project.ProjectTaskGraph, error) {
 	return &project.ProjectTaskGraph{
 		Nodes:              []project.ProjectTaskGraphNode{},

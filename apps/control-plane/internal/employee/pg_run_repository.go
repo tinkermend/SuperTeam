@@ -342,6 +342,8 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 		TimedOut:                  run.TimedOut,
 		ProviderType:              run.ProviderType,
 		ProviderSessionExternalID: run.ProviderSessionExternalID,
+		FailureAcknowledgedAt:     run.FailureAcknowledgedAt,
+		FailureAcknowledgedBy:     run.FailureAcknowledgedBy,
 	})
 	mapped.RunKind = run.RunKind
 	mapped.ResumeOfRunID = uuidPtrFromNull(run.ResumeOfRunID)
@@ -1001,6 +1003,7 @@ func digitalEmployeeRunFromQuery(run queries.TaskRun) *DigitalEmployeeRun {
 		ExitCode:                  int32PtrFromInt4(run.ExitCode),
 		Signal:                    stringPtrFromText(run.Signal),
 		TimedOut:                  run.TimedOut,
+		FailureAcknowledgedAt:     timePtrFromTimestamptz(run.FailureAcknowledgedAt),
 		IdempotencyKey:            stringPtrFromText(run.IdempotencyKey),
 		IdempotencyFingerprint:    stringPtrFromText(run.IdempotencyFingerprint),
 		TimeoutSec:                int32PtrFromInt4(run.TimeoutSec),
@@ -1054,6 +1057,8 @@ func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRu
 		FinishedAt:                row.FinishedAt,
 		CreatedAt:                 row.CreatedAt,
 		UpdatedAt:                 row.UpdatedAt,
+		FailureAcknowledgedAt:     row.FailureAcknowledgedAt,
+		FailureAcknowledgedBy:     row.FailureAcknowledgedBy,
 	})
 	// run_kind/resume_of_run_id live on the joined tasks columns, not on the
 	// task_runs subset reassembled above; carry them through explicitly (see

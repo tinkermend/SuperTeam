@@ -20,6 +20,7 @@ type DigitalEmployeeRunRepository interface {
 	GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error)
 	CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error)
 	UpdateRunStatus(ctx context.Context, req UpdateRunStatusRequest) (*DigitalEmployeeRun, error)
+	AcknowledgeRunFailure(ctx context.Context, tenantID, runID, actorUserID uuid.UUID) (*DigitalEmployeeRun, error)
 	HasRunEventSequence(ctx context.Context, tenantID, taskID, runID uuid.UUID, sequenceNumber int32) (bool, error)
 	CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) (bool, error)
 	UpsertProviderSession(ctx context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error)

@@ -2381,6 +2381,10 @@ func (s *handlerTestService) ListProjectTasks(ctx context.Context, tenantID, pro
 	return nil, nil
 }
 
+func (s *handlerTestService) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*ProjectTask, error) {
+	return &ProjectTask{ID: taskID, TenantID: tenantID, ProjectID: projectID, Title: "dismissed", Status: "failed"}, nil
+}
+
 func (s *handlerTestService) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
 	return nil, nil
 }

@@ -603,17 +603,42 @@ func (r *PgRepository) ListProjectMembers(ctx context.Context, tenantID, project
 }
 
 func (r *PgRepository) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error) {
+	return r.listProjectTasks(ctx, tenantID, projectID, status, limit, offset, false)
+}
+
+func (r *PgRepository) ListProjectTasksIncludingDismissed(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error) {
+	return r.listProjectTasks(ctx, tenantID, projectID, status, limit, offset, true)
+}
+
+func (r *PgRepository) listProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32, includeDismissed bool) ([]ProjectTask, error) {
 	rows, err := r.q.ListProjectTasks(ctx, queries.ListProjectTasksParams{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Status:    textPtr(status),
-		Limit:     limit,
-		Offset:    offset,
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Status:           textPtr(status),
+		IncludeDismissed: pgtype.Bool{Bool: includeDismissed, Valid: true},
+		Limit:            limit,
+		Offset:           offset,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return tasksFromRecords(rows)
+}
+
+func (r *PgRepository) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.DismissProjectTask(ctx, queries.DismissProjectTaskParams{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ID:          taskID,
+		DismissedBy: actorUserID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectTask{}, ErrProjectTaskNotDismissible
+		}
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
 }
 
 func (r *PgRepository) ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error) {
@@ -6499,6 +6524,8 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		WaitingRequestID:           ptrUUID(row.WaitingRequestID),
 		TerminalEventID:            ptrUUID(row.TerminalEventID),
 		StatusChangedAt:            row.StatusChangedAt.Time,
+		DismissedAt:                ptrTime(row.DismissedAt),
+		DismissedBy:                ptrUUID(row.DismissedBy),
 		CreatedAt:                  row.CreatedAt.Time,
 		UpdatedAt:                  row.UpdatedAt.Time,
 	}, nil

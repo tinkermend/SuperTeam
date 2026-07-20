@@ -1303,6 +1303,57 @@ func (s *Service) ListProjectTasks(ctx context.Context, tenantID, projectID uuid
 	return s.repository.ListProjectTasks(ctx, tenantID, projectID, status, limit, offset)
 }
 
+// DismissProjectTask soft-dismisses a terminal failed/cancelled task so it leaves
+// active views and project risk, without changing status or deleting history.
+func (s *Service) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*ProjectTask, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil || taskID == uuid.Nil || actorUserID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	projectRecord, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	eligible, err := s.isEligibleDecider(ctx, tenantID, projectRecord, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if !eligible {
+		return nil, ErrProjectDecisionForbidden
+	}
+	task, err := s.repository.GetProjectTask(ctx, tenantID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.ProjectID != projectID {
+		return nil, ErrProjectNotFound
+	}
+	if task.DismissedAt != nil {
+		return &task, nil
+	}
+	dismissed, err := s.repository.DismissProjectTask(ctx, tenantID, projectID, taskID, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		EventType:    ProjectEventTaskDismissed,
+		ActorType:    "human_user",
+		ActorID:      actorUserID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(taskID.String()),
+		Summary:      "项目任务已清理",
+		Payload: map[string]any{
+			"project_task_id": taskID.String(),
+			"status":          dismissed.Status,
+			"title":           dismissed.Title,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return &dismissed, nil
+}
+
 func (s *Service) ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -5835,13 +5886,14 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		}
 	}
 	if s.approvals != nil && decision.ApprovalRequestID != uuid.Nil {
+		approvalDecision, approvalPayload := mapDecisionForApproval(decision.DecisionType, req.Decision, mapOrEmptyAny(req.Payload))
 		if err := s.approvals.ResolveApproval(ctx, ResolveApprovalRequest{
 			TenantID:          req.TenantID,
 			ApprovalRequestID: decision.ApprovalRequestID,
 			DecidedByUserID:   req.DecidedByUserID,
-			Decision:          req.Decision,
+			Decision:          approvalDecision,
 			Comment:           req.Comment,
-			Payload:           mapOrEmptyAny(req.Payload),
+			Payload:           approvalPayload,
 		}); err != nil {
 			return nil, err
 		}
@@ -7220,10 +7272,35 @@ func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, no
 
 func validHumanDecision(decision string) bool {
 	switch decision {
-	case "approved", "rejected", "needs_more_evidence", PlanReviewDecisionRequestChanges, PlanningGapDecisionRestaffed, PlanningGapDecisionExempted:
+	case "approved", "rejected", "needs_more_evidence", "retry", "cancel_downstream", "reassign", PlanReviewDecisionRequestChanges, PlanningGapDecisionRestaffed, PlanningGapDecisionExempted:
 		return true
 	default:
 		return false
+	}
+}
+
+// mapDecisionForApproval translates task-failure recovery vocabulary (retry /
+// cancel_downstream / reassign) into the closed approval decision enum while
+// preserving recovery_action in the payload for audit.
+func mapDecisionForApproval(decisionType, decision string, payload map[string]any) (string, map[string]any) {
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	if decisionType != "task_failure_recovery" {
+		return decision, payload
+	}
+	switch decision {
+	case "retry":
+		payload["recovery_action"] = "retry"
+		return "approved", payload
+	case "reassign":
+		payload["recovery_action"] = "reassign"
+		return "approved", payload
+	case "cancel_downstream":
+		payload["recovery_action"] = "cancel_downstream"
+		return "rejected", payload
+	default:
+		return decision, payload
 	}
 }
 

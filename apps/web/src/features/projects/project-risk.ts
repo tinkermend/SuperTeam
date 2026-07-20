@@ -175,6 +175,9 @@ export function deriveProjectRiskSummary(
   }
 
   for (const projectTask of input.tasks ?? []) {
+    if (projectTask.dismissed_at) {
+      continue;
+    }
     const status = normalize(projectTask.status);
     if (failedTaskStatuses.has(status)) {
       reasons.push({
@@ -233,7 +236,7 @@ export function deriveProjectRiskSummary(
     });
   }
 
-  const waitingSince = staleWaitingSince(project, options);
+  const waitingSince = staleWaitingSince(input, options);
   if (waitingSince) {
     reasons.push({
       id: `project:${project.id}:sla_waiting`,
@@ -241,7 +244,7 @@ export function deriveProjectRiskSummary(
       level: "warn",
       source: "project",
       title: project.name,
-      detail: "running",
+      detail: "waiting_over_sla",
       sourceId: project.id,
       waitingSince,
     });
@@ -445,22 +448,47 @@ function normalize(value?: string): string {
 }
 
 function staleWaitingSince(
-  project: Project,
+  input: ProjectRiskInput,
   options: ProjectRiskOptions,
 ): string | undefined {
-  if (project.status !== "running" || !project.updated_at) {
-    return undefined;
-  }
-  const updatedAt = Date.parse(project.updated_at);
-  if (Number.isNaN(updatedAt)) {
-    return undefined;
-  }
   const now = parseTime(options.now ?? new Date());
   if (now === undefined) {
     return undefined;
   }
   const threshold = options.slaWaitMs ?? slaWaitMs;
-  return now - updatedAt > threshold ? project.updated_at : undefined;
+  const candidates: string[] = [];
+
+  // 「等待超时」必须挂在真实等待主体上（未决决策 / 等人任务），
+  // 不能仅因 project.status=running 且 updated_at 变旧就报「待处理」——
+  // 空任务/已无动作的 running 项目会假阳性（如配置页体验走查E2E）。
+  for (const decision of input.decisions ?? []) {
+    if (!activeDecisionStatuses.has(normalize(decision.status_snapshot))) {
+      continue;
+    }
+    const since = decision.created_at;
+    const sinceMs = since ? Date.parse(since) : Number.NaN;
+    if (!Number.isNaN(sinceMs) && now - sinceMs > threshold) {
+      candidates.push(since!);
+    }
+  }
+
+  for (const projectTask of input.tasks ?? []) {
+    if (projectTask.dismissed_at) {
+      continue;
+    }
+    const status = normalize(projectTask.status);
+    // 与员工运营态一致：requires_human_approval 非等待态不算「在等人」。
+    if (!waitingHumanTaskStatuses.has(status)) {
+      continue;
+    }
+    const since = projectTask.updated_at ?? projectTask.created_at;
+    const sinceMs = since ? Date.parse(since) : Number.NaN;
+    if (!Number.isNaN(sinceMs) && now - sinceMs > threshold) {
+      candidates.push(since!);
+    }
+  }
+
+  return candidates.sort((left, right) => Date.parse(left) - Date.parse(right))[0];
 }
 
 function parseTime(value: Date | string | number): number | undefined {

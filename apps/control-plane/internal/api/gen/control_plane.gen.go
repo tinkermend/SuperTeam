@@ -803,8 +803,10 @@ func (e HealthResponseStatus) Valid() bool {
 
 // Defines values for InboxItemItemType.
 const (
-	InboxItemItemTypeApproval        InboxItemItemType = "approval"
-	InboxItemItemTypeProjectDecision InboxItemItemType = "project_decision"
+	InboxItemItemTypeApproval                   InboxItemItemType = "approval"
+	InboxItemItemTypeDigitalEmployeeRunRecovery InboxItemItemType = "digital_employee_run_recovery"
+	InboxItemItemTypeProjectDecision            InboxItemItemType = "project_decision"
+	InboxItemItemTypeTeamPendingDelete          InboxItemItemType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the InboxItemItemType enum.
@@ -812,7 +814,11 @@ func (e InboxItemItemType) Valid() bool {
 	switch e {
 	case InboxItemItemTypeApproval:
 		return true
+	case InboxItemItemTypeDigitalEmployeeRunRecovery:
+		return true
 	case InboxItemItemTypeProjectDecision:
+		return true
+	case InboxItemItemTypeTeamPendingDelete:
 		return true
 	default:
 		return false
@@ -822,7 +828,9 @@ func (e InboxItemItemType) Valid() bool {
 // Defines values for InboxItemSourceType.
 const (
 	InboxItemSourceTypeApprovalRequest        InboxItemSourceType = "approval_request"
+	InboxItemSourceTypeDigitalEmployeeRun     InboxItemSourceType = "digital_employee_run"
 	InboxItemSourceTypeProjectDecisionRequest InboxItemSourceType = "project_decision_request"
+	InboxItemSourceTypeTeamPendingDelete      InboxItemSourceType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the InboxItemSourceType enum.
@@ -830,7 +838,11 @@ func (e InboxItemSourceType) Valid() bool {
 	switch e {
 	case InboxItemSourceTypeApprovalRequest:
 		return true
+	case InboxItemSourceTypeDigitalEmployeeRun:
+		return true
 	case InboxItemSourceTypeProjectDecisionRequest:
+		return true
+	case InboxItemSourceTypeTeamPendingDelete:
 		return true
 	default:
 		return false
@@ -2183,16 +2195,22 @@ func (e ListInboxItemsParamsStatus) Valid() bool {
 
 // Defines values for ListInboxItemsParamsItemType.
 const (
-	ListInboxItemsParamsItemTypeApproval        ListInboxItemsParamsItemType = "approval"
-	ListInboxItemsParamsItemTypeProjectDecision ListInboxItemsParamsItemType = "project_decision"
+	Approval                   ListInboxItemsParamsItemType = "approval"
+	DigitalEmployeeRunRecovery ListInboxItemsParamsItemType = "digital_employee_run_recovery"
+	ProjectDecision            ListInboxItemsParamsItemType = "project_decision"
+	TeamPendingDelete          ListInboxItemsParamsItemType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsItemType enum.
 func (e ListInboxItemsParamsItemType) Valid() bool {
 	switch e {
-	case ListInboxItemsParamsItemTypeApproval:
+	case Approval:
 		return true
-	case ListInboxItemsParamsItemTypeProjectDecision:
+	case DigitalEmployeeRunRecovery:
+		return true
+	case ProjectDecision:
+		return true
+	case TeamPendingDelete:
 		return true
 	default:
 		return false
@@ -3181,17 +3199,20 @@ type DigitalEmployeeRecentEventSummary struct {
 // DigitalEmployeeRun defines model for DigitalEmployeeRun.
 type DigitalEmployeeRun struct {
 	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
-	ChatThreadId              *openapi_types.UUID       `json:"chat_thread_id,omitempty"`
-	CommandId                 string                    `json:"command_id"`
-	CompletedAt               *time.Time                `json:"completed_at,omitempty"`
-	CreatedAt                 *time.Time                `json:"created_at,omitempty"`
-	Diagnostic                map[string]interface{}    `json:"diagnostic"`
-	DigitalEmployeeId         openapi_types.UUID        `json:"digital_employee_id"`
-	ErrorCode                 *string                   `json:"error_code,omitempty"`
-	ErrorFamily               *string                   `json:"error_family,omitempty"`
-	ErrorMessage              *string                   `json:"error_message,omitempty"`
-	ExecutionInstanceId       openapi_types.UUID        `json:"execution_instance_id"`
-	ExitCode                  *int32                    `json:"exit_code,omitempty"`
+	ChatThreadId        *openapi_types.UUID    `json:"chat_thread_id,omitempty"`
+	CommandId           string                 `json:"command_id"`
+	CompletedAt         *time.Time             `json:"completed_at,omitempty"`
+	CreatedAt           *time.Time             `json:"created_at,omitempty"`
+	Diagnostic          map[string]interface{} `json:"diagnostic"`
+	DigitalEmployeeId   openapi_types.UUID     `json:"digital_employee_id"`
+	ErrorCode           *string                `json:"error_code,omitempty"`
+	ErrorFamily         *string                `json:"error_family,omitempty"`
+	ErrorMessage        *string                `json:"error_message,omitempty"`
+	ExecutionInstanceId openapi_types.UUID     `json:"execution_instance_id"`
+	ExitCode            *int32                 `json:"exit_code,omitempty"`
+
+	// FailureAcknowledgedAt When a human acknowledged this failed/timed_out standalone run
+	FailureAcknowledgedAt     *time.Time                `json:"failure_acknowledged_at,omitempty"`
 	FinishedAt                *time.Time                `json:"finished_at,omitempty"`
 	GraceSec                  *int32                    `json:"grace_sec,omitempty"`
 	Id                        openapi_types.UUID        `json:"id"`
@@ -3252,18 +3273,21 @@ type DigitalEmployeeRunList struct {
 // DigitalEmployeeRunListItem defines model for DigitalEmployeeRunListItem.
 type DigitalEmployeeRunListItem struct {
 	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
-	ChatThreadId              *openapi_types.UUID               `json:"chat_thread_id,omitempty"`
-	CommandId                 string                            `json:"command_id"`
-	CompletedAt               *time.Time                        `json:"completed_at,omitempty"`
-	CreatedAt                 *time.Time                        `json:"created_at,omitempty"`
-	Diagnostic                map[string]interface{}            `json:"diagnostic"`
-	DigitalEmployeeId         openapi_types.UUID                `json:"digital_employee_id"`
-	DurationSec               *float32                          `json:"duration_sec,omitempty"`
-	ErrorCode                 *string                           `json:"error_code,omitempty"`
-	ErrorFamily               *string                           `json:"error_family,omitempty"`
-	ErrorMessage              *string                           `json:"error_message,omitempty"`
-	ExecutionInstanceId       openapi_types.UUID                `json:"execution_instance_id"`
-	ExitCode                  *int32                            `json:"exit_code,omitempty"`
+	ChatThreadId        *openapi_types.UUID    `json:"chat_thread_id,omitempty"`
+	CommandId           string                 `json:"command_id"`
+	CompletedAt         *time.Time             `json:"completed_at,omitempty"`
+	CreatedAt           *time.Time             `json:"created_at,omitempty"`
+	Diagnostic          map[string]interface{} `json:"diagnostic"`
+	DigitalEmployeeId   openapi_types.UUID     `json:"digital_employee_id"`
+	DurationSec         *float32               `json:"duration_sec,omitempty"`
+	ErrorCode           *string                `json:"error_code,omitempty"`
+	ErrorFamily         *string                `json:"error_family,omitempty"`
+	ErrorMessage        *string                `json:"error_message,omitempty"`
+	ExecutionInstanceId openapi_types.UUID     `json:"execution_instance_id"`
+	ExitCode            *int32                 `json:"exit_code,omitempty"`
+
+	// FailureAcknowledgedAt When a human acknowledged this failed/timed_out standalone run
+	FailureAcknowledgedAt     *time.Time                        `json:"failure_acknowledged_at,omitempty"`
 	FinishedAt                *time.Time                        `json:"finished_at,omitempty"`
 	GraceSec                  *int32                            `json:"grace_sec,omitempty"`
 	Id                        openapi_types.UUID                `json:"id"`
@@ -4543,27 +4567,33 @@ type ProjectStatusSummary struct {
 
 // ProjectTask defines model for ProjectTask.
 type ProjectTask struct {
-	AssignedDigitalEmployeeId *openapi_types.UUID     `json:"assigned_digital_employee_id,omitempty"`
-	CoordinationJobId         *openapi_types.UUID     `json:"coordination_job_id,omitempty"`
-	CreatedAt                 time.Time               `json:"created_at"`
-	DemandId                  *openapi_types.UUID     `json:"demand_id,omitempty"`
-	ExpectedOutputs           *[]interface{}          `json:"expected_outputs,omitempty"`
-	HandoffContract           *map[string]interface{} `json:"handoff_contract,omitempty"`
-	Id                        openapi_types.UUID      `json:"id"`
-	InputRequirements         *map[string]interface{} `json:"input_requirements,omitempty"`
-	PlannedTaskKey            *string                 `json:"planned_task_key,omitempty"`
-	PlannerMetadata           *map[string]interface{} `json:"planner_metadata,omitempty"`
-	ProjectId                 openapi_types.UUID      `json:"project_id"`
-	RequiresHumanApproval     bool                    `json:"requires_human_approval"`
-	RiskLevel                 *string                 `json:"risk_level,omitempty"`
-	RouteDecisionId           *openapi_types.UUID     `json:"route_decision_id,omitempty"`
-	StageIndex                *int32                  `json:"stage_index,omitempty"`
-	Status                    string                  `json:"status"`
-	Summary                   *string                 `json:"summary,omitempty"`
-	TaskKind                  *string                 `json:"task_kind,omitempty"`
-	TenantId                  openapi_types.UUID      `json:"tenant_id"`
-	Title                     string                  `json:"title"`
-	UpdatedAt                 time.Time               `json:"updated_at"`
+	AssignedDigitalEmployeeId *openapi_types.UUID `json:"assigned_digital_employee_id,omitempty"`
+	CoordinationJobId         *openapi_types.UUID `json:"coordination_job_id,omitempty"`
+	CreatedAt                 time.Time           `json:"created_at"`
+	DemandId                  *openapi_types.UUID `json:"demand_id,omitempty"`
+
+	// DismissedAt When a human soft-dismissed this terminal task from active views
+	DismissedAt *time.Time `json:"dismissed_at,omitempty"`
+
+	// DismissedBy User who soft-dismissed this task
+	DismissedBy           *openapi_types.UUID     `json:"dismissed_by,omitempty"`
+	ExpectedOutputs       *[]interface{}          `json:"expected_outputs,omitempty"`
+	HandoffContract       *map[string]interface{} `json:"handoff_contract,omitempty"`
+	Id                    openapi_types.UUID      `json:"id"`
+	InputRequirements     *map[string]interface{} `json:"input_requirements,omitempty"`
+	PlannedTaskKey        *string                 `json:"planned_task_key,omitempty"`
+	PlannerMetadata       *map[string]interface{} `json:"planner_metadata,omitempty"`
+	ProjectId             openapi_types.UUID      `json:"project_id"`
+	RequiresHumanApproval bool                    `json:"requires_human_approval"`
+	RiskLevel             *string                 `json:"risk_level,omitempty"`
+	RouteDecisionId       *openapi_types.UUID     `json:"route_decision_id,omitempty"`
+	StageIndex            *int32                  `json:"stage_index,omitempty"`
+	Status                string                  `json:"status"`
+	Summary               *string                 `json:"summary,omitempty"`
+	TaskKind              *string                 `json:"task_kind,omitempty"`
+	TenantId              openapi_types.UUID      `json:"tenant_id"`
+	Title                 string                  `json:"title"`
+	UpdatedAt             time.Time               `json:"updated_at"`
 }
 
 // ProjectTaskAttemptBudgetHeartbeatResponse defines model for ProjectTaskAttemptBudgetHeartbeatResponse.
@@ -7245,9 +7275,15 @@ type ServerInterface interface {
 	// Get a digital employee run
 	// (GET /api/v1/digital-employees/{employeeId}/runs/{runId})
 	GetDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
+	// Acknowledge a failed standalone digital employee run
+	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure)
+	AcknowledgeDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
 	// List digital employee run events
 	// (GET /api/v1/digital-employees/{employeeId}/runs/{runId}/events)
 	ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId, params ListDigitalEmployeeRunEventsParams)
+	// Retry a failed standalone digital employee run
+	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/retry)
+	RetryDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
 	// Stop an active digital employee run
 	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/stop)
 	StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
@@ -7449,6 +7485,9 @@ type ServerInterface interface {
 	// List project tasks
 	// (GET /api/v1/projects/{projectId}/tasks)
 	ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams)
+	// Dismiss a terminal project task from active views
+	// (POST /api/v1/projects/{projectId}/tasks/{taskId}/dismiss)
+	DismissProjectTask(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId)
 	// List project task dispatch gate results
 	// (GET /api/v1/projects/{projectId}/tasks/{taskId}/dispatch-gates)
 	ListProjectTaskDispatchGates(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId)
@@ -8019,9 +8058,21 @@ func (_ Unimplemented) GetDigitalEmployeeRun(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Acknowledge a failed standalone digital employee run
+// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure)
+func (_ Unimplemented) AcknowledgeDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List digital employee run events
 // (GET /api/v1/digital-employees/{employeeId}/runs/{runId}/events)
 func (_ Unimplemented) ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId, params ListDigitalEmployeeRunEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Retry a failed standalone digital employee run
+// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/retry)
+func (_ Unimplemented) RetryDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8424,6 +8475,12 @@ func (_ Unimplemented) GetProjectTaskGraph(w http.ResponseWriter, r *http.Reques
 // List project tasks
 // (GET /api/v1/projects/{projectId}/tasks)
 func (_ Unimplemented) ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Dismiss a terminal project task from active views
+// (POST /api/v1/projects/{projectId}/tasks/{taskId}/dismiss)
+func (_ Unimplemented) DismissProjectTask(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10611,6 +10668,41 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployeeRun(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// AcknowledgeDigitalEmployeeRunFailure operation middleware
+func (siw *ServerInterfaceWrapper) AcknowledgeDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "runId" -------------
+	var runId RunId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runId", chi.URLParam(r, "runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcknowledgeDigitalEmployeeRunFailure(w, r, employeeId, runId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListDigitalEmployeeRunEvents operation middleware
 func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *http.Request) {
 
@@ -10666,6 +10758,41 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRunEvents(w http.ResponseW
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListDigitalEmployeeRunEvents(w, r, employeeId, runId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetryDigitalEmployeeRunFailure operation middleware
+func (siw *ServerInterfaceWrapper) RetryDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "runId" -------------
+	var runId RunId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runId", chi.URLParam(r, "runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetryDigitalEmployeeRunFailure(w, r, employeeId, runId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13200,6 +13327,41 @@ func (siw *ServerInterfaceWrapper) ListProjectTasks(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectTasks(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DismissProjectTask operation middleware
+func (siw *ServerInterfaceWrapper) DismissProjectTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "taskId" -------------
+	var taskId TaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DismissProjectTask(w, r, projectId, taskId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16439,7 +16601,13 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}", wrapper.GetDigitalEmployeeRun)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure", wrapper.AcknowledgeDigitalEmployeeRunFailure)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/events", wrapper.ListDigitalEmployeeRunEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/retry", wrapper.RetryDigitalEmployeeRunFailure)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/stop", wrapper.StopDigitalEmployeeRun)
@@ -16641,6 +16809,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks", wrapper.ListProjectTasks)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/tasks/{taskId}/dismiss", wrapper.DismissProjectTask)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks/{taskId}/dispatch-gates", wrapper.ListProjectTaskDispatchGates)

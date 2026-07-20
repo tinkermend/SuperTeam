@@ -1502,6 +1502,10 @@ type ProjectTask struct {
 	LatestTaskResultID uuid.NullUUID `json:"latest_task_result_id"`
 	// Graph extension round: 0 for the original plan, N for tasks appended in the Nth round.
 	PlanIteration int32 `json:"plan_iteration"`
+	// 人类了结该终态任务的时间;有值后任务从活跃视图/项目风险/员工运营态中隐藏,status 与审计不变
+	DismissedAt pgtype.Timestamptz `json:"dismissed_at"`
+	// 了结该任务的用户 ID
+	DismissedBy uuid.NullUUID `json:"dismissed_by"`
 }
 
 // 项目任务执行尝试表，记录项目任务调度、租约、重试和终态回写。
@@ -2410,6 +2414,10 @@ type TaskRun struct {
 	ProviderType pgtype.Text `json:"provider_type"`
 	// Provider外部会话ID
 	ProviderSessionExternalID pgtype.Text `json:"provider_session_external_id"`
+	// 人类确认关闭该失败 run 的时间;有值后运营态不再因该 run 点亮异常
+	FailureAcknowledgedAt pgtype.Timestamptz `json:"failure_acknowledged_at"`
+	// 确认关闭该失败 run 的用户 ID
+	FailureAcknowledgedBy uuid.NullUUID `json:"failure_acknowledged_by"`
 }
 
 // 团队对注册表 MCP 的绑定，团队下数字员工继承

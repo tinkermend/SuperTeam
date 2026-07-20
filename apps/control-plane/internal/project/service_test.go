@@ -11553,7 +11553,7 @@ func (r *memoryRepository) ListProjectTasks(ctx context.Context, tenantID, proje
 	r.lastTasksOffset = offset
 	filtered := make([]ProjectTask, 0, len(r.tasks))
 	for _, task := range r.tasks {
-		if task.TenantID == tenantID && task.ProjectID == projectID && (status == nil || task.Status == *status) {
+		if task.TenantID == tenantID && task.ProjectID == projectID && (status == nil || task.Status == *status) && task.DismissedAt == nil {
 			filtered = append(filtered, task)
 		}
 	}
@@ -11561,6 +11561,27 @@ func (r *memoryRepository) ListProjectTasks(ctx context.Context, tenantID, proje
 		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 	})
 	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error) {
+	now := time.Now().UTC()
+	for i := range r.tasks {
+		task := &r.tasks[i]
+		if task.TenantID != tenantID || task.ProjectID != projectID || task.ID != taskID {
+			continue
+		}
+		if task.DismissedAt != nil {
+			return *task, nil
+		}
+		if task.Status != "failed" && task.Status != "cancelled" {
+			return ProjectTask{}, ErrProjectTaskNotDismissible
+		}
+		task.DismissedAt = &now
+		task.DismissedBy = &actorUserID
+		task.UpdatedAt = now
+		return *task, nil
+	}
+	return ProjectTask{}, ErrProjectTaskNotDismissible
 }
 
 func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {

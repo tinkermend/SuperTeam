@@ -266,6 +266,7 @@ export type DigitalEmployeeRun = {
   idempotency_key?: string;
   timeout_sec?: number;
   grace_sec?: number;
+  failure_acknowledged_at?: string;
   started_at?: string;
   completed_at?: string;
   finished_at?: string;
@@ -1019,5 +1020,37 @@ export function stopDigitalEmployeeRun(
     `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/stop`,
     input,
     "stop digital employee run",
+  );
+}
+
+export function acknowledgeDigitalEmployeeRunFailure(
+  options: ApiClientOptions,
+  employeeId: string,
+  runId: string,
+): Promise<DigitalEmployeeRun> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const encodedRunId = encodePathSegment(runId);
+
+  return postJson<DigitalEmployeeRun>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/acknowledge-failure`,
+    {},
+    "acknowledge digital employee run failure",
+  );
+}
+
+export function retryDigitalEmployeeRunFailure(
+  options: ApiClientOptions,
+  employeeId: string,
+  runId: string,
+): Promise<DigitalEmployeeRun> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const encodedRunId = encodePathSegment(runId);
+
+  return postJson<DigitalEmployeeRun>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/retry`,
+    {},
+    "retry digital employee run failure",
   );
 }

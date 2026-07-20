@@ -1975,8 +1975,17 @@ func parseFailureRecoveryAction(decision string, payload map[string]any) (Failur
 	switch decision {
 	case "needs_more_evidence":
 		return FailureRecoveryAction{Action: "needs_more_evidence"}, nil
-	case "rejected":
+	case "rejected", "cancel_downstream":
 		return FailureRecoveryAction{Action: "cancel_downstream"}, nil
+	case "retry":
+		return FailureRecoveryAction{Action: "retry"}, nil
+	case "reassign":
+		idText, _ := payload["new_digital_employee_id"].(string)
+		id, err := uuid.Parse(strings.TrimSpace(idText))
+		if err != nil {
+			return FailureRecoveryAction{}, project.ErrInvalidProject
+		}
+		return FailureRecoveryAction{Action: "reassign", NewDigitalEmployeeID: &id}, nil
 	case "approved":
 		raw, _ := payload["recovery_action"].(string)
 		switch strings.TrimSpace(raw) {
@@ -1990,7 +1999,8 @@ func parseFailureRecoveryAction(decision string, payload map[string]any) (Failur
 			}
 			return FailureRecoveryAction{Action: "reassign", NewDigitalEmployeeID: &id}, nil
 		default:
-			return FailureRecoveryAction{}, project.ErrInvalidProject
+			// 兼容旧「同意」无 recovery_action:默认按重试处理,避免卡片无法收敛。
+			return FailureRecoveryAction{Action: "retry"}, nil
 		}
 	default:
 		return FailureRecoveryAction{}, project.ErrInvalidProject

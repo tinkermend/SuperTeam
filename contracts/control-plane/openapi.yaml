@@ -1200,6 +1200,29 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/tasks/{taskId}/dismiss:
+    post:
+      operationId: dismissProjectTask
+      summary: Dismiss a terminal project task from active views
+      description: Soft-dismiss a failed or cancelled project task so it leaves active queues and project risk without deleting history.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Dismissed project task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTask"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/tasks/{taskId}/liveness:
     get:
       operationId: getProjectTaskLiveness
@@ -2038,6 +2061,8 @@ paths:
             enum:
               - approval
               - project_decision
+              - team_pending_delete
+              - digital_employee_run_recovery
         - name: risk_level
           in: query
           required: false
@@ -3951,6 +3976,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeRun"
+  /api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure:
+    post:
+      operationId: acknowledgeDigitalEmployeeRunFailure
+      summary: Acknowledge a failed standalone digital employee run
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Failure acknowledged; operational stain cleared for this run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeRun"
+  /api/v1/digital-employees/{employeeId}/runs/{runId}/retry:
+    post:
+      operationId: retryDigitalEmployeeRunFailure
+      summary: Retry a failed standalone digital employee run
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "201":
+          description: Replacement run created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeRun"
   /api/v1/digital-employees/{employeeId}/provider-sessions:
     get:
       operationId: listProviderSessionsForDigitalEmployee
@@ -5052,11 +5105,15 @@ components:
           enum:
             - approval
             - project_decision
+            - team_pending_delete
+            - digital_employee_run_recovery
         source_type:
           type: string
           enum:
             - approval_request
             - project_decision_request
+            - team_pending_delete
+            - digital_employee_run
         source_id:
           type: string
           format: uuid
@@ -6654,6 +6711,14 @@ components:
         updated_at:
           type: string
           format: date-time
+        dismissed_at:
+          type: string
+          format: date-time
+          description: When a human soft-dismissed this terminal task from active views
+        dismissed_by:
+          type: string
+          format: uuid
+          description: User who soft-dismissed this task
     ProjectTaskGraph:
       type: object
       required:
@@ -12072,6 +12137,10 @@ components:
         grace_sec:
           type: integer
           format: int32
+        failure_acknowledged_at:
+          type: string
+          format: date-time
+          description: When a human acknowledged this failed/timed_out standalone run
         started_at:
           type: string
           format: date-time

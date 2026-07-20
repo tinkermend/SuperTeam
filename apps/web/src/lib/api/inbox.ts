@@ -5,9 +5,17 @@ export type InboxViewMode = "mine" | "team";
 
 export type InboxStatus = "open" | "resolved" | "cancelled";
 
-export type InboxItemType = "approval" | "project_decision";
+export type InboxItemType =
+  | "approval"
+  | "project_decision"
+  | "team_pending_delete"
+  | "digital_employee_run_recovery";
 
-export type InboxSourceType = "approval_request" | "project_decision_request";
+export type InboxSourceType =
+  | "approval_request"
+  | "project_decision_request"
+  | "team_pending_delete"
+  | "digital_employee_run";
 
 export type InboxItemAction = {
   key: string;

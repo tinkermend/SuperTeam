@@ -62,9 +62,12 @@ const UUID_PATTERN =
 const INBOX_STATUSES = ["open", "resolved", "cancelled"] satisfies Array<
   NonNullable<InboxListFilters["status"]>
 >;
-const INBOX_ITEM_TYPES = ["approval", "project_decision"] satisfies Array<
-  NonNullable<InboxListFilters["item_type"]>
->;
+const INBOX_ITEM_TYPES = [
+  "approval",
+  "project_decision",
+  "team_pending_delete",
+  "digital_employee_run_recovery",
+] satisfies Array<NonNullable<InboxListFilters["item_type"]>>;
 
 export function InboxPage({ fetcher }: InboxPageProps = {}) {
   return <InboxView apiBaseUrl={resolveControlPlaneUrl()} fetcher={fetcher} />;

@@ -507,6 +507,17 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, errors.New("project repository does not support provider event ledger recording")
 	}
 	runWritebackService.WithExecutionLedgerRecorder(providerEventLedgerRecorder{repository: providerLedgerRepository})
+	runRecoveryAdapter := inbox.NewRunRecoveryProjectorAdapter(inboxService, runService)
+	runService.WithFailureInboxProjector(runRecoveryAdapter)
+	runWritebackService.WithFailureInboxProjector(runRecoveryAdapter)
+	runWritebackService.WithEmployeeOwnerLookup(func(ctx context.Context, tenantID, employeeID uuid.UUID) (uuid.UUID, string, error) {
+		record, err := employeeService.GetDigitalEmployee(ctx, tenantID, employeeID)
+		if err != nil || record == nil {
+			return uuid.Nil, "", err
+		}
+		return record.OwnerUserID, record.Name, nil
+	})
+	inboxService.SetRunRecoveryActionResolver(runRecoveryAdapter)
 
 	capabilityRepository := capability.NewPgRepository(q)
 	var credentialSealer capability.CredentialSealer

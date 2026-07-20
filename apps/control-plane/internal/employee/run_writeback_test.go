@@ -1101,6 +1101,17 @@ func (f *fakeRunWritebackRepository) UpdateRunStatus(_ context.Context, req Upda
 	return cloneWritebackRun(run), nil
 }
 
+func (f *fakeRunWritebackRepository) AcknowledgeRunFailure(_ context.Context, tenantID, runID, _ uuid.UUID) (*DigitalEmployeeRun, error) {
+	run, ok := f.runsByID[runID]
+	if !ok || run.TenantID != tenantID {
+		return nil, ErrNotFound
+	}
+	now := time.Now().UTC()
+	run.FailureAcknowledgedAt = &now
+	f.runsByCommand[run.CommandID] = cloneWritebackRun(run)
+	return cloneWritebackRun(run), nil
+}
+
 func (f *fakeRunWritebackRepository) HasRunEventSequence(_ context.Context, tenantID, _ uuid.UUID, runID uuid.UUID, sequenceNumber int32) (bool, error) {
 	if f.forceMissingRunEventSequence {
 		return false, nil

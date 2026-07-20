@@ -35,11 +35,15 @@ export const riskTone: Record<string, V3Tone> = {
 const itemTypeLabel: Record<string, string> = {
   approval: "审批",
   project_decision: "项目决策",
+  team_pending_delete: "团队待删",
+  digital_employee_run_recovery: "运行恢复",
 };
 
 const sourceTypeLabel: Record<string, string> = {
   approval_request: "审批请求",
   project_decision_request: "项目决策请求",
+  team_pending_delete: "团队待删",
+  digital_employee_run: "数字员工运行",
 };
 
 /**

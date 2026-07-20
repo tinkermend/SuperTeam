@@ -179,6 +179,23 @@ describe("project risk model", () => {
     );
   });
 
+  it("ignores dismissed failed tasks in risk reasons", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      project: project("project-dismissed"),
+      tasks: [
+        task("project-dismissed", {
+          dismissed_at: "2026-06-29T10:00:00.000Z",
+          status: "failed",
+        }),
+      ],
+    });
+
+    expect(summary.level).toBe("none");
+    expect(summary.reasons.map((reason) => reason.type)).not.toContain("execution_failed");
+  });
+
   it("marks rejected and submitted evidence as evidence-required warnings", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [],
@@ -215,7 +232,7 @@ describe("project risk model", () => {
     );
   });
 
-  it("marks stale running projects as SLA waiting warnings using injected now", () => {
+  it("does not mark empty stale running projects as SLA waiting", () => {
     const summary = deriveProjectRiskSummary(
       {
         decisions: [],
@@ -229,9 +246,67 @@ describe("project risk model", () => {
       { now: new Date("2026-06-29T10:30:00.000Z") },
     );
 
-    expect(summary.level).toBe("warn");
-    expect(summary.primaryReason?.type).toBe("sla_waiting");
-    expect(summary.waitingSince).toBe("2026-06-29T07:00:00.000Z");
+    expect(summary.level).toBe("none");
+    expect(summary.primaryReason).toBeUndefined();
+    expect(summary.reasons.map((reason) => reason.type)).not.toContain("sla_waiting");
+  });
+
+  it("marks stale waiting-human tasks as SLA waiting using injected now", () => {
+    const waitingSince = "2026-06-29T07:00:00.000Z";
+    const summary = deriveProjectRiskSummary(
+      {
+        decisions: [],
+        evidence: [],
+        project: project("project-5b", {
+          status: "running",
+          updated_at: waitingSince,
+        }),
+        tasks: [
+          task("project-5b", {
+            status: "waiting_human",
+            updated_at: waitingSince,
+          }),
+        ],
+      },
+      { now: new Date("2026-06-29T10:30:00.000Z") },
+    );
+
+    expect(summary.reasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "sla_waiting",
+          waitingSince,
+        }),
+      ]),
+    );
+    expect(summary.waitingSince).toBe(waitingSince);
+  });
+
+  it("marks stale pending decisions as SLA waiting using injected now", () => {
+    const waitingSince = "2026-06-29T07:00:00.000Z";
+    const summary = deriveProjectRiskSummary(
+      {
+        decisions: [
+          decision("project-5c", {
+            created_at: waitingSince,
+            status_snapshot: "pending",
+          }),
+        ],
+        evidence: [],
+        project: project("project-5c"),
+        tasks: [],
+      },
+      { now: new Date("2026-06-29T10:30:00.000Z") },
+    );
+
+    expect(summary.reasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "sla_waiting",
+          waitingSince,
+        }),
+      ]),
+    );
   });
 
   it("sorts danger before warn before healthy", () => {

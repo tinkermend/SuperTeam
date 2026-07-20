@@ -483,7 +483,7 @@ SELECT
     tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_message, tr.error_code,
     tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.idempotency_key,
     tr.timeout_sec, tr.grace_sec, tr.started_at, tr.completed_at, tr.finished_at,
-    tr.created_at, tr.updated_at,
+    tr.created_at, tr.updated_at, tr.failure_acknowledged_at, tr.failure_acknowledged_by,
     t.title AS task_title,
     t.run_kind,
     t.resume_of_run_id,
@@ -600,3 +600,14 @@ WITH inserted AS (
     RETURNING *, (xmax = 0) AS inserted
 )
 SELECT * FROM inserted;
+
+-- name: AcknowledgeDigitalEmployeeRunFailure :one
+UPDATE task_runs
+SET failure_acknowledged_at = NOW(),
+    failure_acknowledged_by = sqlc.arg('acknowledged_by')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('run_id')::uuid
+  AND status IN ('failed', 'timed_out')
+  AND failure_acknowledged_at IS NULL
+RETURNING *;

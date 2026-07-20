@@ -329,7 +329,7 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("配置待审批")).toBeVisible();
     await expect.element(screen.getByText("运行失败").first()).toBeVisible();
     await expect.element(readyArticle).toBeVisible();
-    expect(readyArticle.element().textContent).toContain("工作台：就绪");
+    expect(readyArticle.element().textContent).toContain("身份：就绪");
     await expect.element(screen.getByAltText("需求分析员工 的头像").first()).toHaveAttribute(
       "src",
       "/images/digital-employee-avatars/engineer-f-01-256.webp",
@@ -407,7 +407,7 @@ describe("EmployeesView", () => {
     const unboundArticle = employeeArticle(screen, "待配置员工");
 
     await expect.element(unboundArticle).toBeVisible();
-    expect(unboundArticle.element().textContent).toContain("工作台：待配置");
+    expect(unboundArticle.element().textContent).toContain("身份：待配置");
     // 身份级 provider 始终可显示;不得再出现"等待绑定 Runtime Agent"占位。
     expect(unboundArticle.element().textContent).toContain("Codex");
     expect(unboundArticle.element().textContent).not.toContain("等待绑定 Runtime Agent");

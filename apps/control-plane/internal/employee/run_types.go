@@ -97,6 +97,7 @@ type DigitalEmployeeRun struct {
 	ExitCode               *int32
 	Signal                 *string
 	TimedOut               bool
+	FailureAcknowledgedAt  *time.Time
 	IdempotencyKey         *string
 	IdempotencyFingerprint *string
 	TimeoutSec             *int32

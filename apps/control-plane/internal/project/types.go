@@ -19,7 +19,9 @@ var (
 	ErrTeamlessProjectMember        = errors.New("teamless digital employee cannot join project")
 	ErrProjectNotFound              = errors.New("project not found")
 	ErrProjectConflict              = errors.New("project conflict")
-	ErrProjectArchived              = errors.New("project archived")
+	// ErrProjectTaskNotDismissible:仅终态失败/取消且无未决决策的任务可软了结清理。
+	ErrProjectTaskNotDismissible = errors.New("仅终态失败或已取消、且无未决决策的任务可清理")
+	ErrProjectArchived           = errors.New("project archived")
 	ErrProjectTaskForbidden         = errors.New("project task forbidden")
 	ErrProjectTaskGraphPending      = errors.New("project task graph pending implementation")
 	ErrInvalidProjectEvidence       = errors.New("invalid project evidence")
@@ -205,6 +207,7 @@ const (
 	ProjectEventTaskContractMissing            ProjectEventType = "project_task.contract_missing"
 	ProjectEventTaskWaitingHuman               ProjectEventType = "project_task.waiting_human"
 	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
+	ProjectEventTaskDismissed                  ProjectEventType = "project_task.dismissed"
 	ProjectEventTaskCompleted                  ProjectEventType = "project_task.completed"
 	ProjectEventTaskFailed                     ProjectEventType = "project_task.failed"
 	ProjectEventTaskResultSubmitted            ProjectEventType = "project_task.result.submitted"
@@ -638,6 +641,8 @@ type ProjectTask struct {
 	WaitingRequestID           *uuid.UUID
 	TerminalEventID            *uuid.UUID
 	StatusChangedAt            time.Time
+	DismissedAt                *time.Time
+	DismissedBy                *uuid.UUID
 	CreatedAt                  time.Time
 	UpdatedAt                  time.Time
 }

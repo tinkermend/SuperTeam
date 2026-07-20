@@ -19,6 +19,7 @@ const STATUS_LABELS: Record<string, string> = {
   decomposed: "已分解",
   decomposing: "分解中",
   disabled: "已禁用",
+  dismissed: "已清理",
   dispatchable: "可分派",
   dispatching: "分派中",
   done: "已完成",

@@ -14,6 +14,7 @@ import (
 type Querier interface {
 	AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error
 	AcceptProjectPlanRevision(ctx context.Context, arg AcceptProjectPlanRevisionParams) (ProjectPlanRevision, error)
+	AcknowledgeDigitalEmployeeRunFailure(ctx context.Context, arg AcknowledgeDigitalEmployeeRunFailureParams) (TaskRun, error)
 	ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
@@ -189,6 +190,8 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
+	// 仅终态 failed/cancelled、尚未了结、且无 pending/requested 决策时可清理。
+	DismissProjectTask(ctx context.Context, arg DismissProjectTaskParams) (ProjectTask, error)
 	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	// Resume the latest recoverable session for this lineage root, including
 	// completed ones. Upstream work often finishes (status=completed) before a

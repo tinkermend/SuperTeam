@@ -1369,6 +1369,7 @@ latest_runs AS (
         tr.error_message,
         tr.error_family,
         tr.error_code,
+        tr.failure_acknowledged_at,
         tr.created_at
     FROM task_runs tr
     JOIN overview_args args ON args.tenant_id = tr.tenant_id
@@ -1512,6 +1513,17 @@ employee_operational_facts AS (
             OR count(pt.id) FILTER (
                 WHERE pt.status IN ('waiting_human', 'pending_review')
             ) > 0
+            OR EXISTS (
+                SELECT 1
+                FROM inbox_items ii
+                JOIN task_runs tr_rec
+                  ON tr_rec.id = ii.source_id
+                 AND tr_rec.tenant_id = ii.tenant_id
+                WHERE ii.tenant_id = de.tenant_id
+                  AND ii.item_type = 'digital_employee_run_recovery'
+                  AND ii.status = 'open'
+                  AND tr_rec.digital_employee_id = de.id
+            )
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
         count(pt.id) FILTER (WHERE pt.status IN ('queued')) > 0 AS operational_has_queued_work,
@@ -1523,12 +1535,29 @@ employee_operational_facts AS (
             )
                OR pt.status IN ('pending', 'planned', 'queued', 'blocked', 'running', 'in_progress', 'waiting_human', 'pending_review')
         ) > 0 AS operational_has_active_work,
-        count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
+        -- 失败任务只在「仍需关注」时点亮异常:已有非 pending 的恢复决策
+        -- (retry/reassign/cancel 或人类已处理)后不再因历史 failed 行钉死员工。
+        count(pt.id) FILTER (
+            WHERE pt.status = 'failed'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM project_decision_requests pdr
+                WHERE pdr.tenant_id = pt.tenant_id
+                  AND pdr.project_task_id = pt.id
+                  AND pdr.decision_type IN (
+                    'task_failure_recovery',
+                    'project_task_recovery',
+                    'project_task_runtime_recovery'
+                  )
+                  AND COALESCE(pdr.status_snapshot, '') NOT IN ('pending', 'requested')
+              )
+        ) > 0 AS operational_has_task_failure
     FROM digital_employees de
     JOIN overview_args args ON args.tenant_id = de.tenant_id
     LEFT JOIN project_tasks pt
       ON pt.tenant_id = de.tenant_id
      AND pt.assigned_digital_employee_id = de.id
+     AND pt.dismissed_at IS NULL
      AND (
          pt.status IN ('pending', 'planned', 'queued', 'blocked', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
          OR (
@@ -1603,7 +1632,10 @@ overview_rows AS (
         (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
         lr.id AS latest_run_id,
         lr.task_id AS latest_run_task_id,
-        COALESCE(lr.status, 'none')::text AS latest_run_status,
+        CASE
+            WHEN lr.status IN ('failed', 'timed_out') AND lr.failure_acknowledged_at IS NOT NULL THEN 'none'
+            ELSE COALESCE(lr.status, 'none')
+        END::text AS latest_run_status,
         COALESCE(lr.title, '')::text AS latest_run_title,
         lr.started_at AS latest_run_started_at,
         lr.finished_at AS latest_run_finished_at,
@@ -1799,6 +1831,7 @@ employee_project_stats AS (
       ON pt.tenant_id = links.tenant_id
      AND pt.project_id = links.project_id
      AND pt.assigned_digital_employee_id = links.digital_employee_id
+     AND pt.dismissed_at IS NULL
     GROUP BY links.tenant_id, links.digital_employee_id, links.project_id, p.name, p.status
 ),
 employee_projects AS (
@@ -1942,7 +1975,8 @@ latest_runs AS (
         tr.digital_employee_id,
         tr.status,
         tr.error_family,
-        tr.error_code
+        tr.error_code,
+        tr.failure_acknowledged_at
     FROM task_runs tr
     JOIN overview_args args ON args.tenant_id = tr.tenant_id
     JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
@@ -2001,6 +2035,17 @@ employee_operational_facts AS (
             OR count(pt.id) FILTER (
                 WHERE pt.status IN ('waiting_human', 'pending_review')
             ) > 0
+            OR EXISTS (
+                SELECT 1
+                FROM inbox_items ii
+                JOIN task_runs tr_rec
+                  ON tr_rec.id = ii.source_id
+                 AND tr_rec.tenant_id = ii.tenant_id
+                WHERE ii.tenant_id = de.tenant_id
+                  AND ii.item_type = 'digital_employee_run_recovery'
+                  AND ii.status = 'open'
+                  AND tr_rec.digital_employee_id = de.id
+            )
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
         count(pt.id) FILTER (WHERE pt.status IN ('queued')) > 0 AS operational_has_queued_work,
@@ -2012,12 +2057,28 @@ employee_operational_facts AS (
             )
                OR pt.status IN ('pending', 'planned', 'queued', 'blocked', 'running', 'in_progress', 'waiting_human', 'pending_review')
         ) > 0 AS operational_has_active_work,
-        count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
+        -- 失败任务只在仍需关注时点亮(已有非 pending 恢复决策则收敛)。
+        count(pt.id) FILTER (
+            WHERE pt.status = 'failed'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM project_decision_requests pdr
+                WHERE pdr.tenant_id = pt.tenant_id
+                  AND pdr.project_task_id = pt.id
+                  AND pdr.decision_type IN (
+                    'task_failure_recovery',
+                    'project_task_recovery',
+                    'project_task_runtime_recovery'
+                  )
+                  AND COALESCE(pdr.status_snapshot, '') NOT IN ('pending', 'requested')
+              )
+        ) > 0 AS operational_has_task_failure
     FROM digital_employees de
     JOIN overview_args args ON args.tenant_id = de.tenant_id
     LEFT JOIN project_tasks pt
       ON pt.tenant_id = de.tenant_id
      AND pt.assigned_digital_employee_id = de.id
+     AND pt.dismissed_at IS NULL
      AND (
          pt.status IN ('pending', 'planned', 'queued', 'blocked', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
          OR (
@@ -2051,7 +2112,10 @@ overview_rows AS (
         de.risk_level,
         de.provider_type,
         (de.provider_type IN (SELECT apt.provider_type FROM available_provider_types apt))::boolean AS tenant_provider_available,
-        COALESCE(lr.status, 'none')::text AS latest_run_status,
+        CASE
+            WHEN lr.status IN ('failed', 'timed_out') AND lr.failure_acknowledged_at IS NOT NULL THEN 'none'
+            ELSE COALESCE(lr.status, 'none')
+        END::text AS latest_run_status,
         COALESCE(lr.error_family, '')::text AS latest_run_error_family,
         COALESCE(lr.error_code, '')::text AS latest_run_error_code,
         ecs.effective_config_id,

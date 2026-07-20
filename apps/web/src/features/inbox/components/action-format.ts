@@ -26,6 +26,10 @@ export function formatInboxActionLabel(action: InboxAction) {
   if (normalizedKey === "needs_more_evidence" || normalizedKey === "request_evidence") {
     return "要求补证";
   }
+  if (normalizedKey === "retry") return "重试";
+  if (normalizedKey === "acknowledge") return "确认关闭";
+  if (normalizedKey === "cancel_downstream") return "取消下游";
+  if (normalizedKey === "reassign") return "改派";
 
   return label;
 }

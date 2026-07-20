@@ -32,6 +32,7 @@ type HandlerService interface {
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
+	DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*ProjectTask, error)
 	ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error)
 	RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSignalRequest) (*ProjectEvent, error)
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
@@ -543,6 +544,23 @@ func (h *HTTPHandler) ListProjectTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, taskResponses(tasks))
+}
+
+func (h *HTTPHandler) DismissProjectTask(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	task, err := service.DismissProjectTask(r.Context(), tenantID, projectID, taskID, actorID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, taskResponseFromDomain(*task))
 }
 
 func (h *HTTPHandler) GetProjectTaskGraph(w http.ResponseWriter, r *http.Request) {
@@ -1763,7 +1781,7 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, "当前用户无权使用该团队创建项目。", http.StatusForbidden)
 	case errors.Is(err, ErrProjectTaskForbidden), errors.Is(err, ErrProjectDecisionForbidden):
 		http.Error(w, "project task forbidden", http.StatusForbidden)
-	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict):
+	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict), errors.Is(err, ErrProjectTaskNotDismissible):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		// 500 兜底不能吞错误细节——留一条服务端日志供排障（响应体仍不泄露内部信息）。
@@ -2300,6 +2318,8 @@ type projectTaskResponse struct {
 	InputRequirements         map[string]any `json:"input_requirements"`
 	HandoffContract           map[string]any `json:"handoff_contract"`
 	PlannerMetadata           map[string]any `json:"planner_metadata"`
+	DismissedAt               *string        `json:"dismissed_at,omitempty"`
+	DismissedBy               *string        `json:"dismissed_by,omitempty"`
 	CreatedAt                 string         `json:"created_at"`
 	UpdatedAt                 string         `json:"updated_at"`
 }
@@ -3106,6 +3126,8 @@ func taskResponseFromDomain(task ProjectTask) projectTaskResponse {
 		InputRequirements:         mapOrEmpty(task.InputRequirements),
 		HandoffContract:           mapOrEmpty(task.HandoffContract),
 		PlannerMetadata:           mapOrEmpty(task.PlannerMetadata),
+		DismissedAt:               timePtr(task.DismissedAt),
+		DismissedBy:               stringPtr(task.DismissedBy),
 		CreatedAt:                 timeValue(task.CreatedAt),
 		UpdatedAt:                 timeValue(task.UpdatedAt),
 	}

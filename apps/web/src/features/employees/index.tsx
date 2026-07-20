@@ -519,7 +519,7 @@ function AvatarGalleryCard({
             {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
           </p>
         </div>
-        <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
+        <StatusPill tone={operationalStatus.tone}>{`运行：${operationalStatus.label}`}</StatusPill>
       </div>
 
       {/* 指标行 */}
@@ -534,7 +534,7 @@ function AvatarGalleryCard({
           </span>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-v3-ink-3">工作台：</span>
+          <span className="text-v3-ink-3">身份：</span>
           <span className="font-semibold text-v3-ink">{workbenchStatusLabel(item.workbench_status)}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -780,13 +780,13 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
             {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
           </p>
           <div className="mt-2 flex justify-center">
-            <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
+            <StatusPill tone={operationalStatus.tone}>{`运行：${operationalStatus.label}`}</StatusPill>
           </div>
         </div>
       </div>
       <div className="flex flex-col gap-1.5 text-xs">
         <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
-          <span className="text-v3-ink-3">工作台</span>
+          <span className="text-v3-ink-3">身份</span>
           <span className="font-semibold text-v3-ink">{workbenchStatusLabel(item.workbench_status)}</span>
         </div>
         <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
