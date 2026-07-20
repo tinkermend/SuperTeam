@@ -464,6 +464,69 @@ func TestProjectStoreRunPreDispatchGatePassesAfterApprovalDecision(t *testing.T)
 	require.Equal(t, project.ProjectEventTaskDispatchGateChecked, repo.events[len(repo.events)-1].EventType)
 }
 
+// TestProjectStoreRunPreDispatchGateDurableRiskApprovalSurvivesWaitingReqClear
+// reproduces the approve→run-start-fails→re-ask loop: after the human approves,
+// queueing an attempt clears waiting_request_id and a transient run-start failure
+// restores the task to planned WITHOUT that pointer. The gate must still treat the
+// high-risk dispatch as approved (durable grant) rather than minting a fresh risk
+// approval and re-nagging the human.
+func TestProjectStoreRunPreDispatchGateDurableRiskApprovalSurvivesWaitingReqClear(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	demandID := uuid.New()
+	fixedNow := time.Date(2026, 6, 21, 11, 0, 0, 0, time.UTC)
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "Approve risky work",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			RequiresHumanApproval:     true,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	approvals := &preDispatchGateApprovalRecorder{approvalID: uuid.New()}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, approvals, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow })
+
+	first, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusWaitingHuman, first.Gate.Status)
+	require.Len(t, repo.decisionRequests, 1)
+
+	// Human approves, then the failed run-start restores the task to planned and
+	// clears waiting_request_id (the exact state the run-start-failure path leaves).
+	repo.decisionRequests[0].StatusSnapshot = "approved"
+	repo.task.Status = project.ProjectTaskStatusPlanned
+	repo.task.WaitingRequestID = nil
+
+	second, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TaskID:         taskID,
+		DispatchReason: project.DispatchReasonRetry,
+	})
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusPassed, second.Gate.Status, "durable grant must keep the gate passing without re-asking")
+	require.True(t, second.AllowRunStart)
+	require.Len(t, repo.decisionRequests, 1, "no fresh risk approval may be minted on re-dispatch")
+}
+
 func TestProjectStoreApplyPreDispatchGateDecisionIgnoresNonApprovalGateDecision(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1398,6 +1461,33 @@ func (r *preDispatchGateRepositoryFake) GetDecisionRequest(ctx context.Context, 
 		}
 	}
 	return project.DecisionRequest{}, project.ErrProjectNotFound
+}
+
+func (r *preDispatchGateRepositoryFake) ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]project.DecisionRequest, error) {
+	taskSet := make(map[uuid.UUID]struct{}, len(projectTaskIDs))
+	for _, id := range projectTaskIDs {
+		taskSet[id] = struct{}{}
+	}
+	jobSet := make(map[uuid.UUID]struct{}, len(coordinationJobIDs))
+	for _, id := range coordinationJobIDs {
+		jobSet[id] = struct{}{}
+	}
+	out := make([]project.DecisionRequest, 0)
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID {
+			continue
+		}
+		taskMatch := decision.ProjectTaskID != nil && func() bool { _, ok := taskSet[*decision.ProjectTaskID]; return ok }()
+		jobMatch := decision.CoordinationJobID != nil && func() bool { _, ok := jobSet[*decision.CoordinationJobID]; return ok }()
+		if !taskMatch && !jobMatch {
+			continue
+		}
+		out = append(out, decision)
+		if limit > 0 && int32(len(out)) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (r *preDispatchGateRepositoryFake) GetDecisionRequestByApprovalAndTask(ctx context.Context, tenantID, projectID, approvalRequestID, projectTaskID uuid.UUID) (project.DecisionRequest, error) {
