@@ -71,7 +71,7 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     evidence_policy: { retention_days: 90 },
     goal: "完成客户接入验收",
     human_owner_user_id: "human-owner-1",
-    human_owner_user_ids: ["human-owner-1"],
+    human_owner_user_ids: ["human-owner-1"] as string[],
     id: "project-1",
     name: "客户接入验收",
     status,

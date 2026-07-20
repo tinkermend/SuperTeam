@@ -2247,7 +2247,8 @@ describe("ProjectsView", () => {
       expect(postCall).toBeTruthy();
       const body = JSON.parse(String(postCall?.[1]?.body));
       expect(body).toMatchObject({
-        human_owner_user_id: CURRENT_USER_ID,
+        human_owner_user_id: LEADER_USER_ID,
+        human_owner_user_ids: [LEADER_USER_ID],
         name: "客户验收推进",
         team_id: TEAM_REVIEW_ID,
         runtime_node_ids: ["runtime-node-1"],

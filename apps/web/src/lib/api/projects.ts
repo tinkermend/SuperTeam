@@ -846,6 +846,7 @@ export type CreateProjectInput = {
   description?: string;
   goal: string;
   human_owner_user_id: string;
+  human_owner_user_ids?: string[];
   members?: ProjectMemberInput[];
   coordination_policy?: Record<string, unknown>;
   approval_policy?: Record<string, unknown>;
