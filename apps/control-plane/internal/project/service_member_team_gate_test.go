@@ -85,16 +85,23 @@ func TestReplaceProjectMembersAllowsTeamAssignedDigitalEmployee(t *testing.T) {
 	resolver := &fakeMemberTeamResolver{assignments: map[uuid.UUID]*uuid.UUID{employeeID: &teamID}}
 	service.SetMemberTeamAssignmentResolver(resolver)
 
-	members, err := service.ReplaceProjectMembers(context.Background(), tenantID, projectID, uuid.New(), []ProjectMemberInput{{
-		PrincipalType: PrincipalTypeDigitalEmployee,
-		PrincipalID:   employeeID,
-		ProjectRole:   ProjectRoleExecutor,
-	}})
+	members, err := service.ReplaceProjectMembers(context.Background(), tenantID, projectID, uuid.New(), []ProjectMemberInput{
+		{
+			PrincipalType: PrincipalTypeHumanUser,
+			PrincipalID:   uuid.New(),
+			ProjectRole:   ProjectRoleOwner,
+		},
+		{
+			PrincipalType: PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   ProjectRoleExecutor,
+		},
+	})
 	if err != nil {
 		t.Fatalf("replace members: %v", err)
 	}
-	if len(members) != 1 {
-		t.Fatalf("expected one member, got %d", len(members))
+	if len(members) != 2 {
+		t.Fatalf("expected two members, got %d", len(members))
 	}
 	if resolver.calls != 1 {
 		t.Fatalf("expected one resolver call, got %d", resolver.calls)

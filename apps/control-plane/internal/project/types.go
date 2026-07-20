@@ -11,6 +11,8 @@ import (
 var (
 	ErrInvalidProject       = errors.New("invalid project")
 	ErrInvalidProjectMember = errors.New("invalid project member")
+	// ErrProjectRequiresHumanOwner:项目必须至少保留一个 owner 角色的人类负责人成员。
+	ErrProjectRequiresHumanOwner = errors.New("project requires at least one human owner")
 	// ErrTeamlessProjectMember means a digital_employee member has no team
 	// affiliation. Team affiliation is a precondition for project
 	// participation; teamless (lobby) employees must be bound to a team first.
@@ -420,6 +422,7 @@ type Project struct {
 	Goal                   string
 	Status                 ProjectStatus
 	HumanOwnerUserID       uuid.UUID
+	HumanOwnerUserIDs      []uuid.UUID
 	CoordinationWorkflowID string
 	CoordinationStatus     string
 	CoordinationPolicy     map[string]any
@@ -1572,6 +1575,7 @@ type CreateProjectRequest struct {
 	Description        string
 	Goal               string
 	HumanOwnerUserID   uuid.UUID
+	HumanOwnerUserIDs  []uuid.UUID
 	Members            []ProjectMemberInput
 	CoordinationPolicy map[string]any
 	ApprovalPolicy     map[string]any

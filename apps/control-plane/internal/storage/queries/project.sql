@@ -8,6 +8,7 @@ INSERT INTO projects (
     goal,
     status,
     human_owner_user_id,
+    human_owner_user_ids,
     coordination_workflow_id,
     coordination_status,
     coordination_policy,
@@ -28,6 +29,7 @@ INSERT INTO projects (
     sqlc.narg('goal')::text,
     sqlc.arg('status')::varchar,
     sqlc.arg('human_owner_user_id')::uuid,
+    sqlc.arg('human_owner_user_ids')::uuid[],
     sqlc.narg('coordination_workflow_id')::varchar,
     sqlc.narg('coordination_status')::varchar,
     COALESCE(sqlc.narg('coordination_policy')::jsonb, '{}'::jsonb),
@@ -43,6 +45,16 @@ INSERT INTO projects (
 
 -- name: GetProject :one
 SELECT * FROM projects
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL;
+
+-- name: SetProjectHumanOwners :exec
+-- 多负责人:成员变更后按 owner 角色人类成员重同步负责人集合(数组权威,scalar=首个过渡镜像)。
+UPDATE projects
+SET human_owner_user_ids = sqlc.arg('human_owner_user_ids')::uuid[],
+    human_owner_user_id = sqlc.arg('human_owner_user_id')::uuid,
+    updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
   AND deleted_at IS NULL;
@@ -89,7 +101,7 @@ WITH visible_demands AS (
         OR p.name ILIKE '%' || sqlc.narg('q')::text || '%'
       )
       AND (
-        p.human_owner_user_id = sqlc.arg('actor_user_id')::uuid
+        sqlc.arg('actor_user_id')::uuid = ANY(p.human_owner_user_ids)
         OR EXISTS (
           SELECT 1
           FROM project_members pm
@@ -419,6 +431,7 @@ SET
     goal = COALESCE(sqlc.narg('goal')::text, goal),
     status = COALESCE(sqlc.narg('status')::varchar, status),
     human_owner_user_id = COALESCE(sqlc.narg('human_owner_user_id')::uuid, human_owner_user_id),
+    human_owner_user_ids = COALESCE(sqlc.narg('human_owner_user_ids')::uuid[], human_owner_user_ids),
     coordination_policy = COALESCE(sqlc.narg('coordination_policy')::jsonb, coordination_policy),
     approval_policy = COALESCE(sqlc.narg('approval_policy')::jsonb, approval_policy),
     evidence_policy = COALESCE(sqlc.narg('evidence_policy')::jsonb, evidence_policy),

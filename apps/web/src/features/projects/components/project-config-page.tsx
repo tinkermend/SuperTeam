@@ -85,7 +85,6 @@ type ConfigDraft = {
   description: string;
   evidencePolicy: string;
   goal: string;
-  humanOwnerUserID: string;
   name: string;
 };
 
@@ -271,9 +270,12 @@ export function ProjectConfigView({
       return byId.get(key) ?? userNameById.get(key);
     };
   }, [config?.members, employeeById, userNameById]);
-  const ownerName = config
-    ? resolvePrincipalName(config.project.human_owner_user_id)
-    : undefined;
+  const ownerIDs = useMemo<string[]>(() => {
+    if (!config) return [];
+    const ids = config.project.human_owner_user_ids;
+    if (ids && ids.length > 0) return ids;
+    return config.project.human_owner_user_id ? [config.project.human_owner_user_id] : [];
+  }, [config]);
 
   const updateMutation = useMutation({
     mutationFn: (input: UpdateProjectConfigInput) =>
@@ -481,19 +483,22 @@ export function ProjectConfigView({
                     />
                   </Field>
                   <Field label="项目负责人">
-                    <Input
-                      disabled={configFieldsDisabled}
-                      value={draft.humanOwnerUserID}
-                      onChange={(event) =>
-                        updateDraft((current) => ({
-                          ...current,
-                          humanOwnerUserID: event.target.value,
-                        }))
-                      }
-                    />
-                    <span className="mt-1 flex items-center gap-1.5 text-[12px] text-v3-ink-3">
-                      当前：
-                      <ObjectRef id={draft.humanOwnerUserID} name={ownerName} />
+                    <div className="flex flex-wrap gap-2">
+                      {ownerIDs.length === 0 ? (
+                        <span className="text-[13px] text-v3-ink-3">暂无负责人</span>
+                      ) : (
+                        ownerIDs.map((id) => (
+                          <span
+                            key={id}
+                            className="inline-flex items-center rounded-[10px] border border-v3-line bg-v3-card-soft px-2.5 py-1 text-[13px] text-v3-ink"
+                          >
+                            <ObjectRef id={id} name={resolvePrincipalName(id)} />
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <span className="mt-1 block text-[12px] text-v3-ink-3">
+                      多个平级负责人,任一可审批/验收;在「成员」标签页增删负责人(至少保留一位)。
                     </span>
                   </Field>
                   <Field label="目标">
@@ -533,7 +538,7 @@ export function ProjectConfigView({
                   digitalMembers={config.digital_employee_pool}
                   employeeById={employeeById}
                   humanMembers={config.human_roles}
-                  ownerUserID={config.project.human_owner_user_id}
+                  ownerUserIDs={ownerIDs}
                   resolveName={resolvePrincipalName}
                 />
                 <Collapsible className="grid gap-3">
@@ -587,7 +592,6 @@ function emptyConfigDraft(): ConfigDraft {
     description: "",
     evidencePolicy: "{}",
     goal: "",
-    humanOwnerUserID: "",
     name: "",
   };
 }
@@ -606,7 +610,6 @@ function configToDraft(config: ProjectConfig): ConfigDraft {
     description: config.project.description ?? "",
     evidencePolicy: JSON.stringify(config.evidence_policy ?? {}, null, 2),
     goal: config.project.goal,
-    humanOwnerUserID: config.project.human_owner_user_id,
     name: config.project.name,
   };
 }
@@ -634,7 +637,6 @@ function draftToInput(draft: ConfigDraft): UpdateProjectConfigInput {
     description: draft.description.trim() || undefined,
     evidence_policy: parseJsonObject(draft.evidencePolicy, "证据归档"),
     goal: draft.goal.trim() || undefined,
-    human_owner_user_id: draft.humanOwnerUserID.trim() || undefined,
     name: draft.name.trim() || undefined,
   };
 }
@@ -905,13 +907,13 @@ function MembersHumanizedPanel({
   digitalMembers,
   employeeById,
   humanMembers,
-  ownerUserID,
+  ownerUserIDs,
   resolveName,
 }: {
   digitalMembers: ProjectMember[];
   employeeById: Map<string, DigitalEmployee>;
   humanMembers: ProjectMember[];
-  ownerUserID: string;
+  ownerUserIDs: string[];
   resolveName: (id: string | undefined | null) => string | undefined;
 }) {
   return (
@@ -925,7 +927,7 @@ function MembersHumanizedPanel({
         {humanMembers.map((member) => (
           <ConfigMemberRow
             key={member.id}
-            isOwner={member.principal_id === ownerUserID}
+            isOwner={ownerUserIDs.includes(member.principal_id)}
             member={member}
             resolvedName={resolveName(member.principal_id)}
           />
