@@ -265,6 +265,51 @@ describe("ProjectOperationalDetail", () => {
     );
   });
 
+  it("resolves owner and service-pool names when membership snapshots are empty", async () => {
+    const unnamedOverview: ProjectOverview = {
+      ...overview,
+      digital_employee_pool: [
+        member({
+          display_name_snapshot: undefined,
+          id: "member-employee-unnamed",
+          principal_id: "employee-unnamed-1",
+          principal_type: "digital_employee",
+        }),
+      ],
+      human_roles: [
+        member({
+          display_name_snapshot: undefined,
+          id: "member-owner-unnamed",
+          principal_id: "human-owner-unnamed-1",
+          principal_type: "human_user",
+          project_role: "owner",
+        }),
+      ],
+    };
+    const screen = await renderDetail({
+      overview: unnamedOverview,
+      principalNamesById: new Map([
+        ["employee-unnamed-1", "运维检索员工"],
+        ["human-owner-unnamed-1", "李娜"],
+      ]),
+      project: {
+        ...project,
+        human_owner_user_id: "human-owner-unnamed-1",
+      },
+    });
+
+    await expect.element(screen.getByRole("link", { name: /李娜/ })).toHaveAttribute(
+      "href",
+      "/users",
+    );
+    await expect.element(screen.getByRole("link", { name: /运维检索员工/ })).toHaveAttribute(
+      "href",
+      "/employees/employee-unnamed-1",
+    );
+    expect(screen.container.textContent).not.toContain("human-owner-unnamed-1");
+    expect(screen.container.textContent).not.toContain("employee-unnamed-1");
+  });
+
   it("shows a diagnosis line and gap deep link for a failed demand", async () => {
     const failedDemands: ProjectDemand[] = [
       { ...demands[0], status: "failed" },

@@ -84,6 +84,7 @@ import {
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
 import { listDigitalEmployees } from "@/lib/api/employees";
+import { listUsers } from "@/lib/api/auth";
 import { getInboxBadge, listInboxItems } from "@/lib/api/inbox";
 import { listRuntimeNodes } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -310,23 +311,36 @@ export function ProjectsView({
     queryFn: () => getInboxBadge(apiOptions),
     placeholderData: keepPreviousData,
   });
-  // 全局数字员工目录：队列「当前处理者」在成员快照缺名时回退到真实员工名而非 id。
+  // 数字员工 / 用户目录：成员快照缺名时回退真实名称，避免项目详情侧栏与风险队列裸显 UUID。
   const digitalEmployeesQuery = useQuery({
-    enabled: !routeProjectId,
-    queryKey: ["digital-employees", "project-dashboard", "name-map"],
+    queryKey: ["digital-employees", "project-name-map"],
     queryFn: () => listDigitalEmployees(apiOptions),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   });
-  const employeeNamesById = useMemo(() => {
+  const usersQuery = useQuery({
+    enabled: Boolean(routeProjectId),
+    queryKey: ["auth-users", "member-name-lookup"],
+    queryFn: () => listUsers({ ...apiOptions, limit: 200 }),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+  });
+  const principalNamesById = useMemo(() => {
     const names = new Map<string, string>();
     for (const employee of digitalEmployeesQuery.data ?? []) {
       if (employee.name?.trim()) {
         names.set(employee.id, employee.name.trim());
       }
     }
+    for (const user of usersQuery.data?.items ?? []) {
+      const name = user.display_name?.trim() || user.username?.trim();
+      if (name) {
+        names.set(user.id, name);
+      }
+    }
     return names;
-  }, [digitalEmployeesQuery.data]);
+  }, [digitalEmployeesQuery.data, usersQuery.data]);
+  const employeeNamesById = principalNamesById;
   const projects = projectsQuery.data ?? [];
   const projectListPageCount = Math.max(1, Math.ceil(projects.length / projectListPageSize));
   const activeProjectListPage = Math.min(projectListPage, projectListPageCount);
@@ -1107,6 +1121,7 @@ export function ProjectsView({
                     }}
                     onSubmitDemand={() => setDemandOpen(true)}
                     overview={overview}
+                    principalNamesById={principalNamesById}
                     project={displayedProject}
                     reports={projectReports}
                     planRevisions={projectPlanRevisions}

@@ -129,6 +129,8 @@ type ProjectOperationalDetailProps = {
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
   planRevisions: ProjectPlanRevision[];
+  /** 成员快照缺名时回退到用户/数字员工真实名称，避免侧栏裸显 UUID。 */
+  principalNamesById?: ReadonlyMap<string, string>;
   project?: Project;
   reports?: ProjectReportRef[];
   routeDecisions: ProjectRouteDecision[];
@@ -183,6 +185,7 @@ export function ProjectOperationalDetail({
   onSubmitDemand,
   overview,
   planRevisions,
+  principalNamesById,
   project,
   reports,
   routeDecisions,
@@ -570,7 +573,11 @@ export function ProjectOperationalDetail({
                               </div>
                               <RuntimeMeta
                                 label="执行员工"
-                                value={planRevisionTaskEmployee(task, servicePool)}
+                                value={planRevisionTaskEmployee(
+                                  task,
+                                  servicePool,
+                                  principalNamesById,
+                                )}
                               />
                               <RuntimeMeta
                                 label="选择原因"
@@ -755,7 +762,14 @@ export function ProjectOperationalDetail({
                       {latestResult.recommended_next_action}
                     </p>
                   ) : null}
-                  <RuntimeMeta label="执行员工" value={latestResult.digital_employee_id} />
+                  <RuntimeMeta
+                    label="执行员工"
+                    value={resolvePrincipalLabel(
+                      latestResult.digital_employee_id,
+                      undefined,
+                      principalNamesById,
+                    )}
+                  />
                 </div>
               ) : (
                 <EmptyLine label="数字员工完成任务后会在这里回写结果" />
@@ -855,12 +869,14 @@ export function ProjectOperationalDetail({
               emptyLabel="当前项目尚未设置项目负责人"
               icon={<UserRound />}
               members={projectOwners}
+              principalNamesById={principalNamesById}
               title="项目负责人组"
             />
             <MemberPanel
               emptyLabel="当前项目服务池为空"
               icon={<Bot />}
               members={servicePool}
+              principalNamesById={principalNamesById}
               title="项目服务池"
             />
           </aside>
@@ -1374,11 +1390,13 @@ function MemberPanel({
   emptyLabel,
   icon,
   members,
+  principalNamesById,
   title,
 }: {
   emptyLabel: string;
   icon: ReactNode;
   members: ProjectMember[];
+  principalNamesById?: ReadonlyMap<string, string>;
   title: string;
 }) {
   return (
@@ -1388,20 +1406,37 @@ function MemberPanel({
         {members.length === 0 ? (
           <EmptyLine label={emptyLabel} />
         ) : (
-          members.slice(0, 6).map((member) => <MemberRow key={member.id} member={member} />)
+          members
+            .slice(0, 6)
+            .map((member) => (
+              <MemberRow
+                key={member.id}
+                member={member}
+                principalNamesById={principalNamesById}
+              />
+            ))
         )}
       </div>
     </SoftCard>
   );
 }
 
-function MemberRow({ member }: { member: ProjectMember }) {
+function MemberRow({
+  member,
+  principalNamesById,
+}: {
+  member: ProjectMember;
+  principalNamesById?: ReadonlyMap<string, string>;
+}) {
+  const name = resolvePrincipalLabel(
+    member.principal_id,
+    member.display_name_snapshot,
+    principalNamesById,
+  );
   const content = (
     <>
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-v3-ink">
-          {member.display_name_snapshot || member.principal_id}
-        </p>
+        <p className="truncate text-sm font-medium text-v3-ink">{name}</p>
         <p className="truncate text-xs text-v3-ink-2">
           {projectMemberBusinessLabel(member)}
         </p>
@@ -2153,12 +2188,39 @@ function planRevisionTaskTitle(task: Record<string, unknown>) {
 function planRevisionTaskEmployee(
   task: Record<string, unknown>,
   members: ProjectMember[],
+  principalNamesById?: ReadonlyMap<string, string>,
 ) {
   const employeeID = stringField(task, "selected_employee_id");
-  const employeeName = members.find(
+  if (!employeeID) {
+    return "未指定";
+  }
+  const snapshot = members.find(
     (member) => member.principal_id === employeeID,
   )?.display_name_snapshot;
-  return employeeName || employeeID || "未指定";
+  return resolvePrincipalLabel(employeeID, snapshot, principalNamesById);
+}
+
+function resolvePrincipalName(
+  id: string | undefined | null,
+  snapshot?: string | null,
+  principalNamesById?: ReadonlyMap<string, string>,
+): string | undefined {
+  const fromSnapshot = snapshot?.trim();
+  if (fromSnapshot) {
+    return fromSnapshot;
+  }
+  if (!id) {
+    return undefined;
+  }
+  return principalNamesById?.get(id.trim())?.trim() || undefined;
+}
+
+function resolvePrincipalLabel(
+  id: string | undefined | null,
+  snapshot?: string | null,
+  principalNamesById?: ReadonlyMap<string, string>,
+): string {
+  return resolvePrincipalName(id, snapshot, principalNamesById) || id?.trim() || "未指定";
 }
 
 function planRevisionTone(status: string): V3Tone {
