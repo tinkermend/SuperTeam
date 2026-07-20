@@ -4840,7 +4840,13 @@ func (s *Service) ResolveProjectTaskHumanWait(ctx context.Context, req ResolvePr
 	if err != nil {
 		return nil, err
 	}
-	if req.ActorUserID != projectRecord.HumanOwnerUserID {
+	// 多负责人:验收由任一 eligible decider(全部 active 人类成员含所有平级负责人)执行,
+	// 不再仅限单一 primary owner。
+	eligible, err := s.isEligibleDecider(ctx, req.TenantID, projectRecord, req.ActorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if !eligible {
 		return nil, ErrProjectTaskForbidden
 	}
 	var currentAttempt ProjectTaskAttempt
