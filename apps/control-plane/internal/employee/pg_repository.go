@@ -986,6 +986,13 @@ func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, 
 	})
 }
 
+func (r *PgRepository) ArchivePriorActiveConfigRevisions(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) error {
+	return r.q.ArchivePriorActiveDigitalEmployeeConfigRevisions(ctx, queries.ArchivePriorActiveDigitalEmployeeConfigRevisionsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+}
+
 func (r *PgRepository) GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {
 	revision, err := r.q.GetDigitalEmployeeConfigRevision(ctx, queries.GetDigitalEmployeeConfigRevisionParams{
 		ID:                employeeConfigRevisionID,

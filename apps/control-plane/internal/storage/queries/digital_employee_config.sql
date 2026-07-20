@@ -102,3 +102,15 @@ SELECT (COALESCE(MAX(revision_number), 0) + 1)::integer
 FROM digital_employee_config_revisions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid;
+
+-- name: ArchivePriorActiveDigitalEmployeeConfigRevisions :exec
+-- 归档某员工当前所有已生效(active、未归档)修订,让位给新激活的修订。
+-- 配合偏唯一索引 uq_digital_employee_config_revisions_active(每员工至多一条 active 未归档)。
+UPDATE digital_employee_config_revisions
+SET status = 'archived',
+    archived_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND status = 'active'
+  AND archived_at IS NULL;

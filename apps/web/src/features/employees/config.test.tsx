@@ -21,6 +21,11 @@ vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
 
+// 能力面板有自己的数据获取与测试;配置页单测在此边界打桩,只验 config.tsx 自身逻辑。
+vi.mock("./components/employee-capabilities-panel", () => ({
+  EmployeeCapabilitiesPanel: () => <div data-testid="capabilities-panel" />,
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string; params?: unknown }) => (
     <a href={to}>{children}</a>
@@ -30,12 +35,8 @@ vi.mock("@tanstack/react-router", () => ({
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
-      mutations: {
-        retry: false,
-      },
-      queries: {
-        retry: false,
-      },
+      mutations: { retry: false },
+      queries: { retry: false },
     },
   });
 }
@@ -51,8 +52,9 @@ const employee = {
   role: "requirements_analyst",
   description: "负责需求拆解和交付风险识别",
   status: "active" as const,
-  permission_policy: {},
+  permission_policy: { grants: ["database.read:dev_db"] },
   persona_memory_markdown: "# 人格画像\n证据优先",
+  // skills/mcp_servers 是已废弃键:hydration 必须剥离,保存时绝不回传(否则服务端 400)。
   capability_bindings: {
     skills: ["incident-diagnosis"],
     mcp_servers: ["postgres-readonly"],
@@ -73,8 +75,6 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit) {
   return init?.method ?? (input instanceof Request ? input.method : "GET");
 }
 
-type ExtraRoutes = Record<string, unknown>;
-
 function routeKey(input: RequestInfo | URL, init?: RequestInit) {
   const url = new URL(requestUrl(input));
   return `${requestMethod(input, init)} ${url.pathname}${url.search}`;
@@ -87,22 +87,16 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function createEmployeeConfigFetcher({ extraRoutes = {} }: { extraRoutes?: ExtraRoutes } = {}) {
+function createEmployeeConfigFetcher() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const key = routeKey(input, init);
-    if (key in extraRoutes) {
-      const value = extraRoutes[key];
-      return value instanceof Response ? value : jsonResponse(value);
-    }
 
     if (key === `GET /api/v1/digital-employees/${employee.id}`) {
       return jsonResponse(employee);
     }
-
     if (key === `POST /api/v1/digital-employees/${employee.id}/config-revisions`) {
       return jsonResponse({ id: "revision-1", status: "draft" }, 201);
     }
-
     return jsonResponse({ error: `unhandled ${key}` }, 404);
   });
 }
@@ -113,7 +107,6 @@ function requestBody(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, pa
     return url.pathname === path && requestMethod(input, init) === method;
   });
   expect(call).toBeTruthy();
-
   return JSON.parse(String(call?.[1]?.body));
 }
 
@@ -124,175 +117,77 @@ function hasRequest(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, pat
   });
 }
 
+function renderConfig(fetcher: ReturnType<typeof createEmployeeConfigFetcher>) {
+  return render(
+    <QueryClientProvider client={createQueryClient()}>
+      <EmployeeConfigView apiBaseUrl="http://localhost:8080" employeeId={employee.id} fetcher={fetcher} />
+    </QueryClientProvider>,
+  );
+}
+
 describe("EmployeeConfigView", () => {
-  it("renders employee name and config form", async () => {
-    const queryClient = createQueryClient();
-    const fetcher = createEmployeeConfigFetcher();
+  it("renders locator header, immediate tier form and read-only permission tier", async () => {
+    const screen = await renderConfig(createEmployeeConfigFetcher());
 
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
+    // 定位头:名称 + Provider 只读 + 角色
+    await expect.element(screen.getByText(employee.name).first()).toBeVisible();
+    await expect.element(screen.getByText("Provider（不可改）")).toBeVisible();
+    await expect.element(screen.getByText("Codex")).toBeVisible();
 
-    await expect.element(screen.getByText(employee.name)).toBeVisible();
-    await expect.element(screen.getByText("配置员工人格记忆、能力绑定和预算策略")).toBeVisible();
-    expect(screen.getByRole("tab", { name: "高级配置" }).query()).toBeNull();
-    expect(screen.getByText("角色配置").query()).toBeNull();
-    expect(screen.getByText("能力与策略").query()).toBeNull();
+    // 分层标题
+    await expect.element(screen.getByRole("heading", { name: "即时生效配置" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "权限审批配置" })).toBeVisible();
+
+    // 即时层字段
     await expect.element(screen.getByLabelText("人格记忆.md")).toBeVisible();
-    await expect.element(screen.getByLabelText("能力绑定")).toBeVisible();
+    await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "保存即时配置" })).toBeVisible();
+
+    // 权限审批层为只读呈现(role/grants),无编辑控件
+    await expect.element(screen.getByText("角色与权限")).toBeVisible();
+    await expect.element(screen.getByText("database.read:dev_db")).toBeVisible();
   });
 
-  it("submits persona memory config revision on save", async () => {
-    const queryClient = createQueryClient();
+  it("keeps save disabled until an immediate field is edited", async () => {
     const fetcher = createEmployeeConfigFetcher();
+    const screen = await renderConfig(fetcher);
 
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
-    await userEvent.fill(screen.getByLabelText("人格记忆.md"), "# 人格画像\n需求拆解优先");
-    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
-    await expect.element(screen.getByText("配置已保存")).toBeVisible();
-
-    const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST");
-    expect(body).toEqual({
-      persona_memory_markdown: "# 人格画像\n需求拆解优先",
-      status: "draft",
-    });
-  });
-
-  it("submits only budget policy for a budget-only config revision", async () => {
-    const queryClient = createQueryClient();
-    const fetcher = createEmployeeConfigFetcher();
-
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
-    await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), "15000");
-    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
-
-    const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST");
-    expect(body).toEqual({
-      budget_policy: { daily_token_limit: 15000 },
-      status: "draft",
-    });
-  });
-
-  it("keeps save disabled when the untouched daily token budget is empty", async () => {
-    const queryClient = createQueryClient();
-    const fetcher = createEmployeeConfigFetcher();
-
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeDisabled();
-    await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toHaveValue(null);
+    await expect.element(screen.getByRole("button", { name: "保存即时配置" })).toBeDisabled();
     expect(
       hasRequest(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST"),
     ).toBe(false);
   });
 
-  it("submits empty budget policy when the edited daily token budget is cleared", async () => {
-    const queryClient = createQueryClient();
+  it("saves the full immediate snapshot as an active revision, stripping legacy binding keys", async () => {
     const fetcher = createEmployeeConfigFetcher();
+    const screen = await renderConfig(fetcher);
 
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
+    await userEvent.fill(screen.getByLabelText("人格记忆.md"), "# 人格画像\n需求拆解优先");
+    await userEvent.click(screen.getByRole("button", { name: "保存即时配置" }));
 
-    const budgetInput = screen.getByRole("spinbutton", { name: "每日 Token 预算上限" });
-    await userEvent.type(budgetInput, "15000");
-    await userEvent.clear(budgetInput);
-    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
+    await expect.element(screen.getByText("已保存并生效")).toBeVisible();
 
     const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST");
     expect(body).toEqual({
+      persona_memory_markdown: "# 人格画像\n需求拆解优先",
+      capability_bindings: {
+        external_capabilities: [],
+        environment_variable_refs: ["PG_DSN"],
+      },
       budget_policy: {},
-      status: "draft",
     });
   });
 
-  it.each(["0", "12.5"])("blocks invalid daily token budget %s when saving config", async (invalidValue) => {
-    const queryClient = createQueryClient();
+  it.each(["0", "12.5"])("blocks invalid daily token budget %s when saving", async (invalidValue) => {
     const fetcher = createEmployeeConfigFetcher();
+    const screen = await renderConfig(fetcher);
 
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
     await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), invalidValue);
-    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
+    await userEvent.click(screen.getByRole("button", { name: "保存即时配置" }));
 
     await expect.element(screen.getByText("每日 Token 预算上限必须是正整数")).toBeVisible();
-    const postCall = fetcher.mock.calls.find(
-      ([input, init]) => requestUrl(input).includes("/config-revisions") && init?.method === "POST",
-    );
-    expect(postCall).toBeUndefined();
+    expect(
+      hasRequest(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST"),
+    ).toBe(false);
   });
-
-  it("blocks invalid advanced JSON when saving config", async () => {
-    const queryClient = createQueryClient();
-    const fetcher = createEmployeeConfigFetcher();
-
-    const screen = await render(
-      <QueryClientProvider client={queryClient}>
-        <EmployeeConfigView
-          apiBaseUrl="http://localhost:8080"
-          employeeId={employee.id}
-          fetcher={fetcher}
-        />
-      </QueryClientProvider>,
-    );
-
-    await userEvent.fill(screen.getByLabelText("能力绑定"), '{"skills":');
-    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
-
-    await expect.element(screen.getByText("能力绑定必须是有效 JSON object")).toBeVisible();
-    const postCall = fetcher.mock.calls.find(
-      ([input, init]) => requestUrl(input).includes("/config-revisions") && init?.method === "POST",
-    );
-    expect(postCall).toBeUndefined();
-  });
-
 });

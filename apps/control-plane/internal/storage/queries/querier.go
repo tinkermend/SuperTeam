@@ -20,6 +20,9 @@ type Querier interface {
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
 	ArchiveDigitalEmployeeConfigRevisionsForDelete(ctx context.Context, arg ArchiveDigitalEmployeeConfigRevisionsForDeleteParams) ([]uuid.UUID, error)
+	// 归档某员工当前所有已生效(active、未归档)修订,让位给新激活的修订。
+	// 配合偏唯一索引 uq_digital_employee_config_revisions_active(每员工至多一条 active 未归档)。
+	ArchivePriorActiveDigitalEmployeeConfigRevisions(ctx context.Context, arg ArchivePriorActiveDigitalEmployeeConfigRevisionsParams) error
 	ArchiveProject(ctx context.Context, arg ArchiveProjectParams) (Project, error)
 	AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error)
 	AssignProjectTask(ctx context.Context, arg AssignProjectTaskParams) (ProjectTask, error)

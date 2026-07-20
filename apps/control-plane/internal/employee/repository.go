@@ -43,6 +43,9 @@ type Repository interface {
 	WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error)
 	AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error)
+	// ArchivePriorActiveConfigRevisions 归档某员工当前所有 active 修订,让位给新激活的修订(维持
+	// 每员工至多一条 active 的偏唯一索引)。应与创建新 active 修订同事务调用。
+	ArchivePriorActiveConfigRevisions(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) error
 	GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error)

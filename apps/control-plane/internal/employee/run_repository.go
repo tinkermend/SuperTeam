@@ -45,6 +45,20 @@ type DigitalEmployeeRunRepository interface {
 	DeleteDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) error
 }
 
+// EmployeePermissionPolicyReader 读取员工行上的 permission_policy(经权限中心审批的 A2 写回后
+// 仍是运行时真源),供派发时按 allowed_actions 收敛可执行动作(P-enforce)。这是可选能力:未实现
+// 该接口的仓库(如部分单测 fake)在派发处静默跳过收敛,不影响既有行为。
+type EmployeePermissionPolicyReader interface {
+	GetDigitalEmployeePermissionPolicy(ctx context.Context, tenantID, employeeID uuid.UUID) (map[string]any, error)
+}
+
+// ConfigRevisionCurrentReader 读取「已生效(active)」配置修订,供派发解析生效配置。这是治理 gate 的
+// 承重读取:草案(draft)治理修订未批不得进入派发,否则审批 gate 形同虚设(员工配置页 spec §6.2/A)。
+// 可选能力:未实现的仓库(部分单测 fake)回退到最新修订读取,保持既有行为。
+type ConfigRevisionCurrentReader interface {
+	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, tenantID, employeeID uuid.UUID) (EmployeeConfigInput, error)
+}
+
 type ProjectTaskRunPreflightRepository interface {
 	// GetProjectTaskRunPreflight is discovery-only: it reports facts for an
 	// employee against a deterministic representative of the project's
