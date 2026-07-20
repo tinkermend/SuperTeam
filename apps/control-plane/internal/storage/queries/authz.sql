@@ -84,7 +84,7 @@ SELECT EXISTS (
 
 -- name: GetProjectAuthzFacts :one
 SELECT
-  p.human_owner_user_ids,
+  p.human_owner_user_id,
   EXISTS(
     SELECT 1 FROM project_members pm
     WHERE pm.project_id = p.id AND pm.principal_id = sqlc.arg('user_id')::uuid

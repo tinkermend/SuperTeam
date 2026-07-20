@@ -3,7 +3,6 @@ package authz
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"github.com/google/uuid"
 )
@@ -560,7 +559,7 @@ func (a *DBAuthorizer) checkProjectAccess(ctx context.Context, req CheckRequest)
 		}
 		return Decision{}, err
 	}
-	if slices.Contains(facts.HumanOwnerUserIDs, principalID) {
+	if facts.HumanOwnerUserID == principalID {
 		return allow("project.owner", RoleOwner), nil
 	}
 	if facts.IsMember && projectActionAllowedForMember(req.Action) {
@@ -613,7 +612,7 @@ func (a *DBAuthorizer) checkAuditAccess(ctx context.Context, req CheckRequest) (
 			}
 			return Decision{}, err
 		}
-		if slices.Contains(facts.HumanOwnerUserIDs, principalID) || facts.IsMember {
+		if facts.HumanOwnerUserID == principalID || facts.IsMember {
 			return allow("audit.project_member", RoleMember), nil
 		}
 	}

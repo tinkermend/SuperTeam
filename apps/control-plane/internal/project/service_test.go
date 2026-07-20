@@ -10524,28 +10524,21 @@ func TestReplaceProjectMembersRequiresActorAndRecordsEvent(t *testing.T) {
 		t.Fatalf("expected invalid project error, got %v", err)
 	}
 
-	members, err := service.ReplaceProjectMembers(context.Background(), tenantID, projectID, uuid.New(), []ProjectMemberInput{
-		{
-			PrincipalType: PrincipalTypeHumanUser,
-			PrincipalID:   uuid.New(),
-			ProjectRole:   ProjectRoleOwner,
-		},
-		{
-			PrincipalType: PrincipalTypeDigitalEmployee,
-			PrincipalID:   uuid.New(),
-			ProjectRole:   ProjectRoleExecutor,
-		},
-	})
+	members, err := service.ReplaceProjectMembers(context.Background(), tenantID, projectID, uuid.New(), []ProjectMemberInput{{
+		PrincipalType: PrincipalTypeDigitalEmployee,
+		PrincipalID:   uuid.New(),
+		ProjectRole:   ProjectRoleExecutor,
+	}})
 	if err != nil {
 		t.Fatalf("replace members: %v", err)
 	}
-	if len(members) != 2 {
-		t.Fatalf("expected two members, got %d", len(members))
+	if len(members) != 1 {
+		t.Fatalf("expected one member, got %d", len(members))
 	}
 	if len(repo.eventTypes) != 1 || repo.eventTypes[0] != ProjectEventConfigChanged {
 		t.Fatalf("expected config changed event, got %#v", repo.eventTypes)
 	}
-	if got := repo.events[0].Payload["member_count"]; got != 2 {
+	if got := repo.events[0].Payload["member_count"]; got != 1 {
 		t.Fatalf("expected member_count payload, got %#v", got)
 	}
 }
@@ -11498,20 +11491,6 @@ func (r *memoryRepository) AreAllProjectDemandsTerminal(ctx context.Context, ten
 		}
 	}
 	return count > 0, nil
-}
-
-func (r *memoryRepository) SetProjectHumanOwners(ctx context.Context, tenantID, projectID uuid.UUID, ownerIDs []uuid.UUID) error {
-	project, ok := r.projects[projectID]
-	if !ok || project.TenantID != tenantID {
-		return ErrProjectNotFound
-	}
-	if len(ownerIDs) == 0 {
-		return ErrProjectRequiresHumanOwner
-	}
-	project.HumanOwnerUserIDs = ownerIDs
-	project.HumanOwnerUserID = ownerIDs[0]
-	r.projects[projectID] = project
-	return nil
 }
 
 func (r *memoryRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {

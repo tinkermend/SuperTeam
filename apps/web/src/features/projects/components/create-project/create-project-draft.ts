@@ -124,10 +124,7 @@ export function buildProjectCreateInput(
   draft: ProjectCreateDraft,
   currentUser: UserSummary,
 ): CreateProjectInput {
-  // 多负责人:选中的人类负责人即为项目 owners;未选时回退为创建者本人(保证 ≥1)。
-  const ownerUsers = draft.ownerUsers.length > 0 ? draft.ownerUsers : [currentUser];
-  const ownerIDs = ownerUsers.map((owner) => owner.id);
-  const members: ProjectMemberInput[] = ownerUsers.map((owner) => ({
+  const members: ProjectMemberInput[] = draft.ownerUsers.map((owner) => ({
     display_name_snapshot: owner.display_name ?? owner.username,
     principal_id: owner.id,
     principal_type: "human_user",
@@ -164,8 +161,7 @@ export function buildProjectCreateInput(
       preset: draft.policyPreset,
     },
     goal: draft.goal.trim(),
-    human_owner_user_id: ownerIDs[0],
-    human_owner_user_ids: ownerIDs,
+    human_owner_user_id: currentUser.id,
     members,
     name: draft.name.trim(),
     runtime_node_ids: draft.runtimeNodeIds,

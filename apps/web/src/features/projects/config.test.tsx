@@ -71,7 +71,6 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     evidence_policy: { retention_days: 90 },
     goal: "完成客户接入验收",
     human_owner_user_id: "human-owner-1",
-    human_owner_user_ids: ["human-owner-1"] as string[],
     id: "project-1",
     name: "客户接入验收",
     status,
@@ -410,6 +409,7 @@ describe("ProjectConfigView", () => {
     expect(container.querySelectorAll('[data-slot="v3-tab"]').length).toBeGreaterThan(
       0,
     );
+    await userEvent.fill(screen.getByLabelText("项目负责人"), "human-owner-2");
     await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
     await expect.element(screen.getByLabelText("协调策略 JSON")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("协调策略 JSON"), '{"cadence":"hourly"}');
@@ -425,14 +425,8 @@ describe("ProjectConfigView", () => {
       expect(putCall).toBeTruthy();
       expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
         coordination_policy: { cadence: "hourly" },
+        human_owner_user_id: "human-owner-2",
       });
-      // 负责人不再从配置页发送(改由成员管理),PUT body 不应含 human_owner_user_id
-      expect(
-        Object.prototype.hasOwnProperty.call(
-          JSON.parse(String(putCall?.[1]?.body)),
-          "human_owner_user_id",
-        ),
-      ).toBe(false);
     });
   });
 

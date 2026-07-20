@@ -53,7 +53,7 @@ type ProjectAuthzParams struct {
 }
 
 type ProjectAuthzFacts struct {
-	HumanOwnerUserIDs []uuid.UUID
-	IsMember          bool
-	TeamID            *uuid.UUID
+	HumanOwnerUserID uuid.UUID
+	IsMember         bool
+	TeamID           *uuid.UUID
 }

@@ -1686,7 +1686,7 @@ func TestDBAuthorizerProjectDelete(t *testing.T) {
 			if tt.asHumanOwner || tt.asMember {
 				facts := ProjectAuthzFacts{IsMember: tt.asMember}
 				if tt.asHumanOwner {
-					facts.HumanOwnerUserIDs = []uuid.UUID{userID}
+					facts.HumanOwnerUserID = userID
 				}
 				repo.projectFacts[projectID] = facts
 			}
