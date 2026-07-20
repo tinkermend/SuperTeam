@@ -357,9 +357,13 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 	}
 
 	if snapshot.Risk.HumanApprovalRequired && !snapshot.Risk.HumanApprovalGranted {
-		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionRiskApproval, HumanWaitReasonApprovalRequired, "project_task_approval", "高风险动作需要确认", "需要人类确认风险后才能分派任务", "high")
+		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionRiskApproval, HumanWaitReasonApprovalRequired, "project_task_approval", "高风险动作需要确认", riskApprovalSummary(task, snapshot.Risk.Reason), "high")
+		if title := strings.TrimSpace(task.Title); title != "" {
+			result.HumanActionRequest.Context["task_title"] = title
+		}
 		if snapshot.Risk.Reason != "" {
 			result.HumanActionRequest.Context["risk_reason"] = snapshot.Risk.Reason
+			result.HumanActionRequest.Context["risk_reason_label"] = riskReasonLabel(snapshot.Risk.Reason)
 		}
 		addCheck("risk.approval", "failed", map[string]any{"reason": snapshot.Risk.Reason})
 		addBlocker("risk.approval_required", PreDispatchGateStatusWaitingHuman, "human", false, nil)
@@ -553,6 +557,34 @@ func sanitizeHumanActionRequest(request *PreDispatchHumanActionRequest) {
 		return
 	}
 	request.Context = sanitizeGateDetails(request.Context)
+}
+
+// riskApprovalSummary makes the "high-risk action" card self-describing: the
+// generic boilerplate never told the human WHICH action was gated (the task's
+// title lived only in the raw context payload) nor WHY (an opaque reason code).
+// It now names the concrete task and a readable trigger.
+func riskApprovalSummary(task ProjectTask, reason string) string {
+	summary := "需要人类确认高风险动作后才能分派任务"
+	if title := strings.TrimSpace(task.Title); title != "" {
+		summary = fmt.Sprintf("%s：「%s」", summary, title)
+	}
+	if label := riskReasonLabel(reason); label != "" {
+		summary = fmt.Sprintf("%s（触发原因：%s）", summary, label)
+	}
+	return summary
+}
+
+// riskReasonLabel maps pre-dispatch risk reason codes to human-readable Chinese.
+// Unknown codes fall back to the raw code so nothing is silently dropped.
+func riskReasonLabel(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "":
+		return ""
+	case "task.requires_human_approval":
+		return "任务被标记为需人工审批"
+	default:
+		return strings.TrimSpace(reason)
+	}
 }
 
 func humanGateRequest(actionType, waitingReason, decisionType, title, summary, riskLevel string) *PreDispatchHumanActionRequest {

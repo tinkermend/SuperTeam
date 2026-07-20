@@ -229,7 +229,15 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 			return project.PreDispatchGateSnapshot{}, err
 		}
 		snapshot.Runtime.Pinned = resolution.Pinned || resolution.Paused
-		snapshot.Runtime.NodeOnline = resolution.NodeID != uuid.Nil
+		// The resolver authoritatively decides WHICH node (honoring pins) and whether
+		// any node resolves — but it does NOT verify the employee's runtime SESSION is
+		// live. A node can be online while the session is inactive, which passed the
+		// gate and then failed hard at StartProjectTaskRun ("runtime session is not
+		// active"), stranding a queued attempt every dispatch. AND in the session-active
+		// signal (already carried on snapshot.Runtime.NodeOnline by the employee runtime
+		// snapshot) so a dead session parks the task at retry_later backoff instead of a
+		// dispatch that can only fail at run-start.
+		snapshot.Runtime.NodeOnline = snapshot.Runtime.NodeOnline && resolution.NodeID != uuid.Nil
 	}
 	if s.capabilityReader != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
 		capabilities, err := s.capabilityReader.GetEmployeeCapabilitySnapshot(ctx, input.TenantID, *task.AssignedDigitalEmployeeID, task)
@@ -314,24 +322,57 @@ func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input A
 	return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: []uuid.UUID{task.ID}}, nil
 }
 
+// gateRiskApprovalScanLimit bounds the durable-grant scan below. A looping task
+// accumulates one gate decision per cycle; the newest page always contains the
+// approved ones (any single approved row grants), so a generous page is ample.
+const gateRiskApprovalScanLimit int32 = 100
+
 func (s *ProjectStore) preDispatchRiskApprovalGranted(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask) (bool, error) {
-	if task.WaitingRequestID == nil || *task.WaitingRequestID == uuid.Nil {
-		return false, nil
+	// Fast path: the task's live waiting_request_id points at an approved
+	// gate-linked risk approval.
+	if task.WaitingRequestID != nil && *task.WaitingRequestID != uuid.Nil {
+		decision, err := s.repository.GetDecisionRequest(ctx, tenantID, projectID, *task.WaitingRequestID)
+		if err != nil {
+			return false, err
+		}
+		if gateRiskApprovalGranted(decision, task.ID) {
+			return true, nil
+		}
 	}
-	decision, err := s.repository.GetDecisionRequest(ctx, tenantID, projectID, *task.WaitingRequestID)
+	// Durable path: the human's risk approval must survive waiting_request_id being
+	// cleared. Queueing an attempt clears waiting_request_id, and a transient
+	// run-start failure (e.g. runtime session briefly inactive) restores the task to
+	// planned with no waiting_request_id — so the fast path goes blank and, without
+	// this fallback, the gate re-mints a fresh risk approval and re-nags the human on
+	// every retry (the approve→fail→re-ask loop). Any approved gate-linked
+	// project_task_approval decision for THIS task means the human already cleared
+	// this high-risk dispatch. A real content change re-plans into a NEW task id
+	// (revision_of_task_id), so a stale approval can't leak across plans. The list
+	// query is generic ("decisions for these task ids"); the demand-launch name is
+	// incidental.
+	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, tenantID, projectID, []uuid.UUID{}, []uuid.UUID{task.ID}, gateRiskApprovalScanLimit)
 	if err != nil {
 		return false, err
 	}
-	if decision.ProjectTaskID == nil || *decision.ProjectTaskID != task.ID {
-		return false, nil
+	for _, decision := range decisions {
+		if gateRiskApprovalGranted(decision, task.ID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func gateRiskApprovalGranted(decision project.DecisionRequest, taskID uuid.UUID) bool {
+	if decision.ProjectTaskID == nil || *decision.ProjectTaskID != taskID {
+		return false
 	}
 	if decision.DecisionType != "project_task_approval" {
-		return false, nil
+		return false
 	}
 	if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID == uuid.Nil {
-		return false, nil
+		return false
 	}
-	return strings.EqualFold(decision.StatusSnapshot, "approved"), nil
+	return strings.EqualFold(decision.StatusSnapshot, "approved")
 }
 
 func preDispatchGateDecisionResolvedForDispatch(decision project.DecisionRequest, signalDecision string) bool {

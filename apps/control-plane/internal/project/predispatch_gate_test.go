@@ -187,6 +187,31 @@ func TestEvaluatePreDispatchGateWaitsForHumanWhenRiskApprovalMissing(t *testing.
 	require.False(t, result.CreateRun)
 }
 
+func TestEvaluatePreDispatchGateRiskApprovalCardNamesConcreteAction(t *testing.T) {
+	now := time.Date(2026, 6, 21, 9, 32, 0, 0, time.UTC)
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	snapshot := readyPreDispatchGateSnapshot(projectID, taskID, employeeID)
+	snapshot.Task.Title = "执行 echo 命令"
+	snapshot.Risk = PreDispatchRiskSnapshot{HumanApprovalRequired: true, HumanApprovalGranted: false, Reason: "task.requires_human_approval"}
+
+	result := EvaluatePreDispatchGate(PreDispatchGateInput{
+		ProjectID:          projectID,
+		ProjectTaskID:      taskID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonRootReady,
+	}, snapshot, now)
+
+	require.NotNil(t, result.HumanActionRequest)
+	require.Contains(t, result.HumanActionRequest.Summary, "执行 echo 命令", "card summary must name the gated action")
+	require.Contains(t, result.HumanActionRequest.Summary, "任务被标记为需人工审批", "card summary must give a readable trigger")
+	require.Equal(t, "执行 echo 命令", result.HumanActionRequest.Context["task_title"])
+	require.Equal(t, "task.requires_human_approval", result.HumanActionRequest.Context["risk_reason"])
+	require.Equal(t, "任务被标记为需人工审批", result.HumanActionRequest.Context["risk_reason_label"])
+}
+
 func TestEvaluatePreDispatchGateReturnsRetryLaterForRuntimeSlot(t *testing.T) {
 	now := time.Date(2026, 6, 21, 9, 33, 0, 0, time.UTC)
 	projectID := uuid.New()
