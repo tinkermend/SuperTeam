@@ -17,7 +17,6 @@ import (
 func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	tenantID := uuid.New()
 	employeeID := uuid.New()
-	runtimeNodeID := uuid.New()
 	reader := fakePlanningProfileEmployeeReader{
 		employees: map[uuid.UUID]employee.DigitalEmployeeRecord{
 			employeeID: {
@@ -26,6 +25,7 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 				EmployeeType:     "database_admin",
 				Role:             "数据库分析",
 				Status:           employee.DigitalEmployeeStatusActive,
+				ProviderType:     "codex",
 				PermissionPolicy: map[string]any{"grants": []any{"database.read:dev_database"}},
 			},
 		},
@@ -39,14 +39,6 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 					"skills":                []any{"backend-implementation"},
 					"mcp_servers":           []any{"postgres-readonly"},
 				},
-			},
-		},
-		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
-			employeeID: {
-				DigitalEmployeeID: employeeID,
-				RuntimeNodeID:     runtimeNodeID,
-				ProviderType:      "codex",
-				Status:            employee.ExecutionInstanceStatusReady,
 			},
 		},
 		signals: map[uuid.UUID]employee.OperationalSignals{
@@ -65,8 +57,8 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	record := records[employeeID]
 	require.Equal(t, "database_admin", record.EmployeeType)
 	require.Equal(t, "active", record.EmployeeStatus)
-	require.Equal(t, "ready", record.ExecutionStatus)
-	require.Equal(t, runtimeNodeID, record.RuntimeNodeID)
+	require.Empty(t, record.ExecutionStatus)
+	require.Equal(t, uuid.Nil, record.RuntimeNodeID)
 	require.Equal(t, "codex", record.ProviderType)
 	require.Equal(t, "# 人格画像\n证据优先", record.PersonaMemoryMarkdown)
 	require.Equal(t, map[string]any{
@@ -186,32 +178,36 @@ func TestPreDispatchGateAdapterMapsEmployeeRuntimeFacts(t *testing.T) {
 				Status:   employee.DigitalEmployeeStatusActive,
 			},
 		},
-		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
-			employeeID: {
-				DigitalEmployeeID: employeeID,
-				RuntimeNodeID:     runtimeNodeID,
-				ProviderType:      "codex",
-				AgentHomeDir:      "/var/superteam/agents/db",
-				RuntimeSelector:   map[string]any{"runtime_node_id": runtimeNodeID.String(), "node_id": nodeID},
-				Status:            employee.ExecutionInstanceStatusReady,
-			},
-		},
 	}
 	runtimeReader := &fakeGateRuntimeNodeReader{
-		nodes: map[string]runtimepkg.NodeRecord{
-			nodeID: {
-				ID:              runtimeNodeID,
-				TenantID:        tenantID,
-				NodeID:          nodeID,
-				MaxSlots:        4,
-				CurrentLoad:     2,
-				Status:          "online",
-				LastHeartbeatAt: timestamptz(now.Add(-30 * time.Second)),
+		nodesByID: map[uuid.UUID]runtimepkg.NodeRecord{
+			runtimeNodeID: {
+				ID:                 runtimeNodeID,
+				TenantID:           tenantID,
+				NodeID:             nodeID,
+				SupportedProviders: []byte(`["codex"]`),
+				MaxSlots:           4,
+				CurrentLoad:        2,
+				Status:             "online",
+				LastHeartbeatAt:    timestamptz(now.Add(-30 * time.Second)),
 			},
 		},
 	}
 	adapter := preDispatchGateAdapter{
-		employees:    reader,
+		employees: reader,
+		projectTaskRuns: fakeProjectTaskRunPreflightReader{
+			preflight: employee.StartProjectTaskRunPreflight{
+				TenantID:              tenantID,
+				DigitalEmployeeID:     employeeID,
+				DigitalEmployeeStatus: employee.DigitalEmployeeStatusActive,
+				RuntimeNodeID:         runtimeNodeID,
+				NodeID:                nodeID,
+				ProviderType:          "codex",
+				WorkspaceBaseDir:      "/var/superteam/agents/db",
+				RuntimeSessionActive:  true,
+				ProviderHealthy:       true,
+			},
+		},
 		runtimeNodes: runtimeReader,
 		now:          func() time.Time { return now },
 	}
@@ -312,15 +308,6 @@ func TestPreDispatchGateAdapterMapsRuntimeFactsWithoutRuntimeSelector(t *testing
 				Status:   employee.DigitalEmployeeStatusActive,
 			},
 		},
-		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
-			employeeID: {
-				DigitalEmployeeID: employeeID,
-				RuntimeNodeID:     runtimeNodeID,
-				ProviderType:      "codex",
-				AgentHomeDir:      "/var/superteam/agents/db",
-				Status:            employee.ExecutionInstanceStatusReady,
-			},
-		},
 	}
 	runtimeReader := &fakeGateRuntimeNodeReader{
 		nodesByID: map[uuid.UUID]runtimepkg.NodeRecord{
@@ -337,7 +324,20 @@ func TestPreDispatchGateAdapterMapsRuntimeFactsWithoutRuntimeSelector(t *testing
 		},
 	}
 	adapter := preDispatchGateAdapter{
-		employees:    reader,
+		employees: reader,
+		projectTaskRuns: fakeProjectTaskRunPreflightReader{
+			preflight: employee.StartProjectTaskRunPreflight{
+				TenantID:              tenantID,
+				DigitalEmployeeID:     employeeID,
+				DigitalEmployeeStatus: employee.DigitalEmployeeStatusActive,
+				RuntimeNodeID:         runtimeNodeID,
+				NodeID:                "runtime-node-empty-selector",
+				ProviderType:          "codex",
+				WorkspaceBaseDir:      "/var/superteam/agents/db",
+				RuntimeSessionActive:  true,
+				ProviderHealthy:       true,
+			},
+		},
 		runtimeNodes: runtimeReader,
 		now:          func() time.Time { return now },
 	}
@@ -367,18 +367,22 @@ func TestPreDispatchGateAdapterTreatsStaleRuntimeHeartbeatAsOffline(t *testing.T
 				Status:   employee.DigitalEmployeeStatusActive,
 			},
 		},
-		instances: map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord{
-			employeeID: {
-				DigitalEmployeeID: employeeID,
-				RuntimeNodeID:     runtimeNodeID,
-				ProviderType:      "codex",
-				AgentHomeDir:      "/var/superteam/agents/db",
-				Status:            employee.ExecutionInstanceStatusActive,
-			},
-		},
 	}
 	adapter := preDispatchGateAdapter{
 		employees: reader,
+		projectTaskRuns: fakeProjectTaskRunPreflightReader{
+			preflight: employee.StartProjectTaskRunPreflight{
+				TenantID:              tenantID,
+				DigitalEmployeeID:     employeeID,
+				DigitalEmployeeStatus: employee.DigitalEmployeeStatusActive,
+				RuntimeNodeID:         runtimeNodeID,
+				NodeID:                "runtime-node-stale",
+				ProviderType:          "codex",
+				WorkspaceBaseDir:      "/var/superteam/agents/db",
+				RuntimeSessionActive:  true,
+				ProviderHealthy:       true,
+			},
+		},
 		runtimeNodes: &fakeGateRuntimeNodeReader{
 			nodesByID: map[uuid.UUID]runtimepkg.NodeRecord{
 				runtimeNodeID: {
@@ -428,7 +432,6 @@ func TestPreDispatchGateAdapterDoesNotDeriveCapabilitiesFromPlannerOutput(t *tes
 type fakePlanningProfileEmployeeReader struct {
 	employees map[uuid.UUID]employee.DigitalEmployeeRecord
 	configs   map[uuid.UUID]employee.EmployeeConfigInput
-	instances map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord
 	signals   map[uuid.UUID]employee.OperationalSignals
 }
 
@@ -444,14 +447,6 @@ func (r fakePlanningProfileEmployeeReader) GetLatestDigitalEmployeeConfigRevisio
 	record, ok := r.configs[employeeID]
 	if !ok || record.TenantID != tenantID {
 		return employee.EmployeeConfigInput{}, employee.ErrNotFound
-	}
-	return record, nil
-}
-
-func (r fakePlanningProfileEmployeeReader) GetDigitalEmployeeExecutionInstanceByEmployeeID(_ context.Context, tenantID, employeeID uuid.UUID) (employee.DigitalEmployeeExecutionInstanceRecord, error) {
-	record, ok := r.instances[employeeID]
-	if !ok || tenantID == uuid.Nil {
-		return employee.DigitalEmployeeExecutionInstanceRecord{}, employee.ErrNotFound
 	}
 	return record, nil
 }

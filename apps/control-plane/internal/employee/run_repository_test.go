@@ -116,8 +116,6 @@ func TestRunPreflightFromQueryAllowsMissingTeam(t *testing.T) {
 		TeamID:                uuid.NullUUID{},
 		DigitalEmployeeID:     uuid.New(),
 		DigitalEmployeeStatus: string(DigitalEmployeeStatusReady),
-		ExecutionInstanceID:   uuid.New(),
-		ExecutionStatus:       string(ExecutionInstanceStatusReady),
 		RuntimeNodeID:         uuid.New(),
 		NodeID:                "runtime-authoritative",
 		ProviderType:          "codex",
@@ -198,7 +196,6 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
 	runtimeNodeID := uuid.New()
 	employeeID := uuid.New()
-	executionInstanceID := uuid.New()
 	employeeConfigRevisionID := uuid.New()
 	authoritativeNodeID := "runtime-authoritative"
 
@@ -297,38 +294,6 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			'{}'::jsonb
 		);
 
-		INSERT INTO digital_employee_execution_instances (
-			id,
-			tenant_id,
-			digital_employee_id,
-			runtime_node_id,
-			provider_type,
-			agent_home_dir,
-			workspace_policy,
-			session_policy,
-			runtime_selector,
-			capacity_requirements,
-			fallback_policy,
-			status,
-			ready_at,
-			metadata
-		) VALUES (
-			$6,
-			$1,
-			$5,
-			$3,
-			'codex',
-			'/var/lib/superteam/agents/employee',
-			'{"workspace":"isolated"}'::jsonb,
-			'{"resume":true}'::jsonb,
-			'{"node_id":"wrong-selector-value"}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'ready',
-			NOW(),
-			'{}'::jsonb
-		);
-
 		INSERT INTO digital_employee_config_revisions (
 			id,
 			tenant_id,
@@ -339,7 +304,7 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			budget_policy,
 			status
 		) VALUES (
-			$7,
+			$6,
 			$1,
 			$5,
 			1,
@@ -349,7 +314,7 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			'{}'::jsonb,
 			'draft'
 		);
-	`, tenantID, teamID, runtimeNodeID, authoritativeNodeID, employeeID, executionInstanceID, employeeConfigRevisionID)
+	`, tenantID, teamID, runtimeNodeID, authoritativeNodeID, employeeID, employeeConfigRevisionID)
 	require.NoError(t, err)
 
 	repo := NewPgRunRepository(queries.New(conn))
@@ -358,9 +323,10 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	require.NoError(t, err)
 	require.Equal(t, authoritativeNodeID, preflight.NodeID)
 	require.Equal(t, runtimeNodeID, preflight.RuntimeNodeID)
-	require.Equal(t, executionInstanceID, preflight.ExecutionInstanceID)
+	// dei retired: ExecutionInstanceID is now a synthesized compat UUID, not from dei table.
+	require.NotEqual(t, uuid.Nil, preflight.ExecutionInstanceID)
+	require.Equal(t, ExecutionInstanceStatusReady, preflight.ExecutionStatus)
 	require.Equal(t, "codex", preflight.ProviderType)
-	require.Equal(t, "isolated", preflight.WorkspacePolicy["workspace"])
 	require.True(t, preflight.ProviderHealthy)
 }
 
@@ -389,7 +355,8 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
 	runtimeNodeID := uuid.New()
 	employeeID := uuid.New()
-	executionInstanceID := uuid.New()
+	// dei retired: use a plain UUID for execution_instance_id in task_runs (no dei table required)
+	compatInstanceID := uuid.New()
 	employeeConfigRevisionID := uuid.New()
 	taskBeforeID := uuid.New()
 	taskInsideID := uuid.New()
@@ -500,38 +467,6 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			'{}'::jsonb
 		);
 
-		INSERT INTO digital_employee_execution_instances (
-			id,
-			tenant_id,
-			digital_employee_id,
-			runtime_node_id,
-			provider_type,
-			agent_home_dir,
-			workspace_policy,
-			session_policy,
-			runtime_selector,
-			capacity_requirements,
-			fallback_policy,
-			status,
-			ready_at,
-			metadata
-		) VALUES (
-			$6,
-			$1,
-			$5,
-			$3,
-			'codex',
-			'/var/lib/superteam/agents/employee',
-			'{"workspace":"isolated"}'::jsonb,
-			'{"resume":true}'::jsonb,
-			'{"node_id":"runtime-budget-boundary"}'::jsonb,
-			'{}'::jsonb,
-			'{}'::jsonb,
-			'ready',
-			NOW(),
-			'{}'::jsonb
-		);
-
 		INSERT INTO digital_employee_config_revisions (
 			id,
 			tenant_id,
@@ -542,7 +477,7 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			budget_policy,
 			status
 		) VALUES (
-			$7,
+			$6,
 			$1,
 			$5,
 			1,
@@ -566,8 +501,8 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			created_at,
 			updated_at
 		) VALUES
-			($8, $1, $2, '午夜前运行', 'completed', 'codex', $4, '{}'::jsonb, $12, $12),
-			($9, $1, $2, '午夜后运行', 'completed', 'codex', $4, '{}'::jsonb, $13, $13);
+			($7, $1, $2, '午夜前运行', 'completed', 'codex', $4, '{}'::jsonb, $11, $11),
+			($8, $1, $2, '午夜后运行', 'completed', 'codex', $4, '{}'::jsonb, $12, $12);
 
 		INSERT INTO task_runs (
 			id,
@@ -587,9 +522,9 @@ func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
 			execution_instance_id,
 			provider_type
 		) VALUES
-			($10, $1, $8, $4, $3, 'completed', $12, $12, $12, '{"usage":{"total_tokens":700}}'::jsonb, $12, $12, 'cmd-before-midnight', $5, $6, 'codex'),
-			($11, $1, $9, $4, $3, 'completed', $13, $13, $13, '{"usage":{"total_tokens":300}}'::jsonb, $13, $13, 'cmd-after-midnight', $5, $6, 'codex');
-	`, tenantID, teamID, runtimeNodeID, nodeID, employeeID, executionInstanceID, employeeConfigRevisionID, taskBeforeID, taskInsideID, runBeforeID, runInsideID, beforeToday, insideToday)
+			($9, $1, $7, $4, $3, 'completed', $11, $11, $11, '{"usage":{"total_tokens":700}}'::jsonb, $11, $11, 'cmd-before-midnight', $5, $13, 'codex'),
+			($10, $1, $8, $4, $3, 'completed', $12, $12, $12, '{"usage":{"total_tokens":300}}'::jsonb, $12, $12, 'cmd-after-midnight', $5, $13, 'codex');
+	`, tenantID, teamID, runtimeNodeID, nodeID, employeeID, employeeConfigRevisionID, taskBeforeID, taskInsideID, runBeforeID, runInsideID, beforeToday, insideToday, compatInstanceID)
 	require.NoError(t, err)
 
 	repo := NewPgRunRepository(queries.New(conn))

@@ -36,7 +36,6 @@ describe("EffectiveContextPanel", () => {
           totalCount: 2,
           missingNames: ["REDIS_URL"],
         }}
-        executionInstance={undefined}
         mcp={{ isLoading: false, isError: false, personalCount: 0, inheritedCount: 1, totalCount: 1 }}
         skills={{ isLoading: false, isError: false, personalCount: 1, inheritedCount: 2, totalCount: 3 }}
       />,

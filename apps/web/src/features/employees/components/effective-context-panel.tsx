@@ -1,12 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { BookOpen, Boxes, KeyRound, Network, ScrollText } from "lucide-react";
 import { IconTile, SoftCard, StatusPill, V3Button } from "@/components/superteam";
-import type { DigitalEmployee, DigitalEmployeeExecutionInstance } from "@/lib/api/employees";
+import type { DigitalEmployee } from "@/lib/api/employees";
 import { providerDisplayName } from "../provider-label";
 
 type EffectiveContextPanelProps = {
   employee: DigitalEmployee;
-  executionInstance: DigitalEmployeeExecutionInstance | undefined;
   employeeId: string;
   skills: { isLoading: boolean; isError: boolean; personalCount: number; inheritedCount: number; totalCount: number };
   mcp: { isLoading: boolean; isError: boolean; personalCount: number; inheritedCount: number; totalCount: number };
@@ -21,7 +20,6 @@ type EffectiveContextPanelProps = {
 
 export function EffectiveContextPanel({
   employee,
-  executionInstance,
   employeeId,
   skills,
   mcp,
@@ -43,7 +41,7 @@ export function EffectiveContextPanel({
         <div className="grid grid-cols-2 gap-2 text-sm">
           <InfoItem label="Provider" value={providerDisplayName(employee.provider_type)} />
           <InfoItem label="角色" value={employee.role} />
-          <InfoItem label="工作目录" value={executionInstance?.agent_home_dir ?? "由项目 Runtime 创建"} />
+          <InfoItem label="工作目录" value="由项目 Runtime 创建" />
         </div>
       </section>
 

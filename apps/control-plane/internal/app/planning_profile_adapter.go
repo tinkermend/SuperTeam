@@ -21,7 +21,6 @@ const runtimeNodeHeartbeatTTL = 2 * time.Minute
 type digitalEmployeePlanningProfileReader interface {
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (employee.DigitalEmployeeRecord, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (employee.EmployeeConfigInput, error)
-	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (employee.DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeOperationalSignals(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]employee.OperationalSignals, error)
 }
 
@@ -161,7 +160,6 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 		if err := a.applyEffectiveCapabilityBindings(ctx, tenantID, employeeID, &record); err != nil {
 			return nil, err
 		}
-		preflightApplied := false
 		if a.projectTaskRuns != nil && projectID != uuid.Nil {
 			preflight, err := a.projectTaskRuns.GetProjectTaskRunPreflight(ctx, tenantID, projectID, employeeID)
 			if err != nil {
@@ -170,21 +168,6 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 				}
 			} else {
 				applyProjectTaskPreflightPlanningFacts(&record, preflight)
-				preflightApplied = true
-			}
-		}
-		if !preflightApplied {
-			instance, err := a.reader.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, tenantID, employeeID)
-			if err != nil {
-				if !errors.Is(err, employee.ErrNotFound) {
-					return nil, err
-				}
-			} else {
-				record.RuntimeNodeID = instance.RuntimeNodeID
-				if strings.TrimSpace(instance.ProviderType) != "" {
-					record.ProviderType = instance.ProviderType
-				}
-				record.ExecutionStatus = string(instance.Status)
 			}
 		}
 		if signal, ok := signals[employeeID]; ok {
@@ -289,44 +272,11 @@ func (a preDispatchGateAdapter) GetEmployeeRuntimeSnapshot(ctx context.Context, 
 			if !normalGateAbsence(err) {
 				return project.PreDispatchEmployeeSnapshot{}, project.PreDispatchRuntimeSnapshot{}, err
 			}
-		} else {
-			return a.runtimeSnapshotFromProjectTaskPreflight(ctx, tenantID, employeeSnapshot, preflight)
-		}
-	}
-
-	instance, err := a.employees.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, tenantID, employeeID)
-	if err != nil {
-		if normalGateAbsence(err) {
 			return employeeSnapshot, runtimeSnapshot, nil
 		}
-		return project.PreDispatchEmployeeSnapshot{}, project.PreDispatchRuntimeSnapshot{}, err
-	}
-	runtimeSnapshot.ProviderAvailable = instance.ProviderType != "" && executionInstanceRunnable(instance.Status)
-	runtimeSnapshot.WorkspaceReady = strings.TrimSpace(instance.AgentHomeDir) != ""
-	if instance.RuntimeNodeID == uuid.Nil || a.runtimeNodes == nil {
-		return employeeSnapshot, runtimeSnapshot, nil
+		return a.runtimeSnapshotFromProjectTaskPreflight(ctx, tenantID, employeeSnapshot, preflight)
 	}
 
-	node, err := a.runtimeNodeForInstance(ctx, instance)
-	if err != nil {
-		if normalGateAbsence(err) {
-			return employeeSnapshot, runtimeSnapshot, nil
-		}
-		return project.PreDispatchEmployeeSnapshot{}, project.PreDispatchRuntimeSnapshot{}, err
-	}
-	if node.TenantID != uuid.Nil && node.TenantID != tenantID {
-		return employeeSnapshot, runtimeSnapshot, nil
-	}
-	availableSlots := node.MaxSlots - node.CurrentLoad
-	if availableSlots < 0 {
-		availableSlots = 0
-	}
-	employeeSnapshot.AvailableLoadSlots = availableSlots
-	runtimeSnapshot.NodeOnline = runtimeNodeOnline(node, a.clock())
-	runtimeSnapshot.SlotAvailable = availableSlots >= employeeSnapshot.RequiredLoadSlots
-	if !runtimeProviderSupported(node, instance.ProviderType) {
-		runtimeSnapshot.ProviderAvailable = false
-	}
 	return employeeSnapshot, runtimeSnapshot, nil
 }
 
@@ -382,16 +332,6 @@ func (a preDispatchGateAdapter) clock() time.Time {
 	return time.Now().UTC()
 }
 
-func (a preDispatchGateAdapter) runtimeNodeForInstance(ctx context.Context, instance employee.DigitalEmployeeExecutionInstanceRecord) (runtimepkg.NodeRecord, error) {
-	if nodeID := runtimeNodeSelectorID(instance); nodeID != "" {
-		return a.runtimeNodes.GetNode(ctx, nodeID)
-	}
-	if reader, ok := a.runtimeNodes.(gateRuntimeNodeIDReader); ok {
-		return reader.GetNodeByID(ctx, instance.RuntimeNodeID)
-	}
-	return runtimepkg.NodeRecord{}, pgx.ErrNoRows
-}
-
 func (a preDispatchGateAdapter) runtimeNodeForProjectTaskPreflight(ctx context.Context, preflight employee.StartProjectTaskRunPreflight) (runtimepkg.NodeRecord, error) {
 	if reader, ok := a.runtimeNodes.(gateRuntimeNodeIDReader); ok {
 		return reader.GetNodeByID(ctx, preflight.RuntimeNodeID)
@@ -406,19 +346,6 @@ func normalGateAbsence(err error) bool {
 	return errors.Is(err, employee.ErrNotFound) ||
 		errors.Is(err, capability.ErrNotFound) ||
 		errors.Is(err, pgx.ErrNoRows)
-}
-
-func executionInstanceRunnable(status employee.ExecutionInstanceStatus) bool {
-	return status == employee.ExecutionInstanceStatusReady || status == employee.ExecutionInstanceStatusActive
-}
-
-func runtimeNodeSelectorID(instance employee.DigitalEmployeeExecutionInstanceRecord) string {
-	if instance.RuntimeSelector != nil {
-		if nodeID := strings.TrimSpace(stringFromAny(instance.RuntimeSelector["node_id"])); nodeID != "" {
-			return nodeID
-		}
-	}
-	return ""
 }
 
 func runtimeNodeOnline(node runtimepkg.NodeRecord, now time.Time) bool {

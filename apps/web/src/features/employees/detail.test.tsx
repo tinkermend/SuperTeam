@@ -85,13 +85,7 @@ const employee = {
   },
 };
 
-const executionInstance = {
-  id: "22222222-2222-4222-8222-222222222222",
-  digital_employee_id: employee.id,
-  runtime_node_id: "33333333-3333-4333-8333-333333333333",
-  provider_type: "codex",
-  status: "ready",
-};
+const runtimeNodeId = "33333333-3333-4333-8333-333333333333";
 
 const runStats = {
   total_count: 12,
@@ -147,8 +141,8 @@ function runFixture(overrides: Record<string, unknown> = {}) {
     tenant_id: "tenant-1",
     task_id: "task-1",
     digital_employee_id: employee.id,
-    execution_instance_id: executionInstance.id,
-    runtime_node_id: executionInstance.runtime_node_id,
+    execution_instance_id: "22222222-2222-4222-8222-222222222222",
+    runtime_node_id: runtimeNodeId,
     node_id: "node-a",
     command_id: "cmd-1",
     provider_type: "codex",
@@ -198,7 +192,6 @@ function createDetailFetcher({
   run = runFixture(),
   runs,
   eventsByRunId,
-  executionInstanceStatus = 200,
   runsStatus = 200,
   readiness = schedulingReadiness,
   readinessStatus = 200,
@@ -213,7 +206,7 @@ function createDetailFetcher({
     pending_enrollments: [],
     nodes: [
       {
-        runtime_node_id: executionInstance.runtime_node_id,
+        runtime_node_id: runtimeNodeId,
         node_id: "node-a",
         name: "node-a",
         supported_providers: ["codex"],
@@ -234,7 +227,6 @@ function createDetailFetcher({
   run?: Record<string, unknown>;
   runs?: Array<Record<string, unknown>>;
   eventsByRunId?: Record<string, Array<Record<string, unknown>>>;
-  executionInstanceStatus?: number;
   runsStatus?: number;
   readiness?: Record<string, unknown>;
   readinessStatus?: number;
@@ -258,13 +250,6 @@ function createDetailFetcher({
         return noContentResponse();
       }
       return jsonResponse(deletePayload ?? { error: "delete failed" }, deleteStatus);
-    }
-
-    if (path === `/api/v1/digital-employees/${employee.id}/execution-instance` && method === "GET") {
-      if (executionInstanceStatus !== 200) {
-        return jsonResponse({ error: "execution instance failed" }, executionInstanceStatus);
-      }
-      return jsonResponse(executionInstance);
     }
 
     if (path === `/api/v1/digital-employees/${employee.id}/scheduling-readiness` && method === "GET") {
@@ -477,45 +462,6 @@ describe("EmployeeDetailView", () => {
     await expect.element(screen.getByRole("link", { name: "进入项目" })).toHaveAttribute("href", "/projects");
   });
 
-  it("keeps start submit disabled when runtime command channel is disconnected", async () => {
-    const fetcher = createDetailFetcher({
-      events: [],
-      run: runFixture({ status: "completed" }),
-      runtimeOverview: {
-        summary: {
-          online_nodes: 1,
-          total_nodes: 1,
-          pending_enrollments: 0,
-          active_provider_sessions: 0,
-          blocked_events: 0,
-        },
-        pending_enrollments: [],
-        nodes: [
-          {
-            runtime_node_id: executionInstance.runtime_node_id,
-            node_id: "node-a",
-            name: "node-a",
-            supported_providers: ["codex"],
-            max_slots: 3,
-            current_load: 0,
-            status: "online",
-            command_channel_connected: false,
-          },
-        ],
-        provider_capabilities: [],
-        recent_events: [],
-      },
-    });
-    const screen = await renderEmployeeDetail(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
-
-    await expect
-      .element(screen.getByText("Runtime 命令通道未连接，暂不能开始任务"))
-      .toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
-  });
-
   it("renders completed run result and failed run failure reason in the drawer", async () => {
     const completedScreen = await renderEmployeeDetail(
       createDetailFetcher({
@@ -592,21 +538,6 @@ describe("EmployeeDetailView", () => {
 
     await expect
       .element(screen.getByText("运行列表加载失败，暂不能开始新任务"))
-      .toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
-  });
-
-  it("keeps start submit disabled when execution instance is missing", async () => {
-    const fetcher = createDetailFetcher({
-      executionInstanceStatus: 404,
-      run: runFixture({ status: "completed" }),
-    });
-    const screen = await renderEmployeeDetail(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
-
-    await expect
-      .element(screen.getByText("项目运行时就绪度会决定 Runtime 节点，当前不能从员工详情直接开始任务"))
       .toBeVisible();
     await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
   });
@@ -711,46 +642,5 @@ describe("EmployeeDetailView", () => {
     await expect.element(screen.getByText("项目内待办")).toBeVisible();
     await expect.element(screen.getByText("项目任务 · 进行中")).toBeVisible();
     expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it("shows a page-level alert when the runtime command channel is disconnected", async () => {
-    const fetcher = createDetailFetcher({
-      run: runFixture({ status: "completed" }),
-      runtimeOverview: {
-        summary: {
-          online_nodes: 1,
-          total_nodes: 1,
-          pending_enrollments: 0,
-          active_provider_sessions: 0,
-          blocked_events: 0,
-        },
-        pending_enrollments: [],
-        nodes: [
-          {
-            runtime_node_id: executionInstance.runtime_node_id,
-            node_id: "node-a",
-            name: "node-a",
-            supported_providers: ["codex"],
-            max_slots: 3,
-            current_load: 0,
-            status: "online",
-            command_channel_connected: false,
-          },
-        ],
-        provider_capabilities: [],
-        recent_events: [],
-      },
-    });
-    const screen = await renderEmployeeDetail(fetcher);
-
-    await expect.element(screen.getByText("Runtime 命令通道未连接")).toBeVisible();
-    await expect.element(screen.getByText(/当前无法开始新任务/)).toBeVisible();
-  });
-
-  it("hides the channel alert when the command channel is connected", async () => {
-    const screen = await renderEmployeeDetail();
-
-    await expect.element(screen.getByRole("heading", { level: 2, name: "需求分析员工" })).toBeVisible();
-    expect(screen.getByText("Runtime 命令通道未连接").query()).toBeNull();
   });
 });

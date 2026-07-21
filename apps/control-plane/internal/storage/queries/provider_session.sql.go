@@ -12,245 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const CreateProviderSession = `-- name: CreateProviderSession :one
-INSERT INTO provider_sessions (
-    tenant_id,
-    provider_session_id,
-    digital_employee_id,
-    execution_instance_id,
-    runtime_node_id,
-    provider_type,
-    status,
-    recoverable,
-    last_active_at,
-    metadata
-) SELECT
-    dei.tenant_id,
-    $1::varchar,
-    dei.digital_employee_id,
-    dei.id,
-    dei.runtime_node_id,
-    dei.provider_type,
-    $2::varchar,
-    $3::boolean,
-    $4::timestamptz,
-    COALESCE($5::jsonb, '{}'::jsonb)
-FROM digital_employee_execution_instances dei
-JOIN digital_employees de
-  ON de.id = dei.digital_employee_id
- AND de.tenant_id = dei.tenant_id
- AND de.status NOT IN ('disabled', 'error')
- AND de.deleted_at IS NULL
- AND de.archived_at IS NULL
-JOIN runtime_nodes rn
-  ON rn.id = dei.runtime_node_id
- AND rn.tenant_id = dei.tenant_id
- AND rn.status = 'online'
- AND rn.disabled_at IS NULL
- AND rn.archived_at IS NULL
-WHERE dei.id = $6::uuid
-  AND dei.tenant_id = $7::uuid
-  AND dei.digital_employee_id = $8::uuid
-  AND dei.runtime_node_id = $9::uuid
-  AND dei.provider_type = $10::varchar
-  AND dei.status IN ('ready', 'active')
-  AND dei.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM runtime_sessions rs
-      JOIN runtime_enrollments re
-        ON re.id = rs.enrollment_id
-       AND re.tenant_id = rs.tenant_id
-       AND re.runtime_node_id = rs.runtime_node_id
-       AND re.status = 'approved'
-       AND re.revoked_at IS NULL
-       AND re.rejected_at IS NULL
-      WHERE rs.tenant_id = dei.tenant_id
-        AND rs.runtime_node_id = rn.id
-        AND rs.expires_at > NOW()
-        AND rs.revoked_at IS NULL
-  )
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
-`
-
-type CreateProviderSessionParams struct {
-	ProviderSessionID   string             `json:"provider_session_id"`
-	Status              string             `json:"status"`
-	Recoverable         bool               `json:"recoverable"`
-	LastActiveAt        pgtype.Timestamptz `json:"last_active_at"`
-	Metadata            []byte             `json:"metadata"`
-	ExecutionInstanceID uuid.UUID          `json:"execution_instance_id"`
-	TenantID            uuid.UUID          `json:"tenant_id"`
-	DigitalEmployeeID   uuid.UUID          `json:"digital_employee_id"`
-	RuntimeNodeID       uuid.UUID          `json:"runtime_node_id"`
-	ProviderType        string             `json:"provider_type"`
-}
-
-func (q *Queries) CreateProviderSession(ctx context.Context, arg CreateProviderSessionParams) (ProviderSession, error) {
-	row := q.db.QueryRow(ctx, CreateProviderSession,
-		arg.ProviderSessionID,
-		arg.Status,
-		arg.Recoverable,
-		arg.LastActiveAt,
-		arg.Metadata,
-		arg.ExecutionInstanceID,
-		arg.TenantID,
-		arg.DigitalEmployeeID,
-		arg.RuntimeNodeID,
-		arg.ProviderType,
-	)
-	var i ProviderSession
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.ProviderSessionID,
-		&i.DigitalEmployeeID,
-		&i.ExecutionInstanceID,
-		&i.RuntimeNodeID,
-		&i.ProviderType,
-		&i.Status,
-		&i.Recoverable,
-		&i.LastActiveAt,
-		&i.ClosedAt,
-		&i.ErrorMessage,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.SessionDisplayID,
-		&i.SessionParams,
-		&i.SessionState,
-		&i.LastSequenceNumber,
-		&i.LastCommandID,
-		&i.LastRunID,
-		&i.LastErrorFamily,
-		&i.LastRuntimeSeenAt,
-		&i.ProjectTaskRootID,
-	)
-	return i, err
-}
-
-const CreateProviderSessionEvent = `-- name: CreateProviderSessionEvent :one
-INSERT INTO provider_session_events (
-    tenant_id,
-    provider_session_id,
-    digital_employee_id,
-    execution_instance_id,
-    runtime_node_id,
-    provider_type,
-    event_type,
-    sequence_number,
-    payload,
-    request_id,
-    command_id,
-    raw_event_ref,
-    metadata
-) SELECT
-    ps.tenant_id,
-    ps.id,
-    ps.digital_employee_id,
-    ps.execution_instance_id,
-    ps.runtime_node_id,
-    ps.provider_type,
-    $1::varchar,
-    $2::integer,
-    $3::jsonb,
-    $4::varchar,
-    $5::varchar,
-    $6::text,
-    COALESCE($7::jsonb, '{}'::jsonb)
-FROM provider_sessions ps
-JOIN digital_employee_execution_instances dei
-  ON dei.id = ps.execution_instance_id
- AND dei.tenant_id = ps.tenant_id
- AND dei.digital_employee_id = ps.digital_employee_id
- AND dei.runtime_node_id = ps.runtime_node_id
- AND dei.provider_type = ps.provider_type
- AND dei.status IN ('ready', 'active')
- AND dei.deleted_at IS NULL
-JOIN digital_employees de
-  ON de.id = ps.digital_employee_id
- AND de.tenant_id = ps.tenant_id
- AND de.status NOT IN ('disabled', 'error')
- AND de.deleted_at IS NULL
- AND de.archived_at IS NULL
-JOIN runtime_nodes rn
-  ON rn.id = ps.runtime_node_id
- AND rn.tenant_id = ps.tenant_id
- AND rn.node_id = $8::varchar
- AND rn.status = 'online'
- AND rn.disabled_at IS NULL
- AND rn.archived_at IS NULL
-WHERE ps.id = $9::uuid
-  AND ps.tenant_id = $10::uuid
-  AND ps.status IN ('running', 'idle')
-  AND ps.closed_at IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM runtime_sessions rs
-      JOIN runtime_enrollments re
-        ON re.id = rs.enrollment_id
-       AND re.tenant_id = rs.tenant_id
-       AND re.runtime_node_id = rs.runtime_node_id
-       AND re.status = 'approved'
-       AND re.revoked_at IS NULL
-       AND re.rejected_at IS NULL
-      WHERE rs.tenant_id = ps.tenant_id
-        AND rs.runtime_node_id = rn.id
-        AND rs.expires_at > NOW()
-        AND rs.revoked_at IS NULL
-  )
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at, log_ref, session_state_patch
-`
-
-type CreateProviderSessionEventParams struct {
-	EventType         string      `json:"event_type"`
-	SequenceNumber    int32       `json:"sequence_number"`
-	Payload           []byte      `json:"payload"`
-	RequestID         pgtype.Text `json:"request_id"`
-	CommandID         pgtype.Text `json:"command_id"`
-	RawEventRef       pgtype.Text `json:"raw_event_ref"`
-	Metadata          []byte      `json:"metadata"`
-	NodeID            string      `json:"node_id"`
-	ProviderSessionID uuid.UUID   `json:"provider_session_id"`
-	TenantID          uuid.UUID   `json:"tenant_id"`
-}
-
-func (q *Queries) CreateProviderSessionEvent(ctx context.Context, arg CreateProviderSessionEventParams) (ProviderSessionEvent, error) {
-	row := q.db.QueryRow(ctx, CreateProviderSessionEvent,
-		arg.EventType,
-		arg.SequenceNumber,
-		arg.Payload,
-		arg.RequestID,
-		arg.CommandID,
-		arg.RawEventRef,
-		arg.Metadata,
-		arg.NodeID,
-		arg.ProviderSessionID,
-		arg.TenantID,
-	)
-	var i ProviderSessionEvent
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.ProviderSessionID,
-		&i.DigitalEmployeeID,
-		&i.ExecutionInstanceID,
-		&i.RuntimeNodeID,
-		&i.ProviderType,
-		&i.EventType,
-		&i.SequenceNumber,
-		&i.Payload,
-		&i.RequestID,
-		&i.CommandID,
-		&i.RawEventRef,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.LogRef,
-		&i.SessionStatePatch,
-	)
-	return i, err
-}
-
 const CreateProviderSessionEventIfAbsent = `-- name: CreateProviderSessionEventIfAbsent :one
 WITH inserted AS (
     INSERT INTO provider_session_events (
@@ -432,6 +193,7 @@ func (q *Queries) GetLatestProviderSessionEventSequence(ctx context.Context, arg
 }
 
 const GetProviderSession = `-- name: GetProviderSession :one
+
 SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at, project_task_root_id
 FROM provider_sessions
 WHERE id = $1::uuid
@@ -443,6 +205,7 @@ type GetProviderSessionParams struct {
 	TenantID uuid.UUID `json:"tenant_id"`
 }
 
+// CreateProviderSession retired (2026-07-21).
 func (q *Queries) GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error) {
 	row := q.db.QueryRow(ctx, GetProviderSession, arg.ID, arg.TenantID)
 	var i ProviderSession
@@ -522,6 +285,7 @@ func (q *Queries) GetProviderSessionByExternalID(ctx context.Context, arg GetPro
 }
 
 const ListProviderSessionEvents = `-- name: ListProviderSessionEvents :many
+
 SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at, log_ref, session_state_patch
 FROM provider_session_events
 WHERE tenant_id = $1::uuid
@@ -534,6 +298,7 @@ type ListProviderSessionEventsParams struct {
 	ProviderSessionID uuid.UUID `json:"provider_session_id"`
 }
 
+// CreateProviderSessionEvent retired (2026-07-21).
 func (q *Queries) ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error) {
 	rows, err := q.db.Query(ctx, ListProviderSessionEvents, arg.TenantID, arg.ProviderSessionID)
 	if err != nil {

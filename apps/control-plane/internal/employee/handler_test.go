@@ -108,14 +108,6 @@ func (s *fakeTemplateHandlerService) ReassignTeam(ctx context.Context, req Reass
 	return nil, nil
 }
 
-func (s *fakeTemplateHandlerService) GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error) {
-	return nil, nil
-}
-
-func (s *fakeTemplateHandlerService) BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error) {
-	return nil, nil
-}
-
 func (s *fakeTemplateHandlerService) CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error) {
 	return nil, nil
 }

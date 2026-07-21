@@ -292,6 +292,16 @@ func TestOverviewItemsSQLUsesLatestGovernanceStatusForCard(t *testing.T) {
 	require.Contains(t, normalizedSQL, "COALESCE(ecs.governance_status, 'missing')::text AS governance_status")
 }
 
+func TestOverviewItemsSQLSourcesExecutionSummaryFromLatestTaskRun(t *testing.T) {
+	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewItems)
+
+	require.NotContains(t, normalizedSQL, "digital_employee_execution_instances")
+	require.Contains(t, normalizedSQL, "tr.runtime_node_id")
+	require.Contains(t, normalizedSQL, "tr.node_id AS run_node_id")
+	require.Contains(t, normalizedSQL, "NULL::uuid AS execution_instance_id")
+	require.Contains(t, normalizedSQL, "LEFT JOIN runtime_nodes rn ON rn.id = lr.runtime_node_id")
+}
+
 func TestOverviewItemsSQLExcludesDeletedTaskEvents(t *testing.T) {
 	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewItems)
 

@@ -778,7 +778,6 @@ func TestWritebackRejectsRetiredProvisioningReceipts(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	receipt := validProvisioningReceipt("provision-cmd-1")
 	repo.putReceipt(receipt)
-	repo.putExecutionInstance(validProvisioningInstance(receipt.ResourceID))
 	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
 
 	err := service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
@@ -787,7 +786,7 @@ func TestWritebackRejectsRetiredProvisioningReceipts(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected retired provisioning receipt to be rejected with ErrNotFound, got %v", err)
 	}
-	if len(repo.executionInstanceStatusUpdates) != 0 || len(repo.employeeStatusUpdates) != 0 || len(repo.receiptUpdates) != 0 {
+	if len(repo.employeeStatusUpdates) != 0 || len(repo.receiptUpdates) != 0 {
 		t.Fatalf("expected no state mutations for retired provisioning receipt")
 	}
 }
@@ -927,20 +926,6 @@ func validProvisioningReceipt(commandID string) *RuntimeCommandReceipt {
 	}
 }
 
-func validProvisioningInstance(instanceID uuid.UUID) DigitalEmployeeExecutionInstanceRecord {
-	return DigitalEmployeeExecutionInstanceRecord{
-		ID:                instanceID,
-		TenantID:          runWritebackTenantID,
-		DigitalEmployeeID: runWritebackEmployeeID,
-		RuntimeNodeID:     runWritebackRuntimeNodeID,
-		ProviderType:      "codex",
-		AgentHomeDir:      "/srv/agents/code",
-		Status:            ExecutionInstanceStatusProvisioning,
-		Metadata:          map[string]any{},
-		CreatedAt:         time.Now().UTC(),
-		UpdatedAt:         time.Now().UTC(),
-	}
-}
 
 var (
 	runWritebackTenantID            = uuid.MustParse("00000000-0000-0000-0000-000000000001")
@@ -953,7 +938,6 @@ type fakeRunWritebackRepository struct {
 	runsByCommand                   map[string]*DigitalEmployeeRun
 	runsByID                        map[uuid.UUID]*DigitalEmployeeRun
 	receipts                        map[string]*RuntimeCommandReceipt
-	executionInstances              map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
 	taskEventKeys                   map[string]struct{}
 	providerSessionEventKeys        map[string]struct{}
 	providerSessionEventIDs         map[string]uuid.UUID
@@ -964,22 +948,13 @@ type fakeRunWritebackRepository struct {
 	providerSessionUpserts          []UpsertProviderSessionRequest
 	runUpdates                      []UpdateRunStatusRequest
 	receiptUpdates                  []UpdateRuntimeCommandReceiptRequest
-	executionInstanceStatusUpdates  []fakeExecutionInstanceStatusUpdate
 	employeeStatusUpdates           []fakeEmployeeStatusUpdate
-	deletedExecutionInstances       []uuid.UUID
 	deletedEmployees                []uuid.UUID
 	taskEventInsertCount            int
 	providerSessionEventInsertCount int
 	transactionCount                int
 	lockedReceiptReadCount          int
 	forceMissingRunEventSequence    bool
-}
-
-type fakeExecutionInstanceStatusUpdate struct {
-	tenantID            uuid.UUID
-	executionInstanceID uuid.UUID
-	status              ExecutionInstanceStatus
-	errorMessage        *string
 }
 
 type fakeEmployeeStatusUpdate struct {
@@ -993,7 +968,6 @@ func newFakeRunWritebackRepository() *fakeRunWritebackRepository {
 		runsByCommand:            map[string]*DigitalEmployeeRun{},
 		runsByID:                 map[uuid.UUID]*DigitalEmployeeRun{},
 		receipts:                 map[string]*RuntimeCommandReceipt{},
-		executionInstances:       map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord{},
 		taskEventKeys:            map[string]struct{}{},
 		providerSessionEventKeys: map[string]struct{}{},
 		providerSessionEventIDs:  map[string]uuid.UUID{},
@@ -1012,9 +986,6 @@ func (f *fakeRunWritebackRepository) putReceipt(receipt *RuntimeCommandReceipt) 
 	f.receipts[receipt.CommandID] = &copied
 }
 
-func (f *fakeRunWritebackRepository) putExecutionInstance(instance DigitalEmployeeExecutionInstanceRecord) {
-	f.executionInstances[instance.ID] = cloneExecutionInstanceRecord(instance)
-}
 
 func (f *fakeRunWritebackRepository) GetRunPreflight(context.Context, uuid.UUID, uuid.UUID) (RunPreflight, error) {
 	return RunPreflight{}, ErrNotFound
@@ -1216,22 +1187,6 @@ func (f *fakeRunWritebackRepository) UpdateCommandReceipt(_ context.Context, req
 	return &copied, nil
 }
 
-func (f *fakeRunWritebackRepository) UpdateExecutionInstanceStatus(_ context.Context, tenantID, executionInstanceID uuid.UUID, status ExecutionInstanceStatus, errorMessage *string) (DigitalEmployeeExecutionInstanceRecord, error) {
-	f.executionInstanceStatusUpdates = append(f.executionInstanceStatusUpdates, fakeExecutionInstanceStatusUpdate{
-		tenantID:            tenantID,
-		executionInstanceID: executionInstanceID,
-		status:              status,
-		errorMessage:        errorMessage,
-	})
-	instance, ok := f.executionInstances[executionInstanceID]
-	if !ok || instance.TenantID != tenantID {
-		return DigitalEmployeeExecutionInstanceRecord{}, ErrNotFound
-	}
-	instance.Status = status
-	instance.ErrorMessage = errorMessage
-	f.executionInstances[executionInstanceID] = instance
-	return cloneExecutionInstanceRecord(instance), nil
-}
 
 func (f *fakeRunWritebackRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	f.employeeStatusUpdates = append(f.employeeStatusUpdates, fakeEmployeeStatusUpdate{
@@ -1248,15 +1203,6 @@ func (f *fakeRunWritebackRepository) UpdateDigitalEmployeeStatus(_ context.Conte
 	}, nil
 }
 
-func (f *fakeRunWritebackRepository) DeleteExecutionInstance(_ context.Context, tenantID, executionInstanceID uuid.UUID) error {
-	instance, ok := f.executionInstances[executionInstanceID]
-	if !ok || instance.TenantID != tenantID {
-		return ErrNotFound
-	}
-	f.deletedExecutionInstances = append(f.deletedExecutionInstances, executionInstanceID)
-	delete(f.executionInstances, executionInstanceID)
-	return nil
-}
 
 func (f *fakeRunWritebackRepository) DeleteDigitalEmployee(_ context.Context, tenantID, employeeID uuid.UUID) error {
 	f.deletedEmployees = append(f.deletedEmployees, employeeID)
@@ -1309,14 +1255,4 @@ func cloneWritebackRun(run *DigitalEmployeeRun) *DigitalEmployeeRun {
 	copied.SessionState = cloneMap(run.SessionState)
 	copied.WorkProducts = append([]WorkProduct(nil), run.WorkProducts...)
 	return &copied
-}
-
-func cloneExecutionInstanceRecord(instance DigitalEmployeeExecutionInstanceRecord) DigitalEmployeeExecutionInstanceRecord {
-	instance.WorkspacePolicy = cloneMap(instance.WorkspacePolicy)
-	instance.SessionPolicy = cloneMap(instance.SessionPolicy)
-	instance.RuntimeSelector = cloneMap(instance.RuntimeSelector)
-	instance.CapacityRequirements = cloneMap(instance.CapacityRequirements)
-	instance.FallbackPolicy = cloneMap(instance.FallbackPolicy)
-	instance.Metadata = cloneMap(instance.Metadata)
-	return instance
 }

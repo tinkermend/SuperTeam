@@ -1383,6 +1383,19 @@ func chatDispatchNonce(idempotencyKey *string) string {
 	return strings.ReplaceAll(uuid.NewString(), "-", "")
 }
 
+// standaloneCompatibilityExecutionInstanceID produces a deterministic placeholder
+// for standalone/workbench runs (not project-scoped). Used by GetRunPreflight after
+// dei retirement so the non-null execution_instance_id column in task_runs is still
+// satisfied without touching digital_employee_execution_instances.
+func standaloneCompatibilityExecutionInstanceID(tenantID, employeeID uuid.UUID) uuid.UUID {
+	seed := strings.Join([]string{
+		tenantID.String(),
+		employeeID.String(),
+		"superteam:standalone-run:tenant:employee",
+	}, ":")
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(seed))
+}
+
 // chatCompatibilityExecutionInstanceID mirrors
 // projectTaskCompatibilityExecutionInstanceID's role for chat dispatch: a
 // deterministic placeholder satisfying the legacy non-null

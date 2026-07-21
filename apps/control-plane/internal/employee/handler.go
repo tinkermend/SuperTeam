@@ -32,8 +32,6 @@ type HandlerService interface {
 	DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error)
-	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
-	BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
 	SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error)
 	GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error)
@@ -633,79 +631,6 @@ func (h *HTTPHandler) ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, employeeResponseFromDomain(employee))
 }
 
-func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee execution instance read")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	instance, err := service.GetExecutionInstance(r.Context(), tenantID, employeeID)
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	if instance == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	writeJSON(w, http.StatusOK, executionInstanceResponseFromDomain(instance))
-}
-
-func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
-	employeeID, ok := employeeIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeExecutionBind, &employeeID, "digital employee execution instance bind")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	var req struct {
-		RuntimeNodeID        uuid.UUID      `json:"runtime_node_id"`
-		ProviderType         string         `json:"provider_type"`
-		AgentHomeDir         string         `json:"agent_home_dir"`
-		WorkspacePolicy      map[string]any `json:"workspace_policy"`
-		SessionPolicy        map[string]any `json:"session_policy"`
-		RuntimeSelector      map[string]any `json:"runtime_selector"`
-		CapacityRequirements map[string]any `json:"capacity_requirements"`
-		FallbackPolicy       map[string]any `json:"fallback_policy"`
-		Metadata             map[string]any `json:"metadata"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	instance, err := service.BindExecutionInstance(r.Context(), BindExecutionInstanceRequest{
-		TenantID:             tenantID,
-		DigitalEmployeeID:    employeeID,
-		RuntimeNodeID:        req.RuntimeNodeID,
-		ProviderType:         req.ProviderType,
-		AgentHomeDir:         req.AgentHomeDir,
-		WorkspacePolicy:      req.WorkspacePolicy,
-		SessionPolicy:        req.SessionPolicy,
-		RuntimeSelector:      req.RuntimeSelector,
-		CapacityRequirements: req.CapacityRequirements,
-		FallbackPolicy:       req.FallbackPolicy,
-		Metadata:             req.Metadata,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, executionInstanceResponseFromDomain(instance))
-}
-
 func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter, r *http.Request) {
 	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
@@ -1293,28 +1218,6 @@ type policyDefaultsResponse struct {
 	Metadata         map[string]any `json:"metadata"`
 }
 
-type executionInstanceResponse struct {
-	ID                   string                  `json:"id"`
-	TenantID             string                  `json:"tenant_id"`
-	DigitalEmployeeID    string                  `json:"digital_employee_id"`
-	RuntimeNodeID        string                  `json:"runtime_node_id"`
-	ProviderType         string                  `json:"provider_type"`
-	AgentHomeDir         string                  `json:"agent_home_dir"`
-	WorkspacePolicy      map[string]any          `json:"workspace_policy"`
-	SessionPolicy        map[string]any          `json:"session_policy"`
-	RuntimeSelector      map[string]any          `json:"runtime_selector"`
-	CapacityRequirements map[string]any          `json:"capacity_requirements"`
-	FallbackPolicy       map[string]any          `json:"fallback_policy"`
-	Status               ExecutionInstanceStatus `json:"status"`
-	ReadyAt              *string                 `json:"ready_at,omitempty"`
-	DisabledAt           *string                 `json:"disabled_at,omitempty"`
-	ErrorAt              *string                 `json:"error_at,omitempty"`
-	ErrorMessage         *string                 `json:"error_message,omitempty"`
-	Metadata             map[string]any          `json:"metadata"`
-	CreatedAt            string                  `json:"created_at,omitempty"`
-	UpdatedAt            string                  `json:"updated_at,omitempty"`
-}
-
 type configRevisionResponse struct {
 	ID                    string               `json:"id"`
 	TenantID              string               `json:"tenant_id"`
@@ -1893,30 +1796,6 @@ func capabilityOptionItemsForJSON(items []CapabilityOptionItem) []capabilityOpti
 		})
 	}
 	return out
-}
-
-func executionInstanceResponseFromDomain(instance *DigitalEmployeeExecutionInstance) executionInstanceResponse {
-	return executionInstanceResponse{
-		ID:                   instance.ID.String(),
-		TenantID:             instance.TenantID.String(),
-		DigitalEmployeeID:    instance.DigitalEmployeeID.String(),
-		RuntimeNodeID:        instance.RuntimeNodeID.String(),
-		ProviderType:         instance.ProviderType,
-		AgentHomeDir:         instance.AgentHomeDir,
-		WorkspacePolicy:      cloneMap(instance.WorkspacePolicy),
-		SessionPolicy:        cloneMap(instance.SessionPolicy),
-		RuntimeSelector:      cloneMap(instance.RuntimeSelector),
-		CapacityRequirements: cloneMap(instance.CapacityRequirements),
-		FallbackPolicy:       cloneMap(instance.FallbackPolicy),
-		Status:               instance.Status,
-		ReadyAt:              timeStringPtr(instance.ReadyAt),
-		DisabledAt:           timeStringPtr(instance.DisabledAt),
-		ErrorAt:              timeStringPtr(instance.ErrorAt),
-		ErrorMessage:         instance.ErrorMessage,
-		Metadata:             cloneMap(instance.Metadata),
-		CreatedAt:            timeString(instance.CreatedAt),
-		UpdatedAt:            timeString(instance.UpdatedAt),
-	}
 }
 
 func configRevisionResponseFromDomain(revision *DigitalEmployeeConfigRevision) configRevisionResponse {

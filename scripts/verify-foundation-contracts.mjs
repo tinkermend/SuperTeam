@@ -112,7 +112,6 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/teams",
   "/api/v1/teams/{teamId}/constitution",
   "/api/v1/digital-employees",
-  "/api/v1/digital-employees/{employeeId}/execution-instance",
   "/api/v1/digital-employees/{employeeId}/config-revisions",
   "/api/v1/digital-employees/{employeeId}/runs",
   "/api/v1/digital-employees/{employeeId}/runs/{runId}",

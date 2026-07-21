@@ -18,7 +18,6 @@ import {
   createDigitalEmployeeRun,
   deleteDigitalEmployee,
   getDigitalEmployee,
-  getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeSchedulingReadiness,
   getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
@@ -33,7 +32,6 @@ import {
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
 import { listEmployeeSkills } from "@/lib/api/skills";
-import { getRuntimeOverview } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { EffectiveContextPanel } from "./components/effective-context-panel";
 import { EmployeeDetailHeader } from "./components/employee-detail-header";
@@ -89,12 +87,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   // 员工不存在（已删除或路由过期）时停掉所有从属查询，避免对已删资源持续打 404。
   const employeeNotFound =
     employee.error instanceof ApiRequestError && employee.error.status === 404;
-  const instance = useQuery({
-    enabled: !employeeNotFound,
-    queryKey: ["digital-employee-execution-instance", employeeId],
-    queryFn: () => getDigitalEmployeeExecutionInstance(apiOptions, employeeId),
-    retry: false,
-  });
   const schedulingReadiness = useQuery({
     enabled: !employeeNotFound,
     queryKey: ["digital-employee-scheduling-readiness", employeeId],
@@ -119,12 +111,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     refetchInterval: (query) =>
       query.state.data?.items.some((item) => isActiveRun(item.status)) ? 2500 : false,
   });
-  const runtimeOverview = useQuery({
-    queryKey: ["runtime-overview"],
-    queryFn: () => getRuntimeOverview(apiOptions),
-    refetchInterval: 5000,
-  });
-
   // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed the panel
   // (as computed props). The panel is now a pure presentational component.
   const skillsQuery = useQuery({
@@ -143,10 +129,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
   });
 
-  // 204/null = 员工存在但尚无执行实例；404 兜底旧后端行为。
-  const instanceNotFound =
-    (instance.isSuccess && instance.data === null) ||
-    (instance.error instanceof ApiRequestError && instance.error.status === 404);
   // EffectiveEmployeeSkill carries both `inherited` and `source_scope`; `inherited`
   // is the canonical flag for skill counting (matches Task 11 semantics).
   const personalSkillCount = skillsQuery.data?.filter((skill) => !skill.inherited).length ?? 0;
@@ -164,29 +146,10 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const operationalStatus = employee.data?.operational_state?.status;
   const isBusy = operationalStatus ? isBusyOperationalStatus(operationalStatus) : hasActiveRun;
   const employeeCanRun = employee.data?.status === "ready" || employee.data?.status === "active";
-  const executionInstanceCanRun =
-    instance.isSuccess && (instance.data?.status === "ready" || instance.data?.status === "active");
-  const executionRuntimeNodeId = instance.data?.runtime_node_id;
-  const runtimeNode = runtimeOverview.data?.nodes.find(
-    (node) => node.runtime_node_id === executionRuntimeNodeId,
-  );
-  const runtimeCommandChannelDisconnected =
-    runtimeOverview.isSuccess && runtimeNode?.command_channel_connected === false;
-  const canStartTask =
-    employeeCanRun &&
-    executionInstanceCanRun &&
-    runs.isSuccess &&
-    !isBusy &&
-    !runtimeCommandChannelDisconnected;
+  const canStartTask = employeeCanRun && runs.isSuccess && !isBusy;
 
   const disabledReasons: string[] = [];
   if (isBusy) disabledReasons.push("当前有进行中的工作，暂不能开始新任务");
-  if (!executionInstanceCanRun && instance.isSuccess && !instanceNotFound)
-    disabledReasons.push("执行实例当前不可执行");
-  if (runtimeCommandChannelDisconnected) disabledReasons.push("Runtime 命令通道未连接，暂不能开始任务");
-  if (instanceNotFound) {
-    disabledReasons.push("项目运行时就绪度会决定 Runtime 节点，当前不能从员工详情直接开始任务");
-  }
   if (runs.isError) disabledReasons.push("运行列表加载失败，暂不能开始新任务");
 
   const refreshRunFacts = async () => {
@@ -218,7 +181,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       await navigate({ to: "/employees" });
       for (const key of [
         "digital-employee",
-        "digital-employee-execution-instance",
         "digital-employee-scheduling-readiness",
         "digital-employee-run-stats",
         "digital-employee-runs",
@@ -267,7 +229,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       <ShellPageHeader
         back={<ShellPageHeaderBack ariaLabel="返回数字员工列表" to="/employees" />}
         title={employee.data?.name ?? "数字员工详情"}
-        subtitle="执行实例、运行事件、结果和人工停止。"
+        subtitle="运行事件、结果和人工停止。"
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         {employee.isLoading ? <p className="text-sm text-v3-ink-2">加载中</p> : null}
@@ -279,14 +241,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
 
         {employee.data ? (
           <div className="flex flex-col gap-4">
-            {runtimeCommandChannelDisconnected ? (
-              <Alert className="border-v3-danger/30 bg-v3-danger-soft text-v3-danger" variant="destructive">
-                <AlertTriangle className="size-4" />
-                <AlertTitle>Runtime 命令通道未连接</AlertTitle>
-                <AlertDescription>当前无法开始新任务，请检查 Runtime Agent 连接状态后重试。</AlertDescription>
-              </Alert>
-            ) : null}
-
             <EmployeeDetailHeader
               employee={employee.data}
               onDelete={() => setDeleteDialogOpen(true)}
@@ -346,7 +300,6 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                       totalCount: envVarsQuery.data?.length ?? 0,
                       missingNames: missingEnvVars.map((item) => item.name),
                     }}
-                    executionInstance={instance.data ?? undefined}
                     mcp={{
                       isLoading: mcpQuery.isLoading,
                       isError: mcpQuery.isError,

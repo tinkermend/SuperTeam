@@ -560,7 +560,6 @@ func TestProjectStoreSnapshotUsesProjectRuntimeReadinessForExecutorPool(t *testi
 		},
 	}}
 	store := NewProjectStore(repo).
-		WithDigitalEmployeeReadiness(fakeLegacyReadiness{ready: map[uuid.UUID]bool{employeeID: false}}).
 		WithDigitalEmployeePlanningProfiles(source).
 		WithPreDispatchGateReaders(reader, nil)
 
@@ -736,22 +735,6 @@ func TestProjectStoreSnapshotKeepsUnknownProfileWhenProfileSourceFails(t *testin
 	require.NotNil(t, snapshot.DigitalEmployeePool[0].PlanningProfile)
 	require.Equal(t, "unknown", snapshot.DigitalEmployeePool[0].PlanningProfile.ProfileFreshness.SourceState)
 	require.Contains(t, snapshot.DigitalEmployeePool[0].PlanningProfile.SelectionWarnings, "profile_source_missing")
-}
-
-type fakeLegacyReadiness struct {
-	ready map[uuid.UUID]bool
-	err   error
-}
-
-func (r fakeLegacyReadiness) AreRuntimeReady(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
-	if r.err != nil {
-		return nil, r.err
-	}
-	result := make(map[uuid.UUID]bool, len(employeeIDs))
-	for _, id := range employeeIDs {
-		result[id] = r.ready[id]
-	}
-	return result, nil
 }
 
 type fakePlanningProfileSource struct {

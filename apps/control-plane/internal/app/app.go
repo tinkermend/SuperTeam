@@ -250,14 +250,6 @@ func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, r
 	}, nil
 }
 
-type digitalEmployeeReadinessAdapter struct {
-	repository employee.Repository
-}
-
-func (a digitalEmployeeReadinessAdapter) AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
-	return a.repository.AreRuntimeReady(ctx, tenantID, employeeIDs)
-}
-
 // teamBoundaryGatekeeperAdapter implements projectcoordination.TeamBoundaryGatekeeper:
 // it resolves each digital employee's owning team so the coordinator can exclude
 // employees from foreign teams（借调机制已下线）.
@@ -610,7 +602,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			approvalService,
 			decisionProjector,
 			projectTaskRunStarterAdapter{runService: runService},
-		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository}).
+		).
 			WithTeamBoundaryGatekeeper(teamBoundaryGatekeeperAdapter{employees: employeeRepository}).
 			WithDigitalEmployeePlanningProfiles(planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)).
 			WithPreDispatchGateReaders(gateAdapter, gateAdapter)

@@ -176,17 +176,6 @@ WHERE id = sqlc.arg('id')::uuid
   AND deleted_at IS NULL
 RETURNING *;
 
--- name: SoftDeleteDigitalEmployeeExecutionInstancesForDelete :many
-UPDATE digital_employee_execution_instances
-SET status = 'disabled',
-    disabled_at = COALESCE(disabled_at, sqlc.arg('deleted_at')::timestamptz),
-    deleted_at = COALESCE(deleted_at, sqlc.arg('deleted_at')::timestamptz),
-    updated_at = sqlc.arg('deleted_at')::timestamptz
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-  AND deleted_at IS NULL
-RETURNING id, runtime_node_id, provider_type, agent_home_dir;
-
 -- name: SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete :many
 UPDATE digital_employee_environment_variables
 SET status = 'disabled',
@@ -237,92 +226,6 @@ SET deleted_at = COALESCE(deleted_at, NOW()),
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid;
-
--- name: UpsertDigitalEmployeeExecutionInstance :one
-INSERT INTO digital_employee_execution_instances (
-    tenant_id,
-    digital_employee_id,
-    runtime_node_id,
-    provider_type,
-    agent_home_dir,
-    workspace_policy,
-    session_policy,
-    runtime_selector,
-    capacity_requirements,
-    fallback_policy,
-    status,
-    metadata
-) SELECT
-    de.tenant_id,
-    de.id,
-    rn.id,
-    sqlc.arg('provider_type')::varchar,
-    sqlc.arg('agent_home_dir')::text,
-    COALESCE(sqlc.arg('workspace_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('session_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('runtime_selector')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('capacity_requirements')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('fallback_policy')::jsonb, '{}'::jsonb),
-    sqlc.arg('status')::varchar,
-    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
-FROM digital_employees de
-JOIN runtime_nodes rn
-  ON rn.id = sqlc.arg('runtime_node_id')::uuid
- AND rn.tenant_id = de.tenant_id
- AND rn.status = 'online'
- AND rn.disabled_at IS NULL
- AND rn.archived_at IS NULL
-WHERE de.id = sqlc.arg('digital_employee_id')::uuid
-  AND de.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND de.status NOT IN ('disabled', 'error')
-  AND de.deleted_at IS NULL
-  AND de.archived_at IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM runtime_enrollments re
-      WHERE re.tenant_id = de.tenant_id
-        AND re.runtime_node_id = rn.id
-        AND re.status = 'approved'
-  )
-  AND EXISTS (
-      SELECT 1
-      FROM runtime_capabilities rc
-      WHERE rc.tenant_id = de.tenant_id
-        AND rc.runtime_node_id = rn.id
-        AND rc.capability_type = 'provider'
-        AND rc.provider_type = sqlc.arg('provider_type')::varchar
-        AND rc.available = true
-        AND rc.status = 'healthy'
-        AND rc.health_status = 'healthy'
-        AND rc.archived_at IS NULL
-  )
-ON CONFLICT (tenant_id, digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
-    runtime_node_id = EXCLUDED.runtime_node_id,
-    provider_type = EXCLUDED.provider_type,
-    agent_home_dir = EXCLUDED.agent_home_dir,
-    workspace_policy = EXCLUDED.workspace_policy,
-    session_policy = EXCLUDED.session_policy,
-    runtime_selector = EXCLUDED.runtime_selector,
-    capacity_requirements = EXCLUDED.capacity_requirements,
-    fallback_policy = EXCLUDED.fallback_policy,
-    status = EXCLUDED.status,
-    metadata = EXCLUDED.metadata,
-    updated_at = NOW()
-RETURNING *;
-
--- name: GetDigitalEmployeeExecutionInstance :one
-SELECT *
-FROM digital_employee_execution_instances
-WHERE id = sqlc.arg('id')::uuid
-  AND tenant_id = sqlc.arg('tenant_id')::uuid
-  AND deleted_at IS NULL;
-
--- name: GetDigitalEmployeeExecutionInstanceByEmployeeID :one
-SELECT *
-FROM digital_employee_execution_instances
-WHERE digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-  AND tenant_id = sqlc.arg('tenant_id')::uuid
-  AND deleted_at IS NULL;
 
 -- name: ListRuntimeProviderOptionsForDigitalEmployeeCreate :many
 WITH active_team_config AS (
@@ -495,262 +398,93 @@ WHERE rn.tenant_id = sqlc.arg('tenant_id')::uuid
   AND pc.provider_type IS NOT NULL
 ORDER BY available DESC, rn.name ASC, pc.provider_type ASC;
 
--- name: GetRuntimeProvisioningPreflightTeamLess :one
--- Team-less variant: no team governance, provider/runtime policy always allowed.
-WITH provider_capability AS (
-    SELECT *
-    FROM runtime_capabilities
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
-      AND capability_type = 'provider'
-      AND provider_type = sqlc.arg('provider_type')::varchar
-      AND available = true
-      AND status = 'healthy'
-      AND health_status = 'healthy'
-      AND archived_at IS NULL
-    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
-    LIMIT 1
-),
-workspace_capability AS (
-    SELECT *
-    FROM runtime_capabilities
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
-      AND capability_type = 'workspace'
-      AND capability_key = 'base-dir'
-      AND available = true
-      AND archived_at IS NULL
-    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
-    LIMIT 1
-)
-SELECT
-    rn.tenant_id,
-    NULL::uuid AS team_id,
-    rn.id AS runtime_node_id,
-    rn.node_id,
-    COALESCE(
-        provider_capability.details ->> 'agent_home_dir',
-        provider_capability.metadata ->> 'agent_home_dir',
-        provider_capability.workspace_base_dir,
-        workspace_capability.details ->> 'agent_home_dir',
-        workspace_capability.metadata ->> 'agent_home_dir',
-        workspace_capability.workspace_base_dir,
-        rn.metadata ->> 'agent_home_dir',
-        ''
-    )::text AS agent_home_dir,
-    '{}'::jsonb AS governance_snapshot,
-    false::boolean AS has_active_team_config,
-    (
-        rn.status = 'online'
-        AND rn.disabled_at IS NULL
-        AND rn.archived_at IS NULL
-    )::boolean AS runtime_online,
-    EXISTS (
-        SELECT 1
-        FROM runtime_enrollments re
-        WHERE re.tenant_id = rn.tenant_id
-          AND re.runtime_node_id = rn.id
-          AND re.status = 'approved'
-          AND re.rejected_at IS NULL
-          AND re.revoked_at IS NULL
-    )::boolean AS enrollment_approved,
-    EXISTS (
-        SELECT 1
-        FROM runtime_sessions rs
-        JOIN runtime_enrollments re
-          ON re.id = rs.enrollment_id
-         AND re.tenant_id = rs.tenant_id
-         AND re.runtime_node_id = rs.runtime_node_id
-         AND re.status = 'approved'
-         AND re.rejected_at IS NULL
-         AND re.revoked_at IS NULL
-        WHERE rs.tenant_id = rn.tenant_id
-          AND rs.runtime_node_id = rn.id
-          AND rs.expires_at > NOW()
-          AND rs.revoked_at IS NULL
-    )::boolean AS runtime_session_active,
-    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
-    true::boolean AS provider_policy_allowed,
-    true::boolean AS runtime_policy_allowed
-FROM runtime_nodes rn
-LEFT JOIN provider_capability ON TRUE
-LEFT JOIN workspace_capability ON TRUE
-WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
-  AND rn.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND rn.archived_at IS NULL;
-
--- name: GetRuntimeProvisioningPreflight :one
-WITH active_team_config AS (
-    SELECT
-        tt.id,
-        tt.tenant_id,
-        tt.constitution,
-        '{}'::jsonb AS capability_policy,
-        '{}'::jsonb AS context_policy,
-        '{}'::jsonb AS approval_policy,
-        '{}'::jsonb AS artifact_contract,
-        '{}'::jsonb AS internal_collaboration_policy,
-        '{}'::jsonb AS runtime_scope_policy
-    FROM tenant_teams tt
-    WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
-      AND tt.id = sqlc.arg('team_id')::uuid
-      AND tt.deleted_at IS NULL
-      AND tt.status <> 'archived'
-    LIMIT 1
-),
-provider_capability AS (
-    SELECT *
-    FROM runtime_capabilities
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
-      AND capability_type = 'provider'
-      AND provider_type = sqlc.arg('provider_type')::varchar
-      AND available = true
-      AND status = 'healthy'
-      AND health_status = 'healthy'
-      AND archived_at IS NULL
-    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
-    LIMIT 1
-),
-workspace_capability AS (
-    SELECT *
-    FROM runtime_capabilities
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
-      AND capability_type = 'workspace'
-      AND capability_key = 'base-dir'
-      AND available = true
-      AND archived_at IS NULL
-    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
-    LIMIT 1
-)
-SELECT
-    tt.tenant_id,
-    tt.id AS team_id,
-    rn.id AS runtime_node_id,
-    rn.node_id,
-    COALESCE(
-        provider_capability.details ->> 'agent_home_dir',
-        provider_capability.metadata ->> 'agent_home_dir',
-        provider_capability.workspace_base_dir,
-        workspace_capability.details ->> 'agent_home_dir',
-        workspace_capability.metadata ->> 'agent_home_dir',
-        workspace_capability.workspace_base_dir,
-        rn.metadata ->> 'agent_home_dir',
-        ''
-    )::text AS agent_home_dir,
-    COALESCE(
-        jsonb_build_object(
-            'constitution', active_team_config.constitution,
-            'capability_policy', active_team_config.capability_policy,
-            'context_policy', active_team_config.context_policy,
-            'approval_policy', active_team_config.approval_policy,
-            'artifact_contract', active_team_config.artifact_contract,
-            'internal_collaboration_policy', active_team_config.internal_collaboration_policy,
-            'runtime_scope_policy', active_team_config.runtime_scope_policy
-        ),
-        '{}'::jsonb
-    ) AS governance_snapshot,
-    (active_team_config.id IS NOT NULL)::boolean AS has_active_team_config,
-    (
-        rn.status = 'online'
-        AND rn.disabled_at IS NULL
-        AND rn.archived_at IS NULL
-    )::boolean AS runtime_online,
-    EXISTS (
-        SELECT 1
-        FROM runtime_enrollments re
-        WHERE re.tenant_id = tt.tenant_id
-          AND re.runtime_node_id = rn.id
-          AND re.status = 'approved'
-          AND re.rejected_at IS NULL
-          AND re.revoked_at IS NULL
-    )::boolean AS enrollment_approved,
-    EXISTS (
-        SELECT 1
-        FROM runtime_sessions rs
-        JOIN runtime_enrollments re
-          ON re.id = rs.enrollment_id
-         AND re.tenant_id = rs.tenant_id
-         AND re.runtime_node_id = rs.runtime_node_id
-         AND re.status = 'approved'
-         AND re.rejected_at IS NULL
-         AND re.revoked_at IS NULL
-        WHERE rs.tenant_id = tt.tenant_id
-          AND rs.runtime_node_id = rn.id
-          AND rs.expires_at > NOW()
-          AND rs.revoked_at IS NULL
-	    )::boolean AS runtime_session_active,
-	    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
-	    (active_team_config.id IS NOT NULL)::boolean AS provider_policy_allowed,
-	    COALESCE((
-	        active_team_config.id IS NOT NULL
-	        AND CASE
-	            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
-	            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
-	                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
-            ELSE false
-        END
-        AND CASE
-            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_node_ids') THEN true
-            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
-                (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
-            ELSE false
-        END
-    ), false)::boolean AS runtime_policy_allowed
-FROM tenant_teams tt
-JOIN runtime_nodes rn
-  ON rn.id = sqlc.arg('runtime_node_id')::uuid
- AND rn.tenant_id = tt.tenant_id
-LEFT JOIN active_team_config ON TRUE
-LEFT JOIN provider_capability ON TRUE
-LEFT JOIN workspace_capability ON TRUE
-WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND tt.id = sqlc.arg('team_id')::uuid
-  AND tt.status = 'active'
-  AND tt.disabled_at IS NULL
-  AND tt.archived_at IS NULL
-  AND tt.deleted_at IS NULL;
-
 -- name: GetDigitalEmployeeRunPreflight :one
+-- Standalone/workbench run preflight: least-loaded online tenant node with healthy provider.
 SELECT
     de.tenant_id,
     de.team_id,
     de.id AS digital_employee_id,
     de.status AS digital_employee_status,
-    dei.id AS execution_instance_id,
-    dei.status AS execution_status,
-    dei.runtime_node_id,
+    rn.id AS runtime_node_id,
     rn.node_id,
-    dei.provider_type,
-    dei.agent_home_dir,
-    dei.runtime_selector,
-    dei.session_policy,
-    dei.workspace_policy,
+    de.provider_type,
+    COALESCE(
+        provider_capability.details ->> 'agent_home_dir',
+        provider_capability.metadata ->> 'agent_home_dir',
+        provider_capability.workspace_base_dir,
+        workspace_capability.details ->> 'agent_home_dir',
+        workspace_capability.metadata ->> 'agent_home_dir',
+        workspace_capability.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        provider_capability.details ->> 'workspace_base_dir',
+        provider_capability.metadata ->> 'workspace_base_dir',
+        workspace_capability.details ->> 'workspace_base_dir',
+        workspace_capability.metadata ->> 'workspace_base_dir',
+        ''
+    )::text AS agent_home_dir,
+    jsonb_build_object('source', 'tenant_placement', 'node_id', rn.node_id) AS runtime_selector,
+    '{}'::jsonb AS session_policy,
+    jsonb_build_object(
+        'workspace_base_dir',
+        COALESCE(
+            provider_capability.workspace_base_dir,
+            workspace_capability.workspace_base_dir,
+            rn.metadata ->> 'workspace_base_dir',
+            ''
+        )
+    ) AS workspace_policy,
     COALESCE(config_state.budget_policy, '{}'::jsonb)::jsonb AS budget_policy,
     COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
     'Asia/Shanghai'::text AS business_timezone,
-    EXISTS (
-        SELECT 1
-        FROM runtime_capabilities rc
-        WHERE rc.tenant_id = de.tenant_id
-          AND rc.runtime_node_id = dei.runtime_node_id
-          AND rc.capability_type = 'provider'
-          AND rc.provider_type = dei.provider_type
-          AND rc.available = true
-          AND rc.status = 'healthy'
-          AND rc.health_status = 'healthy'
-          AND rc.archived_at IS NULL
-    ) AS provider_healthy
+    (provider_capability.id IS NOT NULL)::boolean AS provider_healthy
 FROM digital_employees de
-JOIN digital_employee_execution_instances dei
-  ON dei.digital_employee_id = de.id
- AND dei.tenant_id = de.tenant_id
- AND dei.deleted_at IS NULL
-JOIN runtime_nodes rn
-  ON rn.id = dei.runtime_node_id
- AND rn.tenant_id = de.tenant_id
- AND rn.archived_at IS NULL
+JOIN LATERAL (
+    SELECT rn2.*
+    FROM runtime_nodes rn2
+    JOIN runtime_capabilities rc
+      ON rc.tenant_id = rn2.tenant_id
+     AND rc.runtime_node_id = rn2.id
+     AND rc.capability_type = 'provider'
+     AND rc.provider_type = de.provider_type
+     AND rc.available = true
+     AND rc.status = 'healthy'
+     AND rc.health_status = 'healthy'
+     AND rc.archived_at IS NULL
+    WHERE rn2.tenant_id = de.tenant_id
+      AND rn2.status = 'online'
+      AND rn2.disabled_at IS NULL
+      AND rn2.archived_at IS NULL
+    ORDER BY rn2.current_load ASC, rn2.id ASC
+    LIMIT 1
+) rn ON TRUE
+LEFT JOIN LATERAL (
+    SELECT rc.*
+    FROM runtime_capabilities rc
+    WHERE rc.tenant_id = de.tenant_id
+      AND rc.runtime_node_id = rn.id
+      AND rc.capability_type = 'provider'
+      AND rc.provider_type = de.provider_type
+      AND rc.available = true
+      AND rc.status = 'healthy'
+      AND rc.health_status = 'healthy'
+      AND rc.archived_at IS NULL
+    ORDER BY rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+    LIMIT 1
+) provider_capability ON TRUE
+LEFT JOIN LATERAL (
+    SELECT rc.*
+    FROM runtime_capabilities rc
+    WHERE rc.tenant_id = de.tenant_id
+      AND rc.runtime_node_id = rn.id
+      AND rc.capability_type = 'workspace'
+      AND rc.available = true
+      AND rc.archived_at IS NULL
+    ORDER BY
+      CASE WHEN rc.capability_key = 'base-dir' THEN 0 ELSE 1 END,
+      rc.last_seen_at DESC NULLS LAST,
+      rc.updated_at DESC
+    LIMIT 1
+) workspace_capability ON TRUE
 LEFT JOIN LATERAL (
     SELECT
         decr.budget_policy
@@ -1046,124 +780,6 @@ WHERE de.id = sqlc.arg('digital_employee_id')::uuid
   AND de.deleted_at IS NULL
   AND de.archived_at IS NULL;
 
--- name: ListDigitalEmployeeExecutionInstances :many
-SELECT *
-FROM digital_employee_execution_instances
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND deleted_at IS NULL
-  AND (sqlc.narg('runtime_node_id')::uuid IS NULL OR runtime_node_id = sqlc.narg('runtime_node_id')::uuid)
-  AND (sqlc.narg('provider_type')::varchar IS NULL OR provider_type = sqlc.narg('provider_type')::varchar)
-  AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
-ORDER BY created_at DESC
-LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
-
--- name: UpdateDigitalEmployeeExecutionInstanceStatus :one
-UPDATE digital_employee_execution_instances
-SET status = sqlc.arg('status')::varchar,
-    ready_at = CASE
-        WHEN sqlc.arg('status')::varchar = 'ready' THEN COALESCE(ready_at, NOW())
-        ELSE ready_at
-    END,
-    disabled_at = CASE
-        WHEN sqlc.arg('status')::varchar = 'disabled' THEN COALESCE(disabled_at, NOW())
-        WHEN sqlc.arg('status')::varchar IN ('provisioning', 'ready', 'active') THEN NULL
-        ELSE disabled_at
-    END,
-    error_at = CASE
-        WHEN sqlc.arg('status')::varchar = 'error' THEN COALESCE(error_at, NOW())
-        WHEN sqlc.arg('status')::varchar IN ('provisioning', 'ready', 'active') THEN NULL
-        ELSE error_at
-    END,
-    error_message = CASE
-        WHEN sqlc.arg('status')::varchar = 'error' THEN COALESCE(sqlc.narg('error_message')::text, error_message)
-        WHEN sqlc.arg('status')::varchar IN ('provisioning', 'ready', 'active') THEN NULL
-        ELSE error_message
-    END,
-    updated_at = NOW()
-WHERE id = sqlc.arg('id')::uuid
-  AND tenant_id = sqlc.arg('tenant_id')::uuid
-  AND deleted_at IS NULL
-RETURNING *;
-
--- name: DeleteDigitalEmployeeExecutionInstance :exec
-UPDATE digital_employee_execution_instances
-SET deleted_at = COALESCE(deleted_at, NOW()),
-    updated_at = NOW()
-WHERE id = sqlc.arg('id')::uuid
-  AND tenant_id = sqlc.arg('tenant_id')::uuid;
-
--- name: AbortProvisionedDigitalEmployee :exec
-WITH abort_args AS (
-    SELECT
-        sqlc.arg('reason')::text AS reason,
-        sqlc.arg('execution_instance_id')::uuid AS execution_instance_id,
-        sqlc.arg('tenant_id')::uuid AS tenant_id,
-        sqlc.arg('digital_employee_id')::uuid AS digital_employee_id,
-        sqlc.arg('execution_instance_id')::uuid = '00000000-0000-0000-0000-000000000000'::uuid AS abort_by_employee
-),
-aborted_instance AS (
-    UPDATE digital_employee_execution_instances dei
-    SET status = 'error',
-        error_at = COALESCE(dei.error_at, NOW()),
-        error_message = abort_args.reason,
-        deleted_at = COALESCE(dei.deleted_at, NOW()),
-        updated_at = NOW()
-    FROM abort_args
-    WHERE dei.id = abort_args.execution_instance_id
-      AND dei.tenant_id = abort_args.tenant_id
-      AND dei.digital_employee_id = abort_args.digital_employee_id
-      AND NOT abort_args.abort_by_employee
-    RETURNING dei.id
-),
-abort_scope AS (
-    SELECT abort_args.abort_by_employee OR EXISTS (SELECT 1 FROM aborted_instance) AS matched
-    FROM abort_args
-),
-aborted_employee AS (
-    UPDATE digital_employees de
-    SET status = 'error',
-        deleted_at = COALESCE(de.deleted_at, NOW()),
-        updated_at = NOW()
-    FROM abort_args
-    WHERE de.id = abort_args.digital_employee_id
-      AND de.tenant_id = abort_args.tenant_id
-      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
-    RETURNING de.id
-),
-aborted_configs AS (
-    UPDATE digital_employee_config_revisions decr
-    SET archived_at = COALESCE(decr.archived_at, NOW()),
-        updated_at = NOW()
-    FROM abort_args
-    WHERE decr.tenant_id = abort_args.tenant_id
-      AND decr.digital_employee_id = abort_args.digital_employee_id
-      AND decr.archived_at IS NULL
-      AND EXISTS (SELECT 1 FROM aborted_employee)
-      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
-    RETURNING decr.id
-),
-aborted_receipts AS (
-    UPDATE runtime_command_receipts rcr
-    SET status = CASE
-            WHEN rcr.status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN rcr.status
-            ELSE 'failed'
-        END,
-        error_message = COALESCE(rcr.error_message, abort_args.reason),
-        completed_at = CASE
-            WHEN rcr.status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN rcr.completed_at
-            ELSE COALESCE(rcr.completed_at, NOW())
-        END,
-        updated_at = NOW()
-    FROM abort_args
-    JOIN aborted_instance ai ON TRUE
-    JOIN aborted_employee ae ON TRUE
-    WHERE rcr.tenant_id = abort_args.tenant_id
-      AND rcr.resource_type = 'digital_employee_execution_instance'
-      AND rcr.resource_id = ai.id
-    RETURNING rcr.id
-)
-SELECT 1;
-
 -- name: GetDigitalEmployeeOverviewSummary :one
 WITH overview_args AS (
     SELECT
@@ -1370,7 +986,9 @@ latest_runs AS (
         tr.error_family,
         tr.error_code,
         tr.failure_acknowledged_at,
-        tr.created_at
+        tr.created_at,
+        tr.runtime_node_id,
+        tr.node_id AS run_node_id
     FROM task_runs tr
     JOIN overview_args args ON args.tenant_id = tr.tenant_id
     JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
@@ -1615,21 +1233,28 @@ overview_rows AS (
         de.status,
         de.risk_level,
         de.metadata,
-        dei.id AS execution_instance_id,
-        COALESCE(dei.status, 'missing')::text AS execution_status,
-        dei.runtime_node_id,
-        COALESCE(rn.node_id, '')::text AS node_id,
+        -- execution_summary 落点改取最近一次 task_runs 真实派发节点(dei 已退役)。
+        -- 无运行记录的员工落点为空(候岗),execution_instance_id 恒空。
+        NULL::uuid AS execution_instance_id,
+        CASE
+            WHEN lr.id IS NULL THEN 'missing'
+            WHEN lr.status IN ('running', 'dispatching', 'queued', 'cancelling') THEN 'active'
+            WHEN lr.status IN ('failed', 'timed_out') THEN 'error'
+            ELSE 'ready'
+        END::text AS execution_status,
+        lr.runtime_node_id,
+        COALESCE(rn.node_id, COALESCE(lr.run_node_id, ''))::text AS node_id,
         COALESCE(rn.name, '')::text AS runtime_name,
         COALESCE(rn.status, '')::text AS runtime_status,
         rn.disabled_at AS runtime_disabled_at,
         rn.archived_at AS runtime_archived_at,
-        COALESCE(dei.provider_type, '')::text AS provider_type,
+        COALESCE(de.provider_type, '')::text AS provider_type,
         de.provider_type AS identity_provider_type,
         (de.provider_type IN (SELECT apt.provider_type FROM available_provider_types apt))::boolean AS tenant_provider_available,
         COALESCE(pc.available, false)::boolean AS provider_available,
         COALESCE(pc.status, 'unknown')::text AS provider_status,
         COALESCE(pc.health_status, 'unknown')::text AS health_status,
-        (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
+        false::boolean AS agent_home_dir_available,
         lr.id AS latest_run_id,
         lr.task_id AS latest_run_task_id,
         CASE
@@ -1681,20 +1306,16 @@ overview_rows AS (
     LEFT JOIN auth_users au
       ON au.id = de.owner_user_id
      AND au.deleted_at IS NULL
-    LEFT JOIN digital_employee_execution_instances dei
-      ON dei.tenant_id = de.tenant_id
-     AND dei.digital_employee_id = de.id
-     AND dei.deleted_at IS NULL
-    LEFT JOIN runtime_nodes rn
-      ON rn.id = dei.runtime_node_id
-     AND rn.tenant_id = dei.tenant_id
-    LEFT JOIN provider_capabilities pc
-      ON pc.tenant_id = dei.tenant_id
-     AND pc.runtime_node_id = dei.runtime_node_id
-     AND pc.provider_type = dei.provider_type
     LEFT JOIN latest_runs lr
       ON lr.tenant_id = de.tenant_id
      AND lr.digital_employee_id = de.id
+    LEFT JOIN runtime_nodes rn
+      ON rn.id = lr.runtime_node_id
+     AND rn.tenant_id = de.tenant_id
+    LEFT JOIN provider_capabilities pc
+      ON pc.tenant_id = de.tenant_id
+     AND pc.runtime_node_id = lr.runtime_node_id
+     AND pc.provider_type = de.provider_type
     LEFT JOIN budget_runs br
       ON br.tenant_id = de.tenant_id
      AND br.digital_employee_id = de.id
@@ -2269,14 +1890,6 @@ FROM (
     WHERE NULLIF(run_status, '') IS NOT NULL
 ) options
 ORDER BY filter_type, label, value;
-
--- name: AreEmployeesRuntimeReady :many
-SELECT
-    digital_employee_id,
-    is_runtime_ready
-FROM digital_employee_runtime_readiness
-WHERE tenant_id = sqlc.arg('tenant_id')
-  AND digital_employee_id = ANY(sqlc.arg('digital_employee_ids')::uuid[]);
 
 -- name: CountDigitalEmployeeOperationalSignals :many
 -- Batch load per-employee load and reliability counts from recent project task

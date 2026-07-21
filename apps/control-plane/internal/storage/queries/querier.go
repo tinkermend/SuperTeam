@@ -12,7 +12,6 @@ import (
 )
 
 type Querier interface {
-	AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error
 	AcceptProjectPlanRevision(ctx context.Context, arg AcceptProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	AcknowledgeDigitalEmployeeRunFailure(ctx context.Context, arg AcknowledgeDigitalEmployeeRunFailureParams) (TaskRun, error)
 	ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error)
@@ -25,7 +24,6 @@ type Querier interface {
 	// 配合偏唯一索引 uq_digital_employee_config_revisions_active(每员工至多一条 active 未归档)。
 	ArchivePriorActiveDigitalEmployeeConfigRevisions(ctx context.Context, arg ArchivePriorActiveDigitalEmployeeConfigRevisionsParams) error
 	ArchiveProject(ctx context.Context, arg ArchiveProjectParams) (Project, error)
-	AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error)
 	AssignProjectTask(ctx context.Context, arg AssignProjectTaskParams) (ProjectTask, error)
 	BindDigitalEmployeeToTeam(ctx context.Context, arg BindDigitalEmployeeToTeamParams) (uuid.UUID, error)
 	BindProjectTaskAttemptRun(ctx context.Context, arg BindProjectTaskAttemptRunParams) (ProjectTaskAttempt, error)
@@ -135,8 +133,6 @@ type Querier interface {
 	CreateProjectTaskResult(ctx context.Context, arg CreateProjectTaskResultParams) (ProjectTaskResult, error)
 	CreateProjectTransferRequest(ctx context.Context, arg CreateProjectTransferRequestParams) (ProjectTransferRequest, error)
 	CreatePromptTemplate(ctx context.Context, arg CreatePromptTemplateParams) (TaskPromptTemplate, error)
-	CreateProviderSession(ctx context.Context, arg CreateProviderSessionParams) (ProviderSession, error)
-	CreateProviderSessionEvent(ctx context.Context, arg CreateProviderSessionEventParams) (ProviderSessionEvent, error)
 	CreateProviderSessionEventIfAbsent(ctx context.Context, arg CreateProviderSessionEventIfAbsentParams) (CreateProviderSessionEventIfAbsentRow, error)
 	CreateProviderSessionEventLedgerEvent(ctx context.Context, arg CreateProviderSessionEventLedgerEventParams) (ExecutionLedgerEvent, error)
 	// 检测门聚合行写入：demand_criterion_verdicts, judge_type=review_gate, project_task_id 为空，
@@ -169,7 +165,6 @@ type Querier interface {
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
 	DeactivateProjectMembersForDelete(ctx context.Context, arg DeactivateProjectMembersForDeleteParams) ([]uuid.UUID, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
-	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
 	DeleteExpiredCaptchaChallenges(ctx context.Context, before pgtype.Timestamptz) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
@@ -216,14 +211,13 @@ type Querier interface {
 	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigitalEmployeeAuthzScopeParams) (GetDigitalEmployeeAuthzScopeRow, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (GetDigitalEmployeeConfigRevisionRow, error)
-	GetDigitalEmployeeExecutionInstance(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
-	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceByEmployeeIDParams) (DigitalEmployeeExecutionInstance, error)
 	GetDigitalEmployeeForDelete(ctx context.Context, arg GetDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
 	// 租户内当前具备在线可用 Runtime 能力的 provider 集合。员工不再绑定 Runtime
 	// (运行落点由项目派发时动态解析),就绪判据只看"租户内是否有任一在线节点提供该 provider"。
 	GetDigitalEmployeeOverviewSummary(ctx context.Context, arg GetDigitalEmployeeOverviewSummaryParams) (GetDigitalEmployeeOverviewSummaryRow, error)
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (GetDigitalEmployeeRunRow, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
+	// Standalone/workbench run preflight: least-loaded online tenant node with healthy provider.
 	GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error)
 	GetDigitalEmployeeRunStats(ctx context.Context, arg GetDigitalEmployeeRunStatsParams) (GetDigitalEmployeeRunStatsRow, error)
 	GetDigitalEmployeeSchedulingSkillCounts(ctx context.Context, arg GetDigitalEmployeeSchedulingSkillCountsParams) (GetDigitalEmployeeSchedulingSkillCountsRow, error)
@@ -295,6 +289,7 @@ type Querier interface {
 	// employee.PgRunRepository.ResolveProjectTaskLineageRoot): only the two
 	// fields that participate in root resolution, not the full row.
 	GetProjectTaskSessionLineage(ctx context.Context, arg GetProjectTaskSessionLineageParams) (GetProjectTaskSessionLineageRow, error)
+	// CreateProviderSession retired (2026-07-21).
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
 	GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabilityParams) (RuntimeCapability, error)
@@ -304,9 +299,6 @@ type Querier interface {
 	GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRuntimeEnrollmentByNodeIDParams) (RuntimeEnrollment, error)
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
 	GetRuntimeNodeByID(ctx context.Context, id uuid.UUID) (RuntimeNode, error)
-	GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRuntimeProvisioningPreflightParams) (GetRuntimeProvisioningPreflightRow, error)
-	// Team-less variant: no team governance, provider/runtime policy always allowed.
-	GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, arg GetRuntimeProvisioningPreflightTeamLessParams) (GetRuntimeProvisioningPreflightTeamLessRow, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioTemplateByKeyParams) (ScenarioTemplate, error)
@@ -369,7 +361,6 @@ type Querier interface {
 	ListDigitalEmployeeActivity(ctx context.Context, arg ListDigitalEmployeeActivityParams) ([]ListDigitalEmployeeActivityRow, error)
 	ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error)
 	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
-	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	// 租户内当前具备在线可用 Runtime 能力的 provider 集合(判据说明见 GetDigitalEmployeeOverviewSummary)。
 	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
@@ -467,9 +458,11 @@ type Querier interface {
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	ListProjectsForHumanMember(ctx context.Context, arg ListProjectsForHumanMemberParams) ([]ListProjectsForHumanMemberRow, error)
 	ListPromptTemplates(ctx context.Context, arg ListPromptTemplatesParams) ([]TaskPromptTemplate, error)
+	// CreateProviderSessionEvent retired (2026-07-21).
 	ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error)
 	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)
-	ListRequiredToolsForNode(ctx context.Context, arg ListRequiredToolsForNodeParams) ([]string, error)
+	// dei retired: required tools are delivered via dispatch payload/MCP config, not employee-node bindings.
+	ListRequiredToolsForNode(ctx context.Context) ([]string, error)
 	ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCapabilitiesParams) ([]RuntimeCapability, error)
 	ListRuntimeCapabilitiesForNode(ctx context.Context, arg ListRuntimeCapabilitiesForNodeParams) ([]RuntimeCapability, error)
 	ListRuntimeEnrollments(ctx context.Context, arg ListRuntimeEnrollmentsParams) ([]RuntimeEnrollment, error)
@@ -586,7 +579,6 @@ type Querier interface {
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)
 	SkillExistsForTenant(ctx context.Context, arg SkillExistsForTenantParams) (bool, error)
 	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)
-	SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams) ([]SoftDeleteDigitalEmployeeExecutionInstancesForDeleteRow, error)
 	SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
 	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
@@ -622,7 +614,6 @@ type Querier interface {
 	// as "slot unavailable" and try the next candidate.
 	TryAcquireRuntimeNodeSlot(ctx context.Context, arg TryAcquireRuntimeNodeSlotParams) (RuntimeNode, error)
 	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
-	UpdateDigitalEmployeeExecutionInstanceStatus(ctx context.Context, arg UpdateDigitalEmployeeExecutionInstanceStatusParams) (DigitalEmployeeExecutionInstance, error)
 	// 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
 	// 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。
 	UpdateDigitalEmployeeRolePermission(ctx context.Context, arg UpdateDigitalEmployeeRolePermissionParams) (DigitalEmployee, error)
@@ -654,7 +645,6 @@ type Querier interface {
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)
 	UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
-	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, arg UpsertDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuAppConfigParams) (FeishuAppConfig, error)
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)

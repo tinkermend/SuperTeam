@@ -1,4 +1,4 @@
-h1:uRNt+d2qcE5qnBu20Eujcn/3rC3PU0CjqYv4rUDbV4w=
+h1:MIEOC75qdpvREjnSyrr6XOwl+5PP+5y18cVNXos+LPg=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -93,3 +93,5 @@ h1:uRNt+d2qcE5qnBu20Eujcn/3rC3PU0CjqYv4rUDbV4w=
 20260720014622_approval_requests_category.sql h1:lENdRriC55/RNqWKGNWdDRiuANm223B8xeRSDfrGmHo=
 20260720160000_run_failure_acknowledge.sql h1:5lSMo4SugF5+qRcF9GvA8x7RFJA16hlg413w4fIEutE=
 20260720165706_project_task_dismiss.sql h1:KJeJXKI7DaoL2zuVBsFXZGXoVke+soe9ixPKX+G8xPk=
+20260721152932_dei_surgical_retirement.sql h1:Foqeq7B2lCTA5zbWHkjGNH6VjdJ4ffkKeGWvUS6JyUs=
+20260721155354_drop_dei_execution_instances.sql h1:7J++nILXspN5Sy7cqgRqWcdHFSSPX3e6SwXKvlaLTgQ=

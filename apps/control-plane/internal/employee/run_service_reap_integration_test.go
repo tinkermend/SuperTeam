@@ -211,7 +211,7 @@ func seedEmployeeRunGraph(
 	conn *pgx.Conn,
 	tenantID, teamID, runtimeNodeID uuid.UUID,
 	authoritativeNodeID string,
-	employeeID, executionInstanceID, _, employeeConfigRevisionID uuid.UUID,
+	employeeID, _, _, employeeConfigRevisionID uuid.UUID,
 ) error {
 	ownerUserID := uuid.New()
 	sql := fmt.Sprintf(`
@@ -252,18 +252,6 @@ func seedEmployeeRunGraph(
 			'normal', '{}'::jsonb
 		);
 
-		INSERT INTO digital_employee_execution_instances (
-			id, tenant_id, digital_employee_id, runtime_node_id, provider_type,
-			agent_home_dir, workspace_policy, session_policy, runtime_selector,
-			capacity_requirements, fallback_policy, status, ready_at, metadata
-		) VALUES (
-			'%s', '%s', '%s', '%s', 'codex',
-			'/var/lib/superteam/agents/employee',
-			'{"workspace":"isolated"}'::jsonb, '{"resume":true}'::jsonb,
-			'{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
-			'ready', NOW(), '{}'::jsonb
-		);
-
 		INSERT INTO digital_employee_config_revisions (
 			id, tenant_id, digital_employee_id, revision_number,
 			persona_memory_markdown, capability_bindings, budget_policy, status
@@ -281,7 +269,6 @@ func seedEmployeeRunGraph(
 		runtimeNodeID, tenantID, authoritativeNodeID,
 		tenantID, runtimeNodeID,
 		employeeID, tenantID, teamID, ownerUserID,
-		executionInstanceID, tenantID, employeeID, runtimeNodeID,
 		employeeConfigRevisionID, tenantID, employeeID,
 	)
 	_, err := conn.Exec(ctx, sql)

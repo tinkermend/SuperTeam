@@ -2738,16 +2738,8 @@ func (f *fakeRunServiceRepository) UpdateCommandReceipt(_ context.Context, req U
 	}, nil
 }
 
-func (f *fakeRunServiceRepository) UpdateExecutionInstanceStatus(context.Context, uuid.UUID, uuid.UUID, ExecutionInstanceStatus, *string) (DigitalEmployeeExecutionInstanceRecord, error) {
-	return DigitalEmployeeExecutionInstanceRecord{}, ErrInvalidInput
-}
-
 func (f *fakeRunServiceRepository) UpdateDigitalEmployeeStatus(context.Context, uuid.UUID, uuid.UUID, DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	return DigitalEmployeeRecord{}, ErrInvalidInput
-}
-
-func (f *fakeRunServiceRepository) DeleteExecutionInstance(context.Context, uuid.UUID, uuid.UUID) error {
-	return ErrInvalidInput
 }
 
 func (f *fakeRunServiceRepository) DeleteDigitalEmployee(context.Context, uuid.UUID, uuid.UUID) error {

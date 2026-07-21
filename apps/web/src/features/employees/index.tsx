@@ -139,7 +139,7 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
         icon={<Bot />}
         iconTone="brand"
         title="数字员工"
-        subtitle="业务身份、执行实例和运行状态"
+        subtitle="业务身份与运行状态"
       />
       <Main width="wide">
         <div className="flex flex-col gap-5">

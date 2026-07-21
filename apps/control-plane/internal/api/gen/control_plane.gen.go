@@ -357,33 +357,6 @@ func (e DigitalEmployeeEnvironmentVariableSummaryStatus) Valid() bool {
 	}
 }
 
-// Defines values for DigitalEmployeeExecutionInstanceStatus.
-const (
-	DigitalEmployeeExecutionInstanceStatusActive       DigitalEmployeeExecutionInstanceStatus = "active"
-	DigitalEmployeeExecutionInstanceStatusDisabled     DigitalEmployeeExecutionInstanceStatus = "disabled"
-	DigitalEmployeeExecutionInstanceStatusError        DigitalEmployeeExecutionInstanceStatus = "error"
-	DigitalEmployeeExecutionInstanceStatusProvisioning DigitalEmployeeExecutionInstanceStatus = "provisioning"
-	DigitalEmployeeExecutionInstanceStatusReady        DigitalEmployeeExecutionInstanceStatus = "ready"
-)
-
-// Valid indicates whether the value is a known member of the DigitalEmployeeExecutionInstanceStatus enum.
-func (e DigitalEmployeeExecutionInstanceStatus) Valid() bool {
-	switch e {
-	case DigitalEmployeeExecutionInstanceStatusActive:
-		return true
-	case DigitalEmployeeExecutionInstanceStatusDisabled:
-		return true
-	case DigitalEmployeeExecutionInstanceStatusError:
-		return true
-	case DigitalEmployeeExecutionInstanceStatusProvisioning:
-		return true
-	case DigitalEmployeeExecutionInstanceStatusReady:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for DigitalEmployeeOperationalStatus.
 const (
 	DigitalEmployeeOperationalStatusError              DigitalEmployeeOperationalStatus = "error"
@@ -2174,19 +2147,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	Cancelled ListInboxItemsParamsStatus = "cancelled"
-	Open      ListInboxItemsParamsStatus = "open"
-	Resolved  ListInboxItemsParamsStatus = "resolved"
+	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
+	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
+	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case ListInboxItemsParamsStatusCancelled:
 		return true
-	case Open:
+	case ListInboxItemsParamsStatusOpen:
 		return true
-	case Resolved:
+	case ListInboxItemsParamsStatusResolved:
 		return true
 	default:
 		return false
@@ -2988,32 +2961,6 @@ type DigitalEmployeeEnvironmentVariableSummary struct {
 
 // DigitalEmployeeEnvironmentVariableSummaryStatus defines model for DigitalEmployeeEnvironmentVariableSummary.Status.
 type DigitalEmployeeEnvironmentVariableSummaryStatus string
-
-// DigitalEmployeeExecutionInstance defines model for DigitalEmployeeExecutionInstance.
-type DigitalEmployeeExecutionInstance struct {
-	AgentHomeDir         string                                 `json:"agent_home_dir"`
-	CapacityRequirements *map[string]interface{}                `json:"capacity_requirements,omitempty"`
-	CreatedAt            *time.Time                             `json:"created_at,omitempty"`
-	DigitalEmployeeId    openapi_types.UUID                     `json:"digital_employee_id"`
-	DisabledAt           *time.Time                             `json:"disabled_at,omitempty"`
-	ErrorAt              *time.Time                             `json:"error_at,omitempty"`
-	ErrorMessage         *string                                `json:"error_message,omitempty"`
-	FallbackPolicy       *map[string]interface{}                `json:"fallback_policy,omitempty"`
-	Id                   openapi_types.UUID                     `json:"id"`
-	Metadata             *map[string]interface{}                `json:"metadata,omitempty"`
-	ProviderType         string                                 `json:"provider_type"`
-	ReadyAt              *time.Time                             `json:"ready_at,omitempty"`
-	RuntimeNodeId        openapi_types.UUID                     `json:"runtime_node_id"`
-	RuntimeSelector      *map[string]interface{}                `json:"runtime_selector,omitempty"`
-	SessionPolicy        map[string]interface{}                 `json:"session_policy"`
-	Status               DigitalEmployeeExecutionInstanceStatus `json:"status"`
-	TenantId             openapi_types.UUID                     `json:"tenant_id"`
-	UpdatedAt            *time.Time                             `json:"updated_at,omitempty"`
-	WorkspacePolicy      map[string]interface{}                 `json:"workspace_policy"`
-}
-
-// DigitalEmployeeExecutionInstanceStatus defines model for DigitalEmployeeExecutionInstanceStatus.
-type DigitalEmployeeExecutionInstanceStatus string
 
 // DigitalEmployeeExecutionSummary defines model for DigitalEmployeeExecutionSummary.
 type DigitalEmployeeExecutionSummary struct {
@@ -5794,19 +5741,6 @@ type UploadSkillRequest struct {
 	TeamIds *string `json:"team_ids,omitempty"`
 }
 
-// UpsertDigitalEmployeeExecutionInstanceRequest defines model for UpsertDigitalEmployeeExecutionInstanceRequest.
-type UpsertDigitalEmployeeExecutionInstanceRequest struct {
-	AgentHomeDir         string                  `json:"agent_home_dir"`
-	CapacityRequirements *map[string]interface{} `json:"capacity_requirements,omitempty"`
-	FallbackPolicy       *map[string]interface{} `json:"fallback_policy,omitempty"`
-	Metadata             *map[string]interface{} `json:"metadata,omitempty"`
-	ProviderType         string                  `json:"provider_type"`
-	RuntimeNodeId        openapi_types.UUID      `json:"runtime_node_id"`
-	RuntimeSelector      *map[string]interface{} `json:"runtime_selector,omitempty"`
-	SessionPolicy        *map[string]interface{} `json:"session_policy,omitempty"`
-	WorkspacePolicy      *map[string]interface{} `json:"workspace_policy,omitempty"`
-}
-
 // UpsertEnvironmentVariableRequest defines model for UpsertEnvironmentVariableRequest.
 type UpsertEnvironmentVariableRequest struct {
 	Sensitive *bool `json:"sensitive,omitempty"`
@@ -6465,9 +6399,6 @@ type CreateDigitalEmployeeConfigRevisionJSONRequestBody = CreateDigitalEmployeeC
 
 // UpsertEmployeeEnvironmentVariableJSONRequestBody defines body for UpsertEmployeeEnvironmentVariable for application/json ContentType.
 type UpsertEmployeeEnvironmentVariableJSONRequestBody = UpsertEnvironmentVariableRequest
-
-// UpsertDigitalEmployeeExecutionInstanceJSONRequestBody defines body for UpsertDigitalEmployeeExecutionInstance for application/json ContentType.
-type UpsertDigitalEmployeeExecutionInstanceJSONRequestBody = UpsertDigitalEmployeeExecutionInstanceRequest
 
 // CreateEmployeeMCPBindingV2JSONRequestBody defines body for CreateEmployeeMCPBindingV2 for application/json ContentType.
 type CreateEmployeeMCPBindingV2JSONRequestBody = CreateMCPBindingRequest
@@ -7242,12 +7173,6 @@ type ServerInterface interface {
 	// Upsert an employee environment variable
 	// (PUT /api/v1/digital-employees/{employeeId}/environment-variables/{envName})
 	UpsertEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, envName string)
-	// Get the digital employee execution instance
-	// (GET /api/v1/digital-employees/{employeeId}/execution-instance)
-	GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
-	// Create or update the unique digital employee execution instance
-	// (PUT /api/v1/digital-employees/{employeeId}/execution-instance)
-	UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List a digital employee's personal MCP bindings with env-var preflight
 	// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings-v2)
 	ListEmployeeMCPBindingsV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -7989,18 +7914,6 @@ func (_ Unimplemented) DeleteEmployeeEnvironmentVariable(w http.ResponseWriter, 
 // Upsert an employee environment variable
 // (PUT /api/v1/digital-employees/{employeeId}/environment-variables/{envName})
 func (_ Unimplemented) UpsertEmployeeEnvironmentVariable(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, envName string) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get the digital employee execution instance
-// (GET /api/v1/digital-employees/{employeeId}/execution-instance)
-func (_ Unimplemented) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create or update the unique digital employee execution instance
-// (PUT /api/v1/digital-employees/{employeeId}/execution-instance)
-func (_ Unimplemented) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10219,58 +10132,6 @@ func (siw *ServerInterfaceWrapper) UpsertEmployeeEnvironmentVariable(w http.Resp
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpsertEmployeeEnvironmentVariable(w, r, employeeId, envName)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetDigitalEmployeeExecutionInstance operation middleware
-func (siw *ServerInterfaceWrapper) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetDigitalEmployeeExecutionInstance(w, r, employeeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpsertDigitalEmployeeExecutionInstance operation middleware
-func (siw *ServerInterfaceWrapper) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpsertDigitalEmployeeExecutionInstance(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16566,12 +16427,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/environment-variables/{envName}", wrapper.UpsertEmployeeEnvironmentVariable)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/execution-instance", wrapper.GetDigitalEmployeeExecutionInstance)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/execution-instance", wrapper.UpsertDigitalEmployeeExecutionInstance)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2", wrapper.ListEmployeeMCPBindingsV2)

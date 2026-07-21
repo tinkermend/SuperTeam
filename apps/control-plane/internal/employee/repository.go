@@ -21,7 +21,6 @@ type Repository interface {
 	CreateDigitalEmployeeDeleteAuditEvent(ctx context.Context, params DigitalEmployeeDeleteAuditEventParams) error
 	GetDigitalEmployeeOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
 	GetDigitalEmployeeActivity(ctx context.Context, req GetDigitalEmployeeActivityRequest) ([]DigitalEmployeeActivityItem, error)
-	AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error)
 	EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error
 	GetTeamBaseline(ctx context.Context, tenantID, teamID uuid.UUID) (TeamBaseline, error)
 	ListUsedAvatarAssetIDs(ctx context.Context, tenantID uuid.UUID) (map[string]struct{}, error)
@@ -33,18 +32,13 @@ type Repository interface {
 	BindMCPServersToEmployee(ctx context.Context, tenantID, employeeID uuid.UUID, serverIDs []uuid.UUID) error
 	ListRuntimeProviderOptionsForCreate(ctx context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error)
 	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]RuntimeProviderOption, error)
-	GetRuntimeProvisioningPreflight(ctx context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error)
-	GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, tenantID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
 	// UpdateDigitalEmployeeRolePermission 写回经权限中心批准的 role/permission_policy(方案2:
 	// 权限变更不进 config_revision,值由审批请求 ContextPayload 承载,批准时落库员工行)。
 	UpdateDigitalEmployeeRolePermission(ctx context.Context, tenantID, employeeID uuid.UUID, role string, permissionPolicy map[string]any) (DigitalEmployeeRecord, error)
-	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error)
-	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeOperationalSignals(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]OperationalSignals, error)
 	CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error)
-	AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error)
 	// ArchivePriorActiveConfigRevisions 归档某员工当前所有 active 修订,让位给新激活的修订(维持
 	// 每员工至多一条 active 的偏唯一索引)。应与创建新 active 修订同事务调用。
@@ -89,21 +83,6 @@ type ListDigitalEmployeesParams struct {
 	Limit      int32
 }
 
-type UpsertExecutionInstanceParams struct {
-	TenantID             uuid.UUID
-	DigitalEmployeeID    uuid.UUID
-	RuntimeNodeID        uuid.UUID
-	ProviderType         string
-	AgentHomeDir         string
-	WorkspacePolicy      map[string]any
-	SessionPolicy        map[string]any
-	RuntimeSelector      map[string]any
-	CapacityRequirements map[string]any
-	FallbackPolicy       map[string]any
-	Status               ExecutionInstanceStatus
-	Metadata             map[string]any
-}
-
 type CreateConfigRevisionParams struct {
 	TenantID              uuid.UUID
 	DigitalEmployeeID     uuid.UUID
@@ -135,29 +114,6 @@ type DigitalEmployeeRecord struct {
 	DeletedAt        *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-}
-
-type DigitalEmployeeExecutionInstanceRecord struct {
-	ID                   uuid.UUID
-	TenantID             uuid.UUID
-	DigitalEmployeeID    uuid.UUID
-	RuntimeNodeID        uuid.UUID
-	ProviderType         string
-	AgentHomeDir         string
-	WorkspacePolicy      map[string]any
-	SessionPolicy        map[string]any
-	RuntimeSelector      map[string]any
-	CapacityRequirements map[string]any
-	FallbackPolicy       map[string]any
-	Status               ExecutionInstanceStatus
-	ReadyAt              *time.Time
-	DisabledAt           *time.Time
-	ErrorAt              *time.Time
-	ErrorMessage         *string
-	DeletedAt            *time.Time
-	Metadata             map[string]any
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
 }
 
 type DigitalEmployeeConfigRevisionRecord struct {

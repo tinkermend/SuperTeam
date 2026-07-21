@@ -67,7 +67,6 @@ type SoftDeleteDigitalEmployeeCascadeParams struct {
 }
 
 type DigitalEmployeeDeleteCascadeResult struct {
-	ExecutionInstances   int64
 	EnvironmentVariables int64
 	MCPBindingsV2        int64
 	SkillBindings        int64
@@ -75,9 +74,6 @@ type DigitalEmployeeDeleteCascadeResult struct {
 	ProjectAffinities    int64
 	MCPBindingV2IDs      []uuid.UUID
 	SkillBindingIDs      []uuid.UUID
-	ExecutionInstanceID  *uuid.UUID
-	RuntimeNodeID        *uuid.UUID
-	AgentHomeDir         string
 	ProviderType         string
 }
 
@@ -467,44 +463,6 @@ type EffectiveConfigPreview struct {
 	Validation               EffectiveConfigValidation
 }
 
-type DigitalEmployeeExecutionInstance struct {
-	ID                   uuid.UUID
-	TenantID             uuid.UUID
-	DigitalEmployeeID    uuid.UUID
-	RuntimeNodeID        uuid.UUID
-	ProviderType         string
-	AgentHomeDir         string
-	WorkspacePolicy      map[string]any
-	SessionPolicy        map[string]any
-	RuntimeSelector      map[string]any
-	CapacityRequirements map[string]any
-	FallbackPolicy       map[string]any
-	Status               ExecutionInstanceStatus
-	ReadyAt              *time.Time
-	DisabledAt           *time.Time
-	ErrorAt              *time.Time
-	ErrorMessage         *string
-	Metadata             map[string]any
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-}
-
-type RuntimeProvisioningPreflight struct {
-	TenantID              uuid.UUID
-	TeamID                uuid.UUID
-	RuntimeNodeID         uuid.UUID
-	NodeID                string
-	AgentHomeDir          string
-	GovernanceSnapshot    map[string]any
-	HasActiveTeamConfig   bool
-	RuntimeOnline         bool
-	EnrollmentApproved    bool
-	RuntimeSessionActive  bool
-	ProviderAvailable     bool
-	ProviderPolicyAllowed bool
-	RuntimePolicyAllowed  bool
-}
-
 type CreateOptionsRequest struct {
 	TenantID uuid.UUID
 	TeamID   *uuid.UUID
@@ -726,7 +684,7 @@ type DigitalEmployeeIdentitySummary struct {
 	EmployeeType      string
 	EmployeeTypeLabel string
 	// ProviderType 是身份级主 Provider 类型(如 claude/codex/opencode),
-	// 与运行期落点无关;运行落点见 ExecutionSummary(遗留员工级绑定)。
+	// 与运行期落点无关;运行落点见 ExecutionSummary(最近一次 task_runs 真实落点)。
 	ProviderType string
 	Name         string
 	Role         string
@@ -814,18 +772,4 @@ type UpdateStatusRequest struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Status            DigitalEmployeeStatus
-}
-
-type BindExecutionInstanceRequest struct {
-	TenantID             uuid.UUID
-	DigitalEmployeeID    uuid.UUID
-	RuntimeNodeID        uuid.UUID
-	ProviderType         string
-	AgentHomeDir         string
-	WorkspacePolicy      map[string]any
-	SessionPolicy        map[string]any
-	RuntimeSelector      map[string]any
-	CapacityRequirements map[string]any
-	FallbackPolicy       map[string]any
-	Metadata             map[string]any
 }

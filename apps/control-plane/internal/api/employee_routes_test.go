@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -279,22 +278,6 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if got.OwnerUserID != user.ID.String() || got.EmployeeType != "database_admin" {
 		t.Fatalf("expected get response owner/type, got %#v", got)
-	}
-
-	bindRuntimeNodeID := uuid.New()
-	upsertReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+created.ID+"/execution-instance", strings.NewReader(`{"runtime_node_id":"`+bindRuntimeNodeID.String()+`","provider_type":"codex","agent_home_dir":"/srv/agents/requirements","workspace_policy":{},"session_policy":{}}`))
-	upsertReq.Header.Set("Content-Type", "application/json")
-	upsertReq.AddCookie(cookie)
-	upsertResp := httptest.NewRecorder()
-	server.ServeHTTP(upsertResp, upsertReq)
-	if upsertResp.Code != http.StatusBadRequest {
-		t.Fatalf("expected legacy execution instance bind to be rejected, got %d: %s", upsertResp.Code, upsertResp.Body.String())
-	}
-	if service.bindReq.TenantID != expectedTenantID || service.bindReq.RuntimeNodeID != bindRuntimeNodeID {
-		t.Fatalf("expected bind tenant/runtime %s/%s, got %s/%s", expectedTenantID, bindRuntimeNodeID, service.bindReq.TenantID, service.bindReq.RuntimeNodeID)
-	}
-	if !strings.Contains(upsertResp.Body.String(), "digital employees are not runtime-bound") {
-		t.Fatalf("expected runtime binding rejection body, got %s", upsertResp.Body.String())
 	}
 
 	spoofedConfigApproverID := uuid.New()
@@ -1314,7 +1297,6 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 	server.SetEmployeeHandler(employee.NewHandler(service))
 	cookie := routeLogin(t, server, "admin", "admin")
 	employeeID := uuid.New().String()
-	runtimeNodeID := uuid.New().String()
 
 	tests := []struct {
 		name         string
@@ -1332,8 +1314,6 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "delete", method: http.MethodDelete, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeDelete, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
-		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
-		{name: "upsert execution instance", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", body: `{"runtime_node_id":"` + runtimeNodeID + `","provider_type":"codex","agent_home_dir":"/srv/agents/requirements"}`, action: authz.ActionEmployeeExecutionBind, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get scheduling readiness", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/scheduling-readiness", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
@@ -1635,16 +1615,12 @@ type routeEmployeeService struct {
 	deleteEnvReq                     employee.DeleteEnvironmentVariableRequest
 	deleteReq                        employee.DeleteDigitalEmployeeRequest
 	deleteErr                        error
-	bindReq                          employee.BindExecutionInstanceRequest
 	updateReq                        employee.UpdateStatusRequest
 	getTenantID                      uuid.UUID
-	getInstanceTenantID              uuid.UUID
 	createCalled                     bool
 	listCalled                       bool
 	getCalled                        bool
 	updateCalled                     bool
-	getInstanceCalled                bool
-	bindCalled                       bool
 	configRevisionReq                employee.CreateDigitalEmployeeConfigRevisionRequest
 	configCalled                     bool
 	getSchedulingReadinessCalled     bool
@@ -1861,35 +1837,6 @@ func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.Up
 	}, nil
 }
 
-func (s *routeEmployeeService) GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeExecutionInstance, error) {
-	s.getInstanceCalled = true
-	s.getInstanceTenantID = tenantID
-	now := time.Now().UTC()
-	return &employee.DigitalEmployeeExecutionInstance{
-		ID:                   uuid.New(),
-		TenantID:             tenantID,
-		DigitalEmployeeID:    employeeID,
-		RuntimeNodeID:        uuid.New(),
-		ProviderType:         "codex",
-		AgentHomeDir:         "/srv/agents/requirements",
-		WorkspacePolicy:      map[string]any{},
-		SessionPolicy:        map[string]any{},
-		RuntimeSelector:      map[string]any{},
-		CapacityRequirements: map[string]any{},
-		FallbackPolicy:       map[string]any{},
-		Status:               employee.ExecutionInstanceStatusReady,
-		Metadata:             map[string]any{},
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}, nil
-}
-
-func (s *routeEmployeeService) BindExecutionInstance(ctx context.Context, req employee.BindExecutionInstanceRequest) (*employee.DigitalEmployeeExecutionInstance, error) {
-	s.bindCalled = true
-	s.bindReq = req
-	return nil, fmt.Errorf("%w: digital employees are not runtime-bound; bind runtime nodes to projects and dispatch project tasks instead", employee.ErrInvalidInput)
-}
-
 func (s *routeEmployeeService) SubmitPermissionChange(ctx context.Context, req employee.SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error) {
 	return nil, employee.ErrPermissionApprovalNotConfigured
 }
@@ -1981,8 +1928,6 @@ func (s *routeEmployeeService) called() bool {
 		s.listCalled ||
 		s.getCalled ||
 		s.updateCalled ||
-		s.getInstanceCalled ||
-		s.bindCalled ||
 		s.configCalled ||
 		s.getSchedulingReadinessCalled
 }

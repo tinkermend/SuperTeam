@@ -567,14 +567,6 @@ function createTeamsFetcher(
         });
       }
 
-      if (
-        url.pathname ===
-          "/api/v1/digital-employees/employee-unbound/execution-instance" &&
-        method === "GET"
-      ) {
-        return jsonResponse({ error: "not found" }, 404);
-      }
-
       if (url.pathname === "/api/v1/teams/team-1/audit" && method === "GET") {
         expect(url.searchParams.get("limit")).toBe("20");
         expect(url.searchParams.get("offset")).toBe("0");
@@ -681,27 +673,6 @@ function createTeamsFetcher(
             created_at: "2026-06-03T08:40:00Z",
           },
         ]);
-      }
-
-      if (
-        url.pathname.startsWith("/api/v1/digital-employees/") &&
-        url.pathname.endsWith("/execution-instance")
-      ) {
-        const pathParts = url.pathname.split("/");
-        const employeeId = pathParts[pathParts.length - 2];
-
-        return jsonResponse({
-          id: `instance-${employeeId}`,
-          digital_employee_id: employeeId,
-          runtime_node_id:
-            employeeId === "employee-active"
-              ? "ops-node-01"
-              : employeeId === "employee-draft"
-                ? "ops-node-review"
-                : "ops-node-02",
-          provider_type: "codex",
-          status: "ready",
-        });
       }
 
       return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);

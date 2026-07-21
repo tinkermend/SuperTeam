@@ -229,9 +229,6 @@ func TestCreateEmployeeWithoutTeamRevision(t *testing.T) {
 		Skills:     []string{"database-troubleshooting", "incident-diagnosis"},
 		MCPServers: []string{"postgres-readonly"},
 	}
-	repo.preflight.HasActiveTeamConfig = false
-	delete(repo.preflight.GovernanceSnapshot, "team_config_revision_id")
-
 	employee, err := svc.CreateDigitalEmployee(context.Background(), req)
 
 	require.NoError(t, err)
@@ -495,11 +492,9 @@ func TestServiceDeleteDigitalEmployeeSoftDeletesCascadeAndAudits(t *testing.T) {
 	teamID := uuid.New()
 	employeeID := uuid.New()
 	actorID := uuid.New()
-	executionInstanceID := uuid.New()
-	runtimeNodeID := uuid.New()
 	now := time.Now().UTC()
 	repo.employees[employeeID] = DigitalEmployeeRecord{ID: employeeID, TenantID: tenantID, TeamID: &teamID, OwnerUserID: actorID, EmployeeType: "devops_engineer", ProviderType: "codex", Name: "可删除员工", Role: "devops", Status: DigitalEmployeeStatusReady, CreatedAt: now, UpdatedAt: now}
-	repo.deleteCascadeResult = DigitalEmployeeDeleteCascadeResult{ExecutionInstances: 1, EnvironmentVariables: 2, MCPBindingsV2: 1, SkillBindings: 1, ConfigRevisions: 1, ProjectAffinities: 1, ExecutionInstanceID: &executionInstanceID, RuntimeNodeID: &runtimeNodeID, AgentHomeDir: "/srv/superteam/agents/emp", ProviderType: "codex"}
+	repo.deleteCascadeResult = DigitalEmployeeDeleteCascadeResult{EnvironmentVariables: 2, MCPBindingsV2: 1, SkillBindings: 1, ConfigRevisions: 1, ProjectAffinities: 1, ProviderType: "codex"}
 
 	err = svc.DeleteDigitalEmployee(context.Background(), DeleteDigitalEmployeeRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, ActorUserID: actorID})
 	require.NoError(t, err)
@@ -509,7 +504,7 @@ func TestServiceDeleteDigitalEmployeeSoftDeletesCascadeAndAudits(t *testing.T) {
 	require.Len(t, repo.deleteAuditEvents, 1)
 	require.Equal(t, actorID, repo.deleteAuditEvents[0].ActorUserID)
 	require.Equal(t, employeeID, repo.deleteAuditEvents[0].Employee.ID)
-	require.Equal(t, int64(1), repo.deleteAuditEvents[0].CascadeResult.ExecutionInstances)
+	require.Equal(t, int64(2), repo.deleteAuditEvents[0].CascadeResult.EnvironmentVariables)
 	require.Equal(t, 1, repo.transactionCommitCount)
 }
 
@@ -613,9 +608,6 @@ func TestCreateDigitalEmployeeDoesNotRequireRuntimeBinding(t *testing.T) {
 	if employee.ProviderType != "codex" {
 		t.Fatalf("expected provider_type codex, got %q", employee.ProviderType)
 	}
-	if len(repo.instances) != 0 {
-		t.Fatalf("expected no execution instances, got %#v", repo.instances)
-	}
 	if len(repo.commandReceipts) != 0 {
 		t.Fatalf("expected no runtime command receipts, got %#v", repo.commandReceipts)
 	}
@@ -695,9 +687,6 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigWithoutRuntim
 
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("expected no runtime command, got %#v", dispatcher.commands)
-	}
-	if len(repo.instances) != 0 {
-		t.Fatalf("expected no execution instances, got %#v", repo.instances)
 	}
 	if len(repo.commandReceipts) != 0 {
 		t.Fatalf("expected no command receipt, got %#v", repo.commandReceipts)
@@ -825,8 +814,8 @@ func TestCreateDigitalEmployeeRollsBackInitialEnvironmentVariablesWhenNameInvali
 	if repo.transactionCount != 1 || repo.transactionCommitCount != 0 || repo.transactionRollbackCount != 1 {
 		t.Fatalf("expected one rolled-back transaction, got tx=%d commit=%d rollback=%d", repo.transactionCount, repo.transactionCommitCount, repo.transactionRollbackCount)
 	}
-	if len(repo.employees) != 0 || len(repo.envVars) != 0 || len(repo.instances) != 0 || len(repo.commandReceipts) != 0 {
-		t.Fatalf("expected local facts rollback, employees=%#v env=%#v instances=%#v receipts=%#v", repo.employees, repo.envVars, repo.instances, repo.commandReceipts)
+	if len(repo.employees) != 0 || len(repo.envVars) != 0 || len(repo.commandReceipts) != 0 {
+		t.Fatalf("expected local facts rollback, employees=%#v env=%#v receipts=%#v", repo.employees, repo.envVars, repo.commandReceipts)
 	}
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("expected no runtime dispatch after invalid env var, got %#v", dispatcher.commands)
@@ -1073,85 +1062,12 @@ func TestCreateDigitalEmployeeDoesNotWaitForProvisioningTimeout(t *testing.T) {
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("expected no runtime command, got %#v", dispatcher.commands)
 	}
-	if len(repo.abortReasons) != 0 {
-		t.Fatalf("expected no provisioning abort, got %#v", repo.abortReasons)
-	}
 	visible, err := repo.ListDigitalEmployees(context.Background(), ListDigitalEmployeesParams{TenantID: req.TenantID})
 	if err != nil {
 		t.Fatalf("list employees: %v", err)
 	}
 	if len(visible) != 1 || visible[0].Status != DigitalEmployeeStatusReady {
 		t.Fatalf("expected visible ready employee after identity creation, got %#v", visible)
-	}
-}
-
-func TestBindExecutionInstanceRejectsEmployeeRuntimeBinding(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	runtimeID := uuid.New()
-	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:           employeeID,
-		TenantID:     tenantID,
-		Status:       DigitalEmployeeStatusReady,
-		ProviderType: "codex",
-	}
-
-	_, err = svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		RuntimeNodeID:     runtimeID,
-		ProviderType:      "codex",
-		AgentHomeDir:      "/srv/superteam/employees/finance",
-		SessionPolicy:     map[string]any{"max_turns": float64(5)},
-	})
-	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "digital employees are not runtime-bound") {
-		t.Fatalf("expected runtime binding rejection, got %v", err)
-	}
-	if len(repo.instances) != 0 {
-		t.Fatalf("expected no execution instance writes, got %#v", repo.instances)
-	}
-}
-
-func TestBindExecutionInstanceRejectsProviderChangeThroughLegacyBinding(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewService(repo)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	employeeID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.employees[employeeID] = DigitalEmployeeRecord{
-		ID:           employeeID,
-		TenantID:     tenantID,
-		Status:       DigitalEmployeeStatusReady,
-		ProviderType: "codex",
-	}
-
-	_, err = svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
-		TenantID:          tenantID,
-		DigitalEmployeeID: employeeID,
-		RuntimeNodeID:     runtimeNodeID,
-		ProviderType:      "opencode",
-		AgentHomeDir:      "/tmp/opencode",
-	})
-
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected ErrInvalidInput, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "digital employees are not runtime-bound") {
-		t.Fatalf("expected runtime binding rejection, got %v", err)
-	}
-	if repo.employees[employeeID].ProviderType != "codex" {
-		t.Fatalf("expected employee provider to remain codex, got %q", repo.employees[employeeID].ProviderType)
-	}
-	if len(repo.instances) != 0 {
-		t.Fatalf("expected no execution instance writes, got %#v", repo.instances)
 	}
 }
 
@@ -1163,9 +1079,7 @@ func TestServiceValidation(t *testing.T) {
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
-	employeeID := uuid.New()
 	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
 	if _, err := repo.CreateEmployeeTemplate(context.Background(), CreateEmployeeTemplateParams{
 		TenantID:    tenantID,
 		Type:        "backend_engineer",
@@ -1232,31 +1146,6 @@ func TestServiceValidation(t *testing.T) {
 				req := validCreateReq()
 				req.ProviderType = " "
 				_, err := svc.CreateDigitalEmployee(context.Background(), req)
-				return err
-			},
-		},
-		{
-			name: "bind requires provider",
-			run: func() error {
-				_, err := svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
-					TenantID:          tenantID,
-					DigitalEmployeeID: employeeID,
-					RuntimeNodeID:     runtimeNodeID,
-					AgentHomeDir:      "/tmp/agent",
-				})
-				return err
-			},
-		},
-		{
-			name: "bind requires agent home dir",
-			run: func() error {
-				_, err := svc.BindExecutionInstance(context.Background(), BindExecutionInstanceRequest{
-					TenantID:          tenantID,
-					DigitalEmployeeID: employeeID,
-					RuntimeNodeID:     runtimeNodeID,
-					ProviderType:      "codex",
-					AgentHomeDir:      " ",
-				})
 				return err
 			},
 		},
@@ -2067,7 +1956,6 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	tenantID := uuid.New()
 	teamID := uuid.New()
 	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
 	teamConfigID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.teamConfigs[teamConfigID] = TeamConfigInput{
@@ -2102,11 +1990,6 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 		CapabilityBindings:    map[string]any{"skills": []string{"database-troubleshooting", "sql-review"}},
 	}); err != nil {
 		t.Fatalf("seed database_admin template: %v", err)
-	}
-	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
-	repo.preflight.GovernanceSnapshot = map[string]any{
-		"authorization":     "Bearer raw-token",
-		"capability_policy": map[string]any{"api_key": "raw-key"},
 	}
 	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
 	dispatcher.connected["runtime-node-1"] = true
@@ -2199,35 +2082,13 @@ func firstEmployeeID(repo *memoryRepository) uuid.UUID {
 	return uuid.Nil
 }
 
-func validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID uuid.UUID) RuntimeProvisioningPreflight {
-	return RuntimeProvisioningPreflight{
-		TenantID:              tenantID,
-		TeamID:                teamID,
-		RuntimeNodeID:         runtimeNodeID,
-		NodeID:                "runtime-node-1",
-		AgentHomeDir:          "/runtime/reported/agent-home",
-		GovernanceSnapshot:    map[string]any{},
-		HasActiveTeamConfig:   true,
-		RuntimeOnline:         true,
-		EnrollmentApproved:    true,
-		RuntimeSessionActive:  true,
-		ProviderAvailable:     true,
-		ProviderPolicyAllowed: true,
-		RuntimePolicyAllowed:  true,
-	}
-}
 
 type memoryRepository struct {
 	teams                     map[uuid.UUID]uuid.UUID
 	employees                 map[uuid.UUID]DigitalEmployeeRecord
-	instances                 map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
-	preflight                 RuntimeProvisioningPreflight
-	preflightErr              error
 	commandReceipts           map[string]*RuntimeCommandReceipt
 	waitStatus                string
 	waitErr                   error
-	abortReasons              []string
-	abortContextErrors        []error
 	createdEmployeeCount      int
 	teamConfigs               map[uuid.UUID]TeamConfigInput
 	teamBaselines             map[uuid.UUID]TeamBaseline
@@ -2262,7 +2123,6 @@ func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
 		teams:                    make(map[uuid.UUID]uuid.UUID),
 		employees:                make(map[uuid.UUID]DigitalEmployeeRecord),
-		instances:                make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord),
 		commandReceipts:          make(map[string]*RuntimeCommandReceipt),
 		teamConfigs:              make(map[uuid.UUID]TeamConfigInput),
 		teamBaselines:            make(map[uuid.UUID]TeamBaseline),
@@ -2547,14 +2407,6 @@ func (r *memoryRepository) GetDigitalEmployeeOverview(_ context.Context, req Get
 	}, nil
 }
 
-func (r *memoryRepository) AreRuntimeReady(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
-	ready := make(map[uuid.UUID]bool, len(employeeIDs))
-	for _, id := range employeeIDs {
-		ready[id] = true
-	}
-	return ready, nil
-}
-
 func (r *memoryRepository) EnsureTeamExists(_ context.Context, tenantID, teamID uuid.UUID) error {
 	teamTenantID, ok := r.teams[teamID]
 	if !ok || teamTenantID != tenantID {
@@ -2668,41 +2520,6 @@ func (r *memoryRepository) UpdateDigitalEmployeeRolePermission(_ context.Context
 	record.PermissionPolicy = cloneMap(permissionPolicy)
 	record.UpdatedAt = time.Now().UTC()
 	r.employees[employeeID] = record
-	return record, nil
-}
-
-func (r *memoryRepository) UpsertDigitalEmployeeExecutionInstance(_ context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error) {
-	if params.TenantID == uuid.Nil || params.DigitalEmployeeID == uuid.Nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, errors.New("tenant and employee are required")
-	}
-	now := time.Now().UTC()
-	record, ok := r.instances[params.DigitalEmployeeID]
-	if !ok {
-		record.ID = uuid.New()
-		record.CreatedAt = now
-	}
-	record.TenantID = params.TenantID
-	record.DigitalEmployeeID = params.DigitalEmployeeID
-	record.RuntimeNodeID = params.RuntimeNodeID
-	record.ProviderType = params.ProviderType
-	record.AgentHomeDir = params.AgentHomeDir
-	record.WorkspacePolicy = cloneMap(params.WorkspacePolicy)
-	record.SessionPolicy = cloneMap(params.SessionPolicy)
-	record.RuntimeSelector = cloneMap(params.RuntimeSelector)
-	record.CapacityRequirements = cloneMap(params.CapacityRequirements)
-	record.FallbackPolicy = cloneMap(params.FallbackPolicy)
-	record.Status = params.Status
-	record.Metadata = cloneMap(params.Metadata)
-	record.UpdatedAt = now
-	r.instances[params.DigitalEmployeeID] = record
-	return record, nil
-}
-
-func (r *memoryRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(_ context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error) {
-	record, ok := r.instances[employeeID]
-	if !ok || record.TenantID != tenantID {
-		return DigitalEmployeeExecutionInstanceRecord{}, ErrNotFound
-	}
 	return record, nil
 }
 
@@ -2846,25 +2663,6 @@ func (r *memoryRepository) ListRunsDetailed(_ context.Context, _, _ uuid.UUID, _
 	return &DigitalEmployeeRunListResult{}, nil
 }
 
-func (r *memoryRepository) GetRuntimeProvisioningPreflight(_ context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
-	if r.preflightErr != nil {
-		return RuntimeProvisioningPreflight{}, r.preflightErr
-	}
-	if r.preflight.TenantID != tenantID || r.preflight.TeamID != teamID || r.preflight.RuntimeNodeID != runtimeNodeID || providerType == "" {
-		return RuntimeProvisioningPreflight{}, ErrNotFound
-	}
-	return r.preflight, nil
-}
-
-func (r *memoryRepository) GetRuntimeProvisioningPreflightTeamLess(_ context.Context, tenantID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
-	if r.preflightErr != nil {
-		return RuntimeProvisioningPreflight{}, r.preflightErr
-	}
-	if r.preflight.TenantID != tenantID || r.preflight.RuntimeNodeID != runtimeNodeID || providerType == "" {
-		return RuntimeProvisioningPreflight{}, ErrNotFound
-	}
-	return r.preflight, nil
-}
 
 func (r *memoryRepository) CreateRuntimeCommandReceipt(_ context.Context, req CreateRuntimeCommandReceiptRequest) error {
 	r.commandReceipts[req.CommandID] = &RuntimeCommandReceipt{
@@ -2904,65 +2702,11 @@ func (r *memoryRepository) WaitForRuntimeCommandCompletion(ctx context.Context, 
 		receipt.Status = r.waitStatus
 		receipt.CompletedAt = &now
 	}
-	if receipt.Status == string(DigitalEmployeeRunStatusCompleted) {
-		instance, ok := r.instances[receipt.ResourceID]
-		if !ok {
-			for _, record := range r.instances {
-				if record.ID == receipt.ResourceID {
-					instance = record
-					ok = true
-					break
-				}
-			}
-		}
-		if ok {
-			now := time.Now().UTC()
-			instance.Status = ExecutionInstanceStatusReady
-			instance.ReadyAt = &now
-			r.instances[instance.DigitalEmployeeID] = instance
-			employeeRecord := r.employees[instance.DigitalEmployeeID]
-			employeeRecord.Status = DigitalEmployeeStatusReady
-			employeeRecord.UpdatedAt = now
-			r.employees[instance.DigitalEmployeeID] = employeeRecord
-		}
-	}
 	return receipt, nil
-}
-
-func (r *memoryRepository) AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
-	r.abortReasons = append(r.abortReasons, reason)
-	r.abortContextErrors = append(r.abortContextErrors, ctx.Err())
-	now := time.Now().UTC()
-	employeeRecord, ok := r.employees[employeeID]
-	if ok && employeeRecord.TenantID == tenantID {
-		employeeRecord.Status = DigitalEmployeeStatusError
-		employeeRecord.DeletedAt = &now
-		employeeRecord.UpdatedAt = now
-		r.employees[employeeID] = employeeRecord
-	}
-	instance, ok := r.instances[employeeID]
-	if ok && instance.TenantID == tenantID && (executionInstanceID == uuid.Nil || instance.ID == executionInstanceID) {
-		instance.Status = ExecutionInstanceStatusError
-		instance.ErrorAt = &now
-		instance.ErrorMessage = &reason
-		instance.DeletedAt = &now
-		instance.UpdatedAt = now
-		r.instances[employeeID] = instance
-	}
-	for _, receipt := range r.commandReceipts {
-		if receipt.TenantID == tenantID && (executionInstanceID == uuid.Nil || receipt.ResourceID == executionInstanceID) {
-			receipt.Status = string(DigitalEmployeeRunStatusFailed)
-			receipt.ErrorMessage = &reason
-			receipt.CompletedAt = &now
-			receipt.UpdatedAt = now
-		}
-	}
-	return nil
 }
 
 type memoryRepositorySnapshot struct {
 	employees                map[uuid.UUID]DigitalEmployeeRecord
-	instances                map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
 	commandReceipts          map[string]*RuntimeCommandReceipt
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
 	envVars                  map[string]EnvironmentVariableRecord
@@ -2976,7 +2720,6 @@ type memoryRepositorySnapshot struct {
 func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
 	return memoryRepositorySnapshot{
 		employees:                cloneEmployeeRecordMap(r.employees),
-		instances:                cloneExecutionInstanceRecordMap(r.instances),
 		commandReceipts:          cloneCommandReceiptMap(r.commandReceipts),
 		employeeConfigs:          cloneEmployeeConfigInputMap(r.employeeConfigs),
 		envVars:                  cloneEnvironmentVariableRecordMap(r.envVars),
@@ -2990,7 +2733,6 @@ func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
 
 func (r *memoryRepository) restore(snapshot memoryRepositorySnapshot) {
 	r.employees = snapshot.employees
-	r.instances = snapshot.instances
 	r.commandReceipts = snapshot.commandReceipts
 	r.employeeConfigs = snapshot.employeeConfigs
 	r.envVars = snapshot.envVars
@@ -3016,24 +2758,6 @@ func cloneEmployeeRecordMap(values map[uuid.UUID]DigitalEmployeeRecord) map[uuid
 	return cloned
 }
 
-func cloneExecutionInstanceRecordMap(values map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord) map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord {
-	cloned := make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord, len(values))
-	for id, record := range values {
-		record.WorkspacePolicy = cloneMap(record.WorkspacePolicy)
-		record.SessionPolicy = cloneMap(record.SessionPolicy)
-		record.RuntimeSelector = cloneMap(record.RuntimeSelector)
-		record.CapacityRequirements = cloneMap(record.CapacityRequirements)
-		record.FallbackPolicy = cloneMap(record.FallbackPolicy)
-		record.ReadyAt = cloneTimePtr(record.ReadyAt)
-		record.DisabledAt = cloneTimePtr(record.DisabledAt)
-		record.ErrorAt = cloneTimePtr(record.ErrorAt)
-		record.ErrorMessage = cloneStringPtrForTest(record.ErrorMessage)
-		record.DeletedAt = cloneTimePtr(record.DeletedAt)
-		record.Metadata = cloneMap(record.Metadata)
-		cloned[id] = record
-	}
-	return cloned
-}
 
 func cloneCommandReceiptMap(values map[string]*RuntimeCommandReceipt) map[string]*RuntimeCommandReceipt {
 	cloned := make(map[string]*RuntimeCommandReceipt, len(values))

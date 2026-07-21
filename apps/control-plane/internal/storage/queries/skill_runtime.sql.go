@@ -7,70 +7,16 @@ package queries
 
 import (
 	"context"
-
-	"github.com/google/uuid"
 )
 
 const ListRequiredToolsForNode = `-- name: ListRequiredToolsForNode :many
-WITH target_node AS (
-    SELECT id
-    FROM runtime_nodes
-    WHERE tenant_id = $1::uuid
-      AND node_id = $2::varchar
-      AND archived_at IS NULL
-),
-mounted_skills AS (
-    SELECT s.metadata
-    FROM target_node tn
-    JOIN digital_employee_execution_instances dei
-      ON dei.runtime_node_id = tn.id
-     AND dei.tenant_id = $1::uuid
-     AND dei.deleted_at IS NULL
-     AND dei.status IN ('provisioning', 'ready', 'active')
-    JOIN skill_agent_bindings sab
-      ON sab.tenant_id = dei.tenant_id
-     AND sab.digital_employee_id = dei.digital_employee_id
-     AND sab.status = 'enabled'
-    JOIN skills s
-      ON s.tenant_id = sab.tenant_id
-     AND s.id = sab.skill_id
-     AND s.deleted_at IS NULL
-    UNION
-    SELECT s.metadata
-    FROM target_node tn
-    JOIN digital_employee_execution_instances dei
-      ON dei.runtime_node_id = tn.id
-     AND dei.tenant_id = $1::uuid
-     AND dei.deleted_at IS NULL
-     AND dei.status IN ('provisioning', 'ready', 'active')
-    JOIN digital_employees de
-      ON de.tenant_id = dei.tenant_id
-     AND de.id = dei.digital_employee_id
-     AND de.deleted_at IS NULL
-    JOIN team_skill_bindings stb
-      ON stb.tenant_id = de.tenant_id
-     AND stb.team_id = de.team_id
-    JOIN skills s
-      ON s.tenant_id = stb.tenant_id
-     AND s.id = stb.skill_id
-     AND s.deleted_at IS NULL
-)
-SELECT DISTINCT tool::text
-FROM mounted_skills ms,
-     LATERAL jsonb_array_elements_text(
-        COALESCE(ms.metadata->'runtime_dependencies'->'tools', '[]'::jsonb)
-     ) AS tool
-WHERE btrim(tool) <> ''
-ORDER BY tool
+SELECT ''::text AS tool
+WHERE false
 `
 
-type ListRequiredToolsForNodeParams struct {
-	TenantID uuid.UUID `json:"tenant_id"`
-	NodeID   string    `json:"node_id"`
-}
-
-func (q *Queries) ListRequiredToolsForNode(ctx context.Context, arg ListRequiredToolsForNodeParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, ListRequiredToolsForNode, arg.TenantID, arg.NodeID)
+// dei retired: required tools are delivered via dispatch payload/MCP config, not employee-node bindings.
+func (q *Queries) ListRequiredToolsForNode(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, ListRequiredToolsForNode)
 	if err != nil {
 		return nil, err
 	}

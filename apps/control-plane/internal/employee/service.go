@@ -1174,37 +1174,6 @@ func (s *Service) ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeT
 	return employeeFromRecord(record), nil
 }
 
-func (s *Service) BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error) {
-	if req.TenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
-	}
-	if req.DigitalEmployeeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
-	}
-	return nil, fmt.Errorf("%w: digital employees are not runtime-bound; bind runtime nodes to projects and dispatch project tasks instead", ErrInvalidInput)
-}
-
-func (s *Service) GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error) {
-	if tenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
-	}
-	if employeeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
-	}
-	record, err := s.repository.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, tenantID, employeeID)
-	if errors.Is(err, ErrNotFound) {
-		// 无执行实例与员工不存在共用 ErrNotFound；员工存在时返回 nil 表示"尚无实例"。
-		if _, employeeErr := s.repository.GetDigitalEmployee(ctx, tenantID, employeeID); employeeErr != nil {
-			return nil, fmt.Errorf("get digital employee execution instance: %w", employeeErr)
-		}
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get digital employee execution instance: %w", err)
-	}
-	return executionInstanceFromRecord(record), nil
-}
-
 func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
@@ -1661,30 +1630,6 @@ func employeeConfigInputFromRecord(record DigitalEmployeeConfigRevisionRecord) E
 		PersonaMemoryMarkdown: record.PersonaMemoryMarkdown,
 		CapabilityBindings:    cloneMap(record.CapabilityBindings),
 		BudgetPolicy:          cloneMap(record.BudgetPolicy),
-	}
-}
-
-func executionInstanceFromRecord(record DigitalEmployeeExecutionInstanceRecord) *DigitalEmployeeExecutionInstance {
-	return &DigitalEmployeeExecutionInstance{
-		ID:                   record.ID,
-		TenantID:             record.TenantID,
-		DigitalEmployeeID:    record.DigitalEmployeeID,
-		RuntimeNodeID:        record.RuntimeNodeID,
-		ProviderType:         record.ProviderType,
-		AgentHomeDir:         record.AgentHomeDir,
-		WorkspacePolicy:      cloneMap(record.WorkspacePolicy),
-		SessionPolicy:        cloneMap(record.SessionPolicy),
-		RuntimeSelector:      cloneMap(record.RuntimeSelector),
-		CapacityRequirements: cloneMap(record.CapacityRequirements),
-		FallbackPolicy:       cloneMap(record.FallbackPolicy),
-		Status:               record.Status,
-		ReadyAt:              cloneTimePtr(record.ReadyAt),
-		DisabledAt:           cloneTimePtr(record.DisabledAt),
-		ErrorAt:              cloneTimePtr(record.ErrorAt),
-		ErrorMessage:         trimOptionalString(record.ErrorMessage),
-		Metadata:             cloneMap(record.Metadata),
-		CreatedAt:            record.CreatedAt,
-		UpdatedAt:            record.UpdatedAt,
 	}
 }
 

@@ -436,50 +436,6 @@ type DigitalEmployeeEnvironmentVariable struct {
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 }
 
-// 数字员工唯一执行实例表
-type DigitalEmployeeExecutionInstance struct {
-	// 数字员工执行实例主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 绑定的数字员工 ID
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 承载执行实例的 Runtime 节点 UUID
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
-	// 执行实例使用的 Provider 类型
-	ProviderType string `json:"provider_type"`
-	// 数字员工在 Runtime 工作区中的长期目录
-	AgentHomeDir string `json:"agent_home_dir"`
-	// 工作区策略快照
-	WorkspacePolicy []byte `json:"workspace_policy"`
-	// Provider 会话策略快照
-	SessionPolicy []byte `json:"session_policy"`
-	// 预留的 Runtime 自动选择器
-	RuntimeSelector []byte `json:"runtime_selector"`
-	// 预留的容量需求
-	CapacityRequirements []byte `json:"capacity_requirements"`
-	// 预留的降级或 fallback 策略
-	FallbackPolicy []byte `json:"fallback_policy"`
-	// 执行实例状态
-	Status string `json:"status"`
-	// 执行实例就绪时间
-	ReadyAt pgtype.Timestamptz `json:"ready_at"`
-	// 执行实例禁用时间
-	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
-	// 执行实例进入错误状态时间
-	ErrorAt pgtype.Timestamptz `json:"error_at"`
-	// 执行实例错误说明
-	ErrorMessage pgtype.Text `json:"error_message"`
-	// 执行实例软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 执行实例扩展元数据
-	Metadata []byte `json:"metadata"`
-	// 执行实例创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 执行实例最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 数字员工对注册表 MCP 的个人绑定
 type DigitalEmployeeMcpBindingsV2 struct {
 	// 员工 MCP 绑定主键 UUID
@@ -502,12 +458,6 @@ type DigitalEmployeeMcpBindingsV2 struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 绑定更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-type DigitalEmployeeRuntimeReadiness struct {
-	TenantID          uuid.UUID `json:"tenant_id"`
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	IsRuntimeReady    bool      `json:"is_runtime_ready"`
 }
 
 type DigitalEmployeeTemplate struct {

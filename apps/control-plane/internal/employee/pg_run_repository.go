@@ -203,19 +203,20 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 		TeamID:                preflight.TeamID.UUID,
 		DigitalEmployeeID:     preflight.DigitalEmployeeID,
 		DigitalEmployeeStatus: DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
-		ExecutionInstanceID:   preflight.ExecutionInstanceID,
-		ExecutionStatus:       ExecutionInstanceStatus(preflight.ExecutionStatus),
-		RuntimeNodeID:         preflight.RuntimeNodeID,
-		NodeID:                preflight.NodeID,
-		ProviderType:          preflight.ProviderType,
-		AgentHomeDir:          preflight.AgentHomeDir,
-		RuntimeSelector:       runtimeSelector,
-		SessionPolicy:         sessionPolicy,
-		WorkspacePolicy:       workspacePolicy,
-		BudgetPolicy:          budgetPolicy,
-		TodayTokenUsage:       preflight.TodayTokenUsage,
-		BusinessTimezone:      preflight.BusinessTimezone,
-		ProviderHealthy:       preflight.ProviderHealthy,
+		// dei retired: synthesize a deterministic compat UUID; no longer read from dei table.
+		ExecutionInstanceID: standaloneCompatibilityExecutionInstanceID(preflight.TenantID, preflight.DigitalEmployeeID),
+		ExecutionStatus:     ExecutionInstanceStatusReady,
+		RuntimeNodeID:       preflight.RuntimeNodeID,
+		NodeID:              preflight.NodeID,
+		ProviderType:        preflight.ProviderType,
+		AgentHomeDir:        preflight.AgentHomeDir,
+		RuntimeSelector:     runtimeSelector,
+		SessionPolicy:       sessionPolicy,
+		WorkspacePolicy:     workspacePolicy,
+		BudgetPolicy:        budgetPolicy,
+		TodayTokenUsage:     preflight.TodayTokenUsage,
+		BusinessTimezone:    preflight.BusinessTimezone,
+		ProviderHealthy:     preflight.ProviderHealthy,
 	}, nil
 }
 
@@ -776,19 +777,6 @@ func (r *PgRunRepository) UpdateCommandReceipt(ctx context.Context, req UpdateRu
 	return runtimeCommandReceiptFromQuery(receipt), nil
 }
 
-func (r *PgRunRepository) UpdateExecutionInstanceStatus(ctx context.Context, tenantID, executionInstanceID uuid.UUID, status ExecutionInstanceStatus, errorMessage *string) (DigitalEmployeeExecutionInstanceRecord, error) {
-	instance, err := r.q.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
-		Status:       string(status),
-		ErrorMessage: textFromPtr(errorMessage),
-		ID:           executionInstanceID,
-		TenantID:     tenantID,
-	})
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, mapNoRows(err)
-	}
-	return executionInstanceRecordFromQuery(instance)
-}
-
 func (r *PgRunRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	record, err := r.q.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
 		Status:   string(status),
@@ -799,13 +787,6 @@ func (r *PgRunRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenan
 		return DigitalEmployeeRecord{}, mapNoRows(err)
 	}
 	return digitalEmployeeRecordFromQuery(record)
-}
-
-func (r *PgRunRepository) DeleteExecutionInstance(ctx context.Context, tenantID, executionInstanceID uuid.UUID) error {
-	return r.q.DeleteDigitalEmployeeExecutionInstance(ctx, queries.DeleteDigitalEmployeeExecutionInstanceParams{
-		ID:       executionInstanceID,
-		TenantID: tenantID,
-	})
 }
 
 func (r *PgRunRepository) DeleteDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) error {

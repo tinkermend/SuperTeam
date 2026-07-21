@@ -23,7 +23,6 @@ type ProjectStore struct {
 	approvals         ApprovalCreator
 	inbox             project.DecisionInboxProjector
 	runStarter        ProjectTaskRunStarter
-	readiness         DigitalEmployeeReadinessChecker
 	teamBoundary      TeamBoundaryGatekeeper
 	scenarioTemplates ScenarioTemplateSource
 	profileSource     DigitalEmployeePlanningProfileSource
@@ -89,14 +88,6 @@ func (s *ProjectStore) WithProjectTaskNodeResolver(resolver GateProjectTaskNodeR
 	return s
 }
 
-// WithDigitalEmployeeReadiness attaches the legacy employee-scoped readiness checker.
-// ProjectTask planning prefers project-scoped Runtime placement when a gate reader is
-// available, so this checker is only a compatibility fallback.
-func (s *ProjectStore) WithDigitalEmployeeReadiness(checker DigitalEmployeeReadinessChecker) *ProjectStore {
-	s.readiness = checker
-	return s
-}
-
 // WithTeamBoundaryGatekeeper attaches the team-boundary gate used to exclude digital
 // employees from foreign teams out of the project's executor pool.
 func (s *ProjectStore) WithTeamBoundaryGatekeeper(gatekeeper TeamBoundaryGatekeeper) *ProjectStore {
@@ -122,7 +113,9 @@ func (s *ProjectStore) WithDigitalEmployeePlanningProfiles(source DigitalEmploye
 
 // runtimeReadyEmployeeIDs returns the set of project-runtime-ready digital-employee
 // principal IDs among the given members. A nil result means "do not filter" so
-// behavior stays backward-compatible when no readiness source is attached or lookup fails.
+// behavior stays backward-compatible when no project-scoped reader is attached,
+// projectID is empty, or lookup fails. Employee-scoped dei readiness was removed:
+// readiness is project placement + provider health only.
 func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID, projectID uuid.UUID, members []project.ProjectMember) map[uuid.UUID]bool {
 	ids := make([]uuid.UUID, 0, len(members))
 	for _, member := range members {
@@ -130,27 +123,17 @@ func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID, pr
 			ids = append(ids, member.PrincipalID)
 		}
 	}
-	if len(ids) == 0 {
+	if len(ids) == 0 || s.employeeReader == nil || projectID == uuid.Nil {
 		return nil
 	}
-	if s.employeeReader != nil && projectID != uuid.Nil {
-		ready := make(map[uuid.UUID]bool, len(ids))
-		for _, id := range ids {
-			employee, runtimeSnapshot, err := s.employeeReader.GetEmployeeRuntimeSnapshot(ctx, tenantID, projectID, id)
-			if err != nil {
-				return nil
-			}
-			ready[id] = employeeRuntimeSnapshotReady(employee, runtimeSnapshot)
+	ready := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		employee, runtimeSnapshot, err := s.employeeReader.GetEmployeeRuntimeSnapshot(ctx, tenantID, projectID, id)
+		if err != nil {
+			// Fail open: a readiness lookup error must not block planning.
+			return nil
 		}
-		return ready
-	}
-	if s.readiness == nil {
-		return nil
-	}
-	ready, err := s.readiness.AreRuntimeReady(ctx, tenantID, ids)
-	if err != nil {
-		// Fail open: a readiness lookup error must not block planning.
-		return nil
+		ready[id] = employeeRuntimeSnapshotReady(employee, runtimeSnapshot)
 	}
 	return ready
 }
@@ -301,14 +284,6 @@ type ApprovalCreator interface {
 
 type ProjectTaskRunStarter interface {
 	StartProjectTaskRun(ctx context.Context, req StartProjectTaskRunRequest) (StartProjectTaskRunResult, error)
-}
-
-// DigitalEmployeeReadinessChecker reports which digital employees are runtime-ready
-// (bound to a healthy online runtime with an approved effective config). The coordinator
-// uses it to filter its executor pool so the reasoning planner only proposes employees
-// that can actually run, instead of stranding tasks on unbound ones.
-type DigitalEmployeeReadinessChecker interface {
-	AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
 type DigitalEmployeePlanningProfileSource interface {

@@ -20,8 +20,7 @@ func TestGeneratedSchedulingSkillCountQueryMatchesEffectiveSkillPrecedence(t *te
 
 func TestRuntimeProviderQueriesDoNotRequireLegacyTeamProviderPolicy(t *testing.T) {
 	for name, query := range map[string]string{
-		"create_options":          ListRuntimeProviderOptionsForDigitalEmployeeCreate,
-		"provisioning_preflight": GetRuntimeProvisioningPreflight,
+		"create_options": ListRuntimeProviderOptionsForDigitalEmployeeCreate,
 	} {
 		normalized := strings.Join(strings.Fields(query), " ")
 		if strings.Contains(normalized, "allowed_provider_types") {

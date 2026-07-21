@@ -196,21 +196,12 @@ func (r *PgRepository) SoftDeleteDigitalEmployeeCascade(ctx context.Context, par
 	deletedAt := pgtype.Timestamptz{Time: params.DeletedAt.UTC(), Valid: true}
 	cascade := DigitalEmployeeDeleteCascadeResult{}
 
-	instances, err := r.q.SoftDeleteDigitalEmployeeExecutionInstancesForDelete(ctx, queries.SoftDeleteDigitalEmployeeExecutionInstancesForDeleteParams{
-		TenantID:          params.TenantID,
-		DigitalEmployeeID: params.DigitalEmployeeID,
-		DeletedAt:         deletedAt,
-	})
-	if err != nil {
-		return cascade, err
-	}
-	cascade.ExecutionInstances = int64(len(instances))
-	if len(instances) > 0 {
-		first := instances[0]
-		cascade.ExecutionInstanceID = uuidPtr(first.ID)
-		cascade.RuntimeNodeID = uuidPtr(first.RuntimeNodeID)
-		cascade.ProviderType = first.ProviderType
-		cascade.AgentHomeDir = first.AgentHomeDir
+	// provider_type for audit trail comes from the employee identity row (dei retired).
+	if employee, err := r.q.GetDigitalEmployee(ctx, queries.GetDigitalEmployeeParams{
+		ID:       params.DigitalEmployeeID,
+		TenantID: params.TenantID,
+	}); err == nil {
+		cascade.ProviderType = employee.ProviderType
 	}
 
 	envRows, err := r.q.SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx, queries.SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams{TenantID: params.TenantID, DigitalEmployeeID: params.DigitalEmployeeID, DeletedAt: deletedAt})
@@ -611,37 +602,6 @@ func (r *PgRepository) ListRuntimeProviderOptionsForCreate(ctx context.Context, 
 	return options, nil
 }
 
-func (r *PgRepository) GetRuntimeProvisioningPreflight(ctx context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
-	preflight, err := r.q.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		RuntimeNodeID: runtimeNodeID,
-		ProviderType:  providerType,
-	})
-	if err != nil {
-		return RuntimeProvisioningPreflight{}, mapNoRows(err)
-	}
-	governanceSnapshot, err := mapFromJSONValue(preflight.GovernanceSnapshot, "governance_snapshot")
-	if err != nil {
-		return RuntimeProvisioningPreflight{}, err
-	}
-	return RuntimeProvisioningPreflight{
-		TenantID:              preflight.TenantID,
-		TeamID:                preflight.TeamID,
-		RuntimeNodeID:         preflight.RuntimeNodeID,
-		NodeID:                preflight.NodeID,
-		AgentHomeDir:          preflight.AgentHomeDir,
-		GovernanceSnapshot:    governanceSnapshot,
-		HasActiveTeamConfig:   preflight.HasActiveTeamConfig,
-		RuntimeOnline:         preflight.RuntimeOnline,
-		EnrollmentApproved:    preflight.EnrollmentApproved,
-		RuntimeSessionActive:  preflight.RuntimeSessionActive,
-		ProviderAvailable:     preflight.ProviderAvailable,
-		ProviderPolicyAllowed: preflight.ProviderPolicyAllowed,
-		RuntimePolicyAllowed:  preflight.RuntimePolicyAllowed,
-	}, nil
-}
-
 func (r *PgRepository) ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]RuntimeProviderOption, error) {
 	rows, err := r.q.ListRuntimeProviderOptionsForTeamLessCreate(ctx, tenantID)
 	if err != nil {
@@ -666,36 +626,6 @@ func (r *PgRepository) ListRuntimeProviderOptionsForTeamLessCreate(ctx context.C
 		})
 	}
 	return options, nil
-}
-
-func (r *PgRepository) GetRuntimeProvisioningPreflightTeamLess(ctx context.Context, tenantID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
-	preflight, err := r.q.GetRuntimeProvisioningPreflightTeamLess(ctx, queries.GetRuntimeProvisioningPreflightTeamLessParams{
-		RuntimeNodeID: runtimeNodeID,
-		TenantID:      tenantID,
-		ProviderType:  providerType,
-	})
-	if err != nil {
-		return RuntimeProvisioningPreflight{}, mapNoRows(err)
-	}
-	governanceSnapshot, err := mapFromJSONValue(preflight.GovernanceSnapshot, "governance_snapshot")
-	if err != nil {
-		return RuntimeProvisioningPreflight{}, err
-	}
-	return RuntimeProvisioningPreflight{
-		TenantID:              preflight.TenantID,
-		TeamID:                preflight.TeamID.UUID,
-		RuntimeNodeID:         preflight.RuntimeNodeID,
-		NodeID:                preflight.NodeID,
-		AgentHomeDir:          preflight.AgentHomeDir,
-		GovernanceSnapshot:    governanceSnapshot,
-		HasActiveTeamConfig:   preflight.HasActiveTeamConfig,
-		RuntimeOnline:         preflight.RuntimeOnline,
-		EnrollmentApproved:    preflight.EnrollmentApproved,
-		RuntimeSessionActive:  preflight.RuntimeSessionActive,
-		ProviderAvailable:     preflight.ProviderAvailable,
-		ProviderPolicyAllowed: preflight.ProviderPolicyAllowed,
-		RuntimePolicyAllowed:  preflight.RuntimePolicyAllowed,
-	}, nil
 }
 
 func (r *PgRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
@@ -725,52 +655,6 @@ func (r *PgRepository) UpdateDigitalEmployeeRolePermission(ctx context.Context, 
 		return DigitalEmployeeRecord{}, mapNoRows(err)
 	}
 	return digitalEmployeeRecordFromQuery(employee)
-}
-
-func (r *PgRepository) UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error) {
-	workspacePolicy, err := jsonbFromMap(params.WorkspacePolicy, "workspace_policy")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	sessionPolicy, err := jsonbFromMap(params.SessionPolicy, "session_policy")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	runtimeSelector, err := jsonbFromMap(params.RuntimeSelector, "runtime_selector")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	capacityRequirements, err := jsonbFromMap(params.CapacityRequirements, "capacity_requirements")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	fallbackPolicy, err := jsonbFromMap(params.FallbackPolicy, "fallback_policy")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	metadata, err := jsonbFromMap(params.Metadata, "metadata")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-
-	instance, err := r.q.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
-		ProviderType:         params.ProviderType,
-		AgentHomeDir:         params.AgentHomeDir,
-		WorkspacePolicy:      workspacePolicy,
-		SessionPolicy:        sessionPolicy,
-		RuntimeSelector:      runtimeSelector,
-		CapacityRequirements: capacityRequirements,
-		FallbackPolicy:       fallbackPolicy,
-		Status:               string(params.Status),
-		Metadata:             metadata,
-		RuntimeNodeID:        params.RuntimeNodeID,
-		DigitalEmployeeID:    params.DigitalEmployeeID,
-		TenantID:             params.TenantID,
-	})
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, mapNoRows(err)
-	}
-	return executionInstanceRecordFromQuery(instance)
 }
 
 func (r *PgRepository) CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error {
@@ -818,26 +702,6 @@ func (r *PgRepository) WaitForRuntimeCommandCompletion(ctx context.Context, tena
 		case <-timer.C:
 		}
 	}
-}
-
-func (r *PgRepository) AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
-	return r.q.AbortProvisionedDigitalEmployee(ctx, queries.AbortProvisionedDigitalEmployeeParams{
-		TenantID:            tenantID,
-		DigitalEmployeeID:   employeeID,
-		ExecutionInstanceID: executionInstanceID,
-		Reason:              reason,
-	})
-}
-
-func (r *PgRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error) {
-	instance, err := r.q.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, queries.GetDigitalEmployeeExecutionInstanceByEmployeeIDParams{
-		DigitalEmployeeID: employeeID,
-		TenantID:          tenantID,
-	})
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, mapNoRows(err)
-	}
-	return executionInstanceRecordFromQuery(instance)
 }
 
 func (r *PgRepository) ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableRecord, error) {
@@ -1342,28 +1206,6 @@ func (r *PgRepository) GetDigitalEmployeeActivity(ctx context.Context, req GetDi
 		})
 	}
 	return items, nil
-}
-
-// AreRuntimeReady reports which of the given digital employees are runtime-ready,
-// using the digital_employee_runtime_readiness view. 注意:该视图仍基于已废弃的
-// 员工级执行实例绑定(dei),与总览新的 runnable 判据(身份+治理+租户级 provider
-// 可用性)不再一致;它只作为协调线程缺少项目级 reader 时的兜底,待清偿。
-func (r *PgRepository) AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
-	if len(employeeIDs) == 0 {
-		return map[uuid.UUID]bool{}, nil
-	}
-	rows, err := r.q.AreEmployeesRuntimeReady(ctx, queries.AreEmployeesRuntimeReadyParams{
-		TenantID:           tenantID,
-		DigitalEmployeeIds: employeeIDs,
-	})
-	if err != nil {
-		return nil, err
-	}
-	ready := make(map[uuid.UUID]bool, len(rows))
-	for _, row := range rows {
-		ready[row.DigitalEmployeeID] = row.IsRuntimeReady
-	}
-	return ready, nil
 }
 
 // OperationalSignals carries the per-employee load and reliability counts that the
@@ -2140,55 +1982,6 @@ func employeeConfigInputFromQuery(revision digitalEmployeeConfigRevisionQueryRow
 	}, nil
 }
 
-func executionInstanceRecordFromQuery(instance queries.DigitalEmployeeExecutionInstance) (DigitalEmployeeExecutionInstanceRecord, error) {
-	workspacePolicy, err := mapFromJSONB(instance.WorkspacePolicy, "workspace_policy")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	sessionPolicy, err := mapFromJSONB(instance.SessionPolicy, "session_policy")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	runtimeSelector, err := mapFromJSONB(instance.RuntimeSelector, "runtime_selector")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	capacityRequirements, err := mapFromJSONB(instance.CapacityRequirements, "capacity_requirements")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	fallbackPolicy, err := mapFromJSONB(instance.FallbackPolicy, "fallback_policy")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	metadata, err := mapFromJSONB(instance.Metadata, "metadata")
-	if err != nil {
-		return DigitalEmployeeExecutionInstanceRecord{}, err
-	}
-	return DigitalEmployeeExecutionInstanceRecord{
-		ID:                   instance.ID,
-		TenantID:             instance.TenantID,
-		DigitalEmployeeID:    instance.DigitalEmployeeID,
-		RuntimeNodeID:        instance.RuntimeNodeID,
-		ProviderType:         instance.ProviderType,
-		AgentHomeDir:         instance.AgentHomeDir,
-		WorkspacePolicy:      workspacePolicy,
-		SessionPolicy:        sessionPolicy,
-		RuntimeSelector:      runtimeSelector,
-		CapacityRequirements: capacityRequirements,
-		FallbackPolicy:       fallbackPolicy,
-		Status:               ExecutionInstanceStatus(instance.Status),
-		ReadyAt:              timePtrFromTimestamptz(instance.ReadyAt),
-		DisabledAt:           timePtrFromTimestamptz(instance.DisabledAt),
-		ErrorAt:              timePtrFromTimestamptz(instance.ErrorAt),
-		ErrorMessage:         stringPtrFromText(instance.ErrorMessage),
-		DeletedAt:            timePtrFromTimestamptz(instance.DeletedAt),
-		Metadata:             metadata,
-		CreatedAt:            timeFromTimestamptz(instance.CreatedAt),
-		UpdatedAt:            timeFromTimestamptz(instance.UpdatedAt),
-	}, nil
-}
-
 func mapNoRows(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -2235,24 +2028,12 @@ func digitalEmployeeDeleteAuditDetails(params DigitalEmployeeDeleteAuditEventPar
 	if params.Employee.TeamID != nil {
 		teamID = params.Employee.TeamID.String()
 	}
-	executionInstanceID := ""
-	if params.CascadeResult.ExecutionInstanceID != nil {
-		executionInstanceID = params.CascadeResult.ExecutionInstanceID.String()
-	}
-	runtimeNodeID := ""
-	if params.CascadeResult.RuntimeNodeID != nil {
-		runtimeNodeID = params.CascadeResult.RuntimeNodeID.String()
-	}
 	return map[string]any{
-		"digital_employee_id":   params.Employee.ID.String(),
-		"name":                  params.Employee.Name,
-		"team_id":               teamID,
-		"provider_type":         coalesceString(params.CascadeResult.ProviderType, params.Employee.ProviderType),
-		"runtime_node_id":       runtimeNodeID,
-		"execution_instance_id": executionInstanceID,
-		"agent_home_dir":        params.CascadeResult.AgentHomeDir,
+		"digital_employee_id": params.Employee.ID.String(),
+		"name":                params.Employee.Name,
+		"team_id":             teamID,
+		"provider_type":       coalesceString(params.CascadeResult.ProviderType, params.Employee.ProviderType),
 		"cascade_counts": map[string]any{
-			"execution_instances":   params.CascadeResult.ExecutionInstances,
 			"environment_variables": params.CascadeResult.EnvironmentVariables,
 			"mcp_bindings_v2":       params.CascadeResult.MCPBindingsV2,
 			"skill_bindings":        params.CascadeResult.SkillBindings,
@@ -2260,7 +2041,6 @@ func digitalEmployeeDeleteAuditDetails(params DigitalEmployeeDeleteAuditEventPar
 			"project_affinities":    params.CascadeResult.ProjectAffinities,
 		},
 		"cleanup_candidates": map[string]any{
-			"agent_home_dir":    params.CascadeResult.AgentHomeDir,
 			"mcp_binding_ids":   uuidStrings(params.CascadeResult.MCPBindingV2IDs),
 			"skill_binding_ids": uuidStrings(params.CascadeResult.SkillBindingIDs),
 		},

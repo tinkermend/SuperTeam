@@ -7,7 +7,6 @@ import {
   getDigitalEmployeeOverview,
   createDigitalEmployeeRun,
   getDigitalEmployee,
-  getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeRun,
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
@@ -689,42 +688,6 @@ describe("digital employee API", () => {
       },
       budget_policy: { daily_token_limit: 12000 },
     });
-  });
-
-  it("gets execution instance with encoded employee id and cookie credentials", async () => {
-    const instance = {
-      id: "22222222-2222-4222-8222-222222222222",
-      digital_employee_id: "11111111-1111-4111-8111-111111111111",
-      runtime_node_id: "33333333-3333-4333-8333-333333333333",
-      provider_type: "codex",
-      status: "ready",
-    };
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify(instance), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
-    );
-
-    await expect(
-      getDigitalEmployeeExecutionInstance(
-        {
-          baseUrl: "http://control-plane.local",
-          fetcher,
-        },
-        "employee 1/primary",
-      ),
-    ).resolves.toEqual(instance);
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/execution-instance",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
-    );
   });
 
   it("creates a digital employee run with encoded employee id and JSON body", async () => {

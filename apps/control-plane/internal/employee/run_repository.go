@@ -40,9 +40,7 @@ type DigitalEmployeeRunRepository interface {
 	GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	UpdateCommandReceipt(ctx context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error)
-	UpdateExecutionInstanceStatus(ctx context.Context, tenantID, executionInstanceID uuid.UUID, status ExecutionInstanceStatus, errorMessage *string) (DigitalEmployeeExecutionInstanceRecord, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
-	DeleteExecutionInstance(ctx context.Context, tenantID, executionInstanceID uuid.UUID) error
 	DeleteDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) error
 }
 
