@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-22 00:40（收件箱全局 SSE——任意页角标秒级更新，真实浏览器 E2E PASS）：原 SSE 只挂收件箱页，其它页仅靠侧栏 badge 30s 轮询，任务完成后须手动刷新才见验收卡。抽出 `useInboxChangeStream`，挂到 `AuthenticatedLayout`（每登录会话一条长连接）；收件箱页去重双连；badge 轮询 30s→60s 兜底。不引入消息队列。验证：Vitest hook/layout/inbox 29/29；项目页停留时 DB 插入 open inbox 项→侧栏「收件箱 1」出现，进收件箱即见条目无需 F5。
 - 2026-07-21 23:28（Gate 型高风险审批驳回无终结修复，真实链路 E2E PASS）：`ApplyPreDispatchGateDecision` 对带 `DispatchGateResultID` 的 `project_task_approval` 原先只在 approved 时放行重派，rejected 直接 `{}, nil`，决策卡已消费、任务永滞 `waiting_human`。现与非 gate 等待族对齐：非 approved 走 `applyTaskHumanWaitRelease`（rejected/cancelled→MarkFailed→任务 failed+需求重算）。定向测试 `TestProjectStoreApplyPreDispatchGateDecisionFailsGateLinkedApprovalOnReject` PASS。真实链路：restart CP→种 gate-linked pending 卡→`POST .../decisions/{id}/resolve` rejected 200→任务 `waiting_human`→`failed`、决策 `rejected`、事件 `project_task.failed`。
 - 2026-07-21 22:35（数字员工网格卡去掉 Provider 行）：Provider 仅保留在右侧选中侧栏，避免与侧栏同构。Vitest employees index 20/20；restart web。
 - 2026-07-21 22:32（选中员工侧栏大头像+完整说明，与网格卡差异化，真实浏览器 PASS）：网格卡去掉说明预览，只扫读名称/团队/事实行；右侧 `GallerySelectedPanel` 头像升 `hero`(80px)、说明全文展示（超长 `max-h-40` 滚动），保留运行态/Provider/最新事件/查看详情。验证：Vitest employees index 20/20；浏览器选中「测试一下」侧栏含完整说明、网格卡无说明正文。

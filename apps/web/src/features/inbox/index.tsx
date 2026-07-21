@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   keepPreviousData,
   useMutation,
@@ -32,8 +32,6 @@ type InboxPageProps = {
 type InboxViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
-  // 测试注入用；生产默认用带凭据的原生 EventSource。
-  eventSourceFactory?: (url: string) => EventSource;
 };
 
 type SelectedAction = {
@@ -73,7 +71,7 @@ export function InboxPage({ fetcher }: InboxPageProps = {}) {
   return <InboxView apiBaseUrl={resolveControlPlaneUrl()} fetcher={fetcher} />;
 }
 
-export function InboxView({ apiBaseUrl, fetcher, eventSourceFactory }: InboxViewProps) {
+export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   const queryClient = useQueryClient();
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
@@ -116,34 +114,9 @@ export function InboxView({ apiBaseUrl, fetcher, eventSourceFactory }: InboxView
     queryKey: ["inbox-items", view, filters],
     queryFn: () => listInboxItems(apiOptions, { ...filters, view }),
     placeholderData: keepPreviousData,
-    // 外部渠道(飞书/他人)的变更主要靠下方 SSE 脏通知推送刷新;
-    // 这里只留低频轮询兜底流断开的窗口。
+    // 主刷新由已登录布局上的全局 SSE 脏通知驱动;这里只留低频轮询兜底流断开窗口。
     refetchInterval: 60_000,
   });
-
-  // SSE 脏通知:服务端探测到可见范围内收件箱变更时推 inbox-changed,收到即重拉列表与角标。
-  // 流断开由 EventSource 自动重连,60s 轮询兜底。
-  useEffect(() => {
-    // 组件测试注入 fetcher 时默认不开真实流,避免连不上的重连噪音;显式给 factory 则照常开。
-    if (fetcher && !eventSourceFactory) return;
-    const factory =
-      eventSourceFactory ?? ((url: string) => new EventSource(url, { withCredentials: true }));
-    let source: EventSource | undefined;
-    try {
-      source = factory(`${apiBaseUrl}/api/v1/inbox/stream`);
-    } catch {
-      return;
-    }
-    const onChanged = () => {
-      void queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-      void queryClient.invalidateQueries({ queryKey: ["inbox-badge"] });
-    };
-    source.addEventListener("inbox-changed", onChanged);
-    return () => {
-      source?.removeEventListener("inbox-changed", onChanged);
-      source?.close();
-    };
-  }, [apiBaseUrl, eventSourceFactory, fetcher, queryClient]);
 
   const actionMutation = useMutation({
     mutationFn: ({

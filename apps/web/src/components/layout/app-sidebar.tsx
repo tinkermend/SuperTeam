@@ -25,9 +25,9 @@ export function AppSidebar() {
         return { mine_open_count: 0, team_open_count: 0, high_risk_count: 0 };
       }
     },
-    staleTime: 30 * 1000,
-    // 外部渠道(飞书/他人)resolve 后徽标数应自动回落,轮询兜底(与 staleTime 一致)。
-    refetchInterval: 30 * 1000,
+    staleTime: 60 * 1000,
+    // 主刷新由已登录布局上的全局 SSE 脏通知 invalidate；此处低频轮询兜底流断开窗口。
+    refetchInterval: 60 * 1000,
   });
   const inboxBadge =
     inboxBadgeQuery.data && inboxBadgeQuery.data.mine_open_count > 0
