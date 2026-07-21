@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-22 01:52（数字员工网格卡视觉层级重设计，真实浏览器 E2E PASS）：卡片从"浅底身份顶栏 + 表单式标签值堆叠"改为清晰层级——状态 pill 独立置于右上角一行（不再挤压名称宽度，长名称不再被 pill 截断）；头像 64→72px（`EmployeeAvatar` 新增 `xxl` 档）；「最近运行」升为主角指标（小灰标签 + 17px 粗体大字，成功绿/失败红双编码）；治理行与 Token 预算降为次级元信息；操作区「详情」改实心主按钮占主宽、「配置」降 ghost 次按钮，不再两键平铺。验证：Vitest employees 16 文件 137 例全过；admin 真实登录 :3000/employees，overview API 200、12 张卡按新结构渲染（截图 .scratch/employees-card-real.png）。
 - 2026-07-22 00:38（dei 物理拆表）：`DROP VIEW digital_employee_runtime_readiness` + `DROP TABLE digital_employee_execution_instances`；删 dei CRUD/sqlc、死 provider-session JOIN、skill required-tools 旧链、GET `/execution-instance` 与 OpenAPI/Web 客户端；standalone preflight 改租户最少负载在线节点 + 合成 compat `execution_instance_id`。远程库表/视图均已消失；列表/详情页眉去掉「执行实例」残留文案。admin 浏览器走查：`/employees` overview 200、详情无 `execution-instance` 请求、调度就绪度指向项目 Runtime、开始任务抽屉可开；`/run-overview` 仅读 overview。
 - 2026-07-21 23:31（dei 外科手术版退役 A–D）：杀协调备用腿 `AreRuntimeReady`/dei readiness 兜底与 planning/preflight 的员工级执行实例回退；总览 `execution_summary` 落点改最近一次 `task_runs`；封删 `PUT .../execution-instance`；迁移重建 readiness 视图为身份+治理+租户 provider 判据并 `DELETE` dei 数据行。
 - 2026-07-22 00:40（收件箱全局 SSE——任意页角标秒级更新，真实浏览器 E2E PASS）：原 SSE 只挂收件箱页，其它页仅靠侧栏 badge 30s 轮询，任务完成后须手动刷新才见验收卡。抽出 `useInboxChangeStream`，挂到 `AuthenticatedLayout`（每登录会话一条长连接）；收件箱页去重双连；badge 轮询 30s→60s 兜底。不引入消息队列。验证：Vitest hook/layout/inbox 29/29；项目页停留时 DB 插入 open inbox 项→侧栏「收件箱 1」出现，进收件箱即见条目无需 F5。

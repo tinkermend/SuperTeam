@@ -3,7 +3,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
 import { cn } from "@/lib/utils";
 
-type EmployeeAvatarSize = "sm" | "md" | "lg" | "xl" | "hero";
+type EmployeeAvatarSize = "sm" | "md" | "lg" | "xl" | "xxl" | "hero";
 
 type EmployeeAvatarProps = {
   asset?: DigitalEmployeeAvatarAsset | null;
@@ -16,6 +16,7 @@ const sizeClass: Record<EmployeeAvatarSize, string> = {
   md: "size-10",
   lg: "size-12",
   xl: "size-16",
+  xxl: "size-[72px]",
   hero: "size-20",
 };
 
@@ -24,6 +25,7 @@ const iconClass: Record<EmployeeAvatarSize, string> = {
   md: "size-4",
   lg: "size-5",
   xl: "size-6",
+  xxl: "size-7",
   hero: "size-7",
 };
 
