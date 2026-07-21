@@ -1784,14 +1784,15 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 // family). approved → the paused attempt yields and the task goes back to
 // planned, returned as ready for a normal dispatch round (gate + run start —
 // queuing an attempt directly would strand it: no run means the runtime never
-// picks it up). rejected → mark the task failed. Any other resolution leaves
-// the task waiting. Idempotent: a task no longer waiting (already released or
-// terminal) is a no-op, so signal retries are safe.
+// picks it up). rejected/cancelled → mark the task failed. Any other resolution
+// (e.g. needs_more_evidence) leaves the task waiting. Idempotent: a task no
+// longer waiting (already released or terminal) is a no-op, so signal retries
+// are safe.
 func (s *ProjectStore) applyTaskHumanWaitRelease(ctx context.Context, input ApplyPreDispatchGateDecisionInput, decision project.DecisionRequest) (ApplyPreDispatchGateDecisionResult, error) {
 	var markFailed bool
 	switch strings.ToLower(strings.TrimSpace(input.Decision)) {
 	case "approved":
-	case "rejected":
+	case "rejected", "cancelled":
 		markFailed = true
 	default:
 		return ApplyPreDispatchGateDecisionResult{}, nil

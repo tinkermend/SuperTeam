@@ -571,6 +571,68 @@ func TestProjectStoreApplyPreDispatchGateDecisionIgnoresNonApprovalGateDecision(
 	require.Empty(t, result.ReadyTaskIDs)
 }
 
+func TestProjectStoreApplyPreDispatchGateDecisionFailsGateLinkedApprovalOnReject(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	decisionID := uuid.New()
+	gateID := uuid.New()
+	taskIDCopy := taskID
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "High-risk action parked at gate",
+			Status:                    project.ProjectTaskStatusWaitingHuman,
+			AssignedDigitalEmployeeID: &employeeID,
+			WaitingRequestID:          &decisionID,
+			AttemptCount:              0,
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:                   decisionID,
+			TenantID:             tenantID,
+			ProjectID:            projectID,
+			ApprovalRequestID:    uuid.New(),
+			ProjectTaskID:        &taskIDCopy,
+			TargetUserID:         uuid.New(),
+			DecisionType:         "project_task_approval",
+			TitleSnapshot:        "高风险动作需要确认",
+			StatusSnapshot:       "rejected",
+			DispatchGateResultID: &gateID,
+		}},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{})
+
+	result, err := store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "rejected",
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, result.ReadyTaskIDs, "veto must not re-dispatch")
+	require.NotNil(t, repo.recoveryReleaseReq)
+	require.Equal(t, decisionID, repo.recoveryReleaseReq.DecisionRequestID)
+	require.True(t, repo.recoveryReleaseReq.MarkFailed, "gate-linked reject must MarkFailed like other wait families")
+
+	// approved still falls through to ready-for-dispatch (no MarkFailed release)
+	repo.decisionRequests[0].StatusSnapshot = "approved"
+	repo.recoveryReleaseReq = nil
+	result, err = store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{taskID}, result.ReadyTaskIDs)
+	require.Nil(t, repo.recoveryReleaseReq)
+}
+
 func TestProjectStoreApplyPreDispatchGateDecisionReleasesRecoveryWait(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

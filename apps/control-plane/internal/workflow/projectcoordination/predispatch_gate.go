@@ -293,8 +293,10 @@ func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input A
 	// histories already carry such signals) to the old dead-end path until
 	// continue-as-new. Activity executions are never replayed, so live signals
 	// gain the release immediately. project_task_acceptance is NOT released
-	// here — Service.resolveProjectTaskWaitDecision completes it; a gate-linked
-	// project_task_approval keeps the original gate re-dispatch below.
+	// here — Service.resolveProjectTaskWaitDecision completes it. Gate-linked
+	// project_task_approval approved keeps the original gate re-dispatch below;
+	// rejected/cancelled must MarkFailed via applyTaskHumanWaitRelease or the
+	// task stays forever in waiting_human after the decision card is consumed.
 	switch decision.DecisionType {
 	case "project_task_recovery", "project_task_runtime_recovery",
 		"project_task_clarification", "project_task_missing_context",
@@ -303,6 +305,9 @@ func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input A
 		return s.applyTaskHumanWaitRelease(ctx, input, decision)
 	case "project_task_approval":
 		if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID == uuid.Nil {
+			return s.applyTaskHumanWaitRelease(ctx, input, decision)
+		}
+		if !strings.EqualFold(strings.TrimSpace(input.Decision), "approved") {
 			return s.applyTaskHumanWaitRelease(ctx, input, decision)
 		}
 	}

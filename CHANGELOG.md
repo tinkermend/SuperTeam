@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-21 23:28（Gate 型高风险审批驳回无终结修复，真实链路 E2E PASS）：`ApplyPreDispatchGateDecision` 对带 `DispatchGateResultID` 的 `project_task_approval` 原先只在 approved 时放行重派，rejected 直接 `{}, nil`，决策卡已消费、任务永滞 `waiting_human`。现与非 gate 等待族对齐：非 approved 走 `applyTaskHumanWaitRelease`（rejected/cancelled→MarkFailed→任务 failed+需求重算）。定向测试 `TestProjectStoreApplyPreDispatchGateDecisionFailsGateLinkedApprovalOnReject` PASS。真实链路：restart CP→种 gate-linked pending 卡→`POST .../decisions/{id}/resolve` rejected 200→任务 `waiting_human`→`failed`、决策 `rejected`、事件 `project_task.failed`。
 - 2026-07-21 22:35（数字员工网格卡去掉 Provider 行）：Provider 仅保留在右侧选中侧栏，避免与侧栏同构。Vitest employees index 20/20；restart web。
 - 2026-07-21 22:32（选中员工侧栏大头像+完整说明，与网格卡差异化，真实浏览器 PASS）：网格卡去掉说明预览，只扫读名称/团队/事实行；右侧 `GallerySelectedPanel` 头像升 `hero`(80px)、说明全文展示（超长 `max-h-40` 滚动），保留运行态/Provider/最新事件/查看详情。验证：Vitest employees index 20/20；浏览器选中「测试一下」侧栏含完整说明、网格卡无说明正文。
 - 2026-07-21 21:56（数字员工卡展示说明 + 创建填说明，真实浏览器 PASS）：列表卡去掉「身份：就绪」工作台态与「类型·团队」拼接，改为名称下仅团队（无则「无团队归属」）+ `description` 两行截断；事实行「运行」展示运营态。创建身份步新增可选「员工说明」并提交已有 `description` 字段（模板默认带入类型描述）。配置后编辑说明因无身份更新 API 延后（TODO.md）。验证：Vitest employees index+create 71/71；restart web 后 `/employees` 卡头团队/说明与运行行符合预期。
