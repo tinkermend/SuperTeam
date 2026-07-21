@@ -224,7 +224,7 @@ export function CreateProjectView({
       <ShellPageHeader
         back={<ShellPageHeaderBack ariaLabel="返回项目管理" to="/projects" />}
         title="新建项目工作台"
-        subtitle="建立项目事实容器，配置负责人、团队、数字员工池与策略预设。"
+        subtitle="建立项目事实容器，配置负责人、团队、数字员工池与协调策略。"
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <CreateProjectShell

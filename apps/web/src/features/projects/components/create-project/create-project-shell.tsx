@@ -146,7 +146,7 @@ export function CreateProjectShell({
               <div>
                 <p className="text-[12px] font-bold text-v3-brand">项目管理 / 新建项目</p>
                 <h2 className="mt-1 text-xl font-extrabold tracking-tight text-v3-ink" id="project-create-title">新建项目</h2>
-                <p className="mt-1 text-[13px] text-v3-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与策略预设。</p>
+                <p className="mt-1 text-[13px] text-v3-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与协调策略。</p>
               </div>
               <Button aria-label="关闭新建项目" className="size-9 rounded-[10px]" onClick={onCancel} size="icon" type="button" variant="ghost">
                 <X className="size-5" />

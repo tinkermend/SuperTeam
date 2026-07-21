@@ -31,7 +31,7 @@ export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: Proj
     },
     { group: "人类负责人", label: "额外负责人", value: `${draft.ownerUsers.length} 位已选` },
     { group: "数字员工池", label: "执行员工", value: `${draft.selectedDigitalEmployees.length} 位已选` },
-    { group: "协调策略", label: "策略预设", value: policyPresetLabel(draft.policyPreset) },
+    { group: "协调策略", label: "协调预设", value: policyPresetLabel(draft.policyPreset) },
     {
       group: "协调策略",
       label: "审计日志",
