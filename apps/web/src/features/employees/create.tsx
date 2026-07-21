@@ -86,6 +86,7 @@ type WizardDraft = {
     skills: string[];
   };
   daily_token_limit: string;
+  description: string;
   employee_type: string;
   avatar_asset_id: string;
   name: string;
@@ -126,6 +127,7 @@ const emptyDraft: WizardDraft = {
     skills: [],
   },
   daily_token_limit: "",
+  description: "",
   employee_type: "",
   avatar_asset_id: "",
   name: "",
@@ -238,6 +240,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             name: draft.name.trim(),
             avatar_asset_id: draft.avatar_asset_id,
             role: draft.role.trim(),
+            ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
             ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
             budget_policy: budgetPolicyFromDraft(draft),
             ...capabilitySelectionFromDraft(draft, createOptions.data),
@@ -1204,6 +1207,10 @@ function ConfirmCreationStep({
             ) : null}
             <InlineSummary label="名称" value={draft.name.trim() || "未填写"} />
             <InlineSummary label="职责定位" value={draft.role || "未填写"} />
+            <InlineSummary
+              label="员工说明"
+              value={draft.description.trim() || "未填写"}
+            />
             <InlineSummary label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
           </div>
         </section>
@@ -1272,7 +1279,7 @@ function IdentityStep({
     <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-lg font-semibold text-v3-ink">身份</h2>
-        <p className="text-sm text-v3-ink-3">确定团队、名称和职责定位。负责人由后端按当前登录身份注入。</p>
+        <p className="text-sm text-v3-ink-3">确定团队、名称、职责定位与员工说明。负责人由后端按当前登录身份注入。</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="归属团队" error={errors.team_id ?? teamCapacityError}>
@@ -1321,6 +1328,18 @@ function IdentityStep({
             <option value="critical">严重</option>
           </select>
         </Field>
+        <div className="md:col-span-2">
+          <Field label="员工说明">
+            <Textarea
+              id="employee-description"
+              placeholder="简述这位数字员工负责什么、边界与协作方式，便于列表扫读识别。"
+              rows={3}
+              value={draft.description}
+              onChange={(event) => onUpdate({ description: event.target.value })}
+            />
+            <p className="text-xs text-v3-ink-3">可选。会出现在数字员工卡片上，超出两行以省略号截断。</p>
+          </Field>
+        </div>
       </div>
       <div className="v3-glass-inner p-3 text-sm">
         <div className="font-semibold text-v3-ink">
@@ -1771,6 +1790,7 @@ const labelId: Record<string, string> = {
   名称: "employee-name",
   归属团队: "employee-team",
   职责定位: "employee-role",
+  员工说明: "employee-description",
   风险等级: "employee-risk",
   "每日 Token 预算上限": "daily-token-limit",
 };
@@ -1792,6 +1812,7 @@ function applyTypeDefaults(
     capability_bindings: capabilityBindingDefaults(typeOption.capability_bindings),
     capability_binding_draft: recommendedCapabilitySelection(typeOption, options),
     daily_token_limit: dailyTokenLimit,
+    description: typeOption.description ?? "",
     employee_type: typeOption.type,
     persona_memory_markdown: typeOption.persona_memory_markdown ?? "",
     risk_level: stringValue(policyDefaults?.approval_policy?.min_risk_for_human) || "medium",
@@ -1808,6 +1829,7 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
       mcp_servers: [],
       skills: [],
     },
+    description: "",
     employee_type: BLANK_CUSTOM_EMPLOYEE_TYPE,
     persona_memory_markdown: "",
     risk_level: "medium",

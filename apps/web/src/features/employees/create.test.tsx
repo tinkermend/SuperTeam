@@ -791,14 +791,14 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByText("这里只提交员工个人扩展项。")).toBeVisible();
   });
 
-  it("configures blank custom without employee type or description fields", async () => {
+  it("configures blank custom with employee description and without employee type field", async () => {
     const screen = await renderCreateEmployeeView();
 
     await enterBlankCustomConfiguration(screen);
 
     await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
     expect(screen.getByLabelText("员工类型").query()).toBeNull();
-    expect(screen.getByLabelText("描述").query()).toBeNull();
+    await expect.element(screen.getByLabelText("员工说明")).toBeVisible();
     expect(document.body.textContent).toContain("自定义身份");
     expect(document.body.textContent).not.toContain("custom_agent");
     await expect.element(screen.getByLabelText("职责定位")).toHaveValue("");

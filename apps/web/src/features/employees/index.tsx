@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
-  Cpu,
   LayoutTemplate,
   Link as LinkIcon,
   Plus,
@@ -43,7 +42,6 @@ import {
   type DigitalEmployeeOverview,
   type DigitalEmployeeOverviewFilters,
   type DigitalEmployeeOverviewItem,
-  type DigitalEmployeeWorkbenchStatus,
   type OverviewFilterOption,
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -473,7 +471,7 @@ function GalleryFilterBar({
 
 /* ============================================================
  * 头像优先画廊卡（AvatarGalleryCard）
- * 方向 C：居中大头像 + 角色徽章 + 紧凑指标行
+ * 身份顶栏：浅底横条 + 左侧大头像轻微上溢 + 右侧名称/状态
  * ============================================================ */
 
 function AvatarGalleryCard({
@@ -502,40 +500,30 @@ function AvatarGalleryCard({
       }}
       tabIndex={0}
       className={cn(
-        "group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card p-4 text-left shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
+        "group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card px-4 pb-4 pt-5 text-left shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
         selected && "border-v3-brand bg-v3-brand-soft/40 shadow-v3-pop ring-1 ring-v3-brand/20",
       )}
     >
       {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-v3-brand" /> : null}
 
-      {/* 头像区：居中 */}
-      <div className="flex flex-col items-center gap-2 pb-3">
-        <div className="relative">
-          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
+      {/* 身份顶栏：浅底板 + 左侧大头像上溢 + 右侧名称/团队/说明 */}
+      <div className="relative mb-3 mt-3 rounded-v3-inner bg-v3-card-soft px-3 py-3">
+        <div className="absolute -top-2.5 left-3">
+          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="hero" />
         </div>
-        <div className="w-full text-center">
+        <div className="min-h-16 min-w-0 pl-[92px]">
           <p className="truncate text-[13.5px] font-bold text-v3-ink">{identity.name}</p>
           <p className="mt-0.5 truncate text-[11px] text-v3-ink-3">
-            {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
+            {identity.team_name?.trim() || "无团队归属"}
           </p>
         </div>
-        <StatusPill tone={operationalStatus.tone}>{`运行：${operationalStatus.label}`}</StatusPill>
       </div>
 
       {/* 指标行 */}
       <div className="flex flex-col gap-1.5 border-t border-v3-line pt-2.5 text-[11.5px]">
         <div className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1 text-v3-ink-3">
-            <Cpu className="size-3" aria-hidden />
-            Provider
-          </span>
-          <span className="truncate text-right font-semibold text-v3-ink">
-            {identityProviderLine(item)}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-v3-ink-3">身份：</span>
-          <span className="font-semibold text-v3-ink">{workbenchStatusLabel(item.workbench_status)}</span>
+          <span className="text-v3-ink-3">运行</span>
+          <StatusPill tone={operationalStatus.tone}>{operationalStatus.label}</StatusPill>
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-v3-ink-3">最近运行</span>
@@ -762,33 +750,35 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
   const identity = item.identity_summary;
   const avatarAsset = overviewAvatarAsset(item);
   const operationalStatus = operationalStatusPresentation(item.operational_state?.status);
+  const description = identity.description?.trim() ?? "";
 
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="font-semibold">选中员工</h2>
       </div>
-      <div className="flex flex-col items-center gap-2">
-        <div className="relative">
-          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
+      <div className="flex flex-col items-center gap-3">
+        <div className="flex size-[5.5rem] items-center justify-center rounded-full bg-v3-card-soft ring-1 ring-v3-line">
+          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="hero" />
         </div>
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2">
-            <p className="truncate font-semibold">{identity.name}</p>
-          </div>
+        <div className="w-full text-center">
+          <p className="truncate font-semibold text-v3-ink">{identity.name}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
+            {identity.team_name?.trim() || "无团队归属"}
           </p>
           <div className="mt-2 flex justify-center">
             <StatusPill tone={operationalStatus.tone}>{`运行：${operationalStatus.label}`}</StatusPill>
           </div>
         </div>
       </div>
-      <div className="flex flex-col gap-1.5 text-xs">
-        <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
-          <span className="text-v3-ink-3">身份</span>
-          <span className="font-semibold text-v3-ink">{workbenchStatusLabel(item.workbench_status)}</span>
+      {description ? (
+        <div className="max-h-40 overflow-y-auto rounded-v3-inner bg-v3-card-soft px-3 py-2.5 text-left">
+          <p className="text-sm leading-5 text-v3-ink-2 whitespace-pre-wrap break-words">{description}</p>
         </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">暂无员工说明</p>
+      )}
+      <div className="flex flex-col gap-1.5 text-xs">
         <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
           <span className="text-v3-ink-3">Provider</span>
           <span className="text-right font-semibold text-v3-ink">{identityProviderLine(item)}</span>
@@ -893,10 +883,6 @@ function updateFilter(
 
 function formatNumber(value: number | undefined | null) {
   return new Intl.NumberFormat("en-US").format(value ?? 0);
-}
-
-function workbenchStatusLabel(status: DigitalEmployeeWorkbenchStatus) {
-  return status === "ready" ? "就绪" : status === "needs_configuration" ? "待配置" : "异常";
 }
 
 /** Provider 行显示身份级 agent 能力(claude/codex/opencode);运行落点由项目派发时动态解析,不在卡片上展示 Runtime 节点。 */

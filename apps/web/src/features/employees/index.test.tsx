@@ -329,12 +329,22 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("配置待审批")).toBeVisible();
     await expect.element(screen.getByText("运行失败").first()).toBeVisible();
     await expect.element(readyArticle).toBeVisible();
-    expect(readyArticle.element().textContent).toContain("身份：就绪");
+    expect(readyArticle.element().textContent).toContain("空闲");
+    expect(readyArticle.element().textContent).toContain("产品组");
+    // 完整说明只在右侧选中栏，网格卡不做多行预览
+    expect(readyArticle.element().textContent).not.toContain("负责需求拆解和交付风险识别");
+    expect(readyArticle.element().textContent).not.toContain("身份：就绪");
+    expect(readyArticle.element().textContent).not.toContain("自定义数字员工");
+    await expect.element(screen.getByRole("heading", { name: "选中员工" })).toBeVisible();
+    await expect.element(screen.getByText("负责需求拆解和交付风险识别")).toBeVisible();
     await expect.element(screen.getByAltText("需求分析员工 的头像").first()).toHaveAttribute(
       "src",
       "/images/digital-employee-avatars/engineer-f-01-256.webp",
     );
     await expect.element(screen.getByText("产品组").first()).toBeVisible();
+    // Provider 只在选中侧栏展示，网格卡不再重复
+    expect(readyArticle.element().textContent).not.toContain("Claude Code");
+    expect(readyArticle.element().textContent).not.toContain("Provider");
     await expect.element(screen.getByText("Claude Code").first()).toBeVisible();
     await expect.element(screen.getByText("成功 · 2 分钟前")).toBeVisible();
     await expect.element(screen.getByText("无预算上限")).toBeVisible();
@@ -402,15 +412,16 @@ describe("EmployeesView", () => {
     expect(main?.textContent).toContain("创建数字员工");
   });
 
-  it("renders needs-configuration employees with identity provider instead of runtime binding", async () => {
+  it("renders needs-configuration employees without runtime binding placeholder", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
     const unboundArticle = employeeArticle(screen, "待配置员工");
 
     await expect.element(unboundArticle).toBeVisible();
-    expect(unboundArticle.element().textContent).toContain("身份：待配置");
-    // 身份级 provider 始终可显示;不得再出现"等待绑定 Runtime Agent"占位。
-    expect(unboundArticle.element().textContent).toContain("Codex");
+    expect(unboundArticle.element().textContent).toContain("待配置");
+    expect(unboundArticle.element().textContent).not.toContain("身份：待配置");
+    // Provider 已迁到选中侧栏；网格卡不得再出现 Runtime 绑定占位。
     expect(unboundArticle.element().textContent).not.toContain("等待绑定 Runtime Agent");
+    expect(unboundArticle.element().textContent).not.toContain("Provider");
   });
 
   it("renders waiting-human operational status from the API state", async () => {

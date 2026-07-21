@@ -3,16 +3,28 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
 import { cn } from "@/lib/utils";
 
+type EmployeeAvatarSize = "sm" | "md" | "lg" | "xl" | "hero";
+
 type EmployeeAvatarProps = {
   asset?: DigitalEmployeeAvatarAsset | null;
   name: string;
-  size?: "sm" | "md" | "lg";
+  size?: EmployeeAvatarSize;
 };
 
-const sizeClass = {
+const sizeClass: Record<EmployeeAvatarSize, string> = {
   sm: "size-9",
   md: "size-10",
   lg: "size-12",
+  xl: "size-16",
+  hero: "size-20",
+};
+
+const iconClass: Record<EmployeeAvatarSize, string> = {
+  sm: "size-4",
+  md: "size-4",
+  lg: "size-5",
+  xl: "size-6",
+  hero: "size-7",
 };
 
 export function EmployeeAvatar({ asset, name, size = "md" }: EmployeeAvatarProps) {
@@ -22,7 +34,7 @@ export function EmployeeAvatar({ asset, name, size = "md" }: EmployeeAvatarProps
         <AvatarImage alt={`${name} 的头像`} className="object-cover" src={asset.thumbnail_url} />
       ) : null}
       <AvatarFallback aria-label={`${name} 的头像`} className="text-muted-foreground">
-        <Bot />
+        <Bot className={iconClass[size]} />
       </AvatarFallback>
     </Avatar>
   );
