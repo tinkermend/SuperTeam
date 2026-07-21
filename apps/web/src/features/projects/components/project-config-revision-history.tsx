@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FileArchive, GitBranch, History, ShieldCheck } from "lucide-react";
+import { GitBranch, History } from "lucide-react";
 import {
   IconTile,
   ObjectRef,
@@ -28,16 +28,6 @@ const policySections = [
     icon: GitBranch,
     keys: ["coordination_policy", "coordinationPolicy"],
     title: "协调策略",
-  },
-  {
-    icon: ShieldCheck,
-    keys: ["approval_policy", "approvalPolicy"],
-    title: "审批策略",
-  },
-  {
-    icon: FileArchive,
-    keys: ["evidence_policy", "evidencePolicy"],
-    title: "证据归档规则",
   },
 ] as const;
 

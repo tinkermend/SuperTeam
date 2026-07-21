@@ -61,30 +61,9 @@ export function ProjectPolicyStep({ draft, onChange }: ProjectPolicyStepProps) {
           label="新需求需要人工确认"
           onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, newDemandNeedsHumanConfirmation: checked } })}
         />
-        <PolicyToggle
-          checked={draft.policyToggles.highRiskActionNeedsConfirmation}
-          description="涉及数据删除、权限变更、外部调用等高风险动作需暂停并等待主负责人确认。"
-          label="高风险动作暂停等待确认"
-          onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, highRiskActionNeedsConfirmation: checked } })}
-        />
-        <PolicyToggle
-          checked={draft.policyToggles.requireEvidenceBeforeAcceptance}
-          description="最终验收前必须补齐产出、测试、日志或审计证据。"
-          label="验收前必须补齐证据"
-          onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, requireEvidenceBeforeAcceptance: checked } })}
-        />
-        <PolicyToggle
-          checked={draft.policyToggles.budgetOverrunNeedsOwnerApproval}
-          description="实际消耗超过预算阈值时，需要主负责人审批后继续。"
-          label="预算超限需负责人审批"
-          onCheckedChange={(checked) => onChange({ ...draft, policyToggles: { ...draft.policyToggles, budgetOverrunNeedsOwnerApproval: checked } })}
-        />
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <StatusPill tone="info">审批策略</StatusPill>
-        <StatusPill tone="artifact">工作契约</StatusPill>
-        <StatusPill tone="warn">证据要求</StatusPill>
         <StatusPill tone="ok">审计默认开启</StatusPill>
       </div>
     </div>

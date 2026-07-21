@@ -274,14 +274,6 @@ func (s *routeCapabilityService) ListEffectiveMCPConfig(ctx context.Context, req
 	return s.effectiveServers, nil
 }
 
-func (s *routeCapabilityService) ListProjectMCPBindings(context.Context, capability.ProjectScopedRequest) ([]capability.MCPBinding, error) {
-	return []capability.MCPBinding{s.mcpBinding}, nil
-}
-
-func (s *routeCapabilityService) PutProjectMCPBindings(context.Context, capability.PutProjectMCPBindingsRequest) ([]capability.MCPBinding, error) {
-	return []capability.MCPBinding{s.mcpBinding}, nil
-}
-
 func (s *routeCapabilityService) ListSkillMCPDependencies(ctx context.Context, req capability.ListSkillMCPDependenciesRequest) ([]capability.SkillMCPDependency, error) {
 	s.listSkillDependenciesReq = req
 	return s.skillMCPDependencies, nil

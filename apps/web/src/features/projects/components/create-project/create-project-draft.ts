@@ -9,7 +9,7 @@ export const projectCreateSteps: Array<{ id: ProjectCreateStep; label: string }>
   { id: "owners", label: "人类负责人" },
   { id: "digitalEmployees", label: "数字员工池" },
   { id: "runtimeNodes", label: "可运行节点" },
-  { id: "policies", label: "策略预设" },
+  { id: "policies", label: "协调策略" },
 ];
 
 export type ProjectPolicyPreset = "standard" | "lightweight" | "highRisk";
@@ -22,10 +22,7 @@ export type ProjectCreateDraft = {
   policyPreset: ProjectPolicyPreset;
   policyToggles: {
     auditLogEnabled: boolean;
-    budgetOverrunNeedsOwnerApproval: boolean;
-    highRiskActionNeedsConfirmation: boolean;
     newDemandNeedsHumanConfirmation: boolean;
-    requireEvidenceBeforeAcceptance: boolean;
   };
   runtimeNodeIds: string[];
   scenarioTemplateKey: string;
@@ -40,10 +37,7 @@ export const emptyProjectCreateDraft: ProjectCreateDraft = {
   policyPreset: "standard",
   policyToggles: {
     auditLogEnabled: true,
-    budgetOverrunNeedsOwnerApproval: false,
-    highRiskActionNeedsConfirmation: true,
     newDemandNeedsHumanConfirmation: true,
-    requireEvidenceBeforeAcceptance: true,
   },
   ownerUsers: [],
   runtimeNodeIds: [],
@@ -69,24 +63,15 @@ export function selectedSourceTeams(
 const POLICY_PRESETS: Record<ProjectPolicyPreset, ProjectCreateDraft["policyToggles"]> = {
   standard: {
     auditLogEnabled: true,
-    budgetOverrunNeedsOwnerApproval: false,
-    highRiskActionNeedsConfirmation: true,
     newDemandNeedsHumanConfirmation: true,
-    requireEvidenceBeforeAcceptance: true,
   },
   lightweight: {
     auditLogEnabled: true,
-    budgetOverrunNeedsOwnerApproval: false,
-    highRiskActionNeedsConfirmation: true,
     newDemandNeedsHumanConfirmation: false,
-    requireEvidenceBeforeAcceptance: false,
   },
   highRisk: {
     auditLogEnabled: true,
-    budgetOverrunNeedsOwnerApproval: true,
-    highRiskActionNeedsConfirmation: true,
     newDemandNeedsHumanConfirmation: true,
-    requireEvidenceBeforeAcceptance: true,
   },
 };
 
@@ -148,21 +133,12 @@ export function buildProjectCreateInput(
   }
 
   return {
-    approval_policy: {
-      budget_overrun_requires_owner_approval: draft.policyToggles.budgetOverrunNeedsOwnerApproval,
-      high_risk_action_requires_confirmation: draft.policyToggles.highRiskActionNeedsConfirmation,
-      new_demand_requires_human_confirmation: draft.policyToggles.newDemandNeedsHumanConfirmation,
-      preset: draft.policyPreset,
-    },
     coordination_policy: {
       audit_log_enabled: draft.policyToggles.auditLogEnabled,
+      require_human_review_for_new_demands: draft.policyToggles.newDemandNeedsHumanConfirmation,
       preset: draft.policyPreset,
     },
     description: draft.description.trim() || undefined,
-    evidence_policy: {
-      acceptance_requires_evidence: draft.policyToggles.requireEvidenceBeforeAcceptance,
-      preset: draft.policyPreset,
-    },
     goal: draft.goal.trim(),
     human_owner_user_id: ownerIDs[0],
     human_owner_user_ids: ownerIDs,

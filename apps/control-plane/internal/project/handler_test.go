@@ -2777,8 +2777,6 @@ func testProject(tenantID, projectID, ownerID uuid.UUID) Project {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 		CoordinationPolicy:     map[string]any{},
-		ApprovalPolicy:         map[string]any{},
-		EvidencePolicy:         map[string]any{},
 		RepoBinding:            unboundProjectRepoBinding(),
 		CreatedAt:              now,
 		UpdatedAt:              now,

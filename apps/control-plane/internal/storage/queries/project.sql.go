@@ -82,7 +82,7 @@ SET status = 'archived',
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
 `
 
 type ArchiveProjectParams struct {
@@ -105,8 +105,6 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 		&i.CoordinationWorkflowID,
 		&i.CoordinationStatus,
 		&i.CoordinationPolicy,
-		&i.ApprovalPolicy,
-		&i.EvidencePolicy,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -702,8 +700,6 @@ INSERT INTO projects (
     coordination_workflow_id,
     coordination_status,
     coordination_policy,
-    approval_policy,
-    evidence_policy,
     repo_url,
     repo_default_branch,
     repo_git_credential_ref,
@@ -723,15 +719,13 @@ INSERT INTO projects (
     $10::varchar,
     $11::varchar,
     COALESCE($12::jsonb, '{}'::jsonb),
-    COALESCE($13::jsonb, '{}'::jsonb),
-    COALESCE($14::jsonb, '{}'::jsonb),
-    $15::text,
-    $16::varchar,
-    $17::varchar,
-    COALESCE($18::jsonb, '[]'::jsonb),
-    COALESCE($19::varchar, 'unbound'),
-    $20::text
-) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+    $13::text,
+    $14::varchar,
+    $15::varchar,
+    COALESCE($16::jsonb, '[]'::jsonb),
+    COALESCE($17::varchar, 'unbound'),
+    $18::text
+) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
 `
 
 type CreateProjectParams struct {
@@ -747,8 +741,6 @@ type CreateProjectParams struct {
 	CoordinationWorkflowID pgtype.Text   `json:"coordination_workflow_id"`
 	CoordinationStatus     pgtype.Text   `json:"coordination_status"`
 	CoordinationPolicy     []byte        `json:"coordination_policy"`
-	ApprovalPolicy         []byte        `json:"approval_policy"`
-	EvidencePolicy         []byte        `json:"evidence_policy"`
 	RepoUrl                pgtype.Text   `json:"repo_url"`
 	RepoDefaultBranch      pgtype.Text   `json:"repo_default_branch"`
 	RepoGitCredentialRef   pgtype.Text   `json:"repo_git_credential_ref"`
@@ -771,8 +763,6 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.CoordinationWorkflowID,
 		arg.CoordinationStatus,
 		arg.CoordinationPolicy,
-		arg.ApprovalPolicy,
-		arg.EvidencePolicy,
 		arg.RepoUrl,
 		arg.RepoDefaultBranch,
 		arg.RepoGitCredentialRef,
@@ -793,8 +783,6 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.CoordinationWorkflowID,
 		&i.CoordinationStatus,
 		&i.CoordinationPolicy,
-		&i.ApprovalPolicy,
-		&i.EvidencePolicy,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2845,7 +2833,7 @@ func (q *Queries) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.C
 }
 
 const GetProject = `-- name: GetProject :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -2871,8 +2859,6 @@ func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project
 		&i.CoordinationWorkflowID,
 		&i.CoordinationStatus,
 		&i.CoordinationPolicy,
-		&i.ApprovalPolicy,
-		&i.EvidencePolicy,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -3228,7 +3214,7 @@ func (q *Queries) GetProjectEventByTypeAndActor(ctx context.Context, arg GetProj
 }
 
 const GetProjectForDelete = `-- name: GetProjectForDelete :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -3255,8 +3241,6 @@ func (q *Queries) GetProjectForDelete(ctx context.Context, arg GetProjectForDele
 		&i.CoordinationWorkflowID,
 		&i.CoordinationStatus,
 		&i.CoordinationPolicy,
-		&i.ApprovalPolicy,
-		&i.EvidencePolicy,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -6164,7 +6148,7 @@ func (q *Queries) ListProjectTransferRequests(ctx context.Context, arg ListProje
 }
 
 const ListProjects = `-- name: ListProjects :many
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
   AND ($2::varchar IS NULL OR status = $2::varchar)
@@ -6212,8 +6196,6 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.CoordinationWorkflowID,
 			&i.CoordinationStatus,
 			&i.CoordinationPolicy,
-			&i.ApprovalPolicy,
-			&i.EvidencePolicy,
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -8513,7 +8495,7 @@ SET deleted_at = COALESCE(deleted_at, $1::timestamptz),
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
 `
 
 type SoftDeleteProjectParams struct {
@@ -8537,8 +8519,6 @@ func (q *Queries) SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectPa
 		&i.CoordinationWorkflowID,
 		&i.CoordinationStatus,
 		&i.CoordinationPolicy,
-		&i.ApprovalPolicy,
-		&i.EvidencePolicy,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -8709,7 +8689,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND status = ANY($4::varchar[])
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
 `
 
 type TransitionProjectStatusParams struct {
@@ -8742,8 +8722,6 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 		&i.CoordinationWorkflowID,
 		&i.CoordinationStatus,
 		&i.CoordinationPolicy,
-		&i.ApprovalPolicy,
-		&i.EvidencePolicy,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -8769,34 +8747,32 @@ SET
     human_owner_user_id = COALESCE($5::uuid, human_owner_user_id),
     human_owner_user_ids = COALESCE($6::uuid[], human_owner_user_ids),
     coordination_policy = COALESCE($7::jsonb, coordination_policy),
-    approval_policy = COALESCE($8::jsonb, approval_policy),
-    evidence_policy = COALESCE($9::jsonb, evidence_policy),
     repo_url = CASE
-        WHEN $10::varchar IS NULL THEN repo_url
-        WHEN $10::varchar = 'unbound' THEN NULL
-        ELSE $11::text
+        WHEN $8::varchar IS NULL THEN repo_url
+        WHEN $8::varchar = 'unbound' THEN NULL
+        ELSE $9::text
     END,
     repo_default_branch = CASE
-        WHEN $10::varchar IS NULL THEN repo_default_branch
-        WHEN $10::varchar = 'unbound' THEN NULL
-        ELSE $12::varchar
+        WHEN $8::varchar IS NULL THEN repo_default_branch
+        WHEN $8::varchar = 'unbound' THEN NULL
+        ELSE $10::varchar
     END,
     repo_git_credential_ref = CASE
-        WHEN $10::varchar IS NULL THEN repo_git_credential_ref
-        WHEN $10::varchar = 'unbound' THEN NULL
-        ELSE $13::varchar
+        WHEN $8::varchar IS NULL THEN repo_git_credential_ref
+        WHEN $8::varchar = 'unbound' THEN NULL
+        ELSE $11::varchar
     END,
     repo_scope = CASE
-        WHEN $10::varchar IS NULL THEN repo_scope
-        WHEN $10::varchar = 'unbound' THEN '[]'::jsonb
-        ELSE COALESCE($14::jsonb, '[]'::jsonb)
+        WHEN $8::varchar IS NULL THEN repo_scope
+        WHEN $8::varchar = 'unbound' THEN '[]'::jsonb
+        ELSE COALESCE($12::jsonb, '[]'::jsonb)
     END,
-    repo_binding_status = COALESCE($10::varchar, repo_binding_status),
+    repo_binding_status = COALESCE($8::varchar, repo_binding_status),
     updated_at = NOW()
-WHERE tenant_id = $15::uuid
-  AND id = $16::uuid
+WHERE tenant_id = $13::uuid
+  AND id = $14::uuid
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
 `
 
 type UpdateProjectParams struct {
@@ -8807,8 +8783,6 @@ type UpdateProjectParams struct {
 	HumanOwnerUserID     uuid.NullUUID `json:"human_owner_user_id"`
 	HumanOwnerUserIds    []uuid.UUID   `json:"human_owner_user_ids"`
 	CoordinationPolicy   []byte        `json:"coordination_policy"`
-	ApprovalPolicy       []byte        `json:"approval_policy"`
-	EvidencePolicy       []byte        `json:"evidence_policy"`
 	RepoBindingStatus    pgtype.Text   `json:"repo_binding_status"`
 	RepoUrl              pgtype.Text   `json:"repo_url"`
 	RepoDefaultBranch    pgtype.Text   `json:"repo_default_branch"`
@@ -8827,8 +8801,6 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.HumanOwnerUserID,
 		arg.HumanOwnerUserIds,
 		arg.CoordinationPolicy,
-		arg.ApprovalPolicy,
-		arg.EvidencePolicy,
 		arg.RepoBindingStatus,
 		arg.RepoUrl,
 		arg.RepoDefaultBranch,
@@ -8850,8 +8822,6 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.CoordinationWorkflowID,
 		&i.CoordinationStatus,
 		&i.CoordinationPolicy,
-		&i.ApprovalPolicy,
-		&i.EvidencePolicy,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,

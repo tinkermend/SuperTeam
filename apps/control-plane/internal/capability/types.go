@@ -73,17 +73,14 @@ type MCPDefinition struct {
 	UpdatedAt          time.Time
 }
 
-// MCPBinding represents a team, employee or project binding to a registered MCP definition,
+// MCPBinding represents a team or employee binding to a registered MCP definition,
 // enriched with the definition's projection fields and a preflight (MissingEnvVars) computed
-// against the target employee's configured env vars where applicable. 项目绑定（迁移 072）
-// 沿用同一行类型：team/employee/project 三个维度靠对应的 ID 指针与 SourceScope 区分，
-// 不另设独立的 ProjectMCPBinding 结构（team 版也没有独立结构）。
+// against the target employee's configured env vars where applicable.
 type MCPBinding struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
 	TeamID            *uuid.UUID
 	DigitalEmployeeID *uuid.UUID
-	ProjectID         *uuid.UUID
 	MCPServerID       uuid.UUID
 	CredentialEnvVar  string
 	ServerName        string
@@ -203,27 +200,6 @@ type DeleteTeamMCPBindingRequest struct {
 	TeamID    uuid.UUID
 	UserID    uuid.UUID
 	BindingID uuid.UUID
-}
-
-type ProjectScopedRequest struct {
-	TenantID  uuid.UUID
-	UserID    uuid.UUID
-	ProjectID uuid.UUID
-}
-
-// ProjectMCPBindingInput is one desired project binding in a declarative replace.
-type ProjectMCPBindingInput struct {
-	MCPServerID      uuid.UUID
-	CredentialEnvVar string
-}
-
-// PutProjectMCPBindingsRequest declaratively replaces a project's MCP bindings
-// with the desired set（目录与能力投影修订 spec §3.2：项目公共 MCP 走注册表正门）.
-type PutProjectMCPBindingsRequest struct {
-	TenantID  uuid.UUID
-	ProjectID uuid.UUID
-	UserID    uuid.UUID
-	Items     []ProjectMCPBindingInput
 }
 
 type ListSkillMCPDependenciesRequest struct {

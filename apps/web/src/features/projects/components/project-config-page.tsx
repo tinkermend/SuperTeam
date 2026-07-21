@@ -80,10 +80,8 @@ type ProjectConfigViewProps = {
 };
 
 type ConfigDraft = {
-  approvalPolicy: string;
   coordinationPolicy: string;
   description: string;
-  evidencePolicy: string;
   goal: string;
   name: string;
 };
@@ -288,9 +286,7 @@ export function ProjectConfigView({
           current
             ? {
                 ...current,
-                approval_policy: project.approval_policy,
                 coordination_policy: project.coordination_policy,
-                evidence_policy: project.evidence_policy,
                 project,
               }
             : current,
@@ -587,10 +583,8 @@ export function ProjectConfigView({
 
 function emptyConfigDraft(): ConfigDraft {
   return {
-    approvalPolicy: "{}",
     coordinationPolicy: "{}",
     description: "",
-    evidencePolicy: "{}",
     goal: "",
     name: "",
   };
@@ -605,10 +599,8 @@ function getLatestConfigRevision(revisions: ProjectConfigRevision[]) {
 
 function configToDraft(config: ProjectConfig): ConfigDraft {
   return {
-    approvalPolicy: JSON.stringify(config.approval_policy ?? {}, null, 2),
     coordinationPolicy: JSON.stringify(config.coordination_policy ?? {}, null, 2),
     description: config.project.description ?? "",
-    evidencePolicy: JSON.stringify(config.evidence_policy ?? {}, null, 2),
     goal: config.project.goal,
     name: config.project.name,
   };
@@ -632,10 +624,8 @@ function configToMemberDraft(config: ProjectConfig): MemberDraft {
 
 function draftToInput(draft: ConfigDraft): UpdateProjectConfigInput {
   return {
-    approval_policy: parseJsonObject(draft.approvalPolicy, "审批规则"),
     coordination_policy: parseJsonObject(draft.coordinationPolicy, "协调策略"),
     description: draft.description.trim() || undefined,
-    evidence_policy: parseJsonObject(draft.evidencePolicy, "证据归档"),
     goal: draft.goal.trim() || undefined,
     name: draft.name.trim() || undefined,
   };

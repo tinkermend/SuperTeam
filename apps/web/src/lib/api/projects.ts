@@ -167,8 +167,6 @@ export type Project = {
   coordination_workflow_id: string;
   coordination_status: string;
   coordination_policy: Record<string, unknown>;
-  approval_policy: Record<string, unknown>;
-  evidence_policy: Record<string, unknown>;
   archived_at?: string;
   allowed_actions?: string[];
   created_at?: string;
@@ -467,8 +465,6 @@ export type ProjectConfig = {
   digital_employee_pool: ProjectMember[];
   members: ProjectMember[];
   coordination_policy: Record<string, unknown>;
-  approval_policy: Record<string, unknown>;
-  evidence_policy: Record<string, unknown>;
   coordination_workflow: ProjectCoordinationWorkflow;
 };
 
@@ -851,8 +847,6 @@ export type CreateProjectInput = {
   human_owner_user_ids?: string[];
   members?: ProjectMemberInput[];
   coordination_policy?: Record<string, unknown>;
-  approval_policy?: Record<string, unknown>;
-  evidence_policy?: Record<string, unknown>;
   runtime_node_ids: string[];
   scenario_template_key?: string;
 };
@@ -869,8 +863,6 @@ export type UpdateProjectConfigInput = {
   human_owner_user_id?: string;
   members?: ProjectMemberInput[];
   coordination_policy?: Record<string, unknown>;
-  approval_policy?: Record<string, unknown>;
-  evidence_policy?: Record<string, unknown>;
 };
 
 export type SubmitProjectDemandInput = {

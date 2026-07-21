@@ -18,11 +18,9 @@ const ownerId = "user-owner-1";
 
 function project(id: string, overrides: Partial<Project> = {}): Project {
   return {
-    approval_policy: {},
     coordination_policy: {},
     coordination_status: "registered",
     coordination_workflow_id: `project-coordinator:${id}`,
-    evidence_policy: {},
     goal: "完成项目闭环",
     human_owner_user_id: ownerId,
     id,

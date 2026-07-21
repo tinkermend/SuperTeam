@@ -97,11 +97,9 @@ function jsonResponse(body: unknown, status = 200) {
 function makeProject(id: string, name: string, status: Project["status"] = "running"): Project {
   const updatedAt = id === "project-2" ? "2026-06-05T02:28:13Z" : "2026-06-04T02:28:13Z";
   return {
-    approval_policy: { high_risk: "human" },
     coordination_policy: { cadence: "daily" },
     coordination_status: "registered",
     coordination_workflow_id: `project-coordinator:${id}`,
-    evidence_policy: { archive: "required" },
     goal: `${name} 闭环目标`,
     human_owner_user_id: "human-owner-1",
     id,
@@ -2252,17 +2250,14 @@ describe("ProjectsView", () => {
         name: "客户验收推进",
         team_id: TEAM_REVIEW_ID,
         runtime_node_ids: ["runtime-node-1"],
-        approval_policy: {
-          budget_overrun_requires_owner_approval: true,
-          high_risk_action_requires_confirmation: true,
-          new_demand_requires_human_confirmation: true,
-          preset: "highRisk",
-        },
-        evidence_policy: {
-          acceptance_requires_evidence: true,
+        coordination_policy: {
+          audit_log_enabled: true,
+          require_human_review_for_new_demands: true,
           preset: "highRisk",
         },
       });
+      expect(body).not.toHaveProperty("approval_policy");
+      expect(body).not.toHaveProperty("evidence_policy");
       expect(body).not.toHaveProperty("leader_user_id");
       expect(body).not.toHaveProperty("acceptance_user_id");
       expect(body.members).toEqual(

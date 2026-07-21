@@ -3153,47 +3153,6 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/projects/{projectId}/mcp-bindings:
-    get:
-      operationId: listProjectMCPBindings
-      summary: List project MCP bindings to registered MCP servers
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      responses:
-        "200":
-          description: Project MCP binding list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/MCPBinding"
-        "403":
-          $ref: "#/components/responses/Error"
-    put:
-      operationId: putProjectMCPBindings
-      summary: Declaratively replace the project's MCP bindings with the desired set
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PutProjectMCPBindingsRequest"
-      responses:
-        "200":
-          description: Project MCP binding list after replacement
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/MCPBinding"
-        "400":
-          $ref: "#/components/responses/Error"
-        "403":
-          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/mcp-bindings-v2:
     get:
       operationId: listEmployeeMCPBindingsV2
@@ -6297,8 +6256,6 @@ components:
         - coordination_workflow_id
         - coordination_status
         - coordination_policy
-        - approval_policy
-        - evidence_policy
         - repo_binding
       properties:
         id:
@@ -6334,12 +6291,6 @@ components:
         scenario_template_key:
           type: string
         coordination_policy:
-          type: object
-          additionalProperties: true
-        approval_policy:
-          type: object
-          additionalProperties: true
-        evidence_policy:
           type: object
           additionalProperties: true
         repo_binding:
@@ -8319,8 +8270,6 @@ components:
         - digital_employee_pool
         - members
         - coordination_policy
-        - approval_policy
-        - evidence_policy
         - coordination_workflow
       properties:
         project:
@@ -8338,12 +8287,6 @@ components:
           items:
             $ref: "#/components/schemas/ProjectMember"
         coordination_policy:
-          type: object
-          additionalProperties: true
-        approval_policy:
-          type: object
-          additionalProperties: true
-        evidence_policy:
           type: object
           additionalProperties: true
         coordination_workflow:
@@ -8430,12 +8373,6 @@ components:
         coordination_policy:
           type: object
           additionalProperties: true
-        approval_policy:
-          type: object
-          additionalProperties: true
-        evidence_policy:
-          type: object
-          additionalProperties: true
         runtime_node_ids:
           type: array
           minItems: 1
@@ -8477,12 +8414,6 @@ components:
           items:
             $ref: "#/components/schemas/ProjectMemberInput"
         coordination_policy:
-          type: object
-          additionalProperties: true
-        approval_policy:
-          type: object
-          additionalProperties: true
-        evidence_policy:
           type: object
           additionalProperties: true
         repo_binding:
@@ -10259,23 +10190,6 @@ components:
           format: uuid
         credential_env_var:
           type: string
-    PutProjectMCPBindingsRequest:
-      type: object
-      required:
-        - items
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            required:
-              - mcp_server_id
-            properties:
-              mcp_server_id:
-                type: string
-                format: uuid
-              credential_env_var:
-                type: string
     MCPBinding:
       type: object
       required:

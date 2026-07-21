@@ -36,8 +36,6 @@ func TestProjectFromRecordMapsPoliciesAndOptionalUsers(t *testing.T) {
 		CoordinationWorkflowID: pgtype.Text{String: "project-coordinator:abc", Valid: true},
 		CoordinationStatus:     pgtype.Text{String: "registered", Valid: true},
 		CoordinationPolicy:     []byte(`{"auto_dispatch_low_risk":true}`),
-		ApprovalPolicy:         []byte(`{"high_risk":"required"}`),
-		EvidencePolicy:         []byte(`{"required":["TaskSummary"]}`),
 		ArchivedAt:             pgtype.Timestamptz{Time: archivedAt, Valid: true},
 		CreatedAt:              pgtype.Timestamptz{Time: archivedAt.Add(-time.Hour), Valid: true},
 		UpdatedAt:              pgtype.Timestamptz{Time: archivedAt, Valid: true},
@@ -61,9 +59,6 @@ func TestProjectFromRecordMapsPoliciesAndOptionalUsers(t *testing.T) {
 	}
 	if project.CoordinationPolicy["auto_dispatch_low_risk"] != true {
 		t.Fatalf("expected coordination policy, got %#v", project.CoordinationPolicy)
-	}
-	if project.ApprovalPolicy["high_risk"] != "required" {
-		t.Fatalf("expected approval policy, got %#v", project.ApprovalPolicy)
 	}
 }
 

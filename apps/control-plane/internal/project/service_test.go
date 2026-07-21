@@ -11325,8 +11325,6 @@ func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectR
 		CoordinationWorkflowID: workflowID,
 		CoordinationStatus:     "registered",
 		CoordinationPolicy:     req.CoordinationPolicy,
-		ApprovalPolicy:         req.ApprovalPolicy,
-		EvidencePolicy:         req.EvidencePolicy,
 		RepoBinding:            repoBindingFromInput(req.RepoBinding),
 		ScenarioTemplateKey:    req.ScenarioTemplateKey,
 	}
@@ -11422,12 +11420,6 @@ func (r *memoryRepository) UpdateProjectConfig(ctx context.Context, req UpdatePr
 	}
 	if req.CoordinationPolicy != nil {
 		project.CoordinationPolicy = req.CoordinationPolicy
-	}
-	if req.ApprovalPolicy != nil {
-		project.ApprovalPolicy = req.ApprovalPolicy
-	}
-	if req.EvidencePolicy != nil {
-		project.EvidencePolicy = req.EvidencePolicy
 	}
 	if req.RepoBinding != nil {
 		project.RepoBinding = repoBindingFromInput(req.RepoBinding)

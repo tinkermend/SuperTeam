@@ -22,10 +22,6 @@ type serviceRepo struct {
 	effectiveByEmployee  map[uuid.UUID][]EffectiveMCPServer // keyed by digital employee ID
 	existingSkills       map[uuid.UUID]bool                 // keyed by skill ID, for SkillExistsForTenant
 
-	effectiveByProject     map[uuid.UUID][]EffectiveMCPServer // keyed by project ID, for runtime projection merge
-	projectBindings        map[uuid.UUID][]MCPBinding         // keyed by project ID
-	putProjectBindingsArgs []ProjectMCPBindingInput
-	putProjectBindingsHit  bool
 }
 
 func (r *serviceRepo) CreateMCPServerDefinition(_ context.Context, req CreateMCPServerDefinitionRequest) (MCPDefinition, error) {
@@ -94,36 +90,6 @@ func (r *serviceRepo) ListEffectiveMCPBindingsV2(_ context.Context, req Employee
 
 func (r *serviceRepo) ListConfiguredEmployeeEnvVarNames(context.Context, uuid.UUID, uuid.UUID) ([]string, error) {
 	return r.configuredEnvVars, nil
-}
-
-func (r *serviceRepo) PutProjectMCPBindings(_ context.Context, tenantID, projectID, _ uuid.UUID, items []ProjectMCPBindingInput) ([]MCPBinding, error) {
-	r.putProjectBindingsHit = true
-	r.putProjectBindingsArgs = items
-	if r.projectBindings == nil {
-		r.projectBindings = map[uuid.UUID][]MCPBinding{}
-	}
-	bindings := make([]MCPBinding, 0, len(items))
-	for _, item := range items {
-		pid := projectID
-		bindings = append(bindings, MCPBinding{
-			ID:               uuid.New(),
-			TenantID:         tenantID,
-			ProjectID:        &pid,
-			MCPServerID:      item.MCPServerID,
-			CredentialEnvVar: item.CredentialEnvVar,
-			SourceScope:      "project",
-		})
-	}
-	r.projectBindings[projectID] = bindings
-	return bindings, nil
-}
-
-func (r *serviceRepo) ListProjectMCPBindings(_ context.Context, req ProjectScopedRequest) ([]MCPBinding, error) {
-	return r.projectBindings[req.ProjectID], nil
-}
-
-func (r *serviceRepo) ListEffectiveProjectMCPServers(_ context.Context, _, projectID, _ uuid.UUID) ([]EffectiveMCPServer, error) {
-	return r.effectiveByProject[projectID], nil
 }
 
 func (r *serviceRepo) SkillExistsForTenant(_ context.Context, _, skillID uuid.UUID) (bool, error) {
@@ -411,180 +377,38 @@ func TestServiceEvaluateEmployeeSkillMCPDependenciesReturnsEmptyWhenEmployeeHasN
 }
 
 // ----------------------------------------------------------------------------
-// 项目级 MCP 绑定（迁移 072，目录与能力投影修订 spec §3.2）
-// ----------------------------------------------------------------------------
-
-func TestServicePutProjectMCPBindingsValidatesServersAndReplaces(t *testing.T) {
-	tenantID := uuid.New()
-	projectID := uuid.New()
-	userID := uuid.New()
-	repo := &serviceRepo{}
-	serverID := repo.seedDefinition(tenantID, "github-mcp")
-	service := NewService(repo, nil)
-
-	bindings, err := service.PutProjectMCPBindings(context.Background(), PutProjectMCPBindingsRequest{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		UserID:    userID,
-		Items:     []ProjectMCPBindingInput{{MCPServerID: serverID, CredentialEnvVar: "  GH_TOKEN  "}},
-	})
-	if err != nil {
-		t.Fatalf("put project mcp bindings: %v", err)
-	}
-	if !repo.putProjectBindingsHit {
-		t.Fatalf("expected repository replace to be called")
-	}
-	if len(repo.putProjectBindingsArgs) != 1 || repo.putProjectBindingsArgs[0].CredentialEnvVar != "GH_TOKEN" {
-		t.Fatalf("expected trimmed credential env var, got %#v", repo.putProjectBindingsArgs)
-	}
-	if len(bindings) != 1 || bindings[0].ProjectID == nil || *bindings[0].ProjectID != projectID || bindings[0].SourceScope != "project" {
-		t.Fatalf("expected project-scoped binding response, got %#v", bindings)
-	}
-}
-
-func TestServicePutProjectMCPBindingsAllowsEmptySetAsClear(t *testing.T) {
-	tenantID := uuid.New()
-	repo := &serviceRepo{}
-	service := NewService(repo, nil)
-
-	bindings, err := service.PutProjectMCPBindings(context.Background(), PutProjectMCPBindingsRequest{
-		TenantID:  tenantID,
-		ProjectID: uuid.New(),
-		UserID:    uuid.New(),
-		Items:     nil,
-	})
-	if err != nil {
-		t.Fatalf("put empty project mcp bindings: %v", err)
-	}
-	if !repo.putProjectBindingsHit {
-		t.Fatalf("expected repository replace to be called for declarative clear")
-	}
-	if len(bindings) != 0 {
-		t.Fatalf("expected empty binding set, got %#v", bindings)
-	}
-}
-
-func TestServicePutProjectMCPBindingsRejectsInvalidItems(t *testing.T) {
-	tenantID := uuid.New()
-	repo := &serviceRepo{}
-	activeID := repo.seedDefinition(tenantID, "github-mcp")
-	service := NewService(repo, nil)
-
-	tests := []struct {
-		name    string
-		items   []ProjectMCPBindingInput
-		wantErr string
-	}{
-		{
-			name:    "nil server id",
-			items:   []ProjectMCPBindingInput{{MCPServerID: uuid.Nil}},
-			wantErr: "mcp_server_id is required",
-		},
-		{
-			name:    "duplicate server id",
-			items:   []ProjectMCPBindingInput{{MCPServerID: activeID}, {MCPServerID: activeID}},
-			wantErr: "duplicate mcp_server_id",
-		},
-		{
-			name:    "unknown server",
-			items:   []ProjectMCPBindingInput{{MCPServerID: uuid.New()}},
-			wantErr: "not found",
-		},
-		{
-			name:    "invalid credential env var",
-			items:   []ProjectMCPBindingInput{{MCPServerID: activeID, CredentialEnvVar: "1BAD NAME"}},
-			wantErr: "invalid credential env var name",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo.putProjectBindingsHit = false
-			_, err := service.PutProjectMCPBindings(context.Background(), PutProjectMCPBindingsRequest{
-				TenantID:  tenantID,
-				ProjectID: uuid.New(),
-				UserID:    uuid.New(),
-				Items:     tt.items,
-			})
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
-			}
-			if repo.putProjectBindingsHit {
-				t.Fatalf("repository replace must not run on validation failure")
-			}
-		})
-	}
-}
-
-// TestServiceRuntimeProjectionMergesProjectBindingsWithPriority 覆盖投影合并语义：
-// 结果 = 员工侧集合 ∪ 项目绑定集合，同 server_key 时项目绑定优先（员工侧同 key 条目
-// 整条被替换，含 credential_env_var）；仅项目绑定的 server 也必须出现在结果里。
-func TestServiceRuntimeProjectionMergesProjectBindingsWithPriority(t *testing.T) {
+// TestServiceRuntimeProjectionIgnoresProjectID verifies that after project MCP binding
+// retirement, ListEffectiveMCPConfigForRuntime always returns employee-side servers only,
+// regardless of whether a projectID is provided.
+func TestServiceRuntimeProjectionIgnoresProjectID(t *testing.T) {
 	tenantID := uuid.New()
 	employeeID := uuid.New()
 	projectID := uuid.New()
-	sharedEmployeeServerID := uuid.New()
-	sharedProjectServerID := uuid.New()
-	employeeOnlyServerID := uuid.New()
-	projectOnlyServerID := uuid.New()
+	employeeServerID := uuid.New()
 
 	repo := &serviceRepo{}
-	repo.seedEffective(employeeID, employeeOnlyServerID, nil)
-	repo.effectiveByEmployee[employeeID] = []EffectiveMCPServer{
-		{ServerID: employeeOnlyServerID, ServerKey: "search-mcp", CredentialEnvVar: "SEARCH_TOKEN", SourceScope: "employee"},
-		{ServerID: sharedEmployeeServerID, ServerKey: "github-mcp", CredentialEnvVar: "EMPLOYEE_GH_TOKEN", SourceScope: "team"},
-	}
-	repo.effectiveByProject = map[uuid.UUID][]EffectiveMCPServer{
-		projectID: {
-			{ServerID: sharedProjectServerID, ServerKey: "github-mcp", CredentialEnvVar: "PROJECT_GH_TOKEN", SourceScope: "project"},
-			{ServerID: projectOnlyServerID, ServerKey: "deploy-mcp", SourceScope: "project", MissingEnvVars: []string{"DEPLOY_TOKEN"}},
+	repo.effectiveByEmployee = map[uuid.UUID][]EffectiveMCPServer{
+		employeeID: {
+			{ServerID: employeeServerID, ServerKey: "search-mcp", CredentialEnvVar: "SEARCH_TOKEN", SourceScope: "employee"},
 		},
 	}
 	service := NewService(repo, nil)
 
-	merged, err := service.ListEffectiveMCPConfigForRuntime(context.Background(), tenantID, employeeID, &projectID)
+	// With projectID provided: should still return only employee side.
+	withProject, err := service.ListEffectiveMCPConfigForRuntime(context.Background(), tenantID, employeeID, &projectID)
 	if err != nil {
-		t.Fatalf("list effective mcp config for runtime: %v", err)
+		t.Fatalf("list effective mcp config with project: %v", err)
 	}
-	byKey := map[string]EffectiveMCPServer{}
-	for _, server := range merged {
-		byKey[server.ServerKey] = server
-	}
-	if len(merged) != 3 {
-		t.Fatalf("expected 3 merged servers, got %#v", merged)
-	}
-	if got := byKey["github-mcp"]; got.SourceScope != "project" || got.CredentialEnvVar != "PROJECT_GH_TOKEN" || got.ServerID != sharedProjectServerID {
-		t.Fatalf("expected project binding to win on shared server_key, got %#v", got)
-	}
-	if got := byKey["search-mcp"]; got.SourceScope != "employee" {
-		t.Fatalf("expected employee-only server preserved, got %#v", got)
-	}
-	if got := byKey["deploy-mcp"]; got.SourceScope != "project" || len(got.MissingEnvVars) != 1 {
-		t.Fatalf("expected project-only server with env preflight preserved, got %#v", got)
+	if len(withProject) != 1 || withProject[0].ServerID != employeeServerID {
+		t.Fatalf("expected employee-side only, got %#v", withProject)
 	}
 
-	// projectID 为 nil 时是纯员工侧结果，项目绑定不得渗入。
-	employeeOnly, err := service.ListEffectiveMCPConfigForRuntime(context.Background(), tenantID, employeeID, nil)
+	// Without projectID: same result.
+	withoutProject, err := service.ListEffectiveMCPConfigForRuntime(context.Background(), tenantID, employeeID, nil)
 	if err != nil {
 		t.Fatalf("list effective mcp config without project: %v", err)
 	}
-	if len(employeeOnly) != 2 {
-		t.Fatalf("expected employee-side servers only, got %#v", employeeOnly)
-	}
-	for _, server := range employeeOnly {
-		if server.SourceScope == "project" {
-			t.Fatalf("project binding leaked into nil-project projection: %#v", server)
-		}
-	}
-}
-
-func TestServiceListProjectMCPBindingsValidatesScope(t *testing.T) {
-	repo := &serviceRepo{}
-	service := NewService(repo, nil)
-	_, err := service.ListProjectMCPBindings(context.Background(), ProjectScopedRequest{
-		TenantID: uuid.New(),
-		UserID:   uuid.New(),
-	})
-	if err == nil || !strings.Contains(err.Error(), "project_id is required") {
-		t.Fatalf("expected project_id validation error, got %v", err)
+	if len(withoutProject) != 1 || withoutProject[0].ServerID != employeeServerID {
+		t.Fatalf("expected employee-side only, got %#v", withoutProject)
 	}
 }

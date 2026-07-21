@@ -2576,10 +2576,8 @@ type CreateProjectEvidenceRequest struct {
 
 // CreateProjectRequest defines model for CreateProjectRequest.
 type CreateProjectRequest struct {
-	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
 	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
 	Description        *string                 `json:"description,omitempty"`
-	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
 	Goal               string                  `json:"goal"`
 	HumanOwnerUserId   openapi_types.UUID      `json:"human_owner_user_id"`
 
@@ -3954,14 +3952,12 @@ type PresignUploadResponse struct {
 // Project defines model for Project.
 type Project struct {
 	AllowedActions         *[]string              `json:"allowed_actions,omitempty"`
-	ApprovalPolicy         map[string]interface{} `json:"approval_policy"`
 	ArchivedAt             *time.Time             `json:"archived_at,omitempty"`
 	CoordinationPolicy     map[string]interface{} `json:"coordination_policy"`
 	CoordinationStatus     string                 `json:"coordination_status"`
 	CoordinationWorkflowId string                 `json:"coordination_workflow_id"`
 	CreatedAt              *time.Time             `json:"created_at,omitempty"`
 	Description            *string                `json:"description,omitempty"`
-	EvidencePolicy         map[string]interface{} `json:"evidence_policy"`
 	Goal                   string                 `json:"goal"`
 	HumanOwnerUserId       openapi_types.UUID     `json:"human_owner_user_id"`
 
@@ -4081,11 +4077,9 @@ type ProjectBudgetSummary struct {
 
 // ProjectConfig defines model for ProjectConfig.
 type ProjectConfig struct {
-	ApprovalPolicy       map[string]interface{}      `json:"approval_policy"`
 	CoordinationPolicy   map[string]interface{}      `json:"coordination_policy"`
 	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
 	DigitalEmployeePool  []ProjectMember             `json:"digital_employee_pool"`
-	EvidencePolicy       map[string]interface{}      `json:"evidence_policy"`
 	HumanRoles           []ProjectMember             `json:"human_roles"`
 	Members              []ProjectMember             `json:"members"`
 	Project              Project                     `json:"project"`
@@ -4856,14 +4850,6 @@ type ProviderSessionEvent1 = interface{}
 // PushTaskEventsRequest defines model for PushTaskEventsRequest.
 type PushTaskEventsRequest struct {
 	Events []map[string]interface{} `json:"events"`
-}
-
-// PutProjectMCPBindingsRequest defines model for PutProjectMCPBindingsRequest.
-type PutProjectMCPBindingsRequest struct {
-	Items []struct {
-		CredentialEnvVar *string            `json:"credential_env_var,omitempty"`
-		McpServerId      openapi_types.UUID `json:"mcp_server_id"`
-	} `json:"items"`
 }
 
 // ReassignDigitalEmployeeTeamRequest defines model for ReassignDigitalEmployeeTeamRequest.
@@ -5685,10 +5671,8 @@ type UpdateEmployeeTemplateRequest struct {
 
 // UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.
 type UpdateProjectConfigRequest struct {
-	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
 	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
 	Description        *string                 `json:"description,omitempty"`
-	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
 	Goal               *string                 `json:"goal,omitempty"`
 	HumanOwnerUserId   *openapi_types.UUID     `json:"human_owner_user_id,omitempty"`
 
@@ -6459,9 +6443,6 @@ type CreateProjectEvidenceJSONRequestBody = CreateProjectEvidenceRequest
 
 // PatchProjectEvidenceJSONRequestBody defines body for PatchProjectEvidence for application/json ContentType.
 type PatchProjectEvidenceJSONRequestBody = PatchProjectEvidenceRequest
-
-// PutProjectMCPBindingsJSONRequestBody defines body for PutProjectMCPBindings for application/json ContentType.
-type PutProjectMCPBindingsJSONRequestBody = PutProjectMCPBindingsRequest
 
 // ReplaceProjectMembersJSONRequestBody defines body for ReplaceProjectMembers for application/json ContentType.
 type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
@@ -7365,12 +7346,6 @@ type ServerInterface interface {
 	// Get project execution trace
 	// (GET /api/v1/projects/{projectId}/execution-trace)
 	GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectExecutionTraceParams)
-	// List project MCP bindings to registered MCP servers
-	// (GET /api/v1/projects/{projectId}/mcp-bindings)
-	ListProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
-	// Declaratively replace the project's MCP bindings with the desired set
-	// (PUT /api/v1/projects/{projectId}/mcp-bindings)
-	PutProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// List project members
 	// (GET /api/v1/projects/{projectId}/members)
 	ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -8298,18 +8273,6 @@ func (_ Unimplemented) ListProjectExecutionSummaries(w http.ResponseWriter, r *h
 // Get project execution trace
 // (GET /api/v1/projects/{projectId}/execution-trace)
 func (_ Unimplemented) GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectExecutionTraceParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List project MCP bindings to registered MCP servers
-// (GET /api/v1/projects/{projectId}/mcp-bindings)
-func (_ Unimplemented) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Declaratively replace the project's MCP bindings with the desired set
-// (PUT /api/v1/projects/{projectId}/mcp-bindings)
-func (_ Unimplemented) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -12609,58 +12572,6 @@ func (siw *ServerInterfaceWrapper) GetProjectExecutionTrace(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
-// ListProjectMCPBindings operation middleware
-func (siw *ServerInterfaceWrapper) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "projectId" -------------
-	var projectId ProjectId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListProjectMCPBindings(w, r, projectId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PutProjectMCPBindings operation middleware
-func (siw *ServerInterfaceWrapper) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "projectId" -------------
-	var projectId ProjectId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PutProjectMCPBindings(w, r, projectId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListProjectMembers operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 
@@ -16619,12 +16530,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/execution-trace", wrapper.GetProjectExecutionTrace)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/mcp-bindings", wrapper.ListProjectMCPBindings)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/mcp-bindings", wrapper.PutProjectMCPBindings)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/members", wrapper.ListProjectMembers)

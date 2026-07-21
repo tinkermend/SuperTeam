@@ -429,8 +429,6 @@ type Project struct {
 	CoordinationWorkflowID string
 	CoordinationStatus     string
 	CoordinationPolicy     map[string]any
-	ApprovalPolicy         map[string]any
-	EvidencePolicy         map[string]any
 	RepoBinding            ProjectRepoBinding
 	ScenarioTemplateKey    *string
 	ArchivedAt             *time.Time
@@ -1583,8 +1581,6 @@ type CreateProjectRequest struct {
 	HumanOwnerUserIDs  []uuid.UUID
 	Members            []ProjectMemberInput
 	CoordinationPolicy map[string]any
-	ApprovalPolicy     map[string]any
-	EvidencePolicy     map[string]any
 	RepoBinding        *ProjectRepoBindingInput
 	RuntimeNodeIDs     []uuid.UUID
 	// ScenarioTemplateKey binds the project to a scenario template; nil means
@@ -1632,8 +1628,6 @@ type UpdateProjectConfigRequest struct {
 	HumanOwnerUserID   uuid.UUID
 	Members            *[]ProjectMemberInput
 	CoordinationPolicy map[string]any
-	ApprovalPolicy     map[string]any
-	EvidencePolicy     map[string]any
 	RepoBinding        *ProjectRepoBindingInput
 }
 

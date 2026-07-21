@@ -159,9 +159,7 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		"goal":"完成 Runtime 接入验收",
 		"human_owner_user_id":"`+ownerID.String()+`",
 		"members":[{"principal_type":"human_user","principal_id":"`+ownerID.String()+`","project_role":"owner"}],
-		"coordination_policy":{"cadence":"daily"},
-		"approval_policy":{},
-		"evidence_policy":{}
+		"coordination_policy":{"cadence":"daily"}
 	}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
@@ -1839,8 +1837,6 @@ func routeProject(tenantID, projectID, ownerID uuid.UUID) project.Project {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 		CoordinationPolicy:     map[string]any{},
-		ApprovalPolicy:         map[string]any{},
-		EvidencePolicy:         map[string]any{},
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}

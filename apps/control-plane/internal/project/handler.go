@@ -277,8 +277,6 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		HumanOwnerUserIDs:   req.HumanOwnerUserIDs,
 		Members:             req.Members,
 		CoordinationPolicy:  req.CoordinationPolicy,
-		ApprovalPolicy:      req.ApprovalPolicy,
-		EvidencePolicy:      req.EvidencePolicy,
 		RepoBinding:         req.RepoBinding,
 		RuntimeNodeIDs:      req.RuntimeNodeIDs,
 		ScenarioTemplateKey: req.ScenarioTemplateKey,
@@ -1587,8 +1585,6 @@ func (h *HTTPHandler) updateProjectConfig(w http.ResponseWriter, r *http.Request
 		HumanOwnerUserID:   req.HumanOwnerUserID,
 		Members:            req.Members,
 		CoordinationPolicy: req.CoordinationPolicy,
-		ApprovalPolicy:     req.ApprovalPolicy,
-		EvidencePolicy:     req.EvidencePolicy,
 		RepoBinding:        req.RepoBinding,
 	})
 	if err != nil {
@@ -1841,8 +1837,6 @@ type createProjectBody struct {
 	HumanOwnerUserIDs   []uuid.UUID              `json:"human_owner_user_ids"`
 	Members             []ProjectMemberInput     `json:"members"`
 	CoordinationPolicy  map[string]any           `json:"coordination_policy"`
-	ApprovalPolicy      map[string]any           `json:"approval_policy"`
-	EvidencePolicy      map[string]any           `json:"evidence_policy"`
 	RepoBinding         *ProjectRepoBindingInput `json:"repo_binding"`
 	RuntimeNodeIDs      []uuid.UUID              `json:"runtime_node_ids"`
 	ScenarioTemplateKey *string                  `json:"scenario_template_key"`
@@ -1874,8 +1868,6 @@ type updateProjectBody struct {
 	HumanOwnerUserID   uuid.UUID                `json:"human_owner_user_id"`
 	Members            *[]ProjectMemberInput    `json:"members"`
 	CoordinationPolicy map[string]any           `json:"coordination_policy"`
-	ApprovalPolicy     map[string]any           `json:"approval_policy"`
-	EvidencePolicy     map[string]any           `json:"evidence_policy"`
 	RepoBinding        *ProjectRepoBindingInput `json:"repo_binding"`
 }
 
@@ -2184,8 +2176,6 @@ type projectResponse struct {
 	CoordinationWorkflowID string                     `json:"coordination_workflow_id"`
 	CoordinationStatus     string                     `json:"coordination_status"`
 	CoordinationPolicy     map[string]any             `json:"coordination_policy"`
-	ApprovalPolicy         map[string]any             `json:"approval_policy"`
-	EvidencePolicy         map[string]any             `json:"evidence_policy"`
 	RepoBinding            projectRepoBindingResponse `json:"repo_binding"`
 	ScenarioTemplateKey    *string                    `json:"scenario_template_key,omitempty"`
 	ArchivedAt             *string                    `json:"archived_at,omitempty"`
@@ -2902,8 +2892,6 @@ type projectConfigResponse struct {
 	DigitalEmployeePool  []projectMemberResponse     `json:"digital_employee_pool"`
 	Members              []projectMemberResponse     `json:"members"`
 	CoordinationPolicy   map[string]any              `json:"coordination_policy"`
-	ApprovalPolicy       map[string]any              `json:"approval_policy"`
-	EvidencePolicy       map[string]any              `json:"evidence_policy"`
 	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
 }
 
@@ -2952,8 +2940,6 @@ func projectResponseFromDomain(project Project) projectResponse {
 		CoordinationWorkflowID: project.CoordinationWorkflowID,
 		CoordinationStatus:     project.CoordinationStatus,
 		CoordinationPolicy:     mapOrEmpty(project.CoordinationPolicy),
-		ApprovalPolicy:         mapOrEmpty(project.ApprovalPolicy),
-		EvidencePolicy:         mapOrEmpty(project.EvidencePolicy),
 		RepoBinding:            projectRepoBindingResponseFromDomain(project.RepoBinding),
 		ScenarioTemplateKey:    project.ScenarioTemplateKey,
 		ArchivedAt:             timePtr(project.ArchivedAt),
@@ -3933,8 +3919,6 @@ func projectConfigResponseFromDomain(overview *ProjectOverview) projectConfigRes
 		DigitalEmployeePool:  memberResponses(overview.DigitalEmployeePool),
 		Members:              memberResponses(members),
 		CoordinationPolicy:   mapOrEmpty(overview.Project.CoordinationPolicy),
-		ApprovalPolicy:       mapOrEmpty(overview.Project.ApprovalPolicy),
-		EvidencePolicy:       mapOrEmpty(overview.Project.EvidencePolicy),
 		CoordinationWorkflow: overview.CoordinationWorkflow,
 	}
 }

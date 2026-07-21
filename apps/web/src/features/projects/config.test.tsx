@@ -63,12 +63,10 @@ function jsonResponse(body: unknown, status = 200) {
 
 function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
   const project = {
-    approval_policy: { high_risk: "human" },
     coordination_policy: { cadence: "daily" },
     coordination_status: "registered",
     coordination_workflow_id: "project-coordinator:project-1",
     description: "配置说明",
-    evidence_policy: { retention_days: 90 },
     goal: "完成客户接入验收",
     human_owner_user_id: "human-owner-1",
     human_owner_user_ids: ["human-owner-1"] as string[],
@@ -101,14 +99,12 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
   } as const;
 
   return {
-    approval_policy: project.approval_policy,
     coordination_policy: project.coordination_policy,
     coordination_workflow: {
       status: "registered",
       workflow_id: "project-coordinator:project-1",
     },
     digital_employee_pool: [digitalMember],
-    evidence_policy: project.evidence_policy,
     human_roles: [humanMember],
     members: [humanMember, digitalMember],
     project,
@@ -121,9 +117,7 @@ function makeConfigRevisions(): ProjectConfigRevision[] {
       changed_sections: ["coordination_policy"],
       change_summary: "提高协调频率",
       config_snapshot: {
-        approval_policy: { high_risk: "human" },
         coordination_policy: { cadence: "continuous" },
-        evidence_policy: { retention_days: 120 },
       },
       created_at: "2026-01-03T08:00:00Z",
       created_by_user_id: "human-owner-1",
@@ -136,18 +130,14 @@ function makeConfigRevisions(): ProjectConfigRevision[] {
       previous_revision_id: "revision-2",
     },
     {
-      changed_sections: ["approvalPolicy", "evidence_policy"],
-      change_summary: "补充审批和证据规则",
+      changed_sections: ["coordinationPolicy"],
+      change_summary: "调整协调策略",
       config_snapshot: {
-        project: {
-          approvalPolicy: { highRisk: "human_review" },
-          coordination_policy: { cadence: "hourly" },
-          evidence_policy: { archive_mode: "locked", retention_days: 90 },
-        },
+        coordination_policy: { cadence: "hourly" },
       },
       created_at: "2026-01-02T08:00:00Z",
       created_by_user_id: "leader-user-1",
-      diff_summary: { approvalPolicy: "changed", evidence_policy: "changed" },
+      diff_summary: { coordinationPolicy: "changed" },
       id: "revision-2",
       policy_fingerprint: "policy-fingerprint-2",
       project_id: "project-1",
@@ -159,9 +149,7 @@ function makeConfigRevisions(): ProjectConfigRevision[] {
       changed_sections: [],
       change_summary: "初始配置",
       config_snapshot: {
-        approval_policy: { high_risk: "human" },
         coordination_policy: { cadence: "daily" },
-        evidence_policy: { retention_days: 30 },
       },
       created_at: "2026-01-01T08:00:00Z",
       created_by_user_id: "human-owner-1",
@@ -179,9 +167,7 @@ function makeLatestRevision(): ProjectConfigRevision {
     changed_sections: ["coordination_policy"],
     change_summary: "新增最新修订",
     config_snapshot: {
-      approval_policy: { high_risk: "auto" },
       coordination_policy: { cadence: "minute" },
-      evidence_policy: { fallbackLatest: true, retention_days: 365 },
     },
     created_at: "2026-01-04T08:00:00Z",
     created_by_user_id: "human-owner-1",
@@ -330,14 +316,7 @@ describe("ProjectConfigView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "协调策略" }))
       .toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("heading", { name: "审批策略" }))
-      .toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("heading", { name: "证据归档规则" }))
-      .toBeInTheDocument();
-    await expect.element(screen.getByText(/human_review/)).toBeInTheDocument();
-    await expect.element(screen.getByText(/archive_mode/)).toBeInTheDocument();
+    await expect.element(screen.getByText(/hourly/)).toBeInTheDocument();
   });
 
   it("renders malformed config revision payloads with safe JSON fallbacks", async () => {
@@ -354,12 +333,6 @@ describe("ProjectConfigView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "协调策略" }))
       .toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("heading", { name: "审批策略" }))
-      .toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("heading", { name: "证据归档规则" }))
-      .toBeInTheDocument();
     await expect.element(screen.getByText("0 个变更区块")).toBeInTheDocument();
     await expect.element(screen.getByText("null").first()).toBeInTheDocument();
   });
@@ -370,15 +343,15 @@ describe("ProjectConfigView", () => {
     const { queryClient, screen } = await renderConfigWithClient(fetcher);
 
     await userEvent.click(screen.getByRole("button", { name: "查看 revision #2" }));
-    await expect.element(screen.getByText(/human_review/)).toBeInTheDocument();
+    await expect.element(screen.getByText(/hourly/)).toBeInTheDocument();
 
     revisions.unshift(makeLatestRevision());
     await queryClient.refetchQueries({
       queryKey: ["project-config-revisions", "project-1"],
     });
 
-    await expect.element(screen.getByText(/human_review/)).toBeInTheDocument();
-    await expect.element(screen.getByText(/fallbackLatest/)).not.toBeInTheDocument();
+    await expect.element(screen.getByText(/hourly/)).toBeInTheDocument();
+    await expect.element(screen.getByText(/minute/)).not.toBeInTheDocument();
 
     const selectedRevisionIndex = revisions.findIndex(
       (revision) => revision.id === "revision-2",
@@ -388,8 +361,8 @@ describe("ProjectConfigView", () => {
       queryKey: ["project-config-revisions", "project-1"],
     });
 
-    await expect.element(screen.getByText(/fallbackLatest/)).toBeInTheDocument();
-    await expect.element(screen.getByText(/human_review/)).not.toBeInTheDocument();
+    await expect.element(screen.getByText(/minute/)).toBeInTheDocument();
+    await expect.element(screen.getByText(/hourly/)).not.toBeInTheDocument();
   });
 
   it("renders config tabs and saves current project policy", async () => {

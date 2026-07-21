@@ -72,14 +72,6 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 	if err != nil {
 		return Project{}, err
 	}
-	approvalPolicy, err := jsonbObject(req.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return Project{}, err
-	}
-	evidencePolicy, err := jsonbObject(req.EvidencePolicy, "evidence_policy")
-	if err != nil {
-		return Project{}, err
-	}
 	repoParams, err := createProjectRepoBindingParams(req.RepoBinding)
 	if err != nil {
 		return Project{}, err
@@ -97,8 +89,6 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		CoordinationWorkflowID: textOrNull(workflowID),
 		CoordinationStatus:     textOrNull("registered"),
 		CoordinationPolicy:     coordinationPolicy,
-		ApprovalPolicy:         approvalPolicy,
-		EvidencePolicy:         evidencePolicy,
 		RepoUrl:                repoParams.url,
 		RepoDefaultBranch:      repoParams.defaultBranch,
 		RepoGitCredentialRef:   repoParams.gitCredentialRef,
@@ -279,14 +269,6 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 	if err != nil {
 		return Project{}, err
 	}
-	approvalPolicy, err := jsonbObjectOrNull(req.ApprovalPolicy, "approval_policy")
-	if err != nil {
-		return Project{}, err
-	}
-	evidencePolicy, err := jsonbObjectOrNull(req.EvidencePolicy, "evidence_policy")
-	if err != nil {
-		return Project{}, err
-	}
 	repoParams, err := updateProjectRepoBindingParams(req.RepoBinding)
 	if err != nil {
 		return Project{}, err
@@ -300,8 +282,6 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 		HumanOwnerUserID:     nullUUIDIfNotNil(req.HumanOwnerUserID),
 		HumanOwnerUserIds:    mirrorHumanOwnerIDs(req.HumanOwnerUserID),
 		CoordinationPolicy:   coordinationPolicy,
-		ApprovalPolicy:       approvalPolicy,
-		EvidencePolicy:       evidencePolicy,
 		RepoUrl:              repoParams.url,
 		RepoDefaultBranch:    repoParams.defaultBranch,
 		RepoGitCredentialRef: repoParams.gitCredentialRef,
@@ -6225,14 +6205,6 @@ func projectFromRecord(row queries.Project) (Project, error) {
 	if err != nil {
 		return Project{}, fmt.Errorf("coordination_policy: %w", err)
 	}
-	approvalPolicy, err := mapFromJSON(row.ApprovalPolicy)
-	if err != nil {
-		return Project{}, fmt.Errorf("approval_policy: %w", err)
-	}
-	evidencePolicy, err := mapFromJSON(row.EvidencePolicy)
-	if err != nil {
-		return Project{}, fmt.Errorf("evidence_policy: %w", err)
-	}
 	repoBinding, err := projectRepoBindingFromRecord(row)
 	if err != nil {
 		return Project{}, err
@@ -6250,8 +6222,6 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		CoordinationWorkflowID: textValue(row.CoordinationWorkflowID),
 		CoordinationStatus:     textValue(row.CoordinationStatus),
 		CoordinationPolicy:     coordinationPolicy,
-		ApprovalPolicy:         approvalPolicy,
-		EvidencePolicy:         evidencePolicy,
 		RepoBinding:            repoBinding,
 		ScenarioTemplateKey:    ptrText(row.ScenarioTemplateKey),
 		ArchivedAt:             ptrTime(row.ArchivedAt),
@@ -8053,12 +8023,6 @@ func projectConfigChangedSections(req UpdateProjectConfigRequest) []any {
 	if req.CoordinationPolicy != nil {
 		sections = append(sections, "coordination_policy")
 	}
-	if req.ApprovalPolicy != nil {
-		sections = append(sections, "approval_policy")
-	}
-	if req.EvidencePolicy != nil {
-		sections = append(sections, "evidence_policy")
-	}
 	if len(sections) > 0 {
 		return sections
 	}
@@ -8067,8 +8031,6 @@ func projectConfigChangedSections(req UpdateProjectConfigRequest) []any {
 		"goal",
 		"human_owner_user_id",
 		"coordination_policy",
-		"approval_policy",
-		"evidence_policy",
 	}
 }
 
@@ -8095,8 +8057,6 @@ func projectConfigSnapshot(project Project) map[string]any {
 		"status":              string(project.Status),
 		"human_owner_user_id": project.HumanOwnerUserID.String(),
 		"coordination_policy": project.CoordinationPolicy,
-		"approval_policy":     project.ApprovalPolicy,
-		"evidence_policy":     project.EvidencePolicy,
 	}
 	return snapshot
 }

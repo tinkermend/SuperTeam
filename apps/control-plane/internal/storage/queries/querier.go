@@ -115,10 +115,6 @@ type Querier interface {
 	CreateProjectEvent(ctx context.Context, arg CreateProjectEventParams) (ProjectEvent, error)
 	CreateProjectEvidenceRef(ctx context.Context, arg CreateProjectEvidenceRefParams) (ProjectEvidenceRef, error)
 	CreateProjectExecutionSummary(ctx context.Context, arg CreateProjectExecutionSummaryParams) (ProjectExecutionSummary, error)
-	// 项目级 MCP 绑定（迁移 072，目录与能力投影修订 spec §3.2）。
-	// 项目绑定是声明式全量替换（PUT 语义）：先软删项目下全部活跃绑定，再逐条插入
-	// 期望集合；部分失败向"更少能力"收敛（fail-closed），不会静默多授权。
-	CreateProjectMCPBinding(ctx context.Context, arg CreateProjectMCPBindingParams) (ProjectMcpBinding, error)
 	CreateProjectMember(ctx context.Context, arg CreateProjectMemberParams) (ProjectMember, error)
 	CreateProjectPlanDecompositionClaim(ctx context.Context, arg CreateProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	CreateProjectPlanRevision(ctx context.Context, arg CreateProjectPlanRevisionParams) (ProjectPlanRevision, error)
@@ -390,9 +386,6 @@ type Querier interface {
 	// required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
 	// returned here.
 	ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error)
-	// 项目绑定的运行时投影行：只取活跃绑定 × 活跃注册表定义。缺失 env 判定由调用方
-	// 用目标员工的已配置 env 集合完成（与员工侧投影同一套过滤逻辑），凭据值不经此路。
-	ListEffectiveProjectMCPBindingsForRuntime(ctx context.Context, arg ListEffectiveProjectMCPBindingsForRuntimeParams) ([]ListEffectiveProjectMCPBindingsForRuntimeRow, error)
 	ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmployeeMCPBindingsV2Params) ([]ListEmployeeMCPBindingsV2Row, error)
 	ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.UUID) ([]ListEmployeeTemplateLabelsRow, error)
 	// apps/control-plane/internal/storage/queries/digital_employee_templates.sql
@@ -434,7 +427,6 @@ type Querier interface {
 	ListProjectExecutionLedgerEvents(ctx context.Context, arg ListProjectExecutionLedgerEventsParams) ([]ExecutionLedgerEvent, error)
 	ListProjectExecutionSummaries(ctx context.Context, arg ListProjectExecutionSummariesParams) ([]ProjectExecutionSummary, error)
 	ListProjectExecutionSummariesByTaskIDs(ctx context.Context, arg ListProjectExecutionSummariesByTaskIDsParams) ([]ProjectExecutionSummary, error)
-	ListProjectMCPBindings(ctx context.Context, arg ListProjectMCPBindingsParams) ([]ListProjectMCPBindingsRow, error)
 	ListProjectMembers(ctx context.Context, arg ListProjectMembersParams) ([]ProjectMember, error)
 	ListProjectPlanRevisions(ctx context.Context, arg ListProjectPlanRevisionsParams) ([]ProjectPlanRevision, error)
 	ListProjectPlanRevisionsForDemand(ctx context.Context, arg ListProjectPlanRevisionsForDemandParams) ([]ProjectPlanRevision, error)
@@ -583,7 +575,6 @@ type Querier interface {
 	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
-	SoftDeleteProjectMCPBindingsForProject(ctx context.Context, arg SoftDeleteProjectMCPBindingsForProjectParams) error
 	// 删除进入待确认态:全站不可见(deleted_at),管理员恢复或确认后才物理删除。
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
 	SoftDeleteTeamMCPBindings(ctx context.Context, arg SoftDeleteTeamMCPBindingsParams) error

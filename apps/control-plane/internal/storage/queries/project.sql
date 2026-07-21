@@ -12,8 +12,6 @@ INSERT INTO projects (
     coordination_workflow_id,
     coordination_status,
     coordination_policy,
-    approval_policy,
-    evidence_policy,
     repo_url,
     repo_default_branch,
     repo_git_credential_ref,
@@ -33,8 +31,6 @@ INSERT INTO projects (
     sqlc.narg('coordination_workflow_id')::varchar,
     sqlc.narg('coordination_status')::varchar,
     COALESCE(sqlc.narg('coordination_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.narg('approval_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.narg('evidence_policy')::jsonb, '{}'::jsonb),
     sqlc.narg('repo_url')::text,
     sqlc.narg('repo_default_branch')::varchar,
     sqlc.narg('repo_git_credential_ref')::varchar,
@@ -433,8 +429,6 @@ SET
     human_owner_user_id = COALESCE(sqlc.narg('human_owner_user_id')::uuid, human_owner_user_id),
     human_owner_user_ids = COALESCE(sqlc.narg('human_owner_user_ids')::uuid[], human_owner_user_ids),
     coordination_policy = COALESCE(sqlc.narg('coordination_policy')::jsonb, coordination_policy),
-    approval_policy = COALESCE(sqlc.narg('approval_policy')::jsonb, approval_policy),
-    evidence_policy = COALESCE(sqlc.narg('evidence_policy')::jsonb, evidence_policy),
     repo_url = CASE
         WHEN sqlc.narg('repo_binding_status')::varchar IS NULL THEN repo_url
         WHEN sqlc.narg('repo_binding_status')::varchar = 'unbound' THEN NULL

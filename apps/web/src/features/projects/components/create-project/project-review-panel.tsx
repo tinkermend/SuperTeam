@@ -31,16 +31,16 @@ export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: Proj
     },
     { group: "人类负责人", label: "额外负责人", value: `${draft.ownerUsers.length} 位已选` },
     { group: "数字员工池", label: "执行员工", value: `${draft.selectedDigitalEmployees.length} 位已选` },
-    { group: "策略与审计", label: "策略预设", value: policyPresetLabel(draft.policyPreset) },
+    { group: "协调策略", label: "策略预设", value: policyPresetLabel(draft.policyPreset) },
     {
-      group: "策略与审计",
+      group: "协调策略",
       label: "审计日志",
       value: draft.policyToggles.auditLogEnabled ? "自动开启" : "未开启",
     },
     {
-      group: "策略与审计",
-      label: "证据要求",
-      value: draft.policyToggles.requireEvidenceBeforeAcceptance ? "验收前必须补齐" : "轻量要求",
+      group: "协调策略",
+      label: "新需求需人工确认",
+      value: draft.policyToggles.newDemandNeedsHumanConfirmation ? "是" : "否",
     },
   ];
 

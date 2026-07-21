@@ -25,9 +25,6 @@ type HandlerService interface {
 	ListEmployeeMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]MCPBinding, error)
 	DeleteEmployeeMCPBindingV2(ctx context.Context, req DeleteEmployeeMCPBindingV2Request) error
 	ListEffectiveMCPConfig(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error)
-	ListProjectMCPBindings(ctx context.Context, req ProjectScopedRequest) ([]MCPBinding, error)
-	PutProjectMCPBindings(ctx context.Context, req PutProjectMCPBindingsRequest) ([]MCPBinding, error)
-
 	ListSkillMCPDependencies(ctx context.Context, req ListSkillMCPDependenciesRequest) ([]SkillMCPDependency, error)
 	ReplaceSkillMCPDependencies(ctx context.Context, req ReplaceSkillMCPDependenciesRequest) ([]SkillMCPDependency, error)
 	ListDependentSkills(ctx context.Context, req ListDependentSkillsRequest) ([]DependentSkill, error)
@@ -303,77 +300,6 @@ func (h *HTTPHandler) DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.
 }
 
 // ----------------------------------------------------------------------------
-// 项目级 MCP 绑定（迁移 072，目录与能力投影修订 spec §3.2）
-// ----------------------------------------------------------------------------
-
-// ListProjectMCPBindings 走项目级 authz（ResourceProject + project.config.read，项目成员
-// 可读）：项目绑定属于项目配置面，归属边界由 checkProjectAccess 按项目成员关系裁决，
-// 与 team 绑定端点用 team 维度动作（ResourceTeam + team.capability.manage）同构。
-func (h *HTTPHandler) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := uuidParam(w, r, "projectId", "invalid project id")
-	if !ok {
-		return
-	}
-	tenantID, userID, ok := h.authorize(w, r, authz.ActionProjectConfigRead, authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()}, "project mcp binding read", nil)
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	bindings, err := service.ListProjectMCPBindings(r.Context(), ProjectScopedRequest{TenantID: tenantID, UserID: userID, ProjectID: projectID})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, mcpBindingResponses(bindings))
-}
-
-// PutProjectMCPBindings 声明式全量替换项目绑定集合；写路径要求 project.config.edit
-// （项目 human_owner 或租户管理员），项目成员只读不可改。
-func (h *HTTPHandler) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := uuidParam(w, r, "projectId", "invalid project id")
-	if !ok {
-		return
-	}
-	tenantID, userID, ok := h.authorize(w, r, authz.ActionProjectConfigEdit, authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()}, "project mcp binding replace", nil)
-	if !ok {
-		return
-	}
-	var body putProjectMCPBindingsRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeHandlerError(w, fmt.Errorf("%w: invalid json body", ErrInvalidInput))
-		return
-	}
-	// 声明式 PUT 里"清空"必须是显式的 []:字段缺失(nil)多半是键名手滑,
-	// 宽容成清空会静默抹掉全部绑定(残债交接 §3),按契约 required 拒绝。
-	if body.Items == nil {
-		writeHandlerError(w, fmt.Errorf("%w: items is required (use [] to clear all bindings)", ErrInvalidInput))
-		return
-	}
-	items := make([]ProjectMCPBindingInput, 0, len(body.Items))
-	for _, item := range body.Items {
-		serverID, err := uuid.Parse(item.MCPServerID)
-		if err != nil {
-			writeHandlerError(w, fmt.Errorf("%w: invalid mcp_server_id", ErrInvalidInput))
-			return
-		}
-		items = append(items, ProjectMCPBindingInput{MCPServerID: serverID, CredentialEnvVar: item.CredentialEnvVar})
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	bindings, err := service.PutProjectMCPBindings(r.Context(), PutProjectMCPBindingsRequest{TenantID: tenantID, ProjectID: projectID, UserID: userID, Items: items})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, mcpBindingResponses(bindings))
-}
-
-// ----------------------------------------------------------------------------
 // Skill <-> MCP dependency declarations
 // ----------------------------------------------------------------------------
 
@@ -568,7 +494,6 @@ type mcpBindingResponse struct {
 	TenantID          string   `json:"tenant_id"`
 	TeamID            string   `json:"team_id,omitempty"`
 	DigitalEmployeeID string   `json:"digital_employee_id,omitempty"`
-	ProjectID         string   `json:"project_id,omitempty"`
 	MCPServerID       string   `json:"mcp_server_id"`
 	ServerKey         string   `json:"server_key,omitempty"`
 	ServerName        string   `json:"server_name,omitempty"`
@@ -665,9 +590,6 @@ func mcpBindingResponseFromDomain(item MCPBinding) mcpBindingResponse {
 	if item.DigitalEmployeeID != nil {
 		response.DigitalEmployeeID = item.DigitalEmployeeID.String()
 	}
-	if item.ProjectID != nil {
-		response.ProjectID = item.ProjectID.String()
-	}
 	return response
 }
 
@@ -698,13 +620,6 @@ func nonNilStrings(values []string) []string {
 		return []string{}
 	}
 	return values
-}
-
-type putProjectMCPBindingsRequestBody struct {
-	Items []struct {
-		MCPServerID      string `json:"mcp_server_id"`
-		CredentialEnvVar string `json:"credential_env_var"`
-	} `json:"items"`
 }
 
 type replaceSkillMCPDependenciesRequestBody struct {

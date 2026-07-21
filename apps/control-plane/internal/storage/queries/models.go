@@ -708,10 +708,6 @@ type Project struct {
 	CoordinationStatus pgtype.Text `json:"coordination_status"`
 	// 项目协调策略配置
 	CoordinationPolicy []byte `json:"coordination_policy"`
-	// 项目审批策略配置
-	ApprovalPolicy []byte `json:"approval_policy"`
-	// 项目证据与工件策略配置
-	EvidencePolicy []byte `json:"evidence_policy"`
 	// 项目归档时间
 	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
 	// 项目创建时间
@@ -1164,30 +1160,6 @@ type ProjectExecutionSummary struct {
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 执行摘要创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-// 项目对注册表 MCP 的绑定，任务运行时与员工侧集合合并投影，同 server_key 项目侧优先
-type ProjectMcpBinding struct {
-	// 项目 MCP 绑定主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 绑定所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 绑定所属项目 ID
-	ProjectID uuid.UUID `json:"project_id"`
-	// 引用的注册表 MCP 定义 ID
-	McpServerID uuid.UUID `json:"mcp_server_id"`
-	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
-	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
-	// 绑定扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 绑定软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 创建绑定的用户 ID
-	CreatedBy uuid.NullUUID `json:"created_by"`
-	// 绑定创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 绑定更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目成员与数字员工池

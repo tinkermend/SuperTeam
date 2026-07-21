@@ -40,11 +40,9 @@ vi.mock("@tanstack/react-router", () => {
 });
 
 const project: Project = {
-  approval_policy: {},
   coordination_policy: {},
   coordination_status: "registered",
   coordination_workflow_id: "project-coordinator:project-1",
-  evidence_policy: {},
   goal: "完成客户接入验收闭环",
   human_owner_user_id: "human-owner-1",
   id: "project-1",

@@ -204,34 +204,6 @@ export function deleteEmployeeMcpBindingV2(
   );
 }
 
-export function listProjectMcpBindings(
-  options: ApiClientOptions,
-  projectId: string,
-): Promise<McpBinding[]> {
-  const encodedProjectId = encodePathSegment(projectId);
-
-  return getJson<McpBinding[]>(
-    options,
-    `/api/v1/projects/${encodedProjectId}/mcp-bindings`,
-    "project mcp bindings",
-  );
-}
-
-export function putProjectMcpBindings(
-  options: ApiClientOptions,
-  projectId: string,
-  items: CreateMcpBindingInput[],
-): Promise<McpBinding[]> {
-  const encodedProjectId = encodePathSegment(projectId);
-
-  return putJson<McpBinding[]>(
-    options,
-    `/api/v1/projects/${encodedProjectId}/mcp-bindings`,
-    { items },
-    "put project mcp bindings",
-  );
-}
-
 export function listEffectiveMcpConfig(
   options: ApiClientOptions,
   employeeId: string,
