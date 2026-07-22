@@ -404,8 +404,8 @@ fn codex_resume_uses_resume_subcommand_and_bypass_flag() {
     );
     assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
     assert!(
-        args.windows(2)
-            .any(|window| window == ["--cd", "/tmp/workspace"])
+        !args.iter().any(|arg| arg == "--cd"),
+        "codex exec resume does not accept --cd; workspace is Command.current_dir only"
     );
     assert!(
         args.windows(2)
@@ -429,8 +429,8 @@ fn codex_resume_without_session_uses_last_so_prompt_is_not_session_id() {
     assert!(args.iter().any(|arg| arg == "--last"));
     assert!(args.iter().any(|arg| arg == "--json"));
     assert!(
-        args.windows(2)
-            .any(|window| window == ["--cd", "/tmp/workspace"])
+        !args.iter().any(|arg| arg == "--cd"),
+        "codex exec resume does not accept --cd; workspace is Command.current_dir only"
     );
     assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
     assert_eq!(args.last().map(String::as_str), Some("hello"));
