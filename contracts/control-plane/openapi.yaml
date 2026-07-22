@@ -7004,6 +7004,7 @@ components:
         - actor_type
         - actor_id
         - payload
+        - created_at
       properties:
         id:
           type: string
@@ -7032,6 +7033,10 @@ components:
         payload:
           type: object
           additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+          description: 事件创建时间（project_events.created_at）
     ReviewerPreference:
       type: object
       required:

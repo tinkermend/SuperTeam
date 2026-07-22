@@ -414,6 +414,7 @@ export type ProjectEvent = {
   resource_id?: string;
   summary?: string;
   payload: Record<string, unknown>;
+  created_at: string;
 };
 
 export type ProjectDemand = {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deleteBlockerTypeLabel,
+  demandStatusLabel,
   employeeStatusLabel,
   governanceStatusLabel,
   projectStatusLabel,
@@ -85,5 +86,18 @@ describe("domain overrides", () => {
     expect(projectStatusLabel("paused")).toBe("已暂停");
     expect(projectStatusLabel("acceptance")).toBe("验收中");
     expect(projectStatusLabel("archived")).toBe("已归档");
+  });
+
+  it("demandStatusLabel covers demand lifecycle codes", () => {
+    expect(demandStatusLabel("submitted")).toBe("待计划");
+    expect(demandStatusLabel("planning_pending")).toBe("待计划");
+    expect(demandStatusLabel("planned")).toBe("已计划");
+    expect(demandStatusLabel("executing")).toBe("执行中");
+    expect(demandStatusLabel("acceptance_pending")).toBe("待验收");
+    expect(demandStatusLabel("completed")).toBe("已完成");
+    expect(demandStatusLabel("failed")).toBe("失败");
+    expect(demandStatusLabel("cancelled")).toBe("已取消");
+    expect(demandStatusLabel("recorded")).toBe("已记录");
+    expect(demandStatusLabel(undefined)).toBe("未知");
   });
 });

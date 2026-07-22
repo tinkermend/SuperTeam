@@ -104,8 +104,8 @@ func (a runtimeMCPListerAdapter) ListRuntimeMCPServersForRuntime(ctx context.Con
 	if a.capability == nil {
 		return nil, nil
 	}
-	// projectID 非 nil 时并入项目级 MCP 绑定（同 server_key 项目侧优先）；
-	// 之后的 MissingEnvVars 过滤对项目侧条目同样生效。
+	// projectID 保留调用签名兼容，但已退役项目级 MCP 绑定（spec 2026-07-22），
+	// 投影仅为员工侧（团队继承 ∪ 个人绑定）；真实项目 MCP 来自仓库 .mcp.json。
 	effective, err := a.capability.ListEffectiveMCPConfigForRuntime(ctx, tenantID, digitalEmployeeID, projectID)
 	if err != nil {
 		return nil, err
@@ -602,8 +602,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			approvalService,
 			decisionProjector,
 			projectTaskRunStarterAdapter{runService: runService},
-		).
-			WithTeamBoundaryGatekeeper(teamBoundaryGatekeeperAdapter{employees: employeeRepository}).
+		).WithTeamBoundaryGatekeeper(teamBoundaryGatekeeperAdapter{employees: employeeRepository}).
 			WithDigitalEmployeePlanningProfiles(planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)).
 			WithPreDispatchGateReaders(gateAdapter, gateAdapter)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))

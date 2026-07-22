@@ -581,6 +581,7 @@ function createProjectFetcher(
           {
             actor_id: "human-owner-1",
             actor_type: "human_user",
+            created_at: "2026-07-22T01:00:00Z",
             event_type: "project.created",
             id: "event-1",
             payload: {},
@@ -594,6 +595,7 @@ function createProjectFetcher(
           {
             actor_id: "system",
             actor_type: "system",
+            created_at: "2026-07-22T01:05:00Z",
             event_type: "route_decision.created",
             id: "event-2",
             payload: {},
@@ -818,6 +820,7 @@ function createProjectFetcher(
         {
           actor_id: "runtime",
           actor_type: "system",
+          created_at: "2026-07-22T01:10:00Z",
           event_type: "project_task.failed",
           id: "event-project-2-failed",
           payload: {},
@@ -1955,6 +1958,8 @@ describe("ProjectsView", () => {
     const screen = await renderProjectRouteSwitcher(fetcher);
 
     await expect.element(screen.getByText("已就绪")).toBeInTheDocument();
+    // 已就绪的运行落点默认折叠为一行摘要，先展开再操作绑定动作。
+    await userEvent.click(screen.getByRole("button", { name: "展开运行落点" }));
     await expect.element(screen.getByRole("button", { name: "释放绑定" })).toBeEnabled();
 
     await userEvent.click(screen.getByRole("button", { name: "切换到项目二" }));
@@ -2014,8 +2019,9 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
     await expect
-      .element(screen.getByRole("link", { name: "配置项目" }))
+      .element(screen.getByRole("menuitem", { name: "配置项目" }))
       .toHaveAttribute("href", "/projects/project-1/config");
 
     const visibleLinkLabels = Array.from(screen.container.querySelectorAll("a")).map((link) =>
@@ -2514,14 +2520,16 @@ describe("ProjectsView", () => {
       });
 
     // 取消路径：打开弹窗后取消，不得发出归档请求。
-    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "归档项目" }));
     await expect
       .element(screen.getByRole("heading", { name: "归档项目" }))
       .toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(archivePosts()).toHaveLength(0);
 
-    await userEvent.click(screen.getByRole("button", { name: "归档项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "归档项目" }));
     await userEvent.click(screen.getByRole("button", { name: "确认归档" }));
 
     await vi.waitFor(() => {
@@ -2720,7 +2728,9 @@ describe("ProjectsView", () => {
       .toBeVisible();
     await expect.element(screen.getByText("整理接入证据")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "提交需求" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "归档项目" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await expect.element(screen.getByRole("menuitem", { name: "归档项目" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
     await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
     await expect.element(screen.getByText("路由决策")).toBeVisible();
     await expect.element(screen.getByText("协调任务")).toBeVisible();
@@ -2733,7 +2743,8 @@ describe("ProjectsView", () => {
     });
     const screen = await renderProjects(fetcher, "project-1");
 
-    await userEvent.click(screen.getByRole("button", { name: "删除项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "删除项目" }));
     await expect.element(screen.getByRole("heading", { name: "删除项目" })).toBeVisible();
     await expect.element(screen.getByText("仍有 1 项待处理决策")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
@@ -2762,7 +2773,8 @@ describe("ProjectsView", () => {
     });
     const screen = await renderProjects(fetcher, "project-1");
 
-    await userEvent.click(screen.getByRole("button", { name: "删除项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "删除项目" }));
     await expect.element(screen.getByText("删除被阻断")).toBeVisible();
     await expect.element(screen.getByText("运行中的接入任务")).toBeVisible();
 
@@ -2777,7 +2789,8 @@ describe("ProjectsView", () => {
     });
     const screen = await renderProjects(fetcher, "project-1");
 
-    await userEvent.click(screen.getByRole("button", { name: "删除项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "删除项目" }));
     await userEvent.fill(screen.getByLabelText("输入项目名称确认删除"), "客户接入验收");
     await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
 

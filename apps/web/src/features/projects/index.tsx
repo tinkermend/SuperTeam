@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   keepPreviousData,
   useMutation,
@@ -8,6 +8,8 @@ import {
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Check,
+  Copy,
   FolderKanban,
   Plus,
 } from "lucide-react";
@@ -24,6 +26,7 @@ import {
   V3LoadingState,
   WorkSurface,
 } from "@/components/superteam";
+import { cn } from "@/lib/utils";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   getCurrentUser,
@@ -963,10 +966,10 @@ export function ProjectsView({
         back={projectHeaderBack}
         icon={routeProjectId ? undefined : <FolderKanban />}
         iconTone="brand"
-        title={routeProjectId ? selectedProject?.name ?? "项目详情" : "项目管理"}
+        title={routeProjectId ? "项目详情" : "项目管理"}
         subtitle={
           routeProjectId
-            ? selectedProject?.goal ?? "查看项目运行状态、证据、决策和验收进度"
+            ? undefined
             : "围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环"
         }
       />
@@ -1254,6 +1257,11 @@ export function ProjectsView({
             }}
           >
             <div className="space-y-2">
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium text-v3-ink">项目名称</p>
+                <CopyableProjectName name={projectName} />
+                <p className="text-xs text-v3-ink-3">点击上方名称可复制，粘贴或手动输入后确认删除。</p>
+              </div>
               <Label htmlFor="delete-project-confirmation">输入项目名称确认删除</Label>
               <Input
                 autoComplete="off"
@@ -1262,6 +1270,7 @@ export function ProjectsView({
                   setDeleteConfirmation(event.currentTarget.value);
                   if (deleteBlocked) setDeleteBlocked(undefined);
                 }}
+                placeholder="粘贴或输入完整项目名称"
                 value={deleteConfirmation}
               />
             </div>
@@ -1363,6 +1372,61 @@ function getProjectDeleteErrorMessage(error: unknown) {
   if (error instanceof ApiRequestError && error.detail) return error.detail;
   if (error instanceof Error) return error.message;
   return "删除失败，请稍后重试。";
+}
+
+function CopyableProjectName({ name }: { name: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current) {
+        clearTimeout(resetTimer.current);
+      }
+    },
+    [],
+  );
+
+  if (!name) {
+    return (
+      <span className="block rounded-v3-inner border border-dashed border-v3-line bg-v3-card-soft px-3 py-2 text-sm text-v3-ink-3">
+        加载项目名称…
+      </span>
+    );
+  }
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(name);
+      setCopied(true);
+      if (resetTimer.current) {
+        clearTimeout(resetTimer.current);
+      }
+      resetTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 剪贴板不可用时静默降级，用户仍可手动选中输入
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      title={copied ? "已复制" : "点击复制项目名称"}
+      aria-label={`复制项目名称 ${name}`}
+      onClick={() => void copy()}
+      className={cn(
+        "flex w-full min-w-0 items-center justify-between gap-2 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-left text-sm text-v3-ink-3 transition-colors",
+        "hover:border-v3-line-strong hover:text-v3-ink-2",
+      )}
+    >
+      <span className="min-w-0 break-all select-all">{name}</span>
+      {copied ? (
+        <Check aria-hidden className="size-3.5 shrink-0 text-v3-ok" />
+      ) : (
+        <Copy aria-hidden className="size-3.5 shrink-0 opacity-70" />
+      )}
+    </button>
+  );
 }
 
 function ProjectDeleteDialogDescription({

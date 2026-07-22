@@ -2669,6 +2669,7 @@ type projectEventResponse struct {
 	ResourceID     *string          `json:"resource_id,omitempty"`
 	Summary        *string          `json:"summary,omitempty"`
 	Payload        map[string]any   `json:"payload"`
+	CreatedAt      string           `json:"created_at"`
 }
 
 type projectDemandResponse struct {
@@ -3649,6 +3650,7 @@ func eventResponseFromDomain(event ProjectEvent) projectEventResponse {
 		ResourceID:     event.ResourceID,
 		Summary:        event.Summary,
 		Payload:        mapOrEmpty(event.Payload),
+		CreatedAt:      timeValue(event.CreatedAt),
 	}
 }
 

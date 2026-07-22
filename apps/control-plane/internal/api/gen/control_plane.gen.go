@@ -4238,8 +4238,11 @@ type ProjectEmployeeReadiness struct {
 
 // ProjectEvent defines model for ProjectEvent.
 type ProjectEvent struct {
-	ActorId        string                 `json:"actor_id"`
-	ActorType      string                 `json:"actor_type"`
+	ActorId   string `json:"actor_id"`
+	ActorType string `json:"actor_type"`
+
+	// CreatedAt 事件创建时间（project_events.created_at）
+	CreatedAt      time.Time              `json:"created_at"`
 	EventType      ProjectEventType       `json:"event_type"`
 	Id             openapi_types.UUID     `json:"id"`
 	Payload        map[string]interface{} `json:"payload"`

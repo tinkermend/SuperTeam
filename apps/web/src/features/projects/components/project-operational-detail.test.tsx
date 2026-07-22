@@ -731,7 +731,7 @@ describe("ProjectOperationalDetail", () => {
     );
   });
 
-  it("shows archive and delete actions in the detail header when allowed", async () => {
+  it("shows archive and delete actions in the detail header menu when allowed", async () => {
     const onArchiveProject = vi.fn();
     const onDeleteProject = vi.fn();
     const screen = await renderDetail({
@@ -743,14 +743,15 @@ describe("ProjectOperationalDetail", () => {
       },
     });
 
-    const archiveButton = screen.getByRole("button", { name: "归档项目" });
-    const deleteButton = screen.getByRole("button", { name: "删除项目" });
-    await expect.element(archiveButton).toHaveAttribute("data-variant", "outline");
-    await expect.element(deleteButton).toHaveAttribute("data-variant", "danger");
-
-    await archiveButton.click();
-    await deleteButton.click();
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await expect
+      .element(screen.getByRole("menuitem", { name: "删除项目" }))
+      .toHaveAttribute("data-variant", "destructive");
+    await userEvent.click(screen.getByRole("menuitem", { name: "归档项目" }));
     expect(onArchiveProject).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "删除项目" }));
     expect(onDeleteProject).toHaveBeenCalledTimes(1);
   });
 
@@ -763,7 +764,38 @@ describe("ProjectOperationalDetail", () => {
       },
     });
 
-    await expect.element(screen.getByRole("button", { name: "归档项目" })).not.toBeInTheDocument();
-    await expect.element(screen.getByRole("button", { name: "删除项目" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
+    await expect
+      .element(screen.getByRole("menuitem", { name: "配置项目" }))
+      .toBeInTheDocument();
+    await expect.element(screen.getByRole("menuitem", { name: "归档项目" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("menuitem", { name: "删除项目" })).not.toBeInTheDocument();
+  });
+
+  it("shows relative timestamps on the event stream", async () => {
+    const screen = await renderDetail({
+      overview: {
+        ...overview,
+        recent_events: [
+          {
+            actor_id: "system",
+            actor_type: "system",
+            created_at: "2026-07-20T01:00:00Z",
+            event_type: "project.created",
+            id: "event-created",
+            payload: {},
+            project_id: "project-1",
+            sequence_number: 1,
+            summary: "项目已创建",
+            tenant_id: "tenant-1",
+          },
+        ],
+      },
+    });
+
+    await expect.element(screen.getByText("项目已创建")).toBeVisible();
+    const time = screen.container.querySelector('time[datetime="2026-07-20T01:00:00Z"]');
+    expect(time).not.toBeNull();
+    expect(time?.textContent ?? "").toMatch(/\d+\s*天前/);
   });
 });

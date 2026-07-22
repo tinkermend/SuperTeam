@@ -140,6 +140,15 @@ export function projectStatusLabel(status: string | undefined): string {
   return statusLabel(status);
 }
 
+export function demandStatusLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    acceptance_pending: "待验收",
+    executing: "执行中",
+    recorded: "已记录",
+    submitted: "待计划",
+  });
+}
+
 const RISK_LEVEL_LABELS: Record<string, string> = {
   blocked: "阻断",
   high: "高风险",

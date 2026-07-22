@@ -14,7 +14,9 @@ import {
   FileText,
   GitBranch,
   History,
+  MoreHorizontal,
   Settings2,
+  SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
 import {
@@ -22,6 +24,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -79,6 +87,7 @@ import type {
 } from "@/lib/api/projects";
 import {
   decisionStatusLabel,
+  demandStatusLabel,
   dispatchGateStatusLabel,
   projectStatusLabel,
   statusLabel,
@@ -266,9 +275,9 @@ export function ProjectOperationalDetail({
             </IconTile>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-xl font-semibold tracking-normal text-v3-ink">
+                <h2 className="truncate text-xl font-semibold tracking-normal text-v3-ink">
                   {project.name}
-                </p>
+                </h2>
                 <StatusPill tone={projectStatusTone(project.status)}>
                   {projectStatusLabel(project.status)}
                 </StatusPill>
@@ -276,15 +285,35 @@ export function ProjectOperationalDetail({
               <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
                 {project.goal}
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-v3-ink-2">
+                <HeroFactLink
+                  label={`阶段 ${projectStatusLabel(currentPhase)}`}
+                  targetId="project-overview-plan"
+                />
+                <span aria-hidden className="text-v3-ink-3">·</span>
+                <HeroFactLink
+                  label={`待处理 ${pendingOwnerDecisions.length} 项`}
+                  targetId="project-overview-pending"
+                />
+                <span aria-hidden className="text-v3-ink-3">·</span>
+                <HeroFactLink
+                  label={`执行中 ${activeTasks.length} 个任务`}
+                  targetId="project-overview-execution"
+                />
+                <span aria-hidden className="text-v3-ink-3">·</span>
+                {latestDemand ? (
+                  <HeroFactLink
+                    className="max-w-56 truncate"
+                    label={`需求 ${latestDemand.title}`}
+                    targetId="project-overview-demand"
+                  />
+                ) : (
+                  <span>需求 暂无</span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <V3Button asChild variant="outline">
-              <Link search={{ project: project.id }} to="/run-overview">
-                <Activity data-icon="inline-start" />
-                在运行总览查看
-              </Link>
-            </V3Button>
             <V3Button
               disabled={isArchived}
               type="button"
@@ -294,50 +323,47 @@ export function ProjectOperationalDetail({
               提交需求
             </V3Button>
             <V3Button asChild variant="outline">
-              <Link
-                params={{ projectId: project.id }}
-                to="/projects/$projectId/config"
-              >
-                <Settings2 data-icon="inline-start" />
-                配置项目
+              <Link search={{ project: project.id }} to="/run-overview">
+                <SquareArrowOutUpRight data-icon="inline-start" />
+                在运行总览查看
               </Link>
             </V3Button>
-            {canArchive ? (
-              <V3Button type="button" variant="outline" onClick={onArchiveProject}>
-                <Archive data-icon="inline-start" />
-                归档项目
-              </V3Button>
-            ) : null}
-            {canDelete ? (
-              <V3Button type="button" variant="danger" onClick={onDeleteProject}>
-                <Trash2 data-icon="inline-start" />
-                删除项目
-              </V3Button>
-            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <V3Button
+                  aria-label="更多项目操作"
+                  size="icon"
+                  type="button"
+                  variant="outline"
+                >
+                  <MoreHorizontal />
+                </V3Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link
+                    params={{ projectId: project.id }}
+                    to="/projects/$projectId/config"
+                  >
+                    <Settings2 />
+                    配置项目
+                  </Link>
+                </DropdownMenuItem>
+                {canArchive ? (
+                  <DropdownMenuItem onSelect={onArchiveProject}>
+                    <Archive />
+                    归档项目
+                  </DropdownMenuItem>
+                ) : null}
+                {canDelete ? (
+                  <DropdownMenuItem variant="destructive" onSelect={onDeleteProject}>
+                    <Trash2 />
+                    删除项目
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <FactTile
-            icon={<GitBranch />}
-            label="当前阶段"
-            value={projectStatusLabel(currentPhase)}
-          />
-          <FactTile
-            icon={<UserRound />}
-            label="待负责人处理"
-            value={`${pendingOwnerDecisions.length} 项`}
-          />
-          <FactTile
-            icon={<FileText />}
-            label="当前需求"
-            value={latestDemand?.title ?? "暂无需求"}
-          />
-          <FactTile
-            icon={<ClipboardList />}
-            label="当前执行"
-            value={`${activeTasks.length} 个任务`}
-          />
         </div>
       </SoftCard>
 
@@ -379,7 +405,7 @@ export function ProjectOperationalDetail({
           {runtimePlacementPanel}
 
           {taskGraph && taskGraph.nodes.length > 0 ? (
-            <section className="grid gap-2" data-testid="project-plan-graph-section">
+            <section className="grid scroll-mt-20 gap-2" data-testid="project-plan-graph-section" id="project-overview-execution">
               <div className="flex items-center gap-2 px-1">
                 <ClipboardList className="size-4 text-v3-ink-2" />
                 <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
@@ -396,7 +422,7 @@ export function ProjectOperationalDetail({
         rail="md"
         master={
           <section className="grid min-w-0 gap-4">
-            <SoftCard className="overflow-hidden">
+            <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-demand">
               <PanelHeader
                 icon={<FileText />}
                 title="当前需求"
@@ -416,11 +442,25 @@ export function ProjectOperationalDetail({
                   ) : null}
                 </div>
               ) : (
-                <EmptyLine label="暂无提交到项目的需求" />
+                <EmptyLine
+                  action={
+                    <V3Button
+                      disabled={isArchived}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      onClick={onSubmitDemand}
+                    >
+                      <FileText data-icon="inline-start" />
+                      提交需求
+                    </V3Button>
+                  }
+                  label="暂无提交到项目的需求"
+                />
               )}
             </SoftCard>
 
-            <SoftCard className="overflow-hidden">
+            <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-plan">
               <PanelHeader
                 icon={<GitBranch />}
                 title="计划确认"
@@ -710,7 +750,7 @@ export function ProjectOperationalDetail({
             </SoftCard>
 
             {taskGraph && taskGraph.nodes.length > 0 ? null : (
-              <SoftCard className="overflow-hidden">
+              <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-execution">
                 <PanelHeader
                   icon={<ClipboardList />}
                   title="当前执行"
@@ -782,7 +822,7 @@ export function ProjectOperationalDetail({
               )}
             </SoftCard>
 
-            <SoftCard className="overflow-hidden">
+            <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-pending">
               <PanelHeader
                 icon={<UserRound />}
                 title="待负责人处理"
@@ -829,48 +869,10 @@ export function ProjectOperationalDetail({
                 </div>
               </SoftCard>
             ) : null}
-
-            <SoftCard className="overflow-hidden">
-              <PanelHeader
-                icon={<History />}
-                title="事件流"
-                meta={`${recentEvents.length} 条`}
-              />
-              <div className="divide-y divide-v3-line">
-                {recentEvents.length === 0 ? (
-                  <EmptyLine label="暂无项目事件" />
-                ) : (
-                  recentEvents.slice(0, 8).map((event) => {
-                    const eventDisplay = projectEventDisplay(event);
-                    return (
-                      <div className="flex gap-3 p-4" key={event.id}>
-                        <span className="mt-1 size-2 rounded-full bg-v3-brand" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-medium">{eventDisplay.title}</p>
-                            <span className="text-xs text-v3-ink-2">
-                              #{event.sequence_number}
-                            </span>
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
-                            {eventDisplay.summary}
-                          </p>
-                          {eventDisplay.resource ? (
-                            <p className="mt-1 text-xs text-v3-ink-2">
-                              {eventDisplay.resource}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </SoftCard>
           </section>
         }
         detail={
-          <aside className="grid min-w-0 gap-4">
+          <aside className="grid min-w-0 gap-4 self-start @4xl/master-detail:sticky @4xl/master-detail:top-4">
             <MemberPanel
               emptyLabel="当前项目尚未设置项目负责人"
               icon={<UserRound />}
@@ -885,6 +887,64 @@ export function ProjectOperationalDetail({
               principalNamesById={principalNamesById}
               title="项目服务池"
             />
+            <SoftCard className="overflow-hidden">
+              <PanelHeader
+                icon={<History />}
+                title="事件流"
+                meta={`${recentEvents.length} 条`}
+              />
+              <div className="divide-y divide-v3-line">
+                {recentEvents.length === 0 ? (
+                  <EmptyLine label="暂无项目事件" />
+                ) : (
+                  recentEvents.slice(0, 6).map((event) => {
+                    const eventDisplay = projectEventDisplay(event);
+                    const actorLabel = projectEventActorLabel(
+                      event,
+                      principalNamesById,
+                    );
+                    return (
+                      <div className="flex gap-3 p-4" key={event.id}>
+                        <span className="mt-1 size-2 shrink-0 rounded-full bg-v3-brand" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <p className="text-sm font-medium">{eventDisplay.title}</p>
+                            {actorLabel ? (
+                              <span className="text-xs text-v3-ink-3">{actorLabel}</span>
+                            ) : null}
+                            {event.created_at ? (
+                              <time
+                                className="text-xs text-v3-ink-3 tabular-nums"
+                                dateTime={event.created_at}
+                                title={formatAbsoluteDateTime(event.created_at)}
+                              >
+                                {formatRelativeTime(event.created_at)}
+                              </time>
+                            ) : null}
+                            <span className="text-xs text-v3-ink-3">
+                              #{event.sequence_number}
+                            </span>
+                          </div>
+                          {!eventSummaryDuplicatesTitle(
+                            eventDisplay.title,
+                            eventDisplay.summary,
+                          ) ? (
+                            <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
+                              {eventDisplay.summary}
+                            </p>
+                          ) : null}
+                          {eventDisplay.resource ? (
+                            <p className="mt-1 text-xs text-v3-ink-2">
+                              {eventDisplay.resource}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </SoftCard>
           </aside>
         }
       />
@@ -1375,6 +1435,33 @@ function FactTile({
   );
 }
 
+function HeroFactLink({
+  className,
+  label,
+  targetId,
+}: {
+  className?: string;
+  label: string;
+  targetId: string;
+}) {
+  return (
+    <button
+      className={cn(
+        "rounded-sm font-medium underline-offset-2 transition-colors hover:text-v3-ink hover:underline",
+        className,
+      )}
+      type="button"
+      onClick={() =>
+        document
+          .getElementById(targetId)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
 function PanelHeader({
   icon,
   meta,
@@ -1798,10 +1885,11 @@ function ProjectApprovalPanel({
   );
 }
 
-function EmptyLine({ label }: { label: string }) {
+function EmptyLine({ action, label }: { action?: ReactNode; label: string }) {
   return (
-    <div className="flex min-h-24 items-center justify-center p-4 text-sm text-v3-ink-2">
-      {label}
+    <div className="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-v3-ink-2">
+      <span>{label}</span>
+      {action}
     </div>
   );
 }
@@ -2052,6 +2140,25 @@ function projectEventDisplay(event: ProjectEvent) {
   };
 }
 
+function projectEventActorLabel(
+  event: ProjectEvent,
+  principalNamesById?: ReadonlyMap<string, string>,
+) {
+  if (
+    event.actor_type === "human_user" ||
+    event.actor_type === "digital_employee"
+  ) {
+    // 无法补名时不显示，避免裸 UUID 出现在用户可见文本里。
+    return resolvePrincipalName(event.actor_id, undefined, principalNamesById);
+  }
+  return "系统";
+}
+
+function eventSummaryDuplicatesTitle(title: string, summary: string) {
+  const normalize = (value: string) => value.trim().replace(/[。.!！]+$/u, "");
+  return normalize(summary) === normalize(title);
+}
+
 function shortIdentifier(value: string) {
   return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
 }
@@ -2085,21 +2192,6 @@ function ownerMembers(members: ProjectMember[], fallbackOwnerID: string) {
       tenant_id: "",
     },
   ];
-}
-
-function demandStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    acceptance_pending: "待验收",
-    cancelled: "已取消",
-    completed: "已完成",
-    executing: "执行中",
-    failed: "失败",
-    planned: "已计划",
-    planning_pending: "待计划",
-    recorded: "已记录",
-    submitted: "待计划",
-  };
-  return labels[status] ?? status;
 }
 
 function projectStatusTone(status: ProjectStatus | string): V3Tone {

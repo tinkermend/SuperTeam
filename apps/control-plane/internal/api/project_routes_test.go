@@ -1501,6 +1501,7 @@ func (s *routeProjectService) ListProjectEvents(ctx context.Context, tenantID, p
 		ActorType:      "human_user",
 		ActorID:        uuid.New().String(),
 		Payload:        map[string]any{},
+		CreatedAt:      time.Date(2026, 7, 22, 1, 0, 0, 0, time.UTC),
 	}}, nil
 }
 
@@ -1515,6 +1516,7 @@ func (s *routeProjectService) RetryWorkflowSignal(ctx context.Context, req proje
 		ActorType:      "human_user",
 		ActorID:        req.ActorID.String(),
 		Payload:        map[string]any{"status": "sent"},
+		CreatedAt:      time.Date(2026, 7, 22, 1, 5, 0, 0, time.UTC),
 	}, nil
 }
 

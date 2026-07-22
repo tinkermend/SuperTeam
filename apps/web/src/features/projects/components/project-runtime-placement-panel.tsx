@@ -1,11 +1,17 @@
+import { useState, type ReactNode } from "react";
 import {
   Cable,
+  ChevronDown,
   Link2,
   MonitorCog,
   PlugZap,
   Unlink,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   IconTile,
   SoftCard,
@@ -13,6 +19,7 @@ import {
   V3Button,
   type V3Tone,
 } from "@/components/superteam";
+import { cn } from "@/lib/utils";
 import type { ProjectRuntimePlacementReadiness } from "@/lib/api/projects";
 import type { RuntimeNodeResponse } from "@/lib/api/runtime";
 
@@ -55,132 +62,184 @@ export function ProjectRuntimePlacementPanel({
   const canBind =
     Boolean(selectedRuntimeNodeId) && !isReadinessLoading && !isBinding && !isReleasing;
   const canRelease = hasActivePlacement && !isReadinessLoading && !isBinding && !isReleasing;
+  // 未绑定或阻塞时默认展开（需要用户介入），已就绪默认折叠为一行摘要。
+  const isReady = hasActivePlacement && readiness?.placement_status === "ready";
+  const [openOverride, setOpenOverride] = useState<boolean | null>(null);
+  const open = openOverride ?? !isReady;
 
   return (
     <SoftCard className="overflow-hidden" data-testid="project-runtime-placement-panel">
-      <div className="flex flex-col gap-4 border-b border-v3-line p-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <IconTile tone="brand" size="sm">
-            <MonitorCog />
-          </IconTile>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+      <Collapsible open={open} onOpenChange={setOpenOverride}>
+        <div
+          className={cn(
+            "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
+            open && "border-b border-v3-line",
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <IconTile tone="brand" size="sm">
+              <MonitorCog />
+            </IconTile>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
               <h3 className="text-sm font-semibold tracking-normal text-v3-ink">
                 运行落点
               </h3>
               <StatusPill tone={readinessTone(readiness?.placement_status)}>
                 {readinessStatusLabel(readiness?.placement_status)}
               </StatusPill>
+              {!open ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-xs text-v3-ink-2">
+                    <Cable className="size-3.5" />
+                    {readiness?.command_channel_connected
+                      ? "命令通道已连接"
+                      : "命令通道未连接"}
+                  </span>
+                  <span className="min-w-0 max-w-40 truncate text-xs text-v3-ink-2">
+                    {readiness?.runtime_node_name ??
+                      runtimeNodeLabel(selectedNode) ??
+                      "未绑定"}
+                  </span>
+                  {providerSummary.length > 0 ? (
+                    <span className="flex flex-wrap gap-1.5">
+                      {providerSummary.map((provider) => (
+                        <StatusPill key={provider} tone="info" showDot={false}>
+                          {provider}
+                        </StatusPill>
+                      ))}
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
             </div>
-            <p className="mt-1 text-xs leading-5 text-v3-ink-2">
+          </div>
+          <CollapsibleTrigger asChild>
+            <V3Button
+              aria-label={open ? "收起运行落点" : "展开运行落点"}
+              className="shrink-0"
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {open ? "收起" : "管理"}
+              <ChevronDown
+                className={cn("size-3.5 transition-transform", open && "rotate-180")}
+              />
+            </V3Button>
+          </CollapsibleTrigger>
+        </div>
+
+        <CollapsibleContent>
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+            <p className="min-w-0 text-xs leading-5 text-v3-ink-2">
               绑定项目执行使用的 Runtime 节点，并检查命令通道与 Provider 能力。
             </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <V3Button
-            disabled={!canBind}
-            size="sm"
-            type="button"
-            onClick={onBindRuntime}
-          >
-            <Link2 data-icon="inline-start" />
-            {isBinding ? "绑定中" : "绑定运行节点"}
-          </V3Button>
-          <V3Button
-            disabled={!canRelease}
-            size="sm"
-            type="button"
-            variant="outline"
-            onClick={onReleaseRuntime}
-          >
-            <Unlink data-icon="inline-start" />
-            {isReleasing ? "释放中" : "释放绑定"}
-          </V3Button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
-        <div className="grid min-w-0 gap-3">
-          <label className="grid gap-1.5 text-sm font-medium text-v3-ink">
-            选择运行节点
-            <select
-              aria-label="选择运行节点"
-              className="h-10 w-full rounded-xl border border-v3-line-strong bg-v3-card px-3 text-sm text-v3-ink shadow-sm outline-none transition focus:border-v3-brand focus:ring-2 focus:ring-v3-brand/20 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={sortedNodes.length === 0 || isBinding || isReleasing}
-              value={selectedRuntimeNodeId}
-              onChange={(event) =>
-                onSelectedRuntimeNodeIdChange(event.currentTarget.value)
-              }
-            >
-              <option value="">选择 Runtime 节点</option>
-              {sortedNodes.map((node, index) => {
-                const value = runtimeNodeValue(node);
-                return (
-                  <option key={`${value}-${index}`} value={value}>
-                    {runtimeNodeLabel(node)} · {runtimeNodeStatusLabel(node.status)}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-
-          <div className="grid gap-2 rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
-            <RuntimeLine
-              icon={<PlugZap className="size-3.5" />}
-              label="命令通道"
-              value={
-                readiness?.command_channel_connected
-                  ? "已连接"
-                  : "未连接或等待绑定"
-              }
-            />
-            <RuntimeLine
-              icon={<Cable className="size-3.5" />}
-              label="当前节点"
-              value={readiness?.runtime_node_name ?? runtimeNodeLabel(selectedNode) ?? "未绑定"}
-            />
-          </div>
-        </div>
-
-        <div className="grid min-w-0 gap-3">
-          <div>
-            <p className="text-xs font-semibold text-v3-ink-2">Provider 能力</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {providerSummary.length > 0 ? (
-                providerSummary.map((provider) => (
-                  <StatusPill key={provider} tone="info" showDot={false}>
-                    {provider}
-                  </StatusPill>
-                ))
-              ) : (
-                <span className="text-xs text-v3-ink-2">暂无可用 Provider</span>
-              )}
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <V3Button
+                disabled={!canBind}
+                size="sm"
+                type="button"
+                onClick={onBindRuntime}
+              >
+                <Link2 data-icon="inline-start" />
+                {isBinding ? "绑定中" : "绑定运行节点"}
+              </V3Button>
+              <V3Button
+                disabled={!canRelease}
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={onReleaseRuntime}
+              >
+                <Unlink data-icon="inline-start" />
+                {isReleasing ? "释放中" : "释放绑定"}
+              </V3Button>
             </div>
           </div>
 
-          <div>
-            <p className="text-xs font-semibold text-v3-ink-2">阻塞原因</p>
-            {readiness?.blocking_reasons?.length ? (
-              <ul className="mt-2 grid gap-2">
-                {readiness.blocking_reasons.map((reason) => (
-                  <li
-                    className="rounded-v3-inner border border-v3-warn/20 bg-v3-warn-soft px-3 py-2 text-xs leading-5 text-v3-ink"
-                    key={`${reason.code}-${reason.resource_id ?? reason.message}`}
-                  >
-                    <span className="font-semibold">{reason.message}</span>
-                    <span className="ml-2 font-mono text-[11px] text-v3-ink-2">
-                      {reason.code}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-xs text-v3-ink-2">当前没有运行落点阻塞。</p>
-            )}
+          <div className="grid gap-4 px-4 pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+            <div className="grid min-w-0 gap-3">
+              <label className="grid gap-1.5 text-sm font-medium text-v3-ink">
+                选择运行节点
+                <select
+                  aria-label="选择运行节点"
+                  className="h-10 w-full rounded-xl border border-v3-line-strong bg-v3-card px-3 text-sm text-v3-ink shadow-sm outline-none transition focus:border-v3-brand focus:ring-2 focus:ring-v3-brand/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={sortedNodes.length === 0 || isBinding || isReleasing}
+                  value={selectedRuntimeNodeId}
+                  onChange={(event) =>
+                    onSelectedRuntimeNodeIdChange(event.currentTarget.value)
+                  }
+                >
+                  <option value="">选择 Runtime 节点</option>
+                  {sortedNodes.map((node, index) => {
+                    const value = runtimeNodeValue(node);
+                    return (
+                      <option key={`${value}-${index}`} value={value}>
+                        {runtimeNodeLabel(node)} · {runtimeNodeStatusLabel(node.status)}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+
+              <div className="grid gap-2 rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
+                <RuntimeLine
+                  icon={<PlugZap className="size-3.5" />}
+                  label="命令通道"
+                  value={
+                    readiness?.command_channel_connected
+                      ? "已连接"
+                      : "未连接或等待绑定"
+                  }
+                />
+                <RuntimeLine
+                  icon={<Cable className="size-3.5" />}
+                  label="当前节点"
+                  value={readiness?.runtime_node_name ?? runtimeNodeLabel(selectedNode) ?? "未绑定"}
+                />
+              </div>
+            </div>
+
+            <div className="grid min-w-0 gap-3">
+              <div>
+                <p className="text-xs font-semibold text-v3-ink-2">Provider 能力</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {providerSummary.length > 0 ? (
+                    providerSummary.map((provider) => (
+                      <StatusPill key={provider} tone="info" showDot={false}>
+                        {provider}
+                      </StatusPill>
+                    ))
+                  ) : (
+                    <span className="text-xs text-v3-ink-2">暂无可用 Provider</span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-v3-ink-2">阻塞原因</p>
+                {readiness?.blocking_reasons?.length ? (
+                  <ul className="mt-2 grid gap-2">
+                    {readiness.blocking_reasons.map((reason) => (
+                      <li
+                        className="rounded-v3-inner border border-v3-warn/20 bg-v3-warn-soft px-3 py-2 text-xs leading-5 text-v3-ink"
+                        key={`${reason.code}-${reason.resource_id ?? reason.message}`}
+                      >
+                        <span className="font-semibold">{reason.message}</span>
+                        <span className="ml-2 font-mono text-[11px] text-v3-ink-2">
+                          {reason.code}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-xs text-v3-ink-2">当前没有运行落点阻塞。</p>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </CollapsibleContent>
+      </Collapsible>
     </SoftCard>
   );
 }
