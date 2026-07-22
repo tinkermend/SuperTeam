@@ -30,7 +30,7 @@ WEB_WAIT_URL="${SUPERTEAM_DEV_WEB_WAIT_URL-http://127.0.0.1:3000/}"
 RUNTIME_AGENT_CMD="${SUPERTEAM_DEV_RUNTIME_AGENT_CMD:-pnpm run dev:runtime-agent}"
 RUNTIME_AGENT_WAIT_URL="${SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL-}"
 
-# feishu-connector 不进默认 all(飞书通道按需启动);无 HTTP 面,不配 WAIT_URL。
+# feishu-connector 进默认 all(排在 control-plane 之后);无 HTTP 面,不配 WAIT_URL。
 FEISHU_CONNECTOR_CMD="${SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD:-go run ./apps/feishu-connector}"
 FEISHU_CONNECTOR_WAIT_URL="${SUPERTEAM_DEV_FEISHU_CONNECTOR_WAIT_URL-}"
 
@@ -65,8 +65,8 @@ OPENFGA_PLAYGROUND_PORT="${SUPERTEAM_DEV_OPENFGA_PLAYGROUND_PORT:-3008}"
 OPENFGA_PLAYGROUND_ADDR="${SUPERTEAM_DEV_OPENFGA_PLAYGROUND_ADDR:-127.0.0.1:$OPENFGA_PLAYGROUND_PORT}"
 OPENFGA_WAIT_URL="${SUPERTEAM_DEV_OPENFGA_WAIT_URL-http://127.0.0.1:8088/healthz}"
 
-SERVICES=(temporal control-plane web runtime-agent)
-STOP_SERVICES=(runtime-agent web control-plane temporal)
+SERVICES=(temporal control-plane web runtime-agent feishu-connector)
+STOP_SERVICES=(feishu-connector runtime-agent web control-plane temporal)
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -93,7 +93,7 @@ log_success() {
 usage() {
     cat <<'USAGE'
 Usage:
-  scripts/dev-services.sh <start|stop|restart|status> [all|temporal|control-plane|web|runtime-agent|openfga]
+  scripts/dev-services.sh <start|stop|restart|status> [all|temporal|control-plane|web|runtime-agent|feishu-connector|openfga]
 
 Examples:
   scripts/dev-services.sh start all
@@ -114,6 +114,9 @@ Environment overrides:
   SUPERTEAM_DEV_WEB_WAIT_URL
   SUPERTEAM_DEV_RUNTIME_AGENT_CMD
   SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL
+  SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD
+  SUPERTEAM_DEV_FEISHU_CONNECTOR_WAIT_URL
+  SUPERTEAM_DEV_FEISHU_CONNECTOR_TOKEN_FILE
   SUPERTEAM_DEV_OPENFGA_MODE
   SUPERTEAM_DEV_OPENFGA_CMD
   SUPERTEAM_DEV_OPENFGA_COMPOSE_FILE

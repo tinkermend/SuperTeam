@@ -40,7 +40,7 @@ SuperTeam 把 AI 执行能力、流程调度、人类审批、上下文、工件
 
 - 技术栈以当前 workspace、契约和构建脚本为准；不得在没有明确共识时引入替代主栈的并行框架或重复基础设施。根级命令以 `package.json` 为准，优先通过 `corepack pnpm <script>` 运行；不要记录未在仓库脚本、Makefile 或 helper script 中确认过的命令。
 - 验证一律走仓库已有的 `verify:*` 脚本，不要手拼等价命令：`verify:foundation`（契约 + TS/Go/Rust 全量）、`verify:web`、`verify:control-plane`、`verify:runtime-agent`、`verify:db`、`verify:contracts`、`verify:design-system`、`verify:design-prototypes`。契约代码生成用 `generate:control-plane`。
-- 启停用 `scripts/dev-services.sh start|status|restart|stop`；默认 `all` 含 Temporal、Control Plane、Web、Runtime Agent，OpenFGA 需单独管理。联调前后先 `status` 确认实际状态，代码变更后优先定向 `restart <service>`（脚本只管理自己写入 pid 文件的进程）。`start|restart control-plane` 会先自动执行 Atlas 迁移，仅在明确需要时用 `SUPERTEAM_DEV_SKIP_MIGRATIONS=1` 跳过。
+- 启停用 `scripts/dev-services.sh start|status|restart|stop`；默认 `all` 含 Temporal、Control Plane、Web、Runtime Agent、Feishu Connector，OpenFGA 需单独管理。联调前后先 `status` 确认实际状态，代码变更后优先定向 `restart <service>`（脚本只管理自己写入 pid 文件的进程）。`start|restart control-plane` 会先自动执行 Atlas 迁移，仅在明确需要时用 `SUPERTEAM_DEV_SKIP_MIGRATIONS=1` 跳过。
 - 数据库表设计、字段类型、UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 规则统一遵循 `DATABASE_DESIGN.md`。生产迁移唯一目录是 `apps/control-plane/internal/storage/migrations/`；变更后必须更新 `atlas.sum`，并用 `make -C apps/control-plane migrate-validate` 校验（本地非 Docker dev 库可覆盖 `DEV_URL`）。
 - 代码发现优先使用 codebase-memory-mcp：`search_graph` 查符号、`trace_path` 追调用、`get_code_snippet` 读实现，复杂模式用 `query_graph` / `get_architecture`；工具不可用、结果不足或搜索字符串/配置/非代码文件时才回退 `rg` / 文件读取。
 - 平台面向中文用户且不做 i18n：前端用户可见的状态/枚举一律经 `apps/web/src/lib/status-labels.ts` 映射为中文，缺键补词表而非在组件内翻译；业务对象指称显示名称（必要时"名称 (id)"），不得裸 UUID，名称由服务端读路径批量补名。细则见 `DESIGN.md`「面向用户文本与枚举显示」，护栏测试 `status-labels.guard.test.ts`。

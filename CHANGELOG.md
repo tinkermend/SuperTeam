@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-22 18:14（dev-services 默认 all 含飞书）：`scripts/dev-services.sh start|restart all` 纳入 `feishu-connector`（排在 control-plane 之后；缺 service token 仍只告警）。验证：`bash scripts/dev-services.test.sh` PASS。
 - 2026-07-22 17:07（日历/GetRun chat 所属项目为空修复）：任务中枢对话 run 的项目落在 `tasks.params.metadata.anchor_project_id`，原先只 join `project_tasks`，日历点开几乎全是「无关联项目」。GetRun/run-calendar/runs 列表改为优先 `project_tasks`、回退 metadata 锚点。验证：`go test ./internal/employee` PASS；restart CP 后「开发-小王」本周 10 条 calendar 均有 `project_name`；chat `ca7e3150` GetRun=`多owner决策可见性E2E`；浏览器点「续接旧对话验证」抽屉「所属项目」同名。
 - 2026-07-22 16:56（数字员工详情团队与绑定项目）：`GET /digital-employees/{id}` 补 `team_name` + `project_summary`；`GetRun` 补 `project_id`/`project_name`。详情头卡展示团队（无队「无团队归属」可点进团队）；右栏「绑定项目」列表链到具体项目；运行抽屉摘要增加「所属项目」。验证：Go employee/api PASS；Vitest 31/31；restart CP/web 后 API「开发-小王」team=`G4补员E2E团队`、3 个绑定项目；浏览器头卡/右栏可见；日历点「执行 echo 命令」抽屉所属项目=`多owner决策可见性E2E`。
 - 2026-07-22 16:40（数字员工工作日历条目状态回 StatusPill）：上行恢复时分 + 紧凑 StatusPill；下行标题 `line-clamp-2` 超出省略。验证：日历 Vitest 4/4；restart web 后 pill 可见，长标题实测约 2 行收束。

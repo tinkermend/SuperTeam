@@ -28,6 +28,7 @@ export SUPERTEAM_DEV_CONTROL_PLANE_WAIT_URL=""
 export SUPERTEAM_DEV_WEB_CMD="sleep 60"
 export SUPERTEAM_DEV_WEB_WAIT_URL=""
 export SUPERTEAM_DEV_RUNTIME_AGENT_CMD="sleep 60"
+export SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD="sleep 60"
 
 run_script() {
     bash "$SCRIPT" "$@"
@@ -63,11 +64,13 @@ run_script start all >"$TMP_DIR/start.out"
 assert_pid_running control-plane
 assert_pid_running web
 assert_pid_running runtime-agent
+assert_pid_running feishu-connector
 
 run_script status all >"$TMP_DIR/status-running.out"
 assert_contains "$TMP_DIR/status-running.out" "control-plane: running"
 assert_contains "$TMP_DIR/status-running.out" "web: running"
 assert_contains "$TMP_DIR/status-running.out" "runtime-agent: running"
+assert_contains "$TMP_DIR/status-running.out" "feishu-connector: running"
 
 old_web_pid="$(cat "$SUPERTEAM_DEV_PID_DIR/web.pid")"
 run_script restart web >"$TMP_DIR/restart-web.out"
@@ -87,6 +90,7 @@ run_script status all >"$TMP_DIR/status-stopped.out"
 assert_contains "$TMP_DIR/status-stopped.out" "control-plane: stopped"
 assert_contains "$TMP_DIR/status-stopped.out" "web: stopped"
 assert_contains "$TMP_DIR/status-stopped.out" "runtime-agent: stopped"
+assert_contains "$TMP_DIR/status-stopped.out" "feishu-connector: stopped"
 
 FAKE_BIN="$TMP_DIR/bin"
 mkdir -p "$FAKE_BIN"
