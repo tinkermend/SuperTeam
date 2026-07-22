@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-22 23:47（自动化首页 OCR 修高/中）：事实条「72h 待触发」改为无上限计数（右栏仍限 8）；`pending` fire tone；inbox 计数与列表同源并避免「有数却空态」；下次触发页面级 `buildNextFireById` memo；interval 算术跳步；`hourCycle: h23` + 午夜单测。验证：automations Vitest 10/10。
+- 2026-07-22 20:45（自动化任务首页工作台重构）：`/automations` 改为事实条 + 规则表（下次触发/健康）+ 常驻右栏（即将触发 / 待你处理 inbox / 最近触发）；空态三场景模板；新建抽屉分区（模式三卡、cron 大预设、闸门摘要）。下次触发客户端估算。验证：automations Vitest 7/7；浏览器 `/automations` 见事实条与右栏、新建抽屉模式卡与「到点后你还可能需要」。
 - 2026-07-22 19:47（自动化任务 P1 真链路 PASS，分支 `feat/automation-tasks`）：迁移 `20260722150001` 已 apply 远端库（`automation_rules`/`automation_fires`）；worktree 重启 CP(:8081)/Web(:3000)。API：admin 创建 loop 规则 → trigger `succeeded` 产出 demand `source_type=automation`（含 rule/fire refs）→ 二次 trigger `skipped_overlap` → disable=`user_disabled`。浏览器 `/automations` 见规则行（项目名/循环/已手动停用/最近触发）。飞书投影未启 connector，未验。验证：`go test ./internal/automation` PASS。
 - 2026-07-22 18:14（dev-services 默认 all 含飞书）：`scripts/dev-services.sh start|restart all` 纳入 `feishu-connector`（排在 control-plane 之后；缺 service token 仍只告警）。验证：`bash scripts/dev-services.test.sh` PASS。
 - 2026-07-22 17:07（日历/GetRun chat 所属项目为空修复）：任务中枢对话 run 的项目落在 `tasks.params.metadata.anchor_project_id`，原先只 join `project_tasks`，日历点开几乎全是「无关联项目」。GetRun/run-calendar/runs 列表改为优先 `project_tasks`、回退 metadata 锚点。验证：`go test ./internal/employee` PASS；restart CP 后「开发-小王」本周 10 条 calendar 均有 `project_name`；chat `ca7e3150` GetRun=`多owner决策可见性E2E`；浏览器点「续接旧对话验证」抽屉「所属项目」同名。

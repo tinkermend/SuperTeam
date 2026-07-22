@@ -20,7 +20,7 @@ export function formatRelativeTime(value: string): string {
   }
   const diff = Date.now() - date.getTime();
   if (diff < 0) {
-    return formatDateTime(value);
+    return formatRelativeFuture(value);
   }
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) return "刚刚";
@@ -29,6 +29,24 @@ export function formatRelativeTime(value: string): string {
   if (hours < 24) return `${hours} 小时前`;
   const days = Math.floor(hours / 24);
   return `${days} 天前`;
+}
+
+/** Relative future: "即将" / "X 分钟后" / "X 小时后" / "X 天后". */
+export function formatRelativeFuture(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const diff = date.getTime() - Date.now();
+  if (diff <= 0) return "即将";
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "即将";
+  if (minutes < 60) return `${minutes} 分钟后`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时后`;
+  const days = Math.floor(hours / 24);
+  if (days < 14) return `${days} 天后`;
+  return formatDateTime(value);
 }
 
 /** Compare ISO timestamps descending (newest first). Missing values sort last. */

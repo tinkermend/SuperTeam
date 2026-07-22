@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Play, Pencil, Power, Trash2 } from "lucide-react";
+import { Play, Pencil, Power, Trash2, X } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
@@ -10,29 +10,16 @@ import {
   V3Td,
   V3Th,
   V3Tr,
-  type V3Tone,
 } from "@/components/superteam";
 import {
   formatAutomationScheduleSummary,
   type AutomationFire,
   type AutomationRule,
 } from "@/lib/api/automations";
+import { formatRelativeFuture } from "@/lib/format-time";
 import { statusLabel } from "@/lib/status-labels";
+import { automationFireTone } from "../fire-tone";
 import { HumanGateCallout } from "./human-gate-callout";
-
-function fireTone(status: string): V3Tone {
-  switch (status) {
-    case "succeeded":
-      return "ok";
-    case "failed":
-      return "danger";
-    case "skipped_overlap":
-    case "skipped_disabled":
-      return "warn";
-    default:
-      return "mute";
-  }
-}
 
 function disabledReasonLabel(reason: string | null | undefined): string {
   if (!reason) return "";
@@ -45,11 +32,14 @@ type AutomationRuleDetailProps = {
   firesLoading?: boolean;
   actionError?: string | null;
   busy?: boolean;
+  /** Precomputed next fire ISO from page-level map; avoids per-render cron scan. */
+  nextFireIso?: string | null;
   onDisable: () => void;
   onEnable: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onTrigger: () => void;
+  onClose?: () => void;
 };
 
 export function AutomationRuleDetail({
@@ -58,19 +48,35 @@ export function AutomationRuleDetail({
   firesLoading,
   actionError,
   busy,
+  nextFireIso,
   onDisable,
   onEnable,
   onEdit,
   onDelete,
   onTrigger,
+  onClose,
 }: AutomationRuleDetailProps) {
   const projectLabel = rule.project_name?.trim() || rule.project_id;
+  const nextIso = nextFireIso ?? null;
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <SoftCard className="space-y-3 p-4">
         <div className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">{rule.name}</h2>
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="text-base font-extrabold text-v3-ink">{rule.name}</h2>
+            {onClose ? (
+              <V3Button
+                aria-label="返回工作台"
+                size="icon"
+                type="button"
+                variant="secondary"
+                onClick={onClose}
+              >
+                <X className="size-4" />
+              </V3Button>
+            ) : null}
+          </div>
           <p className="text-sm text-muted-foreground">
             项目{" "}
             <Link
@@ -89,6 +95,12 @@ export function AutomationRuleDetail({
             <StatusPill tone={rule.enabled ? "ok" : "mute"}>
               {rule.enabled ? "启用中" : "已禁用"}
             </StatusPill>
+            {nextIso ? (
+              <span className="text-sm tabular-nums text-muted-foreground">
+                下次{" "}
+                <time dateTime={nextIso}>{formatRelativeFuture(nextIso)}</time>
+              </span>
+            ) : null}
             {!rule.enabled && rule.disabled_reason ? (
               <span className="text-sm text-muted-foreground">
                 {disabledReasonLabel(rule.disabled_reason)}
@@ -152,14 +164,17 @@ export function AutomationRuleDetail({
             </thead>
             <tbody>
               {fires.map((fire) => (
-                <V3Tr key={fire.id} tone={fireTone(fire.status) === "danger" ? "danger" : undefined}>
+                <V3Tr
+                  key={fire.id}
+                  tone={automationFireTone(fire.status) === "danger" ? "danger" : undefined}
+                >
                   <V3Td className="tabular-nums text-sm text-muted-foreground">
                     <time dateTime={fire.scheduled_fire_at}>
                       {new Date(fire.scheduled_fire_at).toLocaleString("zh-CN")}
                     </time>
                   </V3Td>
                   <V3Td>
-                    <StatusPill tone={fireTone(fire.status)}>
+                    <StatusPill tone={automationFireTone(fire.status)}>
                       {statusLabel(fire.status)}
                     </StatusPill>
                     {fire.error_message ? (
