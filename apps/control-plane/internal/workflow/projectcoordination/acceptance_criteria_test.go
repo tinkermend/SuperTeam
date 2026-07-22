@@ -240,3 +240,94 @@ func TestUnknownMethodStillRejected(t *testing.T) {
 	require.Contains(t, err.Error(), "unknown_verification_method")
 	require.Contains(t, err.Error(), "vibe_check")
 }
+
+// TestCollapseBlockingHumanJudgmentKeepsOne: three blocking human criteria
+// collapse to one blocking + two non_blocking checklist items.
+func TestCollapseBlockingHumanJudgmentKeepsOne(t *testing.T) {
+	plan := &RouteDecisionPlan{
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "h1", Statement: "结论业务上可接受", VerificationMethod: VerificationMethodHumanJudgment, Severity: CriterionSeverityBlocking},
+			{ID: "h2", Statement: "范围说明充分", VerificationMethod: VerificationMethodHumanJudgment, Severity: CriterionSeverityBlocking},
+			{ID: "h3", Statement: "风险已沟通", VerificationMethod: VerificationMethodHumanJudgment, Severity: CriterionSeverityBlocking},
+			{ID: "a1", Statement: "登录失败返回 401", VerificationMethod: VerificationMethodAutomatedTest, Severity: CriterionSeverityBlocking, SatisfiedBy: []string{"t1"}},
+		},
+	}
+
+	collapseBlockingHumanJudgment(plan)
+
+	require.Equal(t, CriterionSeverityBlocking, plan.PlanAcceptanceCriteria[0].Severity)
+	require.Equal(t, "h1", plan.PlanAcceptanceCriteria[0].ID)
+	require.Equal(t, CriterionSeverityNonBlocking, plan.PlanAcceptanceCriteria[1].Severity)
+	require.Equal(t, CriterionSeverityNonBlocking, plan.PlanAcceptanceCriteria[2].Severity)
+	require.Equal(t, CriterionSeverityBlocking, plan.PlanAcceptanceCriteria[3].Severity, "automated criteria untouched")
+}
+
+// TestCollapsePrefersHumanFinalConfirmation: when the fallback id is present,
+// it is the kept blocking gate even if it is not first.
+func TestCollapsePrefersHumanFinalConfirmation(t *testing.T) {
+	plan := &RouteDecisionPlan{
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "h1", Statement: "planner 业务判断", VerificationMethod: VerificationMethodHumanJudgment, Severity: CriterionSeverityBlocking},
+			{ID: fallbackHumanJudgmentCriterionID, Statement: fallbackHumanJudgmentCriterionStatement, VerificationMethod: VerificationMethodHumanJudgment, Severity: CriterionSeverityBlocking},
+			{ID: "h2", Statement: "另一条人类判断", VerificationMethod: VerificationMethodHumanJudgment, Severity: CriterionSeverityBlocking},
+		},
+	}
+
+	collapseBlockingHumanJudgment(plan)
+
+	require.Equal(t, CriterionSeverityNonBlocking, plan.PlanAcceptanceCriteria[0].Severity)
+	require.Equal(t, CriterionSeverityBlocking, plan.PlanAcceptanceCriteria[1].Severity)
+	require.Equal(t, fallbackHumanJudgmentCriterionID, plan.PlanAcceptanceCriteria[1].ID)
+	require.Equal(t, CriterionSeverityNonBlocking, plan.PlanAcceptanceCriteria[2].Severity)
+}
+
+// TestApplyDefaultsCollapsesThenInjects: high-risk + three planner human
+// criteria → collapse to one blocking human, no double-inject of fallback.
+func TestApplyDefaultsCollapsesThenInjects(t *testing.T) {
+	plan := &RouteDecisionPlan{
+		RequiresHumanReview: true,
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "h1", Statement: "结论业务上可接受", VerificationMethod: VerificationMethodHumanJudgment},
+			{ID: "h2", Statement: "范围说明充分", VerificationMethod: VerificationMethodHumanJudgment},
+			{ID: "h3", Statement: "风险已沟通", VerificationMethod: VerificationMethodHumanJudgment},
+		},
+	}
+
+	applyAcceptanceCriteriaDefaults(plan, nil)
+
+	blockingHuman := 0
+	nonBlockingHuman := 0
+	for _, c := range plan.PlanAcceptanceCriteria {
+		if c.VerificationMethod != VerificationMethodHumanJudgment {
+			continue
+		}
+		switch c.Severity {
+		case CriterionSeverityBlocking:
+			blockingHuman++
+		case CriterionSeverityNonBlocking:
+			nonBlockingHuman++
+		}
+	}
+	require.Equal(t, 1, blockingHuman, "exactly one blocking human gate")
+	require.Equal(t, 2, nonBlockingHuman, "extras demoted to checklist")
+	require.Len(t, plan.PlanAcceptanceCriteria, 3, "no fallback double-inject when planner already authored human")
+}
+
+// TestApplyDefaultsHighRiskInjectsSingleFallback: high-risk with only
+// automated criteria still gets exactly one human_final_confirmation.
+func TestApplyDefaultsHighRiskInjectsSingleFallback(t *testing.T) {
+	plan := &RouteDecisionPlan{
+		RequiresHumanReview: true,
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{ID: "a1", Statement: "登录失败返回 401", SatisfiedBy: []string{"t1"}},
+		},
+	}
+
+	applyAcceptanceCriteriaDefaults(plan, nil)
+
+	require.Len(t, plan.PlanAcceptanceCriteria, 2)
+	injected := plan.PlanAcceptanceCriteria[1]
+	require.Equal(t, fallbackHumanJudgmentCriterionID, injected.ID)
+	require.Equal(t, VerificationMethodHumanJudgment, injected.VerificationMethod)
+	require.Equal(t, CriterionSeverityBlocking, injected.Severity)
+}

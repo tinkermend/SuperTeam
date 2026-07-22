@@ -1189,6 +1189,10 @@ type DecisionRequest struct {
 	UpdatedAt            time.Time
 	ResolvedAt           *time.Time
 	DispatchGateResultID *uuid.UUID
+	// InboxContext is projection-only (not persisted on decision_requests).
+	// Callers set it before UpsertProjectDecisionRequest so the inbox item
+	// carries demand/task identity for human-facing cards.
+	InboxContext map[string]any
 }
 
 type DecisionInboxProjector interface {

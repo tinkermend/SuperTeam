@@ -65,23 +65,26 @@ function judgeLabel(judgeType: DemandAcceptanceCriterionDetail["judge_type"]): s
   }
 }
 
-function canSignCriterion(
+/** Unsigned blocking human_judgment criteria that still gate acceptance. */
+export function unsignedBlockingHumanCriteria(
   demandStatus: string,
-  criterion: DemandAcceptanceCriterionDetail,
-): boolean {
-  return (
-    demandStatus === ACCEPTANCE_PENDING &&
-    criterion.verification_method === "human_judgment" &&
-    criterion.severity === "blocking" &&
-    // 已有人类判定即视为已签署（人类判定优先于员工判定）。
-    criterion.judge_type !== "human"
+  criteria: DemandAcceptanceCriterionDetail[],
+): DemandAcceptanceCriterionDetail[] {
+  if (demandStatus !== ACCEPTANCE_PENDING) {
+    return [];
+  }
+  return criteria.filter(
+    (criterion) =>
+      criterion.verification_method === "human_judgment" &&
+      criterion.severity === "blocking" &&
+      criterion.judge_type !== "human",
   );
 }
 
-type SignHandler = (
-  criterionId: string,
+type FinalAcceptanceHandler = (
   verdict: "satisfied" | "unsatisfied",
   reason: string,
+  criterionIds: string[],
 ) => void;
 
 function deliverableToPreviewable(
@@ -145,21 +148,13 @@ function DeliverableChips({
 
 function CriterionRow({
   criterion,
-  demandStatus,
-  onSign,
   onPreview,
-  isSigning,
 }: {
   criterion: DemandAcceptanceCriterionDetail;
-  demandStatus: string;
-  onSign?: SignHandler;
   onPreview: (artifact: PreviewableArtifact) => void;
-  isSigning?: boolean;
 }) {
-  const [reason, setReason] = useState("");
   const { tone, label } = verdictPill(criterion.verdict);
   const judge = judgeLabel(criterion.judge_type);
-  const showControls = Boolean(onSign) && canSignCriterion(demandStatus, criterion);
 
   return (
     <div className="grid gap-2.5 p-3" data-testid={`criterion-row-${criterion.criterion_id}`}>
@@ -223,38 +218,70 @@ function CriterionRow({
           </div>
         </details>
       ) : null}
+    </div>
+  );
+}
 
-      {showControls ? (
-        <div className="grid gap-2 rounded-v3-inner border border-v3-line bg-v3-surface p-2.5">
-          <Textarea
-            className="min-h-16 text-sm"
-            data-testid={`criterion-reason-${criterion.criterion_id}`}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder="签署理由（可选）——请先核对上方产出再判定"
-            value={reason}
-          />
-          <div className="flex flex-wrap gap-2">
-            <V3Button
-              data-testid={`criterion-sign-satisfied-${criterion.criterion_id}`}
-              disabled={isSigning}
-              onClick={() => onSign?.(criterion.criterion_id, "satisfied", reason.trim())}
-              size="sm"
-              variant="primary"
-            >
-              满足
-            </V3Button>
-            <V3Button
-              data-testid={`criterion-sign-unsatisfied-${criterion.criterion_id}`}
-              disabled={isSigning}
-              onClick={() => onSign?.(criterion.criterion_id, "unsatisfied", reason.trim())}
-              size="sm"
-              variant="danger"
-            >
-              不满足
-            </V3Button>
-          </div>
-        </div>
-      ) : null}
+function FinalAcceptanceGate({
+  pendingCriteria,
+  onAccept,
+  isSigning,
+}: {
+  pendingCriteria: DemandAcceptanceCriterionDetail[];
+  onAccept?: FinalAcceptanceHandler;
+  isSigning?: boolean;
+}) {
+  const [reason, setReason] = useState("");
+  if (!onAccept || pendingCriteria.length === 0) {
+    return null;
+  }
+  const criterionIds = pendingCriteria.map((c) => c.criterion_id);
+
+  return (
+    <div
+      className="grid gap-2.5 rounded-v3-inner border border-v3-warn/40 bg-v3-warn-soft/40 p-3"
+      data-testid="final-acceptance-gate"
+    >
+      <div className="grid gap-1">
+        <p className="text-sm font-semibold text-v3-ink">最终验收</p>
+        <p className="text-xs leading-5 text-v3-ink-2">
+          确认交付是否符合需求意图。一次通过即完成本次人类守门；不通过将使本需求失败。
+        </p>
+      </div>
+      <ul className="grid gap-1 text-xs text-v3-ink-2">
+        {pendingCriteria.map((criterion) => (
+          <li key={criterion.criterion_id} data-testid={`final-acceptance-item-${criterion.criterion_id}`}>
+            · {criterion.statement}
+          </li>
+        ))}
+      </ul>
+      <Textarea
+        className="min-h-16 text-sm"
+        data-testid="final-acceptance-reason"
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="签署理由——不通过时必填；通过时可选"
+        value={reason}
+      />
+      <div className="flex flex-wrap gap-2">
+        <V3Button
+          data-testid="final-acceptance-pass"
+          disabled={isSigning}
+          onClick={() => onAccept("satisfied", reason.trim(), criterionIds)}
+          size="sm"
+          variant="primary"
+        >
+          通过
+        </V3Button>
+        <V3Button
+          data-testid="final-acceptance-reject"
+          disabled={isSigning || !reason.trim()}
+          onClick={() => onAccept("unsatisfied", reason.trim(), criterionIds)}
+          size="sm"
+          variant="danger"
+        >
+          不通过
+        </V3Button>
+      </div>
     </div>
   );
 }
@@ -265,7 +292,7 @@ export type CriteriaPanelViewProps = {
   isLoading?: boolean;
   isError?: boolean;
   onRetry?: () => void;
-  onSign?: SignHandler;
+  onFinalAccept?: FinalAcceptanceHandler;
   isSigning?: boolean;
 };
 
@@ -275,11 +302,13 @@ export function CriteriaPanelView({
   isLoading,
   isError,
   onRetry,
-  onSign,
+  onFinalAccept,
   isSigning,
 }: CriteriaPanelViewProps) {
   const [previewArtifact, setPreviewArtifact] =
     useState<PreviewableArtifact | null>(null);
+  const pendingHuman = unsignedBlockingHumanCriteria(demandStatus, criteria);
+
   return (
     <SoftCard className="grid gap-3 p-4">
       <div className="flex items-center gap-2">
@@ -297,18 +326,22 @@ export function CriteriaPanelView({
       ) : criteria.length === 0 ? (
         <V3EmptyState title="本需求未声明验收判据" />
       ) : (
-        <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
-          {criteria.map((criterion) => (
-            <CriterionRow
-              criterion={criterion}
-              demandStatus={demandStatus}
-              isSigning={isSigning}
-              key={criterion.criterion_id}
-              onPreview={setPreviewArtifact}
-              onSign={onSign}
-            />
-          ))}
-        </div>
+        <>
+          <FinalAcceptanceGate
+            isSigning={isSigning}
+            onAccept={onFinalAccept}
+            pendingCriteria={pendingHuman}
+          />
+          <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+            {criteria.map((criterion) => (
+              <CriterionRow
+                criterion={criterion}
+                key={criterion.criterion_id}
+                onPreview={setPreviewArtifact}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       <ArtifactPreviewSheet
@@ -335,16 +368,31 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
   });
 
   const signMutation = useMutation({
-    mutationFn: (input: {
-      criterionId: string;
+    mutationFn: async (input: {
       verdict: "satisfied" | "unsatisfied";
       reason: string;
-    }) =>
-      signDemandCriterionVerdict(apiOptions, demandId, {
-        criterion_id: input.criterionId,
-        reason: input.reason || undefined,
-        verdict: input.verdict,
-      }),
+      criterionIds: string[];
+    }) => {
+      if (input.criterionIds.length === 0) {
+        return;
+      }
+      if (input.verdict === "unsatisfied") {
+        // 一条 unsatisfied 即失败整 demand；其余未签不再要求。
+        await signDemandCriterionVerdict(apiOptions, demandId, {
+          criterion_id: input.criterionIds[0]!,
+          reason: input.reason || undefined,
+          verdict: "unsatisfied",
+        });
+        return;
+      }
+      for (const criterionId of input.criterionIds) {
+        await signDemandCriterionVerdict(apiOptions, demandId, {
+          criterion_id: criterionId,
+          reason: input.reason || undefined,
+          verdict: "satisfied",
+        });
+      }
+    },
     onError: (error) => {
       const message =
         error instanceof ApiRequestError && error.status === 409
@@ -353,7 +401,7 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
       toast.error(message);
     },
     onSuccess: () => {
-      toast.success("已记录判定");
+      toast.success("已记录最终验收");
       void queryClient.invalidateQueries({
         queryKey: ["demand-acceptance-criteria", apiBaseUrl, demandId],
       });
@@ -373,8 +421,8 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
       isLoading={criteriaQuery.isLoading}
       isSigning={signMutation.isPending}
       onRetry={() => void criteriaQuery.refetch()}
-      onSign={(criterionId, verdict, reason) =>
-        signMutation.mutate({ criterionId, reason, verdict })
+      onFinalAccept={(verdict, reason, criterionIds) =>
+        signMutation.mutate({ criterionIds, reason, verdict })
       }
     />
   );

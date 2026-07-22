@@ -9858,7 +9858,7 @@ func TestSignDemandCriterionVerdictRequiresAcceptancePendingStatus(t *testing.T)
 // assertProjectAcceptanceReviewOpened verifies Fix B: when the last demand of a
 // (running) project converges terminal, the service opens the project acceptance
 // review — project transitions running→acceptance and a pending project_acceptance
-// decision exists.
+// decision exists with demand-first title/context (never the opaque "验收项目交付").
 func assertProjectAcceptanceReviewOpened(t *testing.T, repo *memoryRepository, approvals *fakeApprovalResolver, projectID uuid.UUID) {
 	t.Helper()
 	if repo.projects[projectID].Status != ProjectStatusAcceptance {
@@ -9867,10 +9867,28 @@ func assertProjectAcceptanceReviewOpened(t *testing.T, repo *memoryRepository, a
 	if approvals.createCalls != 1 || approvals.lastCreate.DecisionType != "project_acceptance" {
 		t.Fatalf("expected one project_acceptance approval created, got calls=%d last=%#v", approvals.createCalls, approvals.lastCreate)
 	}
+	if strings.Contains(approvals.lastCreate.Title, "验收项目交付") {
+		t.Fatalf("project_acceptance title must not use opaque project-only copy, got %q", approvals.lastCreate.Title)
+	}
+	if !strings.HasPrefix(approvals.lastCreate.Title, "验收 · ") {
+		t.Fatalf("expected demand-first title prefix 验收 · , got %q", approvals.lastCreate.Title)
+	}
+	if approvals.lastCreate.ContextPayload == nil {
+		t.Fatalf("expected ContextPayload on project_acceptance approval")
+	}
+	if _, ok := approvals.lastCreate.ContextPayload["demands"]; !ok {
+		t.Fatalf("expected demands in ContextPayload, got %#v", approvals.lastCreate.ContextPayload)
+	}
+	if _, ok := approvals.lastCreate.ContextPayload["primary_demand_id"]; !ok {
+		t.Fatalf("expected primary_demand_id in ContextPayload, got %#v", approvals.lastCreate.ContextPayload)
+	}
 	found := false
 	for _, d := range repo.decisionRequests {
 		if d.ProjectID == projectID && d.DecisionType == "project_acceptance" && d.StatusSnapshot == "pending" {
 			found = true
+			if strings.Contains(d.TitleSnapshot, "验收项目交付") || !strings.HasPrefix(d.TitleSnapshot, "验收 · ") {
+				t.Fatalf("expected demand-first decision title, got %q", d.TitleSnapshot)
+			}
 		}
 	}
 	if !found {

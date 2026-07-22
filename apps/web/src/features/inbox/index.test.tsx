@@ -373,13 +373,59 @@ describe("InboxView", () => {
   it("renders read-only inbox items when API returns null actions", async () => {
     const itemWithNullActions = makeInboxItem({
       actions: null as unknown as InboxItem["actions"],
-      title: "验收项目交付",
+      title: "验收 · 帮我分析 Claude Code",
     });
     const screen = await renderInboxView(createInboxFetcher({ mineItem: itemWithNullActions }));
 
-    await expect.element(screen.getByText("验收项目交付")).toBeVisible();
+    await expect.element(screen.getByText("验收 · 帮我分析 Claude Code")).toBeVisible();
     expect(screen.getByRole("button", { name: "同意" }).query()).toBeNull();
     expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
+  });
+
+  it("lists demand and task refs before project for project_acceptance cards", async () => {
+    const demandId = "6cfc23eb-1111-2222-3333-444444444444";
+    const acceptanceItem = makeInboxItem({
+      context: {
+        decision_type: "project_acceptance",
+        demands: [
+          {
+            id: demandId,
+            status: "completed",
+            task_titles: ["分析服务器中的Claude Code配置合理性"],
+            title: "帮我分析 Claude Code",
+          },
+        ],
+        primary_demand_id: demandId,
+        project_name: "测试项目",
+      },
+      deep_link: {
+        anchor: "decision-1",
+        route: `/workflows/${demandId}`,
+      },
+      item_type: "project_decision",
+      source_approval_request_id: undefined,
+      source_project_name: "测试项目",
+      source_task_id: undefined,
+      source_type: "project_decision_request",
+      title: "验收 · 帮我分析 Claude Code",
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: acceptanceItem }));
+
+    await expect.element(screen.getByText("验收 · 帮我分析 Claude Code")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：验收 · 帮我分析 Claude Code" }));
+
+    await expect.element(screen.getByText("关联需求 · 帮我分析 Claude Code")).toBeVisible();
+    await expect
+      .element(screen.getByText("关联任务 · 分析服务器中的Claude Code配置合理性"))
+      .toBeVisible();
+    await expect.element(screen.getByText("关联项目 · 测试项目")).toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: /关联需求 · 帮我分析 Claude Code/ }))
+      .toHaveAttribute("href", `/workflows/${demandId}`);
+    await expect
+      .element(screen.getByText("帮我分析 Claude Code（任务：分析服务器中的Claude Code配置合理性）", { exact: true }))
+      .toBeVisible();
+    await expect.element(screen.getByText("项目 · 测试项目", { exact: true })).toBeVisible();
   });
 
   it("requests open inbox items by default", async () => {
@@ -547,15 +593,72 @@ describe("InboxView", () => {
     await expect.element(screen.getByRole("dialog")).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "同意" })).toBeVisible();
     const dialog = screen.getByRole("dialog");
-    await expect.element(dialog.getByText("风险等级")).toBeVisible();
+    await expect.element(dialog.getByText("风险提示")).toBeVisible();
     await expect.element(dialog.getByText("高风险")).toBeVisible();
-    await expect.element(dialog.getByText("来源项目")).toBeVisible();
-    await expect.element(dialog.getByText("project-1")).toBeVisible();
-    await expect.element(dialog.getByText("来源任务")).toBeVisible();
+    await expect.element(dialog.getByText("所属项目")).toBeVisible();
+    await expect.element(dialog.getByText("相关任务")).toBeVisible();
     await expect.element(dialog.getByText("task-1")).toBeVisible();
-    await expect.element(dialog.getByText("上下文摘要")).toBeVisible();
-    await expect.element(dialog.getByText("客户接入项目")).toBeVisible();
+    await expect.element(dialog.getByText("技术详情")).toBeVisible();
     await expect.element(dialog.getByText("上游审批服务暂时不可用")).toBeVisible();
+  });
+
+  it("frames project acceptance approve dialog around conclusion and consequences", async () => {
+    const demandId = "6cfc23eb-3e1a-471a-adb3-c303d14e4cbe";
+    const acceptanceItem = makeInboxItem({
+      context: {
+        decision_type: "project_acceptance",
+        demands: [
+          {
+            id: demandId,
+            status: "completed",
+            task_titles: ["分析服务器中的Claude Code配置合理性"],
+            title: "帮我分析一下当前服务器中的 claude code 配置是否合理",
+          },
+        ],
+        primary_demand_id: demandId,
+        project_id: "9a9418d6-f1cd-4ca3-94f6-83c16f0d7fb4",
+        project_name: "测试项目",
+      },
+      item_type: "project_decision",
+      source_project_name: "测试项目",
+      source_task_id: undefined,
+      source_type: "project_decision_request",
+      summary:
+        "项目「测试项目」· 需求「帮我分析一下当前服务器中的 claude code 配置是否合理」（含任务：分析服务器中的Claude Code配置合理性）已完成，请确认项目验收",
+      title: "验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理",
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: acceptanceItem }));
+
+    await expect
+      .element(screen.getByText("验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理"))
+      .toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "打开事项：验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理",
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
+
+    const dialog = screen.getByRole("dialog");
+    await expect.element(dialog.getByText("你在确认：项目整体可关闭")).toBeVisible();
+    await expect.element(dialog.getByText(/本次「同意」后：/)).toBeVisible();
+    await expect.element(dialog.getByText(/项目将归档关闭/)).toBeVisible();
+    await expect.element(dialog.getByText("触发需求")).toBeVisible();
+    await expect.element(dialog.getByText("相关任务")).toBeVisible();
+    await expect
+      .element(dialog.getByText("分析服务器中的Claude Code配置合理性"))
+      .toBeVisible();
+    await expect.element(dialog.getByText("所属项目")).toBeVisible();
+    await expect.element(dialog.getByText("测试项目")).toBeVisible();
+    await expect.element(dialog.getByText(/项目级终态决策/)).toBeVisible();
+    await expect.element(dialog.getByRole("link", { name: "查看需求流程与产出" })).toHaveAttribute(
+      "href",
+      `/workflows/${demandId}`,
+    );
+    // 长摘要与裸 decision_type 不应再堆在主区
+    expect(dialog.getByText(/请确认项目验收/).query()).toBeNull();
+    expect(dialog.getByText("project_acceptance").query()).toBeNull();
+    await expect.element(dialog.getByText("技术详情")).toBeVisible();
   });
 
   // 修复回归:此前页面级单飞锁会把第二条事项的提交静默吞掉(弹窗永远"提交中",

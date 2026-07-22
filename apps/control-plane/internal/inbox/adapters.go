@@ -3,6 +3,7 @@ package inbox
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,6 +83,19 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 		id := decision.ApprovalRequestID
 		approvalID = &id
 	}
+	contextPayload := decision.InboxContext
+	if contextPayload == nil {
+		contextPayload = map[string]any{}
+	}
+	deepLink := map[string]any{
+		"route":  "/projects/" + decision.ProjectID.String(),
+		"anchor": decision.ID.String(),
+	}
+	if primaryDemandID, ok := contextPayload["primary_demand_id"].(string); ok && strings.TrimSpace(primaryDemandID) != "" {
+		deepLink["route"] = "/workflows/" + strings.TrimSpace(primaryDemandID)
+	} else if demandID, ok := contextPayload["demand_id"].(string); ok && strings.TrimSpace(demandID) != "" {
+		deepLink["route"] = "/workflows/" + strings.TrimSpace(demandID)
+	}
 	_, err := a.service.UpsertItem(ctx, UpsertItemRequest{
 		TenantID:                decision.TenantID,
 		TargetUserID:            decision.TargetUserID,
@@ -97,12 +111,10 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 		RiskLevel:               stringValue(decision.RiskLevelSnapshot),
 		Status:                  statusFromDecisionSnapshot(decision.StatusSnapshot),
 		Actions:                 DecisionActions(decision.DecisionType),
-		DeepLink: map[string]any{
-			"route":  "/projects/" + decision.ProjectID.String(),
-			"anchor": decision.ID.String(),
-		},
-		ResolvedAt:     decision.ResolvedAt,
-		LastActivityAt: lastActivityAt(decision.UpdatedAt, decision.CreatedAt),
+		ContextPayload:          contextPayload,
+		DeepLink:                deepLink,
+		ResolvedAt:              decision.ResolvedAt,
+		LastActivityAt:          lastActivityAt(decision.UpdatedAt, decision.CreatedAt),
 	})
 	return err
 }

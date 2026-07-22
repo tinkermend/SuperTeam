@@ -105,16 +105,17 @@ type ApprovalResolver interface {
 // project service needs to open a project_acceptance review; the adapter maps it
 // to the approval package's own input type.
 type CreateApprovalRequestInput struct {
-	TenantID      uuid.UUID
-	ResourceType  string
-	ResourceID    uuid.UUID
-	RequesterType string
-	TargetUserID  uuid.UUID
-	DecisionType  string
-	Title         string
-	Summary       string
-	RiskLevel     string
-	Options       []any
+	TenantID       uuid.UUID
+	ResourceType   string
+	ResourceID     uuid.UUID
+	RequesterType  string
+	TargetUserID   uuid.UUID
+	DecisionType   string
+	Title          string
+	Summary        string
+	RiskLevel      string
+	Options        []any
+	ContextPayload map[string]any
 }
 
 type DigitalEmployeeIdentity struct {
@@ -6474,18 +6475,24 @@ func (s *Service) maybeOpenProjectAcceptanceReview(ctx context.Context, tenantID
 	rollbackToRunning := func() {
 		_, _ = s.repository.TransitionProjectStatus(ctx, tenantID, projectID, []string{string(ProjectStatusAcceptance)}, string(ProjectStatusRunning))
 	}
+	presentation, err := s.projectAcceptancePresentation(ctx, tenantID, projectID, projectRecord.Name)
+	if err != nil {
+		rollbackToRunning()
+		return err
+	}
 	targetUserID := projectRecord.HumanOwnerUserID
 	approvalRequestID, err := s.approvals.CreateRequest(ctx, CreateApprovalRequestInput{
-		TenantID:      tenantID,
-		ResourceType:  "project",
-		ResourceID:    projectID,
-		RequesterType: "project_coordinator",
-		TargetUserID:  targetUserID,
-		DecisionType:  "project_acceptance",
-		Title:         "验收项目交付",
-		Summary:       "项目全部需求已完成,请确认验收",
-		RiskLevel:     "high",
-		Options:       []any{"approved", "rejected", "needs_more_evidence"},
+		TenantID:       tenantID,
+		ResourceType:   "project",
+		ResourceID:     projectID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   targetUserID,
+		DecisionType:   "project_acceptance",
+		Title:          presentation.Title,
+		Summary:        presentation.Summary,
+		RiskLevel:      "high",
+		Options:        []any{"approved", "rejected", "needs_more_evidence"},
+		ContextPayload: presentation.Context,
 	})
 	if err != nil {
 		rollbackToRunning()
@@ -6502,6 +6509,7 @@ func (s *Service) maybeOpenProjectAcceptanceReview(ctx context.Context, tenantID
 			"approval_request_id": approvalRequestID.String(),
 			"project_id":          projectID.String(),
 			"target_user_id":      targetUserID.String(),
+			"primary_demand_id":   presentation.PrimaryDemandID.String(),
 		},
 	})
 	if err != nil {
@@ -6514,8 +6522,8 @@ func (s *Service) maybeOpenProjectAcceptanceReview(ctx context.Context, tenantID
 		ApprovalRequestID: approvalRequestID,
 		TargetUserID:      targetUserID,
 		DecisionType:      "project_acceptance",
-		TitleSnapshot:     "验收项目交付",
-		SummarySnapshot:   "项目全部需求已完成,请确认验收",
+		TitleSnapshot:     presentation.Title,
+		SummarySnapshot:   presentation.Summary,
 		RiskLevelSnapshot: "high",
 		StatusSnapshot:    "pending",
 		CreatedEventID:    &event.ID,
@@ -6524,12 +6532,50 @@ func (s *Service) maybeOpenProjectAcceptanceReview(ctx context.Context, tenantID
 		rollbackToRunning()
 		return err
 	}
+	decision.InboxContext = presentation.Context
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// projectAcceptancePresentation loads terminal demands (+ best-effort task
+// titles) and builds demand/task-first copy for project_acceptance cards.
+func (s *Service) projectAcceptancePresentation(ctx context.Context, tenantID, projectID uuid.UUID, projectName string) (ProjectAcceptancePresentation, error) {
+	demands, err := s.repository.ListProjectDemands(ctx, tenantID, projectID, 100, 0)
+	if err != nil {
+		return ProjectAcceptancePresentation{}, err
+	}
+	taskTitlesByDemand := map[uuid.UUID][]string{}
+	tasks, taskErr := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, 200, 0)
+	if taskErr == nil {
+		for _, task := range tasks {
+			if task.DemandID == nil || *task.DemandID == uuid.Nil {
+				continue
+			}
+			title := strings.TrimSpace(task.Title)
+			if title == "" {
+				continue
+			}
+			taskTitlesByDemand[*task.DemandID] = append(taskTitlesByDemand[*task.DemandID], title)
+		}
+	}
+	inputs := make([]ProjectAcceptanceDemandInput, 0, len(demands))
+	for _, demand := range demands {
+		switch demand.Status {
+		case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+			inputs = append(inputs, ProjectAcceptanceDemandInput{
+				ID:         demand.ID,
+				Title:      demand.Title,
+				Status:     string(demand.Status),
+				UpdatedAt:  demand.UpdatedAt,
+				TaskTitles: taskTitlesByDemand[demand.ID],
+			})
+		}
+	}
+	return BuildProjectAcceptancePresentation(projectName, projectID, inputs), nil
 }
 
 // findRejectedHumanCriterion returns the criterion a human signed unsatisfied,

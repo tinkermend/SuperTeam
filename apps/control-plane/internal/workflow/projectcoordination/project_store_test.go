@@ -2652,7 +2652,11 @@ func TestProjectStoreRequestProjectAcceptanceReviewTransitionsAndIsIdempotent(t 
 	require.NotEmpty(t, repo.decisionRequests)
 	require.Equal(t, "project_acceptance", repo.decisionRequests[0].DecisionType)
 	require.Equal(t, ownerID, repo.decisionRequests[0].TargetUserID)
+	require.True(t, strings.HasPrefix(repo.decisionRequests[0].TitleSnapshot, "验收 · "))
+	require.NotContains(t, repo.decisionRequests[0].TitleSnapshot, "验收项目交付")
 	require.Len(t, inbox.upserts, 1)
+	require.NotNil(t, inbox.upserts[0].InboxContext)
+	require.Contains(t, inbox.upserts[0].InboxContext, "demands")
 
 	// Second call: project is no longer running (already in acceptance) -> idempotent no-op.
 	repo.decisionRequests = nil

@@ -2437,18 +2437,24 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 	rollbackToRunning := func() {
 		_, _ = s.repository.TransitionProjectStatus(ctx, input.TenantID, input.ProjectID, []string{string(project.ProjectStatusAcceptance)}, string(project.ProjectStatusRunning))
 	}
+	presentation, err := s.projectAcceptancePresentation(ctx, input.TenantID, input.ProjectID, projectRecord.Name)
+	if err != nil {
+		rollbackToRunning()
+		return DecisionRequestResult{}, err
+	}
 	targetUserID := projectRecord.HumanOwnerUserID
 	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
-		TenantID:      input.TenantID,
-		ResourceType:  "project",
-		ResourceID:    input.ProjectID,
-		RequesterType: "project_coordinator",
-		TargetUserID:  targetUserID,
-		DecisionType:  "project_acceptance",
-		Title:         "验收项目交付",
-		Summary:       "项目全部需求已完成,请确认验收",
-		RiskLevel:     "high",
-		Options:       []any{"approved", "rejected", "needs_more_evidence"},
+		TenantID:       input.TenantID,
+		ResourceType:   "project",
+		ResourceID:     input.ProjectID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   targetUserID,
+		DecisionType:   "project_acceptance",
+		Title:          presentation.Title,
+		Summary:        presentation.Summary,
+		RiskLevel:      "high",
+		Options:        []any{"approved", "rejected", "needs_more_evidence"},
+		ContextPayload: presentation.Context,
 	})
 	if err != nil {
 		rollbackToRunning()
@@ -2458,6 +2464,7 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		"approval_request_id": approvalRequest.ID.String(),
 		"project_id":          input.ProjectID.String(),
 		"target_user_id":      targetUserID.String(),
+		"primary_demand_id":   presentation.PrimaryDemandID.String(),
 	}))
 	if err != nil {
 		rollbackToRunning()
@@ -2469,8 +2476,8 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		ApprovalRequestID: approvalRequest.ID,
 		TargetUserID:      targetUserID,
 		DecisionType:      "project_acceptance",
-		TitleSnapshot:     "验收项目交付",
-		SummarySnapshot:   "项目全部需求已完成,请确认验收",
+		TitleSnapshot:     presentation.Title,
+		SummarySnapshot:   presentation.Summary,
 		RiskLevelSnapshot: "high",
 		StatusSnapshot:    "pending",
 		CreatedEventID:    &event.ID,
@@ -2479,12 +2486,43 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		rollbackToRunning()
 		return DecisionRequestResult{}, err
 	}
+	decision.InboxContext = presentation.Context
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
 			return DecisionRequestResult{ID: decision.ID}, nil
 		}
 	}
 	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+func (s *ProjectStore) projectAcceptancePresentation(ctx context.Context, tenantID, projectID uuid.UUID, projectName string) (project.ProjectAcceptancePresentation, error) {
+	demands, err := s.repository.ListProjectDemands(ctx, tenantID, projectID, 100, 0)
+	if err != nil {
+		return project.ProjectAcceptancePresentation{}, err
+	}
+	inputs := make([]project.ProjectAcceptanceDemandInput, 0, len(demands))
+	for _, demand := range demands {
+		if !projectDemandTerminalStatus(demand.Status) {
+			continue
+		}
+		taskTitles := []string{}
+		if tasks, taskErr := s.listDemandSummaryTasks(ctx, tenantID, projectID, demand.ID); taskErr == nil {
+			for _, task := range tasks {
+				title := strings.TrimSpace(task.Title)
+				if title != "" {
+					taskTitles = append(taskTitles, title)
+				}
+			}
+		}
+		inputs = append(inputs, project.ProjectAcceptanceDemandInput{
+			ID:         demand.ID,
+			Title:      demand.Title,
+			Status:     string(demand.Status),
+			UpdatedAt:  demand.UpdatedAt,
+			TaskTitles: taskTitles,
+		})
+	}
+	return project.BuildProjectAcceptancePresentation(projectName, projectID, inputs), nil
 }
 
 func (s *ProjectStore) ensureFinalDemandSummariesForAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) error {
@@ -4123,6 +4161,13 @@ func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenan
 	})
 	if err != nil {
 		return DecisionRequestResult{}, err
+	}
+	decision.InboxContext = map[string]any{
+		"demand_id":               demandID.String(),
+		"demand_title":            demand.Title,
+		"plan_revision_id":        revisionID.String(),
+		"pending_criteria":        pendingCriteria,
+		"pending_criteria_detail": pendingCriteriaDetail,
 	}
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {

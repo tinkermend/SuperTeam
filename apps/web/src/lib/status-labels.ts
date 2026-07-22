@@ -164,6 +164,28 @@ export function riskLevelLabel(level: string | undefined): string {
   return RISK_LEVEL_LABELS[normalized] ?? level;
 }
 
+const DECISION_TYPE_LABELS: Record<string, string> = {
+  budget_approval: "预算审批",
+  demand_acceptance: "需求验收",
+  plan_review: "计划确认",
+  planning_gap: "规划缺口",
+  project_acceptance: "项目验收",
+  project_task_acceptance: "任务验收",
+  project_task_approval: "任务审批",
+  project_task_clarification: "任务澄清",
+  project_task_recovery: "任务恢复",
+  route_review: "路由复核",
+};
+
+/** 收件箱/决策卡上的 decision_type 面向用户显示。 */
+export function decisionTypeLabel(type: string | undefined): string {
+  if (!type) {
+    return "未知";
+  }
+  const normalized = type.trim().toLowerCase();
+  return DECISION_TYPE_LABELS[normalized] ?? type;
+}
+
 const PROJECT_ROLE_LABELS: Record<string, string> = {
   executor: "执行者",
   leader: "负责人",

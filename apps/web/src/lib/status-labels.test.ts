@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decisionTypeLabel,
   deleteBlockerTypeLabel,
   demandStatusLabel,
   employeeStatusLabel,
@@ -29,6 +30,12 @@ describe("statusLabel", () => {
     expect(statusLabel("restaffed")).toBe("已补员");
     expect(statusLabel("exempted")).toBe("已豁免");
     expect(statusLabel("needs_more_evidence")).toBe("需要补充证据");
+  });
+
+  it("maps decision types for inbox framing", () => {
+    expect(decisionTypeLabel("project_acceptance")).toBe("项目验收");
+    expect(decisionTypeLabel("demand_acceptance")).toBe("需求验收");
+    expect(decisionTypeLabel("plan_review")).toBe("计划确认");
   });
 
   it("covers node and engine health codes", () => {

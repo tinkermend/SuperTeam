@@ -191,6 +191,47 @@ func isConstitutionalHighRiskLevel(value string) bool {
 	}
 }
 
+// collapseBlockingHumanJudgment enforces at most one blocking human_judgment
+// criterion per plan. Extra blocking human criteria are demoted to
+// non_blocking (kept as a readable checklist, no longer signable/gating).
+// Keep preference: id == human_final_confirmation, else the first blocking
+// human in list order. Call after normalizeCriterionDefaults and before
+// ensureHumanJudgmentCriterion so the fallback inject still sees a clean
+// "zero vs one" human set.
+func collapseBlockingHumanJudgment(plan *RouteDecisionPlan) {
+	if plan == nil {
+		return
+	}
+	keepIdx := -1
+	for i, criterion := range plan.PlanAcceptanceCriteria {
+		if criterion.VerificationMethod != VerificationMethodHumanJudgment {
+			continue
+		}
+		if criterion.Severity != CriterionSeverityBlocking {
+			continue
+		}
+		if criterion.ID == fallbackHumanJudgmentCriterionID {
+			keepIdx = i
+			break
+		}
+		if keepIdx < 0 {
+			keepIdx = i
+		}
+	}
+	if keepIdx < 0 {
+		return
+	}
+	for i := range plan.PlanAcceptanceCriteria {
+		if i == keepIdx {
+			continue
+		}
+		c := &plan.PlanAcceptanceCriteria[i]
+		if c.VerificationMethod == VerificationMethodHumanJudgment && c.Severity == CriterionSeverityBlocking {
+			c.Severity = CriterionSeverityNonBlocking
+		}
+	}
+}
+
 // markAmbiguousCriteria flags (but never rejects) criteria whose statement is
 // too vague to judge: shorter than ambiguousCriterionMinRuneLength once
 // trimmed, or containing a vague qualifier phrase.
@@ -218,11 +259,11 @@ func isAmbiguousCriterionStatement(statement string) bool {
 
 // applyAcceptanceCriteriaDefaults runs the full plan-level acceptance-criteria
 // pipeline in order: normalize every criterion's method/severity defaults,
-// inject the fallback human-judgment criterion if none exists (unless
-// policy-exempt), then flag ambiguous statements. Both planner production
-// paths (the primary decode and the required-review repair synthesis, which
-// starts from zero criteria of its own) must call this before
-// ValidateRouteDecisionPlan.
+// collapse excess blocking human_judgment criteria to a single gate, inject
+// the fallback human-judgment criterion if none exists (unless policy-exempt),
+// then flag ambiguous statements. Both planner production paths (the primary
+// decode and the required-review repair synthesis, which starts from zero
+// criteria of its own) must call this before ValidateRouteDecisionPlan.
 func applyAcceptanceCriteriaDefaults(plan *RouteDecisionPlan, policy map[string]any) {
 	if plan == nil {
 		return
@@ -230,6 +271,7 @@ func applyAcceptanceCriteriaDefaults(plan *RouteDecisionPlan, policy map[string]
 	for i := range plan.PlanAcceptanceCriteria {
 		normalizeCriterionDefaults(&plan.PlanAcceptanceCriteria[i])
 	}
+	collapseBlockingHumanJudgment(plan)
 	ensureHumanJudgmentCriterion(plan, policy)
 	markAmbiguousCriteria(plan)
 }

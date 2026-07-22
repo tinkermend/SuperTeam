@@ -55,6 +55,9 @@ import {
   formatSourceType,
   formatWaitShort,
   InboxItemList,
+  primaryDemandLabel,
+  primaryTaskLabel,
+  readDemandRefs,
   resolveInboxHref,
   riskLabel,
   riskTone,
@@ -428,7 +431,9 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
         <h3 className="text-[13px] font-extrabold text-v3-ink">为什么需要你处理</h3>
         <dl className="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px]">
           <dt className="font-semibold text-v3-ink-3">关联对象</dt>
-          <dd className="min-w-0 font-semibold text-v3-ink">{formatContext(item) ?? item.source_id}</dd>
+          <dd className="min-w-0 font-semibold text-v3-ink">
+            <RelatedObjectSummary item={item} />
+          </dd>
           <dt className="font-semibold text-v3-ink-3">当前节点</dt>
           <dd className="min-w-0 font-semibold text-v3-ink">{formatCurrentNode(item)}</dd>
           <dt className="font-semibold text-v3-ink-3">发起来源</dt>
@@ -552,26 +557,74 @@ type RelatedReference = {
   href?: string;
 };
 
-function buildRelatedReferences(item: InboxItem): RelatedReference[] {
-  const refs: RelatedReference[] = [];
+function RelatedObjectSummary({ item }: { item: InboxItem }) {
+  const demandLabel = primaryDemandLabel(item);
+  const taskLabel = primaryTaskLabel(item);
+  const projectName =
+    item.source_project_name ??
+    readStringFromContext(item.context, ["project_name", "project", "project_title"]);
 
-  if (item.source_project_id) {
-    refs.push({
-      key: "project",
-      icon: <FolderKanban className="size-4 shrink-0 text-v3-ink-3" />,
-      label: `关联项目 · ${item.source_project_name ?? formatContext(item) ?? item.source_project_id}`,
-      meta: "source_project_id ↗",
-      href: `/projects/${encodeURIComponent(item.source_project_id)}`,
-    });
+  if (demandLabel) {
+    return (
+      <div className="min-w-0 space-y-0.5">
+        <p className="truncate">
+          {taskLabel && taskLabel !== demandLabel
+            ? `${demandLabel}（任务：${taskLabel}）`
+            : demandLabel}
+        </p>
+        {projectName ? (
+          <p className="truncate text-xs font-medium text-v3-ink-3">项目 · {projectName}</p>
+        ) : null}
+      </div>
+    );
   }
 
-  if (item.source_task_id) {
+  return <>{formatContext(item) ?? item.source_id}</>;
+}
+
+function buildRelatedReferences(item: InboxItem): RelatedReference[] {
+  const refs: RelatedReference[] = [];
+  const demandRefs = readDemandRefs(item);
+  const seenTaskTitles = new Set<string>();
+
+  for (const demand of demandRefs) {
+    refs.push({
+      key: `demand-${demand.id ?? demand.title}`,
+      icon: <Layers className="size-4 shrink-0 text-v3-ink-3" />,
+      label: `关联需求 · ${demand.title}`,
+      meta: demand.id ? "demand_id ↗" : "demand",
+      href: demand.id ? `/workflows/${encodeURIComponent(demand.id)}` : undefined,
+    });
+    for (const taskTitle of demand.taskTitles) {
+      if (seenTaskTitles.has(taskTitle)) continue;
+      seenTaskTitles.add(taskTitle);
+      refs.push({
+        key: `task-title-${taskTitle}`,
+        icon: <FileText className="size-4 shrink-0 text-v3-ink-3" />,
+        label: `关联任务 · ${taskTitle}`,
+        meta: "task_title",
+        href: item.source_task_id ? resolveInboxHref(item) : undefined,
+      });
+    }
+  }
+
+  if (item.source_task_id && !seenTaskTitles.has(item.source_task_name ?? item.source_task_id)) {
     refs.push({
       key: "task",
       icon: <FileText className="size-4 shrink-0 text-v3-ink-3" />,
       label: `关联任务 · ${item.source_task_name ?? item.source_task_id}`,
       meta: "source_task_id ↗",
       href: resolveInboxHref(item),
+    });
+  }
+
+  if (item.source_project_id) {
+    refs.push({
+      key: "project",
+      icon: <FolderKanban className="size-4 shrink-0 text-v3-ink-3" />,
+      label: `关联项目 · ${item.source_project_name ?? readStringFromContext(item.context, ["project_name", "project_title"]) ?? item.source_project_id}`,
+      meta: "source_project_id ↗",
+      href: `/projects/${encodeURIComponent(item.source_project_id)}`,
     });
   }
 
@@ -596,12 +649,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
 }
 
 function countRelatedReferences(item: InboxItem): number {
-  let count = 0;
-  if (item.source_project_id) count++;
-  if (item.source_task_id) count++;
-  if (item.source_approval_request_id) count++;
-  count++; // 审计日志
-  return count;
+  return buildRelatedReferences(item).length;
 }
 
 function RelatedReferenceRow({ reference }: { reference: RelatedReference }) {
@@ -923,7 +971,10 @@ function resolveWorkflowInstanceHref(item: InboxItem) {
     "workflow_run_route",
     "process_instance_route",
   ]);
-  return isLocalPath(route) ? route : resolveInboxHref(item);
+  if (isLocalPath(route)) return route;
+  const demandId = readStringFromContext(item.context, ["primary_demand_id", "demand_id"]);
+  if (demandId) return `/workflows/${encodeURIComponent(demandId)}`;
+  return resolveInboxHref(item);
 }
 
 function resolveWorkflowTemplateHref(item: InboxItem) {
@@ -932,7 +983,10 @@ function resolveWorkflowTemplateHref(item: InboxItem) {
     "workflow_route",
     "process_route",
   ]);
-  return isLocalPath(route) ? route : "/workflows";
+  if (isLocalPath(route)) return route;
+  const demandId = readStringFromContext(item.context, ["primary_demand_id", "demand_id"]);
+  if (demandId) return `/workflows/${encodeURIComponent(demandId)}`;
+  return "/workflows";
 }
 
 function readStringFromContext(context: Record<string, unknown>, keys: string[]) {

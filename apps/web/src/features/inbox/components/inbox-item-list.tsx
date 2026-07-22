@@ -175,7 +175,79 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
   );
 }
 
+export type InboxDemandRef = {
+  id?: string;
+  title: string;
+  taskTitles: string[];
+};
+
+/** Prefer demand/task identity from context; project is only a fallback container. */
+export function readDemandRefs(item: InboxItem): InboxDemandRef[] {
+  const context = item.context ?? {};
+  const rawDemands = context.demands;
+  if (Array.isArray(rawDemands) && rawDemands.length > 0) {
+    const refs: InboxDemandRef[] = [];
+    for (const entry of rawDemands) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : undefined;
+      const title =
+        typeof record.title === "string" && record.title.trim()
+          ? record.title.trim()
+          : (id ?? "");
+      if (!title) continue;
+      const taskTitles: string[] = [];
+      if (Array.isArray(record.task_titles)) {
+        for (const taskTitle of record.task_titles) {
+          if (typeof taskTitle === "string" && taskTitle.trim()) {
+            taskTitles.push(taskTitle.trim());
+          }
+        }
+      }
+      refs.push({ id, title, taskTitles });
+    }
+    if (refs.length > 0) return refs;
+  }
+
+  const demandId =
+    readContextText(context, ["primary_demand_id", "demand_id"]) ?? undefined;
+  const demandTitle = readContextText(context, ["demand_title"]);
+  if (demandTitle || demandId) {
+    return [
+      {
+        id: demandId,
+        title: demandTitle ?? demandId!,
+        taskTitles: [],
+      },
+    ];
+  }
+  return [];
+}
+
+export function primaryDemandLabel(item: InboxItem): string | undefined {
+  const refs = readDemandRefs(item);
+  if (refs.length === 0) return undefined;
+  if (refs.length === 1) return refs[0].title;
+  return `${refs[0].title} 等 ${refs.length} 项`;
+}
+
+export function primaryTaskLabel(item: InboxItem): string | undefined {
+  const refs = readDemandRefs(item);
+  for (const ref of refs) {
+    if (ref.taskTitles[0]) return ref.taskTitles[0];
+  }
+  return readContextText(item.context, ["task_title"]) ?? item.source_task_name ?? undefined;
+}
+
 export function formatContext(item: InboxItem) {
+  const demandLabel = primaryDemandLabel(item);
+  const taskLabel = primaryTaskLabel(item);
+  if (demandLabel) {
+    return taskLabel && taskLabel !== demandLabel
+      ? `${demandLabel}（任务：${taskLabel}）`
+      : demandLabel;
+  }
+
   // 服务端读时补名优先于 context 快照;两者都缺时才回退裸 id。
   const projectName =
     item.source_project_name ??

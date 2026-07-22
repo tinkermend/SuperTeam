@@ -153,6 +153,51 @@ func TestDecisionProjectorAdapterUpsertsProjectDecision(t *testing.T) {
 	}
 }
 
+func TestDecisionProjectorAdapterUsesInboxContextAndDemandDeepLink(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewDecisionProjectorAdapter(service)
+	demandID := uuid.New()
+	createdAt := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	decision := project.DecisionRequest{
+		ID:             uuid.New(),
+		TenantID:       uuid.New(),
+		ProjectID:      uuid.New(),
+		TargetUserID:   uuid.New(),
+		DecisionType:   "project_acceptance",
+		TitleSnapshot:  "验收 · 帮我分析 Claude Code",
+		StatusSnapshot: "pending",
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
+		InboxContext: map[string]any{
+			"decision_type":     "project_acceptance",
+			"primary_demand_id": demandID.String(),
+			"project_name":      "测试项目",
+			"demands": []map[string]any{
+				{"id": demandID.String(), "title": "帮我分析 Claude Code", "status": "completed"},
+			},
+		},
+	}
+
+	if err := adapter.UpsertProjectDecisionRequest(context.Background(), decision); err != nil {
+		t.Fatalf("upsert project decision: %v", err)
+	}
+	itemID := repo.itemsBySource[sourceKey(decision.TenantID, SourceTypeProjectDecisionRequest, decision.ID)]
+	item, err := repo.GetItem(context.Background(), decision.TenantID, itemID)
+	if err != nil {
+		t.Fatalf("get projected item: %v", err)
+	}
+	if item.DeepLink["route"] != "/workflows/"+demandID.String() {
+		t.Fatalf("expected workflow deep link for primary demand, got %#v", item.DeepLink)
+	}
+	if item.ContextPayload["primary_demand_id"] != demandID.String() {
+		t.Fatalf("expected InboxContext projected into ContextPayload, got %#v", item.ContextPayload)
+	}
+}
+
 func TestDecisionProjectorAdapterOmitsEmptyApprovalSource(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

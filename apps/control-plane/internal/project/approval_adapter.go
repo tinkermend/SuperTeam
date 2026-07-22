@@ -48,16 +48,17 @@ func (a ApprovalServiceAdapter) GetRequestContextPayload(ctx context.Context, te
 // makes the last demand terminal (Service.maybeOpenProjectAcceptanceReview).
 func (a ApprovalServiceAdapter) CreateRequest(ctx context.Context, req CreateApprovalRequestInput) (uuid.UUID, error) {
 	request, err := a.service.CreateRequest(ctx, approval.CreateRequestInput{
-		TenantID:      req.TenantID,
-		ResourceType:  req.ResourceType,
-		ResourceID:    req.ResourceID,
-		RequesterType: req.RequesterType,
-		TargetUserID:  req.TargetUserID,
-		DecisionType:  req.DecisionType,
-		Title:         req.Title,
-		Summary:       req.Summary,
-		RiskLevel:     req.RiskLevel,
-		Options:       req.Options,
+		TenantID:       req.TenantID,
+		ResourceType:   req.ResourceType,
+		ResourceID:     req.ResourceID,
+		RequesterType:  req.RequesterType,
+		TargetUserID:   req.TargetUserID,
+		DecisionType:   req.DecisionType,
+		Title:          req.Title,
+		Summary:        req.Summary,
+		RiskLevel:      req.RiskLevel,
+		Options:        req.Options,
+		ContextPayload: req.ContextPayload,
 	})
 	if err != nil {
 		return uuid.Nil, err
