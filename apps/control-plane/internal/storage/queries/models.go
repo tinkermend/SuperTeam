@@ -241,6 +241,77 @@ type AuthUser struct {
 	AvatarAssetID pgtype.Text `json:"avatar_asset_id"`
 }
 
+// 自动化规则每次触发审计行；幂等键 rule_id+scheduled_fire_at
+type AutomationFire struct {
+	ID uuid.UUID `json:"id"`
+	// 租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属规则 ID
+	RuleID uuid.UUID `json:"rule_id"`
+	// 计划触发时刻（调度日历时间）
+	ScheduledFireAt pgtype.Timestamptz `json:"scheduled_fire_at"`
+	// 全局唯一幂等键
+	IdempotencyKey string `json:"idempotency_key"`
+	// pending | succeeded | failed | skipped_overlap | skipped_disabled
+	Status string `json:"status"`
+	// plan/loop 成功时写入的 demand ID
+	DemandID uuid.NullUUID `json:"demand_id"`
+	// chat 成功时写入的 run ID
+	RunID uuid.NullUUID `json:"run_id"`
+	// 失败/跳过机器可读码
+	ErrorCode pgtype.Text `json:"error_code"`
+	// 失败/跳过可读摘要
+	ErrorMessage pgtype.Text        `json:"error_message"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+// 自动化定时规则：到点触发任务中枢 SubmitDemand 或员工 chat run；发起人固定为创建者
+type AutomationRule struct {
+	ID uuid.UUID `json:"id"`
+	// 租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 项目所属团队 ID（创建时从项目快照）
+	TeamID uuid.UUID `json:"team_id"`
+	// 锚点项目；创建/启用/触发均校验发起人对该项目有发起权
+	ProjectID uuid.UUID `json:"project_id"`
+	// 规则显示名称
+	Name string `json:"name"`
+	// 是否启用；失权或连败 3 次时由系统置 false
+	Enabled bool `json:"enabled"`
+	// plan | loop | chat
+	CoordinationMode string `json:"coordination_mode"`
+	// plan/loop 需求标题模板，支持 {{date}} 等变量
+	DemandTitleTemplate pgtype.Text `json:"demand_title_template"`
+	// plan/loop 需求正文模板
+	DemandBodyTemplate pgtype.Text `json:"demand_body_template"`
+	// 可选场景模板 key
+	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
+	// chat 模式目标数字员工
+	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
+	// chat 对话目标模板
+	ChatObjectiveTemplate pgtype.Text `json:"chat_objective_template"`
+	// cron | interval
+	ScheduleKind string `json:"schedule_kind"`
+	// schedule_kind=cron 时的表达式
+	CronExpr pgtype.Text `json:"cron_expr"`
+	// schedule_kind=interval 时的间隔秒数
+	IntervalSeconds pgtype.Int4 `json:"interval_seconds"`
+	// 日程时区，默认 Asia/Shanghai
+	Timezone string `json:"timezone"`
+	// 重叠策略；P1 固定 skip（上一次未终态则跳过）
+	OverlapPolicy string `json:"overlap_policy"`
+	// 名义发起人，固定为规则创建者
+	ActorUserID uuid.UUID `json:"actor_user_id"`
+	// 系统或用户禁用原因码；启用中为 NULL
+	DisabledReason pgtype.Text `json:"disabled_reason"`
+	// 连续发起失败次数；成功归零；达 3 自动禁用
+	ConsecutiveFailureCount int32 `json:"consecutive_failure_count"`
+	// Temporal Schedule ID，与规则对账
+	TemporalScheduleID pgtype.Text        `json:"temporal_schedule_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 租户级能力词汇注册表：场景模板角色 required_capabilities 与员工能力声明共享的键，插行即扩展，不建代码枚举
 type CapabilityVocabulary struct {
 	// 能力词汇主键 UUID

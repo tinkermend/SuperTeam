@@ -2844,6 +2844,176 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/automations:
+    get:
+      operationId: listAutomationRules
+      summary: List automation rules for the tenant
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: enabled
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Automation rule list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRuleListResponse"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createAutomationRule
+      summary: Create an automation rule (actor = creator)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAutomationRuleRequest"
+      responses:
+        "201":
+          description: Automation rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/automations/{ruleId}:
+    get:
+      operationId: getAutomationRule
+      summary: Get one automation rule
+      parameters:
+        - $ref: "#/components/parameters/RuleId"
+      responses:
+        "200":
+          description: Automation rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: patchAutomationRule
+      summary: Update automation rule templates and schedule (project/mode locked)
+      parameters:
+        - $ref: "#/components/parameters/RuleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchAutomationRuleRequest"
+      responses:
+        "200":
+          description: Automation rule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteAutomationRule
+      summary: Delete an automation rule and its Temporal schedule
+      parameters:
+        - $ref: "#/components/parameters/RuleId"
+      responses:
+        "204":
+          description: Automation rule deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/automations/{ruleId}/enable:
+    post:
+      operationId: enableAutomationRule
+      summary: Enable an automation rule (re-checks actor eligibility)
+      parameters:
+        - $ref: "#/components/parameters/RuleId"
+      responses:
+        "200":
+          description: Automation rule enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/automations/{ruleId}/disable:
+    post:
+      operationId: disableAutomationRule
+      summary: Disable an automation rule
+      parameters:
+        - $ref: "#/components/parameters/RuleId"
+      responses:
+        "200":
+          description: Automation rule disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/automations/{ruleId}/trigger:
+    post:
+      operationId: triggerAutomationRule
+      summary: Manually fire an automation rule once
+      parameters:
+        - $ref: "#/components/parameters/RuleId"
+      responses:
+        "200":
+          description: Automation fire result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFire"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/automations/{ruleId}/fires:
+    get:
+      operationId: listAutomationFires
+      summary: List recent fires for an automation rule
+      parameters:
+        - $ref: "#/components/parameters/RuleId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Automation fire list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFireListResponse"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/scenario-templates:
     get:
       operationId: listScenarioTemplates
@@ -4444,6 +4614,13 @@ components:
         format: uuid
     ProjectId:
       name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RuleId:
+      name: ruleId
       in: path
       required: true
       schema:
@@ -6088,6 +6265,248 @@ components:
         - ticket
         - document
         - log
+        - automation
+    AutomationCoordinationMode:
+      type: string
+      enum:
+        - plan
+        - loop
+        - chat
+    AutomationScheduleKind:
+      type: string
+      enum:
+        - cron
+        - interval
+    AutomationDisabledReason:
+      type: string
+      enum:
+        - actor_removed_from_project
+        - actor_deactivated
+        - consecutive_fire_failures
+        - user_disabled
+    AutomationFireStatus:
+      type: string
+      enum:
+        - pending
+        - succeeded
+        - failed
+        - skipped_overlap
+        - skipped_disabled
+    AutomationRule:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_id
+        - project_id
+        - name
+        - enabled
+        - coordination_mode
+        - schedule_kind
+        - timezone
+        - overlap_policy
+        - actor_user_id
+        - consecutive_failure_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+          description: 项目显示名（读路径补名，禁止前端裸 UUID）
+        name:
+          type: string
+        enabled:
+          type: boolean
+        coordination_mode:
+          $ref: "#/components/schemas/AutomationCoordinationMode"
+        demand_title_template:
+          type: string
+          nullable: true
+        demand_body_template:
+          type: string
+          nullable: true
+        scenario_template_key:
+          type: string
+          nullable: true
+        digital_employee_id:
+          type: string
+          format: uuid
+          nullable: true
+        chat_objective_template:
+          type: string
+          nullable: true
+        schedule_kind:
+          $ref: "#/components/schemas/AutomationScheduleKind"
+        cron_expr:
+          type: string
+          nullable: true
+        interval_seconds:
+          type: integer
+          nullable: true
+        timezone:
+          type: string
+        overlap_policy:
+          type: string
+          enum:
+            - skip
+        actor_user_id:
+          type: string
+          format: uuid
+        disabled_reason:
+          allOf:
+            - $ref: "#/components/schemas/AutomationDisabledReason"
+          nullable: true
+        consecutive_failure_count:
+          type: integer
+        temporal_schedule_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        latest_fire:
+          allOf:
+            - $ref: "#/components/schemas/AutomationFire"
+          nullable: true
+    AutomationFire:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - rule_id
+        - scheduled_fire_at
+        - idempotency_key
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        rule_id:
+          type: string
+          format: uuid
+        scheduled_fire_at:
+          type: string
+          format: date-time
+        idempotency_key:
+          type: string
+        status:
+          $ref: "#/components/schemas/AutomationFireStatus"
+        demand_id:
+          type: string
+          format: uuid
+          nullable: true
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+        error_code:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    AutomationRuleListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationRule"
+    AutomationFireListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationFire"
+    CreateAutomationRuleRequest:
+      type: object
+      required:
+        - project_id
+        - name
+        - coordination_mode
+        - schedule_kind
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        coordination_mode:
+          $ref: "#/components/schemas/AutomationCoordinationMode"
+        demand_title_template:
+          type: string
+        demand_body_template:
+          type: string
+        scenario_template_key:
+          type: string
+        digital_employee_id:
+          type: string
+          format: uuid
+        chat_objective_template:
+          type: string
+        schedule_kind:
+          $ref: "#/components/schemas/AutomationScheduleKind"
+        cron_expr:
+          type: string
+        interval_seconds:
+          type: integer
+          minimum: 60
+        timezone:
+          type: string
+        enabled:
+          type: boolean
+    PatchAutomationRuleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        demand_title_template:
+          type: string
+        demand_body_template:
+          type: string
+        scenario_template_key:
+          type: string
+        digital_employee_id:
+          type: string
+          format: uuid
+        chat_objective_template:
+          type: string
+        schedule_kind:
+          $ref: "#/components/schemas/AutomationScheduleKind"
+        cron_expr:
+          type: string
+        interval_seconds:
+          type: integer
+          minimum: 60
+        timezone:
+          type: string
     ProjectDemandStatus:
       type: string
       enum:

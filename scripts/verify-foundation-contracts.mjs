@@ -119,6 +119,12 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/digital-employees/{employeeId}/runs/{runId}/stop",
   "/api/v1/skills",
   "/api/v1/skills/uploads",
+  "/api/v1/automations",
+  "/api/v1/automations/{ruleId}",
+  "/api/v1/automations/{ruleId}/enable",
+  "/api/v1/automations/{ruleId}/disable",
+  "/api/v1/automations/{ruleId}/trigger",
+  "/api/v1/automations/{ruleId}/fires",
 ]);
 
 function readText(path) {
@@ -254,6 +260,7 @@ function readTypeScriptClientPaths() {
     "apps/web/src/lib/api/teams.ts",
     "apps/web/src/lib/api/employees.ts",
     "apps/web/src/lib/api/skills.ts",
+    "apps/web/src/lib/api/automations.ts",
   ];
   const paths = new Set();
 
@@ -277,7 +284,9 @@ function readTypeScriptClientPaths() {
             .replaceAll("${envName}", "{envName}")
             .replaceAll("${encodedEnvName}", "{envName}")
             .replaceAll("${skillId}", "{skillId}")
-            .replaceAll("${encodedSkillId}", "{skillId}"),
+            .replaceAll("${encodedSkillId}", "{skillId}")
+            .replaceAll("${ruleId}", "{ruleId}")
+            .replaceAll("${encodedRuleId}", "{ruleId}"),
         ),
       );
     }

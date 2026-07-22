@@ -12,6 +12,7 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/automation"
 	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
@@ -38,6 +39,7 @@ type Server struct {
 	authorizer                     authz.Authorizer
 	auditHandler                   *audit.HTTPHandler
 	authzCenterHandler             *authzcenter.HTTPHandler
+	automationHandler              *automation.HTTPHandler
 	capabilityHandler              *capability.HTTPHandler
 	employeeHandler                *employee.HTTPHandler
 	costHandler                    *cost.HTTPHandler
@@ -173,6 +175,14 @@ func (s *Server) SetProjectHandler(projectHandler *project.HTTPHandler) {
 	s.projectHandler = projectHandler
 	if projectHandler != nil {
 		projectHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetAutomationHandler(automationHandler *automation.HTTPHandler) {
+	s.automationHandler = automationHandler
+	if automationHandler != nil {
+		automationHandler.SetAuthorizer(s.authorizer)
 	}
 	s.registerRoutes()
 }
@@ -422,6 +432,21 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/archive-snapshots", s.projectHandler.ListArchiveSnapshots)
 				r.Get("/projects/{projectId}/config-revisions", s.projectHandler.ListConfigRevisions)
 				r.Get("/projects/{projectId}/config-revisions/{revisionId}", s.projectHandler.GetConfigRevision)
+			})
+		}
+
+		if s.automationHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/automations", s.automationHandler.ListRules)
+				r.Post("/automations", s.automationHandler.CreateRule)
+				r.Get("/automations/{ruleId}", s.automationHandler.GetRule)
+				r.Patch("/automations/{ruleId}", s.automationHandler.PatchRule)
+				r.Delete("/automations/{ruleId}", s.automationHandler.DeleteRule)
+				r.Post("/automations/{ruleId}/enable", s.automationHandler.EnableRule)
+				r.Post("/automations/{ruleId}/disable", s.automationHandler.DisableRule)
+				r.Post("/automations/{ruleId}/trigger", s.automationHandler.TriggerRule)
+				r.Get("/automations/{ruleId}/fires", s.automationHandler.ListFires)
 			})
 		}
 

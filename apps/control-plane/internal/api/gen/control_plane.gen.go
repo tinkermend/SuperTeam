@@ -72,6 +72,111 @@ func (e AllowedTeamAction) Valid() bool {
 	}
 }
 
+// Defines values for AutomationCoordinationMode.
+const (
+	AutomationCoordinationModeChat AutomationCoordinationMode = "chat"
+	AutomationCoordinationModeLoop AutomationCoordinationMode = "loop"
+	AutomationCoordinationModePlan AutomationCoordinationMode = "plan"
+)
+
+// Valid indicates whether the value is a known member of the AutomationCoordinationMode enum.
+func (e AutomationCoordinationMode) Valid() bool {
+	switch e {
+	case AutomationCoordinationModeChat:
+		return true
+	case AutomationCoordinationModeLoop:
+		return true
+	case AutomationCoordinationModePlan:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AutomationDisabledReason.
+const (
+	ActorDeactivated        AutomationDisabledReason = "actor_deactivated"
+	ActorRemovedFromProject AutomationDisabledReason = "actor_removed_from_project"
+	ConsecutiveFireFailures AutomationDisabledReason = "consecutive_fire_failures"
+	UserDisabled            AutomationDisabledReason = "user_disabled"
+)
+
+// Valid indicates whether the value is a known member of the AutomationDisabledReason enum.
+func (e AutomationDisabledReason) Valid() bool {
+	switch e {
+	case ActorDeactivated:
+		return true
+	case ActorRemovedFromProject:
+		return true
+	case ConsecutiveFireFailures:
+		return true
+	case UserDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AutomationFireStatus.
+const (
+	AutomationFireStatusFailed          AutomationFireStatus = "failed"
+	AutomationFireStatusPending         AutomationFireStatus = "pending"
+	AutomationFireStatusSkippedDisabled AutomationFireStatus = "skipped_disabled"
+	AutomationFireStatusSkippedOverlap  AutomationFireStatus = "skipped_overlap"
+	AutomationFireStatusSucceeded       AutomationFireStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the AutomationFireStatus enum.
+func (e AutomationFireStatus) Valid() bool {
+	switch e {
+	case AutomationFireStatusFailed:
+		return true
+	case AutomationFireStatusPending:
+		return true
+	case AutomationFireStatusSkippedDisabled:
+		return true
+	case AutomationFireStatusSkippedOverlap:
+		return true
+	case AutomationFireStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AutomationRuleOverlapPolicy.
+const (
+	Skip AutomationRuleOverlapPolicy = "skip"
+)
+
+// Valid indicates whether the value is a known member of the AutomationRuleOverlapPolicy enum.
+func (e AutomationRuleOverlapPolicy) Valid() bool {
+	switch e {
+	case Skip:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AutomationScheduleKind.
+const (
+	Cron     AutomationScheduleKind = "cron"
+	Interval AutomationScheduleKind = "interval"
+)
+
+// Valid indicates whether the value is a known member of the AutomationScheduleKind enum.
+func (e AutomationScheduleKind) Valid() bool {
+	switch e {
+	case Cron:
+		return true
+	case Interval:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorSignDemandCriterionRequestVerdict.
 const (
 	ConnectorSignDemandCriterionRequestVerdictSatisfied   ConnectorSignDemandCriterionRequestVerdict = "satisfied"
@@ -1130,16 +1235,19 @@ func (e ProjectDeleteBlockerType) Valid() bool {
 
 // Defines values for ProjectDemandSourceType.
 const (
-	Document ProjectDemandSourceType = "document"
-	Github   ProjectDemandSourceType = "github"
-	Log      ProjectDemandSourceType = "log"
-	Manual   ProjectDemandSourceType = "manual"
-	Ticket   ProjectDemandSourceType = "ticket"
+	Automation ProjectDemandSourceType = "automation"
+	Document   ProjectDemandSourceType = "document"
+	Github     ProjectDemandSourceType = "github"
+	Log        ProjectDemandSourceType = "log"
+	Manual     ProjectDemandSourceType = "manual"
+	Ticket     ProjectDemandSourceType = "ticket"
 )
 
 // Valid indicates whether the value is a known member of the ProjectDemandSourceType enum.
 func (e ProjectDemandSourceType) Valid() bool {
 	switch e {
+	case Automation:
+		return true
 	case Document:
 		return true
 	case Github:
@@ -1805,16 +1913,16 @@ func (e SetEmployeeTemplateStatusRequestStatus) Valid() bool {
 
 // Defines values for SignDemandCriterionVerdictRequestVerdict.
 const (
-	SignDemandCriterionVerdictRequestVerdictSatisfied   SignDemandCriterionVerdictRequestVerdict = "satisfied"
-	SignDemandCriterionVerdictRequestVerdictUnsatisfied SignDemandCriterionVerdictRequestVerdict = "unsatisfied"
+	Satisfied   SignDemandCriterionVerdictRequestVerdict = "satisfied"
+	Unsatisfied SignDemandCriterionVerdictRequestVerdict = "unsatisfied"
 )
 
 // Valid indicates whether the value is a known member of the SignDemandCriterionVerdictRequestVerdict enum.
 func (e SignDemandCriterionVerdictRequestVerdict) Valid() bool {
 	switch e {
-	case SignDemandCriterionVerdictRequestVerdictSatisfied:
+	case Satisfied:
 		return true
-	case SignDemandCriterionVerdictRequestVerdictUnsatisfied:
+	case Unsatisfied:
 		return true
 	default:
 		return false
@@ -1823,16 +1931,16 @@ func (e SignDemandCriterionVerdictRequestVerdict) Valid() bool {
 
 // Defines values for SubmitProjectDemandRequestCoordinationMode.
 const (
-	SubmitProjectDemandRequestCoordinationModeLoop SubmitProjectDemandRequestCoordinationMode = "loop"
-	SubmitProjectDemandRequestCoordinationModePlan SubmitProjectDemandRequestCoordinationMode = "plan"
+	Loop SubmitProjectDemandRequestCoordinationMode = "loop"
+	Plan SubmitProjectDemandRequestCoordinationMode = "plan"
 )
 
 // Valid indicates whether the value is a known member of the SubmitProjectDemandRequestCoordinationMode enum.
 func (e SubmitProjectDemandRequestCoordinationMode) Valid() bool {
 	switch e {
-	case SubmitProjectDemandRequestCoordinationModeLoop:
+	case Loop:
 		return true
-	case SubmitProjectDemandRequestCoordinationModePlan:
+	case Plan:
 		return true
 	default:
 		return false
@@ -2348,6 +2456,77 @@ type AuditEvent struct {
 	TenantId     openapi_types.UUID     `json:"tenant_id"`
 }
 
+// AutomationCoordinationMode defines model for AutomationCoordinationMode.
+type AutomationCoordinationMode string
+
+// AutomationDisabledReason defines model for AutomationDisabledReason.
+type AutomationDisabledReason string
+
+// AutomationFire defines model for AutomationFire.
+type AutomationFire struct {
+	CreatedAt       time.Time            `json:"created_at"`
+	DemandId        *openapi_types.UUID  `json:"demand_id,omitempty"`
+	ErrorCode       *string              `json:"error_code,omitempty"`
+	ErrorMessage    *string              `json:"error_message,omitempty"`
+	Id              openapi_types.UUID   `json:"id"`
+	IdempotencyKey  string               `json:"idempotency_key"`
+	RuleId          openapi_types.UUID   `json:"rule_id"`
+	RunId           *openapi_types.UUID  `json:"run_id,omitempty"`
+	ScheduledFireAt time.Time            `json:"scheduled_fire_at"`
+	Status          AutomationFireStatus `json:"status"`
+	TenantId        openapi_types.UUID   `json:"tenant_id"`
+}
+
+// AutomationFireListResponse defines model for AutomationFireListResponse.
+type AutomationFireListResponse struct {
+	Items []AutomationFire `json:"items"`
+}
+
+// AutomationFireStatus defines model for AutomationFireStatus.
+type AutomationFireStatus string
+
+// AutomationRule defines model for AutomationRule.
+type AutomationRule struct {
+	ActorUserId             openapi_types.UUID          `json:"actor_user_id"`
+	ChatObjectiveTemplate   *string                     `json:"chat_objective_template,omitempty"`
+	ConsecutiveFailureCount int                         `json:"consecutive_failure_count"`
+	CoordinationMode        AutomationCoordinationMode  `json:"coordination_mode"`
+	CreatedAt               time.Time                   `json:"created_at"`
+	CronExpr                *string                     `json:"cron_expr,omitempty"`
+	DemandBodyTemplate      *string                     `json:"demand_body_template,omitempty"`
+	DemandTitleTemplate     *string                     `json:"demand_title_template,omitempty"`
+	DigitalEmployeeId       *openapi_types.UUID         `json:"digital_employee_id,omitempty"`
+	DisabledReason          *AutomationDisabledReason   `json:"disabled_reason,omitempty"`
+	Enabled                 bool                        `json:"enabled"`
+	Id                      openapi_types.UUID          `json:"id"`
+	IntervalSeconds         *int                        `json:"interval_seconds,omitempty"`
+	LatestFire              *AutomationFire             `json:"latest_fire,omitempty"`
+	Name                    string                      `json:"name"`
+	OverlapPolicy           AutomationRuleOverlapPolicy `json:"overlap_policy"`
+	ProjectId               openapi_types.UUID          `json:"project_id"`
+
+	// ProjectName 项目显示名（读路径补名，禁止前端裸 UUID）
+	ProjectName         *string                `json:"project_name,omitempty"`
+	ScenarioTemplateKey *string                `json:"scenario_template_key,omitempty"`
+	ScheduleKind        AutomationScheduleKind `json:"schedule_kind"`
+	TeamId              openapi_types.UUID     `json:"team_id"`
+	TemporalScheduleId  *string                `json:"temporal_schedule_id,omitempty"`
+	TenantId            openapi_types.UUID     `json:"tenant_id"`
+	Timezone            string                 `json:"timezone"`
+	UpdatedAt           time.Time              `json:"updated_at"`
+}
+
+// AutomationRuleOverlapPolicy defines model for AutomationRule.OverlapPolicy.
+type AutomationRuleOverlapPolicy string
+
+// AutomationRuleListResponse defines model for AutomationRuleListResponse.
+type AutomationRuleListResponse struct {
+	Items []AutomationRule `json:"items"`
+}
+
+// AutomationScheduleKind defines model for AutomationScheduleKind.
+type AutomationScheduleKind string
+
 // BindTeamDigitalEmployeeRequest defines model for BindTeamDigitalEmployeeRequest.
 type BindTeamDigitalEmployeeRequest struct {
 	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
@@ -2451,6 +2630,23 @@ type ConnectorSubmitDemandResponse struct {
 	DemandId openapi_types.UUID `json:"demand_id"`
 	Status   string             `json:"status"`
 	Title    string             `json:"title"`
+}
+
+// CreateAutomationRuleRequest defines model for CreateAutomationRuleRequest.
+type CreateAutomationRuleRequest struct {
+	ChatObjectiveTemplate *string                    `json:"chat_objective_template,omitempty"`
+	CoordinationMode      AutomationCoordinationMode `json:"coordination_mode"`
+	CronExpr              *string                    `json:"cron_expr,omitempty"`
+	DemandBodyTemplate    *string                    `json:"demand_body_template,omitempty"`
+	DemandTitleTemplate   *string                    `json:"demand_title_template,omitempty"`
+	DigitalEmployeeId     *openapi_types.UUID        `json:"digital_employee_id,omitempty"`
+	Enabled               *bool                      `json:"enabled,omitempty"`
+	IntervalSeconds       *int                       `json:"interval_seconds,omitempty"`
+	Name                  string                     `json:"name"`
+	ProjectId             openapi_types.UUID         `json:"project_id"`
+	ScenarioTemplateKey   *string                    `json:"scenario_template_key,omitempty"`
+	ScheduleKind          AutomationScheduleKind     `json:"schedule_kind"`
+	Timezone              *string                    `json:"timezone,omitempty"`
 }
 
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
@@ -3851,6 +4047,20 @@ type OverviewPagination struct {
 	Limit      int32 `json:"limit"`
 	Offset     int32 `json:"offset"`
 	TotalCount int32 `json:"total_count"`
+}
+
+// PatchAutomationRuleRequest defines model for PatchAutomationRuleRequest.
+type PatchAutomationRuleRequest struct {
+	ChatObjectiveTemplate *string                 `json:"chat_objective_template,omitempty"`
+	CronExpr              *string                 `json:"cron_expr,omitempty"`
+	DemandBodyTemplate    *string                 `json:"demand_body_template,omitempty"`
+	DemandTitleTemplate   *string                 `json:"demand_title_template,omitempty"`
+	DigitalEmployeeId     *openapi_types.UUID     `json:"digital_employee_id,omitempty"`
+	IntervalSeconds       *int                    `json:"interval_seconds,omitempty"`
+	Name                  *string                 `json:"name,omitempty"`
+	ScenarioTemplateKey   *string                 `json:"scenario_template_key,omitempty"`
+	ScheduleKind          *AutomationScheduleKind `json:"schedule_kind,omitempty"`
+	Timezone              *string                 `json:"timezone,omitempty"`
 }
 
 // PatchProjectEvidenceRequest defines model for PatchProjectEvidenceRequest.
@@ -5942,6 +6152,9 @@ type RequestId = openapi_types.UUID
 // RevisionId defines model for RevisionId.
 type RevisionId = openapi_types.UUID
 
+// RuleId defines model for RuleId.
+type RuleId = openapi_types.UUID
+
 // RunId defines model for RunId.
 type RunId = openapi_types.UUID
 
@@ -5993,6 +6206,20 @@ type FeishuOAuthCallbackParams struct {
 type FeishuOAuthStartParams struct {
 	AppConfigId *openapi_types.UUID `form:"app_config_id,omitempty" json:"app_config_id,omitempty"`
 	ReturnTo    *string             `form:"return_to,omitempty" json:"return_to,omitempty"`
+}
+
+// ListAutomationRulesParams defines parameters for ListAutomationRules.
+type ListAutomationRulesParams struct {
+	ProjectId *openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
+	Enabled   *bool               `form:"enabled,omitempty" json:"enabled,omitempty"`
+	Limit     *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset    *Offset             `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListAutomationFiresParams defines parameters for ListAutomationFires.
+type ListAutomationFiresParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ConnectorResolveIdentityParams defines parameters for ConnectorResolveIdentity.
@@ -6418,6 +6645,12 @@ type UpsertFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
 
 // IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
 type IssueServiceTokenJSONRequestBody = IssueServiceTokenRequest
+
+// CreateAutomationRuleJSONRequestBody defines body for CreateAutomationRule for application/json ContentType.
+type CreateAutomationRuleJSONRequestBody = CreateAutomationRuleRequest
+
+// PatchAutomationRuleJSONRequestBody defines body for PatchAutomationRule for application/json ContentType.
+type PatchAutomationRuleJSONRequestBody = PatchAutomationRuleRequest
 
 // ConnectorResolveDecisionJSONRequestBody defines body for ConnectorResolveDecision for application/json ContentType.
 type ConnectorResolveDecisionJSONRequestBody = ConnectorResolveDecisionRequest
@@ -7135,6 +7368,33 @@ type ServerInterface interface {
 	// Redirect the current console user to the Feishu authorize page (binds on callback)
 	// (GET /api/v1/auth/feishu/oauth-start)
 	FeishuOAuthStart(w http.ResponseWriter, r *http.Request, params FeishuOAuthStartParams)
+	// List automation rules for the tenant
+	// (GET /api/v1/automations)
+	ListAutomationRules(w http.ResponseWriter, r *http.Request, params ListAutomationRulesParams)
+	// Create an automation rule (actor = creator)
+	// (POST /api/v1/automations)
+	CreateAutomationRule(w http.ResponseWriter, r *http.Request)
+	// Delete an automation rule and its Temporal schedule
+	// (DELETE /api/v1/automations/{ruleId})
+	DeleteAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId)
+	// Get one automation rule
+	// (GET /api/v1/automations/{ruleId})
+	GetAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId)
+	// Update automation rule templates and schedule (project/mode locked)
+	// (PATCH /api/v1/automations/{ruleId})
+	PatchAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId)
+	// Disable an automation rule
+	// (POST /api/v1/automations/{ruleId}/disable)
+	DisableAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId)
+	// Enable an automation rule (re-checks actor eligibility)
+	// (POST /api/v1/automations/{ruleId}/enable)
+	EnableAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId)
+	// List recent fires for an automation rule
+	// (GET /api/v1/automations/{ruleId}/fires)
+	ListAutomationFires(w http.ResponseWriter, r *http.Request, ruleId RuleId, params ListAutomationFiresParams)
+	// Manually fire an automation rule once
+	// (POST /api/v1/automations/{ruleId}/trigger)
+	TriggerAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId)
 	// Fetch decrypted Feishu app configs for an authenticated connector service
 	// (GET /api/v1/connector/bootstrap)
 	ConnectorBootstrap(w http.ResponseWriter, r *http.Request)
@@ -7789,6 +8049,60 @@ func (_ Unimplemented) FeishuOAuthCallback(w http.ResponseWriter, r *http.Reques
 // Redirect the current console user to the Feishu authorize page (binds on callback)
 // (GET /api/v1/auth/feishu/oauth-start)
 func (_ Unimplemented) FeishuOAuthStart(w http.ResponseWriter, r *http.Request, params FeishuOAuthStartParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List automation rules for the tenant
+// (GET /api/v1/automations)
+func (_ Unimplemented) ListAutomationRules(w http.ResponseWriter, r *http.Request, params ListAutomationRulesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create an automation rule (actor = creator)
+// (POST /api/v1/automations)
+func (_ Unimplemented) CreateAutomationRule(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete an automation rule and its Temporal schedule
+// (DELETE /api/v1/automations/{ruleId})
+func (_ Unimplemented) DeleteAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get one automation rule
+// (GET /api/v1/automations/{ruleId})
+func (_ Unimplemented) GetAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update automation rule templates and schedule (project/mode locked)
+// (PATCH /api/v1/automations/{ruleId})
+func (_ Unimplemented) PatchAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Disable an automation rule
+// (POST /api/v1/automations/{ruleId}/disable)
+func (_ Unimplemented) DisableAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Enable an automation rule (re-checks actor eligibility)
+// (POST /api/v1/automations/{ruleId}/enable)
+func (_ Unimplemented) EnableAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List recent fires for an automation rule
+// (GET /api/v1/automations/{ruleId}/fires)
+func (_ Unimplemented) ListAutomationFires(w http.ResponseWriter, r *http.Request, ruleId RuleId, params ListAutomationFiresParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Manually fire an automation rule once
+// (POST /api/v1/automations/{ruleId}/trigger)
+func (_ Unimplemented) TriggerAutomationRule(w http.ResponseWriter, r *http.Request, ruleId RuleId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9276,6 +9590,303 @@ func (siw *ServerInterfaceWrapper) FeishuOAuthStart(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.FeishuOAuthStart(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAutomationRules operation middleware
+func (siw *ServerInterfaceWrapper) ListAutomationRules(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAutomationRulesParams
+
+	// ------------- Optional query parameter "project_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_id", r.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "enabled" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "enabled", r.URL.Query(), &params.Enabled, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "enabled"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "enabled", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAutomationRules(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAutomationRule operation middleware
+func (siw *ServerInterfaceWrapper) CreateAutomationRule(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAutomationRule(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAutomationRule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAutomationRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ruleId" -------------
+	var ruleId RuleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ruleId", chi.URLParam(r, "ruleId"), &ruleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ruleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAutomationRule(w, r, ruleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAutomationRule operation middleware
+func (siw *ServerInterfaceWrapper) GetAutomationRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ruleId" -------------
+	var ruleId RuleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ruleId", chi.URLParam(r, "ruleId"), &ruleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ruleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAutomationRule(w, r, ruleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchAutomationRule operation middleware
+func (siw *ServerInterfaceWrapper) PatchAutomationRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ruleId" -------------
+	var ruleId RuleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ruleId", chi.URLParam(r, "ruleId"), &ruleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ruleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchAutomationRule(w, r, ruleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableAutomationRule operation middleware
+func (siw *ServerInterfaceWrapper) DisableAutomationRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ruleId" -------------
+	var ruleId RuleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ruleId", chi.URLParam(r, "ruleId"), &ruleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ruleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableAutomationRule(w, r, ruleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableAutomationRule operation middleware
+func (siw *ServerInterfaceWrapper) EnableAutomationRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ruleId" -------------
+	var ruleId RuleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ruleId", chi.URLParam(r, "ruleId"), &ruleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ruleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableAutomationRule(w, r, ruleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAutomationFires operation middleware
+func (siw *ServerInterfaceWrapper) ListAutomationFires(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ruleId" -------------
+	var ruleId RuleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ruleId", chi.URLParam(r, "ruleId"), &ruleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ruleId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAutomationFiresParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAutomationFires(w, r, ruleId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TriggerAutomationRule operation middleware
+func (siw *ServerInterfaceWrapper) TriggerAutomationRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ruleId" -------------
+	var ruleId RuleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ruleId", chi.URLParam(r, "ruleId"), &ruleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ruleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TriggerAutomationRule(w, r, ruleId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16383,6 +16994,33 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/auth/feishu/oauth-start", wrapper.FeishuOAuthStart)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/automations", wrapper.ListAutomationRules)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/automations", wrapper.CreateAutomationRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/automations/{ruleId}", wrapper.DeleteAutomationRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/automations/{ruleId}", wrapper.GetAutomationRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/automations/{ruleId}", wrapper.PatchAutomationRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/automations/{ruleId}/disable", wrapper.DisableAutomationRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/automations/{ruleId}/enable", wrapper.EnableAutomationRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/automations/{ruleId}/fires", wrapper.ListAutomationFires)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/automations/{ruleId}/trigger", wrapper.TriggerAutomationRule)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/connector/bootstrap", wrapper.ConnectorBootstrap)

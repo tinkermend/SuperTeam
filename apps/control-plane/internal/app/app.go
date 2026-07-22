@@ -19,6 +19,7 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/automation"
 	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/cost"
@@ -69,6 +70,7 @@ type Container struct {
 	AuthzCenter                    *authzcenter.Service
 	Poller                         *runtimepkg.Poller
 	CoordinationWorker             lifecycleWorker
+	AutomationWorker               lifecycleWorker
 	TemporalClientClose            func()
 	TaskHandler                    *handlers.TaskHandler
 	RuntimeHandler                 *handlers.RuntimeHandler
@@ -77,6 +79,7 @@ type Container struct {
 	InboxHandler                   *inbox.HTTPHandler
 	AuditHandler                   *audit.HTTPHandler
 	ProjectHandler                 *project.HTTPHandler
+	AutomationHandler              *automation.HTTPHandler
 	SkillHandler                   *skill.HTTPHandler
 	CapabilityHandler              *capability.HTTPHandler
 	PromptTemplateHandler          *prompttemplate.HTTPHandler
@@ -564,6 +567,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
+	var temporalClient temporalclient.Client
 	var temporalClientClose func()
 	// coordinationStore is declared here (rather than with := inside the
 	// Temporal-enabled block below) so it can be attached to projectService's
@@ -578,7 +582,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	var coordinationStore *projectcoordination.ProjectStore
 	projectTaskPreflights, _ := runRepository.(gateProjectTaskRunPreflightReader)
 	if cfg.Temporal.Enabled {
-		temporalClient, err := temporalclient.NewLazyClient(temporalclient.Options{
+		temporalClient, err = temporalclient.NewLazyClient(temporalclient.Options{
 			HostPort:  cfg.Temporal.Address,
 			Namespace: cfg.Temporal.Namespace,
 		})
@@ -742,6 +746,22 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	inboxHandler := inbox.NewHandler(inboxService)
 	auditHandler := audit.NewHandler(auditService)
 	projectHandler := project.NewHandler(projectService)
+	automationRepo := automation.NewPgRepository(q)
+	automationScheduler := automation.NewTemporalScheduler(temporalClient, cfg.Temporal.TaskQueue)
+	automationService := automation.NewService(
+		automationRepo,
+		automation.NewProjectServiceGateway(projectService),
+		automation.NewDemandSubmitter(projectService),
+		automation.NewChatRunner(runService),
+		automationScheduler,
+	)
+	projectService.SetAutomationActorRemover(automationService)
+	authService.SetUserDeactivatedHook(automationUserDeactivatedHook{service: automationService})
+	var automationWorker lifecycleWorker
+	if temporalClient != nil {
+		automationWorker = automation.NewWorker(temporalClient, cfg.Temporal.TaskQueue, automation.NewActivities(automationService))
+	}
+	automationHandler := automation.NewHandler(automationService)
 	skillHandler := skill.NewHandler(skillService)
 	skillHandler.SetSystemConfigReader(systemConfigService)
 	capabilityHandler := capability.NewHandler(capabilityService)
@@ -785,6 +805,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetPermissionHandler(permissionHandler)
 	server.SetAuditHandler(auditHandler)
 	server.SetProjectHandler(projectHandler)
+	server.SetAutomationHandler(automationHandler)
 	server.SetSkillHandler(skillHandler)
 	server.SetCapabilityHandler(capabilityHandler)
 	server.SetSystemConfigHandler(systemConfigHandler)
@@ -817,6 +838,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		AuthzCenter:                    authzCenterService,
 		Poller:                         poller,
 		CoordinationWorker:             coordinationWorker,
+		AutomationWorker:               automationWorker,
 		TemporalClientClose:            temporalClientClose,
 		TaskHandler:                    taskHandler,
 		RuntimeHandler:                 runtimeHandler,
@@ -825,6 +847,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		InboxHandler:                   inboxHandler,
 		AuditHandler:                   auditHandler,
 		ProjectHandler:                 projectHandler,
+		AutomationHandler:              automationHandler,
 		SkillHandler:                   skillHandler,
 		CapabilityHandler:              capabilityHandler,
 		PromptTemplateHandler:          promptTemplateHandler,
@@ -868,6 +891,12 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 			return err
 		}
 		defer container.CoordinationWorker.Stop()
+	}
+	if container.AutomationWorker != nil {
+		if err := container.AutomationWorker.Start(); err != nil {
+			return err
+		}
+		defer container.AutomationWorker.Stop()
 	}
 	if container.EmployeeRun != nil {
 		// 调度韧性:预确认态 run 的超时看门狗(残债交接 §1 第 2 层)。
@@ -1104,4 +1133,15 @@ func (a feishuProjectGatewayAdapter) DecisionCardSnapshot(ctx context.Context, t
 		}
 	}
 	return payload, nil
+}
+
+type automationUserDeactivatedHook struct {
+	service *automation.Service
+}
+
+func (h automationUserDeactivatedHook) OnUserDeactivated(ctx context.Context, userID uuid.UUID) error {
+	if h.service == nil {
+		return nil
+	}
+	return h.service.DisableForActorDeactivated(ctx, platform.DefaultTenantID, userID)
 }
