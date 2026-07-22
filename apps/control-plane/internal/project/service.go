@@ -31,6 +31,17 @@ type Service struct {
 	artifactObjectStore       ArtifactObjectStore
 	systemConfig              systemconfig.Reader
 	legacyLimitNodesChecker   func(ctx context.Context, tenantID uuid.UUID) (bool, error)
+	automationActorRemover    AutomationActorRemover
+}
+
+// AutomationActorRemover disables automation rules when a human actor loses
+// project membership. Optional; nil skips the hook (tests / unwired).
+type AutomationActorRemover interface {
+	DisableForActorRemoved(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) error
+}
+
+func (s *Service) SetAutomationActorRemover(remover AutomationActorRemover) {
+	s.automationActorRemover = remover
 }
 
 // ScenarioTemplateResolver is the narrow view of the scenario template
@@ -1244,6 +1255,20 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 	if len(ownerIDs) == 0 {
 		return nil, ErrProjectRequiresHumanOwner
 	}
+	previousHumans := map[uuid.UUID]struct{}{}
+	if previousMembers, err := s.repository.ListProjectMembers(ctx, tenantID, projectID); err == nil {
+		for _, member := range previousMembers {
+			if member.PrincipalType == PrincipalTypeHumanUser && member.Status == "active" {
+				previousHumans[member.PrincipalID] = struct{}{}
+			}
+		}
+	}
+	if previousProject, err := s.repository.GetProject(ctx, tenantID, projectID); err == nil {
+		previousHumans[previousProject.HumanOwnerUserID] = struct{}{}
+		for _, ownerID := range previousProject.HumanOwnerUserIDs {
+			previousHumans[ownerID] = struct{}{}
+		}
+	}
 	replaced, err := s.repository.ReplaceProjectMembers(ctx, tenantID, projectID, members)
 	if err != nil {
 		return nil, err
@@ -1285,6 +1310,30 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 			"changed_member_count": len(changedMemberIDs),
 		})
 		return nil, err
+	}
+	if s.automationActorRemover != nil {
+		currentHumans := map[uuid.UUID]struct{}{}
+		for _, member := range replaced {
+			if member.PrincipalType == PrincipalTypeHumanUser && member.Status == "active" {
+				currentHumans[member.PrincipalID] = struct{}{}
+			}
+		}
+		currentHumans[project.HumanOwnerUserID] = struct{}{}
+		for _, ownerID := range project.HumanOwnerUserIDs {
+			currentHumans[ownerID] = struct{}{}
+		}
+		for humanID := range previousHumans {
+			if humanID == uuid.Nil {
+				continue
+			}
+			if _, ok := currentHumans[humanID]; ok {
+				continue
+			}
+			if err := s.automationActorRemover.DisableForActorRemoved(ctx, tenantID, projectID, humanID); err != nil {
+				slog.Warn("automation disable on member removal failed",
+					"tenant_id", tenantID, "project_id", projectID, "actor_user_id", humanID, "error", err)
+			}
+		}
 	}
 	return replaced, nil
 }

@@ -83,6 +83,8 @@ type Querier interface {
 	CreateApprovalRequest(ctx context.Context, arg CreateApprovalRequestParams) (ApprovalRequest, error)
 	CreateArtifactRetentionHold(ctx context.Context, arg CreateArtifactRetentionHoldParams) (ArtifactRetentionHold, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
+	CreateAutomationFire(ctx context.Context, arg CreateAutomationFireParams) (AutomationFire, error)
+	CreateAutomationRule(ctx context.Context, arg CreateAutomationRuleParams) (AutomationRule, error)
 	CreateCaptchaChallenge(ctx context.Context, arg CreateCaptchaChallengeParams) (AuthCaptchaChallenge, error)
 	CreateDemandAcceptanceCriterion(ctx context.Context, arg CreateDemandAcceptanceCriterionParams) error
 	CreateDemandConstraintExemption(ctx context.Context, arg CreateDemandConstraintExemptionParams) (ProjectDemandConstraintExemption, error)
@@ -161,6 +163,7 @@ type Querier interface {
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
 	DeactivateProjectMembersForDelete(ctx context.Context, arg DeactivateProjectMembersForDeleteParams) ([]uuid.UUID, error)
+	DeleteAutomationRule(ctx context.Context, arg DeleteAutomationRuleParams) (int64, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
 	DeleteExpiredCaptchaChallenges(ctx context.Context, before pgtype.Timestamptz) error
@@ -180,6 +183,7 @@ type Querier interface {
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
 	DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSkillBindingsParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	DisableAutomationRuleSystem(ctx context.Context, arg DisableAutomationRuleSystemParams) (AutomationRule, error)
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	// 仅终态 failed/cancelled、尚未了结、且无 pending/requested 决策时可清理。
@@ -201,6 +205,8 @@ type Querier interface {
 	GetApprovalRequest(ctx context.Context, arg GetApprovalRequestParams) (ApprovalRequest, error)
 	GetApprovalRequestByResource(ctx context.Context, arg GetApprovalRequestByResourceParams) (ApprovalRequest, error)
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
+	GetAutomationFireByIdempotency(ctx context.Context, idempotencyKey string) (AutomationFire, error)
+	GetAutomationRule(ctx context.Context, arg GetAutomationRuleParams) (AutomationRule, error)
 	GetCapabilityVocabularyByKeys(ctx context.Context, arg GetCapabilityVocabularyByKeysParams) ([]CapabilityVocabulary, error)
 	GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (AuthCaptchaChallenge, error)
 	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (GetCurrentDigitalEmployeeConfigRevisionRow, error)
@@ -228,6 +234,7 @@ type Querier interface {
 	GetFeishuIdentityByUser(ctx context.Context, arg GetFeishuIdentityByUserParams) (UserFeishuIdentity, error)
 	GetInboxItem(ctx context.Context, arg GetInboxItemParams) (InboxItem, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (GetLatestDigitalEmployeeConfigRevisionRow, error)
+	GetLatestNonTerminalAutomationFire(ctx context.Context, arg GetLatestNonTerminalAutomationFireParams) (AutomationFire, error)
 	GetLatestProjectAcceptanceRecord(ctx context.Context, arg GetLatestProjectAcceptanceRecordParams) (ProjectAcceptanceRecord, error)
 	GetLatestProjectConfigRevision(ctx context.Context, arg GetLatestProjectConfigRevisionParams) (ProjectConfigRevision, error)
 	GetLatestProjectConfigRevisionNumber(ctx context.Context, arg GetLatestProjectConfigRevisionNumberParams) (int32, error)
@@ -321,6 +328,7 @@ type Querier interface {
 	HardDeleteTeamMembers(ctx context.Context, arg HardDeleteTeamMembersParams) error
 	HardDeleteTeamRuntimeNodeScopes(ctx context.Context, teamID uuid.UUID) error
 	HardDeleteTeamUserProjectTeamScopes(ctx context.Context, teamID uuid.UUID) error
+	IncrementAutomationRuleFailureCount(ctx context.Context, arg IncrementAutomationRuleFailureCountParams) (AutomationRule, error)
 	IncrementPromptTemplateUseCount(ctx context.Context, arg IncrementPromptTemplateUseCountParams) error
 	InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error)
 	InsertSkillMCPDependency(ctx context.Context, arg InsertSkillMCPDependencyParams) error
@@ -341,6 +349,8 @@ type Querier interface {
 	ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error)
 	ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error)
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
+	ListAutomationFires(ctx context.Context, arg ListAutomationFiresParams) ([]AutomationFire, error)
+	ListAutomationRules(ctx context.Context, arg ListAutomationRulesParams) ([]AutomationRule, error)
 	ListCapabilityVocabulary(ctx context.Context, tenantID uuid.UUID) ([]CapabilityVocabulary, error)
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error)
 	ListDemandAcceptanceCriteria(ctx context.Context, arg ListDemandAcceptanceCriteriaParams) ([]DemandAcceptanceCriterium, error)
@@ -396,6 +406,8 @@ type Querier interface {
 	ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.UUID) ([]ListEmployeeTemplateLabelsRow, error)
 	// apps/control-plane/internal/storage/queries/digital_employee_templates.sql
 	ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID) ([]DigitalEmployeeTemplate, error)
+	ListEnabledAutomationRulesByActor(ctx context.Context, arg ListEnabledAutomationRulesByActorParams) ([]AutomationRule, error)
+	ListEnabledAutomationRulesByActorOnProject(ctx context.Context, arg ListEnabledAutomationRulesByActorOnProjectParams) ([]AutomationRule, error)
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
 	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
@@ -555,6 +567,7 @@ type Querier interface {
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
+	ResetAutomationRuleFailureCount(ctx context.Context, arg ResetAutomationRuleFailureCountParams) (AutomationRule, error)
 	ResolveApprovalRequest(ctx context.Context, arg ResolveApprovalRequestParams) (ApprovalRequest, error)
 	// 孤儿催办回收:团队已被恢复或确认删除后,其滞留催办条目自动关闭(清扫任务每轮执行)。
 	ResolveOrphanTeamPendingDeleteReminders(ctx context.Context) error
@@ -570,6 +583,8 @@ type Querier interface {
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
 	ScheduleProjectTaskDispatchRetry(ctx context.Context, arg ScheduleProjectTaskDispatchRetryParams) (ProjectTask, error)
 	ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProjectTaskRetryParams) (ProjectTask, error)
+	SetAutomationRuleEnabled(ctx context.Context, arg SetAutomationRuleEnabledParams) (AutomationRule, error)
+	SetAutomationRuleScheduleID(ctx context.Context, arg SetAutomationRuleScheduleIDParams) (AutomationRule, error)
 	SetEmployeeTemplateStatus(ctx context.Context, arg SetEmployeeTemplateStatusParams) (DigitalEmployeeTemplate, error)
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
 	// 多负责人:成员变更后按 owner 角色人类成员重同步负责人集合(数组权威,scalar=首个过渡镜像)。
@@ -611,6 +626,8 @@ type Querier interface {
 	// as "slot unavailable" and try the next candidate.
 	TryAcquireRuntimeNodeSlot(ctx context.Context, arg TryAcquireRuntimeNodeSlotParams) (RuntimeNode, error)
 	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
+	UpdateAutomationFire(ctx context.Context, arg UpdateAutomationFireParams) (AutomationFire, error)
+	UpdateAutomationRule(ctx context.Context, arg UpdateAutomationRuleParams) (AutomationRule, error)
 	// 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
 	// 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。
 	UpdateDigitalEmployeeRolePermission(ctx context.Context, arg UpdateDigitalEmployeeRolePermissionParams) (DigitalEmployee, error)

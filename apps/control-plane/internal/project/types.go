@@ -272,11 +272,12 @@ const (
 type DemandSourceType string
 
 const (
-	DemandSourceManual   DemandSourceType = "manual"
-	DemandSourceGithub   DemandSourceType = "github"
-	DemandSourceTicket   DemandSourceType = "ticket"
-	DemandSourceDocument DemandSourceType = "document"
-	DemandSourceLog      DemandSourceType = "log"
+	DemandSourceManual     DemandSourceType = "manual"
+	DemandSourceGithub     DemandSourceType = "github"
+	DemandSourceTicket     DemandSourceType = "ticket"
+	DemandSourceDocument   DemandSourceType = "document"
+	DemandSourceLog        DemandSourceType = "log"
+	DemandSourceAutomation DemandSourceType = "automation"
 )
 
 type ProjectDemandStatus string

@@ -60,6 +60,17 @@ type Service struct {
 	captchaTTL             time.Duration
 	now                    func() time.Time
 	sessionTTLResolver     func(ctx context.Context) time.Duration
+	userDeactivatedHook    UserDeactivatedHook
+}
+
+// UserDeactivatedHook notifies dependents when a managed user is disabled.
+// Optional; nil skips the hook.
+type UserDeactivatedHook interface {
+	OnUserDeactivated(ctx context.Context, userID uuid.UUID) error
+}
+
+func (s *Service) SetUserDeactivatedHook(hook UserDeactivatedHook) {
+	s.userDeactivatedHook = hook
 }
 
 // defaultAuthSessionTTL 是登录会话 TTL 兜底默认值;生效值经 SetSessionTTLResolver
@@ -308,6 +319,11 @@ func (s *Service) UpdateManagedUserStatus(ctx context.Context, actor Actor, user
 		return nil, err
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, action, OperationResultSucceeded)
+	if status == UserStatusDisabled && s.userDeactivatedHook != nil {
+		if hookErr := s.userDeactivatedHook.OnUserDeactivated(ctx, user.ID); hookErr != nil {
+			log.Printf("user deactivated hook failed: user_id=%s err=%v", user.ID, hookErr)
+		}
+	}
 	return user, nil
 }
 
