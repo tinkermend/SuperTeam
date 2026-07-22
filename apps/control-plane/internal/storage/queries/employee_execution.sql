@@ -34,6 +34,111 @@ WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL;
 
+-- name: GetDigitalEmployeeDetailAffiliation :one
+-- 详情页归属信息：团队显示名 + 绑定项目摘要（与 overview project_summary 同源口径）。
+WITH target AS (
+    SELECT
+        de.tenant_id,
+        de.id AS digital_employee_id,
+        COALESCE(tt.name, '')::text AS team_name
+    FROM digital_employees de
+    LEFT JOIN tenant_teams tt
+      ON tt.id = de.team_id
+     AND tt.tenant_id = de.tenant_id
+    WHERE de.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND de.id = sqlc.arg('digital_employee_id')::uuid
+      AND de.deleted_at IS NULL
+),
+employee_project_links AS (
+    SELECT
+        t.tenant_id,
+        t.digital_employee_id,
+        pm.project_id,
+        TRUE AS is_member
+    FROM target t
+    JOIN project_members pm
+      ON pm.tenant_id = t.tenant_id
+     AND pm.principal_type = 'digital_employee'
+     AND pm.principal_id = t.digital_employee_id
+     AND pm.status = 'active'
+    UNION
+    SELECT
+        t.tenant_id,
+        t.digital_employee_id,
+        pt.project_id,
+        FALSE AS is_member
+    FROM target t
+    JOIN project_tasks pt
+      ON pt.tenant_id = t.tenant_id
+     AND pt.assigned_digital_employee_id = t.digital_employee_id
+     AND pt.dismissed_at IS NULL
+),
+employee_project_stats AS (
+    SELECT
+        links.tenant_id,
+        links.digital_employee_id,
+        links.project_id,
+        BOOL_OR(links.is_member) AS is_member,
+        p.name AS project_name,
+        p.status AS project_status,
+        COUNT(DISTINCT pt.id) FILTER (
+            WHERE pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+        )::integer AS active_task_count,
+        COUNT(DISTINCT pt.id) FILTER (
+            WHERE pt.status IN ('running', 'in_progress')
+        )::integer AS working_task_count,
+        COUNT(DISTINCT pt.id)::integer AS total_task_count,
+        GREATEST(MAX(pt.updated_at), MAX(p.updated_at)) AS last_activity_at
+    FROM employee_project_links links
+    JOIN projects p
+      ON p.id = links.project_id
+     AND p.tenant_id = links.tenant_id
+     AND p.archived_at IS NULL
+    LEFT JOIN project_tasks pt
+      ON pt.tenant_id = links.tenant_id
+     AND pt.project_id = links.project_id
+     AND pt.assigned_digital_employee_id = links.digital_employee_id
+     AND pt.dismissed_at IS NULL
+    GROUP BY links.tenant_id, links.digital_employee_id, links.project_id, p.name, p.status
+),
+employee_projects AS (
+    SELECT
+        s.tenant_id,
+        s.digital_employee_id,
+        COUNT(*)::integer AS project_count,
+        jsonb_agg(
+            jsonb_build_object(
+                'project_id', s.project_id,
+                'name', s.project_name,
+                'status', s.project_status,
+                'is_member', s.is_member,
+                'active_task_count', s.active_task_count,
+                'working_task_count', s.working_task_count,
+                'total_task_count', s.total_task_count,
+                'last_activity_at', s.last_activity_at
+            )
+            ORDER BY s.last_activity_at DESC NULLS LAST, s.project_id
+        ) FILTER (WHERE s.row_number <= 5) AS projects_json
+    FROM (
+        SELECT
+            employee_project_stats.*,
+            ROW_NUMBER() OVER (
+                PARTITION BY employee_project_stats.tenant_id, employee_project_stats.digital_employee_id
+                ORDER BY employee_project_stats.last_activity_at DESC NULLS LAST, employee_project_stats.project_id
+            ) AS row_number
+        FROM employee_project_stats
+    ) s
+    GROUP BY s.tenant_id, s.digital_employee_id
+)
+SELECT
+    t.team_name,
+    COALESCE(ep.project_count, 0)::integer AS project_count,
+    COALESCE(ep.projects_json, '[]'::jsonb) AS projects_json
+FROM target t
+LEFT JOIN employee_projects ep
+  ON ep.tenant_id = t.tenant_id
+ AND ep.digital_employee_id = t.digital_employee_id;
+
 -- name: GetDigitalEmployeeForDelete :one
 SELECT *
 FROM digital_employees

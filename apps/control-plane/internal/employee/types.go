@@ -228,6 +228,9 @@ type DigitalEmployee struct {
 	// OperationalState 是与运行总览/员工列表完全同源的运行态裁决(跨视图一致性 P2 3.3a):
 	// 详情页据此判断"是否忙碌",消除此前前端本地 hasActiveRun 的第三套口径。仅单员工读路径填充。
 	OperationalState *DigitalEmployeeOperationalState
+	// TeamName / ProjectSummary 仅详情读路径填充(列表/创建响应可为空默认值)。
+	TeamName       string
+	ProjectSummary DigitalEmployeeProjectSummary
 }
 
 type EnvironmentVariableStatus string

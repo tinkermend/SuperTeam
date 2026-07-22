@@ -517,10 +517,22 @@ export function ChatPanel({
           aria-label="对话问题"
           className="tl-chat-textarea"
           onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              handleSend();
+            }
+          }}
           placeholder="向数字员工提问，回答不会写入项目流转"
           value={question}
         />
-        <button className="tl-btn-send" disabled={!canSend} onClick={handleSend} type="button">
+        <button
+          className="tl-btn-send"
+          disabled={!canSend}
+          onClick={handleSend}
+          title="发送（Shift+Enter）"
+          type="button"
+        >
           发送
           <SendHorizontal aria-hidden className="size-4" />
         </button>

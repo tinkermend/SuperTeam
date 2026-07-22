@@ -107,6 +107,9 @@ type DigitalEmployeeRun struct {
 	FinishedAt             *time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+	// ProjectID / ProjectName: project_tasks link, else chat/task-hub metadata anchors.
+	ProjectID   *uuid.UUID
+	ProjectName *string
 }
 
 type DigitalEmployeeRunStats struct {
@@ -118,6 +121,29 @@ type DigitalEmployeeRunStats struct {
 	Prev7dCount    int64
 	AvgDurationSec *float64
 	P90DurationSec *float64
+}
+
+// DigitalEmployeeRunCalendarItem is the slim run projection for calendar boards.
+// It intentionally omits result/diagnostic/session_state/work_products payloads.
+type DigitalEmployeeRunCalendarItem struct {
+	ID          uuid.UUID
+	TaskTitle   string
+	Status      DigitalEmployeeRunStatus
+	RunKind     string
+	CreatedAt   time.Time
+	ProjectID   *uuid.UUID
+	ProjectName *string
+}
+
+// DigitalEmployeeRunCalendarResult is the calendar-window response: total matching
+// runs in [From, To), whether the item list was truncated to the server cap, and
+// the newest-first slim items actually returned.
+type DigitalEmployeeRunCalendarResult struct {
+	From       time.Time
+	To         time.Time
+	TotalCount int64
+	Truncated  bool
+	Items      []DigitalEmployeeRunCalendarItem
 }
 
 // DigitalEmployeeRunListFilter captures the filterable, pagination, and time-window
@@ -141,8 +167,9 @@ type DigitalEmployeeRunListFilter struct {
 
 // DigitalEmployeeRunListItem augments a run with the joined task title, optional
 // project association, work-product count, and finished-run duration. ProjectID and
-// ProjectName are non-nil only when the run is linked to a project via project_tasks.
-// DurationSec is non-nil only for runs that have reached a terminal finished_at.
+// ProjectName are non-nil when linked via project_tasks or chat/task metadata
+// (anchor_project_id / project_id). DurationSec is non-nil only for runs that have
+// reached a terminal finished_at.
 type DigitalEmployeeRunListItem struct {
 	Run              *DigitalEmployeeRun
 	TaskTitle        string

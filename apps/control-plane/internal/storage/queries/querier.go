@@ -52,6 +52,7 @@ type Querier interface {
 	// reflects recent behaviour rather than lifetime totals. Employees with no recent
 	// attempts do not produce a row; callers treat absence as zero.
 	CountDigitalEmployeeOperationalSignals(ctx context.Context, arg CountDigitalEmployeeOperationalSignalsParams) ([]CountDigitalEmployeeOperationalSignalsRow, error)
+	CountDigitalEmployeeRunCalendarItems(ctx context.Context, arg CountDigitalEmployeeRunCalendarItemsParams) (int64, error)
 	CountDigitalEmployeeRunsDetailed(ctx context.Context, arg CountDigitalEmployeeRunsDetailedParams) (int64, error)
 	CountHighRiskInboxItems(ctx context.Context, arg CountHighRiskInboxItemsParams) (int64, error)
 	CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error)
@@ -207,10 +208,13 @@ type Querier interface {
 	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigitalEmployeeAuthzScopeParams) (GetDigitalEmployeeAuthzScopeRow, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (GetDigitalEmployeeConfigRevisionRow, error)
+	// 详情页归属信息：团队显示名 + 绑定项目摘要（与 overview project_summary 同源口径）。
+	GetDigitalEmployeeDetailAffiliation(ctx context.Context, arg GetDigitalEmployeeDetailAffiliationParams) (GetDigitalEmployeeDetailAffiliationRow, error)
 	GetDigitalEmployeeForDelete(ctx context.Context, arg GetDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
 	// 租户内当前具备在线可用 Runtime 能力的 provider 集合。员工不再绑定 Runtime
 	// (运行落点由项目派发时动态解析),就绪判据只看"租户内是否有任一在线节点提供该 provider"。
 	GetDigitalEmployeeOverviewSummary(ctx context.Context, arg GetDigitalEmployeeOverviewSummaryParams) (GetDigitalEmployeeOverviewSummaryRow, error)
+	// Prefer project_tasks; chat/task-hub runs fall back to metadata anchors.
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (GetDigitalEmployeeRunRow, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
 	// Standalone/workbench run preflight: least-loaded online tenant node with healthy provider.
@@ -376,6 +380,8 @@ type Querier interface {
 	// 创建的类型早已脱节,导致这一腿永远不触发)过滤;唯一排除 project_acceptance,
 	// 它是项目级 guard,不构成员工级 waiting_human(见 operational_status.go)。
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
+	// 日历看板轻量投影:不含 result/diagnostic/session_state/work_products。
+	ListDigitalEmployeeRunCalendarItems(ctx context.Context, arg ListDigitalEmployeeRunCalendarItemsParams) ([]ListDigitalEmployeeRunCalendarItemsRow, error)
 	ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error)
 	ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEmployeeRunsParams) ([]ListDigitalEmployeeRunsRow, error)
 	ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListDigitalEmployeeRunsDetailedParams) ([]ListDigitalEmployeeRunsDetailedRow, error)

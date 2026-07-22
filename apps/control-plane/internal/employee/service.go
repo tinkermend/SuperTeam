@@ -1075,6 +1075,16 @@ func (s *Service) GetDigitalEmployee(ctx context.Context, tenantID, employeeID u
 	} else {
 		employee.OperationalState = &state
 	}
+	if affiliation, affiliationErr := s.repository.GetDigitalEmployeeDetailAffiliation(ctx, tenantID, employeeID); affiliationErr != nil {
+		slog.Default().Warn("attach detail affiliation failed", "employee_id", employeeID, "error", affiliationErr)
+		employee.ProjectSummary = DigitalEmployeeProjectSummary{Projects: []DigitalEmployeeProjectLinkSummary{}}
+	} else {
+		employee.TeamName = affiliation.TeamName
+		employee.ProjectSummary = affiliation.ProjectSummary
+		if employee.ProjectSummary.Projects == nil {
+			employee.ProjectSummary.Projects = []DigitalEmployeeProjectLinkSummary{}
+		}
+	}
 	return employee, nil
 }
 

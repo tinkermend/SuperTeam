@@ -1081,6 +1081,30 @@ func (s *DigitalEmployeeRunService) GetRunStats(ctx context.Context, tenantID, e
 	return &stats, nil
 }
 
+const (
+	runCalendarMaxWindow = 31 * 24 * time.Hour
+	runCalendarMaxItems  = int32(500)
+)
+
+func (s *DigitalEmployeeRunService) GetRunCalendar(ctx context.Context, tenantID, employeeID uuid.UUID, from, to time.Time) (*DigitalEmployeeRunCalendarResult, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if employeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if from.IsZero() || to.IsZero() {
+		return nil, fmt.Errorf("%w: from and to are required", ErrInvalidInput)
+	}
+	if !to.After(from) {
+		return nil, fmt.Errorf("%w: to must be after from", ErrInvalidInput)
+	}
+	if to.Sub(from) > runCalendarMaxWindow {
+		return nil, fmt.Errorf("%w: calendar window must be at most 31 days", ErrInvalidInput)
+	}
+	return s.repository.ListRunCalendar(ctx, tenantID, employeeID, from, to, runCalendarMaxItems)
+}
+
 func (s *DigitalEmployeeRunService) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

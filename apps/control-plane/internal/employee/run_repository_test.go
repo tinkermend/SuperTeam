@@ -1370,3 +1370,77 @@ func TestPgRunRepositoryGetRunTaskMetadata(t *testing.T) {
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 }
+
+// TestPgRunRepositoryResolvesChatRunProjectFromMetadata covers task-hub chat
+// runs that store the project only in tasks.params.metadata.anchor_project_id
+// (no project_tasks row). GetRun / calendar / detailed list must surface it.
+func TestPgRunRepositoryResolvesChatRunProjectFromMetadata(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "chat_run_project_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runID := uuid.New()
+	projectID := uuid.New()
+	humanOwnerID := uuid.New()
+
+	_, err = conn.Exec(ctx, `INSERT INTO tenants (id, slug, name, status) VALUES ($1, 'default', '默认租户', 'active') ON CONFLICT (id) DO NOTHING`, tenantID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO projects (id, tenant_id, name, status, human_owner_user_id) VALUES ($1, $2, '任务中枢锚点项目', 'active', $3)`, projectID, tenantID, humanOwnerID)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, title, provider_type, status, run_kind, params)
+		VALUES ($1, $2, '只回一个字', 'codex', 'completed', 'chat',
+		        jsonb_build_object('metadata', jsonb_build_object('anchor_project_id', $3::text)))
+	`, taskID, tenantID, projectID.String())
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `
+		INSERT INTO task_runs (id, tenant_id, task_id, digital_employee_id, node_id, status, created_at)
+		VALUES ($1, $2, $3, $4, 'node-a', 'completed', NOW() - interval '1 hour')
+	`, runID, tenantID, taskID, employeeID)
+	require.NoError(t, err)
+
+	repo := NewPgRunRepository(queries.New(conn))
+
+	got, err := repo.GetRun(ctx, tenantID, employeeID, runID)
+	require.NoError(t, err)
+	require.NotNil(t, got.ProjectID)
+	require.Equal(t, projectID, *got.ProjectID)
+	require.NotNil(t, got.ProjectName)
+	require.Equal(t, "任务中枢锚点项目", *got.ProjectName)
+
+	from := time.Now().UTC().Add(-24 * time.Hour)
+	to := time.Now().UTC().Add(time.Hour)
+	calendar, err := repo.ListRunCalendar(ctx, tenantID, employeeID, from, to, 100)
+	require.NoError(t, err)
+	require.Len(t, calendar.Items, 1)
+	require.NotNil(t, calendar.Items[0].ProjectID)
+	require.Equal(t, projectID, *calendar.Items[0].ProjectID)
+	require.NotNil(t, calendar.Items[0].ProjectName)
+	require.Equal(t, "任务中枢锚点项目", *calendar.Items[0].ProjectName)
+
+	listed, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		ProjectID: &projectID,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), listed.TotalCount)
+	require.Equal(t, runID, listed.Items[0].Run.ID)
+	require.NotNil(t, listed.Items[0].ProjectName)
+	require.Equal(t, "任务中枢锚点项目", *listed.Items[0].ProjectName)
+}

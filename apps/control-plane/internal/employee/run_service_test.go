@@ -2587,6 +2587,10 @@ func (f *fakeRunServiceRepository) ListRunsDetailed(_ context.Context, tenantID,
 	return &DigitalEmployeeRunListResult{Items: items, TotalCount: int64(len(items))}, nil
 }
 
+func (f *fakeRunServiceRepository) ListRunCalendar(_ context.Context, _, _ uuid.UUID, from, to time.Time, _ int32) (*DigitalEmployeeRunCalendarResult, error) {
+	return &DigitalEmployeeRunCalendarResult{From: from, To: to, Items: []DigitalEmployeeRunCalendarItem{}}, nil
+}
+
 func (f *fakeRunServiceRepository) ListRunEvents(_ context.Context, _ uuid.UUID, taskID, runID uuid.UUID, _ int32, _ int32) ([]RuntimeCommandEventWriteback, error) {
 	f.listRunEventsTaskID = taskID
 	f.listRunEventsRunID = runID
@@ -3099,5 +3103,30 @@ func TestSweepStalePreConfirmationRunsNoopWithoutLister(t *testing.T) {
 	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
 	if reaped := service.SweepStalePreConfirmationRuns(context.Background()); reaped != 0 {
 		t.Fatalf("expected zero reaped without lister support, got %d", reaped)
+	}
+}
+
+func TestGetRunCalendarRejectsInvalidWindow(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	from := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		from time.Time
+		to   time.Time
+	}{
+		{name: "to before from", from: from, to: from.Add(-time.Hour)},
+		{name: "to equal from", from: from, to: from},
+		{name: "window over 31 days", from: from, to: from.Add(32 * 24 * time.Hour)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := service.GetRunCalendar(context.Background(), tenantID, employeeID, tc.from, tc.to)
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput, got %v", err)
+			}
+		})
 	}
 }

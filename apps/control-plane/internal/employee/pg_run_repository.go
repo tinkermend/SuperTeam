@@ -349,6 +349,11 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 	mapped.RunKind = run.RunKind
 	mapped.ResumeOfRunID = uuidPtrFromNull(run.ResumeOfRunID)
 	mapped.ChatThreadID = effectiveChatThreadID(run.RunKind, run.ChatThreadID, run.ID)
+	mapped.ProjectID = uuidPtrFromNull(run.ProjectID)
+	if run.ProjectName.Valid {
+		name := run.ProjectName.String
+		mapped.ProjectName = &name
+	}
 	return mapped, nil
 }
 
@@ -460,6 +465,60 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 	}
 
 	return &DigitalEmployeeRunListResult{Items: items, TotalCount: total, Projects: projects}, nil
+}
+
+func (r *PgRunRepository) ListRunCalendar(ctx context.Context, tenantID, employeeID uuid.UUID, from, to time.Time, limit int32) (*DigitalEmployeeRunCalendarResult, error) {
+	fromTime := pgtype.Timestamptz{Time: from, Valid: true}
+	toTime := pgtype.Timestamptz{Time: to, Valid: true}
+
+	total, err := r.q.CountDigitalEmployeeRunCalendarItems(ctx, queries.CountDigitalEmployeeRunCalendarItemsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		FromTime:          fromTime,
+		ToTime:            toTime,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := r.q.ListDigitalEmployeeRunCalendarItems(ctx, queries.ListDigitalEmployeeRunCalendarItemsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		FromTime:          fromTime,
+		ToTime:            toTime,
+		Limit:             limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]DigitalEmployeeRunCalendarItem, 0, len(rows))
+	for _, row := range rows {
+		item := DigitalEmployeeRunCalendarItem{
+			ID:        row.ID,
+			TaskTitle: row.TaskTitle,
+			Status:    DigitalEmployeeRunStatus(row.Status),
+			RunKind:   row.RunKind,
+			CreatedAt: timeFromTimestamptz(row.CreatedAt),
+		}
+		if row.ProjectID.Valid {
+			id := row.ProjectID.UUID
+			item.ProjectID = &id
+		}
+		if row.ProjectName.Valid {
+			name := row.ProjectName.String
+			item.ProjectName = &name
+		}
+		items = append(items, item)
+	}
+
+	return &DigitalEmployeeRunCalendarResult{
+		From:       from,
+		To:         to,
+		TotalCount: total,
+		Truncated:  total > int64(len(items)),
+		Items:      items,
+	}, nil
 }
 
 func (r *PgRunRepository) ListRunEvents(ctx context.Context, tenantID, taskID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error) {

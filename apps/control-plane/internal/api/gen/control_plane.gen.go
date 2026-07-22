@@ -477,6 +477,24 @@ func (e DigitalEmployeeRunRunKind) Valid() bool {
 	}
 }
 
+// Defines values for DigitalEmployeeRunCalendarItemRunKind.
+const (
+	DigitalEmployeeRunCalendarItemRunKindChat DigitalEmployeeRunCalendarItemRunKind = "chat"
+	DigitalEmployeeRunCalendarItemRunKindTask DigitalEmployeeRunCalendarItemRunKind = "task"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeRunCalendarItemRunKind enum.
+func (e DigitalEmployeeRunCalendarItemRunKind) Valid() bool {
+	switch e {
+	case DigitalEmployeeRunCalendarItemRunKindChat:
+		return true
+	case DigitalEmployeeRunCalendarItemRunKindTask:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DigitalEmployeeRunListItemRunKind.
 const (
 	DigitalEmployeeRunListItemRunKindChat DigitalEmployeeRunListItemRunKind = "chat"
@@ -2772,13 +2790,19 @@ type DigitalEmployee struct {
 	OwnerUserId           openapi_types.UUID      `json:"owner_user_id"`
 	PermissionPolicy      map[string]interface{}  `json:"permission_policy"`
 	PersonaMemoryMarkdown string                  `json:"persona_memory_markdown"`
-	ProviderType          string                  `json:"provider_type"`
-	RiskLevel             string                  `json:"risk_level"`
-	Role                  string                  `json:"role"`
-	Status                DigitalEmployeeStatus   `json:"status"`
-	TeamId                openapi_types.UUID      `json:"team_id"`
-	TenantId              openapi_types.UUID      `json:"tenant_id"`
-	UpdatedAt             *time.Time              `json:"updated_at,omitempty"`
+
+	// ProjectSummary 数字员工的项目关联情况（活跃成员身份或任务分派均算关联）
+	ProjectSummary DigitalEmployeeProjectSummary `json:"project_summary"`
+	ProviderType   string                        `json:"provider_type"`
+	RiskLevel      string                        `json:"risk_level"`
+	Role           string                        `json:"role"`
+	Status         DigitalEmployeeStatus         `json:"status"`
+	TeamId         openapi_types.UUID            `json:"team_id"`
+
+	// TeamName 归属团队显示名；无团队时为空串，前端展示「无团队归属」
+	TeamName  string             `json:"team_name"`
+	TenantId  openapi_types.UUID `json:"tenant_id"`
+	UpdatedAt *time.Time         `json:"updated_at,omitempty"`
 }
 
 // DigitalEmployeeActivity defines model for DigitalEmployeeActivity.
@@ -3157,13 +3181,19 @@ type DigitalEmployeeRun struct {
 	ExitCode            *int32                 `json:"exit_code,omitempty"`
 
 	// FailureAcknowledgedAt When a human acknowledged this failed/timed_out standalone run
-	FailureAcknowledgedAt     *time.Time                `json:"failure_acknowledged_at,omitempty"`
-	FinishedAt                *time.Time                `json:"finished_at,omitempty"`
-	GraceSec                  *int32                    `json:"grace_sec,omitempty"`
-	Id                        openapi_types.UUID        `json:"id"`
-	IdempotencyKey            *string                   `json:"idempotency_key,omitempty"`
-	LogRef                    *string                   `json:"log_ref,omitempty"`
-	NodeId                    string                    `json:"node_id"`
+	FailureAcknowledgedAt *time.Time         `json:"failure_acknowledged_at,omitempty"`
+	FinishedAt            *time.Time         `json:"finished_at,omitempty"`
+	GraceSec              *int32             `json:"grace_sec,omitempty"`
+	Id                    openapi_types.UUID `json:"id"`
+	IdempotencyKey        *string            `json:"idempotency_key,omitempty"`
+	LogRef                *string            `json:"log_ref,omitempty"`
+	NodeId                string             `json:"node_id"`
+
+	// ProjectId Linked project via project_tasks.digital_employee_run_id when present.
+	ProjectId *openapi_types.UUID `json:"project_id,omitempty"`
+
+	// ProjectName Display name for the linked project when project_id is present.
+	ProjectName               *string                   `json:"project_name,omitempty"`
 	ProviderSessionExternalId *string                   `json:"provider_session_external_id,omitempty"`
 	ProviderSessionId         *string                   `json:"provider_session_id,omitempty"`
 	ProviderType              string                    `json:"provider_type"`
@@ -3186,6 +3216,29 @@ type DigitalEmployeeRun struct {
 
 // DigitalEmployeeRunRunKind defines model for DigitalEmployeeRun.RunKind.
 type DigitalEmployeeRunRunKind string
+
+// DigitalEmployeeRunCalendar defines model for DigitalEmployeeRunCalendar.
+type DigitalEmployeeRunCalendar struct {
+	From       time.Time                        `json:"from"`
+	Items      []DigitalEmployeeRunCalendarItem `json:"items"`
+	To         time.Time                        `json:"to"`
+	TotalCount int64                            `json:"total_count"`
+	Truncated  bool                             `json:"truncated"`
+}
+
+// DigitalEmployeeRunCalendarItem defines model for DigitalEmployeeRunCalendarItem.
+type DigitalEmployeeRunCalendarItem struct {
+	CreatedAt   time.Time                             `json:"created_at"`
+	Id          openapi_types.UUID                    `json:"id"`
+	ProjectId   *openapi_types.UUID                   `json:"project_id,omitempty"`
+	ProjectName *string                               `json:"project_name,omitempty"`
+	RunKind     DigitalEmployeeRunCalendarItemRunKind `json:"run_kind"`
+	Status      DigitalEmployeeRunStatus              `json:"status"`
+	TaskTitle   string                                `json:"task_title"`
+}
+
+// DigitalEmployeeRunCalendarItemRunKind defines model for DigitalEmployeeRunCalendarItem.RunKind.
+type DigitalEmployeeRunCalendarItemRunKind string
 
 // DigitalEmployeeRunEvent defines model for DigitalEmployeeRunEvent.
 type DigitalEmployeeRunEvent struct {
@@ -6003,6 +6056,15 @@ type ListProviderSessionsForDigitalEmployeeParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetDigitalEmployeeRunCalendarParams defines parameters for GetDigitalEmployeeRunCalendar.
+type GetDigitalEmployeeRunCalendarParams struct {
+	// From Inclusive window start (RFC3339)
+	From time.Time `form:"from" json:"from"`
+
+	// To Exclusive window end (RFC3339)
+	To time.Time `form:"to" json:"to"`
+}
+
 // ListDigitalEmployeeRunsParams defines parameters for ListDigitalEmployeeRuns.
 type ListDigitalEmployeeRunsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -7172,6 +7234,9 @@ type ServerInterface interface {
 	// Create a provider session mapping for a digital employee
 	// (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 	CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List slim digital employee runs for a calendar window
+	// (GET /api/v1/digital-employees/{employeeId}/run-calendar)
+	GetDigitalEmployeeRunCalendar(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params GetDigitalEmployeeRunCalendarParams)
 	// Get digital employee run statistics
 	// (GET /api/v1/digital-employees/{employeeId}/run-stats)
 	GetDigitalEmployeeRunStats(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -7922,6 +7987,12 @@ func (_ Unimplemented) ListProviderSessionsForDigitalEmployee(w http.ResponseWri
 // Create a provider session mapping for a digital employee
 // (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 func (_ Unimplemented) CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List slim digital employee runs for a calendar window
+// (GET /api/v1/digital-employees/{employeeId}/run-calendar)
+func (_ Unimplemented) GetDigitalEmployeeRunCalendar(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params GetDigitalEmployeeRunCalendarParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10266,6 +10337,61 @@ func (siw *ServerInterfaceWrapper) CreateProviderSessionForDigitalEmployee(w htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateProviderSessionForDigitalEmployee(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDigitalEmployeeRunCalendar operation middleware
+func (siw *ServerInterfaceWrapper) GetDigitalEmployeeRunCalendar(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDigitalEmployeeRunCalendarParams
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDigitalEmployeeRunCalendar(w, r, employeeId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16356,6 +16482,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/provider-sessions", wrapper.CreateProviderSessionForDigitalEmployee)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/run-calendar", wrapper.GetDigitalEmployeeRunCalendar)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/run-stats", wrapper.GetDigitalEmployeeRunStats)

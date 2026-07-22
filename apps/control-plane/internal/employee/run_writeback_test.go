@@ -1036,6 +1036,10 @@ func (f *fakeRunWritebackRepository) ListRunsDetailed(_ context.Context, _ uuid.
 	return nil, nil
 }
 
+func (f *fakeRunWritebackRepository) ListRunCalendar(_ context.Context, _, _ uuid.UUID, from, to time.Time, _ int32) (*DigitalEmployeeRunCalendarResult, error) {
+	return &DigitalEmployeeRunCalendarResult{From: from, To: to, Items: []DigitalEmployeeRunCalendarItem{}}, nil
+}
+
 func (f *fakeRunWritebackRepository) CreateRun(context.Context, CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
 	return nil, ErrInvalidInput
 }

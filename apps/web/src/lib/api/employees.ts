@@ -29,6 +29,8 @@ export type DigitalEmployee = {
   id: string;
   tenant_id: string;
   team_id?: string;
+  /** 归属团队显示名；无团队时为空串，UI 展示「无团队归属」。 */
+  team_name?: string;
   owner_user_id: string;
   employee_type: string;
   provider_type: string;
@@ -40,6 +42,8 @@ export type DigitalEmployee = {
   persona_memory_markdown?: string;
   capability_bindings?: CapabilityBindings;
   budget_policy?: BudgetPolicy;
+  /** 绑定项目摘要；详情读路径填充。 */
+  project_summary?: DigitalEmployeeProjectSummary;
   risk_level: string;
   metadata?: Record<string, unknown> & {
     avatar?: Record<string, unknown>;
@@ -260,6 +264,8 @@ export type DigitalEmployeeRun = {
   resume_of_run_id?: string;
   /** Effective chat conversation id (thread root run id); present on chat runs only. */
   chat_thread_id?: string;
+  project_id?: string;
+  project_name?: string;
 };
 
 export type DigitalEmployeeRunEvent = {
@@ -283,6 +289,24 @@ export type DigitalEmployeeRunStats = {
   p90_duration_sec: number | null;
   last_7d_count: number;
   prev_7d_count: number;
+};
+
+export type DigitalEmployeeRunCalendarItem = {
+  id: string;
+  task_title: string;
+  status: DigitalEmployeeRunStatus;
+  run_kind: DigitalEmployeeRunKind;
+  created_at: string;
+  project_id?: string;
+  project_name?: string;
+};
+
+export type DigitalEmployeeRunCalendar = {
+  from: string;
+  to: string;
+  total_count: number;
+  truncated: boolean;
+  items: DigitalEmployeeRunCalendarItem[];
 };
 
 export type DigitalEmployeeRunFilterOption = {
@@ -935,6 +959,22 @@ export function getDigitalEmployeeRunStats(
     options,
     `/api/v1/digital-employees/${encodePathSegment(employeeId)}/run-stats`,
     "digital employee run stats",
+  );
+}
+
+export function getDigitalEmployeeRunCalendar(
+  options: ApiClientOptions,
+  employeeId: string,
+  window: { from: string; to: string },
+): Promise<DigitalEmployeeRunCalendar> {
+  const params = new URLSearchParams({
+    from: window.from,
+    to: window.to,
+  });
+  return getJson<DigitalEmployeeRunCalendar>(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}/run-calendar?${params.toString()}`,
+    "digital employee run calendar",
   );
 }
 

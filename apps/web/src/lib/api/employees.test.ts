@@ -8,6 +8,7 @@ import {
   createDigitalEmployeeRun,
   getDigitalEmployee,
   getDigitalEmployeeRun,
+  getDigitalEmployeeRunCalendar,
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
   listDigitalEmployees,
@@ -923,6 +924,47 @@ describe("digital employee API", () => {
           "content-type": "application/json",
         },
         method: "POST",
+      },
+    );
+  });
+
+  it("loads digital employee run calendar with from/to window", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({
+        from: "2026-07-20T00:00:00.000Z",
+        to: "2026-07-27T00:00:00.000Z",
+        total_count: 1,
+        truncated: false,
+        items: [
+          {
+            id: "run-1",
+            task_title: "周历条目",
+            status: "completed",
+            run_kind: "task",
+            created_at: "2026-07-21T04:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      getDigitalEmployeeRunCalendar(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        { from: "2026-07-20T00:00:00.000Z", to: "2026-07-27T00:00:00.000Z" },
+      ),
+    ).resolves.toMatchObject({
+      total_count: 1,
+      truncated: false,
+      items: [{ id: "run-1", task_title: "周历条目" }],
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/run-calendar?from=2026-07-20T00%3A00%3A00.000Z&to=2026-07-27T00%3A00%3A00.000Z",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
       },
     );
   });

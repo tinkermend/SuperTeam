@@ -8,40 +8,40 @@ import {
   ShellPageHeader,
   ShellPageHeaderBack,
 } from "@/components/layout/shell-page-header";
-import { MasterDetailLayout, SoftCard, StatusPill } from "@/components/superteam";
+import { MasterDetailLayout, StatusPill, V3Segmented } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiRequestError } from "@/lib/api/client";
 import { listEffectiveMcpConfig } from "@/lib/api/capabilities";
 import {
-  createDigitalEmployeeRun,
   deleteDigitalEmployee,
   getDigitalEmployee,
+  getDigitalEmployeeRun,
+  getDigitalEmployeeRunCalendar,
   getDigitalEmployeeSchedulingReadiness,
   getDigitalEmployeeRunStats,
   listDigitalEmployeeRuns,
   listEmployeeEnvironmentVariables,
-  type BudgetPolicy,
-  type DigitalEmployee,
   type DigitalEmployeeDeleteBlockedErrorResponse,
   type DigitalEmployeeDeleteBlocker,
   type DigitalEmployeeRun,
+  type DigitalEmployeeRunCalendarItem,
   type DigitalEmployeeRunKind,
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
 import { listEmployeeSkills } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { EffectiveContextPanel } from "./components/effective-context-panel";
+import { EmployeeCapabilityRail } from "./components/employee-capability-rail";
 import { EmployeeDetailHeader } from "./components/employee-detail-header";
-import { EmployeeMetricsStrip } from "./components/employee-metrics-strip";
 import { EmployeeRunHistoryTable } from "./components/employee-run-history-table";
+import {
+  EmployeeWorkCalendar,
+  employeeWeekQueryWindow,
+  employeeWeekStart,
+} from "./components/employee-work-calendar";
 import { RunDetailDrawer } from "./components/run-detail-drawer";
-import { isBusyOperationalStatus } from "./operational-status";
-import { SchedulingReadinessPanel } from "./components/scheduling-readiness-panel";
-import { StartTaskDrawer } from "./components/start-task-drawer";
-import { providerDisplayName } from "./provider-label";
 import { deleteBlockerTypeLabel, statusLabel } from "@/lib/status-labels";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>([
@@ -70,13 +70,15 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<DigitalEmployeeRunStatus | undefined>(undefined);
   const [runKindFilter, setRunKindFilter] = useState<DigitalEmployeeRunKind | undefined>(undefined);
+  const [historyView, setHistoryView] = useState<"calendar" | "list">("calendar");
+  const [weekStart, setWeekStart] = useState(() => employeeWeekStart(new Date()));
   const [selectedRun, setSelectedRun] = useState<DigitalEmployeeRunListItem | undefined>(undefined);
   const [runDrawerOpen, setRunDrawerOpen] = useState(false);
-  const [startTaskOpen, setStartTaskOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteBlocked, setDeleteBlocked] =
     useState<DigitalEmployeeDeleteBlockedErrorResponse | undefined>(undefined);
+  const [calendarOpenError, setCalendarOpenError] = useState<string | undefined>(undefined);
 
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
@@ -99,7 +101,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     queryFn: () => getDigitalEmployeeRunStats(apiOptions, employeeId),
   });
   const runs = useQuery({
-    enabled: !employeeNotFound,
+    enabled: !employeeNotFound && historyView === "list",
     queryKey: ["digital-employee-runs", employeeId, { page, statusFilter, runKindFilter }] as const,
     queryFn: () =>
       listDigitalEmployeeRuns(apiOptions, employeeId, {
@@ -110,6 +112,23 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       }),
     refetchInterval: (query) =>
       query.state.data?.items.some((item) => isActiveRun(item.status)) ? 2500 : false,
+  });
+  // Encode local Mon 00:00 → next Mon 00:00 as absolute UTC ISO so the API window
+  // matches the calendar's local-day columns (do not send "UTC midnight" labels).
+  const weekWindow = employeeWeekQueryWindow(weekStart);
+  const calendar = useQuery({
+    enabled: !employeeNotFound && historyView === "calendar",
+    queryKey: [
+      "digital-employee-run-calendar",
+      employeeId,
+      weekWindow.from,
+      weekWindow.to,
+    ] as const,
+    queryFn: () =>
+      getDigitalEmployeeRunCalendar(apiOptions, employeeId, {
+        from: weekWindow.from,
+        to: weekWindow.to,
+      }),
   });
   // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed the panel
   // (as computed props). The panel is now a pure presentational component.
@@ -140,36 +159,30 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const configuredEnvCount = envVarsQuery.data?.filter((item) => item.configured).length ?? 0;
   const missingEnvVars = envVarsQuery.data?.filter((item) => !item.configured) ?? [];
 
-  const hasActiveRun = runs.data?.items.some((item) => isActiveRun(item.status)) ?? false;
-  // 忙碌判定与运行总览/员工列表同源:优先用后端 operational_state(working/queued=忙),
-  // 消除详情页此前基于 runs 列表本地各算一套(第三套算法)。后端未返回时回退本地 hasActiveRun。
-  const operationalStatus = employee.data?.operational_state?.status;
-  const isBusy = operationalStatus ? isBusyOperationalStatus(operationalStatus) : hasActiveRun;
-  const employeeCanRun = employee.data?.status === "ready" || employee.data?.status === "active";
-  const canStartTask = employeeCanRun && runs.isSuccess && !isBusy;
-
-  const disabledReasons: string[] = [];
-  if (isBusy) disabledReasons.push("当前有进行中的工作，暂不能开始新任务");
-  if (runs.isError) disabledReasons.push("运行列表加载失败，暂不能开始新任务");
-
   const refreshRunFacts = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["digital-employee-runs", employeeId] }),
       queryClient.invalidateQueries({ queryKey: ["digital-employee-run-stats", employeeId] }),
+      queryClient.invalidateQueries({ queryKey: ["digital-employee-run-calendar", employeeId] }),
     ]);
   };
 
-  const createRun = useMutation({
-    mutationFn: (input: { objective: string; prompt: string }) =>
-      createDigitalEmployeeRun(apiOptions, employeeId, {
-        objective: input.objective,
-        prompt: input.prompt,
-      }),
-    onSuccess: async () => {
-      setStartTaskOpen(false);
-      await refreshRunFacts();
-    },
-  });
+  const openCalendarItem = async (item: DigitalEmployeeRunCalendarItem) => {
+    setCalendarOpenError(undefined);
+    try {
+      const run = await getDigitalEmployeeRun(apiOptions, employeeId, item.id);
+      setSelectedRun({
+        ...run,
+        task_title: item.task_title,
+        project_id: item.project_id,
+        project_name: item.project_name,
+        work_product_count: Array.isArray(run.work_products) ? run.work_products.length : 0,
+      });
+      setRunDrawerOpen(true);
+    } catch {
+      setCalendarOpenError("打开运行详情失败，请稍后重试");
+    }
+  };
 
   const deleteEmployee = useMutation({
     mutationFn: () => deleteDigitalEmployee(apiOptions, employeeId),
@@ -184,6 +197,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         "digital-employee-scheduling-readiness",
         "digital-employee-run-stats",
         "digital-employee-runs",
+        "digital-employee-run-calendar",
         "employee-skills",
         "employee-effective-mcp",
         "employee-environment-variables",
@@ -229,9 +243,9 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       <ShellPageHeader
         back={<ShellPageHeaderBack ariaLabel="返回数字员工列表" to="/employees" />}
         title={employee.data?.name ?? "数字员工详情"}
-        subtitle="运行事件、结果和人工停止。"
+        subtitle="身份与工作节奏。"
       />
-      <Main width="wide" className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden py-4">
         {employee.isLoading ? <p className="text-sm text-v3-ink-2">加载中</p> : null}
         {employeeNotFound ? (
           <p className="text-sm text-v3-ink-2">该数字员工不存在或已被删除。</p>
@@ -240,99 +254,119 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         ) : null}
 
         {employee.data ? (
-          <div className="flex flex-col gap-4">
+          <div className="flex min-h-[calc(100dvh-9.5rem)] flex-col gap-3">
             <EmployeeDetailHeader
               employee={employee.data}
               onDelete={() => setDeleteDialogOpen(true)}
-              onStartTask={() => setStartTaskOpen(true)}
-            />
-
-            <EmployeeMetricsStrip
-              providerType={providerDisplayName(employee.data.provider_type)}
               stats={runStats.data}
             />
 
             <MasterDetailLayout
+              className="min-h-0 flex-1 [&>div]:h-full [&>div]:items-stretch [&>div]:gap-3"
               narrowDetail="stack"
               rail="md"
               master={
-                <EmployeeRunHistoryTable
-                  employeeId={employeeId}
-                  error={runs.error}
-                  isError={runs.isError}
-                  isLoading={runs.isLoading}
-                  onPageChange={setPage}
-                  onRetry={() => runs.refetch()}
-                  onRowClick={(item) => {
-                    setSelectedRun(item);
-                    setRunDrawerOpen(true);
-                  }}
-                  onRunKindFilterChange={(runKind) => {
-                    setRunKindFilter(runKind);
-                    setPage(1);
-                  }}
-                  onStatusFilterChange={(status) => {
-                    setStatusFilter(status);
-                    setPage(1);
-                  }}
-                  page={page}
-                  pageSize={PAGE_SIZE}
-                  result={runs.data}
-                  runKindFilter={runKindFilter}
-                  statusFilter={statusFilter}
-                />
-              }
-              detail={
-                <div className="flex flex-col gap-4">
-                  <SchedulingReadinessPanel
-                    isError={schedulingReadiness.isError}
-                    isLoading={schedulingReadiness.isLoading}
-                    onRetry={() => schedulingReadiness.refetch()}
-                    readiness={schedulingReadiness.data}
-                  />
-                  <EffectiveContextPanel
-                    employee={employee.data}
-                    employeeId={employeeId}
-                    envVars={{
-                      isLoading: envVarsQuery.isLoading,
-                      isError: envVarsQuery.isError,
-                      configuredCount: configuredEnvCount,
-                      totalCount: envVarsQuery.data?.length ?? 0,
-                      missingNames: missingEnvVars.map((item) => item.name),
-                    }}
-                    mcp={{
-                      isLoading: mcpQuery.isLoading,
-                      isError: mcpQuery.isError,
-                      personalCount: personalMcpCount,
-                      inheritedCount: inheritedMcpCount,
-                      totalCount: mcpQuery.data?.length ?? 0,
-                    }}
-                    skills={{
-                      isLoading: skillsQuery.isLoading,
-                      isError: skillsQuery.isError,
-                      personalCount: personalSkillCount,
-                      inheritedCount: inheritedSkillCount,
-                      totalCount: skillsQuery.data?.length ?? 0,
-                    }}
-                  />
+                <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-v3-ink">工作节奏</h3>
+                      <p className="mt-0.5 text-[11px] text-v3-ink-3">按日查看做过什么；点条目打开运行详情。</p>
+                    </div>
+                    <V3Segmented
+                      aria-label="工作节奏视图"
+                      onChange={setHistoryView}
+                      options={[
+                        { value: "calendar", label: "日历" },
+                        { value: "list", label: "列表" },
+                      ]}
+                      role="group"
+                      value={historyView}
+                    />
+                  </div>
+                  {calendarOpenError ? (
+                    <p className="shrink-0 text-sm text-v3-danger">{calendarOpenError}</p>
+                  ) : null}
+                  {historyView === "list" ? (
+                    <div className="min-h-0 flex-1 overflow-auto">
+                      <EmployeeRunHistoryTable
+                        employeeId={employeeId}
+                        error={runs.error}
+                        isError={runs.isError}
+                        isLoading={runs.isLoading}
+                        onPageChange={setPage}
+                        onRetry={() => runs.refetch()}
+                        onRowClick={(item) => {
+                          setSelectedRun(item);
+                          setRunDrawerOpen(true);
+                        }}
+                        onRunKindFilterChange={(runKind) => {
+                          setRunKindFilter(runKind);
+                          setPage(1);
+                        }}
+                        onStatusFilterChange={(status) => {
+                          setStatusFilter(status);
+                          setPage(1);
+                        }}
+                        page={page}
+                        pageSize={PAGE_SIZE}
+                        result={runs.data}
+                        runKindFilter={runKindFilter}
+                        statusFilter={statusFilter}
+                      />
+                    </div>
+                  ) : (
+                    <EmployeeWorkCalendar
+                      error={calendar.error}
+                      isError={calendar.isError}
+                      isLoading={calendar.isLoading}
+                      items={calendar.data?.items ?? []}
+                      onItemClick={(item) => {
+                        void openCalendarItem(item);
+                      }}
+                      onRetry={() => calendar.refetch()}
+                      onWeekChange={setWeekStart}
+                      totalCount={calendar.data?.total_count ?? 0}
+                      truncated={calendar.data?.truncated}
+                      weekStart={weekStart}
+                    />
+                  )}
                 </div>
               }
+              detail={
+                <EmployeeCapabilityRail
+                  employee={employee.data}
+                  employeeId={employeeId}
+                  envVars={{
+                    isLoading: envVarsQuery.isLoading,
+                    isError: envVarsQuery.isError,
+                    configuredCount: configuredEnvCount,
+                    totalCount: envVarsQuery.data?.length ?? 0,
+                    missingNames: missingEnvVars.map((item) => item.name),
+                  }}
+                  mcp={{
+                    isLoading: mcpQuery.isLoading,
+                    isError: mcpQuery.isError,
+                    personalCount: personalMcpCount,
+                    inheritedCount: inheritedMcpCount,
+                    totalCount: mcpQuery.data?.length ?? 0,
+                  }}
+                  onRetryReadiness={() => schedulingReadiness.refetch()}
+                  readiness={schedulingReadiness.data}
+                  readinessError={schedulingReadiness.isError}
+                  readinessLoading={schedulingReadiness.isLoading}
+                  skills={{
+                    isLoading: skillsQuery.isLoading,
+                    isError: skillsQuery.isError,
+                    personalCount: personalSkillCount,
+                    inheritedCount: inheritedSkillCount,
+                    totalCount: skillsQuery.data?.length ?? 0,
+                  }}
+                />
+              }
             />
-
-            <EmployeeConfigSnapshotSection employee={employee.data} />
           </div>
         ) : null}
       </Main>
-
-      <StartTaskDrawer
-        canStartTask={canStartTask}
-        disabledReasons={disabledReasons}
-        isError={createRun.isError}
-        isPending={createRun.isPending}
-        onOpenChange={setStartTaskOpen}
-        onSubmit={(input) => createRun.mutate(input)}
-        open={startTaskOpen}
-      />
 
       <RunDetailDrawer
         apiOptions={apiOptions}
@@ -461,53 +495,5 @@ function DeleteBlockerItem({ blocker }: { blocker: DigitalEmployeeDeleteBlocker 
         id {blocker.id}
       </p>
     </li>
-  );
-}
-
-function EmployeeConfigSnapshotSection({ employee }: { employee: DigitalEmployee }) {
-  const personaMemory = employee.persona_memory_markdown?.trim();
-
-  return (
-    <section className="grid gap-4 lg:grid-cols-2">
-      <SoftCard className="p-4">
-        <div className="text-sm font-semibold text-v3-ink">人格记忆.md</div>
-        {personaMemory ? (
-          <p className="mt-3 whitespace-pre-wrap break-words rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm leading-6 text-v3-ink">
-            {personaMemory}
-          </p>
-        ) : (
-          <p className="mt-3 text-sm text-v3-ink-3">未设置</p>
-        )}
-      </SoftCard>
-      <SoftCard className="p-4">
-        <div className="text-sm font-semibold text-v3-ink">预算策略</div>
-        <BudgetPolicyContent budgetPolicy={employee.budget_policy} />
-      </SoftCard>
-    </section>
-  );
-}
-
-function BudgetPolicyContent({ budgetPolicy }: { budgetPolicy?: BudgetPolicy }) {
-  const limit = budgetPolicy?.daily_token_limit;
-  const extraEntries = Object.entries(budgetPolicy ?? {}).filter(([key]) => key !== "daily_token_limit");
-
-  return (
-    <div className="mt-3 space-y-2 text-sm">
-      <div className="flex items-center justify-between gap-3 rounded-[14px] border border-v3-line bg-v3-card-soft px-3 py-2">
-        <span className="text-v3-ink-2">每日 Token 上限</span>
-        <span className="font-medium tabular-nums text-v3-ink">
-          {typeof limit === "number" ? limit.toLocaleString("zh-CN") : "未设置"}
-        </span>
-      </div>
-      {extraEntries.map(([key, value]) => (
-        <div
-          className="flex items-center justify-between gap-3 rounded-[14px] border border-v3-line bg-v3-card-soft px-3 py-2"
-          key={key}
-        >
-          <span className="text-v3-ink-2">{key}</span>
-          <span className="break-all font-mono text-xs text-v3-ink">{JSON.stringify(value)}</span>
-        </div>
-      ))}
-    </div>
   );
 }

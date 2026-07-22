@@ -322,8 +322,35 @@ describe("RunDetailDrawer", () => {
 
     expect(screen.getByRole("button", { name: "重试" }).query()).toBeNull();
     expect(screen.getByRole("button", { name: "确认关闭" }).query()).toBeNull();
+    await expect.element(screen.getByText("所属项目")).toBeVisible();
     await expect.element(screen.getByText(/此运行属于项目任务/)).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "多owner决策可见性E2E" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "多owner决策可见性E2E" }).elements().length).toBeGreaterThan(0);
+  });
+
+  it("shows no linked project in the summary when the run is standalone", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/events")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse({ error: "unhandled" }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={{ ...runningRun, status: "completed", task_title: "独立任务" }}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText("所属项目")).toBeVisible();
+    await expect.element(screen.getByText("无关联项目")).toBeVisible();
   });
 
   it("shows retry and acknowledge actions for a failed standalone run", async () => {

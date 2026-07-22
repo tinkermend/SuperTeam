@@ -15,6 +15,7 @@ type DigitalEmployeeRunRepository interface {
 	GetRunByID(ctx context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	GetRunByCommandID(ctx context.Context, tenantID uuid.UUID, commandID string) (*DigitalEmployeeRun, error)
 	ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error)
+	ListRunCalendar(ctx context.Context, tenantID, employeeID uuid.UUID, from, to time.Time, limit int32) (*DigitalEmployeeRunCalendarResult, error)
 	ListRunEvents(ctx context.Context, tenantID, taskID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error)
 	GetDigitalEmployeeRunStats(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeRunStats, error)

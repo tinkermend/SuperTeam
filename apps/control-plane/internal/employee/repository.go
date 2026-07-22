@@ -14,6 +14,7 @@ type Repository interface {
 	CreateDigitalEmployee(ctx context.Context, params CreateDigitalEmployeeParams) (DigitalEmployeeRecord, error)
 	ListDigitalEmployees(ctx context.Context, params ListDigitalEmployeesParams) ([]DigitalEmployeeRecord, error)
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error)
+	GetDigitalEmployeeDetailAffiliation(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeDetailAffiliation, error)
 	GetDigitalEmployeeOperationalState(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeOperationalState, error)
 	GetDigitalEmployeeForDelete(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error)
 	ListDigitalEmployeeDeleteBlockers(ctx context.Context, tenantID, employeeID uuid.UUID) ([]DigitalEmployeeDeleteBlocker, error)
@@ -114,6 +115,12 @@ type DigitalEmployeeRecord struct {
 	DeletedAt        *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+// DigitalEmployeeDetailAffiliation is the detail-page team name + project binding summary.
+type DigitalEmployeeDetailAffiliation struct {
+	TeamName       string
+	ProjectSummary DigitalEmployeeProjectSummary
 }
 
 type DigitalEmployeeConfigRevisionRecord struct {

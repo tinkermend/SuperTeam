@@ -2527,6 +2527,23 @@ func (r *memoryRepository) GetDigitalEmployeeOperationalState(_ context.Context,
 	return DigitalEmployeeOperationalState{Status: DigitalEmployeeOperationalStatusIdle, Reasons: []DigitalEmployeeOperationalReason{}}, nil
 }
 
+func (r *memoryRepository) GetDigitalEmployeeDetailAffiliation(_ context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeDetailAffiliation, error) {
+	record, err := r.GetDigitalEmployee(context.Background(), tenantID, employeeID)
+	if err != nil {
+		return DigitalEmployeeDetailAffiliation{}, err
+	}
+	teamName := ""
+	if record.TeamID != nil {
+		teamName = "测试团队"
+	}
+	return DigitalEmployeeDetailAffiliation{
+		TeamName: teamName,
+		ProjectSummary: DigitalEmployeeProjectSummary{
+			Projects: []DigitalEmployeeProjectLinkSummary{},
+		},
+	}, nil
+}
+
 func (r *memoryRepository) GetDigitalEmployeeOperationalSignals(_ context.Context, _ uuid.UUID, _ []uuid.UUID) (map[uuid.UUID]OperationalSignals, error) {
 	return map[uuid.UUID]OperationalSignals{}, nil
 }
@@ -2661,6 +2678,10 @@ func (r *memoryRepository) GetDigitalEmployeeRunStats(_ context.Context, _, _ uu
 
 func (r *memoryRepository) ListRunsDetailed(_ context.Context, _, _ uuid.UUID, _ DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error) {
 	return &DigitalEmployeeRunListResult{}, nil
+}
+
+func (r *memoryRepository) ListRunCalendar(_ context.Context, _, _ uuid.UUID, from, to time.Time, _ int32) (*DigitalEmployeeRunCalendarResult, error) {
+	return &DigitalEmployeeRunCalendarResult{From: from, To: to, Items: []DigitalEmployeeRunCalendarItem{}}, nil
 }
 
 

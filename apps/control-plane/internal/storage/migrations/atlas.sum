@@ -1,4 +1,4 @@
-h1:szk9idqQRz+3d5m8oZwkSMwHQanhPQOpvUarQ7bWcfM=
+h1:ZeTuUWSf2SlwDNVjCvnW5z+38AMD9Jkuk5oBBjier3A=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -97,3 +97,4 @@ h1:szk9idqQRz+3d5m8oZwkSMwHQanhPQOpvUarQ7bWcfM=
 20260721155354_drop_dei_execution_instances.sql h1:7J++nILXspN5Sy7cqgRqWcdHFSSPX3e6SwXKvlaLTgQ=
 20260722003600_drop_project_mcp_bindings.sql h1:XRzy7sx87l5CXdmJoO5uUAjxFutcqoEkDyH6K24s1Ew=
 20260722004800_drop_project_approval_evidence_policy.sql h1:YGqH9GvyWXBTS64bfmsLv+tjEB69Wm60cEMdbnXaAqA=
+20260722150000_task_runs_employee_created_index.sql h1:0kqQ4YfQV60LNwFNgZf3gvXCdjHQ/1ni+lMEKuVFL6g=

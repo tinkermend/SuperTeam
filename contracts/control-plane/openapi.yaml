@@ -3774,6 +3774,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeRunStats"
+  /api/v1/digital-employees/{employeeId}/run-calendar:
+    get:
+      operationId: getDigitalEmployeeRunCalendar
+      summary: List slim digital employee runs for a calendar window
+      description: >
+        Returns a lightweight run projection for calendar boards (id, title, status,
+        timestamps). Omits result/diagnostic/session_state payloads. Window must be
+        at most 31 days. Items are newest-first and capped; truncated is true when
+        total_count exceeds the returned items.
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Inclusive window start (RFC3339)
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Exclusive window end (RFC3339)
+      responses:
+        "200":
+          description: Digital employee run calendar window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeRunCalendar"
+        "400":
+          description: Invalid window parameters
   /api/v1/digital-employees/{employeeId}/runs:
     get:
       operationId: listDigitalEmployeeRuns
@@ -10949,6 +10983,8 @@ components:
         - persona_memory_markdown
         - capability_bindings
         - budget_policy
+        - team_name
+        - project_summary
       properties:
         id:
           type: string
@@ -10959,6 +10995,9 @@ components:
         team_id:
           type: string
           format: uuid
+        team_name:
+          type: string
+          description: 归属团队显示名；无团队时为空串，前端展示「无团队归属」
         owner_user_id:
           type: string
           format: uuid
@@ -10990,6 +11029,8 @@ components:
         budget_policy:
           type: object
           additionalProperties: true
+        project_summary:
+          $ref: "#/components/schemas/DigitalEmployeeProjectSummary"
         disabled_at:
           type: string
           format: date-time
@@ -11946,6 +11987,13 @@ components:
           type: string
           format: uuid
           description: Effective chat conversation id (thread root run id); present on chat runs only.
+        project_id:
+          type: string
+          format: uuid
+          description: Linked project via project_tasks.digital_employee_run_id when present.
+        project_name:
+          type: string
+          description: Display name for the linked project when project_id is present.
     DigitalEmployeeRunStats:
       type: object
       required:
@@ -11983,6 +12031,59 @@ components:
         prev_7d_count:
           type: integer
           format: int64
+    DigitalEmployeeRunCalendarItem:
+      type: object
+      required:
+        - id
+        - task_title
+        - status
+        - run_kind
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_title:
+          type: string
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeRunStatus"
+        run_kind:
+          type: string
+          enum:
+            - task
+            - chat
+        created_at:
+          type: string
+          format: date-time
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+    DigitalEmployeeRunCalendar:
+      type: object
+      required:
+        - from
+        - to
+        - total_count
+        - truncated
+        - items
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        total_count:
+          type: integer
+          format: int64
+        truncated:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeRunCalendarItem"
     DigitalEmployeeRunListItem:
       allOf:
         - $ref: "#/components/schemas/DigitalEmployeeRun"

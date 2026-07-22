@@ -1045,6 +1045,55 @@ describe("ChatPanel", () => {
     });
     await waitFor(() => expect(chatThread().textContent).toContain("轮询回答-run-a"));
   });
+
+  it("sends the current question with Shift+Enter and leaves plain Enter as a newline", async () => {
+    const { fetcher, setRunScript } = createChatFetcher();
+    const onConvertToTask = vi.fn();
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    setRunScript("run-1", [
+      { status: "running" },
+      { status: "completed", result: { output: "快捷键回答" } },
+    ]);
+    await typeInLabeledField("对话问题", "用快捷键发送");
+
+    const textarea = getByLabelText("对话问题") as HTMLTextAreaElement;
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+        }),
+      );
+    });
+    expect(postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")).toHaveLength(0);
+
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+          shiftKey: true,
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")[0]).toEqual({
+        objective: "用快捷键发送",
+        run_kind: "chat",
+        project_id: "project-1",
+      });
+    });
+  });
 });
 
 function chatThread() {

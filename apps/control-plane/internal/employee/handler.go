@@ -888,6 +888,7 @@ type digitalEmployeeResponse struct {
 	ID                    string                `json:"id"`
 	TenantID              string                `json:"tenant_id"`
 	TeamID                *string               `json:"team_id,omitempty"`
+	TeamName              string                `json:"team_name"`
 	OwnerUserID           string                `json:"owner_user_id"`
 	EmployeeType          string                `json:"employee_type"`
 	ProviderType          string                `json:"provider_type"`
@@ -901,6 +902,7 @@ type digitalEmployeeResponse struct {
 	PersonaMemoryMarkdown string                `json:"persona_memory_markdown"`
 	CapabilityBindings    map[string]any        `json:"capability_bindings"`
 	BudgetPolicy          map[string]any        `json:"budget_policy"`
+	ProjectSummary        digitalEmployeeProjectSummaryResponse `json:"project_summary"`
 	DisabledAt            *string               `json:"disabled_at,omitempty"`
 	ArchivedAt            *string               `json:"archived_at,omitempty"`
 	AllowedActions        []string              `json:"allowed_actions,omitempty"`
@@ -1380,10 +1382,15 @@ func employeeResponses(employees []*DigitalEmployee) []digitalEmployeeResponse {
 }
 
 func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeResponse {
+	projects := employee.ProjectSummary.Projects
+	if projects == nil {
+		projects = []DigitalEmployeeProjectLinkSummary{}
+	}
 	response := digitalEmployeeResponse{
 		ID:                    employee.ID.String(),
 		TenantID:              employee.TenantID.String(),
 		TeamID:                uuidStringPtr(employee.TeamID),
+		TeamName:              employee.TeamName,
 		OwnerUserID:           employee.OwnerUserID.String(),
 		EmployeeType:          employee.EmployeeType,
 		ProviderType:          employee.ProviderType,
@@ -1397,10 +1404,14 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		PersonaMemoryMarkdown: employee.PersonaMemoryMarkdown,
 		CapabilityBindings:    cloneMap(employee.CapabilityBindings),
 		BudgetPolicy:          cloneMap(employee.BudgetPolicy),
-		DisabledAt:            timeStringPtr(employee.DisabledAt),
-		ArchivedAt:            timeStringPtr(employee.ArchivedAt),
-		CreatedAt:             timeString(employee.CreatedAt),
-		UpdatedAt:             timeString(employee.UpdatedAt),
+		ProjectSummary: projectSummaryResponseFromDomain(DigitalEmployeeProjectSummary{
+			ProjectCount: employee.ProjectSummary.ProjectCount,
+			Projects:     projects,
+		}),
+		DisabledAt: timeStringPtr(employee.DisabledAt),
+		ArchivedAt: timeStringPtr(employee.ArchivedAt),
+		CreatedAt:  timeString(employee.CreatedAt),
+		UpdatedAt:  timeString(employee.UpdatedAt),
 	}
 	if employee.OperationalState != nil {
 		state := operationalStateResponseFromDomain(*employee.OperationalState)

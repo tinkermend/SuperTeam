@@ -263,6 +263,16 @@ function createDetailFetcher({
       return jsonResponse(runStats);
     }
 
+    if (path === `/api/v1/digital-employees/${employee.id}/run-calendar` && method === "GET") {
+      return jsonResponse({
+        from: url.searchParams.get("from"),
+        to: url.searchParams.get("to"),
+        total_count: 0,
+        truncated: false,
+        items: [],
+      });
+    }
+
     if (path === `/api/v1/digital-employees/${employee.id}/skills` && method === "GET") {
       return jsonResponse([]);
     }
@@ -294,6 +304,19 @@ function createDetailFetcher({
     ) {
       const runId = decodeURIComponent(path.split("/runs/")[1]?.replace("/events", "") ?? "");
       return jsonResponse(eventsByRunId?.[runId] ?? events);
+    }
+
+    if (
+      path.startsWith(`/api/v1/digital-employees/${employee.id}/runs/`) &&
+      !path.endsWith("/events") &&
+      !path.endsWith("/stop") &&
+      !path.endsWith("/acknowledge-failure") &&
+      !path.endsWith("/retry") &&
+      method === "GET"
+    ) {
+      const runId = decodeURIComponent(path.split("/runs/")[1] ?? "");
+      const found = currentRuns.find((item) => item.id === runId) ?? currentRun;
+      return jsonResponse(found);
     }
 
     if (
@@ -364,12 +387,20 @@ async function renderEmployeeDetail(fetcher = createDetailFetcher()) {
   );
 }
 
+async function showRunList(screen: Awaited<ReturnType<typeof renderEmployeeDetail>>) {
+  await expect.element(screen.getByRole("heading", { name: "工作节奏" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "列表" }));
+  await expect.element(screen.getByRole("link", { name: "在运行总览查看" })).toBeVisible();
+}
+
 describe("EmployeeDetailView", () => {
   it("opens a run drawer, renders events and stops the active run with refresh", async () => {
     const fetcher = createDetailFetcher();
     const screen = await renderEmployeeDetail(fetcher);
 
     await expect.element(screen.getByRole("heading", { level: 1, name: "需求分析员工" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "工作节奏" })).toBeVisible();
+    await showRunList(screen);
     await expect.element(screen.getByRole("link", { name: "在运行总览查看" })).toHaveAttribute(
       "href",
       "/run-overview?employee=11111111-1111-4111-8111-111111111111",
@@ -389,42 +420,48 @@ describe("EmployeeDetailView", () => {
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "GET")).toBeGreaterThanOrEqual(2);
   });
 
-  it("renders persona memory and budget policy without raw JSON snapshot cards", async () => {
+  it("renders persona memory and budget in the capability rail without raw JSON cards", async () => {
     const screen = await renderEmployeeDetail();
 
-    await expect.element(screen.getByText("人格记忆.md")).toBeVisible();
-    await expect.element(screen.getByText("# 人格画像\n证据优先")).toBeVisible();
-    await expect.element(screen.getByText("预算策略")).toBeVisible();
-    await expect.element(screen.getByText("每日 Token 上限")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "可调度能力" })).toBeVisible();
+    await expect.element(screen.getByText("人格记忆")).toBeVisible();
+    await expect.element(screen.getByText("有内容")).toBeVisible();
+    await expect.element(screen.getByText(/证据优先/)).toBeVisible();
+    await expect.element(screen.getByText("每日 Token")).toBeVisible();
     await expect.element(screen.getByText("12,000")).toBeVisible();
+    expect(screen.getByText("人格记忆.md").query()).toBeNull();
     expect(screen.getByText("能力绑定").query()).toBeNull();
     expect(screen.getByText("运行与缓存状态").query()).toBeNull();
-    expect(screen.getByText("角色配置").query()).toBeNull();
-    expect(screen.getByText("能力与策略").query()).toBeNull();
   });
 
-  it("starts a task from the start-task drawer when there is no active run", async () => {
-    const fetcher = createDetailFetcher({
-      events: [],
-      run: runFixture({
-        status: "completed",
-        result: { summary: "上一次已完成" },
+  it("does not expose a start-task entry on the detail page", async () => {
+    const screen = await renderEmployeeDetail(
+      createDetailFetcher({
+        run: runFixture({ status: "completed" }),
       }),
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "工作节奏" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "开始任务" }).query()).toBeNull();
+    await expect.element(screen.getByRole("link", { name: "编辑配置" })).toBeVisible();
+  });
+
+  it("loads run calendar by default and defers the run list until list view is selected", async () => {
+    const fetcher = createDetailFetcher({
+      run: runFixture({ status: "completed" }),
     });
     const screen = await renderEmployeeDetail(fetcher);
 
-    // Open the start-task drawer via the header button.
-    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
+    await expect.element(screen.getByRole("heading", { name: "工作节奏" })).toBeVisible();
+    await expect
+      .poll(() => fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/run-calendar`, "GET"))
+      .toBeGreaterThanOrEqual(1);
+    expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "GET")).toBe(0);
 
-    await userEvent.fill(screen.getByLabelText("任务目标"), "梳理上线风险");
-    await userEvent.fill(screen.getByLabelText("任务提示"), "请检查最近失败任务");
-    // Submit button inside the drawer shares the "开始任务" label. Radix Dialog marks
-    // body siblings aria-hidden when modal, so getByRole resolves to the in-dialog button.
-    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
-
-    // Drawer closes and runs list is refetched, surfacing the new dispatching run.
-    await expect.element(screen.getByText("分派中")).toBeVisible();
-    expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "POST")).toBe(1);
+    await showRunList(screen);
+    await expect
+      .poll(() => fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "GET"))
+      .toBeGreaterThanOrEqual(1);
   });
 
   it("shows scheduling readiness and links project scheduling next action to projects", async () => {
@@ -451,19 +488,17 @@ describe("EmployeeDetailView", () => {
     });
     const screen = await renderEmployeeDetail(fetcher);
 
-    await expect.element(screen.getByRole("heading", { level: 2, name: "项目调度就绪度" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "可调度能力" })).toBeVisible();
     await expect.element(screen.getByText("可进入项目调度池")).toBeVisible();
-    await expect.element(screen.getByText("Runtime 节点由项目运行时就绪度决定")).toBeVisible();
-    await expect.element(screen.getByText("技能 3")).toBeVisible();
-    await expect.element(screen.getByText("MCP 2")).toBeVisible();
-    await expect.element(screen.getByText("环境变量 3")).toBeVisible();
+    await expect.element(screen.getByText("Runtime 由项目运行准备决定。")).toBeVisible();
     await expect.element(screen.getByText("OPENAI_API_KEY")).toBeVisible();
     await expect.element(screen.getByText("risk-review")).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "进入项目" })).toHaveAttribute("href", "/projects");
+    await expect.element(screen.getByText("未绑定任何项目")).toBeVisible();
+    expect(screen.getByRole("link", { name: "进入项目" }).query()).toBeNull();
   });
 
-  it("renders completed run result and failed run failure reason in the drawer", async () => {
-    const completedScreen = await renderEmployeeDetail(
+  it("renders completed run result in the drawer", async () => {
+    const screen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           status: "completed",
@@ -473,15 +508,15 @@ describe("EmployeeDetailView", () => {
       }),
     );
 
-    await userEvent.click(completedScreen.getByText("已完成任务示例"));
+    await showRunList(screen);
+    await userEvent.click(screen.getByText("已完成任务示例"));
     // Status-pill label "已完成" duplicates the filter chip text, so verify drawer
     // state via the unique result payload instead.
-    await expect.element(completedScreen.getByText(/已生成验收报告/)).toBeVisible();
-    // Close the drawer so its modal overlay stops intercepting pointer events on
-    // the second render in this same test.
-    await userEvent.keyboard("{Escape}");
+    await expect.element(screen.getByText(/已生成验收报告/)).toBeVisible();
+  });
 
-    const failedScreen = await renderEmployeeDetail(
+  it("renders failed run failure reason in the drawer", async () => {
+    const screen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           error_message: "Runtime 节点断开",
@@ -491,13 +526,14 @@ describe("EmployeeDetailView", () => {
       }),
     );
 
-    await userEvent.click(failedScreen.getByText("失败任务示例"));
-    await expect.element(failedScreen.getByText("失败原因")).toBeVisible();
-    await expect.element(failedScreen.getByText("Runtime 节点断开")).toBeVisible();
+    await showRunList(screen);
+    await userEvent.click(screen.getByText("失败任务示例"));
+    await expect.element(screen.getByText("失败原因")).toBeVisible();
+    await expect.element(screen.getByText("Runtime 节点断开")).toBeVisible();
   });
 
-  it("renders cancellation and timeout as failure reasons in the drawer", async () => {
-    const cancelledScreen = await renderEmployeeDetail(
+  it("renders cancellation as a failure reason in the drawer", async () => {
+    const screen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           error_message: "用户停止执行",
@@ -507,13 +543,13 @@ describe("EmployeeDetailView", () => {
       }),
     );
 
-    await userEvent.click(cancelledScreen.getByText("取消任务示例"));
-    await expect.element(cancelledScreen.getByText("用户停止执行")).toBeVisible();
-    // Close the drawer so its modal overlay stops intercepting pointer events on
-    // the second render in this same test.
-    await userEvent.keyboard("{Escape}");
+    await showRunList(screen);
+    await userEvent.click(screen.getByText("取消任务示例"));
+    await expect.element(screen.getByText("用户停止执行")).toBeVisible();
+  });
 
-    const timedOutScreen = await renderEmployeeDetail(
+  it("renders timeout as a failure reason in the drawer", async () => {
+    const screen = await renderEmployeeDetail(
       createDetailFetcher({
         run: runFixture({
           diagnostic: { reason: "lease expired" },
@@ -523,23 +559,9 @@ describe("EmployeeDetailView", () => {
       }),
     );
 
-    await userEvent.click(timedOutScreen.getByText("超时任务示例"));
-    await expect.element(timedOutScreen.getByText(/lease expired/)).toBeVisible();
-  });
-
-  it("keeps start submit disabled when run list cannot be trusted", async () => {
-    const fetcher = createDetailFetcher({
-      run: runFixture({ status: "completed" }),
-      runsStatus: 500,
-    });
-    const screen = await renderEmployeeDetail(fetcher);
-
-    await userEvent.click(screen.getByRole("button", { name: "开始任务" }));
-
-    await expect
-      .element(screen.getByText("运行列表加载失败，暂不能开始新任务"))
-      .toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
+    await showRunList(screen);
+    await userEvent.click(screen.getByText("超时任务示例"));
+    await expect.element(screen.getByText(/lease expired/)).toBeVisible();
   });
 
   it("switches event stream when opening the drawer for different historical runs", async () => {
@@ -568,6 +590,8 @@ describe("EmployeeDetailView", () => {
     });
     const screen = await renderEmployeeDetail(fetcher);
 
+    await showRunList(screen);
+
     // Open drawer for the latest run — its events stream in.
     await userEvent.click(screen.getByText("最新执行任务"));
     await expect.element(screen.getByText(/最新事件/)).toBeVisible();
@@ -588,7 +612,8 @@ describe("EmployeeDetailView", () => {
     });
     const screen = await renderEmployeeDetail(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "删除员工" }));
+    await userEvent.click(screen.getByRole("button", { name: "更多员工操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "删除员工" }));
     await expect.element(screen.getByRole("heading", { name: "删除数字员工" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "确认删除" })).toBeDisabled();
 
@@ -632,7 +657,8 @@ describe("EmployeeDetailView", () => {
     });
     const screen = await renderEmployeeDetail(fetcher);
 
-    await userEvent.click(screen.getByRole("button", { name: "删除员工" }));
+    await userEvent.click(screen.getByRole("button", { name: "更多员工操作" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "删除员工" }));
     await userEvent.fill(screen.getByLabelText("输入员工名称确认删除"), "需求分析员工");
     await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
 

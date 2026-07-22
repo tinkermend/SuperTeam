@@ -1992,6 +1992,16 @@ func (s *routeEmployeeRunService) ListRunsDetailed(ctx context.Context, tenantID
 	}, nil
 }
 
+func (s *routeEmployeeRunService) GetRunCalendar(_ context.Context, tenantID, employeeID uuid.UUID, from, to time.Time) (*employee.DigitalEmployeeRunCalendarResult, error) {
+	return &employee.DigitalEmployeeRunCalendarResult{
+		From:       from,
+		To:         to,
+		TotalCount: 0,
+		Truncated:  false,
+		Items:      []employee.DigitalEmployeeRunCalendarItem{},
+	}, nil
+}
+
 func (s *routeEmployeeRunService) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*employee.DigitalEmployeeRun, error) {
 	s.getTenantID = tenantID
 	s.getEmployeeID = employeeID

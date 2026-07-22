@@ -118,12 +118,57 @@ func (q *Queries) CancelTask(ctx context.Context, arg CancelTaskParams) (Task, e
 	return i, err
 }
 
+const CountDigitalEmployeeRunCalendarItems = `-- name: CountDigitalEmployeeRunCalendarItems :one
+SELECT COUNT(*)::bigint AS total_count
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND t.deleted_at IS NULL
+  AND tr.created_at >= $3::timestamptz
+  AND tr.created_at < $4::timestamptz
+`
+
+type CountDigitalEmployeeRunCalendarItemsParams struct {
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	FromTime          pgtype.Timestamptz `json:"from_time"`
+	ToTime            pgtype.Timestamptz `json:"to_time"`
+}
+
+func (q *Queries) CountDigitalEmployeeRunCalendarItems(ctx context.Context, arg CountDigitalEmployeeRunCalendarItemsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountDigitalEmployeeRunCalendarItems,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.FromTime,
+		arg.ToTime,
+	)
+	var total_count int64
+	err := row.Scan(&total_count)
+	return total_count, err
+}
+
 const CountDigitalEmployeeRunsDetailed = `-- name: CountDigitalEmployeeRunsDetailed :one
 SELECT COUNT(*)::bigint AS total_count
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
-LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+LEFT JOIN projects p
+  ON p.tenant_id = tr.tenant_id
+ AND p.id = COALESCE(
+       pt.project_id,
+       CASE
+           WHEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+           THEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                )::uuid
+           ELSE NULL
+       END
+     )
 WHERE tr.tenant_id = $1::uuid
   AND tr.digital_employee_id = $2::uuid
   AND t.deleted_at IS NULL
@@ -815,10 +860,32 @@ func (q *Queries) GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActive
 }
 
 const GetDigitalEmployeeRun = `-- name: GetDigitalEmployeeRun :one
-SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, tr.failure_acknowledged_at, tr.failure_acknowledged_by, t.run_kind, t.resume_of_run_id,
-    t.chat_thread_id
+SELECT
+    tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, tr.failure_acknowledged_at, tr.failure_acknowledged_by,
+    t.run_kind,
+    t.resume_of_run_id,
+    t.chat_thread_id,
+    p.id AS project_id,
+    p.name AS project_name
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p
+  ON p.tenant_id = tr.tenant_id
+ AND p.id = COALESCE(
+       pt.project_id,
+       CASE
+           WHEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+           THEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                )::uuid
+           ELSE NULL
+       END
+     )
 WHERE tr.tenant_id = $1::uuid
   AND tr.digital_employee_id = $2::uuid
   AND tr.id = $3::uuid
@@ -870,8 +937,11 @@ type GetDigitalEmployeeRunRow struct {
 	RunKind                   string             `json:"run_kind"`
 	ResumeOfRunID             uuid.NullUUID      `json:"resume_of_run_id"`
 	ChatThreadID              uuid.NullUUID      `json:"chat_thread_id"`
+	ProjectID                 uuid.NullUUID      `json:"project_id"`
+	ProjectName               pgtype.Text        `json:"project_name"`
 }
 
+// Prefer project_tasks; chat/task-hub runs fall back to metadata anchors.
 func (q *Queries) GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (GetDigitalEmployeeRunRow, error) {
 	row := q.db.QueryRow(ctx, GetDigitalEmployeeRun, arg.TenantID, arg.DigitalEmployeeID, arg.RunID)
 	var i GetDigitalEmployeeRunRow
@@ -914,6 +984,8 @@ func (q *Queries) GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmplo
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ProjectID,
+		&i.ProjectName,
 	)
 	return i, err
 }
@@ -1245,14 +1317,127 @@ func (q *Queries) GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun
 	return i, err
 }
 
-const ListDigitalEmployeeRunProjectOptions = `-- name: ListDigitalEmployeeRunProjectOptions :many
-SELECT DISTINCT p.id, p.name
+const ListDigitalEmployeeRunCalendarItems = `-- name: ListDigitalEmployeeRunCalendarItems :many
+SELECT
+    tr.id,
+    tr.status,
+    tr.created_at,
+    t.title AS task_title,
+    t.run_kind,
+    p.id AS project_id,
+    p.name AS project_name
 FROM task_runs tr
-JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
-JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+LEFT JOIN projects p
+  ON p.tenant_id = tr.tenant_id
+ AND p.id = COALESCE(
+       pt.project_id,
+       CASE
+           WHEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+           THEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                )::uuid
+           ELSE NULL
+       END
+     )
 WHERE tr.tenant_id = $1::uuid
   AND tr.digital_employee_id = $2::uuid
-ORDER BY p.name
+  AND t.deleted_at IS NULL
+  AND tr.created_at >= $3::timestamptz
+  AND tr.created_at < $4::timestamptz
+ORDER BY tr.created_at DESC
+LIMIT $5
+`
+
+type ListDigitalEmployeeRunCalendarItemsParams struct {
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	FromTime          pgtype.Timestamptz `json:"from_time"`
+	ToTime            pgtype.Timestamptz `json:"to_time"`
+	Limit             int32              `json:"limit"`
+}
+
+type ListDigitalEmployeeRunCalendarItemsRow struct {
+	ID          uuid.UUID          `json:"id"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	TaskTitle   string             `json:"task_title"`
+	RunKind     string             `json:"run_kind"`
+	ProjectID   uuid.NullUUID      `json:"project_id"`
+	ProjectName pgtype.Text        `json:"project_name"`
+}
+
+// 日历看板轻量投影:不含 result/diagnostic/session_state/work_products。
+func (q *Queries) ListDigitalEmployeeRunCalendarItems(ctx context.Context, arg ListDigitalEmployeeRunCalendarItemsParams) ([]ListDigitalEmployeeRunCalendarItemsRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeRunCalendarItems,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.FromTime,
+		arg.ToTime,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeRunCalendarItemsRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeRunCalendarItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.TaskTitle,
+			&i.RunKind,
+			&i.ProjectID,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDigitalEmployeeRunProjectOptions = `-- name: ListDigitalEmployeeRunProjectOptions :many
+SELECT DISTINCT project_id AS id, project_name AS name
+FROM (
+    SELECT p.id AS project_id, p.name AS project_name
+    FROM task_runs tr
+    JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
+    JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+    WHERE tr.tenant_id = $1::uuid
+      AND tr.digital_employee_id = $2::uuid
+    UNION
+    SELECT meta_p.id AS project_id, meta_p.name AS project_name
+    FROM task_runs tr
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    JOIN projects meta_p
+      ON meta_p.tenant_id = tr.tenant_id
+     AND meta_p.id = CASE
+           WHEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+           THEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                )::uuid
+           ELSE NULL
+         END
+    WHERE tr.tenant_id = $1::uuid
+      AND tr.digital_employee_id = $2::uuid
+      AND t.deleted_at IS NULL
+) linked
+ORDER BY name
 `
 
 type ListDigitalEmployeeRunProjectOptionsParams struct {
@@ -1428,12 +1613,27 @@ SELECT
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
-LEFT JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
+LEFT JOIN projects p
+  ON p.tenant_id = tr.tenant_id
+ AND p.id = COALESCE(
+       pt.project_id,
+       CASE
+           WHEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+           THEN COALESCE(
+                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
+                  NULLIF(t.params #>> '{metadata,project_id}', '')
+                )::uuid
+           ELSE NULL
+       END
+     )
 WHERE tr.tenant_id = $1::uuid
   AND tr.digital_employee_id = $2::uuid
   AND t.deleted_at IS NULL
   AND (cardinality($3::text[]) = 0 OR tr.status = ANY($3::text[]))
-  -- chat run 无 project_tasks 关联,project 过滤对其按 §13 审计锚点匹配。
+  -- chat run 无 project_tasks 关联,project 过滤对其按 §13 审计锚点 / metadata 匹配。
   AND ($4::uuid IS NULL
        OR p.id = $4::uuid
        OR (t.run_kind = 'chat' AND t.params -> 'metadata' ->> 'anchor_project_id' = $4::uuid::text))

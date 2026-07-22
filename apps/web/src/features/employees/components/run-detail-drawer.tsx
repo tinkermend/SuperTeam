@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { RotateCcw, Square } from "lucide-react";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/employees";
 import { formatDateTime } from "@/lib/format-time";
 import { runStatusLabel } from "@/lib/status-labels";
+import { cn } from "@/lib/utils";
 import { providerDisplayName } from "../provider-label";
 import { RunEventTimeline } from "./run-event-timeline";
 
@@ -130,6 +131,23 @@ export function RunDetailDrawer({
             <SummaryItem label="Provider" value={providerDisplayName(displayedRun.provider_type)} />
             <SummaryItem label="节点" mono value={displayedRun.node_id || displayedRun.runtime_node_id} />
             <SummaryItem label="更新时间" value={formatRunTimestamp(displayedRun)} />
+            <SummaryItem
+              className="md:col-span-2"
+              label="所属项目"
+              value={
+                displayedRun.project_id ? (
+                  <Link
+                    className="font-medium text-v3-brand underline-offset-2 hover:underline"
+                    params={{ projectId: displayedRun.project_id }}
+                    to="/projects/$projectId"
+                  >
+                    {displayedRun.project_name?.trim() || "项目详情"}
+                  </Link>
+                ) : (
+                  "无关联项目"
+                )
+              }
+            />
           </div>
           {isFailedRun(displayedRun.status) ? <FailureBlock run={displayedRun} /> : null}
           {/* key=run.id:切换到另一条运行时重挂载,重置原始 JSON 折叠的展开态 */}
@@ -217,13 +235,29 @@ export function RunDetailDrawer({
   );
 }
 
-function SummaryItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function SummaryItem({
+  label,
+  value,
+  mono,
+  className,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+  className?: string;
+}) {
   return (
-    <div className="min-w-0 rounded-md border border-v3-line bg-v3-card-soft px-3 py-2">
+    <div className={cn("min-w-0 rounded-md border border-v3-line bg-v3-card-soft px-3 py-2", className)}>
       <p className="text-xs text-v3-ink-3">{label}</p>
-      <p className={mono ? "mt-1 truncate font-mono text-xs text-v3-ink" : "mt-1 truncate text-sm font-medium text-v3-ink"}>
+      <div
+        className={
+          mono
+            ? "mt-1 truncate font-mono text-xs text-v3-ink"
+            : "mt-1 truncate text-sm font-medium text-v3-ink"
+        }
+      >
         {value}
-      </p>
+      </div>
     </div>
   );
 }

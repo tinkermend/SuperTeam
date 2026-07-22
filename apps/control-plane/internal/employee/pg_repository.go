@@ -142,6 +142,23 @@ func (r *PgRepository) GetDigitalEmployee(ctx context.Context, tenantID, employe
 	return digitalEmployeeRecordFromQuery(employee)
 }
 
+func (r *PgRepository) GetDigitalEmployeeDetailAffiliation(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeDetailAffiliation, error) {
+	row, err := r.q.GetDigitalEmployeeDetailAffiliation(ctx, queries.GetDigitalEmployeeDetailAffiliationParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		return DigitalEmployeeDetailAffiliation{}, mapNoRows(err)
+	}
+	return DigitalEmployeeDetailAffiliation{
+		TeamName: row.TeamName,
+		ProjectSummary: DigitalEmployeeProjectSummary{
+			ProjectCount: row.ProjectCount,
+			Projects:     projectLinksFromJSON(row.ProjectsJson),
+		},
+	}, nil
+}
+
 func (r *PgRepository) GetDigitalEmployeeForDelete(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error) {
 	employee, err := r.q.GetDigitalEmployeeForDelete(ctx, queries.GetDigitalEmployeeForDeleteParams{
 		ID:       employeeID,

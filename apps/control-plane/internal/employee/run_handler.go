@@ -17,6 +17,7 @@ import (
 type RunHandlerService interface {
 	CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
 	ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error)
+	GetRunCalendar(ctx context.Context, tenantID, employeeID uuid.UUID, from, to time.Time) (*DigitalEmployeeRunCalendarResult, error)
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
 	StopRun(ctx context.Context, req StopDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
@@ -188,6 +189,50 @@ func (h *HTTPHandler) GetDigitalEmployeeRunStats(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, runStatsResponseFromDomain(stats))
 }
 
+func (h *HTTPHandler) GetDigitalEmployeeRunCalendar(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee run calendar read")
+	if !ok {
+		return
+	}
+	service, ok := h.runServiceFromRequest(w)
+	if !ok {
+		return
+	}
+	from, to, parseErr := parseRunCalendarWindow(r)
+	if parseErr != "" {
+		http.Error(w, parseErr, http.StatusBadRequest)
+		return
+	}
+	result, err := service.GetRunCalendar(r.Context(), tenantID, employeeID, from, to)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, runCalendarResponseFromDomain(result))
+}
+
+func parseRunCalendarWindow(r *http.Request) (time.Time, time.Time, string) {
+	query := r.URL.Query()
+	rawFrom := query.Get("from")
+	rawTo := query.Get("to")
+	if rawFrom == "" || rawTo == "" {
+		return time.Time{}, time.Time{}, "from and to are required RFC3339 timestamps"
+	}
+	from, err := time.Parse(time.RFC3339, rawFrom)
+	if err != nil {
+		return time.Time{}, time.Time{}, "from must be an RFC3339 timestamp"
+	}
+	to, err := time.Parse(time.RFC3339, rawTo)
+	if err != nil {
+		return time.Time{}, time.Time{}, "to must be an RFC3339 timestamp"
+	}
+	return from, to, ""
+}
+
 type digitalEmployeeRunStatsResponse struct {
 	TotalCount     int64    `json:"total_count"`
 	SucceededCount int64    `json:"succeeded_count"`
@@ -216,6 +261,51 @@ func runStatsResponseFromDomain(stats *DigitalEmployeeRunStats) digitalEmployeeR
 		P90DurationSec: stats.P90DurationSec,
 		Last7dCount:    stats.Last7dCount,
 		Prev7dCount:    stats.Prev7dCount,
+	}
+}
+
+type digitalEmployeeRunCalendarItemResponse struct {
+	ID          string `json:"id"`
+	TaskTitle   string `json:"task_title"`
+	Status      string `json:"status"`
+	RunKind     string `json:"run_kind"`
+	CreatedAt   string `json:"created_at"`
+	ProjectID   string `json:"project_id,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+}
+
+type digitalEmployeeRunCalendarResponse struct {
+	From       string                                  `json:"from"`
+	To         string                                  `json:"to"`
+	TotalCount int64                                   `json:"total_count"`
+	Truncated  bool                                    `json:"truncated"`
+	Items      []digitalEmployeeRunCalendarItemResponse `json:"items"`
+}
+
+func runCalendarResponseFromDomain(result *DigitalEmployeeRunCalendarResult) digitalEmployeeRunCalendarResponse {
+	items := make([]digitalEmployeeRunCalendarItemResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		row := digitalEmployeeRunCalendarItemResponse{
+			ID:        item.ID.String(),
+			TaskTitle: item.TaskTitle,
+			Status:    string(item.Status),
+			RunKind:   item.RunKind,
+			CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano),
+		}
+		if item.ProjectID != nil {
+			row.ProjectID = item.ProjectID.String()
+		}
+		if item.ProjectName != nil {
+			row.ProjectName = *item.ProjectName
+		}
+		items = append(items, row)
+	}
+	return digitalEmployeeRunCalendarResponse{
+		From:       result.From.UTC().Format(time.RFC3339Nano),
+		To:         result.To.UTC().Format(time.RFC3339Nano),
+		TotalCount: result.TotalCount,
+		Truncated:  result.Truncated,
+		Items:      items,
 	}
 }
 
@@ -418,10 +508,12 @@ type digitalEmployeeRunResponse struct {
 	FinishedAt                *string                  `json:"finished_at,omitempty"`
 	CreatedAt                 string                   `json:"created_at,omitempty"`
 	UpdatedAt                 string                   `json:"updated_at,omitempty"`
+	ProjectID                 *string                  `json:"project_id,omitempty"`
+	ProjectName               *string                  `json:"project_name,omitempty"`
 }
 
 func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
-	return digitalEmployeeRunResponse{
+	response := digitalEmployeeRunResponse{
 		ID:                        run.ID.String(),
 		TenantID:                  run.TenantID.String(),
 		TaskID:                    run.TaskID.String(),
@@ -458,7 +550,13 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		FinishedAt:                timeStringPtr(run.FinishedAt),
 		CreatedAt:                 timeString(run.CreatedAt),
 		UpdatedAt:                 timeString(run.UpdatedAt),
+		ProjectName:               run.ProjectName,
 	}
+	if run.ProjectID != nil {
+		id := run.ProjectID.String()
+		response.ProjectID = &id
+	}
+	return response
 }
 
 // digitalEmployeeRunListItemResponse embeds the base run response and adds the joined
