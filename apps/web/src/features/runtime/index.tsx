@@ -138,6 +138,7 @@ type RuntimeNodesViewProps = {
 export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps) {
   const queryClient = useQueryClient();
   const search = useSearch({ strict: false }) as { node?: string };
+  const [activeTab, setActiveTab] = useState("overview");
   const [eventFilters, setEventFilters] = useState<RuntimeEventFilters>(() => ({
     ...defaultEventFilters,
     node_id: search.node || undefined,
@@ -154,11 +155,13 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
   const events = useQuery({
     queryKey: ["runtime-events", eventFilters],
     queryFn: () => listRuntimeEvents({ baseUrl: apiBaseUrl, fetcher, ...eventFilters }),
+    enabled: activeTab === "events",
   });
 
   const enrollments = useQuery({
     queryKey: ["runtime-enrollments"],
     queryFn: () => listRuntimeEnrollments({ baseUrl: apiBaseUrl, fetcher }),
+    enabled: activeTab === "enrollments",
   });
 
   useEffect(() => {
@@ -291,7 +294,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
             <>
               <SummaryMetrics summary={overviewData.summary} />
 
-              <Tabs defaultValue="overview" className="gap-4">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
                 <div className="min-w-0 overflow-x-auto pb-1">
                   <TabsList
                     aria-label="Runtime 管理视图"

@@ -503,6 +503,12 @@ func (s *Service) CreateSession(ctx context.Context, userID uuid.UUID, clientIP,
 	return session, token, nil
 }
 
+const (
+	// sessionLastSeenMinInterval skips last_seen writes on hot console paths so
+	// remote Postgres RTT is not paid on every authenticated request.
+	sessionLastSeenMinInterval = 60 * time.Second
+)
+
 func (s *Service) GetUserBySessionToken(ctx context.Context, token string) (*Session, *User, error) {
 	if token == "" {
 		return nil, nil, ErrUnauthorized
@@ -523,7 +529,10 @@ func (s *Service) GetUserBySessionToken(ctx context.Context, token string) (*Ses
 	if user.Status != "active" {
 		return nil, nil, ErrUserDisabled
 	}
-	_ = s.repo.UpdateSessionLastSeen(ctx, tokenHash, time.Now().UTC())
+	now := time.Now().UTC()
+	if now.Sub(session.LastSeenAt) >= sessionLastSeenMinInterval {
+		_ = s.repo.UpdateSessionLastSeen(ctx, tokenHash, now)
+	}
 	return session, user, nil
 }
 

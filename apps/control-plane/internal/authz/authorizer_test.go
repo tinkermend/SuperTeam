@@ -162,7 +162,7 @@ func TestDBAuthorizerRecordsDeniedDecision(t *testing.T) {
 	}
 }
 
-func TestDBAuthorizerRecordsAllowedDecision(t *testing.T) {
+func TestDBAuthorizerSkipsRecordingAllowedDecision(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	userID := uuid.MustParse("00000000-0000-4000-8000-000000000011")
 	recorder := &memoryRecorder{}
@@ -186,24 +186,11 @@ func TestDBAuthorizerRecordsAllowedDecision(t *testing.T) {
 	if !decision.Allowed {
 		t.Fatalf("expected console access to be allowed, got %#v", decision)
 	}
-	if len(recorder.records) != 1 {
-		t.Fatalf("expected one decision record, got %#v", recorder.records)
+	if decision.RequiresAudit {
+		t.Fatalf("expected allowed decision not to require audit, got %#v", decision)
 	}
-	record := recorder.records[0]
-	if !record.Allowed {
-		t.Fatalf("expected allowed decision record, got %#v", record)
-	}
-	if record.MatchedRule != "tenant.owner" {
-		t.Fatalf("expected tenant.owner rule, got %q", record.MatchedRule)
-	}
-	if record.TenantID != tenantID || record.TeamID != nil {
-		t.Fatalf("unexpected tenant/team context: %#v", record)
-	}
-	if record.ActorType != ActorUser || record.ActorID != userID.String() {
-		t.Fatalf("unexpected actor context: %#v", record)
-	}
-	if record.Action != ActionConsoleAccess || record.ResourceType != ResourceConsole || record.ResourceID != "web" {
-		t.Fatalf("unexpected action/resource context: %#v", record)
+	if len(recorder.records) != 0 {
+		t.Fatalf("expected allowed decisions not to be recorded, got %#v", recorder.records)
 	}
 }
 
@@ -212,12 +199,7 @@ func TestDBAuthorizerPropagatesRecorderError(t *testing.T) {
 	userID := uuid.MustParse("00000000-0000-4000-8000-000000000012")
 	recorderErr := errors.New("record decision failed")
 	recorder := &memoryRecorder{err: recorderErr}
-	repo := &memoryRepository{
-		tenantRoles: map[string]string{
-			tenantID.String() + ":user:" + userID.String(): RoleOwner,
-		},
-	}
-	authorizer := NewDBAuthorizer(repo, recorder)
+	authorizer := NewDBAuthorizer(&memoryRepository{tenantRoles: map[string]string{}}, recorder)
 
 	decision, err := authorizer.Check(context.Background(), CheckRequest{
 		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
@@ -547,6 +529,12 @@ func TestDBAuthorizerEmployeeActionsUseBusinessActionSurface(t *testing.T) {
 			}
 			if tt.denyReason != "" && decision.Reason != tt.denyReason {
 				t.Fatalf("expected deny reason %s, got %#v", tt.denyReason, decision)
+			}
+			if tt.allowed {
+				if len(recorder.records) != 0 {
+					t.Fatalf("expected allowed decisions not to be recorded, got %#v", recorder.records)
+				}
+				return
 			}
 			if len(recorder.records) != 1 {
 				t.Fatalf("expected one decision record, got %#v", recorder.records)
@@ -1249,7 +1237,7 @@ func TestDBAuthorizerTeamManagementActionsValidateResourceShape(t *testing.T) {
 	}
 }
 
-func TestDBAuthorizerRecordsTeamManagementDecision(t *testing.T) {
+func TestDBAuthorizerDoesNotRecordAllowedTeamManagementDecision(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
 	userID := uuid.MustParse("00000000-0000-4000-8000-000000000014")
@@ -1275,22 +1263,12 @@ func TestDBAuthorizerRecordsTeamManagementDecision(t *testing.T) {
 	if !decision.Allowed {
 		t.Fatalf("expected allowed decision, got %#v", decision)
 	}
-	if len(recorder.records) != 1 {
-		t.Fatalf("expected one decision record, got %#v", recorder.records)
-	}
-	record := recorder.records[0]
-	if record.Action != ActionTeamGovernanceApprove || record.ResourceType != ResourceTeam || record.ResourceID != teamID.String() {
-		t.Fatalf("unexpected action/resource record: %#v", record)
-	}
-	if record.TeamID == nil || *record.TeamID != teamID {
-		t.Fatalf("expected team context in record, got %#v", record)
-	}
-	if !record.Allowed || record.MatchedRule != "team.owner" {
-		t.Fatalf("unexpected decision record: %#v", record)
+	if len(recorder.records) != 0 {
+		t.Fatalf("expected allowed decisions not to be recorded, got %#v", recorder.records)
 	}
 }
 
-func TestDBAuthorizerRecordsAllTeamManagementActions(t *testing.T) {
+func TestDBAuthorizerAllowsAllTeamManagementActions(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
 
@@ -1354,22 +1332,11 @@ func TestDBAuthorizerRecordsAllTeamManagementActions(t *testing.T) {
 			if !decision.Allowed {
 				t.Fatalf("expected allowed decision, got %#v", decision)
 			}
-			if len(recorder.records) != 1 {
-				t.Fatalf("expected one decision record, got %#v", recorder.records)
+			if decision.MatchedRule != tt.matchedRule {
+				t.Fatalf("expected matched rule %s, got %#v", tt.matchedRule, decision)
 			}
-			record := recorder.records[0]
-			if record.Action != tt.action || record.ResourceType != tt.resource.Type || record.ResourceID != tt.resource.ID {
-				t.Fatalf("unexpected action/resource record: %#v", record)
-			}
-			if record.MatchedRule != tt.matchedRule || !record.Allowed {
-				t.Fatalf("unexpected decision record: %#v", record)
-			}
-			if tt.resourceTeam {
-				if record.TeamID == nil || *record.TeamID != teamID {
-					t.Fatalf("expected team context in record, got %#v", record)
-				}
-			} else if record.TeamID != nil {
-				t.Fatalf("expected no team context in record, got %#v", record)
+			if len(recorder.records) != 0 {
+				t.Fatalf("expected allowed decisions not to be recorded, got %#v", recorder.records)
 			}
 		})
 	}

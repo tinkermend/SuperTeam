@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/superteam/control-plane/internal/platform"
 )
@@ -564,44 +565,117 @@ func (s *Service) GetOverview(ctx context.Context, filter RuntimeOverviewFilter)
 	if !ok {
 		return nil, errors.New("runtime event repository is required")
 	}
-	tenantID := tenantOrDefault(filter.TenantID)
-
-	totalNodes, err := overviewRepo.CountRuntimeNodesForTenant(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count runtime nodes: %w", err)
-	}
-	onlineNodes, err := overviewRepo.CountOnlineRuntimeNodesForTenant(ctx, tenantID, time.Now().Add(-s.heartbeatTimeout(ctx, tenantID)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to count online runtime nodes: %w", err)
-	}
-	activeProviderSessions, err := overviewRepo.CountActiveProviderSessionsForTenant(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count active provider sessions: %w", err)
-	}
-	blockedEvents, err := eventRepo.CountBlockedRuntimeEventsSince(ctx, tenantID, time.Now().Add(-24*time.Hour))
-	if err != nil {
-		return nil, fmt.Errorf("failed to count blocked runtime events: %w", err)
-	}
-
 	enrollmentLister, ok := s.repository.(interface {
 		ListRuntimeEnrollments(context.Context, ListRuntimeEnrollmentsParams) ([]RuntimeEnrollmentRecord, error)
 	})
 	if !ok {
 		return nil, errors.New("runtime enrollment list repository is required")
 	}
+	tenantID := tenantOrDefault(filter.TenantID)
+	onlineThreshold := time.Now().Add(-s.heartbeatTimeout(ctx, tenantID))
+	blockedSince := time.Now().Add(-24 * time.Hour)
 	pendingStatus := RuntimeEnrollmentStatusPending
-	pendingEnrollmentCount, err := overviewRepo.CountRuntimeEnrollmentsForTenant(ctx, tenantID, &pendingStatus)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count pending runtime enrollments: %w", err)
-	}
-	pendingRecords, err := enrollmentLister.ListRuntimeEnrollments(ctx, ListRuntimeEnrollmentsParams{
-		TenantID: tenantID,
-		Status:   enrollmentStatusToText(&pendingStatus),
-		Limit:    5,
+
+	// Remote Postgres pays ~40ms RTT per round-trip. Fan out independent reads so
+	// overview wall time tracks the slowest query instead of the sum.
+	var (
+		totalNodes             int64
+		onlineNodes            int64
+		activeProviderSessions int64
+		blockedEvents          int64
+		pendingEnrollmentCount int64
+		pendingRecords         []RuntimeEnrollmentRecord
+		nodeRecords            []NodeRecord
+		providerCapabilities   []RuntimeProviderCapabilitySummary
+		recentEvents           []RuntimeEvent
+	)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		var err error
+		totalNodes, err = overviewRepo.CountRuntimeNodesForTenant(groupCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to count runtime nodes: %w", err)
+		}
+		return nil
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pending runtime enrollments: %w", err)
+	group.Go(func() error {
+		var err error
+		onlineNodes, err = overviewRepo.CountOnlineRuntimeNodesForTenant(groupCtx, tenantID, onlineThreshold)
+		if err != nil {
+			return fmt.Errorf("failed to count online runtime nodes: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		activeProviderSessions, err = overviewRepo.CountActiveProviderSessionsForTenant(groupCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to count active provider sessions: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		blockedEvents, err = eventRepo.CountBlockedRuntimeEventsSince(groupCtx, tenantID, blockedSince)
+		if err != nil {
+			return fmt.Errorf("failed to count blocked runtime events: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		pendingEnrollmentCount, err = overviewRepo.CountRuntimeEnrollmentsForTenant(groupCtx, tenantID, &pendingStatus)
+		if err != nil {
+			return fmt.Errorf("failed to count pending runtime enrollments: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		pendingRecords, err = enrollmentLister.ListRuntimeEnrollments(groupCtx, ListRuntimeEnrollmentsParams{
+			TenantID: tenantID,
+			Status:   enrollmentStatusToText(&pendingStatus),
+			Limit:    5,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list pending runtime enrollments: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		nodeRecords, err = overviewRepo.ListRuntimeNodesForTenant(groupCtx, ListRuntimeNodesForTenantParams{
+			TenantID: tenantID,
+			Limit:    50,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list runtime nodes: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		providerCapabilities, err = overviewRepo.ListRuntimeProviderCapabilitiesForTenant(groupCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to list runtime provider capabilities: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		recentEvents, err = eventRepo.ListRuntimeEvents(groupCtx, ListRuntimeEventsParams{
+			TenantID: tenantID,
+			Limit:    10,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list recent runtime events: %w", err)
+		}
+		return nil
+	})
+	if err := group.Wait(); err != nil {
+		return nil, err
 	}
+
 	pendingEnrollments := make([]*RuntimeEnrollment, 0, len(pendingRecords))
 	for _, record := range pendingRecords {
 		enrollment, err := s.recordToRuntimeEnrollment(record)
@@ -610,13 +684,6 @@ func (s *Service) GetOverview(ctx context.Context, filter RuntimeOverviewFilter)
 		}
 		pendingEnrollments = append(pendingEnrollments, enrollment)
 	}
-	nodeRecords, err := overviewRepo.ListRuntimeNodesForTenant(ctx, ListRuntimeNodesForTenantParams{
-		TenantID: tenantID,
-		Limit:    50,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list runtime nodes: %w", err)
-	}
 	nodes := make([]*Node, 0, len(nodeRecords))
 	for _, record := range nodeRecords {
 		node, err := s.recordToNode(ctx, record)
@@ -624,17 +691,6 @@ func (s *Service) GetOverview(ctx context.Context, filter RuntimeOverviewFilter)
 			continue
 		}
 		nodes = append(nodes, node)
-	}
-	providerCapabilities, err := overviewRepo.ListRuntimeProviderCapabilitiesForTenant(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list runtime provider capabilities: %w", err)
-	}
-	recentEvents, err := eventRepo.ListRuntimeEvents(ctx, ListRuntimeEventsParams{
-		TenantID: tenantID,
-		Limit:    10,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list recent runtime events: %w", err)
 	}
 
 	return &RuntimeOverview{

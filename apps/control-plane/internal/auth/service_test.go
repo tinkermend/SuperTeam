@@ -14,26 +14,27 @@ import (
 )
 
 type mockRepo struct {
-	users               map[string]*User
-	usersByID           map[uuid.UUID]*User
-	runtimeTokens       map[string]*RuntimeToken
-	sessions            map[string]*Session
-	loginLogs           []LoginLog
-	operationLogs       []mockOperationLog
-	captchaChallenges   map[uuid.UUID]*CaptchaChallengeRecord
-	captchaConsumeCalls []uuid.UUID
-	lastCaptchaCleanup  *time.Time
-	failCaptchaGet      error
-	failCaptchaConsume  error
-	failCaptchaCleanup  error
-	failLoginLogInTx    bool
-	scopeTeamIDs        map[uuid.UUID][]uuid.UUID
-	invalidTeamIDs      map[uuid.UUID]bool
-	failScopeReplace    error
-	lastListUsersFilter ListUsersFilter
-	lastLoginLogFilter  ListLoginLogsFilter
-	transactionCalls    int
-	inTransaction       bool
+	users                       map[string]*User
+	usersByID                   map[uuid.UUID]*User
+	runtimeTokens               map[string]*RuntimeToken
+	sessions                    map[string]*Session
+	loginLogs                   []LoginLog
+	operationLogs               []mockOperationLog
+	captchaChallenges           map[uuid.UUID]*CaptchaChallengeRecord
+	captchaConsumeCalls         []uuid.UUID
+	lastCaptchaCleanup          *time.Time
+	failCaptchaGet              error
+	failCaptchaConsume          error
+	failCaptchaCleanup          error
+	failLoginLogInTx            bool
+	scopeTeamIDs                map[uuid.UUID][]uuid.UUID
+	invalidTeamIDs              map[uuid.UUID]bool
+	failScopeReplace            error
+	lastListUsersFilter         ListUsersFilter
+	lastLoginLogFilter          ListLoginLogsFilter
+	transactionCalls            int
+	inTransaction               bool
+	updateSessionLastSeenCalls  int
 }
 
 type recordingProjectTeamScopeSyncer struct {
@@ -233,6 +234,7 @@ func (m *mockRepo) DeleteSession(ctx context.Context, token string) error {
 }
 
 func (m *mockRepo) UpdateSessionLastSeen(ctx context.Context, token string, lastSeenAt time.Time) error {
+	m.updateSessionLastSeenCalls++
 	session, ok := m.sessions[token]
 	if !ok {
 		return ErrSessionNotFound
@@ -1332,6 +1334,36 @@ func TestLoginCreatesSessionAndReturnsCurrentUser(t *testing.T) {
 	}
 	if log.Result != LoginResultSucceeded {
 		t.Fatalf("expected result %q, got %q", LoginResultSucceeded, log.Result)
+	}
+}
+
+func TestGetUserBySessionTokenThrottlesLastSeenWrites(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	if _, err := svc.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	_, _, token, err := svc.Login(context.Background(), "admin", "admin", "127.0.0.1", "test-agent")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	tokenHash := HashToken(token)
+	session := repo.sessions[tokenHash]
+	session.LastSeenAt = time.Now().UTC().Add(-30 * time.Second)
+
+	if _, _, err := svc.GetUserBySessionToken(context.Background(), token); err != nil {
+		t.Fatalf("get current user: %v", err)
+	}
+	if repo.updateSessionLastSeenCalls != 0 {
+		t.Fatalf("expected throttled last_seen write, got %d calls", repo.updateSessionLastSeenCalls)
+	}
+
+	session.LastSeenAt = time.Now().UTC().Add(-2 * time.Minute)
+	if _, _, err := svc.GetUserBySessionToken(context.Background(), token); err != nil {
+		t.Fatalf("get current user after stale last_seen: %v", err)
+	}
+	if repo.updateSessionLastSeenCalls != 1 {
+		t.Fatalf("expected one last_seen write after throttle window, got %d", repo.updateSessionLastSeenCalls)
 	}
 }
 

@@ -223,8 +223,10 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 	if err != nil {
 		return decision, err
 	}
-	if recordErr := a.record(ctx, req, decision); recordErr != nil {
-		return Decision{}, recordErr
+	if decision.RequiresAudit {
+		if recordErr := a.record(ctx, req, decision); recordErr != nil {
+			return Decision{}, recordErr
+		}
 	}
 	return decision, nil
 }
