@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-24 00:42（任务中枢项目选择改下拉）：平铺项目卡改为「触发器 + Popover 下拉」结构——触发器单行显示状态点+名称+状态词，下拉内搜索框（名称/目标过滤）+ 富信息选项卡滚动列表（max-height 收口），项目多时不再撑破排版；任务表单与对话锚点仍共用 `ProjectPicker`。顺带清理测试工厂里已被 `badabba2` 退役的 `approval_policy`/`evidence_policy` 残留并补 `directory_name`。验证：task-launches Vitest 20/20；task-launch 相关 tsc 零错误；真实浏览器验证下拉开合、22 项注入滚动收口、搜索过滤。全量 verify:web 仍受其他会话未完成改动（workflows/lib/api）阻断。
+- 2026-07-24 00:28（任务中枢发起页改版）：删除顶部「提交后由协调线程动态编排」eyebrow；三模式卡升级为带选中圈/默认徽标/分色图标块的新设计；项目选择由下拉改为卡片单选（状态点+名称+目标+状态词），任务表单与对话锚点共用 `ProjectPicker`；顺带修复 HEAD 遗留的 index.test.tsx 多余 `}));` 语法错误。验证：task-launches Vitest 20/20；真实浏览器（admin 登录 + 真实项目数据）核对 Plan/对话两模式渲染。全量 verify:web 受工作树中其他会话未完成的 workflows/lib/api 改动阻断，未全绿。
 - 2026-07-23 23:12（项目详情首屏视觉迭代）：区段导航改全宽底边线；空态右栏合并为单卡行级空态；去掉启动区重复 CTA；左右列等高；高级事实收成虚线轻栏。验证：Vitest 21/21；restart web 后空项目 1440 视觉自验满意。
 - 2026-07-23 22:57（项目详情首屏重做）：七等分 Tab → 头卡下四区段（工作台/任务/审批/资产）；默认工作台；配置仅更多菜单→配置页；资产合并工件+预算+验收；工作台用 `lg:` 双栏（不再依赖未挂载 master-detail 容器）；空项目压缩为启动卡+单行空态。验证：定向 Vitest + restart web 浏览器空项目核对。
 - 2026-07-23 22:45（项目详情运营首屏）：概览改为指挥台布局（运行脉搏+执行/阻塞+员工∥Runtime / 本项目阻塞+事件流+项目脉搏）；提交需求深链任务中枢 `?project=&mode=plan`；去掉运行总览出口；计划确认下沉审批 Tab。验证：ops-home/detail Vitest 19/19；restart web 后浏览器视觉核对。

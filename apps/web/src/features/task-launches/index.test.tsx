@@ -107,7 +107,6 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
   useSearch: () => ({}),
 }));
-}));
 
 function createQueryClient() {
   return new QueryClient({
@@ -124,11 +123,10 @@ function jsonResponse(body: unknown, status = 200) {
 
 function makeProject(id = "project-1", status: Project["status"] = "running"): Project {
   return {
-    approval_policy: {},
     coordination_policy: {},
     coordination_status: "registered",
     coordination_workflow_id: `project-coordinator:${id}`,
-    evidence_policy: {},
+    directory_name: `${id}-dir`,
     goal: "完成一次任务发起",
     human_owner_user_id: id === "project-2" ? "owner-2" : "owner-1",
     id,
@@ -237,8 +235,7 @@ function createTaskLaunchFetcherWithChat({
     if (path === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse([
         {
-          approval_policy: {},
-          context_policy: {},
+                context_policy: {},
           employee_type: "generalist",
           id: "emp-1",
           name: "Ada",
@@ -482,6 +479,7 @@ describe("TaskLaunchView", () => {
       <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
+    await clickButton("项目");
     await waitFor(() => expect(getByText("生产巡检项目")).toBeTruthy());
     await clickButton("生产巡检项目");
     await typeInLabeledField("需求描述", "处理第二个项目的巡检问题");
@@ -533,7 +531,7 @@ describe("TaskLaunchView", () => {
     await waitFor(() => expect(getByText("中枢指令区")).toBeTruthy());
 
     expect(getByText("提出任务")).toBeTruthy();
-    expect(getByText("提交后由协调线程动态编排")).toBeTruthy();
+    expect(queryByText("提交后由协调线程动态编排")).toBeNull();
     expect(getByText("中枢指令区")).toBeTruthy();
     expect(getByText("命令中心")).toBeTruthy();
     expect(getByText("保存草稿")).toBeTruthy();
@@ -643,6 +641,7 @@ describe("TaskLaunchView", () => {
     await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
 
     // anchor the chat conversation to the second project before asking anything
+    await clickButton("项目");
     await clickButton("生产巡检项目");
     // 参与门禁：换锚点项目后成员列表与会话恢复各需一轮查询落定
     await act(async () => {

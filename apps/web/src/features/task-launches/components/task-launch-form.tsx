@@ -1,6 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
+  ChevronsUpDown,
   FolderOpen,
   ListChecks,
   MessagesSquare,
@@ -9,14 +10,9 @@ import {
   SendHorizontal,
   Sparkles,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { GlassCard } from "@/components/superteam";
+import { projectStatusLabel } from "@/lib/status-labels";
 import type {
   Project,
   ProjectDemandSourceType,
@@ -29,27 +25,33 @@ import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 export type LaunchMode = "plan" | "loop" | "chat";
 
 const MODE_CARDS: Array<{
+  badge?: string;
   desc: string;
   icon: ReactNode;
   label: string;
+  tone: "brand" | "info" | "warn";
   value: LaunchMode;
 }> = [
   {
+    badge: "默认",
     desc: "遇上游阻塞时暂停，提案报你决策后再补做",
     icon: <ListChecks aria-hidden />,
     label: "Plan 任务",
+    tone: "brand",
     value: "plan",
   },
   {
     desc: "遇上游阻塞时自动补做上游任务并重跑下游",
     icon: <RefreshCw aria-hidden />,
     label: "Loop 任务",
+    tone: "info",
     value: "loop",
   },
   {
     desc: "与指定数字员工单次对话，结果不进入项目流转",
     icon: <MessagesSquare aria-hidden />,
     label: "对话",
+    tone: "warn",
     value: "chat",
   },
 ];
@@ -142,10 +144,6 @@ export function TaskLaunchForm({
   return (
     <>
       <div className="tl-hero">
-        <span className="tl-eyebrow">
-          <Sparkles className="size-3.5" aria-hidden />
-          提交后由协调线程动态编排
-        </span>
         <h1 className="tl-title">提出任务</h1>
         <p className="tl-sub">
           先把目标说清楚，编排、上下文切片和执行分派会在提交后由系统完成。
@@ -159,14 +157,17 @@ export function TaskLaunchForm({
             aria-label={card.label}
             className="tl-mode-card"
             data-active={mode === card.value || undefined}
+            data-tone={card.tone}
             key={card.value}
             onClick={() => onModeChange(card.value)}
             role="radio"
             type="button"
           >
+            <span aria-hidden className="tl-mode-check" />
             <span className="tl-mode-head">
               <span className="tl-mode-icon">{card.icon}</span>
               <span className="tl-mode-name">{card.label}</span>
+              {card.badge ? <span className="tl-mode-def">{card.badge}</span> : null}
             </span>
             <span className="tl-mode-desc">{card.desc}</span>
           </button>
@@ -208,18 +209,11 @@ export function TaskLaunchForm({
 
             <div className="tl-params" data-testid="task-launch-parameters">
               <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
-                <Select value={projectId} onValueChange={handleProjectChange}>
-                  <SelectTrigger aria-label="项目" className="tl-chip-select">
-                    <SelectValue placeholder="选择项目" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeProjects.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ProjectPicker
+                  onChange={handleProjectChange}
+                  projects={activeProjects}
+                  value={projectId}
+                />
               </LaunchChip>
             </div>
 
@@ -250,6 +244,89 @@ export function TaskLaunchForm({
         onInsert={handleInsertTemplate}
       />
     </>
+  );
+}
+
+export function ProjectPicker({
+  onChange,
+  projects,
+  value,
+}: {
+  onChange: (projectId: string) => void;
+  projects: Project[];
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = projects.find((project) => project.id === value);
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return projects;
+    return projects.filter(
+      (project) =>
+        project.name.toLowerCase().includes(keyword) ||
+        (project.goal ?? "").toLowerCase().includes(keyword),
+    );
+  }, [projects, query]);
+
+  return (
+    <Popover
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setQuery("");
+      }}
+      open={open}
+    >
+      <PopoverTrigger asChild>
+        <button aria-label="项目" className="tl-proj-trigger" type="button">
+          {selected ? (
+            <>
+              <span className="tl-proj-dot" data-status={selected.status} />
+              <span className="tl-proj-trigger-name">{selected.name}</span>
+              <span className="tl-proj-status">{projectStatusLabel(selected.status)}</span>
+            </>
+          ) : (
+            <span className="tl-proj-trigger-placeholder">选择项目</span>
+          )}
+          <ChevronsUpDown aria-hidden className="tl-proj-trigger-caret" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="tl-proj-pop">
+        <input
+          aria-label="搜索项目"
+          className="tl-proj-search"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索项目名称或目标…"
+          value={query}
+        />
+        <div aria-label="项目列表" className="tl-proj-list" role="radiogroup">
+          {filtered.map((project) => (
+            <button
+              aria-checked={value === project.id}
+              aria-label={project.name}
+              className="tl-proj"
+              data-active={value === project.id || undefined}
+              key={project.id}
+              onClick={() => {
+                onChange(project.id);
+                setOpen(false);
+              }}
+              role="radio"
+              type="button"
+            >
+              <span className="tl-proj-dot" data-status={project.status} />
+              <span className="tl-proj-main">
+                <span className="tl-proj-name">{project.name}</span>
+                {project.goal ? <span className="tl-proj-goal">{project.goal}</span> : null}
+              </span>
+              <span className="tl-proj-status">{projectStatusLabel(project.status)}</span>
+              <span aria-hidden className="tl-proj-check" />
+            </button>
+          ))}
+          {filtered.length === 0 ? <div className="tl-proj-empty">无匹配项目</div> : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -44,11 +44,10 @@ function ControlledChatPanel({
 
 function makeProject(id = "project-1", name = "客户接入项目"): Project {
   return {
-    approval_policy: {},
     coordination_policy: {},
     coordination_status: "registered",
     coordination_workflow_id: `project-coordinator:${id}`,
-    evidence_policy: {},
+    directory_name: `${id}-dir`,
     goal: "完成一次任务发起",
     human_owner_user_id: "owner-1",
     id,
@@ -832,6 +831,7 @@ describe("ChatPanel", () => {
 
     // selecting a project arms the anchor and loads its member employees; send
     // stays gated until the anchor's conversation restore settles (empty here)
+    await clickButton("项目");
     await clickButton("生产巡检项目");
     await act(async () => {
       await queryClient.refetchQueries();
@@ -865,6 +865,7 @@ describe("ChatPanel", () => {
     });
     await waitFor(() => expect(chatThread().textContent).toContain("第一轮回答"));
 
+    await clickButton("项目");
     await clickButton("生产巡检项目");
 
     // switching the project anchor clears the prior Q/A, same as switching employee
@@ -1159,7 +1160,7 @@ async function clickButton(name: string) {
 
 function getButton(name: string) {
   const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
-    (item) => item.textContent?.trim() === name,
+    (item) => item.textContent?.trim() === name || item.getAttribute("aria-label") === name,
   );
   if (!button) {
     throw new Error(`Unable to find button: ${name}`);

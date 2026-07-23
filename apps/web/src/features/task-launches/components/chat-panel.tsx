@@ -27,7 +27,7 @@ import {
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
 import { listProjectMembers, type Project } from "@/lib/api/projects";
-import { LaunchChip } from "./task-launch-form";
+import { LaunchChip, ProjectPicker } from "./task-launch-form";
 
 const ACTIVE_RUN_STATUSES = new Set<DigitalEmployeeRunStatus>([
   "queued",
@@ -401,18 +401,7 @@ export function ChatPanel({
     <div className="tl-chat">
       <div className="tl-chat-header">
         <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
-          <Select value={projectId} onValueChange={handleProjectChange}>
-            <SelectTrigger aria-label="项目" className="tl-chip-select">
-              <SelectValue placeholder="选择项目" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ProjectPicker onChange={handleProjectChange} projects={projects} value={projectId} />
         </LaunchChip>
         <LaunchChip icon={<UserRound aria-hidden />} label="对话员工" required>
           <Select disabled={!projectId} value={employeeId} onValueChange={handleEmployeeChange}>
