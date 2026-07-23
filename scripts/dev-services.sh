@@ -33,6 +33,8 @@ RUNTIME_AGENT_WAIT_URL="${SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL-}"
 # feishu-connector 进默认 all(排在 control-plane 之后);无 HTTP 面,不配 WAIT_URL。
 FEISHU_CONNECTOR_CMD="${SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD:-go run ./apps/feishu-connector}"
 FEISHU_CONNECTOR_WAIT_URL="${SUPERTEAM_DEV_FEISHU_CONNECTOR_WAIT_URL-}"
+# connector → CP 默认与 CONTROL_PLANE_WAIT_URL 同源 :8080;分支 sidecar 可覆盖。
+FEISHU_CONNECTOR_CONTROL_PLANE_URL="${SUPERTEAM_DEV_FEISHU_CONNECTOR_CONTROL_PLANE_URL:-http://127.0.0.1:8080}"
 
 # 凭据加密主密钥由 control-plane 配置文件承载(config.yaml security.credentialEncryptionKey,
 # 环境变量 CONTROL_PLANE_CREDENTIAL_KEY 可覆盖),脚本不再注入。
@@ -50,6 +52,15 @@ ensure_feishu_connector_token() {
         return 0
     fi
     log_warn "FEISHU_CONNECTOR_TOKEN 未设置且 $FEISHU_CONNECTOR_TOKEN_FILE 不存在;经 POST /api/v1/admin/service-tokens 签发后写入该文件"
+}
+
+# 保证 feishu-connector 打到与主栈一致的 Control Plane(默认 :8080)。
+ensure_feishu_connector_control_plane_url() {
+    if [ -n "${CONTROL_PLANE_URL:-}" ]; then
+        return 0
+    fi
+    CONTROL_PLANE_URL="$FEISHU_CONNECTOR_CONTROL_PLANE_URL"
+    export CONTROL_PLANE_URL
 }
 
 OPENFGA_COMPOSE_FILE="${SUPERTEAM_DEV_OPENFGA_COMPOSE_FILE:-$PROJECT_ROOT/docker-compose.dev.yml}"
@@ -116,7 +127,9 @@ Environment overrides:
   SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL
   SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD
   SUPERTEAM_DEV_FEISHU_CONNECTOR_WAIT_URL
+  SUPERTEAM_DEV_FEISHU_CONNECTOR_CONTROL_PLANE_URL
   SUPERTEAM_DEV_FEISHU_CONNECTOR_TOKEN_FILE
+  CONTROL_PLANE_URL
   SUPERTEAM_DEV_OPENFGA_MODE
   SUPERTEAM_DEV_OPENFGA_CMD
   SUPERTEAM_DEV_OPENFGA_COMPOSE_FILE
@@ -411,7 +424,10 @@ start_service() {
     ensure_dirs
 
     case "$service" in
-        feishu-connector) ensure_feishu_connector_token ;;
+        feishu-connector)
+            ensure_feishu_connector_token
+            ensure_feishu_connector_control_plane_url
+            ;;
     esac
 
     if [ "$service" = "openfga" ]; then

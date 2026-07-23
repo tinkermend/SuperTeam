@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 scripts/dev-services.sh status
 
-: "${SUPERTEAM_API_BASE:=http://127.0.0.1:8081}"
+: "${SUPERTEAM_API_BASE:=http://127.0.0.1:8080}"
 : "${SUPERTEAM_USERNAME:=admin}"
 : "${SUPERTEAM_PASSWORD:=admin}"
 

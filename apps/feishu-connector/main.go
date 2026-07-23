@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	controlPlaneURL := envOr("CONTROL_PLANE_URL", "http://127.0.0.1:8081")
+	controlPlaneURL := envOr("CONTROL_PLANE_URL", "http://127.0.0.1:8080")
 	token := strings.TrimSpace(os.Getenv("FEISHU_CONNECTOR_TOKEN"))
 	if token == "" {
 		log.Fatal("FEISHU_CONNECTOR_TOKEN is required (issue via POST /api/v1/admin/service-tokens)")

@@ -785,7 +785,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	feishuService.SetUserLister(feishuUserListerAdapter{auth: authService})
 	feishuPublicOrigin := os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN")
 	if feishuPublicOrigin == "" {
-		feishuPublicOrigin = "http://127.0.0.1:8081"
+		feishuPublicOrigin = "http://127.0.0.1:8080"
 	}
 	feishuWebOrigin := os.Getenv("CONTROL_PLANE_WEB_ORIGIN")
 	if feishuWebOrigin == "" {
