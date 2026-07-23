@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>项目详情 · 运营首屏 · SuperTeam 原型</title>
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --card-soft: #f7f8fa;
+      --ink: #0b0d12;
+      --ink-2: #697586;
+      --ink-3: #9aa4b2;
+      --line: #eef1f4;
+      --line-2: #e6e9ee;
+      --brand: #2f5fff;
+      --brand-deep: #2348e0;
+      --brand-soft: #e9efff;
+      --ok: #15a06b;
+      --ok-soft: #e4f6ee;
+      --warn: #cf7a14;
+      --warn-soft: #fdf0db;
+      --danger: #e5484d;
+      --danger-soft: #fde8e9;
+      --mute: #64748b;
+      --mute-soft: #eef1f4;
+      --chat: #0d9488;
+      --chat-soft: #e6f7f5;
+      --loop: #7c5cff;
+      --loop-soft: #efeaff;
+      --r-card: 18px;
+      --shadow: 0 1px 2px rgba(16,24,40,.04), 0 10px 24px rgba(16,24,40,.05);
+      --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --rail: minmax(280px, 320px);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      color: var(--ink);
+      background: var(--bg);
+      font-size: 13.5px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    .num { font-variant-numeric: tabular-nums; }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; cursor: pointer; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 200px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    .nav {
+      background: color-mix(in srgb, #fff 72%, transparent);
+      border-right: 1px solid var(--line);
+      padding: 14px 10px;
+      backdrop-filter: blur(12px);
+    }
+    .brand {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 750; letter-spacing: -.02em; margin-bottom: 16px; padding: 0 8px; font-size: 14px;
+    }
+    .brand .mk {
+      width: 26px; height: 26px; border-radius: 8px;
+      background: linear-gradient(140deg, #5b8bff, #2f5fff 58%, #2348e0);
+      color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 800;
+    }
+    .nav-label {
+      font-size: 10.5px; font-weight: 650; color: var(--ink-3);
+      letter-spacing: .04em; padding: 0 10px 6px;
+    }
+    .nav a {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 9px; color: var(--ink-2); font-weight: 550;
+      margin-bottom: 2px; font-size: 13px;
+    }
+    .nav a:hover { background: #fff; color: var(--ink); }
+    .nav a.on { background: var(--brand-soft); color: var(--brand-deep); font-weight: 700; }
+
+    .main {
+      padding: 12px 20px 24px;
+      max-width: 1400px;
+      min-width: 0;
+    }
+    .crumb {
+      display: flex; align-items: center; gap: 8px;
+      color: var(--ink-3); font-size: 12px; margin-bottom: 8px;
+    }
+    .proto-bar {
+      display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+      margin-bottom: 10px; padding: 8px 12px; border-radius: 12px;
+      background: var(--brand-soft); font-size: 12px; color: var(--brand-deep);
+    }
+    .proto-bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 650; }
+    .proto-bar code { font-family: var(--mono); font-size: 11px; background: #fff; padding: 1px 5px; border-radius: 5px; }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--r-card);
+      box-shadow: var(--shadow);
+      min-width: 0; /* 防空态把栅格撑破 */
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; white-space: nowrap;
+    }
+    .pill .d { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .p-ok { color: var(--ok); background: var(--ok-soft); }
+    .p-info { color: var(--brand); background: var(--brand-soft); }
+    .p-warn { color: var(--warn); background: var(--warn-soft); }
+    .p-danger { color: var(--danger); background: var(--danger-soft); }
+    .p-mute { color: var(--mute); background: var(--mute-soft); }
+    .p-plan { color: var(--brand); background: var(--brand-soft); }
+    .p-loop { color: var(--loop); background: var(--loop-soft); }
+    .p-chat { color: var(--chat); background: var(--chat-soft); }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      border: none; border-radius: 10px; padding: 7px 12px;
+      font-size: 12.5px; font-weight: 650;
+    }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: var(--brand-deep); }
+    .btn-ghost { background: var(--card); border: 1px solid var(--line-2); color: var(--ink); }
+    .btn-link {
+      background: none; border: none; color: var(--brand);
+      font-size: 12px; font-weight: 650; padding: 0; white-space: nowrap;
+    }
+    .btn-link:hover { opacity: .75; }
+    .btn-sm { padding: 5px 9px; font-size: 11.5px; }
+
+    /* —— Hero（压矮） —— */
+    .hero {
+      display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start;
+      padding: 14px 16px; margin-bottom: 10px;
+    }
+    .hero-left { display: flex; gap: 12px; min-width: 0; flex: 1; }
+    .icon-tile {
+      width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+      background: var(--brand-soft); color: var(--brand-deep);
+      display: grid; place-items: center; font-size: 14px; font-weight: 800;
+    }
+    .hero h1 {
+      margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -.02em;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    }
+    .hero .goal { margin: 4px 0 0; color: var(--ink-2); font-size: 12.5px; max-width: 48rem; }
+    .facts {
+      display: flex; flex-wrap: wrap; gap: 4px 2px; margin-top: 8px;
+      font-size: 12px; color: var(--ink-2);
+    }
+    .facts a { color: var(--ink); font-weight: 650; border-bottom: 1px dashed var(--line-2); }
+    .facts a:hover { color: var(--brand); }
+    .facts .sep { color: var(--ink-3); padding: 0 4px; }
+    .owners {
+      display: flex; align-items: center; gap: 6px; margin-top: 6px;
+      font-size: 12px; color: var(--ink-2);
+    }
+    .av {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: linear-gradient(135deg, #94a3b8, #475569); color: #fff;
+      display: grid; place-items: center; font-size: 9px; font-weight: 700;
+    }
+    .av.stack { margin-left: -5px; border: 2px solid #fff; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* —— 主布局：自适应，窄屏单列 —— */
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) var(--rail);
+      gap: 10px;
+      align-items: stretch; /* 空态时左右等高，避免塌成细条 */
+    }
+    @media (max-width: 1100px) {
+      .shell { grid-template-columns: 1fr; }
+      .nav { display: none; }
+      .layout { grid-template-columns: 1fr; }
+      .rail { position: static; }
+    }
+
+    .col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .rail {
+      display: flex; flex-direction: column; gap: 10px; min-width: 0;
+      position: sticky; top: 10px;
+      /* 侧栏自身可滚，主区尽量少滚 —— 不是禁止整页滚动 */
+      max-height: calc(100vh - 20px);
+      overflow-y: auto;
+    }
+
+    .panel { padding: 12px 14px; display: flex; flex-direction: column; min-height: 0; }
+    .panel-h {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+      margin-bottom: 8px; flex-shrink: 0;
+    }
+    .panel-h h2 { margin: 0; font-size: 13px; font-weight: 800; }
+    .panel-h .note { margin: 2px 0 0; font-size: 11.5px; color: var(--ink-3); }
+
+    /* 列表体：固定最小高度，空/满态同宽同高感 */
+    .body-slot {
+      flex: 1;
+      min-height: 96px;
+      display: flex;
+      flex-direction: column;
+    }
+    .body-slot.tall { min-height: 120px; }
+    .body-slot.pulse { min-height: 132px; }
+
+    .empty {
+      flex: 1;
+      min-height: inherit;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 4px;
+      padding: 12px;
+      border-radius: 12px;
+      background: var(--card-soft);
+      border: 1px dashed var(--line-2);
+      color: var(--ink-3);
+    }
+    .empty b { color: var(--ink-2); font-size: 12.5px; font-weight: 700; }
+    .empty span { font-size: 11.5px; max-width: 22rem; }
+
+    /* —— 运行脉搏：时间 + 模式 —— */
+    .pulse-toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      justify-content: space-between; margin-bottom: 8px;
+    }
+    .pulse-legend {
+      display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--ink-3);
+    }
+    .pulse-legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .sw { width: 7px; height: 7px; border-radius: 50%; }
+    .seg {
+      display: inline-flex; padding: 2px; border-radius: 9px;
+      background: var(--card-soft); border: 1px solid var(--line);
+    }
+    .seg button {
+      border: none; background: transparent; padding: 4px 9px;
+      border-radius: 7px; font-size: 11.5px; font-weight: 650; color: var(--ink-2);
+    }
+    .seg button.on { background: #fff; color: var(--ink); box-shadow: var(--shadow); }
+
+    .week {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 5px;
+      min-width: 0;
+    }
+    .day {
+      min-height: 100px; /* 空天也占位，防塌布局 */
+      border-radius: 10px; background: var(--card-soft);
+      border: 1px solid transparent; padding: 6px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .day.today { border-color: color-mix(in srgb, var(--brand) 35%, transparent); background: #fff; }
+    .day .dhead {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 10.5px; color: var(--ink-3); margin-bottom: 2px; flex-shrink: 0;
+    }
+    .day .dhead b { color: var(--ink); font-weight: 750; }
+    .day .slots { flex: 1; display: flex; flex-direction: column; gap: 3px; min-height: 0; }
+    .chip {
+      display: grid;
+      grid-template-columns: 6px minmax(0, 1fr);
+      gap: 4px; align-items: start;
+      font-size: 10.5px; font-weight: 650; padding: 3px 5px; border-radius: 6px;
+      background: #fff; border: 1px solid var(--line);
+    }
+    .chip .c { width: 6px; height: 6px; border-radius: 50%; margin-top: 3px; }
+    .chip .line1 {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .chip .line2 {
+      display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
+      margin-top: 1px; font-weight: 550; color: var(--ink-3); font-size: 10px;
+    }
+    .day .day-empty {
+      flex: 1; display: grid; place-items: center;
+      font-size: 10.5px; color: var(--ink-3);
+    }
+
+    /* 任务 / 阻塞行 */
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px; align-items: start;
+      padding: 8px 0; border-top: 1px solid var(--line);
+    }
+    .row:first-child { border-top: none; padding-top: 0; }
+    .row .t { font-weight: 700; font-size: 12.5px; }
+    .row .s { font-size: 11.5px; color: var(--ink-2); margin-top: 2px; }
+    .row .meta {
+      display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center;
+      font-size: 11px; color: var(--ink-3); margin-top: 4px;
+    }
+
+    .twin {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    @media (max-width: 900px) { .twin { grid-template-columns: 1fr; } }
+
+    .emp-row, .rt-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 0; border-top: 1px solid var(--line);
+    }
+    .emp-row:first-child, .rt-row:first-child { border-top: none; }
+    .emp-row .name { font-weight: 700; font-size: 12.5px; }
+    .emp-row .role { font-size: 11px; color: var(--ink-3); }
+    .emp-row .now { margin-left: auto; font-size: 11.5px; color: var(--ink-2); max-width: 42%; text-align: right; }
+
+    .rt-summary {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 10px; background: var(--ok-soft);
+    }
+    .rt-summary.warn { background: var(--warn-soft); }
+    .rt-summary .txt { flex: 1; min-width: 0; }
+    .rt-summary .txt b { display: block; font-size: 12.5px; }
+    .rt-summary .txt span { font-size: 11.5px; color: var(--ink-2); }
+
+    .event {
+      display: grid; grid-template-columns: 52px 1fr; gap: 6px;
+      padding: 7px 0; border-top: 1px solid var(--line); font-size: 12px;
+    }
+    .event:first-child { border-top: none; padding-top: 0; }
+    .event .t { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+    .event .b { font-weight: 650; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .event .d { color: var(--ink-2); margin-top: 1px; font-size: 11.5px; }
+
+    .pulse-metrics {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    }
+    .pm {
+      padding: 8px 10px; border-radius: 10px; background: var(--card-soft); min-height: 64px;
+    }
+    .pm .k { font-size: 10.5px; color: var(--ink-3); }
+    .pm .v { font-size: 15px; font-weight: 800; margin-top: 2px; letter-spacing: -.02em; }
+    .pm a { color: var(--brand); font-size: 11px; font-weight: 650; }
+
+    .tabs {
+      display: flex; flex-wrap: wrap; gap: 3px; margin-top: 10px;
+      padding: 3px; background: var(--card); border-radius: 12px; box-shadow: var(--shadow);
+    }
+    .tabs span {
+      padding: 6px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 650; color: var(--ink-2);
+    }
+    .tabs span.on { background: var(--brand-soft); color: var(--brand-deep); }
+    .tabs-hint { margin: 6px 0 0; font-size: 11.5px; color: var(--ink-3); }
+
+    .choice-box {
+      margin-top: 16px; padding: 14px 16px; border-radius: var(--r-card);
+      background: #fff; box-shadow: var(--shadow); border-left: 4px solid var(--brand);
+    }
+    .choice-box h3 { margin: 0 0 6px; font-size: 13px; }
+    .choice-box ol { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; }
+    .choice-box li { margin: 4px 0; }
+    .choice-box .rec { color: var(--brand-deep); font-weight: 650; }
+
+    body.empty-demo .has-data { display: none !important; }
+    body:not(.empty-demo) .empty-only { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="nav" aria-label="侧栏">
+      <div class="brand"><span class="mk">S</span> SuperTeam</div>
+      <div class="nav-label">工作台</div>
+      <a href="#"><span>⬡</span>任务中枢</a>
+      <a href="#"><span>▣</span>收件箱</a>
+      <a href="#"><span>◎</span>运行总览</a>
+      <div class="nav-label" style="margin-top:12px">协作对象</div>
+      <a class="on" href="#"><span>▦</span>项目管理</a>
+      <a href="#"><span>◇</span>数字员工</a>
+      <a href="#"><span>▦</span>团队管理</a>
+    </aside>
+
+    <div class="main">
+      <div class="crumb">
+        <a href="#">项目管理</a><span>/</span><span>支付网关迁移</span>
+      </div>
+
+      <div class="proto-bar">
+        <b>原型 · 运营首屏</b>
+        <label><input type="checkbox" id="toggle-empty" /> 切换「无数据」空态（验布局保宽）</label>
+        <span>目标：自适应 + 空态不塌；尽量少滚看完首屏，不是禁止滚动</span>
+        <code>project-detail-ops-home.html</code>
+      </div>
+
+      <section class="card hero" aria-label="项目头卡">
+        <div class="hero-left">
+          <div class="icon-tile">支</div>
+          <div>
+            <h1>
+              支付网关迁移
+              <span class="pill p-info"><i class="d"></i>进行中</span>
+              <span class="pill p-ok"><i class="d"></i>工作区就绪</span>
+            </h1>
+            <p class="goal">完成切换并在 9 月 30 日前通过验收。</p>
+            <div class="owners">
+              <span class="av">李</span><span class="av stack">张</span>
+              <span>负责人 李明、张强</span>
+            </div>
+            <div class="facts">
+              <a href="#blockers">阻塞 <span class="num has-data">2</span><span class="num empty-only">0</span></a>
+              <span class="sep">·</span>
+              <a href="#running">执行中 <span class="num has-data">3</span><span class="num empty-only">0</span></a>
+              <span class="sep">·</span>
+              <a href="#runtime">Runtime 就绪</a>
+              <span class="sep">·</span>
+              <a href="#pulse">本周活动 <span class="num has-data">11</span><span class="num empty-only">0</span></a>
+            </div>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-primary" type="button" title="→ 任务中枢 · Plan，预选本项目">提交需求</button>
+          <button class="btn btn-ghost" type="button">配置</button>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="col">
+          <!-- 运行脉搏 -->
+          <section class="card panel" id="pulse" aria-label="运行脉搏">
+            <div class="panel-h">
+              <div>
+                <h2>运行脉搏 · 本周</h2>
+                <p class="note">每条：时间 + 模式（Plan / Loop / 对话）+ 任务名；全量时间线进任务 Tab</p>
+              </div>
+              <div class="seg" role="group" aria-label="视图">
+                <button type="button" class="on">周</button>
+                <button type="button">月</button>
+              </div>
+            </div>
+            <div class="pulse-toolbar">
+              <div class="pulse-legend">
+                <span><i class="sw" style="background:var(--ok)"></i>完成</span>
+                <span><i class="sw" style="background:var(--warn)"></i>执行中</span>
+                <span><i class="sw" style="background:var(--brand)"></i>待启</span>
+                <span><i class="sw" style="background:var(--danger)"></i>失败</span>
+                <span class="pill p-plan">Plan</span>
+                <span class="pill p-loop">Loop</span>
+                <span class="pill p-chat">对话</span>
+              </div>
+              <button class="btn-link" type="button">任务 Tab 看全部 →</button>
+            </div>
+            <div class="body-slot pulse">
+              <div class="week has-data">
+                <div class="day">
+                  <div class="dhead"><span>一</span><b>22</b></div>
+                  <div class="slots">
+                    <div class="chip">
+                      <i class="c" style="background:var(--ok)"></i>
+                      <div>
+                        <div class="line1">需求评审</div>
+                        <div class="line2"><span class="num">09:30</span><span class="pill p-plan">Plan</span></div>
+                      </div>
+                    </div>
+                    <div class="chip">
+                      <i class="c" style="background:var(--ok)"></i>
+                      <div>
+                        <div class="line1">架构评审</div>
+                        <div class="line2"><span class="num">14:00</span><span class="pill p-plan">Plan</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="day">
+                  <div class="dhead"><span>二</span><b>23</b></div>
+                  <div class="slots">
+                    <div class="chip">
+                      <i class="c" style="background:var(--ok)"></i>
+                      <div>
+                        <div class="line1">联调准备</div>
+                        <div class="line2"><span class="num">10:15</span><span class="pill p-loop">Loop</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="day today">
+                  <div class="dhead"><span>三 · 今</span><b>24</b></div>
+                  <div class="slots">
+                    <div class="chip">
+                      <i class="c" style="background:var(--warn)"></i>
+                      <div>
+                        <div class="line1">集成测试</div>
+                        <div class="line2"><span class="num">13:40</span><span class="pill p-plan">Plan</span></div>
+                      </div>
+                    </div>
+                    <div class="chip">
+                      <i class="c" style="background:var(--brand)"></i>
+                      <div>
+                        <div class="line1">安全扫描</div>
+                        <div class="line2"><span class="num">待启</span><span class="pill p-plan">Plan</span></div>
+                      </div>
+                    </div>
+                    <div class="chip">
+                      <i class="c" style="background:var(--danger)"></i>
+                      <div>
+                        <div class="line1">压测脚本</div>
+                        <div class="line2"><span class="num">14:02</span><span class="pill p-loop">Loop</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="day">
+                  <div class="dhead"><span>四</span><b>25</b></div>
+                  <div class="slots">
+                    <div class="chip">
+                      <i class="c" style="background:var(--brand)"></i>
+                      <div>
+                        <div class="line1">灰度方案澄清</div>
+                        <div class="line2"><span class="num">排期</span><span class="pill p-chat">对话</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="day"><div class="dhead"><span>五</span><b>26</b></div><div class="day-empty">—</div></div>
+                <div class="day"><div class="dhead"><span>六</span><b>27</b></div><div class="day-empty">—</div></div>
+                <div class="day"><div class="dhead"><span>日</span><b>28</b></div><div class="day-empty">—</div></div>
+              </div>
+              <div class="empty empty-only">
+                <b>本周尚无任务活动</b>
+                <span>提交需求后，Plan / Loop / 对话会按开始时间落在对应日期。空天仍保留格位，布局不塌。</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 执行中与阻塞：首屏只切片，全量跳任务 Tab -->
+          <section class="card panel" id="running" aria-label="执行态">
+            <div class="panel-h">
+              <div>
+                <h2>执行中与阻塞</h2>
+                <p class="note">首屏最多 3 条；其余进任务 Tab</p>
+              </div>
+              <button class="btn-link" type="button">查看全部任务 →</button>
+            </div>
+            <div class="body-slot">
+              <div class="has-data">
+                <div class="row">
+                  <div>
+                    <div class="t">集成测试 · 支付回调链路</div>
+                    <div class="s">等待 Provider 回写</div>
+                    <div class="meta">
+                      <span class="pill p-plan">Plan</span>
+                      <span class="num">13:40 开始</span>
+                      <span>测试工程师 AI</span>
+                    </div>
+                  </div>
+                  <span class="pill p-warn"><i class="d"></i>执行中</span>
+                </div>
+                <div class="row">
+                  <div>
+                    <div class="t">压测脚本生成</div>
+                    <div class="s">失败：缺少采样工件</div>
+                    <div class="meta">
+                      <span class="pill p-loop">Loop</span>
+                      <span class="num">14:02</span>
+                      <span>性能工程师 AI</span>
+                    </div>
+                  </div>
+                  <span class="pill p-danger"><i class="d"></i>失败</span>
+                </div>
+                <div class="row">
+                  <div>
+                    <div class="t">安全扫描</div>
+                    <div class="s">已入队，等待槽位</div>
+                    <div class="meta">
+                      <span class="pill p-plan">Plan</span>
+                      <span>安全工程师 AI</span>
+                    </div>
+                  </div>
+                  <span class="pill p-info"><i class="d"></i>待启</span>
+                </div>
+              </div>
+              <div class="empty empty-only">
+                <b>暂无执行中或阻塞任务</b>
+                <span>有任务推进或卡住时会出现在这里。查看历史与全部状态请用「查看全部任务」。</span>
+              </div>
+            </div>
+          </section>
+
+          <div class="twin">
+            <section class="card panel" aria-label="数字员工池">
+              <div class="panel-h">
+                <div>
+                  <h2>项目数字员工</h2>
+                  <p class="note">谁在忙 / 谁空闲</p>
+                </div>
+                <button class="btn-link" type="button">配置池 →</button>
+              </div>
+              <div class="body-slot">
+                <div class="has-data">
+                  <div class="emp-row">
+                    <span class="av">测</span>
+                    <div><div class="name">测试工程师 AI</div><div class="role">自动化测试</div></div>
+                    <div class="now">集成测试</div>
+                  </div>
+                  <div class="emp-row">
+                    <span class="av">安</span>
+                    <div><div class="name">安全工程师 AI</div><div class="role">安全扫描</div></div>
+                    <div class="now" style="color:var(--ink-3)">空闲 · 待启</div>
+                  </div>
+                  <div class="emp-row">
+                    <span class="av">性</span>
+                    <div><div class="name">性能工程师 AI</div><div class="role">压测</div></div>
+                    <div class="now" style="color:var(--danger)">失败待恢复</div>
+                  </div>
+                </div>
+                <div class="empty empty-only">
+                  <b>尚未配置数字员工池</b>
+                  <span>去配置池绑定可调度员工后，这里显示忙闲态势。</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="card panel" id="runtime" aria-label="Runtime 健康">
+              <div class="panel-h">
+                <div>
+                  <h2>Runtime 节点</h2>
+                  <p class="note">健康摘要；绑定进配置</p>
+                </div>
+                <button class="btn-link" type="button">管理绑定 →</button>
+              </div>
+              <div class="body-slot">
+                <div class="has-data">
+                  <div class="rt-summary">
+                    <span class="pill p-ok"><i class="d"></i>就绪</span>
+                    <div class="txt">
+                      <b>runtime-node-prod-02</b>
+                      <span>online · placement ready</span>
+                    </div>
+                  </div>
+                  <div class="rt-row">
+                    <div>
+                      <div class="name" style="font-weight:700;font-size:12.5px">备用 · runtime-node-dev-01</div>
+                      <div class="role" style="font-size:11px;color:var(--ink-3)">online · 非当前 placement</div>
+                    </div>
+                    <span class="pill p-mute"><i class="d"></i>待命</span>
+                  </div>
+                </div>
+                <div class="empty empty-only">
+                  <b>尚未绑定 Runtime</b>
+                  <span>绑定节点并完成工作区就绪后，这里显示健康摘要。空态卡片保持与左列同宽。</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <aside class="rail" aria-label="项目侧栏">
+          <section class="card panel" id="blockers" aria-label="本项目阻塞">
+            <div class="panel-h">
+              <div>
+                <h2>本项目阻塞 · <span class="num has-data">2</span><span class="num empty-only">0</span></h2>
+                <p class="note">项目卡点 · 非第二收件箱；更多进审批/收件箱</p>
+              </div>
+              <button class="btn-link" type="button">全部待办 →</button>
+            </div>
+            <div class="body-slot tall">
+              <div class="has-data">
+                <div class="row">
+                  <div>
+                    <div class="t">压测失败恢复</div>
+                    <div class="s">缺采样工件 · 重试 / 补证 / 改派</div>
+                    <div class="meta"><span class="num">14:02</span><span>李明或张强</span></div>
+                  </div>
+                  <button class="btn btn-primary btn-sm" type="button">处理</button>
+                </div>
+                <div class="row">
+                  <div>
+                    <div class="t">金丝雀切换审批</div>
+                    <div class="s">发布窗口确认 · any-of-N</div>
+                    <div class="meta"><span class="num">11:20</span><span>审批</span></div>
+                  </div>
+                  <button class="btn btn-ghost btn-sm" type="button">处理</button>
+                </div>
+              </div>
+              <div class="empty empty-only">
+                <b>当前没有项目阻塞</b>
+                <span>决策、审批与系统卡点会出现在这里。跨项目「我的待办」请走收件箱。</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card panel" aria-label="事件流">
+            <div class="panel-h">
+              <div>
+                <h2>事件流</h2>
+                <p class="note">任务执行 + 任务审批；首屏近几条，全量进审计</p>
+              </div>
+              <button class="btn-link" type="button">审计中心 →</button>
+            </div>
+            <div class="body-slot tall">
+              <div class="has-data">
+                <div class="event">
+                  <div class="t">14:02</div>
+                  <div>
+                    <div class="b">任务失败 <span class="pill p-loop">Loop</span></div>
+                    <div class="d">压测脚本生成 · 缺采样工件</div>
+                  </div>
+                </div>
+                <div class="event">
+                  <div class="t">13:40</div>
+                  <div>
+                    <div class="b">任务开始 <span class="pill p-plan">Plan</span></div>
+                    <div class="d">集成测试 · 测试工程师 AI</div>
+                  </div>
+                </div>
+                <div class="event">
+                  <div class="t">11:20</div>
+                  <div>
+                    <div class="b">审批创建 <span class="pill p-info">审批</span></div>
+                    <div class="d">金丝雀切换 · 已扇出负责人</div>
+                  </div>
+                </div>
+                <div class="event">
+                  <div class="t">10:05</div>
+                  <div>
+                    <div class="b">审批通过 <span class="pill p-ok">审批</span></div>
+                    <div class="d">计划版本 v3 · 张强</div>
+                  </div>
+                </div>
+                <div class="event">
+                  <div class="t">09:15</div>
+                  <div>
+                    <div class="b">任务完成 <span class="pill p-loop">Loop</span></div>
+                    <div class="d">联调准备 · 已回写交接包</div>
+                  </div>
+                </div>
+              </div>
+              <div class="empty empty-only">
+                <b>暂无项目事件</b>
+                <span>执行开始/完成/失败与审批创建/通过/驳回会出现在这里。卡片保持固定最小高度。</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card panel" aria-label="项目脉搏">
+            <div class="panel-h">
+              <div>
+                <h2>项目脉搏</h2>
+                <p class="note">轻量摘要 · 详情跳 Tab</p>
+              </div>
+            </div>
+            <div class="pulse-metrics">
+              <div class="pm">
+                <div class="k">预算消耗</div>
+                <div class="v num has-data">56.7%</div>
+                <div class="v num empty-only">—</div>
+                <a href="#">预算台账 →</a>
+              </div>
+              <div class="pm">
+                <div class="k">风险</div>
+                <div class="v has-data" style="color:var(--warn)">中</div>
+                <div class="v empty-only">—</div>
+                <a href="#">风险信号 →</a>
+              </div>
+              <div class="pm">
+                <div class="k">计划版本</div>
+                <div class="v num has-data">v3</div>
+                <div class="v num empty-only">—</div>
+                <a href="#">计划与验收 →</a>
+              </div>
+              <div class="pm">
+                <div class="k">证据 / 工件</div>
+                <div class="v num has-data">32</div>
+                <div class="v num empty-only">0</div>
+                <a href="#">工件 Tab →</a>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <div class="tabs" aria-label="区段导航">
+        <span class="on">工作台</span>
+        <span>任务</span>
+        <span>审批</span>
+        <span>资产</span>
+      </div>
+      <p class="tabs-hint">
+        IA：默认落地工作台（无「概览」对等 Tab）；资产 = 工件+预算+验收；配置走头卡/更多菜单 → 配置页。
+        跳出：全部任务→任务区段；待办→审批；审计→全量事件；空项目用启动卡+单行空态，宽屏 lg 双栏。
+      </p>
+
+      <section class="choice-box">
+        <h3>本轮已吸收的设计约束</h3>
+        <ol>
+          <li>顶栏仅 4 区段：工作台 / 任务 / 审批 / 资产；配置不进对等 Tab</li>
+          <li>事件流 = <span class="rec">任务执行记录 + 任务审批记录</span>（创建/通过/驳回等）</li>
+          <li>运行脉搏每条带 <span class="rec">时间 + Plan/Loop/对话模式</span></li>
+          <li>空态：启动卡 + 单行空态（禁止巨卡 V3EmptyState）；宽屏用媒体查询双栏，不依赖未挂载的 master-detail 容器</li>
+          <li>布局目标：<span class="rec">尽量少滚看完首屏</span>，非强制一屏；溢出用侧栏内滚 / Tab 跳出</li>
+          <li>全量信息不堆首屏：用「查看全部…」跳到任务 Tab / 收件箱 / 审计</li>
+        </ol>
+      </section>
+    </div>
+  </div>
+  <script>
+    const toggle = document.getElementById("toggle-empty");
+    toggle?.addEventListener("change", () => {
+      document.body.classList.toggle("empty-demo", toggle.checked);
+    });
+  </script>
+</body>
+</html>

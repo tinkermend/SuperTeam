@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { TaskLaunchShell } from "./components/task-launch-shell";
 import { TaskLaunchForm, type LaunchMode } from "./components/task-launch-form";
 import { ChatPanel, type ConvertToTaskPayload } from "./components/chat-panel";
@@ -12,23 +12,40 @@ import {
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
 
+type TaskLaunchSearch = {
+  mode?: LaunchMode;
+  project?: string;
+};
+
 type TaskLaunchPageProps = {
   title?: string;
 };
 
 export function TaskLaunchPage({ title = "任务发起" }: TaskLaunchPageProps) {
-  return <TaskLaunchView apiBaseUrl={resolveControlPlaneUrl()} title={title} />;
+  const search = useSearch({ strict: false }) as TaskLaunchSearch;
+  return (
+    <TaskLaunchView
+      apiBaseUrl={resolveControlPlaneUrl()}
+      initialMode={search.mode}
+      initialProjectId={search.project}
+      title={title}
+    />
+  );
 }
 
 type TaskLaunchViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
+  initialMode?: LaunchMode;
+  initialProjectId?: string;
   title?: string;
 };
 
 export function TaskLaunchView({
   apiBaseUrl,
   fetcher,
+  initialMode,
+  initialProjectId,
   title = "任务发起",
 }: TaskLaunchViewProps) {
   const navigate = useNavigate();
@@ -36,8 +53,8 @@ export function TaskLaunchView({
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
   );
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [mode, setMode] = useState<LaunchMode>("plan");
+  const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? "");
+  const [mode, setMode] = useState<LaunchMode>(initialMode ?? "plan");
   const [content, setContent] = useState("");
   const [chatSource, setChatSource] = useState<{
     chatRunId: string;
@@ -54,6 +71,18 @@ export function TaskLaunchView({
   );
 
   useEffect(() => {
+    if (initialMode === "plan" || initialMode === "loop" || initialMode === "chat") {
+      setMode(initialMode);
+    }
+  }, [initialMode]);
+
+  useEffect(() => {
+    if (initialProjectId) {
+      setSelectedProjectId(initialProjectId);
+    }
+  }, [initialProjectId]);
+
+  useEffect(() => {
     if (!activeProjects.length) {
       if (selectedProjectId) {
         setSelectedProjectId("");
@@ -61,9 +90,16 @@ export function TaskLaunchView({
       return;
     }
     if (!activeProjects.some((project) => project.id === selectedProjectId)) {
+      if (
+        initialProjectId &&
+        activeProjects.some((project) => project.id === initialProjectId)
+      ) {
+        setSelectedProjectId(initialProjectId);
+        return;
+      }
       setSelectedProjectId(activeProjects[0].id);
     }
-  }, [activeProjects, selectedProjectId]);
+  }, [activeProjects, initialProjectId, selectedProjectId]);
 
   const submitMutation = useMutation({
     mutationFn: ({
@@ -91,16 +127,11 @@ export function TaskLaunchView({
     setMode("plan");
     setContent(draft);
     setChatSource({ chatRunId, digitalEmployeeId });
-    // Default the task form's project to the chat run's anchor; user can still
-    // change it before submitting.
     setSelectedProjectId(anchorProjectId);
   }
 
   function handleModeChange(nextMode: LaunchMode) {
     if (nextMode === "chat") {
-      // Prevents stale lineage: a chat-sourced demand's source_refs must not
-      // leak onto a later, unrelated demand submitted after switching back to
-      // chat mode and never converting anything from it.
       setChatSource(null);
     }
     setMode(nextMode);

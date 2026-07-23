@@ -16,7 +16,6 @@ import {
   History,
   MoreHorizontal,
   Settings2,
-  SquareArrowOutUpRight,
   UserRound,
 } from "lucide-react";
 import {
@@ -97,8 +96,15 @@ import {
 } from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
+import { ProjectAssetsPanel } from "./project-assets-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { PlanGraphCanvas } from "./plan-graph-canvas";
+import { ProjectOpsHome } from "./project-ops-home";
+import {
+  assetsInitialTabFromQuery,
+  normalizeProjectDetailSection,
+  type ProjectDetailSection,
+} from "../lib/project-detail-section";
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -120,7 +126,7 @@ type ProjectOperationalDetailProps = {
   executionTraceIsLoading?: boolean;
   executionSummaries: ProjectExecutionSummary[];
   focusDecisionId?: string;
-  initialTab?: ProjectOperationalTab;
+  initialTab?: ProjectDetailSection | string;
   isArchived?: boolean;
   onArchiveProject: () => void;
   onDeleteProject?: () => void;
@@ -156,17 +162,8 @@ type ProjectOperationalDetailProps = {
   transferRequests: ProjectTransferRequest[];
 };
 
-type ProjectOperationalTab =
-  | "overview"
-  | "tasks"
-  | "artifacts"
-  | "approval"
-  | "budget"
-  | "acceptance"
-  | "config";
-
-const projectTabTriggerClass =
-  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-v3-card-soft data-[state=inactive]:hover:text-v3-ink";
+const sectionTriggerClass =
+  "h-auto flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-3.5 pb-2.5 pt-1 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:border-v3-brand data-[state=active]:bg-transparent data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-transparent data-[state=inactive]:hover:text-v3-ink";
 
 export function ProjectOperationalDetail({
   acceptance,
@@ -188,7 +185,7 @@ export function ProjectOperationalDetail({
   executionTraceIsLoading,
   executionSummaries,
   focusDecisionId,
-  initialTab = "overview",
+  initialTab = "workbench",
   isArchived,
   onArchiveProject,
   onDeleteProject,
@@ -203,7 +200,7 @@ export function ProjectOperationalDetail({
   onResolveDecision,
   onDismissTask,
   dismissTaskPending,
-  onSubmitDemand,
+  onSubmitDemand: _onSubmitDemand,
   overview,
   planRevisions,
   principalNamesById,
@@ -216,11 +213,22 @@ export function ProjectOperationalDetail({
   transferRequests,
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<ProjectOperationalTab>(initialTab);
+  const initialSection = normalizeProjectDetailSection(
+    typeof initialTab === "string" ? initialTab : undefined,
+  );
+  const [activeSection, setActiveSection] =
+    useState<ProjectDetailSection>(initialSection);
   const [selectedExitDeliverable, setSelectedExitDeliverable] = useState("");
+  const assetsInitial = assetsInitialTabFromQuery(
+    typeof initialTab === "string" ? initialTab : undefined,
+  );
 
   useEffect(() => {
-    setActiveTab(initialTab);
+    setActiveSection(
+      normalizeProjectDetailSection(
+        typeof initialTab === "string" ? initialTab : undefined,
+      ),
+    );
   }, [initialTab, focusDecisionId]);
 
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
@@ -305,55 +313,80 @@ export function ProjectOperationalDetail({
               <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
                 {project.goal}
               </p>
+              {projectOwners.length > 0 ? (
+                <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-v3-ink-2">
+                  <span>负责人</span>
+                  {projectOwners.map((owner) => {
+                    const name =
+                      owner.display_name_snapshot ||
+                      principalNamesById?.get(owner.principal_id) ||
+                      "负责人";
+                    const href = projectMemberHref(owner);
+                    return href ? (
+                      <Link
+                        className="font-semibold text-v3-ink underline-offset-2 hover:underline"
+                        key={owner.id}
+                        to={href}
+                      >
+                        {name}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold" key={owner.id}>
+                        {name}
+                      </span>
+                    );
+                  })}
+                </p>
+              ) : null}
               <p className="mt-1 text-xs text-v3-ink-3">
-                目录名 {project.name}
+                目录名 {project.directory_name || project.name}
                 {project.workspace_ready_error
                   ? ` · ${project.workspace_ready_error}`
                   : ""}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-v3-ink-2">
                 <HeroFactLink
-                  label={`阶段 ${projectStatusLabel(currentPhase)}`}
-                  targetId="project-overview-plan"
-                />
-                <span aria-hidden className="text-v3-ink-3">·</span>
-                <HeroFactLink
-                  label={`待处理 ${pendingOwnerDecisions.length} 项`}
+                  label={`阻塞 ${pendingOwnerDecisions.length}`}
                   targetId="project-overview-pending"
                 />
                 <span aria-hidden className="text-v3-ink-3">·</span>
                 <HeroFactLink
-                  label={`执行中 ${activeTasks.length} 个任务`}
+                  label={`执行中 ${activeTasks.length}`}
                   targetId="project-overview-execution"
                 />
                 <span aria-hidden className="text-v3-ink-3">·</span>
+                <HeroFactLink
+                  label={`阶段 ${projectStatusLabel(currentPhase)}`}
+                  targetId="project-overview-execution"
+                />
                 {latestDemand ? (
-                  <HeroFactLink
-                    className="max-w-56 truncate"
-                    label={`需求 ${latestDemand.title}`}
-                    targetId="project-overview-demand"
-                  />
-                ) : (
-                  <span>需求 暂无</span>
-                )}
+                  <>
+                    <span aria-hidden className="text-v3-ink-3">·</span>
+                    <span className="max-w-56 truncate">
+                      需求 {latestDemand.title}
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <V3Button
-              disabled={isArchived}
-              type="button"
-              onClick={onSubmitDemand}
-            >
-              <FileText data-icon="inline-start" />
-              提交需求
-            </V3Button>
-            <V3Button asChild variant="outline">
-              <Link search={{ project: project.id }} to="/run-overview">
-                <SquareArrowOutUpRight data-icon="inline-start" />
-                在运行总览查看
-              </Link>
-            </V3Button>
+            {isArchived ? (
+              <V3Button disabled type="button">
+                <FileText data-icon="inline-start" />
+                提交需求
+              </V3Button>
+            ) : (
+              <V3Button asChild>
+                <Link
+                  search={{ mode: "plan", project: project.id }}
+                  to="/task-launches"
+                >
+                  <FileText data-icon="inline-start" />
+                  提交需求
+                </Link>
+              </V3Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <V3Button
@@ -410,667 +443,148 @@ export function ProjectOperationalDetail({
       </SoftCard>
 
       <Tabs
-        className="grid min-w-0 gap-4"
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as ProjectOperationalTab)}
+        className="grid min-w-0 gap-3"
+        value={activeSection}
+        onValueChange={(value) => setActiveSection(value as ProjectDetailSection)}
       >
-        <div className="min-w-0 overflow-x-auto pb-1">
+        <div className="min-w-0 w-full border-b border-v3-line">
           <TabsList
-            aria-label="项目工作中枢"
-            className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[14px] bg-v3-card p-1.5 text-v3-ink shadow-v3 sm:min-w-0"
+            aria-label="项目工作区段"
+            className="flex h-auto w-full min-w-0 max-w-none justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 text-v3-ink shadow-none"
           >
-            <TabsTrigger className={projectTabTriggerClass} value="overview">
-              概览
+            <TabsTrigger className={sectionTriggerClass} value="workbench">
+              工作台
             </TabsTrigger>
-            <TabsTrigger className={projectTabTriggerClass} value="tasks">
+            <TabsTrigger className={sectionTriggerClass} value="tasks">
               任务
             </TabsTrigger>
-            <TabsTrigger className={projectTabTriggerClass} value="artifacts">
-              工件
-            </TabsTrigger>
-            <TabsTrigger className={projectTabTriggerClass} value="approval">
+            <TabsTrigger className={sectionTriggerClass} value="approval">
               审批
             </TabsTrigger>
-            <TabsTrigger className={projectTabTriggerClass} value="budget">
-              预算
-            </TabsTrigger>
-            <TabsTrigger className={projectTabTriggerClass} value="acceptance">
-              验收
-            </TabsTrigger>
-            <TabsTrigger className={projectTabTriggerClass} value="config">
-              配置
+            <TabsTrigger className={sectionTriggerClass} value="assets">
+              资产
             </TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent className="m-0 grid min-w-0 gap-4" value="overview">
-          {runtimePlacementPanel}
+        <TabsContent className="m-0 grid min-w-0 gap-4" value="workbench">
+          <ProjectOpsHome
+            artifactsCount={artifacts?.length}
+            budgetSummary={budgetSummary}
+            decisionRequests={decisionRequests}
+            demands={demands}
+            events={events}
+            isArchived={isArchived}
+            onResolveDecision={onResolveDecision}
+            onShowAllTasks={() => setActiveSection("tasks")}
+            overview={overview}
+            planRevisions={planRevisions}
+            principalNamesById={principalNamesById}
+            project={project}
+            runtimePlacementPanel={runtimePlacementPanel}
+            taskGraph={taskGraph}
+            tasks={tasks}
+          />
 
-          {taskGraph && taskGraph.nodes.length > 0 ? (
-            <section className="grid scroll-mt-20 gap-2" data-testid="project-plan-graph-section" id="project-overview-execution">
-              <div className="flex items-center gap-2 px-1">
-                <ClipboardList className="size-4 text-v3-ink-2" />
-                <h3 className="text-sm font-semibold tracking-normal">当前执行</h3>
-                <StatusPill tone="mute">
-                  {planTaskGraphSummaryLabel(taskGraph)}
-                </StatusPill>
-              </div>
-              <PlanGraphCanvas graph={taskGraph} />
-            </section>
-          ) : null}
-
-      <MasterDetailLayout
-        narrowDetail="stack"
-        rail="md"
-        master={
-          <section className="grid min-w-0 gap-4">
-            <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-demand">
-              <PanelHeader
-                icon={<FileText />}
-                title="当前需求"
-                meta={latestDemand ? demandStatusLabel(latestDemand.status) : "暂无需求"}
-              />
-              {latestDemand ? (
-                <div className="grid gap-2 p-4">
-                  <DemandTitle demand={latestDemand} />
-                  <p className="line-clamp-3 text-sm leading-6 text-v3-ink-2">
-                    {latestDemand.content || "需求内容已记录，等待系统生成下一步计划。"}
-                  </p>
-                  {latestDemand.status === "failed" ? (
-                    <DemandFailureDiagnosis
-                      demandId={latestDemand.id}
-                      fact={taskGraph?.blocking_facts?.[0]}
-                    />
-                  ) : null}
-                </div>
-              ) : (
-                <EmptyLine
-                  action={
-                    <V3Button
-                      disabled={isArchived}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                      onClick={onSubmitDemand}
-                    >
-                      <FileText data-icon="inline-start" />
-                      提交需求
-                    </V3Button>
-                  }
-                  label="暂无提交到项目的需求"
-                />
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <div
+              className={cn(
+                "overflow-hidden rounded-[12px] border border-dashed border-v3-line",
+                advancedOpen ? "border-solid bg-v3-card shadow-v3" : "bg-transparent",
               )}
-            </SoftCard>
-
-            <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-plan">
-              <PanelHeader
-                icon={<GitBranch />}
-                title="计划确认"
-                meta={
-                  latestPlanRevision
-                    ? `v${latestPlanRevision.revision_number}`
-                    : "暂无版本"
-                }
-              />
-              {latestPlanRevision ? (
-                <div className="grid gap-4 p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
-                          {statusLabel(latestPlanRevision.status)}
-                        </StatusPill>
-                        {latestPlanRevision.review_required ? (
-                          <StatusPill tone="warn">需人工复核</StatusPill>
-                        ) : (
-                          <StatusPill tone="ok">自动接受</StatusPill>
-                        )}
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-sm text-v3-ink-2">
-                        {planRevisionSummary(latestPlanRevision)}
-                      </p>
-                    </div>
-                    {latestPlanReviewDecision ? (
-                      <div className="flex shrink-0 flex-col items-end gap-2">
-                        {planRevisionAvailableExits(latestPlanRevision).length > 1 ? (
-                          <div className="flex items-center gap-2">
-                            <Label
-                              className="shrink-0 text-xs text-v3-ink-2"
-                              htmlFor="plan-review-target-exit"
-                            >
-                              改选交付出口
-                            </Label>
-                            <Select
-                              value={
-                                selectedExitDeliverable ||
-                                planRevisionExitDeliverable(latestPlanRevision)
-                              }
-                              onValueChange={setSelectedExitDeliverable}
-                            >
-                              <SelectTrigger
-                                className="h-8 w-[220px] text-xs"
-                                id="plan-review-target-exit"
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {planRevisionAvailableExits(latestPlanRevision).map(
-                                  (exit) => (
-                                    <SelectItem key={exit.deliverable} value={exit.deliverable}>
-                                      {exit.label}
-                                    </SelectItem>
-                                  ),
-                                )}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ) : null}
-                        <div className="flex flex-wrap gap-2">
-                          <V3Button
-                            aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
-                            size="sm"
-                            type="button"
-                            onClick={() =>
-                              onResolveDecision(latestPlanReviewDecision.id, "approved")
-                            }
-                          >
-                            批准
-                          </V3Button>
-                          <V3Button
-                            aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                            onClick={() =>
-                              onResolveDecision(
-                                latestPlanReviewDecision.id,
-                                "request_changes",
-                                planRevisionAvailableExits(latestPlanRevision).length > 1
-                                  ? selectedExitDeliverable ||
-                                      planRevisionExitDeliverable(latestPlanRevision)
-                                  : undefined,
-                              )
-                            }
-                          >
-                            要求修改
-                          </V3Button>
-                          <V3Button
-                            aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                            onClick={() =>
-                              onResolveDecision(latestPlanReviewDecision.id, "rejected")
-                            }
-                          >
-                            拒绝
-                          </V3Button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                  {planRevisionHasBoundTemplate(latestPlanRevision) &&
-                  planRevisionTemplateKey(latestPlanRevision) ? (
-                    <RuntimeMeta
-                      label="场景模板"
-                      value={planRevisionTemplateKey(latestPlanRevision)}
-                    />
-                  ) : null}
-                  {planRevisionHasBoundTemplate(latestPlanRevision) &&
-                  planRevisionExitLabel(latestPlanRevision) ? (
-                    <RuntimeMeta
-                      label="交付出口"
-                      value={planRevisionExitLabel(latestPlanRevision)}
-                    />
-                  ) : null}
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <FactTile
-                      icon={<ClipboardList />}
-                      label="计划任务"
-                      value={`${planRevisionTasks(latestPlanRevision).length} 项`}
-                    />
-                    <FactTile
-                      icon={<Bot />}
-                      label="能力需求"
-                      value={formatShortList(planRevisionCapabilityLabels(latestPlanRevision))}
-                    />
-                    <FactTile
-                      icon={<FileCheck2 />}
-                      label="风险等级"
-                      value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
-                    />
-                  </div>
-                  <div className="grid gap-3">
-                    <div className="grid gap-2" data-testid="plan-dispatch-order">
-                      <div className="flex items-center gap-2 px-1">
-                        <ClipboardList className="size-4 text-v3-ink-2" />
-                        <h4 className="text-sm font-semibold text-v3-ink">调度顺序</h4>
-                      </div>
-                      <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
-                        {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
-                          (task, index) => (
-                            <div
-                              className="grid gap-2 p-3"
-                              key={`${planRevisionTaskKey(task)}-${index}`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <p className="min-w-0 text-sm font-medium text-v3-ink">
-                                  {planRevisionTaskTitle(task)}
-                                </p>
-                                <StatusPill tone="info">第 {index + 1} 步</StatusPill>
-                              </div>
-                              <RuntimeMeta
-                                label="执行员工"
-                                value={planRevisionTaskEmployee(
-                                  task,
-                                  servicePool,
-                                  principalNamesById,
-                                )}
-                              />
-                              <RuntimeMeta
-                                label="选择原因"
-                                value={
-                                  stringField(task, "employee_selection_reason") ||
-                                  "未说明选择原因"
-                                }
-                              />
-                            </div>
-                          ),
-                        )}
-                        {planRevisionTasks(latestPlanRevision).length === 0 ? (
-                          <EmptyLine label="计划版本尚未包含可展示任务" />
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2" data-testid="plan-acceptance-criteria">
-                      <div className="flex items-center gap-2 px-1">
-                        <FileCheck2 className="size-4 text-v3-ink-2" />
-                        <h4 className="text-sm font-semibold text-v3-ink">验收判据</h4>
-                      </div>
-                      <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
-                        {planRevisionAcceptanceCriteria(latestPlanRevision).map(
-                          (criterion, index) => {
-                            const criterionId =
-                              stringField(criterion, "id") || `criterion-${index}`;
-                            const method =
-                              planAcceptanceCriterionVerificationMethod(criterion);
-                            const severity = planAcceptanceCriterionSeverity(criterion);
-                            const isAmbiguous =
-                              planAcceptanceCriterionAmbiguityFlag(criterion);
-                            const evidenceHint =
-                              planAcceptanceCriterionEvidenceHint(criterion);
-
-                            return (
-                              <div className="grid gap-2 p-3" key={`${criterionId}-${index}`}>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <StatusPill
-                                    data-testid={`plan-acceptance-criterion-method-${criterionId}`}
-                                    showDot={false}
-                                    tone={method === "human_judgment" ? "info" : "mute"}
-                                  >
-                                    {method === "human_judgment" ? "人类判定" : "自动验证"}
-                                  </StatusPill>
-                                  {severity === "non_blocking" ? (
-                                    <StatusPill
-                                      data-testid={`plan-acceptance-criterion-severity-${criterionId}`}
-                                      showDot={false}
-                                      tone="mute"
-                                    >
-                                      非阻断
-                                    </StatusPill>
-                                  ) : null}
-                                </div>
-                                <PlanAcceptanceCriterionStatement
-                                  criterionId={criterionId}
-                                  statement={stringField(criterion, "statement")}
-                                />
-                                {isAmbiguous ? (
-                                  <p
-                                    className="flex items-center gap-1.5 text-xs font-medium text-v3-warn-text"
-                                    data-testid={`plan-acceptance-criterion-ambiguity-${criterionId}`}
-                                  >
-                                    <AlertTriangle className="size-3.5 shrink-0" />
-                                    断言可能不可判定，请改写后再批准
-                                  </p>
-                                ) : null}
-                                {evidenceHint ? (
-                                  <p
-                                    className="text-xs text-v3-ink-3"
-                                    data-testid={`plan-acceptance-criterion-evidence-hint-${criterionId}`}
-                                  >
-                                    证据提示：{evidenceHint}
-                                  </p>
-                                ) : null}
-                                <RuntimeMeta
-                                  label="满足任务"
-                                  value={planRevisionCriterionSatisfiedLabel(
-                                    criterion,
-                                    latestPlanRevision,
-                                  )}
-                                />
-                              </div>
-                            );
-                          },
-                        )}
-                        {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
-                          <EmptyLine label="本计划未声明验收判据" />
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {planRevisionConstraintNotes(latestPlanRevision).length > 0 ? (
-                      <div className="grid gap-2" data-testid="plan-constraint-notes">
-                        <div className="flex items-center gap-2 px-1">
-                          <FileCheck2 className="size-4 text-v3-ink-2" />
-                          <h4 className="text-sm font-semibold text-v3-ink">约束说明</h4>
-                        </div>
-                        <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
-                          {planRevisionConstraintNotes(latestPlanRevision).map(
-                            (note, index) => (
-                              <div
-                                className="flex items-start gap-2 p-3"
-                                key={`${note.kind}-${index}`}
-                              >
-                                <StatusPill tone={constraintNoteTone(note.kind)}>
-                                  {constraintNoteKindLabel(note.kind)}
-                                </StatusPill>
-                                <p className="min-w-0 flex-1 text-xs text-v3-ink-2">
-                                  {note.message}
-                                </p>
-                              </div>
-                            ),
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
-              )}
-            </SoftCard>
-
-            {taskGraph && taskGraph.nodes.length > 0 ? null : (
-              <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-execution">
-                <PanelHeader
-                  icon={<ClipboardList />}
-                  title="当前执行"
-                  meta={`${activeTasks.length} 项`}
-                />
-                <div className="divide-y divide-v3-line">
-                  {activeTasks.length === 0 ? (
-                    <EmptyLine label="当前没有正在执行的数字员工任务" />
-                  ) : (
-                    [...activeTasks]
-                      .sort((left, right) =>
-                        compareIsoDesc(
-                          left.updated_at ?? left.created_at,
-                          right.updated_at ?? right.created_at,
-                        ),
-                      )
-                      .slice(0, 6)
-                      .map((task) => (
-                      <div className="grid gap-1 p-4" key={task.id}>
-                        <div className="flex items-center justify-between gap-3">
-                          <ProjectTaskLink task={task} />
-                          <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
-                        </div>
-                        <p className="line-clamp-2 text-xs text-v3-ink-2">
-                          {task.summary || "等待系统分派数字员工执行。"}
-                        </p>
-                        {task.updated_at || task.created_at ? (
-                          <p
-                            className="tabular-nums text-[11px] text-v3-ink-3"
-                            title={formatAbsoluteDateTime(task.updated_at ?? task.created_at ?? "")}
-                          >
-                            更新 {formatRelativeTime(task.updated_at ?? task.created_at ?? "")}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </SoftCard>
-            )}
-
-            <SoftCard className="overflow-hidden">
-              <PanelHeader
-                icon={<FileCheck2 />}
-                title="最新结果"
-                meta={latestResult ? "已回写" : "暂无结果"}
-              />
-              {latestResult ? (
-                <div className="grid gap-2 p-4">
-                  <p className="line-clamp-3 text-sm font-medium text-v3-ink">
-                    {latestResult.conclusion}
-                  </p>
-                  {latestResult.recommended_next_action ? (
-                    <p className="line-clamp-2 text-xs text-v3-ink-2">
-                      {latestResult.recommended_next_action}
-                    </p>
-                  ) : null}
-                  <RuntimeMeta
-                    label="执行员工"
-                    value={resolvePrincipalLabel(
-                      latestResult.digital_employee_id,
-                      undefined,
-                      principalNamesById,
-                    )}
-                  />
-                </div>
-              ) : (
-                <EmptyLine label="数字员工完成任务后会在这里回写结果" />
-              )}
-            </SoftCard>
-
-            <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-pending">
-              <PanelHeader
-                icon={<UserRound />}
-                title="待负责人处理"
-                meta={`${pendingOwnerActionItems.length} 项`}
-              />
-              <div className="divide-y divide-v3-line">
-                {pendingOwnerActionItems.length === 0 ? (
-                  <EmptyLine label="当前没有需要项目负责人处理的事项" />
-                ) : (
-                  pendingOwnerActionItems.slice(0, 5).map((decision) => (
-                    <div className="grid gap-3 p-4" key={decision.id}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
-                            {decision.title_snapshot}
-                          </p>
-                          <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
-                            {decision.summary_snapshot &&
-                            decision.summary_snapshot !== decision.title_snapshot
-                              ? decision.summary_snapshot
-                              : "等待负责人处理"}
-                          </p>
-                        </div>
-                        <StatusPill tone={decisionTone(decision.status_snapshot)}>
-                          {decisionStatusLabel(decision.status_snapshot)}
-                        </StatusPill>
-                      </div>
-                      <DecisionRequestActions
-                        decision={decision}
-                        onResolveDecision={onResolveDecision}
-                      />
-                    </div>
-                  ))
-                )}
-              </div>
-            </SoftCard>
-
-            {businessBlocker ? (
-              <SoftCard className="overflow-hidden">
-                <PanelHeader icon={<CircleDot />} title="当前阻塞" meta={statusLabel(businessBlocker.status)} />
-                <div className="grid gap-2 p-4">
-                  <p className="text-sm font-semibold text-v3-ink">{businessBlocker.title}</p>
-                  <p className="text-xs leading-5 text-v3-ink-2">{businessBlocker.description}</p>
-                </div>
-              </SoftCard>
-            ) : null}
-          </section>
-        }
-        detail={
-          <aside className="grid min-w-0 gap-4 self-start @4xl/master-detail:sticky @4xl/master-detail:top-4">
-            <MemberPanel
-              emptyLabel="当前项目尚未设置项目负责人"
-              icon={<UserRound />}
-              members={projectOwners}
-              principalNamesById={principalNamesById}
-              title="项目负责人组"
-            />
-            <MemberPanel
-              emptyLabel="当前项目服务池为空"
-              icon={<Bot />}
-              members={servicePool}
-              principalNamesById={principalNamesById}
-              title="项目服务池"
-            />
-            <SoftCard className="overflow-hidden">
-              <PanelHeader
-                icon={<History />}
-                title="事件流"
-                meta={`${recentEvents.length} 条`}
-              />
-              <div className="divide-y divide-v3-line">
-                {recentEvents.length === 0 ? (
-                  <EmptyLine label="暂无项目事件" />
-                ) : (
-                  recentEvents.slice(0, 6).map((event) => {
-                    const eventDisplay = projectEventDisplay(event);
-                    const actorLabel = projectEventActorLabel(
-                      event,
-                      principalNamesById,
-                    );
-                    return (
-                      <div className="flex gap-3 p-4" key={event.id}>
-                        <span className="mt-1 size-2 shrink-0 rounded-full bg-v3-brand" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <p className="text-sm font-medium">{eventDisplay.title}</p>
-                            {actorLabel ? (
-                              <span className="text-xs text-v3-ink-3">{actorLabel}</span>
-                            ) : null}
-                            {event.created_at ? (
-                              <time
-                                className="text-xs text-v3-ink-3 tabular-nums"
-                                dateTime={event.created_at}
-                                title={formatAbsoluteDateTime(event.created_at)}
-                              >
-                                {formatRelativeTime(event.created_at)}
-                              </time>
-                            ) : null}
-                            <span className="text-xs text-v3-ink-3">
-                              #{event.sequence_number}
-                            </span>
-                          </div>
-                          {!eventSummaryDuplicatesTitle(
-                            eventDisplay.title,
-                            eventDisplay.summary,
-                          ) ? (
-                            <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">
-                              {eventDisplay.summary}
-                            </p>
-                          ) : null}
-                          {eventDisplay.resource ? (
-                            <p className="mt-1 text-xs text-v3-ink-2">
-                              {eventDisplay.resource}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </SoftCard>
-          </aside>
-        }
-      />
-
-      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-        <div className="overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3">
-          <CollapsibleTrigger asChild>
-            <button
-              aria-label={advancedOpen ? "收起高级项目事实" : "展开高级项目事实"}
-              className="flex w-full items-center justify-between gap-3 border-b border-v3-line p-4 text-left"
-              type="button"
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <IconTile tone="brand" size="sm" className="size-8 rounded-[10px] [&_svg]:size-3.5">
-                  <GitBranch />
-                </IconTile>
-                <span className="min-w-0">
-                  <span className="block font-semibold text-v3-ink">高级项目事实</span>
-                  <span className="mt-0.5 block text-xs text-v3-ink-2">
-                    计划历史、任务图、执行记录、治理、预算、归档和内部协调事实
+              <CollapsibleTrigger asChild>
+                <button
+                  aria-label={advancedOpen ? "收起高级项目事实" : "展开高级项目事实"}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left",
+                    advancedOpen && "border-b border-v3-line",
+                  )}
+                  type="button"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] font-semibold text-v3-ink-2">
+                      高级项目事实
+                    </span>
+                    {!advancedOpen ? (
+                      <span className="mt-0.5 block text-[11px] text-v3-ink-3">
+                        计划图 · 需求 · 执行记录 · 治理
+                      </span>
+                    ) : null}
                   </span>
-                </span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-v3-ink-2">
-                {advancedOpen ? "收起" : "展开"}
-                <ChevronDown
-                  className={cn("size-4 transition-transform", advancedOpen && "rotate-180")}
+                  <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-semibold text-v3-ink-3">
+                    {advancedOpen ? "收起" : "展开"}
+                    <ChevronDown
+                      className={cn("size-3.5 transition-transform", advancedOpen && "rotate-180")}
+                    />
+                  </span>
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <MasterDetailLayout
+                  className="p-4"
+                  narrowDetail="stack"
+                  rail="md"
+                  master={
+                    <section className="grid min-w-0 gap-4">
+                      {taskGraph && taskGraph.nodes.length > 0 ? (
+                        <section className="grid gap-2" data-testid="project-plan-graph-section">
+                          <div className="flex items-center gap-2 px-1">
+                            <ClipboardList className="size-4 text-v3-ink-2" />
+                            <h3 className="text-sm font-semibold tracking-normal">当前执行图</h3>
+                          </div>
+                          <PlanGraphCanvas graph={taskGraph} />
+                        </section>
+                      ) : null}
+                      <DispatchGateSummary
+                        gates={dispatchGates ?? []}
+                        taskTitle={dispatchGateTaskTitle}
+                      />
+                      <AdvancedRouteDecisions routeDecisions={routeDecisions} />
+                      <ProjectExecutionTracePanel
+                        errorMessage={executionTraceErrorMessage}
+                        isError={executionTraceIsError}
+                        isLoading={executionTraceIsLoading}
+                        onRetry={onRetryExecutionTrace}
+                        trace={executionTrace}
+                      />
+                      <ProjectGovernanceTabs
+                        acceptance={acceptance}
+                        archivePreview={archivePreview}
+                        archiveSnapshots={archiveSnapshots}
+                        artifacts={artifacts}
+                        budgetLedger={budgetLedger}
+                        budgetSummary={budgetSummary}
+                        decisionRequestCount={decisionRequests.length}
+                        demandCount={demands.length}
+                        evidence={evidence}
+                        executionSummaryCount={executionSummaries.length}
+                        onCreateAcceptance={onCreateAcceptance}
+                        onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+                        onCreateEvidence={onCreateEvidence}
+                        onPatchEvidence={onPatchEvidence}
+                        reports={reports}
+                        routeDecisionCount={routeDecisions.length}
+                        taskCount={tasks.length}
+                      />
+                    </section>
+                  }
+                  detail={
+                    <aside className="grid min-w-0 gap-4">
+                      <AdvancedCoordinationJobs coordinationJobs={coordinationJobs} />
+                      <AdvancedExecutionSummaries executionSummaries={executionSummaries} />
+                      <AdvancedTransferRequests transferRequests={transferRequests} />
+                      <AdvancedWorkflow project={project} overview={overview} />
+                      <AdvancedDemands
+                        blockingFact={taskGraph?.blocking_facts?.[0]}
+                        demands={demands}
+                      />
+                    </aside>
+                  }
                 />
-              </span>
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <MasterDetailLayout
-              className="p-4"
-              narrowDetail="stack"
-              rail="md"
-              master={
-                <section className="grid min-w-0 gap-4">
-                  <DispatchGateSummary
-                    gates={dispatchGates ?? []}
-                    taskTitle={dispatchGateTaskTitle}
-                  />
-                  <AdvancedRouteDecisions routeDecisions={routeDecisions} />
-                  <ProjectExecutionTracePanel
-                    errorMessage={executionTraceErrorMessage}
-                    isError={executionTraceIsError}
-                    isLoading={executionTraceIsLoading}
-                    onRetry={onRetryExecutionTrace}
-                    trace={executionTrace}
-                  />
-                  <ProjectGovernanceTabs
-                    acceptance={acceptance}
-                    archivePreview={archivePreview}
-                    archiveSnapshots={archiveSnapshots}
-                    artifacts={artifacts}
-                    budgetLedger={budgetLedger}
-                    budgetSummary={budgetSummary}
-                    decisionRequestCount={decisionRequests.length}
-                    demandCount={demands.length}
-                    evidence={evidence}
-                    executionSummaryCount={executionSummaries.length}
-                    onCreateAcceptance={onCreateAcceptance}
-                    onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-                    onCreateEvidence={onCreateEvidence}
-                    onPatchEvidence={onPatchEvidence}
-                    reports={reports}
-                    routeDecisionCount={routeDecisions.length}
-                    taskCount={tasks.length}
-                  />
-                </section>
-              }
-              detail={
-                <aside className="grid min-w-0 gap-4">
-                  <AdvancedCoordinationJobs coordinationJobs={coordinationJobs} />
-                  <AdvancedExecutionSummaries executionSummaries={executionSummaries} />
-                  <AdvancedTransferRequests transferRequests={transferRequests} />
-                  <AdvancedWorkflow project={project} overview={overview} />
-                  <AdvancedDemands demands={demands} />
-                </aside>
-              }
-            />
-          </CollapsibleContent>
-        </div>
-      </Collapsible>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
         </TabsContent>
 
         <TabsContent className="m-0" value="tasks">
@@ -1082,30 +596,297 @@ export function ProjectOperationalDetail({
           />
         </TabsContent>
 
-        <TabsContent className="m-0" value="artifacts">
-          <ProjectGovernanceTabs
-            acceptance={acceptance}
-            archivePreview={archivePreview}
-            archiveSnapshots={archiveSnapshots}
-            artifacts={artifacts}
-            budgetLedger={budgetLedger}
-            budgetSummary={budgetSummary}
-            decisionRequestCount={decisionRequests.length}
-            demandCount={demands.length}
-            evidence={evidence}
-            executionSummaryCount={executionSummaries.length}
-            initialTab="artifacts"
-            onCreateAcceptance={onCreateAcceptance}
-            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-            onCreateEvidence={onCreateEvidence}
-            onPatchEvidence={onPatchEvidence}
-            reports={reports}
-            routeDecisionCount={routeDecisions.length}
-            taskCount={tasks.length}
-          />
-        </TabsContent>
+        <TabsContent className="m-0 grid min-w-0 gap-4" value="approval">
 
-        <TabsContent className="m-0" value="approval">
+                      <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-plan">
+                        <PanelHeader
+                          icon={<GitBranch />}
+                          title="计划确认"
+                          meta={
+                            latestPlanRevision
+                              ? `v${latestPlanRevision.revision_number}`
+                              : "暂无版本"
+                          }
+                        />
+                        {latestPlanRevision ? (
+                          <div className="grid gap-4 p-4">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
+                                    {statusLabel(latestPlanRevision.status)}
+                                  </StatusPill>
+                                  {latestPlanRevision.review_required ? (
+                                    <StatusPill tone="warn">需人工复核</StatusPill>
+                                  ) : (
+                                    <StatusPill tone="ok">自动接受</StatusPill>
+                                  )}
+                                </div>
+                                <p className="mt-2 line-clamp-2 text-sm text-v3-ink-2">
+                                  {planRevisionSummary(latestPlanRevision)}
+                                </p>
+                              </div>
+                              {latestPlanReviewDecision ? (
+                                <div className="flex shrink-0 flex-col items-end gap-2">
+                                  {planRevisionAvailableExits(latestPlanRevision).length > 1 ? (
+                                    <div className="flex items-center gap-2">
+                                      <Label
+                                        className="shrink-0 text-xs text-v3-ink-2"
+                                        htmlFor="plan-review-target-exit"
+                                      >
+                                        改选交付出口
+                                      </Label>
+                                      <Select
+                                        value={
+                                          selectedExitDeliverable ||
+                                          planRevisionExitDeliverable(latestPlanRevision)
+                                        }
+                                        onValueChange={setSelectedExitDeliverable}
+                                      >
+                                        <SelectTrigger
+                                          className="h-8 w-[220px] text-xs"
+                                          id="plan-review-target-exit"
+                                        >
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {planRevisionAvailableExits(latestPlanRevision).map(
+                                            (exit) => (
+                                              <SelectItem key={exit.deliverable} value={exit.deliverable}>
+                                                {exit.label}
+                                              </SelectItem>
+                                            ),
+                                          )}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  ) : null}
+                                  <div className="flex flex-wrap gap-2">
+                                    <V3Button
+                                      aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
+                                      size="sm"
+                                      type="button"
+                                      onClick={() =>
+                                        onResolveDecision(latestPlanReviewDecision.id, "approved")
+                                      }
+                                    >
+                                      批准
+                                    </V3Button>
+                                    <V3Button
+                                      aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() =>
+                                        onResolveDecision(
+                                          latestPlanReviewDecision.id,
+                                          "request_changes",
+                                          planRevisionAvailableExits(latestPlanRevision).length > 1
+                                            ? selectedExitDeliverable ||
+                                                planRevisionExitDeliverable(latestPlanRevision)
+                                            : undefined,
+                                        )
+                                      }
+                                    >
+                                      要求修改
+                                    </V3Button>
+                                    <V3Button
+                                      aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() =>
+                                        onResolveDecision(latestPlanReviewDecision.id, "rejected")
+                                      }
+                                    >
+                                      拒绝
+                                    </V3Button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                            {planRevisionHasBoundTemplate(latestPlanRevision) &&
+                            planRevisionTemplateKey(latestPlanRevision) ? (
+                              <RuntimeMeta
+                                label="场景模板"
+                                value={planRevisionTemplateKey(latestPlanRevision)}
+                              />
+                            ) : null}
+                            {planRevisionHasBoundTemplate(latestPlanRevision) &&
+                            planRevisionExitLabel(latestPlanRevision) ? (
+                              <RuntimeMeta
+                                label="交付出口"
+                                value={planRevisionExitLabel(latestPlanRevision)}
+                              />
+                            ) : null}
+                            <div className="grid gap-3 md:grid-cols-3">
+                              <FactTile
+                                icon={<ClipboardList />}
+                                label="计划任务"
+                                value={`${planRevisionTasks(latestPlanRevision).length} 项`}
+                              />
+                              <FactTile
+                                icon={<Bot />}
+                                label="能力需求"
+                                value={formatShortList(planRevisionCapabilityLabels(latestPlanRevision))}
+                              />
+                              <FactTile
+                                icon={<FileCheck2 />}
+                                label="风险等级"
+                                value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
+                              />
+                            </div>
+                            <div className="grid gap-3">
+                              <div className="grid gap-2" data-testid="plan-dispatch-order">
+                                <div className="flex items-center gap-2 px-1">
+                                  <ClipboardList className="size-4 text-v3-ink-2" />
+                                  <h4 className="text-sm font-semibold text-v3-ink">调度顺序</h4>
+                                </div>
+                                <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                                  {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
+                                    (task, index) => (
+                                      <div
+                                        className="grid gap-2 p-3"
+                                        key={`${planRevisionTaskKey(task)}-${index}`}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <p className="min-w-0 text-sm font-medium text-v3-ink">
+                                            {planRevisionTaskTitle(task)}
+                                          </p>
+                                          <StatusPill tone="info">第 {index + 1} 步</StatusPill>
+                                        </div>
+                                        <RuntimeMeta
+                                          label="执行员工"
+                                          value={planRevisionTaskEmployee(
+                                            task,
+                                            servicePool,
+                                            principalNamesById,
+                                          )}
+                                        />
+                                        <RuntimeMeta
+                                          label="选择原因"
+                                          value={
+                                            stringField(task, "employee_selection_reason") ||
+                                            "未说明选择原因"
+                                          }
+                                        />
+                                      </div>
+                                    ),
+                                  )}
+                                  {planRevisionTasks(latestPlanRevision).length === 0 ? (
+                                    <EmptyLine label="计划版本尚未包含可展示任务" />
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="grid gap-2" data-testid="plan-acceptance-criteria">
+                                <div className="flex items-center gap-2 px-1">
+                                  <FileCheck2 className="size-4 text-v3-ink-2" />
+                                  <h4 className="text-sm font-semibold text-v3-ink">验收判据</h4>
+                                </div>
+                                <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                                  {planRevisionAcceptanceCriteria(latestPlanRevision).map(
+                                    (criterion, index) => {
+                                      const criterionId =
+                                        stringField(criterion, "id") || `criterion-${index}`;
+                                      const method =
+                                        planAcceptanceCriterionVerificationMethod(criterion);
+                                      const severity = planAcceptanceCriterionSeverity(criterion);
+                                      const isAmbiguous =
+                                        planAcceptanceCriterionAmbiguityFlag(criterion);
+                                      const evidenceHint =
+                                        planAcceptanceCriterionEvidenceHint(criterion);
+
+                                      return (
+                                        <div className="grid gap-2 p-3" key={`${criterionId}-${index}`}>
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <StatusPill
+                                              data-testid={`plan-acceptance-criterion-method-${criterionId}`}
+                                              showDot={false}
+                                              tone={method === "human_judgment" ? "info" : "mute"}
+                                            >
+                                              {method === "human_judgment" ? "人类判定" : "自动验证"}
+                                            </StatusPill>
+                                            {severity === "non_blocking" ? (
+                                              <StatusPill
+                                                data-testid={`plan-acceptance-criterion-severity-${criterionId}`}
+                                                showDot={false}
+                                                tone="mute"
+                                              >
+                                                非阻断
+                                              </StatusPill>
+                                            ) : null}
+                                          </div>
+                                          <PlanAcceptanceCriterionStatement
+                                            criterionId={criterionId}
+                                            statement={stringField(criterion, "statement")}
+                                          />
+                                          {isAmbiguous ? (
+                                            <p
+                                              className="flex items-center gap-1.5 text-xs font-medium text-v3-warn-text"
+                                              data-testid={`plan-acceptance-criterion-ambiguity-${criterionId}`}
+                                            >
+                                              <AlertTriangle className="size-3.5 shrink-0" />
+                                              断言可能不可判定，请改写后再批准
+                                            </p>
+                                          ) : null}
+                                          {evidenceHint ? (
+                                            <p
+                                              className="text-xs text-v3-ink-3"
+                                              data-testid={`plan-acceptance-criterion-evidence-hint-${criterionId}`}
+                                            >
+                                              证据提示：{evidenceHint}
+                                            </p>
+                                          ) : null}
+                                          <RuntimeMeta
+                                            label="满足任务"
+                                            value={planRevisionCriterionSatisfiedLabel(
+                                              criterion,
+                                              latestPlanRevision,
+                                            )}
+                                          />
+                                        </div>
+                                      );
+                                    },
+                                  )}
+                                  {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
+                                    <EmptyLine label="本计划未声明验收判据" />
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              {planRevisionConstraintNotes(latestPlanRevision).length > 0 ? (
+                                <div className="grid gap-2" data-testid="plan-constraint-notes">
+                                  <div className="flex items-center gap-2 px-1">
+                                    <FileCheck2 className="size-4 text-v3-ink-2" />
+                                    <h4 className="text-sm font-semibold text-v3-ink">约束说明</h4>
+                                  </div>
+                                  <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                                    {planRevisionConstraintNotes(latestPlanRevision).map(
+                                      (note, index) => (
+                                        <div
+                                          className="flex items-start gap-2 p-3"
+                                          key={`${note.kind}-${index}`}
+                                        >
+                                          <StatusPill tone={constraintNoteTone(note.kind)}>
+                                            {constraintNoteKindLabel(note.kind)}
+                                          </StatusPill>
+                                          <p className="min-w-0 flex-1 text-xs text-v3-ink-2">
+                                            {note.message}
+                                          </p>
+                                        </div>
+                                      ),
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : (
+                          <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
+                        )}
+                      </SoftCard>
+
           <ProjectApprovalPanel
             decisionRequests={decisionRequests}
             focusDecisionId={focusDecisionId}
@@ -1113,69 +894,16 @@ export function ProjectOperationalDetail({
           />
         </TabsContent>
 
-        <TabsContent className="m-0" value="budget">
-          <ProjectGovernanceTabs
+        <TabsContent className="m-0" value="assets">
+          <ProjectAssetsPanel
             acceptance={acceptance}
-            archivePreview={archivePreview}
-            archiveSnapshots={archiveSnapshots}
             artifacts={artifacts}
             budgetLedger={budgetLedger}
             budgetSummary={budgetSummary}
-            decisionRequestCount={decisionRequests.length}
-            demandCount={demands.length}
-            evidence={evidence}
-            executionSummaryCount={executionSummaries.length}
-            initialTab="budget"
+            initialTab={assetsInitial}
             onCreateAcceptance={onCreateAcceptance}
-            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-            onCreateEvidence={onCreateEvidence}
-            onPatchEvidence={onPatchEvidence}
             reports={reports}
-            routeDecisionCount={routeDecisions.length}
-            taskCount={tasks.length}
           />
-        </TabsContent>
-
-        <TabsContent className="m-0" value="acceptance">
-          <ProjectGovernanceTabs
-            acceptance={acceptance}
-            archivePreview={archivePreview}
-            archiveSnapshots={archiveSnapshots}
-            artifacts={artifacts}
-            budgetLedger={budgetLedger}
-            budgetSummary={budgetSummary}
-            decisionRequestCount={decisionRequests.length}
-            demandCount={demands.length}
-            evidence={evidence}
-            executionSummaryCount={executionSummaries.length}
-            initialTab="acceptance"
-            onCreateAcceptance={onCreateAcceptance}
-            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-            onCreateEvidence={onCreateEvidence}
-            onPatchEvidence={onPatchEvidence}
-            reports={reports}
-            routeDecisionCount={routeDecisions.length}
-            taskCount={tasks.length}
-          />
-        </TabsContent>
-
-        <TabsContent className="m-0" value="config">
-          <SoftCard className="p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-v3-ink">项目配置</h3>
-                <p className="mt-1 text-sm text-v3-ink-2">
-                  配置表单仍保留在独立页面，避免在工作中枢内重复复杂写入面。
-                </p>
-              </div>
-              <V3Button asChild variant="outline">
-                <Link params={{ projectId: project.id }} to="/projects/$projectId/config">
-                  <Settings2 data-icon="inline-start" />
-                  打开配置页
-                </Link>
-              </V3Button>
-            </div>
-          </SoftCard>
         </TabsContent>
       </Tabs>
     </div>
@@ -1424,7 +1152,13 @@ function AdvancedWorkflow({
   );
 }
 
-function AdvancedDemands({ demands }: { demands: ProjectDemand[] }) {
+function AdvancedDemands({
+  demands,
+  blockingFact,
+}: {
+  blockingFact?: ProjectTaskGraphBlockingFact;
+  demands: ProjectDemand[];
+}) {
   return (
     <SoftCard className="overflow-hidden">
       <PanelHeader
@@ -1447,6 +1181,12 @@ function AdvancedDemands({ demands }: { demands: ProjectDemand[] }) {
               <p className="line-clamp-2 text-xs text-v3-ink-2">
                 {demand.content || "需求内容已记录"}
               </p>
+              {demand.status === "failed" ? (
+                <DemandFailureDiagnosis
+                  demandId={demand.id}
+                  fact={blockingFact}
+                />
+              ) : null}
             </div>
           ))
         )}

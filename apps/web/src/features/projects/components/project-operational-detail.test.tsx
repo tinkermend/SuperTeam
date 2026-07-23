@@ -236,26 +236,22 @@ function renderDetail(
 }
 
 describe("ProjectOperationalDetail", () => {
-  it("renders top-level work hub tabs and navigable project context", async () => {
+  it("renders section nav with workbench default and navigable project context", async () => {
     const screen = await renderDetail();
 
-    await expect.element(screen.getByRole("tab", { name: "概览" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "工作台" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "任务" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "审批" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "资产" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "概览" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "配置" })).not.toBeInTheDocument();
     await expect.element(screen.getByText("工作区就绪")).toBeVisible();
     await expect.element(screen.getByText("目录名 客户接入验收")).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: /在运行总览查看/ })).toHaveAttribute(
+    await expect.element(screen.getByRole("link", { name: /提交需求/ })).toHaveAttribute(
       "href",
-      "/run-overview?project=project-1",
+      "/task-launches?mode=plan&project=project-1",
     );
-    await expect.element(screen.getByRole("link", { name: /补充上线验收说明/ })).toHaveAttribute(
-      "href",
-      "/workflows/demand-1",
-    );
-    await expect.element(screen.getByRole("link", { name: /整理接入证据/ })).toHaveAttribute(
-      "href",
-      "/employees/employee-1",
-    );
+    await expect.element(screen.getByTestId("project-ops-home")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: /验收执行员工/ })).toHaveAttribute(
       "href",
       "/employees/employee-1",
@@ -264,6 +260,62 @@ describe("ProjectOperationalDetail", () => {
       "href",
       "/users",
     );
+  });
+
+  it("maps legacy tab deep links onto sections and assets sub-tabs", async () => {
+    const artifactsScreen = await renderDetail({ initialTab: "artifacts" });
+    await expect
+      .element(artifactsScreen.getByRole("tab", { name: "资产", selected: true }))
+      .toBeVisible();
+    await expect
+      .element(artifactsScreen.getByRole("tab", { name: "工件", selected: true }))
+      .toBeVisible();
+
+    const budgetScreen = await renderDetail({ initialTab: "budget" });
+    await expect
+      .element(budgetScreen.getByRole("tab", { name: "预算", selected: true }))
+      .toBeVisible();
+
+    const overviewScreen = await renderDetail({ initialTab: "overview" });
+    await expect
+      .element(overviewScreen.getByRole("tab", { name: "工作台", selected: true }))
+      .toBeVisible();
+    await expect.element(overviewScreen.getByTestId("project-ops-home")).toBeVisible();
+  });
+
+  it("compresses empty project into a startup card instead of giant empty vaults", async () => {
+    const emptyOverview: ProjectOverview = {
+      ...overview,
+      active_tasks: [],
+      digital_employee_pool: [],
+      recent_events: [],
+    };
+    const screen = await renderDetail({
+      decisionRequests: [],
+      demands: [],
+      events: [],
+      overview: emptyOverview,
+      planRevisions: [],
+      tasks: [],
+    });
+
+    await expect.element(screen.getByTestId("project-ops-startup")).toBeVisible();
+    await expect
+      .element(
+        screen.getByText(
+          "项目已就绪，还没有任务活动。用头卡「提交需求」发起后，这里会出现运行脉搏与执行态。",
+        ),
+      )
+      .toBeVisible();
+    await expect.element(screen.getByText("本周 0 次活动")).toBeVisible();
+    await expect.element(screen.getByTestId("project-ops-rail")).toBeVisible();
+    await expect.element(screen.getByText("当前无阻塞")).toBeVisible();
+    await expect.element(screen.getByText("暂无执行/审批事件")).toBeVisible();
+    await expect.element(screen.getByTestId("project-ops-pulse")).not.toBeInTheDocument();
+    await expect.element(screen.getByTestId("project-ops-running")).not.toBeInTheDocument();
+    // 主 CTA 只在头卡，启动区不重复「提交需求」按钮
+    const submitLinks = screen.getByRole("link", { name: /提交需求/ });
+    await expect.element(submitLinks).toBeVisible();
   });
 
   it("resolves owner and service-pool names when membership snapshots are empty", async () => {
@@ -336,6 +388,7 @@ describe("ProjectOperationalDetail", () => {
       },
     });
 
+    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
     await expect
       .element(screen.getByText("项目员工池无法满足审查独立性约束（需≥2名可调度员工）"))
       .toBeVisible();
@@ -350,6 +403,7 @@ describe("ProjectOperationalDetail", () => {
 
   it("does not show a diagnosis line for a non-failed demand", async () => {
     const screen = await renderDetail();
+    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
 
     await expect
       .element(screen.getByRole("link", { name: "查看缺口处理 →" }))
@@ -373,7 +427,7 @@ describe("ProjectOperationalDetail", () => {
   });
 
   it("shows dispatch order and acceptance criteria from the latest plan revision", async () => {
-    const screen = await renderDetail({ planRevisions });
+    const screen = await renderDetail({ initialTab: "approval", planRevisions });
     const dispatchOrder = screen.getByTestId("plan-dispatch-order");
     const acceptanceCriteria = screen.getByTestId("plan-acceptance-criteria");
 
@@ -416,7 +470,7 @@ describe("ProjectOperationalDetail", () => {
   });
 
   it("defaults to automated-verification badge and no ambiguity warning for legacy criteria payload", async () => {
-    const screen = await renderDetail({ planRevisions });
+    const screen = await renderDetail({ initialTab: "approval", planRevisions });
 
     expect(
       screen.container.querySelector(
@@ -474,7 +528,7 @@ describe("ProjectOperationalDetail", () => {
         ],
       },
     };
-    const screen = await renderDetail({ planRevisions: [semanticCriteriaRevision] });
+    const screen = await renderDetail({ initialTab: "approval", planRevisions: [semanticCriteriaRevision] });
 
     expect(
       screen.container.querySelector(
@@ -544,7 +598,7 @@ describe("ProjectOperationalDetail", () => {
         template_version: 2,
       },
     };
-    const screen = await renderDetail({ planRevisions: [templatedRevision] });
+    const screen = await renderDetail({ initialTab: "approval", planRevisions: [templatedRevision] });
 
     await expect.element(screen.getByText("software_delivery@v2")).toBeVisible();
     await expect.element(screen.getByText("审查通过并合入")).toBeVisible();
@@ -569,7 +623,7 @@ describe("ProjectOperationalDetail", () => {
         template_key: "tech_risk_analysis",
       },
     };
-    const screen = await renderDetail({ planRevisions: [unboundRevision] });
+    const screen = await renderDetail({ initialTab: "approval", planRevisions: [unboundRevision] });
 
     await expect.element(screen.getByText("调度顺序")).toBeVisible();
     await expect.element(screen.getByText("tech_risk_analysis")).not.toBeInTheDocument();
@@ -607,6 +661,7 @@ describe("ProjectOperationalDetail", () => {
     };
     const screen = await renderDetail({
       decisionRequests: [planReviewDecision],
+      initialTab: "approval",
       onResolveDecision,
       planRevisions: [templatedRevision],
     });
@@ -670,6 +725,7 @@ describe("ProjectOperationalDetail", () => {
     const screen = await render(
       detailElement({
         decisionRequests: [planReviewDecision],
+        initialTab: "approval",
         onResolveDecision,
         planRevisions: [revisionA],
       }),
@@ -686,6 +742,7 @@ describe("ProjectOperationalDetail", () => {
     await screen.rerender(
       detailElement({
         decisionRequests: [planReviewDecision],
+        initialTab: "approval",
         onResolveDecision,
         planRevisions: [revisionB],
       }),
@@ -726,7 +783,7 @@ describe("ProjectOperationalDetail", () => {
         ],
       },
     };
-    const screen = await renderDetail({ planRevisions: [blockedByKeysRevision] });
+    const screen = await renderDetail({ initialTab: "approval", planRevisions: [blockedByKeysRevision] });
     const dispatchOrderText =
       screen.container.querySelector("[data-testid='plan-dispatch-order']")?.textContent ?? "";
     expect(dispatchOrderText.indexOf("收集接入证据")).toBeLessThan(
@@ -784,19 +841,19 @@ describe("ProjectOperationalDetail", () => {
             actor_id: "system",
             actor_type: "system",
             created_at: "2026-07-20T01:00:00Z",
-            event_type: "project.created",
-            id: "event-created",
+            event_type: "project_task.completed",
+            id: "event-completed",
             payload: {},
             project_id: "project-1",
             sequence_number: 1,
-            summary: "项目已创建",
+            summary: "接入证据整理完成",
             tenant_id: "tenant-1",
           },
         ],
       },
     });
 
-    await expect.element(screen.getByText("项目已创建")).toBeVisible();
+    await expect.element(screen.getByText("接入证据整理完成")).toBeVisible();
     const time = screen.container.querySelector('time[datetime="2026-07-20T01:00:00Z"]');
     expect(time).not.toBeNull();
     expect(time?.textContent ?? "").toMatch(/\d+\s*天前/);

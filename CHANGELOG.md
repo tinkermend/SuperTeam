@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-23 23:12（项目详情首屏视觉迭代）：区段导航改全宽底边线；空态右栏合并为单卡行级空态；去掉启动区重复 CTA；左右列等高；高级事实收成虚线轻栏。验证：Vitest 21/21；restart web 后空项目 1440 视觉自验满意。
+- 2026-07-23 22:57（项目详情首屏重做）：七等分 Tab → 头卡下四区段（工作台/任务/审批/资产）；默认工作台；配置仅更多菜单→配置页；资产合并工件+预算+验收；工作台用 `lg:` 双栏（不再依赖未挂载 master-detail 容器）；空项目压缩为启动卡+单行空态。验证：定向 Vitest + restart web 浏览器空项目核对。
+- 2026-07-23 22:45（项目详情运营首屏）：概览改为指挥台布局（运行脉搏+执行/阻塞+员工∥Runtime / 本项目阻塞+事件流+项目脉搏）；提交需求深链任务中枢 `?project=&mode=plan`；去掉运行总览出口；计划确认下沉审批 Tab。验证：ops-home/detail Vitest 19/19；restart web 后浏览器视觉核对。
 - 2026-07-23 22:15（删项目级联员工失败态）：删除项目时一并 cancel `failed` 任务、ack 锚在该项目的失败/超时 run；总览 `operational_has_task_failure` 忽略已删项目上的 failed 孤儿。存量迁移清掉 2 条 failed 任务与未 ack 的失败 run，避免运行总览长期「异常」。
 - 2026-07-23 16:10（已删项目 run 展示）：员工 run 详情/列表/日历 API 增加 `project_deleted`；所属项目保留名称并标注「已删除」、不再链进项目详情；筛选选项同标注。验证：employee Go 定向 PASS；drawer/history Vitest PASS。
 - 2026-07-23 16:00（项目状态文案）：项目生命周期 `running` 展示由「运行中」改为「已就绪」（`projectStatusLabel` 覆盖；任务/run 的「运行中」不变）。验证：status-labels Vitest 14/14。

@@ -105,6 +105,8 @@ vi.mock("@tanstack/react-router", () => ({
     return <a href={href}>{children}</a>;
   },
   useNavigate: () => mocks.navigate,
+  useSearch: () => ({}),
+}));
 }));
 
 function createQueryClient() {

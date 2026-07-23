@@ -1369,17 +1369,17 @@ function createProjectSubmitErrorMessage(error: unknown): string {
   return apiErrorMessage(error, "创建项目失败，请稍后重试");
 }
 
-function isProjectOperationalTab(value: string | undefined): value is NonNullable<
-  React.ComponentProps<typeof ProjectOperationalDetail>["initialTab"]
-> {
+function isProjectOperationalTab(value: string | undefined): boolean {
   return (
+    value === "workbench" ||
     value === "overview" ||
     value === "tasks" ||
     value === "artifacts" ||
     value === "approval" ||
     value === "budget" ||
     value === "acceptance" ||
-    value === "config"
+    value === "config" ||
+    value === "assets"
   );
 }
 
