@@ -2332,12 +2332,46 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 RETURNING id;
 
 -- name: CancelProjectTasksForDelete :many
+-- Soft-delete cascade: cancel any task that could still light employee overview
+-- blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
 UPDATE project_tasks
 SET status = 'cancelled', updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
-  AND status NOT IN ('completed', 'failed', 'cancelled', 'done', 'success')
+  AND status NOT IN ('completed', 'cancelled', 'done', 'success')
 RETURNING id;
+
+-- name: AcknowledgeTaskRunsForProjectDelete :many
+-- Soft-delete cascade: auto-ack failed/timed_out runs anchored to this project so
+-- employee overview no longer stays in 异常 waiting for unreachable recovery.
+UPDATE task_runs tr
+SET failure_acknowledged_at = COALESCE(tr.failure_acknowledged_at, NOW()),
+    failure_acknowledged_by = COALESCE(tr.failure_acknowledged_by, sqlc.narg('acknowledged_by')::uuid),
+    updated_at = NOW()
+FROM tasks t
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND t.id = tr.task_id
+  AND t.tenant_id = tr.tenant_id
+  AND tr.status IN ('failed', 'timed_out')
+  AND tr.failure_acknowledged_at IS NULL
+  AND (
+    EXISTS (
+      SELECT 1
+      FROM project_tasks pt
+      WHERE pt.tenant_id = tr.tenant_id
+        AND pt.digital_employee_run_id = tr.id
+        AND pt.project_id = sqlc.arg('project_id')::uuid
+    )
+    OR (
+      (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      AND (t.params #>> '{metadata,anchor_project_id}')::uuid = sqlc.arg('project_id')::uuid
+    )
+    OR (
+      (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      AND (t.params #>> '{metadata,project_id}')::uuid = sqlc.arg('project_id')::uuid
+    )
+  )
+RETURNING tr.id;
 
 -- name: CancelProjectDecisionRequestsForDelete :many
 UPDATE project_decision_requests

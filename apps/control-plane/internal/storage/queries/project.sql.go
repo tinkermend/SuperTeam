@@ -75,6 +75,65 @@ func (q *Queries) AcceptProjectPlanRevision(ctx context.Context, arg AcceptProje
 	return i, err
 }
 
+const AcknowledgeTaskRunsForProjectDelete = `-- name: AcknowledgeTaskRunsForProjectDelete :many
+UPDATE task_runs tr
+SET failure_acknowledged_at = COALESCE(tr.failure_acknowledged_at, NOW()),
+    failure_acknowledged_by = COALESCE(tr.failure_acknowledged_by, $1::uuid),
+    updated_at = NOW()
+FROM tasks t
+WHERE tr.tenant_id = $2::uuid
+  AND t.id = tr.task_id
+  AND t.tenant_id = tr.tenant_id
+  AND tr.status IN ('failed', 'timed_out')
+  AND tr.failure_acknowledged_at IS NULL
+  AND (
+    EXISTS (
+      SELECT 1
+      FROM project_tasks pt
+      WHERE pt.tenant_id = tr.tenant_id
+        AND pt.digital_employee_run_id = tr.id
+        AND pt.project_id = $3::uuid
+    )
+    OR (
+      (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      AND (t.params #>> '{metadata,anchor_project_id}')::uuid = $3::uuid
+    )
+    OR (
+      (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      AND (t.params #>> '{metadata,project_id}')::uuid = $3::uuid
+    )
+  )
+RETURNING tr.id
+`
+
+type AcknowledgeTaskRunsForProjectDeleteParams struct {
+	AcknowledgedBy uuid.NullUUID `json:"acknowledged_by"`
+	TenantID       uuid.UUID     `json:"tenant_id"`
+	ProjectID      uuid.UUID     `json:"project_id"`
+}
+
+// Soft-delete cascade: auto-ack failed/timed_out runs anchored to this project so
+// employee overview no longer stays in 异常 waiting for unreachable recovery.
+func (q *Queries) AcknowledgeTaskRunsForProjectDelete(ctx context.Context, arg AcknowledgeTaskRunsForProjectDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, AcknowledgeTaskRunsForProjectDelete, arg.AcknowledgedBy, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ArchiveProject = `-- name: ArchiveProject :one
 UPDATE projects
 SET status = 'archived',
@@ -534,7 +593,7 @@ UPDATE project_tasks
 SET status = 'cancelled', updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
-  AND status NOT IN ('completed', 'failed', 'cancelled', 'done', 'success')
+  AND status NOT IN ('completed', 'cancelled', 'done', 'success')
 RETURNING id
 `
 
@@ -543,6 +602,8 @@ type CancelProjectTasksForDeleteParams struct {
 	ProjectID uuid.UUID `json:"project_id"`
 }
 
+// Soft-delete cascade: cancel any task that could still light employee overview
+// blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
 func (q *Queries) CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, CancelProjectTasksForDelete, arg.TenantID, arg.ProjectID)
 	if err != nil {

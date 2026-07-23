@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-23 22:15（删项目级联员工失败态）：删除项目时一并 cancel `failed` 任务、ack 锚在该项目的失败/超时 run；总览 `operational_has_task_failure` 忽略已删项目上的 failed 孤儿。存量迁移清掉 2 条 failed 任务与未 ack 的失败 run，避免运行总览长期「异常」。
 - 2026-07-23 16:10（已删项目 run 展示）：员工 run 详情/列表/日历 API 增加 `project_deleted`；所属项目保留名称并标注「已删除」、不再链进项目详情；筛选选项同标注。验证：employee Go 定向 PASS；drawer/history Vitest PASS。
 - 2026-07-23 16:00（项目状态文案）：项目生命周期 `running` 展示由「运行中」改为「已就绪」（`projectStatusLabel` 覆盖；任务/run 的「运行中」不变）。验证：status-labels Vitest 14/14。
 - 2026-07-23 15:55（删项目级联自动化规则）：删除项目前移除锚点规则与 fires，并删 Temporal Schedule；列表 JOIN 过滤已删项目；删除预览增加 `automation_rule_count`。存量已删项目上的 1 条规则+2 条 fires 已清。验证：`go test ./internal/automation` PASS；`GET /api/v1/automations` → `items:[]`；open inbox=0。

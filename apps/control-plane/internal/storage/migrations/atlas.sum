@@ -1,4 +1,4 @@
-h1:vx3TeLZBs/tB8NaNlAPIsAB3CnsaPSRC+dENxWU4n5M=
+h1:xEKZ+EqIGf0gucWa9HOqqakP7cMusohImgZHQHPPJVc=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -103,3 +103,4 @@ h1:vx3TeLZBs/tB8NaNlAPIsAB3CnsaPSRC+dENxWU4n5M=
 20260723071727_legacy_invalid_project_directory_names.sql h1:2EEaBAAeNDJhYTeSSclXRPpUK9AnI+RXVZh1HVVoqiE=
 20260723074713_cancel_inbox_for_deleted_project_anchored_runs.sql h1:cKYGw8e1PWmXiASzr8RQnWisYI+6D+sYzMPHKjW8oW0=
 20260723075000_delete_automation_for_deleted_projects.sql h1:O+N1w9dpmoDBSp3xl1Koq2HzYRICul7PfUuU4dC2L0k=
+20260723141500_cleanup_orphan_employee_failures_for_deleted_projects.sql h1:yEWfjPix8Y1nP7ti4OLXHzr+QuJUC+JHw2Gv+xSWbF8=

@@ -416,6 +416,20 @@ func (r *PgRepository) softDeleteProjectCascadeWithQueries(ctx context.Context, 
 	}
 	cascade.TaskCount = len(taskRows)
 
+	ackBy := uuid.NullUUID{}
+	if params.ActorUserID != uuid.Nil {
+		ackBy = uuid.NullUUID{UUID: params.ActorUserID, Valid: true}
+	}
+	runRows, err := q.AcknowledgeTaskRunsForProjectDelete(ctx, queries.AcknowledgeTaskRunsForProjectDeleteParams{
+		TenantID:       params.TenantID,
+		ProjectID:      params.ProjectID,
+		AcknowledgedBy: ackBy,
+	})
+	if err != nil {
+		return cascade, err
+	}
+	cascade.AcknowledgedRunCount = len(runRows)
+
 	decisionRows, err := q.CancelProjectDecisionRequestsForDelete(ctx, queries.CancelProjectDecisionRequestsForDeleteParams{
 		TenantID:  params.TenantID,
 		ProjectID: params.ProjectID,
@@ -6308,14 +6322,15 @@ func projectDeleteAuditDetails(params ProjectDeleteAuditEventParams) map[string]
 		"project_name": params.Project.Name,
 		"workflow_id":  workflowID,
 		"cascade": map[string]any{
-			"members":       params.CascadeResult.MemberCount,
-			"tasks":         params.CascadeResult.TaskCount,
-			"decisions":     params.CascadeResult.DecisionCount,
-			"approvals":     params.CascadeResult.ApprovalCount,
-			"inbox":         params.CascadeResult.InboxCount,
-			"runtime_nodes":     params.CascadeResult.RuntimeNodeCount,
-			"affinities":        params.CascadeResult.AffinityCount,
-			"automation_rules":  params.CascadeResult.AutomationRuleCount,
+			"members":            params.CascadeResult.MemberCount,
+			"tasks":              params.CascadeResult.TaskCount,
+			"decisions":          params.CascadeResult.DecisionCount,
+			"approvals":          params.CascadeResult.ApprovalCount,
+			"inbox":              params.CascadeResult.InboxCount,
+			"acknowledged_runs":  params.CascadeResult.AcknowledgedRunCount,
+			"runtime_nodes":      params.CascadeResult.RuntimeNodeCount,
+			"affinities":         params.CascadeResult.AffinityCount,
+			"automation_rules":   params.CascadeResult.AutomationRuleCount,
 		},
 	}
 }

@@ -114,6 +114,7 @@ type ProjectDeleteCascadeResult struct {
 	DecisionCount       int
 	ApprovalCount       int
 	InboxCount          int
+	AcknowledgedRunCount int
 	RuntimeNodeCount    int
 	AffinityCount       int
 	AutomationRuleCount int

@@ -14,6 +14,9 @@ import (
 type Querier interface {
 	AcceptProjectPlanRevision(ctx context.Context, arg AcceptProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	AcknowledgeDigitalEmployeeRunFailure(ctx context.Context, arg AcknowledgeDigitalEmployeeRunFailureParams) (TaskRun, error)
+	// Soft-delete cascade: auto-ack failed/timed_out runs anchored to this project so
+	// employee overview no longer stays in 异常 waiting for unreachable recovery.
+	AcknowledgeTaskRunsForProjectDelete(ctx context.Context, arg AcknowledgeTaskRunsForProjectDeleteParams) ([]uuid.UUID, error)
 	ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
@@ -34,6 +37,8 @@ type Querier interface {
 	// run 失败恢复卡(锚在 tasks.params.metadata.anchor_project_id|project_id)。
 	CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error)
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
+	// Soft-delete cascade: cancel any task that could still light employee overview
+	// blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
 	CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	// 兜底:软删时 UnbindTeamDigitalEmployees 已清存活员工;这里连已删员工的历史引用一并清。

@@ -1834,8 +1834,16 @@ employee_operational_facts AS (
         ) > 0 AS operational_has_active_work,
         -- 失败任务只在「仍需关注」时点亮异常:已有非 pending 的恢复决策
         -- (retry/reassign/cancel 或人类已处理)后不再因历史 failed 行钉死员工。
+        -- 所属项目已软删的 failed 行也不计(删项目级联会 cancel;此处兜底防孤儿)。
         count(pt.id) FILTER (
             WHERE pt.status = 'failed'
+              AND EXISTS (
+                SELECT 1
+                FROM projects p
+                WHERE p.id = pt.project_id
+                  AND p.tenant_id = pt.tenant_id
+                  AND p.deleted_at IS NULL
+              )
               AND NOT EXISTS (
                 SELECT 1
                 FROM project_decision_requests pdr
@@ -2539,8 +2547,16 @@ employee_operational_facts AS (
                OR pt.status IN ('pending', 'planned', 'queued', 'blocked', 'running', 'in_progress', 'waiting_human', 'pending_review')
         ) > 0 AS operational_has_active_work,
         -- 失败任务只在仍需关注时点亮(已有非 pending 恢复决策则收敛)。
+        -- 所属项目已软删的 failed 行也不计(删项目级联会 cancel;此处兜底防孤儿)。
         count(pt.id) FILTER (
             WHERE pt.status = 'failed'
+              AND EXISTS (
+                SELECT 1
+                FROM projects p
+                WHERE p.id = pt.project_id
+                  AND p.tenant_id = pt.tenant_id
+                  AND p.deleted_at IS NULL
+              )
               AND NOT EXISTS (
                 SELECT 1
                 FROM project_decision_requests pdr
