@@ -389,24 +389,28 @@ type HeartbeatResponse struct {
 // 值来源=系统配置中心生效值,由 app 装配层以 PlatformLimitsResolver 闭包注入
 // (runtime 包被 api/middleware 反向依赖,不能 import systemconfig)。
 type PlatformLimits struct {
-	ArtifactMaxFileSizeBytes  int64
+	ArtifactMaxFileSizeBytes   int64
 	AttachmentMaxFileSizeBytes int64
-	AttachmentMaxCount        int64
-	AttachmentTotalMaxBytes   int64
-	SkillArchiveMaxBytes      int64
-	SkillArchiveMaxFileCount  int64
+	AttachmentMaxCount         int64
+	AttachmentTotalMaxBytes    int64
+	SkillArchiveMaxBytes       int64
+	SkillArchiveMaxFileCount   int64
+	// WorkspaceBaseDir 是平台约定的工作区根(系统配置 runtime.workspace_base_dir);
+	// 节点本地 config/env 仍可覆盖。空串表示未下发(agent 保持本地默认)。
+	WorkspaceBaseDir string
 }
 
 // Fingerprint 返回对限额有序序列化的稳定指纹,runtime 据此判断"没变就不动"。
 func (l PlatformLimits) Fingerprint() string {
 	canonical := fmt.Sprintf(
-		"artifact_max_file_size_bytes=%d;attachment_max_file_size_bytes=%d;attachment_max_count=%d;attachment_total_max_bytes=%d;skill_archive_max_bytes=%d;skill_archive_max_file_count=%d",
+		"artifact_max_file_size_bytes=%d;attachment_max_file_size_bytes=%d;attachment_max_count=%d;attachment_total_max_bytes=%d;skill_archive_max_bytes=%d;skill_archive_max_file_count=%d;workspace_base_dir=%s",
 		l.ArtifactMaxFileSizeBytes,
 		l.AttachmentMaxFileSizeBytes,
 		l.AttachmentMaxCount,
 		l.AttachmentTotalMaxBytes,
 		l.SkillArchiveMaxBytes,
 		l.SkillArchiveMaxFileCount,
+		l.WorkspaceBaseDir,
 	)
 	sum := sha256.Sum256([]byte(canonical))
 	return "plv1:sha256:" + hex.EncodeToString(sum[:])

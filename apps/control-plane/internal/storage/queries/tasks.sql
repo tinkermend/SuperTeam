@@ -419,11 +419,13 @@ SELECT
     t.resume_of_run_id,
     t.chat_thread_id,
     p.id AS project_id,
-    p.name AS project_name
+    p.name AS project_name,
+    (p.deleted_at IS NOT NULL)::boolean AS project_deleted
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
 -- Prefer project_tasks; chat/task-hub runs fall back to metadata anchors.
+-- Soft-deleted projects still resolve so run history keeps the name + deleted flag.
 LEFT JOIN projects p
   ON p.tenant_id = tr.tenant_id
  AND p.id = COALESCE(
@@ -507,7 +509,8 @@ SELECT
     t.title AS task_title,
     t.run_kind,
     p.id AS project_id,
-    p.name AS project_name
+    p.name AS project_name,
+    (p.deleted_at IS NOT NULL)::boolean AS project_deleted
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
@@ -560,6 +563,7 @@ SELECT
     t.chat_thread_id,
     p.id AS project_id,
     p.name AS project_name,
+    (p.deleted_at IS NOT NULL)::boolean AS project_deleted,
     jsonb_array_length(tr.work_products) AS work_product_count
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
@@ -632,16 +636,22 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
        OR (t.run_kind = 'chat' AND (t.chat_thread_id = sqlc.narg('chat_thread_id')::uuid OR tr.id = sqlc.narg('chat_thread_id')::uuid)));
 
 -- name: ListDigitalEmployeeRunProjectOptions :many
-SELECT DISTINCT project_id AS id, project_name AS name
+SELECT DISTINCT project_id AS id, project_name AS name, project_deleted
 FROM (
-    SELECT p.id AS project_id, p.name AS project_name
+    SELECT
+        p.id AS project_id,
+        p.name AS project_name,
+        (p.deleted_at IS NOT NULL)::boolean AS project_deleted
     FROM task_runs tr
     JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
     JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
     WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
       AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
     UNION
-    SELECT meta_p.id AS project_id, meta_p.name AS project_name
+    SELECT
+        meta_p.id AS project_id,
+        meta_p.name AS project_name,
+        (meta_p.deleted_at IS NOT NULL)::boolean AS project_deleted
     FROM task_runs tr
     JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
     JOIN projects meta_p

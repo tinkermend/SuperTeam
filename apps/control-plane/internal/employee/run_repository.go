@@ -41,6 +41,7 @@ type DigitalEmployeeRunRepository interface {
 	GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	UpdateCommandReceipt(ctx context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error)
+	ListCommandReceiptsByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID, commandType string, limit int32) ([]RuntimeCommandReceipt, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
 	DeleteDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) error
 }
@@ -109,6 +110,19 @@ type ResolveProjectTaskNodeRequest struct {
 // needs to know which sentinel it is.
 type ProjectTaskNodeResolver interface {
 	ResolveProjectTaskNode(ctx context.Context, req ResolveProjectTaskNodeRequest) (uuid.UUID, error)
+}
+
+// ProjectDispatchFacts carries project fields needed at dispatch time for
+// stable project-directory CWD (name) and readiness messaging.
+type ProjectDispatchFacts struct {
+	Name                 string
+	WorkspaceReadyStatus string
+}
+
+// ProjectDispatchFactsReader loads project dispatch facts without importing
+// the project package (wired via adapter in internal/app).
+type ProjectDispatchFactsReader interface {
+	GetProjectDispatchFacts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectDispatchFacts, error)
 }
 
 // ChatAnchorProjectValidator confirms a project can serve as a chat run's

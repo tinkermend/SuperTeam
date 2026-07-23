@@ -390,6 +390,8 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/overview", s.projectHandler.GetOverview)
 				r.Put("/projects/{projectId}/runtime-nodes/{runtimeNodeId}", s.projectHandler.AddProjectRuntimeNode)
 				r.Delete("/projects/{projectId}/runtime-nodes/{runtimeNodeId}", s.projectHandler.RemoveProjectRuntimeNode)
+				r.Post("/projects/{projectId}/workspace/reclone", s.projectHandler.RecloneProjectWorkspace)
+				r.Post("/projects/{projectId}/workspace/mark-ready", s.projectHandler.MarkProjectWorkspaceReady)
 				r.Get("/projects/{projectId}/runtime-readiness", s.projectHandler.GetProjectRuntimeReadiness)
 				r.Get("/projects/{projectId}/runtime-nodes", s.projectHandler.ListProjectRuntimeNodes)
 				r.Get("/projects/{projectId}/members", s.projectHandler.ListProjectMembers)

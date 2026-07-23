@@ -25,17 +25,18 @@ func (a *RunRecoveryProjectorAdapter) UpsertStandaloneRunFailure(ctx context.Con
 	}
 	now := time.Now().UTC()
 	_, err := a.service.UpsertItem(ctx, UpsertItemRequest{
-		TenantID:     input.TenantID,
-		TargetUserID: input.TargetUserID,
-		Scope:        "personal",
-		ItemType:     ItemTypeDigitalEmployeeRunRecovery,
-		SourceType:   SourceTypeDigitalEmployeeRun,
-		SourceID:     input.RunID,
-		Title:        input.Title,
-		Summary:      input.Summary,
-		RiskLevel:    "high",
-		Status:       StatusOpen,
-		Actions:      DefaultActions(ItemTypeDigitalEmployeeRunRecovery),
+		TenantID:        input.TenantID,
+		TargetUserID:    input.TargetUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeDigitalEmployeeRunRecovery,
+		SourceType:      SourceTypeDigitalEmployeeRun,
+		SourceID:        input.RunID,
+		SourceProjectID: input.ProjectID,
+		Title:           input.Title,
+		Summary:         input.Summary,
+		RiskLevel:       "high",
+		Status:          StatusOpen,
+		Actions:         DefaultActions(ItemTypeDigitalEmployeeRunRecovery),
 		ContextPayload: map[string]any{
 			"digital_employee_id":   input.DigitalEmployeeID.String(),
 			"digital_employee_name": input.EmployeeName,
@@ -43,7 +44,7 @@ func (a *RunRecoveryProjectorAdapter) UpsertStandaloneRunFailure(ctx context.Con
 			"run_kind":              input.RunKind,
 		},
 		DeepLink: map[string]any{
-			"route": "/employees/" + input.DigitalEmployeeID.String(),
+			"route":  "/employees/" + input.DigitalEmployeeID.String(),
 			"run_id": input.RunID.String(),
 		},
 		LastActivityAt: now,

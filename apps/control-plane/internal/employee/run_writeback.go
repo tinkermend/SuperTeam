@@ -24,6 +24,18 @@ type DigitalEmployeeRunWritebackService struct {
 	executionLedger       ExecutionLedgerRecorder
 	failureInbox          RunFailureInboxProjector
 	employeeOwnerLookup   func(ctx context.Context, tenantID, employeeID uuid.UUID) (ownerUserID uuid.UUID, name string, err error)
+	projectWorkspaceHook  ProjectWorkspaceCommandHook
+}
+
+// ProjectWorkspaceCommandHook observes project_workspace command terminals
+// (clone) so Control Plane can flip workspace_ready_status.
+type ProjectWorkspaceCommandHook interface {
+	OnProjectWorkspaceCommandTerminal(ctx context.Context, receipt RuntimeCommandReceipt, success bool) error
+}
+
+func (s *DigitalEmployeeRunWritebackService) WithProjectWorkspaceCommandHook(hook ProjectWorkspaceCommandHook) *DigitalEmployeeRunWritebackService {
+	s.projectWorkspaceHook = hook
+	return s
 }
 
 type ExecutionLedgerRecorder interface {
@@ -247,6 +259,36 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 	if run == nil {
+		// project_workspace 命令(ensure/remove project directory)无关联 run:
+		// 只把回执置终态,供创建 fan-out 的同步等待解除阻塞。
+		if receipt.ResourceType == "project_workspace" {
+			if isTerminalReceiptStatus(receipt.Status) && receipt.Status != string(spec.status) {
+				return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
+			}
+			receiptResult := terminalReceiptResult(terminal, spec.status)
+			errorMessage := terminal.ErrorMessage
+			if errorMessage == nil && spec.receiptErrorMsg != nil {
+				errorMessage = spec.receiptErrorMsg
+			}
+			updated, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
+				TenantID:     identity.TenantID,
+				CommandID:    commandID,
+				Status:       string(spec.status),
+				Result:       receiptResult,
+				ErrorMessage: errorMessage,
+			})
+			if err != nil {
+				return false, nil, fmt.Errorf("update project workspace command receipt: %w", err)
+			}
+			if s.projectWorkspaceHook != nil && updated != nil &&
+				strings.TrimSpace(updated.CommandType) == "clone_project_repository" {
+				success := updated.Status == "completed"
+				if hookErr := s.projectWorkspaceHook.OnProjectWorkspaceCommandTerminal(ctx, *updated, success); hookErr != nil {
+					return false, nil, fmt.Errorf("project workspace clone hook: %w", hookErr)
+				}
+			}
+			return false, nil, nil
+		}
 		// provision_instance 与 sync_workspace_files 命令均已退役:
 		// 不再存在任何合法的"无 run"命令回执。
 		return false, nil, fmt.Errorf("%w: command receipt does not belong to a digital employee run", ErrNotFound)
@@ -370,7 +412,7 @@ func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context,
 	if errors.Is(err, ErrNotFound) && receipt.ResourceType == "digital_employee_run" && receipt.ResourceID != uuid.Nil {
 		run, err = s.repository.GetRunByID(ctx, identity.TenantID, receipt.ResourceID)
 	}
-	if errors.Is(err, ErrNotFound) && (receipt.ResourceType == "digital_employee_execution_instance" || receipt.ResourceType == "digital_employee_workspace_sync") {
+	if errors.Is(err, ErrNotFound) && (receipt.ResourceType == "digital_employee_execution_instance" || receipt.ResourceType == "digital_employee_workspace_sync" || receipt.ResourceType == "project_workspace") {
 		return receipt, nil, nil
 	}
 	if err != nil {
@@ -432,6 +474,7 @@ func (s *DigitalEmployeeRunWritebackService) projectStandaloneFailureBestEffort(
 		Title:             fmt.Sprintf("处理「%s」的运行失败", employeeName),
 		Summary:           summary,
 		RunKind:           run.RunKind,
+		ProjectID:         projectIDFromRunMetadata(meta),
 	})
 }
 

@@ -15,11 +15,11 @@
 - Endpoints: `GET /api/v1/projects/{projectId}/delete-preview`, `DELETE /api/v1/projects/{projectId}`.
 - Auth action: `project.delete` — tenant owner/admin **or** project `human_owner` only (same surface as `project.archive` / `project.update`); ordinary project members denied.
 - Hard blockers: `project_tasks.status IN ('queued','running','in_progress')` and project-linked `task_runs.status IN ('queued','dispatching','running','cancelling')`.
-- Warnings (preview only, cleaned on confirm): pending/requested decisions, `waiting_human`/`pending_review` tasks, open inbox items for the project.
+- Warnings (preview only, cleaned on confirm): pending/requested decisions, `waiting_human`/`pending_review` tasks, open inbox items for the project, automation rules anchored to the project.
 - Soft-delete: `projects.deleted_at`; list/get/schedule queries must exclude deleted rows; already-deleted → `404`.
 - Cascade does **not** delete `digital_employees` rows; only `project_members` active → `removed`.
 - Non-terminal `project_tasks` → `cancelled`; do **not** rewrite already-terminal statuses (`completed`,`failed`,`cancelled`,`done`,`success`).
-- Pending `project_decision_requests.status_snapshot` / `approval_requests.status` → `cancelled`; open `inbox_items` for `source_project_id` → `cancelled`.
+- Pending `project_decision_requests.status_snapshot` / `approval_requests.status` → `cancelled`; open `inbox_items` for `source_project_id` **or** `digital_employee_run_recovery` anchored via run `tasks.params.metadata.anchor_project_id|project_id` → `cancelled`.
 - Hard-delete projection rows: `project_runtime_nodes`, `project_employee_node_affinity`; release active `project_placements`.
 - Terminate Temporal coordinator **before** DB commit; terminate failure → no DB changes; already-finished workflow = success.
 - Audit: `audit_events.action = project.delete` with cascade counts; no secrets.

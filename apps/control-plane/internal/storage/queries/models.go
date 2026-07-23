@@ -763,7 +763,7 @@ type Project struct {
 	TenantID uuid.UUID `json:"tenant_id"`
 	// 团队ID（可选）
 	TeamID uuid.NullUUID `json:"team_id"`
-	// 项目名称
+	// 项目展示名称(允许中文);不作为 Runtime 目录名
 	Name string `json:"name"`
 	// 项目说明
 	Description pgtype.Text `json:"description"`
@@ -800,6 +800,16 @@ type Project struct {
 	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
 	// 项目人类负责人ID集合(平级,至少一个;任一可审批/验收/兜底路由)
 	HumanOwnerUserIds []uuid.UUID `json:"human_owner_user_ids"`
+	// 工作区首启就绪:pending|ready|error;未就绪只挡派发
+	WorkspaceReadyStatus string `json:"workspace_ready_status"`
+	// 高亲和主 Runtime 节点(首个可用/clone 成功);可空
+	PrimaryRuntimeNodeID uuid.NullUUID `json:"primary_runtime_node_id"`
+	// 最近一次工作区供给失败原因(供人工处理)
+	WorkspaceReadyError pgtype.Text `json:"workspace_ready_error"`
+	// 首次进入 ready 的时间
+	WorkspaceReadyAt pgtype.Timestamptz `json:"workspace_ready_at"`
+	// Runtime 工作区相对目录名(ASCII,全局唯一);与 name 分离
+	DirectoryName string `json:"directory_name"`
 }
 
 // 项目验收记录表，保存人类验收结论、证据引用和未解决风险

@@ -389,7 +389,7 @@ pub async fn build_capabilities(
             descriptor.provider_type,
             section.enabled,
             section.binary_path.display().to_string(),
-            config.workspace.base_dir.display().to_string(),
+            config.workspace_base_dir().display().to_string(),
             health,
         ));
     }
@@ -410,7 +410,7 @@ pub async fn build_capabilities(
         provider_version: None,
         binary_path: None,
         available: true,
-        workspace_base_dir: Some(config.workspace.base_dir.display().to_string()),
+        workspace_base_dir: Some(config.workspace_base_dir().display().to_string()),
         capacity: None,
         labels: Some(workspace_labels),
         status: "available".to_string(),
@@ -535,10 +535,11 @@ fn enrollment_status_label(status: &EnrollmentStatus) -> &'static str {
     }
 }
 
-async fn heartbeat_loop(client: ControlPlaneClient, config: RuntimeConfig) {
+async fn heartbeat_loop(client: ControlPlaneClient, mut config: RuntimeConfig) {
     let mut interval =
         tokio::time::interval(Duration::from_secs(config.runtime.heartbeat_interval));
     let mut last_required_tools = normalize_tool_set(std::iter::empty::<String>());
+    let mut last_capability_fingerprint = String::new();
 
     loop {
         interval.tick().await;
@@ -561,17 +562,40 @@ async fn heartbeat_loop(client: ControlPlaneClient, config: RuntimeConfig) {
                             snapshot.version.as_deref().unwrap_or("unversioned")
                         );
                     }
+                    // 工作区根:本地显式配置优先;否则采纳平台下发值(spec 2026-07-23 §4)。
+                    if !config.workspace.base_dir_explicit {
+                        if let Some(next) = snapshot
+                            .workspace_base_dir
+                            .as_deref()
+                            .and_then(crate::platform_limits::sanitize_platform_workspace_base_dir)
+                        {
+                            if config.workspace.base_dir != next {
+                                println!(
+                                    "Workspace base_dir updated from platform: {} -> {}",
+                                    config.workspace.base_dir.display(),
+                                    next.display()
+                                );
+                                config.workspace.base_dir = next;
+                            }
+                        }
+                    }
                 }
+                // Re-probe every heartbeat so provider install/PATH fixes surface
+                // even when required_tools is unchanged (previously stuck unhealthy).
                 let required_tools = normalize_tool_set(response.required_tools);
-                if required_tools != last_required_tools {
-                    let probe_tools = merge_tool_sets(&config.tools.probe_names, &required_tools);
-                    let capabilities = build_capabilities(&config, &probe_tools).await;
+                let probe_tools = merge_tool_sets(&config.tools.probe_names, &required_tools);
+                let capabilities = build_capabilities(&config, &probe_tools).await;
+                let fingerprint = provider_capability_fingerprint(&capabilities);
+                if required_tools != last_required_tools
+                    || fingerprint != last_capability_fingerprint
+                {
                     match client
                         .upsert_capabilities(&config.runtime.node_id, capabilities)
                         .await
                     {
                         Ok(_) => {
                             last_required_tools = required_tools;
+                            last_capability_fingerprint = fingerprint;
                         }
                         Err(e) => {
                             eprintln!("Runtime capability upsert failed after heartbeat: {}", e);
@@ -584,6 +608,29 @@ async fn heartbeat_loop(client: ControlPlaneClient, config: RuntimeConfig) {
             }
         }
     }
+}
+
+fn provider_capability_fingerprint(capabilities: &[RuntimeCapabilityInput]) -> String {
+    let mut parts = capabilities
+        .iter()
+        .filter(|capability| {
+            capability.capability_type == "provider" || capability.capability_type == "workspace"
+        })
+        .map(|capability| {
+            format!(
+                "{}|{}|{}|{}|{}|{}|{}",
+                capability.capability_type,
+                capability.provider_type,
+                capability.available,
+                capability.status,
+                capability.health_status,
+                capability.binary_path.as_deref().unwrap_or(""),
+                capability.workspace_base_dir.as_deref().unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>();
+    parts.sort();
+    parts.join(";")
 }
 
 fn normalize_tool_set<I>(names: I) -> Vec<String>

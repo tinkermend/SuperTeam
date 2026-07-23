@@ -28,6 +28,7 @@ function project(id: string, overrides: Partial<Project> = {}): Project {
     status: "running",
     tenant_id: tenantId,
     updated_at: "2099-06-29T08:00:00.000Z",
+    workspace_ready_status: "ready",
     ...overrides,
   };
 }

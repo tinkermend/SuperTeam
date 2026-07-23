@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -19,6 +21,7 @@ import (
 const (
 	NodeResolutionReasonNoEligibleOnlineNode = "no_eligible_online_node"
 	NodeResolutionReasonPinnedNodeOffline    = "pinned_node_offline"
+	NodeResolutionReasonWorkspaceUnavailable = "workspace_unavailable"
 )
 
 // NodeResolution is the outcome of three-layer runtime node resolution.
@@ -66,6 +69,14 @@ func (s *Service) ResolveProjectTaskNode(ctx context.Context, in ResolveProjectT
 		return NodeResolution{}, ErrProjectNotFound
 	}
 
+	project, err := s.repository.GetProject(ctx, in.TenantID, in.ProjectID)
+	if err != nil {
+		return NodeResolution{}, err
+	}
+	if project.WorkspaceReadyStatus != "" && project.WorkspaceReadyStatus != WorkspaceReadyStatusReady {
+		return NodeResolution{}, fmt.Errorf("%w: status=%s", ErrProjectWorkspaceNotReady, project.WorkspaceReadyStatus)
+	}
+
 	eligibleNodes, err := s.repository.ListProjectRuntimeNodes(ctx, in.TenantID, in.ProjectID)
 	if err != nil {
 		return NodeResolution{}, err
@@ -107,6 +118,12 @@ func (s *Service) ResolveProjectTaskNode(ctx context.Context, in ResolveProjectT
 		case err == nil && attempt.RuntimeNodeID != nil && *attempt.RuntimeNodeID != uuid.Nil:
 			pinned := *attempt.RuntimeNodeID
 			if dispatchable(pinned) {
+				if !in.DryRun {
+					requireGit := project.RepoBinding.Status == ProjectRepoBindingStatusBound
+					if err := s.validateProjectWorkspaceOnNode(ctx, project.TenantID, project.ID, project.WorkspaceDirectoryName(), pinned, requireGit); err != nil {
+						return NodeResolution{}, fmt.Errorf("%w: pinned node workspace invalid: %v", ErrProjectWorkspaceUnavailable, err)
+					}
+				}
 				return NodeResolution{NodeID: pinned, Pinned: true}, nil
 			}
 			return NodeResolution{Paused: true, Reason: NodeResolutionReasonPinnedNodeOffline}, nil
@@ -133,13 +150,41 @@ func (s *Service) ResolveProjectTaskNode(ctx context.Context, in ResolveProjectT
 		return NodeResolution{Reason: NodeResolutionReasonNoEligibleOnlineNode}, nil
 	}
 
-	// Layer 2: employee affinity → lowest load.
+	requireGit := project.RepoBinding.Status == ProjectRepoBindingStatusBound
+	// 真实派发:对候选节点做工作区校验。DryRun(就绪探测)跳过,避免轮询拖垮 Runtime。
+	if !in.DryRun {
+		validated, validateErr := s.filterCandidatesByWorkspace(ctx, project, candidates, requireGit)
+		if validateErr != nil {
+			return NodeResolution{}, validateErr
+		}
+		if len(validated) == 0 {
+			return NodeResolution{Reason: NodeResolutionReasonWorkspaceUnavailable}, nil
+		}
+		candidates = validated
+		inCandidates = make(map[uuid.UUID]struct{}, len(candidates))
+		for _, record := range candidates {
+			inCandidates[record.ID] = struct{}{}
+		}
+	}
+
+	// Layer 2: primary sticky → employee affinity → lowest load.
+	// 主节点存活且校验通过时必选主节点;主挂才落到其它已绑定且校验通过的节点。
 	chosen := lowestLoadNodeID(candidates)
+	primaryUsable := false
+	if project.PrimaryRuntimeNodeID != nil {
+		if _, ok := inCandidates[*project.PrimaryRuntimeNodeID]; ok {
+			chosen = *project.PrimaryRuntimeNodeID
+			primaryUsable = true
+		}
+	}
 	affinity, err := s.repository.GetProjectEmployeeNodeAffinity(ctx, in.TenantID, in.ProjectID, in.DigitalEmployeeID)
 	switch {
 	case err == nil && affinity.RuntimeNodeID != uuid.Nil:
-		if _, ok := inCandidates[affinity.RuntimeNodeID]; ok {
-			chosen = affinity.RuntimeNodeID
+		// 员工亲和只在主节点不可用时生效;主节点可用时保持粘滞主节点。
+		if !primaryUsable {
+			if _, ok := inCandidates[affinity.RuntimeNodeID]; ok {
+				chosen = affinity.RuntimeNodeID
+			}
 		}
 	case err != nil && !errors.Is(err, ErrProjectNotFound):
 		return NodeResolution{}, err
@@ -151,6 +196,35 @@ func (s *Service) ResolveProjectTaskNode(ctx context.Context, in ResolveProjectT
 		}
 	}
 	return NodeResolution{NodeID: chosen, Pinned: false}, nil
+}
+
+func (s *Service) filterCandidatesByWorkspace(
+	ctx context.Context,
+	project Project,
+	candidates []runtimepkg.NodeRecord,
+	requireGit bool,
+) ([]runtimepkg.NodeRecord, error) {
+	if s.workspaceCommander == nil {
+		return candidates, nil
+	}
+	validated := make([]runtimepkg.NodeRecord, 0, len(candidates))
+	var lastErr error
+	for _, record := range candidates {
+		if err := s.validateProjectWorkspaceOnNode(ctx, project.TenantID, project.ID, project.WorkspaceDirectoryName(), record.ID, requireGit); err != nil {
+			lastErr = err
+			slog.Default().Warn("runtime node failed project workspace validation",
+				"project_id", project.ID.String(),
+				"runtime_node_id", record.ID.String(),
+				"error", err.Error(),
+			)
+			continue
+		}
+		validated = append(validated, record)
+	}
+	if len(validated) == 0 && lastErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrProjectWorkspaceUnavailable, lastErr)
+	}
+	return validated, nil
 }
 
 // runtimeNodeDispatchable reports whether a runtime node can currently accept a

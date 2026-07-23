@@ -17,6 +17,8 @@ type Repository interface {
 	ResetFailureCount(ctx context.Context, tenantID, ruleID uuid.UUID) (Rule, error)
 	DisableRuleSystem(ctx context.Context, tenantID, ruleID uuid.UUID, reason string) (Rule, error)
 	DeleteRule(ctx context.Context, tenantID, ruleID uuid.UUID) error
+	ListRulesByProject(ctx context.Context, tenantID, projectID uuid.UUID) ([]Rule, error)
+	DeleteRulesForProject(ctx context.Context, tenantID, projectID uuid.UUID) error
 	ListEnabledRulesByActor(ctx context.Context, tenantID, actorUserID uuid.UUID) ([]Rule, error)
 	ListEnabledRulesByActorOnProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) ([]Rule, error)
 

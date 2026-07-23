@@ -15,7 +15,7 @@ import {
   type DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
 import { formatDateTime } from "@/lib/format-time";
-import { runStatusLabel } from "@/lib/status-labels";
+import { runStatusLabel, statusLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import { providerDisplayName } from "../provider-label";
 import { RunEventTimeline } from "./run-event-timeline";
@@ -23,6 +23,42 @@ import { RunEventTimeline } from "./run-event-timeline";
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>(["queued", "dispatching", "running", "cancelling"]);
 const failedRunStatuses = new Set<DigitalEmployeeRunStatus>(["failed", "cancelled", "timed_out"]);
 const recoverableRunStatuses = new Set<DigitalEmployeeRunStatus>(["failed", "timed_out"]);
+
+function runProjectDisplayName(name: string | undefined): string {
+  return name?.trim() || "项目详情";
+}
+
+function RunProjectValue({
+  projectId,
+  projectName,
+  projectDeleted,
+}: {
+  projectId?: string;
+  projectName?: string;
+  projectDeleted?: boolean;
+}) {
+  if (!projectId) {
+    return "无关联项目";
+  }
+  const name = runProjectDisplayName(projectName);
+  if (projectDeleted) {
+    return (
+      <span className="font-medium text-v3-ink">
+        {name}
+        <span className="ml-1 font-normal text-v3-ink-3">（{statusLabel("deleted")}）</span>
+      </span>
+    );
+  }
+  return (
+    <Link
+      className="font-medium text-v3-brand underline-offset-2 hover:underline"
+      params={{ projectId }}
+      to="/projects/$projectId"
+    >
+      {name}
+    </Link>
+  );
+}
 
 type RunDetailDrawerProps = {
   apiOptions: ApiClientOptions;
@@ -135,17 +171,11 @@ export function RunDetailDrawer({
               className="md:col-span-2"
               label="所属项目"
               value={
-                displayedRun.project_id ? (
-                  <Link
-                    className="font-medium text-v3-brand underline-offset-2 hover:underline"
-                    params={{ projectId: displayedRun.project_id }}
-                    to="/projects/$projectId"
-                  >
-                    {displayedRun.project_name?.trim() || "项目详情"}
-                  </Link>
-                ) : (
-                  "无关联项目"
-                )
+                <RunProjectValue
+                  projectDeleted={displayedRun.project_deleted}
+                  projectId={displayedRun.project_id}
+                  projectName={displayedRun.project_name}
+                />
               }
             />
           </div>
@@ -186,24 +216,32 @@ export function RunDetailDrawer({
           ) : null}
           {isProjectLinkedRun && isRecoverableRun(displayedRun.status) ? (
             <p className="text-sm text-v3-ink-2">
-              此运行属于项目任务，失败恢复请在
-              {displayedRun.project_id ? (
+              {displayedRun.project_deleted ? (
                 <>
-                  {" "}
-                  <Link
-                    className="font-medium text-v3-brand underline-offset-2 hover:underline"
-                    params={{ projectId: displayedRun.project_id }}
-                    to="/projects/$projectId"
-                  >
-                    {displayedRun.project_name?.trim() || "项目详情"}
-                  </Link>
-                  {" "}
-                  或收件箱处理
+                  此运行属于已删除项目「{runProjectDisplayName(displayedRun.project_name)}」，失败恢复请在收件箱处理。
                 </>
               ) : (
-                " 项目详情或收件箱处理"
+                <>
+                  此运行属于项目任务，失败恢复请在
+                  {displayedRun.project_id ? (
+                    <>
+                      {" "}
+                      <Link
+                        className="font-medium text-v3-brand underline-offset-2 hover:underline"
+                        params={{ projectId: displayedRun.project_id }}
+                        to="/projects/$projectId"
+                      >
+                        {runProjectDisplayName(displayedRun.project_name)}
+                      </Link>
+                      {" "}
+                      或收件箱处理
+                    </>
+                  ) : (
+                    " 项目详情或收件箱处理"
+                  )}
+                  。
+                </>
               )}
-              。
             </p>
           ) : null}
           {displayedRun.failure_acknowledged_at ? (

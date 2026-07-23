@@ -18,7 +18,7 @@ import type {
   DigitalEmployeeRunStatus,
 } from "@/lib/api/employees";
 import { formatDateTime } from "@/lib/format-time";
-import { runStatusLabel } from "@/lib/status-labels";
+import { runStatusLabel, statusLabel } from "@/lib/status-labels";
 import { Link } from "@tanstack/react-router";
 
 type EmployeeRunHistoryTableProps = {
@@ -134,7 +134,13 @@ export function EmployeeRunHistoryTable({
               >
                 <V3Td>
                   <p className="truncate font-medium text-v3-ink">{item.task_title}</p>
-                  <p className="truncate text-xs text-v3-ink-3">{item.project_name ?? "无关联项目"}</p>
+                  <p className="truncate text-xs text-v3-ink-3">
+                    {item.project_name
+                      ? item.project_deleted
+                        ? `${item.project_name}（${statusLabel("deleted")}）`
+                        : item.project_name
+                      : "无关联项目"}
+                  </p>
                 </V3Td>
                 <V3Td className="font-mono text-xs text-v3-ink-2">{shortId(item.id)}</V3Td>
                 <V3Td>

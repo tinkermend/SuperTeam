@@ -7,6 +7,11 @@
 //! - 后台清扫（janitor）：任务工作区按项目 LRU 裁剪到 `max_retained`；chat 线程
 //!   目录按 TTL + 每项目条数兜底清理。活跃 run 引用的目录一律跳过。
 //!
+//! 稳定项目目录 `{base}/{project_name}`（spec 2026-07-23）**永不**进入本模块的
+//! 删除计划：`TerminalWorkspaceCleanup::plan` 只认 legacy
+//! `{base}/workspaces/{proj}/{task}/{attempt}` 三段路径。会话装卸由
+//! `project_session` 按清单 unlink，禁止靠删项目根清理。
+//!
 //! 所有删除都是 best-effort：清理失败绝不影响 run 结果，只留 stderr 痕迹。
 
 use std::collections::HashSet;
@@ -231,7 +236,7 @@ fn last_activity(dir: &Path) -> SystemTime {
 /// 目录;所有删除 best-effort。挂在命令循环所在任务旁,进程存活即持续。
 pub fn spawn_janitor(config: crate::config::RuntimeConfig, runs: crate::runs::RuntimeRunStore) {
     let Ok(base_dir) =
-        crate::project_workspace::absolutize_workspace_base_dir(&config.workspace.base_dir)
+        crate::project_workspace::absolutize_workspace_base_dir(&config.workspace_base_dir())
     else {
         eprintln!("workspace janitor disabled: cannot absolutize workspace base dir");
         return;
@@ -287,6 +292,12 @@ mod tests {
         mk(&chat);
         assert!(TerminalWorkspaceCleanup::plan("on_success", base, &chat).is_none());
         assert!(TerminalWorkspaceCleanup::plan("on_success", base, Path::new("/tmp/x")).is_none());
+        // Stable project dirs are never terminal-cleaned (P2 / spec 2026-07-23).
+        let stable = base.join("my-stable-project");
+        assert!(
+            TerminalWorkspaceCleanup::plan("always", base, &stable).is_none(),
+            "stable {{base}}/{{project_name}} must not enter attempt cleanup"
+        );
         let shallow = base.join("workspaces/p1");
         mk(&shallow);
         assert!(TerminalWorkspaceCleanup::plan("on_success", base, &shallow).is_none());

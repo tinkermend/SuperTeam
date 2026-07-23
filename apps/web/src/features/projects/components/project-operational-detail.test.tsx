@@ -49,6 +49,7 @@ const project: Project = {
   name: "客户接入验收",
   status: "running",
   tenant_id: "tenant-1",
+  workspace_ready_status: "ready",
 };
 
 function member(overrides: Partial<ProjectMember>): ProjectMember {
@@ -241,6 +242,8 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByRole("tab", { name: "概览" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "任务" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "审批" })).toBeVisible();
+    await expect.element(screen.getByText("工作区就绪")).toBeVisible();
+    await expect.element(screen.getByText("目录名 客户接入验收")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: /在运行总览查看/ })).toHaveAttribute(
       "href",
       "/run-overview?project=project-1",

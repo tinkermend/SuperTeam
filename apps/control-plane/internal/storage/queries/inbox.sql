@@ -263,14 +263,38 @@ ORDER BY updated_at DESC, id DESC
 LIMIT 1;
 
 -- name: CancelInboxItemsForProjectDelete :many
-UPDATE inbox_items
+-- 取消项目挂接的 open 收件箱:显式 source_project_id,以及 chat/standalone
+-- run 失败恢复卡(锚在 tasks.params.metadata.anchor_project_id|project_id)。
+UPDATE inbox_items ii
 SET status = 'cancelled',
-    resolved_at = COALESCE(resolved_at, NOW()),
+    resolved_at = COALESCE(ii.resolved_at, NOW()),
     updated_at = NOW()
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND source_project_id = sqlc.arg('project_id')::uuid
-  AND status = 'open'
-RETURNING id;
+WHERE ii.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND ii.status = 'open'
+  AND (
+    ii.source_project_id = sqlc.arg('project_id')::uuid
+    OR (
+      ii.item_type = 'digital_employee_run_recovery'
+      AND EXISTS (
+        SELECT 1
+        FROM task_runs tr
+        JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+        WHERE tr.id = ii.source_id
+          AND tr.tenant_id = sqlc.arg('tenant_id')::uuid
+          AND (
+            (
+              (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              AND (t.params #>> '{metadata,anchor_project_id}')::uuid = sqlc.arg('project_id')::uuid
+            )
+            OR (
+              (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              AND (t.params #>> '{metadata,project_id}')::uuid = sqlc.arg('project_id')::uuid
+            )
+          )
+      )
+    )
+  )
+RETURNING ii.id;
 
 -- name: ListInboxProjectNames :many
 -- 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。

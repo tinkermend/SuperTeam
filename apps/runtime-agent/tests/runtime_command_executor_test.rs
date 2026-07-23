@@ -42,6 +42,7 @@ fn configure_runtime(temp: &TempDir, claude_bin: PathBuf) -> RuntimeCommandExecu
     let mut config = RuntimeConfig::default();
     config.runs.log_dir = temp.path().join("run-logs");
     config.workspace.base_dir = temp.path().join("workspaces");
+    config.workspace.base_dir_explicit = true;
     config.providers.claude_code.enabled = true;
     config.providers.claude_code.binary_path = claude_bin;
     config.providers.opencode.enabled = false;
@@ -57,6 +58,7 @@ fn configure_runtime_with_control_plane(
     let mut config = RuntimeConfig::default();
     config.runs.log_dir = temp.path().join("run-logs");
     config.workspace.base_dir = temp.path().join("workspaces");
+    config.workspace.base_dir_explicit = true;
     config.providers.claude_code.enabled = true;
     config.providers.claude_code.binary_path = claude_bin;
     config.providers.opencode.enabled = false;
@@ -1719,6 +1721,7 @@ async fn install_skills_command_falls_back_to_unsupported_outcome() {
     let temp = tempfile::tempdir().unwrap();
     let mut config = RuntimeConfig::default();
     config.workspace.base_dir = temp.path().join("workspaces");
+    config.workspace.base_dir_explicit = true;
     let executor = RuntimeCommandExecutor::new(config);
 
     let command: RuntimeCommand = serde_json::from_value(json!({
@@ -1754,6 +1757,7 @@ async fn provision_instance_command_falls_back_to_unsupported_outcome() {
     let temp = tempfile::tempdir().unwrap();
     let mut config = RuntimeConfig::default();
     config.workspace.base_dir = temp.path().join("workspaces");
+    config.workspace.base_dir_explicit = true;
     let executor = RuntimeCommandExecutor::new(config);
 
     let command: RuntimeCommand = serde_json::from_value(json!({
@@ -1836,6 +1840,7 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
     let mut config = RuntimeConfig::default();
     config.runs.log_dir = temp.path().join("run-logs");
     config.workspace.base_dir = temp.path().join("workspaces");
+    config.workspace.base_dir_explicit = true;
     config.providers.claude_code.enabled = false;
     config.providers.claude_code.binary_path = temp.path().join("missing-claude");
     config.providers.opencode.enabled = false;
@@ -1953,6 +1958,7 @@ async fn codex_project_task_completion_uses_item_text_when_turn_summary_is_empty
     let mut config = RuntimeConfig::default();
     config.runs.log_dir = temp.path().join("run-logs");
     config.workspace.base_dir = temp.path().join("workspaces");
+    config.workspace.base_dir_explicit = true;
     config.providers.claude_code.enabled = false;
     config.providers.claude_code.binary_path = temp.path().join("missing-claude");
     config.providers.opencode.enabled = false;

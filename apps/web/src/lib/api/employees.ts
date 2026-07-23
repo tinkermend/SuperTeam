@@ -266,6 +266,8 @@ export type DigitalEmployeeRun = {
   chat_thread_id?: string;
   project_id?: string;
   project_name?: string;
+  /** Soft-deleted linked project: keep the name, do not navigate to project detail. */
+  project_deleted?: boolean;
 };
 
 export type DigitalEmployeeRunEvent = {
@@ -299,6 +301,7 @@ export type DigitalEmployeeRunCalendarItem = {
   created_at: string;
   project_id?: string;
   project_name?: string;
+  project_deleted?: boolean;
 };
 
 export type DigitalEmployeeRunCalendar = {
@@ -318,6 +321,7 @@ export type DigitalEmployeeRunListItem = DigitalEmployeeRun & {
   task_title: string;
   project_id?: string;
   project_name?: string;
+  project_deleted?: boolean;
   work_product_count: number;
   duration_sec?: number;
 };

@@ -13,14 +13,36 @@ import (
 )
 
 const CancelInboxItemsForProjectDelete = `-- name: CancelInboxItemsForProjectDelete :many
-UPDATE inbox_items
+UPDATE inbox_items ii
 SET status = 'cancelled',
-    resolved_at = COALESCE(resolved_at, NOW()),
+    resolved_at = COALESCE(ii.resolved_at, NOW()),
     updated_at = NOW()
-WHERE tenant_id = $1::uuid
-  AND source_project_id = $2::uuid
-  AND status = 'open'
-RETURNING id
+WHERE ii.tenant_id = $1::uuid
+  AND ii.status = 'open'
+  AND (
+    ii.source_project_id = $2::uuid
+    OR (
+      ii.item_type = 'digital_employee_run_recovery'
+      AND EXISTS (
+        SELECT 1
+        FROM task_runs tr
+        JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+        WHERE tr.id = ii.source_id
+          AND tr.tenant_id = $1::uuid
+          AND (
+            (
+              (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              AND (t.params #>> '{metadata,anchor_project_id}')::uuid = $2::uuid
+            )
+            OR (
+              (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              AND (t.params #>> '{metadata,project_id}')::uuid = $2::uuid
+            )
+          )
+      )
+    )
+  )
+RETURNING ii.id
 `
 
 type CancelInboxItemsForProjectDeleteParams struct {
@@ -28,6 +50,8 @@ type CancelInboxItemsForProjectDeleteParams struct {
 	ProjectID uuid.UUID `json:"project_id"`
 }
 
+// 取消项目挂接的 open 收件箱:显式 source_project_id,以及 chat/standalone
+// run 失败恢复卡(锚在 tasks.params.metadata.anchor_project_id|project_id)。
 func (q *Queries) CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, CancelInboxItemsForProjectDelete, arg.TenantID, arg.ProjectID)
 	if err != nil {

@@ -80,6 +80,7 @@ type DigitalEmployeeRunService struct {
 	skillMCPDependencyLister SkillMCPDependencyLister
 	nodeResolver             ProjectTaskNodeResolver
 	chatAnchorValidator      ChatAnchorProjectValidator
+	dispatchFacts            ProjectDispatchFactsReader
 	failureInbox             RunFailureInboxProjector
 }
 
@@ -131,6 +132,10 @@ func (s *DigitalEmployeeRunService) SetProjectTaskNodeResolver(r ProjectTaskNode
 // chat requests rather than skipping the check.
 func (s *DigitalEmployeeRunService) SetChatAnchorProjectValidator(v ChatAnchorProjectValidator) {
 	s.chatAnchorValidator = v
+}
+
+func (s *DigitalEmployeeRunService) SetProjectDispatchFactsReader(r ProjectDispatchFactsReader) {
+	s.dispatchFacts = r
 }
 
 func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error) {
@@ -328,6 +333,9 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 	// chat_thread_id itself is injected at payload-build time (a root turn
 	// only knows its thread id once the run row exists).
 	req.Metadata["project_id"] = projectID.String()
+	if err := s.attachProjectNameMetadata(ctx, req.TenantID, projectID, req.Metadata); err != nil {
+		return nil, err
+	}
 	workspaceMode := "none"
 	if resolver, ok := s.chatAnchorValidator.(ChatAnchorProjectGitResolver); ok {
 		projectGit, err := resolver.ChatAnchorProjectGit(ctx, req.TenantID, projectID)
@@ -416,6 +424,9 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 
 	metadata := projectTaskRunMetadata(req, projectPreflight)
 	metadata["revision_root_task_id"] = rootTaskID.String()
+	if err := s.attachProjectNameMetadata(ctx, req.TenantID, req.ProjectID, metadata); err != nil {
+		return StartProjectTaskRunResult{}, err
+	}
 
 	// Session identity is decided here; runtime only consumes it. The
 	// session key is the lineage root, never the current project_task_id —
@@ -1473,6 +1484,20 @@ func projectTaskRunMetadata(req StartProjectTaskRunRequest, preflight StartProje
 		metadata["execution_context_packet_version"] = "v1"
 	}
 	return metadata
+}
+
+func (s *DigitalEmployeeRunService) attachProjectNameMetadata(ctx context.Context, tenantID, projectID uuid.UUID, metadata map[string]any) error {
+	if s.dispatchFacts == nil || projectID == uuid.Nil {
+		return nil
+	}
+	facts, err := s.dispatchFacts.GetProjectDispatchFacts(ctx, tenantID, projectID)
+	if err != nil {
+		return fmt.Errorf("get project dispatch facts: %w", err)
+	}
+	if name := strings.TrimSpace(facts.Name); name != "" {
+		metadata["project_name"] = name
+	}
+	return nil
 }
 
 func validateDailyTokenBudget(preflight RunPreflight) error {

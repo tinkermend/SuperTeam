@@ -354,6 +354,7 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 		name := run.ProjectName.String
 		mapped.ProjectName = &name
 	}
+	mapped.ProjectDeleted = run.ProjectDeleted
 	return mapped, nil
 }
 
@@ -461,7 +462,7 @@ func (r *PgRunRepository) ListRunsDetailed(ctx context.Context, tenantID, employ
 	}
 	projects := make([]RunProjectOption, 0, len(projectRows))
 	for _, p := range projectRows {
-		projects = append(projects, RunProjectOption{ID: p.ID, Name: p.Name})
+		projects = append(projects, RunProjectOption{ID: p.ID, Name: p.Name, Deleted: p.ProjectDeleted})
 	}
 
 	return &DigitalEmployeeRunListResult{Items: items, TotalCount: total, Projects: projects}, nil
@@ -509,6 +510,7 @@ func (r *PgRunRepository) ListRunCalendar(ctx context.Context, tenantID, employe
 			name := row.ProjectName.String
 			item.ProjectName = &name
 		}
+		item.ProjectDeleted = row.ProjectDeleted
 		items = append(items, item)
 	}
 
@@ -836,6 +838,29 @@ func (r *PgRunRepository) UpdateCommandReceipt(ctx context.Context, req UpdateRu
 	return runtimeCommandReceiptFromQuery(receipt), nil
 }
 
+func (r *PgRunRepository) ListCommandReceiptsByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID, commandType string, limit int32) ([]RuntimeCommandReceipt, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.q.ListRuntimeCommandReceiptsByResource(ctx, queries.ListRuntimeCommandReceiptsByResourceParams{
+		TenantID:     tenantID,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		CommandType:  commandType,
+		LimitCount:   limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RuntimeCommandReceipt, 0, len(rows))
+	for _, row := range rows {
+		if mapped := runtimeCommandReceiptFromQuery(row); mapped != nil {
+			out = append(out, *mapped)
+		}
+	}
+	return out, nil
+}
+
 func (r *PgRunRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	record, err := r.q.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
 		Status:   string(status),
@@ -1121,6 +1146,7 @@ func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRu
 		name := row.ProjectName.String
 		item.ProjectName = &name
 	}
+	item.ProjectDeleted = row.ProjectDeleted
 	return item
 }
 

@@ -1191,6 +1191,24 @@ func (f *fakeRunWritebackRepository) UpdateCommandReceipt(_ context.Context, req
 	return &copied, nil
 }
 
+func (f *fakeRunWritebackRepository) ListCommandReceiptsByResource(_ context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID, commandType string, limit int32) ([]RuntimeCommandReceipt, error) {
+	out := make([]RuntimeCommandReceipt, 0)
+	for _, receipt := range f.receipts {
+		if receipt.TenantID != tenantID || receipt.ResourceType != resourceType || receipt.ResourceID != resourceID {
+			continue
+		}
+		if commandType != "" && receipt.CommandType != commandType {
+			continue
+		}
+		copied := *receipt
+		out = append(out, copied)
+		if limit > 0 && int32(len(out)) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 
 func (f *fakeRunWritebackRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	f.employeeStatusUpdates = append(f.employeeStatusUpdates, fakeEmployeeStatusUpdate{

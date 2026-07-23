@@ -184,6 +184,68 @@ func (q *Queries) GetRuntimeCommandReceiptByCommandIDForUpdate(ctx context.Conte
 	return i, err
 }
 
+const ListRuntimeCommandReceiptsByResource = `-- name: ListRuntimeCommandReceiptsByResource :many
+SELECT id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at
+FROM runtime_command_receipts
+WHERE tenant_id = $1::uuid
+  AND resource_type = $2::varchar
+  AND resource_id = $3::uuid
+  AND command_type = $4::varchar
+ORDER BY created_at DESC
+LIMIT $5::int
+`
+
+type ListRuntimeCommandReceiptsByResourceParams struct {
+	TenantID     uuid.UUID `json:"tenant_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   uuid.UUID `json:"resource_id"`
+	CommandType  string    `json:"command_type"`
+	LimitCount   int32     `json:"limit_count"`
+}
+
+func (q *Queries) ListRuntimeCommandReceiptsByResource(ctx context.Context, arg ListRuntimeCommandReceiptsByResourceParams) ([]RuntimeCommandReceipt, error) {
+	rows, err := q.db.Query(ctx, ListRuntimeCommandReceiptsByResource,
+		arg.TenantID,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.CommandType,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RuntimeCommandReceipt{}
+	for rows.Next() {
+		var i RuntimeCommandReceipt
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.CommandID,
+			&i.CommandType,
+			&i.RuntimeNodeID,
+			&i.NodeID,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Status,
+			&i.Payload,
+			&i.Result,
+			&i.ErrorMessage,
+			&i.DispatchedAt,
+			&i.CompletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const UpdateRuntimeCommandReceiptStatus = `-- name: UpdateRuntimeCommandReceiptStatus :one
 UPDATE runtime_command_receipts
 SET status = $1::varchar,

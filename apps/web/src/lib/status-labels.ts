@@ -22,6 +22,7 @@ const STATUS_LABELS: Record<string, string> = {
   consecutive_fire_failures: "连续发起失败 3 次",
   decomposed: "已分解",
   decomposing: "分解中",
+  deleted: "已删除",
   disabled: "已禁用",
   dismissed: "已清理",
   dispatchable: "可分派",
@@ -146,7 +147,19 @@ export function employeeStatusLabel(status: string | undefined): string {
 }
 
 export function projectStatusLabel(status: string | undefined): string {
-  return statusLabel(status);
+  return labelWithOverrides(status, {
+    // 项目生命周期 running = 已可调度/推进；与任务/run 的「运行中」语义区分。
+    running: "已就绪",
+  });
+}
+
+/** 项目工作区首启就绪态；pending 不复用全局「待处理」，以免与审批待办混淆。 */
+export function workspaceReadyStatusLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    error: "工作区异常",
+    pending: "工作区准备中",
+    ready: "工作区就绪",
+  });
 }
 
 export function demandStatusLabel(status: string | undefined): string {

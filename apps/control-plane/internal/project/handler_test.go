@@ -2326,6 +2326,18 @@ func (s *handlerTestService) RemoveProjectRuntimeNode(ctx context.Context, req M
 	return nil
 }
 
+func (s *handlerTestService) RecloneProjectWorkspace(ctx context.Context, req WorkspaceManualActionRequest) (*Project, error) {
+	project := testProject(req.TenantID, req.ProjectID, req.ActorUserID)
+	project.WorkspaceReadyStatus = WorkspaceReadyStatusPending
+	return &project, nil
+}
+
+func (s *handlerTestService) MarkProjectWorkspaceReadyManually(ctx context.Context, req WorkspaceManualActionRequest) (*Project, error) {
+	project := testProject(req.TenantID, req.ProjectID, req.ActorUserID)
+	project.WorkspaceReadyStatus = WorkspaceReadyStatusReady
+	return &project, nil
+}
+
 func (s *handlerTestService) GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error) {
 	s.runtimeReadinessTenantID = tenantID
 	s.runtimeReadinessProjectID = projectID

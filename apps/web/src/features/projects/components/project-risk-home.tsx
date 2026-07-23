@@ -125,7 +125,7 @@ export function ProjectPortfolioSummaryBar({
 }) {
   const items = [
     { icon: FolderKanban, label: "已加载项目", tone: "brand" as V3Tone, value: portfolioCounts.total },
-    { icon: PlayCircle, label: "运行中", tone: "ok" as V3Tone, value: portfolioCounts.running },
+    { icon: PlayCircle, label: projectStatusLabel("running"), tone: "ok" as V3Tone, value: portfolioCounts.running },
     { icon: ShieldCheck, label: "验收中", tone: "info" as V3Tone, value: portfolioCounts.acceptance },
     { icon: AlertTriangle, label: "协调异常", tone: "danger" as V3Tone, value: portfolioCounts.coordinationAnomaly },
     ...(pendingDecisionCount !== undefined

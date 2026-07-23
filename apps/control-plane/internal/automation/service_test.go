@@ -128,6 +128,32 @@ func TestFireConsecutiveFailuresDisable(t *testing.T) {
 	}
 }
 
+func TestCascadeForProjectDeletedRemovesRulesAndSchedules(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ruleID := uuid.New()
+	scheduleID := "automation-rule:" + ruleID.String()
+	repo := newFakeRepo()
+	repo.rules[ruleID] = Rule{
+		ID:                 ruleID,
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		Enabled:            true,
+		TemporalScheduleID: &scheduleID,
+	}
+	schedules := &fakeSchedules{}
+	svc := NewService(repo, &fakeProjects{eligible: true, name: "P"}, nil, nil, schedules)
+	if err := svc.CascadeForProjectDeleted(context.Background(), tenantID, projectID); err != nil {
+		t.Fatalf("cascade: %v", err)
+	}
+	if _, ok := repo.rules[ruleID]; ok {
+		t.Fatal("expected rule deleted")
+	}
+	if schedules.deleteCalls != 1 {
+		t.Fatalf("expected schedule delete once, got %d", schedules.deleteCalls)
+	}
+}
+
 func TestFireSkipsOverlap(t *testing.T) {
 	tenantID := uuid.New()
 	ruleID := uuid.New()
@@ -276,6 +302,27 @@ func (r *fakeRepo) DisableRuleSystem(ctx context.Context, tenantID, ruleID uuid.
 func (r *fakeRepo) DeleteRule(ctx context.Context, tenantID, ruleID uuid.UUID) error {
 	return nil
 }
+func (r *fakeRepo) ListRulesByProject(ctx context.Context, tenantID, projectID uuid.UUID) ([]Rule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]Rule, 0)
+	for _, rule := range r.rules {
+		if rule.TenantID == tenantID && rule.ProjectID == projectID {
+			out = append(out, rule)
+		}
+	}
+	return out, nil
+}
+func (r *fakeRepo) DeleteRulesForProject(ctx context.Context, tenantID, projectID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, rule := range r.rules {
+		if rule.TenantID == tenantID && rule.ProjectID == projectID {
+			delete(r.rules, id)
+		}
+	}
+	return nil
+}
 func (r *fakeRepo) ListEnabledRulesByActor(ctx context.Context, tenantID, actorUserID uuid.UUID) ([]Rule, error) {
 	return nil, nil
 }
@@ -350,7 +397,8 @@ func (f *fakeDemands) SubmitDemand(ctx context.Context, req DemandSubmitRequest)
 }
 
 type fakeSchedules struct {
-	pauseCalls int
+	pauseCalls  int
+	deleteCalls int
 }
 
 func (f *fakeSchedules) Create(ctx context.Context, rule Rule) (string, error) { return "", nil }
@@ -362,7 +410,10 @@ func (f *fakeSchedules) Pause(ctx context.Context, scheduleID string, note strin
 func (f *fakeSchedules) Unpause(ctx context.Context, scheduleID string, note string) error {
 	return nil
 }
-func (f *fakeSchedules) Delete(ctx context.Context, scheduleID string) error { return nil }
+func (f *fakeSchedules) Delete(ctx context.Context, scheduleID string) error {
+	f.deleteCalls++
+	return nil
+}
 
 func strPtr(v string) *string { return &v }
 func int32Ptr(v int32) *int32 { return &v }

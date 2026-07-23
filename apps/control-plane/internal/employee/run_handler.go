@@ -265,13 +265,14 @@ func runStatsResponseFromDomain(stats *DigitalEmployeeRunStats) digitalEmployeeR
 }
 
 type digitalEmployeeRunCalendarItemResponse struct {
-	ID          string `json:"id"`
-	TaskTitle   string `json:"task_title"`
-	Status      string `json:"status"`
-	RunKind     string `json:"run_kind"`
-	CreatedAt   string `json:"created_at"`
-	ProjectID   string `json:"project_id,omitempty"`
-	ProjectName string `json:"project_name,omitempty"`
+	ID             string `json:"id"`
+	TaskTitle      string `json:"task_title"`
+	Status         string `json:"status"`
+	RunKind        string `json:"run_kind"`
+	CreatedAt      string `json:"created_at"`
+	ProjectID      string `json:"project_id,omitempty"`
+	ProjectName    string `json:"project_name,omitempty"`
+	ProjectDeleted bool   `json:"project_deleted,omitempty"`
 }
 
 type digitalEmployeeRunCalendarResponse struct {
@@ -298,6 +299,7 @@ func runCalendarResponseFromDomain(result *DigitalEmployeeRunCalendarResult) dig
 		if item.ProjectName != nil {
 			row.ProjectName = *item.ProjectName
 		}
+		row.ProjectDeleted = item.ProjectDeleted
 		items = append(items, row)
 	}
 	return digitalEmployeeRunCalendarResponse{
@@ -510,6 +512,7 @@ type digitalEmployeeRunResponse struct {
 	UpdatedAt                 string                   `json:"updated_at,omitempty"`
 	ProjectID                 *string                  `json:"project_id,omitempty"`
 	ProjectName               *string                  `json:"project_name,omitempty"`
+	ProjectDeleted            bool                     `json:"project_deleted,omitempty"`
 }
 
 func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
@@ -551,6 +554,7 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		CreatedAt:                 timeString(run.CreatedAt),
 		UpdatedAt:                 timeString(run.UpdatedAt),
 		ProjectName:               run.ProjectName,
+		ProjectDeleted:            run.ProjectDeleted,
 	}
 	if run.ProjectID != nil {
 		id := run.ProjectID.String()
@@ -567,6 +571,7 @@ type digitalEmployeeRunListItemResponse struct {
 	TaskTitle        string   `json:"task_title"`
 	ProjectID        *string  `json:"project_id,omitempty"`
 	ProjectName      *string  `json:"project_name,omitempty"`
+	ProjectDeleted   bool     `json:"project_deleted,omitempty"`
 	WorkProductCount int32    `json:"work_product_count"`
 	DurationSec      *float64 `json:"duration_sec,omitempty"`
 }
@@ -633,6 +638,7 @@ func runListResponseFromDomain(result *DigitalEmployeeRunListResult) digitalEmpl
 			entry.ProjectID = &id
 		}
 		entry.ProjectName = item.ProjectName
+		entry.ProjectDeleted = item.ProjectDeleted
 		response.Items = append(response.Items, entry)
 	}
 	for _, status := range runStatusFilterOrder {
@@ -642,9 +648,13 @@ func runListResponseFromDomain(result *DigitalEmployeeRunListResult) digitalEmpl
 		})
 	}
 	for _, project := range result.Projects {
+		label := project.Name
+		if project.Deleted {
+			label = project.Name + "（已删除）"
+		}
 		response.Filters.Projects = append(response.Filters.Projects, runFilterOption{
 			Value: project.ID.String(),
-			Label: project.Name,
+			Label: label,
 		})
 	}
 	return response

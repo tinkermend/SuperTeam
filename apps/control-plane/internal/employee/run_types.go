@@ -108,8 +108,10 @@ type DigitalEmployeeRun struct {
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 	// ProjectID / ProjectName: project_tasks link, else chat/task-hub metadata anchors.
-	ProjectID   *uuid.UUID
-	ProjectName *string
+	// Soft-deleted projects still resolve; ProjectDeleted is true when deleted_at is set.
+	ProjectID      *uuid.UUID
+	ProjectName    *string
+	ProjectDeleted bool
 }
 
 type DigitalEmployeeRunStats struct {
@@ -133,6 +135,8 @@ type DigitalEmployeeRunCalendarItem struct {
 	CreatedAt   time.Time
 	ProjectID   *uuid.UUID
 	ProjectName *string
+	// ProjectDeleted is true when the linked project has been soft-deleted.
+	ProjectDeleted bool
 }
 
 // DigitalEmployeeRunCalendarResult is the calendar-window response: total matching
@@ -175,6 +179,7 @@ type DigitalEmployeeRunListItem struct {
 	TaskTitle        string
 	ProjectID        *uuid.UUID
 	ProjectName      *string
+	ProjectDeleted   bool
 	WorkProductCount int32
 	DurationSec      *float64
 }
@@ -182,8 +187,9 @@ type DigitalEmployeeRunListItem struct {
 // RunProjectOption is a distinct project option surfaced in the run list response
 // filters, scoped to projects that currently have at least one run for the employee.
 type RunProjectOption struct {
-	ID   uuid.UUID
-	Name string
+	ID      uuid.UUID
+	Name    string
+	Deleted bool
 }
 
 // DigitalEmployeeRunListResult is the aggregated payload returned by the run history

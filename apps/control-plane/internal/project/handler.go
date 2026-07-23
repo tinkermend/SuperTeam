@@ -22,6 +22,8 @@ type HandlerService interface {
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (*Project, error)
 	AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error)
 	RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error
+	RecloneProjectWorkspace(ctx context.Context, req WorkspaceManualActionRequest) (*Project, error)
+	MarkProjectWorkspaceReadyManually(ctx context.Context, req WorkspaceManualActionRequest) (*Project, error)
 	GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
@@ -271,6 +273,7 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		TeamID:              req.TeamID,
 		ActorUserID:         actorID,
 		Name:                req.Name,
+		DirectoryName:       req.DirectoryName,
 		Description:         req.Description,
 		Goal:                req.Goal,
 		HumanOwnerUserID:    req.HumanOwnerUserID,
@@ -352,6 +355,66 @@ func (h *HTTPHandler) AddProjectRuntimeNode(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, projectRuntimeNodeResponse{RuntimeNodeID: node.RuntimeNodeID})
+}
+
+func (h *HTTPHandler) RecloneProjectWorkspace(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectUpdate)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body workspaceManualActionBody
+	if r.Body != nil && r.Body != http.NoBody {
+		if !decodeOptionalJSONBody(w, r, &body) {
+			return
+		}
+	}
+	project, err := service.RecloneProjectWorkspace(r.Context(), WorkspaceManualActionRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: actorID,
+		Reason:      body.Reason,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectResponseFromDomain(*project))
+}
+
+func (h *HTTPHandler) MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectUpdate)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body workspaceManualActionBody
+	if r.Body != nil && r.Body != http.NoBody {
+		if !decodeOptionalJSONBody(w, r, &body) {
+			return
+		}
+	}
+	project, err := service.MarkProjectWorkspaceReadyManually(r.Context(), WorkspaceManualActionRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: actorID,
+		Reason:      body.Reason,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectResponseFromDomain(*project))
+}
+
+type workspaceManualActionBody struct {
+	Reason string `json:"reason"`
 }
 
 func (h *HTTPHandler) RemoveProjectRuntimeNode(w http.ResponseWriter, r *http.Request) {
@@ -1769,8 +1832,10 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTeamlessProjectMember):
 		http.Error(w, "数字员工必须先归属团队才能加入项目："+strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrTeamlessProjectMember.Error()+":")), http.StatusBadRequest)
-	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrProjectRequiresHumanOwner), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
+	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectName), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrProjectRequiresHumanOwner), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrProjectNameConflict), errors.Is(err, ErrProjectWorkspaceNotReady), errors.Is(err, ErrProjectWorkspaceProvision), errors.Is(err, ErrProjectWorkspaceUnavailable):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrUnauthorizedProjectTeamScope):
@@ -1831,6 +1896,7 @@ type createProjectBody struct {
 	ActorUserID         uuid.UUID                `json:"actor_user_id,omitempty"`
 	TeamID              *uuid.UUID               `json:"team_id"`
 	Name                string                   `json:"name"`
+	DirectoryName       string                   `json:"directory_name"`
 	Description         string                   `json:"description"`
 	Goal                string                   `json:"goal"`
 	HumanOwnerUserID    uuid.UUID                `json:"human_owner_user_id"`
@@ -2168,6 +2234,7 @@ type projectResponse struct {
 	TenantID               string                     `json:"tenant_id"`
 	TeamID                 *string                    `json:"team_id,omitempty"`
 	Name                   string                     `json:"name"`
+	DirectoryName          string                     `json:"directory_name"`
 	Description            *string                    `json:"description,omitempty"`
 	Goal                   string                     `json:"goal"`
 	Status                 ProjectStatus              `json:"status"`
@@ -2178,6 +2245,10 @@ type projectResponse struct {
 	CoordinationPolicy     map[string]any             `json:"coordination_policy"`
 	RepoBinding            projectRepoBindingResponse `json:"repo_binding"`
 	ScenarioTemplateKey    *string                    `json:"scenario_template_key,omitempty"`
+	WorkspaceReadyStatus   WorkspaceReadyStatus       `json:"workspace_ready_status"`
+	PrimaryRuntimeNodeID   *string                    `json:"primary_runtime_node_id,omitempty"`
+	WorkspaceReadyError    *string                    `json:"workspace_ready_error,omitempty"`
+	WorkspaceReadyAt       *string                    `json:"workspace_ready_at,omitempty"`
 	ArchivedAt             *string                    `json:"archived_at,omitempty"`
 	AllowedActions         []string                   `json:"allowed_actions,omitempty"`
 	CreatedAt              string                     `json:"created_at,omitempty"`
@@ -2928,11 +2999,16 @@ func uuidsToStrings(ids []uuid.UUID) []string {
 }
 
 func projectResponseFromDomain(project Project) projectResponse {
+	readyStatus := project.WorkspaceReadyStatus
+	if readyStatus == "" {
+		readyStatus = WorkspaceReadyStatusReady
+	}
 	return projectResponse{
 		ID:                     project.ID.String(),
 		TenantID:               project.TenantID.String(),
 		TeamID:                 stringPtr(project.TeamID),
 		Name:                   project.Name,
+		DirectoryName:          project.WorkspaceDirectoryName(),
 		Description:            project.Description,
 		Goal:                   project.Goal,
 		Status:                 project.Status,
@@ -2943,6 +3019,10 @@ func projectResponseFromDomain(project Project) projectResponse {
 		CoordinationPolicy:     mapOrEmpty(project.CoordinationPolicy),
 		RepoBinding:            projectRepoBindingResponseFromDomain(project.RepoBinding),
 		ScenarioTemplateKey:    project.ScenarioTemplateKey,
+		WorkspaceReadyStatus:   readyStatus,
+		PrimaryRuntimeNodeID:   stringPtr(project.PrimaryRuntimeNodeID),
+		WorkspaceReadyError:    project.WorkspaceReadyError,
+		WorkspaceReadyAt:       timePtr(project.WorkspaceReadyAt),
 		ArchivedAt:             timePtr(project.ArchivedAt),
 		CreatedAt:              timeValue(project.CreatedAt),
 		UpdatedAt:              timeValue(project.UpdatedAt),

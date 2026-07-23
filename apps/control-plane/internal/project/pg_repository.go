@@ -76,11 +76,20 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 	if err != nil {
 		return Project{}, err
 	}
+	readyStatus := string(req.WorkspaceReadyStatus)
+	if readyStatus == "" {
+		readyStatus = string(WorkspaceReadyStatusReady)
+	}
+	var readyAt pgtype.Timestamptz
+	if readyStatus == string(WorkspaceReadyStatusReady) {
+		readyAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	}
 	row, err := r.q.CreateProject(ctx, queries.CreateProjectParams{
 		ID:                     projectID,
 		TenantID:               req.TenantID,
 		TeamID:                 nullUUID(req.TeamID),
 		Name:                   req.Name,
+		DirectoryName:          req.DirectoryName,
 		Description:            textOrNull(req.Description),
 		Goal:                   textOrNull(req.Goal),
 		Status:                 string(ProjectStatusRunning),
@@ -95,9 +104,25 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		RepoScope:              repoParams.scope,
 		RepoBindingStatus:      repoParams.status,
 		ScenarioTemplateKey:    textFromStringPtr(req.ScenarioTemplateKey),
+		WorkspaceReadyStatus:   textOrNull(readyStatus),
+		WorkspaceReadyAt:       readyAt,
 	})
 	if err != nil {
 		return Project{}, err
+	}
+	return projectFromRecord(row)
+}
+
+func (r *PgRepository) SetProjectWorkspaceReady(ctx context.Context, tenantID, projectID uuid.UUID, status WorkspaceReadyStatus, primaryNodeID *uuid.UUID, readyError *string) (Project, error) {
+	row, err := r.q.SetProjectWorkspaceReady(ctx, queries.SetProjectWorkspaceReadyParams{
+		TenantID:             tenantID,
+		ID:                   projectID,
+		WorkspaceReadyStatus: string(status),
+		PrimaryRuntimeNodeID: nullUUID(primaryNodeID),
+		WorkspaceReadyError:  textFromStringPtr(readyError),
+	})
+	if err != nil {
+		return Project{}, projectRepositoryError(err)
 	}
 	return projectFromRecord(row)
 }
@@ -6214,6 +6239,7 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		TenantID:               row.TenantID,
 		TeamID:                 ptrUUID(row.TeamID),
 		Name:                   row.Name,
+		DirectoryName:          row.DirectoryName,
 		Description:            ptrText(row.Description),
 		Goal:                   textValue(row.Goal),
 		Status:                 ProjectStatus(row.Status),
@@ -6224,11 +6250,24 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		CoordinationPolicy:     coordinationPolicy,
 		RepoBinding:            repoBinding,
 		ScenarioTemplateKey:    ptrText(row.ScenarioTemplateKey),
+		WorkspaceReadyStatus:   workspaceReadyStatusFromRecord(row.WorkspaceReadyStatus),
+		PrimaryRuntimeNodeID:   ptrUUID(row.PrimaryRuntimeNodeID),
+		WorkspaceReadyError:    ptrText(row.WorkspaceReadyError),
+		WorkspaceReadyAt:       ptrTime(row.WorkspaceReadyAt),
 		ArchivedAt:             ptrTime(row.ArchivedAt),
 		DeletedAt:              ptrTime(row.DeletedAt),
 		CreatedAt:              row.CreatedAt.Time,
 		UpdatedAt:              row.UpdatedAt.Time,
 	}, nil
+}
+
+func workspaceReadyStatusFromRecord(value string) WorkspaceReadyStatus {
+	switch WorkspaceReadyStatus(strings.TrimSpace(value)) {
+	case WorkspaceReadyStatusPending, WorkspaceReadyStatusReady, WorkspaceReadyStatusError:
+		return WorkspaceReadyStatus(strings.TrimSpace(value))
+	default:
+		return WorkspaceReadyStatusReady
+	}
 }
 
 func projectDeleteBlockerFromTaskRow(row queries.ListProjectDeleteTaskBlockersRow) ProjectDeleteBlocker {
@@ -6258,6 +6297,7 @@ func projectDeleteWarningsFromCounts(row queries.GetProjectDeletePreviewCountsRo
 		DigitalEmployeeMemberCount: row.DigitalEmployeeMemberCount,
 		RuntimeNodeBindingCount:    row.RuntimeNodeBindingCount,
 		AffinityCount:              row.AffinityCount,
+		AutomationRuleCount:        row.AutomationRuleCount,
 	}
 }
 
@@ -6273,8 +6313,9 @@ func projectDeleteAuditDetails(params ProjectDeleteAuditEventParams) map[string]
 			"decisions":     params.CascadeResult.DecisionCount,
 			"approvals":     params.CascadeResult.ApprovalCount,
 			"inbox":         params.CascadeResult.InboxCount,
-			"runtime_nodes": params.CascadeResult.RuntimeNodeCount,
-			"affinities":    params.CascadeResult.AffinityCount,
+			"runtime_nodes":     params.CascadeResult.RuntimeNodeCount,
+			"affinities":        params.CascadeResult.AffinityCount,
+			"automation_rules":  params.CascadeResult.AutomationRuleCount,
 		},
 	}
 }

@@ -107,6 +107,7 @@ function makeProject(id: string, name: string, status: Project["status"] = "runn
     status,
     tenant_id: "tenant-1",
     updated_at: updatedAt,
+    workspace_ready_status: "ready",
   };
 }
 
@@ -1579,7 +1580,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("必备项 1 / 3 已就绪")).toBeInTheDocument();
     await expect.element(screen.getByText("未选择")).toBeInTheDocument();
 
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "授权检查");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "auth-check");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "确认来源团队可见");
     await expect.element(screen.getByText("必备项 2 / 3 已就绪")).toBeInTheDocument();
 
@@ -2111,7 +2112,7 @@ describe("ProjectsView", () => {
   it("fetches current user and authorized project teams on the create route", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "授权检查");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "auth-check");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "确认来源团队可见");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2162,7 +2163,7 @@ describe("ProjectsView", () => {
       userProjectTeamScopesResponse(),
     );
     const screen = await renderProjectCreate(fetcher, queryClient);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "缓存授权项目");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "cached-auth-project");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "等待授权范围刷新后才能提交");
 
     try {
@@ -2192,7 +2193,7 @@ describe("ProjectsView", () => {
   it("creates a project from the split console with human owners, source teams, employees, and policies", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "客户验收推进");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "customer-acceptance");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "完成客户验收闭环");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2241,7 +2242,7 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "local-dev-node" }));
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
-    await userEvent.click(screen.getByRole("button", { name: /高风险审批/ }));
+    await userEvent.click(screen.getByRole("button", { name: /高风险复核/ }));
     await userEvent.click(screen.getByRole("button", { name: "创建项目", exact: true }));
 
     await vi.waitFor(() => {
@@ -2253,7 +2254,7 @@ describe("ProjectsView", () => {
       expect(body).toMatchObject({
         human_owner_user_id: LEADER_USER_ID,
         human_owner_user_ids: [LEADER_USER_ID],
-        name: "客户验收推进",
+        name: "customer-acceptance",
         team_id: TEAM_REVIEW_ID,
         runtime_node_ids: ["runtime-node-1"],
         coordination_policy: {
@@ -2294,7 +2295,7 @@ describe("ProjectsView", () => {
   it("lists runtime nodes and lets the user select and deselect them", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "节点选择校验");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "runtime-node-select");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "验证可运行节点多选");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2317,7 +2318,7 @@ describe("ProjectsView", () => {
   it("requires selecting at least one runtime node before creating a project", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "缺少运行节点");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "missing-runtime-node");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "未选择运行节点时不能创建项目");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2339,7 +2340,7 @@ describe("ProjectsView", () => {
   it("does not offer unauthorized teams as digital-employee source teams", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "越权团队项目");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "unauthorized-team");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "尝试提交未授权团队");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2362,7 +2363,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const queryClient = createQueryClient();
     const screen = await renderProjectCreate(fetcher, queryClient);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "清空来源团队");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "clear-source-teams");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "刷新授权范围后仍保持清空");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2395,7 +2396,7 @@ describe("ProjectsView", () => {
   it("shows an empty state and disables project creation when no teams are selectable", async () => {
     const fetcher = createProjectFetcher({ projectTeamScopesStatus: "empty" });
     const screen = await renderProjectCreate(fetcher);
-    await userEvent.fill(screen.getByLabelText("项目名称 *"), "客户验收推进");
+    await userEvent.fill(screen.getByLabelText("项目名称 *"), "customer-acceptance");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "完成客户验收闭环");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2415,6 +2416,8 @@ describe("ProjectsView", () => {
     const screen = await renderProjectCreate(fetcher);
 
     try {
+      await userEvent.fill(screen.getByLabelText("项目名称 *"), "loading-user");
+      await userEvent.fill(screen.getByLabelText("项目目标 *"), "等待当前用户加载");
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await expect.element(screen.getByText("正在加载当前用户...")).toBeInTheDocument();
     } finally {
@@ -2450,7 +2453,7 @@ describe("ProjectsView", () => {
     const screen = await renderProjectCreate(fetcher);
 
     try {
-      await userEvent.fill(screen.getByLabelText("项目名称 *"), "等待团队");
+      await userEvent.fill(screen.getByLabelText("项目名称 *"), "waiting-teams");
       await userEvent.fill(screen.getByLabelText("项目目标 *"), "团队加载中");
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));

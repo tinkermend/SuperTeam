@@ -9,6 +9,7 @@ import {
   riskLevelLabel,
   statusLabel,
   teamStatusLabel,
+  workspaceReadyStatusLabel,
 } from "./status-labels";
 
 describe("statusLabel", () => {
@@ -89,10 +90,17 @@ describe("domain overrides", () => {
   it("projectStatusLabel covers lifecycle codes", () => {
     expect(projectStatusLabel("draft")).toBe("草稿");
     expect(projectStatusLabel("configuring")).toBe("配置中");
-    expect(projectStatusLabel("running")).toBe("运行中");
+    expect(projectStatusLabel("running")).toBe("已就绪");
     expect(projectStatusLabel("paused")).toBe("已暂停");
     expect(projectStatusLabel("acceptance")).toBe("验收中");
     expect(projectStatusLabel("archived")).toBe("已归档");
+  });
+
+  it("workspaceReadyStatusLabel uses domain-specific pending copy", () => {
+    expect(workspaceReadyStatusLabel("pending")).toBe("工作区准备中");
+    expect(workspaceReadyStatusLabel("ready")).toBe("工作区就绪");
+    expect(workspaceReadyStatusLabel("error")).toBe("工作区异常");
+    expect(workspaceReadyStatusLabel(undefined)).toBe("未知");
   });
 
   it("demandStatusLabel covers demand lifecycle codes", () => {

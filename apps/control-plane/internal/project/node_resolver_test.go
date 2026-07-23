@@ -52,6 +52,13 @@ func newResolverService(t *testing.T, repo Repository, nodes ...runtimepkg.NodeR
 
 func seedEligibility(t *testing.T, repo *memoryRepository, tenantID, projectID uuid.UUID, nodeIDs ...uuid.UUID) {
 	t.Helper()
+	repo.projects[projectID] = Project{
+		ID:                   projectID,
+		TenantID:             tenantID,
+		Name:                 "resolver-test-project",
+		Status:               ProjectStatusRunning,
+		WorkspaceReadyStatus: WorkspaceReadyStatusReady,
+	}
 	for _, id := range nodeIDs {
 		_, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, id)
 		require.NoError(t, err)

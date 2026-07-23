@@ -13,6 +13,7 @@ type Repository interface {
 	// Node operations
 	CreateNode(ctx context.Context, params CreateNodeParams) (NodeRecord, error)
 	GetNode(ctx context.Context, nodeID string) (NodeRecord, error)
+	GetNodeByID(ctx context.Context, id uuid.UUID) (NodeRecord, error)
 	ListNodes(ctx context.Context, params ListNodesParams) ([]NodeRecord, error)
 	ListOnlineNodes(ctx context.Context, heartbeatThreshold pgtype.Timestamptz) ([]NodeRecord, error)
 	UpdateHeartbeat(ctx context.Context, params UpdateHeartbeatParams) (NodeRecord, error)

@@ -327,6 +327,42 @@ describe("RunDetailDrawer", () => {
     expect(screen.getByRole("link", { name: "多owner决策可见性E2E" }).elements().length).toBeGreaterThan(0);
   });
 
+  it("shows deleted project name without linking to project detail", async () => {
+    const deletedProjectRun: DigitalEmployeeRunListItem = {
+      ...runningRun,
+      status: "completed",
+      project_id: "4e90dc0b-db29-46b7-bb87-1227f79101a0",
+      project_name: "p2-session-1784772086",
+      project_deleted: true,
+      task_title: "P2 smoke reply OK",
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/events")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse({ error: "unhandled" }, 404);
+    }) as unknown as typeof fetch;
+
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={deletedProjectRun}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByText("所属项目")).toBeVisible();
+    await expect.element(screen.getByText("p2-session-1784772086")).toBeVisible();
+    await expect.element(screen.getByText(/（已删除）/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "p2-session-1784772086" }).query()).toBeNull();
+  });
+
   it("shows no linked project in the summary when the run is standalone", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));

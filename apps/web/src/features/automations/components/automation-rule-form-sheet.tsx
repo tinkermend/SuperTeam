@@ -451,7 +451,7 @@ export function AutomationRuleFormSheet({
         </div>
 
         <SheetFooter className="gap-2 border-t p-4">
-          <V3Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <V3Button variant="outline" onClick={() => onOpenChange(false)}>
             取消
           </V3Button>
           <V3Button disabled={!canSubmit || submitting} onClick={handleSubmit}>

@@ -28,8 +28,8 @@ runs:
   log_dir: .superteam/runtime-runs
 
 workspace:
-  # 工作目录基础路径
-  base_dir: .superteam/workspaces
+  # 工作目录基础路径（交付默认与 RUNTIME_AGENT_WORKSPACE_DIR 对齐）
+  base_dir: /var/superteam/workspaces
 
   # 清理策略：on_success | on_completion | manual
   cleanup_policy: on_success
@@ -40,6 +40,7 @@ workspace:
 providers:
   claude_code:
     enabled: true
+    # 命令名或绝对路径；命令名按 PATH 解析。勿写死本机不存在的 /usr/local/bin/...。
     binary_path: claude
     # 超时时间（秒）
     timeout: 3600

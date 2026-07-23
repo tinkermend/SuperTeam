@@ -1114,6 +1114,52 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/workspace/reclone:
+    post:
+      operationId: recloneProjectWorkspace
+      summary: Re-trigger git clone for a project workspace (from pending/error)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectWorkspaceManualActionRequest"
+      responses:
+        "200":
+          description: Workspace reclone accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/workspace/mark-ready:
+    post:
+      operationId: markProjectWorkspaceReady
+      summary: Mark project workspace ready after manual disk repair
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectWorkspaceManualActionRequest"
+      responses:
+        "200":
+          description: Workspace marked ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/overview:
     get:
       operationId: getProjectOverview
@@ -4757,21 +4803,37 @@ components:
           type: string
         value_type:
           type: string
-          description: bytes | duration_seconds | int (registry-validated, not a closed enum)
+          description: >-
+            bytes | duration_seconds | int | string (registry-validated, not a
+            closed enum). For string types numeric fields are 0 and
+            default_string_value / effective_string_value carry the text.
         default_value:
           type: integer
           format: int64
+          description: Numeric default; 0 for string value_type.
         effective_value:
           type: integer
           format: int64
+          description: Numeric effective value; 0 for string value_type.
+        default_string_value:
+          type: string
+          description: Present for string value_type; registry default text.
+        effective_string_value:
+          type: string
+          description: Present for string value_type; effective override or default.
+        max_string_length:
+          type: integer
+          description: Present for string value_type; max rune length (default 1024).
         is_overridden:
           type: boolean
         min_value:
           type: integer
           format: int64
+          description: Numeric lower bound; 0 for string value_type.
         max_value:
           type: integer
           format: int64
+          description: Numeric upper bound; 0 for string value_type.
         updated_at:
           type: string
           format: date-time
@@ -4788,12 +4850,17 @@ components:
             $ref: "#/components/schemas/SystemConfigItem"
     UpdateSystemConfigRequest:
       type: object
-      required:
-        - value
+      description: >-
+        Provide exactly one of value (numeric configs) or string_value (string
+        configs). Sending both or neither is a client error.
       properties:
         value:
           type: integer
           format: int64
+          description: Required for bytes | duration_seconds | int configs.
+        string_value:
+          type: string
+          description: Required for string configs (e.g. runtime.workspace_base_dir).
     ConnectorProjectListResponse:
       type: object
       required:
@@ -5790,6 +5857,13 @@ components:
         skill_archive_max_file_count:
           type: integer
           format: int64
+        workspace_base_dir:
+          type: string
+          description: >-
+            Effective platform workspace root from system config
+            (runtime.workspace_base_dir). Agents may still override via local
+            config.yaml / RUNTIME_AGENT_WORKSPACE_DIR. Missing field keeps the
+            agent local default.
     RuntimeEnrollmentStatus:
       type: string
       enum:
@@ -6702,6 +6776,7 @@ components:
         - id
         - tenant_id
         - name
+        - directory_name
         - goal
         - status
         - human_owner_user_id
@@ -6710,6 +6785,7 @@ components:
         - coordination_status
         - coordination_policy
         - repo_binding
+        - workspace_ready_status
       properties:
         id:
           type: string
@@ -6722,6 +6798,15 @@ components:
           format: uuid
         name:
           type: string
+          description: >-
+            Project display name shown in Console (Chinese allowed). Not used
+            as the on-disk Runtime directory name.
+        directory_name:
+          type: string
+          description: >-
+            Stable relative directory under the runtime workspace root.
+            Linux-friendly ASCII only; globally unique among non-deleted
+            projects. Immutable after create.
         description:
           type: string
         goal:
@@ -6748,6 +6833,26 @@ components:
           additionalProperties: true
         repo_binding:
           $ref: "#/components/schemas/ProjectRepoBinding"
+        workspace_ready_status:
+          type: string
+          enum:
+            - pending
+            - ready
+            - error
+          description: >-
+            First-boot workspace readiness. pending/error block dispatch into
+            the project directory; metadata edits are not blocked.
+        primary_runtime_node_id:
+          type: string
+          format: uuid
+          description: Sticky primary runtime node (first successful provision/clone).
+        workspace_ready_error:
+          type: string
+          description: Latest workspace provision failure message for operators.
+        workspace_ready_at:
+          type: string
+          format: date-time
+          description: When the project first became workspace-ready.
         archived_at:
           type: string
           format: date-time
@@ -6803,6 +6908,9 @@ components:
           type: integer
         affinity_count:
           type: integer
+        automation_rule_count:
+          type: integer
+          description: 锚到该项目的自动化规则数；确认删除时一并移除并清理 Temporal Schedule
     ProjectDeleteBlockedError:
       type: object
       required:
@@ -6865,6 +6973,12 @@ components:
         runtime_node_id:
           type: string
           format: uuid
+    ProjectWorkspaceManualActionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Optional operator note recorded in the project audit event.
     ProjectRuntimePlacementStatus:
       type: string
       enum:
@@ -8811,6 +8925,16 @@ components:
           format: uuid
         name:
           type: string
+          description: >-
+            Project display name (Chinese allowed). Separate from
+            directory_name.
+        directory_name:
+          type: string
+          description: >-
+            Runtime workspace relative directory (ASCII only:
+            [a-zA-Z0-9._-]+). Globally unique among non-deleted projects.
+            Required for non-Git projects. For Git-bound creates, may be
+            omitted to derive from the repository URL basename.
         description:
           type: string
         goal:
@@ -12413,6 +12537,9 @@ components:
         project_name:
           type: string
           description: Display name for the linked project when project_id is present.
+        project_deleted:
+          type: boolean
+          description: True when the linked project exists but has been soft-deleted; UI should keep the name and not link to project detail.
     DigitalEmployeeRunStats:
       type: object
       required:
@@ -12479,6 +12606,9 @@ components:
           format: uuid
         project_name:
           type: string
+        project_deleted:
+          type: boolean
+          description: True when the linked project has been soft-deleted.
     DigitalEmployeeRunCalendar:
       type: object
       required:
@@ -12518,6 +12648,9 @@ components:
               format: uuid
             project_name:
               type: string
+            project_deleted:
+              type: boolean
+              description: True when the linked project has been soft-deleted.
             work_product_count:
               type: integer
             duration_sec:

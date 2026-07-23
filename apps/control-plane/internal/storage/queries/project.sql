@@ -4,6 +4,7 @@ INSERT INTO projects (
     tenant_id,
     team_id,
     name,
+    directory_name,
     description,
     goal,
     status,
@@ -17,12 +18,15 @@ INSERT INTO projects (
     repo_git_credential_ref,
     repo_scope,
     repo_binding_status,
-    scenario_template_key
+    scenario_template_key,
+    workspace_ready_status,
+    workspace_ready_at
 ) VALUES (
     sqlc.arg('id')::uuid,
     sqlc.arg('tenant_id')::uuid,
     sqlc.narg('team_id')::uuid,
     sqlc.arg('name')::varchar,
+    sqlc.arg('directory_name')::varchar,
     sqlc.narg('description')::text,
     sqlc.narg('goal')::text,
     sqlc.arg('status')::varchar,
@@ -36,7 +40,9 @@ INSERT INTO projects (
     sqlc.narg('repo_git_credential_ref')::varchar,
     COALESCE(sqlc.narg('repo_scope')::jsonb, '[]'::jsonb),
     COALESCE(sqlc.narg('repo_binding_status')::varchar, 'unbound'),
-    sqlc.narg('scenario_template_key')::text
+    sqlc.narg('scenario_template_key')::text,
+    COALESCE(sqlc.narg('workspace_ready_status')::varchar, 'ready'),
+    sqlc.narg('workspace_ready_at')::timestamptz
 ) RETURNING *;
 
 -- name: GetProject :one
@@ -63,6 +69,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND (
     sqlc.narg('q')::text IS NULL
     OR name ILIKE '%' || sqlc.narg('q')::text || '%'
+    OR directory_name ILIKE '%' || sqlc.narg('q')::text || '%'
     OR COALESCE(goal, '') ILIKE '%' || sqlc.narg('q')::text || '%'
   )
 ORDER BY created_at DESC
@@ -2212,6 +2219,31 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: SetProjectWorkspaceReady :one
+-- CAS: ready 仅从 pending|error|ready；error 仅从 pending；pending 可从 pending|error|ready（reclone）。
+UPDATE projects
+SET workspace_ready_status = sqlc.arg('workspace_ready_status')::varchar,
+    primary_runtime_node_id = sqlc.narg('primary_runtime_node_id')::uuid,
+    workspace_ready_error = sqlc.narg('workspace_ready_error')::text,
+    workspace_ready_at = CASE
+        WHEN sqlc.arg('workspace_ready_status')::varchar = 'ready'
+            THEN COALESCE(workspace_ready_at, NOW())
+        ELSE workspace_ready_at
+    END,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL
+  AND (
+    CASE sqlc.arg('workspace_ready_status')::varchar
+      WHEN 'ready' THEN workspace_ready_status IN ('pending', 'error', 'ready')
+      WHEN 'error' THEN workspace_ready_status = 'pending'
+      WHEN 'pending' THEN workspace_ready_status IN ('pending', 'error', 'ready')
+      ELSE TRUE
+    END
+  )
+RETURNING *;
+
 -- name: ListProjectDeleteTaskBlockers :many
 SELECT
     'project_task'::text AS blocker_type,
@@ -2252,9 +2284,32 @@ SELECT
   (SELECT COUNT(*)::int FROM project_tasks
     WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
       AND status IN ('waiting_human', 'pending_review')) AS waiting_human_task_count,
-  (SELECT COUNT(*)::int FROM inbox_items
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND source_project_id = sqlc.arg('project_id')::uuid
-      AND status = 'open') AS open_inbox_count,
+  (SELECT COUNT(*)::int FROM inbox_items ii
+    WHERE ii.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND ii.status = 'open'
+      AND (
+        ii.source_project_id = sqlc.arg('project_id')::uuid
+        OR (
+          ii.item_type = 'digital_employee_run_recovery'
+          AND EXISTS (
+            SELECT 1
+            FROM task_runs tr
+            JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+            WHERE tr.id = ii.source_id
+              AND tr.tenant_id = sqlc.arg('tenant_id')::uuid
+              AND (
+                (
+                  (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  AND (t.params #>> '{metadata,anchor_project_id}')::uuid = sqlc.arg('project_id')::uuid
+                )
+                OR (
+                  (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  AND (t.params #>> '{metadata,project_id}')::uuid = sqlc.arg('project_id')::uuid
+                )
+              )
+          )
+        )
+      )) AS open_inbox_count,
   (SELECT COUNT(*)::int FROM project_members
     WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
       AND status = 'active') AS active_member_count,
@@ -2264,7 +2319,9 @@ SELECT
   (SELECT COUNT(*)::int FROM project_runtime_nodes
     WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid) AS runtime_node_binding_count,
   (SELECT COUNT(*)::int FROM project_employee_node_affinity
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid) AS affinity_count;
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid) AS affinity_count,
+  (SELECT COUNT(*)::int FROM automation_rules
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid) AS automation_rule_count;
 
 -- name: DeactivateProjectMembersForDelete :many
 UPDATE project_members

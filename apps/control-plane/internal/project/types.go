@@ -10,7 +10,16 @@ import (
 
 var (
 	ErrInvalidProject       = errors.New("invalid project")
-	ErrInvalidProjectMember = errors.New("invalid project member")
+	ErrInvalidProjectName   = errors.New("invalid project name")
+	// ErrProjectNameConflict:项目名(=目录名)全局唯一冲突。
+	ErrProjectNameConflict = errors.New("project name already exists")
+	// ErrProjectWorkspaceNotReady:工作区未就绪,挡派发(及进入项目目录的执行路径)。
+	ErrProjectWorkspaceNotReady = errors.New("project workspace is not ready")
+	// ErrProjectWorkspaceProvision:关联 Runtime 节点上预建/清理项目目录失败。
+	ErrProjectWorkspaceProvision = errors.New("project workspace provision failed")
+	// ErrProjectWorkspaceUnavailable:项目级已 ready,但目标节点工作区校验失败。
+	ErrProjectWorkspaceUnavailable = errors.New("project workspace unavailable on runtime nodes")
+	ErrInvalidProjectMember        = errors.New("invalid project member")
 	// ErrProjectRequiresHumanOwner:项目必须至少保留一个 owner 角色的人类负责人成员。
 	ErrProjectRequiresHumanOwner = errors.New("project requires at least one human owner")
 	// ErrTeamlessProjectMember means a digital_employee member has no team
@@ -96,16 +105,18 @@ type ProjectDeleteWarnings struct {
 	DigitalEmployeeMemberCount int32 `json:"digital_employee_member_count"`
 	RuntimeNodeBindingCount    int32 `json:"runtime_node_binding_count"`
 	AffinityCount              int32 `json:"affinity_count"`
+	AutomationRuleCount        int32 `json:"automation_rule_count"`
 }
 
 type ProjectDeleteCascadeResult struct {
-	MemberCount      int
-	TaskCount        int
-	DecisionCount    int
-	ApprovalCount    int
-	InboxCount       int
-	RuntimeNodeCount int
-	AffinityCount    int
+	MemberCount         int
+	TaskCount           int
+	DecisionCount       int
+	ApprovalCount       int
+	InboxCount          int
+	RuntimeNodeCount    int
+	AffinityCount       int
+	AutomationRuleCount int
 }
 
 type DeleteProjectRequest struct {
@@ -184,6 +195,10 @@ const (
 
 	ProjectEventRuntimePlacementUpdated          ProjectEventType = "project.runtime_placement.updated"
 	ProjectEventRuntimePlacementReleased         ProjectEventType = "project.runtime_placement.released"
+	ProjectEventWorkspaceReady                   ProjectEventType = "project.workspace.ready"
+	ProjectEventWorkspaceError                   ProjectEventType = "project.workspace.error"
+	ProjectEventWorkspaceRecloneRequested        ProjectEventType = "project.workspace.reclone_requested"
+	ProjectEventWorkspaceMarkedReady             ProjectEventType = "project.workspace.marked_ready"
 	ProjectEventCoordinationBlocked              ProjectEventType = "coordination.blocked"
 	ProjectEventScenarioTemplateResolutionFailed ProjectEventType = "scenario_template.resolution_failed"
 	ProjectEventWorkflowCoordinationFailed       ProjectEventType = "workflow.coordination_failed"
@@ -417,11 +432,21 @@ type WorkflowInstanceSummary struct {
 	RecentEvent               *WorkflowInstanceRecentEvent
 }
 
+// WorkspaceReadyStatus 项目工作区首启就绪(spec 2026-07-23 §5.2)。
+type WorkspaceReadyStatus string
+
+const (
+	WorkspaceReadyStatusPending WorkspaceReadyStatus = "pending"
+	WorkspaceReadyStatusReady   WorkspaceReadyStatus = "ready"
+	WorkspaceReadyStatusError   WorkspaceReadyStatus = "error"
+)
+
 type Project struct {
 	ID                     uuid.UUID
 	TenantID               uuid.UUID
 	TeamID                 *uuid.UUID
 	Name                   string
+	DirectoryName          string
 	Description            *string
 	Goal                   string
 	Status                 ProjectStatus
@@ -432,6 +457,10 @@ type Project struct {
 	CoordinationPolicy     map[string]any
 	RepoBinding            ProjectRepoBinding
 	ScenarioTemplateKey    *string
+	WorkspaceReadyStatus   WorkspaceReadyStatus
+	PrimaryRuntimeNodeID   *uuid.UUID
+	WorkspaceReadyError    *string
+	WorkspaceReadyAt       *time.Time
 	ArchivedAt             *time.Time
 	DeletedAt              *time.Time
 	CreatedAt              time.Time
@@ -1580,6 +1609,10 @@ type CreateProjectRequest struct {
 	TeamID             *uuid.UUID
 	ActorUserID        uuid.UUID
 	Name               string
+	// DirectoryName is the Runtime workspace relative directory (ASCII).
+	// When empty: Git-bound projects derive from repo URL; otherwise if Name
+	// itself is a valid directory name it is copied (legacy single-field).
+	DirectoryName      string
 	Description        string
 	Goal               string
 	HumanOwnerUserID   uuid.UUID
@@ -1591,6 +1624,9 @@ type CreateProjectRequest struct {
 	// ScenarioTemplateKey binds the project to a scenario template; nil means
 	// the generic fallback (planning behaves exactly as an unbound project).
 	ScenarioTemplateKey *string
+	// WorkspaceReadyStatus is set by CreateProject before persistence; callers
+	// outside CreateProject leave it empty (repository defaults to ready).
+	WorkspaceReadyStatus WorkspaceReadyStatus
 }
 
 // ProjectRuntimeNode is a runtime node bound to a project's eligibility set —

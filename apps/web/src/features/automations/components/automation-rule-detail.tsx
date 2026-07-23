@@ -70,7 +70,7 @@ export function AutomationRuleDetail({
                 aria-label="返回工作台"
                 size="icon"
                 type="button"
-                variant="secondary"
+                variant="outline"
                 onClick={onClose}
               >
                 <X className="size-4" />
@@ -119,12 +119,12 @@ export function AutomationRuleDetail({
 
         <div className="flex flex-wrap gap-2">
           {rule.enabled ? (
-            <V3Button disabled={busy} onClick={onDisable} size="sm" variant="secondary">
+            <V3Button disabled={busy} onClick={onDisable} size="sm" variant="outline">
               <Power data-icon="inline-start" />
               停用
             </V3Button>
           ) : (
-            <V3Button disabled={busy} onClick={onEnable} size="sm" variant="secondary">
+            <V3Button disabled={busy} onClick={onEnable} size="sm" variant="outline">
               <Power data-icon="inline-start" />
               启用
             </V3Button>
@@ -133,7 +133,7 @@ export function AutomationRuleDetail({
             <Play data-icon="inline-start" />
             立即试跑
           </V3Button>
-          <V3Button disabled={busy} onClick={onEdit} size="sm" variant="secondary">
+          <V3Button disabled={busy} onClick={onEdit} size="sm" variant="outline">
             <Pencil data-icon="inline-start" />
             编辑
           </V3Button>

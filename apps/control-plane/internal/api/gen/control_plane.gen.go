@@ -1179,6 +1179,27 @@ func (e PresignRuntimeRawLogRequestObject) Valid() bool {
 	}
 }
 
+// Defines values for ProjectWorkspaceReadyStatus.
+const (
+	ProjectWorkspaceReadyStatusError   ProjectWorkspaceReadyStatus = "error"
+	ProjectWorkspaceReadyStatusPending ProjectWorkspaceReadyStatus = "pending"
+	ProjectWorkspaceReadyStatusReady   ProjectWorkspaceReadyStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the ProjectWorkspaceReadyStatus enum.
+func (e ProjectWorkspaceReadyStatus) Valid() bool {
+	switch e {
+	case ProjectWorkspaceReadyStatusError:
+		return true
+	case ProjectWorkspaceReadyStatusPending:
+		return true
+	case ProjectWorkspaceReadyStatusReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectAcceptanceRecordStatus.
 const (
 	ProjectAcceptanceRecordStatusAccepted          ProjectAcceptanceRecordStatus = "accepted"
@@ -1493,34 +1514,34 @@ func (e ProjectRole) Valid() bool {
 
 // Defines values for ProjectRuntimePlacementStatus.
 const (
-	CapacityFull               ProjectRuntimePlacementStatus = "capacity_full"
-	CommandChannelDisconnected ProjectRuntimePlacementStatus = "command_channel_disconnected"
-	ContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
-	Missing                    ProjectRuntimePlacementStatus = "missing"
-	ProviderUnavailable        ProjectRuntimePlacementStatus = "provider_unavailable"
-	Ready                      ProjectRuntimePlacementStatus = "ready"
-	RuntimeOffline             ProjectRuntimePlacementStatus = "runtime_offline"
-	WorkspacePending           ProjectRuntimePlacementStatus = "workspace_pending"
+	ProjectRuntimePlacementStatusCapacityFull               ProjectRuntimePlacementStatus = "capacity_full"
+	ProjectRuntimePlacementStatusCommandChannelDisconnected ProjectRuntimePlacementStatus = "command_channel_disconnected"
+	ProjectRuntimePlacementStatusContractMismatch           ProjectRuntimePlacementStatus = "contract_mismatch"
+	ProjectRuntimePlacementStatusMissing                    ProjectRuntimePlacementStatus = "missing"
+	ProjectRuntimePlacementStatusProviderUnavailable        ProjectRuntimePlacementStatus = "provider_unavailable"
+	ProjectRuntimePlacementStatusReady                      ProjectRuntimePlacementStatus = "ready"
+	ProjectRuntimePlacementStatusRuntimeOffline             ProjectRuntimePlacementStatus = "runtime_offline"
+	ProjectRuntimePlacementStatusWorkspacePending           ProjectRuntimePlacementStatus = "workspace_pending"
 )
 
 // Valid indicates whether the value is a known member of the ProjectRuntimePlacementStatus enum.
 func (e ProjectRuntimePlacementStatus) Valid() bool {
 	switch e {
-	case CapacityFull:
+	case ProjectRuntimePlacementStatusCapacityFull:
 		return true
-	case CommandChannelDisconnected:
+	case ProjectRuntimePlacementStatusCommandChannelDisconnected:
 		return true
-	case ContractMismatch:
+	case ProjectRuntimePlacementStatusContractMismatch:
 		return true
-	case Missing:
+	case ProjectRuntimePlacementStatusMissing:
 		return true
-	case ProviderUnavailable:
+	case ProjectRuntimePlacementStatusProviderUnavailable:
 		return true
-	case Ready:
+	case ProjectRuntimePlacementStatusReady:
 		return true
-	case RuntimeOffline:
+	case ProjectRuntimePlacementStatusRuntimeOffline:
 		return true
-	case WorkspacePending:
+	case ProjectRuntimePlacementStatusWorkspacePending:
 		return true
 	default:
 		return false
@@ -2792,15 +2813,20 @@ type CreateProjectEvidenceRequest struct {
 type CreateProjectRequest struct {
 	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
 	Description        *string                 `json:"description,omitempty"`
-	Goal               string                  `json:"goal"`
-	HumanOwnerUserId   openapi_types.UUID      `json:"human_owner_user_id"`
+
+	// DirectoryName Runtime workspace relative directory (ASCII only: [a-zA-Z0-9._-]+). Globally unique among non-deleted projects. Required for non-Git projects. For Git-bound creates, may be omitted to derive from the repository URL basename.
+	DirectoryName    *string            `json:"directory_name,omitempty"`
+	Goal             string             `json:"goal"`
+	HumanOwnerUserId openapi_types.UUID `json:"human_owner_user_id"`
 
 	// HumanOwnerUserIds 项目人类负责人ID集合(平级,至少一个);与 human_owner_user_id 二选一或并用,服务端归一化去重
 	HumanOwnerUserIds *[]openapi_types.UUID `json:"human_owner_user_ids,omitempty"`
 	Members           *[]ProjectMemberInput `json:"members,omitempty"`
-	Name              string                `json:"name"`
-	RepoBinding       *ProjectRepoBinding   `json:"repo_binding,omitempty"`
-	RuntimeNodeIds    []openapi_types.UUID  `json:"runtime_node_ids"`
+
+	// Name Project display name (Chinese allowed). Separate from directory_name.
+	Name           string               `json:"name"`
+	RepoBinding    *ProjectRepoBinding  `json:"repo_binding,omitempty"`
+	RuntimeNodeIds []openapi_types.UUID `json:"runtime_node_ids"`
 
 	// ScenarioTemplateKey 绑定的场景模板 key；缺省为 generic 兜底（行为同无模板）
 	ScenarioTemplateKey *string             `json:"scenario_template_key,omitempty"`
@@ -3385,6 +3411,9 @@ type DigitalEmployeeRun struct {
 	LogRef                *string            `json:"log_ref,omitempty"`
 	NodeId                string             `json:"node_id"`
 
+	// ProjectDeleted True when the linked project exists but has been soft-deleted; UI should keep the name and not link to project detail.
+	ProjectDeleted *bool `json:"project_deleted,omitempty"`
+
 	// ProjectId Linked project via project_tasks.digital_employee_run_id when present.
 	ProjectId *openapi_types.UUID `json:"project_id,omitempty"`
 
@@ -3424,13 +3453,16 @@ type DigitalEmployeeRunCalendar struct {
 
 // DigitalEmployeeRunCalendarItem defines model for DigitalEmployeeRunCalendarItem.
 type DigitalEmployeeRunCalendarItem struct {
-	CreatedAt   time.Time                             `json:"created_at"`
-	Id          openapi_types.UUID                    `json:"id"`
-	ProjectId   *openapi_types.UUID                   `json:"project_id,omitempty"`
-	ProjectName *string                               `json:"project_name,omitempty"`
-	RunKind     DigitalEmployeeRunCalendarItemRunKind `json:"run_kind"`
-	Status      DigitalEmployeeRunStatus              `json:"status"`
-	TaskTitle   string                                `json:"task_title"`
+	CreatedAt time.Time          `json:"created_at"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// ProjectDeleted True when the linked project has been soft-deleted.
+	ProjectDeleted *bool                                 `json:"project_deleted,omitempty"`
+	ProjectId      *openapi_types.UUID                   `json:"project_id,omitempty"`
+	ProjectName    *string                               `json:"project_name,omitempty"`
+	RunKind        DigitalEmployeeRunCalendarItemRunKind `json:"run_kind"`
+	Status         DigitalEmployeeRunStatus              `json:"status"`
+	TaskTitle      string                                `json:"task_title"`
 }
 
 // DigitalEmployeeRunCalendarItemRunKind defines model for DigitalEmployeeRunCalendarItem.RunKind.
@@ -3481,13 +3513,16 @@ type DigitalEmployeeRunListItem struct {
 	ExitCode            *int32                 `json:"exit_code,omitempty"`
 
 	// FailureAcknowledgedAt When a human acknowledged this failed/timed_out standalone run
-	FailureAcknowledgedAt     *time.Time                        `json:"failure_acknowledged_at,omitempty"`
-	FinishedAt                *time.Time                        `json:"finished_at,omitempty"`
-	GraceSec                  *int32                            `json:"grace_sec,omitempty"`
-	Id                        openapi_types.UUID                `json:"id"`
-	IdempotencyKey            *string                           `json:"idempotency_key,omitempty"`
-	LogRef                    *string                           `json:"log_ref,omitempty"`
-	NodeId                    string                            `json:"node_id"`
+	FailureAcknowledgedAt *time.Time         `json:"failure_acknowledged_at,omitempty"`
+	FinishedAt            *time.Time         `json:"finished_at,omitempty"`
+	GraceSec              *int32             `json:"grace_sec,omitempty"`
+	Id                    openapi_types.UUID `json:"id"`
+	IdempotencyKey        *string            `json:"idempotency_key,omitempty"`
+	LogRef                *string            `json:"log_ref,omitempty"`
+	NodeId                string             `json:"node_id"`
+
+	// ProjectDeleted True when the linked project has been soft-deleted.
+	ProjectDeleted            *bool                             `json:"project_deleted,omitempty"`
 	ProjectId                 *openapi_types.UUID               `json:"project_id,omitempty"`
 	ProjectName               *string                           `json:"project_name,omitempty"`
 	ProviderSessionExternalId *string                           `json:"provider_session_external_id,omitempty"`
@@ -4180,6 +4215,9 @@ type PlatformLimits struct {
 
 	// Version Stable fingerprint ("plv1:sha256:<hex>") over the ordered limit values; agents skip re-applying when unchanged.
 	Version *string `json:"version,omitempty"`
+
+	// WorkspaceBaseDir Effective platform workspace root from system config (runtime.workspace_base_dir). Agents may still override via local config.yaml / RUNTIME_AGENT_WORKSPACE_DIR. Missing field keeps the agent local default.
+	WorkspaceBaseDir *string `json:"workspace_base_dir,omitempty"`
 }
 
 // PresignRuntimeArtifactRequest defines model for PresignRuntimeArtifactRequest.
@@ -4221,20 +4259,40 @@ type Project struct {
 	CoordinationWorkflowId string                 `json:"coordination_workflow_id"`
 	CreatedAt              *time.Time             `json:"created_at,omitempty"`
 	Description            *string                `json:"description,omitempty"`
-	Goal                   string                 `json:"goal"`
-	HumanOwnerUserId       openapi_types.UUID     `json:"human_owner_user_id"`
+
+	// DirectoryName Stable relative directory under the runtime workspace root. Linux-friendly ASCII only; globally unique among non-deleted projects. Immutable after create.
+	DirectoryName    string             `json:"directory_name"`
+	Goal             string             `json:"goal"`
+	HumanOwnerUserId openapi_types.UUID `json:"human_owner_user_id"`
 
 	// HumanOwnerUserIds 项目人类负责人ID集合(平级,至少一个)
-	HumanOwnerUserIds   []openapi_types.UUID `json:"human_owner_user_ids"`
-	Id                  openapi_types.UUID   `json:"id"`
-	Name                string               `json:"name"`
-	RepoBinding         ProjectRepoBinding   `json:"repo_binding"`
-	ScenarioTemplateKey *string              `json:"scenario_template_key,omitempty"`
-	Status              ProjectStatus        `json:"status"`
-	TeamId              *openapi_types.UUID  `json:"team_id,omitempty"`
-	TenantId            openapi_types.UUID   `json:"tenant_id"`
-	UpdatedAt           *time.Time           `json:"updated_at,omitempty"`
+	HumanOwnerUserIds []openapi_types.UUID `json:"human_owner_user_ids"`
+	Id                openapi_types.UUID   `json:"id"`
+
+	// Name Project display name shown in Console (Chinese allowed). Not used as the on-disk Runtime directory name.
+	Name string `json:"name"`
+
+	// PrimaryRuntimeNodeId Sticky primary runtime node (first successful provision/clone).
+	PrimaryRuntimeNodeId *openapi_types.UUID `json:"primary_runtime_node_id,omitempty"`
+	RepoBinding          ProjectRepoBinding  `json:"repo_binding"`
+	ScenarioTemplateKey  *string             `json:"scenario_template_key,omitempty"`
+	Status               ProjectStatus       `json:"status"`
+	TeamId               *openapi_types.UUID `json:"team_id,omitempty"`
+	TenantId             openapi_types.UUID  `json:"tenant_id"`
+	UpdatedAt            *time.Time          `json:"updated_at,omitempty"`
+
+	// WorkspaceReadyAt When the project first became workspace-ready.
+	WorkspaceReadyAt *time.Time `json:"workspace_ready_at,omitempty"`
+
+	// WorkspaceReadyError Latest workspace provision failure message for operators.
+	WorkspaceReadyError *string `json:"workspace_ready_error,omitempty"`
+
+	// WorkspaceReadyStatus First-boot workspace readiness. pending/error block dispatch into the project directory; metadata edits are not blocked.
+	WorkspaceReadyStatus ProjectWorkspaceReadyStatus `json:"workspace_ready_status"`
 }
+
+// ProjectWorkspaceReadyStatus First-boot workspace readiness. pending/error block dispatch into the project directory; metadata edits are not blocked.
+type ProjectWorkspaceReadyStatus string
 
 // ProjectAcceptanceRecord defines model for ProjectAcceptanceRecord.
 type ProjectAcceptanceRecord struct {
@@ -4441,8 +4499,11 @@ type ProjectDeletePreview struct {
 
 // ProjectDeleteWarnings defines model for ProjectDeleteWarnings.
 type ProjectDeleteWarnings struct {
-	ActiveMemberCount          *int `json:"active_member_count,omitempty"`
-	AffinityCount              *int `json:"affinity_count,omitempty"`
+	ActiveMemberCount *int `json:"active_member_count,omitempty"`
+	AffinityCount     *int `json:"affinity_count,omitempty"`
+
+	// AutomationRuleCount 锚到该项目的自动化规则数；确认删除时一并移除并清理 Temporal Schedule
+	AutomationRuleCount        *int `json:"automation_rule_count,omitempty"`
 	DigitalEmployeeMemberCount *int `json:"digital_employee_member_count,omitempty"`
 	OpenInboxCount             *int `json:"open_inbox_count,omitempty"`
 	PendingDecisionCount       *int `json:"pending_decision_count,omitempty"`
@@ -5039,6 +5100,12 @@ type ProjectTransferRequest struct {
 	SuggestedEmployeeType        *string              `json:"suggested_employee_type,omitempty"`
 	TenantId                     openapi_types.UUID   `json:"tenant_id"`
 	UpdatedAt                    *time.Time           `json:"updated_at,omitempty"`
+}
+
+// ProjectWorkspaceManualActionRequest defines model for ProjectWorkspaceManualActionRequest.
+type ProjectWorkspaceManualActionRequest struct {
+	// Reason Optional operator note recorded in the project audit event.
+	Reason *string `json:"reason,omitempty"`
 }
 
 // PromptTemplate defines model for PromptTemplate.
@@ -5703,21 +5770,37 @@ type SubmitProjectTaskAttemptResultRequest struct {
 
 // SystemConfigItem defines model for SystemConfigItem.
 type SystemConfigItem struct {
+	// DefaultStringValue Present for string value_type; registry default text.
+	DefaultStringValue *string `json:"default_string_value,omitempty"`
+
+	// DefaultValue Numeric default; 0 for string value_type.
 	DefaultValue int64  `json:"default_value"`
 	Description  string `json:"description"`
 
 	// Domain Registry domain tag; the console groups tabs by this value.
-	Domain         string     `json:"domain"`
-	EffectiveValue int64      `json:"effective_value"`
-	IsOverridden   bool       `json:"is_overridden"`
-	Key            string     `json:"key"`
-	Label          string     `json:"label"`
-	MaxValue       int64      `json:"max_value"`
-	MinValue       int64      `json:"min_value"`
-	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
-	UpdatedByName  *string    `json:"updated_by_name,omitempty"`
+	Domain string `json:"domain"`
 
-	// ValueType bytes | duration_seconds | int (registry-validated, not a closed enum)
+	// EffectiveStringValue Present for string value_type; effective override or default.
+	EffectiveStringValue *string `json:"effective_string_value,omitempty"`
+
+	// EffectiveValue Numeric effective value; 0 for string value_type.
+	EffectiveValue int64  `json:"effective_value"`
+	IsOverridden   bool   `json:"is_overridden"`
+	Key            string `json:"key"`
+	Label          string `json:"label"`
+
+	// MaxStringLength Present for string value_type; max rune length (default 1024).
+	MaxStringLength *int `json:"max_string_length,omitempty"`
+
+	// MaxValue Numeric upper bound; 0 for string value_type.
+	MaxValue int64 `json:"max_value"`
+
+	// MinValue Numeric lower bound; 0 for string value_type.
+	MinValue      int64      `json:"min_value"`
+	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
+	UpdatedByName *string    `json:"updated_by_name,omitempty"`
+
+	// ValueType bytes | duration_seconds | int | string (registry-validated, not a closed enum). For string types numeric fields are 0 and default_string_value / effective_string_value carry the text.
 	ValueType string `json:"value_type"`
 }
 
@@ -5948,9 +6031,13 @@ type UpdateProjectConfigRequest struct {
 	RepoBinding *ProjectRepoBinding   `json:"repo_binding,omitempty"`
 }
 
-// UpdateSystemConfigRequest defines model for UpdateSystemConfigRequest.
+// UpdateSystemConfigRequest Provide exactly one of value (numeric configs) or string_value (string configs). Sending both or neither is a client error.
 type UpdateSystemConfigRequest struct {
-	Value int64 `json:"value"`
+	// StringValue Required for string configs (e.g. runtime.workspace_base_dir).
+	StringValue *string `json:"string_value,omitempty"`
+
+	// Value Required for bytes | duration_seconds | int configs.
+	Value *int64 `json:"value,omitempty"`
 }
 
 // UpdateTaskStatusRequest defines model for UpdateTaskStatusRequest.
@@ -6747,6 +6834,12 @@ type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
 
 // AddProjectRuntimeNodeJSONRequestBody defines body for AddProjectRuntimeNode for application/json ContentType.
 type AddProjectRuntimeNodeJSONRequestBody AddProjectRuntimeNodeJSONBody
+
+// MarkProjectWorkspaceReadyJSONRequestBody defines body for MarkProjectWorkspaceReady for application/json ContentType.
+type MarkProjectWorkspaceReadyJSONRequestBody = ProjectWorkspaceManualActionRequest
+
+// RecloneProjectWorkspaceJSONRequestBody defines body for RecloneProjectWorkspace for application/json ContentType.
+type RecloneProjectWorkspaceJSONRequestBody = ProjectWorkspaceManualActionRequest
 
 // AppendProviderSessionEventJSONRequestBody defines body for AppendProviderSessionEvent for application/json ContentType.
 type AppendProviderSessionEventJSONRequestBody = AppendProviderSessionEventRequest
@@ -7725,6 +7818,12 @@ type ServerInterface interface {
 	// List project transfer requests
 	// (GET /api/v1/projects/{projectId}/transfer-requests)
 	ListProjectTransferRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTransferRequestsParams)
+	// Mark project workspace ready after manual disk repair
+	// (POST /api/v1/projects/{projectId}/workspace/mark-ready)
+	MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Re-trigger git clone for a project workspace (from pending/error)
+	// (POST /api/v1/projects/{projectId}/workspace/reclone)
+	RecloneProjectWorkspace(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// List provider session events
 	// (GET /api/v1/provider-sessions/{providerSessionId}/events)
 	ListProviderSessionEvents(w http.ResponseWriter, r *http.Request, providerSessionId ProviderSessionId)
@@ -8763,6 +8862,18 @@ func (_ Unimplemented) GetProjectTaskLiveness(w http.ResponseWriter, r *http.Req
 // List project transfer requests
 // (GET /api/v1/projects/{projectId}/transfer-requests)
 func (_ Unimplemented) ListProjectTransferRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTransferRequestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Mark project workspace ready after manual disk repair
+// (POST /api/v1/projects/{projectId}/workspace/mark-ready)
+func (_ Unimplemented) MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Re-trigger git clone for a project workspace (from pending/error)
+// (POST /api/v1/projects/{projectId}/workspace/reclone)
+func (_ Unimplemented) RecloneProjectWorkspace(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -14008,6 +14119,58 @@ func (siw *ServerInterfaceWrapper) ListProjectTransferRequests(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// MarkProjectWorkspaceReady operation middleware
+func (siw *ServerInterfaceWrapper) MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MarkProjectWorkspaceReady(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RecloneProjectWorkspace operation middleware
+func (siw *ServerInterfaceWrapper) RecloneProjectWorkspace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecloneProjectWorkspace(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProviderSessionEvents operation middleware
 func (siw *ServerInterfaceWrapper) ListProviderSessionEvents(w http.ResponseWriter, r *http.Request) {
 
@@ -17351,6 +17514,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/transfer-requests", wrapper.ListProjectTransferRequests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/workspace/mark-ready", wrapper.MarkProjectWorkspaceReady)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/workspace/reclone", wrapper.RecloneProjectWorkspace)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/provider-sessions/{providerSessionId}/events", wrapper.ListProviderSessionEvents)

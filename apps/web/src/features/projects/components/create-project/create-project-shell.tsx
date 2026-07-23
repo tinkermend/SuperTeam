@@ -55,6 +55,7 @@ export function CreateProjectShell({
   const [draft, setDraft] = useState<ProjectCreateDraft>(emptyProjectCreateDraft);
   const [activeStep, setActiveStep] = useState<ProjectCreateStep>("basics");
   const [localError, setLocalError] = useState("");
+  const [basicsAttempted, setBasicsAttempted] = useState(false);
   const validation = projectCreateValidation(draft, currentUser?.id, selectableTeams);
   const activeIndex = projectCreateSteps.findIndex((step) => step.id === activeStep);
   const isAuthorizationLoading = Boolean(isCurrentUserLoading || isTeamsLoading);
@@ -88,6 +89,17 @@ export function CreateProjectShell({
   }, [onCancel]);
 
   function goNext() {
+    if (activeStep === "basics" && !validation.basics) {
+      setBasicsAttempted(true);
+      setLocalError(
+        validation.nameError ??
+          validation.directoryError ??
+          validation.repoError ??
+          (!draft.goal.trim() ? "请补齐项目目标" : "请补齐基础信息"),
+      );
+      return;
+    }
+    setLocalError("");
     if (activeIndex < projectCreateSteps.length - 1) {
       setActiveStep(projectCreateSteps[activeIndex + 1].id);
     }
@@ -105,7 +117,13 @@ export function CreateProjectShell({
       return;
     }
     if (!validation.basics) {
-      setLocalError("请补齐项目名称和目标");
+      setBasicsAttempted(true);
+      setLocalError(
+        validation.nameError ??
+          validation.directoryError ??
+          validation.repoError ??
+          "请补齐项目名称和目标",
+      );
       setActiveStep("basics");
       return;
     }
@@ -201,7 +219,14 @@ export function CreateProjectShell({
               </div>
             ) : null}
             {activeStep === "basics" ? (
-              <ProjectBasicsStep draft={draft} onChange={setDraft} />
+              <ProjectBasicsStep
+                directoryError={validation.directoryError}
+                draft={draft}
+                nameError={validation.nameError}
+                onChange={setDraft}
+                repoError={validation.repoError}
+                showNameError={basicsAttempted}
+              />
             ) : activeStep === "owners" ? (
               <ProjectHumanOwnersStep
                 apiBaseUrl={apiBaseUrl}

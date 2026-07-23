@@ -27,15 +27,11 @@ func (r *PgRepository) ListOverrides(ctx context.Context, tenantID uuid.UUID) ([
 	}
 	out := make([]Override, 0, len(rows))
 	for _, row := range rows {
-		value, err := decodeOverrideValue(row.Value)
+		o, err := decodeOverride(row.ConfigKey, row.Value)
 		if err != nil {
 			return nil, fmt.Errorf("decode override %s: %w", row.ConfigKey, err)
 		}
-		o := Override{
-			ConfigKey: row.ConfigKey,
-			Value:     value,
-			UpdatedAt: row.UpdatedAt.Time,
-		}
+		o.UpdatedAt = row.UpdatedAt.Time
 		if row.UpdatedBy.Valid {
 			updatedBy := row.UpdatedBy.UUID
 			o.UpdatedBy = &updatedBy
@@ -60,19 +56,19 @@ func (r *PgRepository) GetOverride(ctx context.Context, tenantID uuid.UUID, key 
 		}
 		return nil, err
 	}
-	value, err := decodeOverrideValue(row.Value)
+	o, err := decodeOverride(row.ConfigKey, row.Value)
 	if err != nil {
 		return nil, fmt.Errorf("decode override %s: %w", key, err)
 	}
-	o := &Override{ConfigKey: row.ConfigKey, Value: value, UpdatedAt: row.UpdatedAt.Time}
+	o.UpdatedAt = row.UpdatedAt.Time
 	if row.UpdatedBy.Valid {
 		updatedBy := row.UpdatedBy.UUID
 		o.UpdatedBy = &updatedBy
 	}
-	return o, nil
+	return &o, nil
 }
 
-func (r *PgRepository) UpsertOverride(ctx context.Context, tenantID uuid.UUID, key string, value int64, updatedBy uuid.UUID) error {
+func (r *PgRepository) UpsertOverride(ctx context.Context, tenantID uuid.UUID, key string, value any, updatedBy uuid.UUID) error {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -97,10 +93,21 @@ func (r *PgRepository) DeleteOverride(ctx context.Context, tenantID uuid.UUID, k
 	return affected > 0, nil
 }
 
-func decodeOverrideValue(raw []byte) (int64, error) {
-	var value int64
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return 0, err
+// decodeOverride 按 JSONB 实际类型解码:number → Value,string → StringValue。
+// 定义类型由服务层在读路径对齐;存储层只负责忠实还原。
+func decodeOverride(key string, raw []byte) (Override, error) {
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return Override{}, err
 	}
-	return value, nil
+	o := Override{ConfigKey: key}
+	switch v := decoded.(type) {
+	case float64:
+		o.Value = int64(v)
+	case string:
+		o.StringValue = v
+	default:
+		return Override{}, fmt.Errorf("unsupported JSONB value type %T", decoded)
+	}
+	return o, nil
 }

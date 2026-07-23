@@ -50,17 +50,19 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
 -- name: ListAutomationRules :many
-SELECT * FROM automation_rules
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+SELECT ar.* FROM automation_rules ar
+JOIN projects p ON p.id = ar.project_id AND p.tenant_id = ar.tenant_id
+WHERE ar.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND p.deleted_at IS NULL
   AND (
     sqlc.narg('project_id')::uuid IS NULL
-    OR project_id = sqlc.narg('project_id')::uuid
+    OR ar.project_id = sqlc.narg('project_id')::uuid
   )
   AND (
     sqlc.narg('enabled')::boolean IS NULL
-    OR enabled = sqlc.narg('enabled')::boolean
+    OR ar.enabled = sqlc.narg('enabled')::boolean
   )
-ORDER BY updated_at DESC
+ORDER BY ar.updated_at DESC
 LIMIT sqlc.arg('limit_count')::int
 OFFSET sqlc.arg('offset_count')::int;
 
@@ -132,6 +134,26 @@ RETURNING *;
 DELETE FROM automation_rules
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
+
+-- name: ListAutomationRulesByProject :many
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+FROM automation_rules
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid;
+
+-- name: DeleteAutomationFiresByProject :execrows
+DELETE FROM automation_fires
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND rule_id IN (
+    SELECT id FROM automation_rules
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND project_id = sqlc.arg('project_id')::uuid
+  );
+
+-- name: DeleteAutomationRulesByProject :execrows
+DELETE FROM automation_rules
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid;
 
 -- name: ListEnabledAutomationRulesByActor :many
 SELECT * FROM automation_rules

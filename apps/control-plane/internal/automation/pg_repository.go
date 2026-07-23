@@ -192,6 +192,35 @@ func (r *PgRepository) DeleteRule(ctx context.Context, tenantID, ruleID uuid.UUI
 	return nil
 }
 
+func (r *PgRepository) ListRulesByProject(ctx context.Context, tenantID, projectID uuid.UUID) ([]Rule, error) {
+	rows, err := r.q.ListAutomationRulesByProject(ctx, queries.ListAutomationRulesByProjectParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Rule, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ruleFromRow(row))
+	}
+	return out, nil
+}
+
+func (r *PgRepository) DeleteRulesForProject(ctx context.Context, tenantID, projectID uuid.UUID) error {
+	if _, err := r.q.DeleteAutomationFiresByProject(ctx, queries.DeleteAutomationFiresByProjectParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	}); err != nil {
+		return err
+	}
+	_, err := r.q.DeleteAutomationRulesByProject(ctx, queries.DeleteAutomationRulesByProjectParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	return err
+}
+
 func (r *PgRepository) ListEnabledRulesByActor(ctx context.Context, tenantID, actorUserID uuid.UUID) ([]Rule, error) {
 	rows, err := r.q.ListEnabledAutomationRulesByActor(ctx, queries.ListEnabledAutomationRulesByActorParams{
 		TenantID:    tenantID,

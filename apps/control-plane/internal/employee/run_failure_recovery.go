@@ -26,6 +26,9 @@ type StandaloneRunFailureInboxInput struct {
 	Title             string
 	Summary           string
 	RunKind           string
+	// ProjectID is the chat/task-hub anchor project when present; stored as
+	// inbox source_project_id so project delete can cascade-cancel the card.
+	ProjectID *uuid.UUID
 }
 
 func (s *DigitalEmployeeRunService) WithFailureInboxProjector(projector RunFailureInboxProjector) *DigitalEmployeeRunService {

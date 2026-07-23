@@ -154,11 +154,25 @@ export type ProjectAcceptanceStatus =
   | "needs_more_evidence"
   | "partially_accepted";
 
+export type WorkspaceReadyStatus = "pending" | "ready" | "error";
+
+export type ProjectRepoBindingStatus = "bound" | "unbound";
+
+export type ProjectRepoBinding = {
+  status: ProjectRepoBindingStatus;
+  url?: string;
+  default_branch?: string;
+  git_credential_ref?: string;
+  scope?: string[];
+};
+
 export type Project = {
   id: string;
   tenant_id: string;
   team_id?: string;
   name: string;
+  /** Runtime 工作区相对目录名（ASCII）；与展示 name 分离。 */
+  directory_name: string;
   description?: string;
   goal: string;
   status: ProjectStatus;
@@ -167,6 +181,12 @@ export type Project = {
   coordination_workflow_id: string;
   coordination_status: string;
   coordination_policy: Record<string, unknown>;
+  repo_binding?: ProjectRepoBinding;
+  /** 工作区首启就绪；未就绪只挡派发。 */
+  workspace_ready_status: WorkspaceReadyStatus;
+  primary_runtime_node_id?: string;
+  workspace_ready_error?: string;
+  workspace_ready_at?: string;
   archived_at?: string;
   allowed_actions?: string[];
   created_at?: string;
@@ -790,6 +810,7 @@ export type ProjectDeleteWarnings = {
   digital_employee_member_count?: number;
   runtime_node_binding_count?: number;
   affinity_count?: number;
+  automation_rule_count?: number;
 };
 
 export type ProjectDeletePreview = {
@@ -842,6 +863,8 @@ export type ProjectConfigRevision = {
 export type CreateProjectInput = {
   team_id?: string;
   name: string;
+  /** Runtime 目录名；非 Git 必填；Git 可省略由服务端从 URL 推导。 */
+  directory_name?: string;
   description?: string;
   goal: string;
   human_owner_user_id: string;
@@ -849,6 +872,8 @@ export type CreateProjectInput = {
   members?: ProjectMemberInput[];
   coordination_policy?: Record<string, unknown>;
   runtime_node_ids: string[];
+  /** 可选：绑定 Git 仓库，创建后异步 clone 到项目目录。 */
+  repo_binding?: ProjectRepoBinding;
   scenario_template_key?: string;
 };
 
@@ -1124,6 +1149,32 @@ export function archiveProject(
     options,
     projectPath(projectId, "/archive"),
     "archive project",
+  );
+}
+
+export function recloneProjectWorkspace(
+  options: ApiClientOptions,
+  projectId: string,
+  reason?: string,
+): Promise<Project> {
+  return postJson<Project, { reason?: string }>(
+    options,
+    projectPath(projectId, "/workspace/reclone"),
+    reason ? { reason } : {},
+    "reclone project workspace",
+  );
+}
+
+export function markProjectWorkspaceReady(
+  options: ApiClientOptions,
+  projectId: string,
+  reason?: string,
+): Promise<Project> {
+  return postJson<Project, { reason?: string }>(
+    options,
+    projectPath(projectId, "/workspace/mark-ready"),
+    reason ? { reason } : {},
+    "mark project workspace ready",
   );
 }
 

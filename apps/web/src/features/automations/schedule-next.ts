@@ -108,7 +108,7 @@ function matchCron(expr: string, parts: ZonedParts): boolean {
   const months = expandField(month, 1, 12);
   // cron DOW: 0 or 7 = Sunday
   const dows = new Set<number>();
-  for (const value of expandField(dow.replaceAll("7", "0"), 0, 6)) {
+  for (const value of expandField(dow.replace(/7/g, "0"), 0, 6)) {
     dows.add(value);
   }
 

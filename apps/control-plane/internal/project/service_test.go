@@ -31,7 +31,7 @@ func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      ownerID,
-		Name:             "支付网关稳定性整改",
+		Name:             "payment-gateway-stability",
 		Goal:             "修复超时链路并形成验收报告",
 		HumanOwnerUserID: ownerID,
 		Members: []ProjectMemberInput{
@@ -4633,7 +4633,7 @@ func TestCreateProjectRejectsUnauthorizedTeamScope(t *testing.T) {
 		TenantID:         tenantID,
 		TeamID:           &teamID,
 		ActorUserID:      actorID,
-		Name:             "未授权团队项目",
+		Name:             "unauthorized-team-project",
 		Goal:             "验证团队授权边界",
 		HumanOwnerUserID: ownerID,
 	})
@@ -4661,7 +4661,7 @@ func TestCreateProjectAllowsAuthorizedTeamScope(t *testing.T) {
 		TenantID:         tenantID,
 		TeamID:           &teamID,
 		ActorUserID:      actorID,
-		Name:             "授权团队项目",
+		Name:             "authorized-team-project",
 		Goal:             "验证授权通过",
 		HumanOwnerUserID: ownerID,
 		Members: []ProjectMemberInput{{
@@ -4695,7 +4695,7 @@ func TestCreateProjectRejectsUnauthorizedMemberOnlyTeamScope(t *testing.T) {
 	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      actorID,
-		Name:             "未授权团队成员项目",
+		Name:             "unauthorized-member-project",
 		Goal:             "验证成员团队授权边界",
 		HumanOwnerUserID: ownerID,
 		Members: []ProjectMemberInput{{
@@ -4728,7 +4728,7 @@ func TestCreateProjectAllowsAuthorizedMemberOnlyTeamScope(t *testing.T) {
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      actorID,
-		Name:             "授权团队成员项目",
+		Name:             "authorized-member-project",
 		Goal:             "验证成员团队授权通过",
 		HumanOwnerUserID: ownerID,
 		Members: []ProjectMemberInput{{
@@ -4763,7 +4763,7 @@ func TestCreateProjectWithoutTeamScopeSucceedsWithoutAuthorizer(t *testing.T) {
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      actorID,
-		Name:             "无团队项目",
+		Name:             "no-team-project",
 		Goal:             "验证无团队路径不要求授权器",
 		HumanOwnerUserID: ownerID,
 		Members: []ProjectMemberInput{{
@@ -4793,7 +4793,7 @@ func TestCreateProjectRequiresRuntimeNodes(t *testing.T) {
 	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      ownerID,
-		Name:             "缺少运行节点的项目",
+		Name:             "missing-runtime-nodes",
 		Goal:             "验证运行节点资格集必填",
 		HumanOwnerUserID: ownerID,
 		RuntimeNodeIDs:   nil,
@@ -4815,7 +4815,7 @@ func TestCreateProjectPersistsRuntimeNodes(t *testing.T) {
 	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      ownerID,
-		Name:             "带运行节点资格集的项目",
+		Name:             "with-runtime-nodes",
 		Goal:             "验证运行节点资格集写入并可读取",
 		HumanOwnerUserID: ownerID,
 		RuntimeNodeIDs:   []uuid.UUID{nodeA, nodeB},
@@ -4838,7 +4838,7 @@ func TestCreateProjectRequiresMandatoryFields(t *testing.T) {
 	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         uuid.New(),
 		ActorUserID:      uuid.New(),
-		Name:             "缺少目标",
+		Name:             "missing-goal",
 		HumanOwnerUserID: uuid.New(),
 	})
 	if !errors.Is(err, ErrInvalidProject) {
@@ -4859,7 +4859,7 @@ func TestCreateProjectAcceptsNullableRepoBinding(t *testing.T) {
 	unbound, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      ownerID,
-		Name:             "无仓库绑定项目",
+		Name:             "no-repo-binding",
 		Goal:             "验证仓库绑定可为空",
 		HumanOwnerUserID: ownerID,
 		RuntimeNodeIDs:   []uuid.UUID{runtimeNodeID},
@@ -4874,7 +4874,7 @@ func TestCreateProjectAcceptsNullableRepoBinding(t *testing.T) {
 	bound, err := service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      ownerID,
-		Name:             "仓库绑定项目",
+		Name:             "with-repo-binding",
 		Goal:             "验证仓库绑定归一化",
 		HumanOwnerUserID: ownerID,
 		RuntimeNodeIDs:   []uuid.UUID{runtimeNodeID},
@@ -4921,7 +4921,7 @@ func TestCreateProjectRejectsPartialRepoBinding(t *testing.T) {
 			_, err := service.CreateProject(context.Background(), CreateProjectRequest{
 				TenantID:         tenantID,
 				ActorUserID:      ownerID,
-				Name:             "部分仓库绑定项目",
+				Name:             "partial-repo-binding",
 				Goal:             "验证仓库绑定必须完整",
 				HumanOwnerUserID: ownerID,
 				RepoBinding:      tc.repoBinding,
@@ -4939,7 +4939,7 @@ func TestCreateProjectRejectsCoordinatorMemberRole(t *testing.T) {
 	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         uuid.New(),
 		ActorUserID:      uuid.New(),
-		Name:             "项目",
+		Name:             "demo-project",
 		Goal:             "目标",
 		HumanOwnerUserID: uuid.New(),
 		Members: []ProjectMemberInput{{
@@ -4971,7 +4971,7 @@ func TestCreateProjectValidatesRolePrincipalTypes(t *testing.T) {
 			_, err := service.CreateProject(context.Background(), CreateProjectRequest{
 				TenantID:         uuid.New(),
 				ActorUserID:      uuid.New(),
-				Name:             "项目",
+				Name:             "demo-project",
 				Goal:             "目标",
 				HumanOwnerUserID: uuid.New(),
 				Members: []ProjectMemberInput{{
@@ -4998,7 +4998,7 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-		Name:             "客户侧 Runtime 接入验收",
+		Name:             "customer-runtime-acceptance",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: ownerID,
 	}
@@ -5040,7 +5040,7 @@ func TestSubmitDemandRejectsUnknownScenarioTemplateKey(t *testing.T) {
 		repo.projects[projectID] = Project{
 			ID:               projectID,
 			TenantID:         tenantID,
-			Name:             "需求级模板键验证",
+			Name:             "demand-template-key",
 			Status:           ProjectStatusRunning,
 			HumanOwnerUserID: ownerID,
 		}
@@ -5135,7 +5135,7 @@ func TestSubmitDemandCoordinationMode(t *testing.T) {
 		repo.projects[projectID] = Project{
 			ID:                     projectID,
 			TenantID:               tenantID,
-			Name:                   "客户侧 Runtime 接入验收",
+			Name:                   "customer-runtime-acceptance",
 			Status:                 ProjectStatusRunning,
 			HumanOwnerUserID:       ownerID,
 			CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
@@ -5206,7 +5206,7 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         tenantID,
-		Name:             "客户侧 Runtime 接入验收",
+		Name:             "customer-runtime-acceptance",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: ownerID,
 	}
@@ -6565,7 +6565,7 @@ func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "客户侧 Runtime 接入验收",
+		Name:                   "customer-runtime-acceptance",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       ownerID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
@@ -6610,7 +6610,7 @@ func TestSubmitDemandRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "客户侧 Runtime 接入验收",
+		Name:                   "customer-runtime-acceptance",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       ownerID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
@@ -6654,7 +6654,7 @@ func TestSubmitDemandProjectsWorkflowCoordinationFailedReason(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "客户侧 Runtime 接入验收",
+		Name:                   "customer-runtime-acceptance",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       ownerID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
@@ -6697,7 +6697,7 @@ func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "客户侧 Runtime 接入验收",
+		Name:                   "customer-runtime-acceptance",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       ownerID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
@@ -6791,7 +6791,7 @@ func TestCompleteProjectTaskWritesSummaryAndSignalsCoordinator(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7072,7 +7072,7 @@ func newProjectServiceWritebackFixture(t *testing.T, taskOverrides ProjectTask) 
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7114,7 +7114,7 @@ func TestBindProjectTaskRunEnablesCompleteProjectTaskWriteback(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7181,7 +7181,7 @@ func TestRetryWorkflowSignalReplaysCompletedTaskWithoutDuplicateWriteback(t *tes
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7401,7 +7401,7 @@ func TestProjectTaskWritebackRequiresRuntimeNodeIdentity(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7443,7 +7443,7 @@ func TestProjectTaskWritebackRequiresDigitalEmployeeRunBinding(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7519,7 +7519,7 @@ func TestCompleteProjectTaskRejectsTerminalReplay(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7566,7 +7566,7 @@ func TestCompleteProjectTaskRejectsConcurrentTerminalTransitionBeforeSideEffects
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7613,7 +7613,7 @@ func TestCompleteProjectTaskRollsBackStatusWhenSummaryCreationFails(t *testing.T
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7660,7 +7660,7 @@ func TestFailProjectTaskRollsBackStatusWhenEventAppendFails(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7707,7 +7707,7 @@ func TestRequestProjectTaskTransferRollsBackStatusWhenTransferCreationFails(t *t
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7754,7 +7754,7 @@ func TestCompleteProjectTaskRejectsWrongRuntimeWhenRunIsBound(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7799,7 +7799,7 @@ func TestRequestProjectTaskTransferRejectsWaitingHumanTask(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7844,7 +7844,7 @@ func TestRequestProjectTaskTransferMovesTaskToWaitingHuman(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -7894,7 +7894,7 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -7956,7 +7956,7 @@ func TestResolveDecisionThreadsTargetExitDeliverableToSignal(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8010,7 +8010,7 @@ func TestResolveDecisionAcceptsRequestChangesForPlanReview(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8082,7 +8082,7 @@ func TestResolveDecisionRejectsRequestChangesForNonPlanReview(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8143,7 +8143,7 @@ func TestResolveDecisionAcceptsRestaffedForPlanningGap(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8210,7 +8210,7 @@ func TestResolveDecisionRejectsRestaffedForNonPlanningGap(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8270,7 +8270,7 @@ func TestResolveDecisionRejectsGenericVocabularyForPlanningGap(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8333,7 +8333,7 @@ func TestResolveExemptedCreatesExemptionRecord(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8427,7 +8427,7 @@ func TestResolveExemptedRejectsMissingGapPayload(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8505,7 +8505,7 @@ func TestResolveDecisionRejectsUnknownTargetExitDeliverable(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8575,7 +8575,7 @@ func TestResolveDecisionRejectsTargetExitDeliverableForUnboundPlanRevision(t *te
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8625,7 +8625,7 @@ func TestResolveDecisionRejectsUnknownDecisionValue(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8691,7 +8691,7 @@ func TestResolveDecisionSkipsApprovalResolverForProjectOnlyDecision(t *testing.T
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8781,7 +8781,7 @@ func TestResolveDecisionIsIdempotentForSameResolvedDecision(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusArchived,
 		HumanOwnerUserID:       actorID,
@@ -8835,7 +8835,7 @@ func TestRetryWorkflowSignalReplaysHumanDecisionPayload(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       ownerID,
@@ -8901,7 +8901,7 @@ func TestResolveDecisionProjectsInboxResolution(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8949,7 +8949,7 @@ func TestResolveDecisionProjectsInboxResolution(t *testing.T) {
 	failingRepo.projects[failingProjectID] = Project{
 		ID:                     failingProjectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -8995,7 +8995,7 @@ func TestResolveDecisionFindsDecisionBeyondFirstPage(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "项目",
+		Name:                   "demo-project",
 		Goal:                   "目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       actorID,
@@ -9636,7 +9636,7 @@ func TestResolveDecisionAllowsProjectHumanMember(t *testing.T) {
 	decisionID := uuid.New()
 	ownerID := uuid.New()
 	repo.projects[projectID] = Project{
-		ID: projectID, TenantID: tenantID, Name: "项目", Goal: "目标",
+		ID: projectID, TenantID: tenantID, Name: "demo-project", Goal: "目标",
 		Status: ProjectStatusRunning, HumanOwnerUserID: ownerID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 	}
@@ -9672,7 +9672,7 @@ func TestResolveDecisionRejectsNonMemberActor(t *testing.T) {
 	decisionID := uuid.New()
 	ownerID := uuid.New()
 	repo.projects[projectID] = Project{
-		ID: projectID, TenantID: tenantID, Name: "项目", Goal: "目标",
+		ID: projectID, TenantID: tenantID, Name: "demo-project", Goal: "目标",
 		Status: ProjectStatusRunning, HumanOwnerUserID: ownerID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 	}
@@ -10096,7 +10096,7 @@ func TestUpdateProjectConfigCreatesRevision(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         tenantID,
-		Name:             "旧项目",
+		Name:             "old-project",
 		Goal:             "旧目标",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: uuid.New(),
@@ -10106,20 +10106,58 @@ func TestUpdateProjectConfigCreatesRevision(t *testing.T) {
 		TenantID:    tenantID,
 		ProjectID:   projectID,
 		ActorUserID: uuid.New(),
-		Name:        "新项目",
+		Name:        "old-project",
 		Goal:        "新目标",
 	})
 	if err != nil {
 		t.Fatalf("update config: %v", err)
 	}
-	if updated.Name != "新项目" {
-		t.Fatalf("expected updated project name, got %q", updated.Name)
+	if updated.Name != "old-project" {
+		t.Fatalf("expected project name unchanged, got %q", updated.Name)
+	}
+	if updated.Goal != "新目标" {
+		t.Fatalf("expected updated goal, got %q", updated.Goal)
 	}
 	if len(repo.revisions) != 1 {
 		t.Fatalf("expected config revision, got %d", len(repo.revisions))
 	}
 	if len(repo.eventTypes) != 1 || repo.eventTypes[0] != ProjectEventConfigChanged {
 		t.Fatalf("expected config changed event, got %#v", repo.eventTypes)
+	}
+}
+
+func TestUpdateProjectConfigAllowsDisplayNameChange(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "旧展示名",
+		DirectoryName:    "old-project",
+		Goal:             "旧目标",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	updated, err := service.UpdateProjectConfig(context.Background(), UpdateProjectConfigRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: ownerID,
+		Name:        "新展示名",
+	})
+	if err != nil {
+		t.Fatalf("update display name: %v", err)
+	}
+	if updated.Name != "新展示名" {
+		t.Fatalf("expected display name updated, got %q", updated.Name)
+	}
+	if updated.DirectoryName != "old-project" {
+		t.Fatalf("directory name must stay immutable, got %q", updated.DirectoryName)
 	}
 }
 
@@ -10134,7 +10172,7 @@ func TestUpdateProjectConfigPreservesAndClearsRepoBinding(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         tenantID,
-		Name:             "仓库绑定项目",
+		Name:             "with-repo-binding",
 		Goal:             "验证更新语义",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: ownerID,
@@ -10151,9 +10189,11 @@ func TestUpdateProjectConfigPreservesAndClearsRepoBinding(t *testing.T) {
 		TenantID:    tenantID,
 		ProjectID:   projectID,
 		ActorUserID: ownerID,
-		Name:        "仓库绑定项目改名",
+		Name:        "with-repo-binding",
+		Goal:        "验证更新语义-改目标",
 	})
 	require.NoError(t, err)
+	require.Equal(t, "with-repo-binding", preserved.Name)
 	require.Equal(t, ProjectRepoBindingStatusBound, preserved.RepoBinding.Status)
 	require.Equal(t, "https://github.com/acme/superteam.git", preserved.RepoBinding.URL)
 	require.Equal(t, []string{"apps/control-plane"}, preserved.RepoBinding.Scope)
@@ -10375,7 +10415,7 @@ func TestUpdateProjectConfigRecordsRetryableWorkflowSignalFailure(t *testing.T) 
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "旧项目",
+		Name:                   "old-project",
 		Goal:                   "旧目标",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       uuid.New(),
@@ -10386,7 +10426,7 @@ func TestUpdateProjectConfigRecordsRetryableWorkflowSignalFailure(t *testing.T) 
 		TenantID:    tenantID,
 		ProjectID:   projectID,
 		ActorUserID: uuid.New(),
-		Name:        "新项目",
+		Name:        "old-project",
 		Goal:        "新目标",
 	})
 	if err == nil {
@@ -10439,7 +10479,7 @@ func TestUpdateProjectConfigWithoutMembersPreservesExistingMembers(t *testing.T)
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         tenantID,
-		Name:             "旧项目",
+		Name:             "old-project",
 		Goal:             "旧目标",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: memberID,
@@ -10458,13 +10498,14 @@ func TestUpdateProjectConfigWithoutMembersPreservesExistingMembers(t *testing.T)
 		TenantID:    tenantID,
 		ProjectID:   projectID,
 		ActorUserID: uuid.New(),
-		Name:        " 新项目 ",
+		Name:        " old-project ",
+		Goal:        "新目标",
 	})
 	if err != nil {
 		t.Fatalf("update config: %v", err)
 	}
-	if got := repo.projects[projectID].Name; got != "新项目" {
-		t.Fatalf("expected trimmed name, got %q", got)
+	if got := repo.projects[projectID].Name; got != "old-project" {
+		t.Fatalf("expected name unchanged, got %q", got)
 	}
 	if len(repo.members[projectID]) != 1 {
 		t.Fatalf("expected members to be preserved, got %d", len(repo.members[projectID]))
@@ -10531,7 +10572,7 @@ func TestReplaceProjectMembersRequiresActorAndRecordsEvent(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         tenantID,
-		Name:             "项目",
+		Name:             "demo-project",
 		Goal:             "目标",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: uuid.New(),
@@ -10579,7 +10620,7 @@ func TestListPaginationIsNormalized(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         tenantID,
-		Name:             "项目",
+		Name:             "demo-project",
 		Goal:             "目标",
 		Status:           ProjectStatusRunning,
 		HumanOwnerUserID: uuid.New(),
@@ -11331,11 +11372,20 @@ func bindTaskToRuntimeRun(repo *memoryRepository, taskIndex int, runtimeNodeID u
 }
 
 func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectRequest, projectID uuid.UUID, workflowID string) (Project, error) {
+	ready := req.WorkspaceReadyStatus
+	if ready == "" {
+		ready = WorkspaceReadyStatusReady
+	}
+	dirName := strings.TrimSpace(req.DirectoryName)
+	if dirName == "" {
+		dirName = req.Name
+	}
 	project := Project{
 		ID:                     projectID,
 		TenantID:               req.TenantID,
 		TeamID:                 req.TeamID,
 		Name:                   req.Name,
+		DirectoryName:          dirName,
 		Description:            strPtrOrNil(req.Description),
 		Goal:                   req.Goal,
 		Status:                 ProjectStatusRunning,
@@ -11345,8 +11395,52 @@ func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectR
 		CoordinationPolicy:     req.CoordinationPolicy,
 		RepoBinding:            repoBindingFromInput(req.RepoBinding),
 		ScenarioTemplateKey:    req.ScenarioTemplateKey,
+		WorkspaceReadyStatus:   ready,
+	}
+	if ready == WorkspaceReadyStatusReady {
+		now := time.Now().UTC()
+		project.WorkspaceReadyAt = &now
 	}
 	r.projects[project.ID] = project
+	return project, nil
+}
+
+func (r *memoryRepository) SetProjectWorkspaceReady(_ context.Context, tenantID, projectID uuid.UUID, status WorkspaceReadyStatus, primaryNodeID *uuid.UUID, readyError *string) (Project, error) {
+	project, ok := r.projects[projectID]
+	if !ok || project.TenantID != tenantID {
+		return Project{}, ErrProjectNotFound
+	}
+	switch status {
+	case WorkspaceReadyStatusReady:
+		if project.WorkspaceReadyStatus != WorkspaceReadyStatusPending &&
+			project.WorkspaceReadyStatus != WorkspaceReadyStatusError &&
+			project.WorkspaceReadyStatus != WorkspaceReadyStatusReady &&
+			project.WorkspaceReadyStatus != "" {
+			return Project{}, ErrProjectNotFound
+		}
+	case WorkspaceReadyStatusError:
+		if project.WorkspaceReadyStatus != WorkspaceReadyStatusPending && project.WorkspaceReadyStatus != "" {
+			return Project{}, ErrProjectNotFound
+		}
+	case WorkspaceReadyStatusPending:
+		if project.WorkspaceReadyStatus != WorkspaceReadyStatusPending &&
+			project.WorkspaceReadyStatus != WorkspaceReadyStatusError &&
+			project.WorkspaceReadyStatus != WorkspaceReadyStatusReady &&
+			project.WorkspaceReadyStatus != "" {
+			return Project{}, ErrProjectNotFound
+		}
+	}
+	project.WorkspaceReadyStatus = status
+	project.PrimaryRuntimeNodeID = primaryNodeID
+	project.WorkspaceReadyError = readyError
+	if status == WorkspaceReadyStatusReady && project.WorkspaceReadyAt == nil {
+		now := time.Now().UTC()
+		project.WorkspaceReadyAt = &now
+	}
+	if status == WorkspaceReadyStatusError || status == WorkspaceReadyStatusPending {
+		// keep WorkspaceReadyAt as-is for pending/error transitions
+	}
+	r.projects[projectID] = project
 	return project, nil
 }
 
@@ -14708,7 +14802,7 @@ func TestCreateProjectScenarioTemplateBinding(t *testing.T) {
 		return CreateProjectRequest{
 			TenantID:         tenantID,
 			ActorUserID:      ownerID,
-			Name:             "模板绑定验证",
+			Name:             "scenario-template-binding",
 			Goal:             "验证场景模板绑定",
 			HumanOwnerUserID: ownerID,
 			RuntimeNodeIDs:   []uuid.UUID{runtimeNodeID},

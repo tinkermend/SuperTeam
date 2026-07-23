@@ -500,6 +500,28 @@ func (s *Service) ListFires(ctx context.Context, req ListFiresRequest) ([]Fire, 
 	return s.repo.ListFires(ctx, req)
 }
 
+func (s *Service) CascadeForProjectDeleted(ctx context.Context, tenantID, projectID uuid.UUID) error {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return ErrInvalidInput
+	}
+	rules, err := s.repo.ListRulesByProject(ctx, tenantID, projectID)
+	if err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		if rule.TemporalScheduleID != nil && *rule.TemporalScheduleID != "" && s.schedules != nil {
+			if err := s.schedules.Delete(ctx, *rule.TemporalScheduleID); err != nil {
+				slog.Warn("automation schedule delete on project cascade failed",
+					"schedule_id", *rule.TemporalScheduleID,
+					"project_id", projectID.String(),
+					"error", err,
+				)
+			}
+		}
+	}
+	return s.repo.DeleteRulesForProject(ctx, tenantID, projectID)
+}
+
 func (s *Service) DisableForActorRemoved(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) error {
 	if tenantID == uuid.Nil || projectID == uuid.Nil || actorUserID == uuid.Nil {
 		return ErrInvalidInput

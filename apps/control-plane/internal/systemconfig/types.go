@@ -18,15 +18,20 @@ var (
 	ErrInvalidValue = errors.New("invalid system config value")
 )
 
-// 值类型:全部为数值型;bool/string 待有真实配置项时再扩展。
+// 值类型:数值型以 int64 承载;string 以 UTF-8 文本承载。
 // int 是纯计数型(P2 新增),前端编辑弹窗对其免单位换算。
 const (
 	ValueTypeBytes           = "bytes"
 	ValueTypeDurationSeconds = "duration_seconds"
 	ValueTypeInt             = "int"
+	ValueTypeString          = "string"
+
+	// DefaultMaxStringLength 是 string 型配置未显式声明 MaxStringLength 时的上限。
+	DefaultMaxStringLength = 1024
 )
 
-// Definition 是一个配置项的注册表定义。数值以 int64 承载。
+// Definition 是一个配置项的注册表定义。
+// 数值型用 DefaultValue/MinValue/MaxValue;string 型用 DefaultStringValue/MaxStringLength。
 type Definition struct {
 	Key          string
 	Domain       string
@@ -37,12 +42,18 @@ type Definition struct {
 	// MinValue/MaxValue 是服务端防呆边界(含端点),防止一次误操作弄瘫平台。
 	MinValue int64
 	MaxValue int64
+	// DefaultStringValue / MaxStringLength 仅用于 ValueTypeString。
+	// MaxStringLength 为 0 时使用 DefaultMaxStringLength。
+	DefaultStringValue string
+	MaxStringLength    int
 }
 
 // Override 是数据库中的一条覆盖记录。
+// 数值型填 Value;string 型填 StringValue(二者按定义类型互斥使用)。
 type Override struct {
 	ConfigKey     string
 	Value         int64
+	StringValue   string
 	UpdatedBy     *uuid.UUID
 	UpdatedByName string
 	UpdatedAt     time.Time
@@ -51,8 +62,22 @@ type Override struct {
 // EffectiveConfig 是列表接口返回的投影:定义 + 生效值 + 覆盖态。
 type EffectiveConfig struct {
 	Definition
-	EffectiveValue int64
-	IsOverridden   bool
-	UpdatedAt      *time.Time
-	UpdatedByName  string
+	EffectiveValue       int64
+	EffectiveStringValue string
+	IsOverridden         bool
+	UpdatedAt            *time.Time
+	UpdatedByName        string
+}
+
+// IsStringType 报告定义是否为 string 值类型。
+func (d Definition) IsStringType() bool {
+	return d.ValueType == ValueTypeString
+}
+
+// EffectiveMaxStringLength 返回 string 型配置的生效长度上限。
+func (d Definition) EffectiveMaxStringLength() int {
+	if d.MaxStringLength > 0 {
+		return d.MaxStringLength
+	}
+	return DefaultMaxStringLength
 }

@@ -168,20 +168,40 @@ pub fn rollback_session_mcp_config(agent_home_dir: &Path) -> Result<()> {
 
 /// materialize_task_mcp_config writes task-level MCP projection files under
 /// `<workspace>/.superteam/mcp`. These files are capability projection inputs,
-/// not provider auth homes.
+/// not provider auth homes. Prefer `materialize_session_mcp_config` for
+/// session-scoped load/unload (spec 2026-07-23 §6).
 pub fn materialize_task_mcp_config(
     workspace_path: &Path,
     provider_type: &str,
     servers: &[RuntimeMCPServerPayload],
 ) -> Result<Option<PathBuf>> {
+    materialize_mcp_projection(workspace_path, &task_mcp_config_path(workspace_path, provider_type)?, servers)
+}
+
+/// Session-scoped MCP projection under
+/// `{workspace}/.superteam/sessions/{command_id}/mcp/…` — unloaded with the
+/// project session manifest (does not touch business files).
+pub fn materialize_session_mcp_config(
+    workspace_path: &Path,
+    command_id: &str,
+    provider_type: &str,
+    servers: &[RuntimeMCPServerPayload],
+) -> Result<Option<PathBuf>> {
+    let target = session_mcp_config_path(workspace_path, command_id, provider_type)?;
+    materialize_mcp_projection(workspace_path, &target, servers)
+}
+
+fn materialize_mcp_projection(
+    workspace_path: &Path,
+    target: &Path,
+    servers: &[RuntimeMCPServerPayload],
+) -> Result<Option<PathBuf>> {
     for server in servers {
         validate_server(server)?;
     }
-
-    let target = task_mcp_config_path(workspace_path, provider_type)?;
     if !target.starts_with(workspace_path) {
         bail!(
-            "refusing to write task mcp config outside workspace: {}",
+            "refusing to write mcp config outside workspace: {}",
             target.display()
         );
     }
@@ -191,32 +211,119 @@ pub fn materialize_task_mcp_config(
 
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).with_context(|| {
-            format!("failed to create task mcp config dir {}", parent.display())
+            format!("failed to create mcp config dir {}", parent.display())
         })?;
     }
 
-    let content = match provider_type {
+    let provider_type = mcp_file_provider_type(target)?;
+    let content = match provider_type.as_str() {
         "codex" => render_codex_mcp_config(servers)?,
         "claude-code" => render_claude_code_mcp_config(servers)?,
         "opencode" => render_opencode_task_mcp_config(servers)?,
         other => bail!("unsupported provider_type for mcp config: {other}"),
     };
 
-    atomic_write(&target, content.as_bytes())?;
-    Ok(Some(target))
+    atomic_write(target, content.as_bytes())?;
+    Ok(Some(target.to_path_buf()))
+}
+
+fn mcp_projection_file_name(provider_type: &str) -> Result<&'static str> {
+    match provider_type {
+        "codex" => Ok("codex.toml"),
+        "claude-code" | "claude" => Ok("claude.mcp.json"),
+        "opencode" => Ok("opencode.json"),
+        other => bail!("unsupported provider_type for mcp config: {other}"),
+    }
+}
+
+fn mcp_file_provider_type(target: &Path) -> Result<String> {
+    match target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+    {
+        "codex.toml" => Ok("codex".to_string()),
+        "claude.mcp.json" => Ok("claude-code".to_string()),
+        "opencode.json" => Ok("opencode".to_string()),
+        other => bail!("unknown mcp projection file name: {other}"),
+    }
 }
 
 pub fn task_mcp_config_path(workspace_path: &Path, provider_type: &str) -> Result<PathBuf> {
-    let file_name = match provider_type {
-        "codex" => "codex.toml",
-        "claude-code" => "claude.mcp.json",
-        "opencode" => "opencode.json",
-        other => bail!("unsupported provider_type for mcp config: {other}"),
-    };
     Ok(workspace_path
         .join(".superteam")
         .join("mcp")
-        .join(file_name))
+        .join(mcp_projection_file_name(provider_type)?))
+}
+
+pub fn session_mcp_config_path(
+    workspace_path: &Path,
+    command_id: &str,
+    provider_type: &str,
+) -> Result<PathBuf> {
+    let command_id = command_id.trim();
+    if command_id.is_empty() {
+        bail!("command_id is required for session mcp config");
+    }
+    if command_id.contains('/') || command_id.contains('\\') || command_id.contains("..") {
+        bail!("command_id is not a safe path segment");
+    }
+    Ok(workspace_path
+        .join(".superteam")
+        .join("sessions")
+        .join(command_id)
+        .join("mcp")
+        .join(mcp_projection_file_name(provider_type)?))
+}
+
+/// Build a session-local CODEX_HOME that carries MCP servers while auth stays
+/// on the host (symlink auth.json). Does **not** point at employee capability
+/// home — that remains a hard auth boundary (provider_command_test).
+pub fn prepare_codex_session_overlay(
+    overlay_home: &Path,
+    servers: &[RuntimeMCPServerPayload],
+) -> Result<()> {
+    for server in servers {
+        validate_server(server)?;
+    }
+    fs::create_dir_all(overlay_home)
+        .with_context(|| format!("create codex overlay home {}", overlay_home.display()))?;
+
+    let host_home = host_codex_home();
+    let host_config = host_home.as_ref().map(|home| home.join("config.toml"));
+    let content = match host_config.as_ref().filter(|path| path.exists()) {
+        Some(path) => merge_codex_config(path, servers)?,
+        None => render_codex_mcp_config(servers)?,
+    };
+    atomic_write(&overlay_home.join("config.toml"), content.as_bytes())?;
+
+    if let Some(host) = host_home {
+        for name in ["auth.json", "auth.json.bak"] {
+            let src = host.join(name);
+            let dst = overlay_home.join(name);
+            if src.exists() && !dst.exists() {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(&src, &dst).with_context(|| {
+                    format!(
+                        "symlink host codex {} into overlay {}",
+                        src.display(),
+                        dst.display()
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn host_codex_home() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("CODEX_HOME") {
+        let path = PathBuf::from(explicit);
+        if !path.as_os_str().is_empty() {
+            return Some(path);
+        }
+    }
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex"))
 }
 
 // ----------------------------------------------------------------------------

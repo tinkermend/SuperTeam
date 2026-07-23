@@ -9,6 +9,7 @@ pub mod health;
 pub mod instances;
 pub mod mcp_config;
 pub mod platform_limits;
+pub mod project_session;
 pub mod project_workspace;
 pub mod providers;
 pub mod raw_log;

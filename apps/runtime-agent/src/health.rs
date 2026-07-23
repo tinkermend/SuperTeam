@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::time::timeout;
 
+use crate::tools::resolve_binary_path;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderHealthProbe {
     pub kind: String,
@@ -20,9 +22,13 @@ pub struct ProviderHealth {
 }
 
 pub async fn probe_provider_health(probe: ProviderHealthProbe) -> ProviderHealth {
+    // Health means "provider binary is installed and runnable", not "exact
+    // configured path string exists". Resolve bare names / stale absolute paths
+    // via PATH before probing --version.
+    let bin_path = resolve_binary_path(&probe.bin_path);
     let output = timeout(
         Duration::from_secs(3),
-        Command::new(&probe.bin_path).arg("--version").output(),
+        Command::new(&bin_path).arg("--version").output(),
     )
     .await;
 

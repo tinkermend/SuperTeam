@@ -1397,6 +1397,18 @@ func (s *routeProjectService) RemoveProjectRuntimeNode(ctx context.Context, req 
 	return nil
 }
 
+func (s *routeProjectService) RecloneProjectWorkspace(ctx context.Context, req project.WorkspaceManualActionRequest) (*project.Project, error) {
+	p := routeProject(req.TenantID, req.ProjectID, req.ActorUserID)
+	p.WorkspaceReadyStatus = project.WorkspaceReadyStatusPending
+	return &p, nil
+}
+
+func (s *routeProjectService) MarkProjectWorkspaceReadyManually(ctx context.Context, req project.WorkspaceManualActionRequest) (*project.Project, error) {
+	p := routeProject(req.TenantID, req.ProjectID, req.ActorUserID)
+	p.WorkspaceReadyStatus = project.WorkspaceReadyStatusReady
+	return &p, nil
+}
+
 func (s *routeProjectService) GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectRuntimePlacementReadiness, error) {
 	s.runtimeReadinessTenantID = tenantID
 	s.runtimeReadinessProjectID = projectID

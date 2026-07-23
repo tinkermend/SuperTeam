@@ -436,6 +436,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			AttachmentTotalMaxBytes:    systemConfigService.Int64(ctx, tenantID, systemconfig.KeyArtifactAttachmentTotalMaxBytes),
 			SkillArchiveMaxBytes:       systemConfigService.Int64(ctx, tenantID, systemconfig.KeySkillArchiveUnpackMaxBytes),
 			SkillArchiveMaxFileCount:   systemConfigService.Int64(ctx, tenantID, systemconfig.KeySkillArchiveUnpackMaxFileCount),
+			WorkspaceBaseDir:           systemConfigService.String(ctx, tenantID, systemconfig.KeyRuntimeWorkspaceBaseDir),
 		}
 	})
 	employeeService, err := employee.NewService(employeeRepository)
@@ -640,8 +641,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	projectService.SetDigitalEmployeeIdentityLookup(project.NewDigitalEmployeeIdentityAdapter(employeeService))
 	projectService.SetDigitalEmployeePlanningProfileSource(projectPlanningProfileAdapter{source: planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)})
 	projectService.SetProjectRuntimeNodeReader(projectRuntimeNodeReader{runtimeNodes: runtimePlacementNodes, runtimeCapabilities: runtimeService, connections: runtimeCommands})
+	projectService.SetRuntimeWorkspaceCommander(project.NewRuntimeWorkspaceCommanderAdapter(runtimeRepository, runtimeCommands, employeeRepository))
+	projectService.SetProjectWorkspaceReceiptLister(project.NewProjectWorkspaceReceiptListerAdapter(runRepository))
+	runWritebackService.WithProjectWorkspaceCommandHook(project.NewProjectWorkspaceCloneWritebackAdapter(projectService))
 	runService.SetProjectTaskNodeResolver(project.NewProjectTaskNodeResolverAdapter(projectService))
 	runService.SetChatAnchorProjectValidator(project.NewChatAnchorProjectValidatorAdapter(projectService))
+	runService.SetProjectDispatchFactsReader(project.NewProjectDispatchFactsAdapter(projectService))
 	if coordinationStore != nil {
 		coordinationStore.WithProjectTaskNodeResolver(gateProjectTaskNodeResolverAdapter{service: projectService})
 	}
@@ -756,6 +761,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		automationScheduler,
 	)
 	projectService.SetAutomationActorRemover(automationService)
+	projectService.SetAutomationProjectCascade(automationService)
 	authService.SetUserDeactivatedHook(automationUserDeactivatedHook{service: automationService})
 	var automationWorker lifecycleWorker
 	if temporalClient != nil {

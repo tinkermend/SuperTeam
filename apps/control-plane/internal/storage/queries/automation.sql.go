@@ -200,6 +200,29 @@ func (q *Queries) CreateAutomationRule(ctx context.Context, arg CreateAutomation
 	return i, err
 }
 
+const DeleteAutomationFiresByProject = `-- name: DeleteAutomationFiresByProject :execrows
+DELETE FROM automation_fires
+WHERE tenant_id = $1::uuid
+  AND rule_id IN (
+    SELECT id FROM automation_rules
+    WHERE tenant_id = $1::uuid
+      AND project_id = $2::uuid
+  )
+`
+
+type DeleteAutomationFiresByProjectParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) DeleteAutomationFiresByProject(ctx context.Context, arg DeleteAutomationFiresByProjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, DeleteAutomationFiresByProject, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const DeleteAutomationRule = `-- name: DeleteAutomationRule :execrows
 DELETE FROM automation_rules
 WHERE tenant_id = $1::uuid
@@ -213,6 +236,25 @@ type DeleteAutomationRuleParams struct {
 
 func (q *Queries) DeleteAutomationRule(ctx context.Context, arg DeleteAutomationRuleParams) (int64, error) {
 	result, err := q.db.Exec(ctx, DeleteAutomationRule, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const DeleteAutomationRulesByProject = `-- name: DeleteAutomationRulesByProject :execrows
+DELETE FROM automation_rules
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+`
+
+type DeleteAutomationRulesByProjectParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) DeleteAutomationRulesByProject(ctx context.Context, arg DeleteAutomationRulesByProjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, DeleteAutomationRulesByProject, arg.TenantID, arg.ProjectID)
 	if err != nil {
 		return 0, err
 	}
@@ -478,17 +520,19 @@ func (q *Queries) ListAutomationFires(ctx context.Context, arg ListAutomationFir
 }
 
 const ListAutomationRules = `-- name: ListAutomationRules :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at FROM automation_rules
-WHERE tenant_id = $1::uuid
+SELECT ar.id, ar.tenant_id, ar.team_id, ar.project_id, ar.name, ar.enabled, ar.coordination_mode, ar.demand_title_template, ar.demand_body_template, ar.scenario_template_key, ar.digital_employee_id, ar.chat_objective_template, ar.schedule_kind, ar.cron_expr, ar.interval_seconds, ar.timezone, ar.overlap_policy, ar.actor_user_id, ar.disabled_reason, ar.consecutive_failure_count, ar.temporal_schedule_id, ar.created_at, ar.updated_at FROM automation_rules ar
+JOIN projects p ON p.id = ar.project_id AND p.tenant_id = ar.tenant_id
+WHERE ar.tenant_id = $1::uuid
+  AND p.deleted_at IS NULL
   AND (
     $2::uuid IS NULL
-    OR project_id = $2::uuid
+    OR ar.project_id = $2::uuid
   )
   AND (
     $3::boolean IS NULL
-    OR enabled = $3::boolean
+    OR ar.enabled = $3::boolean
   )
-ORDER BY updated_at DESC
+ORDER BY ar.updated_at DESC
 LIMIT $5::int
 OFFSET $4::int
 `
@@ -509,6 +553,62 @@ func (q *Queries) ListAutomationRules(ctx context.Context, arg ListAutomationRul
 		arg.OffsetCount,
 		arg.LimitCount,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AutomationRule{}
+	for rows.Next() {
+		var i AutomationRule
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.ProjectID,
+			&i.Name,
+			&i.Enabled,
+			&i.CoordinationMode,
+			&i.DemandTitleTemplate,
+			&i.DemandBodyTemplate,
+			&i.ScenarioTemplateKey,
+			&i.DigitalEmployeeID,
+			&i.ChatObjectiveTemplate,
+			&i.ScheduleKind,
+			&i.CronExpr,
+			&i.IntervalSeconds,
+			&i.Timezone,
+			&i.OverlapPolicy,
+			&i.ActorUserID,
+			&i.DisabledReason,
+			&i.ConsecutiveFailureCount,
+			&i.TemporalScheduleID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListAutomationRulesByProject = `-- name: ListAutomationRulesByProject :many
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+FROM automation_rules
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+`
+
+type ListAutomationRulesByProjectParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListAutomationRulesByProject(ctx context.Context, arg ListAutomationRulesByProjectParams) ([]AutomationRule, error) {
+	rows, err := q.db.Query(ctx, ListAutomationRulesByProject, arg.TenantID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

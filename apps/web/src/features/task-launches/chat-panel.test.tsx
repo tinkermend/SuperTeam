@@ -55,6 +55,7 @@ function makeProject(id = "project-1", name = "客户接入项目"): Project {
     name,
     status: "running",
     tenant_id: "tenant-1",
+    workspace_ready_status: "ready",
   };
 }
 

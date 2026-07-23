@@ -141,6 +141,42 @@ fn test_runtime_command_deserializes_ensure_instance() {
 }
 
 #[test]
+fn test_runtime_command_deserializes_ensure_project_directory() {
+    let command: RuntimeCommand = serde_json::from_value(serde_json::json!({
+        "id": "cmd-mkdir",
+        "type": "ensure_project_directory",
+        "payload": {
+            "project_name": "acme-app",
+            "project_id": "11111111-1111-4111-8111-111111111111"
+        }
+    }))
+    .unwrap();
+
+    assert_eq!(
+        command.command_type,
+        RuntimeCommandType::EnsureProjectDirectory
+    );
+    assert_eq!(command.payload["project_name"], "acme-app");
+}
+
+#[test]
+fn test_runtime_command_deserializes_remove_project_directory() {
+    let command: RuntimeCommand = serde_json::from_value(serde_json::json!({
+        "id": "cmd-rmdir",
+        "type": "remove_project_directory",
+        "payload": {
+            "project_name": "acme-app"
+        }
+    }))
+    .unwrap();
+
+    assert_eq!(
+        command.command_type,
+        RuntimeCommandType::RemoveProjectDirectory
+    );
+}
+
+#[test]
 fn test_runtime_command_deserializes_unknown_command_as_unsupported() {
     let command: RuntimeCommand = serde_json::from_value(serde_json::json!({
         "id": "cmd-legacy",

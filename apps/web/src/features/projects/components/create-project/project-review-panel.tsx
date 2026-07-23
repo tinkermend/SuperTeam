@@ -1,7 +1,11 @@
 import { CheckCircle2, CircleDot, Network } from "lucide-react";
 import type { UserSummary, UserProjectTeamScope } from "@/lib/api";
 import { StatusPill, WorkSurface } from "@/components/superteam";
-import type { ProjectCreateDraft } from "./create-project-draft";
+import {
+  directoryNameHintFromGitURL,
+  projectCreateValidation,
+  type ProjectCreateDraft,
+} from "./create-project-draft";
 
 type ProjectReviewPanelProps = {
   currentUser?: UserSummary;
@@ -11,13 +15,38 @@ type ProjectReviewPanelProps = {
 
 export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: ProjectReviewPanelProps) {
   const sourceTeams = selectableTeams.filter((scope) => draft.sourceTeamIds.includes(scope.team_id));
+  const validation = projectCreateValidation(draft, currentUser?.id, selectableTeams);
+  const basicsReady = validation.basics;
   const requiredPassed = [
-    Boolean(draft.name.trim()) && Boolean(draft.goal.trim()),
+    basicsReady,
     sourceTeams.length > 0,
     draft.policyToggles.auditLogEnabled,
   ].filter(Boolean).length;
+  const directoryPreview =
+    draft.directoryName.trim() ||
+    (draft.sourceKind === "git" ? directoryNameHintFromGitURL(draft.repoUrl) : null) ||
+    "未填写";
   const reviewRows = [
-    { group: "项目事实", label: "项目名称", value: draft.name || "未填写" },
+    {
+      group: "项目事实",
+      label: "项目名称",
+      value: draft.name || "未填写",
+    },
+    {
+      group: "项目事实",
+      label: "项目目录名",
+      value: directoryPreview,
+    },
+    {
+      group: "项目事实",
+      label: "源码来源",
+      value:
+        draft.sourceKind === "git"
+          ? draft.repoUrl.trim()
+            ? `${draft.repoUrl.trim()} @ ${draft.repoDefaultBranch.trim() || "main"}`
+            : "Git（未填 URL）"
+          : "非 Git（空目录）",
+    },
     {
       group: "项目事实",
       label: "来源团队",
@@ -105,7 +134,7 @@ export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: Proj
           必备项 {requiredPassed} / 3 已就绪
         </div>
         <div className="mt-3 grid gap-2 text-[13px] text-v3-ink-2">
-          <CheckLine checked={Boolean(draft.name.trim()) && Boolean(draft.goal.trim())} label="基础信息已填写" />
+          <CheckLine checked={basicsReady} label="基础信息已填写" />
           <CheckLine checked={sourceTeams.length > 0} label="来源团队已选择" />
           <CheckLine checked={draft.policyToggles.auditLogEnabled} label="审计策略已开启" />
           <CheckLine checked={draft.selectedDigitalEmployees.length > 0} label="数字员工池已选择（可选）" />
@@ -127,6 +156,6 @@ function CheckLine({ checked, label }: { checked: boolean; label: string }) {
 
 function policyPresetLabel(preset: ProjectCreateDraft["policyPreset"]) {
   if (preset === "lightweight") return "轻量协作";
-  if (preset === "highRisk") return "高风险审批";
+  if (preset === "highRisk") return "高风险复核";
   return "标准治理";
 }

@@ -1,4 +1,4 @@
-h1:izDe73hQSDqz+Ygjnzq/TQqae39ue7d9OZ5xjTE5+xw=
+h1:vx3TeLZBs/tB8NaNlAPIsAB3CnsaPSRC+dENxWU4n5M=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -99,3 +99,7 @@ h1:izDe73hQSDqz+Ygjnzq/TQqae39ue7d9OZ5xjTE5+xw=
 20260722004800_drop_project_approval_evidence_policy.sql h1:YGqH9GvyWXBTS64bfmsLv+tjEB69Wm60cEMdbnXaAqA=
 20260722150000_task_runs_employee_created_index.sql h1:0kqQ4YfQV60LNwFNgZf3gvXCdjHQ/1ni+lMEKuVFL6g=
 20260722150001_automation_rules_and_fires.sql h1:yOw+n4vvYIRqQq7KLOfkiTpYFCU62GeXH0IbvcW3Le0=
+20260722171517_project_workspace_directory.sql h1:NK1W/z3tGr5DUl/BOXR4OF2n2I1ViG1+4LlP4jLlTXk=
+20260723071727_legacy_invalid_project_directory_names.sql h1:2EEaBAAeNDJhYTeSSclXRPpUK9AnI+RXVZh1HVVoqiE=
+20260723074713_cancel_inbox_for_deleted_project_anchored_runs.sql h1:cKYGw8e1PWmXiASzr8RQnWisYI+6D+sYzMPHKjW8oW0=
+20260723075000_delete_automation_for_deleted_projects.sql h1:O+N1w9dpmoDBSp3xl1Koq2HzYRICul7PfUuU4dC2L0k=

@@ -32,6 +32,9 @@ type Service struct {
 	systemConfig              systemconfig.Reader
 	legacyLimitNodesChecker   func(ctx context.Context, tenantID uuid.UUID) (bool, error)
 	automationActorRemover    AutomationActorRemover
+	automationProjectCascade  AutomationProjectCascade
+	workspaceCommander        RuntimeWorkspaceCommander
+	workspaceReceipts         ProjectWorkspaceReceiptLister
 }
 
 // AutomationActorRemover disables automation rules when a human actor loses
@@ -40,8 +43,18 @@ type AutomationActorRemover interface {
 	DisableForActorRemoved(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) error
 }
 
+// AutomationProjectCascade removes automation rules (and Temporal schedules)
+// anchored to a project being deleted. Optional; nil skips the hook.
+type AutomationProjectCascade interface {
+	CascadeForProjectDeleted(ctx context.Context, tenantID, projectID uuid.UUID) error
+}
+
 func (s *Service) SetAutomationActorRemover(remover AutomationActorRemover) {
 	s.automationActorRemover = remover
+}
+
+func (s *Service) SetAutomationProjectCascade(cascade AutomationProjectCascade) {
+	s.automationProjectCascade = cascade
 }
 
 // ScenarioTemplateResolver is the narrow view of the scenario template
@@ -210,10 +223,14 @@ func (s *Service) SetDigitalEmployeePlanningProfileSource(source DigitalEmployee
 
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
 	req.Name = strings.TrimSpace(req.Name)
+	req.DirectoryName = strings.TrimSpace(req.DirectoryName)
 	req.Goal = strings.TrimSpace(req.Goal)
 	owners := normalizeHumanOwners(req.HumanOwnerUserID, req.HumanOwnerUserIDs, req.Members)
 	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil || len(owners) == 0 || req.Name == "" || req.Goal == "" {
 		return nil, ErrInvalidProject
+	}
+	if err := ValidateDisplayProjectName(req.Name); err != nil {
+		return nil, err
 	}
 	// 多负责人:owners[0] 作为过渡期单标量镜像(primary),数组为权威。
 	req.HumanOwnerUserIDs = owners
@@ -232,6 +249,24 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		return nil, err
 	}
 	req.RepoBinding = projectRepoBindingInputFromBinding(repoBinding)
+
+	if req.DirectoryName == "" {
+		if repoBinding.Status == ProjectRepoBindingStatusBound {
+			derived, deriveErr := DirectoryNameFromGitURL(repoBinding.URL)
+			if deriveErr != nil {
+				return nil, deriveErr
+			}
+			req.DirectoryName = derived
+		} else if ValidateProjectDirectoryName(req.Name) == nil {
+			// 兼容旧客户端:单字段 ASCII name 同时作为目录名。
+			req.DirectoryName = req.Name
+		} else {
+			return nil, fmt.Errorf("%w: 非 Git 项目须填写项目目录名", ErrInvalidProjectName)
+		}
+	}
+	if err := ValidateProjectDirectoryName(req.DirectoryName); err != nil {
+		return nil, err
+	}
 
 	runtimeNodeIDs, err := s.validateRuntimeNodeIDs(ctx, req.TenantID, req.RuntimeNodeIDs)
 	if err != nil {
@@ -255,19 +290,62 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		}
 	}
 
+	// 非 Git:mkdir 成功后即可 ready;Git:先 pending,异步 clone 成功后转 ready(P1)。
+	initialReady := WorkspaceReadyStatusReady
+	if repoBinding.Status == ProjectRepoBindingStatusBound {
+		initialReady = WorkspaceReadyStatusPending
+	}
+
 	projectID := uuid.New()
 	workflowID := fmt.Sprintf("project-coordinator:%s", projectID)
+	req.WorkspaceReadyStatus = initialReady
 	project, err := s.repository.CreateProject(ctx, req, projectID, workflowID)
 	if err != nil {
+		if isProjectNameUniqueViolation(err) {
+			return nil, fmt.Errorf("%w: 项目目录名 %q 已被使用,请更换", ErrProjectNameConflict, req.DirectoryName)
+		}
 		return nil, err
 	}
+	dirName := project.WorkspaceDirectoryName()
+
 	for _, runtimeNodeID := range runtimeNodeIDs {
 		if _, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, project.ID, runtimeNodeID); err != nil {
+			_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, nil)
 			return nil, err
 		}
 	}
+
+	if err := s.ensureProjectDirectoriesOnNodes(ctx, req.TenantID, project.ID, dirName, runtimeNodeIDs); err != nil {
+		_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, runtimeNodeIDs)
+		return nil, err
+	}
+
+	// 非 Git:mkdir 成功即可 ready,并把首个关联节点记为主节点(粘滞亲和入口)。
+	if initialReady == WorkspaceReadyStatusReady && len(runtimeNodeIDs) > 0 {
+		primary := runtimeNodeIDs[0]
+		if updated, setErr := s.repository.SetProjectWorkspaceReady(ctx, req.TenantID, project.ID, WorkspaceReadyStatusReady, &primary, nil); setErr == nil {
+			project = updated
+		} else {
+			slog.Default().Warn("set primary runtime node after mkdir failed",
+				"project_id", project.ID.String(),
+				"error", setErr.Error(),
+			)
+		}
+	}
+
+	// Git: mkdir 成功后入队异步 clone(P1);门禁钩子已就位——pending 挡派发。
+	if repoBinding.Status == ProjectRepoBindingStatusBound {
+		if err := s.enqueueProjectGitClone(ctx, req.TenantID, project.ID, dirName, runtimeNodeIDs); err != nil {
+			slog.Default().Warn("project git clone enqueue deferred/failed",
+				"project_id", project.ID.String(),
+				"error", err.Error(),
+			)
+		}
+	}
+
 	members, err := s.repository.ReplaceProjectMembers(ctx, req.TenantID, project.ID, ensureOwnerMembers(req))
 	if err != nil {
+		_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, runtimeNodeIDs)
 		return nil, err
 	}
 	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
@@ -277,7 +355,11 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		ActorType: "human_user",
 		ActorID:   req.ActorUserID.String(),
 		Summary:   "项目已创建",
-		Payload:   map[string]any{"name": project.Name},
+		Payload: map[string]any{
+			"name":                   project.Name,
+			"directory_name":         dirName,
+			"workspace_ready_status": string(initialReady),
+		},
 	}); err != nil {
 		return nil, err
 	}
@@ -301,6 +383,49 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	}
 
 	return &CreateProjectResult{Project: project, Members: members}, nil
+}
+
+func (s *Service) rollbackCreatedProject(ctx context.Context, tenantID, projectID uuid.UUID, projectName string, runtimeNodeIDs []uuid.UUID) error {
+	if len(runtimeNodeIDs) > 0 {
+		if err := s.compensateProjectDirectories(ctx, tenantID, projectID, projectName, runtimeNodeIDs); err != nil {
+			slog.Default().Error("project create rollback: directory compensate incomplete",
+				"project_id", projectID.String(),
+				"project_name", projectName,
+				"error", err.Error(),
+			)
+		}
+	}
+	project, getErr := s.repository.GetProject(ctx, tenantID, projectID)
+	if getErr != nil {
+		slog.Default().Error("project create rollback: reload project failed; attempting soft-delete with stub",
+			"project_id", projectID.String(),
+			"error", getErr.Error(),
+		)
+		project = Project{
+			ID:       projectID,
+			TenantID: tenantID,
+			Name:     projectName,
+		}
+	}
+	_, err := s.repository.SoftDeleteProjectCascade(ctx, SoftDeleteProjectCascadeParams{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		DeletedAt:   time.Now().UTC(),
+		ActorUserID: uuid.Nil,
+		Project:     project,
+	})
+	if err != nil {
+		slog.Default().Error("project create rollback: soft-delete failed",
+			"project_id", projectID.String(),
+			"error", err.Error(),
+		)
+	}
+	return err
+}
+
+func isProjectNameUniqueViolation(err error) bool {
+	return isPGUniqueConstraint(err, "uq_projects_directory_name_active") ||
+		isPGUniqueConstraint(err, "uq_projects_name_active")
 }
 
 func (s *Service) validateProjectTeamScopes(ctx context.Context, req CreateProjectRequest) error {
@@ -412,13 +537,15 @@ func (s *Service) requireActiveProject(ctx context.Context, tenantID, projectID 
 
 // AddProjectRuntimeNode adds one runtime node to the project's eligibility set
 // (project_runtime_nodes) — the node-selection authority consulted by dispatch
-// and readiness. Idempotent on (project, node).
+// and readiness. Idempotent on (project, node). Also mkdir (+ async clone) on the
+// new node; does not downgrade an already-ready project to pending.
 func (s *Service) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error) {
 	req.Reason = strings.TrimSpace(req.Reason)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.RuntimeNodeID == uuid.Nil || req.ActorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
-	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
+	project, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	if err := s.requireRuntimeNodeForTenant(ctx, req.TenantID, req.RuntimeNodeID); err != nil {
@@ -427,6 +554,21 @@ func (s *Service) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRu
 	node, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID)
 	if err != nil {
 		return nil, err
+	}
+	if err := s.ensureProjectDirectoriesOnNodes(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID}); err != nil {
+		_ = s.repository.RemoveProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID)
+		_ = s.compensateProjectDirectories(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID})
+		return nil, err
+	}
+	if project.RepoBinding.Status == ProjectRepoBindingStatusBound {
+		// 不加回 pending:新节点 clone 失败只影响故障转移可用性。
+		if cloneErr := s.dispatchProjectGitClones(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID}, false); cloneErr != nil {
+			slog.Default().Warn("add runtime node: git clone enqueue failed",
+				"project_id", req.ProjectID.String(),
+				"runtime_node_id", req.RuntimeNodeID.String(),
+				"error", cloneErr.Error(),
+			)
+		}
 	}
 	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  req.TenantID,
@@ -448,16 +590,28 @@ func (s *Service) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRu
 // RemoveProjectRuntimeNode removes one runtime node from the project's
 // eligibility set. Removing the last node leaves the project undispatchable
 // until a node is bound again — readiness surfaces that as blocking.
+// Also deletes the project directory on that node (best-effort).
 func (s *Service) RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error {
 	req.Reason = strings.TrimSpace(req.Reason)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.RuntimeNodeID == uuid.Nil || req.ActorUserID == uuid.Nil {
 		return ErrInvalidProject
 	}
-	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
+	project, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
 		return err
 	}
 	if err := s.repository.RemoveProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID); err != nil {
 		return err
+	}
+	if err := s.removeProjectDirectoriesOnNodes(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID}); err != nil {
+		slog.Default().Error("remove runtime node: project directory cleanup incomplete",
+			"project_id", req.ProjectID.String(),
+			"runtime_node_id", req.RuntimeNodeID.String(),
+			"error", err.Error(),
+		)
+	}
+	if project.PrimaryRuntimeNodeID != nil && *project.PrimaryRuntimeNodeID == req.RuntimeNodeID {
+		_, _ = s.repository.SetProjectWorkspaceReady(ctx, req.TenantID, req.ProjectID, project.WorkspaceReadyStatus, nil, project.WorkspaceReadyError)
 	}
 	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  req.TenantID,
@@ -832,6 +986,9 @@ func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConf
 	}
 	if req.Name != "" {
 		req.Name = strings.TrimSpace(req.Name)
+		if err := ValidateDisplayProjectName(req.Name); err != nil {
+			return nil, err
+		}
 	}
 	if req.Goal != "" {
 		req.Goal = strings.TrimSpace(req.Goal)
@@ -1221,6 +1378,35 @@ func (s *Service) DeleteProject(ctx context.Context, req DeleteProjectRequest) e
 		Reason:     "project deleted",
 	}); err != nil {
 		return err
+	}
+	runtimeNodes, listErr := s.repository.ListProjectRuntimeNodes(ctx, req.TenantID, req.ProjectID)
+	if listErr != nil {
+		slog.Default().Error("project delete: list runtime nodes failed; skipping directory cleanup",
+			"project_id", req.ProjectID.String(),
+			"error", listErr.Error(),
+		)
+		runtimeNodes = nil
+	}
+	runtimeNodeIDs := make([]uuid.UUID, 0, len(runtimeNodes))
+	for _, node := range runtimeNodes {
+		runtimeNodeIDs = append(runtimeNodeIDs, node.RuntimeNodeID)
+	}
+	if err := s.removeProjectDirectoriesOnNodes(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), runtimeNodeIDs); err != nil {
+		slog.Default().Error("project delete: directory cleanup incomplete",
+			"project_id", req.ProjectID.String(),
+			"directory_name", project.WorkspaceDirectoryName(),
+			"error", err.Error(),
+		)
+		// 目录回滚不净不挡软删;人工收尾(spec §0.4)。
+	}
+	if s.automationProjectCascade != nil {
+		if cascadeErr := s.automationProjectCascade.CascadeForProjectDeleted(ctx, req.TenantID, req.ProjectID); cascadeErr != nil {
+			slog.Default().Error("project delete: automation cascade incomplete",
+				"project_id", req.ProjectID.String(),
+				"error", cascadeErr.Error(),
+			)
+			return cascadeErr
+		}
 	}
 	deletedAt := time.Now().UTC()
 	_, err = s.repository.SoftDeleteProjectCascade(ctx, SoftDeleteProjectCascadeParams{

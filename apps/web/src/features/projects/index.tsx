@@ -28,6 +28,7 @@ import {
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/api-error";
 import {
   getCurrentUser,
   listUserProjectTeamScopes,
@@ -36,6 +37,8 @@ import {
 import { deleteBlockerTypeLabel, statusLabel } from "@/lib/status-labels";
 import {
   addProjectRuntimeNode,
+  markProjectWorkspaceReady,
+  recloneProjectWorkspace,
   archiveProject,
   createProject,
   createProjectAcceptance,
@@ -239,7 +242,11 @@ export function CreateProjectView({
           isCurrentUserLoading={currentUserQuery.isFetching}
           isSubmitting={createMutation.isPending}
           isTeamsLoading={projectTeamScopesQuery.isFetching}
-          submitError={createMutation.error?.message}
+          submitError={
+            createMutation.error
+              ? createProjectSubmitErrorMessage(createMutation.error)
+              : undefined
+          }
           teamsError={projectTeamScopesQuery.error?.message}
           showHeading={false}
           onCancel={() => void navigate({ to: "/projects" })}
@@ -682,6 +689,32 @@ export function ProjectsView({
     },
   });
 
+  const recloneWorkspaceMutation = useMutation({
+    mutationFn: (projectId: string) =>
+      recloneProjectWorkspace(apiOptions, projectId, "console reclone"),
+    onSuccess: async (project) => {
+      queryClient.setQueryData(["project", project.id], project);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", project.id] }),
+      ]);
+    },
+  });
+
+  const markWorkspaceReadyMutation = useMutation({
+    mutationFn: (projectId: string) =>
+      markProjectWorkspaceReady(apiOptions, projectId, "console mark ready"),
+    onSuccess: async (project) => {
+      queryClient.setQueryData(["project", project.id], project);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", project.id] }),
+      ]);
+    },
+  });
+
   const submitDemandMutation = useMutation({
     mutationFn: (input: SubmitProjectDemandInput) =>
       submitProjectDemand(apiOptions, effectiveProjectId as string, input),
@@ -1107,6 +1140,20 @@ export function ProjectsView({
                       setArchiveDialogOpen(true);
                     }}
                     onDeleteProject={() => setDeleteDialogOpen(true)}
+                    onRecloneWorkspace={() => {
+                      if (effectiveProjectId) {
+                        recloneWorkspaceMutation.mutate(effectiveProjectId);
+                      }
+                    }}
+                    onMarkWorkspaceReady={() => {
+                      if (effectiveProjectId) {
+                        markWorkspaceReadyMutation.mutate(effectiveProjectId);
+                      }
+                    }}
+                    workspaceActionPending={
+                      recloneWorkspaceMutation.isPending ||
+                      markWorkspaceReadyMutation.isPending
+                    }
                     onCreateAcceptance={(input) => {
                       if (effectiveProjectId) {
                         createAcceptanceMutation.mutate(input);
@@ -1303,6 +1350,25 @@ function queryErrorMessage(error: unknown) {
   return "执行证据链加载失败";
 }
 
+/** 创建项目失败时的用户文案；同名冲突映射为明确中文提示。 */
+function createProjectSubmitErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    const detail = error.detail ?? "";
+    if (
+      error.status === 409 &&
+      (detail.includes("project name already exists") ||
+        detail.includes("已被使用") ||
+        /项目名.+已被使用/.test(detail))
+    ) {
+      return "项目名已被使用，请更换为全局唯一的目录名。";
+    }
+    if (detail.trim()) {
+      return detail;
+    }
+  }
+  return apiErrorMessage(error, "创建项目失败，请稍后重试");
+}
+
 function isProjectOperationalTab(value: string | undefined): value is NonNullable<
   React.ComponentProps<typeof ProjectOperationalDetail>["initialTab"]
 > {
@@ -1482,6 +1548,9 @@ function formatProjectDeleteWarnings(preview: ProjectDeletePreview) {
   }
   if (warnings.affinity_count) {
     items.push(`仍有 ${warnings.affinity_count} 条员工亲和绑定`);
+  }
+  if (warnings.automation_rule_count) {
+    items.push(`仍有 ${warnings.automation_rule_count} 条自动化规则将一并删除`);
   }
   return items;
 }

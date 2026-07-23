@@ -866,7 +866,8 @@ SELECT
     t.resume_of_run_id,
     t.chat_thread_id,
     p.id AS project_id,
-    p.name AS project_name
+    p.name AS project_name,
+    (p.deleted_at IS NOT NULL)::boolean AS project_deleted
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
@@ -939,9 +940,11 @@ type GetDigitalEmployeeRunRow struct {
 	ChatThreadID              uuid.NullUUID      `json:"chat_thread_id"`
 	ProjectID                 uuid.NullUUID      `json:"project_id"`
 	ProjectName               pgtype.Text        `json:"project_name"`
+	ProjectDeleted            bool               `json:"project_deleted"`
 }
 
 // Prefer project_tasks; chat/task-hub runs fall back to metadata anchors.
+// Soft-deleted projects still resolve so run history keeps the name + deleted flag.
 func (q *Queries) GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (GetDigitalEmployeeRunRow, error) {
 	row := q.db.QueryRow(ctx, GetDigitalEmployeeRun, arg.TenantID, arg.DigitalEmployeeID, arg.RunID)
 	var i GetDigitalEmployeeRunRow
@@ -986,6 +989,7 @@ func (q *Queries) GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmplo
 		&i.ChatThreadID,
 		&i.ProjectID,
 		&i.ProjectName,
+		&i.ProjectDeleted,
 	)
 	return i, err
 }
@@ -1325,7 +1329,8 @@ SELECT
     t.title AS task_title,
     t.run_kind,
     p.id AS project_id,
-    p.name AS project_name
+    p.name AS project_name,
+    (p.deleted_at IS NOT NULL)::boolean AS project_deleted
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
@@ -1363,13 +1368,14 @@ type ListDigitalEmployeeRunCalendarItemsParams struct {
 }
 
 type ListDigitalEmployeeRunCalendarItemsRow struct {
-	ID          uuid.UUID          `json:"id"`
-	Status      string             `json:"status"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	TaskTitle   string             `json:"task_title"`
-	RunKind     string             `json:"run_kind"`
-	ProjectID   uuid.NullUUID      `json:"project_id"`
-	ProjectName pgtype.Text        `json:"project_name"`
+	ID             uuid.UUID          `json:"id"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	TaskTitle      string             `json:"task_title"`
+	RunKind        string             `json:"run_kind"`
+	ProjectID      uuid.NullUUID      `json:"project_id"`
+	ProjectName    pgtype.Text        `json:"project_name"`
+	ProjectDeleted bool               `json:"project_deleted"`
 }
 
 // 日历看板轻量投影:不含 result/diagnostic/session_state/work_products。
@@ -1396,6 +1402,7 @@ func (q *Queries) ListDigitalEmployeeRunCalendarItems(ctx context.Context, arg L
 			&i.RunKind,
 			&i.ProjectID,
 			&i.ProjectName,
+			&i.ProjectDeleted,
 		); err != nil {
 			return nil, err
 		}
@@ -1408,16 +1415,22 @@ func (q *Queries) ListDigitalEmployeeRunCalendarItems(ctx context.Context, arg L
 }
 
 const ListDigitalEmployeeRunProjectOptions = `-- name: ListDigitalEmployeeRunProjectOptions :many
-SELECT DISTINCT project_id AS id, project_name AS name
+SELECT DISTINCT project_id AS id, project_name AS name, project_deleted
 FROM (
-    SELECT p.id AS project_id, p.name AS project_name
+    SELECT
+        p.id AS project_id,
+        p.name AS project_name,
+        (p.deleted_at IS NOT NULL)::boolean AS project_deleted
     FROM task_runs tr
     JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
     JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
     WHERE tr.tenant_id = $1::uuid
       AND tr.digital_employee_id = $2::uuid
     UNION
-    SELECT meta_p.id AS project_id, meta_p.name AS project_name
+    SELECT
+        meta_p.id AS project_id,
+        meta_p.name AS project_name,
+        (meta_p.deleted_at IS NOT NULL)::boolean AS project_deleted
     FROM task_runs tr
     JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
     JOIN projects meta_p
@@ -1446,8 +1459,9 @@ type ListDigitalEmployeeRunProjectOptionsParams struct {
 }
 
 type ListDigitalEmployeeRunProjectOptionsRow struct {
-	ID   uuid.UUID `json:"id"`
-	Name string    `json:"name"`
+	ID             uuid.UUID `json:"id"`
+	Name           string    `json:"name"`
+	ProjectDeleted bool      `json:"project_deleted"`
 }
 
 func (q *Queries) ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error) {
@@ -1459,7 +1473,7 @@ func (q *Queries) ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg 
 	items := []ListDigitalEmployeeRunProjectOptionsRow{}
 	for rows.Next() {
 		var i ListDigitalEmployeeRunProjectOptionsRow
-		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.ProjectDeleted); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1609,6 +1623,7 @@ SELECT
     t.chat_thread_id,
     p.id AS project_id,
     p.name AS project_name,
+    (p.deleted_at IS NOT NULL)::boolean AS project_deleted,
     jsonb_array_length(tr.work_products) AS work_product_count
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
@@ -1700,6 +1715,7 @@ type ListDigitalEmployeeRunsDetailedRow struct {
 	ChatThreadID              uuid.NullUUID      `json:"chat_thread_id"`
 	ProjectID                 uuid.NullUUID      `json:"project_id"`
 	ProjectName               pgtype.Text        `json:"project_name"`
+	ProjectDeleted            bool               `json:"project_deleted"`
 	WorkProductCount          int32              `json:"work_product_count"`
 }
 
@@ -1764,6 +1780,7 @@ func (q *Queries) ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListD
 			&i.ChatThreadID,
 			&i.ProjectID,
 			&i.ProjectName,
+			&i.ProjectDeleted,
 			&i.WorkProductCount,
 		); err != nil {
 			return nil, err

@@ -347,7 +347,7 @@ export function AutomationsPage() {
                         key={value}
                         size="sm"
                         type="button"
-                        variant={filter === value ? "primary" : "secondary"}
+                        variant={filter === value ? "primary" : "outline"}
                         onClick={() => setFilter(value)}
                       >
                         {label}
@@ -366,7 +366,7 @@ export function AutomationsPage() {
                         key={value}
                         size="sm"
                         type="button"
-                        variant={modeFilter === value ? "primary" : "secondary"}
+                        variant={modeFilter === value ? "primary" : "outline"}
                         onClick={() => setModeFilter(value)}
                       >
                         {label}

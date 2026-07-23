@@ -82,7 +82,7 @@ SET status = 'archived',
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
 `
 
 type ArchiveProjectParams struct {
@@ -116,6 +116,11 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 		&i.DeletedAt,
 		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
 	)
 	return i, err
 }
@@ -692,6 +697,7 @@ INSERT INTO projects (
     tenant_id,
     team_id,
     name,
+    directory_name,
     description,
     goal,
     status,
@@ -705,48 +711,56 @@ INSERT INTO projects (
     repo_git_credential_ref,
     repo_scope,
     repo_binding_status,
-    scenario_template_key
+    scenario_template_key,
+    workspace_ready_status,
+    workspace_ready_at
 ) VALUES (
     $1::uuid,
     $2::uuid,
     $3::uuid,
     $4::varchar,
-    $5::text,
+    $5::varchar,
     $6::text,
-    $7::varchar,
-    $8::uuid,
-    $9::uuid[],
-    $10::varchar,
+    $7::text,
+    $8::varchar,
+    $9::uuid,
+    $10::uuid[],
     $11::varchar,
-    COALESCE($12::jsonb, '{}'::jsonb),
-    $13::text,
-    $14::varchar,
+    $12::varchar,
+    COALESCE($13::jsonb, '{}'::jsonb),
+    $14::text,
     $15::varchar,
-    COALESCE($16::jsonb, '[]'::jsonb),
-    COALESCE($17::varchar, 'unbound'),
-    $18::text
-) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+    $16::varchar,
+    COALESCE($17::jsonb, '[]'::jsonb),
+    COALESCE($18::varchar, 'unbound'),
+    $19::text,
+    COALESCE($20::varchar, 'ready'),
+    $21::timestamptz
+) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
 `
 
 type CreateProjectParams struct {
-	ID                     uuid.UUID     `json:"id"`
-	TenantID               uuid.UUID     `json:"tenant_id"`
-	TeamID                 uuid.NullUUID `json:"team_id"`
-	Name                   string        `json:"name"`
-	Description            pgtype.Text   `json:"description"`
-	Goal                   pgtype.Text   `json:"goal"`
-	Status                 string        `json:"status"`
-	HumanOwnerUserID       uuid.UUID     `json:"human_owner_user_id"`
-	HumanOwnerUserIds      []uuid.UUID   `json:"human_owner_user_ids"`
-	CoordinationWorkflowID pgtype.Text   `json:"coordination_workflow_id"`
-	CoordinationStatus     pgtype.Text   `json:"coordination_status"`
-	CoordinationPolicy     []byte        `json:"coordination_policy"`
-	RepoUrl                pgtype.Text   `json:"repo_url"`
-	RepoDefaultBranch      pgtype.Text   `json:"repo_default_branch"`
-	RepoGitCredentialRef   pgtype.Text   `json:"repo_git_credential_ref"`
-	RepoScope              []byte        `json:"repo_scope"`
-	RepoBindingStatus      pgtype.Text   `json:"repo_binding_status"`
-	ScenarioTemplateKey    pgtype.Text   `json:"scenario_template_key"`
+	ID                     uuid.UUID          `json:"id"`
+	TenantID               uuid.UUID          `json:"tenant_id"`
+	TeamID                 uuid.NullUUID      `json:"team_id"`
+	Name                   string             `json:"name"`
+	DirectoryName          string             `json:"directory_name"`
+	Description            pgtype.Text        `json:"description"`
+	Goal                   pgtype.Text        `json:"goal"`
+	Status                 string             `json:"status"`
+	HumanOwnerUserID       uuid.UUID          `json:"human_owner_user_id"`
+	HumanOwnerUserIds      []uuid.UUID        `json:"human_owner_user_ids"`
+	CoordinationWorkflowID pgtype.Text        `json:"coordination_workflow_id"`
+	CoordinationStatus     pgtype.Text        `json:"coordination_status"`
+	CoordinationPolicy     []byte             `json:"coordination_policy"`
+	RepoUrl                pgtype.Text        `json:"repo_url"`
+	RepoDefaultBranch      pgtype.Text        `json:"repo_default_branch"`
+	RepoGitCredentialRef   pgtype.Text        `json:"repo_git_credential_ref"`
+	RepoScope              []byte             `json:"repo_scope"`
+	RepoBindingStatus      pgtype.Text        `json:"repo_binding_status"`
+	ScenarioTemplateKey    pgtype.Text        `json:"scenario_template_key"`
+	WorkspaceReadyStatus   pgtype.Text        `json:"workspace_ready_status"`
+	WorkspaceReadyAt       pgtype.Timestamptz `json:"workspace_ready_at"`
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
@@ -755,6 +769,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.TenantID,
 		arg.TeamID,
 		arg.Name,
+		arg.DirectoryName,
 		arg.Description,
 		arg.Goal,
 		arg.Status,
@@ -769,6 +784,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.RepoScope,
 		arg.RepoBindingStatus,
 		arg.ScenarioTemplateKey,
+		arg.WorkspaceReadyStatus,
+		arg.WorkspaceReadyAt,
 	)
 	var i Project
 	err := row.Scan(
@@ -794,6 +811,11 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.DeletedAt,
 		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
 	)
 	return i, err
 }
@@ -2833,7 +2855,7 @@ func (q *Queries) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.C
 }
 
 const GetProject = `-- name: GetProject :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -2870,6 +2892,11 @@ func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project
 		&i.DeletedAt,
 		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
 	)
 	return i, err
 }
@@ -3057,9 +3084,32 @@ SELECT
   (SELECT COUNT(*)::int FROM project_tasks
     WHERE tenant_id = $1::uuid AND project_id = $2::uuid
       AND status IN ('waiting_human', 'pending_review')) AS waiting_human_task_count,
-  (SELECT COUNT(*)::int FROM inbox_items
-    WHERE tenant_id = $1::uuid AND source_project_id = $2::uuid
-      AND status = 'open') AS open_inbox_count,
+  (SELECT COUNT(*)::int FROM inbox_items ii
+    WHERE ii.tenant_id = $1::uuid
+      AND ii.status = 'open'
+      AND (
+        ii.source_project_id = $2::uuid
+        OR (
+          ii.item_type = 'digital_employee_run_recovery'
+          AND EXISTS (
+            SELECT 1
+            FROM task_runs tr
+            JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+            WHERE tr.id = ii.source_id
+              AND tr.tenant_id = $1::uuid
+              AND (
+                (
+                  (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  AND (t.params #>> '{metadata,anchor_project_id}')::uuid = $2::uuid
+                )
+                OR (
+                  (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  AND (t.params #>> '{metadata,project_id}')::uuid = $2::uuid
+                )
+              )
+          )
+        )
+      )) AS open_inbox_count,
   (SELECT COUNT(*)::int FROM project_members
     WHERE tenant_id = $1::uuid AND project_id = $2::uuid
       AND status = 'active') AS active_member_count,
@@ -3069,7 +3119,9 @@ SELECT
   (SELECT COUNT(*)::int FROM project_runtime_nodes
     WHERE tenant_id = $1::uuid AND project_id = $2::uuid) AS runtime_node_binding_count,
   (SELECT COUNT(*)::int FROM project_employee_node_affinity
-    WHERE tenant_id = $1::uuid AND project_id = $2::uuid) AS affinity_count
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid) AS affinity_count,
+  (SELECT COUNT(*)::int FROM automation_rules
+    WHERE tenant_id = $1::uuid AND project_id = $2::uuid) AS automation_rule_count
 `
 
 type GetProjectDeletePreviewCountsParams struct {
@@ -3085,6 +3137,7 @@ type GetProjectDeletePreviewCountsRow struct {
 	DigitalEmployeeMemberCount int32 `json:"digital_employee_member_count"`
 	RuntimeNodeBindingCount    int32 `json:"runtime_node_binding_count"`
 	AffinityCount              int32 `json:"affinity_count"`
+	AutomationRuleCount        int32 `json:"automation_rule_count"`
 }
 
 func (q *Queries) GetProjectDeletePreviewCounts(ctx context.Context, arg GetProjectDeletePreviewCountsParams) (GetProjectDeletePreviewCountsRow, error) {
@@ -3098,6 +3151,7 @@ func (q *Queries) GetProjectDeletePreviewCounts(ctx context.Context, arg GetProj
 		&i.DigitalEmployeeMemberCount,
 		&i.RuntimeNodeBindingCount,
 		&i.AffinityCount,
+		&i.AutomationRuleCount,
 	)
 	return i, err
 }
@@ -3214,7 +3268,7 @@ func (q *Queries) GetProjectEventByTypeAndActor(ctx context.Context, arg GetProj
 }
 
 const GetProjectForDelete = `-- name: GetProjectForDelete :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -3252,6 +3306,11 @@ func (q *Queries) GetProjectForDelete(ctx context.Context, arg GetProjectForDele
 		&i.DeletedAt,
 		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
 	)
 	return i, err
 }
@@ -6148,13 +6207,14 @@ func (q *Queries) ListProjectTransferRequests(ctx context.Context, arg ListProje
 }
 
 const ListProjects = `-- name: ListProjects :many
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name FROM projects
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
   AND ($2::varchar IS NULL OR status = $2::varchar)
   AND (
     $3::text IS NULL
     OR name ILIKE '%' || $3::text || '%'
+    OR directory_name ILIKE '%' || $3::text || '%'
     OR COALESCE(goal, '') ILIKE '%' || $3::text || '%'
   )
 ORDER BY created_at DESC
@@ -6207,6 +6267,11 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.DeletedAt,
 			&i.ScenarioTemplateKey,
 			&i.HumanOwnerUserIds,
+			&i.WorkspaceReadyStatus,
+			&i.PrimaryRuntimeNodeID,
+			&i.WorkspaceReadyError,
+			&i.WorkspaceReadyAt,
+			&i.DirectoryName,
 		); err != nil {
 			return nil, err
 		}
@@ -8487,6 +8552,81 @@ func (q *Queries) SetProjectTaskAttemptDispatchGate(ctx context.Context, arg Set
 	return i, err
 }
 
+const SetProjectWorkspaceReady = `-- name: SetProjectWorkspaceReady :one
+UPDATE projects
+SET workspace_ready_status = $1::varchar,
+    primary_runtime_node_id = $2::uuid,
+    workspace_ready_error = $3::text,
+    workspace_ready_at = CASE
+        WHEN $1::varchar = 'ready'
+            THEN COALESCE(workspace_ready_at, NOW())
+        ELSE workspace_ready_at
+    END,
+    updated_at = NOW()
+WHERE tenant_id = $4::uuid
+  AND id = $5::uuid
+  AND deleted_at IS NULL
+  AND (
+    CASE $1::varchar
+      WHEN 'ready' THEN workspace_ready_status IN ('pending', 'error', 'ready')
+      WHEN 'error' THEN workspace_ready_status = 'pending'
+      WHEN 'pending' THEN workspace_ready_status IN ('pending', 'error', 'ready')
+      ELSE TRUE
+    END
+  )
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
+`
+
+type SetProjectWorkspaceReadyParams struct {
+	WorkspaceReadyStatus string        `json:"workspace_ready_status"`
+	PrimaryRuntimeNodeID uuid.NullUUID `json:"primary_runtime_node_id"`
+	WorkspaceReadyError  pgtype.Text   `json:"workspace_ready_error"`
+	TenantID             uuid.UUID     `json:"tenant_id"`
+	ID                   uuid.UUID     `json:"id"`
+}
+
+// CAS: ready 仅从 pending|error|ready；error 仅从 pending；pending 可从 pending|error|ready（reclone）。
+func (q *Queries) SetProjectWorkspaceReady(ctx context.Context, arg SetProjectWorkspaceReadyParams) (Project, error) {
+	row := q.db.QueryRow(ctx, SetProjectWorkspaceReady,
+		arg.WorkspaceReadyStatus,
+		arg.PrimaryRuntimeNodeID,
+		arg.WorkspaceReadyError,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Description,
+		&i.Goal,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.CoordinationWorkflowID,
+		&i.CoordinationStatus,
+		&i.CoordinationPolicy,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
+		&i.DeletedAt,
+		&i.ScenarioTemplateKey,
+		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
+	)
+	return i, err
+}
+
 const SoftDeleteProject = `-- name: SoftDeleteProject :one
 UPDATE projects
 SET deleted_at = COALESCE(deleted_at, $1::timestamptz),
@@ -8495,7 +8635,7 @@ SET deleted_at = COALESCE(deleted_at, $1::timestamptz),
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
 `
 
 type SoftDeleteProjectParams struct {
@@ -8530,6 +8670,11 @@ func (q *Queries) SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectPa
 		&i.DeletedAt,
 		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
 	)
 	return i, err
 }
@@ -8689,7 +8834,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND status = ANY($4::varchar[])
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
 `
 
 type TransitionProjectStatusParams struct {
@@ -8733,6 +8878,11 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 		&i.DeletedAt,
 		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
 	)
 	return i, err
 }
@@ -8772,7 +8922,7 @@ SET
 WHERE tenant_id = $13::uuid
   AND id = $14::uuid
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
 `
 
 type UpdateProjectParams struct {
@@ -8833,6 +8983,11 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.DeletedAt,
 		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
 	)
 	return i, err
 }

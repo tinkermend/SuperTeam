@@ -37,6 +37,9 @@ pub struct RunsSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSection {
     pub base_dir: PathBuf,
+    /// True when set via config.yaml or RUNTIME_AGENT_WORKSPACE_DIR (not binary default).
+    /// Platform-delivered workspace_base_dir must not override an explicit local value.
+    pub base_dir_explicit: bool,
     pub cleanup_policy: String,
     pub max_retained: u16,
     /// chat 线程目录无活动多少天后可被后台清扫删除(spec §5)。
@@ -181,12 +184,32 @@ impl RuntimeConfig {
         }
         cfg.apply_env(env_vars)?;
         cfg.apply_overrides(overrides);
+        cfg.resolve_provider_binaries();
         cfg.validate()?;
         Ok(cfg)
     }
 
+    /// Resolve provider binary paths against PATH when the configured path is
+    /// missing (stale `/usr/local/bin/...` overrides, bare command names).
+    fn resolve_provider_binaries(&mut self) {
+        self.providers.claude_code.binary_path =
+            crate::tools::resolve_binary_path(&self.providers.claude_code.binary_path);
+        self.providers.opencode.binary_path =
+            crate::tools::resolve_binary_path(&self.providers.opencode.binary_path);
+        self.providers.codex.binary_path =
+            crate::tools::resolve_binary_path(&self.providers.codex.binary_path);
+    }
+
     pub fn node_id(&self) -> &str {
         &self.runtime.node_id
+    }
+
+    /// 生效工作区根:本地显式 > 平台下发 > 二进制默认(spec 2026-07-23 §4)。
+    pub fn workspace_base_dir(&self) -> PathBuf {
+        crate::platform_limits::effective_workspace_base_dir(
+            &self.workspace.base_dir,
+            self.workspace.base_dir_explicit,
+        )
     }
 
     pub fn http_config(&self) -> crate::server::RuntimeHttpConfig {
@@ -229,7 +252,10 @@ impl RuntimeConfig {
         }
 
         if let Some(workspace) = file.workspace {
-            apply_path(&mut self.workspace.base_dir, workspace.base_dir);
+            if let Some(base_dir) = workspace.base_dir {
+                self.workspace.base_dir = base_dir;
+                self.workspace.base_dir_explicit = true;
+            }
             apply_string(&mut self.workspace.cleanup_policy, workspace.cleanup_policy);
             apply_copy(&mut self.workspace.max_retained, workspace.max_retained);
             apply_copy(&mut self.workspace.chat_ttl_days, workspace.chat_ttl_days);
@@ -304,7 +330,10 @@ impl RuntimeConfig {
             }
             "RUNTIME_AGENT_HTTP_ADDR" => self.http.addr = parse_env(key, value)?,
             "RUNTIME_AGENT_RUN_LOG_DIR" => self.runs.log_dir = PathBuf::from(value),
-            "RUNTIME_AGENT_WORKSPACE_DIR" => self.workspace.base_dir = PathBuf::from(value),
+            "RUNTIME_AGENT_WORKSPACE_DIR" => {
+                self.workspace.base_dir = PathBuf::from(value);
+                self.workspace.base_dir_explicit = true;
+            }
             "RUNTIME_AGENT_CLEANUP_POLICY" => self.workspace.cleanup_policy = value.to_string(),
             "RUNTIME_AGENT_MAX_RETAINED_WORKSPACES" => {
                 self.workspace.max_retained = parse_env(key, value)?;
@@ -430,7 +459,8 @@ impl Default for RuntimeConfig {
                 log_dir: PathBuf::from(".superteam/runtime-runs"),
             },
             workspace: WorkspaceSection {
-                base_dir: PathBuf::from(".superteam/workspaces"),
+                base_dir: PathBuf::from("/var/superteam/workspaces"),
+                base_dir_explicit: false,
                 cleanup_policy: "on_success".to_string(),
                 max_retained: 10,
                 chat_ttl_days: 7,

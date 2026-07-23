@@ -138,6 +138,7 @@ function makeProject(id = "project-1", status: Project["status"] = "running"): P
           : "归档项目",
     status,
     tenant_id: "tenant-1",
+    workspace_ready_status: "ready",
   };
 }
 

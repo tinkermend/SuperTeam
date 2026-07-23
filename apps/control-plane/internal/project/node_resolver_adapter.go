@@ -49,6 +49,8 @@ func (a ProjectTaskNodeResolverAdapter) ResolveProjectTaskNode(ctx context.Conte
 		return uuid.Nil, ErrProjectTaskPinnedNodeOffline
 	case NodeResolutionReasonNoEligibleOnlineNode:
 		return uuid.Nil, ErrProjectTaskNoEligibleOnlineNode
+	case NodeResolutionReasonWorkspaceUnavailable:
+		return uuid.Nil, ErrProjectWorkspaceUnavailable
 	case "":
 		if resolution.NodeID == uuid.Nil {
 			// Defensive: the resolver contract guarantees NodeID != Nil when

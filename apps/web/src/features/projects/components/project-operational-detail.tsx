@@ -84,6 +84,7 @@ import type {
   ProjectTaskGraph,
   ProjectTaskGraphBlockingFact,
   ProjectTransferRequest,
+  WorkspaceReadyStatus,
 } from "@/lib/api/projects";
 import {
   decisionStatusLabel,
@@ -92,6 +93,7 @@ import {
   projectStatusLabel,
   statusLabel,
   taskStatusLabel,
+  workspaceReadyStatusLabel,
 } from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
@@ -122,6 +124,9 @@ type ProjectOperationalDetailProps = {
   isArchived?: boolean;
   onArchiveProject: () => void;
   onDeleteProject?: () => void;
+  onRecloneWorkspace?: () => void;
+  onMarkWorkspaceReady?: () => void;
+  workspaceActionPending?: boolean;
   onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
   onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
@@ -187,6 +192,9 @@ export function ProjectOperationalDetail({
   isArchived,
   onArchiveProject,
   onDeleteProject,
+  onRecloneWorkspace,
+  onMarkWorkspaceReady,
+  workspaceActionPending,
   onCreateAcceptance,
   onCreateArchiveSnapshot,
   onCreateEvidence,
@@ -264,6 +272,15 @@ export function ProjectOperationalDetail({
       : project.allowed_actions.includes("project.archive"));
   const canDelete =
     Boolean(onDeleteProject) && project.allowed_actions?.includes("project.delete");
+  const canManageWorkspace =
+    !isArchived &&
+    (project.workspace_ready_status === "pending" ||
+      project.workspace_ready_status === "error");
+  const showReclone =
+    canManageWorkspace &&
+    Boolean(onRecloneWorkspace) &&
+    Boolean(project.repo_binding && project.repo_binding.status === "bound");
+  const showMarkReady = canManageWorkspace && Boolean(onMarkWorkspaceReady);
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -281,9 +298,18 @@ export function ProjectOperationalDetail({
                 <StatusPill tone={projectStatusTone(project.status)}>
                   {projectStatusLabel(project.status)}
                 </StatusPill>
+                <StatusPill tone={workspaceReadyTone(project.workspace_ready_status)}>
+                  {workspaceReadyStatusLabel(project.workspace_ready_status)}
+                </StatusPill>
               </div>
               <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
                 {project.goal}
+              </p>
+              <p className="mt-1 text-xs text-v3-ink-3">
+                目录名 {project.name}
+                {project.workspace_ready_error
+                  ? ` · ${project.workspace_ready_error}`
+                  : ""}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-v3-ink-2">
                 <HeroFactLink
@@ -353,6 +379,22 @@ export function ProjectOperationalDetail({
                   <DropdownMenuItem onSelect={onArchiveProject}>
                     <Archive />
                     归档项目
+                  </DropdownMenuItem>
+                ) : null}
+                {showReclone ? (
+                  <DropdownMenuItem
+                    disabled={workspaceActionPending}
+                    onSelect={onRecloneWorkspace}
+                  >
+                    重新 clone 工作区
+                  </DropdownMenuItem>
+                ) : null}
+                {showMarkReady ? (
+                  <DropdownMenuItem
+                    disabled={workspaceActionPending}
+                    onSelect={onMarkWorkspaceReady}
+                  >
+                    标记工作区已就绪
                   </DropdownMenuItem>
                 ) : null}
                 {canDelete ? (
@@ -2199,6 +2241,13 @@ function projectStatusTone(status: ProjectStatus | string): V3Tone {
   if (status === "archived") return "mute";
   if (status === "paused" || status === "acceptance") return "warn";
   if (status === "configuring" || status === "draft") return "info";
+  return "mute";
+}
+
+function workspaceReadyTone(status: WorkspaceReadyStatus | string | undefined): V3Tone {
+  if (status === "ready") return "ok";
+  if (status === "error") return "danger";
+  if (status === "pending") return "warn";
   return "mute";
 }
 

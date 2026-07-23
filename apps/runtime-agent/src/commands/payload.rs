@@ -93,6 +93,8 @@ pub struct RuntimeProjectWorkspacePayload {
     /// Chat dispatch only (目录与能力投影修订 spec §4): keys the chat working
     /// directory by (project, thread) instead of (project, task, attempt).
     pub chat_thread_id: Option<String>,
+    /// 稳定项目目录名(spec 2026-07-23);有值时 CWD = `{base}/{project_name}`。
+    pub project_name: Option<String>,
     pub workspace_mode: Option<String>,
     pub base_ref: Option<String>,
     pub project_git: Option<RuntimeProjectGitPayload>,
@@ -234,6 +236,7 @@ impl RuntimeSessionCommandPayload {
             project_task_id: metadata_string(&self.metadata, "project_task_id"),
             project_task_attempt_id: metadata_string(&self.metadata, "project_task_attempt_id"),
             chat_thread_id: metadata_string(&self.metadata, "chat_thread_id"),
+            project_name: metadata_string(&self.metadata, "project_name"),
             workspace_mode: metadata_string(&self.metadata, "workspace_mode"),
             base_ref: metadata_string(&self.metadata, "base_ref"),
             project_git: project_git_metadata(&self.metadata),

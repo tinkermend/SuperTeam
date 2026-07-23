@@ -1,4 +1,5 @@
 import type { SystemConfigItem } from "@/lib/api/system-config";
+import { isStringConfig } from "@/lib/api/system-config";
 
 /** 编辑单位：按 value_type 与默认值量级选定，输入与边界提示均以该单位表达。 */
 export type ConfigUnit = {
@@ -9,6 +10,9 @@ export type ConfigUnit = {
 const MIB = 1024 * 1024;
 
 export function unitFor(item: SystemConfigItem): ConfigUnit {
+  if (isStringConfig(item)) {
+    return { label: "", factor: 1 };
+  }
   if (item.value_type === "bytes") {
     return { label: "MiB", factor: MIB };
   }
@@ -25,15 +29,34 @@ export function unitFor(item: SystemConfigItem): ConfigUnit {
 }
 
 /** 人类可读展示：按值本身选最合适单位（与编辑单位无关）。 */
-export function formatConfigValue(item: SystemConfigItem, rawValue: number): string {
+export function formatConfigValue(item: SystemConfigItem, rawValue?: number | string): string {
+  if (isStringConfig(item)) {
+    if (typeof rawValue === "string") return rawValue;
+    return item.effective_string_value ?? item.default_string_value ?? "";
+  }
+  const numeric = typeof rawValue === "number" ? rawValue : Number(rawValue ?? 0);
   if (item.value_type === "bytes") {
-    if (rawValue % MIB === 0) return `${rawValue / MIB} MiB`;
-    return `${(rawValue / MIB).toFixed(1)} MiB`;
+    if (numeric % MIB === 0) return `${numeric / MIB} MiB`;
+    return `${(numeric / MIB).toFixed(1)} MiB`;
   }
   if (item.value_type === "duration_seconds") {
-    if (rawValue % 3600 === 0) return `${rawValue / 3600} 小时`;
-    if (rawValue % 60 === 0) return `${rawValue / 60} 分钟`;
-    return `${rawValue} 秒`;
+    if (numeric % 3600 === 0) return `${numeric / 3600} 小时`;
+    if (numeric % 60 === 0) return `${numeric / 60} 分钟`;
+    return `${numeric} 秒`;
   }
-  return String(rawValue);
+  return String(numeric);
+}
+
+export function displayEffectiveValue(item: SystemConfigItem): string {
+  if (isStringConfig(item)) {
+    return formatConfigValue(item, item.effective_string_value ?? item.default_string_value ?? "");
+  }
+  return formatConfigValue(item, item.effective_value);
+}
+
+export function displayDefaultValue(item: SystemConfigItem): string {
+  if (isStringConfig(item)) {
+    return formatConfigValue(item, item.default_string_value ?? "");
+  }
+  return formatConfigValue(item, item.default_value);
 }

@@ -24,11 +24,12 @@ import { ApiRequestError } from "@/lib/api/client";
 import {
   listSystemConfigs,
   resetSystemConfig,
+  isHighDangerConfig,
   type SystemConfigItem,
 } from "@/lib/api/system-config";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { EditSystemConfigDialog } from "./edit-dialog";
-import { formatConfigValue } from "./units";
+import { displayDefaultValue, displayEffectiveValue } from "./units";
 
 /** domain → tab 标题。未知 domain 落"其他"，后端加配置项前端零改动。 */
 const DOMAIN_LABELS: Record<string, string> = {
@@ -191,7 +192,7 @@ export function SystemConfigPage() {
         title={`恢复「${pendingReset?.label ?? ""}」默认值`}
         desc={
           pendingReset
-            ? `将删除覆盖值，恢复为默认 ${formatConfigValue(pendingReset, pendingReset.default_value)}（当前生效 ${formatConfigValue(pendingReset, pendingReset.effective_value)}）。`
+            ? `将删除覆盖值，恢复为默认 ${displayDefaultValue(pendingReset)}（当前生效 ${displayEffectiveValue(pendingReset)}）。`
             : ""
         }
         confirmText="恢复默认"
@@ -223,16 +224,19 @@ function SystemConfigRow({
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="font-medium">{item.label}</span>
           <span className="truncate font-mono text-xs text-muted-foreground">{item.key}</span>
+          {isHighDangerConfig(item) ? (
+            <span className="text-xs font-medium text-destructive">高危 · 不宜改动 · 改后不迁存量</span>
+          ) : null}
           <span className="line-clamp-2 max-w-[36rem] text-xs text-muted-foreground">
             {item.description}
           </span>
         </div>
       </V3Td>
       <V3Td className="font-medium tabular-nums">
-        {formatConfigValue(item, item.effective_value)}
+        {displayEffectiveValue(item)}
       </V3Td>
       <V3Td className="tabular-nums text-muted-foreground">
-        {formatConfigValue(item, item.default_value)}
+        {displayDefaultValue(item)}
       </V3Td>
       <V3Td>
         <div className="flex min-w-0 flex-col gap-1">

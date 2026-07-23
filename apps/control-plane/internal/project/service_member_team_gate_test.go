@@ -180,14 +180,17 @@ func TestCreateProjectRejectsTeamlessDigitalEmployeeMember(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
 	teamlessID := uuid.New()
+	runtimeNodeID := uuid.New()
+	stubProjectRuntimeNodeReader(service, tenantID, runtimeNodeID)
 	service.SetMemberTeamAssignmentResolver(&fakeMemberTeamResolver{assignments: map[uuid.UUID]*uuid.UUID{teamlessID: nil}})
 
 	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
 		TenantID:         tenantID,
 		ActorUserID:      actorID,
-		Name:             "候岗员工项目",
+		Name:             "teamless-employee-project",
 		Goal:             "验证参与门禁",
 		HumanOwnerUserID: uuid.New(),
+		RuntimeNodeIDs:   []uuid.UUID{runtimeNodeID},
 		Members: []ProjectMemberInput{{
 			PrincipalType: PrincipalTypeDigitalEmployee,
 			PrincipalID:   teamlessID,

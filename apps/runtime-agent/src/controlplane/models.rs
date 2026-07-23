@@ -141,6 +141,10 @@ pub struct RuntimeCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeCommandType {
     EnsureInstance,
+    EnsureProjectDirectory,
+    RemoveProjectDirectory,
+    CloneProjectRepository,
+    ValidateProjectWorkspace,
     StartSession,
     ResumeSession,
     SendInput,
@@ -153,6 +157,41 @@ pub struct EnsureInstanceCommand {
     #[serde(default)]
     pub team_id: Option<String>,
     pub digital_employee_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnsureProjectDirectoryCommand {
+    pub project_name: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemoveProjectDirectoryCommand {
+    pub project_name: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CloneProjectRepositoryCommand {
+    pub project_name: String,
+    pub repo_url: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub default_branch: Option<String>,
+    #[serde(default)]
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ValidateProjectWorkspaceCommand {
+    pub project_name: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub require_git: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -373,6 +412,10 @@ impl<'de> Deserialize<'de> for RuntimeCommandType {
         let value = String::deserialize(deserializer)?;
         Ok(match value.as_str() {
             "ensure_instance" => Self::EnsureInstance,
+            "ensure_project_directory" => Self::EnsureProjectDirectory,
+            "remove_project_directory" => Self::RemoveProjectDirectory,
+            "clone_project_repository" => Self::CloneProjectRepository,
+            "validate_project_workspace" => Self::ValidateProjectWorkspace,
             "start_session" => Self::StartSession,
             "resume_session" => Self::ResumeSession,
             "send_input" => Self::SendInput,
@@ -455,6 +498,9 @@ pub struct PlatformLimits {
     pub skill_archive_max_bytes: Option<u64>,
     #[serde(default)]
     pub skill_archive_max_file_count: Option<u64>,
+    /// 系统工作区根(spec 2026-07-23 §4);节点本地显式配置优先于平台值。
+    #[serde(default)]
+    pub workspace_base_dir: Option<String>,
 }
 
 /// Heartbeat response

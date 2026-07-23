@@ -205,6 +205,7 @@ mod tests {
         let mut config = RuntimeConfig::new("node-1").expect("config");
         config.runtime.control_plane_url = format!("http://{addr}");
         config.workspace.base_dir = temp.path().to_path_buf();
+        config.workspace.base_dir_explicit = true;
         let executor = RuntimeCommandExecutor::new(config.clone());
         let authorization = HeaderValue::from_static("Bearer session-token");
         run_command_loop_once(
@@ -363,6 +364,7 @@ printf '%s\n' '{"type":"result","result":"done"}'
         let mut config = RuntimeConfig::new("node-1").expect("config");
         config.runs.log_dir = temp.path().join("run-logs");
         config.workspace.base_dir = temp.path().join("workspaces");
+    config.workspace.base_dir_explicit = true;
         config.runtime.control_plane_url = format!("http://{}", http_server.addr);
         config.providers.claude_code.enabled = true;
         config.providers.claude_code.binary_path = fake_claude;

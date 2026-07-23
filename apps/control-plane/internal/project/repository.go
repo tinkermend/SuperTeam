@@ -10,6 +10,7 @@ import (
 
 type Repository interface {
 	CreateProject(ctx context.Context, req CreateProjectRequest, projectID uuid.UUID, workflowID string) (Project, error)
+	SetProjectWorkspaceReady(ctx context.Context, tenantID, projectID uuid.UUID, status WorkspaceReadyStatus, primaryNodeID *uuid.UUID, readyError *string) (Project, error)
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)

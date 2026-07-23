@@ -27,6 +27,7 @@ const (
 	KeySkillArchiveUnpackMaxFileCount     = "skill.archive_unpack_max_file_count"
 	KeyRuntimeSessionTTLSeconds           = "runtime.session_ttl_seconds"
 	KeyRuntimeHeartbeatTimeoutSeconds     = "runtime.heartbeat_timeout_seconds"
+	KeyRuntimeWorkspaceBaseDir            = "runtime.workspace_base_dir"
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
 	KeyEmployeeMaxPerTeam                 = "employee.max_per_team"
@@ -149,6 +150,18 @@ var registry = []Definition{
 		MaxValue:     600,
 	},
 	{
+		Key:    KeyRuntimeWorkspaceBaseDir,
+		Domain: DomainExecution,
+		Label:  "系统工作区根目录",
+		Description: "Runtime 派生项目目录与员工能力缓存的工作区根路径约定。" +
+			"高危、不宜改动；改后不自动迁存量数据，已有目录会相对旧根 orphan。" +
+			"节点本地 config.yaml / RUNTIME_AGENT_WORKSPACE_DIR 可覆盖平台下发值；生效优先级：节点本地 > 平台下发 > 二进制内置默认。" +
+			"经心跳 platform_limits 下发到 runtime。",
+		ValueType:          ValueTypeString,
+		DefaultStringValue: "/var/superteam/workspaces",
+		MaxStringLength:    512,
+	},
+	{
 		Key:          KeyRuntimeSessionTTLSeconds,
 		Domain:       DomainSecurity,
 		Label:        "Runtime 会话有效期",
@@ -204,14 +217,22 @@ func buildRegistryIndex() map[string]Definition {
 		if _, dup := index[def.Key]; dup {
 			panic(fmt.Sprintf("systemconfig: duplicate definition key %q", def.Key))
 		}
-		if def.MinValue > def.MaxValue {
-			panic(fmt.Sprintf("systemconfig: definition %q has min > max", def.Key))
-		}
-		if def.DefaultValue < def.MinValue || def.DefaultValue > def.MaxValue {
-			panic(fmt.Sprintf("systemconfig: definition %q default out of bounds", def.Key))
-		}
 		switch def.ValueType {
 		case ValueTypeBytes, ValueTypeDurationSeconds, ValueTypeInt:
+			if def.MinValue > def.MaxValue {
+				panic(fmt.Sprintf("systemconfig: definition %q has min > max", def.Key))
+			}
+			if def.DefaultValue < def.MinValue || def.DefaultValue > def.MaxValue {
+				panic(fmt.Sprintf("systemconfig: definition %q default out of bounds", def.Key))
+			}
+		case ValueTypeString:
+			maxLen := def.EffectiveMaxStringLength()
+			if len(def.DefaultStringValue) == 0 {
+				panic(fmt.Sprintf("systemconfig: definition %q string default is empty", def.Key))
+			}
+			if len(def.DefaultStringValue) > maxLen {
+				panic(fmt.Sprintf("systemconfig: definition %q string default exceeds max length %d", def.Key, maxLen))
+			}
 		default:
 			panic(fmt.Sprintf("systemconfig: definition %q has unknown value type %q", def.Key, def.ValueType))
 		}
@@ -233,14 +254,29 @@ func LookupDefinition(key string) (Definition, bool) {
 	return def, ok
 }
 
-// DefaultFor 返回注册表默认值,是各使用点 Reader 未注入时的统一兜底,
-// 避免默认值在消费方重复定义产生漂移。未注册 key panic(编程错误)。
+// DefaultFor 返回注册表数值型默认值,是各使用点 Reader 未注入时的统一兜底,
+// 避免默认值在消费方重复定义产生漂移。未注册 key 或非数值型 panic(编程错误)。
 func DefaultFor(key string) int64 {
 	def, ok := registryByKey[key]
 	if !ok {
 		panic(fmt.Sprintf("systemconfig: DefaultFor unknown key %q", key))
 	}
+	if def.IsStringType() {
+		panic(fmt.Sprintf("systemconfig: DefaultFor called on string key %q; use DefaultStringFor", key))
+	}
 	return def.DefaultValue
+}
+
+// DefaultStringFor 返回注册表 string 型默认值。未注册 key 或非 string 型 panic。
+func DefaultStringFor(key string) string {
+	def, ok := registryByKey[key]
+	if !ok {
+		panic(fmt.Sprintf("systemconfig: DefaultStringFor unknown key %q", key))
+	}
+	if !def.IsStringType() {
+		panic(fmt.Sprintf("systemconfig: DefaultStringFor called on non-string key %q", key))
+	}
+	return def.DefaultStringValue
 }
 
 // DefaultDurationFor 是 DefaultFor 的 duration_seconds 便捷形态。

@@ -54,6 +54,7 @@ type platformLimitsResponse struct {
 	AttachmentTotalMaxBytes    int64  `json:"attachment_total_max_bytes"`
 	SkillArchiveMaxBytes       int64  `json:"skill_archive_max_bytes"`
 	SkillArchiveMaxFileCount   int64  `json:"skill_archive_max_file_count"`
+	WorkspaceBaseDir           string `json:"workspace_base_dir,omitempty"`
 }
 
 type runtimeEnrollmentResponse struct {
@@ -238,6 +239,7 @@ func newRuntimeHeartbeatResponse(resp *runtime.HeartbeatResponse) runtimeNodeRes
 			AttachmentTotalMaxBytes:    limits.AttachmentTotalMaxBytes,
 			SkillArchiveMaxBytes:       limits.SkillArchiveMaxBytes,
 			SkillArchiveMaxFileCount:   limits.SkillArchiveMaxFileCount,
+			WorkspaceBaseDir:           limits.WorkspaceBaseDir,
 		}
 	}
 	return response

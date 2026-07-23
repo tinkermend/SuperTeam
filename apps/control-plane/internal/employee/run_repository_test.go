@@ -853,7 +853,7 @@ func TestPgRepositoryListRunsDetailedFiltersByStatusAndProject(t *testing.T) {
 		VALUES (gen_random_uuid(), $1, $2, $3, $4, 'completed', NOW() - interval '1 hour', NOW() - interval '40 minutes', NOW())
 	`, tenantID, taskID, otherEmployeeID, nodeID)
 	require.NoError(t, err)
-	_, err = conn.Exec(ctx, `INSERT INTO projects (id, tenant_id, name, status, human_owner_user_id) VALUES ($1, $2, '试点项目 A', 'active', $3)`, projectID, tenantID, humanOwnerID)
+	_, err = conn.Exec(ctx, `INSERT INTO projects (id, tenant_id, name, directory_name, status, human_owner_user_id) VALUES ($1, $2, '试点项目 A', 'pilot-project-a', 'active', $3)`, projectID, tenantID, humanOwnerID)
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, `INSERT INTO project_tasks (id, tenant_id, project_id, digital_employee_run_id, title, status) VALUES (gen_random_uuid(), $1, $2, $3, '需求梳理任务', 'completed')`, tenantID, projectID, completedRunID)
 	require.NoError(t, err)
@@ -1401,7 +1401,7 @@ func TestPgRunRepositoryResolvesChatRunProjectFromMetadata(t *testing.T) {
 
 	_, err = conn.Exec(ctx, `INSERT INTO tenants (id, slug, name, status) VALUES ($1, 'default', '默认租户', 'active') ON CONFLICT (id) DO NOTHING`, tenantID)
 	require.NoError(t, err)
-	_, err = conn.Exec(ctx, `INSERT INTO projects (id, tenant_id, name, status, human_owner_user_id) VALUES ($1, $2, '任务中枢锚点项目', 'active', $3)`, projectID, tenantID, humanOwnerID)
+	_, err = conn.Exec(ctx, `INSERT INTO projects (id, tenant_id, name, directory_name, status, human_owner_user_id) VALUES ($1, $2, '任务中枢锚点项目', 'task-hub-anchor', 'active', $3)`, projectID, tenantID, humanOwnerID)
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, `
 		INSERT INTO tasks (id, tenant_id, title, provider_type, status, run_kind, params)
@@ -1423,6 +1423,7 @@ func TestPgRunRepositoryResolvesChatRunProjectFromMetadata(t *testing.T) {
 	require.Equal(t, projectID, *got.ProjectID)
 	require.NotNil(t, got.ProjectName)
 	require.Equal(t, "任务中枢锚点项目", *got.ProjectName)
+	require.False(t, got.ProjectDeleted)
 
 	from := time.Now().UTC().Add(-24 * time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
@@ -1433,6 +1434,7 @@ func TestPgRunRepositoryResolvesChatRunProjectFromMetadata(t *testing.T) {
 	require.Equal(t, projectID, *calendar.Items[0].ProjectID)
 	require.NotNil(t, calendar.Items[0].ProjectName)
 	require.Equal(t, "任务中枢锚点项目", *calendar.Items[0].ProjectName)
+	require.False(t, calendar.Items[0].ProjectDeleted)
 
 	listed, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
 		ProjectID: &projectID,
@@ -1443,4 +1445,32 @@ func TestPgRunRepositoryResolvesChatRunProjectFromMetadata(t *testing.T) {
 	require.Equal(t, runID, listed.Items[0].Run.ID)
 	require.NotNil(t, listed.Items[0].ProjectName)
 	require.Equal(t, "任务中枢锚点项目", *listed.Items[0].ProjectName)
+	require.False(t, listed.Items[0].ProjectDeleted)
+
+	_, err = conn.Exec(ctx, `UPDATE projects SET deleted_at = NOW() WHERE id = $1`, projectID)
+	require.NoError(t, err)
+
+	gotDeleted, err := repo.GetRun(ctx, tenantID, employeeID, runID)
+	require.NoError(t, err)
+	require.NotNil(t, gotDeleted.ProjectID)
+	require.Equal(t, projectID, *gotDeleted.ProjectID)
+	require.NotNil(t, gotDeleted.ProjectName)
+	require.Equal(t, "任务中枢锚点项目", *gotDeleted.ProjectName)
+	require.True(t, gotDeleted.ProjectDeleted)
+
+	calendarDeleted, err := repo.ListRunCalendar(ctx, tenantID, employeeID, from, to, 100)
+	require.NoError(t, err)
+	require.Len(t, calendarDeleted.Items, 1)
+	require.True(t, calendarDeleted.Items[0].ProjectDeleted)
+	require.Equal(t, "任务中枢锚点项目", *calendarDeleted.Items[0].ProjectName)
+
+	listedDeleted, err := repo.ListRunsDetailed(ctx, tenantID, employeeID, DigitalEmployeeRunListFilter{
+		ProjectID: &projectID,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), listedDeleted.TotalCount)
+	require.True(t, listedDeleted.Items[0].ProjectDeleted)
+	require.Len(t, listedDeleted.Projects, 1)
+	require.True(t, listedDeleted.Projects[0].Deleted)
 }

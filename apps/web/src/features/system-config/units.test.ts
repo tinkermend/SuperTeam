@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SystemConfigItem } from "@/lib/api/system-config";
-import { formatConfigValue, unitFor } from "./units";
+import {
+  displayDefaultValue,
+  displayEffectiveValue,
+  formatConfigValue,
+  unitFor,
+} from "./units";
 
 const MIB = 1024 * 1024;
 
@@ -54,6 +59,20 @@ describe("unitFor", () => {
     });
     expect(unitFor(count)).toEqual({ label: "", factor: 1 });
   });
+
+  it("string 型免单位", () => {
+    const path = item({
+      value_type: "string",
+      default_value: 0,
+      effective_value: 0,
+      default_string_value: ".superteam/workspaces",
+      effective_string_value: ".superteam/workspaces",
+      max_string_length: 512,
+      min_value: 0,
+      max_value: 0,
+    });
+    expect(unitFor(path)).toEqual({ label: "", factor: 1 });
+  });
 });
 
 describe("formatConfigValue", () => {
@@ -69,5 +88,21 @@ describe("formatConfigValue", () => {
   it("int 纯计数型原样展示", () => {
     const count = item({ value_type: "int", default_value: 20 });
     expect(formatConfigValue(count, 20)).toBe("20");
+  });
+
+  it("string 型展示文本路径", () => {
+    const path = item({
+      key: "runtime.workspace_base_dir",
+      value_type: "string",
+      default_value: 0,
+      effective_value: 0,
+      default_string_value: ".superteam/workspaces",
+      effective_string_value: "/data/workspaces",
+      max_string_length: 512,
+      min_value: 0,
+      max_value: 0,
+    });
+    expect(displayEffectiveValue(path)).toBe("/data/workspaces");
+    expect(displayDefaultValue(path)).toBe(".superteam/workspaces");
   });
 });

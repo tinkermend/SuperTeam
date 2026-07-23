@@ -55,3 +55,13 @@ SET status = sqlc.arg('status')::varchar,
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND command_id = sqlc.arg('command_id')::varchar
 RETURNING *;
+
+-- name: ListRuntimeCommandReceiptsByResource :many
+SELECT *
+FROM runtime_command_receipts
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND resource_type = sqlc.arg('resource_type')::varchar
+  AND resource_id = sqlc.arg('resource_id')::uuid
+  AND command_type = sqlc.arg('command_type')::varchar
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit_count')::int;

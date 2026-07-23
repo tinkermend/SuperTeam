@@ -15,10 +15,13 @@ use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, Runtime
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::{
-    EnsureInstanceCommand, ProjectTaskAttestationWriteback, ProjectTaskBudgetHeartbeatWriteback,
-    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskStartWriteback,
-    ProjectTaskWaitHumanWriteback, RuntimeCommand, RuntimeCommandEventWriteback,
-    RuntimeCommandTerminalWriteback, RuntimeCommandType, TaskResultContract,
+    EnsureInstanceCommand, EnsureProjectDirectoryCommand, CloneProjectRepositoryCommand,
+    ProjectTaskAttestationWriteback,
+    ProjectTaskBudgetHeartbeatWriteback, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
+    ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RemoveProjectDirectoryCommand,
+    ValidateProjectWorkspaceCommand,
+    RuntimeCommand, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
+    RuntimeCommandType, TaskResultContract,
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
@@ -46,6 +49,8 @@ struct CommandWorkspace {
     mcp_config_path: Option<PathBuf>,
     skill_conflicts: Vec<String>,
     skill_convergence: Option<crate::skills_convergence::SkillConvergenceReport>,
+    /// Codex/OpenCode 会话 overlay 环境（不指向员工 auth home）。
+    provider_overlay_env: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -239,6 +244,18 @@ impl RuntimeCommandExecutor {
             | RuntimeCommandType::SendInput => self.handle_input_command(command).await,
             RuntimeCommandType::StopSession => self.handle_stop_command(command).await,
             RuntimeCommandType::EnsureInstance => self.handle_ensure_instance(command),
+            RuntimeCommandType::EnsureProjectDirectory => {
+                self.handle_ensure_project_directory(command).await
+            }
+            RuntimeCommandType::RemoveProjectDirectory => {
+                self.handle_remove_project_directory(command).await
+            }
+            RuntimeCommandType::CloneProjectRepository => {
+                self.handle_clone_project_repository(command).await
+            }
+            RuntimeCommandType::ValidateProjectWorkspace => {
+                self.handle_validate_project_workspace(command).await
+            }
             RuntimeCommandType::Unsupported(_) => Ok(RuntimeCommandOutcome {
                 command_id: command.id,
                 accepted: false,
@@ -316,12 +333,24 @@ impl RuntimeCommandExecutor {
         // (and the drain/attach paths below take over rollback duty) must roll it back
         // best-effort rather than leaving a stale injected config behind.
         let session_policy_value = serde_json::to_value(&payload.session_policy).map_err(|error| {
-            rollback_session_mcp_config_best_effort(
+            rollback_session_projections_best_effort(
                 &payload.command_id,
                 Some(command_workspace.agent_home_dir.as_path()),
+                Some(command_workspace.workspace_path.as_path()),
+                Some(payload.command_id.as_str()),
             );
             self.recorded_error(&payload.command_id, error.into())
         })?;
+
+        let mut environment: BTreeMap<String, String> = payload
+            .environment
+            .iter()
+            .map(|env| (env.name.clone(), env.value.clone()))
+            .collect();
+        crate::project_session::merge_provider_overlay_env(
+            &mut environment,
+            &command_workspace.provider_overlay_env,
+        );
 
         let spec = RunSpec {
             provider_kind: payload.provider_kind().to_string(),
@@ -340,11 +369,7 @@ impl RuntimeCommandExecutor {
                 RuntimeCommandType::ResumeSession | RuntimeCommandType::SendInput
             ),
             model: payload.model.clone(),
-            environment: payload
-                .environment
-                .iter()
-                .map(|env| (env.name.clone(), env.value.clone()))
-                .collect(),
+            environment,
             command_context: Some(RuntimeCommandRunContext {
                 command_id: payload.command_id.clone(),
                 digital_employee_id: payload.digital_employee_id.clone(),
@@ -363,9 +388,11 @@ impl RuntimeCommandExecutor {
                 let error = self.recorded_error(&payload.command_id, error);
                 self.write_command_failure(&payload.command_id, error.to_string())
                     .await?;
-                rollback_session_mcp_config_best_effort(
+                rollback_session_projections_best_effort(
                     &payload.command_id,
                     spec.agent_home_dir.as_deref(),
+                    Some(spec.workspace_path.as_path()),
+                    Some(payload.command_id.as_str()),
                 );
                 return Err(error);
             }
@@ -413,7 +440,12 @@ impl RuntimeCommandExecutor {
                 let _ = self.runs.finish_failed(&run_id, message.clone()).await;
                 let _ = writeback.fail(message).await;
                 self.registry.record_run_finished(&run_id);
-                rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
+                rollback_session_projections_best_effort(
+                    &run_id,
+                    spec.agent_home_dir.as_deref(),
+                    Some(spec.workspace_path.as_path()),
+                    Some(payload.command_id.as_str()),
+                );
                 return Ok(RuntimeCommandOutcome {
                     command_id: payload.command_id,
                     accepted: true,
@@ -438,7 +470,12 @@ impl RuntimeCommandExecutor {
                     writeback.fail(message).await?;
                 }
                 self.registry.record_run_finished(&run_id);
-                rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
+                rollback_session_projections_best_effort(
+                    &run_id,
+                    spec.agent_home_dir.as_deref(),
+                    Some(spec.workspace_path.as_path()),
+                    Some(payload.command_id.as_str()),
+                );
                 return Ok(RuntimeCommandOutcome {
                     command_id: payload.command_id,
                     accepted: true,
@@ -469,7 +506,12 @@ impl RuntimeCommandExecutor {
                 writeback.fail(message).await?;
             }
             self.registry.record_run_finished(&run_id);
-            rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
+            rollback_session_projections_best_effort(
+                &run_id,
+                spec.agent_home_dir.as_deref(),
+                Some(spec.workspace_path.as_path()),
+                Some(payload.command_id.as_str()),
+            );
             return Ok(RuntimeCommandOutcome {
                 command_id: payload.command_id,
                 accepted: true,
@@ -613,6 +655,238 @@ impl RuntimeCommandExecutor {
         })
     }
 
+    async fn handle_ensure_project_directory(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        let request: EnsureProjectDirectoryCommand =
+            match serde_json::from_value(command.payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message = format!("invalid ensure_project_directory command payload: {error}");
+                    self.write_command_failure(&command.id, message.clone())
+                        .await?;
+                    return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
+                }
+            };
+        match crate::project_workspace::ensure_stable_project_directory(
+            &self.config.workspace_base_dir(),
+            &request.project_name,
+        ) {
+            Ok(path) => {
+                let mut result = HashMap::new();
+                result.insert(
+                    "workspace_path".to_string(),
+                    serde_json::Value::String(path.display().to_string()),
+                );
+                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                {
+                    result.insert(
+                        "project_id".to_string(),
+                        serde_json::Value::String(project_id),
+                    );
+                }
+                result.insert(
+                    "project_name".to_string(),
+                    serde_json::Value::String(request.project_name),
+                );
+                self.write_command_completed(
+                    &command.id,
+                    Some(format!(
+                        "ensured project directory {}",
+                        path.display()
+                    )),
+                    Some(result),
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: true,
+                    run_id: None,
+                })
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.write_command_failure(&command.id, message.clone())
+                    .await?;
+                Err(self.recorded_error(&command.id, anyhow::anyhow!(message)))
+            }
+        }
+    }
+
+    async fn handle_remove_project_directory(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        let request: RemoveProjectDirectoryCommand =
+            match serde_json::from_value(command.payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message = format!("invalid remove_project_directory command payload: {error}");
+                    self.write_command_failure(&command.id, message.clone())
+                        .await?;
+                    return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
+                }
+            };
+        match crate::project_workspace::remove_stable_project_directory(
+            &self.config.workspace_base_dir(),
+            &request.project_name,
+        ) {
+            Ok(()) => {
+                let mut result = HashMap::new();
+                result.insert(
+                    "project_name".to_string(),
+                    serde_json::Value::String(request.project_name.clone()),
+                );
+                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                {
+                    result.insert(
+                        "project_id".to_string(),
+                        serde_json::Value::String(project_id),
+                    );
+                }
+                self.write_command_completed(
+                    &command.id,
+                    Some(format!(
+                        "removed project directory {}",
+                        request.project_name
+                    )),
+                    Some(result),
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: true,
+                    run_id: None,
+                })
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.write_command_failure(&command.id, message.clone())
+                    .await?;
+                Err(self.recorded_error(&command.id, anyhow::anyhow!(message)))
+            }
+        }
+    }
+
+    async fn handle_clone_project_repository(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        let request: CloneProjectRepositoryCommand =
+            match serde_json::from_value(command.payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message =
+                        format!("invalid clone_project_repository command payload: {error}");
+                    self.write_command_failure(&command.id, message.clone())
+                        .await?;
+                    return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
+                }
+            };
+        match crate::project_workspace::clone_into_stable_project_directory(
+            &self.config.workspace_base_dir(),
+            &request.project_name,
+            &request.repo_url,
+            request.default_branch.as_deref(),
+            request.force.unwrap_or(false),
+        ) {
+            Ok(path) => {
+                let mut result = HashMap::new();
+                result.insert(
+                    "workspace_path".to_string(),
+                    serde_json::Value::String(path.display().to_string()),
+                );
+                result.insert(
+                    "project_name".to_string(),
+                    serde_json::Value::String(request.project_name),
+                );
+                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                {
+                    result.insert(
+                        "project_id".to_string(),
+                        serde_json::Value::String(project_id),
+                    );
+                }
+                self.write_command_completed(
+                    &command.id,
+                    Some(format!("cloned project repository into {}", path.display())),
+                    Some(result),
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: true,
+                    run_id: None,
+                })
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.write_command_failure(&command.id, message.clone())
+                    .await?;
+                Err(self.recorded_error(&command.id, anyhow::anyhow!(message)))
+            }
+        }
+    }
+
+    async fn handle_validate_project_workspace(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        let request: ValidateProjectWorkspaceCommand =
+            match serde_json::from_value(command.payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message =
+                        format!("invalid validate_project_workspace command payload: {error}");
+                    self.write_command_failure(&command.id, message.clone())
+                        .await?;
+                    return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
+                }
+            };
+        match crate::project_workspace::validate_stable_project_workspace(
+            &self.config.workspace_base_dir(),
+            &request.project_name,
+            request.require_git.unwrap_or(false),
+        ) {
+            Ok(path) => {
+                let mut result = HashMap::new();
+                result.insert(
+                    "workspace_path".to_string(),
+                    serde_json::Value::String(path.display().to_string()),
+                );
+                result.insert(
+                    "project_name".to_string(),
+                    serde_json::Value::String(request.project_name),
+                );
+                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                {
+                    result.insert(
+                        "project_id".to_string(),
+                        serde_json::Value::String(project_id),
+                    );
+                }
+                self.write_command_completed(
+                    &command.id,
+                    Some(format!("validated project workspace {}", path.display())),
+                    Some(result),
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: true,
+                    run_id: None,
+                })
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.write_command_failure(&command.id, message.clone())
+                    .await?;
+                Err(self.recorded_error(&command.id, anyhow::anyhow!(message)))
+            }
+        }
+    }
+
     fn ensure_instance_from_command(
         &self,
         command: &RuntimeCommand,
@@ -626,11 +900,40 @@ impl RuntimeCommandExecutor {
                 )
             })?;
         ensure_instance(EnsureInstanceRequest {
-            base_dir: self.config.workspace.base_dir.clone(),
+            base_dir: self.config.workspace_base_dir(),
             team_id: request.team_id,
             digital_employee_id: request.digital_employee_id,
         })
         .map_err(|error| self.recorded_error(&command.id, error))
+    }
+
+    async fn write_command_completed(
+        &self,
+        command_id: &str,
+        summary: Option<String>,
+        result: Option<HashMap<String, serde_json::Value>>,
+    ) -> anyhow::Result<()> {
+        if let Some(control_plane) = &self.control_plane {
+            control_plane
+                .complete_runtime_command(
+                    command_id,
+                    &RuntimeCommandTerminalWriteback {
+                        status: "completed".to_string(),
+                        summary,
+                        result,
+                        diagnostic: None,
+                        provider_session_external_id: None,
+                        session_state_patch: None,
+                        log_ref: None,
+                        raw_result_ref: None,
+                        error_message: None,
+                        error_code: None,
+                        error_family: None,
+                    },
+                )
+                .await?;
+        }
+        Ok(())
     }
 
     async fn write_command_failure(
@@ -863,11 +1166,12 @@ impl RuntimeCommandExecutor {
         );
         let resolved = crate::project_workspace::resolve_project_workspace(
             crate::project_workspace::ProjectWorkspaceRequest {
-                base_dir: self.config.workspace.base_dir.clone(),
+                base_dir: self.config.workspace_base_dir(),
                 project_id: project_workspace.project_id,
                 project_task_id: project_workspace.project_task_id,
                 attempt_id: project_workspace.project_task_attempt_id,
                 chat_thread_id: project_workspace.chat_thread_id,
+                project_name: project_workspace.project_name,
                 provider_type: Some(payload.provider_type.clone()),
                 workspace_mode: project_workspace
                     .workspace_mode
@@ -877,30 +1181,26 @@ impl RuntimeCommandExecutor {
             },
         )?;
 
-        let mcp_config_path = crate::mcp_config::materialize_task_mcp_config(
-            &resolved.workspace_path,
-            &payload.provider_type,
-            &payload.mcp_servers,
-        )?;
-
         let skill_keys: Vec<String> = payload
             .skills
             .iter()
             .map(|skill| skill.skill_key.clone())
             .collect();
-        let skipped = crate::project_workspace::link_provider_skills(
+        let session = crate::project_session::install_project_session(
             agent_home_dir,
             &resolved.workspace_path,
+            &payload.command_id,
             &payload.provider_type,
             &skill_keys,
+            &payload.mcp_servers,
         )?;
-        if !skipped.is_empty() {
+        if !session.skill_conflicts.is_empty() {
             // 项目原生技能压过员工侧同 key(spec §3.1):stderr 留痕之外,冲突
             // 清单随 CommandWorkspace 进 RunSpec,在 attestation metadata 落库。
             eprintln!(
                 "command {}: employee skills skipped in favor of project-native skills: {}",
                 payload.command_id,
-                skipped.join(",")
+                session.skill_conflicts.join(",")
             );
         }
 
@@ -910,9 +1210,10 @@ impl RuntimeCommandExecutor {
             agent_home_dir: agent_home_dir.to_path_buf(),
             capability_manifest_version,
             provider_auth_mode,
-            mcp_config_path,
-            skill_conflicts: skipped,
+            mcp_config_path: session.mcp_config_path,
+            skill_conflicts: session.skill_conflicts,
             skill_convergence: Some(skill_convergence),
+            provider_overlay_env: session.provider_overlay_env,
         })
     }
 
@@ -955,11 +1256,17 @@ impl RuntimeCommandExecutor {
         // Err branch below can still roll back the session MCP injection when
         // the drain bails out early via `?` before reaching its tail hook.
         let rollback_home = spec.agent_home_dir.clone();
+        let rollback_workspace = spec.workspace_path.clone();
+        let rollback_command_id = spec
+            .command_context
+            .as_ref()
+            .map(|context| context.command_id.clone());
         // 终态清理计划(spec §5):仅任务 attempt 工作区形态会得到 Some;chat
         // 线程目录与未知路径在 plan 层就被排除。base_dir 相对路径按与
         // resolve_project_workspace 相同规则绝对化,保证前缀比对成立。
+        // 稳定 `{base}/{project_name}` 不在终态清理范围(禁止删项目根)。
         let terminal_cleanup = crate::project_workspace::absolutize_workspace_base_dir(
-            &self.config.workspace.base_dir,
+            &self.config.workspace_base_dir(),
         )
         .ok()
         .and_then(|base_dir| {
@@ -991,7 +1298,12 @@ impl RuntimeCommandExecutor {
                 // session MCP injection here as the backstop. If the tail hook
                 // already ran, this is a safe no-op (rollback without a manifest
                 // does nothing), so no dedup logic is needed.
-                rollback_session_mcp_config_best_effort(&run_id, rollback_home.as_deref());
+                rollback_session_projections_best_effort(
+                    &run_id,
+                    rollback_home.as_deref(),
+                    Some(rollback_workspace.as_path()),
+                    rollback_command_id.as_deref(),
+                );
                 if !run_is_cancelled(&runs, &run_id).await {
                     let message = error.to_string();
                     let _ = runs.finish_failed(&run_id, message.clone()).await;
@@ -2766,6 +3078,22 @@ fn project_task_attempt_idempotency_key(
     format!("project-task-attempt:{attempt_id}:{action}:{command_id}")
 }
 
+/// Best-effort rollback of session projections:
+/// 1) stable-dir skill/MCP session manifest unload (spec 2026-07-23 §6)
+/// 2) home-dir MCP injection rollback
+/// Failure must never override the run outcome.
+fn rollback_session_projections_best_effort(
+    label: &str,
+    agent_home_dir: Option<&Path>,
+    workspace_path: Option<&Path>,
+    command_id: Option<&str>,
+) {
+    if let (Some(workspace), Some(command_id)) = (workspace_path, command_id) {
+        crate::project_session::unload_project_session_best_effort(workspace, command_id);
+    }
+    rollback_session_mcp_config_best_effort(label, agent_home_dir);
+}
+
 /// Best-effort rollback of the session-scoped home-dir MCP injection made by
 /// `ensure_command_instance`. Failure to roll back must never override the
 /// run's actual outcome, so it is logged (this crate has no tracing/log setup)
@@ -2863,18 +3191,26 @@ async fn drain_provider_events(
     if let Some(stop) = &heartbeat_stop {
         stop.cancel();
     }
-    // Session-scoped home-dir MCP rollback: this is the common success/failure
-    // sink for a run's provider event stream, so it is the right place to undo
-    // the injection made by ensure_command_instance at session start.
+    // Session-scoped projection rollback: unload project-dir skill/MCP
+    // session (spec 2026-07-23 §6) and restore home-dir MCP injection.
     // handle_stop_command deliberately does not roll back directly: cancel_run
     // makes the provider event stream end, which drives execution back here.
     // Early `?` exits above (stream item error, record/writeback failures) skip
     // this hook; spawn_provider_event_drain's Err branch backstops those with
     // the same rollback (idempotent no-op when this hook already ran).
     // If the process restarts before either point runs (e.g. stop after a
-    // crash), the residual manifest is rolled back defensively by the next
-    // session's inject_session_mcp_config call.
-    rollback_session_mcp_config_best_effort(&run_id, spec.agent_home_dir.as_deref());
+    // crash), the residual project session is unloaded defensively by the next
+    // session's install_project_session, and home MCP by inject_session_mcp_config.
+    let command_id = spec
+        .command_context
+        .as_ref()
+        .map(|context| context.command_id.as_str());
+    rollback_session_projections_best_effort(
+        &run_id,
+        spec.agent_home_dir.as_deref(),
+        Some(spec.workspace_path.as_path()),
+        command_id,
+    );
     // Finalize before the terminal writeback so the attempt row and the raw
     // transcript pointer land in the same call.
     finalize_raw_log(&raw_sink, writeback.as_ref()).await;

@@ -30,6 +30,8 @@ type Querier interface {
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
 	BindQueuedProjectTaskRun(ctx context.Context, arg BindQueuedProjectTaskRunParams) (ProjectTask, error)
 	CancelApprovalRequestsForProjectDelete(ctx context.Context, arg CancelApprovalRequestsForProjectDeleteParams) ([]uuid.UUID, error)
+	// 取消项目挂接的 open 收件箱:显式 source_project_id,以及 chat/standalone
+	// run 失败恢复卡(锚在 tasks.params.metadata.anchor_project_id|project_id)。
 	CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error)
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
 	CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error)
@@ -163,7 +165,9 @@ type Querier interface {
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
 	DeactivateProjectMembersForDelete(ctx context.Context, arg DeactivateProjectMembersForDeleteParams) ([]uuid.UUID, error)
+	DeleteAutomationFiresByProject(ctx context.Context, arg DeleteAutomationFiresByProjectParams) (int64, error)
 	DeleteAutomationRule(ctx context.Context, arg DeleteAutomationRuleParams) (int64, error)
+	DeleteAutomationRulesByProject(ctx context.Context, arg DeleteAutomationRulesByProjectParams) (int64, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
 	DeleteExpiredCaptchaChallenges(ctx context.Context, before pgtype.Timestamptz) error
@@ -221,6 +225,7 @@ type Querier interface {
 	// (运行落点由项目派发时动态解析),就绪判据只看"租户内是否有任一在线节点提供该 provider"。
 	GetDigitalEmployeeOverviewSummary(ctx context.Context, arg GetDigitalEmployeeOverviewSummaryParams) (GetDigitalEmployeeOverviewSummaryRow, error)
 	// Prefer project_tasks; chat/task-hub runs fall back to metadata anchors.
+	// Soft-deleted projects still resolve so run history keeps the name + deleted flag.
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (GetDigitalEmployeeRunRow, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
 	// Standalone/workbench run preflight: least-loaded online tenant node with healthy provider.
@@ -351,6 +356,7 @@ type Querier interface {
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
 	ListAutomationFires(ctx context.Context, arg ListAutomationFiresParams) ([]AutomationFire, error)
 	ListAutomationRules(ctx context.Context, arg ListAutomationRulesParams) ([]AutomationRule, error)
+	ListAutomationRulesByProject(ctx context.Context, arg ListAutomationRulesByProjectParams) ([]AutomationRule, error)
 	ListCapabilityVocabulary(ctx context.Context, tenantID uuid.UUID) ([]CapabilityVocabulary, error)
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error)
 	ListDemandAcceptanceCriteria(ctx context.Context, arg ListDemandAcceptanceCriteriaParams) ([]DemandAcceptanceCriterium, error)
@@ -475,6 +481,7 @@ type Querier interface {
 	ListRequiredToolsForNode(ctx context.Context) ([]string, error)
 	ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCapabilitiesParams) ([]RuntimeCapability, error)
 	ListRuntimeCapabilitiesForNode(ctx context.Context, arg ListRuntimeCapabilitiesForNodeParams) ([]RuntimeCapability, error)
+	ListRuntimeCommandReceiptsByResource(ctx context.Context, arg ListRuntimeCommandReceiptsByResourceParams) ([]RuntimeCommandReceipt, error)
 	ListRuntimeEnrollments(ctx context.Context, arg ListRuntimeEnrollmentsParams) ([]RuntimeEnrollment, error)
 	ListRuntimeEvents(ctx context.Context, arg ListRuntimeEventsParams) ([]RuntimeEvent, error)
 	ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error)
@@ -590,6 +597,8 @@ type Querier interface {
 	// 多负责人:成员变更后按 owner 角色人类成员重同步负责人集合(数组权威,scalar=首个过渡镜像)。
 	SetProjectHumanOwners(ctx context.Context, arg SetProjectHumanOwnersParams) error
 	SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error)
+	// CAS: ready 仅从 pending|error|ready；error 仅从 pending；pending 可从 pending|error|ready（reclone）。
+	SetProjectWorkspaceReady(ctx context.Context, arg SetProjectWorkspaceReadyParams) (Project, error)
 	SkillExistsForTenant(ctx context.Context, arg SkillExistsForTenantParams) (bool, error)
 	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error)

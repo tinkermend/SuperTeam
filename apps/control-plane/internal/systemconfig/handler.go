@@ -45,13 +45,28 @@ func (h *HTTPHandler) UpdateSystemConfig(w http.ResponseWriter, r *http.Request)
 	}
 	key := chi.URLParam(r, "configKey")
 	var body struct {
-		Value *int64 `json:"value"`
+		Value       *int64  `json:"value"`
+		StringValue *string `json:"string_value"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Value == nil {
-		http.Error(w, "value must be an integer", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	item, err := h.service.Set(r.Context(), tenantID, key, *body.Value, userID)
+	hasValue := body.Value != nil
+	hasString := body.StringValue != nil
+	if hasValue == hasString {
+		http.Error(w, "provide exactly one of value or string_value", http.StatusBadRequest)
+		return
+	}
+	var (
+		item EffectiveConfig
+		err  error
+	)
+	if hasString {
+		item, err = h.service.SetString(r.Context(), tenantID, key, *body.StringValue, userID)
+	} else {
+		item, err = h.service.Set(r.Context(), tenantID, key, *body.Value, userID)
+	}
 	if err != nil {
 		writeError(w, err)
 		return
@@ -111,22 +126,25 @@ type listResponse struct {
 }
 
 type configItemResponse struct {
-	Key            string     `json:"key"`
-	Domain         string     `json:"domain"`
-	Label          string     `json:"label"`
-	Description    string     `json:"description"`
-	ValueType      string     `json:"value_type"`
-	DefaultValue   int64      `json:"default_value"`
-	EffectiveValue int64      `json:"effective_value"`
-	IsOverridden   bool       `json:"is_overridden"`
-	MinValue       int64      `json:"min_value"`
-	MaxValue       int64      `json:"max_value"`
-	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
-	UpdatedByName  string     `json:"updated_by_name,omitempty"`
+	Key                  string     `json:"key"`
+	Domain               string     `json:"domain"`
+	Label                string     `json:"label"`
+	Description          string     `json:"description"`
+	ValueType            string     `json:"value_type"`
+	DefaultValue         int64      `json:"default_value"`
+	EffectiveValue       int64      `json:"effective_value"`
+	DefaultStringValue   string     `json:"default_string_value,omitempty"`
+	EffectiveStringValue string     `json:"effective_string_value,omitempty"`
+	MaxStringLength      int        `json:"max_string_length,omitempty"`
+	IsOverridden         bool       `json:"is_overridden"`
+	MinValue             int64      `json:"min_value"`
+	MaxValue             int64      `json:"max_value"`
+	UpdatedAt            *time.Time `json:"updated_at,omitempty"`
+	UpdatedByName        string     `json:"updated_by_name,omitempty"`
 }
 
 func itemResponse(item EffectiveConfig) configItemResponse {
-	return configItemResponse{
+	resp := configItemResponse{
 		Key:            item.Key,
 		Domain:         item.Domain,
 		Label:          item.Label,
@@ -140,6 +158,17 @@ func itemResponse(item EffectiveConfig) configItemResponse {
 		UpdatedAt:      item.UpdatedAt,
 		UpdatedByName:  item.UpdatedByName,
 	}
+	if item.IsStringType() {
+		resp.DefaultStringValue = item.DefaultStringValue
+		resp.EffectiveStringValue = item.EffectiveStringValue
+		resp.MaxStringLength = item.EffectiveMaxStringLength()
+		// 数值字段对 string 型保持 0,便于契约 required 兼容。
+		resp.DefaultValue = 0
+		resp.EffectiveValue = 0
+		resp.MinValue = 0
+		resp.MaxValue = 0
+	}
+	return resp
 }
 
 func itemResponses(items []EffectiveConfig) []configItemResponse {

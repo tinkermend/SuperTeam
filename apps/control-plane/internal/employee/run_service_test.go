@@ -2742,6 +2742,10 @@ func (f *fakeRunServiceRepository) UpdateCommandReceipt(_ context.Context, req U
 	}, nil
 }
 
+func (f *fakeRunServiceRepository) ListCommandReceiptsByResource(context.Context, uuid.UUID, string, uuid.UUID, string, int32) ([]RuntimeCommandReceipt, error) {
+	return nil, nil
+}
+
 func (f *fakeRunServiceRepository) UpdateDigitalEmployeeStatus(context.Context, uuid.UUID, uuid.UUID, DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	return DigitalEmployeeRecord{}, ErrInvalidInput
 }

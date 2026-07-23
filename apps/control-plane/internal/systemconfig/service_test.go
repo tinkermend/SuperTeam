@@ -11,13 +11,13 @@ import (
 )
 
 type fakeRepo struct {
-	overrides map[string]int64
+	overrides map[string]any
 	failReads bool
 	getCalls  int
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{overrides: map[string]int64{}}
+	return &fakeRepo{overrides: map[string]any{}}
 }
 
 func (r *fakeRepo) ListOverrides(_ context.Context, _ uuid.UUID) ([]Override, error) {
@@ -26,7 +26,14 @@ func (r *fakeRepo) ListOverrides(_ context.Context, _ uuid.UUID) ([]Override, er
 	}
 	out := []Override{}
 	for key, value := range r.overrides {
-		out = append(out, Override{ConfigKey: key, Value: value, UpdatedAt: time.Now()})
+		o := Override{ConfigKey: key, UpdatedAt: time.Now()}
+		switch v := value.(type) {
+		case int64:
+			o.Value = v
+		case string:
+			o.StringValue = v
+		}
+		out = append(out, o)
 	}
 	return out, nil
 }
@@ -40,10 +47,17 @@ func (r *fakeRepo) GetOverride(_ context.Context, _ uuid.UUID, key string) (*Ove
 	if !ok {
 		return nil, nil
 	}
-	return &Override{ConfigKey: key, Value: value, UpdatedAt: time.Now()}, nil
+	o := &Override{ConfigKey: key, UpdatedAt: time.Now()}
+	switch v := value.(type) {
+	case int64:
+		o.Value = v
+	case string:
+		o.StringValue = v
+	}
+	return o, nil
 }
 
-func (r *fakeRepo) UpsertOverride(_ context.Context, _ uuid.UUID, key string, value int64, _ uuid.UUID) error {
+func (r *fakeRepo) UpsertOverride(_ context.Context, _ uuid.UUID, key string, value any, _ uuid.UUID) error {
 	r.overrides[key] = value
 	return nil
 }
@@ -65,6 +79,15 @@ func (a *fakeAudit) RecordEvent(_ context.Context, event *audit.Event) error {
 
 func TestRegistryDefaultsWithinBounds(t *testing.T) {
 	for _, def := range Definitions() {
+		if def.IsStringType() {
+			if def.DefaultStringValue == "" {
+				t.Fatalf("definition %s string default is empty", def.Key)
+			}
+			if len(def.DefaultStringValue) > def.EffectiveMaxStringLength() {
+				t.Fatalf("definition %s string default exceeds max length", def.Key)
+			}
+			continue
+		}
 		if def.DefaultValue < def.MinValue || def.DefaultValue > def.MaxValue {
 			t.Fatalf("definition %s default %d outside [%d, %d]", def.Key, def.DefaultValue, def.MinValue, def.MaxValue)
 		}
@@ -86,6 +109,62 @@ func TestSetRejectsUnknownKeyAndOutOfBounds(t *testing.T) {
 	if _, err := service.Set(context.Background(), tenant, def.Key, def.MinValue-1, actor); !errors.Is(err, ErrInvalidValue) {
 		t.Fatalf("expected ErrInvalidValue below min, got %v", err)
 	}
+	if _, err := service.Set(context.Background(), tenant, KeyRuntimeWorkspaceBaseDir, 1, actor); !errors.Is(err, ErrInvalidValue) {
+		t.Fatalf("expected ErrInvalidValue setting numeric on string key, got %v", err)
+	}
+}
+
+func TestSetStringRoundTrip(t *testing.T) {
+	repo := newFakeRepo()
+	recorder := &fakeAudit{}
+	service := NewService(repo)
+	service.SetAuditRecorder(recorder)
+	tenant := uuid.New()
+	actor := uuid.New()
+	ctx := context.Background()
+
+	if got := service.String(ctx, tenant, KeyRuntimeWorkspaceBaseDir); got != DefaultStringFor(KeyRuntimeWorkspaceBaseDir) {
+		t.Fatalf("expected default before override, got %q", got)
+	}
+	target := "/var/lib/superteam/workspaces"
+	if _, err := service.SetString(ctx, tenant, KeyRuntimeWorkspaceBaseDir, target, actor); err != nil {
+		t.Fatalf("set string failed: %v", err)
+	}
+	if got := service.String(ctx, tenant, KeyRuntimeWorkspaceBaseDir); got != target {
+		t.Fatalf("expected %q after set, got %q", target, got)
+	}
+	if _, err := service.SetString(ctx, tenant, KeyRuntimeWorkspaceBaseDir, "  ", actor); !errors.Is(err, ErrInvalidValue) {
+		t.Fatalf("expected ErrInvalidValue for empty string, got %v", err)
+	}
+	if _, err := service.SetString(ctx, tenant, KeySkillUploadMaxBytes, "x", actor); !errors.Is(err, ErrInvalidValue) {
+		t.Fatalf("expected ErrInvalidValue setting string on numeric key, got %v", err)
+	}
+	items, err := service.List(ctx, tenant)
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	found := false
+	for _, item := range items {
+		if item.Key != KeyRuntimeWorkspaceBaseDir {
+			continue
+		}
+		found = true
+		if !item.IsOverridden || item.EffectiveStringValue != target || item.EffectiveValue != 0 {
+			t.Fatalf("unexpected string item: %+v", item)
+		}
+	}
+	if !found {
+		t.Fatal("workspace base dir missing from list")
+	}
+	if _, err := service.Reset(ctx, tenant, KeyRuntimeWorkspaceBaseDir, actor); err != nil {
+		t.Fatalf("reset failed: %v", err)
+	}
+	if got := service.String(ctx, tenant, KeyRuntimeWorkspaceBaseDir); got != DefaultStringFor(KeyRuntimeWorkspaceBaseDir) {
+		t.Fatalf("expected default after reset, got %q", got)
+	}
+	if len(recorder.events) != 2 {
+		t.Fatalf("expected 2 audit events, got %d", len(recorder.events))
+	}
 }
 
 func TestSetResetRoundTripWithAuditAndCacheInvalidation(t *testing.T) {
@@ -104,7 +183,7 @@ func TestSetResetRoundTripWithAuditAndCacheInvalidation(t *testing.T) {
 	if _, err := service.Set(ctx, tenant, KeySkillUploadMaxBytes, target, actor); err != nil {
 		t.Fatalf("set failed: %v", err)
 	}
-	// 写后缓存失效,立即读到新值(同进程写后即时可见)。
+	// 写后缓存失效,立刻读到新值(同进程写后即时可见)。
 	if got := service.Int64(ctx, tenant, KeySkillUploadMaxBytes); got != target {
 		t.Fatalf("expected %d after set, got %d", target, got)
 	}
@@ -150,6 +229,9 @@ func TestReadFallsBackToDefaultOnRepoFailure(t *testing.T) {
 
 	if got := service.Int64(context.Background(), tenant, KeyAuthSessionTTLSeconds); got != DefaultFor(KeyAuthSessionTTLSeconds) {
 		t.Fatalf("expected registry default on repo failure, got %d", got)
+	}
+	if got := service.String(context.Background(), tenant, KeyRuntimeWorkspaceBaseDir); got != DefaultStringFor(KeyRuntimeWorkspaceBaseDir) {
+		t.Fatalf("expected string default on repo failure, got %q", got)
 	}
 }
 

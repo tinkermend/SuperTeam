@@ -205,6 +205,7 @@ function makeProject(): Project {
     name: "支付项目",
     status: "running",
     tenant_id: "tenant-1",
+    workspace_ready_status: "ready",
   };
 }
 

@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -17,6 +18,8 @@ pub struct ProjectWorkspaceRequest {
     /// (project, task, attempt), so files and provider session state stay
     /// stable across the turns of one conversation.
     pub chat_thread_id: Option<String>,
+    /// 稳定项目目录名(spec 2026-07-23):有值时 CWD = `{base}/{project_name}`。
+    pub project_name: Option<String>,
     /// 派发的 provider 类型。opencode 会在启动时裸加载工作区根部的
     /// opencode.json(c)(实测无官方禁用开关,spec §8.3),物化 worktree 时须
     /// 屏蔽仓库原生 MCP 配置;其余 provider 无此行为。
@@ -39,6 +42,52 @@ pub fn resolve_project_workspace(
 ) -> Result<ResolvedProjectWorkspace> {
     let mode = normalize_workspace_mode(&request.workspace_mode);
     let base_dir = absolutize_base_dir(&request.base_dir)?;
+
+    let stable_name = request
+        .project_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(project_name) = stable_name {
+        validate_project_directory_name(project_name)?;
+        if mode != "none" && request.project_git.is_none() {
+            anyhow::bail!("project_git is required for workspace_mode={mode}");
+        }
+        let workspace_path = base_dir.join(project_name);
+        // 防御性:创建路径已 mkdir;派发时再确保一次。
+        std::fs::create_dir_all(&workspace_path).context("create stable project directory")?;
+
+        let repo_path = if let Some(git) = &request.project_git {
+            if mode != "none" {
+                ensure_git_in_stable_project_dir(
+                    &workspace_path,
+                    git,
+                    request.base_ref.as_deref(),
+                    shielded_repo_configs(request.provider_type.as_deref()),
+                )?;
+            }
+            Some(workspace_path.clone())
+        } else {
+            None
+        };
+
+        return Ok(ResolvedProjectWorkspace {
+            workspace_path,
+            repo_path,
+            mode,
+            base_ref: request.base_ref,
+        });
+    }
+
+    // Legacy-only fallback (spec 2026-07-23 §8 / P2):
+    // Control Plane attaches `project_name` on every new chat/task dispatch, so
+    // new executions never enter this branch. Keep the old
+    // `{base}/workspaces/{proj}/{task}/{attempt}` (+ optional `repos/{id}`)
+    // layout ONLY for historical payloads that lack project_name (pre-P0
+    // attempts still in flight or replayed). Do not extend this path; do not
+    // use it for stable-dir projects (those must not create repos/ caches).
+    // Concurrent sessions sharing one stable project dir are accepted without
+    // a platform lock (spec §0.9 / §6.3) — unload is best-effort per-command.
     let project_id = request.project_id.as_deref().unwrap_or("unscoped");
     let task_id = request.project_task_id.as_deref().unwrap_or("manual");
     let attempt_id = request.attempt_id.as_deref().unwrap_or("attempt");
@@ -95,6 +144,146 @@ pub fn resolve_project_workspace(
     })
 }
 
+/// 创建项目时在节点上独占创建 `{base}/{project_name}`;已存在非空目录则失败(不认领)。
+/// 空目录视为上一轮半成功残留,允许回收(控制平面崩溃后可重建)。
+pub fn ensure_stable_project_directory(base_dir: &Path, project_name: &str) -> Result<PathBuf> {
+    validate_project_directory_name(project_name)?;
+    let base = absolutize_base_dir(base_dir)?;
+    std::fs::create_dir_all(&base).with_context(|| {
+        format!("create workspace base dir {}", base.display())
+    })?;
+    let path = base.join(project_name);
+    match std::fs::create_dir(&path) {
+        Ok(()) => Ok(path),
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+            if directory_is_empty(&path)? {
+                return Ok(path);
+            }
+            anyhow::bail!(
+                "project directory already exists (will not attach): {}",
+                path.display()
+            );
+        }
+        Err(err) => Err(err).with_context(|| {
+            format!("create exclusive project directory {}", path.display())
+        })?,
+    }
+}
+
+/// 删除项目时移除 `{base}/{project_name}`;缺失视为成功(幂等)。
+pub fn remove_stable_project_directory(base_dir: &Path, project_name: &str) -> Result<()> {
+    validate_project_directory_name(project_name)?;
+    let base = absolutize_base_dir(base_dir)?;
+    let path = base.join(project_name);
+    match std::fs::remove_dir_all(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => {
+            Err(err).with_context(|| format!("remove project directory {}", path.display()))?
+        }
+    }
+}
+
+/// 将 Git 仓库 clone 进稳定项目目录 `{base}/{project_name}`。
+/// `force` 时先清空目录再 clone;否则已有 `.git` 视为成功(幂等)。
+pub fn clone_into_stable_project_directory(
+    base_dir: &Path,
+    project_name: &str,
+    repo_url: &str,
+    default_branch: Option<&str>,
+    force: bool,
+) -> Result<PathBuf> {
+    validate_project_directory_name(project_name)?;
+    let repo_url = repo_url.trim();
+    if repo_url.is_empty() {
+        anyhow::bail!("repo_url is required");
+    }
+    let base = absolutize_base_dir(base_dir)?;
+    std::fs::create_dir_all(&base).with_context(|| {
+        format!("create workspace base dir {}", base.display())
+    })?;
+    let path = base.join(project_name);
+
+    if force {
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).with_context(|| {
+                    format!("remove project directory before force clone {}", path.display())
+                });
+            }
+        }
+    } else if path.join(".git").exists() {
+        return Ok(path);
+    }
+
+    if path.exists() {
+        if !directory_is_empty(&path)? {
+            anyhow::bail!(
+                "project directory is not empty and has no git repo: {}",
+                path.display()
+            );
+        }
+        // git clone into existing empty directory.
+        run_git(
+            &base,
+            [
+                OsString::from("clone"),
+                OsString::from(repo_url),
+                path.as_os_str().to_os_string(),
+            ],
+        )?;
+    } else {
+        run_git(
+            &base,
+            [
+                OsString::from("clone"),
+                OsString::from(repo_url),
+                path.as_os_str().to_os_string(),
+            ],
+        )?;
+    }
+
+    if let Some(branch) = default_branch.map(str::trim).filter(|value| !value.is_empty()) {
+        run_git(
+            &path,
+            [OsString::from("checkout"), OsString::from(branch)],
+        )?;
+    }
+    Ok(path)
+}
+
+/// 派发前校验:目录存在;Git 项目还要求 `.git` 存在。
+pub fn validate_stable_project_workspace(
+    base_dir: &Path,
+    project_name: &str,
+    require_git: bool,
+) -> Result<PathBuf> {
+    validate_project_directory_name(project_name)?;
+    let base = absolutize_base_dir(base_dir)?;
+    let path = base.join(project_name);
+    let meta = std::fs::symlink_metadata(&path).with_context(|| {
+        format!("project directory missing: {}", path.display())
+    })?;
+    if !meta.is_dir() {
+        anyhow::bail!("project path is not a directory: {}", path.display());
+    }
+    if require_git && !path.join(".git").exists() {
+        anyhow::bail!(
+            "project directory is not a git repository: {}",
+            path.display()
+        );
+    }
+    Ok(path)
+}
+
+fn directory_is_empty(path: &Path) -> Result<bool> {
+    let mut entries = std::fs::read_dir(path)
+        .with_context(|| format!("read project directory {}", path.display()))?;
+    Ok(entries.next().is_none())
+}
+
 /// 供工作区清理等旁路调用:与本模块解析工作区时相同的 base_dir 绝对化规则,
 /// 保证跨模块的路径前缀比对一致。
 pub fn absolutize_workspace_base_dir(base_dir: &Path) -> Result<PathBuf> {
@@ -102,6 +291,14 @@ pub fn absolutize_workspace_base_dir(base_dir: &Path) -> Result<PathBuf> {
 }
 
 fn absolutize_base_dir(base_dir: &Path) -> Result<PathBuf> {
+    for component in base_dir.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            anyhow::bail!(
+                "workspace base_dir must not contain '..': {}",
+                base_dir.display()
+            );
+        }
+    }
     if base_dir.is_absolute() {
         return Ok(base_dir.to_path_buf());
     }
@@ -110,6 +307,7 @@ fn absolutize_base_dir(base_dir: &Path) -> Result<PathBuf> {
         .join(base_dir))
 }
 
+
 /// Links the employee's materialized skills into the task workspace one skill
 /// key at a time (目录与能力投影修订 spec §2/§3.1). A key already present in
 /// the workspace — e.g. a skill checked into the project repo — wins and the
@@ -117,23 +315,35 @@ fn absolutize_base_dir(base_dir: &Path) -> Result<PathBuf> {
 /// surface the conflict instead of hiding it. A missing employee-side source
 /// is an error, never a silent no-op: the session payload declared the skill,
 /// so the capability cache must contain it by the time linking runs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillLinkReport {
+    /// Keys soft-linked (or already correctly linked) from employee home.
+    pub linked: Vec<String>,
+    /// Keys skipped because the project already provides a native path.
+    pub skipped: Vec<String>,
+}
+
+fn provider_skills_rel(provider_type: &str) -> Result<&'static str> {
+    match provider_type {
+        "claude-code" | "claude" => Ok(".claude/skills"),
+        "codex" => Ok(".agents/skills"),
+        "opencode" => Ok(".opencode/skills"),
+        other => anyhow::bail!("unsupported provider_type for skill linking: {other}"),
+    }
+}
+
 pub fn link_provider_skills(
     agent_home_dir: &Path,
     workspace_path: &Path,
     provider_type: &str,
     skill_keys: &[String],
-) -> Result<Vec<String>> {
+) -> Result<SkillLinkReport> {
     if skill_keys.is_empty() {
-        return Ok(Vec::new());
+        return Ok(SkillLinkReport::default());
     }
-    let skills_rel = match provider_type {
-        "claude-code" | "claude" => ".claude/skills",
-        "codex" => ".agents/skills",
-        "opencode" => ".opencode/skills",
-        other => anyhow::bail!("unsupported provider_type for skill linking: {other}"),
-    };
+    let skills_rel = provider_skills_rel(provider_type)?;
 
-    let mut skipped = Vec::new();
+    let mut report = SkillLinkReport::default();
     for key in skill_keys {
         let source = agent_home_dir.join(skills_rel).join(key);
         if !source.exists() {
@@ -154,6 +364,7 @@ pub fn link_provider_skills(
                         .map(|link| link == source)
                         .unwrap_or(false);
                 if already_linked {
+                    report.linked.push(key.clone());
                     continue;
                 }
                 // Project-native content wins (spec §3.1) — skip the
@@ -162,7 +373,7 @@ pub fn link_provider_skills(
                     "workspace already provides skill key {key} at {}; employee-side skill skipped (project wins)",
                     target.display()
                 );
-                skipped.push(key.clone());
+                report.skipped.push(key.clone());
             }
             Err(_) => {
                 #[cfg(unix)]
@@ -173,11 +384,45 @@ pub fn link_provider_skills(
                         target.display()
                     )
                 })?;
+                report.linked.push(key.clone());
             }
         }
     }
 
-    Ok(skipped)
+    Ok(report)
+}
+
+/// Unlink session-installed skill symlinks by key. Real directories/files
+/// (project-native) are left untouched. Missing paths are ignored.
+pub fn unlink_provider_skills(
+    workspace_path: &Path,
+    provider_type: &str,
+    skill_keys: &[String],
+) -> Result<()> {
+    if skill_keys.is_empty() {
+        return Ok(());
+    }
+    let skills_rel = provider_skills_rel(provider_type)?;
+    for key in skill_keys {
+        let target = workspace_path.join(skills_rel).join(key);
+        match std::fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                std::fs::remove_file(&target).with_context(|| {
+                    format!("unlink provider skill {key} at {}", target.display())
+                })?;
+            }
+            Ok(_) => {
+                // Project-native or unexpected non-symlink: never delete.
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("stat provider skill {key} at {}", target.display())
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn ensure_repo_placeholder(repo_path: &Path, git: &RuntimeProjectGitPayload) -> Result<()> {
@@ -185,6 +430,52 @@ fn ensure_repo_placeholder(repo_path: &Path, git: &RuntimeProjectGitPayload) -> 
         anyhow::bail!("project_git.url is required");
     }
     std::fs::create_dir_all(repo_path).context("create project repo cache")?;
+    Ok(())
+}
+
+/// P0 简单路径:Git 直接 clone 进稳定项目目录(跳过 repos/{id} worktree)。
+fn ensure_git_in_stable_project_dir(
+    workspace_path: &Path,
+    git: &RuntimeProjectGitPayload,
+    base_ref: Option<&str>,
+    shielded_configs: &[&str],
+) -> Result<()> {
+    if git.url.trim().is_empty() {
+        anyhow::bail!("project_git.url is required");
+    }
+
+    if !workspace_path.join(".git").exists() {
+        let parent = workspace_path
+            .parent()
+            .context("stable project directory parent")?;
+        match run_git(
+            parent,
+            [
+                OsString::from("clone"),
+                OsString::from(git.url.as_str()),
+                workspace_path.as_os_str().to_os_string(),
+            ],
+        ) {
+            Ok(()) => {}
+            Err(err) if workspace_path.join(".git").exists() => {
+                // 并发会话已完成 clone;接受竞态后的落盘结果。
+                eprintln!(
+                    "git clone raced on {}; adopting existing .git ({err})",
+                    workspace_path.display()
+                );
+            }
+            Err(err) => return Err(err),
+        }
+        if let Some(base_ref) = base_ref.map(str::trim).filter(|value| !value.is_empty()) {
+            run_git(
+                workspace_path,
+                [OsString::from("checkout"), OsString::from(base_ref)],
+            )?;
+        }
+    }
+
+    apply_sparse_scope(workspace_path, &git.scope)?;
+    shield_repo_configs(workspace_path, shielded_configs)?;
     Ok(())
 }
 
@@ -423,6 +714,36 @@ fn validate_segment(value: &str, field: &str) -> Result<()> {
     Ok(())
 }
 
+/// 项目名即目录名(spec 2026-07-23 §3.3):与 CP ValidateProjectDirectoryName 对齐。
+fn validate_project_directory_name(name: &str) -> Result<()> {
+    if name.trim() != name || name.is_empty() {
+        anyhow::bail!("project_name is not a safe path segment");
+    }
+    if name.len() > 64 {
+        anyhow::bail!("project_name exceeds 64 bytes");
+    }
+    if !name.is_ascii() {
+        anyhow::bail!("project_name must be ASCII");
+    }
+    validate_segment(name, "project_name")?;
+    let bytes = name.as_bytes();
+    let is_alnum = |b: u8| b.is_ascii_alphanumeric();
+    let is_allowed = |b: u8| is_alnum(b) || matches!(b, b'.' | b'_' | b'-');
+    if !bytes.iter().copied().all(is_allowed) {
+        anyhow::bail!("project_name must match [a-zA-Z0-9._-]+");
+    }
+    if bytes.len() == 1 {
+        if !is_alnum(bytes[0]) {
+            anyhow::bail!("project_name must match [a-zA-Z0-9._-]+");
+        }
+        return Ok(());
+    }
+    if !is_alnum(bytes[0]) || !is_alnum(bytes[bytes.len() - 1]) {
+        anyhow::bail!("project_name cannot start or end with . or -");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,6 +758,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
@@ -462,6 +784,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: None,
             workspace_mode: "branch".to_string(),
             project_git: None,
@@ -482,6 +805,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
@@ -513,6 +837,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
@@ -566,6 +891,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
@@ -601,6 +927,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: None,
             workspace_mode: "branch".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
@@ -628,6 +955,7 @@ mod tests {
             project_task_id: None,
             attempt_id: None,
             chat_thread_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            project_name: None,
             provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
@@ -652,6 +980,7 @@ mod tests {
             project_task_id: None,
             attempt_id: None,
             chat_thread_id: Some("../escape".to_string()),
+            project_name: None,
             provider_type: None,
             workspace_mode: "none".to_string(),
             project_git: None,
@@ -681,6 +1010,7 @@ mod tests {
             project_task_id: None,
             attempt_id: None,
             chat_thread_id: Some("44444444-4444-4444-8444-444444444444".to_string()),
+            project_name: None,
             provider_type: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
@@ -725,7 +1055,7 @@ mod tests {
         )
         .unwrap();
 
-        let skipped = link_provider_skills(
+        let report = link_provider_skills(
             &home,
             &workspace,
             "claude-code",
@@ -740,7 +1070,8 @@ mod tests {
             std::fs::read_link(&alpha).unwrap(),
             home.join(".claude/skills/alpha")
         );
-        assert_eq!(skipped, vec!["beta".to_string()]);
+        assert_eq!(report.linked, vec!["alpha".to_string()]);
+        assert_eq!(report.skipped, vec!["beta".to_string()]);
         assert_eq!(
             std::fs::read_to_string(workspace.join(".claude/skills/beta/SKILL.md")).unwrap(),
             "project-native beta\n"
@@ -755,7 +1086,8 @@ mod tests {
             &["alpha".to_string(), "beta".to_string()],
         )
         .unwrap();
-        assert_eq!(replayed, vec!["beta".to_string()]);
+        assert_eq!(replayed.linked, vec!["alpha".to_string()]);
+        assert_eq!(replayed.skipped, vec!["beta".to_string()]);
     }
 
     #[test]
@@ -792,6 +1124,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some(attempt.to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: provider.map(ToString::to_string),
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
@@ -856,6 +1189,7 @@ mod tests {
             project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
             attempt_id: Some(attempt.to_string()),
             chat_thread_id: None,
+            project_name: None,
             provider_type: None,
             workspace_mode: "readonly".to_string(),
             project_git: Some(RuntimeProjectGitPayload {
@@ -880,6 +1214,217 @@ mod tests {
         assert!(
             second.workspace_path.join("NEW.md").exists(),
             "new attempt must check out commits pushed after the cache was cloned"
+        );
+    }
+
+    #[test]
+    fn ensure_stable_project_directory_creates_exclusive_and_rejects_existing() {
+        let temp = TempDir::new().unwrap();
+        let path = ensure_stable_project_directory(temp.path(), "acme-app").unwrap();
+        assert!(path.ends_with("acme-app"));
+        assert!(path.is_dir());
+
+        std::fs::write(path.join("keep.txt"), "x").unwrap();
+        let err = ensure_stable_project_directory(temp.path(), "acme-app")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("already exists"));
+    }
+
+    #[test]
+    fn ensure_stable_project_directory_reclaims_empty_existing() {
+        let temp = TempDir::new().unwrap();
+        let path = ensure_stable_project_directory(temp.path(), "empty-reclaim").unwrap();
+        assert!(path.is_dir());
+        let again = ensure_stable_project_directory(temp.path(), "empty-reclaim").unwrap();
+        assert_eq!(path, again);
+    }
+
+    #[test]
+    fn remove_stable_project_directory_is_idempotent() {
+        let temp = TempDir::new().unwrap();
+        ensure_stable_project_directory(temp.path(), "to-remove").unwrap();
+        remove_stable_project_directory(temp.path(), "to-remove").unwrap();
+        assert!(!temp.path().join("to-remove").exists());
+        remove_stable_project_directory(temp.path(), "to-remove").unwrap();
+    }
+
+    #[test]
+    fn ensure_rejects_unsafe_project_directory_name() {
+        let temp = TempDir::new().unwrap();
+        for name in ["../escape", "中文", ".hidden", "-bad", "has/slash", ""] {
+            let err = ensure_stable_project_directory(temp.path(), name)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains("project_name") || err.contains("safe path"),
+                "name={name:?} err={err}"
+            );
+        }
+    }
+
+    #[test]
+    fn clone_into_empty_mkdir_directory_and_validate() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("README.md"), "hello\n").unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "source"]);
+        run_test_git(&source, ["config", "user.email", "test@example.com"]);
+        run_test_git(&source, ["config", "user.name", "Test User"]);
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "initial"]);
+
+        let base = temp.path().join("runtime");
+        ensure_stable_project_directory(&base, "cloned-app").unwrap();
+        let path = clone_into_stable_project_directory(
+            &base,
+            "cloned-app",
+            &source.to_string_lossy(),
+            Some("main"),
+            false,
+        )
+        .unwrap();
+        assert!(path.join("README.md").exists());
+        assert!(path.join(".git").exists());
+        validate_stable_project_workspace(&base, "cloned-app", true).unwrap();
+        // idempotent
+        clone_into_stable_project_directory(
+            &base,
+            "cloned-app",
+            &source.to_string_lossy(),
+            Some("main"),
+            false,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn validate_requires_git_when_requested() {
+        let temp = TempDir::new().unwrap();
+        ensure_stable_project_directory(temp.path(), "plain-dir").unwrap();
+        validate_stable_project_workspace(temp.path(), "plain-dir", false).unwrap();
+        let err = validate_stable_project_workspace(temp.path(), "plain-dir", true)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("git repository"), "{err}");
+    }
+
+    #[test]
+    fn stable_project_name_resolves_to_base_name_cwd() {
+        let temp = TempDir::new().unwrap();
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().to_path_buf(),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
+            project_name: Some("stable-proj".to_string()),
+            provider_type: None,
+            workspace_mode: "none".to_string(),
+            project_git: None,
+            base_ref: None,
+        };
+
+        let resolved = resolve_project_workspace(request).unwrap();
+        assert!(resolved.workspace_path.ends_with("stable-proj"));
+        assert!(!resolved.workspace_path.to_string_lossy().contains("workspaces/"));
+        assert!(resolved.workspace_path.is_dir());
+        assert_eq!(resolved.repo_path, None);
+    }
+
+    #[test]
+    fn stable_project_name_clones_git_into_project_dir() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("README.md"), "hello\n").unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "source"]);
+        run_test_git(&source, ["config", "user.email", "test@example.com"]);
+        run_test_git(&source, ["config", "user.name", "Test User"]);
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "initial"]);
+
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().join("runtime"),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
+            project_name: Some("git-proj".to_string()),
+            provider_type: None,
+            workspace_mode: "readonly".to_string(),
+            project_git: Some(RuntimeProjectGitPayload {
+                url: source.to_string_lossy().to_string(),
+                default_branch: Some("main".to_string()),
+                git_credential_ref: None,
+                scope: Vec::new(),
+            }),
+            base_ref: Some("main".to_string()),
+        };
+
+        let resolved = resolve_project_workspace(request).unwrap();
+        assert!(resolved.workspace_path.ends_with("git-proj"));
+        assert!(resolved.workspace_path.join("README.md").exists());
+        assert!(resolved.workspace_path.join(".git").exists());
+        assert_eq!(resolved.repo_path.as_ref(), Some(&resolved.workspace_path));
+        assert!(
+            !temp
+                .path()
+                .join("runtime/repos/11111111-1111-4111-8111-111111111111")
+                .exists(),
+            "stable path must not create repos/{{id}} cache"
+        );
+    }
+
+    #[test]
+    fn legacy_path_without_project_name_still_uses_workspaces_attempt_layout() {
+        let temp = TempDir::new().unwrap();
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().to_path_buf(),
+            project_id: Some("proj-legacy".to_string()),
+            project_task_id: Some("task-1".to_string()),
+            attempt_id: Some("attempt-1".to_string()),
+            chat_thread_id: None,
+            project_name: None,
+            provider_type: None,
+            workspace_mode: "none".to_string(),
+            project_git: None,
+            base_ref: None,
+        };
+        let resolved = resolve_project_workspace(request).unwrap();
+        assert!(
+            resolved
+                .workspace_path
+                .ends_with("workspaces/proj-legacy/task-1/attempt-1"),
+            "legacy path: {}",
+            resolved.workspace_path.display()
+        );
+        assert_eq!(resolved.repo_path, None);
+    }
+
+    #[test]
+    fn empty_project_name_treated_as_absent_legacy_path() {
+        let temp = TempDir::new().unwrap();
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().to_path_buf(),
+            project_id: Some("proj-a".to_string()),
+            project_task_id: Some("task-a".to_string()),
+            attempt_id: Some("attempt-a".to_string()),
+            chat_thread_id: None,
+            project_name: Some("   ".to_string()),
+            provider_type: None,
+            workspace_mode: "none".to_string(),
+            project_git: None,
+            base_ref: None,
+        };
+        let resolved = resolve_project_workspace(request).unwrap();
+        assert!(
+            resolved
+                .workspace_path
+                .ends_with("workspaces/proj-a/task-a/attempt-a"),
+            "{}",
+            resolved.workspace_path.display()
         );
     }
 
