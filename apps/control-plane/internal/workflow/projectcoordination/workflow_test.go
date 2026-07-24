@@ -157,17 +157,13 @@ func TestProjectCoordinatorRejectsDemandWhenNoSuitableEmployee(t *testing.T) {
 	require.Contains(t, store.rejectDemandInputs[0].Diagnosis, "补充员工")
 }
 
-// TestProjectCoordinatorUntypedPlannerErrorTakesLegacySignalFailedPath pins the
-// replay-compatibility discriminator for the terminal-reject branches: only the
-// typed non-retryable NoSuitableEmployee ApplicationError routes to
-// RejectDemandPlanning. An UNTYPED planner error — which is the only kind old
-// (pre-reject-branch) histories can contain in their recorded
-// ActivityTaskFailed events — must keep falling through to the legacy path
-// (error escapes the handler, the survive-handler-error loop records
-// workflow.signal_failed). This error-type check, not a GetVersion fence, is
-// what keeps old histories replaying deterministically; see replay_test.go for
-// the real-history pin.
-func TestProjectCoordinatorUntypedPlannerErrorTakesLegacySignalFailedPath(t *testing.T) {
+// TestProjectCoordinatorUntypedPlannerErrorMarksPlanningFailed pins §5.5 F6:
+// on NEW executions (GetVersion planning-failed-human-task = 1), an untyped
+// PlanDemandRoute failure after retries parks the demand via
+// MarkDemandPlanningFailed instead of leaving a planning_pending zombie.
+// Typed NoSuitableEmployee still routes to RejectDemandPlanning. Old histories
+// without the version marker keep the legacy signal_failed path (replay_test).
+func TestProjectCoordinatorUntypedPlannerErrorMarksPlanningFailed(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	projectID := uuid.New()
@@ -179,9 +175,7 @@ func TestProjectCoordinatorUntypedPlannerErrorTakesLegacySignalFailedPath(t *tes
 		},
 		jobID: uuid.New(),
 	}
-	// Plain wrapped error, NOT the typed non-retryable family error: this is
-	// what pre-a9a4b8a9 histories carry (e.g. "wrapError" failures).
-	planner := &errPlanner{err: errors.New("no suitable employee: task \"review\": employee scored 0.30")}
+	planner := &errPlanner{err: errors.New("planner upstream EOF")}
 	activities := NewActivities(store, planner)
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
@@ -203,12 +197,11 @@ func TestProjectCoordinatorUntypedPlannerErrorTakesLegacySignalFailedPath(t *tes
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
-	// Legacy path: the untyped error escapes the handler and the coordinator's
-	// survive-handler-error loop records workflow.signal_failed via
-	// AppendProjectEvent — the demand is NOT routed through RejectDemandPlanning.
-	require.Contains(t, store.appendEventTypes, "workflow.signal_failed")
-	require.Empty(t, store.rejectDemandInputs)
+	require.Contains(t, store.calls, "MarkDemandPlanningFailed")
 	require.NotContains(t, store.calls, "RejectDemandPlanning")
+	require.Len(t, store.markPlanningFailedInputs, 1)
+	require.Equal(t, demandID, store.markPlanningFailedInputs[0].DemandID)
+	require.Contains(t, store.markPlanningFailedInputs[0].Diagnosis, "planner upstream EOF")
 }
 
 // TestProjectCoordinatorSurvivesRejectDemandPlanningFailure pins that a failure
@@ -2336,6 +2329,7 @@ type recordingActivityStore struct {
 	decomposePlanInputs                []DecomposeAcceptedPlanRevisionInput
 	finishJobInputs                    []FinishCoordinationJobInput
 	rejectDemandInputs                 []RejectDemandPlanningInput
+	markPlanningFailedInputs           []MarkDemandPlanningFailedInput
 	rejectDemandErr                    error
 	reopenDemandInputs                 []ReopenProjectDemandForReplanningInput
 	reopenDemandErr                    error
@@ -2642,6 +2636,12 @@ func (s *recordingActivityStore) RejectDemandPlanning(ctx context.Context, input
 	s.calls = append(s.calls, "RejectDemandPlanning")
 	s.rejectDemandInputs = append(s.rejectDemandInputs, input)
 	return s.rejectDemandErr
+}
+
+func (s *recordingActivityStore) MarkDemandPlanningFailed(ctx context.Context, input MarkDemandPlanningFailedInput) error {
+	s.calls = append(s.calls, "MarkDemandPlanningFailed")
+	s.markPlanningFailedInputs = append(s.markPlanningFailedInputs, input)
+	return nil
 }
 
 func (s *recordingActivityStore) ReopenProjectDemandForReplanning(ctx context.Context, input ReopenProjectDemandForReplanningInput) error {

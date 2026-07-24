@@ -45,7 +45,8 @@ function ownerIdentity(
     id: owner.principal_id,
     display_name: name,
     status: owner.status || "active",
-    username: name,
+    // 不要把展示名填进 username，否则 UserIdentity 次行会回退成裸 UUID。
+    username: undefined,
   };
 }
 
@@ -53,6 +54,7 @@ function ownerDirectoryLink(owner: ProjectMember): {
   label: string;
   to: "/users" | "/employees/$employeeId";
   params?: { employeeId: string };
+  search?: { user: string };
 } | null {
   if (owner.principal_type === "digital_employee") {
     return {
@@ -62,7 +64,11 @@ function ownerDirectoryLink(owner: ProjectMember): {
     };
   }
   if (owner.principal_type === "human_user") {
-    return { label: "在用户管理中查看", to: "/users" };
+    return {
+      label: "在用户管理中查看",
+      to: "/users",
+      search: { user: owner.principal_id },
+    };
   }
   return null;
 }
@@ -130,6 +136,7 @@ export function ProjectOwnerAvatarStack({
                   ) : (
                     <Link
                       className="mt-2 inline-flex text-[12px] font-semibold text-v3-brand hover:underline"
+                      search={directoryLink.search}
                       to={directoryLink.to}
                     >
                       {directoryLink.label}

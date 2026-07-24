@@ -49,6 +49,7 @@ type ActivityStore interface {
 	ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
 	RejectDemandPlanning(ctx context.Context, input RejectDemandPlanningInput) error
+	MarkDemandPlanningFailed(ctx context.Context, input MarkDemandPlanningFailedInput) error
 	ReopenProjectDemandForReplanning(ctx context.Context, input ReopenProjectDemandForReplanningInput) error
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
 	RecoverTaskDispatchFailure(ctx context.Context, input RecoverTaskDispatchFailureInput) (RecoverTaskDispatchFailureResult, error)
@@ -174,6 +175,13 @@ func (a *Activities) RejectDemandPlanning(ctx context.Context, input RejectDeman
 		return ErrActivityStoreRequired
 	}
 	return a.store.RejectDemandPlanning(ctx, input)
+}
+
+func (a *Activities) MarkDemandPlanningFailed(ctx context.Context, input MarkDemandPlanningFailedInput) error {
+	if a.store == nil {
+		return ErrActivityStoreRequired
+	}
+	return a.store.MarkDemandPlanningFailed(ctx, input)
 }
 
 func (a *Activities) ReopenProjectDemandForReplanning(ctx context.Context, input ReopenProjectDemandForReplanningInput) error {

@@ -28,6 +28,17 @@ const (
 	// DecisionTypePlanningGap is the human-decision type opened when a demand's
 	// route cannot be planned because the executor pool has a structural gap.
 	DecisionTypePlanningGap = "planning_gap"
+	// DecisionTypePlanningFailed is opened when PlanDemandRoute terminally fails
+	// after retries (timeout / upstream error / etc., spec §5.5 F6) — distinct
+	// from planning_gap (structural no-suitable-employee).
+	DecisionTypePlanningFailed = "planning_failed"
+	// PlanningFailedDecisionRetryPlanning reopens the demand and replans it.
+	PlanningFailedDecisionRetryPlanning = "retry_planning"
+	// PlanningFailedDecisionReassign is the "已补员" path: same reopen+replan as
+	// retry_planning after the human restaffs the project.
+	PlanningFailedDecisionReassign = "reassign"
+	// PlanningFailedDecisionCloseDemand cancels the demand (close_demand API).
+	PlanningFailedDecisionCloseDemand = "close_demand"
 	// PlanningGapDecisionRestaffed resolves a planning_gap decision by declaring
 	// the pool has been supplemented; the coordinator reopens the demand and
 	// replans it. Like request_changes it is decision-type-scoped vocabulary.

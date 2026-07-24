@@ -209,6 +209,13 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 			// ever reached alongside this same reject branch.
 			return nil, rejectDemandPlanning(ctx, input, signal, job.ID, diagnosis, gap, []uuid.UUID{signal.CreatedEventID})
 		}
+		// §5.5 F6: after PlanDemandRoute retries are exhausted, park the demand at
+		// planning_failed + open a HumanTask instead of leaving a planning_pending
+		// zombie. GetVersion-fenced so histories that already recorded the raw
+		// error path (return err → signal_failed) replay identically.
+		if workflow.GetVersion(ctx, "planning-failed-human-task", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+			return nil, markDemandPlanningFailed(ctx, input.TenantID, signal.ProjectID, signal.DemandID, job.ID, err, []uuid.UUID{signal.CreatedEventID})
+		}
 		return nil, err
 	}
 
@@ -366,6 +373,8 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		return err
 	case "planning_gap":
 		return handlePlanningGapDecision(ctx, input, signal, route, projectID)
+	case "planning_failed":
+		return handlePlanningFailedDecision(ctx, input, signal, route, projectID)
 	case "task_failure_recovery", "upstream_supplement_review":
 		readyTaskIDs, err := applyFailureRecoveryDecision(ctx, input.TenantID, projectID, signal)
 		if err != nil {
@@ -533,6 +542,9 @@ func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinator
 			// code version and was remediated operationally. gap is nil-safe for
 			// the same reason (see handleDemandSubmitted's matching comment).
 			return nil, rejectDemandPlanningByID(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, diagnosis, gap, outputEventIDs)
+		}
+		if workflow.GetVersion(ctx, "planning-failed-human-task", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+			return nil, markDemandPlanningFailed(ctx, input.TenantID, pending.ProjectID, pending.DemandID, pending.CoordinationJobID, err, outputEventIDs)
 		}
 		return nil, err
 	}
@@ -1270,6 +1282,46 @@ func rejectDemandPlanningByID(ctx workflow.Context, tenantID, projectID, demandI
 		Gap:               gap,
 		OutputEventIDs:    outputEventIDs,
 	}).Get(ctx, nil)
+}
+
+func markDemandPlanningFailed(ctx workflow.Context, tenantID, projectID, demandID, jobID uuid.UUID, planErr error, outputEventIDs []uuid.UUID) error {
+	diagnosis := "需求规划失败"
+	if planErr != nil {
+		msg := strings.TrimSpace(planErr.Error())
+		if msg != "" {
+			diagnosis = truncateRunes(msg, 240)
+		}
+	}
+	return workflow.ExecuteActivity(ctx, (*Activities).MarkDemandPlanningFailed, MarkDemandPlanningFailedInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		Diagnosis:         diagnosis,
+		OutputEventIDs:    outputEventIDs,
+	}).Get(ctx, nil)
+}
+
+// handlePlanningFailedDecision routes a resolved planning_failed card. retry_planning
+// / reassign reopen the demand and replan; close_demand is already applied by
+// Service.resolvePlanningFailedDecision before the signal fires.
+func handlePlanningFailedDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, route HumanDecisionRouteResult, projectID uuid.UUID) error {
+	if route.PlanningGap == nil {
+		return temporal.NewNonRetryableApplicationError("human decision route missing planning failed demand", "HumanDecisionRouteMissingPlanningFailed", project.ErrInvalidProject)
+	}
+	if signal.Decision != project.PlanningFailedDecisionRetryPlanning && signal.Decision != project.PlanningFailedDecisionReassign {
+		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "planning failed decision closed")
+	}
+	demandID := route.PlanningGap.DemandID
+	if err := reopenProjectDemandForReplanning(ctx, input.TenantID, projectID, demandID); err != nil {
+		return err
+	}
+	_, err := handleDemandSubmitted(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID, WorkflowID: input.WorkflowID}, DemandSubmitted{
+		ProjectID:      projectID,
+		DemandID:       demandID,
+		CreatedEventID: signal.ResolvedEventID,
+	})
+	return err
 }
 
 func finishCoordinationJob(ctx workflow.Context, tenantID, jobID uuid.UUID, status string, outputEventIDs []uuid.UUID) error {

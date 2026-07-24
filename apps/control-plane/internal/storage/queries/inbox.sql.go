@@ -211,6 +211,50 @@ func (q *Queries) GetInboxItem(ctx context.Context, arg GetInboxItemParams) (Inb
 	return i, err
 }
 
+const GetInboxItemByApprovalSource = `-- name: GetInboxItemByApprovalSource :one
+SELECT id, tenant_id, team_id, target_user_id, scope, item_type, source_type, source_id, source_project_id, source_task_id, source_approval_request_id, title, summary, risk_level, priority, status, action_schema, context_payload, deep_link, resolved_at, last_activity_at, created_at, updated_at FROM inbox_items
+WHERE tenant_id = $1::uuid
+  AND source_approval_request_id = $2::uuid
+`
+
+type GetInboxItemByApprovalSourceParams struct {
+	TenantID                uuid.UUID `json:"tenant_id"`
+	SourceApprovalRequestID uuid.UUID `json:"source_approval_request_id"`
+}
+
+// §5.4.1: ApprovalProjectorAdapter uses this to detect when a project-decision
+// card already owns the (tenant_id, source_approval_request_id) unique row.
+func (q *Queries) GetInboxItemByApprovalSource(ctx context.Context, arg GetInboxItemByApprovalSourceParams) (InboxItem, error) {
+	row := q.db.QueryRow(ctx, GetInboxItemByApprovalSource, arg.TenantID, arg.SourceApprovalRequestID)
+	var i InboxItem
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.TargetUserID,
+		&i.Scope,
+		&i.ItemType,
+		&i.SourceType,
+		&i.SourceID,
+		&i.SourceProjectID,
+		&i.SourceTaskID,
+		&i.SourceApprovalRequestID,
+		&i.Title,
+		&i.Summary,
+		&i.RiskLevel,
+		&i.Priority,
+		&i.Status,
+		&i.ActionSchema,
+		&i.ContextPayload,
+		&i.DeepLink,
+		&i.ResolvedAt,
+		&i.LastActivityAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ListInboxItems = `-- name: ListInboxItems :many
 SELECT id, tenant_id, team_id, target_user_id, scope, item_type, source_type, source_id, source_project_id, source_task_id, source_approval_request_id, title, summary, risk_level, priority, status, action_schema, context_payload, deep_link, resolved_at, last_activity_at, created_at, updated_at FROM inbox_items
 WHERE tenant_id = $1::uuid
@@ -492,8 +536,12 @@ DO UPDATE SET
     target_user_id = EXCLUDED.target_user_id,
     scope = EXCLUDED.scope,
     item_type = EXCLUDED.item_type,
-    source_project_id = EXCLUDED.source_project_id,
-    source_task_id = EXCLUDED.source_task_id,
+    -- F2(§5.4.2): resolve 投影不得清空已有上下文。source_project_id/source_task_id
+    -- 为空(NULL)时保留原值;context_payload 为空对象({})时保留原值——一个闸门可能被
+    -- 审批与决策两条管道写同一行,后写方(如 resolve 触发的 approval 投影)不带这些字段
+    -- 时不得抹掉先写方(decision 投影)已填的项目归属与展示上下文。
+    source_project_id = COALESCE(EXCLUDED.source_project_id, inbox_items.source_project_id),
+    source_task_id = COALESCE(EXCLUDED.source_task_id, inbox_items.source_task_id),
     source_approval_request_id = EXCLUDED.source_approval_request_id,
     title = EXCLUDED.title,
     summary = EXCLUDED.summary,
@@ -501,7 +549,10 @@ DO UPDATE SET
     priority = EXCLUDED.priority,
     status = EXCLUDED.status,
     action_schema = EXCLUDED.action_schema,
-    context_payload = EXCLUDED.context_payload,
+    context_payload = CASE
+        WHEN EXCLUDED.context_payload = '{}'::jsonb THEN inbox_items.context_payload
+        ELSE EXCLUDED.context_payload
+    END,
     deep_link = EXCLUDED.deep_link,
     resolved_at = EXCLUDED.resolved_at,
     last_activity_at = EXCLUDED.last_activity_at,
@@ -637,15 +688,21 @@ DO UPDATE SET
     item_type = EXCLUDED.item_type,
     source_type = EXCLUDED.source_type,
     source_id = EXCLUDED.source_id,
-    source_project_id = EXCLUDED.source_project_id,
-    source_task_id = EXCLUDED.source_task_id,
+    -- F2(§5.4.2): 审批与决策共用 (tenant_id, source_approval_request_id) 唯一行;resolve
+    -- 触发的 approval 投影不带 source_project_id/source_task_id/上下文时,不得抹掉 decision
+    -- 投影已填的项目归属与展示上下文(见上面 UpsertInboxItem 同理)。
+    source_project_id = COALESCE(EXCLUDED.source_project_id, inbox_items.source_project_id),
+    source_task_id = COALESCE(EXCLUDED.source_task_id, inbox_items.source_task_id),
     title = EXCLUDED.title,
     summary = EXCLUDED.summary,
     risk_level = EXCLUDED.risk_level,
     priority = EXCLUDED.priority,
     status = EXCLUDED.status,
     action_schema = EXCLUDED.action_schema,
-    context_payload = EXCLUDED.context_payload,
+    context_payload = CASE
+        WHEN EXCLUDED.context_payload = '{}'::jsonb THEN inbox_items.context_payload
+        ELSE EXCLUDED.context_payload
+    END,
     deep_link = EXCLUDED.deep_link,
     resolved_at = EXCLUDED.resolved_at,
     last_activity_at = EXCLUDED.last_activity_at,

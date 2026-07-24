@@ -183,7 +183,9 @@ describe("CriteriaPanelView", () => {
     await userEvent.fill(screen.getByTestId("final-acceptance-reason"), "已核对产出");
     await userEvent.click(screen.getByTestId("final-acceptance-pass"));
 
-    expect(onFinalAccept).toHaveBeenCalledWith("satisfied", "已核对产出", ["c1", "c2"]);
+    expect(onFinalAccept).toHaveBeenCalledWith("satisfied", "已核对产出", ["c1", "c2"], {
+      alsoCloseProject: false,
+    });
   });
 
   it("requires a reason before reject and submits unsatisfied for the gate", async () => {

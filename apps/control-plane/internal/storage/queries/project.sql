@@ -154,7 +154,13 @@ task_counts AS (
         COUNT(*) FILTER (WHERE status IN ('completed', 'done', 'success'))::int AS completed_nodes,
         COUNT(*) FILTER (WHERE status IN ('assigned', 'running', 'in_progress'))::int AS running_nodes,
         COUNT(*) FILTER (WHERE status IN ('blocked'))::int AS blocked_nodes,
-        COUNT(*) FILTER (WHERE requires_human_approval OR status IN ('waiting_human', 'pending_review'))::int AS waiting_human_nodes,
+        -- F5(§5.6): requires_human_approval 是粘性标志,任务终态后仍为 true。只有当任务
+        -- 尚未到终态时它才代表真的"等待人工";否则(如 completed 但 requires_human_approval=t)
+        -- 会把早已完成的实例误判成 waiting_human。
+        COUNT(*) FILTER (
+          WHERE status IN ('waiting_human', 'pending_review')
+             OR (requires_human_approval AND status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed'))
+        )::int AS waiting_human_nodes,
         COUNT(*) FILTER (WHERE status IN ('planned', 'pending'))::int AS planned_nodes,
         COUNT(*) FILTER (WHERE status IN ('failed'))::int AS failed_nodes,
         COUNT(*) FILTER (WHERE status IN ('cancelled'))::int AS cancelled_nodes,
@@ -276,15 +282,19 @@ task_blockers AS (
     WHERE tenant_id = sqlc.arg('tenant_id')::uuid
       AND demand_id IS NOT NULL
       AND (
-        requires_human_approval
-        OR status IN ('waiting_human', 'pending_review', 'failed', 'blocked')
+        -- F5(§5.6): 终态任务的粘性 requires_human_approval 不再当作 blocker,否则已完成
+        -- 但曾 requires_human_approval 的任务会永久制造假"等待人工"blocker。failed/blocked
+        -- 仍是真实 blocker,由下面 status IN 覆盖。
+        status IN ('waiting_human', 'pending_review', 'failed', 'blocked')
+        OR (requires_human_approval AND status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed'))
       )
     ORDER BY
         tenant_id,
         project_id,
         demand_id,
         CASE
-          WHEN requires_human_approval OR status IN ('waiting_human', 'pending_review') THEN 1
+          WHEN status IN ('waiting_human', 'pending_review')
+            OR (requires_human_approval AND status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')) THEN 1
           ELSE 2
         END ASC,
         updated_at DESC,
@@ -299,6 +309,11 @@ SELECT
     vd.submitted_by_user_id,
     COALESCE(NULLIF(vd.source_refs->>'submitted_by_display_name', ''), vd.submitted_by_user_id::text)::text AS submitted_by_display_name,
     CASE
+      -- F5(§5.6): demand_status 优先。收敛闸挂起的需求(acceptance_pending)即便所有任务已
+      -- completed 也必须显示为 waiting_human/待验收,不能被任务计数判成 completed 而从运行视图消失;
+      -- 规划失败(planning_failed,§5.5)显示为 failed。其余状态维持任务推导。
+      WHEN vd.demand_status = 'acceptance_pending' THEN 'waiting_human'
+      WHEN vd.demand_status = 'planning_failed' THEN 'failed'
       WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 'waiting_human'
       WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 'failed'
       WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 'running'
@@ -308,6 +323,8 @@ SELECT
       ELSE 'unknown'
     END::text AS status,
     CASE
+      WHEN vd.demand_status = 'acceptance_pending' THEN '待验收'
+      WHEN vd.demand_status = 'planning_failed' THEN '规划失败'
       WHEN COALESCE(dc.pending_decisions, 0) > 0 THEN '等待人工决策'
       WHEN COALESCE(tc.waiting_human_nodes, 0) > 0 THEN '等待人工处理'
       WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN '存在失败任务'
@@ -1858,6 +1875,15 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_task_id = sqlc.arg('project_task_id')::uuid
 ORDER BY created_at DESC
 LIMIT 1;
+
+-- name: ExistsProjectDecisionRequestByApproval :one
+-- §5.4.1: true when a project decision request already owns this approval —
+-- ApprovalProjectorAdapter must not also project/overwrite the inbox card.
+SELECT EXISTS(
+  SELECT 1 FROM project_decision_requests
+  WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+    AND approval_request_id = sqlc.arg('approval_request_id')::uuid
+);
 
 -- name: GetProjectDecisionRequestByPlanRevision :one
 SELECT * FROM project_decision_requests

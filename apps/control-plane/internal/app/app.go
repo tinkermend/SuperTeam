@@ -476,6 +476,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if pgProjectRepository, ok := projectRepository.(*project.PgRepository); ok {
 		adapter := artifactObjectStoreAdapter{store: stores.ObjectStore}
 		pgProjectRepository.SetArtifactObjectVerifier(adapter.StatObject)
+		// §5.4.1: approval projector skips when a project decision already owns
+		// the approval row (DecisionProjectorAdapter is the sole inbox writer).
+		approvalProjector.SetDecisionChecker(pgProjectRepository)
 	}
 	decisionProjector := inbox.NewDecisionProjectorAdapter(inboxService)
 

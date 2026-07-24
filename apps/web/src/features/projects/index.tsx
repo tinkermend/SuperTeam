@@ -41,7 +41,6 @@ import {
   recloneProjectWorkspace,
   archiveProject,
   createProject,
-  createProjectAcceptance,
   createProjectArchiveSnapshot,
   createProjectEvidence,
   deleteProject,
@@ -76,7 +75,6 @@ import {
   dismissProjectTask,
   resolveProjectDecision,
   submitProjectDemand,
-  type CreateProjectAcceptanceInput,
   type CreateProjectArchiveSnapshotInput,
   type CreateProjectEvidenceInput,
   type CreateProjectInput,
@@ -322,7 +320,8 @@ export function ProjectsView({
     queryFn: () => getInboxBadge(apiOptions),
     placeholderData: keepPreviousData,
   });
-  // 数字员工 / 用户目录：成员快照缺名时回退真实名称，避免项目详情侧栏与风险队列裸显 UUID。
+  // 数字员工 / 用户目录：成员快照缺名时回退真实名称，避免项目列表/详情裸显负责人 UUID。
+  // 列表页也要拉用户目录——风险队列负责人行依赖 principalNamesById，不能仅在进详情后启用。
   const digitalEmployeesQuery = useQuery({
     queryKey: ["digital-employees", "project-name-map"],
     queryFn: () => listDigitalEmployees(apiOptions),
@@ -330,7 +329,6 @@ export function ProjectsView({
     staleTime: 60_000,
   });
   const usersQuery = useQuery({
-    enabled: Boolean(routeProjectId),
     queryKey: ["auth-users", "member-name-lookup"],
     queryFn: () => listUsers({ ...apiOptions, limit: 200 }),
     placeholderData: keepPreviousData,
@@ -816,21 +814,6 @@ export function ProjectsView({
     },
   });
 
-  const createAcceptanceMutation = useMutation({
-    mutationFn: (input: CreateProjectAcceptanceInput) =>
-      createProjectAcceptance(apiOptions, effectiveProjectId as string, input),
-    onSuccess: async (acceptance) => {
-      const projectId = acceptance.project_id || effectiveProjectId;
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["project-acceptance", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
-        queryClient.invalidateQueries({
-          queryKey: ["project-archive-preview", projectId],
-        }),
-      ]);
-    },
-  });
-
   const createArchiveSnapshotMutation = useMutation({
     mutationFn: (input: CreateProjectArchiveSnapshotInput) =>
       createProjectArchiveSnapshot(apiOptions, effectiveProjectId as string, input),
@@ -1069,6 +1052,7 @@ export function ProjectsView({
                     selectedQueueProject ? (
                       <ProjectTriagePanel
                         onClose={() => setSelectedQueueProjectId("")}
+                        principalNamesById={principalNamesById}
                         project={selectedQueueProject}
                         summary={selectedQueueSummary}
                       />
@@ -1106,6 +1090,7 @@ export function ProjectsView({
                       onSelectProject={setSelectedQueueProjectId}
                       pageCount={projectListPageCount}
                       pageSize={projectListPageSize}
+                      principalNamesById={principalNamesById}
                       projects={pagedProjects}
                       riskSummaries={displayedRiskSummaries}
                       selectedProjectId={selectedQueueProjectId}
@@ -1161,11 +1146,6 @@ export function ProjectsView({
                       recloneWorkspaceMutation.isPending ||
                       markWorkspaceReadyMutation.isPending
                     }
-                    onCreateAcceptance={(input) => {
-                      if (effectiveProjectId) {
-                        createAcceptanceMutation.mutate(input);
-                      }
-                    }}
                     onCreateArchiveSnapshot={(input) => {
                       if (effectiveProjectId) {
                         createArchiveSnapshotMutation.mutate(input);
@@ -1386,6 +1366,7 @@ function isProjectOperationalTab(value: string | undefined): boolean {
     value === "approval" ||
     value === "budget" ||
     value === "acceptance" ||
+    value === "closure" ||
     value === "config" ||
     value === "assets"
   );

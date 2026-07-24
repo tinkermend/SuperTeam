@@ -16,12 +16,14 @@ describe("project-detail-section", () => {
     expect(normalizeProjectDetailSection("artifacts")).toBe("assets");
     expect(normalizeProjectDetailSection("budget")).toBe("assets");
     expect(normalizeProjectDetailSection("acceptance")).toBe("assets");
+    expect(normalizeProjectDetailSection("closure")).toBe("assets");
   });
 
   it("picks assets sub-tab from legacy query", () => {
     expect(assetsInitialTabFromQuery("artifacts")).toBe("artifacts");
     expect(assetsInitialTabFromQuery("budget")).toBe("budget");
     expect(assetsInitialTabFromQuery("acceptance")).toBe("acceptance");
+    expect(assetsInitialTabFromQuery("closure")).toBe("acceptance");
     expect(assetsInitialTabFromQuery("overview")).toBe("artifacts");
   });
 });

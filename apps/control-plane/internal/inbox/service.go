@@ -72,6 +72,18 @@ func (s *Service) UpsertItem(ctx context.Context, req UpsertItemRequest) (Item, 
 	return s.repository.UpsertItem(ctx, normalized)
 }
 
+// GetItemByApprovalSource returns the inbox card keyed by approval request id
+// (used by ApprovalProjectorAdapter §5.4.1 ownership check).
+func (s *Service) GetItemByApprovalSource(ctx context.Context, tenantID, approvalRequestID uuid.UUID) (Item, error) {
+	if s == nil || s.repository == nil {
+		return Item{}, ErrSourceUnavailable
+	}
+	if tenantID == uuid.Nil || approvalRequestID == uuid.Nil {
+		return Item{}, ErrInvalidItem
+	}
+	return s.repository.GetItemByApprovalSource(ctx, tenantID, approvalRequestID)
+}
+
 func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItemsResult, error) {
 	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
 	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil {
@@ -360,7 +372,13 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	} else {
 		req.LastActivityAt = req.LastActivityAt.UTC()
 	}
-	if len(req.Actions) == 0 {
+	// Project decisions derive their action set from the decision kind
+	// (DecisionActions), which may legitimately be empty. Never fall back to the
+	// itemType-generic set for them: that phantom set (同意/驳回/要求补证) had no
+	// handler for kinds like demand_acceptance and silently overrode the
+	// deliberate action contract — the F1 dead-button deadlock. Action legality
+	// for project decisions is owned by (kind → handler), not by itemType.
+	if len(req.Actions) == 0 && req.ItemType != ItemTypeProjectDecision {
 		req.Actions = DefaultActions(req.ItemType)
 	}
 	actions, err := normalizeActions(req.Actions)
@@ -419,43 +437,16 @@ func DefaultActions(itemType ItemType) []Action {
 // inbox-shell renders item.actions dynamically, so this is the sole source of the
 // buttons shown per decision type.
 func DecisionActions(decisionType string) []Action {
-	switch decisionType {
-	case "planning_gap":
-		return []Action{
-			{Key: "restaffed", Label: "已补员，重新规划", Tone: "positive", Metadata: map[string]any{"decision": "restaffed"}},
-			{Key: "exempted", Label: "豁免约束并重规划", Tone: "positive", Metadata: map[string]any{"decision": "exempted"}},
-			{Key: "rejected", Label: "关闭", Tone: "destructive", Metadata: map[string]any{"decision": "rejected"}},
-		}
-	case "task_failure_recovery":
-		// 失败恢复需要显式 recovery_action;裸 approved 无法驱动 retry。
-		// 改派需要选择新员工,收件箱快动作暂不暴露(项目详情可后续补选择器)。
-		return []Action{
-			{
-				Key:   "retry",
-				Label: "重试任务",
-				Tone:  "positive",
-				Metadata: map[string]any{
-					"decision": "retry",
-				},
-			},
-			{
-				Key:             "cancel_downstream",
-				Label:           "取消下游",
-				Tone:            "destructive",
-				RequiresComment: true,
-				Metadata: map[string]any{
-					"decision": "cancel_downstream",
-				},
-			},
-		}
-	case "demand_acceptance":
-		// demand_acceptance items are a pure deep-link: signing individual
-		// acceptance criteria is a per-criterion action that happens in the
-		// demand detail UI, not a single inbox quick-action, so no buttons are
-		// rendered here.
-		return []Action{}
-	}
-	return DefaultActions(ItemTypeProjectDecision)
+	// Registry-driven (spec §4.4, treating F1): every emitted button comes from
+	// decisionActionRegistry (special kinds) or genericDecisionActions (the default
+	// approved/驳回/要求补证 set), each declaring the server handler that executes it.
+	// decision_action_registry_test.go asserts none escapes handler coverage — an
+	// action can never again exist without a handler behind it. Notable kinds:
+	//   - demand_acceptance: 同意/驳回 → project.ResolveDecision's demand_acceptance
+	//     branch (SignAllPendingDemandCriteria / first-pending-unsatisfied), spec §5.1;
+	//   - planning_gap: 已补员/豁免/关闭 → coordinator handlePlanningGapDecision;
+	//   - task_failure_recovery: 重试/取消下游 → coordinator applyFailureRecoveryDecision.
+	return decisionActionsFromRegistry(registeredActionsForDecision(decisionType))
 }
 
 func findAction(actions []Action, action string) (Action, bool) {

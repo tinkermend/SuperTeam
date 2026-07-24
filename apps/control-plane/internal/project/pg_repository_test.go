@@ -4572,7 +4572,10 @@ func (r *memoryRepository) ListProjectTaskDependencies(ctx context.Context, tena
 }
 
 func (r *memoryRepository) ListDependentsOfTask(ctx context.Context, tenantID, projectID, blockerTaskID uuid.UUID) ([]uuid.UUID, error) {
-	return nil, nil
+	if r.taskDependents == nil {
+		return nil, nil
+	}
+	return r.taskDependents[blockerTaskID], nil
 }
 
 func (r *memoryRepository) ListUnresolvedBlockersForTasks(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependencyReadiness, error) {

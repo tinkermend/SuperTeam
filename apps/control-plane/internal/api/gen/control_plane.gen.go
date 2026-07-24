@@ -255,30 +255,6 @@ func (e CreateDigitalEmployeeRunRequestRunKind) Valid() bool {
 	}
 }
 
-// Defines values for CreateProjectAcceptanceRequestStatus.
-const (
-	CreateProjectAcceptanceRequestStatusAccepted          CreateProjectAcceptanceRequestStatus = "accepted"
-	CreateProjectAcceptanceRequestStatusNeedsMoreEvidence CreateProjectAcceptanceRequestStatus = "needs_more_evidence"
-	CreateProjectAcceptanceRequestStatusPartiallyAccepted CreateProjectAcceptanceRequestStatus = "partially_accepted"
-	CreateProjectAcceptanceRequestStatusRejected          CreateProjectAcceptanceRequestStatus = "rejected"
-)
-
-// Valid indicates whether the value is a known member of the CreateProjectAcceptanceRequestStatus enum.
-func (e CreateProjectAcceptanceRequestStatus) Valid() bool {
-	switch e {
-	case CreateProjectAcceptanceRequestStatusAccepted:
-		return true
-	case CreateProjectAcceptanceRequestStatusNeedsMoreEvidence:
-		return true
-	case CreateProjectAcceptanceRequestStatusPartiallyAccepted:
-		return true
-	case CreateProjectAcceptanceRequestStatusRejected:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for CreatePromptTemplateRequestScope.
 const (
 	GLOBAL   CreatePromptTemplateRequestScope = "GLOBAL"
@@ -1289,19 +1265,23 @@ func (e ProjectDemandSourceType) Valid() bool {
 
 // Defines values for ProjectDemandStatus.
 const (
-	ProjectDemandStatusCancelled       ProjectDemandStatus = "cancelled"
-	ProjectDemandStatusCompleted       ProjectDemandStatus = "completed"
-	ProjectDemandStatusExecuting       ProjectDemandStatus = "executing"
-	ProjectDemandStatusFailed          ProjectDemandStatus = "failed"
-	ProjectDemandStatusPlanned         ProjectDemandStatus = "planned"
-	ProjectDemandStatusPlanningPending ProjectDemandStatus = "planning_pending"
-	ProjectDemandStatusRecorded        ProjectDemandStatus = "recorded"
-	ProjectDemandStatusSubmitted       ProjectDemandStatus = "submitted"
+	ProjectDemandStatusAcceptancePending ProjectDemandStatus = "acceptance_pending"
+	ProjectDemandStatusCancelled         ProjectDemandStatus = "cancelled"
+	ProjectDemandStatusCompleted         ProjectDemandStatus = "completed"
+	ProjectDemandStatusExecuting         ProjectDemandStatus = "executing"
+	ProjectDemandStatusFailed            ProjectDemandStatus = "failed"
+	ProjectDemandStatusPlanned           ProjectDemandStatus = "planned"
+	ProjectDemandStatusPlanningFailed    ProjectDemandStatus = "planning_failed"
+	ProjectDemandStatusPlanningPending   ProjectDemandStatus = "planning_pending"
+	ProjectDemandStatusRecorded          ProjectDemandStatus = "recorded"
+	ProjectDemandStatusSubmitted         ProjectDemandStatus = "submitted"
 )
 
 // Valid indicates whether the value is a known member of the ProjectDemandStatus enum.
 func (e ProjectDemandStatus) Valid() bool {
 	switch e {
+	case ProjectDemandStatusAcceptancePending:
+		return true
 	case ProjectDemandStatusCancelled:
 		return true
 	case ProjectDemandStatusCompleted:
@@ -1311,6 +1291,8 @@ func (e ProjectDemandStatus) Valid() bool {
 	case ProjectDemandStatusFailed:
 		return true
 	case ProjectDemandStatusPlanned:
+		return true
+	case ProjectDemandStatusPlanningFailed:
 		return true
 	case ProjectDemandStatusPlanningPending:
 		return true
@@ -2360,25 +2342,25 @@ func (e ListPermissionApprovalsParamsView) Valid() bool {
 
 // Defines values for ListPermissionApprovalsParamsStatus.
 const (
-	ListPermissionApprovalsParamsStatusApproved          ListPermissionApprovalsParamsStatus = "approved"
-	ListPermissionApprovalsParamsStatusCancelled         ListPermissionApprovalsParamsStatus = "cancelled"
-	ListPermissionApprovalsParamsStatusNeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
-	ListPermissionApprovalsParamsStatusPending           ListPermissionApprovalsParamsStatus = "pending"
-	ListPermissionApprovalsParamsStatusRejected          ListPermissionApprovalsParamsStatus = "rejected"
+	Approved          ListPermissionApprovalsParamsStatus = "approved"
+	Cancelled         ListPermissionApprovalsParamsStatus = "cancelled"
+	NeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
+	Pending           ListPermissionApprovalsParamsStatus = "pending"
+	Rejected          ListPermissionApprovalsParamsStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the ListPermissionApprovalsParamsStatus enum.
 func (e ListPermissionApprovalsParamsStatus) Valid() bool {
 	switch e {
-	case ListPermissionApprovalsParamsStatusApproved:
+	case Approved:
 		return true
-	case ListPermissionApprovalsParamsStatusCancelled:
+	case Cancelled:
 		return true
-	case ListPermissionApprovalsParamsStatusNeedsMoreEvidence:
+	case NeedsMoreEvidence:
 		return true
-	case ListPermissionApprovalsParamsStatusPending:
+	case Pending:
 		return true
-	case ListPermissionApprovalsParamsStatusRejected:
+	case Rejected:
 		return true
 	default:
 		return false
@@ -2560,6 +2542,12 @@ type BindTeamDigitalEmployeeRequest struct {
 type BindTeamDigitalEmployeeResponse struct {
 	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
 	TeamId            openapi_types.UUID `json:"team_id"`
+}
+
+// CloseProjectDemandRequest defines model for CloseProjectDemandRequest.
+type CloseProjectDemandRequest struct {
+	// Reason 关闭原因（可选），写入 demand.cancelled 审计事件
+	Reason *string `json:"reason,omitempty"`
 }
 
 // CompleteProjectTaskAttemptRequest defines model for CompleteProjectTaskAttemptRequest.
@@ -2777,19 +2765,6 @@ type CreateMCPServerDefinitionRequest struct {
 	Transport          MCPTransport     `json:"transport"`
 	Url                string           `json:"url"`
 }
-
-// CreateProjectAcceptanceRequest defines model for CreateProjectAcceptanceRequest.
-type CreateProjectAcceptanceRequest struct {
-	Conclusion      string                               `json:"conclusion"`
-	EvidenceRefIds  *[]openapi_types.UUID                `json:"evidence_ref_ids,omitempty"`
-	ReportRefIds    *[]openapi_types.UUID                `json:"report_ref_ids,omitempty"`
-	Status          CreateProjectAcceptanceRequestStatus `json:"status"`
-	Summary         *string                              `json:"summary,omitempty"`
-	UnresolvedRisks *[]interface{}                       `json:"unresolved_risks,omitempty"`
-}
-
-// CreateProjectAcceptanceRequestStatus defines model for CreateProjectAcceptanceRequest.Status.
-type CreateProjectAcceptanceRequestStatus string
 
 // CreateProjectArchiveSnapshotRequest defines model for CreateProjectArchiveSnapshotRequest.
 type CreateProjectArchiveSnapshotRequest struct {
@@ -3898,19 +3873,35 @@ type InboxBadge struct {
 
 // InboxItem defines model for InboxItem.
 type InboxItem struct {
-	Actions                 []InboxItemAction      `json:"actions"`
-	Context                 map[string]interface{} `json:"context"`
-	CreatedAt               time.Time              `json:"created_at"`
-	DeepLink                map[string]interface{} `json:"deep_link"`
-	Id                      openapi_types.UUID     `json:"id"`
-	ItemType                InboxItemItemType      `json:"item_type"`
-	LastActivityAt          time.Time              `json:"last_activity_at"`
-	Priority                *string                `json:"priority,omitempty"`
-	ResolvedAt              *time.Time             `json:"resolved_at,omitempty"`
-	RiskLevel               *string                `json:"risk_level,omitempty"`
-	SourceApprovalRequestId *openapi_types.UUID    `json:"source_approval_request_id,omitempty"`
-	SourceId                openapi_types.UUID     `json:"source_id"`
-	SourceProjectId         *openapi_types.UUID    `json:"source_project_id,omitempty"`
+	Actions   []InboxItemAction      `json:"actions"`
+	Context   map[string]interface{} `json:"context"`
+	CreatedAt time.Time              `json:"created_at"`
+	DeepLink  map[string]interface{} `json:"deep_link"`
+
+	// Evidence 人类待办 evidence(HumanTask §4.1)：判据/结论/交付物摘录，卡上直接可读。 验收签署卡携带 pending_criteria_detail；结项卡携带需求清单。
+	Evidence *[]map[string]interface{} `json:"evidence,omitempty"`
+	Id       openapi_types.UUID        `json:"id"`
+	ItemType InboxItemItemType         `json:"item_type"`
+
+	// Kind 规范化的人类待办 kind(HumanTask §4.2),由服务端从内部 decision_type 映射得到 (如 dispatch_release / downstream_release / acceptance_sign / closure_confirm / plan_review / planning_gap / task_failure_recovery)。 附加读模型元数据,不改内部 decision_type;控制台据此分组与命名。项目决策以外的事项可能为空。
+	Kind           *string   `json:"kind,omitempty"`
+	LastActivityAt time.Time `json:"last_activity_at"`
+
+	// Layer 人类待办层级(HumanTask §4.1):task / demand / project。项目决策以外的事项可能为空。
+	Layer    *string `json:"layer,omitempty"`
+	Priority *string `json:"priority,omitempty"`
+
+	// Progress 人类待办闭环进度(HumanTask §4.1 / §6.1)：{step,total,label}， 供收件箱进度条渲染（如「任务完成 → 验收签署 待你 → 结项 未开始」）。
+	Progress *struct {
+		Label *string `json:"label,omitempty"`
+		Step  *int    `json:"step,omitempty"`
+		Total *int    `json:"total,omitempty"`
+	} `json:"progress,omitempty"`
+	ResolvedAt              *time.Time          `json:"resolved_at,omitempty"`
+	RiskLevel               *string             `json:"risk_level,omitempty"`
+	SourceApprovalRequestId *openapi_types.UUID `json:"source_approval_request_id,omitempty"`
+	SourceId                openapi_types.UUID  `json:"source_id"`
+	SourceProjectId         *openapi_types.UUID `json:"source_project_id,omitempty"`
 
 	// SourceProjectName 来源项目名称(读时批量补名;来源已删除时缺省)
 	SourceProjectName *string             `json:"source_project_name,omitempty"`
@@ -3926,6 +3917,9 @@ type InboxItem struct {
 	TenantId       openapi_types.UUID  `json:"tenant_id"`
 	Title          string              `json:"title"`
 	UpdatedAt      time.Time           `json:"updated_at"`
+
+	// Why 人类待办 why(HumanTask §4.1)：一句话说明「为什么需要你」，服务端产出中文。 附加读模型元数据；项目决策以外的事项可能为空。
+	Why *string `json:"why,omitempty"`
 }
 
 // InboxItemItemType defines model for InboxItem.ItemType.
@@ -5617,6 +5611,9 @@ type SetEmployeeTemplateStatusRequestStatus string
 
 // SignDemandCriterionVerdictRequest defines model for SignDemandCriterionVerdictRequest.
 type SignDemandCriterionVerdictRequest struct {
+	// AlsoCloseProject §5.3「通过并结项」：为 true 且本需求签署后项目全部需求已终态时， 用同一 actor 直接归档并写验收结论，不再产生结项确认卡。默认 false。
+	AlsoCloseProject *bool `json:"also_close_project,omitempty"`
+
 	// CriterionId 需求当前计划修订版本快照中的判据 ID（demand_acceptance_criteria.criterion_id）
 	CriterionId string                                   `json:"criterion_id"`
 	Reason      *string                                  `json:"reason,omitempty"`
@@ -6837,6 +6834,9 @@ type CreateMCPServerDefinitionJSONRequestBody = CreateMCPServerDefinitionRequest
 // DecidePermissionApprovalJSONRequestBody defines body for DecidePermissionApproval for application/json ContentType.
 type DecidePermissionApprovalJSONRequestBody = PermissionApprovalDecisionRequest
 
+// CloseProjectDemandJSONRequestBody defines body for CloseProjectDemand for application/json ContentType.
+type CloseProjectDemandJSONRequestBody = CloseProjectDemandRequest
+
 // SignDemandCriterionVerdictJSONRequestBody defines body for SignDemandCriterionVerdict for application/json ContentType.
 type SignDemandCriterionVerdictJSONRequestBody = SignDemandCriterionVerdictRequest
 
@@ -6845,9 +6845,6 @@ type CreateProjectJSONRequestBody = CreateProjectRequest
 
 // UpdateProjectJSONRequestBody defines body for UpdateProject for application/json ContentType.
 type UpdateProjectJSONRequestBody = UpdateProjectConfigRequest
-
-// CreateProjectAcceptanceJSONRequestBody defines body for CreateProjectAcceptance for application/json ContentType.
-type CreateProjectAcceptanceJSONRequestBody = CreateProjectAcceptanceRequest
 
 // CreateProjectArchiveSnapshotJSONRequestBody defines body for CreateProjectArchiveSnapshot for application/json ContentType.
 type CreateProjectArchiveSnapshotJSONRequestBody = CreateProjectArchiveSnapshotRequest
@@ -7712,6 +7709,9 @@ type ServerInterface interface {
 	// List a demand's snapshotted acceptance criteria with resolved verdicts and evidence
 	// (GET /api/v1/project-demands/{demandId}/acceptance-criteria)
 	ListDemandAcceptanceCriteria(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
+	// Close (cancel) a non-terminal demand, e.g. to clear a planning zombie
+	// (POST /api/v1/project-demands/{demandId}/close)
+	CloseProjectDemand(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
 	// Sign a human verdict against a demand's blocking human_judgment acceptance criterion
 	// (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
 	SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -7736,9 +7736,6 @@ type ServerInterface interface {
 	// Get latest project acceptance
 	// (GET /api/v1/projects/{projectId}/acceptance)
 	GetProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId)
-	// Submit project acceptance
-	// (POST /api/v1/projects/{projectId}/acceptance)
-	CreateProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Archive a project
 	// (POST /api/v1/projects/{projectId}/archive)
 	ArchiveProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -8621,6 +8618,12 @@ func (_ Unimplemented) ListDemandAcceptanceCriteria(w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Close (cancel) a non-terminal demand, e.g. to clear a planning zombie
+// (POST /api/v1/project-demands/{demandId}/close)
+func (_ Unimplemented) CloseProjectDemand(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Sign a human verdict against a demand's blocking human_judgment acceptance criterion
 // (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
 func (_ Unimplemented) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
@@ -8666,12 +8669,6 @@ func (_ Unimplemented) UpdateProject(w http.ResponseWriter, r *http.Request, pro
 // Get latest project acceptance
 // (GET /api/v1/projects/{projectId}/acceptance)
 func (_ Unimplemented) GetProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Submit project acceptance
-// (POST /api/v1/projects/{projectId}/acceptance)
-func (_ Unimplemented) CreateProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -12219,6 +12216,32 @@ func (siw *ServerInterfaceWrapper) ListDemandAcceptanceCriteria(w http.ResponseW
 	handler.ServeHTTP(w, r)
 }
 
+// CloseProjectDemand operation middleware
+func (siw *ServerInterfaceWrapper) CloseProjectDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "demandId" -------------
+	var demandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "demandId", chi.URLParam(r, "demandId"), &demandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demandId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CloseProjectDemand(w, r, demandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SignDemandCriterionVerdict operation middleware
 func (siw *ServerInterfaceWrapper) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request) {
 
@@ -12452,32 +12475,6 @@ func (siw *ServerInterfaceWrapper) GetProjectAcceptance(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProjectAcceptance(w, r, projectId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateProjectAcceptance operation middleware
-func (siw *ServerInterfaceWrapper) CreateProjectAcceptance(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "projectId" -------------
-	var projectId ProjectId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateProjectAcceptance(w, r, projectId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17480,6 +17477,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/acceptance-criteria", wrapper.ListDemandAcceptanceCriteria)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/project-demands/{demandId}/close", wrapper.CloseProjectDemand)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/project-demands/{demandId}/criterion-verdicts", wrapper.SignDemandCriterionVerdict)
 	})
 	r.Group(func(r chi.Router) {
@@ -17502,9 +17502,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/acceptance", wrapper.GetProjectAcceptance)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/acceptance", wrapper.CreateProjectAcceptance)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/archive", wrapper.ArchiveProject)

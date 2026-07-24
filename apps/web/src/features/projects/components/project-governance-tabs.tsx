@@ -1,7 +1,6 @@
 import { V3TabList, V3Tabs } from "@/components/superteam";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
-  CreateProjectAcceptanceInput,
   CreateProjectArchiveSnapshotInput,
   CreateProjectEvidenceInput,
   ProjectAcceptanceRecord,
@@ -35,7 +34,6 @@ type ProjectGovernanceTabsProps = {
   evidence?: ProjectEvidenceRef[];
   executionSummaryCount: number;
   initialTab?: "evidence" | "artifacts" | "budget" | "acceptance" | "archive";
-  onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
   onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
   onPatchEvidence: (
@@ -59,7 +57,6 @@ export function ProjectGovernanceTabs({
   evidence = [],
   executionSummaryCount,
   initialTab = "evidence",
-  onCreateAcceptance,
   onCreateArchiveSnapshot,
   onCreateEvidence,
   onPatchEvidence,
@@ -90,7 +87,7 @@ export function ProjectGovernanceTabs({
                 预算流水
               </TabsTrigger>
               <TabsTrigger className={governanceTabTriggerClass} value="acceptance">
-                验收结论
+                结项结论
               </TabsTrigger>
               <TabsTrigger className={governanceTabTriggerClass} value="archive">
                 归档预览
@@ -117,12 +114,7 @@ export function ProjectGovernanceTabs({
         />
       </TabsContent>
       <TabsContent className="m-0" value="acceptance">
-        <ProjectAcceptancePanel
-          acceptance={acceptance}
-          evidenceRefIds={evidence.map((item) => item.id)}
-          onCreateAcceptance={onCreateAcceptance}
-          reportRefIds={reports.map((item) => item.id)}
-        />
+        <ProjectAcceptancePanel acceptance={acceptance} />
       </TabsContent>
       <TabsContent className="m-0" value="archive">
         <ProjectArchivePanel

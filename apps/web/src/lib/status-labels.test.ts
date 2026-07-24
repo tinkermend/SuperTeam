@@ -105,7 +105,9 @@ describe("domain overrides", () => {
 
   it("demandStatusLabel covers demand lifecycle codes", () => {
     expect(demandStatusLabel("submitted")).toBe("待计划");
-    expect(demandStatusLabel("planning_pending")).toBe("待计划");
+    // §5.5: planning_pending 拆词后为「排队规划中」,planning_failed 为「规划失败」。
+    expect(demandStatusLabel("planning_pending")).toBe("排队规划中");
+    expect(demandStatusLabel("planning_failed")).toBe("规划失败");
     expect(demandStatusLabel("planned")).toBe("已计划");
     expect(demandStatusLabel("executing")).toBe("执行中");
     expect(demandStatusLabel("acceptance_pending")).toBe("待验收");

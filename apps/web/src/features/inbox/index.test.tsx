@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { InboxView } from "@/features/inbox";
-import { resolveInboxHref } from "@/features/inbox/components/inbox-item-list";
+import { groupInboxItems, readInboxProgress, resolveInboxHref } from "@/features/inbox/components/inbox-item-list";
 import type { InboxItem, InboxListResponse } from "@/lib/api/inbox";
 
 vi.mock("@/components/layout/header", () => ({
@@ -295,8 +295,10 @@ describe("InboxView", () => {
       "href",
       "/projects/project-1/approvals#approval-1",
     );
-    await expect.element(screen.getByRole("link", { name: "进入流程实例" })).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "查看流程编排" })).toBeVisible();
+    // F3(§5.4.3): 原"进入流程实例/查看流程编排"两个各自推导入口已下线,只保留服务端
+    // primary_surface 的唯一权威落点。
+    expect(screen.getByRole("link", { name: "进入流程实例" }).query()).toBeNull();
+    expect(screen.getByRole("link", { name: "查看流程编排" }).query()).toBeNull();
   });
 
   // 已处理事项(如经飞书批准)在"已处理"过滤下选中:详情必须呈终态,不得再渲染
@@ -594,6 +596,25 @@ describe("InboxView", () => {
     await expect.element(contextLink).toHaveAttribute("data-router-link", "true");
   });
 
+  // F3(§5.4.3): primary_surface 是服务端算好的唯一权威落点,前端一律以它为准,
+  // 覆盖 route 的本地推导。
+  it("prefers the server-computed primary_surface as the single deep link", async () => {
+    const item = makeInboxItem({
+      deep_link: {
+        anchor: "approval-1",
+        route: "/projects/project-1",
+        primary_surface: "/workflows/demand-xyz",
+      },
+      source_project_id: "project-1",
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: item }));
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    const contextLink = screen.getByRole("link", { name: "查看上下文" });
+    await expect.element(contextLink).toHaveAttribute("href", "/workflows/demand-xyz");
+    await expect.element(contextLink).toHaveAttribute("data-router-link", "true");
+  });
+
   it("shows failed action submissions inside the dialog without closing it", async () => {
     const screen = await renderInboxView(createInboxFetcher({ actionStatus: 500 }));
 
@@ -630,6 +651,12 @@ describe("InboxView", () => {
         primary_demand_id: demandId,
         project_id: "9a9418d6-f1cd-4ca3-94f6-83c16f0d7fb4",
         project_name: "测试项目",
+      },
+      // F3(§5.4.3): 服务端为 demand 关联决策下发的唯一权威落点。
+      deep_link: {
+        anchor: "approval-1",
+        primary_surface: `/workflows/${demandId}`,
+        route: `/workflows/${demandId}`,
       },
       item_type: "project_decision",
       source_project_name: "测试项目",
@@ -746,5 +773,56 @@ describe("InboxView", () => {
       action: "approved",
     });
     deferred.resolve();
+  });
+});
+
+describe("groupInboxItems (§6.1 领域分组)", () => {
+  it("orders sections by human-task category and buckets others into 异常处理", () => {
+    const mk = (id: string, kind?: string) => makeInboxItem({ id, source_id: id, kind });
+    const items = [
+      mk("a", "closure_confirm"),
+      mk("b", "plan_review"),
+      mk("c", "acceptance_sign"),
+      mk("d", "task_failure_recovery"),
+      mk("e"),
+      mk("f", "dispatch_release"),
+    ];
+
+    const sections = groupInboxItems(items);
+
+    expect(sections.map((section) => section.key)).toEqual([
+      "plan_review",
+      "dispatch_release",
+      "acceptance_sign",
+      "closure_confirm",
+      "exception",
+    ]);
+    const exception = sections.find((section) => section.key === "exception");
+    expect(exception?.label).toBe("异常处理");
+    // task_failure_recovery and the kind-less item both fall into 异常处理, in入参顺序.
+    expect(exception?.items.map((item) => item.id)).toEqual(["d", "e"]);
+    expect(sections.find((section) => section.key === "plan_review")?.label).toBe("计划确认");
+  });
+});
+
+describe("readInboxProgress (§6.1 闭环进度)", () => {
+  it("prefers top-level progress and falls back to context.progress", () => {
+    expect(
+      readInboxProgress(
+        makeInboxItem({
+          progress: { step: 3, total: 4, label: "验收签署 待你" },
+        }),
+      ),
+    ).toEqual({ step: 3, total: 4, label: "验收签署 待你" });
+
+    expect(
+      readInboxProgress(
+        makeInboxItem({
+          context: { progress: { step: 4, total: 4, label: "结项确认 待你" } },
+        }),
+      ),
+    ).toEqual({ step: 4, total: 4, label: "结项确认 待你" });
+
+    expect(readInboxProgress(makeInboxItem({}))).toBeNull();
   });
 });

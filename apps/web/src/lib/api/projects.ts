@@ -924,15 +924,6 @@ export type PatchProjectEvidenceInput = {
   metadata?: Record<string, unknown>;
 };
 
-export type CreateProjectAcceptanceInput = {
-  status: ProjectAcceptanceStatus;
-  conclusion: string;
-  summary?: string;
-  evidence_ref_ids?: string[];
-  report_ref_ids?: string[];
-  unresolved_risks?: unknown[];
-};
-
 export type CreateProjectArchiveSnapshotInput = {
   snapshot_type: string;
   summary?: string;
@@ -1439,6 +1430,8 @@ export type SignDemandCriterionVerdictInput = {
   criterion_id: string;
   verdict: "satisfied" | "unsatisfied";
   reason?: string;
+  /** §5.3「通过并结项」：签署后项目可结项时直接归档，不产生结项确认卡。默认 false。 */
+  also_close_project?: boolean;
 };
 
 export type SignDemandCriterionVerdictResult = {
@@ -1694,19 +1687,6 @@ export function getProjectBudgetSummary(
     options,
     projectPath(projectId, "/budget-summary"),
     "project budget summary",
-  );
-}
-
-export function createProjectAcceptance(
-  options: ApiClientOptions,
-  projectId: string,
-  input: CreateProjectAcceptanceInput,
-): Promise<ProjectAcceptanceRecord> {
-  return postJson<ProjectAcceptanceRecord>(
-    options,
-    projectPath(projectId, "/acceptance"),
-    input,
-    "create project acceptance",
   );
 }
 

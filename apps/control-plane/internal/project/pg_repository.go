@@ -320,7 +320,22 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 }
 
 func (r *PgRepository) ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
-	return r.archiveProjectWithQueries(ctx, r.q, tenantID, projectID)
+	// F8(§5.7): 归档收敛——在同一事务内把该项目所有 open 收件箱待办置 cancelled,
+	// 否则归档后仍有滞留卡(炬枢平台曾滞留 3 小时)。复用 delete 的取消查询(同样含
+	// 挂在该项目上的 standalone run 失败恢复卡)。审计由服务层的 project.archived 事件承载。
+	return withProjectQueries(ctx, r, "archive project", func(q *queries.Queries) (Project, error) {
+		project, err := r.archiveProjectWithQueries(ctx, q, tenantID, projectID)
+		if err != nil {
+			return Project{}, err
+		}
+		if _, err := q.CancelInboxItemsForProjectDelete(ctx, queries.CancelInboxItemsForProjectDeleteParams{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+		}); err != nil {
+			return Project{}, err
+		}
+		return project, nil
+	})
 }
 
 func (r *PgRepository) archiveProjectWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID) (Project, error) {
@@ -5201,22 +5216,23 @@ func (r *PgRepository) AdvanceProjectDemandStatus(ctx context.Context, tenantID,
 	return err
 }
 
-// ReopenProjectDemandForReplanning moves a failed demand back into
-// planning_pending so the coordinator can replan it after the executor pool has
-// been supplemented (the planning_gap → restaffed path). It is a deliberate
+// ReopenProjectDemandForReplanning moves a failed / planning_failed demand back
+// into planning_pending so the coordinator can replan it (planning_gap →
+// restaffed, or planning_failed → retry_planning/reassign). It is a deliberate
 // exception to the forward-only rank guard AdvanceProjectDemandStatus enforces —
-// failed → planning_pending is a backward transition — so it lives in its own
-// method rather than weakening that guard. Only a currently-failed demand may be
-// reopened; any other status returns ErrProjectConflict. The transition and its
-// demand.replanning_reopened audit event are written atomically.
+// failed/planning_failed → planning_pending is a backward transition — so it
+// lives in its own method rather than weakening that guard. Any other status
+// returns ErrProjectConflict. The transition and its demand.replanning_reopened
+// audit event are written atomically.
 func (r *PgRepository) ReopenProjectDemandForReplanning(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
 	return withProjectQueries(ctx, r, "reopen project demand for replanning", func(q *queries.Queries) (ProjectDemand, error) {
 		current, err := q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
 		if err != nil {
 			return ProjectDemand{}, err
 		}
-		if ProjectDemandStatus(current.Status) != ProjectDemandStatusFailed {
-			return ProjectDemand{}, fmt.Errorf("demand %s is not in failed state (current=%s): %w", demandID, current.Status, ErrProjectConflict)
+		status := ProjectDemandStatus(current.Status)
+		if status != ProjectDemandStatusFailed && status != ProjectDemandStatusPlanningFailed {
+			return ProjectDemand{}, fmt.Errorf("demand %s is not in failed/planning_failed state (current=%s): %w", demandID, current.Status, ErrProjectConflict)
 		}
 		if err := q.LockProjectEventSequence(ctx, queries.LockProjectEventSequenceParams{TenantID: tenantID, ProjectID: current.ProjectID}); err != nil {
 			return ProjectDemand{}, err
@@ -5239,6 +5255,52 @@ func (r *PgRepository) ReopenProjectDemandForReplanning(ctx context.Context, ten
 			ResourceID:   strPtr(demandID.String()),
 			Summary:      "规划缺口补员后重开需求重新规划",
 			Payload:      map[string]any{"demand_id": demandID.String()},
+		}); err != nil {
+			return ProjectDemand{}, err
+		}
+		return demandFromRecord(updated)
+	})
+}
+
+// CloseProjectDemand cancels a non-terminal demand (spec §5.5 close_demand),
+// e.g. to clear a planning zombie stuck at planning_pending/planning_failed. The
+// status transition to cancelled and its demand.cancelled audit event are written
+// atomically. Already-cancelled is idempotent; already-completed/failed is
+// ErrProjectConflict (a terminal demand cannot be reopened as cancelled).
+func (r *PgRepository) CloseProjectDemand(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason string) (ProjectDemand, error) {
+	return withProjectQueries(ctx, r, "close project demand", func(q *queries.Queries) (ProjectDemand, error) {
+		current, err := q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
+		if err != nil {
+			return ProjectDemand{}, err
+		}
+		status := ProjectDemandStatus(current.Status)
+		if status == ProjectDemandStatusCancelled {
+			return demandFromRecord(current)
+		}
+		if status == ProjectDemandStatusCompleted || status == ProjectDemandStatusFailed {
+			return ProjectDemand{}, fmt.Errorf("demand %s already terminal (%s): %w", demandID, status, ErrProjectConflict)
+		}
+		if err := q.LockProjectEventSequence(ctx, queries.LockProjectEventSequenceParams{TenantID: tenantID, ProjectID: current.ProjectID}); err != nil {
+			return ProjectDemand{}, err
+		}
+		updated, err := q.UpdateProjectDemandStatus(ctx, queries.UpdateProjectDemandStatusParams{
+			Status:   string(ProjectDemandStatusCancelled),
+			TenantID: tenantID,
+			ID:       demandID,
+		})
+		if err != nil {
+			return ProjectDemand{}, err
+		}
+		if _, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     tenantID,
+			ProjectID:    current.ProjectID,
+			EventType:    ProjectEventDemandCancelled,
+			ActorType:    "human_user",
+			ActorID:      actorUserID.String(),
+			ResourceType: strPtr("project_demand"),
+			ResourceID:   strPtr(demandID.String()),
+			Summary:      "需求已关闭",
+			Payload:      map[string]any{"demand_id": demandID.String(), "reason": reason, "previous_status": string(status)},
 		}); err != nil {
 			return ProjectDemand{}, err
 		}
@@ -5374,6 +5436,17 @@ func (r *PgRepository) GetDecisionRequestByApprovalAndTask(ctx context.Context, 
 		return DecisionRequest{}, err
 	}
 	return decisionRequestFromRecord(row)
+}
+
+// HasProjectDecisionForApproval implements inbox.DecisionByApprovalChecker (§5.4.1).
+func (r *PgRepository) HasProjectDecisionForApproval(ctx context.Context, tenantID, approvalRequestID uuid.UUID) (bool, error) {
+	if r == nil || r.q == nil {
+		return false, nil
+	}
+	return r.q.ExistsProjectDecisionRequestByApproval(ctx, queries.ExistsProjectDecisionRequestByApprovalParams{
+		TenantID:          tenantID,
+		ApprovalRequestID: approvalRequestID,
+	})
 }
 
 func (r *PgRepository) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error) {

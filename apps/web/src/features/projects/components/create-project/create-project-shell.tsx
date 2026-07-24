@@ -259,7 +259,13 @@ export function CreateProjectShell({
             )}
           </section>
 
-          <ProjectReviewPanel currentUser={currentUser} draft={draft} selectableTeams={selectableTeams} />
+          <ProjectReviewPanel
+            apiBaseUrl={apiBaseUrl}
+            currentUser={currentUser}
+            draft={draft}
+            fetcher={fetcher}
+            selectableTeams={selectableTeams}
+          />
         </main>
 
         <footer className="flex flex-col gap-3 border-t border-v3-line bg-v3-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-6">

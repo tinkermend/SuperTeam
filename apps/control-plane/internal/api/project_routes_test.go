@@ -434,26 +434,6 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected budget summary context/path, got tenant=%s project=%s", service.budgetSummaryTenantID, service.budgetSummaryProjectID)
 	}
 
-	acceptanceReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/acceptance", strings.NewReader(`{
-		"tenant_id":"`+spoofedTenantID.String()+`",
-		"project_id":"`+spoofedProjectID.String()+`",
-		"accepted_by_user_id":"`+spoofedActorID.String()+`",
-		"status":"accepted",
-		"conclusion":"通过",
-		"evidence_ref_ids":["`+evidenceID.String()+`"],
-		"report_ref_ids":["`+uuid.New().String()+`"]
-	}`))
-	acceptanceReq.Header.Set("Content-Type", "application/json")
-	acceptanceReq.AddCookie(cookie)
-	acceptanceResp := httptest.NewRecorder()
-	server.ServeHTTP(acceptanceResp, acceptanceReq)
-	if acceptanceResp.Code != http.StatusCreated {
-		t.Fatalf("expected acceptance create to succeed, got %d: %s", acceptanceResp.Code, acceptanceResp.Body.String())
-	}
-	if service.createAcceptanceReq.TenantID != expectedTenantID || service.createAcceptanceReq.ProjectID != service.projectID || service.createAcceptanceReq.AcceptedByUserID != user.ID {
-		t.Fatalf("expected acceptance context/path/user, got %#v", service.createAcceptanceReq)
-	}
-
 	archiveSnapshotReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/archive-snapshot", strings.NewReader(`{
 		"tenant_id":"`+spoofedTenantID.String()+`",
 		"project_id":"`+spoofedProjectID.String()+`",
@@ -1344,7 +1324,6 @@ type routeProjectService struct {
 	patchEvidenceReq                  project.PatchEvidenceRequest
 	budgetSummaryTenantID             uuid.UUID
 	budgetSummaryProjectID            uuid.UUID
-	createAcceptanceReq               project.CreateAcceptanceServiceRequest
 	createArchiveReq                  project.CreateArchiveSnapshotServiceRequest
 	configRevisionTenantID            uuid.UUID
 	configRevisionProjectID           uuid.UUID
@@ -1541,6 +1520,10 @@ func (s *routeProjectService) SubmitDemand(ctx context.Context, req project.Subm
 	s.submitDemandReq = req
 	demand := project.ProjectDemand{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, SubmittedByUserID: req.SubmittedByUserID, Title: req.Title, SourceType: req.SourceType, SourceRefs: req.SourceRefs, Attachments: req.Attachments, Status: project.ProjectDemandStatusRecorded}
 	return &demand, nil
+}
+
+func (s *routeProjectService) CloseDemand(ctx context.Context, req project.CloseDemandRequest) (*project.ProjectDemand, error) {
+	return &project.ProjectDemand{ID: req.DemandID, TenantID: req.TenantID, Status: project.ProjectDemandStatusCancelled}, nil
 }
 
 func (s *routeProjectService) ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectDemand, error) {
@@ -1791,17 +1774,6 @@ func (s *routeProjectService) GetBudgetSummary(ctx context.Context, tenantID, pr
 	s.budgetSummaryTenantID = tenantID
 	s.budgetSummaryProjectID = projectID
 	return &project.ProjectBudgetSummary{EstimatedTokens: 1000, ActualTokens: 800, EstimatedCost: "1.00", ActualCost: "0.80", LedgerCount: 1}, nil
-}
-
-func (s *routeProjectService) CreateAcceptance(ctx context.Context, req project.CreateAcceptanceServiceRequest) (*project.ProjectAcceptanceRecord, error) {
-	s.createAcceptanceReq = req
-	record := routeAcceptance(req.TenantID, req.ProjectID, req.AcceptedByUserID)
-	record.Status = req.Status
-	record.Conclusion = req.Conclusion
-	record.EvidenceRefIDs = req.EvidenceRefIDs
-	record.ReportRefIDs = req.ReportRefIDs
-	record.UnresolvedRisks = req.UnresolvedRisks
-	return &record, nil
 }
 
 func (s *routeProjectService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectAcceptanceRecord, error) {

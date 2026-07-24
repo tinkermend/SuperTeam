@@ -42,6 +42,7 @@ type HandlerService interface {
 	GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error)
 	ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandAcceptanceCriteriaDetail, error)
 	SignDemandCriterionVerdict(ctx context.Context, req SignDemandCriterionVerdictRequest) (*SignDemandCriterionVerdictResult, error)
+	CloseDemand(ctx context.Context, req CloseDemandRequest) (*ProjectDemand, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error)
 	ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
@@ -69,7 +70,6 @@ type HandlerService interface {
 	ListReports(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error)
 	ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error)
 	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectBudgetSummary, error)
-	CreateAcceptance(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error)
 	GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error)
 	GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error)
 	CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotServiceRequest) (*ProjectArchiveSnapshot, error)
@@ -847,18 +847,50 @@ func (h *HTTPHandler) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.
 		return
 	}
 	result, err := service.SignDemandCriterionVerdict(r.Context(), SignDemandCriterionVerdictRequest{
-		TenantID:    tenantID,
-		DemandID:    demandID,
-		ActorUserID: actorID,
-		CriterionID: body.CriterionID,
-		Verdict:     body.Verdict,
-		Reason:      body.Reason,
+		TenantID:         tenantID,
+		DemandID:         demandID,
+		ActorUserID:      actorID,
+		CriterionID:      body.CriterionID,
+		Verdict:          body.Verdict,
+		Reason:           body.Reason,
+		AlsoCloseProject: body.AlsoCloseProject,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, signDemandCriterionVerdictResponseFromDomain(*result))
+}
+
+func (h *HTTPHandler) CloseDemand(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDecisionResolve)
+	if !ok {
+		return
+	}
+	demandID, err := uuid.Parse(chi.URLParam(r, "demandId"))
+	if err != nil {
+		writeHandlerError(w, ErrInvalidProject)
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body closeDemandBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	demand, err := service.CloseDemand(r.Context(), CloseDemandRequest{
+		TenantID:    tenantID,
+		DemandID:    demandID,
+		ActorUserID: actorID,
+		Reason:      body.Reason,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, demandResponseFromDomain(*demand))
 }
 
 func (h *HTTPHandler) ListRouteDecisions(w http.ResponseWriter, r *http.Request) {
@@ -1244,33 +1276,6 @@ func (h *HTTPHandler) GetBudgetSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, budgetSummaryResponseFromDomain(*summary))
-}
-
-func (h *HTTPHandler) CreateAcceptance(w http.ResponseWriter, r *http.Request) {
-	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
-	if !ok {
-		return
-	}
-	var body createAcceptanceBody
-	if !decodeJSONBody(w, r, &body) {
-		return
-	}
-	acceptance, err := service.CreateAcceptance(r.Context(), CreateAcceptanceServiceRequest{
-		TenantID:         tenantID,
-		ProjectID:        projectID,
-		AcceptedByUserID: actorID,
-		Status:           body.Status,
-		Conclusion:       body.Conclusion,
-		Summary:          body.Summary,
-		EvidenceRefIDs:   body.EvidenceRefIDs,
-		ReportRefIDs:     body.ReportRefIDs,
-		UnresolvedRisks:  body.UnresolvedRisks,
-	})
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, acceptanceResponseFromDomain(*acceptance))
 }
 
 func (h *HTTPHandler) GetAcceptance(w http.ResponseWriter, r *http.Request) {
@@ -1844,7 +1849,10 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, "只有该项目的人类成员（含负责人）可以处理该决策。", http.StatusForbidden)
 	case errors.Is(err, ErrProjectTaskForbidden):
 		http.Error(w, "project task forbidden", http.StatusForbidden)
-	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict), errors.Is(err, ErrProjectTaskNotDismissible):
+	case errors.Is(err, ErrProjectArchived):
+		// F8/F7(§5.7)：已归档项目拒收新需求/写操作,给中文文案而非英文 sentinel。
+		http.Error(w, "项目已归档，无法提交新需求或执行该操作。", http.StatusConflict)
+	case errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict), errors.Is(err, ErrProjectTaskNotDismissible):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		// 500 兜底不能吞错误细节——留一条服务端日志供排障（响应体仍不泄露内部信息）。
@@ -2040,9 +2048,14 @@ func demandAcceptanceCriteriaResponseFromDomain(detail DemandAcceptanceCriteriaD
 }
 
 type signDemandCriterionVerdictBody struct {
-	CriterionID string `json:"criterion_id"`
-	Verdict     string `json:"verdict"`
-	Reason      string `json:"reason,omitempty"`
+	CriterionID      string `json:"criterion_id"`
+	Verdict          string `json:"verdict"`
+	Reason           string `json:"reason,omitempty"`
+	AlsoCloseProject bool   `json:"also_close_project,omitempty"`
+}
+
+type closeDemandBody struct {
+	Reason string `json:"reason,omitempty"`
 }
 
 type signDemandCriterionVerdictResponse struct {
@@ -2208,18 +2221,6 @@ type patchEvidenceBody struct {
 	ActorUserID        uuid.UUID                  `json:"actor_user_id,omitempty"`
 	VerificationStatus EvidenceVerificationStatus `json:"verification_status"`
 	Metadata           *map[string]any            `json:"metadata"`
-}
-
-type createAcceptanceBody struct {
-	TenantID         uuid.UUID   `json:"tenant_id,omitempty"`
-	ProjectID        uuid.UUID   `json:"project_id,omitempty"`
-	AcceptedByUserID uuid.UUID   `json:"accepted_by_user_id,omitempty"`
-	Status           string      `json:"status"`
-	Conclusion       string      `json:"conclusion"`
-	Summary          string      `json:"summary"`
-	EvidenceRefIDs   []uuid.UUID `json:"evidence_ref_ids"`
-	ReportRefIDs     []uuid.UUID `json:"report_ref_ids"`
-	UnresolvedRisks  []any       `json:"unresolved_risks"`
 }
 
 type createArchiveSnapshotBody struct {

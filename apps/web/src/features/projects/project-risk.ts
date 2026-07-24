@@ -560,6 +560,29 @@ function selectProjectOwner(
   return buildTaskHandler(humanOwnerId, "human_user", members, principalNames);
 }
 
+/** 项目负责人展示名：摘要 label → 目录补名 → 裸 id（仅名称不可得时）→ 未设置。 */
+export function resolveProjectOwnerLabel(
+  project: Project,
+  owner?: ProjectTaskHandler,
+  principalNamesById?: ReadonlyMap<string, string>,
+): string {
+  const ownerId = (owner?.id || project.human_owner_user_id || "").trim();
+  const ownerLabel = owner?.label?.trim();
+  if (ownerLabel && ownerLabel !== ownerId) {
+    return ownerLabel;
+  }
+  if (ownerId) {
+    const named = principalNamesById?.get(ownerId)?.trim();
+    if (named) {
+      return named;
+    }
+  }
+  if (ownerLabel) {
+    return ownerLabel;
+  }
+  return ownerId || "未设置";
+}
+
 function buildTaskHandler(
   id: string,
   principalType: ProjectPrincipalType,

@@ -91,6 +91,7 @@ type Repository interface {
 	// task-writeback transaction.
 	RecomputeProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error
 	ReopenProjectDemandForReplanning(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error)
+	CloseProjectDemand(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason string) (ProjectDemand, error)
 	ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (bool, error)
 	AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error)
 	CreateExecutionSummary(ctx context.Context, req CreateExecutionSummaryRequest) (ExecutionSummary, error)

@@ -1540,6 +1540,38 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /api/v1/project-demands/{demandId}/close:
+    post:
+      operationId: closeProjectDemand
+      summary: Close (cancel) a non-terminal demand, e.g. to clear a planning zombie
+      parameters:
+        - name: demandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloseProjectDemandRequest"
+      responses:
+        "200":
+          description: Demand cancelled (idempotent if already cancelled)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDemand"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/route-decisions:
     get:
       operationId: listProjectRouteDecisions
@@ -1933,30 +1965,6 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/acceptance:
-    post:
-      operationId: createProjectAcceptance
-      summary: Submit project acceptance
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateProjectAcceptanceRequest"
-      responses:
-        "201":
-          description: Project acceptance recorded
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectAcceptanceRecord"
-        "400":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-        "409":
-          $ref: "#/components/responses/Error"
     get:
       operationId: getProjectAcceptance
       summary: Get latest project acceptance
@@ -5403,6 +5411,42 @@ components:
             - open
             - resolved
             - cancelled
+        kind:
+          type: string
+          description: >-
+            规范化的人类待办 kind(HumanTask §4.2),由服务端从内部 decision_type 映射得到
+            (如 dispatch_release / downstream_release / acceptance_sign /
+            closure_confirm / plan_review / planning_gap / task_failure_recovery)。
+            附加读模型元数据,不改内部 decision_type;控制台据此分组与命名。项目决策以外的事项可能为空。
+        layer:
+          type: string
+          description: 人类待办层级(HumanTask §4.1):task / demand / project。项目决策以外的事项可能为空。
+        why:
+          type: string
+          description: >-
+            人类待办 why(HumanTask §4.1)：一句话说明「为什么需要你」，服务端产出中文。
+            附加读模型元数据；项目决策以外的事项可能为空。
+        evidence:
+          type: array
+          description: >-
+            人类待办 evidence(HumanTask §4.1)：判据/结论/交付物摘录，卡上直接可读。
+            验收签署卡携带 pending_criteria_detail；结项卡携带需求清单。
+          items:
+            type: object
+            additionalProperties: true
+        progress:
+          type: object
+          description: >-
+            人类待办闭环进度(HumanTask §4.1 / §6.1)：{step,total,label}，
+            供收件箱进度条渲染（如「任务完成 → 验收签署 待你 → 结项 未开始」）。
+          properties:
+            step:
+              type: integer
+            total:
+              type: integer
+            label:
+              type: string
+          additionalProperties: false
         actions:
           type: array
           items:
@@ -6642,8 +6686,10 @@ components:
         - submitted
         - recorded
         - planning_pending
+        - planning_failed
         - planned
         - executing
+        - acceptance_pending
         - completed
         - failed
         - cancelled
@@ -9142,36 +9188,6 @@ components:
         metadata:
           type: object
           additionalProperties: true
-    CreateProjectAcceptanceRequest:
-      type: object
-      required:
-        - status
-        - conclusion
-      properties:
-        status:
-          type: string
-          enum:
-            - accepted
-            - rejected
-            - needs_more_evidence
-            - partially_accepted
-        conclusion:
-          type: string
-        summary:
-          type: string
-        evidence_ref_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
-        report_ref_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
-        unresolved_risks:
-          type: array
-          items: {}
     CreateProjectArchiveSnapshotRequest:
       type: object
       required:
@@ -9313,6 +9329,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DemandAcceptanceCriterionDetail"
+    CloseProjectDemandRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: 关闭原因（可选），写入 demand.cancelled 审计事件
     SignDemandCriterionVerdictRequest:
       type: object
       required:
@@ -9329,6 +9351,11 @@ components:
             - unsatisfied
         reason:
           type: string
+        also_close_project:
+          type: boolean
+          description: >-
+            §5.3「通过并结项」：为 true 且本需求签署后项目全部需求已终态时，
+            用同一 actor 直接归档并写验收结论，不再产生结项确认卡。默认 false。
     SignDemandCriterionVerdictResult:
       type: object
       required:

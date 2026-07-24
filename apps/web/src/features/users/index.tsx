@@ -80,6 +80,8 @@ type UserManagementFilters = {
 
 type UsersViewProps = {
   fetcher?: typeof fetch;
+  /** Deep-link：从其他页跳入时预选该用户（如项目负责人 popover）。 */
+  initialUserId?: string;
 };
 
 const defaultUserFilters: UserManagementFilters = {
@@ -87,14 +89,16 @@ const defaultUserFilters: UserManagementFilters = {
   status: "all",
 };
 
-export function Users() {
-  return <UsersView />;
+export function Users({ initialUserId }: { initialUserId?: string } = {}) {
+  return <UsersView initialUserId={initialUserId} />;
 }
 
-export function UsersView({ fetcher }: UsersViewProps = {}) {
+export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<UserManagementFilters>(defaultUserFilters);
-  const [selectedUserId, setSelectedUserId] = useState<string>();
+  const [selectedUserId, setSelectedUserId] = useState<string | undefined>(
+    initialUserId,
+  );
   const [pendingCreatedUserId, setPendingCreatedUserId] = useState<string>();
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
@@ -161,6 +165,12 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
   const selectedMember = selectedUser ? authzMembersByUserId.get(selectedUser.id) : undefined;
   const selectedIdentity = selectedUser ? mergeUserIdentity(selectedUser, selectedMember) : undefined;
   const stats = getUserStats(users, authzMembersQuery.data?.items ?? []);
+
+  useEffect(() => {
+    if (initialUserId) {
+      setSelectedUserId(initialUserId);
+    }
+  }, [initialUserId]);
 
   useEffect(() => {
     if (pendingCreatedUserId) {

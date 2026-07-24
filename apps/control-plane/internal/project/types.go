@@ -270,6 +270,10 @@ const (
 	// statement, reason} structured for outer-loop rework. See
 	// Service.SignDemandCriterionVerdict.
 	ProjectEventDemandAcceptanceRejected ProjectEventType = "demand.acceptance_rejected"
+	// ProjectEventDemandCancelled is appended when a human closes/cancels a demand
+	// (spec §5.5 close_demand), e.g. to clear a planning zombie. Payload carries
+	// {demand_id, reason, previous_status}.
+	ProjectEventDemandCancelled ProjectEventType = "demand.cancelled"
 )
 
 type EvidenceVerificationStatus string
@@ -302,7 +306,13 @@ const (
 	ProjectDemandStatusSubmitted       ProjectDemandStatus = "submitted"
 	ProjectDemandStatusRecorded        ProjectDemandStatus = "recorded"
 	ProjectDemandStatusPlanningPending ProjectDemandStatus = "planning_pending"
-	ProjectDemandStatusPlanned         ProjectDemandStatus = "planned"
+	// ProjectDemandStatusPlanningFailed marks a demand whose planning terminally
+	// failed (planner timeout / upstream error / no eligible executor after
+	// retries exhausted, spec §5.5 F6). Distinct from planning_pending so the read
+	// model and status vocabulary stop conflating "still queued" with "dead".
+	// Non-terminal: a human can retry_planning (reopen) or close_demand (cancel).
+	ProjectDemandStatusPlanningFailed ProjectDemandStatus = "planning_failed"
+	ProjectDemandStatusPlanned        ProjectDemandStatus = "planned"
 	ProjectDemandStatusExecuting       ProjectDemandStatus = "executing"
 	// ProjectDemandStatusAcceptancePending is the convergence gate's hold state:
 	// every project task under the demand has reached a terminal state and none
@@ -326,14 +336,18 @@ const (
 // rejecting acceptance fails the demand), but never back to executing.
 func projectDemandStatusRank(status ProjectDemandStatus) int {
 	switch status {
-	case ProjectDemandStatusPlanned:
+	case ProjectDemandStatusPlanningFailed:
+		// Above intake so planning_pending → planning_failed is a forward advance
+		// (§5.5). Still below planned/executing; retry uses Reopen (bypasses rank).
 		return 1
-	case ProjectDemandStatusExecuting:
+	case ProjectDemandStatusPlanned:
 		return 2
-	case ProjectDemandStatusAcceptancePending:
+	case ProjectDemandStatusExecuting:
 		return 3
-	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+	case ProjectDemandStatusAcceptancePending:
 		return 4
+	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+		return 5
 	default:
 		// submitted / recorded / planning_pending and any unknown intake state
 		return 0
@@ -1548,12 +1562,13 @@ type DemandAcceptanceCriteriaDetail struct {
 // snapshotted blocking human_judgment acceptance criterion for a demand
 // currently at acceptance_pending. See Service.SignDemandCriterionVerdict.
 type SignDemandCriterionVerdictRequest struct {
-	TenantID    uuid.UUID
-	DemandID    uuid.UUID
-	ActorUserID uuid.UUID
-	CriterionID string
-	Verdict     string
-	Reason      string
+	TenantID         uuid.UUID
+	DemandID         uuid.UUID
+	ActorUserID      uuid.UUID
+	CriterionID      string
+	Verdict          string
+	Reason           string
+	AlsoCloseProject bool // §5.3「通过并结项」: when true and project is ready, archive instead of opening closure_confirm
 }
 
 // SignDemandCriterionVerdictResult reports the demand's status after a

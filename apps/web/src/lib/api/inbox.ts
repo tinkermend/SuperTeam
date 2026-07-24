@@ -43,6 +43,20 @@ export type InboxItem = {
   title: string;
   summary?: string;
   status: InboxStatus;
+  // 规范化 HumanTask 分类(§4.1/§4.2):kind 如 dispatch_release/acceptance_sign/…,
+  // layer 为 task/demand/project。服务端附加读模型元数据,用于分组与命名。
+  kind?: string;
+  layer?: string;
+  /** §4.1 why：一句话说明为什么需要你（服务端中文）。 */
+  why?: string;
+  /** §4.1 evidence：判据/结论/交付物摘录。 */
+  evidence?: Array<Record<string, unknown>>;
+  /** §4.1/§6.1 闭环进度条数据。 */
+  progress?: {
+    step: number;
+    total: number;
+    label: string;
+  };
   risk_level?: string;
   priority?: string;
   actions: InboxItemAction[];

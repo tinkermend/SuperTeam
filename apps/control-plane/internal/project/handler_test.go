@@ -2235,12 +2235,12 @@ type handlerTestService struct {
 	updateConfigReq                   UpdateProjectConfigRequest
 	submitDemandReq                   SubmitProjectDemandRequest
 	submitDemandErr                   error
+	closeDemandErr                    error
 	workflowInstances                 []WorkflowInstanceSummary
 	workflowInstancesReq              ListWorkflowInstancesRequest
 	createEvidenceReq                 CreateEvidenceRefServiceRequest
 	patchEvidenceReq                  PatchEvidenceRequest
 	patchEvidenceErr                  error
-	createAcceptanceReq               CreateAcceptanceServiceRequest
 	createArchiveReq                  CreateArchiveSnapshotServiceRequest
 	getAcceptanceErr                  error
 	getAcceptanceMissing              bool
@@ -2420,6 +2420,13 @@ func (s *handlerTestService) SubmitDemand(ctx context.Context, req SubmitProject
 
 func (s *handlerTestService) ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error) {
 	return nil, nil
+}
+
+func (s *handlerTestService) CloseDemand(ctx context.Context, req CloseDemandRequest) (*ProjectDemand, error) {
+	if s.closeDemandErr != nil {
+		return nil, s.closeDemandErr
+	}
+	return &ProjectDemand{ID: req.DemandID, TenantID: req.TenantID, Status: ProjectDemandStatusCancelled}, nil
 }
 
 func (s *handlerTestService) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error) {
@@ -2723,17 +2730,6 @@ func (s *handlerTestService) ListBudgetLedger(ctx context.Context, tenantID, pro
 
 func (s *handlerTestService) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectBudgetSummary, error) {
 	return &ProjectBudgetSummary{EstimatedTokens: 1000, ActualTokens: 800, EstimatedCost: "1.00", ActualCost: "0.80", LedgerCount: 1}, nil
-}
-
-func (s *handlerTestService) CreateAcceptance(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error) {
-	s.createAcceptanceReq = req
-	record := testAcceptance(req.TenantID, req.ProjectID, req.AcceptedByUserID)
-	record.Status = req.Status
-	record.Conclusion = req.Conclusion
-	record.EvidenceRefIDs = req.EvidenceRefIDs
-	record.ReportRefIDs = req.ReportRefIDs
-	record.UnresolvedRisks = req.UnresolvedRisks
-	return &record, nil
 }
 
 func (s *handlerTestService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {

@@ -43,6 +43,7 @@ import {
   PROJECT_RISK_FILTERS,
   projectRiskLevelLabel,
   projectRiskLevelTone,
+  resolveProjectOwnerLabel,
   sortProjectsByRisk,
   type ProjectPortfolioCounts,
   type ProjectRiskCounts,
@@ -71,6 +72,8 @@ export type ProjectRiskQueueProps = {
   onSelectProject: (projectId: string) => void;
   pageCount: number;
   pageSize: number;
+  /** principal_id → 展示名；成员快照缺失时负责人行回退用。 */
+  principalNamesById?: ReadonlyMap<string, string>;
   /** Unsorted current server page; this queue owns risk sorting and risk-chip filtering within that page. */
   projects: Project[];
   riskSummaries: ProjectRiskSummaryMap;
@@ -310,6 +313,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
                 isSelected={props.selectedProjectId === project.id}
                 key={project.id}
                 onSelect={props.onSelectProject}
+                principalNamesById={props.principalNamesById}
                 project={project}
                 riskSummary={props.riskSummaries[project.id]}
                 workflow={workflowByProjectId.get(project.id)}
@@ -346,19 +350,25 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
 function ProjectRiskQueueRow({
   isSelected,
   onSelect,
+  principalNamesById,
   project,
   riskSummary,
   workflow,
 }: {
   isSelected: boolean;
   onSelect: (projectId: string) => void;
+  principalNamesById?: ReadonlyMap<string, string>;
   project: Project;
   riskSummary?: ProjectRiskSummary;
   workflow?: WorkflowInstanceSummary;
 }) {
   const summary = riskSummary ?? emptyProjectRiskSummary(project);
   const pendingCount = summary.reasons.length;
-  const ownerLabel = summary.owner?.label ?? project.human_owner_user_id ?? "未设置";
+  const ownerLabel = resolveProjectOwnerLabel(
+    project,
+    summary.owner,
+    principalNamesById,
+  );
   const handler = summary.currentHandler?.label;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
@@ -479,18 +489,23 @@ const REASON_META: Record<
  */
 export function ProjectTriagePanel({
   onClose,
+  principalNamesById,
   project,
   summary,
 }: {
   /** 关闭选中态（宽容器 in-flow 右栏需要显式返回驾驶舱面板；Sheet 模式有自带关闭钮可不传）。 */
   onClose?: () => void;
+  principalNamesById?: ReadonlyMap<string, string>;
   project: Project;
   summary?: ProjectRiskSummary;
 }) {
   const resolvedSummary = summary ?? emptyProjectRiskSummary(project);
   const reasons = resolvedSummary.reasons;
-  const ownerLabel =
-    resolvedSummary.owner?.label ?? project.human_owner_user_id ?? "未设置";
+  const ownerLabel = resolveProjectOwnerLabel(
+    project,
+    resolvedSummary.owner,
+    principalNamesById,
+  );
 
   return (
     <aside

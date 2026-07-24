@@ -85,6 +85,7 @@ type FinalAcceptanceHandler = (
   verdict: "satisfied" | "unsatisfied",
   reason: string,
   criterionIds: string[],
+  options?: { alsoCloseProject?: boolean },
 ) => void;
 
 function deliverableToPreviewable(
@@ -232,6 +233,8 @@ function FinalAcceptanceGate({
   isSigning?: boolean;
 }) {
   const [reason, setReason] = useState("");
+  // §5.3「通过并结项」默认不勾选：勾选后签署请求带 also_close_project=true。
+  const [alsoCloseProject, setAlsoCloseProject] = useState(false);
   if (!onAccept || pendingCriteria.length === 0) {
     return null;
   }
@@ -262,15 +265,34 @@ function FinalAcceptanceGate({
         placeholder="签署理由——不通过时必填；通过时可选"
         value={reason}
       />
+      <label className="flex cursor-pointer items-start gap-2 text-xs leading-5 text-v3-ink-2">
+        <input
+          checked={alsoCloseProject}
+          className="mt-0.5 size-3.5 shrink-0 accent-[var(--v3-brand)]"
+          data-testid="final-acceptance-also-close"
+          onChange={(event) => setAlsoCloseProject(event.target.checked)}
+          type="checkbox"
+        />
+        <span>
+          通过并结项
+          <span className="mt-0.5 block text-[11px] text-v3-ink-3">
+            勾选后，若项目全部需求已终态，将直接归档，不再产生结项确认卡（默认不勾选）
+          </span>
+        </span>
+      </label>
       <div className="flex flex-wrap gap-2">
         <V3Button
           data-testid="final-acceptance-pass"
           disabled={isSigning}
-          onClick={() => onAccept("satisfied", reason.trim(), criterionIds)}
+          onClick={() =>
+            onAccept("satisfied", reason.trim(), criterionIds, {
+              alsoCloseProject,
+            })
+          }
           size="sm"
           variant="primary"
         >
-          通过
+          {alsoCloseProject ? "通过并结项" : "通过"}
         </V3Button>
         <V3Button
           data-testid="final-acceptance-reject"
@@ -372,6 +394,7 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
       verdict: "satisfied" | "unsatisfied";
       reason: string;
       criterionIds: string[];
+      alsoCloseProject?: boolean;
     }) => {
       if (input.criterionIds.length === 0) {
         return;
@@ -385,8 +408,13 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
         });
         return;
       }
-      for (const criterionId of input.criterionIds) {
+      const lastIndex = input.criterionIds.length - 1;
+      for (let i = 0; i < input.criterionIds.length; i += 1) {
+        const criterionId = input.criterionIds[i]!;
+        // §5.3：also_close_project 只挂在最后一条签署上，避免中途半签就尝试结项。
         await signDemandCriterionVerdict(apiOptions, demandId, {
+          also_close_project:
+            Boolean(input.alsoCloseProject) && i === lastIndex ? true : undefined,
           criterion_id: criterionId,
           reason: input.reason || undefined,
           verdict: "satisfied",
@@ -408,6 +436,8 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
       // 需求可能因本次签署收敛为已完成/失败，刷新详情头卡与河道列表的状态徽标。
       void queryClient.invalidateQueries({ queryKey: ["workflow-detail", apiBaseUrl, demandId] });
       void queryClient.invalidateQueries({ queryKey: ["workflow-instances", apiBaseUrl] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
 
@@ -421,8 +451,13 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
       isLoading={criteriaQuery.isLoading}
       isSigning={signMutation.isPending}
       onRetry={() => void criteriaQuery.refetch()}
-      onFinalAccept={(verdict, reason, criterionIds) =>
-        signMutation.mutate({ criterionIds, reason, verdict })
+      onFinalAccept={(verdict, reason, criterionIds, options) =>
+        signMutation.mutate({
+          alsoCloseProject: options?.alsoCloseProject,
+          criterionIds,
+          reason,
+          verdict,
+        })
       }
     />
   );

@@ -8,6 +8,7 @@ import {
 } from "@/components/superteam";
 import type { InboxItem } from "@/lib/api/inbox";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-time";
+import { decisionTypeLabel, humanTaskKindLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 
 export { formatDateTime, formatRelativeTime };
@@ -46,6 +47,54 @@ const sourceTypeLabel: Record<string, string> = {
   digital_employee_run: "数字员工运行",
 };
 
+type InboxSection = { key: string; label: string; items: InboxItem[] };
+
+// §6.1 收件箱按人类待办类型分组:计划确认 / 执行放行 / 阶段放行 / 验收签署 / 结项确认 /
+// 异常处理。类型取自服务端 HumanTask kind(§4.2);其余(planning_gap / task_failure_recovery /
+// 其它 project_task_* 以及审批 / 运行恢复 / 团队待删)归入"异常处理"。组内保持上游顺序
+// (上游按风险/关注度排序),不再二次排序。
+const INBOX_CATEGORY_ORDER: { key: string; label: string; kinds: string[] }[] = [
+  { key: "plan_review", label: "计划确认", kinds: ["plan_review"] },
+  { key: "dispatch_release", label: "执行放行", kinds: ["dispatch_release"] },
+  { key: "downstream_release", label: "阶段放行", kinds: ["downstream_release"] },
+  { key: "acceptance_sign", label: "验收签署", kinds: ["acceptance_sign"] },
+  { key: "closure_confirm", label: "结项确认", kinds: ["closure_confirm"] },
+];
+const INBOX_EXCEPTION_SECTION = { key: "exception", label: "异常处理" };
+
+function inboxCategoryKey(item: InboxItem): string {
+  const kind = typeof item.kind === "string" ? item.kind : "";
+  for (const category of INBOX_CATEGORY_ORDER) {
+    if (category.kinds.includes(kind)) {
+      return category.key;
+    }
+  }
+  return INBOX_EXCEPTION_SECTION.key;
+}
+
+/** Bucket inbox items into the §6.1 human-task categories, preserving upstream order within each. */
+export function groupInboxItems(items: InboxItem[]): InboxSection[] {
+  const buckets = new Map<string, InboxItem[]>();
+  for (const item of items) {
+    const key = inboxCategoryKey(item);
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(item);
+    buckets.set(key, bucket);
+  }
+  const sections: InboxSection[] = [];
+  for (const category of INBOX_CATEGORY_ORDER) {
+    const bucketItems = buckets.get(category.key);
+    if (bucketItems && bucketItems.length > 0) {
+      sections.push({ key: category.key, label: category.label, items: bucketItems });
+    }
+  }
+  const exception = buckets.get(INBOX_EXCEPTION_SECTION.key);
+  if (exception && exception.length > 0) {
+    sections.push({ key: INBOX_EXCEPTION_SECTION.key, label: INBOX_EXCEPTION_SECTION.label, items: exception });
+  }
+  return sections;
+}
+
 /**
  * 紧凑列表：每行带风险 accent bar + 图标 + 标题 + 风险pill + 摘要 + 来源·节点 + 时间。
  * 装入 WorkSurface 软壳，保持 v3 脆数据面容器语义。
@@ -55,21 +104,9 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
     (item) => item.risk_level === "blocked" || item.risk_level === "high",
   ).length;
 
-  return (
-    <WorkSurface className="flex min-h-0 flex-col xl:h-full">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-v3-line bg-v3-card-soft px-5 py-3.5">
-        <span className="text-sm font-bold text-v3-ink">待处理事项</span>
-        <div className="flex items-center gap-2">
-          {highRiskCount > 0 ? (
-            <StatusPill tone="danger" showDot={false} className="px-2 py-0.5 text-[11px]">
-              {highRiskCount} 高风险
-            </StatusPill>
-          ) : null}
-          <span className="font-mono text-xs text-v3-ink-3">{items.length} 项 · 按风险排序</span>
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {items.map((item) => {
+  const sections = groupInboxItems(items);
+
+  const renderRow = (item: InboxItem) => {
           const isSelected = item.id === selectedItemId;
           const isHighRisk = item.risk_level === "blocked" || item.risk_level === "high";
           const isMediumRisk = item.risk_level === "medium";
@@ -142,6 +179,12 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                     {item.summary}
                   </p>
                 ) : null}
+                {item.why ? (
+                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-v3-ink-2">
+                    {item.why}
+                  </p>
+                ) : null}
+                <InboxProgressBar progress={readInboxProgress(item)} />
                 <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-v3-ink-3">
                   <StatusPill
                     tone={item.item_type === "approval" ? "info" : "artifact"}
@@ -168,10 +211,82 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                 </div>
               </div>
             </div>
-          );
-        })}
+    );
+  };
+
+  return (
+    <WorkSurface className="flex min-h-0 flex-col xl:h-full">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-v3-line bg-v3-card-soft px-5 py-3.5">
+        <span className="text-sm font-bold text-v3-ink">待处理事项</span>
+        <div className="flex items-center gap-2">
+          {highRiskCount > 0 ? (
+            <StatusPill tone="danger" showDot={false} className="px-2 py-0.5 text-[11px]">
+              {highRiskCount} 高风险
+            </StatusPill>
+          ) : null}
+          <span className="font-mono text-xs text-v3-ink-3">{items.length} 项 · 按类型分组</span>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {sections.map((section) => (
+          <section key={section.key}>
+            {/* §6.1 领域分组表头(计划确认/执行放行/阶段放行/验收签署/结项确认/异常处理);组内保持上游关注度排序。 */}
+            <div className="flex items-center justify-between gap-2 border-b border-v3-line bg-v3-card-soft/80 px-4 py-1.5 text-[11px] font-bold text-v3-ink-2">
+              <span>{section.label}</span>
+              <span className="font-mono text-v3-ink-3">{section.items.length}</span>
+            </div>
+            {section.items.map(renderRow)}
+          </section>
+        ))}
       </div>
     </WorkSurface>
+  );
+}
+
+export type InboxProgress = {
+  step: number;
+  total: number;
+  label: string;
+};
+
+/** Read HumanTask.progress from top-level field or context (§4.1 / §6.1). */
+export function readInboxProgress(item: InboxItem): InboxProgress | null {
+  const fromTop = item.progress;
+  if (
+    fromTop &&
+    typeof fromTop.step === "number" &&
+    typeof fromTop.total === "number" &&
+    typeof fromTop.label === "string" &&
+    fromTop.total > 0
+  ) {
+    return fromTop;
+  }
+  const raw = item.context?.progress;
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const step = typeof record.step === "number" ? record.step : Number(record.step);
+  const total = typeof record.total === "number" ? record.total : Number(record.total);
+  const label = typeof record.label === "string" ? record.label : "";
+  if (!Number.isFinite(step) || !Number.isFinite(total) || total <= 0 || !label) {
+    return null;
+  }
+  return { step, total, label };
+}
+
+/** §6.1 闭环进度条：细轨 + 当前步填充 + 中文 label。 */
+export function InboxProgressBar({ progress }: { progress: InboxProgress | null }) {
+  if (!progress) return null;
+  const ratio = Math.max(0, Math.min(1, progress.step / progress.total));
+  return (
+    <div className="mt-1.5 grid gap-1" data-testid="inbox-progress-bar">
+      <div className="h-1 overflow-hidden rounded-full bg-v3-line">
+        <div
+          className="h-full rounded-full bg-v3-brand transition-[width]"
+          style={{ width: `${Math.round(ratio * 100)}%` }}
+        />
+      </div>
+      <p className="line-clamp-1 text-[11px] leading-4 text-v3-ink-3">{progress.label}</p>
+    </div>
   );
 }
 
@@ -271,15 +386,20 @@ export function formatSourceType(item: InboxItem) {
 }
 
 export function formatCurrentNode(item: InboxItem) {
-  return (
-    readContextText(item.context, [
-      "current_node",
-      "node_title",
-      "workflow_node",
-      "stage",
-      "decision_type",
-    ]) ?? formatItemType(item)
-  );
+  const node = readContextText(item.context, ["current_node", "node_title", "workflow_node", "stage"]);
+  if (node) {
+    return node;
+  }
+  // §6.1/§12 + F3：meta 行禁止裸英文技术枚举。规范化 kind(§4.2 中文名)优先,再退
+  // decision_type 词表映射,最后 itemType——一律经 status-labels.ts,不留 project_acceptance 之类原文。
+  if (item.kind) {
+    return humanTaskKindLabel(item.kind);
+  }
+  const decisionType = readContextText(item.context, ["decision_type"]);
+  if (decisionType) {
+    return decisionTypeLabel(decisionType);
+  }
+  return formatItemType(item);
 }
 
 export function readContextText(context: Record<string, unknown>, keys: string[]) {
@@ -293,6 +413,14 @@ export function readContextText(context: Record<string, unknown>, keys: string[]
 }
 
 export function resolveInboxHref(item: InboxItem) {
+  // F3(§5.4.3): primary_surface 是服务端算好的唯一权威落点。前端一律以它为准,不再各自
+  // 推导深链(旧的 resolveWorkflowInstanceHref / resolveWorkflowTemplateHref / reviewHref
+  // 已下线),从根上消除"同一待办在不同入口跳不同页"。
+  const primarySurface =
+    typeof item.deep_link.primary_surface === "string" ? item.deep_link.primary_surface : undefined;
+  if (primarySurface && isSafeAppPath(primarySurface)) {
+    return primarySurface;
+  }
   const route = typeof item.deep_link.route === "string" ? item.deep_link.route : undefined;
   const anchor = typeof item.deep_link.anchor === "string" ? item.deep_link.anchor : undefined;
   const projectDecisionPath = resolveProjectDecisionPath(item, route);

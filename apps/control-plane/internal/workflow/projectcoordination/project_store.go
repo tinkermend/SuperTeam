@@ -1837,7 +1837,7 @@ func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHum
 			CreatedEventID:       uuidValue(decision.CreatedEventID),
 		},
 	}
-	if decision.DecisionType == planningGapDecisionType {
+	if decision.DecisionType == planningGapDecisionType || decision.DecisionType == planningFailedDecisionType {
 		demandID, err := s.planningGapDemandID(ctx, input.TenantID, decision)
 		if err != nil {
 			return HumanDecisionRouteResult{}, err
@@ -2360,6 +2360,10 @@ func (s *ProjectStore) RequestPlanRevisionReview(ctx context.Context, input Requ
 	if err != nil {
 		return DecisionRequestResult{}, err
 	}
+	// Stamp the same context the approval carries so DecisionProjectorAdapter can
+	// compute primary_surface=/workflows/{demand} (without this, plan_review cards
+	// lost demand_id and fell back to the project approval tab — wrong §4.2 surface).
+	decision.InboxContext = planRevisionReviewContext(input)
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
 			return DecisionRequestResult{}, err
@@ -3958,6 +3962,134 @@ func planningGapTitle(diagnosis string) string {
 		runes = runes[:maxRunes]
 	}
 	return "规划缺口：" + string(runes)
+}
+
+// MarkDemandPlanningFailed parks a demand at planning_failed after PlanDemandRoute
+// exhausted retries (spec §5.5 F6) and opens a planning_failed HumanTask. Distinct
+// from RejectDemandPlanning (structural no-suitable-employee → failed + planning_gap).
+// Idempotent per demand: re-entry when already planning_failed reuses the pending
+// decision when present.
+func (s *ProjectStore) MarkDemandPlanningFailed(ctx context.Context, input MarkDemandPlanningFailedInput) error {
+	if s.repository == nil {
+		return ErrActivityStoreRequired
+	}
+	diagnosis := strings.TrimSpace(input.Diagnosis)
+	if diagnosis == "" {
+		diagnosis = "需求规划失败（规划器超时或上游错误），请重新规划、补员后重试，或关闭需求。"
+	}
+	if err := s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID, project.ProjectDemandStatusPlanningFailed); err != nil {
+		return err
+	}
+	var decisionRequestID uuid.UUID
+	if s.approvals != nil {
+		id, err := s.ensurePlanningFailedDecision(ctx, input, diagnosis)
+		if err != nil {
+			return err
+		}
+		decisionRequestID = id
+	}
+	payload := map[string]any{
+		"demand_id":          input.DemandID.String(),
+		"reason_code":        "planning_failed",
+		"recommended_action": "重新规划、补员后重试，或关闭需求",
+	}
+	if decisionRequestID != uuid.Nil {
+		payload["decision_request_id"] = decisionRequestID.String()
+	}
+	if _, err := s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventCoordinationBlocked,
+		"demand_planning_failed:"+input.DemandID.String(), diagnosis, payload); err != nil {
+		return err
+	}
+	if input.CoordinationJobID != uuid.Nil {
+		if err := s.FinishCoordinationJob(ctx, FinishCoordinationJobInput{
+			TenantID:       input.TenantID,
+			JobID:          input.CoordinationJobID,
+			Status:         "blocked",
+			OutputEventIDs: input.OutputEventIDs,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const (
+	planningFailedDecisionType = "planning_failed"
+	planningFailedResourceType = "project_demand_planning_failed"
+)
+
+func (s *ProjectStore) ensurePlanningFailedDecision(ctx context.Context, input MarkDemandPlanningFailedInput, diagnosis string) (uuid.UUID, error) {
+	existing, err := s.approvals.GetRequestByResource(ctx, input.TenantID, planningFailedResourceType, input.DemandID)
+	if err != nil && !errors.Is(err, approval.ErrApprovalNotFound) {
+		return uuid.Nil, err
+	}
+	if existing != nil {
+		return s.findPlanningGapDecisionID(ctx, input.TenantID, input.ProjectID, input.CoordinationJobID, existing.ID), nil
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	targetUserID := projectRecord.HumanOwnerUserID
+	title := "规划失败：" + truncateRunes(diagnosis, 80)
+	contextPayload := map[string]any{
+		"demand_id": input.DemandID.String(),
+		"diagnosis": diagnosis,
+		"why":       diagnosis,
+	}
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       input.TenantID,
+		ResourceType:   planningFailedResourceType,
+		ResourceID:     input.DemandID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   targetUserID,
+		DecisionType:   planningFailedDecisionType,
+		Title:          title,
+		Summary:        diagnosis,
+		RiskLevel:      "high",
+		Options:        []any{"retry_planning", "reassign", "close_demand"},
+		ContextPayload: contextPayload,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.DemandID.String(), "规划失败需要人类处理", map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"demand_id":           input.DemandID.String(),
+		"target_user_id":      targetUserID.String(),
+		"decision_type":       planningFailedDecisionType,
+	}))
+	if err != nil {
+		return uuid.Nil, err
+	}
+	coordinationJobID := input.CoordinationJobID
+	var coordinationJobPtr *uuid.UUID
+	if coordinationJobID != uuid.Nil {
+		coordinationJobPtr = &coordinationJobID
+	}
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ApprovalRequestID: approvalRequest.ID,
+		CoordinationJobID: coordinationJobPtr,
+		TargetUserID:      targetUserID,
+		DecisionType:      planningFailedDecisionType,
+		TitleSnapshot:     title,
+		SummarySnapshot:   diagnosis,
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if s.inbox != nil {
+		decision.InboxContext = contextPayload
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	return decision.ID, nil
 }
 
 // ReopenProjectDemandForReplanning moves a failed demand back to planning_pending

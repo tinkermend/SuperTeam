@@ -100,6 +100,75 @@ func TestApprovalProjectorAdapterResolvesApprovalRequest(t *testing.T) {
 	}
 }
 
+func TestApprovalProjectorAdapterSkipsWhenDecisionOwnsApproval(t *testing.T) {
+	// §5.4.1: once DecisionProjector owns the card, approval resolve must not
+	// overwrite kind/why/progress back to a bare approval projection.
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewApprovalProjectorAdapter(service)
+	adapter.SetDecisionChecker(stubDecisionChecker{owned: true})
+
+	tenantID := uuid.New()
+	approvalID := uuid.New()
+	decisionID := uuid.New()
+	projectID := uuid.New()
+	_, err = service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:                tenantID,
+		TargetUserID:            uuid.New(),
+		Scope:                   "personal",
+		ItemType:                ItemTypeProjectDecision,
+		SourceType:              SourceTypeProjectDecisionRequest,
+		SourceID:                decisionID,
+		SourceProjectID:         &projectID,
+		SourceApprovalRequestID: &approvalID,
+		Title:                   "验收签署",
+		ContextPayload:          map[string]any{"kind": "acceptance_sign", "why": "待人类签署"},
+		Status:                  StatusOpen,
+	})
+	if err != nil {
+		t.Fatalf("seed decision card: %v", err)
+	}
+
+	resolvedAt := time.Now().UTC()
+	if err := adapter.ResolveApprovalRequest(context.Background(), approval.ApprovalRequest{
+		ID:           approvalID,
+		TenantID:     tenantID,
+		ResourceID:   projectID,
+		TargetUserID: uuid.New(),
+		DecisionType: "demand_acceptance",
+		Title:        "approval overwrite attempt",
+		Status:       approval.ApprovalStatusApproved,
+		ResolvedAt:   &resolvedAt,
+		CreatedAt:    resolvedAt.Add(-time.Hour),
+		UpdatedAt:    resolvedAt,
+	}); err != nil {
+		t.Fatalf("resolve approval: %v", err)
+	}
+
+	item, err := service.GetItemByApprovalSource(context.Background(), tenantID, approvalID)
+	if err != nil {
+		t.Fatalf("get item: %v", err)
+	}
+	if item.ItemType != ItemTypeProjectDecision || item.SourceType != SourceTypeProjectDecisionRequest {
+		t.Fatalf("approval projector overwrote decision ownership: %#v", item)
+	}
+	if item.ContextPayload["kind"] != "acceptance_sign" || item.ContextPayload["why"] != "待人类签署" {
+		t.Fatalf("approval projector wiped decision context: %#v", item.ContextPayload)
+	}
+	if item.Status != StatusOpen {
+		t.Fatalf("expected open decision card untouched, got %s", item.Status)
+	}
+}
+
+type stubDecisionChecker struct{ owned bool }
+
+func (s stubDecisionChecker) HasProjectDecisionForApproval(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	return s.owned, nil
+}
+
 func TestDecisionProjectorAdapterUpsertsProjectDecision(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -145,7 +214,12 @@ func TestDecisionProjectorAdapterUpsertsProjectDecision(t *testing.T) {
 	if item.SourceApprovalRequestID == nil || *item.SourceApprovalRequestID != approvalID {
 		t.Fatalf("expected approval source id %s, got %#v", approvalID, item.SourceApprovalRequestID)
 	}
-	if item.DeepLink["route"] != "/projects/"+decision.ProjectID.String() || item.DeepLink["anchor"] != decision.ID.String() {
+	// F3(§5.4.3): server computes the single authoritative primary_surface. A
+	// non-demand project decision lands on the project's approval tab focused on
+	// the decision (mirrors the old web-side resolveProjectDecisionPath, now
+	// server-owned). route mirrors primary_surface; anchor still carries the id.
+	expectedSurface := "/projects/" + decision.ProjectID.String() + "?tab=approval&focus=" + decision.ID.String()
+	if item.DeepLink["route"] != expectedSurface || item.DeepLink["primary_surface"] != expectedSurface || item.DeepLink["anchor"] != decision.ID.String() {
 		t.Fatalf("unexpected deep link: %#v", item.DeepLink)
 	}
 	if item.Summary == nil || *item.Summary != summary || item.RiskLevel == nil || *item.RiskLevel != risk || len(item.Actions) == 0 {
@@ -190,11 +264,74 @@ func TestDecisionProjectorAdapterUsesInboxContextAndDemandDeepLink(t *testing.T)
 	if err != nil {
 		t.Fatalf("get projected item: %v", err)
 	}
-	if item.DeepLink["route"] != "/workflows/"+demandID.String() {
-		t.Fatalf("expected workflow deep link for primary demand, got %#v", item.DeepLink)
+	if item.DeepLink["route"] != "/projects/"+decision.ProjectID.String()+"?tab=closure" {
+		t.Fatalf("expected closure tab deep link for project_acceptance, got %#v", item.DeepLink)
 	}
 	if item.ContextPayload["primary_demand_id"] != demandID.String() {
 		t.Fatalf("expected InboxContext projected into ContextPayload, got %#v", item.ContextPayload)
+	}
+	if item.ContextPayload["kind"] != "closure_confirm" {
+		t.Fatalf("expected kind=closure_confirm, got %#v", item.ContextPayload["kind"])
+	}
+	if item.ContextPayload["why"] == nil || item.ContextPayload["why"] == "" {
+		t.Fatalf("expected why stamped on closure card, got %#v", item.ContextPayload["why"])
+	}
+	progress, _ := item.ContextPayload["progress"].(map[string]any)
+	if progress == nil || progress["step"] != 4 {
+		t.Fatalf("expected progress step=4 for closure_confirm, got %#v", item.ContextPayload["progress"])
+	}
+}
+
+// TestDecisionProjectorAdapterProjectsHumanTaskKindAndLayer pins P1.6 §4.2: the
+// projector stamps the canonical HumanTask kind + layer (and persists
+// decision_type) into the item's context so the console can group/label by
+// human-task semantics without the internal decision_type being renamed.
+func TestDecisionProjectorAdapterProjectsHumanTaskKindAndLayer(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewDecisionProjectorAdapter(service)
+	cases := []struct {
+		decisionType string
+		kind         string
+		layer        string
+	}{
+		{"demand_acceptance", "acceptance_sign", "demand"},
+		{"project_task_approval", "dispatch_release", "task"},
+		{"project_task_acceptance", "downstream_release", "task"},
+		{"project_acceptance", "closure_confirm", "project"},
+		{"plan_review", "plan_review", "demand"},
+		{"planning_gap", "planning_gap", "demand"},
+	}
+	for _, tc := range cases {
+		decision := project.DecisionRequest{
+			ID:             uuid.New(),
+			TenantID:       uuid.New(),
+			ProjectID:      uuid.New(),
+			TargetUserID:   uuid.New(),
+			DecisionType:   tc.decisionType,
+			TitleSnapshot:  "待办",
+			StatusSnapshot: "pending",
+		}
+		if err := adapter.UpsertProjectDecisionRequest(context.Background(), decision); err != nil {
+			t.Fatalf("upsert %s: %v", tc.decisionType, err)
+		}
+		itemID := repo.itemsBySource[sourceKey(decision.TenantID, SourceTypeProjectDecisionRequest, decision.ID)]
+		item, err := repo.GetItem(context.Background(), decision.TenantID, itemID)
+		if err != nil {
+			t.Fatalf("get item %s: %v", tc.decisionType, err)
+		}
+		if item.ContextPayload["kind"] != tc.kind {
+			t.Fatalf("%s kind = %v, want %v", tc.decisionType, item.ContextPayload["kind"], tc.kind)
+		}
+		if item.ContextPayload["layer"] != tc.layer {
+			t.Fatalf("%s layer = %v, want %v", tc.decisionType, item.ContextPayload["layer"], tc.layer)
+		}
+		if item.ContextPayload["decision_type"] != tc.decisionType {
+			t.Fatalf("%s decision_type = %v, want %v", tc.decisionType, item.ContextPayload["decision_type"], tc.decisionType)
+		}
 	}
 }
 

@@ -211,7 +211,6 @@ function detailElement(
       executionSummaries={[]}
       onArchiveProject={vi.fn()}
       onDeleteProject={vi.fn()}
-      onCreateAcceptance={vi.fn()}
       onCreateArchiveSnapshot={vi.fn()}
       onCreateEvidence={vi.fn()}
       onPatchEvidence={vi.fn()}
@@ -242,7 +241,7 @@ describe("ProjectOperationalDetail", () => {
 
     await expect.element(screen.getByRole("tab", { name: "工作台" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "任务" })).toBeVisible();
-    await expect.element(screen.getByRole("tab", { name: "审批" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "决策历史" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "资产" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "概览" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "配置" })).not.toBeInTheDocument();
@@ -266,7 +265,7 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByText("负责人甲")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: "在用户管理中查看" })).toHaveAttribute(
       "href",
-      "/users",
+      "/users?user=human-owner-1",
     );
   });
 
@@ -405,7 +404,7 @@ describe("ProjectOperationalDetail", () => {
       .not.toBeInTheDocument();
   });
 
-  it("opens approval tab from query focus and highlights the decision", async () => {
+  it("opens decision-history tab from query focus and highlights the decision without write actions", async () => {
     const onResolveDecision = vi.fn();
     const screen = await renderDetail({
       focusDecisionId: "decision-1",
@@ -413,12 +412,15 @@ describe("ProjectOperationalDetail", () => {
       onResolveDecision,
     });
 
-    await expect.element(screen.getByRole("tab", { name: "审批", selected: true })).toBeVisible();
+    await expect
+      .element(screen.getByRole("tab", { name: "决策历史", selected: true }))
+      .toBeVisible();
     const focusedDecision = screen.container.querySelector("[data-focused-decision='true']");
     expect(focusedDecision?.textContent).toContain("确认上线风险");
-
-    await userEvent.click(screen.getByRole("button", { name: "批准 确认上线风险" }));
-    expect(onResolveDecision).toHaveBeenCalledWith("decision-1", "approved");
+    await expect
+      .element(screen.getByRole("button", { name: "批准 确认上线风险" }))
+      .not.toBeInTheDocument();
+    expect(onResolveDecision).not.toHaveBeenCalled();
   });
 
   it("shows dispatch order and acceptance criteria from the latest plan revision", async () => {
@@ -626,7 +628,7 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByText("交付出口")).not.toBeInTheDocument();
   });
 
-  it("submits the selected target exit deliverable alongside request_changes", async () => {
+  it("keeps plan review read-only on decision-history tab (inbox is the write entry)", async () => {
     const onResolveDecision = vi.fn();
     const templatedRevision: ProjectPlanRevision = {
       ...planRevisions[0],
@@ -661,20 +663,22 @@ describe("ProjectOperationalDetail", () => {
       planRevisions: [templatedRevision],
     });
 
-    await userEvent.click(screen.getByRole("combobox", { name: "改选交付出口" }));
-    await userEvent.click(screen.getByRole("option", { name: "发布说明就绪" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "要求修改计划版本 v1" }),
-    );
-
-    expect(onResolveDecision).toHaveBeenCalledWith(
-      "decision-plan-review-1",
-      "request_changes",
-      "release_notes",
-    );
+    await expect
+      .element(screen.getByTestId("plan-review-inbox-only"))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("combobox", { name: "改选交付出口" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "要求修改计划版本 v1" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "批准计划版本 v1" }))
+      .not.toBeInTheDocument();
+    expect(onResolveDecision).not.toHaveBeenCalled();
   });
 
-  it("resets the selected target exit deliverable when a newer plan revision replaces it", async () => {
+  it("shows pending plan review as read-only when a newer revision arrives", async () => {
     const onResolveDecision = vi.fn();
     const revisionA: ProjectPlanRevision = {
       ...planRevisions[0],
@@ -726,14 +730,10 @@ describe("ProjectOperationalDetail", () => {
       }),
     );
 
-    await userEvent.click(screen.getByRole("combobox", { name: "改选交付出口" }));
-    await userEvent.click(screen.getByRole("option", { name: "发布说明就绪" }));
     await expect
-      .element(screen.getByRole("combobox", { name: "改选交付出口" }))
-      .toHaveTextContent("发布说明就绪");
+      .element(screen.getByTestId("plan-review-inbox-only"))
+      .toBeVisible();
 
-    // 计划修订到 v2:v1 挑选的出口在新修订里已不是同一个候选,必须重置,
-    // 否则会带着 stale 选择提交给新修订。
     await screen.rerender(
       detailElement({
         decisionRequests: [planReviewDecision],
@@ -744,16 +744,12 @@ describe("ProjectOperationalDetail", () => {
     );
 
     await expect
-      .element(screen.getByRole("combobox", { name: "改选交付出口" }))
-      .toHaveTextContent("审查通过并合入");
-    await userEvent.click(
-      screen.getByRole("button", { name: "要求修改计划版本 v2" }),
-    );
-    expect(onResolveDecision).toHaveBeenCalledWith(
-      "decision-plan-review-1",
-      "request_changes",
-      "review_verdict",
-    );
+      .element(screen.getByTestId("plan-review-inbox-only"))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "要求修改计划版本 v2" }))
+      .not.toBeInTheDocument();
+    expect(onResolveDecision).not.toHaveBeenCalled();
   });
 
   it("orders tasks using blocked_by_keys when depends_on is absent", async () => {

@@ -58,7 +58,6 @@ import type {
   ProjectBudgetLedgerEntry,
   ProjectBudgetSummary,
   ProjectCoordinationJob,
-  CreateProjectAcceptanceInput,
   CreateProjectArchiveSnapshotInput,
   CreateProjectEvidenceInput,
   DispatchGateResult,
@@ -131,7 +130,6 @@ type ProjectOperationalDetailProps = {
   onRecloneWorkspace?: () => void;
   onMarkWorkspaceReady?: () => void;
   workspaceActionPending?: boolean;
-  onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
   onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
   onPatchEvidence: (
@@ -192,7 +190,6 @@ export function ProjectOperationalDetail({
   onRecloneWorkspace,
   onMarkWorkspaceReady,
   workspaceActionPending,
-  onCreateAcceptance,
   onCreateArchiveSnapshot,
   onCreateEvidence,
   onPatchEvidence,
@@ -219,7 +216,6 @@ export function ProjectOperationalDetail({
   );
   const [activeSection, setActiveSection] =
     useState<ProjectDetailSection>(initialSection);
-  const [selectedExitDeliverable, setSelectedExitDeliverable] = useState("");
   const assetsInitial = assetsInitialTabFromQuery(
     typeof initialTab === "string" ? initialTab : undefined,
   );
@@ -233,12 +229,6 @@ export function ProjectOperationalDetail({
   }, [initialTab, focusDecisionId]);
 
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
-  // A newer plan revision invalidates any exit choice picked against a prior
-  // revision's available_exits — reset it so a stale selection can't be
-  // submitted against the new revision (see request_changes flow below).
-  useEffect(() => {
-    setSelectedExitDeliverable("");
-  }, [latestPlanRevision?.id]);
 
   if (!project) {
     return (
@@ -433,7 +423,7 @@ export function ProjectOperationalDetail({
               任务
             </TabsTrigger>
             <TabsTrigger className={sectionTriggerClass} value="approval">
-              审批
+              决策历史
             </TabsTrigger>
             <TabsTrigger className={sectionTriggerClass} value="assets">
               资产
@@ -533,7 +523,6 @@ export function ProjectOperationalDetail({
                         demandCount={demands.length}
                         evidence={evidence}
                         executionSummaryCount={executionSummaries.length}
-                        onCreateAcceptance={onCreateAcceptance}
                         onCreateArchiveSnapshot={onCreateArchiveSnapshot}
                         onCreateEvidence={onCreateEvidence}
                         onPatchEvidence={onPatchEvidence}
@@ -601,81 +590,14 @@ export function ProjectOperationalDetail({
                                 </p>
                               </div>
                               {latestPlanReviewDecision ? (
-                                <div className="flex shrink-0 flex-col items-end gap-2">
-                                  {planRevisionAvailableExits(latestPlanRevision).length > 1 ? (
-                                    <div className="flex items-center gap-2">
-                                      <Label
-                                        className="shrink-0 text-xs text-v3-ink-2"
-                                        htmlFor="plan-review-target-exit"
-                                      >
-                                        改选交付出口
-                                      </Label>
-                                      <Select
-                                        value={
-                                          selectedExitDeliverable ||
-                                          planRevisionExitDeliverable(latestPlanRevision)
-                                        }
-                                        onValueChange={setSelectedExitDeliverable}
-                                      >
-                                        <SelectTrigger
-                                          className="h-8 w-[220px] text-xs"
-                                          id="plan-review-target-exit"
-                                        >
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {planRevisionAvailableExits(latestPlanRevision).map(
-                                            (exit) => (
-                                              <SelectItem key={exit.deliverable} value={exit.deliverable}>
-                                                {exit.label}
-                                              </SelectItem>
-                                            ),
-                                          )}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  ) : null}
-                                  <div className="flex flex-wrap gap-2">
-                                    <V3Button
-                                      aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
-                                      size="sm"
-                                      type="button"
-                                      onClick={() =>
-                                        onResolveDecision(latestPlanReviewDecision.id, "approved")
-                                      }
-                                    >
-                                      批准
-                                    </V3Button>
-                                    <V3Button
-                                      aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
-                                      size="sm"
-                                      type="button"
-                                      variant="outline"
-                                      onClick={() =>
-                                        onResolveDecision(
-                                          latestPlanReviewDecision.id,
-                                          "request_changes",
-                                          planRevisionAvailableExits(latestPlanRevision).length > 1
-                                            ? selectedExitDeliverable ||
-                                                planRevisionExitDeliverable(latestPlanRevision)
-                                            : undefined,
-                                        )
-                                      }
-                                    >
-                                      要求修改
-                                    </V3Button>
-                                    <V3Button
-                                      aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
-                                      size="sm"
-                                      type="button"
-                                      variant="outline"
-                                      onClick={() =>
-                                        onResolveDecision(latestPlanReviewDecision.id, "rejected")
-                                      }
-                                    >
-                                      拒绝
-                                    </V3Button>
-                                  </div>
+                                <div
+                                  className="flex shrink-0 flex-col items-end gap-2"
+                                  data-testid="plan-review-inbox-only"
+                                >
+                                  <StatusPill tone="warn">待收件箱处理</StatusPill>
+                                  <p className="max-w-[220px] text-right text-[11px] leading-4 text-v3-ink-3">
+                                    计划确认请在收件箱处理（§6.3 决策历史只读）
+                                  </p>
                                 </div>
                               ) : null}
                             </div>
@@ -864,7 +786,6 @@ export function ProjectOperationalDetail({
           <ProjectApprovalPanel
             decisionRequests={decisionRequests}
             focusDecisionId={focusDecisionId}
-            onResolveDecision={onResolveDecision}
           />
         </TabsContent>
 
@@ -875,7 +796,6 @@ export function ProjectOperationalDetail({
             budgetLedger={budgetLedger}
             budgetSummary={budgetSummary}
             initialTab={assetsInitial}
-            onCreateAcceptance={onCreateAcceptance}
             reports={reports}
           />
         </TabsContent>
@@ -1560,11 +1480,9 @@ function ProjectTasksPanel({
 function ProjectApprovalPanel({
   decisionRequests,
   focusDecisionId,
-  onResolveDecision,
 }: {
   decisionRequests: ProjectDecisionRequest[];
   focusDecisionId?: string;
-  onResolveDecision: (decisionId: string, decision: string) => void;
 }) {
   const orderedDecisions = useMemo(
     () =>
@@ -1577,14 +1495,14 @@ function ProjectApprovalPanel({
   return (
     <WorkSurface className="min-w-0">
       <div className="border-b border-v3-line p-4">
-        <h3 className="text-sm font-semibold text-v3-ink">项目审批</h3>
+        <h3 className="text-sm font-semibold text-v3-ink">决策历史</h3>
         <p className="mt-1 text-xs text-v3-ink-2">
-          聚合当前项目 decision requests，并在项目内处理负责人决策。
+          只读汇总本项目决策记录；待办请在收件箱处理。
         </p>
       </div>
       <div className="divide-y divide-v3-line">
         {orderedDecisions.length === 0 ? (
-          <EmptyLine label="当前项目没有审批或决策事项" />
+          <EmptyLine label="当前项目没有决策记录" />
         ) : (
           orderedDecisions.map((decision) => {
             const isResolved =
@@ -1612,7 +1530,9 @@ function ProjectApprovalPanel({
                   <p className="mt-1 line-clamp-3 text-xs leading-5 text-v3-ink-2">
                     {decision.summary_snapshot && decision.summary_snapshot !== decision.title_snapshot
                       ? decision.summary_snapshot
-                      : "等待负责人处理"}
+                      : isResolved
+                        ? "已处理"
+                        : "待收件箱处理"}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-v3-ink-3">
                     {timeValue ? (
@@ -1631,7 +1551,6 @@ function ProjectApprovalPanel({
                   {decisionStatusLabel(decision.status_snapshot)}
                 </StatusPill>
               </div>
-              <DecisionRequestActions decision={decision} onResolveDecision={onResolveDecision} />
             </div>
             );
           })
@@ -1697,54 +1616,6 @@ function RuntimeMeta({ label, value }: { label: string; value: string }) {
     <div className="flex min-w-0 items-center justify-between gap-3 text-xs">
       <span className="shrink-0 text-v3-ink-2">{label}</span>
       <span className="min-w-0 truncate font-medium text-v3-ink">{value}</span>
-    </div>
-  );
-}
-
-function DecisionRequestActions({
-  decision,
-  onResolveDecision,
-}: {
-  decision: ProjectDecisionRequest;
-  onResolveDecision: (decisionId: string, decision: string) => void;
-}) {
-  if (decision.status_snapshot !== "pending") {
-    return null;
-  }
-
-  const actions =
-    decision.decision_type === "task_failure_recovery"
-      ? [
-          { ariaLabel: `重试 ${decision.title_snapshot}`, label: "重试任务", value: "retry" },
-          {
-            ariaLabel: `取消下游 ${decision.title_snapshot}`,
-            label: "取消下游",
-            value: "cancel_downstream",
-          },
-        ]
-      : [
-          { ariaLabel: `批准 ${decision.title_snapshot}`, label: "批准", value: "approved" },
-          {
-            ariaLabel: `要求补证 ${decision.title_snapshot}`,
-            label: "要求补证",
-            value: "needs_more_evidence",
-          },
-        ];
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {actions.map((action) => (
-        <V3Button
-          aria-label={action.ariaLabel}
-          key={action.value}
-          size="sm"
-          type="button"
-          variant={action.value === "retry" || action.value === "approved" ? "primary" : "outline"}
-          onClick={() => onResolveDecision(decision.id, action.value)}
-        >
-          {action.label}
-        </V3Button>
-      ))}
     </div>
   );
 }

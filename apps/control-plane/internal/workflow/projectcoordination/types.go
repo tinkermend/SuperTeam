@@ -543,6 +543,18 @@ type RejectDemandPlanningInput struct {
 	OutputEventIDs    []uuid.UUID
 }
 
+// MarkDemandPlanningFailedInput parks a demand at planning_failed after
+// PlanDemandRoute exhausted retries (timeout / upstream error, spec §5.5 F6)
+// and opens a planning_failed HumanTask so the owner can retry or close.
+type MarkDemandPlanningFailedInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	CoordinationJobID uuid.UUID
+	Diagnosis         string
+	OutputEventIDs    []uuid.UUID
+}
+
 type CoordinationJobResult struct {
 	ID uuid.UUID
 }

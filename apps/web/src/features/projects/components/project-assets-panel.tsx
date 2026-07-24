@@ -1,6 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
-  CreateProjectAcceptanceInput,
   ProjectAcceptanceRecord,
   ProjectArtifactRef,
   ProjectBudgetLedgerEntry,
@@ -20,18 +19,16 @@ type ProjectAssetsPanelProps = {
   budgetLedger?: ProjectBudgetLedgerEntry[];
   budgetSummary?: ProjectBudgetSummary;
   initialTab?: "artifacts" | "budget" | "acceptance";
-  onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
   reports?: ProjectReportRef[];
 };
 
-/** 资产区：工件 + 预算 + 验收（合并原三个对等顶栏 Tab）。 */
+/** 资产区：工件 + 预算 + 结项结论（只读；§6.3 下线自由验收写入口）。 */
 export function ProjectAssetsPanel({
   acceptance,
   artifacts = [],
   budgetLedger = [],
   budgetSummary,
   initialTab = "artifacts",
-  onCreateAcceptance,
   reports = [],
 }: ProjectAssetsPanelProps) {
   return (
@@ -48,7 +45,7 @@ export function ProjectAssetsPanel({
             预算
           </TabsTrigger>
           <TabsTrigger className={assetsTabTriggerClass} value="acceptance">
-            验收
+            结项
           </TabsTrigger>
         </TabsList>
       </div>
@@ -60,7 +57,7 @@ export function ProjectAssetsPanel({
         <ProjectBudgetPanel budgetLedger={budgetLedger} budgetSummary={budgetSummary} />
       </TabsContent>
       <TabsContent className="m-0" value="acceptance">
-        <ProjectAcceptancePanel acceptance={acceptance} onCreateAcceptance={onCreateAcceptance} />
+        <ProjectAcceptancePanel acceptance={acceptance} />
       </TabsContent>
     </Tabs>
   );

@@ -11,10 +11,8 @@ import {
   FolderKanban,
   Inbox,
   Layers,
-  ListChecks,
   RefreshCw,
   RotateCcw,
-  Route as RouteIcon,
   ShieldCheck,
   ShieldQuestion,
   SlidersHorizontal,
@@ -867,14 +865,10 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
           快速跳转
         </div>
         <div className="flex flex-col gap-0.5 px-2 py-1.5">
+          {/* F3(§5.4.3): 唯一权威落点 detailHref 来自服务端 primary_surface。原"进入流程
+              实例/查看流程编排"两个各自推导的入口已下线,避免同一待办多入口跳不同页。 */}
           <QuickLink to={detailHref} icon={<ArrowUpRight className="size-3.5" />}>
             查看完整详情
-          </QuickLink>
-          <QuickLink to={resolveWorkflowInstanceHref(item)} icon={<RouteIcon className="size-3.5" />}>
-            进入流程实例
-          </QuickLink>
-          <QuickLink to={resolveWorkflowTemplateHref(item)} icon={<ListChecks className="size-3.5" />}>
-            查看流程编排
           </QuickLink>
           {item.source_task_id ? (
             <QuickLink to={detailHref} icon={<FileText className="size-3.5" />}>
@@ -990,7 +984,7 @@ function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
       <section className="px-5 py-4">
         <h3 className="text-[13px] font-extrabold text-v3-ink">选择事项后可执行</h3>
         <div className="mt-3 grid gap-2 text-[13px] text-v3-ink-2">
-          {["查看完整详情", "查看过程记录", "查看关联引用", "同意 / 驳回 / 要求补证", "进入流程实例 / 查看流程编排"].map((label) => (
+          {["查看完整详情", "查看过程记录", "查看关联引用", "同意 / 驳回 / 要求补证", "跳转到关联流程或项目"].map((label) => (
             <div className="flex items-center gap-2" key={label}>
               <CheckCircle2 className="size-4 text-v3-ok" />
               <span>{label}</span>
@@ -1047,30 +1041,6 @@ function computeWaitMs(item: InboxItem): number {
   return Math.max(0, Date.now() - created);
 }
 
-function resolveWorkflowInstanceHref(item: InboxItem) {
-  const route = readStringFromContext(item.context, [
-    "workflow_instance_route",
-    "workflow_run_route",
-    "process_instance_route",
-  ]);
-  if (isLocalPath(route)) return route;
-  const demandId = readStringFromContext(item.context, ["primary_demand_id", "demand_id"]);
-  if (demandId) return `/workflows/${encodeURIComponent(demandId)}`;
-  return resolveInboxHref(item);
-}
-
-function resolveWorkflowTemplateHref(item: InboxItem) {
-  const route = readStringFromContext(item.context, [
-    "workflow_template_route",
-    "workflow_route",
-    "process_route",
-  ]);
-  if (isLocalPath(route)) return route;
-  const demandId = readStringFromContext(item.context, ["primary_demand_id", "demand_id"]);
-  if (demandId) return `/workflows/${encodeURIComponent(demandId)}`;
-  return "/workflows";
-}
-
 function readStringFromContext(context: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = context[key];
@@ -1079,10 +1049,6 @@ function readStringFromContext(context: Record<string, unknown>, keys: string[])
     }
   }
   return undefined;
-}
-
-function isLocalPath(value: string | undefined): value is string {
-  return Boolean(value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\"));
 }
 
 // ---------------------------------------------------------------------------

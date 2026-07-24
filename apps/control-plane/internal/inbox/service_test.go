@@ -1144,6 +1144,21 @@ func (r *memoryRepository) GetItem(_ context.Context, tenantID, itemID uuid.UUID
 	return item, nil
 }
 
+func (r *memoryRepository) GetItemByApprovalSource(_ context.Context, tenantID, approvalRequestID uuid.UUID) (Item, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	itemID, ok := r.itemsByApproval[approvalRequestID]
+	if !ok {
+		return Item{}, ErrItemNotFound
+	}
+	item, ok := r.itemsByID[itemID]
+	if !ok || item.TenantID != tenantID {
+		return Item{}, ErrItemNotFound
+	}
+	return item, nil
+}
+
 func (r *memoryRepository) ListItems(_ context.Context, req ListItemsRequest) ([]Item, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

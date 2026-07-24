@@ -1377,6 +1377,9 @@ func TestCompleteProjectTaskAttemptResultContractHumanReviewRoutesToWaitingHuman
 	service, err := NewService(repo)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	// §5.2: a live downstream dependent is required for the provider
+	// HumanReviewRequest to open downstream_release.
+	addFixtureDownstreamDependency(repo.memoryRepository, fixture)
 	contract := validCompletedTaskResultContract()
 	contract.HumanReviewRequest = &TaskResultHumanReviewRequest{
 		Reason:     "需要负责人确认验收口径",
@@ -2029,7 +2032,19 @@ func TestCompleteProjectTaskAttemptAcceptanceResultLinkFailureRollsBackTerminalW
 	service, err := NewService(repo)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
-	repo.tasks[0].RequiresHumanApproval = true
+	// §5.2 downstream_release gate: a human-review signal (high risk) AND a
+	// non-terminal downstream dependency open the acceptance writeback path.
+	highRisk := "high"
+	repo.tasks[0].RiskLevel = &highRisk
+	downstreamID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        downstreamID,
+		TenantID:  repo.tasks[0].TenantID,
+		ProjectID: repo.tasks[0].ProjectID,
+		Title:     "下游任务",
+		Status:    ProjectTaskStatusQueued,
+	})
+	repo.taskDependents = map[uuid.UUID][]uuid.UUID{repo.tasks[0].ID: {downstreamID}}
 	contract := validCompletedTaskResultContract()
 	initialTask := repo.tasks[0]
 	initialAttempt := repo.projectTaskAttempts[0]
@@ -3145,6 +3160,9 @@ func completeProjectTaskAttemptIntoHumanReviewResult(t *testing.T, service *Serv
 	t.Helper()
 
 	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	// §5.2: downstream_release only opens when a live dependent needs this output;
+	// wire one so the provider HumanReviewRequest below actually gates.
+	addFixtureDownstreamDependency(repo.memoryRepository, fixture)
 	contract := validCompletedTaskResultContract()
 	contract.HumanReviewRequest = &TaskResultHumanReviewRequest{
 		Reason:     "需要负责人确认验收口径",
@@ -3229,6 +3247,8 @@ func TestCompleteProjectTaskAttemptAcceptanceBeforeCompletedWritesLedgerEvents(t
 	fixture := newProjectTaskAttemptServiceFixture(repo.memoryRepository, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
 	high := "high"
 	repo.tasks[0].RiskLevel = &high
+	// §5.2: high-risk gates only with a live downstream dependent.
+	addFixtureDownstreamDependency(repo.memoryRepository, fixture)
 
 	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("complete-high-risk-1"),
@@ -3427,6 +3447,33 @@ func TestFailProjectTaskAttemptRetryExhaustionMovesToWaitingHuman(t *testing.T) 
 	require.Equal(t, ProjectTaskAttemptStatusTimedOut, repo.projectTaskAttempts[0].Status)
 	require.Len(t, repo.executionLedgerEvents, 1)
 	require.NotContains(t, repo.executionLedgerEvents[0].Metadata, "retry_project_task_attempt_id")
+}
+
+// TestFailProjectTaskAttemptWaitingHumanEmitsHumanTask pins the sister-F1 fix
+// (handoff §6): a failed attempt that parks the task waiting_human must create a
+// decision request AND project it to the inbox, so the human has an actionable
+// card instead of a silently blocked task.
+func TestFailProjectTaskAttemptWaitingHumanEmitsHumanTask(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+
+	// ApprovalRequired (retryable unset) routes to waiting_human via
+	// projectTaskFailureAction.
+	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-approval-required"),
+		FailureSummary:                   "需要负责人批准高风险动作",
+		FailureFamily:                    FailureFamilyApprovalRequired,
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.Len(t, repo.decisionRequests, 1, "waiting_human must create a decision request (sister-F1)")
+	require.Equal(t, "project_task_approval", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, fixture.taskID, *repo.decisionRequests[0].ProjectTaskID)
+	require.Len(t, inbox.upserts, 1, "the decision must be projected to the inbox")
+	require.Equal(t, repo.decisionRequests[0].ID, inbox.upserts[0].ID)
 }
 
 func TestFailProjectTaskAttemptNonRetryableExecutionFailsTask(t *testing.T) {
@@ -4451,6 +4498,26 @@ func newProjectTaskAttemptServiceFixture(repo *memoryRepository, taskStatus, att
 		nodeID:    nodeID,
 		lease:     lease,
 	}
+}
+
+// addFixtureDownstreamDependency wires a non-terminal downstream task depending on
+// the fixture task so §5.2's downstream_release gate can fire — the human-review /
+// acceptance machinery only intercepts a completed task when a live dependent
+// still needs the human to vouch for its output (leaf tasks fold into demand
+// acceptance instead). Tests that assert the gate opened must set up a dependent.
+func addFixtureDownstreamDependency(repo *memoryRepository, fixture projectTaskAttemptServiceFixture) {
+	downstreamID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        downstreamID,
+		TenantID:  fixture.tenantID,
+		ProjectID: fixture.projectID,
+		Title:     "下游依赖任务",
+		Status:    ProjectTaskStatusQueued,
+	})
+	if repo.taskDependents == nil {
+		repo.taskDependents = map[uuid.UUID][]uuid.UUID{}
+	}
+	repo.taskDependents[fixture.taskID] = append(repo.taskDependents[fixture.taskID], downstreamID)
 }
 
 type delayedAttemptReadinessRepository struct {
@@ -9115,6 +9182,111 @@ func setupDemandAcceptanceSignFixture(repo *memoryRepository, criteria []DemandA
 	return f
 }
 
+// TestCloseDemandCancelsPlanningZombie pins spec §5.5 close_demand: an eligible
+// human can cancel a demand stuck in planning (the F6 zombie), it becomes
+// cancelled with a demand.cancelled audit event, and ineligible actors are
+// rejected.
+func TestCloseDemandCancelsPlanningZombie(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "僵尸项目",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID:        demandID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "永远规划中的僵尸需求",
+		Status:    ProjectDemandStatusPlanningPending,
+	})
+
+	// Ineligible actor is rejected before any state change.
+	if _, err := service.CloseDemand(context.Background(), CloseDemandRequest{
+		TenantID: tenantID, DemandID: demandID, ActorUserID: uuid.New(), Reason: "非成员",
+	}); !errors.Is(err, ErrProjectDecisionForbidden) {
+		t.Fatalf("expected ErrProjectDecisionForbidden for non-member, got %v", err)
+	}
+
+	updated, err := service.CloseDemand(context.Background(), CloseDemandRequest{
+		TenantID: tenantID, DemandID: demandID, ActorUserID: ownerID, Reason: "规划挂死，关闭",
+	})
+	if err != nil {
+		t.Fatalf("close demand: %v", err)
+	}
+	if updated.Status != ProjectDemandStatusCancelled {
+		t.Fatalf("expected demand cancelled, got %s", updated.Status)
+	}
+	ev := lastProjectEventOfType(t, repo.events, ProjectEventDemandCancelled)
+	if ev.Payload["demand_id"] != demandID.String() || ev.Payload["previous_status"] != string(ProjectDemandStatusPlanningPending) {
+		t.Fatalf("unexpected cancel event payload: %#v", ev.Payload)
+	}
+
+	// Idempotent second close.
+	again, err := service.CloseDemand(context.Background(), CloseDemandRequest{
+		TenantID: tenantID, DemandID: demandID, ActorUserID: ownerID,
+	})
+	if err != nil || again.Status != ProjectDemandStatusCancelled {
+		t.Fatalf("expected idempotent cancel, got status=%v err=%v", again.Status, err)
+	}
+}
+
+// TestProjectTaskRequiresAcceptanceGatesOnDownstreamDependency pins spec §5.2 /
+// F4: a completed task opens downstream_release ONLY with a human-review signal
+// AND a live (non-terminal) downstream dependency. Leaf tasks never gate; a
+// terminal downstream does not gate; and RequiresHumanApproval alone never
+// post-gates (it already gated pre-dispatch).
+func TestProjectTaskRequiresAcceptanceGatesOnDownstreamDependency(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	high := "high"
+	blocker := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, RiskLevel: &high, Status: ProjectTaskStatusRunning}
+	repo.tasks = append(repo.tasks, blocker)
+	req := CompleteProjectTaskAttemptRequest{}
+
+	// leaf high-risk task, no downstream → no gate
+	got, err := service.projectTaskRequiresAcceptance(context.Background(), blocker, req)
+	require.NoError(t, err)
+	require.False(t, got, "leaf high-risk task must not open downstream_release (§5.2)")
+
+	// non-terminal downstream → gate
+	downstream := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Status: ProjectTaskStatusQueued}
+	repo.tasks = append(repo.tasks, downstream)
+	repo.taskDependents = map[uuid.UUID][]uuid.UUID{blocker.ID: {downstream.ID}}
+	got, err = service.projectTaskRequiresAcceptance(context.Background(), blocker, req)
+	require.NoError(t, err)
+	require.True(t, got, "high-risk task with a live downstream must open downstream_release")
+
+	// terminal downstream → no gate
+	repo.tasks[1].Status = ProjectTaskStatusCompleted
+	got, err = service.projectTaskRequiresAcceptance(context.Background(), blocker, req)
+	require.NoError(t, err)
+	require.False(t, got, "a fully terminal downstream must not gate")
+
+	// F4: RequiresHumanApproval alone (no review signal) must not post-gate even
+	// with a live downstream — it already fired the pre-dispatch gate.
+	repo.tasks[1].Status = ProjectTaskStatusQueued
+	approvalOnly := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, RequiresHumanApproval: true, Status: ProjectTaskStatusRunning}
+	repo.tasks = append(repo.tasks, approvalOnly)
+	repo.taskDependents[approvalOnly.ID] = []uuid.UUID{downstream.ID}
+	got, err = service.projectTaskRequiresAcceptance(context.Background(), approvalOnly, req)
+	require.NoError(t, err)
+	require.False(t, got, "RequiresHumanApproval alone must not post-gate (F4 de-double-gate)")
+}
+
 func blockingHumanJudgmentCriterion(criterionID, statement string) DemandAcceptanceCriterion {
 	return DemandAcceptanceCriterion{
 		CriterionID:        criterionID,
@@ -9474,6 +9646,200 @@ func TestSignDemandCriterionVerdictCompletesDemandWhenAllBlockingSatisfied(t *te
 	// Fix B: this was the project's only demand, now terminal → project acceptance
 	// review opened rather than the project being left stuck running.
 	assertProjectAcceptanceReviewOpened(t, repo, approvals, f.projectID)
+}
+
+// TestSignDemandCriterionVerdictAlsoCloseProjectArchivesWithoutClosureCard pins
+// §5.3「通过并结项」: when also_close_project=true and the signed demand is the
+// last non-terminal demand, the service archives + writes an acceptance record
+// and does NOT open a project_acceptance / closure_confirm card.
+func TestSignDemandCriterionVerdictAlsoCloseProjectArchivesWithoutClosureCard(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:         f.tenantID,
+		DemandID:         f.demandID,
+		ActorUserID:      f.ownerID,
+		CriterionID:      "c1",
+		Verdict:          "satisfied",
+		AlsoCloseProject: true,
+	})
+	if err != nil {
+		t.Fatalf("sign with also_close_project: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected demand completed, got %s", result.DemandStatus)
+	}
+	projectRecord, _ := repo.GetProject(context.Background(), f.tenantID, f.projectID)
+	if projectRecord.Status != ProjectStatusArchived {
+		t.Fatalf("expected project archived, got %s", projectRecord.Status)
+	}
+	if approvals.createCalls != 0 {
+		t.Fatalf("expected no closure_confirm approval created, got createCalls=%d", approvals.createCalls)
+	}
+	for _, d := range repo.decisionRequests {
+		if d.ProjectID == f.projectID && d.DecisionType == "project_acceptance" && d.StatusSnapshot == "pending" {
+			t.Fatalf("expected no pending project_acceptance decision, found %#v", d)
+		}
+	}
+	foundAcceptanceEvent := false
+	for _, ev := range repo.events {
+		if ev.EventType == ProjectEventAcceptanceSubmitted {
+			foundAcceptanceEvent = true
+			if payload, ok := ev.Payload["also_close_project"].(bool); !ok || !payload {
+				t.Fatalf("expected also_close_project=true on acceptance event, got %#v", ev.Payload)
+			}
+			break
+		}
+	}
+	if !foundAcceptanceEvent {
+		t.Fatalf("expected acceptance.submitted event after also_close_project")
+	}
+}
+
+func TestSignDemandCriterionVerdictAlsoCloseProjectNoopsWhenOtherDemandsOpen(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "唯一一条判据"),
+	})
+	// A second still-open demand means the project is not ready to close.
+	otherDemandID := uuid.New()
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID: otherDemandID, TenantID: f.tenantID, ProjectID: f.projectID,
+		Title: "另一条开放需求", Status: ProjectDemandStatusExecuting, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	})
+
+	result, err := service.SignDemandCriterionVerdict(context.Background(), SignDemandCriterionVerdictRequest{
+		TenantID:         f.tenantID,
+		DemandID:         f.demandID,
+		ActorUserID:      f.ownerID,
+		CriterionID:      "c1",
+		Verdict:          "satisfied",
+		AlsoCloseProject: true,
+	})
+	if err != nil {
+		t.Fatalf("sign with also_close_project while other demand open: %v", err)
+	}
+	if result.DemandStatus != ProjectDemandStatusCompleted {
+		t.Fatalf("expected demand completed, got %s", result.DemandStatus)
+	}
+	projectRecord, _ := repo.GetProject(context.Background(), f.tenantID, f.projectID)
+	if projectRecord.Status == ProjectStatusArchived {
+		t.Fatalf("project must not archive while another demand is open, got %s", projectRecord.Status)
+	}
+	if approvals.createCalls != 0 {
+		t.Fatalf("expected no premature closure card, got createCalls=%d", approvals.createCalls)
+	}
+}
+
+// TestResolveDecisionDemandAcceptanceApprovedSignsAllHumanCriteria pins the F1
+// fix: resolving a demand_acceptance decision "approved" (the inbox one-tap card
+// path) must sign every pending human-signable criterion and converge the
+// demand, NOT resolve into the dead-end pre-dispatch gate. Automated criteria are
+// left to their executor verdicts.
+func TestResolveDecisionDemandAcceptanceApprovedSignsAllHumanCriteria(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "第一条人类判据"),
+		blockingHumanJudgmentCriterion("c2", "第二条人类判据"),
+		{
+			CriterionID:        "auto",
+			Statement:          "自动判据",
+			VerificationMethod: "automated_test",
+			Severity:           demandAcceptanceCriterionSeverityBlocking,
+		},
+	})
+	execTask := uuid.New()
+	repo.demandCriterionVerdicts = append(repo.demandCriterionVerdicts, DemandCriterionVerdict{
+		ID: uuid.New(), TenantID: f.tenantID, ProjectID: f.projectID, DemandID: f.demandID, PlanRevisionID: f.revisionID,
+		CriterionID: "auto", Verdict: "satisfied", JudgeType: "executor", ProjectTaskID: &execTask,
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          f.tenantID,
+		ProjectID:         f.projectID,
+		DecisionRequestID: f.decisionID,
+		DecidedByUserID:   f.ownerID,
+		Decision:          "approved",
+	})
+	if err != nil {
+		t.Fatalf("resolve demand_acceptance approved: %v", err)
+	}
+	if resolved.StatusSnapshot != "approved" {
+		t.Fatalf("expected decision approved, got %s", resolved.StatusSnapshot)
+	}
+	demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID)
+	if demand.Status != ProjectDemandStatusCompleted {
+		t.Fatalf("expected demand completed via one-tap sign-all, got %s", demand.Status)
+	}
+	humanSigned := 0
+	for _, v := range repo.demandCriterionVerdicts {
+		if v.JudgeType == demandCriterionJudgeTypeHuman {
+			humanSigned++
+		}
+	}
+	if humanSigned != 2 {
+		t.Fatalf("expected 2 human verdicts (automated criterion untouched), got %d", humanSigned)
+	}
+	if len(inbox.resolutions) == 0 {
+		t.Fatalf("expected the inbox demand_acceptance card to be resolved")
+	}
+}
+
+// TestResolveDecisionDemandAcceptanceRejectedFailsDemand pins the reject arm of
+// the F1 fix: "rejected" signs the first pending human-signable criterion
+// unsatisfied, failing the demand and resolving the decision.
+func TestResolveDecisionDemandAcceptanceRejectedFailsDemand(t *testing.T) {
+	repo := newMemoryRepository()
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "会被驳回的判据"),
+		blockingHumanJudgmentCriterion("c2", "尚未签署的判据"),
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          f.tenantID,
+		ProjectID:         f.projectID,
+		DecisionRequestID: f.decisionID,
+		DecidedByUserID:   f.ownerID,
+		Decision:          "rejected",
+		Comment:           "证据不足",
+	})
+	if err != nil {
+		t.Fatalf("resolve demand_acceptance rejected: %v", err)
+	}
+	if resolved.StatusSnapshot != "rejected" {
+		t.Fatalf("expected decision rejected, got %s", resolved.StatusSnapshot)
+	}
+	demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID)
+	if demand.Status != ProjectDemandStatusFailed {
+		t.Fatalf("expected demand failed, got %s", demand.Status)
+	}
 }
 
 func TestSignDemandCriterionVerdictRejectsWithStructuredEvent(t *testing.T) {
@@ -9870,8 +10236,8 @@ func assertProjectAcceptanceReviewOpened(t *testing.T, repo *memoryRepository, a
 	if strings.Contains(approvals.lastCreate.Title, "验收项目交付") {
 		t.Fatalf("project_acceptance title must not use opaque project-only copy, got %q", approvals.lastCreate.Title)
 	}
-	if !strings.HasPrefix(approvals.lastCreate.Title, "验收 · ") {
-		t.Fatalf("expected demand-first title prefix 验收 · , got %q", approvals.lastCreate.Title)
+	if !strings.HasPrefix(approvals.lastCreate.Title, "结项确认 · ") {
+		t.Fatalf("expected project-first title prefix 结项确认 · , got %q", approvals.lastCreate.Title)
 	}
 	if approvals.lastCreate.ContextPayload == nil {
 		t.Fatalf("expected ContextPayload on project_acceptance approval")
@@ -9886,8 +10252,8 @@ func assertProjectAcceptanceReviewOpened(t *testing.T, repo *memoryRepository, a
 	for _, d := range repo.decisionRequests {
 		if d.ProjectID == projectID && d.DecisionType == "project_acceptance" && d.StatusSnapshot == "pending" {
 			found = true
-			if strings.Contains(d.TitleSnapshot, "验收项目交付") || !strings.HasPrefix(d.TitleSnapshot, "验收 · ") {
-				t.Fatalf("expected demand-first decision title, got %q", d.TitleSnapshot)
+			if strings.Contains(d.TitleSnapshot, "验收项目交付") || !strings.HasPrefix(d.TitleSnapshot, "结项确认 · ") {
+				t.Fatalf("expected project-first decision title, got %q", d.TitleSnapshot)
 			}
 		}
 	}
@@ -10837,6 +11203,7 @@ type memoryRepository struct {
 	projects                         map[uuid.UUID]Project
 	members                          map[uuid.UUID][]ProjectMember
 	tasks                            []ProjectTask
+	taskDependents                   map[uuid.UUID][]uuid.UUID
 	projectTaskAttempts              []ProjectTaskAttempt
 	dispatchGateResults              []PreDispatchGateResult
 	events                           []ProjectEvent
@@ -11860,6 +12227,36 @@ func (r *memoryRepository) ReopenProjectDemandForReplanning(ctx context.Context,
 				ResourceID:   strPtr(demandID.String()),
 				Summary:      "规划缺口补员后重开需求重新规划",
 				Payload:      map[string]any{"demand_id": demandID.String()},
+			}); err != nil {
+				return ProjectDemand{}, err
+			}
+			return r.demands[i], nil
+		}
+	}
+	return ProjectDemand{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CloseProjectDemand(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason string) (ProjectDemand, error) {
+	for i := range r.demands {
+		if r.demands[i].ID == demandID && r.demands[i].TenantID == tenantID {
+			status := r.demands[i].Status
+			if status == ProjectDemandStatusCancelled {
+				return r.demands[i], nil
+			}
+			if status == ProjectDemandStatusCompleted || status == ProjectDemandStatusFailed {
+				return ProjectDemand{}, fmt.Errorf("demand %s already terminal (%s): %w", demandID, status, ErrProjectConflict)
+			}
+			r.demands[i].Status = ProjectDemandStatusCancelled
+			if _, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+				TenantID:     tenantID,
+				ProjectID:    r.demands[i].ProjectID,
+				EventType:    ProjectEventDemandCancelled,
+				ActorType:    "human_user",
+				ActorID:      actorUserID.String(),
+				ResourceType: strPtr("project_demand"),
+				ResourceID:   strPtr(demandID.String()),
+				Summary:      "需求已关闭",
+				Payload:      map[string]any{"demand_id": demandID.String(), "reason": reason, "previous_status": string(status)},
 			}); err != nil {
 				return ProjectDemand{}, err
 			}

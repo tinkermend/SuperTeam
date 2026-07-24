@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, CircleDot, Network } from "lucide-react";
 import type { UserSummary, UserProjectTeamScope } from "@/lib/api";
+import { listRuntimeNodes, type RuntimeNodeResponse } from "@/lib/api/runtime";
 import { StatusPill, WorkSurface } from "@/components/superteam";
 import {
   directoryNameHintFromGitURL,
@@ -8,20 +10,34 @@ import {
 } from "./create-project-draft";
 
 type ProjectReviewPanelProps = {
+  apiBaseUrl: string;
   currentUser?: UserSummary;
   draft: ProjectCreateDraft;
+  fetcher?: typeof fetch;
   selectableTeams: UserProjectTeamScope[];
 };
 
-export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: ProjectReviewPanelProps) {
+export function ProjectReviewPanel({
+  apiBaseUrl,
+  currentUser,
+  draft,
+  fetcher,
+  selectableTeams,
+}: ProjectReviewPanelProps) {
   const sourceTeams = selectableTeams.filter((scope) => draft.sourceTeamIds.includes(scope.team_id));
   const validation = projectCreateValidation(draft, currentUser?.id, selectableTeams);
   const basicsReady = validation.basics;
+  const runtimeNodesReady = draft.runtimeNodeIds.length > 0;
   const requiredPassed = [
     basicsReady,
     sourceTeams.length > 0,
+    runtimeNodesReady,
     draft.policyToggles.auditLogEnabled,
   ].filter(Boolean).length;
+  const nodesQuery = useQuery({
+    queryKey: ["project-create", "runtime-nodes"],
+    queryFn: () => listRuntimeNodes({ baseUrl: apiBaseUrl, fetcher }),
+  });
   const directoryPreview =
     draft.directoryName.trim() ||
     (draft.sourceKind === "git" ? directoryNameHintFromGitURL(draft.repoUrl) : null) ||
@@ -60,6 +76,11 @@ export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: Proj
     },
     { group: "人类负责人", label: "额外负责人", value: `${draft.ownerUsers.length} 位已选` },
     { group: "数字员工池", label: "执行员工", value: `${draft.selectedDigitalEmployees.length} 位已选` },
+    {
+      group: "可运行节点",
+      label: "已选节点",
+      value: runtimeNodesReviewValue(draft.runtimeNodeIds, nodesQuery.data),
+    },
     { group: "协调策略", label: "协调预设", value: policyPresetLabel(draft.policyPreset) },
     {
       group: "协调策略",
@@ -131,11 +152,12 @@ export function ProjectReviewPanel({ currentUser, draft, selectableTeams }: Proj
       <div className="rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm">
         <div className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
           <CheckCircle2 className="size-4 text-v3-ok" />
-          必备项 {requiredPassed} / 3 已就绪
+          必备项 {requiredPassed} / 4 已就绪
         </div>
         <div className="mt-3 grid gap-2 text-[13px] text-v3-ink-2">
           <CheckLine checked={basicsReady} label="基础信息已填写" />
           <CheckLine checked={sourceTeams.length > 0} label="来源团队已选择" />
+          <CheckLine checked={runtimeNodesReady} label="可运行节点已就绪" />
           <CheckLine checked={draft.policyToggles.auditLogEnabled} label="审计策略已开启" />
           <CheckLine checked={draft.selectedDigitalEmployees.length > 0} label="数字员工池已选择（可选）" />
         </div>
@@ -158,4 +180,23 @@ function policyPresetLabel(preset: ProjectCreateDraft["policyPreset"]) {
   if (preset === "lightweight") return "轻量协作";
   if (preset === "highRisk") return "高风险复核";
   return "标准治理";
+}
+
+function runtimeNodeIdentifier(node: RuntimeNodeResponse): string {
+  return node.runtime_node_id ?? node.node_id;
+}
+
+function runtimeNodesReviewValue(
+  selectedIds: string[],
+  nodes: RuntimeNodeResponse[] | undefined,
+): string {
+  if (selectedIds.length === 0) {
+    return "未选择";
+  }
+  if (!nodes) {
+    return `${selectedIds.length} 个已选`;
+  }
+  const byId = new Map(nodes.map((node) => [runtimeNodeIdentifier(node), node.name]));
+  const names = selectedIds.map((id) => byId.get(id) ?? id);
+  return names.join("、");
 }

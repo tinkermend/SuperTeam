@@ -173,6 +173,8 @@ Action {
 | `planning_gap` | demand | 规划缺口 | 不变 | 不变 |
 | 其余 `project_task_*` | task | 保持现名 | 不变 | 不变 |
 
+> **`kind` 只是展示 / 契约层词表，不改底层 `decision_type` 技术值**（拍板 #6）。存量 `project_decision_requests` 行、协调线程 `workflow.go` 的 switch、飞书 `cards.go` 的 5 处 switch 全部依赖现有枚举值；改值要迁移 + 改飞书 + 改协调线程，收益为零。实施时建立 `decision_type → kind` 的单向映射表，`decision_type` 保持不动。
+
 > 命名待确认项：`dispatch_release`（派发前，"这个高风险动作要不要做"）与 `downstream_release`（完成后，"能否让下游基于这个产出继续"）中文名分别取「执行放行」「阶段放行」，两者字面接近。若人类认为易混，把后者改为「下游放行」即可，语义更直白；**其余命名已拍板不再变动**。
 
 ### 4.3 标题身份规则
@@ -210,9 +212,17 @@ Action {
 - 全部 satisfied 后由既有 `convergeDemandSignOff` 完成收敛、解决决策、必要时开结项闸。
 
 约束：
-- 只签 human-signable 判据（`human_judgment` / `adversarial_review` / `review_gate`），automated_test 判据不碰；
-- 任一条签署失败则整体失败并返回明确错误，不留半签状态（reconcile 路径已能自愈，但接口必须报错而非静默）；
-- 卡片 `evidence` 必须携带 `pending_criteria_detail`（判据原文 + 证据摘录），**收件箱上直接可读**——不能让人在看不到判据的情况下点通过（当前弹窗完全不展示判据，见 F1 现场）。
+- 只签 human-signable 判据（`human_judgment` / `adversarial_review` / `review_gate`）。
+- **遇到未满足的 `automated_test` blocking 判据 → 整体拒绝**（拍板 #7），返回明确中文错误「还有 N 条自动判据未满足，无法整单通过」。人类签不了 automated_test（`service.go:6443` 会 `ErrInvalidProject`），半签只会制造新的不一致。
+- 任一条签署失败则整体失败并返回明确错误，不留半签状态（reconcile 路径已能自愈，但接口必须报错而非静默）。
+- 卡片 `evidence` 必须携带 `pending_criteria_detail`（判据原文 + 证据摘录），**收件箱上直接可读**——不能让人在看不到判据的情况下点通过（当前弹窗完全不展示判据，见 F1 现场）。这是 Console 允许一键的**前提条件**，与飞书"签署紧邻证据"的原则同源。
+
+**覆盖对抗评审与违规检测的边界（拍板 #8）**：一键通过**可以**覆盖 `adversarial_review` 判官驳回与 `review_gate` 检出的违规（既有 tier-3 human override 语义，`service.go:6433-6448`），但：
+- 待签集合中一旦含 `adversarial_review` / `review_gate` 判据，**处理意见变为必填**（覆盖理由），前端与服务端都要校验；
+- 卡片必须显式警示「含 N 条对抗评审驳回 / M 条检出违规」，并列出它们的判据原文与判官/检测结论；
+- 审计事件与 verdict 的 `reason` 必须标记为**人类覆盖**（`override=true` 或等价字段），使"人类推翻了 AI 判定"在审计中可检索——这是自治姿态基线里"人类守门可覆盖"的落账要求，不能静默通过。
+
+**飞书渠道不跟进一键（拍板 #9）**：`apps/feishu-connector/internal/cards/cards.go:399-401` 刻意维持卡内逐条签署、不给一键全过，本次**保持不变**。两渠道交互粒度不同但原则一致（签署紧邻证据）。实施时不得顺手给飞书加"全部通过"。
 
 ### 5.2 任务级拦截按下游依赖裁剪（拍板 #2）
 
@@ -274,6 +284,7 @@ Action {
 - 每张卡带闭环进度条：`任务 1/1 → 验收签署 待你 → 结项 未开始`（数据来自 `HumanTask.progress`）。
 - 卡片正文展示 `why` + `evidence`（验收签署卡必须展示判据原文与证据摘录）。
 - 元数据行禁止出现英文技术枚举（F3 的 `· project_acceptance`），一律经 `status-labels.ts` 映射。
+- **词表单一事实源**：中文词表目前有两套独立实现——web `apps/web/src/lib/status-labels.ts` 与飞书 `apps/feishu-connector/internal/cards/cards.go:531 decisionTypeLabel`。本次的 kind 词表必须两处同步，否则 Console 与飞书对同一闸门说法分叉。实施时在飞书侧加护栏测试（对齐 `status-labels.guard.test.ts` 的做法），断言两套词表的 key 集合一致。
 
 ### 6.2 流程编排 = 证据现场
 - 保留验收签署面板（它与收件箱卡是**同一 HumanTask 的两个视图**，任一侧提交，另一侧秒级消失）。
@@ -341,6 +352,23 @@ Action {
 3. **「通过并结项」默认不勾选**。→ §5.3
 4. **项目页自由验收表单下线**（端点一并下线，下线前核对飞书调用方）。→ §6.3
 5. **命名采用「执行放行 / 阶段放行 / 验收签署 / 结项确认」**；仅「执行放行 vs 阶段放行」字面接近，若需更直白可把后者改为「下游放行」，其余不再变动。→ §4.2
+6. **`kind` 只做展示 / 契约层词表，`decision_type` 技术值不动**（避免迁移 + 飞书 + 协调线程三处破坏，收益为零）。→ §4.2
+7. **一键通过遇未满足的 `automated_test` 判据 → 整体报错**，不做部分签署。→ §5.1
+8. **一键通过可覆盖对抗评审驳回与检出违规，但强制填覆盖理由**，卡片显式警示，审计标记人类覆盖。→ §5.1
+9. **飞书维持卡内逐条签署，不加一键全过**；Console 一键的前提是卡上直接展示判据与证据。→ §5.1
+
+---
+
+## 11. 开工前置清单（2026-07-24 实测，按阻塞度排序）
+
+| # | 事项 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | **修 `verify:control-plane` 编译失败** | **阻塞** | `internal/runtime/scheduler_test.go` 的 `mockSchedulerRepository` 缺 `GetNodeByID`（`Repository` 接口在 07-23 `461855ed` 加的方法）。门禁当前是红的，不修无法判断本 spec 的改动是否引入回归。约 2 行。 |
+| 2 | 分支与 worktree | 待做 | 共享 checkout 规则：开 `feat/human-task-unification` 分支 + 独立 worktree 再动手，禁止在主 checkout 切分支。 |
+| 3 | planner 稳定性 | 待定 | dev 配置 `apps/control-plane/config/config.yaml`（已 gitignore）planner.model = `deepseek-v4-pro`，07-24 复验中 3 次上游挂起（>90s）致 `PlanDemandRoute` 超时；同期 `deepseek-chat` 0.7s 正常。G1/G4/G5 都要走真实规划，建议临时切 `deepseek-chat`，或接受重试成本。 |
+| 4 | dev 数据清理 | 待定 | 复验遗留见 §10。建议保留 `dbd24727`（G1 回归夹具），其余清掉，否则污染 G5/G6 的列表断言。 |
+| 5 | G4 夹具设计 | 待做 | G4 需要"多任务且有依赖"的需求，任务数由 planner 决定。需先设计一条必然分解成 2+ 有依赖任务的需求文案并试跑确认，再写断言。 |
+| 6 | 基线记录 | 已完成 | 2026-07-24 15:26 于 `20488eb8`：`verify:web` PASS（119 文件 / 911 用例）、`verify:contracts` PASS、`verify:control-plane` **FAIL**（见第 1 项）。 |
 
 ---
 

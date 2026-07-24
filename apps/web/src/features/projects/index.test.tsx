@@ -1578,19 +1578,31 @@ describe("ProjectsView", () => {
         }),
       ).toBe(true);
     });
-    await expect.element(screen.getByText("必备项 1 / 3 已就绪")).toBeInTheDocument();
-    await expect.element(screen.getByText("未选择")).toBeInTheDocument();
+    await expect.element(screen.getByText("必备项 1 / 4 已就绪")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("row", { name: "项目事实 来源团队 未选择" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("row", { name: "可运行节点 已选节点 未选择" }))
+      .toBeInTheDocument();
 
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "auth-check");
     await userEvent.fill(screen.getByLabelText("项目目录名 *"), "auth-check");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "确认来源团队可见");
-    await expect.element(screen.getByText("必备项 2 / 3 已就绪")).toBeInTheDocument();
+    await expect.element(screen.getByText("必备项 2 / 4 已就绪")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "平台运营" }));
 
-    await expect.element(screen.getByText("必备项 3 / 3 已就绪")).toBeInTheDocument();
+    await expect.element(screen.getByText("必备项 3 / 4 已就绪")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "local-dev-node" }));
+    await expect.element(screen.getByText("必备项 4 / 4 已就绪")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("row", { name: "可运行节点 已选节点 local-dev-node" }))
+      .toBeInTheDocument();
   });
 
   it("renders the project risk queue as a v3 work surface table", async () => {
@@ -2006,7 +2018,7 @@ describe("ProjectsView", () => {
 
     await expect.element(screen.getByRole("tab", { name: "证据链" })).toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "预算流水" })).toBeInTheDocument();
-    await expect.element(screen.getByRole("tab", { name: "验收结论" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "结项结论" })).toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "归档预览" })).toBeInTheDocument();
     await expect.element(screen.getByText("上线验收证据")).toBeInTheDocument();
 
@@ -2071,17 +2083,16 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("submits project acceptance and creates an archive snapshot", async () => {
+  it("shows readonly closure panel and still creates an archive snapshot", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
     await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
 
-    await userEvent.click(screen.getByRole("tab", { name: "验收结论" }));
-    await userEvent.fill(
-      screen.getByRole("textbox", { name: "验收结论" }),
-      "证据完整，同意归档",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "提交验收" }));
+    await userEvent.click(screen.getByRole("tab", { name: "结项结论" }));
+    await expect
+      .element(screen.getByRole("button", { name: "提交验收" }))
+      .not.toBeInTheDocument();
+    await expect.element(screen.getByTestId("project-closure-readonly")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "归档预览" }));
     await userEvent.fill(
@@ -2095,11 +2106,10 @@ describe("ProjectsView", () => {
         fetchCalls(fetcher).some(([url, init]) => {
           return (
             String(url).endsWith("/api/v1/projects/project-1/acceptance") &&
-            init?.method === "POST" &&
-            JSON.parse(String(init.body)).conclusion === "证据完整，同意归档"
+            init?.method === "POST"
           );
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         fetchCalls(fetcher).some(([url, init]) => {
           return (
@@ -2310,7 +2320,7 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    await expect.element(screen.getByText("选择可运行节点")).toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "选择可运行节点" })).toBeInTheDocument();
     const nodeCheckbox = screen.getByRole("checkbox", { name: "local-dev-node" });
     await expect.element(nodeCheckbox).toBeInTheDocument();
     await expect.element(nodeCheckbox).toHaveAttribute("aria-checked", "false");
@@ -2318,9 +2328,15 @@ describe("ProjectsView", () => {
 
     await userEvent.click(nodeCheckbox);
     await expect.element(nodeCheckbox).toHaveAttribute("aria-checked", "true");
+    await expect
+      .element(screen.getByRole("row", { name: "可运行节点 已选节点 local-dev-node" }))
+      .toBeInTheDocument();
 
     await userEvent.click(nodeCheckbox);
     await expect.element(nodeCheckbox).toHaveAttribute("aria-checked", "false");
+    await expect
+      .element(screen.getByRole("row", { name: "可运行节点 已选节点 未选择" }))
+      .toBeInTheDocument();
   });
 
   it("requires selecting at least one runtime node before creating a project", async () => {
@@ -2854,5 +2870,11 @@ describe("ProjectsView", () => {
     expect(screen.getByTestId("project-create-review-table").element().textContent).toContain(
       "项目事实",
     );
+    expect(screen.getByTestId("project-create-review-table").element().textContent).toContain(
+      "可运行节点",
+    );
+    await expect
+      .element(screen.getByRole("row", { name: "可运行节点 已选节点 未选择" }))
+      .toBeInTheDocument();
   });
 });

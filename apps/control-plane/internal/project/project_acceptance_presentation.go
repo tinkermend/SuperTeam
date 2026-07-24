@@ -25,19 +25,21 @@ type ProjectAcceptanceDemandInput struct {
 	TaskTitles []string
 }
 
-// ProjectAcceptancePresentation is the demand/task-first copy and context for
-// a project_acceptance decision. Technical decision_type stays project_acceptance;
-// human identity must lead with the demand that triggered the review.
+// ProjectAcceptancePresentation is the project-first copy and context for a
+// project_acceptance / closure_confirm decision. Technical decision_type stays
+// project_acceptance; human identity must lead with the project name (§4.3 /
+// §5.3), with demand/task details relegated to summary / why / evidence.
 type ProjectAcceptancePresentation struct {
-	Title             string
-	Summary           string
-	Context           map[string]any
-	PrimaryDemandID   uuid.UUID
+	Title           string
+	Summary         string
+	Context         map[string]any
+	PrimaryDemandID uuid.UUID
 }
 
 // BuildProjectAcceptancePresentation builds inbox/approval title, summary and
-// structured context from the project and its terminal demands. Never returns
-// the opaque legacy title "验收项目交付".
+// structured context from the project and its terminal demands. Title identity
+// is always the project name (结项确认 · {项目}); never the opaque legacy
+// "验收项目交付" and never a demand title borrowed as the card identity (F3/F4).
 func BuildProjectAcceptancePresentation(projectName string, projectID uuid.UUID, demands []ProjectAcceptanceDemandInput) ProjectAcceptancePresentation {
 	projectName = strings.TrimSpace(projectName)
 	if projectName == "" {
@@ -56,6 +58,7 @@ func BuildProjectAcceptancePresentation(projectName string, projectID uuid.UUID,
 	}
 
 	out := ProjectAcceptancePresentation{
+		Title: truncateRunes("结项确认 · "+projectName, projectAcceptanceTitleMaxRunes),
 		Context: map[string]any{
 			"decision_type": "project_acceptance",
 			"project_id":    projectID.String(),
@@ -87,24 +90,13 @@ func BuildProjectAcceptancePresentation(projectName string, projectID uuid.UUID,
 	out.Context["demands"] = demandEntries
 
 	if len(sorted) == 0 {
-		out.Title = truncateRunes("验收 · "+projectName, projectAcceptanceTitleMaxRunes)
-		out.Summary = truncateRunes(fmt.Sprintf("项目「%s」全部需求已完成，请确认项目验收", projectName), projectAcceptanceSummaryMaxRunes)
+		out.Summary = truncateRunes(fmt.Sprintf("项目「%s」全部需求已完成，请确认结项并归档", projectName), projectAcceptanceSummaryMaxRunes)
 		return out
 	}
 
 	primary := sorted[0]
 	out.PrimaryDemandID = primary.ID
 	out.Context["primary_demand_id"] = primary.ID.String()
-	primaryTitle := strings.TrimSpace(primary.Title)
-	if primaryTitle == "" {
-		primaryTitle = primary.ID.String()
-	}
-
-	if len(sorted) == 1 {
-		out.Title = truncateRunes("验收 · "+primaryTitle, projectAcceptanceTitleMaxRunes)
-	} else {
-		out.Title = truncateRunes(fmt.Sprintf("验收 · %s 等 %d 项", primaryTitle, len(sorted)), projectAcceptanceTitleMaxRunes)
-	}
 
 	var b strings.Builder
 	b.WriteString("项目「")
@@ -139,7 +131,7 @@ func BuildProjectAcceptancePresentation(projectName string, projectID uuid.UUID,
 			}
 		}
 	}
-	b.WriteString("已完成，请确认项目验收")
+	b.WriteString("已完成，请确认结项并归档")
 	out.Summary = truncateRunes(b.String(), projectAcceptanceSummaryMaxRunes)
 	return out
 }

@@ -19,6 +19,7 @@ import {
   primaryTaskLabel,
   readContextText,
   readDemandRefs,
+  resolveInboxHref,
   riskLabel,
   riskTone,
 } from "./inbox-item-list";
@@ -159,11 +160,9 @@ function InboxActionContextSummary({ action, item }: { action: InboxAction; item
   const consequence = actionConsequence(action, decisionType);
   const riskReason = riskReasonFor(decisionType, item.risk_level);
   const showSummary = shouldShowSummary(item, demandLabel, projectName, taskLabel);
-  const reviewHref = primaryDemandId
-    ? `/workflows/${encodeURIComponent(primaryDemandId)}`
-    : item.source_project_id
-      ? `/projects/${encodeURIComponent(item.source_project_id)}`
-      : undefined;
+  // F3(§5.4.3): 走服务端 primary_surface 的唯一落点,不再本地拼 href。仅在有需求/项目
+  // 归属时展示"查看证据"入口(审批类纯事项无归属则不展示)。
+  const reviewHref = primaryDemandId || item.source_project_id ? resolveInboxHref(item) : undefined;
   const technicalRows = technicalContextRows(item);
 
   return (

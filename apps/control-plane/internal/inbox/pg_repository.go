@@ -56,6 +56,20 @@ func (r *PgRepository) GetItem(ctx context.Context, tenantID, itemID uuid.UUID) 
 	return itemFromRecord(row)
 }
 
+func (r *PgRepository) GetItemByApprovalSource(ctx context.Context, tenantID, approvalRequestID uuid.UUID) (Item, error) {
+	row, err := r.q.GetInboxItemByApprovalSource(ctx, queries.GetInboxItemByApprovalSourceParams{
+		TenantID:                tenantID,
+		SourceApprovalRequestID: approvalRequestID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Item{}, ErrItemNotFound
+		}
+		return Item{}, err
+	}
+	return itemFromRecord(row)
+}
+
 func (r *PgRepository) ListItems(ctx context.Context, req ListItemsRequest) ([]Item, error) {
 	rows, err := r.q.ListInboxItems(ctx, queries.ListInboxItemsParams{
 		TenantID:        req.TenantID,

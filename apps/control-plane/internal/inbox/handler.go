@@ -431,9 +431,16 @@ type itemResponse struct {
 	RiskLevel               *string        `json:"risk_level,omitempty"`
 	Priority                *string        `json:"priority,omitempty"`
 	Status                  Status         `json:"status"`
-	Actions                 []Action       `json:"actions"`
-	Context                 map[string]any `json:"context"`
-	DeepLink                map[string]any `json:"deep_link"`
+	// Kind/Layer are the canonical HumanTask classification (spec §4.1/§4.2),
+	// additive read-model metadata the console uses to group and label cards.
+	Kind     string         `json:"kind,omitempty"`
+	Layer    string         `json:"layer,omitempty"`
+	Why      string         `json:"why,omitempty"`
+	Evidence []any          `json:"evidence,omitempty"`
+	Progress map[string]any `json:"progress,omitempty"`
+	Actions  []Action       `json:"actions"`
+	Context  map[string]any `json:"context"`
+	DeepLink map[string]any `json:"deep_link"`
 	LastActivityAt          string         `json:"last_activity_at"`
 	CreatedAt               string         `json:"created_at"`
 	UpdatedAt               string         `json:"updated_at"`
@@ -475,6 +482,11 @@ func itemResponseFromDomain(item Item) itemResponse {
 		RiskLevel:               item.RiskLevel,
 		Priority:                item.Priority,
 		Status:                  item.Status,
+		Kind:                    contextString(item.ContextPayload, "kind"),
+		Layer:                   contextString(item.ContextPayload, "layer"),
+		Why:                     contextString(item.ContextPayload, "why"),
+		Evidence:                contextAnySlice(item.ContextPayload, "evidence"),
+		Progress:                contextMap(item.ContextPayload, "progress"),
 		Actions:                 actionsOrEmpty(item.Actions),
 		Context:                 mapOrEmpty(item.ContextPayload),
 		DeepLink:                mapOrEmpty(item.DeepLink),
@@ -490,6 +502,54 @@ func actionsOrEmpty(actions []Action) []Action {
 		return []Action{}
 	}
 	return append([]Action(nil), actions...)
+}
+
+// contextString reads a string value from an item's context payload, returning ""
+// when absent or not a string (used to surface the additive kind/layer metadata).
+func contextString(context map[string]any, key string) string {
+	if context == nil {
+		return ""
+	}
+	if value, ok := context[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func contextMap(context map[string]any, key string) map[string]any {
+	if context == nil {
+		return nil
+	}
+	value, ok := context[key]
+	if !ok || value == nil {
+		return nil
+	}
+	if asMap, ok := value.(map[string]any); ok {
+		return asMap
+	}
+	return nil
+}
+
+func contextAnySlice(context map[string]any, key string) []any {
+	if context == nil {
+		return nil
+	}
+	value, ok := context[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []any:
+		return typed
+	case []map[string]any:
+		out := make([]any, 0, len(typed))
+		for _, entry := range typed {
+			out = append(out, entry)
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func optionalUUIDString(value *uuid.UUID) *string {

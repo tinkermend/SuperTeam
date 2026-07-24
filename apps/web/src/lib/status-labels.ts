@@ -51,7 +51,8 @@ const STATUS_LABELS: Record<string, string> = {
   plan: "计划",
   planned: "已计划",
   planning: "规划中",
-  planning_pending: "待计划",
+  planning_pending: "排队规划中",
+  planning_failed: "规划失败",
   queued: "排队中",
   ready: "就绪",
   rejected: "已拒绝",
@@ -206,6 +207,44 @@ export function decisionTypeLabel(type: string | undefined): string {
   }
   const normalized = type.trim().toLowerCase();
   return DECISION_TYPE_LABELS[normalized] ?? type;
+}
+
+// 规范化 HumanTask kind(§4.2)的中文名。kind 是服务端从 decision_type 映射出的读模型
+// 元数据(见 InboxItem.kind),控制台按此分组/命名人类待办。
+const HUMAN_TASK_KIND_LABELS: Record<string, string> = {
+  plan_review: "计划确认",
+  dispatch_release: "执行放行",
+  downstream_release: "阶段放行",
+  acceptance_sign: "验收签署",
+  closure_confirm: "结项确认",
+  planning_failed: "规划失败",
+  planning_gap: "规划缺口",
+  task_failure_recovery: "任务失败恢复",
+};
+
+/** HumanTask.kind 面向用户显示(§4.2);未登记 kind 回退 decisionTypeLabel。 */
+export function humanTaskKindLabel(kind: string | undefined): string {
+  if (!kind) {
+    return "未知";
+  }
+  const normalized = kind.trim().toLowerCase();
+  return HUMAN_TASK_KIND_LABELS[normalized] ?? decisionTypeLabel(kind);
+}
+
+// 人类待办层级(§4.1)中文名。
+const HUMAN_TASK_LAYER_LABELS: Record<string, string> = {
+  task: "任务级",
+  demand: "需求级",
+  project: "项目级",
+};
+
+/** HumanTask.layer 面向用户显示(§4.1)。 */
+export function humanTaskLayerLabel(layer: string | undefined): string {
+  if (!layer) {
+    return "";
+  }
+  const normalized = layer.trim().toLowerCase();
+  return HUMAN_TASK_LAYER_LABELS[normalized] ?? layer;
 }
 
 const PROJECT_ROLE_LABELS: Record<string, string> = {

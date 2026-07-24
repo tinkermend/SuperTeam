@@ -21,8 +21,9 @@ func TestBuildProjectAcceptancePresentationSingleDemand(t *testing.T) {
 		},
 	})
 
-	require.Equal(t, "验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理", got.Title)
+	require.Equal(t, "结项确认 · 测试项目", got.Title)
 	require.NotContains(t, got.Title, "验收项目交付")
+	require.NotContains(t, got.Title, "帮我分析")
 	require.Contains(t, got.Summary, "测试项目")
 	require.Contains(t, got.Summary, "帮我分析一下当前服务器中的 claude code 配置是否合理")
 	require.Contains(t, got.Summary, "分析服务器中的Claude Code配置合理性")
@@ -50,7 +51,7 @@ func TestBuildProjectAcceptancePresentationMultipleDemandsLeadsWithNewest(t *tes
 	}
 	got := BuildProjectAcceptancePresentation("多需求项目", projectID, []ProjectAcceptanceDemandInput{older, newer})
 
-	require.Equal(t, "验收 · 新完成的需求 等 2 项", got.Title)
+	require.Equal(t, "结项确认 · 多需求项目", got.Title)
 	require.Equal(t, newer.ID, got.PrimaryDemandID)
 	require.Contains(t, got.Summary, "旧需求")
 	require.Contains(t, got.Summary, "新完成的需求")
@@ -59,7 +60,7 @@ func TestBuildProjectAcceptancePresentationMultipleDemandsLeadsWithNewest(t *tes
 
 func TestBuildProjectAcceptancePresentationEmptyDemandsFallsBackToProject(t *testing.T) {
 	got := BuildProjectAcceptancePresentation("空项目", uuid.New(), nil)
-	require.Equal(t, "验收 · 空项目", got.Title)
+	require.Equal(t, "结项确认 · 空项目", got.Title)
 	require.Contains(t, got.Summary, "空项目")
 	require.NotContains(t, got.Title, "验收项目交付")
 }

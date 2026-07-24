@@ -1874,10 +1874,6 @@ func (s *Service) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptan
 	return &result.Acceptance, nil
 }
 
-func (s *Service) CreateAcceptance(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error) {
-	return s.CreateAcceptanceRecord(ctx, req)
-}
-
 func (s *Service) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -2172,6 +2168,45 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 		return nil, err
 	}
 	return &demand, nil
+}
+
+// CloseDemandRequest closes/cancels a demand (spec §5.5 close_demand). Any
+// eligible project human (owner/member, any-of-N) may close a non-terminal demand
+// — the primary use is clearing a planning zombie the platform otherwise has no
+// API to cancel (F6, the direct cause of demands stuck "规划中" forever).
+type CloseDemandRequest struct {
+	TenantID    uuid.UUID
+	DemandID    uuid.UUID
+	ActorUserID uuid.UUID
+	Reason      string
+}
+
+// CloseDemand cancels a non-terminal demand after an eligibility check, writing a
+// demand.cancelled audit event. Idempotent on an already-cancelled demand;
+// ErrProjectConflict on a completed/failed demand.
+func (s *Service) CloseDemand(ctx context.Context, req CloseDemandRequest) (*ProjectDemand, error) {
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TenantID == uuid.Nil || req.DemandID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, req.TenantID, req.DemandID)
+	if err != nil {
+		return nil, err
+	}
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, demand.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if eligible, err := s.isEligibleDecider(ctx, req.TenantID, projectRecord, req.ActorUserID); err != nil {
+		return nil, err
+	} else if !eligible {
+		return nil, ErrProjectDecisionForbidden
+	}
+	updated, err := s.repository.CloseProjectDemand(ctx, req.TenantID, req.DemandID, req.ActorUserID, req.Reason)
+	if err != nil {
+		return nil, err
+	}
+	return &updated, nil
 }
 
 func (s *Service) resolveDemandReviewer(ctx context.Context, req SubmitProjectDemandRequest, project Project) (*ReviewerPreference, map[string]any, error) {
@@ -3465,7 +3500,11 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 	if err != nil {
 		return nil, err
 	}
-	if projectTaskRequiresAcceptance(task, req) {
+	requiresAcceptance, err := s.projectTaskRequiresAcceptance(ctx, task, req)
+	if err != nil {
+		return nil, err
+	}
+	if requiresAcceptance {
 		acceptanceReq := CompleteProjectTaskAttemptAcceptanceWritebackRequest{
 			Task:     task,
 			Complete: req,
@@ -5027,6 +5066,42 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 	if err != nil {
 		return nil, err
 	}
+	// Sister-F1 (handoff §6): a failed attempt whose failure family parks the
+	// task waiting_human still needs a durable, human-actionable card. Before
+	// this fix the method returned here with no decision request and no inbox
+	// projection — the task blocked silently forever (no card to click, no
+	// coordinator signal, fixture project_tasks.id=a144f12d). Mirror
+	// WaitHumanProjectTaskAttempt / recoverProjectTaskAttempt: create the
+	// decision request keyed to the failure's wait reason and project it.
+	if result.Task.Status == ProjectTaskStatusWaitingHuman {
+		projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		reason := humanWaitReasonForFailureFamily(req.FailureFamily)
+		decision, err := s.repository.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+			TenantID:          req.TenantID,
+			ProjectID:         task.ProjectID,
+			CoordinationJobID: task.CoordinationJobID,
+			ProjectTaskID:     &task.ID,
+			TargetUserID:      projectRecord.HumanOwnerUserID,
+			DecisionType:      projectTaskHumanWaitDecisionType(reason),
+			TitleSnapshot:     task.Title,
+			SummarySnapshot:   req.FailureSummary,
+			RiskLevelSnapshot: stringValue(task.RiskLevel),
+			StatusSnapshot:    "pending",
+			CreatedEventID:    &result.Event.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s.inbox != nil {
+			if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+				return nil, err
+			}
+		}
+		return &result.Task, nil
+	}
 	if result.Task.Status != ProjectTaskStatusFailed {
 		return &result.Task, nil
 	}
@@ -5323,11 +5398,21 @@ func (s *Service) projectTaskHumanWaitCompletionSummaryID(ctx context.Context, r
 	return uuid.Nil, nil
 }
 
-func projectTaskRequiresAcceptance(task ProjectTask, req CompleteProjectTaskAttemptRequest) bool {
+// taskCompletionNeedsHumanSignal reports whether a completed task carries a
+// human-review signal: the provider requested review (ResultContract), the
+// runtime reported RequiresHumanReview, or the task is high/critical risk.
+//
+// Spec §5.2 / F4: task.RequiresHumanApproval is deliberately NOT a signal here —
+// it already fires the pre-dispatch gate (dispatch_release / project_task_approval)
+// before the task runs; counting it again post-completion double-gated the same
+// flag. High-risk LEAF tasks that still need a human check are handled by the
+// planner injecting a human_judgment acceptance criterion (ensureHumanJudgmentCriterion),
+// resolved once at demand acceptance_sign, not by a per-task gate.
+func taskCompletionNeedsHumanSignal(task ProjectTask, req CompleteProjectTaskAttemptRequest) bool {
 	if req.ResultContract != nil && req.ResultContract.HumanReviewRequest != nil {
 		return true
 	}
-	if task.RequiresHumanApproval {
+	if req.RequiresHumanReview {
 		return true
 	}
 	if task.RiskLevel != nil {
@@ -5336,7 +5421,53 @@ func projectTaskRequiresAcceptance(task ProjectTask, req CompleteProjectTaskAtte
 			return true
 		}
 	}
-	return req.RequiresHumanReview
+	return false
+}
+
+// projectTaskRequiresAcceptance decides whether a completed task opens a
+// downstream_release gate (spec §5.2). It intercepts ONLY when a human-review
+// signal is present AND the task has at least one non-terminal downstream
+// dependency task — i.e. a human must vouch for this output before dependents
+// build on it. Leaf tasks (no live downstream) never intercept; their output
+// flows straight into the demand's acceptance evidence. This replaces the old
+// four-way OR that gated every high-risk / RequiresHumanApproval task regardless
+// of whether anything depended on it (F4 over-gating + double-gating).
+func (s *Service) projectTaskRequiresAcceptance(ctx context.Context, task ProjectTask, req CompleteProjectTaskAttemptRequest) (bool, error) {
+	if !taskCompletionNeedsHumanSignal(task, req) {
+		return false, nil
+	}
+	return s.hasNonTerminalDownstreamTask(ctx, task)
+}
+
+// hasNonTerminalDownstreamTask reports whether any task that depends on the given
+// task (blocker → dependents, via the same task graph the dispatcher reads) is
+// still non-terminal. Uses ListDependentsOfTask so the downstream口径 stays single-sourced.
+func (s *Service) hasNonTerminalDownstreamTask(ctx context.Context, task ProjectTask) (bool, error) {
+	dependents, err := s.repository.ListDependentsOfTask(ctx, task.TenantID, task.ProjectID, task.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, dependentID := range dependents {
+		dependent, err := s.repository.GetProjectTask(ctx, task.TenantID, dependentID)
+		if err != nil {
+			return false, err
+		}
+		if !isTerminalProjectTaskStatus(dependent.Status) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// isTerminalProjectTaskStatus covers every terminal task spelling used across the
+// read model (completed/done/success) plus cancelled/failed.
+func isTerminalProjectTaskStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "done", "success", "cancelled", "failed":
+		return true
+	default:
+		return false
+	}
 }
 
 func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable *bool) string {
@@ -6091,6 +6222,34 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		req.Decision != PlanningGapDecisionRestaffed && req.Decision != PlanningGapDecisionExempted && req.Decision != "rejected" {
 		return nil, ErrInvalidProject
 	}
+	if decision.DecisionType == DecisionTypePlanningFailed &&
+		req.Decision != PlanningFailedDecisionRetryPlanning &&
+		req.Decision != PlanningFailedDecisionReassign &&
+		req.Decision != PlanningFailedDecisionCloseDemand {
+		return nil, ErrInvalidProject
+	}
+	if (req.Decision == PlanningFailedDecisionRetryPlanning ||
+		req.Decision == PlanningFailedDecisionCloseDemand) &&
+		decision.DecisionType != DecisionTypePlanningFailed {
+		return nil, ErrInvalidProject
+	}
+	// demand_acceptance is the demand convergence gate. Its human action (from the
+	// inbox one-tap card or the demand page) must drive the criterion sign-off
+	// kernel (SignDemandCriterionVerdict), NOT the generic approval-resolve +
+	// coordinator signal below — the latter routed to the pre-dispatch gate
+	// activity and left the demand permanently stuck acceptance_pending while the
+	// sign endpoint 404'd (spec F1).
+	if decision.DecisionType == DecisionTypeDemandAcceptance {
+		return s.resolveDemandAcceptanceDecision(ctx, req, decision)
+	}
+	// §5.5: close_demand must cancel the demand before the generic resolve path
+	// marks the card resolved; retry/reassign fall through and the coordinator
+	// handlePlanningFailedDecision reopens+replans.
+	if decision.DecisionType == DecisionTypePlanningFailed && req.Decision == PlanningFailedDecisionCloseDemand {
+		if err := s.closeDemandFromPlanningFailedDecision(ctx, req, decision); err != nil {
+			return nil, err
+		}
+	}
 	// A non-empty target_exit_deliverable pins the replan's exit — it must name a
 	// member of the reviewed plan revision's available_exits. The web Select only
 	// ever offers known members, but an authorized plan_review actor can call this
@@ -6481,6 +6640,179 @@ func (s *Service) SignDemandCriterionVerdict(ctx context.Context, req SignDemand
 	return s.convergeDemandSignOff(ctx, req, demand, revisionID, criterion, humanJudgmentCriteria, verdicts)
 }
 
+// closeDemandFromPlanningFailedDecision cancels the demand referenced by a
+// planning_failed card's approval context (spec §5.5 close_demand). Idempotent
+// when the demand is already cancelled.
+func (s *Service) closeDemandFromPlanningFailedDecision(ctx context.Context, req ResolveDecisionRequest, decision DecisionRequest) error {
+	if s.approvals == nil {
+		return ErrInvalidProject
+	}
+	payload, err := s.approvals.GetRequestContextPayload(ctx, req.TenantID, decision.ApprovalRequestID)
+	if err != nil {
+		return err
+	}
+	demandIDRaw, _ := payload["demand_id"].(string)
+	demandID, err := uuid.Parse(strings.TrimSpace(demandIDRaw))
+	if err != nil {
+		return ErrInvalidProject
+	}
+	reason := strings.TrimSpace(req.Comment)
+	if reason == "" {
+		reason = "规划失败后关闭需求"
+	}
+	_, err = s.CloseDemand(ctx, CloseDemandRequest{
+		TenantID:    req.TenantID,
+		DemandID:    demandID,
+		ActorUserID: req.DecidedByUserID,
+		Reason:      reason,
+	})
+	return err
+}
+
+// resolveDemandAcceptanceDecision routes a demand_acceptance decision's human
+// action (from the inbox one-tap card or the demand page) to the criterion
+// sign-off kernel. approved signs every pending human-signable criterion (整单
+// 通过, spec §5.1); rejected fails the demand by signing the first pending
+// human-signable criterion unsatisfied. Both converge the demand and resolve
+// this decision idempotently via SignDemandCriterionVerdict. Anything else is
+// invalid vocabulary for this kind. This is the F1 fix: the inbox 同意 button now
+// writes real business facts instead of resolving into the dead-end gate.
+func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req ResolveDecisionRequest, decision DecisionRequest) (*DecisionRequest, error) {
+	// Already resolved: idempotent success (a concurrent sign / double-submit).
+	if decision.StatusSnapshot != "pending" {
+		return &decision, nil
+	}
+	if decision.PlanRevisionID == nil {
+		return nil, ErrInvalidProject
+	}
+	revision, err := s.repository.GetPlanRevision(ctx, req.TenantID, req.ProjectID, *decision.PlanRevisionID)
+	if err != nil {
+		return nil, err
+	}
+	demandID := revision.DemandID
+	if demandID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	switch req.Decision {
+	case "approved":
+		if _, err := s.SignAllPendingDemandCriteria(ctx, req.TenantID, demandID, req.DecidedByUserID, req.Comment); err != nil {
+			return nil, err
+		}
+	case "rejected":
+		if _, err := s.signFirstPendingDemandCriterionUnsatisfied(ctx, req.TenantID, demandID, req.DecidedByUserID, req.Comment); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, ErrInvalidProject
+	}
+	resolved, err := s.findDecisionRequest(ctx, req.TenantID, req.ProjectID, req.DecisionRequestID)
+	if err != nil {
+		return nil, err
+	}
+	return &resolved, nil
+}
+
+// SignAllPendingDemandCriteria signs every pending human-signable blocking
+// criterion of a demand parked at acceptance_pending with a satisfied verdict,
+// then relies on the sign kernel's convergence to complete the demand, resolve
+// the demand_acceptance decision, and open the project acceptance review
+// (spec §5.1, 拍板 #1: 收件箱一键整单通过). It reuses SignDemandCriterionVerdict per
+// criterion so判权/幂等/收敛/reconcile 逻辑 have exactly one implementation. Only
+// human-signable methods (human_judgment / adversarial_review / review_gate) are
+// touched; automated_test criteria are never human-signed. Any single failure
+// aborts (no silent half-sign — reconcile can self-heal, but the API must报错).
+func (s *Service) SignAllPendingDemandCriteria(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason string) (*SignDemandCriterionVerdictResult, error) {
+	signable, err := s.pendingHumanSignableCriteria(ctx, tenantID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	if len(signable) == 0 {
+		return nil, ErrProjectConflict
+	}
+	var result *SignDemandCriterionVerdictResult
+	for _, criterionID := range signable {
+		r, err := s.SignDemandCriterionVerdict(ctx, SignDemandCriterionVerdictRequest{
+			TenantID:    tenantID,
+			DemandID:    demandID,
+			ActorUserID: actorUserID,
+			CriterionID: criterionID,
+			Verdict:     demandCriterionVerdictSatisfied,
+			Reason:      reason,
+		})
+		if err != nil {
+			return nil, err
+		}
+		result = r
+	}
+	return result, nil
+}
+
+// signFirstPendingDemandCriterionUnsatisfied fails a demand by signing its first
+// pending human-signable blocking criterion unsatisfied — a single unsatisfied
+// blocking verdict fails the whole demand via convergeDemandSignOff, so there is
+// no need to touch the rest.
+func (s *Service) signFirstPendingDemandCriterionUnsatisfied(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason string) (*SignDemandCriterionVerdictResult, error) {
+	signable, err := s.pendingHumanSignableCriteria(ctx, tenantID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	if len(signable) == 0 {
+		return nil, ErrProjectConflict
+	}
+	return s.SignDemandCriterionVerdict(ctx, SignDemandCriterionVerdictRequest{
+		TenantID:    tenantID,
+		DemandID:    demandID,
+		ActorUserID: actorUserID,
+		CriterionID: signable[0],
+		Verdict:     demandCriterionVerdictUnsatisfied,
+		Reason:      reason,
+	})
+}
+
+// pendingHumanSignableCriteria returns the criterion_ids of the demand's current
+// effective plan revision that are still blocking-unsatisfied AND human-signable
+// (human_judgment / adversarial_review / review_gate). automated_test criteria
+// are excluded — humans never sign those.
+func (s *Service) pendingHumanSignableCriteria(ctx context.Context, tenantID, demandID uuid.UUID) ([]string, error) {
+	if tenantID == uuid.Nil || demandID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, tenantID, demand.ProjectID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	revisionID := CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return nil, ErrProjectConflict
+	}
+	criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	verdicts, err := s.repository.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	pending := ResolveUnsatisfiedBlockingCriteria(criteria, verdicts)
+	signable := make([]string, 0, len(pending))
+	for _, id := range pending {
+		criterion := findDemandAcceptanceCriterion(criteria, id)
+		if criterion == nil {
+			continue
+		}
+		if criterion.VerificationMethod == demandCriterionVerificationMethodHumanJudgment ||
+			criterion.VerificationMethod == demandCriterionVerificationMethodAdversarialReview ||
+			criterion.VerificationMethod == demandCriterionVerificationMethodReviewGate {
+			signable = append(signable, id)
+		}
+	}
+	return signable, nil
+}
+
 // convergeDemandSignOff drives the acceptance_pending demand toward its terminal
 // status after a verdict is on record, then resolves the pending decision and
 // opens the project acceptance review. Ordering is chosen so a crash between any
@@ -6519,7 +6851,7 @@ func (s *Service) convergeDemandSignOff(ctx context.Context, req SignDemandCrite
 		}
 	}
 	if targetStatus == ProjectDemandStatusCompleted || targetStatus == ProjectDemandStatusFailed {
-		if err := s.maybeOpenProjectAcceptanceReview(ctx, req.TenantID, demand.ProjectID); err != nil {
+		if err := s.afterDemandSignOffConvergence(ctx, req, demand.ProjectID, targetStatus); err != nil {
 			return nil, err
 		}
 	}
@@ -6563,7 +6895,7 @@ func (s *Service) reconcileTerminalDemandSignOff(ctx context.Context, req SignDe
 	default:
 		return nil, err
 	}
-	if err := s.maybeOpenProjectAcceptanceReview(ctx, req.TenantID, demand.ProjectID); err != nil {
+	if err := s.afterDemandSignOffConvergence(ctx, req, demand.ProjectID, demand.Status); err != nil {
 		return nil, err
 	}
 	signed, total := demandAcceptanceHumanProgress(humanJudgmentCriteria, verdicts)
@@ -6576,6 +6908,81 @@ func (s *Service) reconcileTerminalDemandSignOff(ctx context.Context, req SignDe
 		Total:        total,
 		Remaining:    total - signed,
 	}, nil
+}
+
+// afterDemandSignOffConvergence runs the project-level follow-up once a demand
+// has become terminal via criterion sign-off (§5.3):
+//   - also_close_project=true + completed + all demands terminal → archive +
+//     acceptance record directly (no closure_confirm card);
+//   - otherwise → maybeOpenProjectAcceptanceReview (opens closure_confirm when ready).
+func (s *Service) afterDemandSignOffConvergence(ctx context.Context, req SignDemandCriterionVerdictRequest, projectID uuid.UUID, demandStatus ProjectDemandStatus) error {
+	if req.AlsoCloseProject && demandStatus == ProjectDemandStatusCompleted {
+		closed, err := s.tryCloseProjectFromDemandSignOff(ctx, req.TenantID, projectID, req.ActorUserID, req.Reason)
+		if err != nil {
+			return err
+		}
+		if closed {
+			return nil
+		}
+		// Project not ready yet (other demands still open) — flag is a no-op;
+		// do not open a premature closure card either.
+		return nil
+	}
+	return s.maybeOpenProjectAcceptanceReview(ctx, req.TenantID, projectID)
+}
+
+// tryCloseProjectFromDemandSignOff archives the project and writes an accepted
+// acceptance record when every demand is terminal, mirroring
+// ApplyProjectAcceptanceDecision's approved path so「通过并结项」produces the
+// same audit + archive facts without an intervening closure_confirm card.
+// Returns closed=false when the project is not yet ready (caller treats as no-op).
+func (s *Service) tryCloseProjectFromDemandSignOff(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, reason string) (closed bool, err error) {
+	ready, err := s.repository.AreAllProjectDemandsTerminal(ctx, tenantID, projectID)
+	if err != nil {
+		return false, err
+	}
+	if !ready {
+		return false, nil
+	}
+	projectRecord, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return false, err
+	}
+	if projectArchived(projectRecord) {
+		return true, nil // already archived — idempotent success
+	}
+	if _, err := s.repository.ArchiveProject(ctx, tenantID, projectID); err != nil {
+		return false, err
+	}
+	conclusion := strings.TrimSpace(reason)
+	if conclusion == "" {
+		conclusion = "项目交付已通过验收（通过并结项）"
+	}
+	if _, err := s.repository.CreateAcceptanceRecordWithEvent(ctx, CreateAcceptanceRecordWithEventRequest{
+		Event: AppendProjectEventRequest{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			EventType: ProjectEventAcceptanceSubmitted,
+			ActorType: "human_user",
+			ActorID:   actorUserID.String(),
+			Summary:   "项目验收通过,已归档（通过并结项）",
+			Payload: map[string]any{
+				"decision":            "accepted",
+				"also_close_project":  true,
+				"accepted_by_user_id": actorUserID.String(),
+			},
+		},
+		Acceptance: CreateAcceptanceRecordRequest{
+			TenantID:         tenantID,
+			ProjectID:        projectID,
+			AcceptedByUserID: actorUserID,
+			Status:           "accepted",
+			Conclusion:       conclusion,
+		},
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // resolveDemandAcceptanceDecisionIfPending resolves the demand's still-pending
@@ -7553,19 +7960,32 @@ func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, no
 
 func validHumanDecision(decision string) bool {
 	switch decision {
-	case "approved", "rejected", "needs_more_evidence", "retry", "cancel_downstream", "reassign", PlanReviewDecisionRequestChanges, PlanningGapDecisionRestaffed, PlanningGapDecisionExempted:
+	case "approved", "rejected", "needs_more_evidence", "retry", "cancel_downstream", "reassign",
+		PlanReviewDecisionRequestChanges, PlanningGapDecisionRestaffed, PlanningGapDecisionExempted,
+		PlanningFailedDecisionRetryPlanning, PlanningFailedDecisionCloseDemand:
 		return true
 	default:
 		return false
 	}
 }
 
-// mapDecisionForApproval translates task-failure recovery vocabulary (retry /
-// cancel_downstream / reassign) into the closed approval decision enum while
-// preserving recovery_action in the payload for audit.
+// mapDecisionForApproval translates task-failure recovery / planning_failed
+// vocabulary into the closed approval decision enum while preserving action
+// details in the payload for audit.
 func mapDecisionForApproval(decisionType, decision string, payload map[string]any) (string, map[string]any) {
 	if payload == nil {
 		payload = map[string]any{}
+	}
+	if decisionType == DecisionTypePlanningFailed {
+		switch decision {
+		case PlanningFailedDecisionRetryPlanning, PlanningFailedDecisionReassign:
+			payload["planning_failed_action"] = decision
+			return "approved", payload
+		case PlanningFailedDecisionCloseDemand:
+			payload["planning_failed_action"] = decision
+			return "rejected", payload
+		}
+		return decision, payload
 	}
 	if decisionType != "task_failure_recovery" {
 		return decision, payload
@@ -7863,7 +8283,11 @@ func normalizeWorkflowInstancePagination(limit, offset int32) (int32, int32) {
 
 func normalizeWorkflowInstanceStatus(item WorkflowInstanceSummary) WorkflowInstanceStatus {
 	switch item.Status {
-	case WorkflowInstanceStatusFailed, WorkflowInstanceStatusCancelled:
+	case WorkflowInstanceStatusFailed, WorkflowInstanceStatusCancelled, WorkflowInstanceStatusWaitingHuman:
+		// F5(§5.6): ListWorkflowInstances 已按 demand_status 优先算出权威状态
+		// (acceptance_pending→waiting_human、planning_failed→failed),且 waiting_human_nodes
+		// 已按终态裁剪。此处不得再用任务计数把 waiting_human 盖回 completed——否则待验收需求
+		// (任务已 completed 但需求仍 acceptance_pending,如 F5 现场 dbd24727)会从运行视图消失。
 		return item.Status
 	}
 	if item.Progress.WaitingHumanNodes > 0 {

@@ -197,6 +197,9 @@ type Querier interface {
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	// 仅终态 failed/cancelled、尚未了结、且无 pending/requested 决策时可清理。
 	DismissProjectTask(ctx context.Context, arg DismissProjectTaskParams) (ProjectTask, error)
+	// §5.4.1: true when a project decision request already owns this approval —
+	// ApprovalProjectorAdapter must not also project/overwrite the inbox card.
+	ExistsProjectDecisionRequestByApproval(ctx context.Context, arg ExistsProjectDecisionRequestByApprovalParams) (bool, error)
 	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	// Resume the latest recoverable session for this lineage root, including
 	// completed ones. Upstream work often finishes (status=completed) before a
@@ -243,6 +246,9 @@ type Querier interface {
 	GetFeishuIdentityByOpenID(ctx context.Context, arg GetFeishuIdentityByOpenIDParams) (UserFeishuIdentity, error)
 	GetFeishuIdentityByUser(ctx context.Context, arg GetFeishuIdentityByUserParams) (UserFeishuIdentity, error)
 	GetInboxItem(ctx context.Context, arg GetInboxItemParams) (InboxItem, error)
+	// §5.4.1: ApprovalProjectorAdapter uses this to detect when a project-decision
+	// card already owns the (tenant_id, source_approval_request_id) unique row.
+	GetInboxItemByApprovalSource(ctx context.Context, arg GetInboxItemByApprovalSourceParams) (InboxItem, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (GetLatestDigitalEmployeeConfigRevisionRow, error)
 	GetLatestNonTerminalAutomationFire(ctx context.Context, arg GetLatestNonTerminalAutomationFireParams) (AutomationFire, error)
 	GetLatestProjectAcceptanceRecord(ctx context.Context, arg GetLatestProjectAcceptanceRecordParams) (ProjectAcceptanceRecord, error)

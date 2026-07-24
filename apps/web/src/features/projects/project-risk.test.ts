@@ -9,6 +9,7 @@ import {
   buildRiskCounts,
   deriveProjectRiskSummary,
   matchesProjectRiskFilter,
+  resolveProjectOwnerLabel,
   sortProjectsByRisk,
   type ProjectRiskSummaryMap,
 } from "./project-risk";
@@ -85,6 +86,39 @@ function evidence(
 }
 
 describe("project risk model", () => {
+  it("resolves project owner display names from the principal directory when member snapshots are missing", () => {
+    const ownerId = "33333333-3333-4333-8333-333333333333";
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      members: [],
+      principalNamesById: new Map([[ownerId, "开发管理员"]]),
+      project: project("project-owner-names", { human_owner_user_id: ownerId }),
+      tasks: [],
+    });
+
+    expect(summary.owner?.id).toBe(ownerId);
+    expect(summary.owner?.label).toBe("开发管理员");
+    expect(
+      resolveProjectOwnerLabel(
+        project("project-owner-names", { human_owner_user_id: ownerId }),
+        undefined,
+        new Map([[ownerId, "开发管理员"]]),
+      ),
+    ).toBe("开发管理员");
+  });
+
+  it("resolves owner label from directory when risk summary still pending without owner", () => {
+    const ownerId = "33333333-3333-4333-8333-333333333333";
+    expect(
+      resolveProjectOwnerLabel(
+        project("project-owner-pending", { human_owner_user_id: ownerId }),
+        undefined,
+        new Map([[ownerId, "开发管理员"]]),
+      ),
+    ).toBe("开发管理员");
+  });
+
   it("resolves handler display names from the principal directory when member snapshots are missing", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [],

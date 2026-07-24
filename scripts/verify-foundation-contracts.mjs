@@ -72,7 +72,6 @@ const requiredOpenApiOperations = new Set([
   "GET /api/v1/projects/{projectId}/reports",
   "GET /api/v1/projects/{projectId}/budget-ledger",
   "GET /api/v1/projects/{projectId}/budget-summary",
-  "POST /api/v1/projects/{projectId}/acceptance",
   "GET /api/v1/projects/{projectId}/acceptance",
   "GET /api/v1/projects/{projectId}/archive-preview",
   "POST /api/v1/projects/{projectId}/archive-snapshot",

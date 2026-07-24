@@ -18,6 +18,7 @@ export function normalizeProjectDetailSection(
     case "artifacts":
     case "budget":
     case "acceptance":
+    case "closure":
       return "assets";
     case "overview":
     case "config":
@@ -31,7 +32,7 @@ export function assetsInitialTabFromQuery(
   tab: string | undefined,
 ): "artifacts" | "budget" | "acceptance" {
   if (tab === "budget") return "budget";
-  if (tab === "acceptance") return "acceptance";
+  if (tab === "acceptance" || tab === "closure") return "acceptance";
   return "artifacts";
 }
 
@@ -44,6 +45,7 @@ export function isProjectDetailSectionQuery(value: string | undefined): boolean 
     value === "approval" ||
     value === "budget" ||
     value === "acceptance" ||
+    value === "closure" ||
     value === "config" ||
     value === "assets"
   );
