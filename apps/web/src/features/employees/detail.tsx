@@ -6,9 +6,9 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
-import { MasterDetailLayout, StatusPill, V3Segmented } from "@/components/superteam";
+import { MasterDetailLayout, StatusPill, Segmented } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +29,7 @@ import {
   type DigitalEmployeeRunCalendarItem,
   type DigitalEmployeeRunKind,
   type DigitalEmployeeRunListItem,
-  type DigitalEmployeeRunStatus,
+  type DigitalEmployeeRunStatus
 } from "@/lib/api/employees";
 import { listEmployeeSkills } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -39,7 +39,7 @@ import { EmployeeRunHistoryTable } from "./components/employee-run-history-table
 import {
   EmployeeWorkCalendar,
   employeeWeekQueryWindow,
-  employeeWeekStart,
+  employeeWeekStart
 } from "./components/employee-work-calendar";
 import { RunDetailDrawer } from "./components/run-detail-drawer";
 import { deleteBlockerTypeLabel, statusLabel } from "@/lib/status-labels";
@@ -84,8 +84,8 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     queryKey: ["digital-employee", employeeId],
     queryFn: () => getDigitalEmployee(apiOptions, employeeId),
     retry: (failureCount, error) =>
-      !(error instanceof ApiRequestError && error.status === 404) && failureCount < 3,
-  });
+      !(error instanceof ApiRequestError && error.status === 404) && failureCount < 3
+});
   // 员工不存在（已删除或路由过期）时停掉所有从属查询，避免对已删资源持续打 404。
   const employeeNotFound =
     employee.error instanceof ApiRequestError && employee.error.status === 404;
@@ -93,13 +93,13 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     enabled: !employeeNotFound,
     queryKey: ["digital-employee-scheduling-readiness", employeeId],
     queryFn: () => getDigitalEmployeeSchedulingReadiness(apiOptions, employeeId),
-    retry: false,
-  });
+    retry: false
+});
   const runStats = useQuery({
     enabled: !employeeNotFound,
     queryKey: ["digital-employee-run-stats", employeeId],
-    queryFn: () => getDigitalEmployeeRunStats(apiOptions, employeeId),
-  });
+    queryFn: () => getDigitalEmployeeRunStats(apiOptions, employeeId)
+});
   const runs = useQuery({
     enabled: !employeeNotFound && historyView === "list",
     queryKey: ["digital-employee-runs", employeeId, { page, statusFilter, runKindFilter }] as const,
@@ -108,11 +108,11 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
         status: statusFilter ? [statusFilter] : undefined,
-        run_kind: runKindFilter,
-      }),
+        run_kind: runKindFilter
+}),
     refetchInterval: (query) =>
-      query.state.data?.items.some((item) => isActiveRun(item.status)) ? 2500 : false,
-  });
+      query.state.data?.items.some((item) => isActiveRun(item.status)) ? 2500 : false
+});
   // Encode local Mon 00:00 → next Mon 00:00 as absolute UTC ISO so the API window
   // matches the calendar's local-day columns (do not send "UTC midnight" labels).
   const weekWindow = employeeWeekQueryWindow(weekStart);
@@ -127,26 +127,26 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
     queryFn: () =>
       getDigitalEmployeeRunCalendar(apiOptions, employeeId, {
         from: weekWindow.from,
-        to: weekWindow.to,
-      }),
-  });
+        to: weekWindow.to
+})
+});
   // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed the panel
   // (as computed props). The panel is now a pure presentational component.
   const skillsQuery = useQuery({
     enabled: !employeeNotFound,
     queryKey: ["employee-skills", employeeId],
-    queryFn: () => listEmployeeSkills(apiOptions, employeeId),
-  });
+    queryFn: () => listEmployeeSkills(apiOptions, employeeId)
+});
   const mcpQuery = useQuery({
     enabled: !employeeNotFound,
     queryKey: ["employee-effective-mcp", employeeId],
-    queryFn: () => listEffectiveMcpConfig(apiOptions, employeeId),
-  });
+    queryFn: () => listEffectiveMcpConfig(apiOptions, employeeId)
+});
   const envVarsQuery = useQuery({
     enabled: !employeeNotFound,
     queryKey: ["employee-environment-variables", employeeId],
-    queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
-  });
+    queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId)
+});
 
   // EffectiveEmployeeSkill carries both `inherited` and `source_scope`; `inherited`
   // is the canonical flag for skill counting (matches Task 11 semantics).
@@ -176,8 +176,8 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         task_title: item.task_title,
         project_id: item.project_id,
         project_name: item.project_name,
-        work_product_count: Array.isArray(run.work_products) ? run.work_products.length : 0,
-      });
+        work_product_count: Array.isArray(run.work_products) ? run.work_products.length : 0
+});
       setRunDrawerOpen(true);
     } catch {
       setCalendarOpenError("打开运行详情失败，请稍后重试");
@@ -217,8 +217,8 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       if (isDeleteBlockedError(error)) {
         setDeleteBlocked(error.payload);
       }
-    },
-  });
+    }
+});
 
   const handleStopped = async (_run: DigitalEmployeeRun) => {
     await refreshRunFacts();
@@ -246,9 +246,9 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
         subtitle="身份与工作节奏。"
       />
       <Main width="wide" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden py-4">
-        {employee.isLoading ? <p className="text-sm text-v3-ink-2">加载中</p> : null}
+        {employee.isLoading ? <p className="text-sm text-ink-2">加载中</p> : null}
         {employeeNotFound ? (
-          <p className="text-sm text-v3-ink-2">该数字员工不存在或已被删除。</p>
+          <p className="text-sm text-ink-2">该数字员工不存在或已被删除。</p>
         ) : employee.isError ? (
           <p className="text-sm text-destructive">数字员工加载失败</p>
         ) : null}
@@ -269,10 +269,10 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                 <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
                   <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-sm font-semibold text-v3-ink">工作节奏</h3>
-                      <p className="mt-0.5 text-[11px] text-v3-ink-3">按日查看做过什么；点条目打开运行详情。</p>
+                      <h3 className="text-sm font-semibold text-ink">工作节奏</h3>
+                      <p className="mt-0.5 text-[11px] text-ink-3">按日查看做过什么；点条目打开运行详情。</p>
                     </div>
-                    <V3Segmented
+                    <Segmented
                       aria-label="工作节奏视图"
                       onChange={setHistoryView}
                       options={[
@@ -284,7 +284,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                     />
                   </div>
                   {calendarOpenError ? (
-                    <p className="shrink-0 text-sm text-v3-danger">{calendarOpenError}</p>
+                    <p className="shrink-0 text-sm text-danger">{calendarOpenError}</p>
                   ) : null}
                   {historyView === "list" ? (
                     <div className="min-h-0 flex-1 overflow-auto">
@@ -341,15 +341,15 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                     isError: envVarsQuery.isError,
                     configuredCount: configuredEnvCount,
                     totalCount: envVarsQuery.data?.length ?? 0,
-                    missingNames: missingEnvVars.map((item) => item.name),
-                  }}
+                    missingNames: missingEnvVars.map((item) => item.name)
+}}
                   mcp={{
                     isLoading: mcpQuery.isLoading,
                     isError: mcpQuery.isError,
                     personalCount: personalMcpCount,
                     inheritedCount: inheritedMcpCount,
-                    totalCount: mcpQuery.data?.length ?? 0,
-                  }}
+                    totalCount: mcpQuery.data?.length ?? 0
+}}
                   onRetryReadiness={() => schedulingReadiness.refetch()}
                   readiness={schedulingReadiness.data}
                   readinessError={schedulingReadiness.isError}
@@ -359,8 +359,8 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                     isError: skillsQuery.isError,
                     personalCount: personalSkillCount,
                     inheritedCount: inheritedSkillCount,
-                    totalCount: skillsQuery.data?.length ?? 0,
-                  }}
+                    totalCount: skillsQuery.data?.length ?? 0
+}}
                 />
               }
             />
@@ -425,7 +425,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
             </div>
             {deleteBlocked ? <DeleteBlockedAlert blocked={deleteBlocked} /> : null}
             {genericDeleteError ? (
-              <p className="text-sm text-v3-danger">{genericDeleteError}</p>
+              <p className="text-sm text-danger">{genericDeleteError}</p>
             ) : null}
           </form>
         </ConfirmDialog>
@@ -467,7 +467,7 @@ function getDeleteErrorMessage(error: unknown) {
 
 function DeleteBlockedAlert({ blocked }: { blocked: DigitalEmployeeDeleteBlockedErrorResponse }) {
   return (
-    <Alert className="border-v3-danger/30 bg-v3-danger-soft text-v3-danger" variant="destructive">
+    <Alert className="border-danger/30 bg-danger-soft text-danger" variant="destructive">
       <AlertTriangle className="size-4" />
       <AlertTitle>删除被阻断</AlertTitle>
       <AlertDescription>
@@ -484,12 +484,12 @@ function DeleteBlockedAlert({ blocked }: { blocked: DigitalEmployeeDeleteBlocked
 
 function DeleteBlockerItem({ blocker }: { blocker: DigitalEmployeeDeleteBlocker }) {
   return (
-    <li className="rounded-v3-inner border border-v3-danger/25 bg-v3-card px-3 py-2 text-v3-ink">
+    <li className="rounded-inner border border-danger/25 bg-card px-3 py-2 text-ink">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{blocker.title}</span>
         <StatusPill tone="danger">{`${deleteBlockerTypeLabel(blocker.type)} · ${statusLabel(blocker.status)}`}</StatusPill>
       </div>
-      <p className="mt-1 break-all font-mono text-[11px] text-v3-ink-3">
+      <p className="mt-1 break-all font-mono text-[11px] text-ink-3">
         {blocker.project_id ? `project ${blocker.project_id} · ` : ""}
         {blocker.run_id ? `run ${blocker.run_id} · ` : ""}
         id {blocker.id}

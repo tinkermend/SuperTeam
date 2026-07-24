@@ -1,4 +1,4 @@
-import { type V3Tone } from "@/components/superteam";
+import { type Tone } from "@/components/superteam";
 import { type DigitalEmployeeOperationalStatus } from "@/lib/api/employees";
 
 // 数字员工运行态(operational_state.status)的中文标签与色调。单一事实源:运行总览、
@@ -13,7 +13,7 @@ export const operationalStatusLabel: Record<DigitalEmployeeOperationalStatus, st
   needs_configuration: "待配置",
 };
 
-export const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, V3Tone> = {
+export const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, Tone> = {
   working: "info",
   idle: "ok",
   queued: "warn",
@@ -25,7 +25,7 @@ export const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, V3T
 
 export type OperationalStatusPresentation = {
   label: string;
-  tone: V3Tone;
+  tone: Tone;
 };
 
 export function isKnownOperationalStatus(status?: string): status is DigitalEmployeeOperationalStatus {

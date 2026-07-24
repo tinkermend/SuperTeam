@@ -3,18 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, RotateCcw, Settings2 } from "lucide-react";
 import {
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Tab,
-  V3TabList,
-  V3Table,
-  V3Tabs,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageTab,
+  PageTabList,
+  DataTable,
+  PageTabs,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -25,7 +25,7 @@ import {
   listSystemConfigs,
   resetSystemConfig,
   isHighDangerConfig,
-  type SystemConfigItem,
+  type SystemConfigItem
 } from "@/lib/api/system-config";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { EditSystemConfigDialog } from "./edit-dialog";
@@ -35,7 +35,7 @@ import { displayDefaultValue, displayEffectiveValue } from "./units";
 const DOMAIN_LABELS: Record<string, string> = {
   artifact: "文件与工件",
   execution: "执行与调度",
-  security: "安全与会话",
+  security: "安全与会话"
 };
 const DOMAIN_ORDER = ["artifact", "execution", "security"];
 const FALLBACK_DOMAIN = "__other__";
@@ -54,8 +54,8 @@ export function SystemConfigPage() {
 
   const configs = useQuery({
     queryKey: ["system-configs"],
-    queryFn: () => listSystemConfigs({ baseUrl: apiBaseUrl }),
-  });
+    queryFn: () => listSystemConfigs({ baseUrl: apiBaseUrl })
+});
 
   const resetMutation = useMutation({
     mutationFn: (key: string) => resetSystemConfig({ baseUrl: apiBaseUrl }, key),
@@ -71,8 +71,8 @@ export function SystemConfigPage() {
             ? error.message
             : "恢复默认失败",
       );
-    },
-  });
+    }
+});
 
   const items = useMemo(() => configs.data?.items ?? [], [configs.data]);
 
@@ -110,19 +110,19 @@ export function SystemConfigPage() {
       <Main className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
           {domains.length > 1 ? (
-            <V3Tabs>
-              <V3TabList>
+            <PageTabs>
+              <PageTabList>
                 {domains.map((domain) => (
-                  <V3Tab
+                  <PageTab
                     key={domain}
                     active={domain === currentDomain}
                     onClick={() => setActiveDomain(domain)}
                   >
                     {domain === FALLBACK_DOMAIN ? "其他" : domainLabel(domain)}
-                  </V3Tab>
+                  </PageTab>
                 ))}
-              </V3TabList>
-            </V3Tabs>
+              </PageTabList>
+            </PageTabs>
           ) : null}
 
           {actionError ? (
@@ -134,24 +134,24 @@ export function SystemConfigPage() {
 
           <WorkSurface className="min-w-0">
             {isInitialLoading ? (
-              <V3LoadingState label="加载系统配置…" />
+              <LoadingState label="加载系统配置…" />
             ) : isBlockingError ? (
-              <V3ErrorState title="加载失败" description="无法加载系统配置，请确认管理员权限" />
+              <ErrorState title="加载失败" description="无法加载系统配置，请确认管理员权限" />
             ) : rows.length === 0 ? (
-              <V3EmptyState
+              <EmptyState
                 icon={<Settings2 />}
                 title="暂无配置项"
                 description="服务端注册表中还没有该领域的配置项。"
               />
             ) : (
-              <V3Table>
+              <DataTable>
                 <thead>
                   <tr>
-                    <V3Th>配置项</V3Th>
-                    <V3Th className="w-36">生效值</V3Th>
-                    <V3Th className="w-32">默认值</V3Th>
-                    <V3Th className="w-44">状态</V3Th>
-                    <V3Th className="w-28" aria-label="操作" />
+                    <Th>配置项</Th>
+                    <Th className="w-36">生效值</Th>
+                    <Th className="w-32">默认值</Th>
+                    <Th className="w-44">状态</Th>
+                    <Th className="w-28" aria-label="操作" />
                   </tr>
                 </thead>
                 <tbody>
@@ -170,7 +170,7 @@ export function SystemConfigPage() {
                     />
                   ))}
                 </tbody>
-              </V3Table>
+              </DataTable>
             )}
           </WorkSurface>
         </div>
@@ -200,8 +200,8 @@ export function SystemConfigPage() {
         handleConfirm={() => {
           if (pendingReset) {
             resetMutation.mutate(pendingReset.key, {
-              onSettled: () => setPendingReset(null),
-            });
+              onSettled: () => setPendingReset(null)
+});
           }
         }}
       />
@@ -212,15 +212,15 @@ export function SystemConfigPage() {
 function SystemConfigRow({
   item,
   onEdit,
-  onReset,
+  onReset
 }: {
   item: SystemConfigItem;
   onEdit: () => void;
   onReset: () => void;
 }) {
   return (
-    <V3Tr>
-      <V3Td>
+    <Tr>
+      <Td>
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="font-medium">{item.label}</span>
           <span className="truncate font-mono text-xs text-muted-foreground">{item.key}</span>
@@ -231,14 +231,14 @@ function SystemConfigRow({
             {item.description}
           </span>
         </div>
-      </V3Td>
-      <V3Td className="font-medium tabular-nums">
+      </Td>
+      <Td className="font-medium tabular-nums">
         {displayEffectiveValue(item)}
-      </V3Td>
-      <V3Td className="tabular-nums text-muted-foreground">
+      </Td>
+      <Td className="tabular-nums text-muted-foreground">
         {displayDefaultValue(item)}
-      </V3Td>
-      <V3Td>
+      </Td>
+      <Td>
         <div className="flex min-w-0 flex-col gap-1">
           <StatusPill tone={item.is_overridden ? "info" : "mute"}>
             {item.is_overridden ? "已修改" : "默认"}
@@ -253,25 +253,25 @@ function SystemConfigRow({
             </span>
           ) : null}
         </div>
-      </V3Td>
-      <V3Td>
+      </Td>
+      <Td>
         <div className="flex items-center gap-1">
-          <V3Button variant="ghost" size="sm" aria-label={`修改 ${item.label}`} onClick={onEdit}>
+          <Button variant="ghost" size="sm" aria-label={`修改 ${item.label}`} onClick={onEdit}>
             <Pencil />
-          </V3Button>
+          </Button>
           {item.is_overridden ? (
-            <V3Button
+            <Button
               variant="ghost"
               size="sm"
               aria-label={`恢复 ${item.label} 默认值`}
               onClick={onReset}
             >
               <RotateCcw />
-            </V3Button>
+            </Button>
           ) : null}
         </div>
-      </V3Td>
-    </V3Tr>
+      </Td>
+    </Tr>
   );
 }
 

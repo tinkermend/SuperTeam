@@ -12,24 +12,24 @@ import {
   RefreshCw,
   Server,
   ShieldCheck,
-  Wifi,
+  Wifi
 } from "lucide-react";
 import {
   IconTile,
   MasterDetailLayout,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import {
   AlertDialog,
@@ -39,16 +39,15 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -67,7 +66,7 @@ import {
   type RuntimeEvent,
   type RuntimeEventSeverity,
   type RuntimeNodeResponse,
-  type RuntimeProviderCapabilitySummary,
+  type RuntimeProviderCapabilitySummary
 } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
@@ -83,7 +82,7 @@ type RuntimeEventFilters = {
 
 const defaultEventFilters: RuntimeEventFilters = {
   limit: 50,
-  offset: 0,
+  offset: 0
 };
 
 const severityOptions: Array<{ label: string; value: RuntimeEventSeverity }> = [
@@ -97,32 +96,32 @@ const severityLabel: Record<RuntimeEventSeverity, string> = {
   error: "错误",
   info: "信息",
   success: "成功",
-  warning: "预警",
+  warning: "预警"
 };
 
-const severityTone: Record<RuntimeEventSeverity, V3Tone> = {
+const severityTone: Record<RuntimeEventSeverity, Tone> = {
   error: "danger",
   info: "info",
   success: "ok",
-  warning: "warn",
+  warning: "warn"
 };
 
 const enrollmentStatusLabel: Record<RuntimeEnrollmentStatus, string> = {
   approved: "已接入",
   pending: "待接入",
   rejected: "已拒绝",
-  revoked: "已停用",
+  revoked: "已停用"
 };
 
-const enrollmentStatusTone: Record<RuntimeEnrollmentStatus, V3Tone> = {
+const enrollmentStatusTone: Record<RuntimeEnrollmentStatus, Tone> = {
   approved: "ok",
   pending: "warn",
   rejected: "danger",
-  revoked: "mute",
+  revoked: "mute"
 };
 
 const runtimeTabTriggerClass =
-  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-v3-card-soft data-[state=inactive]:hover:text-v3-ink";
+  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-ink-2 shadow-none transition-colors data-[state=active]:bg-brand-soft data-[state=active]:text-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-card-soft data-[state=inactive]:hover:text-ink";
 
 export function RuntimeNodesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -141,28 +140,28 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
   const [activeTab, setActiveTab] = useState("overview");
   const [eventFilters, setEventFilters] = useState<RuntimeEventFilters>(() => ({
     ...defaultEventFilters,
-    node_id: search.node || undefined,
-  }));
+    node_id: search.node || undefined
+}));
   const [approveTarget, setApproveTarget] = useState<RuntimeEnrollment | null>(null);
   const [rejectTarget, setRejectTarget] = useState<RuntimeEnrollment | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
   const overview = useQuery({
     queryKey: ["runtime-overview"],
-    queryFn: () => getRuntimeOverview({ baseUrl: apiBaseUrl, fetcher }),
-  });
+    queryFn: () => getRuntimeOverview({ baseUrl: apiBaseUrl, fetcher })
+});
 
   const events = useQuery({
     queryKey: ["runtime-events", eventFilters],
     queryFn: () => listRuntimeEvents({ baseUrl: apiBaseUrl, fetcher, ...eventFilters }),
-    enabled: activeTab === "events",
-  });
+    enabled: activeTab === "events"
+});
 
   const enrollments = useQuery({
     queryKey: ["runtime-enrollments"],
     queryFn: () => listRuntimeEnrollments({ baseUrl: apiBaseUrl, fetcher }),
-    enabled: activeTab === "enrollments",
-  });
+    enabled: activeTab === "enrollments"
+});
 
   useEffect(() => {
     setEventFilters((current) => {
@@ -173,8 +172,8 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
       return {
         ...current,
         node_id: nextNodeId,
-        offset: 0,
-      };
+        offset: 0
+};
     });
   }, [search.node]);
 
@@ -190,8 +189,8 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
     onSuccess: () => {
       setApproveTarget(null);
       invalidateRuntimeQueries();
-    },
-  });
+    }
+});
 
   const reject = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
@@ -200,8 +199,8 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
       setRejectTarget(null);
       setRejectReason("");
       invalidateRuntimeQueries();
-    },
-  });
+    }
+});
 
   const openApproveDialog = (enrollment: RuntimeEnrollment) => {
     approve.reset();
@@ -239,8 +238,8 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
     setEventFilters((current) => ({
       ...current,
       [key]: value || undefined,
-      offset: 0,
-    }));
+      offset: 0
+}));
   };
 
   const overviewData = overview.data;
@@ -259,7 +258,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
         title="Runtime 节点"
         subtitle="运行节点接入、Provider 能力、事件审计和阻断信号的首屏视图。"
         actions={
-          <V3Button
+          <Button
             type="button"
             variant="outline"
             onClick={() => {
@@ -269,20 +268,20 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
           >
             <RefreshCw data-icon="inline-start" />
             刷新
-          </V3Button>
+          </Button>
         }
       />
       <Main width="wide">
-        <div className="flex min-w-0 flex-col gap-5 text-v3-ink">
+        <div className="flex min-w-0 flex-col gap-5 text-ink">
           {overview.isLoading ? (
             <WorkSurface>
-              <V3LoadingState label="加载 Runtime 总览中" />
+              <LoadingState label="加载 Runtime 总览中" />
             </WorkSurface>
           ) : null}
 
           {overview.isError ? (
             <WorkSurface className="p-4">
-              <V3ErrorState
+              <ErrorState
                 title="Runtime 总览加载失败"
                 description="请稍后重试，或检查 Control Plane Runtime API 是否可用。"
                 onRetry={() => void overview.refetch()}
@@ -298,7 +297,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                 <div className="min-w-0 overflow-x-auto pb-1">
                   <TabsList
                     aria-label="Runtime 管理视图"
-                    className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[14px] bg-v3-card p-1.5 text-v3-ink shadow-v3 sm:min-w-0"
+                    className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[14px] bg-card p-1.5 text-ink shadow-card sm:min-w-0"
                   >
                     <TabsTrigger className={runtimeTabTriggerClass} value="overview">
                       节点总览
@@ -445,7 +444,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
               <Button
                 disabled={reject.isPending || rejectReason.trim().length === 0 || !rejectTarget}
                 type="button"
-                variant="destructive"
+                variant="danger"
                 onClick={() => {
                   if (rejectTarget) {
                     reject.mutate({ id: rejectTarget.id, reason: rejectReason.trim() });
@@ -465,14 +464,14 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
 function SummaryMetrics({ summary }: { summary: RuntimeOverviewSummary }) {
   return (
     <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr))]">
-      <V3MetricCard
+      <MetricCard
         icon={<Wifi />}
         iconTone="ok"
         label="节点在线"
         value={`${summary.online_nodes} / ${summary.total_nodes}`}
         meta="在线节点 / 已登记节点 · 心跳健康"
       />
-      <V3MetricCard
+      <MetricCard
         icon={<ShieldCheck />}
         iconTone={summary.pending_enrollments > 0 ? "warn" : "ok"}
         label="待接入"
@@ -480,14 +479,14 @@ function SummaryMetrics({ summary }: { summary: RuntimeOverviewSummary }) {
         meta="等待人类确认的 Runtime 接入"
         loud={summary.pending_enrollments > 0}
       />
-      <V3MetricCard
+      <MetricCard
         icon={<Activity />}
         iconTone="info"
         label="Provider 会话"
         value={summary.active_provider_sessions}
         meta="当前 Provider 会话占用"
       />
-      <V3MetricCard
+      <MetricCard
         icon={<AlertTriangle />}
         iconTone={summary.blocked_events > 0 ? "danger" : "mute"}
         label="阻断事件"
@@ -513,7 +512,7 @@ function PendingEnrollmentPanel({
   onReject,
   isError,
   isLoading,
-  showDescription,
+  showDescription
 }: {
   enrollments: RuntimeEnrollment[];
   isError?: boolean;
@@ -529,14 +528,14 @@ function PendingEnrollmentPanel({
         title="接入审批"
         description={showDescription ? "确认节点来源和 Provider 能力后再批准接入。" : undefined}
       />
-      <div className="divide-y divide-v3-line">
-        {isLoading ? <V3LoadingState className="py-8" label="加载 Runtime 接入记录中" /> : null}
+      <div className="divide-y divide-line">
+        {isLoading ? <LoadingState className="py-8" label="加载 Runtime 接入记录中" /> : null}
         {isError ? (
           <div className="p-4">
-            <V3ErrorState title="Runtime 接入记录加载失败" />
+            <ErrorState title="Runtime 接入记录加载失败" />
           </div>
         ) : null}
-        {!isLoading && enrollments.length === 0 ? <V3EmptyState title="暂无 Runtime 接入记录" /> : null}
+        {!isLoading && enrollments.length === 0 ? <EmptyState title="暂无 Runtime 接入记录" /> : null}
         {enrollments.length > 0 ? (
           enrollments.map((enrollment) => (
             <EnrollmentRow key={enrollment.id} enrollment={enrollment} onApprove={onApprove} onReject={onReject} />
@@ -550,7 +549,7 @@ function PendingEnrollmentPanel({
 function EnrollmentRow({
   enrollment,
   onApprove,
-  onReject,
+  onReject
 }: {
   enrollment: RuntimeEnrollment;
   onApprove: (enrollment: RuntimeEnrollment) => void;
@@ -563,31 +562,31 @@ function EnrollmentRow({
     <div className="grid min-w-0 gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate font-semibold text-v3-ink">{enrollment.node_id}</span>
+          <span className="truncate font-semibold text-ink">{enrollment.node_id}</span>
           <StatusPill tone={enrollmentStatusTone[enrollment.status]}>
             {enrollmentStatusLabel[enrollment.status]}
           </StatusPill>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-v3-ink-2">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2">
           <span>创建：{formatTime(enrollment.created_at)}</span>
           <span>最近 hello：{formatTime(extras.lastHelloAt)}</span>
           <span>Slots：{extras.maxSlots ?? "-"}</span>
           <span>Provider：{extras.supportedProviders.length > 0 ? extras.supportedProviders.join(", ") : "-"}</span>
         </div>
         {enrollment.reject_reason ? (
-          <p className="mt-2 text-sm text-v3-ink-2">拒绝原因：{enrollment.reject_reason}</p>
+          <p className="mt-2 text-sm text-ink-2">拒绝原因：{enrollment.reject_reason}</p>
         ) : null}
       </div>
       {isPending ? (
         <div className="flex shrink-0 flex-wrap gap-2">
-          <V3Button type="button" size="sm" onClick={() => onApprove(enrollment)}>
+          <Button type="button" size="sm" onClick={() => onApprove(enrollment)}>
             <Check data-icon="inline-start" />
             批准接入
-          </V3Button>
-          <V3Button type="button" size="sm" variant="outline" onClick={() => onReject(enrollment)}>
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => onReject(enrollment)}>
             <Ban data-icon="inline-start" />
             拒绝
-          </V3Button>
+          </Button>
         </div>
       ) : null}
     </div>
@@ -602,27 +601,27 @@ function NodeInventoryPanel({ nodes }: { nodes: RuntimeNodeResponse[] }) {
         title="已登记节点"
         description="按心跳、槽位占用和 Provider 覆盖观察当前执行面。"
       />
-      <V3Table>
+      <DataTable>
         <thead>
           <tr>
-            <V3Th className="min-w-[260px]">节点</V3Th>
-            <V3Th>Provider</V3Th>
-            <V3Th>心跳</V3Th>
-            <V3Th className="min-w-[160px]">槽位占用</V3Th>
+            <Th className="min-w-[260px]">节点</Th>
+            <Th>Provider</Th>
+            <Th>心跳</Th>
+            <Th className="min-w-[160px]">槽位占用</Th>
           </tr>
         </thead>
         <tbody>
           {nodes.length === 0 ? (
-            <V3Tr>
-              <V3Td colSpan={4}>
-                <V3EmptyState title="暂无已登记 Runtime 节点" />
-              </V3Td>
-            </V3Tr>
+            <Tr>
+              <Td colSpan={4}>
+                <EmptyState title="暂无已登记 Runtime 节点" />
+              </Td>
+            </Tr>
           ) : (
             nodes.map((node) => <NodeRow key={node.node_id} node={node} />)
           )}
         </tbody>
-      </V3Table>
+      </DataTable>
     </WorkSurface>
   );
 }
@@ -631,41 +630,41 @@ function NodeRow({ node }: { node: RuntimeNodeResponse }) {
   const loadPercent = node.max_slots > 0 ? Math.min(100, Math.round((node.current_load / node.max_slots) * 100)) : 0;
 
   return (
-    <V3Tr tone={node.status === "online" ? undefined : "warn"}>
-      <V3Td className="min-w-[260px]">
+    <Tr tone={node.status === "online" ? undefined : "warn"}>
+      <Td className="min-w-[260px]">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate font-semibold text-v3-ink">{node.name || node.node_id}</span>
+          <span className="truncate font-semibold text-ink">{node.name || node.node_id}</span>
           <StatusPill tone={node.status === "online" ? "ok" : "mute"}>
             {node.status === "online" ? "在线" : "离线"}
           </StatusPill>
         </div>
-        <p className="mt-1 truncate font-mono text-xs text-v3-ink-2">节点 ID：{node.node_id}</p>
-      </V3Td>
-      <V3Td className="text-v3-ink-2">
+        <p className="mt-1 truncate font-mono text-xs text-ink-2">节点 ID：{node.node_id}</p>
+      </Td>
+      <Td className="text-ink-2">
         Provider：{node.supported_providers.length > 0 ? node.supported_providers.join(", ") : "-"}
-      </V3Td>
-      <V3Td className="tabular-nums text-v3-ink-2">{formatTime(node.last_heartbeat_at)}</V3Td>
-      <V3Td className="min-w-[160px]">
+      </Td>
+      <Td className="tabular-nums text-ink-2">{formatTime(node.last_heartbeat_at)}</Td>
+      <Td className="min-w-[160px]">
         <div className="flex items-center justify-between gap-2 text-[13px]">
-          <span className="text-v3-ink-2">槽位</span>
+          <span className="text-ink-2">槽位</span>
           <span className="font-medium">
             {node.current_load} / {node.max_slots}
           </span>
         </div>
-        <div className="mt-2 h-2 rounded-full bg-v3-card-soft">
+        <div className="mt-2 h-2 rounded-full bg-card-soft">
           <div
-            className="h-2 rounded-full bg-v3-info"
+            className="h-2 rounded-full bg-info"
             style={{ width: `${loadPercent}%` }}
           />
         </div>
-      </V3Td>
-    </V3Tr>
+      </Td>
+    </Tr>
   );
 }
 
 function ProviderCapabilityPanel({
   capabilities,
-  compact,
+  compact
 }: {
   capabilities: RuntimeProviderCapabilitySummary[];
   compact?: boolean;
@@ -675,7 +674,7 @@ function ProviderCapabilityPanel({
       <PanelHeader icon={<Cpu />} title="能力范围" description="Provider 类型、节点覆盖和健康可用性快照。" />
       <div className={cn("grid gap-3 p-4", compact ? "grid-cols-1" : "lg:grid-cols-2")}>
         {capabilities.length === 0 ? (
-          <V3EmptyState className="lg:col-span-2" title="暂无 Provider 能力上报" />
+          <EmptyState className="lg:col-span-2" title="暂无 Provider 能力上报" />
         ) : (
           capabilities.map((capability) => <CapabilityRow key={capability.provider_type} capability={capability} />)
         )}
@@ -686,17 +685,17 @@ function ProviderCapabilityPanel({
 
 function CapabilityRow({ capability }: { capability: RuntimeProviderCapabilitySummary }) {
   return (
-    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
+    <div className="min-w-0 rounded-inner bg-card-soft p-3">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-semibold text-v3-ink">{capability.provider_type}</div>
-          <p className="mt-1 text-xs text-v3-ink-2">最近上报：{formatTime(capability.last_seen_at)}</p>
+          <div className="truncate font-semibold text-ink">{capability.provider_type}</div>
+          <p className="mt-1 text-xs text-ink-2">最近上报：{formatTime(capability.last_seen_at)}</p>
         </div>
         <StatusPill tone={capability.healthy_count > 0 ? "ok" : "warn"}>
           健康 {capability.healthy_count}
         </StatusPill>
       </div>
-      <div className="my-3 border-t border-v3-line" />
+      <div className="my-3 border-t border-line" />
       <div className="grid grid-cols-3 gap-2 text-sm">
         <MetricLite label="节点" value={capability.node_count} />
         <MetricLite label="可用" value={capability.available_count} />
@@ -714,9 +713,9 @@ function RecentEventsPanel({ events }: { events: RuntimeEvent[] }) {
         title="最近事件"
         description="来自 Runtime command、节点心跳和 Provider 会话的最新回传。"
       />
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {events.length === 0 ? (
-          <V3EmptyState title="暂无 Runtime 事件" />
+          <EmptyState title="暂无 Runtime 事件" />
         ) : (
           events.slice(0, 5).map((event) => <EventRow key={event.id} event={event} />)
         )}
@@ -732,7 +731,7 @@ function EventAuditPanel({
   hasAppliedFilter,
   isError,
   isLoading,
-  onFilterChange,
+  onFilterChange
 }: {
   events: RuntimeEvent[];
   filterOptions: {
@@ -748,14 +747,14 @@ function EventAuditPanel({
 }) {
   return (
     <WorkSurface className="min-w-0">
-      <div className="border-b border-v3-line p-4">
+      <div className="border-b border-line p-4">
         <div className="flex min-w-0 items-start gap-3">
           <IconTile tone="info" size="sm">
             <FileClock />
           </IconTile>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-v3-ink">事件审计</h2>
-            <p className="mt-1 text-xs text-v3-ink-2">按事件类型、严重级别、Runtime 节点和 Provider 过滤最近事件。</p>
+            <h2 className="text-sm font-semibold text-ink">事件审计</h2>
+            <p className="mt-1 text-xs text-ink-2">按事件类型、严重级别、Runtime 节点和 Provider 过滤最近事件。</p>
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -790,41 +789,41 @@ function EventAuditPanel({
         </div>
       </div>
 
-      <V3Table>
+      <DataTable>
         <thead>
           <tr>
-            <V3Th className="min-w-[240px]">事件</V3Th>
-            <V3Th>严重级别</V3Th>
-            <V3Th>来源</V3Th>
-            <V3Th>节点 / Provider</V3Th>
-            <V3Th>时间</V3Th>
+            <Th className="min-w-[240px]">事件</Th>
+            <Th>严重级别</Th>
+            <Th>来源</Th>
+            <Th>节点 / Provider</Th>
+            <Th>时间</Th>
           </tr>
         </thead>
         <tbody>
           {isLoading ? (
-            <V3Tr>
-              <V3Td colSpan={5}>
-                <V3LoadingState className="py-8" label="加载 Runtime 事件中" />
-              </V3Td>
-            </V3Tr>
+            <Tr>
+              <Td colSpan={5}>
+                <LoadingState className="py-8" label="加载 Runtime 事件中" />
+              </Td>
+            </Tr>
           ) : null}
           {isError ? (
-            <V3Tr tone="danger">
-              <V3Td colSpan={5}>
-                <V3ErrorState title="Runtime 事件加载失败" />
-              </V3Td>
-            </V3Tr>
+            <Tr tone="danger">
+              <Td colSpan={5}>
+                <ErrorState title="Runtime 事件加载失败" />
+              </Td>
+            </Tr>
           ) : null}
           {!isLoading && events.length === 0 ? (
-            <V3Tr>
-              <V3Td colSpan={5}>
-                <V3EmptyState title={hasAppliedFilter ? "筛选后无 Runtime 事件" : "暂无 Runtime 事件"} />
-              </V3Td>
-            </V3Tr>
+            <Tr>
+              <Td colSpan={5}>
+                <EmptyState title={hasAppliedFilter ? "筛选后无 Runtime 事件" : "暂无 Runtime 事件"} />
+              </Td>
+            </Tr>
           ) : null}
           {events.length > 0 ? events.map((event) => <EventAuditRow key={event.id} event={event} />) : null}
         </tbody>
-      </V3Table>
+      </DataTable>
     </WorkSurface>
   );
 }
@@ -834,7 +833,7 @@ function RuntimeSelectFilter({
   label,
   onValueChange,
   options,
-  value,
+  value
 }: {
   id: string;
   label: string;
@@ -844,14 +843,14 @@ function RuntimeSelectFilter({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <Label htmlFor={id} className="text-xs font-semibold text-v3-ink-2">
+      <Label htmlFor={id} className="text-xs font-semibold text-ink-2">
         {label}
       </Label>
       <Select value={value ?? "all"} onValueChange={(nextValue) => onValueChange(nextValue === "all" ? undefined : nextValue)}>
         <SelectTrigger
           aria-label={label}
           id={id}
-          className="w-full border-v3-line-strong bg-v3-card text-v3-ink shadow-none"
+          className="w-full border-line-strong bg-card text-ink shadow-none"
         >
           <SelectValue placeholder="全部" />
         </SelectTrigger>
@@ -878,10 +877,10 @@ function EventRow({ event }: { event: RuntimeEvent }) {
       </IconTile>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate font-semibold text-v3-ink">{event.title}</span>
+          <span className="truncate font-semibold text-ink">{event.title}</span>
           <StatusPill tone={severityTone[event.severity]}>{severityLabel[event.severity]}</StatusPill>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-v3-ink-2">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2">
           <span>{event.event_type}</span>
           <span>{event.source}</span>
           <span>节点：{event.node_id ?? event.runtime_node_id ?? "-"}</span>
@@ -895,55 +894,55 @@ function EventRow({ event }: { event: RuntimeEvent }) {
 
 function EventAuditRow({ event }: { event: RuntimeEvent }) {
   return (
-    <V3Tr tone={event.severity === "error" ? "danger" : event.severity === "warning" ? "warn" : undefined}>
-      <V3Td className="min-w-[240px]">
+    <Tr tone={event.severity === "error" ? "danger" : event.severity === "warning" ? "warn" : undefined}>
+      <Td className="min-w-[240px]">
         <div className="flex min-w-0 items-start gap-3">
           <IconTile tone={severityTone[event.severity]} size="sm">
             {event.severity === "error" ? <AlertTriangle /> : <Clock />}
           </IconTile>
           <div className="min-w-0">
-            <p className="truncate font-semibold text-v3-ink">{event.title}</p>
-            {event.description ? <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">{event.description}</p> : null}
+            <p className="truncate font-semibold text-ink">{event.title}</p>
+            {event.description ? <p className="mt-1 line-clamp-2 text-xs text-ink-2">{event.description}</p> : null}
           </div>
         </div>
-      </V3Td>
-      <V3Td>
+      </Td>
+      <Td>
         <StatusPill tone={severityTone[event.severity]}>{severityLabel[event.severity]}</StatusPill>
-      </V3Td>
-      <V3Td className="text-v3-ink-2">
+      </Td>
+      <Td className="text-ink-2">
         <div className="grid gap-1">
           <span>{event.event_type}</span>
           <span className="text-xs">{event.source}</span>
         </div>
-      </V3Td>
-      <V3Td className="text-v3-ink-2">
+      </Td>
+      <Td className="text-ink-2">
         <div className="grid gap-1">
           <span>节点：{event.node_id ?? event.runtime_node_id ?? "-"}</span>
           <span>Provider：{event.provider_type ?? "-"}</span>
         </div>
-      </V3Td>
-      <V3Td className="tabular-nums text-v3-ink-2">{formatTime(event.created_at)}</V3Td>
-    </V3Tr>
+      </Td>
+      <Td className="tabular-nums text-ink-2">{formatTime(event.created_at)}</Td>
+    </Tr>
   );
 }
 
 function PanelHeader({
   description,
   icon,
-  title,
+  title
 }: {
   description?: string;
   icon: ReactNode;
   title: string;
 }) {
   return (
-    <div className="flex min-w-0 items-start gap-3 border-b border-v3-line p-4">
+    <div className="flex min-w-0 items-start gap-3 border-b border-line p-4">
       <IconTile tone="info" size="sm">
         {icon}
       </IconTile>
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-v3-ink">{title}</h2>
-        {description ? <p className="mt-1 text-xs text-v3-ink-2">{description}</p> : null}
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        {description ? <p className="mt-1 text-xs text-ink-2">{description}</p> : null}
       </div>
     </div>
   );
@@ -951,16 +950,16 @@ function PanelHeader({
 
 function MetricLite({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[12px] bg-v3-card px-3 py-2">
-      <div className="text-xs text-v3-ink-2">{label}</div>
-      <div className="mt-1 text-lg font-bold tracking-normal text-v3-ink tabular-nums">{value}</div>
+    <div className="rounded-[12px] bg-card px-3 py-2">
+      <div className="text-xs text-ink-2">{label}</div>
+      <div className="mt-1 text-lg font-bold tracking-normal text-ink tabular-nums">{value}</div>
     </div>
   );
 }
 
 function MutationErrorLine({ error, fallback }: { error: unknown; fallback: string }) {
   return (
-    <p className="rounded-v3-inner bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
+    <p className="rounded-inner bg-danger-soft px-3 py-2 text-sm text-danger">
       {readErrorMessage(error, fallback)}
     </p>
   );
@@ -982,8 +981,8 @@ function getEnrollmentExtras(enrollment: RuntimeEnrollment) {
   return {
     lastHelloAt: enrollment.last_hello_at,
     maxSlots: readNumber(requestPayload.max_slots),
-    supportedProviders: readStringArray(requestPayload.supported_providers),
-  };
+    supportedProviders: readStringArray(requestPayload.supported_providers)
+};
 }
 
 function readNumber(value: unknown): number | undefined {
@@ -1009,6 +1008,6 @@ function formatTime(value?: string): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    month: "2-digit",
-  }).format(date);
+    month: "2-digit"
+}).format(date);
 }

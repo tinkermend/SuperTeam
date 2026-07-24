@@ -5,11 +5,11 @@ import { toast } from "sonner";
 import {
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  type V3Tone,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  type Tone
 } from "@/components/superteam";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
@@ -17,19 +17,19 @@ import {
   getDemandAcceptanceCriteria,
   signDemandCriterionVerdict,
   type DemandAcceptanceCriterionDetail,
-  type DemandCriterionDeliverable,
+  type DemandCriterionDeliverable
 } from "@/lib/api/projects";
 import {
   ArtifactPreviewSheet,
   artifactContentHref,
   artifactPreviewKind,
-  type PreviewableArtifact,
+  type PreviewableArtifact
 } from "@/features/projects/components/artifact-preview-sheet";
 
 const ACCEPTANCE_PENDING = "acceptance_pending";
 
 function verdictPill(verdict: DemandAcceptanceCriterionDetail["verdict"]): {
-  tone: V3Tone;
+  tone: Tone;
   label: string;
 } {
   switch (verdict) {
@@ -94,13 +94,13 @@ function deliverableToPreviewable(
   return {
     id: deliverable.artifact_ref_id,
     title: deliverable.title,
-    content_type: deliverable.content_type,
-  };
+    content_type: deliverable.content_type
+};
 }
 
 function DeliverableChips({
   deliverables,
-  onPreview,
+  onPreview
 }: {
   deliverables: DemandCriterionDeliverable[];
   onPreview: (artifact: PreviewableArtifact) => void;
@@ -115,15 +115,15 @@ function DeliverableChips({
         const canPreview = artifactPreviewKind(previewable) != null;
         return (
           <span
-            className="inline-flex items-center gap-1.5 rounded-v3-pill border border-v3-line bg-v3-card px-2 py-0.5 text-[11px] text-v3-ink-2"
+            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-2 py-0.5 text-[11px] text-ink-2"
             key={deliverable.artifact_ref_id}
           >
-            <span className="max-w-[180px] truncate font-medium text-v3-ink" title={deliverable.title}>
+            <span className="max-w-[180px] truncate font-medium text-ink" title={deliverable.title}>
               {deliverable.title}
             </span>
             {canPreview ? (
               <button
-                className="inline-flex items-center gap-0.5 text-v3-brand hover:underline"
+                className="inline-flex items-center gap-0.5 text-brand hover:underline"
                 onClick={() => onPreview(previewable)}
                 type="button"
               >
@@ -132,7 +132,7 @@ function DeliverableChips({
               </button>
             ) : null}
             <a
-              className="inline-flex items-center gap-0.5 text-v3-brand hover:underline"
+              className="inline-flex items-center gap-0.5 text-brand hover:underline"
               href={artifactContentHref(deliverable.artifact_ref_id)}
               rel="noreferrer"
               target="_blank"
@@ -149,7 +149,7 @@ function DeliverableChips({
 
 function CriterionRow({
   criterion,
-  onPreview,
+  onPreview
 }: {
   criterion: DemandAcceptanceCriterionDetail;
   onPreview: (artifact: PreviewableArtifact) => void;
@@ -179,17 +179,17 @@ function CriterionRow({
         ) : null}
       </div>
 
-      <p className="text-sm leading-relaxed text-v3-ink">{criterion.statement}</p>
+      <p className="text-sm leading-relaxed text-ink">{criterion.statement}</p>
 
       {criterion.evidence_refs.length > 0 ? (
         <div className="flex flex-wrap gap-1.5" data-testid={`criterion-evidence-${criterion.criterion_id}`}>
           {criterion.evidence_refs.map((ref, index) => (
             <span
-              className="inline-flex items-center gap-1 rounded-v3-pill border border-v3-line bg-v3-surface px-2 py-0.5 font-mono text-[11px] text-v3-ink-2"
+              className="inline-flex items-center gap-1 rounded-full border border-line bg-card px-2 py-0.5 font-mono text-[11px] text-ink-2"
               key={`${ref}-${index}`}
               title={ref}
             >
-              <span className="text-v3-ink-3">
+              <span className="text-ink-3">
                 {ref.startsWith("attestation:") ? "存证" : "证据"}
               </span>
               <span className="max-w-[220px] truncate">{ref}</span>
@@ -199,15 +199,15 @@ function CriterionRow({
       ) : null}
 
       {criterion.task_summaries.length > 0 ? (
-        <details className="rounded-v3-inner border border-v3-line bg-v3-surface">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-v3-ink-2">
+        <details className="rounded-inner border border-line bg-card">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-ink-2">
             查看满足任务产出（{criterion.task_summaries.length}）
           </summary>
-          <div className="divide-y divide-v3-line border-t border-v3-line">
+          <div className="divide-y divide-line border-t border-line">
             {criterion.task_summaries.map((summary, index) => (
               <div className="grid gap-1.5 px-3 py-2" key={`${summary.task_id}-${index}`}>
-                <span className="font-mono text-[11px] text-v3-ink-3">{summary.task_id}</span>
-                <p className="text-xs leading-relaxed text-v3-ink-2">
+                <span className="font-mono text-[11px] text-ink-3">{summary.task_id}</span>
+                <p className="text-xs leading-relaxed text-ink-2">
                   {summary.summary.trim() ? summary.summary : "该任务尚无执行结论"}
                 </p>
                 <DeliverableChips
@@ -226,7 +226,7 @@ function CriterionRow({
 function FinalAcceptanceGate({
   pendingCriteria,
   onAccept,
-  isSigning,
+  isSigning
 }: {
   pendingCriteria: DemandAcceptanceCriterionDetail[];
   onAccept?: FinalAcceptanceHandler;
@@ -242,16 +242,16 @@ function FinalAcceptanceGate({
 
   return (
     <div
-      className="grid gap-2.5 rounded-v3-inner border border-v3-warn/40 bg-v3-warn-soft/40 p-3"
+      className="grid gap-2.5 rounded-inner border border-warn/40 bg-warn-soft/40 p-3"
       data-testid="final-acceptance-gate"
     >
       <div className="grid gap-1">
-        <p className="text-sm font-semibold text-v3-ink">最终验收</p>
-        <p className="text-xs leading-5 text-v3-ink-2">
+        <p className="text-sm font-semibold text-ink">最终验收</p>
+        <p className="text-xs leading-5 text-ink-2">
           确认交付是否符合需求意图。一次通过即完成本次人类守门；不通过将使本需求失败。
         </p>
       </div>
-      <ul className="grid gap-1 text-xs text-v3-ink-2">
+      <ul className="grid gap-1 text-xs text-ink-2">
         {pendingCriteria.map((criterion) => (
           <li key={criterion.criterion_id} data-testid={`final-acceptance-item-${criterion.criterion_id}`}>
             · {criterion.statement}
@@ -265,36 +265,36 @@ function FinalAcceptanceGate({
         placeholder="签署理由——不通过时必填；通过时可选"
         value={reason}
       />
-      <label className="flex cursor-pointer items-start gap-2 text-xs leading-5 text-v3-ink-2">
+      <label className="flex cursor-pointer items-start gap-2 text-xs leading-5 text-ink-2">
         <input
           checked={alsoCloseProject}
-          className="mt-0.5 size-3.5 shrink-0 accent-[var(--v3-brand)]"
+          className="mt-0.5 size-3.5 shrink-0 accent-[var(--brand)]"
           data-testid="final-acceptance-also-close"
           onChange={(event) => setAlsoCloseProject(event.target.checked)}
           type="checkbox"
         />
         <span>
           通过并结项
-          <span className="mt-0.5 block text-[11px] text-v3-ink-3">
+          <span className="mt-0.5 block text-[11px] text-ink-3">
             勾选后，若项目全部需求已终态，将直接归档，不再产生结项确认卡（默认不勾选）
           </span>
         </span>
       </label>
       <div className="flex flex-wrap gap-2">
-        <V3Button
+        <Button
           data-testid="final-acceptance-pass"
           disabled={isSigning}
           onClick={() =>
             onAccept("satisfied", reason.trim(), criterionIds, {
-              alsoCloseProject,
-            })
+              alsoCloseProject
+})
           }
           size="sm"
           variant="primary"
         >
           {alsoCloseProject ? "通过并结项" : "通过"}
-        </V3Button>
-        <V3Button
+        </Button>
+        <Button
           data-testid="final-acceptance-reject"
           disabled={isSigning || !reason.trim()}
           onClick={() => onAccept("unsatisfied", reason.trim(), criterionIds)}
@@ -302,7 +302,7 @@ function FinalAcceptanceGate({
           variant="danger"
         >
           不通过
-        </V3Button>
+        </Button>
       </div>
     </div>
   );
@@ -325,7 +325,7 @@ export function CriteriaPanelView({
   isError,
   onRetry,
   onFinalAccept,
-  isSigning,
+  isSigning
 }: CriteriaPanelViewProps) {
   const [previewArtifact, setPreviewArtifact] =
     useState<PreviewableArtifact | null>(null);
@@ -334,19 +334,19 @@ export function CriteriaPanelView({
   return (
     <SoftCard className="grid gap-3 p-4">
       <div className="flex items-center gap-2">
-        <FileCheck2 className="size-4 text-v3-ink-2" />
-        <h3 className="text-sm font-semibold text-v3-ink">验收判据血缘</h3>
+        <FileCheck2 className="size-4 text-ink-2" />
+        <h3 className="text-sm font-semibold text-ink">验收判据血缘</h3>
         {demandStatus === ACCEPTANCE_PENDING ? (
           <StatusPill tone="warn">待验收</StatusPill>
         ) : null}
       </div>
 
       {isError ? (
-        <V3ErrorState description="无法加载验收判据" onRetry={onRetry} />
+        <ErrorState description="无法加载验收判据" onRetry={onRetry} />
       ) : isLoading ? (
-        <V3LoadingState />
+        <LoadingState />
       ) : criteria.length === 0 ? (
-        <V3EmptyState title="本需求未声明验收判据" />
+        <EmptyState title="本需求未声明验收判据" />
       ) : (
         <>
           <FinalAcceptanceGate
@@ -354,7 +354,7 @@ export function CriteriaPanelView({
             onAccept={onFinalAccept}
             pendingCriteria={pendingHuman}
           />
-          <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+          <div className="divide-y divide-line rounded-inner border border-line">
             {criteria.map((criterion) => (
               <CriterionRow
                 criterion={criterion}
@@ -386,8 +386,8 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
     enabled: Boolean(demandId),
     queryFn: () => getDemandAcceptanceCriteria(apiOptions, demandId),
     queryKey: ["demand-acceptance-criteria", apiBaseUrl, demandId],
-    refetchInterval: 5000,
-  });
+    refetchInterval: 5000
+});
 
   const signMutation = useMutation({
     mutationFn: async (input: {
@@ -404,8 +404,8 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
         await signDemandCriterionVerdict(apiOptions, demandId, {
           criterion_id: input.criterionIds[0]!,
           reason: input.reason || undefined,
-          verdict: "unsatisfied",
-        });
+          verdict: "unsatisfied"
+});
         return;
       }
       const lastIndex = input.criterionIds.length - 1;
@@ -417,8 +417,8 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
             Boolean(input.alsoCloseProject) && i === lastIndex ? true : undefined,
           criterion_id: criterionId,
           reason: input.reason || undefined,
-          verdict: "satisfied",
-        });
+          verdict: "satisfied"
+});
       }
     },
     onError: (error) => {
@@ -431,15 +431,15 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
     onSuccess: () => {
       toast.success("已记录最终验收");
       void queryClient.invalidateQueries({
-        queryKey: ["demand-acceptance-criteria", apiBaseUrl, demandId],
-      });
+        queryKey: ["demand-acceptance-criteria", apiBaseUrl, demandId]
+});
       // 需求可能因本次签署收敛为已完成/失败，刷新详情头卡与河道列表的状态徽标。
       void queryClient.invalidateQueries({ queryKey: ["workflow-detail", apiBaseUrl, demandId] });
       void queryClient.invalidateQueries({ queryKey: ["workflow-instances", apiBaseUrl] });
       void queryClient.invalidateQueries({ queryKey: ["inbox"] });
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
-    },
-  });
+    }
+});
 
   const data = criteriaQuery.data;
 
@@ -456,8 +456,8 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
           alsoCloseProject: options?.alsoCloseProject,
           criterionIds,
           reason,
-          verdict,
-        })
+          verdict
+})
       }
     />
   );

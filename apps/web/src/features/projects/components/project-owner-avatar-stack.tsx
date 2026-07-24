@@ -2,13 +2,13 @@ import { Link } from "@tanstack/react-router";
 import {
   UserIdentity,
   UserIdentityAvatar,
-  type UserIdentityData,
+  type UserIdentityData
 } from "@/components/superteam/user-identity";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
-  TooltipTrigger,
+  TooltipTrigger
 } from "@/components/ui/tooltip";
 import type { ProjectMember } from "@/lib/api/projects";
 import { cn } from "@/lib/utils";
@@ -36,8 +36,8 @@ function ownerIdentity(
         fromUsers.display_name?.trim() ||
         principalName ||
         fromUsers.username?.trim() ||
-        "负责人",
-    };
+        "负责人"
+};
   }
   const name =
     owner.display_name_snapshot?.trim() || principalName || "负责人";
@@ -46,8 +46,8 @@ function ownerIdentity(
     display_name: name,
     status: owner.status || "active",
     // 不要把展示名填进 username，否则 UserIdentity 次行会回退成裸 UUID。
-    username: undefined,
-  };
+    username: undefined
+};
 }
 
 function ownerDirectoryLink(owner: ProjectMember): {
@@ -60,15 +60,15 @@ function ownerDirectoryLink(owner: ProjectMember): {
     return {
       label: "在数字员工中查看",
       to: "/employees/$employeeId",
-      params: { employeeId: owner.principal_id },
-    };
+      params: { employeeId: owner.principal_id }
+};
   }
   if (owner.principal_type === "human_user") {
     return {
       label: "在用户管理中查看",
       to: "/users",
-      search: { user: owner.principal_id },
-    };
+      search: { user: owner.principal_id }
+};
   }
   return null;
 }
@@ -77,7 +77,7 @@ function ownerDirectoryLink(owner: ProjectMember): {
 export function ProjectOwnerAvatarStack({
   owners,
   principalNamesById,
-  usersById,
+  usersById
 }: ProjectOwnerAvatarStackProps) {
   if (owners.length === 0) {
     return null;
@@ -91,7 +91,7 @@ export function ProjectOwnerAvatarStack({
       className="mt-1.5 flex flex-wrap items-center gap-2"
       data-testid="project-owner-avatars"
     >
-      <span className="text-xs text-v3-ink-3">负责人</span>
+      <span className="text-xs text-ink-3">负责人</span>
       <span className="flex items-center">
         {visible.map((owner, index) => {
           const user = ownerIdentity(owner, principalNamesById, usersById);
@@ -105,13 +105,13 @@ export function ProjectOwnerAvatarStack({
                     <button
                       aria-label={`负责人 ${label}`}
                       className={cn(
-                        "rounded-full outline-none transition-transform hover:z-10 hover:scale-105 focus-visible:ring-2 focus-visible:ring-v3-brand/60",
+                        "rounded-full outline-none transition-transform hover:z-10 hover:scale-105 focus-visible:ring-2 focus-visible:ring-brand/60",
                         index > 0 && "-ml-2",
                       )}
                       type="button"
                     >
                       <UserIdentityAvatar
-                        className="size-7 border-2 border-v3-card shadow-none"
+                        className="size-7 border-2 border-card shadow-none"
                         user={user}
                       />
                     </button>
@@ -121,13 +121,13 @@ export function ProjectOwnerAvatarStack({
               </Tooltip>
               <PopoverContent
                 align="start"
-                className="w-64 rounded-[14px] border-v3-line p-3 shadow-v3"
+                className="w-64 rounded-[14px] border-line p-3 shadow-card"
               >
                 <UserIdentity showSecondary size="sm" user={user} />
                 {directoryLink ? (
                   directoryLink.params ? (
                     <Link
-                      className="mt-2 inline-flex text-[12px] font-semibold text-v3-brand hover:underline"
+                      className="mt-2 inline-flex text-[12px] font-semibold text-brand hover:underline"
                       params={directoryLink.params}
                       to={directoryLink.to}
                     >
@@ -135,7 +135,7 @@ export function ProjectOwnerAvatarStack({
                     </Link>
                   ) : (
                     <Link
-                      className="mt-2 inline-flex text-[12px] font-semibold text-v3-brand hover:underline"
+                      className="mt-2 inline-flex text-[12px] font-semibold text-brand hover:underline"
                       search={directoryLink.search}
                       to={directoryLink.to}
                     >
@@ -150,7 +150,7 @@ export function ProjectOwnerAvatarStack({
         {overflow > 0 ? (
           <span
             aria-label={`还有 ${overflow} 位负责人`}
-            className="-ml-2 grid size-7 place-items-center rounded-full border-2 border-v3-card bg-v3-card-soft text-[10px] font-bold text-v3-ink-2"
+            className="-ml-2 grid size-7 place-items-center rounded-full border-2 border-card bg-card-soft text-[10px] font-bold text-ink-2"
           >
             +{overflow}
           </span>

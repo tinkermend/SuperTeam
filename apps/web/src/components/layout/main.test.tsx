@@ -10,7 +10,7 @@ describe("Main", () => {
     await expect.element(main).toHaveClass("w-full");
     await expect
       .element(main)
-      .toHaveClass("@7xl/content:max-w-(--v3-layout-contained)");
+      .toHaveClass("@7xl/content:max-w-(--layout-contained)");
     expect((main.element() as HTMLElement).dataset.width).toBe("contained");
   });
 
@@ -28,7 +28,7 @@ describe("Main", () => {
 
     await expect
       .element(main)
-      .toHaveClass("@7xl/content:max-w-(--v3-layout-contained)");
+      .toHaveClass("@7xl/content:max-w-(--layout-contained)");
     expect((main.element() as HTMLElement).dataset.width).toBe("contained");
   });
 
@@ -36,7 +36,7 @@ describe("Main", () => {
     const screen = await render(<Main width="wide">主从工作台</Main>);
     const main = screen.getByRole("main");
 
-    await expect.element(main).toHaveClass("max-w-(--v3-layout-wide)");
+    await expect.element(main).toHaveClass("max-w-(--layout-wide)");
     await expect.element(main).toHaveClass("mx-auto");
     expect((main.element() as HTMLElement).dataset.width).toBe("wide");
   });

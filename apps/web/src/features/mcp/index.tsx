@@ -4,17 +4,17 @@ import { CheckCircle2, KeyRound, Network, Plus, Trash2 } from "lucide-react";
 import {
   MetricGrid,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -25,13 +25,13 @@ import {
   deleteMcpServerDefinition,
   listMcpServerDefinitions,
   listMcpServerDependentSkills,
-  type McpServerDefinition,
+  type McpServerDefinition
 } from "@/lib/api/capabilities";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { statusLabel } from "@/lib/status-labels";
 import { RegisterMcpDialog } from "./register-dialog";
 
-type MetricTone = V3Tone;
+type MetricTone = Tone;
 
 export function McpManagementPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -42,8 +42,8 @@ export function McpManagementPage() {
 
   const definitions = useQuery({
     queryKey: ["mcp-server-definitions"],
-    queryFn: () => listMcpServerDefinitions({ baseUrl: apiBaseUrl }),
-  });
+    queryFn: () => listMcpServerDefinitions({ baseUrl: apiBaseUrl })
+});
 
   const deleteMutation = useMutation({
     mutationFn: (serverId: string) =>
@@ -60,14 +60,14 @@ export function McpManagementPage() {
             ? error.message
             : "删除 MCP 失败",
       );
-    },
-  });
+    }
+});
 
   const dependentSkills = useQuery({
     queryKey: ["mcp-dependent-skills", pendingDelete?.id],
     queryFn: () => listMcpServerDependentSkills({ baseUrl: apiBaseUrl }, pendingDelete!.id),
-    enabled: pendingDelete !== null,
-  });
+    enabled: pendingDelete !== null
+});
 
   const rows = definitions.data ?? [];
   const metrics = useMemo(() => {
@@ -78,20 +78,20 @@ export function McpManagementPage() {
         label: "MCP 总数",
         value: rows.length,
         iconTone: "info" as MetricTone,
-        icon: <Network />,
-      },
+        icon: <Network />
+},
       {
         label: "活跃 MCP",
         value: active,
         iconTone: "ok" as MetricTone,
-        icon: <CheckCircle2 />,
-      },
+        icon: <CheckCircle2 />
+},
       {
         label: "需要环境变量",
         value: requiresEnv,
         iconTone: "warn" as MetricTone,
-        icon: <KeyRound />,
-      },
+        icon: <KeyRound />
+},
     ];
   }, [rows]);
 
@@ -109,15 +109,15 @@ export function McpManagementPage() {
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-            <V3Button className="h-11 self-start px-5" onClick={() => setShowCreate(true)}>
+            <Button className="h-11 self-start px-5" onClick={() => setShowCreate(true)}>
               <Plus data-icon="inline-start" />
               注册 MCP
-            </V3Button>
+            </Button>
           </div>
 
           <MetricGrid aria-label="MCP 指标">
             {metrics.map((metric) => (
-              <V3MetricCard
+              <MetricCard
                 key={metric.label}
                 label={metric.label}
                 value={metric.value}
@@ -136,26 +136,26 @@ export function McpManagementPage() {
 
           <WorkSurface className="min-w-0">
             {isInitialLoading ? (
-              <V3LoadingState label="加载 MCP 定义…" />
+              <LoadingState label="加载 MCP 定义…" />
             ) : isBlockingError ? (
-              <V3ErrorState title="加载失败" description="无法加载 MCP 定义" />
+              <ErrorState title="加载失败" description="无法加载 MCP 定义" />
             ) : rows.length === 0 ? (
-              <V3EmptyState
+              <EmptyState
                 icon={<Network />}
                 title="还没有注册 MCP"
                 description="注册一个 HTTP/streamable HTTP MCP 能力后，可在团队或数字员工页面绑定。"
               />
             ) : (
-              <V3Table>
+              <DataTable>
                 <thead>
                   <tr>
-                    <V3Th>名称 / server_key</V3Th>
-                    <V3Th>URL</V3Th>
-                    <V3Th className="w-32">传输</V3Th>
-                    <V3Th className="w-28">鉴权</V3Th>
-                    <V3Th>必需环境变量</V3Th>
-                    <V3Th className="w-24">状态</V3Th>
-                    <V3Th className="w-14" aria-label="操作" />
+                    <Th>名称 / server_key</Th>
+                    <Th>URL</Th>
+                    <Th className="w-32">传输</Th>
+                    <Th className="w-28">鉴权</Th>
+                    <Th>必需环境变量</Th>
+                    <Th className="w-24">状态</Th>
+                    <Th className="w-14" aria-label="操作" />
                   </tr>
                 </thead>
                 <tbody>
@@ -170,7 +170,7 @@ export function McpManagementPage() {
                     />
                   ))}
                 </tbody>
-              </V3Table>
+              </DataTable>
             )}
           </WorkSurface>
         </div>
@@ -202,8 +202,8 @@ export function McpManagementPage() {
         handleConfirm={() => {
           if (pendingDelete) {
             deleteMutation.mutate(pendingDelete.id, {
-              onSettled: () => setPendingDelete(null),
-            });
+              onSettled: () => setPendingDelete(null)
+});
           }
         }}
       />
@@ -213,28 +213,28 @@ export function McpManagementPage() {
 
 function McpDefinitionRow({
   row,
-  onDelete,
+  onDelete
 }: {
   row: McpServerDefinition;
   onDelete: () => void;
 }) {
-  const tone: V3Tone = row.status === "active" ? "ok" : "mute";
+  const tone: Tone = row.status === "active" ? "ok" : "mute";
   return (
-    <V3Tr>
-      <V3Td>
+    <Tr>
+      <Td>
         <div className="flex min-w-0 flex-col">
           <span className="truncate font-medium">{row.name}</span>
           <span className="truncate font-mono text-xs text-muted-foreground">
             {row.server_key}
           </span>
         </div>
-      </V3Td>
-      <V3Td className="max-w-[24rem] truncate font-mono text-xs" title={row.url}>
+      </Td>
+      <Td className="max-w-[24rem] truncate font-mono text-xs" title={row.url}>
         {row.url}
-      </V3Td>
-      <V3Td className="font-mono text-xs">{row.transport}</V3Td>
-      <V3Td className="font-mono text-xs">{row.auth_strategy}</V3Td>
-      <V3Td>
+      </Td>
+      <Td className="font-mono text-xs">{row.transport}</Td>
+      <Td className="font-mono text-xs">{row.auth_strategy}</Td>
+      <Td>
         {row.required_env_vars.length === 0 ? (
           <span className="text-xs text-muted-foreground">—</span>
         ) : (
@@ -250,21 +250,21 @@ function McpDefinitionRow({
             ))}
           </div>
         )}
-      </V3Td>
-      <V3Td>
+      </Td>
+      <Td>
         <StatusPill tone={tone}>{statusLabel(row.status)}</StatusPill>
-      </V3Td>
-      <V3Td>
-        <V3Button
+      </Td>
+      <Td>
+        <Button
           variant="ghost"
           size="sm"
           aria-label={`删除 ${row.name}`}
           onClick={onDelete}
         >
           <Trash2 />
-        </V3Button>
-      </V3Td>
-    </V3Tr>
+        </Button>
+      </Td>
+    </Tr>
   );
 }
 

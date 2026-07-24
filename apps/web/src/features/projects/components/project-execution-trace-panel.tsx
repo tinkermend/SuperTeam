@@ -3,16 +3,16 @@ import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  type V3Tone,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  type Tone
 } from "@/components/superteam";
 import type {
   ExecutionLedgerEvent,
   ProjectExecutionTrace,
-  ProjectExecutionTraceAttempt,
+  ProjectExecutionTraceAttempt
 } from "@/lib/api/projects";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -29,7 +29,7 @@ export function ProjectExecutionTracePanel({
   isError,
   isLoading,
   onRetry,
-  trace,
+  trace
 }: ProjectExecutionTracePanelProps) {
   const attempts = trace?.attempts ?? [];
   const summary = trace?.summary;
@@ -37,14 +37,14 @@ export function ProjectExecutionTracePanel({
 
   return (
     <SoftCard className="overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+      <div className="flex items-center justify-between gap-3 border-b border-line p-4">
         <div className="flex min-w-0 items-center gap-3">
           <IconTile tone="info" size="sm">
             <ActivitySquare />
           </IconTile>
           <div className="min-w-0">
-            <h3 className="font-semibold text-v3-ink">执行证据链</h3>
-            <p className="truncate text-xs text-v3-ink-2">
+            <h3 className="font-semibold text-ink">执行证据链</h3>
+            <p className="truncate text-xs text-ink-2">
               Runtime 尝试、回写事件、证据与工件引用
             </p>
           </div>
@@ -53,10 +53,10 @@ export function ProjectExecutionTracePanel({
       </div>
 
       {isLoading ? (
-        <V3LoadingState className="min-h-32" label="正在加载执行证据链" />
+        <LoadingState className="min-h-32" label="正在加载执行证据链" />
       ) : isError ? (
         <div className="p-4">
-          <V3ErrorState
+          <ErrorState
             className="min-h-32"
             description={errorMessage || "请重试或稍后查看执行证据链。"}
             onRetry={onRetry}
@@ -64,29 +64,29 @@ export function ProjectExecutionTracePanel({
           />
         </div>
       ) : attempts.length === 0 ? (
-        <V3EmptyState className="min-h-32 py-12" title="暂无执行证据链" />
+        <EmptyState className="min-h-32 py-12" title="暂无执行证据链" />
       ) : (
         <div className="grid gap-4 p-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <V3MetricCard
+            <MetricCard
               icon={<AlertTriangle />}
               iconTone="danger"
               label="失败尝试"
               value={String(summary?.failed_attempt_count ?? 0)}
             />
-            <V3MetricCard
+            <MetricCard
               icon={<FileCheck2 />}
               iconTone="warn"
               label="人工复核"
               value={String(summary?.human_review_required_count ?? 0)}
             />
-            <V3MetricCard
+            <MetricCard
               icon={<Boxes />}
               iconTone="artifact"
               label="工件引用"
               value={String(summary?.artifact_ref_count ?? 0)}
             />
-            <V3MetricCard
+            <MetricCard
               icon={<FileCheck2 />}
               iconTone="ok"
               label="证据引用"
@@ -95,8 +95,8 @@ export function ProjectExecutionTracePanel({
           </div>
 
           {summary?.latest_error_family ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-v3-inner bg-v3-danger-soft px-3 py-2 text-xs">
-              <span className="font-medium text-v3-danger">最新错误</span>
+            <div className="flex flex-wrap items-center gap-2 rounded-inner bg-danger-soft px-3 py-2 text-xs">
+              <span className="font-medium text-danger">最新错误</span>
               <StatusPill
                 tone="danger"
                 showDot={false}
@@ -124,12 +124,12 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
   return (
     <section
       aria-label={`执行尝试 ${attempt.attempt_no}`}
-      className="grid gap-3 rounded-v3-inner bg-v3-card-soft p-3"
+      className="grid gap-3 rounded-inner bg-card-soft p-3"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-semibold text-v3-ink">执行尝试 {attempt.attempt_no}</h4>
+            <h4 className="text-sm font-semibold text-ink">执行尝试 {attempt.attempt_no}</h4>
             <StatusPill tone={attemptStatusTone(attempt.status)}>
               {statusLabel(attempt.status)}
             </StatusPill>
@@ -141,14 +141,14 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
           </div>
           {attempt.failure_family ? (
             <p
-              className="mt-1 break-all text-xs text-v3-ink-2"
+              className="mt-1 break-all text-xs text-ink-2"
               title={attempt.failure_family}
             >
               失败族：{attempt.failure_family}
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-v3-ink-2">
+        <div className="flex items-center gap-1.5 text-xs text-ink-2">
           <Clock3 className="size-3.5" />
           <span>{formatTimestamp(attempt.finished_at ?? attempt.started_at)}</span>
         </div>
@@ -162,9 +162,9 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
       </div>
 
       {summary ? (
-        <div className="grid gap-2 rounded-v3-inner bg-v3-card p-3">
+        <div className="grid gap-2 rounded-inner bg-card p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-v3-ink">执行摘要</p>
+            <p className="text-xs font-semibold text-ink">执行摘要</p>
             {summary.requires_human_review ? (
               <StatusPill tone="warn">需人工复核</StatusPill>
             ) : (
@@ -172,12 +172,12 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
             )}
           </div>
           <p
-            className="whitespace-pre-wrap break-words text-sm leading-6 text-v3-ink"
+            className="whitespace-pre-wrap break-words text-sm leading-6 text-ink"
             title={summary.conclusion}
           >
             {summary.conclusion}
           </p>
-          <div className="flex flex-wrap gap-2 text-xs text-v3-ink-2">
+          <div className="flex flex-wrap gap-2 text-xs text-ink-2">
             <span>证据 {summary.evidence_refs.length}</span>
             <span>工件 {summary.artifact_refs.length}</span>
             <span>{formatTimestamp(summary.created_at)}</span>
@@ -187,13 +187,13 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold text-v3-ink">Ledger Events</p>
-          <span className="text-xs text-v3-ink-2">
+          <p className="text-xs font-semibold text-ink">Ledger Events</p>
+          <span className="text-xs text-ink-2">
             {attempt.events.length} 条
           </span>
         </div>
         {attempt.events.length === 0 ? (
-          <div className="rounded-v3-inner bg-v3-card p-3 text-sm text-v3-ink-2">
+          <div className="rounded-inner bg-card p-3 text-sm text-ink-2">
             暂无执行事件
           </div>
         ) : (
@@ -216,7 +216,7 @@ function EventRow({ event }: { event: ExecutionLedgerEvent }) {
   const tool = readToolEvent(event);
 
   return (
-    <div className="grid gap-2 rounded-v3-inner bg-v3-card p-3">
+    <div className="grid gap-2 rounded-inner bg-card p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -230,13 +230,13 @@ function EventRow({ event }: { event: ExecutionLedgerEvent }) {
             ) : null}
           </div>
           <p
-            className="mt-1 break-all text-xs text-v3-ink-2"
+            className="mt-1 break-all text-xs text-ink-2"
             title={actorSourceLabel}
           >
             {actorSourceLabel}
           </p>
         </div>
-        <div className="flex flex-wrap justify-end gap-2 text-xs text-v3-ink-2">
+        <div className="flex flex-wrap justify-end gap-2 text-xs text-ink-2">
           <span>证据 {event.evidence_refs.length}</span>
           <span>工件 {event.artifact_refs.length}</span>
           <span>{formatTimestamp(event.occurred_at)}</span>
@@ -253,13 +253,13 @@ function EventRow({ event }: { event: ExecutionLedgerEvent }) {
       ) : null}
 
       {event.error_family || event.error_code || event.error_message ? (
-        <div className="grid gap-1 rounded-v3-inner bg-v3-danger-soft p-2 text-xs">
-          <p className="break-all font-medium text-v3-danger" title={errorHeader}>
+        <div className="grid gap-1 rounded-inner bg-danger-soft p-2 text-xs">
+          <p className="break-all font-medium text-danger" title={errorHeader}>
             错误 {errorHeader}
           </p>
           {event.error_message ? (
             <p
-              className="whitespace-pre-wrap break-words text-v3-ink-2"
+              className="whitespace-pre-wrap break-words text-ink-2"
               title={event.error_message}
             >
               {event.error_message}
@@ -312,19 +312,19 @@ function readToolEvent(event: ExecutionLedgerEvent): ToolEvent | undefined {
     kind,
     name: typeof metadata.name === "string" ? metadata.name : undefined,
     toolId,
-    truncated: rawTruncated === true,
-  };
+    truncated: rawTruncated === true
+};
 }
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   const label = tool.kind === "started" ? "工具调用" : "工具结果";
 
   return (
-    <div className="grid gap-2 rounded-v3-inner bg-v3-card-soft p-2">
+    <div className="grid gap-2 rounded-inner bg-card-soft p-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] text-v3-ink-3">{label}</span>
+        <span className="text-[11px] text-ink-3">{label}</span>
         {tool.name ? (
-          <span className="font-mono text-xs text-v3-ink">{tool.name}</span>
+          <span className="font-mono text-xs text-ink">{tool.name}</span>
         ) : null}
         {tool.isError !== undefined ? (
           <StatusPill tone={tool.isError ? "danger" : "ok"}>
@@ -334,16 +334,16 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
       </div>
       {tool.excerpt ? (
         <details className="min-w-0">
-          <summary className="cursor-pointer truncate font-mono text-xs text-v3-ink-2">
+          <summary className="cursor-pointer truncate font-mono text-xs text-ink-2">
             {tool.excerpt}
           </summary>
-          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-v3-inner bg-v3-card p-2 font-mono text-xs leading-5 text-v3-ink-2">
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-inner bg-card p-2 font-mono text-xs leading-5 text-ink-2">
             {tool.excerpt}
           </pre>
         </details>
       ) : null}
       {tool.truncated ? (
-        <p className="text-[11px] text-v3-ink-3">
+        <p className="text-[11px] text-ink-3">
           内容已截断，完整日志将在证据地基落地后可下载。
         </p>
       ) : null}
@@ -353,9 +353,9 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
 
 function MetaBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-v3-inner bg-v3-card p-2">
-      <p className="text-[11px] text-v3-ink-3">{label}</p>
-      <p className="mt-1 break-all font-mono text-xs text-v3-ink" title={value}>
+    <div className="min-w-0 rounded-inner bg-card p-2">
+      <p className="text-[11px] text-ink-3">{label}</p>
+      <p className="mt-1 break-all font-mono text-xs text-ink" title={value}>
         {value}
       </p>
     </div>
@@ -364,10 +364,10 @@ function MetaBlock({ label, value }: { label: string; value: string }) {
 
 function SummaryBlock({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-2">
-      <p className="text-[11px] text-v3-ink-3">{label}</p>
+    <div className="min-w-0 rounded-inner bg-card-soft p-2">
+      <p className="text-[11px] text-ink-3">{label}</p>
       <p
-        className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-v3-ink-2"
+        className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-ink-2"
         title={value}
       >
         {value || "未记录"}
@@ -376,7 +376,7 @@ function SummaryBlock({ label, value }: { label: string; value?: string }) {
   );
 }
 
-function attemptStatusTone(status: string): V3Tone {
+function attemptStatusTone(status: string): Tone {
   if (status === "completed" || status === "succeeded") {
     return "ok";
   }
@@ -392,7 +392,7 @@ function attemptStatusTone(status: string): V3Tone {
   return "mute";
 }
 
-function eventTone(event: ExecutionLedgerEvent): V3Tone {
+function eventTone(event: ExecutionLedgerEvent): Tone {
   if (event.error_family || event.error_message || event.event_type.includes("failed")) {
     return "danger";
   }

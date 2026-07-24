@@ -10,5 +10,5 @@ export const Route = createFileRoute("/_authenticated/capabilities/")({
       title="外部能力"
       description="注册和审计 Dify、Deephub、HTTP 服务和企业内部系统能力。"
     />
-  ),
+  )
 });

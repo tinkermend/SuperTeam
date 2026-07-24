@@ -8,27 +8,27 @@ import { EmployeeDetailView } from "./detail";
 const mockNavigate = vi.fn();
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
     search,
-    to,
-  }: {
+    to
+}: {
     children: ReactNode;
     search?: Record<string, string | undefined>;
     to: string;
@@ -38,17 +38,17 @@ vi.mock("@tanstack/react-router", () => ({
       : "";
     return <a href={`${to}${query}`}>{children}</a>;
   },
-  useNavigate: () => mockNavigate,
+  useNavigate: () => mockNavigate
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 const employee = {
@@ -64,11 +64,11 @@ const employee = {
     skills: ["incident-diagnosis"],
     mcp_servers: ["github"],
     external_capabilities: [],
-    environment_variable_refs: ["SERVICE_TOKEN"],
-  },
+    environment_variable_refs: ["SERVICE_TOKEN"]
+},
   budget_policy: {
-    daily_token_limit: 12000,
-  },
+    daily_token_limit: 12000
+},
   metadata: {
     avatar: {
       id: "engineer-f-01",
@@ -80,9 +80,9 @@ const employee = {
       thumbnail_url: "/images/digital-employee-avatars/engineer-f-01-256.webp",
       source: "ai_generated_internal_pack",
       license: "internal_product_asset",
-      status: "active",
-    },
-  },
+      status: "active"
+}
+}
 };
 
 const runtimeNodeId = "33333333-3333-4333-8333-333333333333";
@@ -96,7 +96,7 @@ const runStats = {
   avg_duration_sec: 540,
   p90_duration_sec: 960,
   last_7d_count: 4,
-  prev_7d_count: 3,
+  prev_7d_count: 3
 };
 
 const schedulingReadiness = {
@@ -109,30 +109,30 @@ const schedulingReadiness = {
       code: "effective_config",
       status: "passed",
       label: "生效配置",
-      message: "已批准，可用于项目调度",
-    },
+      message: "已批准，可用于项目调度"
+},
     {
       code: "runtime_source",
       status: "info",
       label: "执行来源",
-      message: "Runtime 节点由项目运行时就绪度决定",
-    },
+      message: "Runtime 节点由项目运行时就绪度决定"
+},
   ],
   capabilities: {
     skills: {
       personal_count: 2,
       inherited_count: 1,
-      missing_required: [],
-    },
+      missing_required: []
+},
     mcp_servers: {
       personal_count: 1,
-      inherited_count: 1,
-    },
+      inherited_count: 1
+},
     environment_variables: {
       configured_count: 3,
-      missing_names: [],
-    },
-  },
+      missing_names: []
+}
+}
 };
 
 function runFixture(overrides: Record<string, unknown> = {}) {
@@ -158,8 +158,8 @@ function runFixture(overrides: Record<string, unknown> = {}) {
     duration_sec: 120,
     created_at: "2026-06-05T01:00:00Z",
     updated_at: "2026-06-05T01:01:00Z",
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function runsPayload(items: Array<Record<string, unknown>>) {
@@ -172,9 +172,9 @@ function runsPayload(items: Array<Record<string, unknown>>) {
         { value: "completed", label: "已完成" },
         { value: "failed", label: "失败" },
       ],
-      projects: [],
-    },
-  };
+      projects: []
+}
+};
 }
 
 function createDetailFetcher({
@@ -186,8 +186,8 @@ function createDetailFetcher({
       payload: { text: "正在分析需求" },
       provider_session_external_id: "session-ext-1",
       session_state_patch: { phase: "analysis" },
-      metadata: { source: "runtime" },
-    },
+      metadata: { source: "runtime" }
+},
   ],
   run = runFixture(),
   runs,
@@ -201,8 +201,8 @@ function createDetailFetcher({
       total_nodes: 1,
       pending_enrollments: 0,
       active_provider_sessions: 0,
-      blocked_events: 0,
-    },
+      blocked_events: 0
+},
     pending_enrollments: [],
     nodes: [
       {
@@ -213,14 +213,14 @@ function createDetailFetcher({
         max_slots: 3,
         current_load: 0,
         status: "online",
-        command_channel_connected: true,
-      },
+        command_channel_connected: true
+},
     ],
     provider_capabilities: [],
-    recent_events: [],
-  },
+    recent_events: []
+},
   deleteStatus = 204,
-  deletePayload,
+  deletePayload
 }: {
   employeePayload?: Record<string, unknown>;
   events?: Array<Record<string, unknown>>;
@@ -269,8 +269,8 @@ function createDetailFetcher({
         to: url.searchParams.get("to"),
         total_count: 0,
         truncated: false,
-        items: [],
-      });
+        items: []
+});
     }
 
     if (path === `/api/v1/digital-employees/${employee.id}/skills` && method === "GET") {
@@ -332,14 +332,14 @@ function createDetailFetcher({
     if (path === `/api/v1/digital-employees/${employee.id}/runs` && method === "POST") {
       expect(JSON.parse(String(init?.body))).toEqual({
         objective: "梳理上线风险",
-        prompt: "请检查最近失败任务",
-      });
+        prompt: "请检查最近失败任务"
+});
       currentRun = runFixture({
         id: "55555555-5555-4555-8555-555555555555",
         objective: "梳理上线风险",
         status: "dispatching",
-        task_title: "梳理上线风险",
-      });
+        task_title: "梳理上线风险"
+});
       currentRuns = [currentRun, ...currentRuns];
       return jsonResponse(currentRun, 201);
     }
@@ -353,8 +353,8 @@ function createDetailFetcher({
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function noContentResponse() {
@@ -437,8 +437,8 @@ describe("EmployeeDetailView", () => {
   it("does not expose a start-task entry on the detail page", async () => {
     const screen = await renderEmployeeDetail(
       createDetailFetcher({
-        run: runFixture({ status: "completed" }),
-      }),
+        run: runFixture({ status: "completed" })
+}),
     );
 
     await expect.element(screen.getByRole("heading", { name: "工作节奏" })).toBeVisible();
@@ -448,8 +448,8 @@ describe("EmployeeDetailView", () => {
 
   it("loads run calendar by default and defers the run list until list view is selected", async () => {
     const fetcher = createDetailFetcher({
-      run: runFixture({ status: "completed" }),
-    });
+      run: runFixture({ status: "completed" })
+});
     const screen = await renderEmployeeDetail(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "工作节奏" })).toBeVisible();
@@ -473,19 +473,19 @@ describe("EmployeeDetailView", () => {
           skills: {
             personal_count: 2,
             inherited_count: 1,
-            missing_required: ["risk-review"],
-          },
+            missing_required: ["risk-review"]
+},
           mcp_servers: {
             personal_count: 1,
-            inherited_count: 1,
-          },
+            inherited_count: 1
+},
           environment_variables: {
             configured_count: 3,
-            missing_names: ["OPENAI_API_KEY"],
-          },
-        },
-      },
-    });
+            missing_names: ["OPENAI_API_KEY"]
+}
+}
+}
+});
     const screen = await renderEmployeeDetail(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "可调度能力" })).toBeVisible();
@@ -503,9 +503,9 @@ describe("EmployeeDetailView", () => {
         run: runFixture({
           status: "completed",
           task_title: "已完成任务示例",
-          result: { summary: "已生成验收报告" },
-        }),
-      }),
+          result: { summary: "已生成验收报告" }
+})
+}),
     );
 
     await showRunList(screen);
@@ -521,9 +521,9 @@ describe("EmployeeDetailView", () => {
         run: runFixture({
           error_message: "Runtime 节点断开",
           status: "failed",
-          task_title: "失败任务示例",
-        }),
-      }),
+          task_title: "失败任务示例"
+})
+}),
     );
 
     await showRunList(screen);
@@ -538,9 +538,9 @@ describe("EmployeeDetailView", () => {
         run: runFixture({
           error_message: "用户停止执行",
           status: "cancelled",
-          task_title: "取消任务示例",
-        }),
-      }),
+          task_title: "取消任务示例"
+})
+}),
     );
 
     await showRunList(screen);
@@ -554,9 +554,9 @@ describe("EmployeeDetailView", () => {
         run: runFixture({
           diagnostic: { reason: "lease expired" },
           status: "timed_out",
-          task_title: "超时任务示例",
-        }),
-      }),
+          task_title: "超时任务示例"
+})
+}),
     );
 
     await showRunList(screen);
@@ -569,14 +569,14 @@ describe("EmployeeDetailView", () => {
       id: "latest-run",
       status: "completed",
       task_title: "最新执行任务",
-      result: { summary: "最新执行完成" },
-    });
+      result: { summary: "最新执行完成" }
+});
     const previousRun = runFixture({
       id: "previous-run",
       status: "failed",
       error_message: "旧运行失败",
-      task_title: "旧失败任务",
-    });
+      task_title: "旧失败任务"
+});
     const fetcher = createDetailFetcher({
       runs: [latestRun, previousRun],
       eventsByRunId: {
@@ -585,9 +585,9 @@ describe("EmployeeDetailView", () => {
         ],
         "previous-run": [
           { event_type: "text_delta", sequence_number: 2, payload: { text: "历史失败事件" } },
-        ],
-      },
-    });
+        ]
+}
+});
     const screen = await renderEmployeeDetail(fetcher);
 
     await showRunList(screen);
@@ -608,8 +608,8 @@ describe("EmployeeDetailView", () => {
   it("requires the employee name before deleting and redirects after success", async () => {
     const fetcher = createDetailFetcher({
       employeePayload: { ...employee, allowed_actions: ["employee.delete"] },
-      run: runFixture({ status: "completed" }),
-    });
+      run: runFixture({ status: "completed" })
+});
     const screen = await renderEmployeeDetail(fetcher);
 
     await userEvent.click(screen.getByRole("button", { name: "更多员工操作" }));
@@ -643,18 +643,18 @@ describe("EmployeeDetailView", () => {
             id: "run-1",
             status: "running",
             title: "运行中的实现任务",
-            run_id: "run-1",
-          },
+            run_id: "run-1"
+},
           {
             type: "project_task",
             id: "task-1",
             status: "in_progress",
             title: "项目内待办",
-            project_id: "project-1",
-          },
-        ],
-      },
-    });
+            project_id: "project-1"
+},
+        ]
+}
+});
     const screen = await renderEmployeeDetail(fetcher);
 
     await userEvent.click(screen.getByRole("button", { name: "更多员工操作" }));

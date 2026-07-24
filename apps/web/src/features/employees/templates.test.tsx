@@ -7,19 +7,19 @@ import type { EmployeeTemplate } from "@/lib/api/employee-templates";
 import { TemplateDetailView, TemplateListView } from "./templates";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -47,17 +47,17 @@ vi.mock("@tanstack/react-router", () => ({
     }
 
     return <a href={href} {...props}>{children}</a>;
-  },
+  }
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function buildTemplate(overrides: Partial<EmployeeTemplate> = {}): EmployeeTemplate {
@@ -75,23 +75,23 @@ function buildTemplate(overrides: Partial<EmployeeTemplate> = {}): EmployeeTempl
     capability_bindings: {
       skills: ["database-troubleshooting"],
       mcp_servers: ["postgres"],
-      provider_types: ["codex"],
-    },
+      provider_types: ["codex"]
+},
     budget_policy: { daily_token_limit: 15000 },
     metadata: {},
     status: "active",
     is_system: true,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(body === null ? null : JSON.stringify(body), {
     headers: body === null ? {} : { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 type FetcherOptions = {
@@ -109,7 +109,7 @@ function createTemplatesFetcher({
   failStatus = false,
   failDelete = false,
   registrySkillSlugs,
-  registryMcpKeys,
+  registryMcpKeys
 }: FetcherOptions = {}) {
   let templates = [...initial];
   let nextId = 900;
@@ -146,8 +146,8 @@ function createTemplatesFetcher({
         capability_bindings: (body?.capability_bindings as Record<string, unknown>) ?? {},
         budget_policy: (body?.budget_policy as Record<string, unknown>) ?? {},
         status: "active",
-        is_system: false,
-      });
+        is_system: false
+});
       templates = [...templates, created];
       return jsonResponse(created, 201);
     }
@@ -237,8 +237,8 @@ describe("TemplateListView", () => {
       type: "frontend_engineer",
       label: "前端开发",
       is_system: false,
-      status: "disabled",
-    });
+      status: "disabled"
+});
     const fetcher = createTemplatesFetcher({ initial: [systemTemplate, customTemplate] });
     const screen = await renderTemplateListView(fetcher);
 
@@ -267,8 +267,8 @@ describe("TemplateListView", () => {
       initial: [buildTemplate()],
       // database-troubleshooting 未上架,postgres 已在 MCP 注册表。
       registrySkillSlugs: ["other-skill"],
-      registryMcpKeys: ["postgres"],
-    });
+      registryMcpKeys: ["postgres"]
+});
     const screen = await renderTemplateListView(fetcher);
 
     await expect.element(screen.getByText("推荐未上架 1")).toBeVisible();
@@ -278,8 +278,8 @@ describe("TemplateListView", () => {
     const fetcher = createTemplatesFetcher({
       initial: [buildTemplate()],
       registrySkillSlugs: ["database-troubleshooting"],
-      registryMcpKeys: ["postgres"],
-    });
+      registryMcpKeys: ["postgres"]
+});
     const screen = await renderTemplateListView(fetcher);
 
     await expect.element(screen.getByText("数据库管理员")).toBeVisible();
@@ -336,8 +336,8 @@ describe("TemplateListView", () => {
       persona_memory_markdown: "",
       capability_bindings: {},
       budget_policy: {},
-      type: "custom_reviewer",
-    });
+      type: "custom_reviewer"
+});
   });
 
   it("configures an existing template: edit dialog is pre-filled, type is not editable, and PATCH omits type", async () => {
@@ -370,8 +370,8 @@ describe("TemplateListView", () => {
       default_role: existing.default_role,
       recommended_skills: existing.recommended_skills,
       recommended_mcp_servers: existing.recommended_mcp_servers,
-      recommended_provider_types: existing.recommended_provider_types,
-    });
+      recommended_provider_types: existing.recommended_provider_types
+});
   });
 
   it("toggles status: clicking the row action PATCHes the opposite status and the pill flips", async () => {
@@ -444,8 +444,8 @@ describe("TemplateDetailView", () => {
     const fetcher = createTemplatesFetcher({
       initial: [buildTemplate()],
       registrySkillSlugs: [],
-      registryMcpKeys: ["postgres"],
-    });
+      registryMcpKeys: ["postgres"]
+});
     const screen = await renderTemplateDetailView("database_admin", fetcher);
 
     await expect.element(screen.getByText("推荐未上架 1")).toBeVisible();

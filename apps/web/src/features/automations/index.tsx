@@ -4,16 +4,16 @@ import { CalendarClock, Plus, Search } from "lucide-react";
 import {
   MasterDetailLayout,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
@@ -31,7 +31,7 @@ import {
   triggerAutomationRule,
   updateAutomationRule,
   type AutomationCoordinationMode,
-  type AutomationRule,
+  type AutomationRule
 } from "@/lib/api/automations";
 import { getInboxBadge, listInboxItems } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -44,7 +44,7 @@ import { AutomationRuleDetail } from "./components/automation-rule-detail";
 import { AutomationRuleFormSheet } from "./components/automation-rule-form-sheet";
 import {
   AUTOMATION_SCENARIO_TEMPLATES,
-  type AutomationRuleDraft,
+  type AutomationRuleDraft
 } from "./scenario-templates";
 import { buildNextFireById } from "./schedule-next";
 import { automationFireTone } from "./fire-tone";
@@ -55,7 +55,7 @@ function errorMessage(error: unknown): string {
   return "操作失败";
 }
 
-function healthLabel(rule: AutomationRule): { text: string; tone: V3Tone } {
+function healthLabel(rule: AutomationRule): { text: string; tone: Tone } {
   if (!rule.enabled) {
     return {
       text: rule.disabled_reason ? statusLabel(rule.disabled_reason) : "已禁用",
@@ -64,8 +64,8 @@ function healthLabel(rule: AutomationRule): { text: string; tone: V3Tone } {
         rule.disabled_reason === "actor_removed_from_project" ||
         rule.disabled_reason === "actor_deactivated"
           ? "warn"
-          : "mute",
-    };
+          : "mute"
+};
   }
   if (rule.latest_fire?.status === "failed" || rule.consecutive_failure_count > 0) {
     return {
@@ -73,8 +73,8 @@ function healthLabel(rule: AutomationRule): { text: string; tone: V3Tone } {
         rule.consecutive_failure_count > 0
           ? `连败 ${rule.consecutive_failure_count}`
           : "最近失败",
-      tone: "warn",
-    };
+      tone: "warn"
+};
   }
   return { text: "启用中", tone: "ok" };
 }
@@ -95,8 +95,8 @@ export function AutomationsPage() {
 
   const rulesQuery = useQuery({
     queryKey: ["automation-rules", apiBaseUrl],
-    queryFn: () => listAutomationRules({ baseUrl: apiBaseUrl }),
-  });
+    queryFn: () => listAutomationRules({ baseUrl: apiBaseUrl })
+});
 
   const inboxQuery = useQuery({
     queryKey: ["inbox", "automations-rail", apiBaseUrl],
@@ -104,13 +104,13 @@ export function AutomationsPage() {
       listInboxItems(
         { baseUrl: apiBaseUrl },
         { limit: 8, status: "open", view: "mine" },
-      ),
-  });
+      )
+});
 
   const inboxBadgeQuery = useQuery({
     queryKey: ["inbox", "automations-badge", apiBaseUrl],
-    queryFn: () => getInboxBadge({ baseUrl: apiBaseUrl }),
-  });
+    queryFn: () => getInboxBadge({ baseUrl: apiBaseUrl })
+});
 
   const allRows = rulesQuery.data?.items ?? [];
   const selected = allRows.find((row) => row.id === selectedId) ?? null;
@@ -132,8 +132,8 @@ export function AutomationsPage() {
   const firesQuery = useQuery({
     queryKey: ["automation-fires", apiBaseUrl, selected?.id],
     queryFn: () => listAutomationFires({ baseUrl: apiBaseUrl }, selected!.id),
-    enabled: Boolean(selected?.id),
-  });
+    enabled: Boolean(selected?.id)
+});
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ["automation-rules"] });
@@ -150,14 +150,14 @@ export function AutomationsPage() {
       await invalidate();
       setSelectedId(rule.id);
     },
-    onError: (error) => setFormError(errorMessage(error)),
-  });
+    onError: (error) => setFormError(errorMessage(error))
+});
 
   const updateMutation = useMutation({
     mutationFn: ({
       ruleId,
-      input,
-    }: {
+      input
+}: {
       ruleId: string;
       input: Parameters<typeof updateAutomationRule>[2];
     }) => updateAutomationRule({ baseUrl: apiBaseUrl }, ruleId, input),
@@ -168,8 +168,8 @@ export function AutomationsPage() {
       setFormError(null);
       await invalidate();
     },
-    onError: (error) => setFormError(errorMessage(error)),
-  });
+    onError: (error) => setFormError(errorMessage(error))
+});
 
   const enableMutation = useMutation({
     mutationFn: (ruleId: string) => enableAutomationRule({ baseUrl: apiBaseUrl }, ruleId),
@@ -177,8 +177,8 @@ export function AutomationsPage() {
       setActionError(null);
       await invalidate();
     },
-    onError: (error) => setActionError(errorMessage(error)),
-  });
+    onError: (error) => setActionError(errorMessage(error))
+});
 
   const disableMutation = useMutation({
     mutationFn: (ruleId: string) => disableAutomationRule({ baseUrl: apiBaseUrl }, ruleId),
@@ -186,8 +186,8 @@ export function AutomationsPage() {
       setActionError(null);
       await invalidate();
     },
-    onError: (error) => setActionError(errorMessage(error)),
-  });
+    onError: (error) => setActionError(errorMessage(error))
+});
 
   const triggerMutation = useMutation({
     mutationFn: (ruleId: string) => triggerAutomationRule({ baseUrl: apiBaseUrl }, ruleId),
@@ -195,8 +195,8 @@ export function AutomationsPage() {
       setActionError(null);
       await invalidate();
     },
-    onError: (error) => setActionError(errorMessage(error)),
-  });
+    onError: (error) => setActionError(errorMessage(error))
+});
 
   const deleteMutation = useMutation({
     mutationFn: (ruleId: string) => deleteAutomationRule({ baseUrl: apiBaseUrl }, ruleId),
@@ -205,8 +205,8 @@ export function AutomationsPage() {
       setSelectedId(null);
       await invalidate();
     },
-    onError: (error) => setActionError(errorMessage(error)),
-  });
+    onError: (error) => setActionError(errorMessage(error))
+});
 
   const enabledCount = allRows.filter((row) => row.enabled).length;
   const dueSoonCount = useMemo(
@@ -289,16 +289,16 @@ export function AutomationsPage() {
       <Main className="min-w-0 overflow-x-hidden" width="wide">
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-2xl text-sm text-v3-ink-2">
+            <p className="max-w-2xl text-sm text-ink-2">
               把例行需求做成日程规则。自动的是触发，不是跳过验收。
             </p>
-            <V3Button
+            <Button
               className="h-11 px-5"
               onClick={() => openCreate()}
             >
               <Plus data-icon="inline-start" />
               新建规则
-            </V3Button>
+            </Button>
           </div>
 
           <AutomationFactStrip
@@ -313,18 +313,18 @@ export function AutomationsPage() {
             detail={rail}
             master={
               <WorkSurface className="min-w-0" data-density="compact">
-                <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line bg-v3-card px-3 py-3">
+                <div className="flex min-w-0 flex-col gap-3 border-b border-line bg-card px-3 py-3">
                   <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                     <div className="min-w-0">
-                      <h2 className="text-sm font-extrabold text-v3-ink">定时规则</h2>
-                      <p className="text-[12px] text-v3-ink-3">
+                      <h2 className="text-sm font-extrabold text-ink">定时规则</h2>
+                      <p className="text-[12px] text-ink-3">
                         {rows.length} / {allRows.length} 条 · 点击行查看详情与触发历史
                       </p>
                     </div>
                     <div className="relative w-full max-w-xs">
                       <Search
                         aria-hidden
-                        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-v3-ink-3"
+                        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-3"
                       />
                       <Input
                         aria-label="搜索规则或项目"
@@ -343,7 +343,7 @@ export function AutomationsPage() {
                         ["disabled", "已禁用"],
                       ] as const
                     ).map(([value, label]) => (
-                      <V3Button
+                      <Button
                         key={value}
                         size="sm"
                         type="button"
@@ -351,9 +351,9 @@ export function AutomationsPage() {
                         onClick={() => setFilter(value)}
                       >
                         {label}
-                      </V3Button>
+                      </Button>
                     ))}
-                    <span aria-hidden className="mx-1 h-6 w-px bg-v3-line" />
+                    <span aria-hidden className="mx-1 h-6 w-px bg-line" />
                     {(
                       [
                         ["all", "所有模式"],
@@ -362,7 +362,7 @@ export function AutomationsPage() {
                         ["chat", "对话"],
                       ] as const
                     ).map(([value, label]) => (
-                      <V3Button
+                      <Button
                         key={value}
                         size="sm"
                         type="button"
@@ -370,18 +370,18 @@ export function AutomationsPage() {
                         onClick={() => setModeFilter(value)}
                       >
                         {label}
-                      </V3Button>
+                      </Button>
                     ))}
                   </div>
                 </div>
 
                 {isInitialLoading ? (
-                  <V3LoadingState label="加载定时规则…" />
+                  <LoadingState label="加载定时规则…" />
                 ) : isBlockingError ? (
-                  <V3ErrorState description="无法加载自动化规则" title="加载失败" />
+                  <ErrorState description="无法加载自动化规则" title="加载失败" />
                 ) : allRows.length === 0 ? (
                   <div className="space-y-4 p-6">
-                    <V3EmptyState
+                    <EmptyState
                       description="把例行需求做成定时规则。自动触发后验收仍可在 Console / 飞书处理。"
                       icon={<CalendarClock />}
                       title="还没有定时规则"
@@ -390,15 +390,15 @@ export function AutomationsPage() {
                       {AUTOMATION_SCENARIO_TEMPLATES.map((template) => (
                         <button
                           key={template.id}
-                          className="rounded-[14px] border border-v3-line bg-v3-soft/60 p-4 text-left transition-colors hover:border-v3-brand/40 hover:bg-v3-brand-soft/40"
+                          className="rounded-[14px] border border-line bg-soft/60 p-4 text-left transition-colors hover:border-brand/40 hover:bg-brand-soft/40"
                           type="button"
                           onClick={() => openCreate(template.draft)}
                         >
-                          <div className="text-sm font-semibold text-v3-ink">{template.title}</div>
-                          <p className="mt-1.5 text-[12px] leading-5 text-v3-ink-3">
+                          <div className="text-sm font-semibold text-ink">{template.title}</div>
+                          <p className="mt-1.5 text-[12px] leading-5 text-ink-3">
                             {template.description}
                           </p>
-                          <span className="mt-3 inline-block text-[12px] font-medium text-v3-brand">
+                          <span className="mt-3 inline-block text-[12px] font-medium text-brand">
                             用此模板新建
                           </span>
                         </button>
@@ -406,20 +406,20 @@ export function AutomationsPage() {
                     </div>
                   </div>
                 ) : rows.length === 0 ? (
-                  <V3EmptyState
+                  <EmptyState
                     description="试试清空搜索或切换筛选条件。"
                     title="没有匹配的规则"
                   />
                 ) : (
-                  <V3Table>
+                  <DataTable>
                     <thead>
                       <tr>
-                        <V3Th>名称 / 项目</V3Th>
-                        <V3Th className="w-20">模式</V3Th>
-                        <V3Th className="w-32">日程</V3Th>
-                        <V3Th className="w-32">下次触发</V3Th>
-                        <V3Th className="w-36">健康</V3Th>
-                        <V3Th className="w-36">最近触发</V3Th>
+                        <Th>名称 / 项目</Th>
+                        <Th className="w-20">模式</Th>
+                        <Th className="w-32">日程</Th>
+                        <Th className="w-32">下次触发</Th>
+                        <Th className="w-36">健康</Th>
+                        <Th className="w-36">最近触发</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -435,7 +435,7 @@ export function AutomationsPage() {
                           row.latest_fire?.status === "failed" ||
                           row.consecutive_failure_count >= 3;
                         return (
-                          <V3Tr
+                          <Tr
                             key={row.id}
                             aria-selected={selectedRow}
                             className="cursor-pointer"
@@ -445,42 +445,42 @@ export function AutomationsPage() {
                               setSelectedId(row.id);
                             }}
                           >
-                            <V3Td>
+                            <Td>
                               <div className="font-medium text-foreground">{row.name}</div>
                               <div className="truncate text-xs text-muted-foreground">
                                 {row.project_name?.trim() || row.project_id}
                               </div>
-                            </V3Td>
-                            <V3Td>
+                            </Td>
+                            <Td>
                               <StatusPill tone="mute">
                                 {statusLabel(row.coordination_mode)}
                               </StatusPill>
-                            </V3Td>
-                            <V3Td className="text-sm tabular-nums">
+                            </Td>
+                            <Td className="text-sm tabular-nums">
                               {formatAutomationScheduleSummary(row)}
-                            </V3Td>
-                            <V3Td className="text-sm text-muted-foreground tabular-nums">
+                            </Td>
+                            <Td className="text-sm text-muted-foreground tabular-nums">
                               {nextIso ? (
                                 <time dateTime={nextIso}>{formatRelativeFuture(nextIso)}</time>
                               ) : (
                                 "—"
                               )}
-                            </V3Td>
-                            <V3Td>
+                            </Td>
+                            <Td>
                               <StatusPill tone={health.tone}>{health.text}</StatusPill>
-                            </V3Td>
-                            <V3Td className="text-sm text-muted-foreground">
+                            </Td>
+                            <Td className="text-sm text-muted-foreground">
                               {row.latest_fire && fireTone ? (
                                 <span className="inline-flex items-center gap-1.5">
                                   <span
                                     aria-hidden
                                     className={cn(
                                       "size-1.5 rounded-full",
-                                      fireTone === "ok" && "bg-v3-ok",
-                                      fireTone === "danger" && "bg-v3-danger",
-                                      fireTone === "warn" && "bg-v3-warn",
-                                      fireTone === "info" && "bg-v3-info",
-                                      fireTone === "mute" && "bg-v3-mute",
+                                      fireTone === "ok" && "bg-ok",
+                                      fireTone === "danger" && "bg-danger",
+                                      fireTone === "warn" && "bg-warn",
+                                      fireTone === "info" && "bg-info",
+                                      fireTone === "mute" && "bg-mute",
                                     )}
                                   />
                                   <span className="tabular-nums">
@@ -491,12 +491,12 @@ export function AutomationsPage() {
                               ) : (
                                 "尚未触发"
                               )}
-                            </V3Td>
-                          </V3Tr>
+                            </Td>
+                          </Tr>
                         );
                       })}
                     </tbody>
-                  </V3Table>
+                  </DataTable>
                 )}
               </WorkSurface>
             }

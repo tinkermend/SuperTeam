@@ -8,27 +8,27 @@ import { UserAuthForm } from './user-auth-form'
 const { getLoginCaptcha, login, navigate } = vi.hoisted(() => ({
   getLoginCaptcha: vi.fn(),
   login: vi.fn(),
-  navigate: vi.fn(),
+  navigate: vi.fn()
 }))
 
 vi.mock('@/features/auth/use-auth', () => ({
-  useAuth: () => ({ apiBaseUrl: 'http://control-plane.local', login }),
+  useAuth: () => ({ apiBaseUrl: 'http://control-plane.local', login })
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return {
     ...actual,
-    getLoginCaptcha,
-  }
+    getLoginCaptcha
+}
 })
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
   return {
     ...actual,
-    useNavigate: () => navigate,
-  }
+    useNavigate: () => navigate
+}
 })
 
 describe('UserAuthForm', () => {
@@ -36,8 +36,8 @@ describe('UserAuthForm', () => {
     enabled: true,
     captcha_id: '11111111-1111-4111-8111-111111111111',
     expires_at: '2026-06-30T08:00:00Z',
-    image_data_url: 'data:image/svg+xml;base64,PHN2Zy8+',
-  }
+    image_data_url: 'data:image/svg+xml;base64,PHN2Zy8+'
+}
 
   beforeEach(() => {
     getLoginCaptcha.mockReset()
@@ -76,8 +76,8 @@ describe('UserAuthForm', () => {
       .element(screen.getByRole('button', { name: /^刷新验证码$/i }))
       .toBeVisible()
     expect(getLoginCaptcha).toHaveBeenCalledWith({
-      baseUrl: 'http://control-plane.local',
-    })
+      baseUrl: 'http://control-plane.local'
+})
   })
 
   it('does not render captcha controls before the server captcha state is known', async () => {
@@ -112,8 +112,8 @@ describe('UserAuthForm', () => {
       enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
-      image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg==',
-    }
+      image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg=='
+}
     getLoginCaptcha
       .mockRejectedValueOnce(new Error('network failed'))
       .mockResolvedValueOnce(refreshedCaptcha)
@@ -148,14 +148,14 @@ describe('UserAuthForm', () => {
       enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
-      image_data_url: 'data:image/svg+xml;base64,PHN2ZyBzdGFsZS8+',
-    }
+      image_data_url: 'data:image/svg+xml;base64,PHN2ZyBzdGFsZS8+'
+}
     const latestCaptcha = {
       enabled: true,
       captcha_id: '33333333-3333-4333-8333-333333333333',
       expires_at: '2026-06-30T08:10:00Z',
-      image_data_url: 'data:image/svg+xml;base64,PHN2ZyBsYXRlc3QvPg==',
-    }
+      image_data_url: 'data:image/svg+xml;base64,PHN2ZyBsYXRlc3QvPg=='
+}
 
     getLoginCaptcha
       .mockReturnValueOnce(
@@ -198,15 +198,15 @@ describe('UserAuthForm', () => {
     const screen = await render(<UserAuthForm />)
 
     const username = screen.getByRole('textbox', { name: /^账号$/i })
-    await expect.element(username).toHaveClass('bg-v3-card-soft')
+    await expect.element(username).toHaveClass('bg-card-soft')
     await expect.element(username).toHaveClass('rounded-xl')
 
     const password = screen.getByLabelText(/^密码$/i)
-    await expect.element(password).toHaveClass('bg-v3-card-soft')
+    await expect.element(password).toHaveClass('bg-card-soft')
     await expect.element(password).toHaveClass('rounded-xl')
 
     const submit = screen.getByRole('button', { name: /^登录$/i })
-    await expect.element(submit).toHaveAttribute('data-slot', 'v3-button')
+    await expect.element(submit).toHaveAttribute('data-slot', 'app-button')
     await expect.element(submit).toHaveAttribute('data-variant', 'primary')
   })
 
@@ -229,8 +229,8 @@ describe('UserAuthForm', () => {
         username: 'admin',
         password: 'admin',
         captcha_id: defaultCaptcha.captcha_id,
-        captcha_code: 'A7K2',
-      })
+        captcha_code: 'A7K2'
+})
     )
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
@@ -256,8 +256,8 @@ describe('UserAuthForm', () => {
     await vi.waitFor(() =>
       expect(login).toHaveBeenCalledWith({
         username: 'admin',
-        password: 'admin',
-      })
+        password: 'admin'
+})
     )
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
@@ -310,8 +310,8 @@ describe('UserAuthForm', () => {
       enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
-      image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg==',
-    }
+      image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg=='
+}
     getLoginCaptcha
       .mockResolvedValueOnce(defaultCaptcha)
       .mockResolvedValueOnce(refreshedCaptcha)
@@ -343,8 +343,8 @@ describe('UserAuthForm', () => {
       enabled: true,
       captcha_id: '22222222-2222-4222-8222-222222222222',
       expires_at: '2026-06-30T08:05:00Z',
-      image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg==',
-    }
+      image_data_url: 'data:image/svg+xml;base64,PHN2ZyByZWZyZXNoZWQvPg=='
+}
     getLoginCaptcha
       .mockResolvedValueOnce(defaultCaptcha)
       .mockResolvedValueOnce(refreshedCaptcha)

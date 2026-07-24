@@ -15,7 +15,7 @@ export function LobbyWorkspaceRenderer({
   lensStateFor,
   onSelectEmployee,
   selectedEmployeeId,
-  workspace,
+  workspace
 }: LobbyWorkspaceRendererProps) {
   if (employees.length === 0) return null;
   const visibleEmployees = employees.slice(0, lobbyPositions.length);
@@ -26,12 +26,12 @@ export function LobbyWorkspaceRenderer({
     <div className="absolute inset-0">
       <article
         data-runtime-lobby-callout
-        className="absolute z-30 w-[196px] rounded-[14px] border border-dashed border-v3-line bg-white/88 p-3 shadow-v3 backdrop-blur"
+        className="absolute z-30 w-[196px] rounded-[14px] border border-dashed border-line bg-white/88 p-3 shadow-card backdrop-blur"
         style={{ left: workspace.cardAnchor.x, top: workspace.cardAnchor.y }}
       >
-        <h3 className="text-sm font-semibold text-v3-ink">候岗区</h3>
-        <p className="mt-1 text-xs font-medium text-v3-ink-2">
-          待编组 <span className="font-semibold text-v3-ink tabular-nums">{employees.length}</span> 名
+        <h3 className="text-sm font-semibold text-ink">候岗区</h3>
+        <p className="mt-1 text-xs font-medium text-ink-2">
+          待编组 <span className="font-semibold text-ink tabular-nums">{employees.length}</span> 名
         </p>
       </article>
       {positions.map((position, index) => (
@@ -57,7 +57,7 @@ export function LobbyWorkspaceRenderer({
       {overflowCount > 0 && lastPosition ? (
         <span
           data-runtime-lobby-overflow
-          className="absolute z-40 grid h-8 min-w-8 place-items-center rounded-full border border-v3-line bg-white/92 px-1.5 text-xs font-semibold text-v3-ink-2 shadow-v3 tabular-nums"
+          className="absolute z-40 grid h-8 min-w-8 place-items-center rounded-full border border-line bg-white/92 px-1.5 text-xs font-semibold text-ink-2 shadow-card tabular-nums"
           style={{ left: lastPosition.x - 16, top: lastPosition.y + 26 }}
         >
           +{overflowCount}

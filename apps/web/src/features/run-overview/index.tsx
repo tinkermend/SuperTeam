@@ -4,7 +4,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Activity, Pause, Play, RefreshCw } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
-import { MasterDetailLayout, V3Button, V3ErrorState, V3LoadingState } from "@/components/superteam";
+import { MasterDetailLayout, Button, ErrorState, LoadingState } from "@/components/superteam";
 import { getDigitalEmployeeActivity, getDigitalEmployeeOverview } from "@/lib/api/employees";
 import { getProjectTaskGraph, listProjectDemands } from "@/lib/api/projects";
 import { listTeamSummaries } from "@/lib/api/teams";
@@ -41,20 +41,20 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   const employees = useQuery({
     queryKey: ["run-overview", "digital-employees"],
     queryFn: () => getDigitalEmployeeOverview({ baseUrl: apiBaseUrl, fetcher }, { limit: 100 }),
-    refetchInterval: 10_000,
-  });
+    refetchInterval: 10_000
+});
   const teams = useQuery({
     queryKey: ["run-overview", "teams"],
     queryFn: () => listTeamSummaries({ baseUrl: apiBaseUrl, fetcher }, { limit: 100, status: "active" }),
-    refetchInterval: 10_000,
-  });
+    refetchInterval: 10_000
+});
   // 跨员工动态流走专用 activity 端点（服务端标签映射 + 不受每员工 top3 截断）；失败时回退 overview 聚合。
   const activity = useQuery({
     queryKey: ["run-overview", "activity"],
     queryFn: () => getDigitalEmployeeActivity({ baseUrl: apiBaseUrl, fetcher }, { limit: 8 }),
     refetchInterval: 10_000,
-    retry: false,
-  });
+    retry: false
+});
   // 项目透镜的任务链路：仅选中项目时拉取，零常驻成本；与 overview 同频轮询。
   // task-graph 端点必须限定 demand 域。默认选最新 demand，但选定后"钉住"——
   // 新 demand 到达不抢当前视图（除非当前 demand 从列表消失），并提供显式切换。
@@ -63,8 +63,8 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     queryFn: () => listProjectDemands({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, { limit: 20 }),
     enabled: Boolean(selectedProjectId),
     refetchInterval: 10_000,
-    retry: false,
-  });
+    retry: false
+});
   const [selectedDemandId, setSelectedDemandId] = useState<string>();
   const demandList = useMemo(() => projectDemands.data ?? [], [projectDemands.data]);
   const demandIdsKey = demandList.map((demand) => demand.id).join("|");
@@ -82,12 +82,12 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     queryKey: ["run-overview", "task-graph", selectedProjectId, selectedDemandId],
     queryFn: () =>
       getProjectTaskGraph({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, {
-        demandId: selectedDemandId as string,
-      }),
+        demandId: selectedDemandId as string
+}),
     enabled: Boolean(selectedProjectId) && Boolean(selectedDemandId),
     refetchInterval: 10_000,
-    retry: false,
-  });
+    retry: false
+});
   // SSE 秒级推送：activity/stream 推来新事件时立即刷新动态流与 overview（节流 2s），
   // 状态变化经既有轮询 diff 通道触发轮播插队；流断开由 EventSource 自动重连，10s 轮询兜底。
   const queryClient = useQueryClient();
@@ -129,8 +129,8 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
         status: item.status,
         occurredAt: item.occurred_at,
         taskTitle: item.task_title || undefined,
-        projectName: item.project_name || undefined,
-      })),
+        projectName: item.project_name || undefined
+})),
     [activity.data],
   );
   const overview = useMemo(() => {
@@ -150,8 +150,8 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     employees: overview?.employees ?? [],
     initialInteracted: Boolean(search.employee),
     // 透镜态强制暂停轮播：链路阅读期间焦点不被抢走，退出透镜即恢复。
-    forcePaused: Boolean(selectedProjectId),
-  });
+    forcePaused: Boolean(selectedProjectId)
+});
   const searchEmployeeId =
     search.employee && overview?.employees.some((employee) => employee.employeeId === search.employee)
       ? search.employee
@@ -188,8 +188,8 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     void navigate({
       to: "/run-overview",
       search: (previous: { employee?: string; project?: string }) => ({ ...previous, project: projectId || undefined }),
-      replace: true,
-    });
+      replace: true
+});
   };
   const handleRefresh = () => {
     void employees.refetch();
@@ -208,8 +208,8 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
         subtitle="按楼层展示团队运行态、数字员工状态和容量占用。"
       />
       <Main width="wide" className="min-w-0">
-      {employees.isPending || teams.isPending ? <V3LoadingState label="正在加载运行总览" /> : null}
-      {error ? <V3ErrorState title="运行总览加载失败" description={error.message} /> : null}
+      {employees.isPending || teams.isPending ? <LoadingState label="正在加载运行总览" /> : null}
+      {error ? <ErrorState title="运行总览加载失败" description={error.message} /> : null}
       {overview ? (
         <MasterDetailLayout
           aria-label="运行总览地图"
@@ -220,7 +220,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
             <div className="min-w-0">
               <div data-runtime-overview-toolbar className="mb-4 flex flex-wrap items-center gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
+                  <span className="inline-flex h-10 items-center rounded-inner border border-line bg-white/80 px-4 text-sm font-semibold text-ink-2 shadow-sm">
                     全部重点
                   </span>
                   {overview.floors.map((floor) => {
@@ -229,7 +229,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
                         ? overview.employees.filter((employee) => employee.floorId === "lobby").length
                         : 0;
                     return (
-                      <V3Button
+                      <Button
                         key={floor.floorId}
                         type="button"
                         variant={activeFloorId === floor.floorId ? "primary" : "outline"}
@@ -244,24 +244,24 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
                         {lensFloorIds?.has(floor.floorId) ? (
                           <span
                             data-runtime-lens-floor-dot={floor.floorId}
-                            className="ml-1 size-2 rounded-full bg-v3-brand"
+                            className="ml-1 size-2 rounded-full bg-brand"
                             aria-label="该楼层有选中项目的参与员工"
                           />
                         ) : null}
-                      </V3Button>
+                      </Button>
                     );
                   })}
-                  <span className="inline-flex h-10 items-center rounded-v3-inner border border-v3-line bg-white/80 px-4 text-sm font-semibold text-v3-ink-2 shadow-sm">
+                  <span className="inline-flex h-10 items-center rounded-inner border border-line bg-white/80 px-4 text-sm font-semibold text-ink-2 shadow-sm">
                     异常优先
                   </span>
                 </div>
-                <V3Button type="button" variant="outline" aria-label="刷新运行总览" onClick={handleRefresh}>
+                <Button type="button" variant="outline" aria-label="刷新运行总览" onClick={handleRefresh}>
                   <RefreshCw className="size-4" />
                   刷新
-                </V3Button>
+                </Button>
                 <StatusLegend className="mx-auto" />
                 {carousel.queue.length > 0 ? (
-                  <div data-runtime-carousel-indicator className="flex items-center gap-2 text-sm text-v3-ink-2">
+                  <div data-runtime-carousel-indicator className="flex items-center gap-2 text-sm text-ink-2">
                     {selectedProjectId ? (
                       <span className="tabular-nums">项目透镜聚焦中 · 轮播已暂停</span>
                     ) : (
@@ -271,7 +271,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
                             ? "轮播已暂停 · 稍后自动恢复"
                             : `焦点轮播 ${carousel.queueIndex >= 0 ? carousel.queueIndex + 1 : 1} / ${carousel.queue.length}`}
                         </span>
-                        <V3Button
+                        <Button
                           type="button"
                           size="sm"
                           variant="outline"
@@ -280,7 +280,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
                         >
                           {carousel.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
                           {carousel.isPaused ? "恢复" : "暂停"}
-                        </V3Button>
+                        </Button>
                       </>
                     )}
                   </div>
@@ -323,14 +323,14 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
 
 function StatusLegend({ className }: { className?: string }) {
   const items = [
-    { label: "异常", className: "bg-v3-danger" },
-    { label: "工作中", className: "bg-v3-ok" },
-    { label: "待确认", className: "bg-v3-warn" },
-    { label: "排队", className: "bg-v3-info" },
-    { label: "空闲", className: "bg-v3-mute" },
+    { label: "异常", className: "bg-danger" },
+    { label: "工作中", className: "bg-ok" },
+    { label: "待确认", className: "bg-warn" },
+    { label: "排队", className: "bg-info" },
+    { label: "空闲", className: "bg-mute" },
   ];
   return (
-    <div className={`flex flex-wrap items-center gap-3 rounded-v3-inner border border-v3-line bg-white/82 px-3 py-2 text-xs font-medium text-v3-ink-2 shadow-sm ${className ?? ""}`}>
+    <div className={`flex flex-wrap items-center gap-3 rounded-inner border border-line bg-white/82 px-3 py-2 text-xs font-medium text-ink-2 shadow-sm ${className ?? ""}`}>
       {items.map((item) => (
         <span key={item.label} className="inline-flex items-center gap-1.5">
           <span className={`size-2.5 rounded-full ${item.className}`} aria-hidden />

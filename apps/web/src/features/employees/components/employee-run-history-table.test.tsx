@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-router", () => ({
         {children}
       </a>
     );
-  },
+  }
 }));
 
 const result: DigitalEmployeeRunListResult = {
@@ -50,14 +50,14 @@ const result: DigitalEmployeeRunListResult = {
       project_name: "数据库平台",
       work_product_count: 2,
       duration_sec: 1095,
-      created_at: "2026-05-20T10:32:00Z",
-    },
+      created_at: "2026-05-20T10:32:00Z"
+},
   ],
   total_count: 1,
   filters: {
     statuses: [{ value: "completed", label: "已完成" }],
-    projects: [{ value: "project-1", label: "数据库平台" }],
-  },
+    projects: [{ value: "project-1", label: "数据库平台" }]
+}
 };
 
 const chatResult: DigitalEmployeeRunListResult = {
@@ -66,11 +66,11 @@ const chatResult: DigitalEmployeeRunListResult = {
       ...result.items[0],
       id: "run-2",
       run_kind: "chat",
-      task_title: "与员工的即时对话",
-    },
+      task_title: "与员工的即时对话"
+},
   ],
   total_count: 1,
-  filters: result.filters,
+  filters: result.filters
 };
 
 describe("EmployeeRunHistoryTable", () => {

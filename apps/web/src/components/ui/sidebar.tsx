@@ -12,14 +12,14 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
-  SheetTitle,
+  SheetTitle
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
+  TooltipTrigger
 } from '@/components/ui/tooltip'
 
 const SIDEBAR_COOKIE_NAME = 'sidebar_state'
@@ -118,8 +118,8 @@ function SidebarProvider({
       isMobile,
       openMobile,
       setOpenMobile,
-      toggleSidebar,
-    }),
+      toggleSidebar
+}),
     [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
   )
 
@@ -132,8 +132,8 @@ function SidebarProvider({
             {
               '--sidebar-width': SIDEBAR_WIDTH,
               '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
-              ...style,
-            } as React.CSSProperties
+              ...style
+} as React.CSSProperties
           }
           className={cn(
             'group/sidebar-wrapper flex min-h-svh w-full',
@@ -187,8 +187,8 @@ function Sidebar({
           className='w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden'
           style={
             {
-              '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
+              '--sidebar-width': SIDEBAR_WIDTH_MOBILE
+} as React.CSSProperties
           }
           side={side}
         >
@@ -475,25 +475,25 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button relative flex w-full items-center gap-3 overflow-hidden rounded-md p-2 text-start text-[15px] outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:font-semibold data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-11! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0 [&>svg]:text-v3-mute',
+  'peer/menu-button relative flex w-full items-center gap-3 overflow-hidden rounded-md p-2 text-start text-[15px] outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:font-semibold data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-11! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0 [&>svg]:text-mute',
   {
     variants: {
       variant: {
         default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         outline:
-          'bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]',
-      },
+          'bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]'
+},
       size: {
         default: 'h-11 text-[15px]',
         sm: 'h-7 text-xs',
-        lg: 'h-12 text-[15px] group-data-[collapsible=icon]:p-0!',
-      },
-    },
+        lg: 'h-12 text-[15px] group-data-[collapsible=icon]:p-0!'
+}
+},
     defaultVariants: {
       variant: 'default',
-      size: 'default',
-    },
-  }
+      size: 'default'
+}
+}
 )
 
 function SidebarMenuButton({
@@ -529,8 +529,8 @@ function SidebarMenuButton({
 
   if (typeof tooltip === 'string') {
     tooltip = {
-      children: tooltip,
-    }
+      children: tooltip
+}
   }
 
   return (
@@ -630,8 +630,8 @@ function SidebarMenuSkeleton({
         data-sidebar='menu-skeleton-text'
         style={
           {
-            '--skeleton-width': width,
-          } as React.CSSProperties
+            '--skeleton-width': width
+} as React.CSSProperties
         }
       />
     </div>
@@ -723,5 +723,5 @@ export {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
-  useSidebar,
+  useSidebar
 }

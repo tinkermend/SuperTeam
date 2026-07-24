@@ -12,41 +12,41 @@ const scopeId = "22222222-2222-4222-8222-222222222222";
 const actorId = "33333333-3333-4333-8333-333333333333";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       mutations: {
-        retry: false,
-      },
+        retry: false
+},
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: {
-      "content-type": "application/json",
-    },
-    status: 200,
-  });
+      "content-type": "application/json"
+},
+    status: 200
+});
 }
 
 type RecordedRequest = {
@@ -62,10 +62,10 @@ type AuthzFetcherOptions = {
 function createNotFoundResponse(pathname: string) {
   return new Response(JSON.stringify({ error: `unhandled ${pathname}` }), {
     headers: {
-      "content-type": "application/json",
-    },
-    status: 404,
-  });
+      "content-type": "application/json"
+},
+    status: 404
+});
 }
 
 function parseRequestBody(init?: RequestInit) {
@@ -84,8 +84,8 @@ function createAuthzFetcher(options: AuthzFetcherOptions = {}) {
     requests.push({
       body: parseRequestBody(init),
       method,
-      pathname: url.pathname,
-    });
+      pathname: url.pathname
+});
 
     switch (url.pathname) {
       case "/api/authz/overview":
@@ -99,17 +99,17 @@ function createAuthzFetcher(options: AuthzFetcherOptions = {}) {
             engine_version: "db-authorizer-v1",
             openfga_model_id: null,
             openfga_store_id: null,
-            recent_diff_count: 0,
-          },
+            recent_diff_count: 0
+},
           totals: {
             allowed: 0,
             denied: 0,
             denied_rate: 0,
-            total: 0,
-          },
+            total: 0
+},
           recent_events: [],
-          top_denied_actions: [],
-        });
+          top_denied_actions: []
+});
       case "/api/authz/decisions":
         if (method !== "GET") {
           return createNotFoundResponse(url.pathname);
@@ -126,9 +126,9 @@ function createAuthzFetcher(options: AuthzFetcherOptions = {}) {
               ...(parseRequestBody(init) as Record<string, unknown>),
               created_at: "2026-06-01T00:00:00Z",
               status: "active",
-              updated_at: "2026-06-01T00:00:00Z",
-            },
-          });
+              updated_at: "2026-06-01T00:00:00Z"
+}
+});
         }
         return createNotFoundResponse(url.pathname);
       case "/api/authz/members":
@@ -145,8 +145,8 @@ function createAuthzFetcher(options: AuthzFetcherOptions = {}) {
           engine: "db",
           matched_rule: "tenant.owner",
           reason: "allowed",
-          snapshot: {},
-        });
+          snapshot: {}
+});
       default:
         if (/^\/api\/authz\/runtime-scopes\/[^/]+$/.test(url.pathname) && method === "PATCH") {
           return jsonResponse({
@@ -159,9 +159,9 @@ function createAuthzFetcher(options: AuthzFetcherOptions = {}) {
               scope_value: defaultTenantId,
               status: (parseRequestBody(init) as { status?: string } | undefined)?.status ?? "disabled",
               created_at: "2026-06-01T00:00:00Z",
-              updated_at: "2026-06-01T00:01:00Z",
-            },
-          });
+              updated_at: "2026-06-01T00:01:00Z"
+}
+});
         }
         return createNotFoundResponse(url.pathname);
     }
@@ -182,7 +182,7 @@ async function expectV3Surface() {
   await vi.waitFor(() => {
     expect(
       document.body.querySelector(
-        '[data-slot="v3-soft-card"], [data-slot="v3-work-surface"], [data-slot="v3-table"], [data-slot="v3-status-pill"], [data-slot="v3-icon-tile"]',
+        '[data-slot="soft-card"], [data-slot="work-surface"], [data-slot="data-table"], [data-slot="status-pill"], [data-slot="icon-tile"]',
       ),
     ).not.toBeNull();
   });
@@ -211,14 +211,14 @@ describe("PermissionsCenter", () => {
 
     await expect.element(screen.getByText(/^db$/)).toBeVisible();
 
-    const iconTile = document.body.querySelector('[data-slot="v3-icon-tile"]');
+    const iconTile = document.body.querySelector('[data-slot="icon-tile"]');
     const tabSurface = document.body.querySelector('[data-slot="tabs-list"]');
 
     expect(iconTile).not.toBeNull();
-    expect(iconTile?.className).toContain("bg-v3-artifact-soft");
+    expect(iconTile?.className).toContain("bg-artifact-soft");
     expect(tabSurface).not.toBeNull();
-    expect(tabSurface?.className).toContain("bg-v3-card");
-    expect(tabSurface?.className).toContain("shadow-v3");
+    expect(tabSurface?.className).toContain("bg-card");
+    expect(tabSurface?.className).toContain("shadow-card");
 
     await userEvent.click(screen.getByRole("tab", { name: "Runtime 范围" }));
     await expect.element(screen.getByLabelText("Runtime Node ID")).toBeVisible();
@@ -263,17 +263,17 @@ describe("PermissionsCenter", () => {
       body: {
         actor: {
           id: actorId,
-          type: "user",
-        },
+          type: "user"
+},
         action: "console.access",
         resource: {
           id: "web",
-          type: "console",
-        },
-        tenant_id: defaultTenantId,
-      },
-      method: "POST",
-    });
+          type: "console"
+},
+        tenant_id: defaultTenantId
+},
+      method: "POST"
+});
   });
 
   it("derives tenant resources when diagnostics action targets tenant authorization", async () => {
@@ -296,10 +296,10 @@ describe("PermissionsCenter", () => {
       action: "runtime_scope.manage",
       resource: {
         id: defaultTenantId,
-        type: "tenant",
-      },
-      tenant_id: defaultTenantId,
-    });
+        type: "tenant"
+},
+      tenant_id: defaultTenantId
+});
   });
 
   it("derives team resources when diagnostics action targets team governance", async () => {
@@ -323,11 +323,11 @@ describe("PermissionsCenter", () => {
       action: "team.governance.approve",
       resource: {
         id: teamId,
-        type: "team",
-      },
+        type: "team"
+},
       team_id: teamId,
-      tenant_id: defaultTenantId,
-    });
+      tenant_id: defaultTenantId
+});
   });
 
   it("creates tenant runtime scopes with backend-derived scope value", async () => {
@@ -346,8 +346,8 @@ describe("PermissionsCenter", () => {
         runtime_node_id: runtimeNodeId,
         tenant_id: defaultTenantId,
         scope_type: "tenant",
-        scope_value: defaultTenantId,
-      });
+        scope_value: defaultTenantId
+});
     });
   });
 
@@ -371,8 +371,8 @@ describe("PermissionsCenter", () => {
         tenant_id: defaultTenantId,
         team_id: teamId,
         scope_type: "team",
-        scope_value: teamId,
-      });
+        scope_value: teamId
+});
     });
   });
 
@@ -415,12 +415,12 @@ describe("PermissionsCenter", () => {
               status: "active",
               disabled_at: null,
               created_at: "2026-06-01T00:00:00Z",
-              updated_at: "2026-06-01T00:00:00Z",
-            },
-          ],
-        },
-      ],
-    });
+              updated_at: "2026-06-01T00:00:00Z"
+},
+          ]
+},
+      ]
+});
     const screen = await renderPermissionsCenter(fetcher);
 
     await userEvent.click(screen.getByRole("tab", { name: "Runtime 范围" }));
@@ -436,10 +436,10 @@ describe("PermissionsCenter", () => {
       const patchRequest = requests.find((request) => request.method === "PATCH");
       expect(patchRequest).toMatchObject({
         body: {
-          status: "disabled",
-        },
-        pathname: `/api/authz/runtime-scopes/${scopeId}`,
-      });
+          status: "disabled"
+},
+        pathname: `/api/authz/runtime-scopes/${scopeId}`
+});
     });
   });
 });

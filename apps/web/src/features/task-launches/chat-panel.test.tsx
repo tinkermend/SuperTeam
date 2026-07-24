@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ChatPanel,
   type ChatPanelProps,
-  type ConvertToTaskPayload,
+  type ConvertToTaskPayload
 } from "@/features/task-launches/components/chat-panel";
 import type { DigitalEmployee, DigitalEmployeeRun } from "@/lib/api/employees";
 import type { Project } from "@/lib/api/projects";
@@ -19,7 +19,7 @@ function ControlledChatPanel({
   initialProjectId = "project-1",
   onConvertToTask,
   onProjectChange,
-  projects,
+  projects
 }: {
   apiOptions: ChatPanelProps["apiOptions"];
   initialProjectId?: string;
@@ -54,8 +54,8 @@ function makeProject(id = "project-1", name = "客户接入项目"): Project {
     name,
     status: "running",
     tenant_id: "tenant-1",
-    workspace_ready_status: "ready",
-  };
+    workspace_ready_status: "ready"
+};
 }
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -75,8 +75,8 @@ vi.mock("@/components/ui/select", async () => {
     Select: ({
       children,
       onValueChange,
-      value,
-    }: {
+      value
+}: {
       children: ReactNode;
       onValueChange?: (value: string) => void;
       value?: string;
@@ -109,8 +109,8 @@ vi.mock("@/components/ui/select", async () => {
     SelectSeparator: () => <hr />,
     SelectTrigger: ({
       "aria-label": ariaLabel,
-      children,
-    }: {
+      children
+}: {
       "aria-label"?: string;
       children: ReactNode;
     }) => (
@@ -118,21 +118,21 @@ vi.mock("@/components/ui/select", async () => {
         {children}
       </button>
     ),
-    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
-  };
+    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>
+};
 });
 
 function createQueryClient() {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false } }
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function makeEmployee(): DigitalEmployee {
@@ -146,8 +146,8 @@ function makeEmployee(): DigitalEmployee {
     risk_level: "low",
     role: "客服助手",
     status: "active",
-    tenant_id: "tenant-1",
-  };
+    tenant_id: "tenant-1"
+};
 }
 
 function baseRunFields(runId: string, employeeId: string): Partial<DigitalEmployeeRun> {
@@ -166,16 +166,16 @@ function baseRunFields(runId: string, employeeId: string): Partial<DigitalEmploy
     timed_out: false,
     diagnostic: {},
     result: {},
-    work_products: [],
-  };
+    work_products: []
+};
 }
 
 function emptyRunListResponse() {
   return jsonResponse({
     filters: { projects: [], statuses: [] },
     items: [],
-    total_count: 0,
-  });
+    total_count: 0
+});
 }
 
 /** 参与门禁：ChatPanel 现在按项目成员过滤员工，测试 fetcher 统一把
@@ -197,8 +197,8 @@ function projectMembersRouteResponse(
       principal_type: "digital_employee",
       principal_id: employee.id,
       project_role: "executor",
-      status: "active",
-    })),
+      status: "active"
+})),
   );
 }
 
@@ -240,8 +240,8 @@ function createChatFetcher() {
         {
           ...baseRunFields(runId, employeeId),
           status: "queued",
-          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {}),
-        },
+          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {})
+},
         201,
       );
     }
@@ -257,8 +257,8 @@ function createChatFetcher() {
       return jsonResponse({
         ...baseRunFields(runId, employeeId),
         status: "running",
-        ...step,
-      });
+        ...step
+});
     }
 
     return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
@@ -267,8 +267,8 @@ function createChatFetcher() {
   return {
     fetcher,
     setRunScript: (runId: string, script: Array<Partial<DigitalEmployeeRun>>) =>
-      runScripts.set(runId, script),
-  };
+      runScripts.set(runId, script)
+};
 }
 
 function createFailingSendFetcher() {
@@ -339,8 +339,8 @@ function createRetryDeferredFetcher() {
           {
             ...baseRunFields(runId, employeeId),
             status: "failed",
-            error_message: "第一次失败",
-          },
+            error_message: "第一次失败"
+},
           201,
         );
       }
@@ -356,8 +356,8 @@ function createRetryDeferredFetcher() {
       return jsonResponse({
         ...baseRunFields(runId, employeeId),
         status: "failed",
-        error_message: "第一次失败",
-      });
+        error_message: "第一次失败"
+});
     }
 
     return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
@@ -369,8 +369,8 @@ function createRetryDeferredFetcher() {
     resolveRetry: () =>
       resolveRetry?.(
         jsonResponse({ ...baseRunFields("run-2", "emp-1"), status: "queued" }, 201),
-      ),
-  };
+      )
+};
 }
 
 /** First message succeeds and completes; the resumed second send is rejected with a
@@ -428,8 +428,8 @@ function createResumeDegradeFetcher() {
       return jsonResponse({
         ...baseRunFields(runId, employeeId),
         status: "completed",
-        result: { output: `回答-${runId}` },
-      });
+        result: { output: `回答-${runId}` }
+});
     }
 
     return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
@@ -482,8 +482,8 @@ function createNonResumableFailureFetcher() {
       return jsonResponse({
         ...baseRunFields(runId, employeeId),
         status: "completed",
-        result: { output: "首轮回答" },
-      });
+        result: { output: "首轮回答" }
+});
     }
 
     return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
@@ -529,8 +529,8 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
       return jsonResponse({
         filters: { projects: [], statuses: [] },
         items,
-        total_count: desc.length,
-      });
+        total_count: desc.length
+});
     }
     if (runsMatch && method === "POST") {
       runCounter += 1;
@@ -539,8 +539,8 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
         {
           ...baseRunFields(`run-${runCounter}`, runsMatch[1]),
           status: "queued",
-          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {}),
-        },
+          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {})
+},
         201,
       );
     }
@@ -550,8 +550,8 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
       return jsonResponse({
         ...baseRunFields(getMatch[2], getMatch[1]),
         status: "completed",
-        result: { output: `轮询回答-${getMatch[2]}` },
-      });
+        result: { output: `轮询回答-${getMatch[2]}` }
+});
     }
 
     return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
@@ -611,8 +611,8 @@ describe("ChatPanel", () => {
       expect(body).toEqual({
         objective: "第一个问题",
         run_kind: "chat",
-        project_id: "project-1",
-      });
+        project_id: "project-1"
+});
     });
 
     // 3. running -> completed; answer renders inside chat-thread
@@ -636,8 +636,8 @@ describe("ChatPanel", () => {
         objective: "第二个问题",
         run_kind: "chat",
         project_id: "project-1",
-        resume_of_run_id: "run-1",
-      });
+        resume_of_run_id: "run-1"
+});
     });
 
     // 5. convert first (completed) answer to a task draft
@@ -666,8 +666,8 @@ describe("ChatPanel", () => {
         objective: "第二个问题",
         run_kind: "chat",
         project_id: "project-1",
-        resume_of_run_id: "run-1",
-      });
+        resume_of_run_id: "run-1"
+});
     });
   });
 
@@ -770,13 +770,13 @@ describe("ChatPanel", () => {
       objective: "第二个问题",
       run_kind: "chat",
       project_id: "project-1",
-      resume_of_run_id: "run-1",
-    });
+      resume_of_run_id: "run-1"
+});
     expect(bodies[2]).toEqual({
       objective: "第二个问题",
       run_kind: "chat",
-      project_id: "project-1",
-    });
+      project_id: "project-1"
+});
 
     await waitFor(() => expect(chatThread().textContent).toContain("上下文未延续"));
   });
@@ -887,8 +887,8 @@ describe("ChatPanel", () => {
       expect(bodies[1]).toEqual({
         objective: "第二个问题",
         run_kind: "chat",
-        project_id: "project-2",
-      });
+        project_id: "project-2"
+});
     });
   });
 
@@ -899,16 +899,16 @@ describe("ChatPanel", () => {
         id: "run-a",
         result: { output: "历史回答一" },
         status: "completed",
-        task_title: "历史问题一",
-      },
+        task_title: "历史问题一"
+},
       {
         chat_thread_id: "run-a",
         id: "run-b",
         resume_of_run_id: "run-a",
         result: { output: "历史回答二" },
         status: "completed",
-        task_title: "历史问题二",
-      },
+        task_title: "历史问题二"
+},
     ]);
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
@@ -943,8 +943,8 @@ describe("ChatPanel", () => {
         objective: "恢复后的追问",
         run_kind: "chat",
         project_id: "project-1",
-        resume_of_run_id: "run-b",
-      });
+        resume_of_run_id: "run-b"
+});
     });
   });
 
@@ -955,8 +955,8 @@ describe("ChatPanel", () => {
         id: "run-a",
         result: {},
         status: "completed",
-        task_title: "被清理的历史问题",
-      },
+        task_title: "被清理的历史问题"
+},
     ]);
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
@@ -986,8 +986,8 @@ describe("ChatPanel", () => {
         id: "run-a",
         result: { output: "历史回答一" },
         status: "completed",
-        task_title: "历史问题一",
-      },
+        task_title: "历史问题一"
+},
     ]);
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
@@ -1014,8 +1014,8 @@ describe("ChatPanel", () => {
       expect(bodies[0]).toEqual({
         objective: "全新会话的问题",
         run_kind: "chat",
-        project_id: "project-1",
-      });
+        project_id: "project-1"
+});
     });
   });
 
@@ -1025,8 +1025,8 @@ describe("ChatPanel", () => {
         chat_thread_id: "run-a",
         id: "run-a",
         status: "running",
-        task_title: "离开前发出的问题",
-      },
+        task_title: "离开前发出的问题"
+},
     ]);
     const onConvertToTask = vi.fn();
     const { queryClient } = await renderWithQueryClient(
@@ -1072,8 +1072,8 @@ describe("ChatPanel", () => {
         new KeyboardEvent("keydown", {
           bubbles: true,
           cancelable: true,
-          key: "Enter",
-        }),
+          key: "Enter"
+}),
       );
     });
     expect(postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")).toHaveLength(0);
@@ -1084,16 +1084,16 @@ describe("ChatPanel", () => {
           bubbles: true,
           cancelable: true,
           key: "Enter",
-          shiftKey: true,
-        }),
+          shiftKey: true
+}),
       );
     });
     await waitFor(() => {
       expect(postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")[0]).toEqual({
         objective: "用快捷键发送",
         run_kind: "chat",
-        project_id: "project-1",
-      });
+        project_id: "project-1"
+});
     });
   });
 });

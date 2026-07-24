@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildUpcomingFires,
   countUpcomingFires,
-  buildRecentFireActivity,
+  buildRecentFireActivity
 } from "./automation-dashboard-rail";
 import type { AutomationRule } from "@/lib/api/automations";
 import { buildNextFireById } from "../schedule-next";
@@ -31,8 +31,8 @@ const baseRule: AutomationRule = {
     scheduled_fire_at: "2026-07-21T01:00:00.000Z",
     idempotency_key: "k1",
     status: "succeeded",
-    created_at: "2026-07-21T01:00:01.000Z",
-  },
+    created_at: "2026-07-21T01:00:01.000Z"
+}
 };
 
 describe("automation dashboard rail helpers", () => {
@@ -50,8 +50,8 @@ describe("automation dashboard rail helpers", () => {
     const many = Array.from({ length: 12 }, (_, index) => ({
       ...baseRule,
       id: `11111111-1111-1111-1111-1111111111${index.toString(16).padStart(2, "0")}`,
-      name: `规则-${index}`,
-    }));
+      name: `规则-${index}`
+}));
     const nextFireById = buildNextFireById(many, now);
     expect(countUpcomingFires(many, nextFireById, 72, now)).toBe(12);
     expect(buildUpcomingFires(many, { now, nextFireById, limit: 8 })).toHaveLength(8);

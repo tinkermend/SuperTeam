@@ -7,26 +7,26 @@ import { SkillUploadView } from "@/features/skills/upload";
 import type { Skill } from "@/lib/api/skills";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a {...props} data-router-link="true" href={to}>{children}</a>
   ),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => vi.fn()
 }));
 
 const uploadedSkill = {
@@ -50,18 +50,18 @@ const uploadedSkill = {
   created_by_name: "开发管理员",
   team_bindings: [],
   agent_bindings: [],
-  runtime_dependencies: { tools: ["gh"], env: ["GH_TOKEN", "OPENAI_API_KEY"] },
+  runtime_dependencies: { tools: ["gh"], env: ["GH_TOKEN", "OPENAI_API_KEY"] }
 } satisfies Skill;
 
 function createQueryClient() {
   return new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  });
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } }
+});
 }
 
 function renderUploadView({
   fetcher = vi.fn(async () => jsonResponse(uploadedSkill, 201)),
-  onUploaded = vi.fn(),
+  onUploaded = vi.fn()
 }: {
   fetcher?: typeof fetch;
   onUploaded?: (skill: Skill) => void;
@@ -171,19 +171,19 @@ describe("SkillUploadView", () => {
   it("uses semantic status pills for every risk level in the publish summary", async () => {
     const screen = await renderUploadView();
 
-    let riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="v3-status-pill"]');
+    let riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="status-pill"]');
     expect(riskSummary).toHaveTextContent("中风险");
     expect(riskSummary).toHaveAttribute("data-tone", "warn");
 
     await userEvent.click(screen.getByRole("button", { name: "低" }));
 
-    riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="v3-status-pill"]');
+    riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="status-pill"]');
     expect(riskSummary).toHaveTextContent("低风险");
     expect(riskSummary).toHaveAttribute("data-tone", "ok");
 
     await userEvent.click(screen.getByRole("button", { name: "高" }));
 
-    riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="v3-status-pill"]');
+    riskSummary = document.querySelector('[data-summary-row="风险等级"] [data-slot="status-pill"]');
     expect(riskSummary).toHaveTextContent("高风险");
     expect(riskSummary).toHaveAttribute("data-tone", "danger");
   });
@@ -247,8 +247,8 @@ describe("SkillUploadView", () => {
     const fetcher = vi.fn(async () =>
       jsonResponse(
         {
-          error: "invalid skill input: zip archive must include SKILL.md",
-        },
+          error: "invalid skill input: zip archive must include SKILL.md"
+},
         400,
       ),
     );

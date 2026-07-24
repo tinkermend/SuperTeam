@@ -14,7 +14,7 @@ export function SelectableTeamList({
   disabled = false,
   onChange,
   selectedTeamIds,
-  teams,
+  teams
 }: SelectableTeamListProps) {
   function toggleTeam(teamId: string) {
     if (selectedTeamIds.includes(teamId)) {

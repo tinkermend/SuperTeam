@@ -37,8 +37,8 @@ export function Main({ fixed, className, contained, fluid, width, ...props }: Ma
         fixed && 'flex grow flex-col overflow-hidden',
 
         resolvedWidth === 'contained' &&
-          '@7xl/content:mx-auto @7xl/content:max-w-(--v3-layout-contained)',
-        resolvedWidth === 'wide' && 'mx-auto max-w-(--v3-layout-wide)',
+          '@7xl/content:mx-auto @7xl/content:max-w-(--layout-contained)',
+        resolvedWidth === 'wide' && 'mx-auto max-w-(--layout-wide)',
         className
       )}
       {...props}

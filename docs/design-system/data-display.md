@@ -45,9 +45,9 @@
 
 密集、需逐行扫读比较的数据本体用脆数据面，装进柔和白卡里（软壳装脆数据）：
 
-- **容器**：外层柔和白卡（`--v3-r-card` 圆角 + `--v3-shadow`），`overflow:hidden`；内部表格实底、不透明、不模糊。
-- **表头**：`background: var(--v3-card-soft)`，`position:sticky; top:0`，小号大写灰字 + `--v3-line-strong` 底线。
-- **行**：行线 `--v3-line`；hover 行 `--v3-card-inner`；选中态使用主色浅背景，不改变行高和列宽。普通风险、预警或待处理对象优先使用左侧实色 accent bar + 状态 pill + 文字说明；只有阻断、失败兜底或危险确认类内容才使用更强的整行软底。
+- **容器**：外层柔和白卡（`--r-card` 圆角 + `--shadow`），`overflow:hidden`；内部表格实底、不透明、不模糊。
+- **表头**：`background: var(--card-soft)`，`position:sticky; top:0`，小号大写灰字 + `--line-strong` 底线。
+- **行**：行线 `--line`；hover 行 `--card-inner`；选中态使用主色浅背景，不改变行高和列宽。普通风险、预警或待处理对象优先使用左侧实色 accent bar + 状态 pill + 文字说明；只有阻断、失败兜底或危险确认类内容才使用更强的整行软底。
 - **排版纪律**：数字、时间、金额一律 `font-variant-numeric: tabular-nums` 纵向对齐；ID/UUID/路径/哈希用等宽字体；长字段必须截断、换行、两行 clamp、等宽断行、展开详情或 tooltip。
 - **密度切换**：提供“舒适 / 紧凑”，通过行内边距/字号 token（如 `--row-py`/`--row-fs`）切换，不改列宽。
 - **状态**：状态用 v3 语义 pill（实底柔色，过 AA）；类别用图标 + 文字，不每类各占一色。

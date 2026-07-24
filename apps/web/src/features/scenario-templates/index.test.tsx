@@ -11,11 +11,11 @@ import {
   listScenarioTemplates,
   patchScenarioTemplate,
   type ScenarioTemplate,
-  type ScenarioTemplateVersion,
+  type ScenarioTemplateVersion
 } from "@/lib/api/scenario-templates";
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children?: React.ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children?: React.ReactNode }) => <main>{children}</main>
 }));
 vi.mock("@/components/layout/shell-page-header", () => ({
   ShellPageHeader: ({ title, subtitle }: { title: string; subtitle?: string }) => (
@@ -23,10 +23,10 @@ vi.mock("@/components/layout/shell-page-header", () => ({
       <h1>{title}</h1>
       {subtitle ? <p>{subtitle}</p> : null}
     </header>
-  ),
+  )
 }));
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://control-plane.local",
+  resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 vi.mock("@/lib/api/scenario-templates", async (importOriginal) => {
   const original =
@@ -37,8 +37,8 @@ vi.mock("@/lib/api/scenario-templates", async (importOriginal) => {
     createScenarioTemplateVersion: vi.fn(),
     listScenarioTemplateVersions: vi.fn(),
     listScenarioTemplates: vi.fn(),
-    patchScenarioTemplate: vi.fn(),
-  };
+    patchScenarioTemplate: vi.fn()
+};
 });
 
 const softwareDelivery = {
@@ -56,12 +56,12 @@ const softwareDelivery = {
       { step: "develop", role: "developer" },
       { step: "review", role: "reviewer", depends_on: ["develop"] },
     ],
-    default_acceptance_criteria: ["变更以 branch+commit 交付且通过独立审查"],
-  },
+    default_acceptance_criteria: ["变更以 branch+commit 交付且通过独立审查"]
+},
   status: "active",
   active_version: 2,
   created_at: "2026-07-13T00:00:00Z",
-  updated_at: "2026-07-13T00:00:00Z",
+  updated_at: "2026-07-13T00:00:00Z"
 } satisfies ScenarioTemplate;
 
 const softwareDeliveryV2 = {
@@ -87,12 +87,12 @@ const softwareDeliveryV2 = {
     default_acceptance_criteria: [
       { statement: "变更以 branch+commit 交付", applies_from_exit: "branch_ref" },
       { statement: "通过独立审查", applies_from_exit: "review_verdict" },
-    ],
-  },
+    ]
+},
   status: "active",
   active_version: 2,
   created_at: "2026-07-14T00:00:00Z",
-  updated_at: "2026-07-14T00:00:00Z",
+  updated_at: "2026-07-14T00:00:00Z"
 } satisfies ScenarioTemplate;
 
 const versions: ScenarioTemplateVersion[] = [
@@ -101,21 +101,21 @@ const versions: ScenarioTemplateVersion[] = [
     template_id: softwareDelivery.id,
     version: 2,
     spec: softwareDelivery.spec,
-    created_at: "2026-07-14T00:00:00Z",
-  },
+    created_at: "2026-07-14T00:00:00Z"
+},
   {
     id: "ver-1",
     template_id: softwareDelivery.id,
     version: 1,
     spec: { roles: [] },
-    created_at: "2026-07-13T00:00:00Z",
-  },
+    created_at: "2026-07-13T00:00:00Z"
+},
 ];
 
 async function renderPage() {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
+});
   return await render(
     <QueryClientProvider client={queryClient}>
       <ScenarioTemplatesPage />
@@ -146,8 +146,8 @@ describe("ScenarioTemplatesPage", () => {
     vi.mocked(createScenarioTemplate).mockResolvedValue({
       ...softwareDelivery,
       id: "new-template",
-      template_key: "ops_review",
-    });
+      template_key: "ops_review"
+});
 
     const user = userEvent.setup();
     const screen = await renderPage();
@@ -170,8 +170,8 @@ describe("ScenarioTemplatesPage", () => {
           template_key: "ops_review",
           name: "运维评审",
           description: "运维变更评审场景",
-          spec: expect.objectContaining({ spec_version: 2 }),
-        }),
+          spec: expect.objectContaining({ spec_version: 2 })
+}),
       );
     });
 
@@ -210,8 +210,8 @@ describe("ScenarioTemplatesPage", () => {
     vi.mocked(listScenarioTemplateVersions).mockResolvedValue([]);
     vi.mocked(createScenarioTemplateVersion).mockResolvedValue({
       ...softwareDelivery,
-      active_version: 3,
-    });
+      active_version: 3
+});
 
     const user = userEvent.setup();
     const screen = await renderPage();
@@ -237,9 +237,9 @@ describe("ScenarioTemplatesPage", () => {
           spec: expect.objectContaining({
             roles: expect.arrayContaining([
               expect.objectContaining({ key: "developer" }),
-            ]),
-          }),
-        }),
+            ])
+})
+}),
       );
     });
   });
@@ -249,8 +249,8 @@ describe("ScenarioTemplatesPage", () => {
     vi.mocked(listScenarioTemplateVersions).mockResolvedValue([]);
     vi.mocked(patchScenarioTemplate).mockResolvedValue({
       ...softwareDelivery,
-      status: "disabled",
-    });
+      status: "disabled"
+});
 
     const user = userEvent.setup();
     const screen = await renderPage();

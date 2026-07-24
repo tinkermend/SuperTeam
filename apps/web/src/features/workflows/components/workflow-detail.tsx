@@ -6,21 +6,21 @@ import {
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3ErrorState,
-  V3LoadingState,
+  Button,
+  ErrorState,
+  LoadingState
 } from "@/components/superteam";
 import type {
   ProjectDecisionRequest,
   ProjectDemandLaunchDetail,
   ProjectTaskGraph,
-  WorkflowInstanceSummary,
+  WorkflowInstanceSummary
 } from "@/lib/api/projects";
 import { decisionTypeLabel, riskLevelLabel } from "@/lib/status-labels";
 import { taskNodeId } from "../workflow-graph-adapter";
@@ -39,7 +39,7 @@ export function WorkflowDetail({
   detail,
   graph,
   instance,
-  isError,
+  isError
 }: WorkflowDetailProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
 
@@ -64,7 +64,7 @@ export function WorkflowDetail({
   if (isError) {
     return (
       <SoftCard className="p-4">
-        <V3ErrorState title="流程详情加载失败" />
+        <ErrorState title="流程详情加载失败" />
       </SoftCard>
     );
   }
@@ -72,7 +72,7 @@ export function WorkflowDetail({
   if (!detail) {
     return (
       <SoftCard>
-        <V3LoadingState label="正在加载流程详情" />
+        <LoadingState label="正在加载流程详情" />
       </SoftCard>
     );
   }
@@ -110,16 +110,16 @@ export function WorkflowDetail({
       <SoftCard className="@container/workflow-graph min-w-0 overflow-hidden">
         <DemandSummaryBar detail={detail} instance={instance} />
 
-        <div className="flex items-start justify-between gap-3 border-b border-v3-line p-4">
+        <div className="flex items-start justify-between gap-3 border-b border-line p-4">
           <div className="flex min-w-0 items-center gap-3">
             <IconTile tone="brand" size="sm">
               <ListChecks />
             </IconTile>
             <div className="min-w-0">
-              <h2 className="text-base font-bold tracking-normal text-v3-ink">
+              <h2 className="text-base font-bold tracking-normal text-ink">
                 {orchestrationTitle}
               </h2>
-              <p className="mt-1 text-xs text-v3-ink-2">
+              <p className="mt-1 text-xs text-ink-2">
                 {orchestrationSubtitle}
               </p>
             </div>
@@ -138,7 +138,7 @@ export function WorkflowDetail({
         ) : pendingDecision ? (
           <PendingDecisionPanel decision={pendingDecision} />
         ) : (
-          <div className="p-5 text-sm leading-6 text-v3-ink-2">
+          <div className="p-5 text-sm leading-6 text-ink-2">
             当前需求已进入流程实例，任务节点会在协调线程规划完成后显示。
           </div>
         )}
@@ -152,11 +152,11 @@ export function WorkflowDetail({
           open={isInspectorOpen}
         >
           <DialogContent className="flex max-h-[85vh] w-full flex-col gap-0 p-0 sm:max-w-xl">
-            <DialogHeader className="shrink-0 border-b border-v3-line px-5 py-4">
-              <DialogTitle className="text-base font-bold tracking-normal text-v3-ink">
+            <DialogHeader className="shrink-0 border-b border-line px-5 py-4">
+              <DialogTitle className="text-base font-bold tracking-normal text-ink">
                 节点详情
               </DialogTitle>
-              <DialogDescription className="text-xs text-v3-ink-2">
+              <DialogDescription className="text-xs text-ink-2">
                 查看任务节点的负责人、阻塞、输入输出与执行结果
               </DialogDescription>
             </DialogHeader>
@@ -176,25 +176,25 @@ export function WorkflowDetail({
 
 function DemandSummaryBar({
   detail,
-  instance,
+  instance
 }: {
   detail: ProjectDemandLaunchDetail;
   instance?: WorkflowInstanceSummary;
 }) {
   return (
-    <div className="border-b border-v3-line bg-v3-card px-4 py-3">
+    <div className="border-b border-line bg-card px-4 py-3">
       <div className="flex flex-col gap-3 @lg/workflow-graph:flex-row @lg/workflow-graph:items-start @lg/workflow-graph:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="text-xs font-bold text-v3-ink-3">需求摘要</p>
-            <p className="truncate text-xs text-v3-ink-2">
+            <p className="text-xs font-bold text-ink-3">需求摘要</p>
+            <p className="truncate text-xs text-ink-2">
               {detail.project.name}
             </p>
           </div>
-          <h2 className="mt-1 line-clamp-2 text-base font-bold leading-6 tracking-normal text-v3-ink">
+          <h2 className="mt-1 line-clamp-2 text-base font-bold leading-6 tracking-normal text-ink">
             {detail.demand.title}
           </h2>
-          <p className="mt-2 line-clamp-2 text-sm leading-6 text-v3-ink-2">
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-ink-2">
             {detail.demand.content || "暂无需求正文"}
           </p>
         </div>
@@ -224,12 +224,12 @@ function DemandSummaryBar({
               ) : null}
             </>
           ) : null}
-          <V3Button asChild size="sm" variant="outline">
+          <Button asChild size="sm" variant="outline">
             <Link params={{ projectId: detail.project.id }} to="/projects/$projectId">
               <FolderKanban className="size-4" />
               打开项目
             </Link>
-          </V3Button>
+          </Button>
         </div>
       </div>
     </div>
@@ -241,7 +241,7 @@ function DemandSummaryBar({
 function PendingDecisionPanel({ decision }: { decision: ProjectDecisionRequest }) {
   return (
     <div className="p-5">
-      <div className="rounded-v3-inner border border-v3-line p-4">
+      <div className="rounded-inner border border-line p-4">
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone="warn">{decisionTypeLabel(decision.decision_type)}</StatusPill>
           {decision.risk_level_snapshot ? (
@@ -250,16 +250,16 @@ function PendingDecisionPanel({ decision }: { decision: ProjectDecisionRequest }
             </StatusPill>
           ) : null}
         </div>
-        <p className="mt-3 text-sm font-semibold text-v3-ink">{decision.title_snapshot}</p>
+        <p className="mt-3 text-sm font-semibold text-ink">{decision.title_snapshot}</p>
         {decision.summary_snapshot ? (
-          <p className="mt-1 line-clamp-3 text-xs leading-5 text-v3-ink-2">
+          <p className="mt-1 line-clamp-3 text-xs leading-5 text-ink-2">
             {decision.summary_snapshot}
           </p>
         ) : null}
         <div className="mt-4">
-          <V3Button asChild size="sm" variant="primary">
+          <Button asChild size="sm" variant="primary">
             <Link to="/inbox">前往收件箱处理</Link>
-          </V3Button>
+          </Button>
         </div>
       </div>
     </div>

@@ -8,7 +8,7 @@ import {
   SheetDescription,
   SheetFooter,
   SheetHeader,
-  SheetTitle,
+  SheetTitle
 } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,15 +18,15 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
-import { SoftCard, V3Button, V3Segmented } from "@/components/superteam";
+import { SoftCard, Button, Segmented } from "@/components/superteam";
 import {
   type AutomationCoordinationMode,
   type AutomationRule,
   type AutomationScheduleKind,
   type CreateAutomationRuleInput,
-  type UpdateAutomationRuleInput,
+  type UpdateAutomationRuleInput
 } from "@/lib/api/automations";
 import { listProjectMembers, listProjects } from "@/lib/api/projects";
 import { cn } from "@/lib/utils";
@@ -43,18 +43,18 @@ const MODE_CARDS: Array<{
     value: "loop",
     title: "循环",
     badge: "推荐",
-    blurb: "到点开跑，中间尽量自治，终点仍等人验收。",
-  },
+    blurb: "到点开跑，中间尽量自治，终点仍等人验收。"
+},
   {
     value: "plan",
     title: "计划",
-    blurb: "到点生成待确认计划，半自动立项。",
-  },
+    blurb: "到点生成待确认计划，半自动立项。"
+},
   {
     value: "chat",
     title: "对话",
-    blurb: "定时对员工发起对话，不进项目验收。",
-  },
+    blurb: "定时对员工发起对话，不进项目验收。"
+},
 ];
 
 const SCHEDULE_OPTIONS: Array<{ label: string; value: AutomationScheduleKind }> = [
@@ -71,7 +71,7 @@ const CRON_PRESETS = [
 const GATE_SUMMARY: Record<AutomationCoordinationMode, string[]> = {
   loop: ["到点自动发起需求", "执行中缺口仍可能升级等人", "终态验收需人类处理（Console / 飞书）"],
   plan: ["到点生成计划", "通常需计划确认后才派发", "终态验收需人类处理"],
-  chat: ["到点发起员工对话", "不进入项目协调与验收", "若要闭环需另转任务或配置 Demand 规则"],
+  chat: ["到点发起员工对话", "不进入项目协调与验收", "若要闭环需另转任务或配置 Demand 规则"]
 };
 
 type AutomationRuleFormSheetProps = {
@@ -95,7 +95,7 @@ export function AutomationRuleFormSheet({
   submitting,
   error,
   onCreate,
-  onUpdate,
+  onUpdate
 }: AutomationRuleFormSheetProps) {
   const isEdit = Boolean(editing);
   const [name, setName] = useState("");
@@ -147,16 +147,16 @@ export function AutomationRuleFormSheet({
   const projectsQuery = useQuery({
     queryKey: ["automation-form-projects", apiBaseUrl],
     queryFn: () => listProjects({ baseUrl: apiBaseUrl }),
-    enabled: open && !isEdit,
-  });
+    enabled: open && !isEdit
+});
 
   const anchorProjectId = isEdit ? (editing?.project_id ?? "") : projectId;
 
   const employeesQuery = useQuery({
     queryKey: ["automation-form-employees", apiBaseUrl, anchorProjectId],
     queryFn: () => listProjectMembers({ baseUrl: apiBaseUrl }, anchorProjectId),
-    enabled: open && mode === "chat" && Boolean(anchorProjectId),
-  });
+    enabled: open && mode === "chat" && Boolean(anchorProjectId)
+});
 
   const projectList = projectsQuery.data ?? [];
 
@@ -166,8 +166,8 @@ export function AutomationRuleFormSheet({
       .filter((member) => member.principal_type === "digital_employee")
       .map((member) => ({
         id: member.principal_id,
-        name: member.display_name_snapshot?.trim() || member.principal_id,
-      }));
+        name: member.display_name_snapshot?.trim() || member.principal_id
+}));
   }, [employeesQuery.data]);
 
   function handleSubmit() {
@@ -182,8 +182,8 @@ export function AutomationRuleFormSheet({
         schedule_kind: scheduleKind,
         cron_expr: scheduleKind === "cron" ? cronExpr : null,
         interval_seconds: scheduleKind === "interval" ? intervalSeconds : null,
-        timezone: "Asia/Shanghai",
-      });
+        timezone: "Asia/Shanghai"
+});
       return;
     }
     onCreate({
@@ -198,8 +198,8 @@ export function AutomationRuleFormSheet({
       cron_expr: scheduleKind === "cron" ? cronExpr : undefined,
       interval_seconds: scheduleKind === "interval" ? intervalSeconds : undefined,
       timezone: "Asia/Shanghai",
-      enabled: true,
-    });
+      enabled: true
+});
   }
 
   const canSubmit =
@@ -222,7 +222,7 @@ export function AutomationRuleFormSheet({
 
         <div className="flex flex-1 flex-col gap-6 px-4 py-4">
           <section className="space-y-3">
-            <h3 className="text-sm font-extrabold text-v3-ink">1. 锚点</h3>
+            <h3 className="text-sm font-extrabold text-ink">1. 锚点</h3>
             <div className="space-y-2">
               <Label htmlFor="automation-name">规则名称</Label>
               <Input
@@ -250,7 +250,7 @@ export function AutomationRuleFormSheet({
                 {projectList.length === 0 && !projectsQuery.isLoading ? (
                   <p className="text-sm text-muted-foreground">
                     没有可选项目。请先{" "}
-                    <Link className="text-v3-brand underline-offset-2 hover:underline" to="/projects">
+                    <Link className="text-brand underline-offset-2 hover:underline" to="/projects">
                       加入或创建项目
                     </Link>
                     。
@@ -258,7 +258,7 @@ export function AutomationRuleFormSheet({
                 ) : null}
               </div>
             ) : (
-              <p className="rounded-[10px] border border-v3-line bg-v3-soft px-3 py-2 text-sm text-v3-ink-2">
+              <p className="rounded-[10px] border border-line bg-soft px-3 py-2 text-sm text-ink-2">
                 项目与模式创建后不可更改。如需更换，请停用本规则并新建。
               </p>
             )}
@@ -266,7 +266,7 @@ export function AutomationRuleFormSheet({
 
           {!isEdit ? (
             <section className="space-y-3">
-              <h3 className="text-sm font-extrabold text-v3-ink">2. 模式</h3>
+              <h3 className="text-sm font-extrabold text-ink">2. 模式</h3>
               <div className="grid gap-2 sm:grid-cols-3">
                 {MODE_CARDS.map((card) => {
                   const selected = mode === card.value;
@@ -277,21 +277,21 @@ export function AutomationRuleFormSheet({
                       className={cn(
                         "rounded-[14px] border px-3 py-3 text-left transition-colors",
                         selected
-                          ? "border-v3-brand bg-v3-brand-soft shadow-sm"
-                          : "border-v3-line bg-v3-card hover:border-v3-brand/40",
+                          ? "border-brand bg-brand-soft shadow-sm"
+                          : "border-line bg-card hover:border-brand/40",
                       )}
                       type="button"
                       onClick={() => setMode(card.value)}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-v3-ink">{card.title}</span>
+                        <span className="text-sm font-semibold text-ink">{card.title}</span>
                         {card.badge ? (
-                          <span className="rounded-md bg-v3-brand px-1.5 py-0.5 text-[10px] font-bold text-white">
+                          <span className="rounded-md bg-brand px-1.5 py-0.5 text-[10px] font-bold text-white">
                             {card.badge}
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-1.5 text-[11.5px] leading-4 text-v3-ink-3">{card.blurb}</p>
+                      <p className="mt-1.5 text-[11.5px] leading-4 text-ink-3">{card.blurb}</p>
                     </button>
                   );
                 })}
@@ -303,7 +303,7 @@ export function AutomationRuleFormSheet({
           )}
 
           <section className="space-y-3">
-            <h3 className="text-sm font-extrabold text-v3-ink">
+            <h3 className="text-sm font-extrabold text-ink">
               {isEdit ? "2. 内容模板" : "3. 内容模板"}
             </h3>
             {mode === "chat" ? (
@@ -332,7 +332,7 @@ export function AutomationRuleFormSheet({
                     value={chatObjective}
                     onChange={(e) => setChatObjective(e.target.value)}
                   />
-                  <p className="text-[11px] text-v3-ink-3">
+                  <p className="text-[11px] text-ink-3">
                     可用变量：{"{{date}}"} {"{{datetime}}"} {"{{rule_name}}"} {"{{project_name}}"}
                   </p>
                 </div>
@@ -357,7 +357,7 @@ export function AutomationRuleFormSheet({
                     value={bodyTemplate}
                     onChange={(e) => setBodyTemplate(e.target.value)}
                   />
-                  <p className="text-[11px] text-v3-ink-3">
+                  <p className="text-[11px] text-ink-3">
                     可用变量：{"{{date}}"} {"{{datetime}}"} {"{{rule_name}}"} {"{{project_name}}"}
                   </p>
                 </div>
@@ -366,10 +366,10 @@ export function AutomationRuleFormSheet({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-extrabold text-v3-ink">
+            <h3 className="text-sm font-extrabold text-ink">
               {isEdit ? "3. 日程" : "4. 日程"}
             </h3>
-            <V3Segmented
+            <Segmented
               aria-label="日程种类"
               options={SCHEDULE_OPTIONS}
               value={scheduleKind}
@@ -387,8 +387,8 @@ export function AutomationRuleFormSheet({
                         className={cn(
                           "rounded-[12px] border px-3 py-3 text-left text-sm font-medium transition-colors",
                           selected
-                            ? "border-v3-brand bg-v3-brand-soft text-v3-brand-deep"
-                            : "border-v3-line bg-v3-card text-v3-ink hover:border-v3-brand/40",
+                            ? "border-brand bg-brand-soft text-brand-deep"
+                            : "border-line bg-card text-ink hover:border-brand/40",
                         )}
                         type="button"
                         onClick={() => setCronExpr(preset.value)}
@@ -408,7 +408,7 @@ export function AutomationRuleFormSheet({
                     value={cronExpr}
                     onChange={(e) => setCronExpr(e.target.value)}
                   />
-                  <p className="text-[11px] text-v3-ink-3">时区 Asia/Shanghai</p>
+                  <p className="text-[11px] text-ink-3">时区 Asia/Shanghai</p>
                 </div>
               </div>
             ) : (
@@ -423,22 +423,22 @@ export function AutomationRuleFormSheet({
                 />
               </div>
             )}
-            <p className="text-[11px] text-v3-ink-3">
+            <p className="text-[11px] text-ink-3">
               重叠策略：上一次触发对应的需求/对话尚未结束时，跳过本次。
             </p>
           </section>
 
-          <SoftCard className="space-y-2 border-v3-line p-4 shadow-none">
-            <h3 className="text-sm font-extrabold text-v3-ink">到点后你还可能需要</h3>
+          <SoftCard className="space-y-2 border-line p-4 shadow-none">
+            <h3 className="text-sm font-extrabold text-ink">到点后你还可能需要</h3>
             <ul className="space-y-1.5">
               {GATE_SUMMARY[mode].map((line) => (
-                <li key={line} className="flex items-start gap-2 text-sm text-v3-ink-2">
-                  <Check aria-hidden className="mt-0.5 size-3.5 shrink-0 text-v3-brand" />
+                <li key={line} className="flex items-start gap-2 text-sm text-ink-2">
+                  <Check aria-hidden className="mt-0.5 size-3.5 shrink-0 text-brand" />
                   <span>{line}</span>
                 </li>
               ))}
             </ul>
-            <p className="pt-1 text-[11px] text-v3-ink-3">
+            <p className="pt-1 text-[11px] text-ink-3">
               发起人 = 当前账号。被移出项目或账号停用后，规则将自动停用。
             </p>
           </SoftCard>
@@ -451,12 +451,12 @@ export function AutomationRuleFormSheet({
         </div>
 
         <SheetFooter className="gap-2 border-t p-4">
-          <V3Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             取消
-          </V3Button>
-          <V3Button disabled={!canSubmit || submitting} onClick={handleSubmit}>
+          </Button>
+          <Button disabled={!canSubmit || submitting} onClick={handleSubmit}>
             {isEdit ? "保存" : "创建并启用"}
-          </V3Button>
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

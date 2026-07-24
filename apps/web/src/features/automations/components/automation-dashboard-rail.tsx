@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CalendarClock, Inbox, Activity } from "lucide-react";
-import { IconTile, StatusPill, V3EmptyState } from "@/components/superteam";
+import { IconTile, StatusPill, EmptyState } from "@/components/superteam";
 import type { AutomationFire, AutomationRule } from "@/lib/api/automations";
 import type { InboxItem } from "@/lib/api/inbox";
 import { formatRelativeFuture, formatRelativeTime } from "@/lib/format-time";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { automationFireTone } from "../fire-tone";
 
 const PANEL_CLASS =
-  "flex min-w-0 flex-col gap-2 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm";
+  "flex min-w-0 flex-col gap-2 rounded-[14px] border border-line bg-card p-4 shadow-sm";
 
 const RAIL_UPCOMING_LIMIT = 8;
 
@@ -59,8 +59,8 @@ export function countUpcomingFires(
     withinHours,
     now,
     limit: Number.POSITIVE_INFINITY,
-    nextFireById,
-  }).length;
+    nextFireById
+}).length;
 }
 
 export function buildRecentFireActivity(rules: AutomationRule[], limit = 8) {
@@ -89,7 +89,7 @@ export function AutomationDashboardRail({
   decisionItems,
   decisionOpenCount,
   decisionsLoading,
-  onSelectRule,
+  onSelectRule
 }: AutomationDashboardRailProps) {
   const upcoming = useMemo(
     () => buildUpcomingFires(rules, { nextFireById, limit: RAIL_UPCOMING_LIMIT }),
@@ -109,11 +109,11 @@ export function AutomationDashboardRail({
     >
       <section aria-label="即将触发" className={PANEL_CLASS}>
         <header className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-extrabold text-v3-ink">即将触发 · 72h</h3>
-          <CalendarClock aria-hidden className="size-3.5 text-v3-ink-3" />
+          <h3 className="text-sm font-extrabold text-ink">即将触发 · 72h</h3>
+          <CalendarClock aria-hidden className="size-3.5 text-ink-3" />
         </header>
         {upcoming.length === 0 ? (
-          <p className="text-[12px] leading-5 text-v3-ink-3">
+          <p className="text-[12px] leading-5 text-ink-3">
             近三天没有启用中的日程，或规则尚未配置。
           </p>
         ) : (
@@ -121,7 +121,7 @@ export function AutomationDashboardRail({
             {upcoming.map(({ rule, nextAt }) => (
               <li key={rule.id}>
                 <button
-                  className="flex w-full min-w-0 items-start gap-2 rounded-[10px] border border-transparent px-2 py-1.5 text-left transition-colors hover:border-v3-line hover:bg-v3-soft"
+                  className="flex w-full min-w-0 items-start gap-2 rounded-[10px] border border-transparent px-2 py-1.5 text-left transition-colors hover:border-line hover:bg-soft"
                   type="button"
                   onClick={() => onSelectRule(rule.id)}
                 >
@@ -129,16 +129,16 @@ export function AutomationDashboardRail({
                     <CalendarClock />
                   </IconTile>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-v3-ink">
+                    <span className="block truncate text-[13px] font-medium text-ink">
                       {rule.name}
                     </span>
-                    <span className="block truncate text-[11px] text-v3-ink-3">
+                    <span className="block truncate text-[11px] text-ink-3">
                       {rule.project_name?.trim() || "项目"} ·{" "}
                       {statusLabel(rule.coordination_mode)}
                     </span>
                   </span>
                   <time
-                    className="shrink-0 text-[11px] tabular-nums text-v3-ink-2"
+                    className="shrink-0 text-[11px] tabular-nums text-ink-2"
                     dateTime={nextAt}
                   >
                     {formatRelativeFuture(nextAt)}
@@ -152,24 +152,24 @@ export function AutomationDashboardRail({
 
       <section aria-label="待你处理" className={PANEL_CLASS} data-testid="automations-gate-panel">
         <header className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-extrabold text-v3-ink">
+          <h3 className="text-sm font-extrabold text-ink">
             待你处理{decisionOpenCount > 0 ? ` · ${decisionOpenCount}` : ""}
           </h3>
           <Link
-            className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-v3-brand hover:opacity-75"
+            className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-brand hover:opacity-75"
             to="/inbox"
           >
             收件箱
             <ArrowRight aria-hidden className="size-3" />
           </Link>
         </header>
-        <p className="text-[11px] leading-4 text-v3-ink-3">
+        <p className="text-[11px] leading-4 text-ink-3">
           自动化到点后仍可能等人确认计划或验收；与手发需求同一收件箱 / 飞书投影。
         </p>
         {showDecisionsLoading ? (
-          <p className="text-[12px] leading-5 text-v3-ink-3">正在加载决策事项…</p>
+          <p className="text-[12px] leading-5 text-ink-3">正在加载决策事项…</p>
         ) : decisionItems.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             description="当前没有等待你处理的审批或人工决策。"
             icon={<Inbox />}
             title="闸门空闲"
@@ -179,17 +179,17 @@ export function AutomationDashboardRail({
             {decisionItems.slice(0, 5).map((item) => (
               <li key={item.id}>
                 <Link
-                  className="flex min-w-0 items-start gap-2 rounded-[10px] border border-transparent px-2 py-1.5 transition-colors hover:border-v3-line hover:bg-v3-soft"
+                  className="flex min-w-0 items-start gap-2 rounded-[10px] border border-transparent px-2 py-1.5 transition-colors hover:border-line hover:bg-soft"
                   to="/inbox"
                 >
                   <IconTile size="sm" tone={item.risk_level === "high" ? "danger" : "warn"}>
                     <Inbox />
                   </IconTile>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-v3-ink">
+                    <span className="block truncate text-[13px] font-medium text-ink">
                       {item.title}
                     </span>
-                    <span className="block truncate text-[11px] text-v3-ink-3">
+                    <span className="block truncate text-[11px] text-ink-3">
                       {item.source_project_name?.trim() || "项目"} ·{" "}
                       {formatRelativeTime(item.last_activity_at)}
                     </span>
@@ -203,11 +203,11 @@ export function AutomationDashboardRail({
 
       <section aria-label="最近触发" className={PANEL_CLASS}>
         <header className="flex items-center gap-2">
-          <h3 className="text-sm font-extrabold text-v3-ink">最近触发</h3>
-          <Activity aria-hidden className="size-3.5 text-v3-ink-3" />
+          <h3 className="text-sm font-extrabold text-ink">最近触发</h3>
+          <Activity aria-hidden className="size-3.5 text-ink-3" />
         </header>
         {recent.length === 0 ? (
-          <p className="text-[12px] leading-5 text-v3-ink-3">
+          <p className="text-[12px] leading-5 text-ink-3">
             还没有触发记录。可在规则详情里点「立即试跑」。
           </p>
         ) : (
@@ -217,7 +217,7 @@ export function AutomationDashboardRail({
               return (
                 <li key={fire.id}>
                   <button
-                    className="flex w-full min-w-0 items-start gap-2 rounded-[10px] border border-transparent px-2 py-1.5 text-left transition-colors hover:border-v3-line hover:bg-v3-soft"
+                    className="flex w-full min-w-0 items-start gap-2 rounded-[10px] border border-transparent px-2 py-1.5 text-left transition-colors hover:border-line hover:bg-soft"
                     type="button"
                     onClick={() => onSelectRule(rule.id)}
                   >
@@ -225,18 +225,18 @@ export function AutomationDashboardRail({
                       aria-hidden
                       className={cn(
                         "mt-1.5 size-1.5 shrink-0 rounded-full",
-                        tone === "ok" && "bg-v3-ok",
-                        tone === "danger" && "bg-v3-danger",
-                        tone === "warn" && "bg-v3-warn",
-                        tone === "info" && "bg-v3-info",
-                        tone === "mute" && "bg-v3-ink-3",
+                        tone === "ok" && "bg-ok",
+                        tone === "danger" && "bg-danger",
+                        tone === "warn" && "bg-warn",
+                        tone === "info" && "bg-info",
+                        tone === "mute" && "bg-ink-3",
                       )}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-v3-ink">
+                      <span className="block truncate text-[13px] font-medium text-ink">
                         {rule.name}
                       </span>
-                      <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-v3-ink-3">
+                      <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-3">
                         <StatusPill tone={tone}>{statusLabel(fire.status)}</StatusPill>
                         <time className="tabular-nums" dateTime={fire.scheduled_fire_at}>
                           {formatRelativeTime(fire.scheduled_fire_at)}

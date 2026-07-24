@@ -5,7 +5,7 @@ import { ProjectRouteContent } from "./$projectId";
 vi.mock("@/features/projects", () => ({
   ProjectDetailPage: ({ projectId }: { projectId: string }) => (
     <div>项目详情 {projectId}</div>
-  ),
+  )
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -17,11 +17,11 @@ vi.mock("@tanstack/react-router", async () => {
     ...actual,
     Outlet: () => <div>配置子路由</div>,
     useRouterState: ({
-      select,
-    }: {
+      select
+}: {
       select: (state: { location: { pathname: string } }) => string;
-    }) => select({ location: { pathname: "/projects/project-1/config" } }),
-  };
+    }) => select({ location: { pathname: "/projects/project-1/config" } })
+};
 });
 
 describe("ProjectRouteContent", () => {

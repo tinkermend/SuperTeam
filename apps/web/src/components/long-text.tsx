@@ -3,13 +3,13 @@ import { cn } from '@/lib/utils'
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger,
+  PopoverTrigger
 } from '@/components/ui/popover'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
+  TooltipTrigger
 } from '@/components/ui/tooltip'
 
 type LongTextProps = {
@@ -21,7 +21,7 @@ type LongTextProps = {
 export function LongText({
   children,
   className = '',
-  contentClassName = '',
+  contentClassName = ''
 }: LongTextProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [isOverflown, setIsOverflown] = useState(false)

@@ -5,7 +5,7 @@ import type { DigitalEmployeeSchedulingReadiness } from "@/lib/api/employees";
 import { EmployeeCapabilityRail } from "./employee-capability-rail";
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>
 }));
 
 const employee = {
@@ -22,7 +22,7 @@ const employee = {
   approval_policy: {},
   persona_memory_markdown: "# 人格画像\n证据优先",
   budget_policy: { daily_token_limit: 12000 },
-  risk_level: "medium",
+  risk_level: "medium"
 };
 
 const readiness: DigitalEmployeeSchedulingReadiness = {
@@ -35,14 +35,14 @@ const readiness: DigitalEmployeeSchedulingReadiness = {
       code: "effective_config",
       status: "passed" as const,
       label: "生效配置",
-      message: "已批准",
-    },
+      message: "已批准"
+},
   ],
   capabilities: {
     skills: { personal_count: 1, inherited_count: 1, missing_required: [] },
     mcp_servers: { personal_count: 1, inherited_count: 0 },
-    environment_variables: { configured_count: 1, missing_names: [] },
-  },
+    environment_variables: { configured_count: 1, missing_names: [] }
+}
 };
 
 describe("EmployeeCapabilityRail", () => {
@@ -56,8 +56,8 @@ describe("EmployeeCapabilityRail", () => {
           isError: false,
           configuredCount: 1,
           totalCount: 1,
-          missingNames: [],
-        }}
+          missingNames: []
+}}
         mcp={{ isLoading: false, isError: false, personalCount: 1, inheritedCount: 0, totalCount: 1 }}
         onRetryReadiness={vi.fn()}
         readiness={readiness}
@@ -91,19 +91,19 @@ describe("EmployeeCapabilityRail", () => {
                 is_member: true,
                 active_task_count: 2,
                 working_task_count: 1,
-                total_task_count: 5,
-              },
-            ],
-          },
-        }}
+                total_task_count: 5
+},
+            ]
+}
+}}
         employeeId="employee-1"
         envVars={{
           isLoading: false,
           isError: false,
           configuredCount: 1,
           totalCount: 1,
-          missingNames: [],
-        }}
+          missingNames: []
+}}
         mcp={{ isLoading: false, isError: false, personalCount: 1, inheritedCount: 0, totalCount: 1 }}
         onRetryReadiness={vi.fn()}
         readiness={readiness}

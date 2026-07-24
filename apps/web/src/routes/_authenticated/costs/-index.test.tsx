@@ -8,19 +8,19 @@ import { Route } from "./index";
 type TestFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -47,31 +47,31 @@ vi.mock("@tanstack/react-router", async () => {
           {children}
         </a>
       );
-    },
-  };
+    }
+};
 });
 
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://control-plane.local",
+  resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: {
-      "content-type": "application/json",
-    },
-    status: 200,
-  });
+      "content-type": "application/json"
+},
+    status: 200
+});
 }
 
 const summaryFixture: CostSummary = {
@@ -85,11 +85,11 @@ const summaryFixture: CostSummary = {
       employee_name: "需求分析员工",
       provider_type: "claude-code",
       run_count: 5,
-      total_tokens: 1800,
-    },
+      total_tokens: 1800
+},
   ],
   by_provider: { "claude-code": 1800 },
-  daily_trend: [],
+  daily_trend: []
 };
 
 function createCostsFetcher(summary: CostSummary = summaryFixture) {
@@ -102,10 +102,10 @@ function createCostsFetcher(summary: CostSummary = summaryFixture) {
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: {
-        "content-type": "application/json",
-      },
-      status: 404,
-    });
+        "content-type": "application/json"
+},
+      status: 404
+});
   });
 }
 
@@ -133,8 +133,8 @@ describe("CostsRoute", () => {
       const requestedPaths = fetcher.mock.calls.map((call) => new URL(String(call[0])).pathname);
       expect(requestedPaths).toContain("/api/v1/costs/summary");
     });
-    expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="page-header"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="data-table"]')).not.toBeNull();
   });
 
   it("renders the empty state when there is no execution data", async () => {
@@ -143,12 +143,12 @@ describe("CostsRoute", () => {
       total_tokens: 0,
       total_runs: 0,
       by_employee: [],
-      by_provider: {},
-    });
+      by_provider: {}
+});
     const screen = await renderCostsRoute(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "成本管理" })).toBeVisible();
     await expect.element(screen.getByText("暂无执行数据")).toBeVisible();
-    expect(document.body.querySelector('[data-slot="v3-empty-state"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="empty-state"]')).not.toBeNull();
   });
 });

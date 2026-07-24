@@ -2,7 +2,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DoubleArrowLeftIcon,
-  DoubleArrowRightIcon,
+  DoubleArrowRightIcon
 } from '@radix-ui/react-icons'
 import { type Table } from '@tanstack/react-table'
 import { cn, getPageNumbers } from '@/lib/utils'
@@ -12,7 +12,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from '@/components/ui/select'
 
 type DataTablePaginationProps<TData> = {
@@ -22,7 +22,7 @@ type DataTablePaginationProps<TData> = {
 
 export function DataTablePagination<TData>({
   table,
-  className,
+  className
 }: DataTablePaginationProps<TData>) {
   const currentPage = table.getState().pagination.pageIndex + 1
   const totalPages = table.getPageCount()

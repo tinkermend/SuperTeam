@@ -4,13 +4,13 @@ import { Activity, AlertTriangle, CheckCircle2, Clock3, Gauge, GitBranch, Timer 
 import {
   SoftCard,
   StatusPill,
-  V3Chip,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  V3Segmented,
-  WorkSurface,
+  Chip,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  Segmented,
+  WorkSurface
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import { compareIsoDesc, formatDateTime, formatRelativeTime as formatSharedRelativeTime } from "@/lib/format-time";
@@ -71,7 +71,7 @@ export function WorkflowRiverView({
   isError,
   isLoading,
   scope,
-  onScopeChange,
+  onScopeChange
 }: WorkflowRiverViewProps) {
   const [filter, setFilter] = useState<RiverFilter>("all");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -81,7 +81,7 @@ export function WorkflowRiverView({
 
   // 口径页签始终渲染（含空/加载/错误态），否则"已归档"为空时用户无法切回"运行中"。
   const scopeTabBar = (
-    <V3Segmented options={scopeTabs} onChange={onScopeChange} value={scope} />
+    <Segmented options={scopeTabs} onChange={onScopeChange} value={scope} />
   );
   const wrap = (children: ReactNode) => (
     <div className="flex min-w-0 flex-col gap-5">
@@ -93,7 +93,7 @@ export function WorkflowRiverView({
   if (isError && instances.length === 0) {
     return wrap(
       <SoftCard className="p-5">
-        <V3ErrorState
+        <ErrorState
           description="暂时无法读取流程编排入口，请稍后重试。"
           title="流程实例加载失败"
         />
@@ -104,7 +104,7 @@ export function WorkflowRiverView({
   if (isLoading && instances.length === 0) {
     return wrap(
       <SoftCard>
-        <V3LoadingState label="正在加载流程实例" />
+        <LoadingState label="正在加载流程实例" />
       </SoftCard>,
     );
   }
@@ -112,7 +112,7 @@ export function WorkflowRiverView({
   if (instances.length === 0) {
     return wrap(
       <SoftCard>
-        <V3EmptyState
+        <EmptyState
           description={
             scope === "archived"
               ? "还没有已归档或已完成（含已取消）的流程实例。"
@@ -141,8 +141,8 @@ export function WorkflowRiverView({
         visibleInstances.filter((instance) =>
           group.categories.includes(riverCategory(instance)),
         ),
-      ),
-    }))
+      )
+}))
     .filter((group) => group.instances.length > 0);
 
   const collapsibleGroups = groups.filter(
@@ -165,21 +165,21 @@ export function WorkflowRiverView({
       {scopeTabBar}
       {/* 指标带 */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <V3MetricCard
+        <MetricCard
           icon={<Activity />}
           iconTone="brand"
           label="运行中"
           meta="含规划中"
           value={metrics.active}
         />
-        <V3MetricCard
+        <MetricCard
           icon={<Timer />}
           iconTone="warn"
           label="等待人工"
           meta={metrics.attentionWaiting > 0 ? "需负责人确认" : "暂无"}
           value={metrics.waiting}
         />
-        <V3MetricCard
+        <MetricCard
           icon={<AlertTriangle />}
           iconTone="danger"
           label="阻断 / 失败"
@@ -187,14 +187,14 @@ export function WorkflowRiverView({
           meta={metrics.blocked > 0 ? `P0 ${metrics.p0}` : "暂无"}
           value={metrics.blocked}
         />
-        <V3MetricCard
+        <MetricCard
           icon={<CheckCircle2 />}
           iconTone="ok"
           label="已完成"
           meta="本视图范围"
           value={metrics.done}
         />
-        <V3MetricCard
+        <MetricCard
           icon={<Gauge />}
           iconTone="danger"
           label="SLA 超时"
@@ -202,7 +202,7 @@ export function WorkflowRiverView({
           meta={metrics.slaBreached > 0 ? "需优先处理" : "全部在控"}
           value={metrics.slaBreached}
         />
-        <V3MetricCard
+        <MetricCard
           icon={<Clock3 />}
           iconTone="mute"
           label="最久已持续"
@@ -214,19 +214,19 @@ export function WorkflowRiverView({
       {/* 河道主体 */}
       <WorkSurface>
         {/* 顶部：标题 + 筛选 */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-v3-line px-4 py-3">
-          <h2 className="text-[15px] font-bold text-v3-ink">流程实例 · 时间河道</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3">
+          <h2 className="text-[15px] font-bold text-ink">流程实例 · 时间河道</h2>
           {isLoading ? <StatusPill tone="mute">同步中</StatusPill> : null}
           {isError ? <StatusPill tone="danger">刷新失败</StatusPill> : null}
-          <span className="ml-auto text-[11px] text-v3-ink-3">
+          <span className="ml-auto text-[11px] text-ink-3">
             河长=已持续时长 · 段宽=节点数比例 · 段色=状态
           </span>
         </div>
 
         {/* 筛选 */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-v3-line bg-v3-card-soft px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-card-soft px-4 py-2.5">
           {filterChips.map((chip) => (
-            <V3Chip
+            <Chip
               active={filter === chip.value}
               count={
                 chip.value === "all"
@@ -239,14 +239,14 @@ export function WorkflowRiverView({
               onClick={() => setFilter(chip.value)}
             >
               {chip.label}
-            </V3Chip>
+            </Chip>
           ))}
-          <span className="ml-auto text-[11px] tabular-nums text-v3-ink-3">
+          <span className="ml-auto text-[11px] tabular-nums text-ink-3">
             显示 {visibleInstances.length} / {instances.length}
           </span>
           {anyCollapsible ? (
             <button
-              className="rounded-md border border-v3-line bg-v3-card px-2.5 py-1 text-[11px] font-semibold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft"
+              className="rounded-md border border-line bg-card px-2.5 py-1 text-[11px] font-semibold text-brand-deep transition-colors hover:bg-brand-soft"
               onClick={toggleAllGroups}
               type="button"
             >
@@ -260,7 +260,7 @@ export function WorkflowRiverView({
 
         {/* 河道分组 */}
         {groups.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             className="py-10"
             description="切换上方筛选查看其他状态的实例。"
             title="该筛选下暂无实例"
@@ -277,13 +277,13 @@ export function WorkflowRiverView({
                   : group.instances.slice(0, GROUP_COLLAPSE_THRESHOLD);
               return (
                 <section key={group.key}>
-                  <header className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-1.5 text-xs font-semibold text-v3-ink-2">
+                  <header className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-1.5 text-xs font-semibold text-ink-2">
                     <span
                       aria-hidden
                       className={cn("size-1.5 rounded-full", groupDotClass[group.tone])}
                     />
                     {group.label}
-                    <span className="tabular-nums text-v3-ink-3">
+                    <span className="tabular-nums text-ink-3">
                       {group.instances.length}
                     </span>
                   </header>
@@ -296,7 +296,7 @@ export function WorkflowRiverView({
                   ))}
                   {overThreshold ? (
                     <button
-                      className="flex w-full items-center justify-center gap-1.5 border-b border-v3-line bg-v3-card-soft py-2 text-xs font-semibold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft"
+                      className="flex w-full items-center justify-center gap-1.5 border-b border-line bg-card-soft py-2 text-xs font-semibold text-brand-deep transition-colors hover:bg-brand-soft"
                       onClick={() => toggleGroup(group.key)}
                       type="button"
                     >
@@ -317,9 +317,9 @@ export function WorkflowRiverView({
 }
 
 const groupDotClass = {
-  danger: "bg-v3-danger",
-  brand: "bg-v3-brand",
-  ok: "bg-v3-ok",
+  danger: "bg-danger",
+  brand: "bg-brand",
+  ok: "bg-ok"
 } as const;
 
 /* ------------------------------------------------------------------ */
@@ -329,11 +329,11 @@ const groupDotClass = {
 function RiverTimeAxis({ maxMs }: { maxMs: number }) {
   const ticks = [0, 0.25, 0.5, 0.75].map((ratio) => ({
     label: ratio === 0 ? "开始" : formatDuration(maxMs * ratio),
-    left: `${ratio * 100}%`,
-  }));
+    left: `${ratio * 100}%`
+}));
   return (
-    <div className="flex items-center border-b border-v3-line bg-v3-card-inner px-4 py-2.5">
-      <div className="w-[210px] shrink-0 text-[11px] font-semibold uppercase tracking-wide text-v3-ink-3">
+    <div className="flex items-center border-b border-line bg-card-inner px-4 py-2.5">
+      <div className="w-[210px] shrink-0 text-[11px] font-semibold uppercase tracking-wide text-ink-3">
         已持续时长 →
       </div>
       <div className="relative h-6 flex-1">
@@ -343,15 +343,15 @@ function RiverTimeAxis({ maxMs }: { maxMs: number }) {
             key={index}
             style={{ left: tick.left }}
           >
-            <span className="whitespace-nowrap font-mono text-[10.5px] font-semibold text-v3-ink-3">
+            <span className="whitespace-nowrap font-mono text-[10.5px] font-semibold text-ink-3">
               {tick.label}
             </span>
-            <span className="mt-0.5 h-2 w-px bg-v3-line-strong" />
+            <span className="mt-0.5 h-2 w-px bg-line-strong" />
           </span>
         ))}
-        <span className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center text-v3-ink-4" style={{ left: "100%" }}>
+        <span className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center text-ink-4" style={{ left: "100%" }}>
           <span className="whitespace-nowrap font-mono text-[10.5px] font-semibold">→ 开放</span>
-          <span className="mt-0.5 h-2 w-px bg-v3-line-strong" />
+          <span className="mt-0.5 h-2 w-px bg-line-strong" />
         </span>
       </div>
     </div>
@@ -364,7 +364,7 @@ function RiverTimeAxis({ maxMs }: { maxMs: number }) {
 
 function RiverLane({
   instance,
-  maxMs,
+  maxMs
 }: {
   instance: WorkflowInstanceSummary;
   maxMs: number;
@@ -384,18 +384,18 @@ function RiverLane({
     <div
       aria-label={instance.title}
       className={cn(
-        "flex cursor-pointer items-stretch border-b border-v3-line transition-colors last:border-b-0 hover:bg-v3-card-inner",
+        "flex cursor-pointer items-stretch border-b border-line transition-colors last:border-b-0 hover:bg-card-inner",
       )}
       onClick={() =>
         void navigate({
           params: { demandId: instance.demand_id },
-          to: "/workflows/$demandId",
-        })
+          to: "/workflows/$demandId"
+})
       }
       role="listitem"
     >
       {/* 左侧标签 */}
-      <div className="flex w-[210px] shrink-0 flex-col justify-center gap-1 border-r border-v3-line px-4 py-3">
+      <div className="flex w-[210px] shrink-0 flex-col justify-center gap-1 border-r border-line px-4 py-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusPill tone={workflowStatusTone(instance.status)}>
             {workflowStatusLabel(instance.status)}
@@ -406,21 +406,21 @@ function RiverLane({
           {instance.risk ? <RiskTag level={instance.risk.level} label={instance.risk.label} /> : null}
         </div>
         <Link
-          className="block min-w-0 truncate text-[13px] font-bold text-v3-ink outline-none hover:text-v3-brand-deep focus-visible:ring-2 focus-visible:ring-v3-brand/60"
+          className="block min-w-0 truncate text-[13px] font-bold text-ink outline-none hover:text-brand-deep focus-visible:ring-2 focus-visible:ring-brand/60"
           onClick={(event) => event.stopPropagation()}
           params={{ demandId: instance.demand_id }}
           to="/workflows/$demandId"
         >
           {instance.title}
         </Link>
-        <span className="truncate font-mono text-[11px] text-v3-ink-3">
+        <span className="truncate font-mono text-[11px] text-ink-3">
           {instance.project_name}
         </span>
-        <span className="text-[10.5px] text-v3-ink-3">
-          提交 <span className="font-semibold text-v3-ink-2">{instance.submitted_by_display_name || "—"}</span>
+        <span className="text-[10.5px] text-ink-3">
+          提交 <span className="font-semibold text-ink-2">{instance.submitted_by_display_name || "—"}</span>
         </span>
         <time
-          className="tabular-nums text-[10.5px] text-v3-ink-3"
+          className="tabular-nums text-[10.5px] text-ink-3"
           dateTime={instance.created_at}
           title={formatDateTime(instance.created_at)}
         >
@@ -431,13 +431,13 @@ function RiverLane({
       {/* 河道主体 */}
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-4 py-2.5">
         {/* 顶栏：时长 + 创建时间 + SLA */}
-        <div className="flex items-center gap-2 font-mono text-[10.5px] text-v3-ink-3">
-          <span className="font-semibold text-v3-ink-2">
+        <div className="flex items-center gap-2 font-mono text-[10.5px] text-ink-3">
+          <span className="font-semibold text-ink-2">
             {isClosed ? `运行 ${formatDuration(duration)} · 已结束` : `已持续 ${formatDuration(duration)}`}
           </span>
-          <span className="text-v3-ink-4">·</span>
+          <span className="text-ink-4">·</span>
           <time
-            className="tabular-nums text-v3-ink-2"
+            className="tabular-nums text-ink-2"
             dateTime={instance.created_at}
             title={formatDateTime(instance.created_at)}
           >
@@ -458,7 +458,7 @@ function RiverLane({
         {/* 河道 */}
         <div className="relative flex h-6 items-center">
           <div
-            className="relative flex h-5 items-stretch overflow-visible rounded-md border border-v3-line bg-v3-card-soft"
+            className="relative flex h-5 items-stretch overflow-visible rounded-md border border-line bg-card-soft"
             style={{ width: `${trackPct}%` }}
           >
             {buckets.map((bucket) => (
@@ -468,17 +468,17 @@ function RiverLane({
             {!isClosed ? (
               <span
                 aria-hidden
-                className="absolute top-1/2 z-10 h-7 w-0.5 -translate-y-1/2 rounded bg-v3-brand"
+                className="absolute top-1/2 z-10 h-7 w-0.5 -translate-y-1/2 rounded bg-brand"
                 style={{ left: `${nowPct}%` }}
               >
-                <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-v3-brand px-1 py-px font-mono text-[8.5px] font-bold text-white shadow-sm">
+                <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-brand px-1 py-px font-mono text-[8.5px] font-bold text-white shadow-sm">
                   当前
                 </span>
               </span>
             ) : null}
             {/* 完成标记 */}
             {isClosed ? (
-              <span className="absolute top-1/2 z-10 flex size-4 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full bg-v3-ok text-[10px] font-bold text-white shadow ring-2 ring-v3-ok-soft" style={{ left: "100%" }}>
+              <span className="absolute top-1/2 z-10 flex size-4 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full bg-ok text-[10px] font-bold text-white shadow ring-2 ring-ok-soft" style={{ left: "100%" }}>
                 ✓
               </span>
             ) : null}
@@ -501,43 +501,43 @@ function RiverLane({
           {!isClosed ? (
             <div
               aria-hidden
-              className="ml-0.5 h-5 shrink-0 rounded-r-md border border-l-0 border-dashed border-v3-line-strong"
+              className="ml-0.5 h-5 shrink-0 rounded-r-md border border-l-0 border-dashed border-line-strong"
               style={{
                 width: "8%",
                 minWidth: "18px",
                 backgroundImage:
-                  "repeating-linear-gradient(135deg, transparent, transparent 4px, var(--v3-line) 4px, var(--v3-line) 8px)",
-              }}
+                  "repeating-linear-gradient(135deg, transparent, transparent 4px, var(--line) 4px, var(--line) 8px)"
+}}
             />
           ) : null}
         </div>
 
         {/* 底栏：计数 + 事件 */}
         <div className="flex items-center gap-2.5 text-[10.5px]">
-          <span className="font-mono font-semibold tabular-nums text-v3-ink-2">
-            <span className="text-v3-ink">{instance.progress.completed_nodes}</span>
-            <span className="text-v3-ink-3">/{instance.progress.total_nodes}</span>
+          <span className="font-mono font-semibold tabular-nums text-ink-2">
+            <span className="text-ink">{instance.progress.completed_nodes}</span>
+            <span className="text-ink-3">/{instance.progress.total_nodes}</span>
             {instance.progress.running_nodes > 0 ? (
-              <span className="ml-1 text-v3-brand">· 运行 {instance.progress.running_nodes}</span>
+              <span className="ml-1 text-brand">· 运行 {instance.progress.running_nodes}</span>
             ) : null}
             {instance.progress.waiting_human_nodes > 0 ? (
-              <span className="ml-1 text-v3-warn">· 人工 {instance.progress.waiting_human_nodes}</span>
+              <span className="ml-1 text-warn">· 人工 {instance.progress.waiting_human_nodes}</span>
             ) : null}
             {instance.progress.blocked_nodes > 0 ? (
-              <span className="ml-1 text-v3-danger">· 阻断 {instance.progress.blocked_nodes}</span>
+              <span className="ml-1 text-danger">· 阻断 {instance.progress.blocked_nodes}</span>
             ) : null}
           </span>
           {summary ? (
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-v3-danger">
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-v3-danger" />
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-danger">
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-danger" />
               <span className="truncate">{summary}</span>
-              {event.ts ? <span className="ml-auto shrink-0 font-mono text-v3-ink-4">{event.ts}</span> : null}
+              {event.ts ? <span className="ml-auto shrink-0 font-mono text-ink-4">{event.ts}</span> : null}
             </span>
           ) : event.text ? (
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-v3-ink-2">
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-v3-mute" />
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ink-2">
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-mute" />
               <span className="truncate">{event.text}</span>
-              {event.ts ? <span className="ml-auto shrink-0 font-mono text-v3-ink-4">{event.ts}</span> : null}
+              {event.ts ? <span className="ml-auto shrink-0 font-mono text-ink-4">{event.ts}</span> : null}
             </span>
           ) : null}
         </div>
@@ -558,11 +558,11 @@ function RiverSegment({ bucket }: { bucket: RiverBucket }) {
       className={cn(
         "flex items-center justify-center overflow-hidden font-mono text-[10px] font-bold text-white",
         bucket.key === "pend" &&
-          "border border-dashed border-v3-line-strong bg-v3-card-soft text-v3-ink-3",
-        bucket.key === "done" && "bg-v3-ok",
-        bucket.key === "run" && "bg-v3-brand",
-        bucket.key === "wait" && "bg-v3-warn",
-        bucket.key === "block" && "bg-v3-danger",
+          "border border-dashed border-line-strong bg-card-soft text-ink-3",
+        bucket.key === "done" && "bg-ok",
+        bucket.key === "run" && "bg-brand",
+        bucket.key === "wait" && "bg-warn",
+        bucket.key === "block" && "bg-danger",
       )}
       style={{ flexGrow: bucket.count, flexBasis: 0, minWidth: bucket.count > 0 ? 4 : 0 }}
       title={`${bucket.label} ${bucket.count}`}
@@ -574,13 +574,13 @@ function RiverSegment({ bucket }: { bucket: RiverBucket }) {
 
 function RiverGate({
   kind,
-  leftPct,
+  leftPct
 }: {
   kind: "human" | "block";
   leftPct: number;
 }) {
-  const color = kind === "human" ? "var(--v3-warn)" : "var(--v3-danger)";
-  const soft = kind === "human" ? "var(--v3-warn-soft)" : "var(--v3-danger-soft)";
+  const color = kind === "human" ? "var(--warn)" : "var(--danger)";
+  const soft = kind === "human" ? "var(--warn-soft)" : "var(--danger-soft)";
   const label = kind === "human" ? "人" : "!";
   return (
     <span
@@ -589,11 +589,11 @@ function RiverGate({
       style={{ left: `${leftPct}%`, background: color }}
     >
       <span
-        className="absolute top-1/2 left-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-v3-card"
+        className="absolute top-1/2 left-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-card"
         style={{ borderColor: color, backgroundColor: soft }}
       />
       <span
-        className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 rounded border border-v3-line bg-v3-card px-1 text-[9px] font-bold"
+        className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 rounded border border-line bg-card px-1 text-[9px] font-bold"
         style={{ color }}
       >
         {label}
@@ -609,12 +609,12 @@ function RiverGate({
 function PriorityTag({ value, label }: { value: string; label: string }) {
   const normalized = value.toLowerCase();
   const tone = ["critical", "p0", "p1", "urgent"].includes(normalized)
-    ? "bg-v3-danger-soft text-v3-danger-text"
+    ? "bg-danger-soft text-danger-text"
     : ["high", "p2"].includes(normalized)
-      ? "bg-v3-warn-soft text-v3-warn-text"
-      : "bg-v3-mute-soft text-v3-mute-text";
+      ? "bg-warn-soft text-warn-text"
+      : "bg-mute-soft text-mute-text";
   return (
-    <span className={cn("rounded border border-v3-line px-1.5 py-px font-mono text-[9.5px] font-bold", tone)}>
+    <span className={cn("rounded border border-line px-1.5 py-px font-mono text-[9.5px] font-bold", tone)}>
       {label}
     </span>
   );
@@ -623,13 +623,13 @@ function PriorityTag({ value, label }: { value: string; label: string }) {
 function RiskTag({ level, label }: { level: string; label: string }) {
   const normalized = level.toLowerCase();
   const tone = ["critical", "high", "severe"].includes(normalized)
-    ? "bg-v3-danger-soft text-v3-danger-text"
+    ? "bg-danger-soft text-danger-text"
     : ["medium", "moderate"].includes(normalized)
-      ? "bg-v3-warn-soft text-v3-warn-text"
+      ? "bg-warn-soft text-warn-text"
       : null;
   if (!tone) return null;
   return (
-    <span className={cn("rounded border border-v3-line px-1.5 py-px font-mono text-[9.5px] font-bold", tone)}>
+    <span className={cn("rounded border border-line px-1.5 py-px font-mono text-[9.5px] font-bold", tone)}>
       {label}
     </span>
   );
@@ -757,15 +757,15 @@ function riverSlaTag(instance: WorkflowInstanceSummary): { text: string; classNa
   const text = sla.breached ? `⚠ ${sla.label}` : sla.label;
   let className: string;
   if (sla.breached) {
-    className = "border-v3-danger/30 bg-v3-danger-soft text-v3-danger-text";
+    className = "border-danger/30 bg-danger-soft text-danger-text";
   } else if (
     sla.remaining_seconds !== undefined &&
     sla.remaining_seconds !== null &&
     sla.remaining_seconds / 60 <= 30
   ) {
-    className = "border-v3-warn/30 bg-v3-warn-soft text-v3-warn-text";
+    className = "border-warn/30 bg-warn-soft text-warn-text";
   } else {
-    className = "border-v3-ok/25 bg-v3-ok-soft text-v3-ok-text";
+    className = "border-ok/25 bg-ok-soft text-ok-text";
   }
   return { text, className };
 }
@@ -781,8 +781,8 @@ function riverEventSummary(instance: WorkflowInstanceSummary): { text: string | 
   if (instance.recent_event?.summary) {
     return {
       text: `最新事件：${instance.recent_event.summary}`,
-      ts: instance.recent_event.occurred_at ? formatRelativeTime(instance.recent_event.occurred_at) : null,
-    };
+      ts: instance.recent_event.occurred_at ? formatRelativeTime(instance.recent_event.occurred_at) : null
+};
   }
   if (instance.status_reason) {
     return { text: instance.status_reason, ts: null };
@@ -821,6 +821,6 @@ function formatTime(iso: string): string {
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+    minute: "2-digit"
+}).format(date);
 }

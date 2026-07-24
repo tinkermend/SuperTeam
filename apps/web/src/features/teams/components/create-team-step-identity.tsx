@@ -16,7 +16,7 @@ const THEME_COLORS = [
 export function CreateTeamStepIdentity({
   draft,
   errors,
-  onChange,
+  onChange
 }: {
   draft: CreateTeamDraft;
   errors: Record<string, string>;
@@ -29,8 +29,8 @@ export function CreateTeamStepIdentity({
         ? draft.display
         : inferTeamDisplay(`${name} ${draft.slug}`),
       name,
-      slug: draft.slugTouched ? draft.slug : slugify(name),
-    });
+      slug: draft.slugTouched ? draft.slug : slugify(name)
+});
   }
 
   function updateSlug(rawSlug: string) {
@@ -41,35 +41,35 @@ export function CreateTeamStepIdentity({
         ? draft.display
         : inferTeamDisplay(`${draft.name} ${slug}`),
       slug,
-      slugTouched: true,
-    });
+      slugTouched: true
+});
   }
 
   function updateIcon(iconKey: string) {
     onChange({
       ...draft,
       display: { ...draft.display, icon_key: iconKey },
-      displayTouched: true,
-    });
+      displayTouched: true
+});
   }
 
   function updateColor(color: typeof draft.display.color_tone) {
     onChange({
       ...draft,
       display: { ...draft.display, color_tone: color },
-      displayTouched: true,
-    });
+      displayTouched: true
+});
   }
 
   return (
-    <section className="rounded-[22px] border border-v3-line bg-v3-card shadow-v3">
-      <header className="flex items-center gap-3 border-b border-v3-line px-5 py-3.5 sm:px-6">
-        <span className="flex size-8 items-center justify-center rounded-[10px] bg-v3-brand-soft text-v3-brand">
+    <section className="rounded-[22px] border border-line bg-card shadow-card">
+      <header className="flex items-center gap-3 border-b border-line px-5 py-3.5 sm:px-6">
+        <span className="flex size-8 items-center justify-center rounded-[10px] bg-brand-soft text-brand">
           <ShieldCheck className="size-4" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-v3-ink">团队身份</h2>
-          <p className="text-xs text-v3-ink-3">名称、标识与配色</p>
+          <h2 className="text-sm font-semibold text-ink">团队身份</h2>
+          <p className="text-xs text-ink-3">名称、标识与配色</p>
         </div>
       </header>
 
@@ -85,16 +85,16 @@ export function CreateTeamStepIdentity({
           {errors.name ? (
             <span className="text-sm text-destructive">{errors.name}</span>
           ) : (
-            <span className="text-xs text-v3-ink-3">用于全站展示，可随时修改。</span>
+            <span className="text-xs text-ink-3">用于全站展示，可随时修改。</span>
           )}
         </div>
 
         <div className="grid gap-1.5">
-          <Label className="text-xs font-medium text-v3-ink-3" htmlFor="team-slug">
+          <Label className="text-xs font-medium text-ink-3" htmlFor="team-slug">
             团队标识 slug
           </Label>
-          <div className="flex items-center gap-2 rounded-[12px] border border-v3-line bg-v3-card-soft px-2.5 py-1">
-            <span className="select-none font-mono text-xs text-v3-ink-3">/teams/</span>
+          <div className="flex items-center gap-2 rounded-[12px] border border-line bg-card-soft px-2.5 py-1">
+            <span className="select-none font-mono text-xs text-ink-3">/teams/</span>
             <Input
               className="h-8 border-0 bg-transparent px-0 font-mono text-sm shadow-none focus-visible:ring-0"
               id="team-slug"
@@ -106,7 +106,7 @@ export function CreateTeamStepIdentity({
           {errors.slug ? (
             <span className="text-sm text-destructive">{errors.slug}</span>
           ) : (
-            <span className="text-xs text-v3-ink-3">默认按名称生成，可手动修改。</span>
+            <span className="text-xs text-ink-3">默认按名称生成，可手动修改。</span>
           )}
         </div>
 
@@ -125,7 +125,7 @@ export function CreateTeamStepIdentity({
                     "flex size-8 items-center justify-center rounded-[10px] transition",
                     color.class,
                     isSelected
-                      ? "ring-2 ring-v3-brand ring-offset-2 ring-offset-v3-card"
+                      ? "ring-2 ring-brand ring-offset-2 ring-offset-card"
                       : "opacity-75 hover:opacity-100",
                   )}
                   key={color.value}

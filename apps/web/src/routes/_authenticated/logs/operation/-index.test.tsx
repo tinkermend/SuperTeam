@@ -5,42 +5,42 @@ import { render } from "vitest-browser-react";
 import { Route } from "./index";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://control-plane.local",
+  resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: {
-      "content-type": "application/json",
-    },
-    status: 200,
-  });
+      "content-type": "application/json"
+},
+    status: 200
+});
 }
 
 function createFetcher() {
@@ -59,18 +59,18 @@ function createFetcher() {
             resource_id: "user-9",
             resource_type: "user",
             result: "succeeded",
-            username: "admin",
-          },
-        ],
-      });
+            username: "admin"
+},
+        ]
+});
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: {
-        "content-type": "application/json",
-      },
-      status: 404,
-    });
+        "content-type": "application/json"
+},
+      status: 404
+});
   }) as unknown as typeof fetch;
 }
 
@@ -92,8 +92,8 @@ describe("OperationLogsRoute", () => {
     await expect.element(screen.getByText("user.create")).toBeVisible();
     await expect.element(screen.getByRole("cell", { name: "users" })).toBeVisible();
 
-    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="data-table"]')).not.toBeNull();
   });
 
   it("renders module quick-filter chips", async () => {

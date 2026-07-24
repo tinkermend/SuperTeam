@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
-import { StatusPill, V3Button, type V3Tone } from "@/components/superteam";
+import { StatusPill, Button, type Tone } from "@/components/superteam";
 import type { ProjectTaskGraph, ProjectTaskGraphNode } from "@/lib/api/projects";
 import { decisionStatusLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 
@@ -13,7 +13,7 @@ type WorkflowNodeInspectorProps = {
 
 export function WorkflowNodeInspector({
   graph,
-  selectedTask,
+  selectedTask
 }: WorkflowNodeInspectorProps) {
   if (!selectedTask) {
     return null;
@@ -31,7 +31,7 @@ export function WorkflowNodeInspector({
   return (
     <>
       <div className="flex items-start justify-between gap-3">
-        <h3 className="line-clamp-3 text-base font-bold leading-6 tracking-normal text-v3-ink">
+        <h3 className="line-clamp-3 text-base font-bold leading-6 tracking-normal text-ink">
           {selectedTask.title}
         </h3>
         <StatusPill className="shrink-0" tone={taskStatusTone(selectedTask.status)}>
@@ -39,7 +39,7 @@ export function WorkflowNodeInspector({
         </StatusPill>
       </div>
 
-      <div className="mt-2 divide-y divide-v3-line text-sm">
+      <div className="mt-2 divide-y divide-line text-sm">
         <InspectorRow label="负责人" value={ownerName} />
         <InspectorRow label="阻塞" value={formatBlocker(selectedTask)} />
         <InspectorRow label="输入" value={formatValue(selectedTask.input_requirements)} />
@@ -51,12 +51,12 @@ export function WorkflowNodeInspector({
         <InspectorRow
           action={
             run?.runtime_task_id ? (
-              <V3Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline">
                 <Link aria-label={`查看${selectedTask.title} Runtime`} to="/runtime">
                   <ExternalLink className="size-3.5" />
                   Runtime
                 </Link>
-              </V3Button>
+              </Button>
             ) : null
           }
           label="运行"
@@ -75,12 +75,12 @@ export function WorkflowNodeInspector({
         <InspectorRow
           action={
             decisions.length > 0 ? (
-              <V3Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline">
                 <Link aria-label={`查看${selectedTask.title}审批`} to="/approvals">
                   <ExternalLink className="size-3.5" />
                   审批
                 </Link>
-              </V3Button>
+              </Button>
             ) : null
           }
           label="人工决策"
@@ -110,7 +110,7 @@ export function employeeNameForTask(
   );
 }
 
-export function taskStatusTone(status: string): V3Tone {
+export function taskStatusTone(status: string): Tone {
   const normalized = status.toLowerCase();
 
   if (["completed", "accepted", "approved", "done", "success"].includes(normalized)) {
@@ -148,7 +148,7 @@ function formatBlocker(task: ProjectTaskGraphNode): string {
 function InspectorRow({
   action,
   label,
-  value,
+  value
 }: {
   action?: ReactNode;
   label: string;
@@ -157,10 +157,10 @@ function InspectorRow({
   return (
     <div className="grid gap-2 py-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-bold text-v3-ink-3">{label}</span>
+        <span className="text-xs font-bold text-ink-3">{label}</span>
         {action}
       </div>
-      <p className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-v3-ink">
+      <p className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-ink">
         {value}
       </p>
     </div>

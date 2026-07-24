@@ -7,7 +7,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
+  DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
 
 type DataTableViewOptionsProps<TData> = {
@@ -15,7 +15,7 @@ type DataTableViewOptionsProps<TData> = {
 }
 
 export function DataTableViewOptions<TData>({
-  table,
+  table
 }: DataTableViewOptionsProps<TData>) {
   return (
     <DropdownMenu modal={false}>

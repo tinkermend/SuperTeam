@@ -8,23 +8,23 @@ import { AppSidebar } from "./app-sidebar";
 const getInboxBadge = vi.fn();
 
 vi.mock("@/lib/api/inbox", () => ({
-  getInboxBadge: (...args: unknown[]) => getInboxBadge(...args),
+  getInboxBadge: (...args: unknown[]) => getInboxBadge(...args)
 }));
 
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://127.0.0.1:8080",
+  resolveControlPlaneUrl: () => "http://127.0.0.1:8080"
 }));
 
 vi.mock("@/features/inbox/use-inbox-stream-status", () => ({
-  useInboxStreamStatus: () => ({ connection: "connected", lastSyncedAt: null }),
+  useInboxStreamStatus: () => ({ connection: "connected", lastSyncedAt: null })
 }));
 
 vi.mock("@/features/inbox/inbox-stream-status", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/features/inbox/inbox-stream-status")>();
   return {
     ...actual,
-    inboxBadgeRefetchInterval: () => false as const,
-  };
+    inboxBadgeRefetchInterval: () => false as const
+};
 });
 
 vi.mock("@/components/ui/sidebar", () => ({
@@ -32,22 +32,22 @@ vi.mock("@/components/ui/sidebar", () => ({
   SidebarContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SidebarHeader: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SidebarRail: () => null,
-  useSidebar: () => ({ state: "expanded", isMobile: false, open: true, setOpen: () => {} }),
+  useSidebar: () => ({ state: "expanded", isMobile: false, open: true, setOpen: () => {} })
 }));
 
 vi.mock("@/context/layout-provider", () => ({
-  useLayout: () => ({ collapsible: "icon", variant: "sidebar" }),
+  useLayout: () => ({ collapsible: "icon", variant: "sidebar" })
 }));
 
 vi.mock("./app-title", () => ({
-  AppTitle: () => <div>title</div>,
+  AppTitle: () => <div>title</div>
 }));
 
 vi.mock("./nav-group", () => ({
   NavGroup: ({
     title,
-    items,
-  }: {
+    items
+}: {
     title: string;
     items: Array<{ title: string; badge?: string }>;
   }) => (
@@ -60,7 +60,7 @@ vi.mock("./nav-group", () => ({
         </div>
       ))}
     </div>
-  ),
+  )
 }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
@@ -79,17 +79,17 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
         {children}
       </a>
     ),
-    useRouterState: () => ({ location: { pathname: "/inbox" } }),
-  };
+    useRouterState: () => ({ location: { pathname: "/inbox" } })
+};
 });
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
+      mutations: { retry: false }
+}
+});
 }
 
 describe("AppSidebar inbox badge", () => {
@@ -101,8 +101,8 @@ describe("AppSidebar inbox badge", () => {
     getInboxBadge.mockResolvedValue({
       mine_open_count: 3,
       team_open_count: 0,
-      high_risk_count: 1,
-    });
+      high_risk_count: 1
+});
 
     const screen = await render(
       <QueryClientProvider client={createQueryClient()}>

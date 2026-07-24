@@ -13,7 +13,7 @@ type TaskLaunchShellProps = {
 export function TaskLaunchShell({
   children,
   description,
-  title,
+  title
 }: TaskLaunchShellProps) {
   return (
     <>

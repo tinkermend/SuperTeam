@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Settings, Trash2, UserPlus } from "lucide-react";
-import { StatusPill, V3Button, V3LoadingState } from "@/components/superteam";
+import { StatusPill, Button, LoadingState } from "@/components/superteam";
 import {
   TeamRoleBadge,
   TeamRoleSelect,
-  type DirectTeamRole,
+  type DirectTeamRole
 } from "@/components/superteam/team-role";
 import {
   UserIdentity,
-  UserIdentityAvatar,
+  UserIdentityAvatar
 } from "@/components/superteam/user-identity";
 import { UserSearchSelect } from "@/components/superteam/user-search-select";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,7 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
-  SheetTitle,
+  SheetTitle
 } from "@/components/ui/sheet";
 import type { UserSummary } from "@/lib/api";
 import type { ApiClientOptions } from "@/lib/api/client";
@@ -42,7 +42,7 @@ export function TeamHumanMembersChrome({
   apiOptions,
   configOpen,
   onConfigOpenChange,
-  teamId,
+  teamId
 }: TeamHumanMembersProps) {
   const canAddMember = allowedActions.includes("team.member.add");
   const canRemoveMember = allowedActions.includes("team.member.remove");
@@ -51,8 +51,8 @@ export function TeamHumanMembersChrome({
 
   const membersQuery = useQuery({
     queryKey: ["team-members", teamId],
-    queryFn: () => listTeamMembers(apiOptions, teamId),
-  });
+    queryFn: () => listTeamMembers(apiOptions, teamId)
+});
 
   const members = membersQuery.data ?? [];
   const existingUserIds = members.map((member) => member.user_id);
@@ -63,15 +63,15 @@ export function TeamHumanMembersChrome({
     onSuccess: () => {
       void membersQuery.refetch();
       setAddResetToken((token) => token + 1);
-    },
-  });
+    }
+});
 
   const removeMutation = useMutation({
     mutationFn: (membershipId: string) => removeTeamMember(apiOptions, teamId, membershipId),
     onSuccess: () => {
       void membersQuery.refetch();
-    },
-  });
+    }
+});
 
   return (
     <>
@@ -92,26 +92,26 @@ export function TeamHumanMembersChrome({
         }}
       >
         <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-lg">
-          <SheetHeader className="border-b border-v3-line px-6 py-5 text-left">
+          <SheetHeader className="border-b border-line px-6 py-5 text-left">
             <SheetTitle>配置团队</SheetTitle>
             <SheetDescription>管理人类成员与角色；普通成员和只读观察者会立即生效。</SheetDescription>
           </SheetHeader>
           <div className="flex flex-col gap-6 px-6 py-5">
             <section className="flex flex-col gap-3">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-bold text-v3-ink">人类成员</h3>
+                <h3 className="text-sm font-bold text-ink">人类成员</h3>
                 <StatusPill tone="mute">{members.length} 人</StatusPill>
               </div>
               {membersQuery.isLoading ? (
-                <V3LoadingState label="加载人类成员" />
+                <LoadingState label="加载人类成员" />
               ) : members.length === 0 ? (
-                <p className="text-[13px] text-v3-ink-2">暂无人类成员</p>
+                <p className="text-[13px] text-ink-2">暂无人类成员</p>
               ) : (
                 <ul className="flex flex-col gap-2">
                   {members.map((member) => (
                     <li
                       key={member.membership_id}
-                      className="flex items-center justify-between gap-3 rounded-[14px] border border-v3-line bg-v3-card-soft/60 px-3 py-2.5"
+                      className="flex items-center justify-between gap-3 rounded-[14px] border border-line bg-card-soft/60 px-3 py-2.5"
                     >
                       <UserIdentity
                         showSecondary
@@ -122,13 +122,13 @@ export function TeamHumanMembersChrome({
                           display_name: member.display_name,
                           email: member.email,
                           avatar: member.avatar,
-                          status: member.account_status || "active",
-                        }}
+                          status: member.account_status || "active"
+}}
                       />
                       <div className="flex shrink-0 items-center gap-2">
                         <TeamRoleBadge role={member.role as DirectTeamRole} />
                         {canRemoveMember && member.role !== "owner" ? (
-                          <V3Button
+                          <Button
                             aria-label={`移除 ${member.display_name || member.username}`}
                             disabled={removeMutation.isPending}
                             onClick={() => removeMutation.mutate(member.membership_id)}
@@ -137,7 +137,7 @@ export function TeamHumanMembersChrome({
                             variant="ghost"
                           >
                             <Trash2 className="size-4" />
-                          </V3Button>
+                          </Button>
                         ) : null}
                       </div>
                     </li>
@@ -147,8 +147,8 @@ export function TeamHumanMembersChrome({
             </section>
 
             {canAddMember ? (
-              <section className="flex flex-col gap-3 border-t border-v3-line pt-5">
-                <h3 className="text-sm font-bold text-v3-ink">添加成员</h3>
+              <section className="flex flex-col gap-3 border-t border-line pt-5">
+                <h3 className="text-sm font-bold text-ink">添加成员</h3>
                 <DirectAddForm
                   apiBaseUrl={apiOptions.baseUrl}
                   canAdd={canAddMember}
@@ -171,7 +171,7 @@ function TeamMemberAvatarStack({
   canConfigure,
   isLoading,
   members,
-  onConfigure,
+  onConfigure
 }: {
   canConfigure: boolean;
   isLoading: boolean;
@@ -185,18 +185,18 @@ function TeamMemberAvatarStack({
     return (
       <div
         aria-hidden
-        className="flex h-8 w-24 animate-pulse rounded-full bg-v3-card-soft"
+        className="flex h-8 w-24 animate-pulse rounded-full bg-card-soft"
       />
     );
   }
 
   if (members.length === 0) {
     if (!canConfigure) {
-      return <p className="text-[12px] text-v3-ink-3">暂无人类成员</p>;
+      return <p className="text-[12px] text-ink-3">暂无人类成员</p>;
     }
     return (
       <button
-        className="text-[12px] font-semibold text-v3-brand hover:underline"
+        className="text-[12px] font-semibold text-brand hover:underline"
         onClick={onConfigure}
         type="button"
       >
@@ -210,7 +210,7 @@ function TeamMemberAvatarStack({
       <PopoverTrigger asChild>
         <button
           aria-label={`人类成员 ${members.length} 人`}
-          className="flex items-center rounded-full p-0.5 transition-colors hover:bg-v3-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60"
+          className="flex items-center rounded-full p-0.5 transition-colors hover:bg-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           type="button"
         >
           <span className="flex items-center">
@@ -218,7 +218,7 @@ function TeamMemberAvatarStack({
               <UserIdentityAvatar
                 key={member.membership_id}
                 className={cn(
-                  "size-8 border-2 border-v3-card shadow-none",
+                  "size-8 border-2 border-card shadow-none",
                   index > 0 && "-ml-2",
                 )}
                 user={{
@@ -227,26 +227,26 @@ function TeamMemberAvatarStack({
                   display_name: member.display_name,
                   email: member.email,
                   avatar: member.avatar,
-                  status: member.account_status || "active",
-                }}
+                  status: member.account_status || "active"
+}}
               />
             ))}
             {overflow > 0 ? (
-              <span className="-ml-2 grid size-8 place-items-center rounded-full border-2 border-v3-card bg-v3-card-soft text-[11px] font-bold text-v3-ink-2">
+              <span className="-ml-2 grid size-8 place-items-center rounded-full border-2 border-card bg-card-soft text-[11px] font-bold text-ink-2">
                 +{overflow}
               </span>
             ) : null}
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 rounded-[16px] border-v3-line p-3 shadow-v3">
+      <PopoverContent align="start" className="w-80 rounded-[16px] border-line p-3 shadow-card">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-[13px] font-semibold text-v3-ink">人类成员 · {members.length}</p>
+          <p className="text-[13px] font-semibold text-ink">人类成员 · {members.length}</p>
           {canConfigure ? (
-            <V3Button onClick={onConfigure} size="sm" type="button" variant="ghost">
+            <Button onClick={onConfigure} size="sm" type="button" variant="ghost">
               <Settings data-icon="inline-start" className="size-3.5" />
               配置
-            </V3Button>
+            </Button>
           ) : null}
         </div>
         <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
@@ -260,8 +260,8 @@ function TeamMemberAvatarStack({
                   display_name: member.display_name,
                   email: member.email,
                   avatar: member.avatar,
-                  status: member.account_status || "active",
-                }}
+                  status: member.account_status || "active"
+}}
               />
               <TeamRoleBadge role={member.role as DirectTeamRole} />
             </li>
@@ -279,7 +279,7 @@ function DirectAddForm({
   fetcher,
   isPending,
   onSubmit,
-  resetToken,
+  resetToken
 }: {
   apiBaseUrl: string;
   canAdd: boolean;
@@ -329,10 +329,10 @@ function DirectAddForm({
           value={role}
         />
       </div>
-      <V3Button disabled={!canAdd || isPending || !selectedUser} type="submit">
+      <Button disabled={!canAdd || isPending || !selectedUser} type="submit">
         <UserPlus data-icon="inline-start" className="mr-2" />
         添加成员
-      </V3Button>
+      </Button>
     </form>
   );
 }

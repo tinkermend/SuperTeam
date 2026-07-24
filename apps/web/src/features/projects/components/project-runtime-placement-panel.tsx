@@ -5,19 +5,19 @@ import {
   Link2,
   MonitorCog,
   PlugZap,
-  Unlink,
+  Unlink
 } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger,
+  CollapsibleTrigger
 } from "@/components/ui/collapsible";
 import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3Button,
-  type V3Tone,
+  Button,
+  type Tone
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import type { ProjectRuntimePlacementReadiness } from "@/lib/api/projects";
@@ -44,7 +44,7 @@ export function ProjectRuntimePlacementPanel({
   onReleaseRuntime,
   isBinding,
   isReleasing,
-  isReadinessLoading,
+  isReadinessLoading
 }: ProjectRuntimePlacementPanelProps) {
   const sortedNodes = [...runtimeNodes].sort((left, right) => {
     if (left.status === right.status) {
@@ -73,7 +73,7 @@ export function ProjectRuntimePlacementPanel({
         <div
           className={cn(
             "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
-            open && "border-b border-v3-line",
+            open && "border-b border-line",
           )}
         >
           <div className="flex min-w-0 items-center gap-3">
@@ -81,7 +81,7 @@ export function ProjectRuntimePlacementPanel({
               <MonitorCog />
             </IconTile>
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h3 className="text-sm font-semibold tracking-normal text-v3-ink">
+              <h3 className="text-sm font-semibold tracking-normal text-ink">
                 运行落点
               </h3>
               <StatusPill tone={readinessTone(readiness?.placement_status)}>
@@ -89,13 +89,13 @@ export function ProjectRuntimePlacementPanel({
               </StatusPill>
               {!open ? (
                 <>
-                  <span className="flex items-center gap-1.5 text-xs text-v3-ink-2">
+                  <span className="flex items-center gap-1.5 text-xs text-ink-2">
                     <Cable className="size-3.5" />
                     {readiness?.command_channel_connected
                       ? "命令通道已连接"
                       : "命令通道未连接"}
                   </span>
-                  <span className="min-w-0 max-w-40 truncate text-xs text-v3-ink-2">
+                  <span className="min-w-0 max-w-40 truncate text-xs text-ink-2">
                     {readiness?.runtime_node_name ??
                       runtimeNodeLabel(selectedNode) ??
                       "未绑定"}
@@ -114,7 +114,7 @@ export function ProjectRuntimePlacementPanel({
             </div>
           </div>
           <CollapsibleTrigger asChild>
-            <V3Button
+            <Button
               aria-label={open ? "收起运行落点" : "展开运行落点"}
               className="shrink-0"
               size="sm"
@@ -125,17 +125,17 @@ export function ProjectRuntimePlacementPanel({
               <ChevronDown
                 className={cn("size-3.5 transition-transform", open && "rotate-180")}
               />
-            </V3Button>
+            </Button>
           </CollapsibleTrigger>
         </div>
 
         <CollapsibleContent>
           <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-            <p className="min-w-0 text-xs leading-5 text-v3-ink-2">
+            <p className="min-w-0 text-xs leading-5 text-ink-2">
               绑定项目执行使用的 Runtime 节点，并检查命令通道与 Provider 能力。
             </p>
             <div className="flex shrink-0 flex-wrap gap-2">
-              <V3Button
+              <Button
                 disabled={!canBind}
                 size="sm"
                 type="button"
@@ -143,8 +143,8 @@ export function ProjectRuntimePlacementPanel({
               >
                 <Link2 data-icon="inline-start" />
                 {isBinding ? "绑定中" : "绑定运行节点"}
-              </V3Button>
-              <V3Button
+              </Button>
+              <Button
                 disabled={!canRelease}
                 size="sm"
                 type="button"
@@ -153,17 +153,17 @@ export function ProjectRuntimePlacementPanel({
               >
                 <Unlink data-icon="inline-start" />
                 {isReleasing ? "释放中" : "释放绑定"}
-              </V3Button>
+              </Button>
             </div>
           </div>
 
           <div className="grid gap-4 px-4 pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
             <div className="grid min-w-0 gap-3">
-              <label className="grid gap-1.5 text-sm font-medium text-v3-ink">
+              <label className="grid gap-1.5 text-sm font-medium text-ink">
                 选择运行节点
                 <select
                   aria-label="选择运行节点"
-                  className="h-10 w-full rounded-xl border border-v3-line-strong bg-v3-card px-3 text-sm text-v3-ink shadow-sm outline-none transition focus:border-v3-brand focus:ring-2 focus:ring-v3-brand/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-10 w-full rounded-xl border border-line-strong bg-card px-3 text-sm text-ink shadow-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={sortedNodes.length === 0 || isBinding || isReleasing}
                   value={selectedRuntimeNodeId}
                   onChange={(event) =>
@@ -182,7 +182,7 @@ export function ProjectRuntimePlacementPanel({
                 </select>
               </label>
 
-              <div className="grid gap-2 rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
+              <div className="grid gap-2 rounded-inner border border-line bg-card-soft p-3">
                 <RuntimeLine
                   icon={<PlugZap className="size-3.5" />}
                   label="命令通道"
@@ -202,7 +202,7 @@ export function ProjectRuntimePlacementPanel({
 
             <div className="grid min-w-0 gap-3">
               <div>
-                <p className="text-xs font-semibold text-v3-ink-2">Provider 能力</p>
+                <p className="text-xs font-semibold text-ink-2">Provider 能力</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {providerSummary.length > 0 ? (
                     providerSummary.map((provider) => (
@@ -211,29 +211,29 @@ export function ProjectRuntimePlacementPanel({
                       </StatusPill>
                     ))
                   ) : (
-                    <span className="text-xs text-v3-ink-2">暂无可用 Provider</span>
+                    <span className="text-xs text-ink-2">暂无可用 Provider</span>
                   )}
                 </div>
               </div>
 
               <div>
-                <p className="text-xs font-semibold text-v3-ink-2">阻塞原因</p>
+                <p className="text-xs font-semibold text-ink-2">阻塞原因</p>
                 {readiness?.blocking_reasons?.length ? (
                   <ul className="mt-2 grid gap-2">
                     {readiness.blocking_reasons.map((reason) => (
                       <li
-                        className="rounded-v3-inner border border-v3-warn/20 bg-v3-warn-soft px-3 py-2 text-xs leading-5 text-v3-ink"
+                        className="rounded-inner border border-warn/20 bg-warn-soft px-3 py-2 text-xs leading-5 text-ink"
                         key={`${reason.code}-${reason.resource_id ?? reason.message}`}
                       >
                         <span className="font-semibold">{reason.message}</span>
-                        <span className="ml-2 font-mono text-[11px] text-v3-ink-2">
+                        <span className="ml-2 font-mono text-[11px] text-ink-2">
                           {reason.code}
                         </span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 text-xs text-v3-ink-2">当前没有运行落点阻塞。</p>
+                  <p className="mt-2 text-xs text-ink-2">当前没有运行落点阻塞。</p>
                 )}
               </div>
             </div>
@@ -247,7 +247,7 @@ export function ProjectRuntimePlacementPanel({
 function RuntimeLine({
   icon,
   label,
-  value,
+  value
 }: {
   icon: ReactNode;
   label: string;
@@ -255,11 +255,11 @@ function RuntimeLine({
 }) {
   return (
     <div className="flex min-w-0 items-center gap-2 text-xs">
-      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-v3-card text-v3-ink-2">
+      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-card text-ink-2">
         {icon}
       </span>
-      <span className="shrink-0 font-semibold text-v3-ink-2">{label}</span>
-      <span className="min-w-0 truncate text-v3-ink">{value}</span>
+      <span className="shrink-0 font-semibold text-ink-2">{label}</span>
+      <span className="min-w-0 truncate text-ink">{value}</span>
     </div>
   );
 }
@@ -287,7 +287,7 @@ function readinessStatusLabel(status?: ProjectRuntimePlacementReadiness["placeme
   }
 }
 
-function readinessTone(status?: ProjectRuntimePlacementReadiness["placement_status"]): V3Tone {
+function readinessTone(status?: ProjectRuntimePlacementReadiness["placement_status"]): Tone {
   switch (status) {
     case "ready":
       return "ok";

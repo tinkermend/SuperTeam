@@ -5,17 +5,17 @@ import { Plus } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import {
-  V3Button,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  Button,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import {
   AlertDialog,
@@ -26,7 +26,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 import {
   confirmTeamDelete,
@@ -34,13 +34,13 @@ import {
   getTeamOverview,
   listPendingDeleteTeams,
   listTeamSummaries,
-  restorePendingDeleteTeam,
+  restorePendingDeleteTeam
 } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { CreateTeamView } from "./components/create-team-page";
 import {
   TeamManagementToolbar,
-  type TeamListFilters,
+  type TeamListFilters
 } from "./components/team-management-toolbar";
 import { TeamDetailLayout } from "./components/team-detail-layout";
 import { TeamCardGrid } from "./components/team-card-grid";
@@ -77,8 +77,8 @@ export function CreateTeamPage() {
             void navigate({
               hash: goToConstitution ? "constitution" : undefined,
               params: { teamId: overview.team.id },
-              to: "/teams/$teamId",
-            })
+              to: "/teams/$teamId"
+})
           }
         />
       </Main>
@@ -101,10 +101,10 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
         {
           governance_status: filters.governance_status,
           q: filters.q,
-          status: filters.status,
-        },
-      ),
-  });
+          status: filters.status
+},
+      )
+});
 
   return (
     <>
@@ -126,12 +126,12 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-            <V3Button asChild className="self-start sm:self-auto">
+            <Button asChild className="self-start sm:self-auto">
               <Link to="/teams/new">
                 <Plus data-icon="inline-start" />
                 新建团队
               </Link>
-            </V3Button>
+            </Button>
           </div>
           <TeamManagementToolbar
             filters={filters}
@@ -157,64 +157,64 @@ function PendingDeleteTeamsSection({ apiBaseUrl, fetcher }: TeamsViewProps) {
   const queryClient = useQueryClient();
   const pending = useQuery({
     queryKey: ["pending-delete-teams"],
-    queryFn: () => listPendingDeleteTeams(apiOptions),
-  });
+    queryFn: () => listPendingDeleteTeams(apiOptions)
+});
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["pending-delete-teams"] });
     void queryClient.invalidateQueries({ queryKey: ["team-summaries"] });
   };
   const restoreMutation = useMutation({
     mutationFn: (teamId: string) => restorePendingDeleteTeam(apiOptions, teamId),
-    onSuccess: invalidate,
-  });
+    onSuccess: invalidate
+});
   const confirmMutation = useMutation({
     mutationFn: (teamId: string) => confirmTeamDelete(apiOptions, teamId),
-    onSuccess: invalidate,
-  });
+    onSuccess: invalidate
+});
   // 防御非数组响应(网关错误页等):队列语义是"有才显示",异常一律隐藏不阻塞主列表。
   const items = Array.isArray(pending.data) ? pending.data : [];
   if (pending.isLoading || pending.isError || items.length === 0) return null;
   return (
     <WorkSurface data-pending-delete-teams>
       <div className="flex items-center justify-between gap-3 px-4 pt-4">
-        <h2 className="text-sm font-semibold text-v3-ink">待确认删除</h2>
-        <span className="text-xs text-v3-ink-3">恢复或确认后生效；未确认前不会物理删除</span>
+        <h2 className="text-sm font-semibold text-ink">待确认删除</h2>
+        <span className="text-xs text-ink-3">恢复或确认后生效；未确认前不会物理删除</span>
       </div>
-      <V3Table aria-label="待确认删除团队">
+      <DataTable aria-label="待确认删除团队">
         <thead>
           <tr>
-            <V3Th>团队</V3Th>
-            <V3Th>删除时间</V3Th>
-            <V3Th>滞留</V3Th>
-            <V3Th aria-label="操作" />
+            <Th>团队</Th>
+            <Th>删除时间</Th>
+            <Th>滞留</Th>
+            <Th aria-label="操作" />
           </tr>
         </thead>
         <tbody>
           {items.map((team) => {
             const stalledDays = Math.max(0, Math.floor((Date.now() - new Date(team.deleted_at).getTime()) / 86_400_000));
             return (
-              <V3Tr key={team.id}>
-                <V3Td>
-                  <span className="font-medium text-v3-ink">{team.name}</span>
-                  <span className="ml-2 text-xs text-v3-ink-3">{team.slug}</span>
-                </V3Td>
-                <V3Td className="tabular-nums">{new Date(team.deleted_at).toLocaleString("zh-CN", { hour12: false })}</V3Td>
-                <V3Td className="tabular-nums">{stalledDays} 天</V3Td>
-                <V3Td>
+              <Tr key={team.id}>
+                <Td>
+                  <span className="font-medium text-ink">{team.name}</span>
+                  <span className="ml-2 text-xs text-ink-3">{team.slug}</span>
+                </Td>
+                <Td className="tabular-nums">{new Date(team.deleted_at).toLocaleString("zh-CN", { hour12: false })}</Td>
+                <Td className="tabular-nums">{stalledDays} 天</Td>
+                <Td>
                   <div className="flex justify-end gap-2">
-                    <V3Button
+                    <Button
                       size="sm"
                       variant="outline"
                       disabled={restoreMutation.isPending}
                       onClick={() => restoreMutation.mutate(team.id)}
                     >
                       恢复
-                    </V3Button>
+                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <V3Button size="sm" variant="danger" disabled={confirmMutation.isPending}>
+                        <Button size="sm" variant="danger" disabled={confirmMutation.isPending}>
                           确认删除
-                        </V3Button>
+                        </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
@@ -230,12 +230,12 @@ function PendingDeleteTeamsSection({ apiBaseUrl, fetcher }: TeamsViewProps) {
                       </AlertDialogContent>
                     </AlertDialog>
                   </div>
-                </V3Td>
-              </V3Tr>
+                </Td>
+              </Tr>
             );
           })}
         </tbody>
-      </V3Table>
+      </DataTable>
     </WorkSurface>
   );
 }
@@ -249,20 +249,20 @@ type TeamDetailViewProps = {
 export function TeamDetailView({
   apiBaseUrl,
   fetcher,
-  teamId,
+  teamId
 }: TeamDetailViewProps) {
   const navigate = useNavigate();
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
   const overview = useQuery({
     queryKey: ["team-overview", teamId],
-    queryFn: () => getTeamOverview(apiOptions, teamId),
-  });
+    queryFn: () => getTeamOverview(apiOptions, teamId)
+});
   const deleteMutation = useMutation({
     mutationFn: () => deleteTeam(apiOptions, teamId),
     onSuccess: () => {
       void navigate({ to: "/teams" });
-    },
-  });
+    }
+});
 
   return (
     <>
@@ -273,10 +273,10 @@ export function TeamDetailView({
       />
       <Main width="wide">
         {overview.isLoading ? (
-          <V3LoadingState label="团队概览加载中" />
+          <LoadingState label="团队概览加载中" />
         ) : null}
         {overview.isError ? (
-          <V3ErrorState title="团队概览加载失败" />
+          <ErrorState title="团队概览加载失败" />
         ) : null}
         {overview.data ? (
           <TeamDetailLayout

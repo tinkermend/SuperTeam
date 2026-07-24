@@ -9,7 +9,7 @@ import type { ApiClientOptions } from "@/lib/api/client";
 import {
   listProjects,
   submitProjectDemand,
-  type SubmitProjectDemandInput,
+  type SubmitProjectDemandInput
 } from "@/lib/api/projects";
 
 type TaskLaunchSearch = {
@@ -46,7 +46,7 @@ export function TaskLaunchView({
   fetcher,
   initialMode,
   initialProjectId,
-  title = "任务发起",
+  title = "任务发起"
 }: TaskLaunchViewProps) {
   const navigate = useNavigate();
   const apiOptions = useMemo<ApiClientOptions>(
@@ -63,8 +63,8 @@ export function TaskLaunchView({
   const projectsQuery = useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => listProjects(apiOptions, { limit: 50, offset: 0 }),
-    queryKey: ["task-launch-projects", apiBaseUrl],
-  });
+    queryKey: ["task-launch-projects", apiBaseUrl]
+});
   const activeProjects = useMemo(
     () => projectsQuery.data?.filter((project) => project.status !== "archived") ?? [],
     [projectsQuery.data],
@@ -104,8 +104,8 @@ export function TaskLaunchView({
   const submitMutation = useMutation({
     mutationFn: ({
       input,
-      projectId,
-    }: {
+      projectId
+}: {
       input: SubmitProjectDemandInput;
       projectId: string;
     }) => submitProjectDemand(apiOptions, projectId, input),
@@ -113,17 +113,17 @@ export function TaskLaunchView({
       setChatSource(null);
       navigate({
         params: { demandId: demand.id },
-        to: "/workflows/$demandId",
-      });
-    },
-  });
+        to: "/workflows/$demandId"
+});
+    }
+});
 
   function handleConvertToTask({
     anchorProjectId,
     draft,
     chatRunId,
-    digitalEmployeeId,
-  }: ConvertToTaskPayload) {
+    digitalEmployeeId
+}: ConvertToTaskPayload) {
     setMode("plan");
     setContent(draft);
     setChatSource({ chatRunId, digitalEmployeeId });
@@ -167,13 +167,13 @@ export function TaskLaunchView({
                 ? {
                     source_refs: {
                       chat_run_id: chatSource.chatRunId,
-                      digital_employee_id: chatSource.digitalEmployeeId,
-                    },
-                  }
-                : {}),
-            },
-            projectId,
-          })
+                      digital_employee_id: chatSource.digitalEmployeeId
+}
+}
+                : {})
+},
+            projectId
+})
         }
         projects={projectsQuery.data ?? []}
         selectedProjectId={selectedProjectId}

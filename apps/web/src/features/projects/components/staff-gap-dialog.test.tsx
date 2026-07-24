@@ -14,16 +14,16 @@ vi.mock("@/lib/api/employees", async (importOriginal) => {
   return {
     ...actual,
     createDigitalEmployee: vi.fn(),
-    listDigitalEmployeeAvatarAssets: vi.fn(),
-  };
+    listDigitalEmployeeAvatarAssets: vi.fn()
+};
 });
 
 vi.mock("@/lib/api/employee-templates", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/employee-templates")>();
   return {
     ...actual,
-    listEmployeeTemplates: vi.fn(),
-  };
+    listEmployeeTemplates: vi.fn()
+};
 });
 
 vi.mock("@/lib/api/projects", async (importOriginal) => {
@@ -33,8 +33,8 @@ vi.mock("@/lib/api/projects", async (importOriginal) => {
     getProject: vi.fn(),
     listProjectMembers: vi.fn(),
     replaceProjectMembers: vi.fn(),
-    resolveProjectDecision: vi.fn(),
-  };
+    resolveProjectDecision: vi.fn()
+};
 });
 
 const { createDigitalEmployee, listDigitalEmployeeAvatarAssets } = await import(
@@ -49,8 +49,8 @@ const codeReviewerTemplate: EmployeeTemplate = {
     environment_variable_refs: [],
     external_capabilities: ["code_review"],
     mcp_servers: [],
-    skills: [],
-  },
+    skills: []
+},
   created_at: "2026-07-01T00:00:00Z",
   default_role: "代码审查",
   description: "独立评审代码变更",
@@ -64,19 +64,19 @@ const codeReviewerTemplate: EmployeeTemplate = {
   status: "active",
   tenant_id: "tenant-1",
   type: "standard_code_reviewer",
-  updated_at: "2026-07-01T00:00:00Z",
+  updated_at: "2026-07-01T00:00:00Z"
 };
 
 const testerTemplate: EmployeeTemplate = {
   ...codeReviewerTemplate,
   capability_bindings: {
     ...codeReviewerTemplate.capability_bindings,
-    external_capabilities: ["test_execution"],
-  },
+    external_capabilities: ["test_execution"]
+},
   default_role: "测试",
   id: "template-tester",
   label: "标准测试员",
-  type: "standard_tester",
+  type: "standard_tester"
 };
 
 const avatarAsset: DigitalEmployeeAvatarAsset = {
@@ -89,7 +89,7 @@ const avatarAsset: DigitalEmployeeAvatarAsset = {
   source: "ai_generated_internal_pack",
   status: "active",
   style: "photorealistic_2d",
-  thumbnail_url: "/images/avatar-1-256.webp",
+  thumbnail_url: "/images/avatar-1-256.webp"
 };
 
 const createdEmployee: DigitalEmployee = {
@@ -102,7 +102,7 @@ const createdEmployee: DigitalEmployee = {
   risk_level: "medium",
   role: "代码审查",
   status: "ready",
-  tenant_id: "tenant-1",
+  tenant_id: "tenant-1"
 };
 
 const existingMember: ProjectMember = {
@@ -114,7 +114,7 @@ const existingMember: ProjectMember = {
   project_role: "owner",
   settings: {},
   status: "active",
-  tenant_id: "tenant-1",
+  tenant_id: "tenant-1"
 };
 
 const resolvedDecision: ProjectDecisionRequest = {
@@ -125,7 +125,7 @@ const resolvedDecision: ProjectDecisionRequest = {
   status_snapshot: "rejected",
   target_user_id: "owner-1",
   tenant_id: "tenant-1",
-  title_snapshot: "规划缺口：项目员工池无法满足审查独立性约束",
+  title_snapshot: "规划缺口：项目员工池无法满足审查独立性约束"
 };
 
 function renderDialog(props: Partial<StaffGapDialogProps> = {}) {
@@ -140,8 +140,8 @@ function renderDialog(props: Partial<StaffGapDialogProps> = {}) {
           constraint_kind: "role_independence",
           options: ["restaff", "exempt"],
           required_capabilities: ["code_review"],
-          roles: ["reviewer", "developer"],
-        }}
+          roles: ["reviewer", "developer"]
+}}
         onOpenChange={vi.fn()}
         onStaffed={vi.fn()}
         open
@@ -206,8 +206,8 @@ describe("StaffGapDialog", () => {
         employee_type: "standard_code_reviewer",
         provider_type: "claude-code",
         role: "代码审查",
-        team_id: "team-1",
-      }),
+        team_id: "team-1"
+}),
     );
     expect(listProjectMembers).toHaveBeenCalledWith(
       { baseUrl: "http://control-plane.local" },
@@ -219,13 +219,13 @@ describe("StaffGapDialog", () => {
       expect.arrayContaining([
         expect.objectContaining({
           principal_id: "owner-1",
-          principal_type: "human_user",
-        }),
+          principal_type: "human_user"
+}),
         expect.objectContaining({
           principal_id: "employee-new-1",
           principal_type: "digital_employee",
-          project_role: "executor",
-        }),
+          project_role: "executor"
+}),
       ]),
     );
     expect(resolveProjectDecision).toHaveBeenCalledWith(
@@ -294,8 +294,8 @@ describe("StaffGapDialog", () => {
       id: "member-new",
       principal_id: createdEmployee.id,
       principal_type: "digital_employee",
-      project_role: "executor",
-    };
+      project_role: "executor"
+};
     vi.mocked(listProjectMembers)
       .mockResolvedValueOnce([existingMember])
       .mockResolvedValueOnce([existingMember, joinedMember]);

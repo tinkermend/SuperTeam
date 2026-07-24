@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 import type { UserSummary, UserProjectTeamScope } from "@/lib/api";
 import type { CreateProjectInput } from "@/lib/api/projects";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/superteam";
 import {
   activeSelectableTeams,
   buildProjectCreateInput,
@@ -11,7 +11,7 @@ import {
   projectCreateSteps,
   projectCreateValidation,
   type ProjectCreateDraft,
-  type ProjectCreateStep,
+  type ProjectCreateStep
 } from "./create-project-draft";
 import { ProjectBasicsStep } from "./project-basics-step";
 import { ProjectDigitalEmployeesStep } from "./project-digital-employees-step";
@@ -49,7 +49,7 @@ export function CreateProjectShell({
   showHeading = true,
   onSubmit,
   submitError,
-  teamsError,
+  teamsError
 }: CreateProjectShellProps) {
   const selectableTeams = useMemo(() => activeSelectableTeams(availableTeams), [availableTeams]);
   const [draft, setDraft] = useState<ProjectCreateDraft>(emptyProjectCreateDraft);
@@ -153,18 +153,18 @@ export function CreateProjectShell({
     <div
       aria-label={showHeading ? undefined : "新建项目"}
       aria-labelledby={showHeading ? "project-create-title" : undefined}
-      className="min-h-[calc(100svh-7rem)] overflow-hidden rounded-[16px] border border-v3-line bg-v3-bg shadow-sm"
+      className="min-h-[calc(100svh-7rem)] overflow-hidden rounded-[16px] border border-line bg-background shadow-sm"
       data-variant="compact-control-surface"
       data-testid="project-create-page"
     >
       <div className="flex min-h-[calc(100svh-7rem)] flex-col">
-        <header className="border-b border-v3-line bg-v3-card px-4 py-4 lg:px-6">
+        <header className="border-b border-line bg-card px-4 py-4 lg:px-6">
           {showHeading ? (
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[12px] font-bold text-v3-brand">项目管理 / 新建项目</p>
-                <h2 className="mt-1 text-xl font-extrabold tracking-tight text-v3-ink" id="project-create-title">新建项目</h2>
-                <p className="mt-1 text-[13px] text-v3-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与协调策略。</p>
+                <p className="text-[12px] font-bold text-brand">项目管理 / 新建项目</p>
+                <h2 className="mt-1 text-xl font-extrabold tracking-tight text-ink" id="project-create-title">新建项目</h2>
+                <p className="mt-1 text-[13px] text-ink-2">建立项目事实容器，配置负责人、团队、数字员工池与协调策略。</p>
               </div>
               <Button aria-label="关闭新建项目" className="size-9 rounded-[10px]" onClick={onCancel} size="icon" type="button" variant="ghost">
                 <X className="size-5" />
@@ -182,7 +182,7 @@ export function CreateProjectShell({
                 <button
                   className={cn(
                     "flex min-w-0 items-center gap-2 rounded-[9px] border px-2.5 py-1.5 text-[12px] font-bold transition",
-                    active ? "border-v3-brand/30 bg-v3-brand-soft text-v3-brand" : "border-v3-line bg-v3-card text-v3-ink-2 hover:bg-v3-card-soft",
+                    active ? "border-brand/30 bg-brand-soft text-brand" : "border-line bg-card text-ink-2 hover:bg-card-soft",
                   )}
                   key={step.id}
                   onClick={() => setActiveStep(step.id)}
@@ -191,9 +191,9 @@ export function CreateProjectShell({
                   <span
                     className={cn(
                       "grid size-6 shrink-0 place-items-center rounded-[7px] border text-[11px]",
-                      active && "border-v3-brand bg-v3-brand text-white",
-                      done && "border-v3-ok bg-v3-ok text-white",
-                      !active && !done && "border-v3-line-strong bg-v3-card text-v3-ink-2",
+                      active && "border-brand bg-brand text-white",
+                      done && "border-ok bg-ok text-white",
+                      !active && !done && "border-line-strong bg-card text-ink-2",
                     )}
                   >
                     {done ? <Check className="size-4" /> : index + 1}
@@ -206,15 +206,15 @@ export function CreateProjectShell({
         </header>
 
         <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto px-4 py-4 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-6">
-          <section className="min-w-0 rounded-[14px] border border-v3-line bg-v3-card p-5 shadow-sm">
-            <div className="mb-4 border-b border-v3-line pb-3">
-              <p className="text-base font-extrabold text-v3-ink">新建项目工作台</p>
-              <p className="mt-1 text-[12px] leading-5 text-v3-ink-3">
+          <section className="min-w-0 rounded-[14px] border border-line bg-card p-5 shadow-sm">
+            <div className="mb-4 border-b border-line pb-3">
+              <p className="text-base font-extrabold text-ink">新建项目工作台</p>
+              <p className="mt-1 text-[12px] leading-5 text-ink-3">
                 按步骤补齐项目事实、责任人、来源团队和治理策略。
               </p>
             </div>
             {authorizationError ? (
-              <div className="mb-4 rounded-[10px] border border-v3-danger/20 bg-v3-danger-soft px-3 py-2 text-sm text-v3-danger">
+              <div className="mb-4 rounded-[10px] border border-danger/20 bg-danger-soft px-3 py-2 text-sm text-danger">
                 {currentUserError ? "加载当前用户失败" : "加载可选团队失败"}
               </div>
             ) : null}
@@ -253,7 +253,7 @@ export function CreateProjectShell({
             ) : activeStep === "policies" ? (
               <ProjectPolicyStep draft={draft} onChange={setDraft} />
             ) : (
-              <div className="rounded-[10px] border border-dashed border-v3-line-strong bg-v3-card-soft p-6 text-sm text-v3-ink-2">
+              <div className="rounded-[10px] border border-dashed border-line-strong bg-card-soft p-6 text-sm text-ink-2">
                 {projectCreateSteps.find((step) => step.id === activeStep)?.label} 步骤将在后续任务中接入。
               </div>
             )}
@@ -268,12 +268,12 @@ export function CreateProjectShell({
           />
         </main>
 
-        <footer className="flex flex-col gap-3 border-t border-v3-line bg-v3-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-6">
+        <footer className="flex flex-col gap-3 border-t border-line bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-6">
           <Button onClick={onCancel} type="button" variant="ghost">
             返回项目列表
           </Button>
           <div className="flex items-center gap-3">
-            {(localError || submitError) ? <p className="text-sm text-v3-danger">{localError || submitError}</p> : null}
+            {(localError || submitError) ? <p className="text-sm text-danger">{localError || submitError}</p> : null}
             <Button disabled={activeIndex === 0} onClick={goBack} type="button" variant="outline">
               <ArrowLeft className="mr-2 size-4" />
               上一步

@@ -10,24 +10,24 @@ import type { Project } from "@/lib/api/projects";
   .IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
-  navigate: vi.fn(),
+  navigate: vi.fn()
 }));
 const mountedRoots: Root[] = [];
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@/components/ui/select", async () => {
@@ -42,8 +42,8 @@ vi.mock("@/components/ui/select", async () => {
     Select: ({
       children,
       onValueChange,
-      value,
-    }: {
+      value
+}: {
       children: ReactNode;
       onValueChange?: (value: string) => void;
       value?: string;
@@ -76,8 +76,8 @@ vi.mock("@/components/ui/select", async () => {
     SelectSeparator: () => <hr />,
     SelectTrigger: ({
       "aria-label": ariaLabel,
-      children,
-    }: {
+      children
+}: {
       "aria-label"?: string;
       children: ReactNode;
     }) => (
@@ -85,16 +85,16 @@ vi.mock("@/components/ui/select", async () => {
         {children}
       </button>
     ),
-    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
-  };
+    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>
+};
 });
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
     params,
-    to,
-  }: {
+    to
+}: {
     children: ReactNode;
     params?: Record<string, string>;
     to: string;
@@ -105,20 +105,20 @@ vi.mock("@tanstack/react-router", () => ({
     return <a href={href}>{children}</a>;
   },
   useNavigate: () => mocks.navigate,
-  useSearch: () => ({}),
+  useSearch: () => ({})
 }));
 
 function createQueryClient() {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false } }
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function makeProject(id = "project-1", status: Project["status"] = "running"): Project {
@@ -138,14 +138,14 @@ function makeProject(id = "project-1", status: Project["status"] = "running"): P
           : "归档项目",
     status,
     tenant_id: "tenant-1",
-    workspace_ready_status: "ready",
-  };
+    workspace_ready_status: "ready"
+};
 }
 
 function createTaskLaunchFetcher({
   includeSecondProject = false,
   launchDetail = false,
-  emptyFacts = false,
+  emptyFacts = false
 }: {
   emptyFacts?: boolean;
   includeSecondProject?: boolean;
@@ -160,15 +160,15 @@ function createTaskLaunchFetcher({
       project_role: "reviewer",
       resolved_from_rule: true,
       reviewer_user_id: "reviewer-1",
-      selection_reason: "project_reviewer_default",
-    },
+      selection_reason: "project_reviewer_default"
+},
     source_refs: {},
     source_type: "manual",
     status: "submitted",
     submitted_by_user_id: "owner-1",
     tenant_id: "tenant-1",
-    title: "审查这个开源项目的 PR，并按数量分配数字员工",
-  };
+    title: "审查这个开源项目的 PR，并按数量分配数字员工"
+};
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -200,10 +200,10 @@ function createTaskLaunchFetcher({
             project_role: "reviewer",
             resolved_from_rule: true,
             reviewer_user_id: "reviewer-2",
-            selection_reason: "project_reviewer_default",
-          },
-          title: body.title,
-        },
+            selection_reason: "project_reviewer_default"
+},
+          title: body.title
+},
         201,
       );
     }
@@ -223,7 +223,7 @@ function createTaskLaunchFetcher({
  * employee and a run that completes immediately) so tests can drive the
  * chat -> 转为任务 -> submit flow and assert the resulting demand's source_refs. */
 function createTaskLaunchFetcherWithChat({
-  includeSecondProject = false,
+  includeSecondProject = false
 }: { includeSecondProject?: boolean } = {}) {
   const base = createTaskLaunchFetcher({ includeSecondProject });
 
@@ -245,8 +245,8 @@ function createTaskLaunchFetcherWithChat({
           risk_level: "low",
           role: "客服助手",
           status: "active",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
     // 参与门禁:chat 员工按项目成员过滤,emp-1 投影为锚点项目的 active 成员。
@@ -260,8 +260,8 @@ function createTaskLaunchFetcherWithChat({
           principal_type: "digital_employee",
           principal_id: "emp-1",
           project_role: "executor",
-          status: "active",
-        },
+          status: "active"
+},
       ]);
     }
     if (path === "/api/v1/digital-employees/emp-1/runs" && method === "GET") {
@@ -269,8 +269,8 @@ function createTaskLaunchFetcherWithChat({
       return jsonResponse({
         filters: { projects: [], statuses: [] },
         items: [],
-        total_count: 0,
-      });
+        total_count: 0
+});
     }
     if (path === "/api/v1/digital-employees/emp-1/runs" && method === "POST") {
       return jsonResponse(
@@ -290,8 +290,8 @@ function createTaskLaunchFetcherWithChat({
           timed_out: false,
           diagnostic: {},
           result: {},
-          work_products: [],
-        },
+          work_products: []
+},
         201,
       );
     }
@@ -312,8 +312,8 @@ function createTaskLaunchFetcherWithChat({
         timed_out: false,
         diagnostic: {},
         result: { output: "这是对话回答" },
-        work_products: [],
-      });
+        work_products: []
+});
     }
 
     return base(input, init);
@@ -323,7 +323,7 @@ function createTaskLaunchFetcherWithChat({
 function makeLaunchDetail({
   demandId = "demand-1",
   emptyFacts = false,
-  title = "审查 PR",
+  title = "审查 PR"
 }: {
   demandId?: string;
   emptyFacts?: boolean;
@@ -339,21 +339,21 @@ function makeLaunchDetail({
       project_role: "reviewer",
       resolved_from_rule: true,
       reviewer_user_id: "reviewer-1",
-      selection_reason: "project_reviewer_default",
-    },
+      selection_reason: "project_reviewer_default"
+},
     source_refs: {},
     source_type: "manual",
     status: "submitted",
     submitted_by_user_id: "owner-1",
     tenant_id: "tenant-1",
-    title,
-  };
+    title
+};
   const empty = {
     coordination_jobs: [],
     decision_requests: [],
     project_tasks: [],
-    route_decisions: [],
-  };
+    route_decisions: []
+};
 
   return {
     demand: baseDemand,
@@ -372,8 +372,8 @@ function makeLaunchDetail({
               project_id: "project-1",
               status: "running",
               tenant_id: "tenant-1",
-              workflow_id: "project-coordinator:project-1",
-            },
+              workflow_id: "project-coordinator:project-1"
+},
           ],
           decision_requests: [
             {
@@ -382,8 +382,8 @@ function makeLaunchDetail({
               status_snapshot: "pending",
               target_user_id: "reviewer-1",
               tenant_id: "tenant-1",
-              title_snapshot: "确认路由",
-            },
+              title_snapshot: "确认路由"
+},
           ],
           project_tasks: [
             {
@@ -394,8 +394,8 @@ function makeLaunchDetail({
               status: "pending",
               summary: "汇总 PR 并输出分派建议",
               tenant_id: "tenant-1",
-              title: "整理审查清单",
-            },
+              title: "整理审查清单"
+},
           ],
           route_decisions: [
             {
@@ -410,11 +410,11 @@ function makeLaunchDetail({
               reason: "按能力分派",
               requires_human_review: true,
               selected_digital_employee_ids: ["employee-1"],
-              tenant_id: "tenant-1",
-            },
-          ],
-        }),
-  };
+              tenant_id: "tenant-1"
+},
+          ]
+})
+};
 }
 
 async function renderWithQueryClient(children: ReactNode) {
@@ -460,15 +460,15 @@ describe("TaskLaunchView", () => {
         source_type: "manual",
         source_refs: {},
         attachments: [],
-        coordination_mode: "plan",
-      });
+        coordination_mode: "plan"
+});
     });
     expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-1/members");
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-1" },
-        to: "/workflows/$demandId",
-      });
+        to: "/workflows/$demandId"
+});
     });
   });
 
@@ -489,16 +489,16 @@ describe("TaskLaunchView", () => {
     const body = postBody(fetcher, "/api/v1/projects/project-2/demands");
     expect(body).toMatchObject({
       content: "处理第二个项目的巡检问题",
-      title: "处理第二个项目的巡检问题",
-    });
+      title: "处理第二个项目的巡检问题"
+});
     expect(body).not.toHaveProperty("reviewer_user_id");
     expect(body).not.toHaveProperty("reviewer_selection_reason");
     expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-2/members");
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-2" },
-        to: "/workflows/$demandId",
-      });
+        to: "/workflows/$demandId"
+});
     });
   });
 
@@ -517,8 +517,8 @@ describe("TaskLaunchView", () => {
 
     await waitFor(() => {
       expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toMatchObject({
-        coordination_mode: "loop",
-      });
+        coordination_mode: "loop"
+});
     });
   });
 
@@ -543,7 +543,7 @@ describe("TaskLaunchView", () => {
     expect(queryByText("优先级")).toBeNull();
     expect(queryByText("风险级别")).toBeNull();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
-    expect(document.querySelector(".v3-glass")).toBeTruthy();
+    expect(document.querySelector(".glass")).toBeTruthy();
     expect(document.querySelector(".tl-btn-send")).toBeTruthy();
 
     expect(queryByText("Command Center")).toBeNull();
@@ -600,8 +600,8 @@ describe("TaskLaunchView", () => {
 
     await waitFor(() => {
       expect(postBody(fetcher, "/api/v1/digital-employees/emp-1/runs")).toMatchObject({
-        project_id: "project-1",
-      });
+        project_id: "project-1"
+});
     });
 
     await act(async () => {
@@ -618,14 +618,14 @@ describe("TaskLaunchView", () => {
 
     await waitFor(() => {
       expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toMatchObject({
-        source_refs: { chat_run_id: "run-1", digital_employee_id: "emp-1" },
-      });
+        source_refs: { chat_run_id: "run-1", digital_employee_id: "emp-1" }
+});
     });
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-1" },
-        to: "/workflows/$demandId",
-      });
+        to: "/workflows/$demandId"
+});
     });
   });
 
@@ -657,8 +657,8 @@ describe("TaskLaunchView", () => {
 
     await waitFor(() => {
       expect(postBody(fetcher, "/api/v1/digital-employees/emp-1/runs")).toMatchObject({
-        project_id: "project-2",
-      });
+        project_id: "project-2"
+});
     });
 
     await act(async () => {
@@ -675,14 +675,14 @@ describe("TaskLaunchView", () => {
 
     await waitFor(() => {
       expect(postBody(fetcher, "/api/v1/projects/project-2/demands")).toMatchObject({
-        source_refs: { chat_run_id: "run-1", digital_employee_id: "emp-1" },
-      });
+        source_refs: { chat_run_id: "run-1", digital_employee_id: "emp-1" }
+});
     });
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-2" },
-        to: "/workflows/$demandId",
-      });
+        to: "/workflows/$demandId"
+});
     });
   });
 
@@ -717,8 +717,8 @@ describe("TaskLaunchView", () => {
 
     await waitFor(() => {
       expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toMatchObject({
-        source_refs: {},
-      });
+        source_refs: {}
+});
     });
   });
 });

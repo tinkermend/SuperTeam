@@ -9,7 +9,7 @@ const logout = vi.fn()
 const MOCK_HREF = 'https://app.test/dashboard?tab=1'
 
 vi.mock('@/features/auth/use-auth', () => ({
-  useAuth: () => ({ logout }),
+  useAuth: () => ({ logout })
 }))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
@@ -17,8 +17,8 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   return {
     ...actual,
     useNavigate: () => navigate,
-    useLocation: () => ({ href: MOCK_HREF }),
-  }
+    useLocation: () => ({ href: MOCK_HREF })
+}
 })
 
 describe('SignOutDialog', () => {
@@ -37,8 +37,8 @@ describe('SignOutDialog', () => {
     expect(navigate).toHaveBeenCalledWith({
       to: '/login',
       search: { redirect: MOCK_HREF },
-      replace: true,
-    })
+      replace: true
+})
   })
 
   it('does not call logout or navigate when Cancel is clicked', async () => {

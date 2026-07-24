@@ -3,7 +3,7 @@ import { SkillDetailView } from "@/features/skills/detail";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
 export const Route = createFileRoute("/_authenticated/skills/$skillId")({
-  component: SkillDetailRoute,
+  component: SkillDetailRoute
 });
 
 function SkillDetailRoute() {

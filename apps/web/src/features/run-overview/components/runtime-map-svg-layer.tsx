@@ -12,8 +12,8 @@ type RuntimeMapSvgLayerProps = {
 // 透镜边色调：muted=已完成/未开始的依赖、primary=当前活跃交接、warning=下游阻塞。
 const lensEdgeStroke: Record<ProjectLensEdgeTone, string> = {
   muted: "#A8C6E6",
-  primary: "var(--v3-brand)",
-  warning: "var(--v3-warn)",
+  primary: "var(--brand)",
+  warning: "var(--warn)"
 };
 
 // 连线端点从座位锚点略微抬升到头像中心高度（头像绘制在座位上方 58px 处，见 EmployeeAvatarNode）。
@@ -24,7 +24,7 @@ export function RuntimeMapSvgLayer({
   hoveredLensEdgeId,
   lensEdges,
   onHoverLensEdge,
-  selectedTeamId,
+  selectedTeamId
 }: RuntimeMapSvgLayerProps) {
   // lensEdges 一旦传入（即使当前楼层为空数组）即视为透镜态。
   const lensActive = lensEdges !== undefined;

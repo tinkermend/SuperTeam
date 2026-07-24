@@ -24,12 +24,12 @@ function createDeferredJsonResponse<T>() {
           new Response(JSON.stringify(payload), {
             status: 200,
             headers: {
-              'content-type': 'application/json',
-            },
-          })
+              'content-type': 'application/json'
+}
+})
       ),
-    resolve,
-  }
+    resolve
+}
 }
 
 function AuthStatus() {
@@ -56,8 +56,8 @@ function LoginProbe() {
           username: 'new',
           password: 'secret',
           captcha_id: '11111111-1111-4111-8111-111111111111',
-          captcha_code: 'A7K2',
-        })
+          captcha_code: 'A7K2'
+})
       }
     >
       Login
@@ -73,8 +73,8 @@ function LoginWithoutCaptchaProbe() {
       onClick={() =>
         void login({
           username: 'new',
-          password: 'secret',
-        })
+          password: 'secret'
+})
       }
     >
       Login
@@ -92,8 +92,8 @@ function FailedLoginProbe() {
           username: 'new',
           password: 'wrong',
           captcha_id: '11111111-1111-4111-8111-111111111111',
-          captcha_code: 'A7K2',
-        }).catch(() => {})
+          captcha_code: 'A7K2'
+}).catch(() => {})
       }}
     >
       Login
@@ -111,19 +111,19 @@ const expectedSuccessfulLoginBody = JSON.stringify({
   username: 'new',
   password: 'secret',
   captcha_id: '11111111-1111-4111-8111-111111111111',
-  captcha_code: 'A7K2',
+  captcha_code: 'A7K2'
 })
 
 const expectedFailedLoginBody = JSON.stringify({
   username: 'new',
   password: 'wrong',
   captcha_id: '11111111-1111-4111-8111-111111111111',
-  captcha_code: 'A7K2',
+  captcha_code: 'A7K2'
 })
 
 const expectedLoginWithoutCaptchaBody = JSON.stringify({
   username: 'new',
-  password: 'secret',
+  password: 'secret'
 })
 
 describe('AuthProvider', () => {
@@ -133,9 +133,9 @@ describe('AuthProvider', () => {
         new Response(JSON.stringify({ error: 'unauthorized' }), {
           status: 401,
           headers: {
-            'content-type': 'application/json',
-          },
-        })
+            'content-type': 'application/json'
+}
+})
       )
     )
 
@@ -157,24 +157,24 @@ describe('AuthProvider', () => {
             user: {
               id: 1,
               username: 'admin',
-              status: 'active',
-            },
-          }),
+              status: 'active'
+}
+}),
           {
             status: 200,
             headers: {
-              'content-type': 'application/json',
-            },
-          }
+              'content-type': 'application/json'
+}
+}
         )
       )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ error: 'unauthorized' }), {
           status: 401,
           headers: {
-            'content-type': 'application/json',
-          },
-        })
+            'content-type': 'application/json'
+}
+})
       )
 
     const screen = await render(
@@ -206,15 +206,15 @@ describe('AuthProvider', () => {
               user: {
                 id: 2,
                 username: 'new',
-                status: 'active',
-              },
-            }),
+                status: 'active'
+}
+}),
             {
               status: 200,
               headers: {
-                'content-type': 'application/json',
-              },
-            }
+                'content-type': 'application/json'
+}
+}
           )
         )
       }
@@ -234,17 +234,17 @@ describe('AuthProvider', () => {
       user: {
         id: 2,
         username: 'new',
-        status: 'active',
-      },
-    })
+        status: 'active'
+}
+})
 
     initialMe.resolve({
       user: {
         id: 1,
         username: 'old',
-        status: 'active',
-      },
-    })
+        status: 'active'
+}
+})
 
     await expect.element(screen.getByText('Signed in as new')).toBeVisible()
     expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
@@ -253,10 +253,10 @@ describe('AuthProvider', () => {
       credentials: 'include',
       headers: {
         accept: 'application/json',
-        'content-type': 'application/json',
-      },
-      method: 'POST',
-    })
+        'content-type': 'application/json'
+},
+      method: 'POST'
+})
   })
 
   it('waits for current user confirmation before completing login', async () => {
@@ -271,9 +271,9 @@ describe('AuthProvider', () => {
           new Response(JSON.stringify({ user: { id: 2, username: 'new', status: 'active' } }), {
             status: 200,
             headers: {
-              'content-type': 'application/json',
-            },
-          })
+              'content-type': 'application/json'
+}
+})
         )
       }
 
@@ -285,9 +285,9 @@ describe('AuthProvider', () => {
         new Response(JSON.stringify({ error: 'unauthorized' }), {
           status: 401,
           headers: {
-            'content-type': 'application/json',
-          },
-        })
+            'content-type': 'application/json'
+}
+})
       )
     })
 
@@ -311,10 +311,10 @@ describe('AuthProvider', () => {
       credentials: 'include',
       headers: {
         accept: 'application/json',
-        'content-type': 'application/json',
-      },
-      method: 'POST',
-    })
+        'content-type': 'application/json'
+},
+      method: 'POST'
+})
   })
 
   it('allows login without captcha fields when the server disables captcha', async () => {
@@ -328,9 +328,9 @@ describe('AuthProvider', () => {
           new Response(JSON.stringify({ user: { id: 2, username: 'new', status: 'active' } }), {
             status: 200,
             headers: {
-              'content-type': 'application/json',
-            },
-          })
+              'content-type': 'application/json'
+}
+})
         )
       }
 
@@ -339,9 +339,9 @@ describe('AuthProvider', () => {
           new Response(JSON.stringify({ user: { id: 2, username: 'new', status: 'active' } }), {
             status: 200,
             headers: {
-              'content-type': 'application/json',
-            },
-          })
+              'content-type': 'application/json'
+}
+})
         )
       }
 
@@ -349,9 +349,9 @@ describe('AuthProvider', () => {
         new Response(JSON.stringify({ error: 'unauthorized' }), {
           status: 401,
           headers: {
-            'content-type': 'application/json',
-          },
-        })
+            'content-type': 'application/json'
+}
+})
       )
     })
 
@@ -371,10 +371,10 @@ describe('AuthProvider', () => {
       credentials: 'include',
       headers: {
         accept: 'application/json',
-        'content-type': 'application/json',
-      },
-      method: 'POST',
-    })
+        'content-type': 'application/json'
+},
+      method: 'POST'
+})
   })
 
   it('clears loading when login fails after superseding a slow initial current-user request', async () => {
@@ -387,9 +387,9 @@ describe('AuthProvider', () => {
           new Response(JSON.stringify({ error: 'invalid_credentials' }), {
             status: 401,
             headers: {
-              'content-type': 'application/json',
-            },
-          })
+              'content-type': 'application/json'
+}
+})
         )
       }
 
@@ -412,9 +412,9 @@ describe('AuthProvider', () => {
       user: {
         id: 1,
         username: 'old',
-        status: 'active',
-      },
-    })
+        status: 'active'
+}
+})
 
     await expect.element(screen.getByText('Signed out')).toBeVisible()
     expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
@@ -423,9 +423,9 @@ describe('AuthProvider', () => {
       credentials: 'include',
       headers: {
         accept: 'application/json',
-        'content-type': 'application/json',
-      },
-      method: 'POST',
-    })
+        'content-type': 'application/json'
+},
+      method: 'POST'
+})
   })
 })

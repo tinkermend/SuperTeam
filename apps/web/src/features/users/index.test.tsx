@@ -7,21 +7,21 @@ import { Users } from "@/features/users";
 import { CreateUserDrawer } from "@/features/users/components/create-user-drawer";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
   Main: ({ children, width }: { children: ReactNode; width?: string }) => (
     <main data-width={width}>{children}</main>
-  ),
+  )
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -45,17 +45,17 @@ function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status: 200,
-  });
+    status: 200
+});
 }
 
 const TEAM_OPS_ID = "11111111-1111-4111-8111-111111111111";
@@ -71,7 +71,7 @@ const SCOPE_RISK_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const NEW_USER_AVATAR = {
   provider: "dicebear" as const,
   seed: "user:zhoumin",
-  style: "adventurer" as const,
+  style: "adventurer" as const
 };
 
 function createDeferredResponse() {
@@ -94,7 +94,7 @@ function createUsersFetcher({
   projectTeamScopesDeferred,
   projectTeamScopesStatus = "ok",
   teamsDeferred,
-  teamsStatus = "ok",
+  teamsStatus = "ok"
 }: CreateUsersFetcherOptions = {}) {
   let createdUser:
     | {
@@ -129,9 +129,9 @@ function createUsersFetcher({
           avatar: {
             provider: "dicebear",
             style: "adventurer",
-            seed: "operator-avatar",
-          },
-        },
+            seed: "operator-avatar"
+}
+},
         {
           avatar_asset_id: "engineer-m-02",
           display_name: "审计员",
@@ -142,15 +142,15 @@ function createUsersFetcher({
           avatar: {
             provider: "dicebear",
             style: "adventurer",
-            seed: "auditor-avatar",
-          },
-        },
+            seed: "auditor-avatar"
+}
+},
       ];
       const visibleUsers = createdUser ? [createdUser, ...users] : users;
 
       return jsonResponse({
-        items: status ? visibleUsers.filter((user) => user.status === status) : visibleUsers,
-      });
+        items: status ? visibleUsers.filter((user) => user.status === status) : visibleUsers
+});
     }
 
     if (url.pathname === "/api/auth/users" && method === "POST") {
@@ -162,12 +162,12 @@ function createUsersFetcher({
         email: null,
         id: USER_CREATED_ID,
         status: "active",
-        username: "new-operator",
-      };
+        username: "new-operator"
+};
 
       return jsonResponse({
-        user: createdUser,
-      });
+        user: createdUser
+});
     }
 
     if (url.pathname === `/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes` && method === "GET") {
@@ -178,8 +178,8 @@ function createUsersFetcher({
       if (projectTeamScopesStatus === "error") {
         return new Response(JSON.stringify({ error: "scope load failed" }), {
           headers: { "content-type": "application/json" },
-          status: 500,
-        });
+          status: 500
+});
       }
 
       if (projectTeamScopesStatus === "empty") {
@@ -204,13 +204,13 @@ function createUsersFetcher({
               pending_draft_count: 0,
               risk_summary: "低风险",
               slug: "ops",
-              status: "active",
-            },
+              status: "active"
+},
             team_id: TEAM_OPS_ID,
             tenant_id: TENANT_ID,
             updated_at: "2026-06-04T02:28:13Z",
-            user_id: USER_OPERATOR_ID,
-          },
+            user_id: USER_OPERATOR_ID
+},
           {
             created_at: "2026-06-04T02:28:13Z",
             granted_by_user_id: USER_ADMIN_ID,
@@ -227,15 +227,15 @@ function createUsersFetcher({
               pending_draft_count: 1,
               risk_summary: "需审批",
               slug: "risk",
-              status: "active",
-            },
+              status: "active"
+},
             team_id: TEAM_RISK_ID,
             tenant_id: TENANT_ID,
             updated_at: "2026-06-04T02:28:13Z",
-            user_id: USER_OPERATOR_ID,
-          },
-        ],
-      });
+            user_id: USER_OPERATOR_ID
+},
+        ]
+});
     }
 
     if (url.pathname === `/api/auth/users/${USER_CREATED_ID}/project-team-scopes` && method === "GET") {
@@ -250,8 +250,8 @@ function createUsersFetcher({
       if (teamsStatus === "error") {
         return new Response(JSON.stringify({ error: "teams failed" }), {
           headers: { "content-type": "application/json" },
-          status: 500,
-        });
+          status: 500
+});
       }
 
       if (teamsStatus === "empty") {
@@ -272,8 +272,8 @@ function createUsersFetcher({
           risk_summary: "低风险",
           slug: "ops",
           status: "active",
-          tenant_id: TENANT_ID,
-        },
+          tenant_id: TENANT_ID
+},
         {
           capability_count: 1,
           current_revision: 1,
@@ -287,8 +287,8 @@ function createUsersFetcher({
           risk_summary: "需审批",
           slug: "risk",
           status: "active",
-          tenant_id: TENANT_ID,
-        },
+          tenant_id: TENANT_ID
+},
         {
           capability_count: 0,
           current_revision: 1,
@@ -302,8 +302,8 @@ function createUsersFetcher({
           risk_summary: "不可选",
           slug: "disabled",
           status: "disabled",
-          tenant_id: TENANT_ID,
-        },
+          tenant_id: TENANT_ID
+},
       ]);
     }
 
@@ -325,20 +325,20 @@ function createUsersFetcher({
                 principal_type: "user",
                 principal_id: USER_OPERATOR_ID,
                 role: "owner",
-                status: "active",
-              },
+                status: "active"
+},
               {
                 tenant_id: TENANT_ID,
                 team_id: TEAM_OPS_ID,
                 principal_type: "user",
                 principal_id: USER_OPERATOR_ID,
                 role: "admin",
-                status: "active",
-              },
-            ],
-          },
-        ],
-      });
+                status: "active"
+},
+            ]
+},
+        ]
+});
     }
 
     if (url.pathname === "/api/v1/admin/feishu/identities" && method === "GET") {
@@ -347,22 +347,22 @@ function createUsersFetcher({
           {
             auth_user_id: USER_OPERATOR_ID,
             open_id: "ou_operator",
-            bound_via: "contact_sync",
-          },
-        ],
-      });
+            bound_via: "contact_sync"
+},
+        ]
+});
     }
 
     if (url.pathname === "/api/v1/admin/feishu/contact-sync" && method === "POST") {
       return jsonResponse({
-        reports: [{ app_id: "cli_test", matched: 2, bound: 1, already_bound: 1, unmatched: 3 }],
-      });
+        reports: [{ app_id: "cli_test", matched: 2, bound: 1, already_bound: 1, unmatched: 3 }]
+});
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
-      status: 404,
-    });
+      status: 404
+});
   });
 }
 
@@ -407,11 +407,11 @@ describe("Users", () => {
     await expect.element(screen.getByText("审计记录")).not.toBeInTheDocument();
     await expect.element(screen.getByText("team.member.change_role", { exact: true }).first()).not.toBeInTheDocument();
     await expect.element(screen.getByText("Chrome 125 / macOS").first()).not.toBeInTheDocument();
-    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-icon-tile"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="icon-tile"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="status-pill"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="work-surface"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="data-table"]').length).toBeGreaterThan(0);
     await expect.element(screen.getByRole("link", { name: "去团队管理分配" })).toHaveAttribute("data-router-link", "true");
 
     const avatar = screen.getByAltText("平台管理员 的头像").first();
@@ -515,8 +515,8 @@ describe("Users", () => {
       display_name: "新管理员",
       password: "secret-pass",
       selectable_team_ids: [TEAM_OPS_ID, TEAM_RISK_ID],
-      username: "new-operator",
-    });
+      username: "new-operator"
+});
     await expect.element(screen.getByLabelText("用户名")).not.toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "新管理员" })).toBeInTheDocument();
     expect(
@@ -602,8 +602,8 @@ describe("Users", () => {
     const deferred = createDeferredResponse();
     const fetcher = createUsersFetcher({
       teamsDeferred: deferred,
-      teamsStatus: "loading",
-    });
+      teamsStatus: "loading"
+});
     vi.stubGlobal("fetch", fetcher);
 
     const screen = await render(
@@ -689,15 +689,15 @@ describe("Users", () => {
             risk_summary: "低风险",
             slug: "ops",
             status: "active",
-            tenant_id: TENANT_ID,
-          },
+            tenant_id: TENANT_ID
+},
         ]);
       }
 
 return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
         headers: { "content-type": "application/json" },
-        status: 404,
-      });
+        status: 404
+});
     });
     const queryClient = createQueryClient();
     const screen = await render(

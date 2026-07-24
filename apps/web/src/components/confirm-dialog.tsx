@@ -6,9 +6,9 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { V3Button } from '@/components/superteam'
+import { Button } from '@/components/superteam'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -44,21 +44,21 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   } = props
   return (
     <AlertDialog {...actions}>
-      <AlertDialogContent className={cn('bg-v3-card border border-v3-line shadow-v3-pop rounded-v3-card sm:rounded-[22px] p-6', className)}>
+      <AlertDialogContent className={cn('bg-card border border-line shadow-pop rounded-card sm:rounded-[22px] p-6', className)}>
         <AlertDialogHeader className='text-start'>
-          <AlertDialogTitle className="text-xl font-extrabold tracking-tight text-v3-ink">{title}</AlertDialogTitle>
+          <AlertDialogTitle className="text-xl font-extrabold tracking-tight text-ink">{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="text-[15px] text-v3-ink-2">{desc}</div>
+            <div className="text-[15px] text-ink-2">{desc}</div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         {children}
         <AlertDialogFooter className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-2">
           <AlertDialogPrimitive.Cancel asChild>
-            <V3Button variant="outline" disabled={isLoading}>
+            <Button variant="outline" disabled={isLoading}>
               {cancelBtnText ?? '取消'}
-            </V3Button>
+            </Button>
           </AlertDialogPrimitive.Cancel>
-          <V3Button
+          <Button
             type={form ? 'submit' : 'button'}
             form={form}
             onClick={handleConfirm}
@@ -66,7 +66,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             disabled={disabled || isLoading}
           >
             {confirmText ?? '继续'}
-          </V3Button>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

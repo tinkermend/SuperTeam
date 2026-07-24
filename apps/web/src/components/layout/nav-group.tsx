@@ -4,7 +4,7 @@ import { ChevronRight } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger,
+  CollapsibleTrigger
 } from '@/components/ui/collapsible'
 import {
   SidebarGroup,
@@ -15,7 +15,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  useSidebar,
+  useSidebar
 } from '@/components/ui/sidebar'
 import { Badge } from '../ui/badge'
 import {
@@ -24,13 +24,13 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from '../ui/dropdown-menu'
 import {
   type NavCollapsible,
   type NavItem,
   type NavLink,
-  type NavGroup as NavGroupProps,
+  type NavGroup as NavGroupProps
 } from './types'
 
 export function NavGroup({ title, items }: NavGroupProps) {
@@ -60,7 +60,7 @@ export function NavGroup({ title, items }: NavGroupProps) {
 
 function NavBadge({ children }: { children: ReactNode }) {
   return (
-    <Badge className='ms-auto h-5 min-w-5 rounded-full border border-transparent bg-v3-brand-soft px-1.5 py-0 text-xs font-bold leading-none text-v3-brand-deep shadow-none'>
+    <Badge className='ms-auto h-5 min-w-5 rounded-full border border-transparent bg-brand-soft px-1.5 py-0 text-xs font-bold leading-none text-brand-deep shadow-none'>
       {children}
     </Badge>
   )
@@ -100,7 +100,7 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
 
 function SidebarMenuCollapsible({
   item,
-  href,
+  href
 }: {
   item: NavCollapsible
   href: string
@@ -146,7 +146,7 @@ function SidebarMenuCollapsible({
 
 function SidebarMenuCollapsedDropdown({
   item,
-  href,
+  href
 }: {
   item: NavCollapsible
   href: string
@@ -174,7 +174,7 @@ function SidebarMenuCollapsedDropdown({
             <DropdownMenuItem key={`${sub.title}-${sub.url}`} asChild>
               <Link
                 to={sub.url}
-                className={`${checkIsActive(href, sub) ? 'bg-v3-brand-soft text-v3-brand-deep' : ''}`}
+                className={`${checkIsActive(href, sub) ? 'bg-brand-soft text-brand-deep' : ''}`}
               >
                 <NavIcon item={sub} />
                 <span className='max-w-52 text-wrap'>{sub.title}</span>

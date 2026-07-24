@@ -3,7 +3,7 @@ import {
   keepPreviousData,
   useMutation,
   useQuery,
-  useQueryClient,
+  useQueryClient
 } from "@tanstack/react-query";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import type { ApiClientOptions } from "@/lib/api/client";
@@ -15,22 +15,22 @@ import {
   type PermissionApprovalDecisionInput,
   type PermissionApprovalListFilters,
   type PermissionApprovalStatus,
-  type PermissionApprovalView,
+  type PermissionApprovalView
 } from "@/lib/api/permission-approvals";
 import {
   ObjectRef,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  WorkSurface,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  WorkSurface
 } from "@/components/superteam";
 import {
   permissionResourceTypeLabel,
   riskLevelLabel,
-  statusLabel,
+  statusLabel
 } from "@/lib/status-labels";
 import { PermissionApprovalDialog } from "./permission-approval-dialog";
 
@@ -96,8 +96,8 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
       view,
       status,
       limit: 50,
-      offset: 0,
-    };
+      offset: 0
+};
     if (riskLevel) {
       next.risk_level = riskLevel;
     }
@@ -109,14 +109,14 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
     queryFn: () => listPermissionApprovals(apiOptions, filters),
     placeholderData: keepPreviousData,
     // 审批决策会触发外部 apply,无推送;靠轮询反映状态变化。
-    refetchInterval: 5000,
-  });
+    refetchInterval: 5000
+});
 
   const decisionMutation = useMutation({
     mutationFn: ({
       id,
-      input,
-    }: {
+      input
+}: {
       id: string;
       input: PermissionApprovalDecisionInput;
     }) => decidePermissionApproval(apiOptions, id, input),
@@ -143,8 +143,8 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
         next.delete(id);
         return next;
       });
-    },
-  });
+    }
+});
 
   const data = approvalsQuery.data;
   const items = data?.items ?? [];
@@ -152,29 +152,29 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
   return (
     <div className="space-y-5">
       {backgroundActionError ? (
-        <div className="rounded-v3-inner bg-v3-danger-soft p-4 text-sm text-v3-danger" role="alert">
+        <div className="rounded-inner bg-danger-soft p-4 text-sm text-danger" role="alert">
           <p className="font-bold">操作未完成</p>
-          <p className="mt-1 text-v3-ink-2">{backgroundActionError.message}</p>
+          <p className="mt-1 text-ink-2">{backgroundActionError.message}</p>
         </div>
       ) : null}
 
       {data ? (
         <section className="grid gap-4 sm:grid-cols-3">
-          <V3MetricCard
+          <MetricCard
             icon={<ShieldCheck />}
             iconTone="info"
             label="开放审批"
             value={data.summary.open_count}
             meta="待处理决策"
           />
-          <V3MetricCard
+          <MetricCard
             icon={<AlertTriangle />}
             iconTone="danger"
             label="高风险"
             value={data.summary.high_risk_count}
             meta="需优先确认"
           />
-          <V3MetricCard
+          <MetricCard
             icon={<AlertTriangle />}
             iconTone="warn"
             label="阻断"
@@ -185,10 +185,10 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
       ) : null}
 
       <WorkSurface className="min-w-0">
-        <div className="flex flex-col gap-3 border-b border-v3-line p-4">
+        <div className="flex flex-col gap-3 border-b border-line p-4">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-v3-ink">权限审批队列</h2>
-            <p className="mt-1 text-xs text-v3-ink-2">
+            <h2 className="text-sm font-semibold text-ink">权限审批队列</h2>
+            <p className="mt-1 text-xs text-ink-2">
               直读审批域（category=permission），与收件箱分离；决策会触发主体授权动作。
             </p>
           </div>
@@ -232,9 +232,9 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
           </div>
         </div>
 
-        {approvalsQuery.isLoading && !data ? <V3LoadingState label="加载权限审批" /> : null}
+        {approvalsQuery.isLoading && !data ? <LoadingState label="加载权限审批" /> : null}
         {approvalsQuery.isError && !data ? (
-          <V3ErrorState
+          <ErrorState
             title="权限审批加载失败"
             description={
               approvalsQuery.error instanceof Error
@@ -243,9 +243,9 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
             }
           />
         ) : null}
-        {data && items.length === 0 ? <V3EmptyState title="当前没有权限审批事项" /> : null}
+        {data && items.length === 0 ? <EmptyState title="当前没有权限审批事项" /> : null}
         {items.length > 0 ? (
-          <div className="divide-y divide-v3-line">
+          <div className="divide-y divide-line">
             {items.map((approval) => (
               <PermissionApprovalRow
                 approval={approval}
@@ -284,7 +284,7 @@ export function PermissionApprovalsQueue({ apiOptions }: PermissionApprovalsQueu
 
 function PermissionApprovalRow({
   approval,
-  onAction,
+  onAction
 }: {
   approval: PermissionApproval;
   onAction: (action: PermissionApprovalAction) => void;
@@ -295,7 +295,7 @@ function PermissionApprovalRow({
     <div className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h3 className="text-sm font-semibold text-v3-ink">{approval.title}</h3>
+          <h3 className="text-sm font-semibold text-ink">{approval.title}</h3>
           {approval.risk_level ? (
             <StatusPill tone={riskTone(approval.risk_level)}>
               {riskLevelLabel(approval.risk_level)}
@@ -308,17 +308,17 @@ function PermissionApprovalRow({
             {permissionResourceTypeLabel(approval.resource_type)}
           </StatusPill>
         </div>
-        <p className="mt-1 line-clamp-2 text-sm text-v3-ink-2">
+        <p className="mt-1 line-clamp-2 text-sm text-ink-2">
           {approval.summary ?? "等待处理"}
         </p>
-        <div className="mt-1 text-xs text-v3-ink-3">
+        <div className="mt-1 text-xs text-ink-3">
           申请人：
           <ObjectRef name={approval.requester_name} id={approval.requester_id} />
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
         {actions.slice(0, 3).map((action) => (
-          <V3Button
+          <Button
             key={action.key}
             size="sm"
             type="button"
@@ -332,7 +332,7 @@ function PermissionApprovalRow({
             onClick={() => onAction(action)}
           >
             {action.label}
-          </V3Button>
+          </Button>
         ))}
       </div>
     </div>
@@ -342,7 +342,7 @@ function PermissionApprovalRow({
 function FilterGroup({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="font-semibold text-v3-ink-2">{label}</span>
+      <span className="font-semibold text-ink-2">{label}</span>
       {children}
     </div>
   );
@@ -351,7 +351,7 @@ function FilterGroup({ children, label }: { children: React.ReactNode; label: st
 function FilterButton({
   active,
   children,
-  onClick,
+  onClick
 }: {
   active: boolean;
   children: React.ReactNode;
@@ -363,8 +363,8 @@ function FilterButton({
       onClick={onClick}
       className={
         active
-          ? "inline-flex h-7 items-center rounded-v3-inner bg-v3-brand-soft px-2.5 font-semibold text-v3-brand-deep"
-          : "inline-flex h-7 items-center rounded-v3-inner border border-v3-line bg-v3-card px-2.5 font-medium text-v3-ink-2 hover:bg-v3-card-soft hover:text-v3-ink"
+          ? "inline-flex h-7 items-center rounded-inner bg-brand-soft px-2.5 font-semibold text-brand-deep"
+          : "inline-flex h-7 items-center rounded-inner border border-line bg-card px-2.5 font-medium text-ink-2 hover:bg-card-soft hover:text-ink"
       }
     >
       {children}

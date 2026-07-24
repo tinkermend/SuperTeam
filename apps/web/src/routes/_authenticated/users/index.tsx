@@ -13,7 +13,7 @@ export const Route = createFileRoute("/_authenticated/users/")({
       result.user = search.user.trim();
     }
     return result;
-  },
+  }
 });
 
 function UsersRoute() {

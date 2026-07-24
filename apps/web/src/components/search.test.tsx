@@ -3,7 +3,7 @@ import { render } from 'vitest-browser-react'
 import { Search } from './search'
 
 vi.mock('@/context/search-provider', () => ({
-  useSearch: () => ({ setOpen: vi.fn() }),
+  useSearch: () => ({ setOpen: vi.fn() })
 }))
 
 describe('Search', () => {
@@ -12,8 +12,8 @@ describe('Search', () => {
 
     const searchButton = getByRole('button', { name: /搜索任务、数字员工、能力/ })
     await expect.element(searchButton).toBeInTheDocument()
-    await expect.element(searchButton).toHaveClass('bg-[var(--v3-shell-control)]')
+    await expect.element(searchButton).toHaveClass('bg-[var(--shell-control)]')
     await expect.element(searchButton).toHaveClass('backdrop-blur-md')
-    await expect.element(searchButton).toHaveClass('text-v3-ink-2')
+    await expect.element(searchButton).toHaveClass('text-ink-2')
   })
 })

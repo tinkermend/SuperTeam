@@ -13,39 +13,31 @@ import {
   FileText,
   GitBranch,
   MoreHorizontal,
-  Settings2,
+  Settings2
 } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger,
+  CollapsibleTrigger
 } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   IconTile,
   MasterDetailLayout,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -79,7 +71,7 @@ import type {
   ProjectTaskGraph,
   ProjectTaskGraphBlockingFact,
   ProjectTransferRequest,
-  WorkspaceReadyStatus,
+  WorkspaceReadyStatus
 } from "@/lib/api/projects";
 import {
   decisionStatusLabel,
@@ -87,7 +79,7 @@ import {
   projectStatusLabel,
   statusLabel,
   taskStatusLabel,
-  workspaceReadyStatusLabel,
+  workspaceReadyStatusLabel
 } from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
@@ -99,7 +91,7 @@ import { ProjectOwnerAvatarStack } from "./project-owner-avatar-stack";
 import {
   assetsInitialTabFromQuery,
   normalizeProjectDetailSection,
-  type ProjectDetailSection,
+  type ProjectDetailSection
 } from "../lib/project-detail-section";
 import type { UserIdentityData } from "@/components/superteam/user-identity";
 
@@ -161,7 +153,7 @@ type ProjectOperationalDetailProps = {
 };
 
 const sectionTriggerClass =
-  "h-auto flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-3.5 pb-2.5 pt-1 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:border-v3-brand data-[state=active]:bg-transparent data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-transparent data-[state=inactive]:hover:text-v3-ink";
+  "h-auto flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-3.5 pb-2.5 pt-1 text-[13px] font-semibold text-ink-2 shadow-none transition-colors data-[state=active]:border-brand data-[state=active]:bg-transparent data-[state=active]:text-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-transparent data-[state=inactive]:hover:text-ink";
 
 export function ProjectOperationalDetail({
   acceptance,
@@ -208,7 +200,7 @@ export function ProjectOperationalDetail({
   runtimePlacementPanel,
   taskGraph,
   tasks,
-  transferRequests,
+  transferRequests
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const initialSection = normalizeProjectDetailSection(
@@ -232,7 +224,7 @@ export function ProjectOperationalDetail({
 
   if (!project) {
     return (
-      <SoftCard className="flex min-h-[460px] items-center justify-center p-8 text-sm text-v3-ink-2">
+      <SoftCard className="flex min-h-[460px] items-center justify-center p-8 text-sm text-ink-2">
         从左侧选择一个项目查看运行详情
       </SoftCard>
     );
@@ -284,7 +276,7 @@ export function ProjectOperationalDetail({
             </IconTile>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-xl font-semibold tracking-normal text-v3-ink">
+                <h2 className="truncate text-xl font-semibold tracking-normal text-ink">
                   {project.name}
                 </h2>
                 <StatusPill tone={projectStatusTone(project.status)}>
@@ -304,28 +296,28 @@ export function ProjectOperationalDetail({
                   usersById={usersById}
                 />
               ) : null}
-              <p className="mt-1 text-xs text-v3-ink-3">
+              <p className="mt-1 text-xs text-ink-3">
                 <span>目录名</span>{" "}
-                <span className="font-mono text-[12px] font-medium text-v3-ink">
+                <span className="font-mono text-[12px] font-medium text-ink">
                   {project.directory_name || project.name}
                 </span>
                 {project.workspace_ready_error
                   ? ` · ${project.workspace_ready_error}`
                   : ""}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-v3-ink-2">
+              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-2">
                 <HeroFactLink
                   label={`阻塞 ${pendingOwnerDecisions.length}`}
                   targetId="project-overview-pending"
                 />
-                <span aria-hidden className="text-v3-ink-3">·</span>
+                <span aria-hidden className="text-ink-3">·</span>
                 <HeroFactLink
                   label={`执行中 ${activeTasks.length}`}
                   targetId="project-overview-execution"
                 />
                 {latestDemand ? (
                   <>
-                    <span aria-hidden className="text-v3-ink-3">·</span>
+                    <span aria-hidden className="text-ink-3">·</span>
                     <span className="max-w-56 truncate">
                       需求 {latestDemand.title}
                     </span>
@@ -336,12 +328,12 @@ export function ProjectOperationalDetail({
           </div>
           <div className="flex flex-wrap gap-2">
             {isArchived ? (
-              <V3Button disabled type="button">
+              <Button disabled type="button">
                 <FileText data-icon="inline-start" />
                 提交需求
-              </V3Button>
+              </Button>
             ) : (
-              <V3Button asChild>
+              <Button asChild>
                 <Link
                   search={{ mode: "plan", project: project.id }}
                   to="/task-launches"
@@ -349,18 +341,18 @@ export function ProjectOperationalDetail({
                   <FileText data-icon="inline-start" />
                   提交需求
                 </Link>
-              </V3Button>
+              </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <V3Button
+                <Button
                   aria-label="更多项目操作"
                   size="icon"
                   type="button"
                   variant="outline"
                 >
                   <MoreHorizontal />
-                </V3Button>
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>
@@ -411,10 +403,10 @@ export function ProjectOperationalDetail({
         value={activeSection}
         onValueChange={(value) => setActiveSection(value as ProjectDetailSection)}
       >
-        <div className="min-w-0 w-full border-b border-v3-line">
+        <div className="min-w-0 w-full border-b border-line">
           <TabsList
             aria-label="项目工作区段"
-            className="flex h-auto w-full min-w-0 max-w-none justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 text-v3-ink shadow-none"
+            className="flex h-auto w-full min-w-0 max-w-none justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 text-ink shadow-none"
           >
             <TabsTrigger className={sectionTriggerClass} value="workbench">
               工作台
@@ -453,8 +445,8 @@ export function ProjectOperationalDetail({
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <div
               className={cn(
-                "overflow-hidden rounded-[12px] border border-dashed border-v3-line",
-                advancedOpen ? "border-solid bg-v3-card shadow-v3" : "bg-transparent",
+                "overflow-hidden rounded-[12px] border border-dashed border-line",
+                advancedOpen ? "border-solid bg-card shadow-card" : "bg-transparent",
               )}
             >
               <CollapsibleTrigger asChild>
@@ -462,21 +454,21 @@ export function ProjectOperationalDetail({
                   aria-label={advancedOpen ? "收起高级项目事实" : "展开高级项目事实"}
                   className={cn(
                     "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left",
-                    advancedOpen && "border-b border-v3-line",
+                    advancedOpen && "border-b border-line",
                   )}
                   type="button"
                 >
                   <span className="min-w-0">
-                    <span className="block text-[12.5px] font-semibold text-v3-ink-2">
+                    <span className="block text-[12.5px] font-semibold text-ink-2">
                       高级项目事实
                     </span>
                     {!advancedOpen ? (
-                      <span className="mt-0.5 block text-[11px] text-v3-ink-3">
+                      <span className="mt-0.5 block text-[11px] text-ink-3">
                         计划图 · 需求 · 执行记录 · 治理
                       </span>
                     ) : null}
                   </span>
-                  <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-semibold text-v3-ink-3">
+                  <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-semibold text-ink-3">
                     {advancedOpen ? "收起" : "展开"}
                     <ChevronDown
                       className={cn("size-3.5 transition-transform", advancedOpen && "rotate-180")}
@@ -494,7 +486,7 @@ export function ProjectOperationalDetail({
                       {taskGraph && taskGraph.nodes.length > 0 ? (
                         <section className="grid gap-2" data-testid="project-plan-graph-section">
                           <div className="flex items-center gap-2 px-1">
-                            <ClipboardList className="size-4 text-v3-ink-2" />
+                            <ClipboardList className="size-4 text-ink-2" />
                             <h3 className="text-sm font-semibold tracking-normal">当前执行图</h3>
                           </div>
                           <PlanGraphCanvas graph={taskGraph} />
@@ -585,7 +577,7 @@ export function ProjectOperationalDetail({
                                     <StatusPill tone="ok">自动接受</StatusPill>
                                   )}
                                 </div>
-                                <p className="mt-2 line-clamp-2 text-sm text-v3-ink-2">
+                                <p className="mt-2 line-clamp-2 text-sm text-ink-2">
                                   {planRevisionSummary(latestPlanRevision)}
                                 </p>
                               </div>
@@ -595,7 +587,7 @@ export function ProjectOperationalDetail({
                                   data-testid="plan-review-inbox-only"
                                 >
                                   <StatusPill tone="warn">待收件箱处理</StatusPill>
-                                  <p className="max-w-[220px] text-right text-[11px] leading-4 text-v3-ink-3">
+                                  <p className="max-w-[220px] text-right text-[11px] leading-4 text-ink-3">
                                     计划确认请在收件箱处理（§6.3 决策历史只读）
                                   </p>
                                 </div>
@@ -635,10 +627,10 @@ export function ProjectOperationalDetail({
                             <div className="grid gap-3">
                               <div className="grid gap-2" data-testid="plan-dispatch-order">
                                 <div className="flex items-center gap-2 px-1">
-                                  <ClipboardList className="size-4 text-v3-ink-2" />
-                                  <h4 className="text-sm font-semibold text-v3-ink">调度顺序</h4>
+                                  <ClipboardList className="size-4 text-ink-2" />
+                                  <h4 className="text-sm font-semibold text-ink">调度顺序</h4>
                                 </div>
-                                <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                                <div className="divide-y divide-line rounded-inner border border-line">
                                   {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
                                     (task, index) => (
                                       <div
@@ -646,7 +638,7 @@ export function ProjectOperationalDetail({
                                         key={`${planRevisionTaskKey(task)}-${index}`}
                                       >
                                         <div className="flex items-start justify-between gap-3">
-                                          <p className="min-w-0 text-sm font-medium text-v3-ink">
+                                          <p className="min-w-0 text-sm font-medium text-ink">
                                             {planRevisionTaskTitle(task)}
                                           </p>
                                           <StatusPill tone="info">第 {index + 1} 步</StatusPill>
@@ -677,10 +669,10 @@ export function ProjectOperationalDetail({
 
                               <div className="grid gap-2" data-testid="plan-acceptance-criteria">
                                 <div className="flex items-center gap-2 px-1">
-                                  <FileCheck2 className="size-4 text-v3-ink-2" />
-                                  <h4 className="text-sm font-semibold text-v3-ink">验收判据</h4>
+                                  <FileCheck2 className="size-4 text-ink-2" />
+                                  <h4 className="text-sm font-semibold text-ink">验收判据</h4>
                                 </div>
-                                <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                                <div className="divide-y divide-line rounded-inner border border-line">
                                   {planRevisionAcceptanceCriteria(latestPlanRevision).map(
                                     (criterion, index) => {
                                       const criterionId =
@@ -719,7 +711,7 @@ export function ProjectOperationalDetail({
                                           />
                                           {isAmbiguous ? (
                                             <p
-                                              className="flex items-center gap-1.5 text-xs font-medium text-v3-warn-text"
+                                              className="flex items-center gap-1.5 text-xs font-medium text-warn-text"
                                               data-testid={`plan-acceptance-criterion-ambiguity-${criterionId}`}
                                             >
                                               <AlertTriangle className="size-3.5 shrink-0" />
@@ -728,7 +720,7 @@ export function ProjectOperationalDetail({
                                           ) : null}
                                           {evidenceHint ? (
                                             <p
-                                              className="text-xs text-v3-ink-3"
+                                              className="text-xs text-ink-3"
                                               data-testid={`plan-acceptance-criterion-evidence-hint-${criterionId}`}
                                             >
                                               证据提示：{evidenceHint}
@@ -754,10 +746,10 @@ export function ProjectOperationalDetail({
                               {planRevisionConstraintNotes(latestPlanRevision).length > 0 ? (
                                 <div className="grid gap-2" data-testid="plan-constraint-notes">
                                   <div className="flex items-center gap-2 px-1">
-                                    <FileCheck2 className="size-4 text-v3-ink-2" />
-                                    <h4 className="text-sm font-semibold text-v3-ink">约束说明</h4>
+                                    <FileCheck2 className="size-4 text-ink-2" />
+                                    <h4 className="text-sm font-semibold text-ink">约束说明</h4>
                                   </div>
-                                  <div className="divide-y divide-v3-line rounded-v3-inner border border-v3-line">
+                                  <div className="divide-y divide-line rounded-inner border border-line">
                                     {planRevisionConstraintNotes(latestPlanRevision).map(
                                       (note, index) => (
                                         <div
@@ -767,7 +759,7 @@ export function ProjectOperationalDetail({
                                           <StatusPill tone={constraintNoteTone(note.kind)}>
                                             {constraintNoteKindLabel(note.kind)}
                                           </StatusPill>
-                                          <p className="min-w-0 flex-1 text-xs text-v3-ink-2">
+                                          <p className="min-w-0 flex-1 text-xs text-ink-2">
                                             {note.message}
                                           </p>
                                         </div>
@@ -806,7 +798,7 @@ export function ProjectOperationalDetail({
 
 function DispatchGateSummary({
   gates,
-  taskTitle,
+  taskTitle
 }: {
   gates: DispatchGateResult[];
   taskTitle?: string;
@@ -819,9 +811,9 @@ function DispatchGateSummary({
     <SoftCard className="p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-v3-ink">Dispatch gate 技术详情</h3>
+          <h3 className="text-sm font-semibold text-ink">Dispatch gate 技术详情</h3>
           {taskTitle ? (
-            <p className="mt-1 truncate text-xs text-v3-ink-2">{taskTitle}</p>
+            <p className="mt-1 truncate text-xs text-ink-2">{taskTitle}</p>
           ) : null}
         </div>
         <StatusPill tone={dispatchGateTone(latest.status)}>
@@ -832,10 +824,10 @@ function DispatchGateSummary({
         <ul className="mt-3 space-y-2">
           {latest.blockers.map((blocker) => (
             <li
-              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-v3-ink-2"
+              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2"
               key={`${latest.id}-${blocker.key}`}
             >
-              <span className="min-w-0 break-all font-mono text-xs text-v3-ink">
+              <span className="min-w-0 break-all font-mono text-xs text-ink">
                 {blocker.key}
               </span>
               <span className="text-xs">
@@ -846,7 +838,7 @@ function DispatchGateSummary({
         </ul>
       ) : null}
       {latest.retry_after ? (
-        <p className="mt-2 text-xs text-v3-ink-2">
+        <p className="mt-2 text-xs text-ink-2">
           {`下次重试 ${formatDateTime(latest.retry_after)}`}
         </p>
       ) : null}
@@ -855,7 +847,7 @@ function DispatchGateSummary({
 }
 
 function AdvancedRouteDecisions({
-  routeDecisions,
+  routeDecisions
 }: {
   routeDecisions: ProjectRouteDecision[];
 }) {
@@ -866,7 +858,7 @@ function AdvancedRouteDecisions({
         title="路由决策"
         meta={`${routeDecisions.length} 条`}
       />
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {routeDecisions.length === 0 ? (
           <EmptyLine label="暂无路由决策" />
         ) : (
@@ -899,7 +891,7 @@ function AdvancedRouteDecisions({
 }
 
 function AdvancedCoordinationJobs({
-  coordinationJobs,
+  coordinationJobs
 }: {
   coordinationJobs: ProjectCoordinationJob[];
 }) {
@@ -910,7 +902,7 @@ function AdvancedCoordinationJobs({
         title="协调任务"
         meta={`${coordinationJobs.length} 条`}
       />
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {coordinationJobs.length === 0 ? (
           <EmptyLine label="暂无协调任务" />
         ) : (
@@ -922,7 +914,7 @@ function AdvancedCoordinationJobs({
                 </p>
                 <StatusPill tone={jobTone(job.status)}>{statusLabel(job.status)}</StatusPill>
               </div>
-              <p className="truncate text-xs text-v3-ink-2">
+              <p className="truncate text-xs text-ink-2">
                 {job.workflow_id}
               </p>
             </div>
@@ -934,7 +926,7 @@ function AdvancedCoordinationJobs({
 }
 
 function AdvancedExecutionSummaries({
-  executionSummaries,
+  executionSummaries
 }: {
   executionSummaries: ProjectExecutionSummary[];
 }) {
@@ -945,7 +937,7 @@ function AdvancedExecutionSummaries({
         title="执行摘要"
         meta={`${executionSummaries.length} 条`}
       />
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {executionSummaries.length === 0 ? (
           <EmptyLine label="暂无执行回写摘要" />
         ) : (
@@ -966,7 +958,7 @@ function AdvancedExecutionSummaries({
                 value={summary.digital_employee_id}
               />
               {summary.recommended_next_action ? (
-                <p className="line-clamp-2 text-xs text-v3-ink-2">
+                <p className="line-clamp-2 text-xs text-ink-2">
                   {summary.recommended_next_action}
                 </p>
               ) : null}
@@ -979,7 +971,7 @@ function AdvancedExecutionSummaries({
 }
 
 function AdvancedTransferRequests({
-  transferRequests,
+  transferRequests
 }: {
   transferRequests: ProjectTransferRequest[];
 }) {
@@ -990,7 +982,7 @@ function AdvancedTransferRequests({
         title="转派请求"
         meta={`${transferRequests.length} 条`}
       />
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {transferRequests.length === 0 ? (
           <EmptyLine label="暂无转派请求" />
         ) : (
@@ -1022,7 +1014,7 @@ function AdvancedTransferRequests({
 
 function AdvancedWorkflow({
   project,
-  overview,
+  overview
 }: {
   project: Project;
   overview?: ProjectOverview;
@@ -1038,7 +1030,7 @@ function AdvancedWorkflow({
         <p className="truncate text-sm font-medium">
           {project.coordination_workflow_id}
         </p>
-        <p className="mt-1 text-xs text-v3-ink-2">
+        <p className="mt-1 text-xs text-ink-2">
           虚拟协调线程，仅作为项目 Workflow 元数据展示。
         </p>
       </div>
@@ -1048,7 +1040,7 @@ function AdvancedWorkflow({
 
 function AdvancedDemands({
   demands,
-  blockingFact,
+  blockingFact
 }: {
   blockingFact?: ProjectTaskGraphBlockingFact;
   demands: ProjectDemand[];
@@ -1060,7 +1052,7 @@ function AdvancedDemands({
         title="需求记录"
         meta={`${demands.length} 条`}
       />
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {demands.length === 0 ? (
           <EmptyLine label="暂无提交到项目的需求" />
         ) : (
@@ -1072,7 +1064,7 @@ function AdvancedDemands({
                 </p>
                 <StatusPill tone="mute">{demand.source_type}</StatusPill>
               </div>
-              <p className="line-clamp-2 text-xs text-v3-ink-2">
+              <p className="line-clamp-2 text-xs text-ink-2">
                 {demand.content || "需求内容已记录"}
               </p>
               {demand.status === "failed" ? (
@@ -1092,21 +1084,21 @@ function AdvancedDemands({
 function FactTile({
   icon,
   label,
-  value,
+  value
 }: {
   icon: ReactNode;
   label: string;
   value: string;
 }) {
   return (
-    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
-      <div className="flex items-center gap-2 text-xs text-v3-ink-2">
+    <div className="min-w-0 rounded-inner bg-card-soft p-3">
+      <div className="flex items-center gap-2 text-xs text-ink-2">
         <IconTile tone="mute" size="sm" className="size-8 rounded-[10px] [&_svg]:size-3.5">
           {icon}
         </IconTile>
         {label}
       </div>
-      <p className="mt-2 truncate text-sm font-semibold text-v3-ink">{value}</p>
+      <p className="mt-2 truncate text-sm font-semibold text-ink">{value}</p>
     </div>
   );
 }
@@ -1114,7 +1106,7 @@ function FactTile({
 function HeroFactLink({
   className,
   label,
-  targetId,
+  targetId
 }: {
   className?: string;
   label: string;
@@ -1123,7 +1115,7 @@ function HeroFactLink({
   return (
     <button
       className={cn(
-        "rounded-sm font-medium underline-offset-2 transition-colors hover:text-v3-ink hover:underline",
+        "rounded-sm font-medium underline-offset-2 transition-colors hover:text-ink hover:underline",
         className,
       )}
       type="button"
@@ -1141,19 +1133,19 @@ function HeroFactLink({
 function PanelHeader({
   icon,
   meta,
-  title,
+  title
 }: {
   icon: ReactNode;
   meta: string;
   title: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+    <div className="flex items-center justify-between gap-3 border-b border-line p-4">
       <div className="flex items-center gap-2">
         <IconTile tone="brand" size="sm" className="size-8 rounded-[10px] [&_svg]:size-3.5">
           {icon}
         </IconTile>
-        <h3 className="font-semibold text-v3-ink">{title}</h3>
+        <h3 className="font-semibold text-ink">{title}</h3>
       </div>
       <StatusPill tone="mute" showDot={false}>{meta}</StatusPill>
     </div>
@@ -1165,7 +1157,7 @@ export function MemberPanel({
   icon,
   members,
   principalNamesById,
-  title,
+  title
 }: {
   emptyLabel: string;
   icon: ReactNode;
@@ -1176,7 +1168,7 @@ export function MemberPanel({
   return (
     <SoftCard className="overflow-hidden">
       <PanelHeader icon={icon} title={title} meta={`${members.length} 个`} />
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {members.length === 0 ? (
           <EmptyLine label={emptyLabel} />
         ) : (
@@ -1197,7 +1189,7 @@ export function MemberPanel({
 
 function MemberRow({
   member,
-  principalNamesById,
+  principalNamesById
 }: {
   member: ProjectMember;
   principalNamesById?: ReadonlyMap<string, string>;
@@ -1210,12 +1202,12 @@ function MemberRow({
   const content = (
     <>
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-v3-ink">{name}</p>
-        <p className="truncate text-xs text-v3-ink-2">
+        <p className="truncate text-sm font-medium text-ink">{name}</p>
+        <p className="truncate text-xs text-ink-2">
           {projectMemberBusinessLabel(member)}
         </p>
       </div>
-      <ExternalLink className="size-3.5 text-v3-ink-2" />
+      <ExternalLink className="size-3.5 text-ink-2" />
     </>
   );
   const href = projectMemberHref(member);
@@ -1225,7 +1217,7 @@ function MemberRow({
   }
 
   return (
-    <Link className="flex items-center justify-between gap-3 p-4 hover:bg-v3-card-soft" to={href}>
+    <Link className="flex items-center justify-between gap-3 p-4 hover:bg-card-soft" to={href}>
       {content}
     </Link>
   );
@@ -1233,12 +1225,12 @@ function MemberRow({
 
 export function DemandTitle({ demand }: { demand: ProjectDemand }) {
   if (!demand.id) {
-    return <p className="text-sm font-semibold text-v3-ink">{demand.title}</p>;
+    return <p className="text-sm font-semibold text-ink">{demand.title}</p>;
   }
 
   return (
     <Link
-      className="text-sm font-semibold text-v3-brand-deep hover:text-v3-brand"
+      className="text-sm font-semibold text-brand-deep hover:text-brand"
       params={{ demandId: demand.id }}
       to="/workflows/$demandId"
     >
@@ -1254,21 +1246,21 @@ export function DemandTitle({ demand }: { demand: ProjectDemand }) {
  */
 function DemandFailureDiagnosis({
   demandId,
-  fact,
+  fact
 }: {
   demandId: string;
   fact?: ProjectTaskGraphBlockingFact;
 }) {
   return (
-    <div className="grid gap-1 rounded-[14px] border border-v3-danger/25 bg-v3-danger/5 p-3">
-      <p className="text-xs leading-5 text-v3-ink-2">
+    <div className="grid gap-1 rounded-[14px] border border-danger/25 bg-danger/5 p-3">
+      <p className="text-xs leading-5 text-ink-2">
         {fact?.message ?? "规划已终止，需要人工处理。"}
       </p>
       {fact?.recommended_action ? (
-        <p className="text-xs leading-5 text-v3-ink-2">下一步：{fact.recommended_action}</p>
+        <p className="text-xs leading-5 text-ink-2">下一步：{fact.recommended_action}</p>
       ) : null}
       <Link
-        className="text-xs font-semibold text-v3-brand-deep hover:text-v3-brand"
+        className="text-xs font-semibold text-brand-deep hover:text-brand"
         params={{ demandId }}
         to="/workflows/$demandId"
       >
@@ -1282,7 +1274,7 @@ function ProjectTaskLink({ task }: { task: ProjectTask }) {
   if (task.assigned_digital_employee_id) {
     return (
       <Link
-        className="min-w-0 truncate text-sm font-medium text-v3-brand-deep hover:text-v3-brand"
+        className="min-w-0 truncate text-sm font-medium text-brand-deep hover:text-brand"
         params={{ employeeId: task.assigned_digital_employee_id }}
         to="/employees/$employeeId"
       >
@@ -1298,7 +1290,7 @@ function ProjectTasksPanel({
   decisionRequests,
   dismissTaskPending,
   onDismissTask,
-  tasks,
+  tasks
 }: {
   decisionRequests?: ProjectDecisionRequest[];
   dismissTaskPending?: boolean;
@@ -1345,17 +1337,17 @@ function ProjectTasksPanel({
 
   return (
     <WorkSurface className="min-w-0">
-      <div className="flex flex-col gap-3 border-b border-v3-line p-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-v3-ink">项目任务</h3>
-          <p className="mt-1 text-xs text-v3-ink-2">
+          <h3 className="text-sm font-semibold text-ink">项目任务</h3>
+          <p className="mt-1 text-xs text-ink-2">
             基于当前 project tasks 数据展示状态、员工和项目上下文。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <select
             aria-label="任务状态"
-            className="h-9 rounded-v3-inner border border-v3-line bg-v3-card px-3 text-xs font-semibold text-v3-ink"
+            className="h-9 rounded-inner border border-line bg-card px-3 text-xs font-semibold text-ink"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
           >
@@ -1368,7 +1360,7 @@ function ProjectTasksPanel({
           </select>
           <select
             aria-label="执行员工"
-            className="h-9 rounded-v3-inner border border-v3-line bg-v3-card px-3 text-xs font-semibold text-v3-ink"
+            className="h-9 rounded-inner border border-line bg-card px-3 text-xs font-semibold text-ink"
             value={employeeFilter}
             onChange={(event) => setEmployeeFilter(event.target.value)}
           >
@@ -1381,23 +1373,23 @@ function ProjectTasksPanel({
           </select>
         </div>
       </div>
-      <V3Table>
+      <DataTable>
         <thead>
           <tr>
-            <V3Th className="min-w-[220px]">任务</V3Th>
-            <V3Th>状态</V3Th>
-            <V3Th>员工</V3Th>
-            <V3Th>更新</V3Th>
-            <V3Th>操作</V3Th>
+            <Th className="min-w-[220px]">任务</Th>
+            <Th>状态</Th>
+            <Th>员工</Th>
+            <Th>更新</Th>
+            <Th>操作</Th>
           </tr>
         </thead>
         <tbody>
           {filteredTasks.length === 0 ? (
-            <V3Tr>
-              <V3Td colSpan={5}>
+            <Tr>
+              <Td colSpan={5}>
                 <EmptyLine label="当前筛选下没有项目任务" />
-              </V3Td>
-            </V3Tr>
+              </Td>
+            </Tr>
           ) : (
             filteredTasks.map((task) => {
               const activityAt = task.updated_at ?? task.created_at;
@@ -1413,20 +1405,20 @@ function ProjectTasksPanel({
                     ),
                 );
               return (
-              <V3Tr key={task.id}>
-                <V3Td className="min-w-[220px]">
+              <Tr key={task.id}>
+                <Td className="min-w-[220px]">
                   <ProjectTaskLink task={task} />
                   {task.summary ? (
-                    <p className="mt-1 line-clamp-2 text-xs text-v3-ink-2">{task.summary}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-ink-2">{task.summary}</p>
                   ) : null}
-                </V3Td>
-                <V3Td>
+                </Td>
+                <Td>
                   <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
-                </V3Td>
-                <V3Td className="font-mono text-xs text-v3-ink-2">
+                </Td>
+                <Td className="font-mono text-xs text-ink-2">
                   {task.assigned_digital_employee_id ? (
                     <Link
-                      className="text-v3-brand-deep hover:text-v3-brand"
+                      className="text-brand-deep hover:text-brand"
                       params={{ employeeId: task.assigned_digital_employee_id }}
                       to="/employees/$employeeId"
                     >
@@ -1435,8 +1427,8 @@ function ProjectTasksPanel({
                   ) : (
                     "未分派"
                   )}
-                </V3Td>
-                <V3Td className="whitespace-nowrap tabular-nums text-xs text-v3-ink-2">
+                </Td>
+                <Td className="whitespace-nowrap tabular-nums text-xs text-ink-2">
                   {activityAt ? (
                     <time dateTime={activityAt} title={formatAbsoluteDateTime(activityAt)}>
                       {formatRelativeTime(activityAt)}
@@ -1444,10 +1436,10 @@ function ProjectTasksPanel({
                   ) : (
                     "—"
                   )}
-                </V3Td>
-                <V3Td>
+                </Td>
+                <Td>
                   {canDismiss ? (
-                    <V3Button
+                    <Button
                       disabled={dismissTaskPending}
                       size="sm"
                       variant="outline"
@@ -1462,24 +1454,24 @@ function ProjectTasksPanel({
                       }}
                     >
                       清理任务
-                    </V3Button>
+                    </Button>
                   ) : (
-                    <span className="text-xs text-v3-ink-3">—</span>
+                    <span className="text-xs text-ink-3">—</span>
                   )}
-                </V3Td>
-              </V3Tr>
+                </Td>
+              </Tr>
               );
             })
           )}
         </tbody>
-      </V3Table>
+      </DataTable>
     </WorkSurface>
   );
 }
 
 function ProjectApprovalPanel({
   decisionRequests,
-  focusDecisionId,
+  focusDecisionId
 }: {
   decisionRequests: ProjectDecisionRequest[];
   focusDecisionId?: string;
@@ -1494,13 +1486,13 @@ function ProjectApprovalPanel({
 
   return (
     <WorkSurface className="min-w-0">
-      <div className="border-b border-v3-line p-4">
-        <h3 className="text-sm font-semibold text-v3-ink">决策历史</h3>
-        <p className="mt-1 text-xs text-v3-ink-2">
+      <div className="border-b border-line p-4">
+        <h3 className="text-sm font-semibold text-ink">决策历史</h3>
+        <p className="mt-1 text-xs text-ink-2">
           只读汇总本项目决策记录；待办请在收件箱处理。
         </p>
       </div>
-      <div className="divide-y divide-v3-line">
+      <div className="divide-y divide-line">
         {orderedDecisions.length === 0 ? (
           <EmptyLine label="当前项目没有决策记录" />
         ) : (
@@ -1518,7 +1510,7 @@ function ProjectApprovalPanel({
             <div
               className={cn(
                 "grid gap-3 p-4",
-                decision.id === focusDecisionId && "bg-v3-brand-soft shadow-[inset_3px_0_0_var(--v3-brand)]",
+                decision.id === focusDecisionId && "bg-brand-soft shadow-[inset_3px_0_0_var(--brand)]",
               )}
               data-focused-decision={decision.id === focusDecisionId ? "true" : undefined}
               id={`decision-${decision.id}`}
@@ -1526,15 +1518,15 @@ function ProjectApprovalPanel({
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-v3-ink">{decision.title_snapshot}</p>
-                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-v3-ink-2">
+                  <p className="text-sm font-semibold text-ink">{decision.title_snapshot}</p>
+                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-ink-2">
                     {decision.summary_snapshot && decision.summary_snapshot !== decision.title_snapshot
                       ? decision.summary_snapshot
                       : isResolved
                         ? "已处理"
                         : "待收件箱处理"}
                   </p>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-v3-ink-3">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-3">
                     {timeValue ? (
                       <time
                         className="tabular-nums"
@@ -1562,7 +1554,7 @@ function ProjectApprovalPanel({
 
 function EmptyLine({ action, label }: { action?: ReactNode; label: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-v3-ink-2">
+    <div className="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-ink-2">
       <span>{label}</span>
       {action}
     </div>
@@ -1573,7 +1565,7 @@ const PLAN_ACCEPTANCE_STATEMENT_EXPAND_THRESHOLD = 80;
 
 function PlanAcceptanceCriterionStatement({
   criterionId,
-  statement,
+  statement
 }: {
   criterionId: string;
   statement: string;
@@ -1586,7 +1578,7 @@ function PlanAcceptanceCriterionStatement({
     <div className="grid gap-1">
       <p
         className={cn(
-          "break-words text-sm leading-6 text-v3-ink",
+          "break-words text-sm leading-6 text-ink",
           isExpandable && !expanded && "line-clamp-3",
         )}
         data-testid={`plan-acceptance-criterion-statement-${criterionId}`}
@@ -1594,7 +1586,7 @@ function PlanAcceptanceCriterionStatement({
         {text}
       </p>
       {isExpandable ? (
-        <V3Button
+        <Button
           aria-label={
             expanded ? `收起验收判据 ${criterionId}` : `展开验收判据 ${criterionId}`
           }
@@ -1605,7 +1597,7 @@ function PlanAcceptanceCriterionStatement({
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "收起" : "展开"}
-        </V3Button>
+        </Button>
       ) : null}
     </div>
   );
@@ -1614,8 +1606,8 @@ function PlanAcceptanceCriterionStatement({
 function RuntimeMeta({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 text-xs">
-      <span className="shrink-0 text-v3-ink-2">{label}</span>
-      <span className="min-w-0 truncate font-medium text-v3-ink">{value}</span>
+      <span className="shrink-0 text-ink-2">{label}</span>
+      <span className="min-w-0 truncate font-medium text-ink">{value}</span>
     </div>
   );
 }
@@ -1649,122 +1641,122 @@ export function projectEventDisplay(event: ProjectEvent) {
   const labels: Record<string, { summary: string; title: string }> = {
     "coordination_job.created": {
       summary: "系统已开始推进下一步项目工作。",
-      title: "项目推进已启动",
-    },
+      title: "项目推进已启动"
+},
     "decision.requested": {
       summary: "有事项需要项目负责人处理。",
-      title: "等待负责人处理",
-    },
+      title: "等待负责人处理"
+},
     "decision.submitted": {
       summary: "负责人处理结果已记录。",
-      title: "负责人已处理",
-    },
+      title: "负责人已处理"
+},
     "demand.submitted": {
       summary: "新的项目需求已进入处理队列。",
-      title: "需求已提交",
-    },
+      title: "需求已提交"
+},
     "project.acceptance.submitted": {
       summary: "项目验收结论已提交。",
-      title: "验收结论已提交",
-    },
+      title: "验收结论已提交"
+},
     "project.archive.retention_pending": {
       summary: "项目归档前仍有保留事项待处理。",
-      title: "归档保留事项待处理",
-    },
+      title: "归档保留事项待处理"
+},
     "project.archive_snapshot.created": {
       summary: "项目归档快照已生成。",
-      title: "归档快照已生成",
-    },
+      title: "归档快照已生成"
+},
     "project.archived": {
       summary: "项目已归档关闭。",
-      title: "项目已归档",
-    },
+      title: "项目已归档"
+},
     "project.artifact.linked": {
       summary: "新的项目工件已关联。",
-      title: "工件已关联",
-    },
+      title: "工件已关联"
+},
     "project.budget.recorded": {
       summary: "项目预算记录已更新。",
-      title: "预算记录已更新",
-    },
+      title: "预算记录已更新"
+},
     "project.config.changed": {
       summary: "项目配置已更新。",
-      title: "配置已更新",
-    },
+      title: "配置已更新"
+},
     "project.created": {
       summary: "项目已创建。",
-      title: "项目已创建",
-    },
+      title: "项目已创建"
+},
     "project.evidence.linked": {
       summary: "新的项目证据已关联。",
-      title: "证据已关联",
-    },
+      title: "证据已关联"
+},
     "project.evidence.verified": {
       summary: "项目证据已完成核验。",
-      title: "证据已核验",
-    },
+      title: "证据已核验"
+},
     "project.report.linked": {
       summary: "项目报告已关联。",
-      title: "报告已关联",
-    },
+      title: "报告已关联"
+},
     "project_task.completed": {
       summary: "数字员工任务已完成并回写结果。",
-      title: "执行任务已完成",
-    },
+      title: "执行任务已完成"
+},
     "project_task.created": {
       summary: "新的执行任务已进入项目推进队列。",
-      title: "执行任务已创建",
-    },
+      title: "执行任务已创建"
+},
     "project_task.dispatched": {
       summary: "系统已安排数字员工执行任务。",
-      title: "执行任务已分派",
-    },
+      title: "执行任务已分派"
+},
     "project_task.dispatch_gate.blocked": {
       summary: "当前执行条件未满足，系统已记录阻塞原因。",
-      title: "执行条件未满足",
-    },
+      title: "执行条件未满足"
+},
     "project_task.dispatch_gate.checked": {
       summary: "系统已检查任务执行条件。",
-      title: "执行条件已检查",
-    },
+      title: "执行条件已检查"
+},
     "project_task.dispatch_gate.replan_required": {
       summary: "当前计划需要调整后继续推进。",
-      title: "计划需要调整",
-    },
+      title: "计划需要调整"
+},
     "project_task.dispatch_gate.retry_later": {
       summary: "运行条件暂不可用，系统会稍后重试。",
-      title: "稍后重试执行",
-    },
+      title: "稍后重试执行"
+},
     "project_task.dispatch_gate.waiting_human": {
       summary: "当前执行需要负责人确认。",
-      title: "等待负责人确认",
-    },
+      title: "等待负责人确认"
+},
     "project_task.failed": {
       summary: "数字员工任务执行失败，系统已记录原因。",
-      title: "执行任务失败",
-    },
+      title: "执行任务失败"
+},
     "route_decision.created": {
       summary: "系统已生成任务分派方案。",
-      title: "任务分派方案已生成",
-    },
+      title: "任务分派方案已生成"
+},
     "transfer.requested": {
       summary: "项目执行需要调整服务员工。",
-      title: "服务员工调整待处理",
-    },
+      title: "服务员工调整待处理"
+},
     "workflow.signaled": {
       summary: "项目推进状态已更新。",
-      title: "项目推进已更新",
-    },
-  };
+      title: "项目推进已更新"
+}
+};
   const label = labels[event.event_type] ?? {
     summary: "项目状态已有新记录。",
-    title: "项目动态已更新",
-  };
+    title: "项目动态已更新"
+};
   return {
     resource: event.resource_id ? `项目对象 · ${shortIdentifier(event.resource_id)}` : undefined,
     summary: label.summary,
-    title: label.title,
-  };
+    title: label.title
+};
 }
 
 export function projectEventActorLabel(
@@ -1816,12 +1808,12 @@ function ownerMembers(members: ProjectMember[], fallbackOwnerID: string) {
       project_role: "owner" as const,
       settings: {},
       status: "active",
-      tenant_id: "",
-    },
+      tenant_id: ""
+},
   ];
 }
 
-function projectStatusTone(status: ProjectStatus | string): V3Tone {
+function projectStatusTone(status: ProjectStatus | string): Tone {
   if (status === "running") return "ok";
   if (status === "archived") return "mute";
   if (status === "paused" || status === "acceptance") return "warn";
@@ -1829,7 +1821,7 @@ function projectStatusTone(status: ProjectStatus | string): V3Tone {
   return "mute";
 }
 
-function workspaceReadyTone(status: WorkspaceReadyStatus | string | undefined): V3Tone {
+function workspaceReadyTone(status: WorkspaceReadyStatus | string | undefined): Tone {
   if (status === "ready") return "ok";
   if (status === "error") return "danger";
   if (status === "pending") return "warn";
@@ -2016,7 +2008,7 @@ function resolvePrincipalLabel(
   return resolvePrincipalName(id, snapshot, principalNamesById) || id?.trim() || "未指定";
 }
 
-function planRevisionTone(status: string): V3Tone {
+function planRevisionTone(status: string): Tone {
   if (status === "accepted" || status === "decomposed") {
     return "ok";
   }
@@ -2078,7 +2070,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function decisionTone(status: string): V3Tone {
+function decisionTone(status: string): Tone {
   if (status === "pending") {
     return "warn";
   }
@@ -2091,7 +2083,7 @@ function decisionTone(status: string): V3Tone {
   return "mute";
 }
 
-function jobTone(status: string): V3Tone {
+function jobTone(status: string): Tone {
   if (status === "completed" || status === "succeeded") {
     return "ok";
   }
@@ -2104,7 +2096,7 @@ function jobTone(status: string): V3Tone {
   return "mute";
 }
 
-function requestTone(status: string): V3Tone {
+function requestTone(status: string): Tone {
   if (status === "approved" || status === "resolved") {
     return "ok";
   }
@@ -2114,7 +2106,7 @@ function requestTone(status: string): V3Tone {
   return "warn";
 }
 
-function dispatchGateTone(status: DispatchGateStatus): V3Tone {
+function dispatchGateTone(status: DispatchGateStatus): Tone {
   if (status === "passed") {
     return "ok";
   }
@@ -2137,28 +2129,28 @@ export function projectBusinessBlocker(gates: DispatchGateResult[]) {
     return {
       description: "目标运行资源暂不可用。项目负责人无需处理，系统会等待平台资源恢复或稍后重试。",
       status: "等待平台处理",
-      title: "运行节点暂不可用，系统会稍后重试",
-    };
+      title: "运行节点暂不可用，系统会稍后重试"
+};
   }
   if (latest.status === "waiting_human") {
     return {
       description: "当前任务需要负责人确认后才能继续推进。",
       status: "待负责人处理",
-      title: "需要负责人确认",
-    };
+      title: "需要负责人确认"
+};
   }
   if (latest.status === "replan_required") {
     return {
       description: "当前计划不再满足执行条件，需要重新编排后继续。",
       status: "需重新计划",
-      title: "计划需要调整",
-    };
+      title: "计划需要调整"
+};
   }
   return {
     description: "当前执行条件尚未满足，系统已保留阻塞原因。",
     status: "待处理",
-    title: "执行条件未满足",
-  };
+    title: "执行条件未满足"
+};
 }
 
 function formatDateTime(value?: string | null) {
@@ -2171,8 +2163,8 @@ function formatDateTime(value?: string | null) {
   }
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
+    timeStyle: "short"
+}).format(date);
 }
 
 // planRevisionHasBoundTemplate reports whether the plan was generated against a
@@ -2264,7 +2256,7 @@ function constraintNoteKindLabel(kind: string): string {
   return "约束";
 }
 
-function constraintNoteTone(kind: string): V3Tone {
+function constraintNoteTone(kind: string): Tone {
   if (kind === "human_gate") {
     return "warn";
   }

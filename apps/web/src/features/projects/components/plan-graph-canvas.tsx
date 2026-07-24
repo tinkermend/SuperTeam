@@ -3,12 +3,12 @@ import { Background, ReactFlow, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
   WorkflowStageLabelNode,
-  WorkflowTaskNode,
+  WorkflowTaskNode
 } from "@/features/workflows/components/workflow-task-node";
 import {
   PLAN_TASK_GRAPH_LAYOUT,
   buildPlanTaskGraphElements,
-  type PlanWorkflowGraphElements,
+  type PlanWorkflowGraphElements
 } from "@/features/workflows/workflow-graph-adapter";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
 
@@ -18,7 +18,7 @@ const CANVAS_BOTTOM_PADDING = 96;
 
 const nodeTypes = {
   workflowStageLabel: WorkflowStageLabelNode,
-  workflowTask: WorkflowTaskNode,
+  workflowTask: WorkflowTaskNode
 } satisfies NodeTypes;
 
 type PlanGraphCanvasProps = {

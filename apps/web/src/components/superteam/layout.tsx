@@ -3,7 +3,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
-  type ReactNode,
+  type ReactNode
 } from "react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -12,8 +12,8 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
  * SuperTeam v3 · 布局基元
  *
  * 布局宪法见 docs/design-system/layout-density.md（宽度档位 / 断点口径 /
- * 主从布局 / 指标带）。宽度取值全部来自 theme.css 的 `--v3-layout-*` /
- * `--v3-metric-*` token；内容区响应一律用容器断点，禁止视口断点。
+ * 主从布局 / 指标带）。宽度取值全部来自 theme.css 的 `--layout-*` /
+ * `--metric-*` token；内容区响应一律用容器断点，禁止视口断点。
  */
 
 export type MasterDetailRail = "md" | "lg";
@@ -21,13 +21,13 @@ export type MasterDetailRail = "md" | "lg";
 /** 双列展开阈值（rem），与下方容器断点变体（@4xl/@5xl）保持同源。 */
 const railThresholdRem: Record<MasterDetailRail, number> = {
   md: 56,
-  lg: 64,
+  lg: 64
 };
 
 /** 右栏列宽：上限取 rail token，空间紧张时可压缩，杜绝任何环境下的横向越界。 */
 const railGridCols: Record<MasterDetailRail, string> = {
-  md: "@4xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,16rem),var(--v3-layout-rail))]",
-  lg: "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--v3-layout-rail-lg))]",
+  md: "@4xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,16rem),var(--layout-rail))]",
+  lg: "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--layout-rail-lg))]"
 };
 
 type MasterDetailLayoutProps = Omit<ComponentProps<"div">, "children"> & {
@@ -122,7 +122,7 @@ export function MasterDetailLayout({
         >
           <SheetContent
             aria-describedby={undefined}
-            className="w-(--v3-layout-rail-lg) max-w-[calc(100vw-2rem)] sm:max-w-(--v3-layout-rail-lg) overflow-y-auto p-3"
+            className="w-(--layout-rail-lg) max-w-[calc(100vw-2rem)] sm:max-w-(--layout-rail-lg) overflow-y-auto p-3"
             side="right"
           >
             <SheetTitle className="sr-only">{detailLabel}</SheetTitle>
@@ -136,7 +136,7 @@ export function MasterDetailLayout({
 
 /**
  * KPI 指标带。卡片弹性填满整行、间距恒定 `gap-3`：空间不足时压缩到
- * `--v3-metric-min`（208px）下限再换行，宽屏靠卡片变宽而非间距变大吸收
+ * `--metric-min`（208px）下限再换行，宽屏靠卡片变宽而非间距变大吸收
  * 剩余空间。取代手写 `sm:grid-cols-2 xl:grid-cols-4`。用 flex-wrap 而非
  * grid auto-fit：auto-fit 的列数按 max 轨道计算，会在还有尾部空间时提前
  * 把卡片挤到下一行。
@@ -146,7 +146,7 @@ export function MetricGrid({ className, ...props }: ComponentProps<"section">) {
     <section
       className={cn(
         "flex min-w-0 flex-wrap gap-3",
-        "[&>*]:min-w-0 [&>*]:flex-[1_1_var(--v3-metric-min)]",
+        "[&>*]:min-w-0 [&>*]:flex-[1_1_var(--metric-min)]",
         className,
       )}
       {...props}

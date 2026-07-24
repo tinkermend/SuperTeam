@@ -7,24 +7,24 @@ import { AuthenticatedLayout } from './authenticated-layout'
 const mocks = vi.hoisted(() => ({
   auth: {
     isAuthenticated: false,
-    isLoading: false,
-  },
+    isLoading: false
+},
   location: {
     href: '/',
-    pathname: '/',
-  },
+    pathname: '/'
+},
   navigateProps: [] as unknown[],
   sidebarProviderProps: [] as Array<{ className?: string; dataSlot?: string }>,
   sidebarInsetProps: [] as Array<{ className?: string; dataSlot?: string }>,
-  inboxStreamCalls: [] as Array<{ url: string }>,
+  inboxStreamCalls: [] as Array<{ url: string }>
 }))
 
 vi.mock('@/features/auth/use-auth', () => ({
-  useAuth: () => mocks.auth,
+  useAuth: () => mocks.auth
 }))
 
 vi.mock('@/lib/cookies', () => ({
-  getCookie: () => 'true',
+  getCookie: () => 'true'
 }))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
@@ -36,24 +36,24 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       return <div>redirecting</div>
     },
     Outlet: () => <div>outlet</div>,
-    useLocation: () => mocks.location,
-  }
+    useLocation: () => mocks.location
+}
 })
 
 vi.mock('@/context/layout-provider', () => ({
-  LayoutProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  LayoutProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>
 }))
 
 vi.mock('@/context/search-provider', () => ({
-  SearchProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SearchProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>
 }))
 
 vi.mock('@/components/ui/sidebar', () => ({
   SidebarInset: ({
     children,
     className,
-    'data-slot': dataSlot,
-  }: {
+    'data-slot': dataSlot
+}: {
     children: ReactNode
     className?: string
     'data-slot'?: string
@@ -64,36 +64,36 @@ vi.mock('@/components/ui/sidebar', () => ({
   SidebarProvider: ({
     children,
     className,
-    'data-slot': dataSlot,
-  }: {
+    'data-slot': dataSlot
+}: {
     children: ReactNode
     className?: string
     'data-slot'?: string
   }) => {
     mocks.sidebarProviderProps.push({ className, dataSlot })
     return <div>{children}</div>
-  },
+  }
 }))
 
 vi.mock('@/components/layout/app-sidebar', () => ({
-  AppSidebar: () => <aside>sidebar</aside>,
+  AppSidebar: () => <aside>sidebar</aside>
 }))
 
 vi.mock('@/components/skip-to-main', () => ({
-  SkipToMain: () => <a href='#main'>skip</a>,
+  SkipToMain: () => <a href='#main'>skip</a>
 }))
 
 vi.mock('@/components/layout/aurora-background', () => ({
-  AuroraBackground: () => null,
+  AuroraBackground: () => null
 }))
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
-      queries: { retry: false },
-    },
-  })
+      queries: { retry: false }
+}
+})
 }
 
 function fakeEventSourceFactory(url: string) {
@@ -101,8 +101,8 @@ function fakeEventSourceFactory(url: string) {
   return {
     addEventListener: () => {},
     removeEventListener: () => {},
-    close: () => {},
-  } as unknown as EventSource
+    close: () => {}
+} as unknown as EventSource
 }
 
 describe('AuthenticatedLayout', () => {
@@ -128,8 +128,8 @@ describe('AuthenticatedLayout', () => {
     expect(mocks.navigateProps[0]).toMatchObject({
       replace: true,
       search: { redirect: '/' },
-      to: '/login',
-    })
+      to: '/login'
+})
     expect(mocks.inboxStreamCalls).toHaveLength(0)
   })
 
@@ -158,10 +158,10 @@ describe('AuthenticatedLayout', () => {
 
     expect(mocks.sidebarProviderProps).toHaveLength(1)
     expect(mocks.sidebarProviderProps[0]).toMatchObject({
-      dataSlot: 'v3-authenticated-shell',
-    })
-    expect(mocks.sidebarProviderProps[0]?.className).toContain('text-v3-ink')
-    expect(mocks.sidebarProviderProps[0]?.className).not.toContain('bg-v3-bg')
+      dataSlot: 'authenticated-shell'
+})
+    expect(mocks.sidebarProviderProps[0]?.className).toContain('text-ink')
+    expect(mocks.sidebarProviderProps[0]?.className).not.toContain('bg-background')
     expect(mocks.sidebarInsetProps[0]?.className).toContain('bg-transparent')
   })
 

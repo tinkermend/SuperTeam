@@ -3,13 +3,13 @@ import {
   IconTile,
   SoftCard,
   StatusPill,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import type {
   ProjectTask,
   ProjectTaskGraphEdge,
   ProjectTaskGraphEmployee,
-  ProjectTaskGraphStageSummary,
+  ProjectTaskGraphStageSummary
 } from "@/lib/api/projects";
 import { riskLevelLabel, taskStatusLabel } from "@/lib/status-labels";
 
@@ -35,11 +35,11 @@ export function PlanTaskGraph({
   edges = [],
   employees = [],
   stageSummaries = [],
-  emptyLabel = "暂无协调任务计划",
+  emptyLabel = "暂无协调任务计划"
 }: PlanTaskGraphProps) {
   if (nodes.length === 0) {
     return (
-      <SoftCard className="p-6 text-sm text-v3-ink-2">
+      <SoftCard className="p-6 text-sm text-ink-2">
         {emptyLabel}
       </SoftCard>
     );
@@ -78,21 +78,21 @@ export function PlanTaskGraph({
             : stageTitle.get(stage) || `阶段 ${stage + 1}`;
         return (
           <SoftCard className="overflow-hidden" key={stage}>
-            <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+            <div className="flex items-center justify-between gap-3 border-b border-line p-4">
               <div className="flex min-w-0 items-center gap-2">
                 <IconTile tone="artifact" size="sm">
                   <GitBranch />
                 </IconTile>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold tracking-normal text-v3-ink">{heading}</h3>
-                  <p className="text-xs text-v3-ink-3">
+                  <h3 className="text-sm font-semibold tracking-normal text-ink">{heading}</h3>
+                  <p className="text-xs text-ink-3">
                     {stageNodes.length} 个任务
                   </p>
                 </div>
               </div>
               <StatusPill tone="mute">{stageNodes.length}</StatusPill>
             </div>
-            <div className="divide-y divide-v3-line">
+            <div className="divide-y divide-line">
               {stageNodes.map((node) => {
                 const blockers = blockersByTask.get(node.id) ?? [];
                 const assignee = node.assigned_digital_employee_id
@@ -102,17 +102,17 @@ export function PlanTaskGraph({
                 return (
                   <div className="grid gap-2 p-4" key={node.id}>
                     <div className="flex items-start justify-between gap-3">
-                      <p className="line-clamp-2 text-sm font-medium text-v3-ink">{node.title}</p>
+                      <p className="line-clamp-2 text-sm font-medium text-ink">{node.title}</p>
                       <StatusPill tone={taskStatusTone(node.status)}>
                         {taskStatusLabel(node.status)}
                       </StatusPill>
                     </div>
                     {node.summary ? (
-                      <p className="line-clamp-2 text-xs text-v3-ink-2">
+                      <p className="line-clamp-2 text-xs text-ink-2">
                         {node.summary}
                       </p>
                     ) : null}
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-v3-ink-2">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-ink-2">
                       <span className="inline-flex items-center gap-1">
                         <Bot className="size-3.5" />
                         {assignee}
@@ -130,7 +130,7 @@ export function PlanTaskGraph({
                       ) : null}
                     </div>
                     {blockers.length > 0 ? (
-                      <p className="text-xs text-v3-ink-2">
+                      <p className="text-xs text-ink-2">
                         {`依赖：${blockers.join("、")}`}
                       </p>
                     ) : null}
@@ -145,7 +145,7 @@ export function PlanTaskGraph({
   );
 }
 
-function taskStatusTone(status: string): V3Tone {
+function taskStatusTone(status: string): Tone {
   if (["completed", "accepted", "approved", "done", "success"].includes(status)) {
     return "ok";
   }
@@ -161,7 +161,7 @@ function taskStatusTone(status: string): V3Tone {
   return "mute";
 }
 
-function riskTone(risk: string): V3Tone {
+function riskTone(risk: string): Tone {
   if (["high", "critical"].includes(risk)) {
     return "danger";
   }

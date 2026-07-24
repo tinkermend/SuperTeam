@@ -7,19 +7,19 @@ import { SkillsView } from "@/features/skills";
 import type { Skill } from "@/lib/api/skills";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@/components/ui/select", async () => {
@@ -35,8 +35,8 @@ vi.mock("@/components/ui/select", async () => {
       children,
       disabled,
       onValueChange,
-      value,
-    }: {
+      value
+}: {
       children: ReactNode;
       disabled?: boolean;
       onValueChange?: (value: string) => void;
@@ -68,8 +68,8 @@ vi.mock("@/components/ui/select", async () => {
     SelectSeparator: () => <hr />,
     SelectTrigger: ({
       "aria-label": ariaLabel,
-      children,
-    }: {
+      children
+}: {
       "aria-label"?: string;
       children: ReactNode;
     }) => (
@@ -77,8 +77,8 @@ vi.mock("@/components/ui/select", async () => {
         {children}
       </button>
     ),
-    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
-  };
+    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>
+};
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -94,7 +94,7 @@ vi.mock("@tanstack/react-router", () => ({
   }) => {
     const href = to === "/skills/$skillId" ? `/skills/${params?.skillId ?? "$skillId"}` : to;
     return <a {...props} data-router-link="true" href={href}>{children}</a>;
-  },
+  }
 }));
 
 const skillsFixture = [
@@ -125,8 +125,8 @@ const skillsFixture = [
       { agent_id: "agent-1", agent_name: "需求澄清 Agent", team_name: "产品团队", status: "enabled" },
       { agent_id: "agent-2", agent_name: "项目协调 Agent", team_name: "平台工程", status: "enabled" },
     ],
-    runtime_dependencies: { tools: [], env: [] },
-  },
+    runtime_dependencies: { tools: [], env: [] }
+},
   {
     id: "skill-api-doc",
     tenant_id: "tenant-1",
@@ -148,8 +148,8 @@ const skillsFixture = [
     created_by_name: "开发管理员",
     team_bindings: [],
     agent_bindings: [],
-    runtime_dependencies: { tools: ["gh"], env: ["OPENAI_API_KEY"] },
-  },
+    runtime_dependencies: { tools: ["gh"], env: ["OPENAI_API_KEY"] }
+},
   {
     id: "skill-incident-review",
     tenant_id: "tenant-1",
@@ -176,8 +176,8 @@ const skillsFixture = [
     agent_bindings: [
       { agent_id: "agent-3", agent_name: "运维复盘 Agent", team_name: "平台工程", status: "enabled" },
     ],
-    runtime_dependencies: { tools: [], env: [] },
-  },
+    runtime_dependencies: { tools: [], env: [] }
+},
 ] satisfies Skill[];
 
 const teamsFixture = [
@@ -196,8 +196,8 @@ const employeesFixture = [
     role: "需求澄清",
     status: "active",
     permission_policy: {},
-    risk_level: "low",
-  },
+    risk_level: "low"
+},
   {
     id: "agent-2",
     tenant_id: "tenant-1",
@@ -208,8 +208,8 @@ const employeesFixture = [
     role: "项目协调",
     status: "ready",
     permission_policy: {},
-    risk_level: "medium",
-  },
+    risk_level: "medium"
+},
 ];
 
 const employeeOverviewFixture = {
@@ -224,13 +224,13 @@ const employeeOverviewFixture = {
     needs_configuration_count: 0,
     pending_config_approval_count: 0,
     failed_recent_run_count: 0,
-    operational_status_counts: { idle: 2 },
-  },
+    operational_status_counts: { idle: 2 }
+},
   queue_summary: {
     needs_configuration_count: 0,
     stale_config_count: 0,
-    failed_recent_run_count: 0,
-  },
+    failed_recent_run_count: 0
+},
   items: [
     {
       workbench_status: "ready",
@@ -249,8 +249,8 @@ const employeeOverviewFixture = {
         name: "需求澄清 Agent",
         role: "需求澄清",
         status: "active",
-        risk_level: "low",
-      },
+        risk_level: "low"
+},
       execution_summary: {
         execution_instance_id: "instance-1",
         status: "ready",
@@ -261,22 +261,22 @@ const employeeOverviewFixture = {
         provider_type: "codex",
         provider_status: "healthy",
         health_status: "healthy",
-        agent_home_dir_available: true,
-      },
+        agent_home_dir_available: true
+},
       governance_summary: {
         status: "approved",
         skills_count: 0,
         mcp_servers_count: 0,
-        constitution_ref: "",
-      },
+        constitution_ref: ""
+},
       budget_summary: {
         run_count_30d: 0,
         currency: "CNY",
         source: "none",
         usage_tokens_today: 0,
-        limit_exceeded: false,
-      },
-    },
+        limit_exceeded: false
+}
+},
     {
       workbench_status: "ready",
       operational_state: { status: "idle", reasons: [], can_dispatch: true },
@@ -294,8 +294,8 @@ const employeeOverviewFixture = {
         name: "项目协调 Agent",
         role: "项目协调",
         status: "ready",
-        risk_level: "medium",
-      },
+        risk_level: "medium"
+},
       execution_summary: {
         execution_instance_id: "instance-2",
         status: "ready",
@@ -306,22 +306,22 @@ const employeeOverviewFixture = {
         provider_type: "codex",
         provider_status: "healthy",
         health_status: "healthy",
-        agent_home_dir_available: true,
-      },
+        agent_home_dir_available: true
+},
       governance_summary: {
         status: "approved",
         skills_count: 0,
         mcp_servers_count: 0,
-        constitution_ref: "",
-      },
+        constitution_ref: ""
+},
       budget_summary: {
         run_count_30d: 0,
         currency: "CNY",
         source: "none",
         usage_tokens_today: 0,
-        limit_exceeded: false,
-      },
-    },
+        limit_exceeded: false
+}
+},
   ],
   filters: {
     teams: [],
@@ -329,15 +329,15 @@ const employeeOverviewFixture = {
     statuses: [],
     providers: [],
     risk_levels: [],
-    run_statuses: [],
-  },
-  pagination: { limit: 50, offset: 0, total_count: 2 },
+    run_statuses: []
+},
+  pagination: { limit: 50, offset: 0, total_count: 2 }
 };
 
 function createQueryClient() {
   return new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  });
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } }
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -373,8 +373,8 @@ function createSkillsFetcher() {
         target_scope: "employee",
         digital_employee_id: "agent-1",
         already_bound: false,
-        bound_at: "2026-07-19T08:00:00Z",
-      }, 201);
+        bound_at: "2026-07-19T08:00:00Z"
+}, 201);
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -394,8 +394,8 @@ function createPendingSkillsFetcher() {
   });
   return {
     fetcher,
-    resolveSkills: () => resolveSkills(jsonResponse([])),
-  };
+    resolveSkills: () => resolveSkills(jsonResponse([]))
+};
 }
 
 function createFailingSkillsFetcher() {
@@ -427,8 +427,8 @@ function createAlreadyBoundInstallFetcher() {
         target_scope: "employee",
         digital_employee_id: "agent-1",
         already_bound: true,
-        bound_at: "2026-07-19T08:00:00Z",
-      }, 201);
+        bound_at: "2026-07-19T08:00:00Z"
+}, 201);
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -478,11 +478,11 @@ describe("SkillsView", () => {
   it("uses shared v3 controls for the primary action", async () => {
     const screen = await renderSkillsView();
 
-    expect(document.body.querySelector('[data-slot="v3-page-header"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-page-header"] [data-slot="v3-icon-tile"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="page-header"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="page-header"] [data-slot="icon-tile"]')).not.toBeNull();
 
     const uploadLink = screen.getByRole("link", { name: "上传技能" });
-    await expect.element(uploadLink).toHaveAttribute("data-slot", "v3-button");
+    await expect.element(uploadLink).toHaveAttribute("data-slot", "app-button");
     await expect.element(uploadLink).toHaveAttribute("data-variant", "primary");
   });
 
@@ -500,7 +500,7 @@ describe("SkillsView", () => {
     const pending = createPendingSkillsFetcher();
     const loadingScreen = await renderSkillsView(pending.fetcher);
     await expect.element(loadingScreen.getByText("加载技能数据…")).toBeVisible();
-    expect(document.body.querySelector('[data-slot="v3-loading-state"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="loading-state"]')).not.toBeNull();
 
     pending.resolveSkills();
     loadingScreen.unmount();
@@ -510,7 +510,7 @@ describe("SkillsView", () => {
     const errorScreen = await renderSkillsView(createFailingSkillsFetcher());
     await expect.element(errorScreen.getByText("技能数据加载失败")).toBeVisible();
     await expect.element(errorScreen.getByText(/skills API offline/)).toBeVisible();
-    expect(document.body.querySelector('[data-slot="v3-error-state"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="error-state"]')).not.toBeNull();
   });
 
   it("uses router navigation for the upload page without designing that flow here", async () => {
@@ -695,10 +695,10 @@ describe("SkillsView", () => {
       expect.objectContaining({
         body: JSON.stringify({
           target_scope: "employee",
-          digital_employee_id: "agent-1",
-        }),
-        method: "POST",
-      }),
+          digital_employee_id: "agent-1"
+}),
+        method: "POST"
+}),
     );
     await expect.element(screen.getByText("已加载,下次任务派发时同步到运行环境")).toBeVisible();
     // 逻辑绑定不触达 runtime,也没有安装记录接口可刷新。

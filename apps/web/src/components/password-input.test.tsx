@@ -7,7 +7,7 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
+  FormLabel
 } from '@/components/ui/form'
 import { PasswordInput } from './password-input'
 
@@ -64,8 +64,8 @@ describe('PasswordInput', () => {
   it('works with FormLabel and react-hook-form field spread', async () => {
     function PasswordInLabeledForm() {
       const form = useForm<{ password: string }>({
-        defaultValues: { password: '' },
-      })
+        defaultValues: { password: '' }
+})
 
       return (
         <Form {...form}>

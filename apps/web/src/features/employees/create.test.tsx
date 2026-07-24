@@ -13,19 +13,19 @@ afterEach(() => {
 });
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
@@ -34,32 +34,32 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     ...actual,
     Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
     useNavigate: () => navigate,
-    useSearch: () => search(),
-  };
+    useSearch: () => search()
+};
 });
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 const team = {
   id: "99999999-9999-4999-8999-999999999999",
   name: "数据平台团队",
   slug: "data-platform",
-  status: "active",
+  status: "active"
 };
 
 const secondTeam = {
   id: "88888888-8888-4888-8888-888888888888",
   name: "安全运营团队",
   slug: "security-operations",
-  status: "active",
+  status: "active"
 };
 
 const avatarAsset = {
@@ -72,7 +72,7 @@ const avatarAsset = {
   thumbnail_url: "/images/digital-employee-avatars/engineer-m-01-256.webp",
   source: "ai_generated_internal_pack",
   license: "internal_product_asset",
-  status: "active",
+  status: "active"
 };
 
 type RuntimeAvailabilityMode = "all" | "first-unavailable" | "none" | "session-inactive";
@@ -87,7 +87,7 @@ function createOptionsFixture({
   capabilityBoundaryKey = "capability_policy",
   includeOtherBlockedCheck = false,
   teamConfigOverrides,
-  templateCapabilityBindingsOverrides,
+  templateCapabilityBindingsOverrides
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -121,8 +121,8 @@ function createOptionsFixture({
       ? undefined
       : firstRuntimeSessionInactive
         ? "runtime_session_inactive"
-        : "runtime_not_online",
-  };
+        : "runtime_not_online"
+};
   const sameNodeProviderOption = {
     runtime_node_id: "33333333-3333-4333-8333-333333333333",
     node_id: "runtime-a",
@@ -140,8 +140,8 @@ function createOptionsFixture({
       ? undefined
       : firstRuntimeSessionInactive
         ? "runtime_session_inactive"
-        : "runtime_not_online",
-  };
+        : "runtime_not_online"
+};
   const secondRuntimeOption = {
     runtime_node_id: "44444444-4444-4444-8444-444444444444",
     node_id: "runtime-b",
@@ -155,8 +155,8 @@ function createOptionsFixture({
     agent_home_dir: "/Users/wangpei/.codex",
     agent_home_dir_available: secondRuntimeAvailable,
     available: secondRuntimeAvailable,
-    disabled_reason: secondRuntimeAvailable ? undefined : "runtime_not_online",
-  };
+    disabled_reason: secondRuntimeAvailable ? undefined : "runtime_not_online"
+};
   const runtimeProviderOptions = [
     firstRuntimeOption,
     ...(sameRuntimeNodeProviders || includePolicyExcludedProvider ? [sameNodeProviderOption] : []),
@@ -171,8 +171,8 @@ function createOptionsFixture({
       constitution: { summary: "团队默认宪法基线" },
       skills: ["sql-review"],
       mcp_servers: ["postgres"],
-      ...teamConfigOverrides,
-    },
+      ...teamConfigOverrides
+},
     employee_types: [
       {
         type: "database_admin",
@@ -186,11 +186,11 @@ function createOptionsFixture({
         capability_bindings: {
           skills: ["sql-review"],
           mcp_servers: ["postgres"],
-          ...templateCapabilityBindingsOverrides,
-        },
+          ...templateCapabilityBindingsOverrides
+},
         budget_policy: {},
-        metadata: { title: "数据库管理员" },
-      },
+        metadata: { title: "数据库管理员" }
+},
       ...(includeFrontendTemplate
         ? [
             {
@@ -204,11 +204,11 @@ function createOptionsFixture({
               persona_memory_markdown: "# 前端开发\n界面一致性优先",
               capability_bindings: {
                 skills: ["frontend-implementation"],
-                mcp_servers: ["browser"],
-              },
+                mcp_servers: ["browser"]
+},
               budget_policy: {},
-              metadata: { title: "前端开发" },
-            },
+              metadata: { title: "前端开发" }
+},
           ]
         : []),
     ],
@@ -221,30 +221,30 @@ function createOptionsFixture({
       ],
       mcp_servers: [
         { key: "postgres", id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", label: "postgres", recommended: false, available: true },
-      ],
-    },
+      ]
+},
     runtime_provider_options: runtimeProviderOptions,
     creation_checks: [
       {
         key: "employee_templates",
         label: "专业模板",
         status: "passed",
-        message: "1 个可用模板",
-      },
+        message: "1 个可用模板"
+},
       {
         key: "runtime_provider",
         label: "Provider 类型预览",
         status: runtimeProviderOptions.some((option) => option.available) ? "passed" : "warning",
-        message: `${runtimeProviderOptions.filter((option) => option.available).length}/${runtimeProviderOptions.length} 个 Provider 候选当前在线；创建时不绑定 Runtime 节点`,
-      },
+        message: `${runtimeProviderOptions.filter((option) => option.available).length}/${runtimeProviderOptions.length} 个 Provider 候选当前在线；创建时不绑定 Runtime 节点`
+},
       ...(includeCapabilityBoundaryBlock
         ? [
             {
               key: capabilityBoundaryKey,
               label: "能力边界",
               status: "blocked",
-              message: "技能 0 · MCP 0",
-            },
+              message: "技能 0 · MCP 0"
+},
           ]
         : []),
       ...(includeOtherBlockedCheck
@@ -253,8 +253,8 @@ function createOptionsFixture({
               key: "other_blocker",
               label: "其他阻断",
               status: "blocked",
-              message: "需要先完成外部前置条件",
-            },
+              message: "需要先完成外部前置条件"
+},
           ]
         : []),
     ],
@@ -263,9 +263,9 @@ function createOptionsFixture({
       approval_policy: { required: true },
       workspace_policy: { mode: "ephemeral" },
       session_policy: { mode: "reuse_latest" },
-      metadata: { source: "team_config" },
-    },
-  };
+      metadata: { source: "team_config" }
+}
+};
 }
 
 function createWizardFetcher({
@@ -282,7 +282,7 @@ function createWizardFetcher({
   pendingCreateOptionsForTeamId,
   teamConfigOverrides,
   templateCapabilityBindingsOverrides,
-  avatarAssets = [avatarAsset],
+  avatarAssets = [avatarAsset]
 }: {
   runtimeAvailability?: RuntimeAvailabilityMode;
   runtimeCount?: 1 | 2;
@@ -318,8 +318,8 @@ function createWizardFetcher({
         return jsonResponse(
           {
             code: "create_options_unavailable",
-            message: "temporary create options failure",
-          },
+            message: "temporary create options failure"
+},
           500,
         );
       }
@@ -334,8 +334,8 @@ function createWizardFetcher({
           runtimeCount,
           sameRuntimeNodeProviders,
           teamConfigOverrides,
-          templateCapabilityBindingsOverrides,
-        }),
+          templateCapabilityBindingsOverrides
+}),
       );
     }
 
@@ -354,8 +354,8 @@ function createWizardFetcher({
           role: "database_admin",
           status: "ready",
           permission_policy: {},
-          risk_level: "high",
-        },
+          risk_level: "high"
+},
         201,
       );
     }
@@ -384,8 +384,8 @@ function requestCreateBody(fetcher: typeof fetch) {
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 async function renderCreateEmployeeView(fetcher = createWizardFetcher(), routerSearch: Record<string, unknown> = {}) {
@@ -458,7 +458,7 @@ describe("CreateEmployeeView", () => {
     // 不随步骤内容滚动，无需 sticky 即始终可见。
     const actions = document.body.querySelector('[data-testid="employee-configure-actions"]');
     expect(actions).toBeTruthy();
-    expect(actions?.parentElement?.className ?? "").toContain("v3-glass");
+    expect(actions?.parentElement?.className ?? "").toContain("glass");
     expect(actions?.className).toContain("border-t");
     await expect.element(screen.getByRole("button", { name: "下一步" })).toBeVisible();
   });
@@ -734,8 +734,8 @@ describe("CreateEmployeeView", () => {
       skills: ["incident-diagnosis"],
       mcp_servers: [],
       provider_type: "codex",
-      environment_variables: [],
-    });
+      environment_variables: []
+});
     // 员工个体不承载策略：创建请求不再提交 context_policy/approval_policy。
     expect(body).not.toHaveProperty("context_policy");
     expect(body).not.toHaveProperty("approval_policy");
@@ -754,8 +754,8 @@ describe("CreateEmployeeView", () => {
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
         params: { employeeId: "11111111-1111-4111-8111-111111111111" },
-        to: "/employees/$employeeId",
-      }),
+        to: "/employees/$employeeId"
+}),
     );
   });
 
@@ -821,8 +821,8 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
         capabilityBoundaryKey: "capability_boundary",
-        includeCapabilityBoundaryBlock: true,
-      }),
+        includeCapabilityBoundaryBlock: true
+}),
     );
 
     await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
@@ -835,8 +835,8 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
         includeCapabilityBoundaryBlock: true,
-        includeOtherBlockedCheck: true,
-      }),
+        includeOtherBlockedCheck: true
+}),
     );
 
     await userEvent.click(screen.getByRole("button", { name: /^空白自定义/ }));
@@ -902,8 +902,8 @@ describe("CreateEmployeeView", () => {
       mcp_servers: [],
       provider_type: "codex",
       environment_variables: [],
-      metadata: { creation_mode: "blank_custom" },
-    });
+      metadata: { creation_mode: "blank_custom" }
+});
     expect(body.capability_bindings).toEqual({});
   });
 
@@ -912,9 +912,9 @@ describe("CreateEmployeeView", () => {
       templateCapabilityBindingsOverrides: {
         external_capabilities: ["deploy"],
         environment_variable_refs: ["PG_DSN"],
-        provider_types: ["codex"],
-      },
-    });
+        provider_types: ["codex"]
+}
+});
     const screen = await renderCreateEmployeeView(fetcher);
 
     await enterConfiguration(screen);
@@ -933,8 +933,8 @@ describe("CreateEmployeeView", () => {
     const body = requestCreateBody(fetcher);
     expect(body.capability_bindings).toEqual({
       external_capabilities: ["deploy"],
-      environment_variable_refs: ["PG_DSN"],
-    });
+      environment_variable_refs: ["PG_DSN"]
+});
     expect(body.skills).toEqual(["incident-diagnosis"]);
     expect(body.mcp_servers).toEqual([]);
     expect(body).not.toHaveProperty("context_policy");
@@ -1011,9 +1011,9 @@ describe("CreateEmployeeView", () => {
       createWizardFetcher({
         teamConfigOverrides: {
           skills: ["incident-diagnosis"],
-          mcp_servers: ["postgres"],
-        },
-      }),
+          mcp_servers: ["postgres"]
+}
+}),
     );
 
     await enterConfiguration(screen);
@@ -1157,8 +1157,8 @@ describe("CreateEmployeeView", () => {
       id: "engineer-m-02",
       label: "工程师头像 M02",
       image_url: "/images/digital-employee-avatars/engineer-m-02.webp",
-      thumbnail_url: "/images/digital-employee-avatars/engineer-m-02-256.webp",
-    };
+      thumbnail_url: "/images/digital-employee-avatars/engineer-m-02-256.webp"
+};
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({ avatarAssets: [usedAvatar, freeAvatar] }),
     );
@@ -1213,8 +1213,8 @@ describe("CreateEmployeeView", () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
         runtimeAvailability: "first-unavailable",
-        runtimeCount: 2,
-      }),
+        runtimeCount: 2
+}),
     );
 
     await enterConfiguration(screen);
@@ -1229,8 +1229,8 @@ describe("CreateEmployeeView", () => {
   it("distinguishes inactive runtime sessions from missing online runtime support", async () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
-        runtimeAvailability: "session-inactive",
-      }),
+        runtimeAvailability: "session-inactive"
+}),
     );
 
     await enterConfiguration(screen);
@@ -1262,8 +1262,8 @@ describe("CreateEmployeeView", () => {
   it("shows providers that are only present in runtime preview options", async () => {
     const screen = await renderCreateEmployeeView(
       createWizardFetcher({
-        includePolicyExcludedProvider: true,
-      }),
+        includePolicyExcludedProvider: true
+}),
     );
 
     await enterConfiguration(screen);
@@ -1347,8 +1347,8 @@ describe("CreateEmployeeView", () => {
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
         params: { employeeId: "11111111-1111-4111-8111-111111111111" },
-        to: "/employees/$employeeId",
-      }),
+        to: "/employees/$employeeId"
+}),
     );
   });
 });

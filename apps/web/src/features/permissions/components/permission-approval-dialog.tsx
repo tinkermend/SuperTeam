@@ -1,22 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { ObjectRef, StatusPill, V3Button, V3ErrorState } from "@/components/superteam";
+import { ObjectRef, StatusPill, Button, ErrorState } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   PermissionApproval,
   PermissionApprovalAction,
-  PermissionApprovalDecisionInput,
+  PermissionApprovalDecisionInput
 } from "@/lib/api/permission-approvals";
 import {
   permissionResourceTypeLabel,
-  riskLevelLabel,
+  riskLevelLabel
 } from "@/lib/status-labels";
 
 type PermissionApprovalDialogProps = {
@@ -54,7 +54,7 @@ export function PermissionApprovalDialog({
   onOpenChange,
   onSubmit,
   open,
-  pending = false,
+  pending = false
 }: PermissionApprovalDialogProps) {
   // 同 inbox 弹窗:按(事项,动作)键记录在飞状态,跨事项复用不泄漏。
   const inFlightKeyRef = useRef<string | null>(null);
@@ -88,8 +88,8 @@ export function PermissionApprovalDialog({
     try {
       await onSubmit({
         decision: action.key as PermissionApprovalDecisionInput["decision"],
-        note,
-      });
+        note
+});
     } catch (error) {
       if (currentKeyRef.current === submittedKey) {
         setSubmitError(error instanceof Error ? error.message : "决策提交失败");
@@ -103,22 +103,22 @@ export function PermissionApprovalDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-v3-line bg-v3-card text-v3-ink shadow-v3-pop sm:max-w-xl">
+      <DialogContent className="border-line bg-card text-ink shadow-pop sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{action?.label ?? "处理权限审批"}</DialogTitle>
           <DialogDescription>{approval?.title ?? "确认本次权限审批决策。"}</DialogDescription>
         </DialogHeader>
         {approval ? <PermissionApprovalContext approval={approval} /> : null}
         {submitError ? (
-          <V3ErrorState title="决策未完成" description={submitError} className="py-4" />
+          <ErrorState title="决策未完成" description={submitError} className="py-4" />
         ) : null}
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-v3-ink" htmlFor="permission-approval-note">
+          <label className="text-sm font-semibold text-ink" htmlFor="permission-approval-note">
             处理意见{noteRequired ? "（必填）" : "（可选）"}
           </label>
           <Textarea
             aria-invalid={noteRequired && !note.trim()}
-            className="min-h-28 rounded-v3-inner border-v3-line-strong bg-v3-card text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-2 focus-visible:ring-v3-brand/25 aria-invalid:border-v3-danger"
+            className="min-h-28 rounded-inner border-line-strong bg-card text-ink shadow-none placeholder:text-ink-3 focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/25 aria-invalid:border-danger"
             disabled={isSubmitting}
             id="permission-approval-note"
             onChange={(event) => setNote(event.target.value)}
@@ -126,26 +126,26 @@ export function PermissionApprovalDialog({
             value={note}
           />
           {noteRequired && !note.trim() ? (
-            <p className="text-xs font-semibold text-v3-danger">该决策需要填写处理意见。</p>
+            <p className="text-xs font-semibold text-danger">该决策需要填写处理意见。</p>
           ) : null}
         </div>
         {isSubmitting ? (
-          <p className="text-xs leading-5 text-v3-ink-3">
+          <p className="text-xs leading-5 text-ink-3">
             正在提交，关闭弹窗后提交会在后台继续，可先处理其他审批。
           </p>
         ) : null}
         <DialogFooter>
-          <V3Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             {isSubmitting ? "关闭" : "取消"}
-          </V3Button>
-          <V3Button
+          </Button>
+          <Button
             type="button"
             variant={action?.tone === "destructive" ? "danger" : "primary"}
             onClick={submit}
             disabled={!canSubmit || isSubmitting}
           >
             {isSubmitting ? "提交中" : "提交"}
-          </V3Button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -154,7 +154,7 @@ export function PermissionApprovalDialog({
 
 function PermissionApprovalContext({ approval }: { approval: PermissionApproval }) {
   return (
-    <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft p-3">
+    <div className="rounded-inner border border-line bg-card-soft p-3">
       <div className="grid gap-3 text-xs sm:grid-cols-2">
         {approval.risk_level ? (
           <ContextField label="风险等级">
@@ -173,9 +173,9 @@ function PermissionApprovalContext({ approval }: { approval: PermissionApproval 
         </ContextField>
       </div>
       {approval.summary ? (
-        <div className="mt-3 border-t border-v3-line pt-3">
-          <div className="text-xs font-semibold text-v3-ink-2">摘要</div>
-          <p className="mt-1 text-sm leading-5 text-v3-ink">{approval.summary}</p>
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="text-xs font-semibold text-ink-2">摘要</div>
+          <p className="mt-1 text-sm leading-5 text-ink">{approval.summary}</p>
         </div>
       ) : null}
       <PermissionContextBody context={approval.context} />
@@ -201,17 +201,17 @@ function PermissionContextBody({ context }: { context: Record<string, unknown> }
   const roleValue = context.role;
 
   return (
-    <div className="mt-3 space-y-3 border-t border-v3-line pt-3">
+    <div className="mt-3 space-y-3 border-t border-line pt-3">
       {hasDiff ? (
         <div>
-          <div className="text-xs font-semibold text-v3-ink-2">当前 vs 变更后</div>
+          <div className="text-xs font-semibold text-ink-2">当前 vs 变更后</div>
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card p-2.5">
-              <div className="text-[11px] font-semibold text-v3-ink-3">当前</div>
+            <div className="min-w-0 rounded-inner border border-line bg-card p-2.5">
+              <div className="text-[11px] font-semibold text-ink-3">当前</div>
               <PrettyValue value={current} empty="（无）" />
             </div>
-            <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-brand-soft/40 p-2.5">
-              <div className="text-[11px] font-semibold text-v3-brand-deep">变更后</div>
+            <div className="min-w-0 rounded-inner border border-line bg-brand-soft/40 p-2.5">
+              <div className="text-[11px] font-semibold text-brand-deep">变更后</div>
               <PrettyValue value={after} empty="（无）" />
             </div>
           </div>
@@ -220,19 +220,19 @@ function PermissionContextBody({ context }: { context: Record<string, unknown> }
 
       {typeof roleValue === "string" && roleValue.trim() ? (
         <div>
-          <div className="text-xs font-semibold text-v3-ink-2">申请角色</div>
-          <p className="mt-1 text-[13px] font-medium text-v3-ink">{roleValue}</p>
+          <div className="text-xs font-semibold text-ink-2">申请角色</div>
+          <p className="mt-1 text-[13px] font-medium text-ink">{roleValue}</p>
         </div>
       ) : null}
 
       {permissionItems.length > 0 ? (
         <div>
-          <div className="text-xs font-semibold text-v3-ink-2">权限项</div>
+          <div className="text-xs font-semibold text-ink-2">权限项</div>
           <ul className="mt-1.5 flex flex-wrap gap-1.5">
             {permissionItems.map((permission) => (
               <li
                 key={permission}
-                className="rounded-v3-inner border border-v3-line bg-v3-card px-2 py-0.5 font-mono text-[11px] text-v3-ink-2"
+                className="rounded-inner border border-line bg-card px-2 py-0.5 font-mono text-[11px] text-ink-2"
               >
                 {permission}
               </li>
@@ -243,8 +243,8 @@ function PermissionContextBody({ context }: { context: Record<string, unknown> }
 
       {!hasDiff && permissionItems.length === 0 && !(typeof roleValue === "string") ? (
         <div>
-          <div className="text-xs font-semibold text-v3-ink-2">上下文</div>
-          <pre className="mt-1.5 max-h-56 overflow-auto rounded-v3-inner border border-v3-line bg-v3-card p-2.5 font-mono text-[11px] leading-5 text-v3-ink-2">
+          <div className="text-xs font-semibold text-ink-2">上下文</div>
+          <pre className="mt-1.5 max-h-56 overflow-auto rounded-inner border border-line bg-card p-2.5 font-mono text-[11px] leading-5 text-ink-2">
             {JSON.stringify(context, null, 2)}
           </pre>
         </div>
@@ -265,10 +265,10 @@ function extractStringList(value: unknown): string[] {
 
 function PrettyValue({ value, empty }: { value: unknown; empty: string }) {
   if (value === undefined || value === null || value === "") {
-    return <p className="mt-1 text-[13px] text-v3-ink-3">{empty}</p>;
+    return <p className="mt-1 text-[13px] text-ink-3">{empty}</p>;
   }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return <p className="mt-1 break-words text-[13px] font-medium text-v3-ink">{String(value)}</p>;
+    return <p className="mt-1 break-words text-[13px] font-medium text-ink">{String(value)}</p>;
   }
   if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
     return (
@@ -276,7 +276,7 @@ function PrettyValue({ value, empty }: { value: unknown; empty: string }) {
         {(value as string[]).map((entry) => (
           <li
             key={entry}
-            className="rounded-v3-inner border border-v3-line bg-v3-card px-2 py-0.5 font-mono text-[11px] text-v3-ink-2"
+            className="rounded-inner border border-line bg-card px-2 py-0.5 font-mono text-[11px] text-ink-2"
           >
             {entry}
           </li>
@@ -285,7 +285,7 @@ function PrettyValue({ value, empty }: { value: unknown; empty: string }) {
     );
   }
   return (
-    <pre className="mt-1 max-h-40 overflow-auto font-mono text-[11px] leading-5 text-v3-ink-2">
+    <pre className="mt-1 max-h-40 overflow-auto font-mono text-[11px] leading-5 text-ink-2">
       {JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -294,8 +294,8 @@ function PrettyValue({ value, empty }: { value: unknown; empty: string }) {
 function ContextField({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <div className="min-w-0 space-y-1">
-      <div className="font-semibold text-v3-ink-2">{label}</div>
-      <div className="min-w-0 text-[13px] leading-5 font-medium text-v3-ink">{children}</div>
+      <div className="font-semibold text-ink-2">{label}</div>
+      <div className="min-w-0 text-[13px] leading-5 font-medium text-ink">{children}</div>
     </div>
   );
 }

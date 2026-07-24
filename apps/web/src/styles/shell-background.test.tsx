@@ -18,16 +18,16 @@ describe('authenticated v3 shell background styles', () => {
         removeEventListener: vi.fn(),
         addListener: vi.fn(),
         removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    })
+        dispatchEvent: vi.fn()
+}))
+})
 
     return () => {
       Object.defineProperty(window, 'matchMedia', {
         configurable: true,
         writable: true,
-        value: originalMatchMedia,
-      })
+        value: originalMatchMedia
+})
     }
   }
 
@@ -37,7 +37,7 @@ describe('authenticated v3 shell background styles', () => {
     try {
       await render(
         <SidebarProvider
-          data-slot='v3-authenticated-shell'
+          data-slot='authenticated-shell'
           data-testid='sidebar-wrapper'
         >
           <Sidebar collapsible='icon' variant='inset'>
@@ -56,7 +56,7 @@ describe('authenticated v3 shell background styles', () => {
 
     expect(sidebarWrapper).toBeInstanceOf(HTMLElement)
     expect((sidebarWrapper as HTMLElement).dataset.slot).toBe(
-      'v3-authenticated-shell'
+      'authenticated-shell'
     )
 
     const bodyBackground = getComputedStyle(document.body).backgroundImage
@@ -80,12 +80,12 @@ describe('authenticated v3 shell background styles', () => {
       <div data-testid='sidebar-wrapper' data-slot='sidebar-wrapper'>
         <div className='peer' data-state='expanded' data-variant='inset' />
         <SidebarInset data-testid='sidebar-inset'>
-          <header data-testid='header' data-slot='v3-shell-header'>
+          <header data-testid='header' data-slot='shell-header'>
             <button
               type='button'
               data-slot='button'
               data-testid='search'
-              className='border border-[var(--v3-shell-search-border)] bg-[var(--v3-shell-search)] text-v3-ink-2 shadow-[var(--v3-shell-search-shadow)] backdrop-blur-md'
+              className='border border-[var(--shell-search-border)] bg-[var(--shell-search)] text-ink-2 shadow-[var(--shell-search-shadow)] backdrop-blur-md'
             >
               Search
             </button>
@@ -201,7 +201,7 @@ describe('authenticated v3 shell background styles', () => {
     )
     expect(containerStyle.boxShadow).toContain('rgba(16, 24, 40, 0.043)')
     expect(innerStyle.borderInlineEndWidth).toBe('0px')
-    // 侧栏改为半透明玻璃，让全局极光背景底透过导航区（--v3-aurora-sidebar）。
+    // 侧栏改为半透明玻璃，让全局极光背景底透过导航区（--aurora-sidebar）。
     expect(innerStyle.boxShadow).toContain('rgba(255, 255, 255, 0.5)')
     expect(innerStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(innerStyle.backgroundImage).toContain('rgba(255, 255, 255, 0.42)')
@@ -242,7 +242,7 @@ describe('authenticated v3 shell background styles', () => {
     expect(innerStyle.borderTopLeftRadius).toBe('26px')
     expect(innerStyle.borderTopRightRadius).toBe('26px')
     expect(innerStyle.borderTopWidth).toBe('1px')
-    // 浮动侧栏同样为半透明玻璃玻璃底（--v3-aurora-sidebar / --v3-aurora-sidebar-border）。
+    // 浮动侧栏同样为半透明玻璃玻璃底（--aurora-sidebar / --aurora-sidebar-border）。
     expect(innerStyle.borderTopColor).toBe('rgba(255, 255, 255, 0.55)')
     expect(innerStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(innerStyle.backgroundImage).toContain('rgba(255, 255, 255, 0.42)')

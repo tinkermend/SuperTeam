@@ -14,8 +14,8 @@ function PermissionsRoute() {
       onTabChange={(next) =>
         navigate({
           search: (prev) => ({ ...prev, tab: next === "overview" ? undefined : next }),
-          replace: true,
-        })
+          replace: true
+})
       }
     />
   );
@@ -29,5 +29,5 @@ export const Route = createFileRoute("/_authenticated/permissions/")({
       result.tab = search.tab;
     }
     return result;
-  },
+  }
 });

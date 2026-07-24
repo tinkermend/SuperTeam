@@ -4,8 +4,8 @@ import { Bot, History, Inbox } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
-  V3Button,
-  type V3Tone,
+  Button,
+  type Tone
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import type {
@@ -17,11 +17,11 @@ import type {
   ProjectOverview,
   ProjectPlanRevision,
   ProjectTask,
-  ProjectTaskGraph,
+  ProjectTaskGraph
 } from "@/lib/api/projects";
 import {
   decisionStatusLabel,
-  taskStatusLabel,
+  taskStatusLabel
 } from "@/lib/status-labels";
 import { formatRelativeTime } from "@/lib/format-time";
 import {
@@ -33,7 +33,7 @@ import {
   resolveTaskMode,
   selectActiveOrBlockedTasks,
   type OpsLaunchMode,
-  type OpsPulseDay,
+  type OpsPulseDay
 } from "../lib/project-ops-home";
 
 type ProjectOpsHomeProps = {
@@ -56,9 +56,9 @@ type ProjectOpsHomeProps = {
 };
 
 const modePillClass: Record<OpsLaunchMode, string> = {
-  plan: "bg-v3-brand-soft text-v3-brand-deep",
-  loop: "bg-v3-artifact-soft text-v3-artifact-text",
-  chat: "bg-emerald-50 text-emerald-700",
+  plan: "bg-brand-soft text-brand-deep",
+  loop: "bg-artifact-soft text-artifact-text",
+  chat: "bg-emerald-50 text-emerald-700"
 };
 
 /** 日格高度按约 10–12 条芯片估，超出可滚；数据侧最多保留 15 条。 */
@@ -68,7 +68,7 @@ function modeToneClass(mode: OpsLaunchMode) {
   return modePillClass[mode] ?? modePillClass.plan;
 }
 
-function statusTone(status: string): V3Tone {
+function statusTone(status: string): Tone {
   switch (status) {
     case "completed":
     case "resolved":
@@ -105,7 +105,7 @@ export function ProjectOpsHome({
   riskLabel,
   runtimePlacementPanel,
   taskGraph,
-  tasks,
+  tasks
 }: ProjectOpsHomeProps) {
   const pool = overview?.digital_employee_pool ?? [];
   const sourceTasks = overview?.active_tasks?.length
@@ -119,8 +119,8 @@ export function ProjectOpsHome({
   const pulseDays = buildWeekPulse({
     demands,
     graphNodes: taskGraph?.nodes,
-    tasks: dedupedTasks,
-  });
+    tasks: dedupedTasks
+});
   const pulseCount = countWeekPulseActivity(pulseDays);
   const runningSlice = selectActiveOrBlockedTasks(dedupedTasks, 3);
   const pendingBlockers = decisionRequests.filter(
@@ -149,20 +149,20 @@ export function ProjectOpsHome({
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-extrabold text-v3-ink">运行脉搏</h3>
-                <span className="rounded-md bg-v3-brand-soft px-1.5 py-0.5 text-[11px] font-bold text-v3-brand-deep">
+                <h3 className="text-sm font-extrabold text-ink">运行脉搏</h3>
+                <span className="rounded-md bg-brand-soft px-1.5 py-0.5 text-[11px] font-bold text-brand-deep">
                   本周
                 </span>
               </div>
               {hasPulseActivity ? (
-                <p className="mt-0.5 text-[11.5px] text-v3-ink-3">
+                <p className="mt-0.5 text-[11.5px] text-ink-3">
                   时间 + Plan/Loop/对话 · {pulseCount} 次
                 </p>
               ) : null}
             </div>
-            <V3Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
+            <Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
               全部任务
-            </V3Button>
+            </Button>
           </div>
 
           {hasPulseActivity ? (
@@ -183,7 +183,7 @@ export function ProjectOpsHome({
           ) : (
             <div
               className={cn(
-                "relative flex-1 overflow-hidden rounded-[12px] border border-v3-line bg-v3-card-soft/40",
+                "relative flex-1 overflow-hidden rounded-[12px] border border-line bg-card-soft/40",
                 PULSE_DAY_MIN_HEIGHT_CLASS,
               )}
               data-testid="project-ops-pulse-empty"
@@ -191,7 +191,7 @@ export function ProjectOpsHome({
               <div
                 aria-hidden
                 className={cn(
-                  "pointer-events-none grid h-full grid-cols-7 divide-x divide-v3-line/80",
+                  "pointer-events-none grid h-full grid-cols-7 divide-x divide-line/80",
                   PULSE_DAY_MIN_HEIGHT_CLASS,
                 )}
               >
@@ -199,16 +199,16 @@ export function ProjectOpsHome({
                   <div
                     className={cn(
                       "flex min-w-0 flex-col px-1.5 py-1.5",
-                      day.isToday && "bg-v3-brand-soft/35",
+                      day.isToday && "bg-brand-soft/35",
                     )}
                     key={day.dayKey}
                   >
-                    <div className="flex items-baseline justify-between gap-1 text-[10.5px] text-v3-ink-3">
+                    <div className="flex items-baseline justify-between gap-1 text-[10.5px] text-ink-3">
                       <span>
                         {day.weekdayLabel}
                         {day.isToday ? " · 今" : ""}
                       </span>
-                      <b className="font-extrabold tabular-nums text-v3-ink/70">
+                      <b className="font-extrabold tabular-nums text-ink/70">
                         {day.dayOfMonth}
                       </b>
                     </div>
@@ -216,7 +216,7 @@ export function ProjectOpsHome({
                 ))}
               </div>
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
-                <p className="text-center text-base font-extrabold tracking-tight text-v3-ink sm:text-lg">
+                <p className="text-center text-base font-extrabold tracking-tight text-ink sm:text-lg">
                   本周暂无任务活动
                 </p>
               </div>
@@ -232,17 +232,17 @@ export function ProjectOpsHome({
           >
             <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h3 className="text-sm font-extrabold text-v3-ink">执行中与阻塞</h3>
-                <p className="mt-0.5 text-[11.5px] text-v3-ink-3">最多 3 条</p>
+                <h3 className="text-sm font-extrabold text-ink">执行中与阻塞</h3>
+                <p className="mt-0.5 text-[11.5px] text-ink-3">最多 3 条</p>
               </div>
-              <V3Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
+              <Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
                 全部任务
-              </V3Button>
+              </Button>
             </div>
             {runningSlice.length === 0 ? (
-              <p className="text-[12.5px] text-v3-ink-3">暂无执行中或阻塞任务</p>
+              <p className="text-[12.5px] text-ink-3">暂无执行中或阻塞任务</p>
             ) : (
-              <ul className="divide-y divide-v3-line">
+              <ul className="divide-y divide-line">
                 {runningSlice.map((task) => {
                   const mode = resolveTaskMode(task, demandsById);
                   return (
@@ -252,10 +252,10 @@ export function ProjectOpsHome({
                     >
                       <div className="min-w-0">
                         <p className="truncate text-[12.5px] font-bold">{task.title}</p>
-                        <p className="mt-0.5 line-clamp-1 text-[11.5px] text-v3-ink-2">
+                        <p className="mt-0.5 line-clamp-1 text-[11.5px] text-ink-2">
                           {task.summary || "等待系统推进"}
                         </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-v3-ink-3">
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-3">
                           <span
                             className={cn(
                               "rounded px-1 font-bold",
@@ -292,17 +292,17 @@ export function ProjectOpsHome({
             {pool.length === 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <div className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-v3-card-soft text-v3-ink-2">
+                  <div className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-card-soft text-ink-2">
                     <Bot className="size-3.5" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-extrabold text-v3-ink">项目数字员工</h3>
-                    <p className="mt-0.5 text-[12px] text-v3-ink-3">尚未配置数字员工池</p>
+                    <h3 className="text-sm font-extrabold text-ink">项目数字员工</h3>
+                    <p className="mt-0.5 text-[12px] text-ink-3">尚未配置数字员工池</p>
                   </div>
                 </div>
                 {!isArchived ? (
                   <Link
-                    className="shrink-0 text-[12px] font-semibold text-v3-brand hover:opacity-80"
+                    className="shrink-0 text-[12px] font-semibold text-brand hover:opacity-80"
                     params={{ projectId: project.id }}
                     to="/projects/$projectId/config"
                   >
@@ -314,12 +314,12 @@ export function ProjectOpsHome({
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="text-sm font-extrabold text-v3-ink">项目数字员工</h3>
-                    <p className="mt-0.5 text-[11.5px] text-v3-ink-3">忙闲态势</p>
+                    <h3 className="text-sm font-extrabold text-ink">项目数字员工</h3>
+                    <p className="mt-0.5 text-[11.5px] text-ink-3">忙闲态势</p>
                   </div>
                   {!isArchived ? (
                     <Link
-                      className="shrink-0 text-[12px] font-semibold text-v3-brand hover:opacity-80"
+                      className="shrink-0 text-[12px] font-semibold text-brand hover:opacity-80"
                       params={{ projectId: project.id }}
                       to="/projects/$projectId/config"
                     >
@@ -327,7 +327,7 @@ export function ProjectOpsHome({
                     </Link>
                   ) : null}
                 </div>
-                <ul className="mt-2 divide-y divide-v3-line">
+                <ul className="mt-2 divide-y divide-line">
                   {pool.slice(0, 6).map((member) => {
                     const busy = employeeBusyLabel(member, dedupedTasks);
                     const name =
@@ -339,7 +339,7 @@ export function ProjectOpsHome({
                         className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0"
                         key={member.id}
                       >
-                        <div className="grid size-7 shrink-0 place-items-center rounded-full bg-v3-card-soft text-[10px] font-bold text-v3-ink-2">
+                        <div className="grid size-7 shrink-0 place-items-center rounded-full bg-card-soft text-[10px] font-bold text-ink-2">
                           {name.slice(0, 1)}
                         </div>
                         <div className="min-w-0 flex-1">
@@ -356,9 +356,9 @@ export function ProjectOpsHome({
                         <p
                           className={cn(
                             "max-w-[42%] truncate text-right text-[11.5px]",
-                            busy.tone === "danger" && "text-v3-danger",
-                            busy.tone === "warn" && "text-v3-ink-2",
-                            busy.tone === "mute" && "text-v3-ink-3",
+                            busy.tone === "danger" && "text-danger",
+                            busy.tone === "warn" && "text-ink-2",
+                            busy.tone === "mute" && "text-ink-3",
                           )}
                         >
                           {busy.label}
@@ -374,8 +374,8 @@ export function ProjectOpsHome({
           <div className="min-w-0" data-testid="project-ops-runtime" id="project-overview-runtime">
             {runtimePlacementPanel ?? (
               <SoftCard className="overflow-hidden px-3.5 py-3">
-                <h3 className="text-sm font-extrabold text-v3-ink">Runtime 节点</h3>
-                <p className="mt-2 text-[12.5px] text-v3-ink-3">尚未绑定 Runtime</p>
+                <h3 className="text-sm font-extrabold text-ink">Runtime 节点</h3>
+                <p className="mt-2 text-[12.5px] text-ink-3">尚未绑定 Runtime</p>
               </SoftCard>
             )}
           </div>
@@ -394,33 +394,33 @@ export function ProjectOpsHome({
             data-testid="project-ops-rail"
           >
             <div
-              className="flex items-center justify-between gap-2 border-b border-v3-line px-3.5 py-2.5"
+              className="flex items-center justify-between gap-2 border-b border-line px-3.5 py-2.5"
               data-testid="project-ops-blockers"
               id="project-overview-pending"
             >
               <span className="flex min-w-0 items-center gap-1.5 text-[12.5px]">
-                <Inbox className="size-3.5 shrink-0 text-v3-ink-3" />
-                <span className="font-bold text-v3-ink">阻塞 · 0</span>
-                <span className="truncate text-v3-ink-3">当前无阻塞</span>
+                <Inbox className="size-3.5 shrink-0 text-ink-3" />
+                <span className="font-bold text-ink">阻塞 · 0</span>
+                <span className="truncate text-ink-3">当前无阻塞</span>
               </span>
               <Link
-                className="shrink-0 text-[11.5px] font-semibold text-v3-brand hover:opacity-80"
+                className="shrink-0 text-[11.5px] font-semibold text-brand hover:opacity-80"
                 to="/inbox"
               >
                 全部待办
               </Link>
             </div>
             <div
-              className="flex items-center justify-between gap-2 border-b border-v3-line px-3.5 py-2.5"
+              className="flex items-center justify-between gap-2 border-b border-line px-3.5 py-2.5"
               data-testid="project-ops-events"
             >
               <span className="flex min-w-0 items-center gap-1.5 text-[12.5px]">
-                <History className="size-3.5 shrink-0 text-v3-ink-3" />
-                <span className="font-bold text-v3-ink">事件</span>
-                <span className="truncate text-v3-ink-3">暂无执行/审批事件</span>
+                <History className="size-3.5 shrink-0 text-ink-3" />
+                <span className="font-bold text-ink">事件</span>
+                <span className="truncate text-ink-3">暂无执行/审批事件</span>
               </span>
               <Link
-                className="shrink-0 text-[11.5px] font-semibold text-v3-brand hover:opacity-80"
+                className="shrink-0 text-[11.5px] font-semibold text-brand hover:opacity-80"
                 search={{ project_id: project.id }}
                 to="/audit"
               >
@@ -428,7 +428,7 @@ export function ProjectOpsHome({
               </Link>
             </div>
             <div className="flex-1 px-3.5 py-3" data-testid="project-ops-metrics">
-              <h3 className="mb-2 text-[12px] font-extrabold text-v3-ink">项目脉搏</h3>
+              <h3 className="mb-2 text-[12px] font-extrabold text-ink">项目脉搏</h3>
               <div className="grid grid-cols-2 gap-1.5">
                 <MetricCell
                   label="预算消耗"
@@ -459,35 +459,35 @@ export function ProjectOpsHome({
             >
               <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h3 className="text-sm font-extrabold text-v3-ink">
+                  <h3 className="text-sm font-extrabold text-ink">
                     本项目阻塞 · {pendingBlockers.length}
                   </h3>
-                  <p className="mt-0.5 text-[11.5px] text-v3-ink-3">非第二收件箱</p>
+                  <p className="mt-0.5 text-[11.5px] text-ink-3">非第二收件箱</p>
                 </div>
-                <V3Button asChild size="sm" variant="ghost">
+                <Button asChild size="sm" variant="ghost">
                   <Link to="/inbox">全部待办</Link>
-                </V3Button>
+                </Button>
               </div>
               {pendingBlockers.length === 0 ? (
-                <p className="flex items-center gap-1.5 text-[12.5px] text-v3-ink-3">
+                <p className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
                   <Inbox className="size-3.5" />
                   当前没有项目阻塞
                 </p>
               ) : (
-                <ul className="divide-y divide-v3-line">
+                <ul className="divide-y divide-line">
                   {pendingBlockers.slice(0, 4).map((decision) => (
                     <li className="py-2 first:pt-0 last:pb-0" key={decision.id}>
                       <div className="min-w-0">
                         <p className="truncate text-[12.5px] font-bold">
                           {decision.title_snapshot}
                         </p>
-                        <p className="mt-0.5 line-clamp-2 text-[11.5px] text-v3-ink-2">
+                        <p className="mt-0.5 line-clamp-2 text-[11.5px] text-ink-2">
                           {decision.summary_snapshot &&
                           decision.summary_snapshot !== decision.title_snapshot
                             ? decision.summary_snapshot
                             : "等待处理"}
                         </p>
-                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-v3-ink-3">
+                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-ink-3">
                           {decision.created_at ? (
                             <time dateTime={decision.created_at}>
                               {formatRelativeTime(decision.created_at)}
@@ -513,22 +513,22 @@ export function ProjectOpsHome({
             <SoftCard className="overflow-hidden p-3.5" data-testid="project-ops-events">
               <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h3 className="text-sm font-extrabold text-v3-ink">事件流</h3>
-                  <p className="mt-0.5 text-[11.5px] text-v3-ink-3">执行 + 审批</p>
+                  <h3 className="text-sm font-extrabold text-ink">事件流</h3>
+                  <p className="mt-0.5 text-[11.5px] text-ink-3">执行 + 审批</p>
                 </div>
-                <V3Button asChild size="sm" variant="ghost">
+                <Button asChild size="sm" variant="ghost">
                   <Link search={{ project_id: project.id }} to="/audit">
                     审计
                   </Link>
-                </V3Button>
+                </Button>
               </div>
               {opsEvents.length === 0 ? (
-                <p className="flex items-center gap-1.5 text-[12.5px] text-v3-ink-3">
+                <p className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
                   <History className="size-3.5" />
                   暂无项目事件
                 </p>
               ) : (
-                <ul className="divide-y divide-v3-line">
+                <ul className="divide-y divide-line">
                   {opsEvents.map((event) => {
                     const display = opsEventTitle(event);
                     return (
@@ -537,7 +537,7 @@ export function ProjectOpsHome({
                         key={event.id}
                       >
                         <time
-                          className="shrink-0 text-[11.5px] tabular-nums text-v3-ink-3"
+                          className="shrink-0 text-[11.5px] tabular-nums text-ink-3"
                           dateTime={event.created_at}
                           title={event.created_at}
                         >
@@ -547,13 +547,13 @@ export function ProjectOpsHome({
                           <p className="flex flex-wrap items-center gap-1 text-[12px] font-bold">
                             {display.title}
                             {display.kind ? (
-                              <span className="rounded bg-v3-card-soft px-1 text-[10px] font-bold text-v3-ink-2">
+                              <span className="rounded bg-card-soft px-1 text-[10px] font-bold text-ink-2">
                                 {display.kind}
                               </span>
                             ) : null}
                           </p>
                           {display.summary ? (
-                            <p className="mt-0.5 line-clamp-2 text-[11.5px] text-v3-ink-2">
+                            <p className="mt-0.5 line-clamp-2 text-[11.5px] text-ink-2">
                               {display.summary}
                             </p>
                           ) : null}
@@ -566,7 +566,7 @@ export function ProjectOpsHome({
             </SoftCard>
 
             <SoftCard className="overflow-hidden p-3.5" data-testid="project-ops-metrics">
-              <h3 className="mb-2 text-sm font-extrabold text-v3-ink">项目脉搏</h3>
+              <h3 className="mb-2 text-sm font-extrabold text-ink">项目脉搏</h3>
               <div className="grid grid-cols-2 gap-1.5">
                 <MetricCell
                   label="预算消耗"
@@ -600,44 +600,44 @@ function WeekPulseGrid({ days }: { days: OpsPulseDay[] }) {
       {days.map((day) => (
         <div
           className={cn(
-            "flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden rounded-[10px] bg-v3-card-soft p-1.5",
+            "flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden rounded-[10px] bg-card-soft p-1.5",
             PULSE_DAY_MIN_HEIGHT_CLASS,
-            day.isToday && "border border-v3-brand/35 bg-v3-card",
+            day.isToday && "border border-brand/35 bg-card",
           )}
           key={day.dayKey}
         >
-          <div className="flex shrink-0 justify-between text-[10.5px] text-v3-ink-3">
+          <div className="flex shrink-0 justify-between text-[10.5px] text-ink-3">
             <span>
               {day.weekdayLabel}
               {day.isToday ? " · 今" : ""}
             </span>
-            <b className="font-extrabold text-v3-ink tabular-nums">{day.dayOfMonth}</b>
+            <b className="font-extrabold text-ink tabular-nums">{day.dayOfMonth}</b>
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
             {day.chips.length === 0 ? (
-              <div className="grid flex-1 place-items-center text-[10.5px] text-v3-ink-3">
+              <div className="grid flex-1 place-items-center text-[10.5px] text-ink-3">
                 —
               </div>
             ) : (
               day.chips.map((chip) => (
                 <div
-                  className="grid shrink-0 grid-cols-[6px_minmax(0,1fr)] gap-1 rounded-md border border-v3-line bg-v3-card px-1 py-0.5"
+                  className="grid shrink-0 grid-cols-[6px_minmax(0,1fr)] gap-1 rounded-md border border-line bg-card px-1 py-0.5"
                   key={chip.taskId}
                   title={chip.title}
                 >
                   <span
                     className={cn(
                       "mt-1 size-1.5 rounded-full",
-                      chip.statusTone === "ok" && "bg-v3-ok",
-                      chip.statusTone === "warn" && "bg-v3-warn",
-                      chip.statusTone === "info" && "bg-v3-brand",
-                      chip.statusTone === "danger" && "bg-v3-danger",
-                      chip.statusTone === "mute" && "bg-v3-ink-3",
+                      chip.statusTone === "ok" && "bg-ok",
+                      chip.statusTone === "warn" && "bg-warn",
+                      chip.statusTone === "info" && "bg-brand",
+                      chip.statusTone === "danger" && "bg-danger",
+                      chip.statusTone === "mute" && "bg-ink-3",
                     )}
                   />
                   <div className="min-w-0">
                     <p className="truncate text-[10.5px] font-bold leading-4">{chip.title}</p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-v3-ink-3">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-ink-3">
                       <span className="tabular-nums">{chip.timeLabel}</span>
                       <span
                         className={cn("rounded px-1 font-bold", modeToneClass(chip.mode))}
@@ -658,7 +658,7 @@ function WeekPulseGrid({ days }: { days: OpsPulseDay[] }) {
 
 function BlockerActions({
   decision,
-  onResolveDecision,
+  onResolveDecision
 }: {
   decision: ProjectDecisionRequest;
   onResolveDecision: (decisionId: string, decision: string) => void;
@@ -676,7 +676,7 @@ function BlockerActions({
   return (
     <div className="flex flex-wrap gap-1.5">
       {actions.map((action) => (
-        <V3Button
+        <Button
           key={action.value}
           size="sm"
           type="button"
@@ -688,7 +688,7 @@ function BlockerActions({
           onClick={() => onResolveDecision(decision.id, action.value)}
         >
           {action.label}
-        </V3Button>
+        </Button>
       ))}
     </div>
   );
@@ -696,9 +696,9 @@ function BlockerActions({
 
 function MetricCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[10px] bg-v3-card-soft px-2.5 py-2">
-      <div className="text-[10.5px] text-v3-ink-3">{label}</div>
-      <div className="mt-0.5 text-[13px] font-extrabold tracking-tight tabular-nums text-v3-ink">
+    <div className="rounded-[10px] bg-card-soft px-2.5 py-2">
+      <div className="text-[10.5px] text-ink-3">{label}</div>
+      <div className="mt-0.5 text-[13px] font-extrabold tracking-tight tabular-nums text-ink">
         {value}
       </div>
     </div>

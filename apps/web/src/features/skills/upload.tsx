@@ -10,12 +10,12 @@ import {
   ShieldCheck,
   Tag,
   Terminal,
-  X,
+  X
 } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import {
   GlassCard,
@@ -23,12 +23,11 @@ import {
   MasterDetailLayout,
   SignatureCard,
   StatusPill,
-  V3Button,
-  type V3Tone,
+  Chip,
+  Button,
+  type Tone
 } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,9 +52,9 @@ const riskOptions = [
 
 // 选中态按风险语义着色：低=绿(ok)、中=橙(warn)、高=红(danger)，与右侧摘要 StatusPill tone 一致。
 const riskActiveClass: Record<string, string> = {
-  low: "bg-v3-ok",
-  medium: "bg-v3-warn",
-  high: "bg-v3-danger",
+  low: "bg-ok",
+  medium: "bg-warn",
+  high: "bg-danger"
 };
 
 export function SkillUploadPage() {
@@ -104,15 +103,15 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
         risk_level: riskLevel,
         runtime_dependencies: {
           env: runtimeEnvItems,
-          tools: runtimeToolItems,
-        },
-        tags: tagItems,
-      });
+          tools: runtimeToolItems
+},
+        tags: tagItems
+});
     },
     onSuccess: (skill) => {
       onUploaded?.(skill);
-    },
-  });
+    }
+});
 
   return (
     <>
@@ -137,7 +136,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
             rail="lg"
             master={
               <GlassCard className="min-w-0">
-              <CardContent className="p-0">
+              <div className="p-0">
                 <section className="p-5">
                   <SectionTitle
                     icon={<BadgeCheck />}
@@ -188,15 +187,15 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     label="风险等级"
                     required
                   >
-                    <div className="grid h-10 grid-cols-3 rounded-xl bg-v3-card-soft p-1" role="group" aria-label="风险等级">
+                    <div className="grid h-10 grid-cols-3 rounded-xl bg-card-soft p-1" role="group" aria-label="风险等级">
                       {riskOptions.map((option) => (
                         <button
                           aria-pressed={riskLevel === option.value}
                           className={cn(
                             "rounded-[10px] text-sm font-semibold transition-colors",
                             riskLevel === option.value
-                              ? cn(riskActiveClass[option.value], "text-white shadow-v3")
-                              : "text-v3-ink-2 hover:bg-v3-card hover:text-v3-ink",
+                              ? cn(riskActiveClass[option.value], "text-white shadow-card")
+                              : "text-ink-2 hover:bg-card hover:text-ink",
                           )}
                           key={option.value}
                           onClick={() => setRiskLevel(option.value)}
@@ -259,17 +258,17 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   </FormRow>
 
                   <div className="mt-4 flex items-start gap-2 border-t pt-4 text-sm text-muted-foreground">
-                    <Info className="mt-0.5 size-4 shrink-0 text-v3-info" />
+                    <Info className="mt-0.5 size-4 shrink-0 text-info" />
                     <span>仅声明变量名，运行时由数字员工配置注入值。以上依赖为声明，不校验值；运行时由安装方或平台提供对应值。</span>
                   </div>
                 </section>
-              </CardContent>
+              </div>
               </GlassCard>
             }
             detail={
               <aside className="min-w-0 @5xl/master-detail:sticky @5xl/master-detail:top-4 @5xl/master-detail:max-h-[calc(100svh-2rem)] @5xl/master-detail:overflow-y-auto">
               <GlassCard>
-                <CardContent className="flex flex-col gap-4 p-5 text-sm">
+                <div className="flex flex-col gap-4 p-5 text-sm">
                   <h2 className="text-base font-semibold tracking-normal">发布摘要</h2>
 
                   <div className="space-y-3 py-1">
@@ -283,8 +282,8 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     <SummarySubRow label="环境变量" value={runtimeEnvItems.length ? runtimeEnvItems.join(", ") : "未声明"} />
                   </div>
 
-                  <div className="flex items-start gap-2 rounded-md border border-v3-info/20 bg-v3-info-soft p-3 text-xs leading-5 text-v3-ink">
-                    <Info className="mt-0.5 size-4 shrink-0 text-v3-info" />
+                  <div className="flex items-start gap-2 rounded-md border border-info/20 bg-info-soft p-3 text-xs leading-5 text-ink">
+                    <Info className="mt-0.5 size-4 shrink-0 text-info" />
                     <p>
                       发布后，平台将从 SKILL.md 读取并补齐技能名称与描述（如未填写）。
                       <br />
@@ -299,11 +298,11 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                   ) : null}
                   <div className="flex flex-col gap-2.5 border-t pt-4">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                      <span className={cn("size-1.5 shrink-0 rounded-full", canPublish ? "bg-v3-ok" : "bg-v3-ink-3")} />
-                      <span className="font-semibold text-v3-ink">{canPublish ? "可发布" : "待完善"}</span>
-                      <span className="text-v3-ink-3">{canPublish ? "元数据与依赖声明已就绪" : "请选择 zip 包并填写技能中文名称"}</span>
+                      <span className={cn("size-1.5 shrink-0 rounded-full", canPublish ? "bg-ok" : "bg-ink-3")} />
+                      <span className="font-semibold text-ink">{canPublish ? "可发布" : "待完善"}</span>
+                      <span className="text-ink-3">{canPublish ? "元数据与依赖声明已就绪" : "请选择 zip 包并填写技能中文名称"}</span>
                     </div>
-                    <V3Button
+                    <Button
                       data-skill-upload-publish
                       disabled={!canPublish || upload.isPending}
                       className="h-11 text-base"
@@ -312,9 +311,9 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     >
                       <Rocket data-icon="inline-start" />
                       发布到技能市场
-                    </V3Button>
+                    </Button>
                   </div>
-                </CardContent>
+                </div>
               </GlassCard>
               </aside>
             }
@@ -342,7 +341,7 @@ function PackageStatusBand({
   file,
   metadataReady,
   onFileChange,
-  packageDisplayName,
+  packageDisplayName
 }: {
   canPublish: boolean;
   dependencyCount: number;
@@ -378,35 +377,35 @@ function PackageStatusBand({
     {
       description: file ? file.name : "等待 ZIP",
       done: Boolean(file),
-      label: "上传文件",
-    },
+      label: "上传文件"
+},
     {
       description: packageDisplayName || "选择后解析",
       done: Boolean(file),
-      label: "解析信息",
-    },
+      label: "解析信息"
+},
     {
       description: metadataReady ? "名称已填写" : "待填写名称",
       done: metadataReady,
-      label: "完善资料",
-    },
+      label: "完善资料"
+},
     {
       description: dependencyCount ? "依赖声明已记录" : "无依赖声明",
       disabled: dependencyCount === 0,
       done: dependencyCount > 0,
-      label: "校验依赖",
-    },
+      label: "校验依赖"
+},
     {
       description: canPublish ? "可以发布" : "等待就绪",
       done: canPublish,
-      label: "发布确认",
-    },
+      label: "发布确认"
+},
   ];
 
   const zipTile = (
     <span
       className="flex size-14 shrink-0 flex-col items-center justify-center rounded-xl text-white shadow-[0_8px_20px_-6px_rgba(47,95,255,0.5)] transition group-hover:scale-[1.03]"
-      style={{ background: "var(--v3-brand-grad)" }}
+      style={{ background: "var(--brand-grad)" }}
     >
       <FileArchive className="size-5" />
       <span className="mt-0.5 text-[10px] font-bold tracking-normal">ZIP</span>
@@ -416,19 +415,19 @@ function PackageStatusBand({
   // 全部用 span：需要能合法嵌入 <button>（点击选择文件的可达性触发器）。
   const fileMeta = (
     <span className="block min-w-0 flex-1 text-left">
-      <span className="block truncate text-base font-extrabold tracking-tight text-v3-ink">
+      <span className="block truncate text-base font-extrabold tracking-tight text-ink">
         {file?.name ?? "选择技能 zip 包"}
       </span>
-      <span className="mt-0.5 block text-sm text-v3-ink-2">
+      <span className="mt-0.5 block text-sm text-ink-2">
         {file ? formatBytes(file.size) : "拖拽 ZIP 到此处，或点击选择，必须包含 SKILL.md"}
       </span>
       {file ? (
-        <span className="mt-1 flex min-w-0 items-center gap-2 text-v3-ink-2">
-          <span className="text-xs uppercase tracking-wide text-v3-ink-3">包名</span>
-          <span className="truncate text-sm font-semibold text-v3-ink">
+        <span className="mt-1 flex min-w-0 items-center gap-2 text-ink-2">
+          <span className="text-xs uppercase tracking-wide text-ink-3">包名</span>
+          <span className="truncate text-sm font-semibold text-ink">
             {packageDisplayName || "选择 zip 后自动生成"}
           </span>
-          <span className="shrink-0 text-xs text-v3-ink-3">· 自动生成</span>
+          <span className="shrink-0 text-xs text-ink-3">· 自动生成</span>
         </span>
       ) : null}
     </span>
@@ -438,7 +437,7 @@ function PackageStatusBand({
     <SignatureCard
       className={cn(
         "p-5 transition-shadow",
-        dragActive && "ring-2 ring-v3-brand ring-offset-2 ring-offset-[color:var(--v3-signature-surface)]",
+        dragActive && "ring-2 ring-brand ring-offset-2 ring-offset-[color:var(--signature-surface)]",
       )}
       onDragLeave={() => setDragActive(false)}
       onDragOver={(event) => {
@@ -463,15 +462,15 @@ function PackageStatusBand({
         className={cn(
           "relative flex min-w-0 flex-col gap-3 rounded-xl border border-dashed p-3 transition-colors sm:flex-row sm:items-center",
           dragActive
-            ? "border-v3-brand bg-v3-brand-soft/50"
-            : "border-v3-line-strong/70 hover:border-v3-brand/60 hover:bg-v3-brand-soft/15",
+            ? "border-brand bg-brand-soft/50"
+            : "border-line-strong/70 hover:border-brand/60 hover:bg-brand-soft/15",
         )}
       >
         {file ? (
           <>
             <button
               aria-label="更换技能 zip 包"
-              className="group shrink-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand focus-visible:ring-offset-2"
+              className="group shrink-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
               onClick={openFilePicker}
               type="button"
             >
@@ -480,14 +479,14 @@ function PackageStatusBand({
             {fileMeta}
             <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1.5">
               <button
-                className="cursor-pointer rounded-lg bg-v3-brand-soft px-2.5 py-1.5 text-xs font-bold text-v3-brand-deep transition-colors hover:bg-v3-brand-soft/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand focus-visible:ring-offset-2"
+                className="cursor-pointer rounded-lg bg-brand-soft px-2.5 py-1.5 text-xs font-bold text-brand-deep transition-colors hover:bg-brand-soft/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                 onClick={openFilePicker}
                 type="button"
               >
                 更换
               </button>
               <button
-                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-v3-ink-3 transition-colors hover:bg-v3-card hover:text-v3-ink"
+                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-3 transition-colors hover:bg-card hover:text-ink"
                 onClick={clearFile}
                 type="button"
               >
@@ -497,7 +496,7 @@ function PackageStatusBand({
           </>
         ) : (
           <button
-            className="group flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand focus-visible:ring-offset-2"
+            className="group flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
             onClick={openFilePicker}
             type="button"
           >
@@ -506,14 +505,14 @@ function PackageStatusBand({
           </button>
         )}
       </div>
-      <div className="mt-4 border-t border-[color:var(--v3-signature-border)] pt-4">
+      <div className="mt-4 border-t border-[color:var(--signature-border)] pt-4">
         <ol className="flex flex-col gap-3 sm:flex-row sm:gap-0">
           {releaseSteps.map((step, index) => (
             <li
               aria-disabled={step.disabled ? "true" : "false"}
               className={cn(
                 "flex min-w-0 flex-1 flex-col gap-1.5",
-                step.done ? "text-v3-ink" : "text-v3-ink-2",
+                step.done ? "text-ink" : "text-ink-2",
               )}
               data-release-step={step.label}
               key={step.label}
@@ -523,8 +522,8 @@ function PackageStatusBand({
                   className={cn(
                     "grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-extrabold tabular-nums transition-colors",
                     step.done
-                      ? "bg-v3-brand text-white shadow-v3"
-                      : "bg-v3-card text-v3-ink-3 ring-1 ring-v3-line-strong",
+                      ? "bg-brand text-white shadow-card"
+                      : "bg-card text-ink-3 ring-1 ring-line-strong",
                   )}
                 >
                   {index + 1}
@@ -533,14 +532,14 @@ function PackageStatusBand({
                   <span
                     className={cn(
                       "hidden h-px flex-1 rounded-full sm:block",
-                      step.done ? "bg-v3-brand/45" : "bg-v3-line",
+                      step.done ? "bg-brand/45" : "bg-line",
                     )}
                   />
                 ) : null}
               </div>
               <div className="min-w-0 pr-3">
                 <span className="block truncate text-sm font-bold" data-release-step-title>{step.label}</span>
-                <p className="mt-0.5 truncate text-xs text-v3-ink-2" data-release-step-description>{step.description}</p>
+                <p className="mt-0.5 truncate text-xs text-ink-2" data-release-step-description>{step.description}</p>
               </div>
             </li>
           ))}
@@ -553,7 +552,7 @@ function PackageStatusBand({
 function SectionTitle({
   description,
   icon,
-  title,
+  title
 }: {
   description?: string;
   icon: ReactNode;
@@ -577,7 +576,7 @@ function FormRow({
   help,
   htmlFor,
   label,
-  required,
+  required
 }: {
   children: ReactNode;
   help: string;
@@ -604,7 +603,7 @@ function DependencyInput({
   id,
   items,
   onChange,
-  placeholder,
+  placeholder
 }: {
   emptyText: string;
   id: string;
@@ -633,23 +632,23 @@ function DependencyInput({
   };
 
   return (
-    <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-[10px] border border-v3-line-strong bg-v3-card px-2 py-1.5 focus-within:border-v3-brand focus-within:ring-2 focus-within:ring-v3-brand/25">
+    <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-[10px] border border-line-strong bg-card px-2 py-1.5 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/25">
       {committedItems.map((item) => (
-        <Badge
-          className="h-7 gap-1 rounded-lg border-transparent bg-v3-brand-soft py-0 pl-2.5 pr-1.5 text-sm font-semibold text-v3-brand-deep shadow-none ring-1 ring-inset ring-[color:var(--v3-signature-border)]"
+        <Chip
+          className="h-7 gap-1 rounded-lg border-transparent bg-brand-soft py-0 pl-2.5 pr-1.5 text-sm font-semibold text-brand-deep shadow-none ring-1 ring-inset ring-[color:var(--signature-border)]"
           key={item}
-          variant="outline"
+          
         >
           {item}
           <button
             aria-label={`移除 ${item}`}
-            className="inline-flex size-4 items-center justify-center rounded-full text-v3-brand-deep/60 transition-colors hover:bg-v3-danger hover:text-white"
+            className="inline-flex size-4 items-center justify-center rounded-full text-brand-deep/60 transition-colors hover:bg-danger hover:text-white"
             onClick={() => removeItem(item)}
             type="button"
           >
             <X className="size-3" />
           </button>
-        </Badge>
+        </Chip>
       ))}
       <Input
         className="h-7 min-w-[220px] flex-1 border-0 bg-transparent px-1 py-0 shadow-none focus-visible:ring-0"
@@ -692,12 +691,12 @@ function SummaryRow({
   icon,
   label,
   value,
-  valueTone,
+  valueTone
 }: {
   icon: ReactNode;
   label: string;
   value: string;
-  valueTone?: V3Tone;
+  valueTone?: Tone;
 }) {
   return (
     <div className="grid grid-cols-[18px_minmax(110px,1fr)_minmax(0,1.35fr)] items-center gap-3" data-summary-row={label}>
@@ -778,7 +777,7 @@ function riskLabel(value: string) {
   }
 }
 
-function riskTone(value: string): V3Tone {
+function riskTone(value: string): Tone {
   switch (value) {
     case "low":
       return "ok";

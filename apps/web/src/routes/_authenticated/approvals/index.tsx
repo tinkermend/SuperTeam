@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_authenticated/approvals/")({
     throw redirect({
       to: "/permissions",
       search: { tab: "permission-approvals" },
-      replace: true,
-    });
-  },
+      replace: true
+});
+  }
 });

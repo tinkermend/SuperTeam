@@ -6,19 +6,19 @@ import { render } from "vitest-browser-react";
 import { EmployeesView } from "@/features/employees";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -30,17 +30,17 @@ vi.mock("@tanstack/react-router", () => ({
       }
     }
     return <a href={href}>{children}</a>;
-  },
+  }
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 type EmployeesFetcherOptions = {
@@ -68,9 +68,9 @@ function createEmployeesFetcher({
   queueSummary = {
     failed_recent_run_count: 1,
     needs_configuration_count: 2,
-    stale_config_count: 4,
-  },
-  totalCount = 18,
+    stale_config_count: 4
+},
+  totalCount = 18
 }: EmployeesFetcherOptions = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -91,22 +91,22 @@ function createEmployeesFetcher({
             operationalStatus === "waiting_human"
               ? [{ code: "approval_blocked", message: "等待人工确认后继续执行" }]
               : [],
-          can_dispatch: operationalStatus === "idle",
-        },
+          can_dispatch: operationalStatus === "idle"
+},
         recent_events: projectAcceptancePendingOnly
           ? [
               {
                 label: "项目验收待处理",
                 status: "project_acceptance",
-                occurred_at: twoMinutesAgo,
-              },
+                occurred_at: twoMinutesAgo
+},
             ]
           : [
               {
                 label: "命令已下发",
                 status: "dispatching",
-                occurred_at: twoMinutesAgo,
-              },
+                occurred_at: twoMinutesAgo
+},
             ],
         identity_summary: {
           id:
@@ -136,9 +136,9 @@ function createEmployeesFetcher({
             thumbnail_url: "/images/digital-employee-avatars/engineer-f-01-256.webp",
             source: "ai_generated_internal_pack",
             license: "internal_product_asset",
-            status: "active",
-          },
-        },
+            status: "active"
+}
+},
         execution_summary: {
           execution_instance_id: "22222222-2222-4222-8222-222222222222",
           status: "active",
@@ -149,8 +149,8 @@ function createEmployeesFetcher({
           provider_type: "claude-code",
           provider_status: "ready",
           health_status: "healthy",
-          agent_home_dir_available: true,
-        },
+          agent_home_dir_available: true
+},
         latest_run_summary: {
           run_id: "44444444-4444-4444-8444-444444444444",
           task_id: "task-1",
@@ -161,8 +161,8 @@ function createEmployeesFetcher({
           updated_at: twoMinutesAgo,
           duration_sec: 480,
           token_usage: 3200,
-          error_message: "",
-        },
+          error_message: ""
+},
         governance_summary: {
           effective_config_id: "55555555-5555-4555-8555-555555555555",
           status: "approved",
@@ -170,8 +170,8 @@ function createEmployeesFetcher({
           employee_revision_number: 2,
           skills_count: 8,
           mcp_servers_count: 3,
-          constitution_ref: "constitution://requirements/v2",
-        },
+          constitution_ref: "constitution://requirements/v2"
+},
         budget_summary: {
           usage_tokens_30d: 16000,
           run_count_30d: 12,
@@ -181,9 +181,9 @@ function createEmployeesFetcher({
           daily_token_limit: null,
           usage_tokens_today: 0,
           usage_percent_today: null,
-          limit_exceeded: false,
-        },
-      };
+          limit_exceeded: false
+}
+};
       // 待配置员工:配置未审批生效(治理判据),同时刻意保留"无 Runtime 绑定"的遗留
       // 执行实例残留——它不应再影响工作台状态或 Provider 行(身份级 provider 仍应显示)。
       const unboundItem = {
@@ -192,8 +192,8 @@ function createEmployeesFetcher({
         operational_state: {
           status: "needs_configuration",
           reasons: [{ code: "configuration_missing", message: "缺少执行所需配置" }],
-          can_dispatch: false,
-        },
+          can_dispatch: false
+},
         recent_events: [],
         identity_summary: {
           ...readyItem.identity_summary,
@@ -203,12 +203,12 @@ function createEmployeesFetcher({
           employee_type_label: "平台运维",
           provider_type: "codex",
           name: "待配置员工",
-          role: "平台运维",
-        },
+          role: "平台运维"
+},
         governance_summary: {
           ...readyItem.governance_summary,
-          status: "pending_approval",
-        },
+          status: "pending_approval"
+},
         execution_summary: {
           ...readyItem.execution_summary,
           execution_instance_id: undefined,
@@ -220,15 +220,15 @@ function createEmployeesFetcher({
           provider_type: "",
           provider_status: "",
           health_status: "missing",
-          agent_home_dir_available: false,
-        },
+          agent_home_dir_available: false
+},
         latest_run_summary: {
           ...readyItem.latest_run_summary,
           run_id: "77777777-7777-4777-8777-777777777777",
           task_id: "task-2",
-          status: "none",
-        },
-      };
+          status: "none"
+}
+};
       const items = includeUnboundEmployee ? [readyItem, unboundItem] : [readyItem];
       const responseItems = omitOperationalState
         ? items.map(({ operational_state: _operationalState, ...item }) => item)
@@ -239,8 +239,8 @@ function createEmployeesFetcher({
           queue_summary: {
             needs_configuration_count: queueSummary.needs_configuration_count,
             stale_config_count: queueSummary.stale_config_count,
-            failed_recent_run_count: queueSummary.failed_recent_run_count,
-          },
+            failed_recent_run_count: queueSummary.failed_recent_run_count
+},
           summary: {
             total_count: totalCount,
             runnable_count: 14,
@@ -259,9 +259,9 @@ function createEmployeesFetcher({
               waiting_human: operationalStatus === "waiting_human" ? 1 : 0,
               error: operationalStatus === "error" ? 1 : 0,
               unavailable: operationalStatus === "unavailable" ? 1 : 0,
-              needs_configuration: includeUnboundEmployee || operationalStatus === "needs_configuration" ? 1 : 0,
-            },
-          },
+              needs_configuration: includeUnboundEmployee || operationalStatus === "needs_configuration" ? 1 : 0
+}
+},
           items: responseItems,
           filters: {
             teams: [{ value: "team-1", label: "产品组" }],
@@ -272,25 +272,25 @@ function createEmployeesFetcher({
             ],
             providers: [{ value: "codex", label: "codex" }],
             risk_levels: [{ value: "medium", label: "中风险" }],
-            run_statuses: [{ value: "running", label: "运行中" }],
-          },
+            run_statuses: [{ value: "running", label: "运行中" }]
+},
           pagination: {
             limit,
             offset,
-            total_count: totalCount,
-          },
-        }),
+            total_count: totalCount
+}
+}),
         {
           headers: { "content-type": "application/json" },
-          status: 200,
-        },
+          status: 200
+},
       );
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
-      status: 404,
-    });
+      status: 404
+});
   }) as unknown as typeof fetch;
 
   return fetcher;
@@ -390,9 +390,9 @@ describe("EmployeesView", () => {
         queueSummary: {
           failed_recent_run_count: 0,
           needs_configuration_count: 0,
-          stale_config_count: 0,
-        },
-      }),
+          stale_config_count: 0
+}
+}),
     );
 
     await expect.element(screen.getByRole("button", { name: "处理" })).toBeDisabled();
@@ -436,8 +436,8 @@ describe("EmployeesView", () => {
     const screen = await renderEmployeesView(
       createEmployeesFetcher({
         operationalStatus: "idle",
-        projectAcceptancePendingOnly: true,
-      }),
+        projectAcceptancePendingOnly: true
+}),
     );
     const readyArticle = employeeArticle(screen, "需求分析员工");
 

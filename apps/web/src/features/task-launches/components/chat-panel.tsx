@@ -6,16 +6,16 @@ import {
   MessageCircle,
   MessageSquarePlus,
   SendHorizontal,
-  UserRound,
+  UserRound
 } from "lucide-react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
-import { V3EmptyState, V3ErrorState, V3LoadingState } from "@/components/superteam";
+import { EmptyState, ErrorState, LoadingState } from "@/components/superteam";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployeeRun,
@@ -24,7 +24,7 @@ import {
   listDigitalEmployees,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunListItem,
-  type DigitalEmployeeRunStatus,
+  type DigitalEmployeeRunStatus
 } from "@/lib/api/employees";
 import { listProjectMembers, type Project } from "@/lib/api/projects";
 import { LaunchChip, ProjectPicker } from "./task-launch-form";
@@ -102,8 +102,8 @@ export function entryFromRunListItem(item: DigitalEmployeeRunListItem): ChatEntr
   const entry: ChatEntry = {
     question: item.task_title,
     runId: item.id,
-    status: item.status,
-  };
+    status: item.status
+};
   if (item.status === "completed") {
     const hasResult = item.result && Object.keys(item.result).length > 0;
     entry.answer = hasResult ? extractAnswerText(item) : "（内容已过期或无结果）";
@@ -118,7 +118,7 @@ export function ChatPanel({
   onConvertToTask,
   onProjectChange,
   projectId,
-  projects,
+  projects
 }: ChatPanelProps) {
   const [employeeId, setEmployeeId] = useState("");
   const [question, setQuestion] = useState("");
@@ -133,15 +133,15 @@ export function ChatPanel({
 
   const employeesQuery = useQuery({
     queryFn: () => listDigitalEmployees(apiOptions),
-    queryKey: ["chat-employees"],
-  });
+    queryKey: ["chat-employees"]
+});
   // 参与门禁：chat 只能选锚点项目的 active digital_employee 成员，
   // 与后端 createChatRun 的成员资格校验同口径。未选项目时不出候选。
   const membersQuery = useQuery({
     enabled: Boolean(projectId),
     queryFn: () => listProjectMembers(apiOptions, projectId),
-    queryKey: ["chat-project-members", projectId],
-  });
+    queryKey: ["chat-project-members", projectId]
+});
   const memberEmployeeIds = useMemo(() => {
     const ids = new Set<string>();
     for (const member of membersQuery.data ?? []) {
@@ -182,20 +182,20 @@ export function ChatPanel({
       const latest = await listDigitalEmployeeRuns(apiOptions, employeeId, {
         limit: 1,
         project_id: projectId,
-        run_kind: "chat",
-      });
+        run_kind: "chat"
+});
       const threadId = latest.items[0]?.chat_thread_id;
       if (!threadId) {
         return [];
       }
       const runs = await listDigitalEmployeeRuns(apiOptions, employeeId, {
         chat_thread_id: threadId,
-        limit: 100,
-      });
+        limit: 100
+});
       // 服务端按 created_at 倒序分页,视图按时间正序展示。
       return [...runs.items].reverse().map(entryFromRunListItem);
-    },
-  });
+    }
+});
 
   const restoring = Boolean(anchorKey) && hydratedAnchor !== anchorKey && !restoreQuery.isError;
 
@@ -249,8 +249,8 @@ export function ChatPanel({
     enabled: runQueryEnabled,
     queryFn: () => getDigitalEmployeeRun(apiOptions, employeeId, activeEntry!.runId),
     queryKey: ["chat-run", employeeId, activeEntry?.runId],
-    refetchInterval: runQueryEnabled ? 2500 : false,
-  });
+    refetchInterval: runQueryEnabled ? 2500 : false
+});
 
   useEffect(() => {
     const run = runQuery.data;
@@ -267,8 +267,8 @@ export function ChatPanel({
             ...entry,
             answer: run.status === "completed" ? extractAnswerText(run) : undefined,
             error: run.status === "completed" ? undefined : run.error_message ?? "对话执行失败，请重试",
-            status: run.status,
-          };
+            status: run.status
+};
         }
         return { ...entry, status: run.status };
       }),
@@ -281,8 +281,8 @@ export function ChatPanel({
         objective: input.objective,
         run_kind: "chat",
         project_id: projectId,
-        ...(input.resumeOf ? { resume_of_run_id: input.resumeOf } : {}),
-      }),
+        ...(input.resumeOf ? { resume_of_run_id: input.resumeOf } : {})
+}),
     onSuccess: (run, variables) => {
       setSendError("");
       setThread((prev) => [
@@ -291,11 +291,11 @@ export function ChatPanel({
           question: variables.objective,
           runId: run.id,
           status: run.status,
-          ...(variables.degraded ? { contextNotContinued: true } : {}),
-        },
+          ...(variables.degraded ? { contextNotContinued: true } : {})
+},
       ]);
-    },
-  });
+    }
+});
 
   // When a send carrying resume_of_run_id fails with a 400 (server rejected the
   // resumed session — invalid or lost), automatically resend exactly once without
@@ -385,8 +385,8 @@ export function ChatPanel({
       anchorProjectId: projectId,
       chatRunId: entry.runId,
       digitalEmployeeId: employeeId,
-      draft: buildTaskDraft(entry, selectedEmployee?.name ?? ""),
-    });
+      draft: buildTaskDraft(entry, selectedEmployee?.name ?? "")
+});
   }
 
   const canSend =
@@ -428,12 +428,12 @@ export function ChatPanel({
         </button>
       </div>
 
-      <div className="tl-chat-thread v3-glass-inner" data-testid="chat-thread">
+      <div className="tl-chat-thread glass-inner" data-testid="chat-thread">
         {employeesQuery.isLoading || (Boolean(projectId) && membersQuery.isLoading) ? (
-          <V3LoadingState label="加载数字员工…" />
+          <LoadingState label="加载数字员工…" />
         ) : null}
         {employeesQuery.isError || membersQuery.isError ? (
-          <V3ErrorState
+          <ErrorState
             description="无法加载数字员工列表"
             onRetry={() => {
               void employeesQuery.refetch();
@@ -442,24 +442,24 @@ export function ChatPanel({
           />
         ) : null}
         {!projectId && employeesQuery.isSuccess ? (
-          <V3EmptyState
+          <EmptyState
             icon={<FolderOpen aria-hidden />}
             title="请先选择项目"
             description="对话按项目锚定，仅项目内的数字员工成员可参与对话"
           />
         ) : null}
         {Boolean(projectId) && employeesQuery.isSuccess && membersQuery.isSuccess && employees.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             icon={<UserRound aria-hidden />}
             title="该项目暂无可对话的数字员工成员"
             description="请先在项目配置中把数字员工加入项目成员"
           />
         ) : null}
         {employeesQuery.isSuccess && employees.length > 0 && restoring ? (
-          <V3LoadingState label="恢复历史对话…" />
+          <LoadingState label="恢复历史对话…" />
         ) : null}
         {employeesQuery.isSuccess && employees.length > 0 && !restoring && thread.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             icon={<MessageCircle aria-hidden />}
             title="向数字员工提问开始对话"
             description="对话结果不会进入项目流转，可随时转为正式任务"
@@ -486,13 +486,13 @@ export function ChatPanel({
             ) : entry.status === "failed" ||
               entry.status === "cancelled" ||
               entry.status === "timed_out" ? (
-              <V3ErrorState
+              <ErrorState
                 description={entry.error}
                 onRetry={sendMutation.isPending ? undefined : () => handleRetry(entry)}
                 title="对话失败"
               />
             ) : (
-              <V3LoadingState label="数字员工思考中…" />
+              <LoadingState label="数字员工思考中…" />
             )}
           </div>
         ))}
@@ -501,7 +501,7 @@ export function ChatPanel({
       {restoreFailed ? <div className="tl-err">⚠ 历史对话恢复失败，可直接开始新对话</div> : null}
       {sendError ? <div className="tl-err">⚠ {sendError}</div> : null}
 
-      <div className="tl-chat-composer v3-glass-inner">
+      <div className="tl-chat-composer glass-inner">
         <textarea
           aria-label="对话问题"
           className="tl-chat-textarea"

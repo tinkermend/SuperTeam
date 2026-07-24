@@ -1,5 +1,4 @@
-import { Button } from '@/components/ui/button'
-
+import { Button } from "@/components/superteam";
 export function MaintenanceError() {
   return (
     <div className='h-svh'>

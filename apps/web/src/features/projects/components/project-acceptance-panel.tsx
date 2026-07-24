@@ -3,8 +3,8 @@ import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3EmptyState,
-  type V3Tone,
+  EmptyState,
+  type Tone
 } from "@/components/superteam";
 import type { ProjectAcceptanceRecord } from "@/lib/api/projects";
 import { acceptanceStatusLabel } from "@/lib/status-labels";
@@ -18,19 +18,19 @@ type ProjectAcceptancePanelProps = {
 
 /** 结项结论只读面板——不再提供自由验收提交表单（§6.3 / F7）。 */
 export function ProjectAcceptancePanel({
-  acceptance,
+  acceptance
 }: ProjectAcceptancePanelProps) {
   return (
     <div className="grid gap-4" data-testid="project-closure-readonly">
       <SoftCard className="overflow-hidden">
-        <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+        <div className="flex items-center justify-between gap-3 border-b border-line p-4">
           <div className="flex min-w-0 items-center gap-3">
             <IconTile tone="ok" size="sm">
               <CheckCircle2 />
             </IconTile>
             <div className="min-w-0">
-              <h3 className="font-semibold text-v3-ink">结项结论</h3>
-              <p className="truncate text-xs text-v3-ink-2">
+              <h3 className="font-semibold text-ink">结项结论</h3>
+              <p className="truncate text-xs text-ink-2">
                 只读归档结论；签署与结项请在收件箱或需求页完成
               </p>
             </div>
@@ -46,7 +46,7 @@ export function ProjectAcceptancePanel({
 
         {!acceptance ? (
           <div className="p-4">
-            <V3EmptyState
+            <EmptyState
               description="项目全部需求终态后，将通过「结项确认」或「通过并结项」写入结论。"
               title="尚未产生结项结论"
             />
@@ -70,12 +70,12 @@ export function ProjectAcceptancePanel({
             </div>
 
             <section className="grid gap-2">
-              <h4 className="text-sm font-semibold text-v3-ink">结论</h4>
-              <p className="rounded-v3-inner bg-v3-card-soft p-3 text-sm leading-6 text-v3-ink">
+              <h4 className="text-sm font-semibold text-ink">结论</h4>
+              <p className="rounded-inner bg-card-soft p-3 text-sm leading-6 text-ink">
                 {acceptance.conclusion}
               </p>
               {acceptance.summary ? (
-                <p className="text-xs text-v3-ink-2">{acceptance.summary}</p>
+                <p className="text-xs text-ink-2">{acceptance.summary}</p>
               ) : null}
             </section>
 
@@ -86,20 +86,20 @@ export function ProjectAcceptancePanel({
 
             <section className="grid gap-2">
               <div className="flex items-center justify-between gap-3">
-                <h4 className="text-sm font-semibold text-v3-ink">未关闭风险</h4>
-                <span className="text-xs text-v3-ink-2">
+                <h4 className="text-sm font-semibold text-ink">未关闭风险</h4>
+                <span className="text-xs text-ink-2">
                   {acceptance.unresolved_risks.length} 项
                 </span>
               </div>
               {acceptance.unresolved_risks.length === 0 ? (
-                <p className="rounded-v3-inner bg-v3-card-soft p-3 text-sm text-v3-ink-2">
+                <p className="rounded-inner bg-card-soft p-3 text-sm text-ink-2">
                   暂无未关闭风险
                 </p>
               ) : (
                 <ul className="grid gap-2">
                   {acceptance.unresolved_risks.slice(0, 4).map((risk, index) => (
                     <li
-                      className="rounded-v3-inner bg-v3-card-soft p-3 font-mono text-xs text-v3-ink"
+                      className="rounded-inner bg-card-soft p-3 font-mono text-xs text-ink"
                       key={`${index}-${stringifyValue(risk)}`}
                     >
                       {stringifyValue(risk)}
@@ -117,9 +117,9 @@ export function ProjectAcceptancePanel({
 
 function MetricBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
-      <p className="text-xs text-v3-ink-2">{label}</p>
-      <p className="mt-2 truncate text-sm font-semibold text-v3-ink">{value}</p>
+    <div className="min-w-0 rounded-inner bg-card-soft p-3">
+      <p className="text-xs text-ink-2">{label}</p>
+      <p className="mt-2 truncate text-sm font-semibold text-ink">{value}</p>
     </div>
   );
 }
@@ -128,12 +128,12 @@ function ReferenceList({ label, refs }: { label: string; refs: string[] }) {
   return (
     <section className="grid gap-2">
       <div className="flex items-center justify-between gap-3">
-        <h4 className="text-sm font-semibold text-v3-ink">{label}</h4>
-        <span className="text-xs text-v3-ink-2">{refs.length} 条</span>
+        <h4 className="text-sm font-semibold text-ink">{label}</h4>
+        <span className="text-xs text-ink-2">{refs.length} 条</span>
       </div>
-      <div className="min-h-16 rounded-v3-inner bg-v3-card-soft p-3">
+      <div className="min-h-16 rounded-inner bg-card-soft p-3">
         {refs.length === 0 ? (
-          <p className="text-sm text-v3-ink-2">暂无引用</p>
+          <p className="text-sm text-ink-2">暂无引用</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {refs.map((ref) => (
@@ -148,7 +148,7 @@ function ReferenceList({ label, refs }: { label: string; refs: string[] }) {
   );
 }
 
-function acceptanceTone(status: ProjectAcceptanceRecord["status"]): V3Tone {
+function acceptanceTone(status: ProjectAcceptanceRecord["status"]): Tone {
   if (status === "accepted") {
     return "ok";
   }

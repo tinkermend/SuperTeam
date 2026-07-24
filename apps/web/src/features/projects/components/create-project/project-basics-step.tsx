@@ -6,7 +6,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { listScenarioTemplates } from "@/lib/api/scenario-templates";
@@ -18,7 +18,7 @@ import {
   validateDisplayProjectName,
   validateProjectDirectoryName,
   type ProjectCreateDraft,
-  type ProjectSourceKind,
+  type ProjectSourceKind
 } from "./create-project-draft";
 
 type ProjectBasicsStepProps = {
@@ -38,13 +38,13 @@ export function ProjectBasicsStep({
   nameError,
   onChange,
   repoError,
-  showNameError = false,
+  showNameError = false
 }: ProjectBasicsStepProps) {
   const apiBaseUrl = resolveControlPlaneUrl();
   const templates = useQuery({
     queryKey: ["scenario-templates"],
-    queryFn: () => listScenarioTemplates({ baseUrl: apiBaseUrl }),
-  });
+    queryFn: () => listScenarioTemplates({ baseUrl: apiBaseUrl })
+});
   const templateOptions = (templates.data ?? []).filter(
     (template) => template.status === "active",
   );
@@ -78,18 +78,18 @@ export function ProjectBasicsStep({
           placeholder="例如：客户接入试点"
           value={draft.name}
         />
-        <p className="text-xs text-v3-ink-3">展示用名称，允许中文；与磁盘目录名分离。</p>
+        <p className="text-xs text-ink-3">展示用名称，允许中文；与磁盘目录名分离。</p>
         {displayedNameError ? (
-          <p className="text-xs text-v3-danger" role="alert">
+          <p className="text-xs text-danger" role="alert">
             {displayedNameError}
           </p>
         ) : null}
       </div>
 
-      <div className="grid gap-3 rounded-[12px] border border-v3-line bg-v3-card-soft/60 p-4">
+      <div className="grid gap-3 rounded-[12px] border border-line bg-card-soft/60 p-4">
         <div className="grid gap-1">
           <Label>源码来源 *</Label>
-          <p className="text-xs text-v3-ink-3">
+          <p className="text-xs text-ink-3">
             Git：填写仓库地址，目录名默认由 URL 推导；非 Git：手填 Runtime 工作区下的目录名。
           </p>
         </div>
@@ -106,8 +106,8 @@ export function ProjectBasicsStep({
                 key={option.id}
                 className={
                   active
-                    ? "rounded-[10px] border border-v3-brand bg-v3-brand-soft px-3 py-1.5 text-sm font-semibold text-v3-brand"
-                    : "rounded-[10px] border border-v3-line bg-v3-card px-3 py-1.5 text-sm text-v3-ink-2"
+                    ? "rounded-[10px] border border-brand bg-brand-soft px-3 py-1.5 text-sm font-semibold text-brand"
+                    : "rounded-[10px] border border-line bg-card px-3 py-1.5 text-sm text-ink-2"
                 }
                 onClick={() =>
                   onChange({
@@ -115,8 +115,8 @@ export function ProjectBasicsStep({
                     sourceKind: option.id,
                     ...(option.id === "directory"
                       ? { repoUrl: "", repoDefaultBranch: "main" }
-                      : {}),
-                  })
+                      : {})
+})
                 }
                 type="button"
               >
@@ -140,7 +140,7 @@ export function ProjectBasicsStep({
                 value={draft.repoUrl}
               />
               {displayedRepoError ? (
-                <p className="text-xs text-v3-danger" role="alert">
+                <p className="text-xs text-danger" role="alert">
                   {displayedRepoError}
                 </p>
               ) : null}
@@ -168,13 +168,13 @@ export function ProjectBasicsStep({
                 placeholder={gitHint ?? "留空则由仓库名推导"}
                 value={draft.directoryName}
               />
-              <p className="text-xs text-v3-ink-3">
+              <p className="text-xs text-ink-3">
                 {gitHint
                   ? `未填写时将使用：${gitHint}`
                   : "无法从 URL 推导时请手填 ASCII 目录名。"}
               </p>
               {displayedDirectoryError ? (
-                <p className="text-xs text-v3-danger" role="alert">
+                <p className="text-xs text-danger" role="alert">
                   {displayedDirectoryError}
                 </p>
               ) : null}
@@ -193,11 +193,11 @@ export function ProjectBasicsStep({
               placeholder="customer-onboarding"
               value={draft.directoryName}
             />
-            <p className="text-xs text-v3-ink-3">
+            <p className="text-xs text-ink-3">
               Runtime 工作区根下的文件夹名（全局唯一，创建后不可改）。仅 ASCII 字母/数字/点/下划线/连字符。
             </p>
             {displayedDirectoryError ? (
-              <p className="text-xs text-v3-danger" role="alert">
+              <p className="text-xs text-danger" role="alert">
                 {displayedDirectoryError}
               </p>
             ) : null}
@@ -232,8 +232,8 @@ export function ProjectBasicsStep({
           onValueChange={(value) =>
             onChange({
               ...draft,
-              scenarioTemplateKey: value === NO_TEMPLATE_VALUE ? "" : value,
-            })
+              scenarioTemplateKey: value === NO_TEMPLATE_VALUE ? "" : value
+})
           }
         >
           <SelectTrigger id="project-create-scenario-template" className="w-full">
@@ -248,7 +248,7 @@ export function ProjectBasicsStep({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-v3-ink-3">
+        <p className="text-xs text-ink-3">
           绑定后，规划将按模板的分解骨架与交接契约实例化；不绑定则按通用方式规划。
         </p>
       </div>

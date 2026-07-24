@@ -4,20 +4,20 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
-  type NodeTypes,
+  type NodeTypes
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
 import {
   PLAN_TASK_GRAPH_LAYOUT,
   buildWorkflowGraphElements,
-  type WorkflowGraphElements,
+  type WorkflowGraphElements
 } from "../workflow-graph-adapter";
 import { WorkflowBlockingNode } from "./workflow-blocking-node";
 import {
   WorkflowAttachmentNode,
   WorkflowStageLabelNode,
-  WorkflowTaskNode,
+  WorkflowTaskNode
 } from "./workflow-task-node";
 
 const MIN_CANVAS_HEIGHT = 820;
@@ -28,7 +28,7 @@ const nodeTypes = {
   workflowAttachment: WorkflowAttachmentNode,
   workflowBlocking: WorkflowBlockingNode,
   workflowStageLabel: WorkflowStageLabelNode,
-  workflowTask: WorkflowTaskNode,
+  workflowTask: WorkflowTaskNode
 } satisfies NodeTypes;
 
 type WorkflowGraphCanvasProps = {
@@ -42,7 +42,7 @@ export function WorkflowGraphCanvas({
   graph,
   onNodeOpen,
   onSelectedNodeChange,
-  selectedNodeId,
+  selectedNodeId
 }: WorkflowGraphCanvasProps) {
   const elements = useMemo<WorkflowGraphElements>(
     () => buildWorkflowGraphElements(graph),
@@ -52,8 +52,8 @@ export function WorkflowGraphCanvas({
     () =>
       elements.nodes.map((node) => ({
         ...node,
-        selected: node.id === selectedNodeId,
-      })),
+        selected: node.id === selectedNodeId
+})),
     [elements.nodes, selectedNodeId],
   );
   const canvasHeight = Math.max(

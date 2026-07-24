@@ -43,8 +43,8 @@ export function DirectionProvider({ children }: { children: React.ReactNode }) {
         defaultDir: DEFAULT_DIRECTION,
         dir,
         setDir,
-        resetDir,
-      }}
+        resetDir
+}}
     >
       <RdxDirProvider dir={dir}>{children}</RdxDirProvider>
     </DirectionContext>

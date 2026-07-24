@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import type {
   WorkflowAttachmentNodeData,
   WorkflowStageLabelNodeData,
-  WorkflowTaskNodeData,
+  WorkflowTaskNodeData
 } from "../workflow-graph-adapter";
 import { taskStatusTone } from "./workflow-node-inspector";
 
@@ -21,12 +21,12 @@ const EMPLOYEE_ROLE_LABELS: Record<string, string> = {
   general_engineer: "通用工程执行",
   implementation_engineer: "实施工程师",
   qa_engineer: "测试工程",
-  security_engineer: "安全工程",
+  security_engineer: "安全工程"
 };
 
 export function WorkflowTaskNode({
   data,
-  selected,
+  selected
 }: NodeProps<Node<WorkflowTaskNodeData, "workflowTask">>) {
   const showHumanApproval = data.requiresHumanApproval || data.hasPendingDecision;
   const employeeRole = employeeRoleLabel(data.employeeRole);
@@ -34,31 +34,31 @@ export function WorkflowTaskNode({
   return (
     <SoftCard
       className={cn(
-        "relative w-[360px] border border-v3-line p-4 shadow-v3-soft",
-        selected && "border-v3-brand ring-2 ring-v3-brand/20",
+        "relative w-[360px] border border-line p-4 shadow-soft",
+        selected && "border-brand ring-2 ring-brand/20",
       )}
     >
       <Handle
-        className="!size-2 !border-v3-brand/40 !bg-v3-brand"
+        className="!size-2 !border-brand/40 !bg-brand"
         isConnectable={false}
         position={Position.Top}
         type="target"
       />
       <div className="flex items-start gap-3.5">
-        <Avatar className="size-14 shrink-0 border-2 border-white shadow-v3-soft ring-1 ring-v3-line">
+        <Avatar className="size-14 shrink-0 border-2 border-white shadow-soft ring-1 ring-line">
           {data.avatarAsset ? (
             <AvatarImage src={data.avatarAsset.thumbnailUrl} alt={data.employeeName || "数字员工"} />
           ) : null}
-          <AvatarFallback className="bg-v3-brand-soft text-v3-brand">
+          <AvatarFallback className="bg-brand-soft text-brand">
             <Bot className="size-6" />
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-v3-ink">
+          <p className="truncate text-sm font-bold text-ink">
             {data.employeeName || "未分配"}
           </p>
           {employeeRole ? (
-            <p className="mt-1 truncate text-xs text-v3-ink-3">{employeeRole}</p>
+            <p className="mt-1 truncate text-xs text-ink-3">{employeeRole}</p>
           ) : null}
         </div>
         <StatusPill className="shrink-0" tone={taskStatusTone(data.status)}>
@@ -67,10 +67,10 @@ export function WorkflowTaskNode({
       </div>
 
       <div className="mt-3">
-        <p className="line-clamp-2 text-[15px] font-bold leading-6 tracking-normal text-v3-ink">
+        <p className="line-clamp-2 text-[15px] font-bold leading-6 tracking-normal text-ink">
           {data.title}
         </p>
-        <p className="mt-1.5 line-clamp-3 text-[13px] leading-5 text-v3-ink-2">
+        <p className="mt-1.5 line-clamp-3 text-[13px] leading-5 text-ink-2">
           {data.summary || "暂无任务摘要"}
         </p>
       </div>
@@ -102,7 +102,7 @@ export function WorkflowTaskNode({
         ) : null}
       </div>
       <Handle
-        className="!size-2 !border-v3-brand/40 !bg-v3-brand"
+        className="!size-2 !border-brand/40 !bg-brand"
         isConnectable={false}
         position={Position.Bottom}
         type="source"
@@ -131,32 +131,32 @@ function nodeRiskTone(level: string): "danger" | "warn" | undefined {
 
 export function WorkflowAttachmentNode({
   data,
-  selected,
+  selected
 }: NodeProps<Node<WorkflowAttachmentNodeData, "workflowAttachment">>) {
   return (
     <SoftCard
       className={cn(
-        "relative w-[220px] border border-v3-line p-3 text-xs",
-        selected && "border-v3-brand ring-2 ring-v3-brand/20",
+        "relative w-[220px] border border-line p-3 text-xs",
+        selected && "border-brand ring-2 ring-brand/20",
       )}
     >
       <Handle
-        className="!size-2 !border-v3-brand/40 !bg-v3-brand"
+        className="!size-2 !border-brand/40 !bg-brand"
         isConnectable={false}
         position={Position.Top}
         type="target"
       />
       <div className="flex items-start gap-2">
-        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-v3-ink-3" />
+        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-ink-3" />
         <div className="min-w-0">
-          <p className="line-clamp-2 font-semibold text-v3-ink">{data.title}</p>
+          <p className="line-clamp-2 font-semibold text-ink">{data.title}</p>
           <StatusPill className="mt-2" tone={taskStatusTone(data.status)}>
             {taskStatusLabel(data.status)}
           </StatusPill>
         </div>
       </div>
       <Handle
-        className="!size-2 !border-v3-brand/40 !bg-v3-brand"
+        className="!size-2 !border-brand/40 !bg-brand"
         isConnectable={false}
         position={Position.Bottom}
         type="source"
@@ -166,17 +166,17 @@ export function WorkflowAttachmentNode({
 }
 
 export function WorkflowStageLabelNode({
-  data,
+  data
 }: NodeProps<Node<WorkflowStageLabelNodeData, "workflowStageLabel">>) {
   return (
     <SoftCard
-      className="flex w-[168px] items-center justify-center rounded-full border border-v3-line bg-v3-card/92 px-3 py-1.5 shadow-sm"
+      className="flex w-[168px] items-center justify-center rounded-full border border-line bg-card/92 px-3 py-1.5 shadow-sm"
       data-testid="workflow-stage-label"
     >
-      <GitBranch className="mr-1.5 size-3.5 shrink-0 text-v3-ink-3" />
+      <GitBranch className="mr-1.5 size-3.5 shrink-0 text-ink-3" />
       <div className="min-w-0 text-center">
-        <p className="truncate text-[11px] font-bold leading-4 text-v3-ink">{data.title}</p>
-        <p className="truncate text-[10px] leading-3 text-v3-ink-3">
+        <p className="truncate text-[11px] font-bold leading-4 text-ink">{data.title}</p>
+        <p className="truncate text-[10px] leading-3 text-ink-3">
           {`${data.taskCount} 任务 · ${data.employeeCount} 人`}
         </p>
       </div>

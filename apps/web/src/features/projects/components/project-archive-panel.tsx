@@ -4,21 +4,21 @@ import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  EmptyState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type {
   CreateProjectArchiveSnapshotInput,
   ProjectArchivePreview,
-  ProjectArchiveSnapshot,
+  ProjectArchiveSnapshot
 } from "@/lib/api/projects";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -51,7 +51,7 @@ export function ProjectArchivePanel({
   reportCount,
   routeDecisionCount,
   taskCount,
-  unresolvedRiskCount,
+  unresolvedRiskCount
 }: ProjectArchivePanelProps) {
   const [objectRef, setObjectRef] = useState("");
   const [summary, setSummary] = useState("");
@@ -66,12 +66,12 @@ export function ProjectArchivePanel({
   const effectiveRiskCount = blockedReasons.length || unresolvedRiskCount;
   const previewStatus: {
     label: string;
-    tone: V3Tone;
+    tone: Tone;
   } = archivePreview
     ? {
         label: archivePreview.retention_pending ? "保留待处理" : "可归档",
-        tone: archivePreview.retention_pending ? "warn" : "ok",
-      }
+        tone: archivePreview.retention_pending ? "warn" : "ok"
+}
     : { label: "待预览", tone: "mute" };
 
   function submitArchiveSnapshot() {
@@ -83,8 +83,8 @@ export function ProjectArchivePanel({
     onCreateArchiveSnapshot({
       object_ref: nextObjectRef,
       snapshot_type: "project_archive",
-      summary: summary.trim() || undefined,
-    });
+      summary: summary.trim() || undefined
+});
     setObjectRef("");
     setSummary("");
   }
@@ -92,14 +92,14 @@ export function ProjectArchivePanel({
   return (
     <div className="grid gap-4">
       <SoftCard className="overflow-hidden">
-        <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+        <div className="flex items-center justify-between gap-3 border-b border-line p-4">
           <div className="flex min-w-0 items-center gap-3">
             <IconTile tone="mute" size="sm">
               <Archive />
             </IconTile>
             <div className="min-w-0">
-              <h3 className="font-semibold text-v3-ink">归档预览</h3>
-              <p className="truncate text-xs text-v3-ink-2">
+              <h3 className="font-semibold text-ink">归档预览</h3>
+              <p className="truncate text-xs text-ink-2">
                 当前项目归档对象、保留状态与快照估算
               </p>
             </div>
@@ -112,7 +112,7 @@ export function ProjectArchivePanel({
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <Field label="快照 Object Ref">
                 <Input
-                  className="border-v3-line bg-v3-card"
+                  className="border-line bg-card"
                   value={objectRef}
                   onChange={(event) => setObjectRef(event.target.value)}
                   placeholder="s3://superteam/project/archive.json"
@@ -120,7 +120,7 @@ export function ProjectArchivePanel({
               </Field>
               <Field label="快照摘要">
                 <Input
-                  className="border-v3-line bg-v3-card"
+                  className="border-line bg-card"
                   value={summary}
                   onChange={(event) => setSummary(event.target.value)}
                   placeholder="当前项目归档快照"
@@ -128,13 +128,13 @@ export function ProjectArchivePanel({
               </Field>
             </div>
             <div className="flex justify-end">
-              <V3Button
+              <Button
                 disabled={!objectRef.trim()}
                 type="button"
                 onClick={submitArchiveSnapshot}
               >
                 生成归档快照
-              </V3Button>
+              </Button>
             </div>
           </div>
 
@@ -153,25 +153,25 @@ export function ProjectArchivePanel({
             <MetricBlock label="ObjectRef 估算" value={estimatedObjectRefs.length} />
           </div>
 
-          <section className="grid gap-2 rounded-v3-inner bg-v3-card-soft p-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
-              <Database className="size-4 text-v3-mute" />
+          <section className="grid gap-2 rounded-inner bg-card-soft p-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <Database className="size-4 text-mute" />
               当前项目
             </div>
-            <div className="grid gap-2 text-xs text-v3-ink-2">
+            <div className="grid gap-2 text-xs text-ink-2">
               <p>
                 Preview ID:{" "}
-                <span className="font-mono text-v3-ink">
+                <span className="font-mono text-ink">
                   {archivePreview?.project_id ?? "-"}
                 </span>
               </p>
               <p>
                 estimated_object_refs:{" "}
-                <span className="font-mono text-v3-ink">
+                <span className="font-mono text-ink">
                   {estimatedObjectRefs.length}
                 </span>
                 ，blocked_reasons:{" "}
-                <span className="font-mono text-v3-ink">
+                <span className="font-mono text-ink">
                   {blockedReasons.length}
                 </span>
               </p>
@@ -190,50 +190,50 @@ export function ProjectArchivePanel({
       </SoftCard>
 
       <WorkSurface>
-        <V3Table>
+        <DataTable>
           <thead>
             <tr>
-              <V3Th>快照类型</V3Th>
-              <V3Th>状态</V3Th>
-              <V3Th className="min-w-[220px]">Object Ref</V3Th>
-              <V3Th>保留工件</V3Th>
-              <V3Th className="min-w-[180px]">摘要</V3Th>
+              <Th>快照类型</Th>
+              <Th>状态</Th>
+              <Th className="min-w-[220px]">Object Ref</Th>
+              <Th>保留工件</Th>
+              <Th className="min-w-[180px]">摘要</Th>
             </tr>
           </thead>
           <tbody>
             {archiveSnapshots.length === 0 ? (
-              <V3Tr>
-                <V3Td colSpan={5}>
-                  <V3EmptyState title="暂无归档快照" />
-                </V3Td>
-              </V3Tr>
+              <Tr>
+                <Td colSpan={5}>
+                  <EmptyState title="暂无归档快照" />
+                </Td>
+              </Tr>
             ) : (
               archiveSnapshots.map((snapshot) => (
-                <V3Tr key={snapshot.id}>
-                  <V3Td className="text-v3-ink-2">{snapshot.snapshot_type}</V3Td>
-                  <V3Td>
+                <Tr key={snapshot.id}>
+                  <Td className="text-ink-2">{snapshot.snapshot_type}</Td>
+                  <Td>
                     <StatusPill tone={snapshot.status === "completed" ? "ok" : "warn"}>
                       {statusLabel(snapshot.status)}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td className="max-w-[280px]">
-                    <span className="block truncate font-mono text-xs text-v3-ink">
+                  </Td>
+                  <Td className="max-w-[280px]">
+                    <span className="block truncate font-mono text-xs text-ink">
                       {snapshot.object_ref ?? "-"}
                     </span>
-                  </V3Td>
-                  <V3Td className="text-v3-ink tabular-nums">
+                  </Td>
+                  <Td className="text-ink tabular-nums">
                     {snapshot.retained_artifact_ids.length}
-                  </V3Td>
-                  <V3Td className="max-w-[260px] whitespace-normal">
-                    <span className="line-clamp-2 text-sm text-v3-ink-2">
+                  </Td>
+                  <Td className="max-w-[260px] whitespace-normal">
+                    <span className="line-clamp-2 text-sm text-ink-2">
                       {snapshot.summary || "快照已记录"}
                     </span>
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))
             )}
           </tbody>
-        </V3Table>
+        </DataTable>
       </WorkSurface>
     </div>
   );
@@ -241,7 +241,7 @@ export function ProjectArchivePanel({
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <Label className="grid gap-2 text-[13px] font-semibold text-v3-ink-2">
+    <Label className="grid gap-2 text-[13px] font-semibold text-ink-2">
       <span>{label}</span>
       {children}
     </Label>
@@ -250,9 +250,9 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
 
 function MetricBlock({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
-      <p className="text-xs text-v3-ink-2">{label}</p>
-      <p className="mt-2 font-mono text-sm font-semibold text-v3-ink tabular-nums">
+    <div className="min-w-0 rounded-inner bg-card-soft p-3">
+      <p className="text-xs text-ink-2">{label}</p>
+      <p className="mt-2 font-mono text-sm font-semibold text-ink tabular-nums">
         {new Intl.NumberFormat("zh-CN").format(value)}
       </p>
     </div>

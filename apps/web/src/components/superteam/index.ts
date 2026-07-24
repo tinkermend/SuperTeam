@@ -1,4 +1,4 @@
-export * from './v3-components'
+export * from './primitives'
 export * from './layout'
 export * from './markdown-prose'
 export * from './object-ref'

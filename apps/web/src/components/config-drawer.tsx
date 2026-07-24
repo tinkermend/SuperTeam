@@ -23,7 +23,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
+  SheetTrigger
 } from '@/components/ui/sheet'
 import { useSidebar } from './ui/sidebar'
 
@@ -84,7 +84,7 @@ function SectionTitle({
   showReset = false,
   onReset,
   resetAriaLabel,
-  className,
+  className
 }: {
   title: string
   showReset?: boolean
@@ -119,7 +119,7 @@ function SectionTitle({
 
 function RadioGroupItem({
   item,
-  isTheme = false,
+  isTheme = false
 }: {
   item: {
     value: string
@@ -193,18 +193,18 @@ function ThemeConfig() {
           {
             value: 'system',
             label: '跟随系统',
-            icon: IconThemeSystem,
-          },
+            icon: IconThemeSystem
+},
           {
             value: 'light',
             label: '浅色',
-            icon: IconThemeLight,
-          },
+            icon: IconThemeLight
+},
           {
             value: 'dark',
             label: '深色',
-            icon: IconThemeDark,
-          },
+            icon: IconThemeDark
+},
         ].map((item) => (
           <RadioGroupItem key={item.value} item={item} isTheme />
         ))}
@@ -237,18 +237,18 @@ function SidebarConfig() {
           {
             value: 'inset',
             label: '嵌入',
-            icon: IconSidebarInset,
-          },
+            icon: IconSidebarInset
+},
           {
             value: 'floating',
             label: '浮动',
-            icon: IconSidebarFloating,
-          },
+            icon: IconSidebarFloating
+},
           {
             value: 'sidebar',
             label: '标准侧栏',
-            icon: IconSidebarSidebar,
-          },
+            icon: IconSidebarSidebar
+},
         ].map((item) => (
           <RadioGroupItem key={item.value} item={item} />
         ))}
@@ -295,18 +295,18 @@ function LayoutConfig() {
           {
             value: 'default',
             label: '默认',
-            icon: IconLayoutDefault,
-          },
+            icon: IconLayoutDefault
+},
           {
             value: 'icon',
             label: '紧凑',
-            icon: IconLayoutCompact,
-          },
+            icon: IconLayoutCompact
+},
           {
             value: 'offcanvas',
             label: '全宽布局',
-            icon: IconLayoutFull,
-          },
+            icon: IconLayoutFull
+},
         ].map((item) => (
           <RadioGroupItem key={item.value} item={item} />
         ))}
@@ -341,15 +341,15 @@ function DirConfig() {
             label: '从左到右',
             icon: (props: SVGProps<SVGSVGElement>) => (
               <IconDir dir='ltr' {...props} />
-            ),
-          },
+            )
+},
           {
             value: 'rtl',
             label: '从右到左',
             icon: (props: SVGProps<SVGSVGElement>) => (
               <IconDir dir='rtl' {...props} />
-            ),
-          },
+            )
+},
         ].map((item) => (
           <RadioGroupItem key={item.value} item={item} />
         ))}

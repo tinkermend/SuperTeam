@@ -2,7 +2,7 @@ import { Outlet, createFileRoute, useRouterState } from "@tanstack/react-router"
 import { ProjectDetailPage } from "@/features/projects";
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId")({
-  component: ProjectDetailRoute,
+  component: ProjectDetailRoute
 });
 
 function ProjectDetailRoute() {

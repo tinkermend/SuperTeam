@@ -10,7 +10,7 @@ const COMMAND_MENU_PLACEHOLDER = '输入命令或搜索...'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
-  setTheme: vi.fn(),
+  setTheme: vi.fn()
 }))
 
 vi.mock('@/components/ui/command', async () => {
@@ -21,8 +21,8 @@ vi.mock('@/components/ui/command', async () => {
   }
   const CommandSearchContext = React.createContext<CommandSearchContextValue>({
     search: '',
-    setSearch: () => {},
-  })
+    setSearch: () => {}
+})
   const textFromChildren = (children: React.ReactNode): string =>
     React.Children.toArray(children)
       .map((child) => {
@@ -39,8 +39,8 @@ vi.mock('@/components/ui/command', async () => {
   return {
     CommandDialog: ({
       children,
-      open,
-    }: {
+      open
+}: {
       children: React.ReactNode
       open: boolean
     }) => {
@@ -60,8 +60,8 @@ vi.mock('@/components/ui/command', async () => {
     },
     CommandGroup: ({
       children,
-      heading,
-    }: {
+      heading
+}: {
       children: React.ReactNode
       heading: string
     }) => (
@@ -83,8 +83,8 @@ vi.mock('@/components/ui/command', async () => {
     CommandItem: ({
       children,
       onSelect,
-      value,
-    }: {
+      value
+}: {
       children: React.ReactNode
       onSelect?: () => void
       value?: string
@@ -101,24 +101,24 @@ vi.mock('@/components/ui/command', async () => {
       )
     },
     CommandList: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-    CommandSeparator: () => <hr />,
-  }
+    CommandSeparator: () => <hr />
+}
 })
 
 vi.mock('@/components/ui/scroll-area', () => ({
-  ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>
 }))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
   return {
     ...actual,
-    useNavigate: () => mocks.navigate,
-  }
+    useNavigate: () => mocks.navigate
+}
 })
 
 vi.mock('@/context/theme-provider', () => ({
-  useTheme: () => ({ setTheme: mocks.setTheme }),
+  useTheme: () => ({ setTheme: mocks.setTheme })
 }))
 
 type ShortcutModifier = 'Control' | 'Meta'
@@ -191,8 +191,8 @@ async function openCommandPalette(
               bubbles: true,
               ctrlKey: modifier === 'Control',
               key: 'k',
-              metaKey: modifier === 'Meta',
-            })
+              metaKey: modifier === 'Meta'
+})
           )
         })
       }

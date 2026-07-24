@@ -4,19 +4,19 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import {
   StatusPill,
-  V3Button,
-  V3Chip,
-  V3EmptyState,
-  V3StateSurface,
+  Button,
+  Chip,
+  EmptyState,
+  StateSurface,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import type { DigitalEmployeeRunCalendarItem, DigitalEmployeeRunStatus } from "@/lib/api/employees";
 import { runStatusLabel } from "@/lib/status-labels";
 
 const PREVIEW_PER_DAY = 5;
 
-const runStatusTone: Record<DigitalEmployeeRunStatus, V3Tone> = {
+const runStatusTone: Record<DigitalEmployeeRunStatus, Tone> = {
   queued: "mute",
   dispatching: "mute",
   running: "info",
@@ -24,7 +24,7 @@ const runStatusTone: Record<DigitalEmployeeRunStatus, V3Tone> = {
   completed: "ok",
   failed: "danger",
   cancelled: "warn",
-  timed_out: "danger",
+  timed_out: "danger"
 };
 
 export type EmployeeWorkCalendarProps = {
@@ -69,7 +69,7 @@ export function EmployeeWorkCalendar({
   isError,
   error,
   onRetry,
-  onItemClick,
+  onItemClick
 }: EmployeeWorkCalendarProps) {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
@@ -79,11 +79,11 @@ export function EmployeeWorkCalendar({
 
   return (
     <WorkSurface className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-col gap-2 border-b border-v3-line px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-line px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-semibold text-v3-ink tabular-nums">{format(weekStart, "yyyy/MM/dd")}</p>
+          <p className="text-sm font-semibold text-ink tabular-nums">{format(weekStart, "yyyy/MM/dd")}</p>
           <div className="flex items-center gap-1">
-            <V3Button
+            <Button
               aria-label="上一周"
               onClick={() => onWeekChange(addDays(weekStart, -7))}
               size="sm"
@@ -91,9 +91,9 @@ export function EmployeeWorkCalendar({
               variant="outline"
             >
               <ChevronLeft className="size-4" />
-            </V3Button>
-            <span className="min-w-[7.5rem] text-center text-sm text-v3-ink-2 tabular-nums">{weekLabel}</span>
-            <V3Button
+            </Button>
+            <span className="min-w-[7.5rem] text-center text-sm text-ink-2 tabular-nums">{weekLabel}</span>
+            <Button
               aria-label="下一周"
               onClick={() => onWeekChange(addDays(weekStart, 7))}
               size="sm"
@@ -101,29 +101,29 @@ export function EmployeeWorkCalendar({
               variant="outline"
             >
               <ChevronRight className="size-4" />
-            </V3Button>
+            </Button>
           </div>
-          <V3Chip active onClick={() => onWeekChange(employeeWeekStart(new Date()))} type="button">
+          <Chip active onClick={() => onWeekChange(employeeWeekStart(new Date()))} type="button">
             本周
-          </V3Chip>
+          </Chip>
         </div>
-        <p className="text-xs text-v3-ink-3 tabular-nums">窗口内 {totalCount} 条</p>
+        <p className="text-xs text-ink-3 tabular-nums">窗口内 {totalCount} 条</p>
       </div>
 
       {truncated ? (
-        <p className="shrink-0 border-b border-v3-line bg-v3-warn-soft px-3 py-1.5 text-xs text-v3-warn-text">
+        <p className="shrink-0 border-b border-line bg-warn-soft px-3 py-1.5 text-xs text-warn-text">
           本周条目较多，仅展示最新 500 条；其余请用列表视图筛选查看。
         </p>
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <V3StateSurface empty={false} error={error} isError={isError} isLoading={isLoading} onRetry={onRetry}>
+        <StateSurface empty={false} error={error} isError={isError} isLoading={isLoading} onRetry={onRetry}>
           {showEmptyWeek ? (
-            <V3EmptyState
+            <EmptyState
               action={
-                <V3Button asChild size="sm" variant="outline">
+                <Button asChild size="sm" variant="outline">
                   <Link to="/">去任务中枢</Link>
-                </V3Button>
+                </Button>
               }
               className="min-h-[10rem] flex-1 justify-center py-10"
               description="在任务中枢发起对话或任务后，会按日出现在工作节奏里。"
@@ -131,7 +131,7 @@ export function EmployeeWorkCalendar({
             />
           ) : (
             <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
-              <div className="grid h-full min-h-[16rem] min-w-[52rem] grid-cols-7 divide-x divide-v3-line">
+              <div className="grid h-full min-h-[16rem] min-w-[52rem] grid-cols-7 divide-x divide-line">
                 {days.map((day) => {
                   const dayKey = localDayKey(day);
                   const dayItems = byDay.get(dayKey) ?? [];
@@ -143,29 +143,29 @@ export function EmployeeWorkCalendar({
                     <section
                       className={
                         today
-                          ? "flex min-h-0 min-w-0 flex-col bg-v3-brand-soft/40 px-2 py-2"
+                          ? "flex min-h-0 min-w-0 flex-col bg-brand-soft/40 px-2 py-2"
                           : "flex min-h-0 min-w-0 flex-col px-2 py-2"
                       }
                       key={dayKey}
                     >
                       <header className="mb-1.5 flex shrink-0 items-baseline justify-between gap-2 px-1">
-                        <span className="text-xl font-bold tabular-nums text-v3-ink-3">{format(day, "d")}</span>
-                        <span className="text-[11px] text-v3-ink-3">{weekdayLabel(day)}</span>
+                        <span className="text-xl font-bold tabular-nums text-ink-3">{format(day, "d")}</span>
+                        <span className="text-[11px] text-ink-3">{weekdayLabel(day)}</span>
                       </header>
                       <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
                         {preview.length === 0 ? (
-                          <li className="px-1 text-[11px] text-v3-ink-3">无记录</li>
+                          <li className="px-1 text-[11px] text-ink-3">无记录</li>
                         ) : (
                           preview.map((item) => (
                             <li key={item.id}>
                               <button
-                                className="flex w-full flex-col gap-0.5 rounded-md px-1 py-1 text-left hover:bg-v3-card-soft"
+                                className="flex w-full flex-col gap-0.5 rounded-md px-1 py-1 text-left hover:bg-card-soft"
                                 onClick={() => onItemClick(item)}
                                 type="button"
                               >
                                 <span className="flex items-center gap-1.5">
                                   <time
-                                    className="shrink-0 text-[11px] tabular-nums text-v3-ink-3"
+                                    className="shrink-0 text-[11px] tabular-nums text-ink-3"
                                     dateTime={item.created_at}
                                   >
                                     {formatRunTime(item.created_at)}
@@ -178,7 +178,7 @@ export function EmployeeWorkCalendar({
                                     {runStatusLabel(item.status)}
                                   </StatusPill>
                                 </span>
-                                <span className="line-clamp-2 break-words text-[12px] leading-snug text-v3-ink">
+                                <span className="line-clamp-2 break-words text-[12px] leading-snug text-ink">
                                   {item.task_title}
                                 </span>
                               </button>
@@ -188,7 +188,7 @@ export function EmployeeWorkCalendar({
                         {overflow > 0 ? (
                           <li className="px-1 pt-0.5">
                             <button
-                              className="text-[11px] font-medium text-v3-brand hover:underline"
+                              className="text-[11px] font-medium text-brand hover:underline"
                               onClick={() =>
                                 setExpandedDays((current) => {
                                   const next = new Set(current);
@@ -205,7 +205,7 @@ export function EmployeeWorkCalendar({
                         {expanded && dayItems.length > PREVIEW_PER_DAY ? (
                           <li className="px-1 pt-0.5">
                             <button
-                              className="text-[11px] text-v3-ink-3 hover:underline"
+                              className="text-[11px] text-ink-3 hover:underline"
                               onClick={() =>
                                 setExpandedDays((current) => {
                                   const next = new Set(current);
@@ -226,7 +226,7 @@ export function EmployeeWorkCalendar({
               </div>
             </div>
           )}
-        </V3StateSurface>
+        </StateSurface>
       </div>
     </WorkSurface>
   );

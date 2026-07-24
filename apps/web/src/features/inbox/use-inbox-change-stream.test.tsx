@@ -3,14 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import {
   getInboxStreamStatus,
-  resetInboxStreamStatus,
+  resetInboxStreamStatus
 } from "./inbox-stream-status";
 import { useInboxChangeStream } from "./use-inbox-change-stream";
 
 function Harness({
   apiBaseUrl,
   eventSourceFactory,
-  enabled,
+  enabled
 }: {
   apiBaseUrl: string;
   eventSourceFactory?: (url: string) => EventSource;
@@ -24,8 +24,8 @@ describe("useInboxChangeStream", () => {
   it("opens the inbox stream and invalidates items + badge on inbox-changed", async () => {
     resetInboxStreamStatus();
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
+});
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const listeners: Record<string, () => void> = {};
     const fakeSource = {
@@ -33,8 +33,8 @@ describe("useInboxChangeStream", () => {
         listeners[type] = listener;
       },
       removeEventListener: () => {},
-      close: vi.fn(),
-    } as unknown as EventSource;
+      close: vi.fn()
+} as unknown as EventSource;
     const streamUrls: string[] = [];
 
     await render(
@@ -67,8 +67,8 @@ describe("useInboxChangeStream", () => {
   it("marks disconnected on error and re-invalidates on reconnect open", async () => {
     resetInboxStreamStatus();
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
+});
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const listeners: Record<string, () => void> = {};
     const fakeSource = {
@@ -76,8 +76,8 @@ describe("useInboxChangeStream", () => {
         listeners[type] = listener;
       },
       removeEventListener: () => {},
-      close: vi.fn(),
-    } as unknown as EventSource;
+      close: vi.fn()
+} as unknown as EventSource;
 
     await render(
       <QueryClientProvider client={queryClient}>
@@ -102,8 +102,8 @@ describe("useInboxChangeStream", () => {
   it("does not open a stream when enabled is false", async () => {
     resetInboxStreamStatus();
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
+});
     const streamUrls: string[] = [];
 
     await render(
@@ -116,8 +116,8 @@ describe("useInboxChangeStream", () => {
             return {
               addEventListener: () => {},
               removeEventListener: () => {},
-              close: () => {},
-            } as unknown as EventSource;
+              close: () => {}
+} as unknown as EventSource;
           }}
         />
       </QueryClientProvider>,

@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Check, BadgeCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import type { TeamOverview } from "@/lib/api/teams";
 import { createTeam } from "@/lib/api/teams";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/superteam";
 
 import { CreateTeamConfigurationCanvas } from "./create-team-configuration-canvas";
 import { CreateTeamStepReview } from "./create-team-step-review";
 import {
   type CreateTeamDraft,
   emptyCreateTeamDraft,
-  toCreateTeamInput,
+  toCreateTeamInput
 } from "./create-team-draft";
 
 export type CreateTeamCreatedHandler = (
@@ -37,7 +37,7 @@ export function CreateTeamView({
   fetcher,
   onCancel,
   onCreated,
-  showHeading = true,
+  showHeading = true
 }: CreateTeamViewProps) {
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
@@ -51,8 +51,8 @@ export function CreateTeamView({
     onSuccess: (overview) => {
       void queryClient.invalidateQueries({ queryKey: ["team-summaries"] });
       onCreated?.(overview, { goToConstitution });
-    },
-  });
+    }
+});
 
   function validateBasics(): Record<string, string> {
     const nextErrors: Record<string, string> = {};
@@ -191,7 +191,7 @@ export function CreateTeamView({
       </div>
 
       <div
-        className="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-3 border-t border-v3-line px-4 py-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)] sm:px-6"
+        className="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-3 border-t border-line px-4 py-4 shadow-[0_-12px_24px_rgba(15,23,42,0.06)] sm:px-6"
         data-testid="create-team-actions"
       >
         {onCancel && currentStep === 1 ? (

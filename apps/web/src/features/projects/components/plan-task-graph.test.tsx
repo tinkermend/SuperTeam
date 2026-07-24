@@ -4,7 +4,7 @@ import type {
   ProjectTask,
   ProjectTaskGraphEdge,
   ProjectTaskGraphEmployee,
-  ProjectTaskGraphStageSummary,
+  ProjectTaskGraphStageSummary
 } from "@/lib/api/projects";
 import { PlanTaskGraph } from "./plan-task-graph";
 
@@ -14,8 +14,8 @@ function task(overrides: Partial<ProjectTask> & { id: string; title: string }): 
     project_id: "project-1",
     status: "pending",
     requires_human_approval: false,
-    ...overrides,
-  } as ProjectTask;
+    ...overrides
+} as ProjectTask;
 }
 
 describe("PlanTaskGraph", () => {
@@ -23,7 +23,7 @@ describe("PlanTaskGraph", () => {
     const screen = await render(<PlanTaskGraph nodes={[]} />);
     await expect.element(screen.getByText("暂无协调任务计划")).toBeInTheDocument();
     await expect
-      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-soft-card"]'))
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="soft-card"]'))
       .toBeInTheDocument();
   });
 
@@ -40,8 +40,8 @@ describe("PlanTaskGraph", () => {
         completed_nodes: 0,
         running_nodes: 0,
         waiting_human_nodes: 0,
-        blocked_nodes: 0,
-      },
+        blocked_nodes: 0
+},
     ];
     const screen = await render(
       <PlanTaskGraph nodes={nodes} stageSummaries={stageSummaries} />,
@@ -53,8 +53,8 @@ describe("PlanTaskGraph", () => {
     await expect.element(screen.getByText("方案实现")).toBeInTheDocument();
     await expect.element(screen.getByText("待处理").first()).toBeInTheDocument();
     expect(screen.container.textContent).not.toContain("pending");
-    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-soft-card"]').length).toBe(2);
-    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="soft-card"]').length).toBe(2);
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="status-pill"]').length).toBeGreaterThan(0);
   });
 
   it("annotates dependencies with blocker task titles", async () => {
@@ -76,16 +76,16 @@ describe("PlanTaskGraph", () => {
         title: "上线发布",
         stage_index: 0,
         assigned_digital_employee_id: "emp-1",
-        requires_human_approval: true,
-      }),
+        requires_human_approval: true
+}),
     ];
     const employees: ProjectTaskGraphEmployee[] = [
       {
         digital_employee_id: "emp-1",
         display_name: "发布助手",
         project_role: "executor",
-        status: "active",
-      },
+        status: "active"
+},
     ];
     const screen = await render(<PlanTaskGraph nodes={nodes} employees={employees} />);
     await expect.element(screen.getByText("发布助手")).toBeInTheDocument();

@@ -11,29 +11,29 @@ import {
   ShieldCheck,
   UserCheck,
   UserRound,
-  X,
+  X
 } from "lucide-react";
 import {
   IconTile,
   MetricGrid,
   StatusPill,
-  V3IconButton,
-  V3Button,
-  V3Chip,
-  V3EmptyState,
-  V3Pagination,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3ToolbarSearch,
-  V3Tr,
+  IconButton,
+  Button,
+  Chip,
+  EmptyState,
+  Pagination,
+  DataTable,
+  Td,
+  Th,
+  ToolbarSearch,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import type {
   Project,
   ProjectStatus,
-  WorkflowInstanceSummary,
+  WorkflowInstanceSummary
 } from "@/lib/api/projects";
 import { projectStatusLabel } from "@/lib/status-labels";
 import {
@@ -51,7 +51,7 @@ import {
   type ProjectRiskReason,
   type ProjectRiskReasonType,
   type ProjectRiskSummary,
-  type ProjectRiskSummaryMap,
+  type ProjectRiskSummaryMap
 } from "../project-risk";
 
 export type ProjectRiskQueueFilters = {
@@ -83,34 +83,34 @@ export type ProjectRiskQueueProps = {
 };
 
 /** KPI 卡语义映射：icon 圆底色 / 数字色 / 顶部装饰条实色。 */
-const kpiSoftBg: Record<V3Tone, string> = {
-  brand: "bg-v3-brand-soft",
-  info: "bg-v3-info-soft",
-  ok: "bg-v3-ok-soft",
-  warn: "bg-v3-warn-soft",
-  danger: "bg-v3-danger-soft",
-  mute: "bg-v3-mute-soft",
-  artifact: "bg-v3-artifact-soft",
+const kpiSoftBg: Record<Tone, string> = {
+  brand: "bg-brand-soft",
+  info: "bg-info-soft",
+  ok: "bg-ok-soft",
+  warn: "bg-warn-soft",
+  danger: "bg-danger-soft",
+  mute: "bg-mute-soft",
+  artifact: "bg-artifact-soft"
 };
 
-const kpiNumText: Record<V3Tone, string> = {
-  brand: "text-v3-brand-deep",
-  info: "text-v3-info-text",
-  ok: "text-v3-ok-text",
-  warn: "text-v3-warn-text",
-  danger: "text-v3-danger-text",
-  mute: "text-v3-mute-text",
-  artifact: "text-v3-artifact-text",
+const kpiNumText: Record<Tone, string> = {
+  brand: "text-brand-deep",
+  info: "text-info-text",
+  ok: "text-ok-text",
+  warn: "text-warn-text",
+  danger: "text-danger-text",
+  mute: "text-mute-text",
+  artifact: "text-artifact-text"
 };
 
-const kpiAccentBar: Record<V3Tone, string> = {
-  brand: "bg-v3-brand",
-  info: "bg-v3-info",
-  ok: "bg-v3-ok",
-  warn: "bg-v3-warn",
-  danger: "bg-v3-danger",
-  mute: "bg-v3-mute",
-  artifact: "bg-v3-artifact",
+const kpiAccentBar: Record<Tone, string> = {
+  brand: "bg-brand",
+  info: "bg-info",
+  ok: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  mute: "bg-mute",
+  artifact: "bg-artifact"
 };
 
 /**
@@ -120,25 +120,25 @@ const kpiAccentBar: Record<V3Tone, string> = {
  */
 export function ProjectPortfolioSummaryBar({
   pendingDecisionCount,
-  portfolioCounts,
+  portfolioCounts
 }: {
   /** 跨项目「待我决策」真值（inbox badge mine_open_count）；未传则不渲染该卡。 */
   pendingDecisionCount?: number;
   portfolioCounts: ProjectPortfolioCounts;
 }) {
   const items = [
-    { icon: FolderKanban, label: "已加载项目", tone: "brand" as V3Tone, value: portfolioCounts.total },
-    { icon: PlayCircle, label: projectStatusLabel("running"), tone: "ok" as V3Tone, value: portfolioCounts.running },
-    { icon: ShieldCheck, label: "验收中", tone: "info" as V3Tone, value: portfolioCounts.acceptance },
-    { icon: AlertTriangle, label: "协调异常", tone: "danger" as V3Tone, value: portfolioCounts.coordinationAnomaly },
+    { icon: FolderKanban, label: "已加载项目", tone: "brand" as Tone, value: portfolioCounts.total },
+    { icon: PlayCircle, label: projectStatusLabel("running"), tone: "ok" as Tone, value: portfolioCounts.running },
+    { icon: ShieldCheck, label: "验收中", tone: "info" as Tone, value: portfolioCounts.acceptance },
+    { icon: AlertTriangle, label: "协调异常", tone: "danger" as Tone, value: portfolioCounts.coordinationAnomaly },
     ...(pendingDecisionCount !== undefined
       ? [
           {
             icon: UserCheck,
             label: "待我决策",
-            tone: (pendingDecisionCount > 0 ? "warn" : "mute") as V3Tone,
-            value: pendingDecisionCount,
-          },
+            tone: (pendingDecisionCount > 0 ? "warn" : "mute") as Tone,
+            value: pendingDecisionCount
+},
         ]
       : []),
   ];
@@ -150,7 +150,7 @@ export function ProjectPortfolioSummaryBar({
         return (
           <div
             key={item.label}
-            className="relative flex flex-col gap-2 overflow-hidden rounded-v3-card border border-v3-line bg-v3-card px-4 py-3.5 shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop"
+            className="relative flex flex-col gap-2 overflow-hidden rounded-card border border-line bg-card px-4 py-3.5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-pop"
           >
             {/* tone accent bar — mirrors the selected-state left bar in employee gallery */}
             <span
@@ -182,7 +182,7 @@ export function ProjectPortfolioSummaryBar({
             </div>
 
             {/* label */}
-            <div className="text-[11.5px] font-medium leading-none text-v3-ink-3">
+            <div className="text-[11.5px] font-medium leading-none text-ink-3">
               {item.label}
             </div>
           </div>
@@ -216,9 +216,9 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
       data-testid="project-risk-queue"
     >
       <WorkSurface className="min-w-0 rounded-[14px] shadow-sm">
-        <div className="flex min-w-0 flex-col gap-2 border-b border-v3-line bg-v3-card px-3 py-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 flex-col gap-2 border-b border-line bg-card px-3 py-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <h2 className="text-base font-extrabold text-v3-ink">项目队列</h2>
+            <h2 className="text-base font-extrabold text-ink">项目队列</h2>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <StatusPill tone={props.isFetching ? "info" : "mute"}>
                 {props.isFetching ? "正在识别风险" : `${props.total} 个项目`}
@@ -227,7 +227,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
                 {riskCounts.blocked} 个阻塞（当前页）
               </StatusPill>
             </div>
-            <p className="mt-1 text-[11px] leading-5 text-v3-ink-3">
+            <p className="mt-1 text-[11px] leading-5 text-ink-3">
               按需要介入程度排序；选中项目在右侧查看待办与直达动作。风险识别基于当前页，筛选仅过滤当前页项目，分页仍对应完整项目列表。
             </p>
           </div>
@@ -236,29 +236,29 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
           ) : null}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-2 border-b border-v3-line bg-v3-card-soft/45 px-3 py-3">
+        <div className="flex min-w-0 flex-col gap-2 border-b border-line bg-card-soft/45 px-3 py-3">
           <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
-            <V3ToolbarSearch
+            <ToolbarSearch
               aria-label="搜索项目"
               className="min-w-0 lg:max-w-md"
               onChange={(event) =>
                 props.onFiltersChange({
                   ...props.filters,
-                  q: event.target.value,
-                })
+                  q: event.target.value
+})
               }
               placeholder="搜索项目名称或目标"
               value={props.filters.q}
             />
             <select
               aria-label="项目状态筛选"
-              className="h-8 rounded-[8px] border border-v3-line bg-v3-card px-2.5 text-[12px] text-v3-ink outline-none transition-colors hover:bg-v3-card-soft focus:border-v3-brand focus:ring-2 focus:ring-v3-brand/25"
+              className="h-8 rounded-[8px] border border-line bg-card px-2.5 text-[12px] text-ink outline-none transition-colors hover:bg-card-soft focus:border-brand focus:ring-2 focus:ring-brand/25"
               onChange={(event) =>
                 props.onFiltersChange({
                   ...props.filters,
                   status: event.target
-                    .value as ProjectRiskQueueProps["filters"]["status"],
-                })
+                    .value as ProjectRiskQueueProps["filters"]["status"]
+})
               }
               value={props.filters.status}
             >
@@ -271,7 +271,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
           </div>
           <div className="flex flex-wrap gap-2">
             {PROJECT_RISK_FILTERS.map((filter) => (
-              <V3Chip
+              <Chip
                 active={props.filters.risk === filter.value}
                 className="rounded-[8px] px-2.5 py-1.5 text-[12px]"
                 count={riskFilterCount(filter.value, riskCounts)}
@@ -279,18 +279,18 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
                 onClick={() =>
                   props.onFiltersChange({
                     ...props.filters,
-                    risk: filter.value,
-                  })
+                    risk: filter.value
+})
                 }
                 type="button"
               >
                 {filter.label}
-              </V3Chip>
+              </Chip>
             ))}
           </div>
         </div>
 
-        <V3Table className="min-w-[46rem] table-fixed text-[12px]">
+        <DataTable className="min-w-[46rem] table-fixed text-[12px]">
           <colgroup>
             <col className="w-[34%]" data-column="project" />
             <col className="w-[20%]" data-column="pending" />
@@ -300,11 +300,11 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
           </colgroup>
           <thead>
             <tr>
-              <V3Th className="px-3 py-2">项目</V3Th>
-              <V3Th className="px-3 py-2">待处理</V3Th>
-              <V3Th className="px-3 py-2">当前处理者</V3Th>
-              <V3Th className="px-3 py-2">最近活动</V3Th>
-              <V3Th className="px-3 py-2 text-right">操作</V3Th>
+              <Th className="px-3 py-2">项目</Th>
+              <Th className="px-3 py-2">待处理</Th>
+              <Th className="px-3 py-2">当前处理者</Th>
+              <Th className="px-3 py-2">最近活动</Th>
+              <Th className="px-3 py-2 text-right">操作</Th>
             </tr>
           </thead>
           <tbody>
@@ -321,19 +321,19 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
             ))}
             {sortedProjects.length === 0 ? (
               <tr>
-                <V3Td className="px-3 py-3" colSpan={5}>
-                  <V3EmptyState
+                <Td className="px-3 py-3" colSpan={5}>
+                  <EmptyState
                     description="调整风险筛选、搜索关键词或项目状态后重试。"
                     icon={<FolderKanban />}
                     title="没有符合筛选条件的项目"
                   />
-                </V3Td>
+                </Td>
               </tr>
             ) : null}
           </tbody>
-        </V3Table>
+        </DataTable>
 
-        <V3Pagination
+        <Pagination
           onPageChange={props.onPageChange}
           onPageSizeChange={props.onPageSizeChange}
           page={props.activePage}
@@ -353,7 +353,7 @@ function ProjectRiskQueueRow({
   principalNamesById,
   project,
   riskSummary,
-  workflow,
+  workflow
 }: {
   isSelected: boolean;
   onSelect: (projectId: string) => void;
@@ -382,15 +382,15 @@ function ProjectRiskQueueRow({
   };
 
   return (
-    <V3Tr
+    <Tr
       aria-selected={isSelected}
       className={[
         "cursor-pointer",
-        isSelected ? "bg-v3-brand-soft/85" : "hover:bg-v3-card-soft/60",
+        isSelected ? "bg-brand-soft/85" : "hover:bg-card-soft/60",
         summary.level === "danger"
-          ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-danger)]"
+          ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--danger)]"
           : summary.level === "warn"
-            ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-warn)]"
+            ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--warn)]"
             : "",
       ]
         .filter(Boolean)
@@ -400,19 +400,19 @@ function ProjectRiskQueueRow({
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
-      <V3Td className="whitespace-normal px-3 py-2">
+      <Td className="whitespace-normal px-3 py-2">
         <div className="flex min-w-0 items-start gap-2.5">
           <IconTile tone={projectStatusTone(project.status)} size="sm">
             <FolderKanban />
           </IconTile>
           <span className="min-w-0 flex-1">
             <span
-              className="block min-h-0 min-w-0 max-h-10 max-w-full line-clamp-2 break-words font-bold leading-5 text-v3-ink"
+              className="block min-h-0 min-w-0 max-h-10 max-w-full line-clamp-2 break-words font-bold leading-5 text-ink"
               data-testid="project-queue-project-title"
             >
               {project.name}
             </span>
-            <span className="mt-1 flex min-w-0 max-w-full items-center gap-1 truncate text-[12px] text-v3-ink-3">
+            <span className="mt-1 flex min-w-0 max-w-full items-center gap-1 truncate text-[12px] text-ink-3">
               <UserRound aria-hidden className="size-3 shrink-0" />
               <span className="truncate">{ownerLabel}</span>
             </span>
@@ -423,8 +423,8 @@ function ProjectRiskQueueRow({
             </span>
           </span>
         </div>
-      </V3Td>
-      <V3Td className="whitespace-normal px-3 py-2">
+      </Td>
+      <Td className="whitespace-normal px-3 py-2">
         <div
           className="flex min-w-0 flex-col items-start gap-1"
           data-testid="project-queue-pending"
@@ -432,30 +432,30 @@ function ProjectRiskQueueRow({
           <StatusPill tone={projectRiskLevelTone(summary.level)}>
             {projectRiskLevelLabel(summary)}
           </StatusPill>
-          <span className="block min-w-0 max-w-full text-[12px] text-v3-ink-3">
+          <span className="block min-w-0 max-w-full text-[12px] text-ink-3">
             {pendingCount > 0 ? `${pendingCount} 项待处理` : "无待处理项"}
           </span>
         </div>
-      </V3Td>
-      <V3Td className="whitespace-normal px-3 py-2">
+      </Td>
+      <Td className="whitespace-normal px-3 py-2">
         <span
-          className="block min-w-0 max-h-10 max-w-full line-clamp-2 break-words text-[12px] font-semibold leading-5 text-v3-ink"
+          className="block min-w-0 max-h-10 max-w-full line-clamp-2 break-words text-[12px] font-semibold leading-5 text-ink"
           data-testid="project-queue-current-handler"
         >
           {project.status === "archived" ? "已归档" : handler ?? "待调度"}
         </span>
-      </V3Td>
-      <V3Td className="whitespace-nowrap px-3 py-2">
-        <span className="block min-w-0 max-w-full truncate font-mono text-[12px] text-v3-ink-2">
+      </Td>
+      <Td className="whitespace-nowrap px-3 py-2">
+        <span className="block min-w-0 max-w-full truncate font-mono text-[12px] text-ink-2">
           {workflow ? formatRunTime(workflow.updated_at) : "暂无运行记录"}
         </span>
-      </V3Td>
-      <V3Td className="whitespace-nowrap px-3 py-2 text-right">
+      </Td>
+      <Td className="whitespace-nowrap px-3 py-2 text-right">
         <div
           className="flex min-w-0 flex-col items-stretch justify-end gap-1.5"
           onClick={(event) => event.stopPropagation()}
         >
-          <V3Button asChild className="max-w-full justify-center" size="sm">
+          <Button asChild className="max-w-full justify-center" size="sm">
             <Link
               aria-label={`进入项目 ${project.name}`}
               params={{ projectId: project.id }}
@@ -464,10 +464,10 @@ function ProjectRiskQueueRow({
               进入项目
               <ArrowRight data-icon="inline-end" />
             </Link>
-          </V3Button>
+          </Button>
         </div>
-      </V3Td>
-    </V3Tr>
+      </Td>
+    </Tr>
   );
 }
 
@@ -479,7 +479,7 @@ const REASON_META: Record<
   execution_failed: { icon: AlertTriangle, tab: "tasks", action: "查看失败任务" },
   runtime_or_coordination: { icon: PlayCircle, tab: "overview", action: "查看协调状态" },
   evidence_required: { icon: FileWarning, tab: "acceptance", action: "补充证据" },
-  sla_waiting: { icon: Clock3, tab: "overview", action: "查看等待原因" },
+  sla_waiting: { icon: Clock3, tab: "overview", action: "查看等待原因" }
 };
 
 /**
@@ -491,7 +491,7 @@ export function ProjectTriagePanel({
   onClose,
   principalNamesById,
   project,
-  summary,
+  summary
 }: {
   /** 关闭选中态（宽容器 in-flow 右栏需要显式返回驾驶舱面板；Sheet 模式有自带关闭钮可不传）。 */
   onClose?: () => void;
@@ -510,7 +510,7 @@ export function ProjectTriagePanel({
   return (
     <aside
       aria-label="选中项目上下文"
-      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4 @5xl/master-detail:max-h-[calc(100svh-2rem)] @5xl/master-detail:overflow-y-auto"
+      className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-line bg-card p-4 shadow-sm @5xl/master-detail:sticky @5xl/master-detail:top-4 @5xl/master-detail:max-h-[calc(100svh-2rem)] @5xl/master-detail:overflow-y-auto"
       data-testid="project-selected-context-panel"
     >
       <div className="flex min-w-0 items-start gap-2.5">
@@ -518,7 +518,7 @@ export function ProjectTriagePanel({
           <FolderKanban />
         </IconTile>
         {onClose ? (
-          <V3IconButton
+          <IconButton
             aria-label="关闭项目待办详情"
             // Sheet 模式有自带关闭钮且位置重叠，此钮仅 in-flow（master-detail 容器内）显示
             className="order-last hidden size-7 shrink-0 @5xl/master-detail:inline-grid"
@@ -526,20 +526,20 @@ export function ProjectTriagePanel({
             type="button"
           >
             <X aria-hidden className="size-3.5" />
-          </V3IconButton>
+          </IconButton>
         ) : null}
         <div className="min-w-0 flex-1">
-          <h3 className="min-w-0 break-words text-sm font-extrabold leading-5 text-v3-ink">
+          <h3 className="min-w-0 break-words text-sm font-extrabold leading-5 text-ink">
             {project.name}
           </h3>
           {project.goal ? (
-            <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-[1.45] text-v3-ink-3">
+            <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-[1.45] text-ink-3">
               {project.goal}
             </p>
           ) : null}
-          <p className="mt-1 flex min-w-0 items-center gap-1 truncate text-[12px] text-v3-ink-3">
+          <p className="mt-1 flex min-w-0 items-center gap-1 truncate text-[12px] text-ink-3">
             <UserRound aria-hidden className="size-3 shrink-0" />
-            负责人 <span className="truncate font-medium text-v3-ink-2">{ownerLabel}</span>
+            负责人 <span className="truncate font-medium text-ink-2">{ownerLabel}</span>
           </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <StatusPill tone={projectStatusTone(project.status)}>
@@ -552,15 +552,15 @@ export function ProjectTriagePanel({
         </div>
       </div>
 
-      <div className="min-w-0 rounded-[10px] bg-v3-card-soft/60 p-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-v3-ink-3">
+      <div className="min-w-0 rounded-[10px] bg-card-soft/60 p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
           待办 {reasons.length > 0 ? `· ${reasons.length}` : ""}
         </div>
         {reasons.length === 0 ? (
-          <p className="mt-1.5 text-[12px] leading-5 text-v3-ink-2">
+          <p className="mt-1.5 text-[12px] leading-5 text-ink-2">
             该项目当前没有需要人工介入的阻塞。{" "}
             <Link
-              className="text-v3-brand underline underline-offset-2 hover:opacity-75"
+              className="text-brand underline underline-offset-2 hover:opacity-75"
               params={{ projectId: project.id }}
               to="/projects/$projectId"
             >
@@ -587,7 +587,7 @@ export function ProjectTriagePanel({
 
 function ProjectTriageReasonRow({
   projectId,
-  reason,
+  reason
 }: {
   projectId: string;
   reason: ProjectRiskReason;
@@ -600,24 +600,24 @@ function ProjectTriageReasonRow({
       : undefined;
 
   return (
-    <li className="flex min-w-0 items-start gap-2 rounded-[8px] bg-v3-card px-2.5 py-2">
+    <li className="flex min-w-0 items-start gap-2 rounded-[8px] bg-card px-2.5 py-2">
       <IconTile tone={projectRiskLevelTone(reason.level)} size="sm">
         <Icon />
       </IconTile>
       <div className="min-w-0 flex-1">
         <p
-          className="min-w-0 line-clamp-2 break-words text-[12px] font-semibold leading-5 text-v3-ink"
+          className="min-w-0 line-clamp-2 break-words text-[12px] font-semibold leading-5 text-ink"
           title={reason.title}
         >
           {reason.title}
         </p>
         {reason.detail ? (
-          <p className="mt-0.5 min-w-0 truncate font-mono text-[11px] text-v3-ink-3">
+          <p className="mt-0.5 min-w-0 truncate font-mono text-[11px] text-ink-3">
             {reason.detail}
           </p>
         ) : null}
       </div>
-      <V3Button asChild className="shrink-0" size="sm" variant="outline">
+      <Button asChild className="shrink-0" size="sm" variant="outline">
         <Link
           params={{ projectId }}
           search={focus ? { focus, tab: meta.tab } : { tab: meta.tab }}
@@ -625,7 +625,7 @@ function ProjectTriageReasonRow({
         >
           {meta.action}
         </Link>
-      </V3Button>
+      </Button>
     </li>
   );
 }
@@ -650,7 +650,7 @@ const PROJECT_STATUS_FILTER_OPTIONS: Array<{
   { label: projectStatusLabel("archived"), value: "archived" },
 ];
 
-function projectStatusTone(status: ProjectStatus | string): V3Tone {
+function projectStatusTone(status: ProjectStatus | string): Tone {
   if (status === "running") return "ok";
   if (status === "archived") return "mute";
   if (status === "acceptance") return "brand";
@@ -699,6 +699,6 @@ function formatRunTime(value: string): string {
     hour: "2-digit",
     hour12: false,
     minute: "2-digit",
-    month: "2-digit",
-  }).format(date);
+    month: "2-digit"
+}).format(date);
 }

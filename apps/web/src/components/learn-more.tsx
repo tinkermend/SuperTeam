@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger,
+  PopoverTrigger
 } from '@/components/ui/popover'
 
 type LearnMoreProps = React.ComponentProps<typeof Root> & {

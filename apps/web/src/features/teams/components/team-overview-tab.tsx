@@ -5,14 +5,14 @@ import { Link } from "@tanstack/react-router";
 import { Plus, UserPlus } from "lucide-react";
 import {
   StatusPill,
-  V3Button,
-  V3LoadingState,
-  V3Pagination,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  Button,
+  LoadingState,
+  Pagination,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import { Label } from "@/components/ui/label";
 import type { AllowedTeamAction } from "@/lib/api/teams";
@@ -27,7 +27,7 @@ import {
   readTeamDigitalEmployeePageSize,
   TEAM_DIGITAL_EMPLOYEE_PAGE_SIZE_OPTIONS,
   writeTeamDigitalEmployeePageSize,
-  type TeamDigitalEmployeePageSize,
+  type TeamDigitalEmployeePageSize
 } from "../lib/team-digital-employees-page-size";
 
 type TeamOverviewTabProps = {
@@ -43,23 +43,23 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, teamId }:
 
   const digitalEmployeesQuery = useQuery({
     queryKey: ["team-digital-employees", teamId],
-    queryFn: () => listDigitalEmployees(apiOptions, { team_id: teamId }),
-  });
+    queryFn: () => listDigitalEmployees(apiOptions, { team_id: teamId })
+});
 
   // 候岗（无归属）数字员工——团队归属参与门禁的归队入口，收编后才可参与项目。
   const unassignedEmployeesQuery = useQuery({
     enabled: canManageTeam,
     queryKey: ["unassigned-digital-employees", teamId],
-    queryFn: () => listDigitalEmployees(apiOptions, { assignment: "unassigned" }),
-  });
+    queryFn: () => listDigitalEmployees(apiOptions, { assignment: "unassigned" })
+});
 
   const bindEmployeeMutation = useMutation({
     mutationFn: (employeeId: string) => bindTeamDigitalEmployee(apiOptions, teamId, employeeId),
     onSuccess: () => {
       void digitalEmployeesQuery.refetch();
       void unassignedEmployeesQuery.refetch();
-    },
-  });
+    }
+});
 
   return (
     <DigitalEmployeesSection
@@ -82,7 +82,7 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, teamId }:
 function DigitalEmployeesSection({
   bindPanel,
   employees,
-  isLoading,
+  isLoading
 }: {
   bindPanel?: ReactNode;
   employees: DigitalEmployee[];
@@ -118,40 +118,40 @@ function DigitalEmployeesSection({
 
   return (
     <WorkSurface>
-      <div className="flex flex-col gap-3 border-b border-v3-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-base font-bold text-v3-ink">数字员工</h2>
-          <p className="mt-1 text-[13px] text-v3-ink-2">
+          <h2 className="text-base font-bold text-ink">数字员工</h2>
+          <p className="mt-1 text-[13px] text-ink-2">
             {empty ? "尚未绑定数字员工" : "团队当前绑定的数字员工。"}
           </p>
         </div>
-        <V3Button asChild size="sm" variant="ghost">
+        <Button asChild size="sm" variant="ghost">
           <Link to="/employees/new">
             <Plus data-icon="inline-start" className="size-3.5" />
             新建数字员工
           </Link>
-        </V3Button>
+        </Button>
       </div>
       {bindPanel}
       {isLoading ? (
         <div className="px-5 py-4">
-          <V3LoadingState label="加载数字员工" />
+          <LoadingState label="加载数字员工" />
         </div>
       ) : empty ? null : (
         <>
-          <V3Table>
+          <DataTable>
             <thead>
               <tr>
-                <V3Th>数字员工</V3Th>
-                <V3Th>职能</V3Th>
-                <V3Th>状态</V3Th>
-                <V3Th className="text-right">操作</V3Th>
+                <Th>数字员工</Th>
+                <Th>职能</Th>
+                <Th>状态</Th>
+                <Th className="text-right">操作</Th>
               </tr>
             </thead>
             <tbody>
               {pagedEmployees.map((employee) => (
-                <V3Tr key={employee.id}>
-                  <V3Td>
+                <Tr key={employee.id}>
+                  <Td>
                     <div className="flex min-w-0 items-center gap-3">
                       <EmployeeAvatar
                         asset={employeeAvatarAsset(employee)}
@@ -159,35 +159,35 @@ function DigitalEmployeesSection({
                         size="md"
                       />
                       <div className="min-w-0">
-                        <p className="truncate font-medium leading-none text-v3-ink">
+                        <p className="truncate font-medium leading-none text-ink">
                           {employee.name}
                         </p>
-                        <p className="mt-1.5 truncate text-sm text-v3-ink-2">
+                        <p className="mt-1.5 truncate text-sm text-ink-2">
                           {employee.description || "执行代理"}
                         </p>
                       </div>
                     </div>
-                  </V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td>
                     <StatusPill tone="info">{employee.role || "未设置"}</StatusPill>
-                  </V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td>
                     <StatusPill tone={employee.status === "active" ? "ok" : "warn"}>
                       {employeeStatusLabel(employee.status)}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td className="text-right">
-                    <V3Button asChild size="sm" variant="ghost">
+                  </Td>
+                  <Td className="text-right">
+                    <Button asChild size="sm" variant="ghost">
                       <Link to="/employees/$employeeId" params={{ employeeId: employee.id }}>
                         详情
                       </Link>
-                    </V3Button>
-                  </V3Td>
-                </V3Tr>
+                    </Button>
+                  </Td>
+                </Tr>
               ))}
             </tbody>
-          </V3Table>
-          <V3Pagination
+          </DataTable>
+          <Pagination
             onPageChange={setPage}
             onPageSizeChange={handlePageSizeChange}
             page={activePage}
@@ -208,7 +208,7 @@ function BindUnassignedEmployeePanel({
   employees,
   error,
   isPending,
-  onBind,
+  onBind
 }: {
   employees: DigitalEmployee[];
   error: unknown;
@@ -228,7 +228,7 @@ function BindUnassignedEmployeePanel({
   }
 
   return (
-    <div className="border-b border-v3-line bg-v3-card-soft px-5 py-4">
+    <div className="border-b border-line bg-card-soft px-5 py-4">
       <form
         className="flex flex-col gap-3 sm:flex-row sm:items-end"
         onSubmit={(event) => {
@@ -242,7 +242,7 @@ function BindUnassignedEmployeePanel({
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <Label htmlFor="bind-unassigned-employee">收编候岗数字员工</Label>
           <select
-            className="h-9 rounded-xl border border-v3-line-strong bg-v3-card px-3 text-sm text-v3-ink"
+            className="h-9 rounded-xl border border-line-strong bg-card px-3 text-sm text-ink"
             disabled={isPending}
             id="bind-unassigned-employee"
             onChange={(event) => setSelectedEmployeeId(event.target.value)}
@@ -255,19 +255,19 @@ function BindUnassignedEmployeePanel({
               </option>
             ))}
           </select>
-          <p className="text-xs text-v3-ink-3">
+          <p className="text-xs text-ink-3">
             无团队归属的数字员工无法参与项目，收编后即可被项目引用。
           </p>
           {error ? (
-            <p className="text-xs text-v3-danger">
+            <p className="text-xs text-danger">
               {error instanceof Error ? error.message : "收编失败，请重试"}
             </p>
           ) : null}
         </div>
-        <V3Button disabled={!selectedEmployeeId || isPending} size="sm" type="submit" variant="ghost">
+        <Button disabled={!selectedEmployeeId || isPending} size="sm" type="submit" variant="ghost">
           <UserPlus data-icon="inline-start" className="mr-1" />
           收编进本团队
-        </V3Button>
+        </Button>
       </form>
     </div>
   );

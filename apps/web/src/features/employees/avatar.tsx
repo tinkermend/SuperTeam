@@ -18,7 +18,7 @@ const sizeClass: Record<EmployeeAvatarSize, string> = {
   xl: "size-16",
   xxl: "size-[72px]",
   hero: "size-20",
-  detail: "size-24",
+  detail: "size-24"
 };
 
 const iconClass: Record<EmployeeAvatarSize, string> = {
@@ -28,7 +28,7 @@ const iconClass: Record<EmployeeAvatarSize, string> = {
   xl: "size-6",
   xxl: "size-7",
   hero: "size-7",
-  detail: "size-8",
+  detail: "size-8"
 };
 
 export function EmployeeAvatar({ asset, name, size = "md" }: EmployeeAvatarProps) {

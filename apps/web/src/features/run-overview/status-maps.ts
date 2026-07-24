@@ -11,13 +11,13 @@ export const employeeStatusLabel: Record<RuntimeOverviewEmployee["status"], stri
 };
 
 export const employeeStatusDotClass: Record<RuntimeOverviewEmployee["status"], string> = {
-  error: "bg-v3-danger",
-  idle: "bg-v3-mute",
-  needs_configuration: "bg-v3-warn",
-  queued: "bg-v3-info",
-  unavailable: "bg-v3-mute",
-  waiting_human: "bg-v3-warn",
-  working: "bg-v3-ok",
+  error: "bg-danger",
+  idle: "bg-mute",
+  needs_configuration: "bg-warn",
+  queued: "bg-info",
+  unavailable: "bg-mute",
+  waiting_human: "bg-warn",
+  working: "bg-ok",
 };
 
 export function employeeStatusTone(status: RuntimeOverviewEmployee["status"]) {

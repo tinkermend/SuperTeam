@@ -3,7 +3,7 @@ import {
   keepPreviousData,
   useMutation,
   useQuery,
-  useQueryClient,
+  useQueryClient
 } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
@@ -11,12 +11,12 @@ import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import {
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  WorkSurface,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  WorkSurface
 } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -25,7 +25,7 @@ import {
   type ExecuteInboxActionInput,
   type InboxAction,
   type InboxItem,
-  type InboxListFilters,
+  type InboxListFilters
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { InboxActionDialog } from "@/features/inbox/components/inbox-action-dialog";
@@ -33,7 +33,7 @@ import {
   formatContext,
   resolveInboxHref,
   riskLabel,
-  riskTone,
+  riskTone
 } from "@/features/inbox/components/inbox-item-list";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -75,8 +75,8 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
       limit: 50,
       offset: 0,
       status: search.status === "resolved" || search.status === "cancelled" ? search.status : "open",
-      view: "mine",
-    };
+      view: "mine"
+};
     if (search.risk) {
       next.risk_level = search.risk;
     }
@@ -91,14 +91,14 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
     queryFn: () => listInboxItems(apiOptions, filters),
     placeholderData: keepPreviousData,
     // 同 inbox:外部渠道 resolve 无推送,靠轮询反映状态变化。
-    refetchInterval: 5000,
-  });
+    refetchInterval: 5000
+});
 
   const actionMutation = useMutation({
     mutationFn: ({
       input,
-      itemId,
-    }: {
+      itemId
+}: {
       input: ExecuteInboxActionInput;
       itemId: string;
     }) => executeInboxAction(apiOptions, itemId, input),
@@ -129,8 +129,8 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
         next.delete(itemId);
         return next;
       });
-    },
-  });
+    }
+});
 
   const data = approvalsQuery.data;
   const items = data?.items ?? [];
@@ -143,33 +143,33 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
         title="审批中心"
         subtitle="聚合项目决策和审批事项，按状态、风险和项目来源筛选处理。"
       />
-      <Main width="wide" className="space-y-5 text-v3-ink">
+      <Main width="wide" className="space-y-5 text-ink">
         {backgroundActionError ? (
           <div
-            className="rounded-v3-inner bg-v3-danger-soft p-4 text-sm text-v3-danger"
+            className="rounded-inner bg-danger-soft p-4 text-sm text-danger"
             role="alert"
           >
             <p className="font-bold">操作未完成</p>
-            <p className="mt-1 text-v3-ink-2">{backgroundActionError.message}</p>
+            <p className="mt-1 text-ink-2">{backgroundActionError.message}</p>
           </div>
         ) : null}
         {data ? (
           <section className="grid gap-4 sm:grid-cols-3">
-            <V3MetricCard
+            <MetricCard
               icon={<ShieldCheck />}
               iconTone="info"
               label="开放审批"
               value={data.summary.open_count}
               meta="来自 inbox API"
             />
-            <V3MetricCard
+            <MetricCard
               icon={<AlertTriangle />}
               iconTone="danger"
               label="高风险"
               value={data.summary.high_risk_count}
               meta="需优先确认"
             />
-            <V3MetricCard
+            <MetricCard
               icon={<AlertTriangle />}
               iconTone="warn"
               label="阻断"
@@ -180,10 +180,10 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
         ) : null}
 
         <WorkSurface className="min-w-0">
-          <div className="flex flex-col gap-3 border-b border-v3-line p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-v3-ink">审批队列</h2>
-              <p className="mt-1 text-xs text-v3-ink-2">
+              <h2 className="text-sm font-semibold text-ink">审批队列</h2>
+              <p className="mt-1 text-xs text-ink-2">
                 默认展示项目决策事项；详情和处理动作复用收件箱能力。
               </p>
             </div>
@@ -204,13 +204,13 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
             </div>
           </div>
 
-          {approvalsQuery.isLoading && !data ? <V3LoadingState label="加载审批中心" /> : null}
+          {approvalsQuery.isLoading && !data ? <LoadingState label="加载审批中心" /> : null}
           {approvalsQuery.isError && !data ? (
-            <V3ErrorState title="审批中心加载失败" description={approvalsQuery.error.message} />
+            <ErrorState title="审批中心加载失败" description={approvalsQuery.error.message} />
           ) : null}
-          {data && items.length === 0 ? <V3EmptyState title="当前没有审批事项" /> : null}
+          {data && items.length === 0 ? <EmptyState title="当前没有审批事项" /> : null}
           {items.length > 0 ? (
-            <div className="divide-y divide-v3-line">
+            <div className="divide-y divide-line">
               {items.map((item) => (
                 <ApprovalRow
                   item={item}
@@ -242,8 +242,8 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
           }
           return actionMutation.mutateAsync({
             input,
-            itemId: current.item.id,
-          });
+            itemId: current.item.id
+});
         }}
         open={Boolean(selectedAction)}
         pending={selectedAction ? pendingItemIds.has(selectedAction.item.id) : false}
@@ -254,7 +254,7 @@ export function ApprovalsCenterView({ apiBaseUrl, fetcher }: ApprovalsCenterView
 
 function ApprovalRow({
   item,
-  onAction,
+  onAction
 }: {
   item: InboxItem;
   onAction: (action: InboxAction) => void;
@@ -265,7 +265,7 @@ function ApprovalRow({
     <div className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h3 className="text-sm font-semibold text-v3-ink">{item.title}</h3>
+          <h3 className="text-sm font-semibold text-ink">{item.title}</h3>
           {item.risk_level ? (
             <StatusPill tone={riskTone[item.risk_level] ?? "mute"}>
               {riskLabel[item.risk_level] ?? item.risk_level}
@@ -275,16 +275,16 @@ function ApprovalRow({
             {statusLabel(item.status)}
           </StatusPill>
         </div>
-        <p className="mt-1 line-clamp-2 text-sm text-v3-ink-2">
+        <p className="mt-1 line-clamp-2 text-sm text-ink-2">
           {item.summary ?? "等待处理"}
         </p>
-        <p className="mt-1 truncate text-xs text-v3-ink-3">
+        <p className="mt-1 truncate text-xs text-ink-3">
           {formatContext(item) ?? item.source_project_id ?? item.source_id}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
         {actions.slice(0, 3).map((action) => (
-          <V3Button
+          <Button
             key={action.key}
             size="sm"
             type="button"
@@ -292,11 +292,11 @@ function ApprovalRow({
             onClick={() => onAction(action)}
           >
             {formatApprovalActionLabel(action)} {item.title}
-          </V3Button>
+          </Button>
         ))}
-        <V3Button asChild size="sm" variant="outline">
+        <Button asChild size="sm" variant="outline">
           <Link to={resolveInboxHref(item)}>查看项目审批</Link>
-        </V3Button>
+        </Button>
       </div>
     </div>
   );
@@ -304,8 +304,8 @@ function ApprovalRow({
 
 function FilterChip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex h-8 items-center gap-1 rounded-v3-inner border border-v3-line bg-v3-card px-3 font-semibold text-v3-ink-2">
-      {label}: <span className="font-mono text-v3-ink">{value}</span>
+    <span className="inline-flex h-8 items-center gap-1 rounded-inner border border-line bg-card px-3 font-semibold text-ink-2">
+      {label}: <span className="font-mono text-ink">{value}</span>
     </span>
   );
 }

@@ -5,7 +5,7 @@ import { EmployeeRouteContent } from "./$employeeId";
 vi.mock("@/features/employees/detail", () => ({
   EmployeeDetailPage: ({ employeeId }: { employeeId: string }) => (
     <div>员工详情 {employeeId}</div>
-  ),
+  )
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -17,11 +17,11 @@ vi.mock("@tanstack/react-router", async () => {
     ...actual,
     Outlet: () => <div>员工配置子路由</div>,
     useRouterState: ({
-      select,
-    }: {
+      select
+}: {
       select: (state: { location: { pathname: string } }) => string;
-    }) => select({ location: { pathname: "/employees/employee-1/config" } }),
-  };
+    }) => select({ location: { pathname: "/employees/employee-1/config" } })
+};
 });
 
 describe("EmployeeRouteContent", () => {

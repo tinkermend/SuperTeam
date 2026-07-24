@@ -4,12 +4,12 @@ import { Clock3, GitBranch } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
-  V3Chip,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
+  Chip,
+  EmptyState,
+  ErrorState,
+  LoadingState,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import type { WorkflowInstanceSummary } from "@/lib/api/projects";
@@ -48,14 +48,14 @@ const runGroups: Array<{
 export function WorkflowEntrance({
   instances,
   isError,
-  isLoading,
+  isLoading
 }: WorkflowEntranceProps) {
   const [filter, setFilter] = useState<WorkflowFilter>("all");
 
   if (isError && instances.length === 0) {
     return (
       <SoftCard className="p-5">
-        <V3ErrorState
+        <ErrorState
           description="暂时无法读取流程编排入口，请稍后重试。"
           title="流程实例加载失败"
         />
@@ -66,7 +66,7 @@ export function WorkflowEntrance({
   if (isLoading && instances.length === 0) {
     return (
       <SoftCard>
-        <V3LoadingState label="正在加载流程实例" />
+        <LoadingState label="正在加载流程实例" />
       </SoftCard>
     );
   }
@@ -74,7 +74,7 @@ export function WorkflowEntrance({
   if (instances.length === 0) {
     return (
       <SoftCard>
-        <V3EmptyState
+        <EmptyState
           description="有需求进入协调线程后，会在这里显示全局流程状态。"
           icon={<GitBranch />}
           title="暂无可见流程实例"
@@ -95,19 +95,19 @@ export function WorkflowEntrance({
         visibleInstances.filter((instance) =>
           group.categories.includes(workflowCategory(instance)),
         ),
-      ),
-    }))
+      )
+}))
     .filter((group) => group.instances.length > 0);
 
   return (
     <WorkSurface>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-v3-line px-4 py-3">
-        <h2 className="text-[15px] font-bold text-v3-ink">流程实例</h2>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3">
+        <h2 className="text-[15px] font-bold text-ink">流程实例</h2>
         {isLoading ? <StatusPill tone="mute">同步中</StatusPill> : null}
         {isError ? <StatusPill tone="danger">刷新失败</StatusPill> : null}
         <div className="ml-auto flex flex-wrap gap-1.5">
           {filterChips.map((chip) => (
-            <V3Chip
+            <Chip
               active={filter === chip.value}
               className="px-2.5 py-1 text-xs"
               count={chip.value === "all" ? instances.length : counts[chip.value]}
@@ -115,12 +115,12 @@ export function WorkflowEntrance({
               onClick={() => setFilter(chip.value)}
             >
               {chip.label}
-            </V3Chip>
+            </Chip>
           ))}
         </div>
       </div>
       {groups.length === 0 ? (
-        <V3EmptyState
+        <EmptyState
           className="py-10"
           description="切换上方筛选查看其他状态的实例。"
           title="该筛选下暂无实例"
@@ -129,13 +129,13 @@ export function WorkflowEntrance({
         <div aria-label="流程实例列表" role="list">
           {groups.map((group) => (
             <section key={group.key}>
-              <header className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-1.5 text-xs font-semibold text-v3-ink-2">
+              <header className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-1.5 text-xs font-semibold text-ink-2">
                 <span
                   aria-hidden
                   className={cn("size-1.5 rounded-full", groupDotClass[group.tone])}
                 />
                 {group.label}
-                <span className="tabular-nums text-v3-ink-3">
+                <span className="tabular-nums text-ink-3">
                   {group.instances.length}
                 </span>
               </header>
@@ -151,10 +151,10 @@ export function WorkflowEntrance({
 }
 
 const groupDotClass = {
-  danger: "bg-v3-danger",
-  mute: "bg-v3-mute",
-  ok: "bg-v3-ok",
-  warn: "bg-v3-warn",
+  danger: "bg-danger",
+  mute: "bg-mute",
+  ok: "bg-ok",
+  warn: "bg-warn"
 } as const;
 
 /** 单条流水线运行行：状态 + 标题行 / 节点链 / 摘要行。整行可点进详情。 */
@@ -170,21 +170,21 @@ function WorkflowRunRow({ instance }: { instance: WorkflowInstanceSummary }) {
   return (
     <div
       className={cn(
-        "cursor-pointer border-b border-v3-line px-4 py-3 transition-colors last:border-b-0 hover:bg-v3-card-inner",
+        "cursor-pointer border-b border-line px-4 py-3 transition-colors last:border-b-0 hover:bg-card-inner",
         category === "blocked" &&
-          "bg-v3-danger-soft/40 shadow-[inset_3px_0_0_var(--v3-danger)]",
+          "bg-danger-soft/40 shadow-[inset_3px_0_0_var(--danger)]",
       )}
       onClick={() =>
         void navigate({
           params: { demandId: instance.demand_id },
-          to: "/workflows/$demandId",
-        })
+          to: "/workflows/$demandId"
+})
       }
       role="listitem"
     >
       <div className="flex items-start justify-between gap-4">
         <Link
-          className="group block min-w-0 flex-1 rounded-v3-inner outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60"
+          className="group block min-w-0 flex-1 rounded-inner outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           onClick={(event) => event.stopPropagation()}
           params={{ demandId: instance.demand_id }}
           to="/workflows/$demandId"
@@ -193,10 +193,10 @@ function WorkflowRunRow({ instance }: { instance: WorkflowInstanceSummary }) {
             <StatusPill tone={workflowStatusTone(instance.status)}>
               {workflowStatusLabel(instance.status)}
             </StatusPill>
-            <span className="min-w-0 truncate text-[13px] font-bold text-v3-ink group-hover:text-v3-brand-deep">
+            <span className="min-w-0 truncate text-[13px] font-bold text-ink group-hover:text-brand-deep">
               {instance.title}
             </span>
-            <span className="truncate text-xs text-v3-ink-3">
+            <span className="truncate text-xs text-ink-3">
               {instance.project_name}
             </span>
             {optionalBadges.map((badge) => (
@@ -207,18 +207,18 @@ function WorkflowRunRow({ instance }: { instance: WorkflowInstanceSummary }) {
           </span>
           <span className="mt-2.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
             <WorkflowNodeChain progress={instance.progress} />
-            <span className="text-xs font-semibold tabular-nums text-v3-ink-2">
+            <span className="text-xs font-semibold tabular-nums text-ink-2">
               {completed}/{total}
             </span>
             {nodeCounters.length > 0 ? (
-              <span className="text-xs text-v3-ink-2">
+              <span className="text-xs text-ink-2">
                 {nodeCounters.map((counter, index) => (
                   <span key={counter.key}>
-                    {index > 0 ? <span className="text-v3-ink-3"> · </span> : null}
+                    {index > 0 ? <span className="text-ink-3"> · </span> : null}
                     <span
                       className={
                         counter.key === "blocked"
-                          ? "font-semibold text-v3-danger-text"
+                          ? "font-semibold text-danger-text"
                           : undefined
                       }
                     >
@@ -230,19 +230,19 @@ function WorkflowRunRow({ instance }: { instance: WorkflowInstanceSummary }) {
             ) : null}
           </span>
           {summary.text ? (
-            <span className="mt-1.5 flex items-start gap-2 text-[13px] leading-5 text-v3-ink-2">
+            <span className="mt-1.5 flex items-start gap-2 text-[13px] leading-5 text-ink-2">
               <span
                 aria-hidden
                 className={cn(
                   "mt-1.5 size-1.5 shrink-0 rounded-full",
-                  summary.blocked ? "bg-v3-danger" : "bg-v3-mute",
+                  summary.blocked ? "bg-danger" : "bg-mute",
                 )}
               />
               <span className="line-clamp-1">{summary.text}</span>
             </span>
           ) : null}
         </Link>
-        <span className="inline-flex shrink-0 items-center gap-1.5 pt-1 text-xs tabular-nums text-v3-ink-2">
+        <span className="inline-flex shrink-0 items-center gap-1.5 pt-1 text-xs tabular-nums text-ink-2">
           <Clock3 className="size-3.5" />
           {formatWorkflowTime(instance.updated_at)}
         </span>
@@ -252,10 +252,10 @@ function WorkflowRunRow({ instance }: { instance: WorkflowInstanceSummary }) {
 }
 
 const chainBuckets = [
-  { dotClass: "bg-v3-brand", key: "completed", label: "已完成" },
-  { dotClass: "bg-v3-info", key: "running", label: "运行中" },
-  { dotClass: "bg-v3-warn", key: "waiting", label: "等待人工" },
-  { dotClass: "bg-v3-danger", key: "blocked", label: "阻断" },
+  { dotClass: "bg-brand", key: "completed", label: "已完成" },
+  { dotClass: "bg-info", key: "running", label: "运行中" },
+  { dotClass: "bg-warn", key: "waiting", label: "等待人工" },
+  { dotClass: "bg-danger", key: "blocked", label: "阻断" },
 ] as const;
 
 /**
@@ -263,7 +263,7 @@ const chainBuckets = [
  * 节点数多于 14 时退化为等宽分段条，保持行高稳定。
  */
 function WorkflowNodeChain({
-  progress,
+  progress
 }: {
   progress: WorkflowInstanceSummary["progress"];
 }) {
@@ -271,8 +271,8 @@ function WorkflowNodeChain({
     blocked: progress.blocked_nodes,
     completed: progress.completed_nodes,
     running: progress.running_nodes,
-    waiting: progress.waiting_human_nodes,
-  };
+    waiting: progress.waiting_human_nodes
+};
   const known = Object.values(values).reduce((sum, count) => sum + count, 0);
   const pending = Math.max(progress.total_nodes - known, 0);
   const total = known + pending;
@@ -280,8 +280,8 @@ function WorkflowNodeChain({
   if (total === 0) {
     return (
       <span className="inline-flex items-center gap-2" aria-hidden>
-        <span className="h-px w-16 border-t border-dashed border-v3-line-strong" />
-        <span className="text-xs text-v3-ink-3">待规划</span>
+        <span className="h-px w-16 border-t border-dashed border-line-strong" />
+        <span className="text-xs text-ink-3">待规划</span>
       </span>
     );
   }
@@ -295,14 +295,14 @@ function WorkflowNodeChain({
     return (
       <span
         aria-label={chainAriaLabel(segments)}
-        className="inline-flex h-1.5 w-40 overflow-hidden rounded-full bg-v3-card-soft"
+        className="inline-flex h-1.5 w-40 overflow-hidden rounded-full bg-card-soft"
         role="img"
       >
         {segments.map((segment) => (
           <span
             className={cn(
               "h-full",
-              segment.key === "pending" ? "bg-v3-line" : segment.dotClass,
+              segment.key === "pending" ? "bg-line" : segment.dotClass,
             )}
             key={segment.key}
             style={{ width: `${(segment.count / total) * 100}%` }}
@@ -316,8 +316,8 @@ function WorkflowNodeChain({
     Array.from({ length: segment.count }, (_, index) => ({
       dotClass: segment.dotClass,
       key: `${segment.key}-${index}`,
-      pending: segment.key === "pending",
-    })),
+      pending: segment.key === "pending"
+})),
   );
 
   return (
@@ -328,12 +328,12 @@ function WorkflowNodeChain({
     >
       {dots.map((dot, index) => (
         <span className="inline-flex items-center" key={dot.key}>
-          {index > 0 ? <span className="h-px w-2.5 bg-v3-line-strong" /> : null}
+          {index > 0 ? <span className="h-px w-2.5 bg-line-strong" /> : null}
           <span
             className={cn(
               "size-2 rounded-full",
               dot.pending
-                ? "border border-v3-line-strong bg-transparent"
+                ? "border border-line-strong bg-transparent"
                 : dot.dotClass,
             )}
           />
@@ -395,8 +395,8 @@ function workflowNodeCounters(instance: WorkflowInstanceSummary) {
     {
       key: "waiting",
       label: "人工",
-      value: instance.progress.waiting_human_nodes,
-    },
+      value: instance.progress.waiting_human_nodes
+},
     { key: "blocked", label: "阻断", value: instance.progress.blocked_nodes },
   ].filter((counter) => counter.value > 0);
 }
@@ -406,8 +406,8 @@ function workflowInstanceSummary(instance: WorkflowInstanceSummary) {
     // 红点只给真正的阻断类实例；等待人工等行保持安静，文字自带「阻塞：」前缀
     return {
       blocked: workflowCategory(instance) === "blocked",
-      text: `阻塞：${instance.current_blocker.title}`,
-    };
+      text: `阻塞：${instance.current_blocker.title}`
+};
   }
 
   if (instance.recent_event?.summary) {
@@ -416,8 +416,8 @@ function workflowInstanceSummary(instance: WorkflowInstanceSummary) {
 
   return {
     blocked: false,
-    text: instance.status_reason || "等待协调线程更新状态",
-  };
+    text: instance.status_reason || "等待协调线程更新状态"
+};
 }
 
 function workflowOptionalBadges(instance: WorkflowInstanceSummary) {
@@ -426,31 +426,31 @@ function workflowOptionalBadges(instance: WorkflowInstanceSummary) {
       ? {
           key: "priority",
           label: instance.priority.label,
-          tone: priorityTone(instance.priority.value),
-        }
+          tone: priorityTone(instance.priority.value)
+}
       : undefined,
     instance.risk
       ? {
           key: "risk",
           label: instance.risk.label,
-          tone: riskTone(instance.risk.level),
-        }
+          tone: riskTone(instance.risk.level)
+}
       : undefined,
     instance.sla
       ? {
           key: "sla",
           label: instance.sla.label,
-          tone: instance.sla.breached ? "danger" : "warn",
-        }
+          tone: instance.sla.breached ? "danger" : "warn"
+}
       : undefined,
   ].filter(
-    (badge): badge is { key: string; label: string; tone: V3Tone } =>
+    (badge): badge is { key: string; label: string; tone: Tone } =>
       // 只保留有信息量的标记：low 优先级 / 低风险等 mute 档不渲染，保持行安静
       Boolean(badge) && badge?.tone !== "mute",
   );
 }
 
-function priorityTone(priority: string): V3Tone {
+function priorityTone(priority: string): Tone {
   const normalized = priority.toLowerCase();
   if (["critical", "p0", "p1", "urgent"].includes(normalized)) {
     return "danger";
@@ -461,7 +461,7 @@ function priorityTone(priority: string): V3Tone {
   return "mute";
 }
 
-function riskTone(risk: string): V3Tone {
+function riskTone(risk: string): Tone {
   const normalized = risk.toLowerCase();
   if (["critical", "high", "severe"].includes(normalized)) {
     return "danger";
@@ -482,6 +482,6 @@ function formatWorkflowTime(value: string): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    month: "2-digit",
-  }).format(date);
+    month: "2-digit"
+}).format(date);
 }

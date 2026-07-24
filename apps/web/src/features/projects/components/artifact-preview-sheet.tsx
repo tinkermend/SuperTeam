@@ -6,9 +6,9 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
-  SheetTitle,
+  SheetTitle
 } from "@/components/ui/sheet";
-import { MarkdownProse, V3ErrorState, V3LoadingState } from "@/components/superteam";
+import { MarkdownProse, ErrorState, LoadingState } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import { buildApiUrl } from "@/lib/api/client";
 import { getArtifactContentText } from "@/lib/api/projects";
@@ -59,7 +59,7 @@ type ArtifactPreviewSheetProps = {
 
 export function ArtifactPreviewSheet({
   artifact,
-  onClose,
+  onClose
 }: ArtifactPreviewSheetProps) {
   return (
     <Sheet onOpenChange={(open) => (open ? undefined : onClose())} open={artifact != null}>
@@ -77,14 +77,14 @@ function ArtifactPreviewBody({ artifact }: { artifact: PreviewableArtifact }) {
   const kind = artifactPreviewKind(artifact);
   return (
     <>
-      <SheetHeader className="border-b border-v3-line p-4">
-        <SheetTitle className="truncate pr-8 text-v3-ink">
+      <SheetHeader className="border-b border-line p-4">
+        <SheetTitle className="truncate pr-8 text-ink">
           {artifact.title}
         </SheetTitle>
-        <SheetDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-v3-ink-2">
+        <SheetDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-2">
           <span>数字员工原样产出,未经平台核实与脱敏</span>
           <a
-            className="inline-flex items-center gap-1 font-medium text-v3-brand hover:underline"
+            className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
             href={artifactContentHref(artifact.id)}
             rel="noreferrer"
             target="_blank"
@@ -98,7 +98,7 @@ function ArtifactPreviewBody({ artifact }: { artifact: PreviewableArtifact }) {
         {kind != null ? (
           <ArtifactTextPreview artifact={artifact} kind={kind} />
         ) : (
-          <V3ErrorState description="该类型不支持预览,请下载查看。" />
+          <ErrorState description="该类型不支持预览,请下载查看。" />
         )}
       </div>
     </>
@@ -107,7 +107,7 @@ function ArtifactPreviewBody({ artifact }: { artifact: PreviewableArtifact }) {
 
 function ArtifactTextPreview({
   artifact,
-  kind,
+  kind
 }: {
   artifact: PreviewableArtifact;
   kind: ArtifactPreviewKind;
@@ -119,15 +119,15 @@ function ArtifactTextPreview({
   const contentQuery = useQuery({
     queryKey: ["artifact-content", artifact.id],
     queryFn: () => getArtifactContentText(apiOptions, artifact.id),
-    staleTime: Infinity,
-  });
+    staleTime: Infinity
+});
 
   if (contentQuery.isLoading) {
-    return <V3LoadingState />;
+    return <LoadingState />;
   }
   if (contentQuery.isError || contentQuery.data == null) {
     return (
-      <V3ErrorState
+      <ErrorState
         description="内容拉取失败(可能是对象存储跨域配置未放行),请用上方链接下载查看。"
         onRetry={() => void contentQuery.refetch()}
       />
@@ -141,7 +141,7 @@ function ArtifactTextPreview({
     // sandbox 内的下载会被静默拦截,表现为空白(E2E 2026-07-19 实测)。
     return (
       <iframe
-        className="h-full min-h-[70vh] w-full rounded-[14px] border border-v3-line bg-white"
+        className="h-full min-h-[70vh] w-full rounded-[14px] border border-line bg-white"
         sandbox="allow-scripts"
         srcDoc={contentQuery.data}
         title={artifact.title}
@@ -152,7 +152,7 @@ function ArtifactTextPreview({
     return <MarkdownProse>{contentQuery.data}</MarkdownProse>;
   }
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-v3-ink">
+    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink">
       {contentQuery.data}
     </pre>
   );

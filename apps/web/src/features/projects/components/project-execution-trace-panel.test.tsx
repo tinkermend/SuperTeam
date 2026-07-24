@@ -34,8 +34,8 @@ const trace: ProjectExecutionTrace = {
           runtime_node_id: "runtime-node-1",
           source_id: "runtime-node-1",
           source_type: "runtime_agent",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ],
       failure_family: "provider_exit",
       finished_at: "2026-06-20T08:02:00Z",
@@ -52,9 +52,9 @@ const trace: ProjectExecutionTrace = {
         created_at: "2026-06-20T08:03:00Z",
         evidence_refs: ["evidence-1"],
         execution_summary_id: "summary-1",
-        requires_human_review: true,
-      },
-    },
+        requires_human_review: true
+}
+},
   ],
   project_id: "project-1",
   summary: {
@@ -63,8 +63,8 @@ const trace: ProjectExecutionTrace = {
     evidence_ref_count: 1,
     failed_attempt_count: 1,
     human_review_required_count: 1,
-    latest_error_family: "provider_exit",
-  },
+    latest_error_family: "provider_exit"
+}
 };
 
 describe("ProjectExecutionTracePanel", () => {
@@ -75,10 +75,10 @@ describe("ProjectExecutionTracePanel", () => {
       .element(screen.getByText("正在加载执行证据链"))
       .toBeInTheDocument();
     await expect
-      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-soft-card"]'))
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="soft-card"]'))
       .toBeInTheDocument();
     await expect
-      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-loading-state"]'))
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="loading-state"]'))
       .toBeInTheDocument();
     await expect
       .element(screen.getByText("暂无执行证据链"))
@@ -99,7 +99,7 @@ describe("ProjectExecutionTracePanel", () => {
       .element(screen.getByText("执行证据链接口失败"))
       .toBeInTheDocument();
     await expect
-      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-error-state"]'))
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="error-state"]'))
       .toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
     await expect
@@ -122,10 +122,10 @@ describe("ProjectExecutionTracePanel", () => {
       .element(screen.getByText("provider_exit", { exact: true }))
       .toBeInTheDocument();
     await expect
-      .element(screen.container.querySelector<HTMLElement>('[data-slot="v3-soft-card"]'))
+      .element(screen.container.querySelector<HTMLElement>('[data-slot="soft-card"]'))
       .toBeInTheDocument();
-    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(1);
-    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="soft-card"]').length).toBeGreaterThanOrEqual(1);
+    expect(screen.container.querySelectorAll<HTMLElement>('[data-slot="status-pill"]').length).toBeGreaterThan(0);
     await expect
       .element(screen.getByLabelText("执行尝试 1"))
       .toBeInTheDocument();
@@ -161,8 +161,8 @@ describe("ProjectExecutionTracePanel", () => {
           runtime_node_id: longRuntimeId,
           summary: {
             ...trace.attempts[0].summary!,
-            conclusion: longConclusion,
-          },
+            conclusion: longConclusion
+},
           events: [
             {
               ...trace.attempts[0].events[0],
@@ -170,12 +170,12 @@ describe("ProjectExecutionTracePanel", () => {
               error_message: longErrorMessage,
               input_summary: longInputSummary,
               output_summary: longOutputSummary,
-              source_id: longSourceId,
-            },
-          ],
-        },
-      ],
-    };
+              source_id: longSourceId
+},
+          ]
+},
+      ]
+};
 
     const screen = await render(<ProjectExecutionTracePanel trace={longTrace} />);
 
@@ -217,14 +217,14 @@ describe("ProjectExecutionTracePanel", () => {
                 is_error: true,
                 output_excerpt: "bash: false: exit 1",
                 output_truncated: false,
-                tool_id: "toolu_2",
-              },
-              output_summary: "bash: false: exit 1",
-            },
-          ],
-        },
-      ],
-    };
+                tool_id: "toolu_2"
+},
+              output_summary: "bash: false: exit 1"
+},
+          ]
+},
+      ]
+};
 
     const screen = await render(<ProjectExecutionTracePanel trace={toolTrace} />);
 
@@ -251,14 +251,14 @@ describe("ProjectExecutionTracePanel", () => {
                 input_excerpt: '{"command":"git status"}',
                 input_truncated: true,
                 name: "Bash",
-                tool_id: "toolu_1",
-              },
-              output_summary: "tool_started",
-            },
-          ],
-        },
-      ],
-    };
+                tool_id: "toolu_1"
+},
+              output_summary: "tool_started"
+},
+          ]
+},
+      ]
+};
 
     const screen = await render(<ProjectExecutionTracePanel trace={toolTrace} />);
 

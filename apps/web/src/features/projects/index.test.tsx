@@ -19,23 +19,23 @@ const EMPLOYEE_ASSISTANT_ID = "employee-assistant-1";
 const EMPLOYEE_QA_ID = "employee-qa-1";
 
 const routerMock = vi.hoisted(() => ({
-  navigate: vi.fn(),
+  navigate: vi.fn()
 }));
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -68,8 +68,8 @@ vi.mock("@tanstack/react-router", () => {
   return {
     Link,
     useNavigate: () => routerMock.navigate,
-    useSearch: () => ({}),
-  };
+    useSearch: () => ({})
+};
 });
 
 beforeEach(() => {
@@ -81,17 +81,17 @@ function createQueryClient(options: { staleTime?: number } = {}) {
     defaultOptions: {
       queries: {
         retry: false,
-        staleTime: options.staleTime,
-      },
-    },
-  });
+        staleTime: options.staleTime
+}
+}
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function makeProject(id: string, name: string, status: Project["status"] = "running"): Project {
@@ -108,8 +108,8 @@ function makeProject(id: string, name: string, status: Project["status"] = "runn
     status,
     tenant_id: "tenant-1",
     updated_at: updatedAt,
-    workspace_ready_status: "ready",
-  };
+    workspace_ready_status: "ready"
+};
 }
 
 function makeDeferred<T>() {
@@ -141,13 +141,13 @@ function userProjectTeamScopesResponse() {
           pending_draft_count: 0,
           risk_summary: "低风险",
           slug: "ops",
-          status: "active",
-        },
+          status: "active"
+},
         team_id: TEAM_AUTHORIZED_ID,
         tenant_id: "tenant-1",
         updated_at: "2026-06-04T02:28:13Z",
-        user_id: CURRENT_USER_ID,
-      },
+        user_id: CURRENT_USER_ID
+},
       {
         created_at: "2026-06-04T02:28:13Z",
         granted_by_user_id: "admin-user-1",
@@ -164,13 +164,13 @@ function userProjectTeamScopesResponse() {
           pending_draft_count: 0,
           risk_summary: "中风险",
           slug: "review",
-          status: "active",
-        },
+          status: "active"
+},
         team_id: TEAM_REVIEW_ID,
         tenant_id: "tenant-1",
         updated_at: "2026-06-04T02:28:13Z",
-        user_id: CURRENT_USER_ID,
-      },
+        user_id: CURRENT_USER_ID
+},
       {
         created_at: "2026-06-04T02:28:13Z",
         granted_by_user_id: "admin-user-1",
@@ -187,13 +187,13 @@ function userProjectTeamScopesResponse() {
           pending_draft_count: 0,
           risk_summary: "低风险",
           slug: "revoked",
-          status: "active",
-        },
+          status: "active"
+},
         team_id: TEAM_REVOKED_ID,
         tenant_id: "tenant-1",
         updated_at: "2026-06-05T02:28:13Z",
-        user_id: CURRENT_USER_ID,
-      },
+        user_id: CURRENT_USER_ID
+},
       {
         created_at: "2026-06-04T02:28:13Z",
         granted_by_user_id: "admin-user-1",
@@ -210,15 +210,15 @@ function userProjectTeamScopesResponse() {
           pending_draft_count: 0,
           risk_summary: "低风险",
           slug: "disabled",
-          status: "disabled",
-        },
+          status: "disabled"
+},
         team_id: TEAM_DISABLED_ID,
         tenant_id: "tenant-1",
         updated_at: "2026-06-04T02:28:13Z",
-        user_id: CURRENT_USER_ID,
-      },
-    ],
-  };
+        user_id: CURRENT_USER_ID
+},
+    ]
+};
 }
 
 function usersResponse(q?: string) {
@@ -230,8 +230,8 @@ function usersResponse(q?: string) {
       email: "leader@example.com",
       id: LEADER_USER_ID,
       status: "active",
-      username: "leader",
-    },
+      username: "leader"
+},
     {
       avatar: { provider: "dicebear", seed: "acceptance", style: "adventurer" },
       avatar_asset_id: null,
@@ -239,8 +239,8 @@ function usersResponse(q?: string) {
       email: "acceptance@example.com",
       id: ACCEPTANCE_USER_ID,
       status: "active",
-      username: "acceptance",
-    },
+      username: "acceptance"
+},
     {
       avatar: { provider: "dicebear", seed: "reviewer", style: "adventurer" },
       avatar_asset_id: null,
@@ -248,13 +248,13 @@ function usersResponse(q?: string) {
       email: "reviewer@example.com",
       id: REVIEWER_USER_ID,
       status: "active",
-      username: "reviewer",
-    },
+      username: "reviewer"
+},
   ];
 
   return {
-    items: q ? allUsers.filter(u => u.display_name.includes(q) || u.username.includes(q)) : allUsers,
-  };
+    items: q ? allUsers.filter(u => u.display_name.includes(q) || u.username.includes(q)) : allUsers
+};
 }
 
 function digitalEmployeesResponse(teamId?: string | null) {
@@ -273,8 +273,8 @@ function digitalEmployeesResponse(teamId?: string | null) {
       role: "platform-operator",
       status: "active",
       team_id: TEAM_AUTHORIZED_ID,
-      tenant_id: "tenant-1",
-    },
+      tenant_id: "tenant-1"
+},
     {
       approval_policy: {},
       context_policy: {},
@@ -289,8 +289,8 @@ function digitalEmployeesResponse(teamId?: string | null) {
       role: "rd-assistant",
       status: "active",
       team_id: TEAM_REVIEW_ID,
-      tenant_id: "tenant-1",
-    },
+      tenant_id: "tenant-1"
+},
     {
       approval_policy: {},
       context_policy: {},
@@ -305,8 +305,8 @@ function digitalEmployeesResponse(teamId?: string | null) {
       role: "qa-engineer",
       status: "active",
       team_id: TEAM_REVIEW_ID,
-      tenant_id: "tenant-1",
-    },
+      tenant_id: "tenant-1"
+},
   ];
   return teamId ? employees.filter((employee) => employee.team_id === teamId) : employees;
 }
@@ -333,8 +333,8 @@ function createProjectFetcher(
   const projects = [
     {
       ...makeProject("project-1", "客户接入验收"),
-      allowed_actions: options.projectAllowedActions ?? ["project.archive", "project.delete"],
-    },
+      allowed_actions: options.projectAllowedActions ?? ["project.archive", "project.delete"]
+},
     makeProject("project-2", "生产巡检整改"),
     ...(options.includeArchivedProject
       ? [makeProject("project-3", "已归档走查项目", "archived")]
@@ -360,9 +360,9 @@ function createProjectFetcher(
           email: "current@example.com",
           id: CURRENT_USER_ID,
           status: "active",
-          username: "current-user",
-        },
-      });
+          username: "current-user"
+}
+});
     }
 
     if (
@@ -399,8 +399,8 @@ function createProjectFetcher(
           node_id: "local-dev-node",
           runtime_node_id: "runtime-node-1",
           status: "online",
-          supported_providers: ["codex"],
-        },
+          supported_providers: ["codex"]
+},
       ]);
     }
 
@@ -424,8 +424,8 @@ function createProjectFetcher(
       projects.unshift(created);
       return jsonResponse({
         members: [],
-        project: created,
-      });
+        project: created
+});
     }
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse([]);
@@ -450,8 +450,8 @@ function createProjectFetcher(
             target_user_id: CURRENT_USER_ID,
             tenant_id: "tenant-1",
             title: "需要负责人确认上线计划",
-            updated_at: "2026-06-05T01:30:00Z",
-          },
+            updated_at: "2026-06-05T01:30:00Z"
+},
           {
             actions: [],
             context: {},
@@ -466,20 +466,20 @@ function createProjectFetcher(
             target_user_id: CURRENT_USER_ID,
             tenant_id: "tenant-1",
             title: "生产环境发布审批",
-            updated_at: "2026-06-05T02:15:00Z",
-          },
+            updated_at: "2026-06-05T02:15:00Z"
+},
         ],
         pagination: { has_more: false, limit: 8, offset: 0 },
-        summary: { blocked_count: 0, high_risk_count: 1, open_count: 2 },
-      });
+        summary: { blocked_count: 0, high_risk_count: 1, open_count: 2 }
+});
     }
 
     if (url.pathname === "/api/v1/inbox/badge" && method === "GET") {
       return jsonResponse({
         high_risk_count: 1,
         mine_open_count: 2,
-        team_open_count: 3,
-      });
+        team_open_count: 3
+});
     }
 
     if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
@@ -492,8 +492,8 @@ function createProjectFetcher(
             completed_nodes: 1,
             running_nodes: 1,
             total_nodes: 2,
-            waiting_human_nodes: 1,
-          },
+            waiting_human_nodes: 1
+},
           project_id: "project-1",
           project_name: "客户接入验收",
           status: "waiting_human",
@@ -501,8 +501,8 @@ function createProjectFetcher(
           submitted_by_display_name: "负责人甲",
           submitted_by_user_id: "human-owner-1",
           title: "补充上线验收说明",
-          updated_at: "2026-06-04T03:00:00Z",
-        },
+          updated_at: "2026-06-04T03:00:00Z"
+},
         {
           created_at: "2026-06-05T02:10:00Z",
           demand_id: "demand-2",
@@ -511,8 +511,8 @@ function createProjectFetcher(
             completed_nodes: 0,
             running_nodes: 0,
             total_nodes: 1,
-            waiting_human_nodes: 0,
-          },
+            waiting_human_nodes: 0
+},
           project_id: "project-2",
           project_name: "生产巡检整改",
           status: "failed",
@@ -520,8 +520,8 @@ function createProjectFetcher(
           submitted_by_display_name: "负责人甲",
           submitted_by_user_id: "human-owner-1",
           title: "分析生产接口 5xx 激增原因并输出处置建议",
-          updated_at: "2026-06-05T02:40:00Z",
-        },
+          updated_at: "2026-06-05T02:40:00Z"
+},
       ]);
     }
 
@@ -534,13 +534,13 @@ function createProjectFetcher(
             requires_human_approval: true,
             status: "running",
             tenant_id: "tenant-1",
-            title: "整理接入证据",
-          },
+            title: "整理接入证据"
+},
         ],
         coordination_workflow: {
           status: "registered",
-          workflow_id: "project-coordinator:project-1",
-        },
+          workflow_id: "project-coordinator:project-1"
+},
         digital_employee_pool: [
           {
             display_name_snapshot: "验收执行员工",
@@ -551,8 +551,8 @@ function createProjectFetcher(
             project_role: "executor",
             settings: { source_team_name: "平台运营" },
             status: "active",
-            tenant_id: "tenant-1",
-          },
+            tenant_id: "tenant-1"
+},
         ],
         human_roles: [
           {
@@ -564,8 +564,8 @@ function createProjectFetcher(
             project_role: "owner",
             settings: {},
             status: "active",
-            tenant_id: "tenant-1",
-          },
+            tenant_id: "tenant-1"
+},
           {
             display_name_snapshot: "负责人乙",
             id: "member-owner-2",
@@ -575,8 +575,8 @@ function createProjectFetcher(
             project_role: "owner",
             settings: {},
             status: "active",
-            tenant_id: "tenant-1",
-          },
+            tenant_id: "tenant-1"
+},
         ],
         project: projects[0],
         recent_events: [
@@ -592,8 +592,8 @@ function createProjectFetcher(
             resource_type: "project",
             sequence_number: 1,
             summary: "项目已创建",
-            tenant_id: "tenant-1",
-          },
+            tenant_id: "tenant-1"
+},
           {
             actor_id: "system",
             actor_type: "system",
@@ -606,17 +606,17 @@ function createProjectFetcher(
             resource_type: "route_decision",
             sequence_number: 2,
             summary: "路由决策已生成",
-            tenant_id: "tenant-1",
-          },
+            tenant_id: "tenant-1"
+},
         ],
         status_summary: { current_phase: "running", is_archived: false },
         task_summary: {
           active_tasks: 1,
           completed_tasks: 0,
           failed_tasks: 0,
-          pending_human_tasks: 1,
-        },
-      });
+          pending_human_tasks: 1
+}
+});
     }
 
     if (url.pathname === "/api/v1/projects/project-1/runtime-readiness" && method === "GET") {
@@ -630,16 +630,16 @@ function createProjectFetcher(
               can_plan: true,
               digital_employee_id: "de-1",
               display_name: "验收执行员工",
-              provider_type: "codex",
-            },
+              provider_type: "codex"
+},
           ],
           next_actions: [],
           placement_status: "ready",
           provider_capabilities: ["codex"],
           required_provider_types: ["codex"],
           runtime_node_id: "runtime-node-1",
-          runtime_node_name: "local-dev-node",
-        });
+          runtime_node_name: "local-dev-node"
+});
       }
 
       return jsonResponse({
@@ -648,8 +648,8 @@ function createProjectFetcher(
             code: "runtime_placement_missing",
             message: "项目尚未绑定运行节点",
             resource_id: "project-1",
-            resource_type: "project",
-          },
+            resource_type: "project"
+},
         ],
         command_channel_connected: false,
         employee_readiness: [
@@ -660,19 +660,19 @@ function createProjectFetcher(
             display_name: "验收执行员工",
             provider_type: "codex",
             reason_code: "runtime_placement_missing",
-            reason_message: "项目尚未绑定运行节点",
-          },
+            reason_message: "项目尚未绑定运行节点"
+},
         ],
         next_actions: [
           {
             code: "bind_runtime_node",
-            label: "绑定运行节点",
-          },
+            label: "绑定运行节点"
+},
         ],
         placement_status: "missing",
         provider_capabilities: [],
-        required_provider_types: ["codex"],
-      });
+        required_provider_types: ["codex"]
+});
     }
 
     if (
@@ -699,8 +699,8 @@ function createProjectFetcher(
         active_tasks: [],
         coordination_workflow: {
           status: "registered",
-          workflow_id: `project-coordinator:${id}`,
-        },
+          workflow_id: `project-coordinator:${id}`
+},
         digital_employee_pool: [],
         human_roles: [],
         project: projects.find((project) => project.id === id) ?? projects[0],
@@ -710,9 +710,9 @@ function createProjectFetcher(
           active_tasks: 0,
           completed_tasks: 0,
           failed_tasks: 0,
-          pending_human_tasks: 0,
-        },
-      });
+          pending_human_tasks: 0
+}
+});
     }
 
     if (url.pathname.endsWith("/runtime-readiness") && method === "GET") {
@@ -727,8 +727,8 @@ function createProjectFetcher(
         next_actions: [],
         placement_status: "missing",
         provider_capabilities: [],
-        required_provider_types: [],
-      });
+        required_provider_types: []
+});
     }
 
     if (
@@ -753,8 +753,8 @@ function createProjectFetcher(
           project_role: "executor",
           settings: { source_team_name: "平台运营" },
           status: "active",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
         {
           display_name_snapshot: "负责人甲",
           id: "member-owner-1",
@@ -764,8 +764,8 @@ function createProjectFetcher(
           project_role: "owner",
           settings: {},
           status: "active",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
 
@@ -783,8 +783,8 @@ function createProjectFetcher(
           project_role: "executor",
           settings: { source_team_name: "平台运营" },
           status: "active",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
 
@@ -801,8 +801,8 @@ function createProjectFetcher(
           task_kind: "data_source.log_search",
           status: "failed",
           tenant_id: "tenant-1",
-          title: "数据源: 日志检索",
-        },
+          title: "数据源: 日志检索"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-2/decisions" && method === "GET") {
@@ -829,8 +829,8 @@ function createProjectFetcher(
           project_id: "project-2",
           sequence_number: 3,
           summary: "巡检脚本失败",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
 
@@ -846,8 +846,8 @@ function createProjectFetcher(
             status: "running",
             task_kind: "human_review",
             tenant_id: "tenant-1",
-            title: "人工: 负责人确认",
-          },
+            title: "人工: 负责人确认"
+},
         ]);
       }
       return jsonResponse([]);
@@ -865,8 +865,8 @@ function createProjectFetcher(
                 details: {},
                 key: "runtime.node_offline",
                 retryable: true,
-                severity: "transient",
-              },
+                severity: "transient"
+},
             ],
             checked_at: "2026-06-21T12:00:00Z",
             checks: [],
@@ -876,10 +876,10 @@ function createProjectFetcher(
             project_task_id: "task-1",
             retry_after: "2026-06-21T12:02:00Z",
             selected_employee_id: "de-1",
-            status: "retry_later",
-          },
-        ],
-      });
+            status: "retry_later"
+},
+        ]
+});
     }
     if (url.pathname.endsWith("/dispatch-gates") && method === "GET") {
       return jsonResponse({ items: [] });
@@ -898,8 +898,8 @@ function createProjectFetcher(
           status: "submitted",
           submitted_by_user_id: "human-owner-1",
           tenant_id: "tenant-1",
-          title: "补充上线验收说明",
-        },
+          title: "补充上线验收说明"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
@@ -920,8 +920,8 @@ function createProjectFetcher(
             stage_index: 0,
             status: "completed",
             tenant_id: "tenant-1",
-            title: "完成环境准备",
-          },
+            title: "完成环境准备"
+},
           {
             expected_outputs: [],
             handoff_contract: {},
@@ -933,13 +933,13 @@ function createProjectFetcher(
             stage_index: 1,
             status: "running",
             tenant_id: "tenant-1",
-            title: "整理接入证据",
-          },
+            title: "整理接入证据"
+},
         ],
         recent_events: [],
         runs: [],
-        stage_summaries: [],
-      });
+        stage_summaries: []
+});
     }
     if (url.pathname === "/api/v1/projects/project-1/route-decisions" && method === "GET") {
       return jsonResponse([
@@ -954,8 +954,8 @@ function createProjectFetcher(
           reason: "选择项目数字员工池中的 active executor",
           requires_human_review: false,
           selected_digital_employee_ids: ["de-1"],
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/plan-revisions" && method === "GET") {
@@ -975,10 +975,10 @@ function createProjectFetcher(
                 planned_task_key: "inspect-runtime",
                 required_capabilities: ["runtime.inspect"],
                 risk_level: "high",
-                title: "检查 Runtime 状态",
-              },
-            ],
-          },
+                title: "检查 Runtime 状态"
+},
+            ]
+},
           plan_fingerprint: "fingerprint",
           project_id: "project-1",
           review_required: true,
@@ -986,8 +986,8 @@ function createProjectFetcher(
           status: "pending_review",
           tenant_id: "tenant-1",
           validation_errors: [],
-          validation_warnings: [],
-        },
+          validation_warnings: []
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/coordination-jobs" && method === "GET") {
@@ -1000,8 +1000,8 @@ function createProjectFetcher(
           project_id: "project-1",
           status: "completed",
           tenant_id: "tenant-1",
-          workflow_id: "project-coordinator:project-1",
-        },
+          workflow_id: "project-coordinator:project-1"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/decisions" && method === "GET") {
@@ -1015,8 +1015,8 @@ function createProjectFetcher(
           summary_snapshot: "需要负责人确认",
           target_user_id: "human-owner-1",
           tenant_id: "tenant-1",
-          title_snapshot: "需要负责人确认",
-        },
+          title_snapshot: "需要负责人确认"
+},
         {
           approval_request_id: "approval-plan-1",
           coordination_job_id: "job-1",
@@ -1027,8 +1027,8 @@ function createProjectFetcher(
           summary_snapshot: "复核生产巡检计划",
           target_user_id: "human-owner-1",
           tenant_id: "tenant-1",
-          title_snapshot: "计划版本 v2 需要复核",
-        },
+          title_snapshot: "计划版本 v2 需要复核"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/execution-summaries" && method === "GET") {
@@ -1044,8 +1044,8 @@ function createProjectFetcher(
           project_id: "project-1",
           project_task_id: "task-1",
           requires_human_review: false,
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/transfer-requests" && method === "GET") {
@@ -1059,8 +1059,8 @@ function createProjectFetcher(
           requested_by_digital_employee_id: "de-1",
           status: "requested",
           suggested_digital_employee_ids: [],
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/evidence" && method === "GET") {
@@ -1077,8 +1077,8 @@ function createProjectFetcher(
           summary: "接入链路验收证据已整理",
           tenant_id: "tenant-1",
           title: "上线验收证据",
-          verification_status: "verified",
-        },
+          verification_status: "verified"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/evidence" && method === "POST") {
@@ -1097,8 +1097,8 @@ function createProjectFetcher(
           summary: body.summary,
           tenant_id: "tenant-1",
           title: body.title,
-          verification_status: "submitted",
-        },
+          verification_status: "submitted"
+},
         201,
       );
     }
@@ -1118,8 +1118,8 @@ function createProjectFetcher(
         submitted_by_type: "digital_employee",
         tenant_id: "tenant-1",
         title: "上线验收证据",
-        verification_status: body.verification_status,
-      });
+        verification_status: body.verification_status
+});
     }
     if (url.pathname === "/api/v1/projects/project-1/artifacts" && method === "GET") {
       return jsonResponse([
@@ -1133,8 +1133,8 @@ function createProjectFetcher(
           retention_status: "retained",
           size_bytes: 2048,
           tenant_id: "tenant-1",
-          title: "回归日志包",
-        },
+          title: "回归日志包"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/reports" && method === "GET") {
@@ -1149,8 +1149,8 @@ function createProjectFetcher(
           report_type: "acceptance",
           summary: "验收摘要已生成",
           tenant_id: "tenant-1",
-          title: "客户接入验收报告",
-        },
+          title: "客户接入验收报告"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/budget-ledger" && method === "GET") {
@@ -1166,8 +1166,8 @@ function createProjectFetcher(
           project_id: "project-1",
           reason: "整理验收证据与报告",
           source: "execution_summary",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/budget-summary" && method === "GET") {
@@ -1176,8 +1176,8 @@ function createProjectFetcher(
         actual_tokens: 4800,
         estimated_cost: "3.00",
         estimated_tokens: 6000,
-        ledger_count: 1,
-      });
+        ledger_count: 1
+});
     }
     if (url.pathname === "/api/v1/projects/project-1/acceptance" && method === "GET") {
       return jsonResponse({
@@ -1190,8 +1190,8 @@ function createProjectFetcher(
         status: "accepted",
         summary: "证据、工件和报告均已归档",
         tenant_id: "tenant-1",
-        unresolved_risks: [],
-      });
+        unresolved_risks: []
+});
     }
     if (url.pathname === "/api/v1/projects/project-1/acceptance" && method === "POST") {
       const body = JSON.parse(String(init?.body));
@@ -1206,8 +1206,8 @@ function createProjectFetcher(
           status: body.status,
           summary: body.summary,
           tenant_id: "tenant-1",
-          unresolved_risks: body.unresolved_risks ?? [],
-        },
+          unresolved_risks: body.unresolved_risks ?? []
+},
         201,
       );
     }
@@ -1219,16 +1219,16 @@ function createProjectFetcher(
           included_counts: {
             artifacts: 1,
             evidence: 1,
-            reports: 1,
-          },
+            reports: 1
+},
           object_ref: "s3://superteam/project-1/archive.json",
           project_id: "project-1",
           retained_artifact_ids: ["artifact-1"],
           snapshot_type: "project_archive",
           status: "completed",
           summary: "当前项目归档快照",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/archive-snapshot" && method === "POST") {
@@ -1244,8 +1244,8 @@ function createProjectFetcher(
           snapshot_type: body.snapshot_type,
           status: "archived",
           summary: body.summary,
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
         201,
       );
     }
@@ -1260,8 +1260,8 @@ function createProjectFetcher(
         evidence_count: 1,
         project_id: "project-1",
         report_count: 1,
-        retention_pending: false,
-      });
+        retention_pending: false
+});
     }
     if (
       [
@@ -1282,8 +1282,8 @@ function createProjectFetcher(
         actual_tokens: 0,
         estimated_cost: "0",
         estimated_tokens: 0,
-        ledger_count: 0,
-      });
+        ledger_count: 0
+});
     }
     if (url.pathname.endsWith("/acceptance") && method === "GET") {
       return jsonResponse({ error: "acceptance not found" }, 404);
@@ -1297,8 +1297,8 @@ function createProjectFetcher(
         evidence_count: 0,
         project_id: id,
         report_count: 0,
-        retention_pending: false,
-      });
+        retention_pending: false
+});
     }
     if (
       url.pathname === "/api/v1/projects/project-1/decisions/decision-1/resolve" &&
@@ -1312,8 +1312,8 @@ function createProjectFetcher(
         status_snapshot: "approved",
         target_user_id: "human-owner-1",
         tenant_id: "tenant-1",
-        title_snapshot: "需要负责人确认",
-      });
+        title_snapshot: "需要负责人确认"
+});
     }
     if (
       url.pathname === "/api/v1/projects/project-1/decisions/decision-plan-1/resolve" &&
@@ -1329,8 +1329,8 @@ function createProjectFetcher(
         status_snapshot: body.decision,
         target_user_id: "human-owner-1",
         tenant_id: "tenant-1",
-        title_snapshot: "计划版本 v2 需要复核",
-      });
+        title_snapshot: "计划版本 v2 需要复核"
+});
     }
     if (url.pathname.endsWith("/demands") && method === "GET") {
       return jsonResponse([]);
@@ -1345,8 +1345,8 @@ function createProjectFetcher(
         status: "submitted",
         submitted_by_user_id: "human-owner-1",
         tenant_id: "tenant-1",
-        title: "补充回归证据",
-      });
+        title: "补充回归证据"
+});
     }
     if (url.pathname === "/api/v1/projects/project-1/archive" && method === "POST") {
       return jsonResponse({ ...projects[0], status: "archived" });
@@ -1364,8 +1364,8 @@ function createProjectFetcher(
                 id: "task-1",
                 status: "running",
                 title: "运行中的接入任务",
-                type: "project_task",
-              },
+                type: "project_task"
+},
             ],
         can_delete: canDelete,
         message: canDelete
@@ -1377,9 +1377,9 @@ function createProjectFetcher(
           active_member_count: 2,
           digital_employee_member_count: 1,
           pending_decision_count: 1,
-          waiting_human_task_count: 1,
-        },
-      });
+          waiting_human_task_count: 1
+}
+});
     }
     if (url.pathname === "/api/v1/projects/project-1" && method === "DELETE") {
       if (options.deleteStatus === 409) {
@@ -1390,12 +1390,12 @@ function createProjectFetcher(
                 id: "task-1",
                 status: "running",
                 title: "运行中的接入任务",
-                type: "project_task",
-              },
+                type: "project_task"
+},
             ],
             code: "project_delete_blocked",
-            message: "该项目仍有进行中的任务，完成或取消后再删除。",
-          },
+            message: "该项目仍有进行中的任务，完成或取消后再删除。"
+},
           409,
         );
       }
@@ -1613,8 +1613,8 @@ describe("ProjectsView", () => {
 
     const listSurface = screen.container.querySelector('[data-testid="project-risk-queue"]');
     expect(listSurface).toBeTruthy();
-    expect(listSurface?.querySelector('[data-slot="v3-work-surface"]')).toBeTruthy();
-    expect(listSurface?.querySelector('[data-slot="v3-table"]')).toBeTruthy();
+    expect(listSurface?.querySelector('[data-slot="work-surface"]')).toBeTruthy();
+    expect(listSurface?.querySelector('[data-slot="data-table"]')).toBeTruthy();
     const headers = Array.from(
       listSurface?.querySelectorAll("thead th") ?? [],
       (header) => header.textContent?.trim(),
@@ -1627,7 +1627,7 @@ describe("ProjectsView", () => {
       "操作",
     ]);
 
-    const table = listSurface?.querySelector('[data-slot="v3-table"]');
+    const table = listSurface?.querySelector('[data-slot="data-table"]');
     expect(table?.className).toContain("table-fixed");
     const columns = Array.from(table?.querySelectorAll("colgroup col") ?? []);
     expect(columns.map((column) => column.getAttribute("data-column"))).toEqual([
@@ -1666,7 +1666,7 @@ describe("ProjectsView", () => {
       expect(layout.className).toContain("@container/master-detail");
       // 未选中：右栏为驾驶舱面板（待我决策 + 最近运行动态），无 triage 面板。
       expect(layout.firstElementChild?.className).toContain(
-        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--v3-layout-rail-lg))]",
+        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--layout-rail-lg))]",
       );
       await vi.waitFor(() => {
         expect(
@@ -1706,7 +1706,7 @@ describe("ProjectsView", () => {
         ).toBeTruthy();
       });
       expect(layout.firstElementChild?.className).toContain(
-        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--v3-layout-rail-lg))]",
+        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--layout-rail-lg))]",
       );
       // 宽容器下面板在栅格内 in-flow，不走 Sheet 抽屉。
       expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
@@ -1967,8 +1967,8 @@ describe("ProjectsView", () => {
     const project2RuntimeReadiness = makeDeferred<Response>();
     const fetcher = createProjectFetcher({
       project2RuntimeReadinessGate: project2RuntimeReadiness.promise.then(() => undefined),
-      runtimeReadinessStatus: "ready",
-    });
+      runtimeReadinessStatus: "ready"
+});
     const screen = await renderProjectRouteSwitcher(fetcher);
 
     await expect
@@ -2159,8 +2159,8 @@ describe("ProjectsView", () => {
     const deferred = makeDeferred<Response>();
     const fetcher = createProjectFetcher({
       projectTeamScopesDeferred: deferred,
-      projectTeamScopesStatus: "loading",
-    });
+      projectTeamScopesStatus: "loading"
+});
     const queryClient = createQueryClient({ staleTime: 10_000 });
     queryClient.setQueryData(["auth", "current-user", "project-create"], {
       user: {
@@ -2170,9 +2170,9 @@ describe("ProjectsView", () => {
         email: "current@example.com",
         id: CURRENT_USER_ID,
         status: "active",
-        username: "current-user",
-      },
-    });
+        username: "current-user"
+}
+});
     queryClient.setQueryData(
       ["auth", "users", CURRENT_USER_ID, "project-team-scopes", "project-create"],
       userProjectTeamScopesResponse(),
@@ -2277,9 +2277,9 @@ describe("ProjectsView", () => {
         coordination_policy: {
           audit_log_enabled: true,
           require_human_review_for_new_demands: true,
-          preset: "highRisk",
-        },
-      });
+          preset: "highRisk"
+}
+});
       expect(body).not.toHaveProperty("approval_policy");
       expect(body).not.toHaveProperty("evidence_policy");
       expect(body).not.toHaveProperty("leader_user_id");
@@ -2289,13 +2289,13 @@ describe("ProjectsView", () => {
           expect.objectContaining({
             principal_id: LEADER_USER_ID,
             principal_type: "human_user",
-            project_role: "owner",
-          }),
+            project_role: "owner"
+}),
           expect.objectContaining({
             principal_id: EMPLOYEE_ASSISTANT_ID,
             principal_type: "digital_employee",
-            project_role: "executor",
-          }),
+            project_role: "executor"
+}),
         ]),
       );
       expect(body.members).not.toEqual(
@@ -2439,8 +2439,8 @@ describe("ProjectsView", () => {
     const deferred = makeDeferred<Response>();
     const fetcher = createProjectFetcher({
       currentUserDeferred: deferred,
-      currentUserStatus: "loading",
-    });
+      currentUserStatus: "loading"
+});
     const screen = await renderProjectCreate(fetcher);
 
     try {
@@ -2459,9 +2459,9 @@ describe("ProjectsView", () => {
             email: "current@example.com",
             id: CURRENT_USER_ID,
             status: "active",
-            username: "current-user",
-          },
-        }),
+            username: "current-user"
+}
+}),
       );
     }
   });
@@ -2477,8 +2477,8 @@ describe("ProjectsView", () => {
     const deferred = makeDeferred<Response>();
     const fetcher = createProjectFetcher({
       projectTeamScopesDeferred: deferred,
-      projectTeamScopesStatus: "loading",
-    });
+      projectTeamScopesStatus: "loading"
+});
     const screen = await renderProjectCreate(fetcher);
 
     try {
@@ -2682,8 +2682,8 @@ describe("ProjectsView", () => {
   it("keeps the queue in a risk-identifying state until current-page risk signals settle", async () => {
     const project2RiskGate = makeDeferred<void>();
     const fetcher = createProjectFetcher({
-      project2RiskSignalGate: project2RiskGate.promise,
-    });
+      project2RiskSignalGate: project2RiskGate.promise
+});
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeVisible();
@@ -2766,8 +2766,8 @@ describe("ProjectsView", () => {
 
   it("requires the project name before deleting and redirects after success", async () => {
     const fetcher = createProjectFetcher({
-      projectAllowedActions: ["project.archive", "project.delete"],
-    });
+      projectAllowedActions: ["project.archive", "project.delete"]
+});
     const screen = await renderProjects(fetcher, "project-1");
 
     await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
@@ -2796,8 +2796,8 @@ describe("ProjectsView", () => {
   it("disables delete confirmation when preview reports blockers", async () => {
     const fetcher = createProjectFetcher({
       deletePreviewCanDelete: false,
-      projectAllowedActions: ["project.archive", "project.delete"],
-    });
+      projectAllowedActions: ["project.archive", "project.delete"]
+});
     const screen = await renderProjects(fetcher, "project-1");
 
     await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
@@ -2812,8 +2812,8 @@ describe("ProjectsView", () => {
   it("keeps the dialog open and renders delete blockers on 409", async () => {
     const fetcher = createProjectFetcher({
       deleteStatus: 409,
-      projectAllowedActions: ["project.archive", "project.delete"],
-    });
+      projectAllowedActions: ["project.archive", "project.delete"]
+});
     const screen = await renderProjects(fetcher, "project-1");
 
     await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));

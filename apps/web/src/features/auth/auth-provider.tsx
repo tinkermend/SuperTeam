@@ -4,7 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
+  type ReactNode
 } from 'react'
 import {
   ApiRequestError,
@@ -12,7 +12,7 @@ import {
   login as loginRequest,
   logout as logoutRequest,
   type ApiClientOptions,
-  type UserSummary,
+  type UserSummary
 } from '@/lib/api'
 import { AuthContext, type LoginCredentials } from './auth-context'
 
@@ -25,7 +25,7 @@ type AuthProviderProps = {
 export function AuthProvider({
   apiBaseUrl,
   children,
-  fetcher,
+  fetcher
 }: AuthProviderProps) {
   const [user, setUser] = useState<UserSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -82,8 +82,8 @@ export function AuthProvider({
             username: credentials.username,
             password: credentials.password,
             captcha_id: credentials.captcha_id,
-            captcha_code: credentials.captcha_code,
-          }
+            captcha_code: credentials.captcha_code
+}
         )
         const response = await getCurrentUser({ baseUrl: apiBaseUrl, fetcher })
         if (isCurrentRequest(requestId)) {
@@ -156,8 +156,8 @@ export function AuthProvider({
       login,
       logout,
       refreshCurrentUser,
-      user,
-    }),
+      user
+}),
     [apiBaseUrl, isLoading, login, logout, refreshCurrentUser, user]
   )
 

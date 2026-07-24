@@ -38,13 +38,13 @@ describe("RunEventTimeline", () => {
           event({
             event_type: "tool_started",
             sequence_number: 1,
-            payload: { tool_id: "t1", name: "Read", input_excerpt: "path=/tmp/a.txt" },
-          }),
+            payload: { tool_id: "t1", name: "Read", input_excerpt: "path=/tmp/a.txt" }
+}),
           event({
             event_type: "tool_completed",
             sequence_number: 2,
-            payload: { tool_id: "t1", is_error: false, output_excerpt: "file contents", output_truncated: true },
-          }),
+            payload: { tool_id: "t1", is_error: false, output_excerpt: "file contents", output_truncated: true }
+}),
         ]}
       />,
     );
@@ -67,8 +67,8 @@ describe("RunEventTimeline", () => {
           event({
             event_type: "tool_completed",
             sequence_number: 7,
-            payload: { tool_id: "t9", is_error: true, output_excerpt: "boom" },
-          }),
+            payload: { tool_id: "t9", is_error: true, output_excerpt: "boom" }
+}),
         ]}
       />,
     );

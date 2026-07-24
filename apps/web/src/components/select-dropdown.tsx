@@ -6,7 +6,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from '@/components/ui/select'
 
 type SelectDropdownProps = {
@@ -28,7 +28,7 @@ export function SelectDropdown({
   placeholder,
   disabled,
   className = '',
-  isControlled = false,
+  isControlled = false
 }: SelectDropdownProps) {
   const defaultState = isControlled
     ? { value: defaultValue, onValueChange }

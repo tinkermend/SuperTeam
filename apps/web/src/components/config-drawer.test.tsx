@@ -10,7 +10,7 @@ import { SidebarProvider } from '@/components/ui/sidebar'
 import { ConfigDrawer } from './config-drawer'
 
 async function renderConfigDrawer({
-  sidebarDefaultOpen = true,
+  sidebarDefaultOpen = true
 }: {
   sidebarDefaultOpen?: boolean
 } = {}) {
@@ -64,8 +64,8 @@ describe('ConfigDrawer (integration)', () => {
     await expect
       .element(
         screen.getByRole('button', {
-          name: /恢复全部默认设置/,
-        })
+          name: /恢复全部默认设置/
+})
       )
       .toBeInTheDocument()
   })
@@ -170,8 +170,8 @@ describe('ConfigDrawer (integration)', () => {
 
       await userEvent.click(
         screen.getByRole('button', {
-          name: /恢复默认主题/,
-        })
+          name: /恢复默认主题/
+})
       )
       await vi.waitFor(() => expect(getCookie('vite-ui-theme')).toBe('system'))
     })
@@ -189,8 +189,8 @@ describe('ConfigDrawer (integration)', () => {
 
       await userEvent.click(
         screen.getByRole('button', {
-          name: /恢复默认文字方向/,
-        })
+          name: /恢复默认文字方向/
+})
       )
       await vi.waitFor(() =>
         expect(document.documentElement.getAttribute('dir')).toBe('ltr')
@@ -211,8 +211,8 @@ describe('ConfigDrawer (integration)', () => {
 
       await userEvent.click(
         screen.getByRole('button', {
-          name: /恢复默认侧栏样式/,
-        })
+          name: /恢复默认侧栏样式/
+})
       )
       await vi.waitFor(() => expect(getCookie('layout_variant')).toBe('floating'))
     })
@@ -228,8 +228,8 @@ describe('ConfigDrawer (integration)', () => {
 
       await userEvent.click(
         screen.getByRole('button', {
-          name: /恢复默认布局选项/,
-        })
+          name: /恢复默认布局选项/
+})
       )
       await vi.waitFor(() => expect(getCookie('sidebar_state')).toBe('true'))
       await vi.waitFor(() =>
@@ -294,8 +294,8 @@ describe('ConfigDrawer (integration)', () => {
 
     await userEvent.click(
       screen.getByRole('button', {
-        name: /恢复全部默认设置/,
-      })
+        name: /恢复全部默认设置/
+})
     )
 
     await vi.waitFor(() => expect(getCookie('sidebar_state')).toBe('true'))

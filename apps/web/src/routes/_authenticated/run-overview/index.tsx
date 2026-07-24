@@ -13,5 +13,5 @@ export const Route = createFileRoute("/_authenticated/run-overview/")({
     if (typeof search.employee === "string" && search.employee) result.employee = search.employee;
     if (typeof search.project === "string" && search.project) result.project = search.project;
     return result;
-  },
+  }
 });

@@ -5,7 +5,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
-  SidebarRail,
+  SidebarRail
 } from "@/components/ui/sidebar";
 import { inboxBadgeRefetchInterval } from "@/features/inbox/inbox-stream-status";
 import { useInboxStreamStatus } from "@/features/inbox/use-inbox-stream-status";
@@ -26,8 +26,8 @@ export function AppSidebar() {
     staleTime: 60 * 1000,
     // 主刷新由全局 SSE（含 onopen 重连追平）；断流时与列表同频 5s 快拉。
     refetchInterval: inboxBadgeRefetchInterval(streamStatus.connection),
-    refetchOnWindowFocus: true,
-  });
+    refetchOnWindowFocus: true
+});
   const inboxBadge =
     inboxBadgeQuery.data && inboxBadgeQuery.data.mine_open_count > 0
       ? String(inboxBadgeQuery.data.mine_open_count)

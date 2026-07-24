@@ -1,12 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,11 +16,11 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import { listPromptTemplates, type PromptTemplate } from "@/lib/api/prompt-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { SoftCard, V3Button } from "@/components/superteam";
+import { SoftCard, Button } from "@/components/superteam";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 
 type PromptTemplateDialogProps = {
@@ -33,7 +32,7 @@ type PromptTemplateDialogProps = {
 export function PromptTemplateDialog({
   open,
   onOpenChange,
-  onInsert,
+  onInsert
 }: PromptTemplateDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
@@ -47,8 +46,8 @@ export function PromptTemplateDialog({
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ["prompt-templates"],
     queryFn: () => listPromptTemplates(apiOptions),
-    enabled: open,
-  });
+    enabled: open
+});
 
   const categories = useMemo(() => {
     const cats = Array.from(new Set(templates.map((t) => t.category_code)));
@@ -110,9 +109,9 @@ export function PromptTemplateDialog({
       {/* sm:max-w-[900px] 覆盖 DialogContent 默认的 sm:max-w-lg(512px)，
           否则模板库侧栏+双列卡片会被压回窄弹窗。 */}
       <DialogContent className="flex max-h-[85vh] min-h-[60vh] w-[90vw] max-w-[900px] sm:max-w-[900px] flex-col overflow-hidden p-0">
-        <DialogHeader className="border-b border-v3-line px-6 py-4">
+        <DialogHeader className="border-b border-line px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <Sparkles className="size-5 text-v3-brand" />
+            <Sparkles className="size-5 text-brand" />
             浏览模板库
           </DialogTitle>
           <DialogDescription>
@@ -123,7 +122,7 @@ export function PromptTemplateDialog({
         <div className="flex min-h-0 flex-1">
           {isLoading ? (
             <div className="flex flex-1 items-center justify-center">
-              <Loader2 className="size-8 animate-spin text-v3-brand/50" />
+              <Loader2 className="size-8 animate-spin text-brand/50" />
             </div>
           ) : selectedTemplate ? (
             <div className="flex w-full flex-col p-6">
@@ -137,8 +136,8 @@ export function PromptTemplateDialog({
                   <ArrowLeft className="size-4" />
                 </Button>
                 <div>
-                  <h3 className="text-lg font-bold text-v3-ink">{selectedTemplate.title}</h3>
-                  <p className="text-sm text-v3-ink-2">填写变量以生成最终提示词</p>
+                  <h3 className="text-lg font-bold text-ink">{selectedTemplate.title}</h3>
+                  <p className="text-sm text-ink-2">填写变量以生成最终提示词</p>
                 </div>
               </div>
               <ScrollArea className="flex-1">
@@ -152,7 +151,7 @@ export function PromptTemplateDialog({
                             {v.required && <span className="ml-1 text-destructive">*</span>}
                           </Label>
                           {v.description && (
-                            <p className="text-xs text-v3-ink-2">{v.description}</p>
+                            <p className="text-xs text-ink-2">{v.description}</p>
                           )}
                           {v.type === "text" ? (
                             <Textarea
@@ -160,8 +159,8 @@ export function PromptTemplateDialog({
                               onChange={(e) =>
                                 setVariableValues((prev) => ({
                                   ...prev,
-                                  [v.name]: e.target.value,
-                                }))
+                                  [v.name]: e.target.value
+}))
                               }
                               placeholder={`输入 ${v.name}...`}
                               className="min-h-[100px]"
@@ -172,8 +171,8 @@ export function PromptTemplateDialog({
                               onValueChange={(val) =>
                                 setVariableValues((prev) => ({
                                   ...prev,
-                                  [v.name]: val,
-                                }))
+                                  [v.name]: val
+}))
                               }
                             >
                               <SelectTrigger>
@@ -193,8 +192,8 @@ export function PromptTemplateDialog({
                               onChange={(e) =>
                                 setVariableValues((prev) => ({
                                   ...prev,
-                                  [v.name]: e.target.value,
-                                }))
+                                  [v.name]: e.target.value
+}))
                               }
                               placeholder={`输入 ${v.name}...`}
                             />
@@ -203,31 +202,31 @@ export function PromptTemplateDialog({
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-lg bg-v3-card-soft p-4 text-sm text-v3-ink-2">
+                    <div className="rounded-lg bg-card-soft p-4 text-sm text-ink-2">
                       此模板无需变量，直接确认即可。
                     </div>
                   )}
-                  <div className="mt-4 rounded-xl border border-v3-line bg-v3-card p-4">
-                    <Label className="mb-2 block text-xs font-bold text-v3-ink-3">模板内容预览</Label>
-                    <div className="whitespace-pre-wrap text-sm text-v3-ink-2 opacity-70">
+                  <div className="mt-4 rounded-xl border border-line bg-card p-4">
+                    <Label className="mb-2 block text-xs font-bold text-ink-3">模板内容预览</Label>
+                    <div className="whitespace-pre-wrap text-sm text-ink-2 opacity-70">
                       {selectedTemplate.content}
                     </div>
                   </div>
                 </div>
               </ScrollArea>
               <div className="mt-6 flex justify-end gap-3 pt-4">
-                <V3Button variant="outline" onClick={() => setSelectedTemplate(null)}>
+                <Button variant="outline" onClick={() => setSelectedTemplate(null)}>
                   返回列表
-                </V3Button>
-                <V3Button disabled={!isFormValid} onClick={handleConfirm}>
+                </Button>
+                <Button disabled={!isFormValid} onClick={handleConfirm}>
                   插入模板
-                </V3Button>
+                </Button>
               </div>
             </div>
           ) : (
             <>
               {/* Sidebar */}
-              <div className="w-48 border-r border-v3-line bg-v3-card-soft py-4">
+              <div className="w-48 border-r border-line bg-card-soft py-4">
                 <ScrollArea className="h-full px-2">
                   <div className="grid gap-1">
                     {categories.map((cat) => (
@@ -236,22 +235,22 @@ export function PromptTemplateDialog({
                         onClick={() => setSelectedCategory(cat)}
                         className={`rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
                           activeCategory === cat
-                            ? "bg-v3-brand-soft text-v3-brand-deep"
-                            : "text-v3-ink-2 hover:bg-v3-card hover:text-v3-ink"
+                            ? "bg-brand-soft text-brand-deep"
+                            : "text-ink-2 hover:bg-card hover:text-ink"
                         }`}
                       >
                         {cat}
                       </button>
                     ))}
                     {categories.length === 0 && (
-                      <div className="px-3 py-2 text-sm text-v3-ink-3">无可用分类</div>
+                      <div className="px-3 py-2 text-sm text-ink-3">无可用分类</div>
                     )}
                   </div>
                 </ScrollArea>
               </div>
 
               {/* Grid */}
-              <div className="flex-1 bg-v3-bg py-4">
+              <div className="flex-1 bg-background py-4">
                 <ScrollArea className="h-full px-6">
                   {/* 列数跟随容器宽度，而非视口断点：Dialog 内容区约 660px，
                       minmax(15rem,1fr) 下稳定 2 列、卡片宽约 320px，
@@ -261,22 +260,22 @@ export function PromptTemplateDialog({
                       <SoftCard
                         key={template.id}
                         onClick={() => handleSelectTemplate(template)}
-                        className="group cursor-pointer border border-v3-line bg-v3-card p-4 transition-all hover:border-v3-brand/30 hover:shadow-md"
+                        className="group cursor-pointer border border-line bg-card p-4 transition-all hover:border-brand/30 hover:shadow-md"
                       >
-                        <h4 className="font-bold text-v3-ink group-hover:text-v3-brand">
+                        <h4 className="font-bold text-ink group-hover:text-brand">
                           {template.title}
                         </h4>
-                        <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-v3-ink-2">
+                        <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-ink-2">
                           {template.content}
                         </p>
-                        <div className="mt-4 flex items-center justify-between text-xs text-v3-ink-3">
+                        <div className="mt-4 flex items-center justify-between text-xs text-ink-3">
                           <span>使用 {template.use_count} 次</span>
                           <span>{template.variables?.length || 0} 个变量</span>
                         </div>
                       </SoftCard>
                     ))}
                     {filteredTemplates.length === 0 && (
-                      <div className="col-span-full py-10 text-center text-sm text-v3-ink-3">
+                      <div className="col-span-full py-10 text-center text-sm text-ink-3">
                         该分类下没有可用模板
                       </div>
                     )}

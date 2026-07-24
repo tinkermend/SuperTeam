@@ -9,13 +9,13 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
+  useSidebar
 } from "@/components/ui/sidebar";
 import { SignOutDialog } from "@/components/sign-out-dialog";
 
@@ -35,26 +35,26 @@ export function NavUser() {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="border border-v3-line bg-v3-card-soft text-v3-ink shadow-v3 data-[state=open]:bg-v3-brand-soft data-[state=open]:text-v3-brand-deep"
+                className="border border-line bg-card-soft text-ink shadow-card data-[state=open]:bg-brand-soft data-[state=open]:text-brand-deep"
               >
                 <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg bg-v3-brand text-white">
+                  <AvatarFallback className="rounded-lg bg-brand text-white">
                     {fallback}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-start text-sm leading-tight">
-                  <span className="truncate font-semibold text-v3-ink">
+                  <span className="truncate font-semibold text-ink">
                     {displayName}
                   </span>
-                  <span className="truncate text-xs text-v3-ink-2">
+                  <span className="truncate text-xs text-ink-2">
                     {displayEmail}
                   </span>
                 </div>
-                <ChevronsUpDown className="ms-auto size-4 text-v3-ink-3" />
+                <ChevronsUpDown className="ms-auto size-4 text-ink-3" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-v3-inner border-v3-line bg-v3-card text-v3-ink shadow-v3-pop"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-inner border-line bg-card text-ink shadow-pop"
               side={isMobile ? "bottom" : "right"}
               align="end"
               sideOffset={4}
@@ -62,7 +62,7 @@ export function NavUser() {
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
                   <Avatar className="size-8 rounded-lg">
-                    <AvatarFallback className="rounded-lg bg-v3-brand text-white">
+                    <AvatarFallback className="rounded-lg bg-brand text-white">
                       {fallback}
                     </AvatarFallback>
                   </Avatar>

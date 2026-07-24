@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ProjectConfigPage } from "@/features/projects";
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId/config")({
-  component: ProjectConfigRoute,
+  component: ProjectConfigRoute
 });
 
 function ProjectConfigRoute() {

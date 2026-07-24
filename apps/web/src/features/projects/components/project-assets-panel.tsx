@@ -4,14 +4,14 @@ import type {
   ProjectArtifactRef,
   ProjectBudgetLedgerEntry,
   ProjectBudgetSummary,
-  ProjectReportRef,
+  ProjectReportRef
 } from "@/lib/api/projects";
 import { ProjectAcceptancePanel } from "./project-acceptance-panel";
 import { ProjectArtifactReportPanel } from "./project-artifact-report-panel";
 import { ProjectBudgetPanel } from "./project-budget-panel";
 
 const assetsTabTriggerClass =
-  "h-8 flex-none rounded-[8px] border-0 px-3 py-1.5 text-[12.5px] font-semibold text-v3-ink-2 shadow-none transition-colors data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-v3-card-soft data-[state=inactive]:hover:text-v3-ink";
+  "h-8 flex-none rounded-[8px] border-0 px-3 py-1.5 text-[12.5px] font-semibold text-ink-2 shadow-none transition-colors data-[state=active]:bg-brand-soft data-[state=active]:text-brand-deep data-[state=active]:shadow-none data-[state=inactive]:hover:bg-card-soft data-[state=inactive]:hover:text-ink";
 
 type ProjectAssetsPanelProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -29,14 +29,14 @@ export function ProjectAssetsPanel({
   budgetLedger = [],
   budgetSummary,
   initialTab = "artifacts",
-  reports = [],
+  reports = []
 }: ProjectAssetsPanelProps) {
   return (
     <Tabs className="flex w-full min-w-0 flex-col gap-3" defaultValue={initialTab}>
       <div className="min-w-0 overflow-x-auto pb-1">
         <TabsList
           aria-label="项目资产"
-          className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[12px] bg-v3-card p-1 text-v3-ink shadow-v3 sm:min-w-0"
+          className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[12px] bg-card p-1 text-ink shadow-card sm:min-w-0"
         >
           <TabsTrigger className={assetsTabTriggerClass} value="artifacts">
             工件

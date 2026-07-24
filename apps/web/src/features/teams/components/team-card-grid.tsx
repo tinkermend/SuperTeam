@@ -2,26 +2,26 @@ import { Link } from "@tanstack/react-router";
 import { Building2, ChevronRight, ShieldCheck, Users } from "lucide-react";
 import {
   getTeamDisplayConfig,
-  type TeamDisplayMetadata,
+  type TeamDisplayMetadata
 } from "@/components/superteam/team-icon-tile";
 import {
   SoftCard,
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  WorkSurface,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  WorkSurface
 } from "@/components/superteam";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
+  TooltipTrigger
 } from "@/components/ui/tooltip";
 import {
   UserIdentityAvatar,
   getUserIdentityLabel,
-  type UserIdentityData,
+  type UserIdentityData
 } from "@/components/superteam/user-identity";
 import { cn } from "@/lib/utils";
 import type { TeamListItem } from "@/lib/api/teams";
@@ -32,10 +32,10 @@ import { governanceStatusLabel, teamStatusLabel } from "@/lib/status-labels";
 // ---------------------------------------------------------------------------
 
 const governanceToneClass = {
-  active: "text-v3-ok",
-  draft_pending: "text-v3-warn",
-  needs_update: "text-v3-warn",
-  not_configured: "text-v3-mute",
+  active: "text-ok",
+  draft_pending: "text-warn",
+  needs_update: "text-warn",
+  not_configured: "text-mute"
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ type TeamCardGridProps = {
 function SummaryStats({
   teams,
   totalDigitalEmployees,
-  totalCapabilities,
+  totalCapabilities
 }: {
   teams: TeamListItem[];
   totalDigitalEmployees: number;
@@ -90,8 +90,8 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
   if (owners.length === 0) {
     return (
       <div className="flex items-center gap-3 py-2">
-        <div className="flex size-10 items-center justify-center rounded-full border border-dashed border-v3-line-strong bg-v3-card-soft">
-          <Users className="size-4 text-v3-ink-3" />
+        <div className="flex size-10 items-center justify-center rounded-full border border-dashed border-line-strong bg-card-soft">
+          <Users className="size-4 text-ink-3" />
         </div>
         <span className="text-sm text-muted-foreground">未设置负责人</span>
       </div>
@@ -105,8 +105,8 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
       <div className="flex items-center gap-3 py-2">
         <UserIdentityAvatar className="size-10" user={owner} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-v3-ink">{label.primary}</div>
-          <div className="truncate text-xs text-v3-ink-2">
+          <div className="truncate text-sm font-medium text-ink">{label.primary}</div>
+          <div className="truncate text-xs text-ink-2">
             {label.secondary}
           </div>
         </div>
@@ -165,14 +165,14 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
       </TooltipProvider>
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-v3-ink">
+        <div className="truncate text-sm font-medium text-ink">
           {owners
             .slice(0, 2)
             .map((o) => getUserIdentityLabel(o).primary)
             .join("、")}
           {owners.length > 2 ? ` 等 ${owners.length} 人` : ""}
         </div>
-        <div className="truncate text-xs text-v3-ink-2">
+        <div className="truncate text-xs text-ink-2">
           联席负责人
         </div>
       </div>
@@ -185,8 +185,8 @@ function getOwnerIdentity(team: TeamListItem): UserIdentityData | undefined {
   if (ownerID) {
     return {
       id: ownerID,
-      status: "active",
-    };
+      status: "active"
+};
   }
 
   return undefined;
@@ -200,8 +200,8 @@ function getOwnerIdentities(team: TeamListItem): UserIdentityData[] {
       email: owner.email,
       id: owner.user_id,
       status: owner.status,
-      username: owner.username,
-    }));
+      username: owner.username
+}));
   }
 
   const singleOwner = getOwnerIdentity(team);
@@ -218,7 +218,7 @@ function getOwnerIdentities(team: TeamListItem): UserIdentityData[] {
 
 function TeamCard({
   isHighlighted,
-  team,
+  team
 }: {
   isHighlighted: boolean;
   team: TeamListItem;
@@ -229,22 +229,22 @@ function TeamCard({
   return (
     <Link
       aria-label={`查看 ${team.name} 团队详情`}
-      className="group block h-full rounded-v3-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand focus-visible:ring-offset-2 focus-visible:ring-offset-v3-bg"
+      className="group block h-full rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       params={{ teamId: team.id }}
       to="/teams/$teamId"
     >
       <SoftCard
         interactive
         className={cn(
-          "flex h-full min-h-[300px] flex-col overflow-hidden border-v3-line bg-v3-card p-0",
-          isHighlighted && "border-v3-brand ring-2 ring-v3-brand shadow-v3-pop",
+          "flex h-full min-h-[300px] flex-col overflow-hidden border-line bg-card p-0",
+          isHighlighted && "border-brand ring-2 ring-brand shadow-pop",
         )}
       >
         <div className="flex min-w-0 items-start justify-between gap-4 px-5 pb-4 pt-5">
           <div className="flex min-w-0 flex-1 items-start gap-4">
             <div
               aria-label={displayConfig.label}
-              className="flex size-[4.75rem] shrink-0 items-center justify-center rounded-[18px] border border-v3-line bg-v3-card-soft shadow-sm"
+              className="flex size-[4.75rem] shrink-0 items-center justify-center rounded-[18px] border border-line bg-card-soft shadow-sm"
               role="img"
             >
               <img
@@ -260,7 +260,7 @@ function TeamCard({
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <h3
-                  className="line-clamp-2 text-[17px] font-bold leading-snug text-v3-ink"
+                  className="line-clamp-2 text-[17px] font-bold leading-snug text-ink"
                   title={team.name}
                 >
                   {team.name}
@@ -269,7 +269,7 @@ function TeamCard({
                   {teamStatusLabel(team.status)}
                 </StatusPill>
               </div>
-              <p className="mt-1 truncate text-xs font-medium text-v3-ink-2">
+              <p className="mt-1 truncate text-xs font-medium text-ink-2">
                 {displayConfig.label}
               </p>
             </div>
@@ -277,12 +277,12 @@ function TeamCard({
         </div>
 
         <div className="px-5">
-          <div className="rounded-v3-inner border border-v3-line bg-v3-card-inner px-3.5 py-3">
-            <p className="text-[11px] font-semibold tracking-[0.08em] text-v3-ink-3">
+          <div className="rounded-inner border border-line bg-card-inner px-3.5 py-3">
+            <p className="text-[11px] font-semibold tracking-[0.08em] text-ink-3">
               团队说明
             </p>
             <p
-              className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-v3-ink-2"
+              className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-ink-2"
               title={team.description || "暂未补充团队说明"}
             >
               {team.description || "暂未补充团队说明"}
@@ -290,19 +290,19 @@ function TeamCard({
           </div>
         </div>
 
-        <div className="mx-5 mt-4 grid grid-cols-2 gap-3 border-y border-v3-line py-3.5 text-sm">
+        <div className="mx-5 mt-4 grid grid-cols-2 gap-3 border-y border-line py-3.5 text-sm">
           <div
-            className="flex min-w-0 items-center gap-2 text-v3-ink-2"
+            className="flex min-w-0 items-center gap-2 text-ink-2"
           >
-            <Users className="size-4 shrink-0 text-v3-ink-3" />
+            <Users className="size-4 shrink-0 text-ink-3" />
             <span className="truncate">
-              <span className="font-bold tabular-nums text-v3-ink">
+              <span className="font-bold tabular-nums text-ink">
                 {team.digital_employee_count}
               </span>{" "}
               名数字员工
             </span>
           </div>
-          <div className="flex min-w-0 items-center gap-2 text-v3-ink-2">
+          <div className="flex min-w-0 items-center gap-2 text-ink-2">
             <ShieldCheck
               className={cn(
                 "size-4 shrink-0",
@@ -317,12 +317,12 @@ function TeamCard({
 
         <div className="mt-auto flex min-w-0 items-center gap-3 px-5 py-4">
           <div className="min-w-0 flex-1">
-            <p className="mb-1 text-[11px] font-semibold tracking-[0.08em] text-v3-ink-3">
+            <p className="mb-1 text-[11px] font-semibold tracking-[0.08em] text-ink-3">
               团队负责人
             </p>
             <HumanOwnerSection team={team} />
           </div>
-          <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-v3-brand-deep">
+          <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-brand-deep">
             进入团队
             <ChevronRight className="size-4 transition-transform duration-200 group-hover:translate-x-1" />
           </span>
@@ -340,7 +340,7 @@ export function TeamCardGrid({
   highlightedTeamId,
   isError,
   isLoading,
-  teams,
+  teams
 }: TeamCardGridProps) {
   const totalDigitalEmployees = teams.reduce(
     (sum, t) => sum + t.digital_employee_count,
@@ -355,7 +355,7 @@ export function TeamCardGrid({
   if (isLoading) {
     return (
       <WorkSurface>
-        <V3LoadingState label="团队列表加载中" />
+        <LoadingState label="团队列表加载中" />
       </WorkSurface>
     );
   }
@@ -363,7 +363,7 @@ export function TeamCardGrid({
   if (isError) {
     return (
       <WorkSurface>
-        <V3ErrorState title="团队列表加载失败" />
+        <ErrorState title="团队列表加载失败" />
       </WorkSurface>
     );
   }
@@ -371,7 +371,7 @@ export function TeamCardGrid({
   if (teams.length === 0) {
     return (
       <WorkSurface>
-        <V3EmptyState icon={<Building2 />} title="暂无团队" />
+        <EmptyState icon={<Building2 />} title="暂无团队" />
       </WorkSurface>
     );
   }

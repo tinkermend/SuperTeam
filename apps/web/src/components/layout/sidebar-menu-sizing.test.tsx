@@ -7,7 +7,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarProvider,
+  SidebarProvider
 } from '@/components/ui/sidebar'
 import '@/styles/index.css'
 
@@ -149,7 +149,7 @@ describe('sidebar menu sizing', () => {
             <SidebarMenuButton data-testid='badged-sidebar-menu-button'>
               <Activity />
               <span>收件箱</span>
-              <span className='ms-auto h-5 min-w-5 rounded-full bg-v3-brand-soft px-1.5 py-0 text-xs font-bold text-v3-brand-deep'>
+              <span className='ms-auto h-5 min-w-5 rounded-full bg-brand-soft px-1.5 py-0 text-xs font-bold text-brand-deep'>
                 12
               </span>
             </SidebarMenuButton>

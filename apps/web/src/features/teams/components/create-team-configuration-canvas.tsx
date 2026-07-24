@@ -7,7 +7,7 @@ import {
   Search,
   Sparkles,
   UserRoundCheck,
-  X,
+  X
 } from "lucide-react";
 import {
   GlassCard,
@@ -16,13 +16,13 @@ import {
   StatusPill,
   UserIdentity,
   UserSearchSelect,
-  V3Pagination,
+  Pagination,
   WorkSurface,
-  type V3Tone,
+  type Tone,
+  Button
 } from "@/components/superteam";
 import { TeamIconPicker } from "@/components/superteam/team-icon-picker";
 import { TeamIconTile } from "@/components/superteam/team-icon-tile";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,14 +32,14 @@ import type { UserSummary } from "@/lib/api/auth";
 import {
   listDigitalEmployees,
   type DigitalEmployee,
-  type DigitalEmployeeStatus,
+  type DigitalEmployeeStatus
 } from "@/lib/api/employees";
 import { cn } from "@/lib/utils";
 import { employeeStatusLabel } from "@/lib/status-labels";
 import {
   type CreateTeamDraft,
   inferTeamDisplay,
-  slugify,
+  slugify
 } from "./create-team-draft";
 
 const THEME_COLORS = [
@@ -50,12 +50,12 @@ const THEME_COLORS = [
   { value: "violet", class: "bg-violet-500", label: "紫" },
 ] as const;
 
-const EMPLOYEE_STATUS_TONE: Record<DigitalEmployeeStatus, V3Tone> = {
+const EMPLOYEE_STATUS_TONE: Record<DigitalEmployeeStatus, Tone> = {
   draft: "mute",
   ready: "ok",
   active: "info",
   disabled: "mute",
-  error: "danger",
+  error: "danger"
 };
 
 const EMPLOYEE_LIBRARY_PAGE_SIZE = 5;
@@ -77,15 +77,15 @@ export function CreateTeamConfigurationCanvas({
   draft,
   errors,
   fetcher,
-  onChange,
+  onChange
 }: CreateTeamConfigurationCanvasProps) {
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [employeePage, setEmployeePage] = useState(1);
   const employeesQuery = useQuery({
     queryKey: ["unassigned-digital-employees"],
     queryFn: () =>
-      listDigitalEmployees({ baseUrl: apiBaseUrl, fetcher }, { assignment: "unassigned" }),
-  });
+      listDigitalEmployees({ baseUrl: apiBaseUrl, fetcher }, { assignment: "unassigned" })
+});
 
   const selectedEmployeeIds = useMemo(
     () => new Set(draft.initial_digital_employees.map((employee) => employee.id)),
@@ -121,8 +121,8 @@ export function CreateTeamConfigurationCanvas({
         ? draft.display
         : inferTeamDisplay(`${name} ${draft.slug}`),
       name,
-      slug: draft.slugTouched ? draft.slug : slugify(name),
-    });
+      slug: draft.slugTouched ? draft.slug : slugify(name)
+});
   }
 
   function updateSlug(rawSlug: string) {
@@ -133,8 +133,8 @@ export function CreateTeamConfigurationCanvas({
         ? draft.display
         : inferTeamDisplay(`${draft.name} ${slug}`),
       slug,
-      slugTouched: true,
-    });
+      slugTouched: true
+});
   }
 
   function updateDescription(description: string) {
@@ -145,16 +145,16 @@ export function CreateTeamConfigurationCanvas({
     onChange({
       ...draft,
       display: { ...draft.display, icon_key: iconKey },
-      displayTouched: true,
-    });
+      displayTouched: true
+});
   }
 
   function updateColor(color: CreateTeamDraft["display"]["color_tone"]) {
     onChange({
       ...draft,
       display: { ...draft.display, color_tone: color },
-      displayTouched: true,
-    });
+      displayTouched: true
+});
   }
 
   function addOwner(owner: UserSummary) {
@@ -170,8 +170,8 @@ export function CreateTeamConfigurationCanvas({
     if (selectedEmployeeIds.has(employee.id)) return;
     onChange({
       ...draft,
-      initial_digital_employees: [...draft.initial_digital_employees, employee],
-    });
+      initial_digital_employees: [...draft.initial_digital_employees, employee]
+});
   }
 
   function removeEmployee(employeeId: string) {
@@ -179,8 +179,8 @@ export function CreateTeamConfigurationCanvas({
       ...draft,
       initial_digital_employees: draft.initial_digital_employees.filter(
         (employee) => employee.id !== employeeId,
-      ),
-    });
+      )
+});
   }
 
   return (
@@ -193,8 +193,8 @@ export function CreateTeamConfigurationCanvas({
                 <Sparkles />
               </IconTile>
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-v3-ink">团队名片</h2>
-                <p className="mt-0.5 text-xs text-v3-ink-3">定义团队的展示身份</p>
+                <h2 className="text-sm font-semibold text-ink">团队名片</h2>
+                <p className="mt-0.5 text-xs text-ink-3">定义团队的展示身份</p>
               </div>
             </div>
             <TeamIconTile
@@ -203,11 +203,11 @@ export function CreateTeamConfigurationCanvas({
             />
           </div>
 
-          <div className="v3-glass-inner mt-4 grid gap-4 p-3.5">
+          <div className="glass-inner mt-4 grid gap-4 p-3.5">
             <div className="grid gap-1.5">
               <Label htmlFor="team-name">团队名称</Label>
               <Input
-                className="bg-v3-card/90"
+                className="bg-card/90"
                 id="team-name"
                 onChange={(event) => updateName(event.target.value)}
                 placeholder="例如：安全响应组"
@@ -216,16 +216,16 @@ export function CreateTeamConfigurationCanvas({
               {errors.name ? (
                 <span className="text-xs text-destructive">{errors.name}</span>
               ) : (
-                <span className="text-[11px] text-v3-ink-3">用于全站展示，可随时修改。</span>
+                <span className="text-[11px] text-ink-3">用于全站展示，可随时修改。</span>
               )}
             </div>
 
             <div className="grid gap-1.5">
-              <Label className="text-xs font-medium text-v3-ink-3" htmlFor="team-slug">
+              <Label className="text-xs font-medium text-ink-3" htmlFor="team-slug">
                 团队标识 slug
               </Label>
-              <div className="flex items-center gap-2 rounded-[12px] border border-v3-line bg-v3-card/90 px-2.5 py-1">
-                <span className="select-none font-mono text-xs text-v3-ink-3">/teams/</span>
+              <div className="flex items-center gap-2 rounded-[12px] border border-line bg-card/90 px-2.5 py-1">
+                <span className="select-none font-mono text-xs text-ink-3">/teams/</span>
                 <Input
                   className="h-8 border-0 bg-transparent px-0 font-mono text-sm shadow-none focus-visible:ring-0"
                   id="team-slug"
@@ -237,19 +237,19 @@ export function CreateTeamConfigurationCanvas({
               {errors.slug ? (
                 <span className="text-xs text-destructive">{errors.slug}</span>
               ) : (
-                <span className="text-[11px] text-v3-ink-3">默认按名称生成，可手动修改。</span>
+                <span className="text-[11px] text-ink-3">默认按名称生成，可手动修改。</span>
               )}
             </div>
 
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="team-description">团队说明</Label>
-                <span className="text-[11px] tabular-nums text-v3-ink-3">
+                <span className="text-[11px] tabular-nums text-ink-3">
                   {draft.description.length}/280
                 </span>
               </div>
               <Textarea
-                className="min-h-20 resize-y bg-v3-card/90 text-sm"
+                className="min-h-20 resize-y bg-card/90 text-sm"
                 id="team-description"
                 maxLength={280}
                 onChange={(event) => updateDescription(event.target.value)}
@@ -260,7 +260,7 @@ export function CreateTeamConfigurationCanvas({
               {errors.description ? (
                 <span className="text-xs text-destructive">{errors.description}</span>
               ) : (
-                <span className="text-[11px] text-v3-ink-3">用于团队目录展示，并可通过接口维护。</span>
+                <span className="text-[11px] text-ink-3">用于团队目录展示，并可通过接口维护。</span>
               )}
             </div>
 
@@ -277,7 +277,7 @@ export function CreateTeamConfigurationCanvas({
                         "flex size-7 items-center justify-center rounded-[9px] transition",
                         color.class,
                         isSelected
-                          ? "ring-2 ring-v3-brand ring-offset-2 ring-offset-v3-card"
+                          ? "ring-2 ring-brand ring-offset-2 ring-offset-card"
                           : "opacity-75 hover:opacity-100",
                       )}
                       key={color.value}
@@ -308,8 +308,8 @@ export function CreateTeamConfigurationCanvas({
               <UserRoundCheck />
             </IconTile>
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-v3-ink">人类负责人</h2>
-              <p className="mt-0.5 text-xs text-v3-ink-3">
+              <h2 className="text-sm font-semibold text-ink">人类负责人</h2>
+              <p className="mt-0.5 text-xs text-ink-3">
                 负责人负责团队配置、审批与业务判断。
               </p>
             </div>
@@ -328,16 +328,16 @@ export function CreateTeamConfigurationCanvas({
           </div>
 
           {draft.owners.length > 0 ? (
-            <ul className="mt-3 flex flex-col gap-2 border-t border-v3-line pt-3">
+            <ul className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
               {draft.owners.map((owner) => (
                 <li
-                  className="flex items-center justify-between gap-2 rounded-v3-inner border border-v3-brand/20 bg-v3-brand-soft/40 px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-inner border border-brand/20 bg-brand-soft/40 px-3 py-2"
                   key={owner.id}
                 >
                   <UserIdentity className="min-w-0" showSecondary size="sm" user={owner} />
                   <Button
                     aria-label={`移除负责人 ${owner.username}`}
-                    className="size-8 text-v3-ink-3 hover:text-destructive"
+                    className="size-8 text-ink-3 hover:text-destructive"
                     onClick={() => removeOwner(owner.id)}
                     size="icon"
                     type="button"
@@ -377,7 +377,7 @@ export function CreateTeamConfigurationCanvas({
 function TeamCanvas({
   draft,
   onRemoveEmployee,
-  onRemoveOwner,
+  onRemoveOwner
 }: {
   draft: CreateTeamDraft;
   onRemoveEmployee: (employeeId: string) => void;
@@ -388,21 +388,21 @@ function TeamCanvas({
   return (
     <section
       aria-label="团队画布"
-      className="relative min-h-[42rem] overflow-hidden rounded-v3-card border border-v3-line bg-v3-card shadow-v3"
+      className="relative min-h-[42rem] overflow-hidden rounded-card border border-line bg-card shadow-card"
     >
-      <div className="relative z-10 flex items-start justify-between gap-3 border-b border-v3-line px-5 py-4 sm:px-6">
+      <div className="relative z-10 flex items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <IconTile tone="brand" size="sm">
             <Network />
           </IconTile>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-v3-ink">团队画布</h2>
-            <p className="mt-0.5 text-xs text-v3-ink-3">
+            <h2 className="text-sm font-semibold text-ink">团队画布</h2>
+            <p className="mt-0.5 text-xs text-ink-3">
               人类负责人在上方，数字员工在下方。
             </p>
           </div>
         </div>
-        <span className="shrink-0 rounded-lg bg-v3-card-soft px-2.5 py-1 text-xs font-medium text-v3-ink-2">
+        <span className="shrink-0 rounded-lg bg-card-soft px-2.5 py-1 text-xs font-medium text-ink-2">
           {draft.owners.length + draft.initial_digital_employees.length} 位成员
         </span>
       </div>
@@ -411,19 +411,19 @@ function TeamCanvas({
         {hasStructure ? <CanvasConnections /> : null}
 
         <div className="relative z-10 mx-auto flex max-w-sm flex-col gap-2">
-          <p className="text-center text-[11px] font-semibold tracking-wide text-v3-ink-3">人类负责人</p>
+          <p className="text-center text-[11px] font-semibold tracking-wide text-ink-3">人类负责人</p>
           {draft.owners.length === 0 ? (
             <CanvasEmptyCard label="从左侧选择负责人" />
           ) : (
             draft.owners.map((owner) => (
               <article
-                className="group flex items-center justify-between gap-3 rounded-v3-inner border border-v3-brand/30 bg-v3-card px-3 py-3 shadow-sm"
+                className="group flex items-center justify-between gap-3 rounded-inner border border-brand/30 bg-card px-3 py-3 shadow-sm"
                 key={owner.id}
               >
                 <UserIdentity className="min-w-0" showSecondary user={owner} />
                 <Button
                   aria-label={`从画布移除负责人 ${owner.username}`}
-                  className="size-8 text-v3-ink-3 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                  className="size-8 text-ink-3 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
                   onClick={() => onRemoveOwner(owner.id)}
                   size="icon"
                   type="button"
@@ -438,8 +438,8 @@ function TeamCanvas({
 
         <div className="relative z-10 mt-14">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold tracking-wide text-v3-ink-3">数字员工</p>
-            <span className="text-xs text-v3-ink-3">{draft.initial_digital_employees.length} 位已加入</span>
+            <p className="text-[11px] font-semibold tracking-wide text-ink-3">数字员工</p>
+            <span className="text-xs text-ink-3">{draft.initial_digital_employees.length} 位已加入</span>
           </div>
 
           {draft.initial_digital_employees.length === 0 ? (
@@ -450,7 +450,7 @@ function TeamCanvas({
             <div className="mt-3 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
               {draft.initial_digital_employees.map((employee) => (
                 <article
-                  className="group flex min-w-0 flex-col gap-3 rounded-v3-inner border border-v3-line bg-v3-card p-3 shadow-sm transition-colors hover:border-v3-line-strong hover:bg-v3-card-soft"
+                  className="group flex min-w-0 flex-col gap-3 rounded-inner border border-line bg-card p-3 shadow-sm transition-colors hover:border-line-strong hover:bg-card-soft"
                   key={employee.id}
                 >
                   <div className="flex min-w-0 items-start justify-between gap-2">
@@ -461,7 +461,7 @@ function TeamCanvas({
                     />
                     <Button
                       aria-label={`移除数字员工 ${employee.name}`}
-                      className="size-7 text-v3-ink-3 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                      className="size-7 text-ink-3 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
                       onClick={() => onRemoveEmployee(employee.id)}
                       size="icon"
                       type="button"
@@ -471,10 +471,10 @@ function TeamCanvas({
                     </Button>
                   </div>
                   <div className="min-w-0">
-                    <h3 className="truncate text-sm font-semibold text-v3-ink">{employee.name}</h3>
-                    <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-v3-ink-3">{employee.role}</p>
+                    <h3 className="truncate text-sm font-semibold text-ink">{employee.name}</h3>
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-ink-3">{employee.role}</p>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-v3-ink-3">
+                  <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
                     <Bot className="size-3.5" />
                     <span>数字员工</span>
                   </div>
@@ -492,7 +492,7 @@ function CanvasConnections() {
   return (
     <svg
       aria-hidden="true"
-      className="pointer-events-none absolute inset-x-10 top-[8.5rem] z-0 h-36 w-[calc(100%-5rem)] text-v3-brand/30"
+      className="pointer-events-none absolute inset-x-10 top-[8.5rem] z-0 h-36 w-[calc(100%-5rem)] text-brand/30"
       fill="none"
       preserveAspectRatio="none"
       viewBox="0 0 100 100"
@@ -508,7 +508,7 @@ function CanvasConnections() {
 
 function CanvasEmptyCard({ label }: { label: string }) {
   return (
-    <div className="flex min-h-20 items-center justify-center rounded-v3-inner border border-dashed border-v3-line-strong bg-v3-card-soft/60 px-4 text-center text-xs text-v3-ink-3">
+    <div className="flex min-h-20 items-center justify-center rounded-inner border border-dashed border-line-strong bg-card-soft/60 px-4 text-center text-xs text-ink-3">
       {label}
     </div>
   );
@@ -524,7 +524,7 @@ function EmployeeLibrary({
   onQueryChange,
   page,
   pageCount,
-  total,
+  total
 }: {
   candidates: DigitalEmployee[];
   employeeQuery: string;
@@ -539,21 +539,21 @@ function EmployeeLibrary({
 }) {
   return (
     <WorkSurface className="flex h-[42rem] min-w-0 flex-col">
-      <div className="border-b border-v3-line px-4 py-4 sm:px-5">
+      <div className="border-b border-line px-4 py-4 sm:px-5">
         <div className="flex items-start gap-3">
           <IconTile tone="artifact" size="sm">
             <Bot />
           </IconTile>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-v3-ink">数字员工库</h2>
-            <p className="mt-0.5 text-xs text-v3-ink-3">仅展示未归属团队的数字员工。</p>
+            <h2 className="text-sm font-semibold text-ink">数字员工库</h2>
+            <p className="mt-0.5 text-xs text-ink-3">仅展示未归属团队的数字员工。</p>
           </div>
         </div>
         <div className="relative mt-4">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-v3-ink-3" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" />
           <Input
             aria-label="搜索候选数字员工"
-            className="bg-v3-card pl-9"
+            className="bg-card pl-9"
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="搜索名称或角色"
             type="search"
@@ -564,11 +564,11 @@ function EmployeeLibrary({
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 sm:p-4">
         {isLoading ? (
-          <p className="py-8 text-center text-sm text-v3-ink-3">加载中...</p>
+          <p className="py-8 text-center text-sm text-ink-3">加载中...</p>
         ) : isError ? (
           <p className="py-8 text-center text-sm text-destructive">加载失败</p>
         ) : total === 0 ? (
-          <p className="py-8 text-center text-sm text-v3-ink-3">
+          <p className="py-8 text-center text-sm text-ink-3">
             {employeeQuery.trim() === "" ? "当前暂无未归属团队的数字员工" : "没有匹配的数字员工"}
           </p>
         ) : (
@@ -576,7 +576,7 @@ function EmployeeLibrary({
             const tone = EMPLOYEE_STATUS_TONE[employee.status] ?? "mute";
             return (
               <article
-                className="flex min-w-0 items-center gap-3 rounded-v3-inner border border-v3-line bg-v3-card px-3 py-3 transition-colors hover:bg-v3-card-soft"
+                className="flex min-w-0 items-center gap-3 rounded-inner border border-line bg-card px-3 py-3 transition-colors hover:bg-card-soft"
                 key={employee.id}
               >
                 <EmployeeAvatar
@@ -585,15 +585,15 @@ function EmployeeLibrary({
                   size="sm"
                 />
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-medium text-v3-ink">{employee.name}</h3>
-                  <p className="mt-0.5 truncate text-xs text-v3-ink-3">{employee.role}</p>
+                  <h3 className="truncate text-sm font-medium text-ink">{employee.name}</h3>
+                  <p className="mt-0.5 truncate text-xs text-ink-3">{employee.role}</p>
                   <StatusPill className="mt-2 px-2 py-0.5 text-[10px]" tone={tone}>
                     {employeeStatusLabel(employee.status)}
                   </StatusPill>
                 </div>
                 <Button
                   aria-label={`加入 ${employee.name}`}
-                  className="size-8 border border-v3-line bg-v3-card text-v3-brand shadow-sm hover:border-v3-brand hover:bg-v3-brand-soft"
+                  className="size-8 border border-line bg-card text-brand shadow-sm hover:border-brand hover:bg-brand-soft"
                   onClick={() => onAdd(employee)}
                   size="icon"
                   type="button"
@@ -607,7 +607,7 @@ function EmployeeLibrary({
         )}
       </div>
       {total > EMPLOYEE_LIBRARY_PAGE_SIZE ? (
-        <V3Pagination
+        <Pagination
           className="shrink-0"
           onPageChange={onPageChange}
           page={page}

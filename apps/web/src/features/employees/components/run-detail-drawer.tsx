@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { RotateCcw, Square } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { MarkdownProse, StatusPill, V3Button, type V3Tone } from "@/components/superteam";
+import { MarkdownProse, StatusPill, Button, type Tone } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   acknowledgeDigitalEmployeeRunFailure,
@@ -12,7 +12,7 @@ import {
   stopDigitalEmployeeRun,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunListItem,
-  type DigitalEmployeeRunStatus,
+  type DigitalEmployeeRunStatus
 } from "@/lib/api/employees";
 import { formatDateTime } from "@/lib/format-time";
 import { runStatusLabel, statusLabel } from "@/lib/status-labels";
@@ -31,7 +31,7 @@ function runProjectDisplayName(name: string | undefined): string {
 function RunProjectValue({
   projectId,
   projectName,
-  projectDeleted,
+  projectDeleted
 }: {
   projectId?: string;
   projectName?: string;
@@ -43,15 +43,15 @@ function RunProjectValue({
   const name = runProjectDisplayName(projectName);
   if (projectDeleted) {
     return (
-      <span className="font-medium text-v3-ink">
+      <span className="font-medium text-ink">
         {name}
-        <span className="ml-1 font-normal text-v3-ink-3">（{statusLabel("deleted")}）</span>
+        <span className="ml-1 font-normal text-ink-3">（{statusLabel("deleted")}）</span>
       </span>
     );
   }
   return (
     <Link
-      className="font-medium text-v3-brand underline-offset-2 hover:underline"
+      className="font-medium text-brand underline-offset-2 hover:underline"
       params={{ projectId }}
       to="/projects/$projectId"
     >
@@ -79,7 +79,7 @@ export function RunDetailDrawer({
   open,
   onOpenChange,
   onStopped,
-  onRecovered,
+  onRecovered
 }: RunDetailDrawerProps) {
   const queryClient = useQueryClient();
   // 多取一条(51)只用于判断是否真的被截断:恰好 50 条时不该显示「仅显示前 50 条」提示。
@@ -88,16 +88,16 @@ export function RunDetailDrawer({
     queryKey: ["digital-employee-run-events", employeeId, run?.id, { limit: EVENT_DISPLAY_LIMIT + 1 }],
     queryFn: () =>
       listDigitalEmployeeRunEvents(apiOptions, employeeId, run?.id ?? "", { limit: EVENT_DISPLAY_LIMIT + 1 }),
-    refetchInterval: run && isActiveRun(run.status) ? 2500 : false,
-  });
+    refetchInterval: run && isActiveRun(run.status) ? 2500 : false
+});
   const stopRun = useMutation({
     mutationFn: (target: DigitalEmployeeRunListItem) =>
       stopDigitalEmployeeRun(apiOptions, employeeId, target.id, { reason: "用户从 Web 停止" }),
     onSuccess: async (updatedRun) => {
       onStopped(updatedRun);
       await queryClient.invalidateQueries({ queryKey: ["digital-employee-run-events", employeeId, updatedRun.id] });
-    },
-  });
+    }
+});
   const acknowledgeFailure = useMutation({
     mutationFn: (target: DigitalEmployeeRunListItem) =>
       acknowledgeDigitalEmployeeRunFailure(apiOptions, employeeId, target.id),
@@ -107,8 +107,8 @@ export function RunDetailDrawer({
       await queryClient.invalidateQueries({ queryKey: ["digital-employee-runs", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["inbox"] });
-    },
-  });
+    }
+});
   const retryFailure = useMutation({
     mutationFn: (target: DigitalEmployeeRunListItem) =>
       retryDigitalEmployeeRunFailure(apiOptions, employeeId, target.id),
@@ -118,8 +118,8 @@ export function RunDetailDrawer({
       await queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["inbox"] });
       onOpenChange(false);
-    },
-  });
+    }
+});
 
   // After a successful stop, prefer the mutation result so the pill and Stop button reflect the
   // new status immediately — BUT only while the `run` prop hasn't caught up. Once the parent's
@@ -183,7 +183,7 @@ export function RunDetailDrawer({
           {/* key=run.id:切换到另一条运行时重挂载,重置原始 JSON 折叠的展开态 */}
           {displayedRun.status === "completed" ? <ResultBlock key={displayedRun.id} run={displayedRun} /> : null}
           {isActiveRun(displayedRun.status) ? (
-            <V3Button
+            <Button
               disabled={displayedRun.status === "cancelling" || stopRun.isPending}
               onClick={() => stopRun.mutate(displayedRun)}
               type="button"
@@ -191,11 +191,11 @@ export function RunDetailDrawer({
             >
               <Square className="size-4" />
               停止
-            </V3Button>
+            </Button>
           ) : null}
           {canRecoverFailure ? (
             <div className="flex flex-wrap gap-2">
-              <V3Button
+              <Button
                 disabled={recoveryPending}
                 onClick={() => retryFailure.mutate(displayedRun)}
                 type="button"
@@ -203,19 +203,19 @@ export function RunDetailDrawer({
               >
                 <RotateCcw className="size-4" />
                 重试
-              </V3Button>
-              <V3Button
+              </Button>
+              <Button
                 disabled={recoveryPending}
                 onClick={() => acknowledgeFailure.mutate(displayedRun)}
                 type="button"
                 variant="outline"
               >
                 确认关闭
-              </V3Button>
+              </Button>
             </div>
           ) : null}
           {isProjectLinkedRun && isRecoverableRun(displayedRun.status) ? (
-            <p className="text-sm text-v3-ink-2">
+            <p className="text-sm text-ink-2">
               {displayedRun.project_deleted ? (
                 <>
                   此运行属于已删除项目「{runProjectDisplayName(displayedRun.project_name)}」，失败恢复请在收件箱处理。
@@ -227,7 +227,7 @@ export function RunDetailDrawer({
                     <>
                       {" "}
                       <Link
-                        className="font-medium text-v3-brand underline-offset-2 hover:underline"
+                        className="font-medium text-brand underline-offset-2 hover:underline"
                         params={{ projectId: displayedRun.project_id }}
                         to="/projects/$projectId"
                       >
@@ -245,7 +245,7 @@ export function RunDetailDrawer({
             </p>
           ) : null}
           {displayedRun.failure_acknowledged_at ? (
-            <p className="text-sm text-v3-ink-2">失败已确认关闭</p>
+            <p className="text-sm text-ink-2">失败已确认关闭</p>
           ) : null}
           {stopRun.isError ? <p className="text-sm text-destructive">停止失败</p> : null}
           {acknowledgeFailure.isError ? (
@@ -257,14 +257,14 @@ export function RunDetailDrawer({
           <div>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold">事件流</p>
-              {displayedEvents ? <span className="text-xs text-v3-ink-3">{displayedEvents.length} 条</span> : null}
+              {displayedEvents ? <span className="text-xs text-ink-3">{displayedEvents.length} 条</span> : null}
             </div>
-            {events.isLoading ? <p className="text-sm text-v3-ink-2">事件加载中</p> : null}
+            {events.isLoading ? <p className="text-sm text-ink-2">事件加载中</p> : null}
             {events.isError ? <p className="text-sm text-destructive">事件加载失败</p> : null}
             {displayedEvents?.length ? (
               <RunEventTimeline events={displayedEvents} key={displayedRun.id} limitReached={eventsTruncated} />
             ) : !events.isLoading ? (
-              <p className="text-sm text-v3-ink-2">暂无事件</p>
+              <p className="text-sm text-ink-2">暂无事件</p>
             ) : null}
           </div>
         </div>
@@ -277,7 +277,7 @@ function SummaryItem({
   label,
   value,
   mono,
-  className,
+  className
 }: {
   label: string;
   value: ReactNode;
@@ -285,13 +285,13 @@ function SummaryItem({
   className?: string;
 }) {
   return (
-    <div className={cn("min-w-0 rounded-md border border-v3-line bg-v3-card-soft px-3 py-2", className)}>
-      <p className="text-xs text-v3-ink-3">{label}</p>
+    <div className={cn("min-w-0 rounded-md border border-line bg-card-soft px-3 py-2", className)}>
+      <p className="text-xs text-ink-3">{label}</p>
       <div
         className={
           mono
-            ? "mt-1 truncate font-mono text-xs text-v3-ink"
-            : "mt-1 truncate text-sm font-medium text-v3-ink"
+            ? "mt-1 truncate font-mono text-xs text-ink"
+            : "mt-1 truncate text-sm font-medium text-ink"
         }
       >
         {value}
@@ -301,7 +301,7 @@ function SummaryItem({
 }
 
 function RunStatusPill({ status }: { status: DigitalEmployeeRunStatus }) {
-  const tone: V3Tone = isFailedRun(status) ? "danger" : status === "completed" ? "ok" : "mute";
+  const tone: Tone = isFailedRun(status) ? "danger" : status === "completed" ? "ok" : "mute";
   return <StatusPill tone={tone}>{runStatusLabel(status)}</StatusPill>;
 }
 
@@ -322,26 +322,26 @@ function ResultBlock({ run }: { run: DigitalEmployeeRunListItem }) {
     <div>
       <p className="text-sm font-medium">结果</p>
       {conclusion ? (
-        <MarkdownProse className="mt-2 break-words rounded-md border border-v3-line bg-v3-card-soft p-3">
+        <MarkdownProse className="mt-2 break-words rounded-md border border-line bg-card-soft p-3">
           {conclusion}
         </MarkdownProse>
       ) : null}
       {rawJson && conclusion ? (
         <details className="mt-2" onToggle={(event) => setRawOpen(event.currentTarget.open)}>
-          <summary className="cursor-pointer text-xs text-v3-ink-3">原始结果 JSON</summary>
+          <summary className="cursor-pointer text-xs text-ink-3">原始结果 JSON</summary>
           {rawOpen ? (
-            <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-v3-line bg-v3-card-soft p-3 text-xs">
+            <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-line bg-card-soft p-3 text-xs">
               {rawJson}
             </pre>
           ) : null}
         </details>
       ) : null}
       {rawJson && !conclusion ? (
-        <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-v3-line bg-v3-card-soft p-3 text-xs">
+        <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-line bg-card-soft p-3 text-xs">
           {rawJson}
         </pre>
       ) : null}
-      {!rawJson && !conclusion ? <p className="mt-2 text-sm text-v3-ink-2">无结果数据</p> : null}
+      {!rawJson && !conclusion ? <p className="mt-2 text-sm text-ink-2">无结果数据</p> : null}
     </div>
   );
 }

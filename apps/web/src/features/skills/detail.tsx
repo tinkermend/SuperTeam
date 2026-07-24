@@ -13,20 +13,20 @@ import {
   Trash2,
   UserRound,
   Users,
-  Wrench,
+  Wrench
 } from "lucide-react";
 import {
   IconTile,
   MasterDetailLayout,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import {
   Select,
@@ -34,19 +34,19 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import { listMcpServerDefinitions } from "@/lib/api/capabilities";
 import {
   getSkill,
   listSkillMcpDependencies,
   replaceSkillMcpDependencies,
-  type Skill,
+  type Skill
 } from "@/lib/api/skills";
 
 type SkillDetailViewProps = {
@@ -55,25 +55,25 @@ type SkillDetailViewProps = {
   skillId: string;
 };
 
-const riskTone: Record<string, V3Tone> = {
+const riskTone: Record<string, Tone> = {
   critical: "danger",
   high: "danger",
   low: "ok",
-  medium: "warn",
+  medium: "warn"
 };
 
 const riskLabel: Record<string, string> = {
   critical: "高风险",
   high: "高风险",
   low: "低风险",
-  medium: "中风险",
+  medium: "中风险"
 };
 
 export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailViewProps) {
   const skill = useQuery({
     queryKey: ["skill", skillId],
-    queryFn: () => getSkill({ baseUrl: apiBaseUrl, fetcher }, skillId),
-  });
+    queryFn: () => getSkill({ baseUrl: apiBaseUrl, fetcher }, skillId)
+});
   const errorMessage = skill.error instanceof Error ? skill.error.message : undefined;
 
   return (
@@ -85,7 +85,7 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
           skill.data ? (
             <span className="inline-flex flex-wrap items-center gap-2">
               <span>技能档案</span>
-              <span className="text-v3-ink-3">/</span>
+              <span className="text-ink-3">/</span>
               <span className="font-mono">{skill.data.slug}</span>
             </span>
           ) : (
@@ -95,9 +95,9 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
         actions={
           skill.data ? (
             <>
-              <V3Button disabled className="h-10 px-4" type="button">
+              <Button disabled className="h-10 px-4" type="button">
                 安装到...
-              </V3Button>
+              </Button>
               <StatusPill tone="mute">即将支持</StatusPill>
             </>
           ) : undefined
@@ -106,11 +106,11 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         {skill.isPending ? (
           <WorkSurface>
-            <V3LoadingState label="加载技能档案…" />
+            <LoadingState label="加载技能档案…" />
           </WorkSurface>
         ) : skill.isError || !skill.data ? (
           <WorkSurface className="p-4">
-            <V3ErrorState
+            <ErrorState
               title="技能档案加载失败"
               description={errorMessage ?? "请检查技能详情接口和当前权限。"}
             />
@@ -127,7 +127,7 @@ function SkillArchiveDetail({
   apiBaseUrl,
   fetcher,
   skill,
-  skillId,
+  skillId
 }: {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
@@ -151,33 +151,33 @@ function SkillArchiveDetail({
             </IconTile>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xl font-extrabold text-v3-ink">{skill.name}</p>
+                <p className="text-xl font-extrabold text-ink">{skill.name}</p>
                 <StatusPill tone={riskTone[risk]}>{riskLabel[risk]}</StatusPill>
                 <StatusPill tone={dependencyCount > 0 ? "warn" : "ok"}>
                   {dependencyCount > 0 ? "有运行依赖" : "无运行依赖"}
                 </StatusPill>
               </div>
-              <p className="mt-2 max-w-4xl text-[13px] leading-6 text-v3-ink-2">
+              <p className="mt-2 max-w-4xl text-[13px] leading-6 text-ink-2">
                 {skill.description}
               </p>
               <SkillTagStrip tags={skill.tags} />
             </div>
           </div>
           <div
-            className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner p-4"
+            className="min-w-0 rounded-inner border border-line bg-card-inner p-4"
             data-testid="skill-detail-declaration"
           >
             <div className="mb-3 flex items-center gap-2">
-              <ShieldCheck className="size-4 text-v3-warn" />
-              <span className="text-sm font-extrabold text-v3-ink">创建者声明</span>
+              <ShieldCheck className="size-4 text-warn" />
+              <span className="text-sm font-extrabold text-ink">创建者声明</span>
             </div>
             <div className="flex flex-wrap gap-2">
               <StatusPill tone={riskTone[risk]}>{riskLabel[risk]}</StatusPill>
               <StatusPill tone="mute">风险等级来自上传表单</StatusPill>
             </div>
-            <div className="mt-4 rounded-[14px] bg-v3-card px-3 py-2.5">
-              <p className="text-xs font-bold text-v3-ink-3">风险说明</p>
-              <p className="mt-1 text-sm font-semibold text-v3-ink">未记录单独风险说明</p>
+            <div className="mt-4 rounded-[14px] bg-card px-3 py-2.5">
+              <p className="text-xs font-bold text-ink-3">风险说明</p>
+              <p className="mt-1 text-sm font-semibold text-ink">未记录单独风险说明</p>
             </div>
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 text-[13px] sm:grid-cols-4 lg:grid-cols-2">
@@ -190,16 +190,16 @@ function SkillArchiveDetail({
       </SoftCard>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="技能档案指标">
-        <V3MetricCard
+        <MetricCard
           icon={<PackageCheck />}
           iconTone="brand"
           label="安装目标"
           meta="团队与数字员工绑定总数"
           value={skill.team_bindings.length + skill.agent_bindings.length}
         />
-        <V3MetricCard icon={<Users />} iconTone="info" label="团队安装" value={skill.team_bindings.length} />
-        <V3MetricCard icon={<Bot />} iconTone="artifact" label="数字员工安装" value={skill.agent_bindings.length} />
-        <V3MetricCard icon={<Wrench />} iconTone="warn" label="运行要求" value={dependencyCount} />
+        <MetricCard icon={<Users />} iconTone="info" label="团队安装" value={skill.team_bindings.length} />
+        <MetricCard icon={<Bot />} iconTone="artifact" label="数字员工安装" value={skill.agent_bindings.length} />
+        <MetricCard icon={<Wrench />} iconTone="warn" label="运行要求" value={dependencyCount} />
       </section>
 
       <MasterDetailLayout
@@ -210,9 +210,9 @@ function SkillArchiveDetail({
             <DetailSection
               action={
                 <div className="flex items-center gap-2">
-                  <V3Button disabled size="sm" type="button">
+                  <Button disabled size="sm" type="button">
                     安装到...
-                  </V3Button>
+                  </Button>
                   <StatusPill tone="mute">即将支持</StatusPill>
                 </div>
               }
@@ -227,8 +227,8 @@ function SkillArchiveDetail({
                     id: binding.team_id,
                     meta: "团队安装",
                     name: binding.team_name || binding.team_id,
-                    tone: "info",
-                  }))}
+                    tone: "info"
+}))}
                   title="团队安装"
                 />
                 <BindingList
@@ -238,8 +238,8 @@ function SkillArchiveDetail({
                     id: binding.agent_id,
                     meta: [binding.team_name || binding.team_id, binding.status].filter(Boolean).join(" / ") || binding.status,
                     name: binding.agent_name || binding.agent_id,
-                    tone: "artifact",
-                  }))}
+                    tone: "artifact"
+}))}
                   title="数字员工安装"
                 />
               </div>
@@ -248,7 +248,7 @@ function SkillArchiveDetail({
             <SkillMcpDependenciesSection apiBaseUrl={apiBaseUrl} fetcher={fetcher} skillId={skillId} />
 
             <DetailSection icon={<ServerCog />} title="运行要求">
-              <div className="mb-4 rounded-v3-inner bg-v3-card-inner p-3 text-sm text-v3-ink-2">
+              <div className="mb-4 rounded-inner bg-card-inner p-3 text-sm text-ink-2">
                 当前仅展示创建者声明的运行要求，不做本地检测或依赖验证。
               </div>
               <DependencyGroup label="CLI 工具" items={skill.runtime_dependencies?.tools ?? []} />
@@ -260,7 +260,7 @@ function SkillArchiveDetail({
           <div className="flex min-w-0 flex-col gap-5">
             <DetailSection icon={<PackageCheck />} title="上传与存储信息">
               <div
-                className="overflow-hidden rounded-v3-inner border border-v3-line bg-v3-card-inner"
+                className="overflow-hidden rounded-inner border border-line bg-card-inner"
                 data-testid="skill-upload-metadata"
               >
                 <DataRow label="Slug" value={skill.slug} mono />
@@ -284,7 +284,7 @@ function SkillArchiveDetail({
 function SkillMcpDependenciesSection({
   apiBaseUrl,
   fetcher,
-  skillId,
+  skillId
 }: {
   apiBaseUrl: string;
   fetcher?: typeof globalThis.fetch;
@@ -294,12 +294,12 @@ function SkillMcpDependenciesSection({
   const options = { baseUrl: apiBaseUrl, fetcher };
   const dependencies = useQuery({
     queryKey: ["skill-mcp-dependencies", skillId],
-    queryFn: () => listSkillMcpDependencies(options, skillId),
-  });
+    queryFn: () => listSkillMcpDependencies(options, skillId)
+});
   const registry = useQuery({
     queryKey: ["mcp-server-definitions"],
-    queryFn: () => listMcpServerDefinitions(options),
-  });
+    queryFn: () => listMcpServerDefinitions(options)
+});
   const [selectedServerId, setSelectedServerId] = useState("");
   const replaceMutation = useMutation({
     mutationFn: (items: Array<{ mcp_server_id: string }>) =>
@@ -307,8 +307,8 @@ function SkillMcpDependenciesSection({
     onSuccess: () => {
       setSelectedServerId("");
       void queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependencies", skillId] });
-    },
-  });
+    }
+});
 
   const current = dependencies.data ?? [];
   const candidates = (registry.data ?? []).filter(
@@ -335,7 +335,7 @@ function SkillMcpDependenciesSection({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <V3Button
+          <Button
             size="sm"
             disabled={!selectedServerId || replaceMutation.isPending}
             onClick={() =>
@@ -346,12 +346,12 @@ function SkillMcpDependenciesSection({
             }
           >
             添加依赖
-          </V3Button>
+          </Button>
         </div>
       }
     >
       {current.length === 0 ? (
-        <V3EmptyState
+        <EmptyState
           title="未声明依赖"
           description="依赖只做装载校验：员工执行任务时若未绑定所依赖的 MCP（或缺环境变量），派发会被阻断等待人工处理；依赖不会自动为员工开通能力。"
         />
@@ -360,12 +360,12 @@ function SkillMcpDependenciesSection({
           <ul className="flex flex-col gap-2">
             {current.map((dep) => (
               <li
-                className="flex items-center justify-between gap-3 rounded-v3-inner border border-v3-line bg-v3-card-inner px-3 py-2"
+                className="flex items-center justify-between gap-3 rounded-inner border border-line bg-card-inner px-3 py-2"
                 key={dep.id}
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-v3-ink">{dep.server_name}</p>
-                  <p className="truncate font-mono text-xs text-v3-ink-3">
+                  <p className="truncate text-sm font-bold text-ink">{dep.server_name}</p>
+                  <p className="truncate font-mono text-xs text-ink-3">
                     {dep.server_key} · {dep.auth_strategy} · {dep.risk_level}
                   </p>
                 </div>
@@ -373,7 +373,7 @@ function SkillMcpDependenciesSection({
                   <StatusPill tone={dep.server_status === "active" ? "ok" : "warn"}>
                     {dep.server_status}
                   </StatusPill>
-                  <V3Button
+                  <Button
                     aria-label={`移除依赖 ${dep.server_key}`}
                     variant="ghost"
                     size="sm"
@@ -387,12 +387,12 @@ function SkillMcpDependenciesSection({
                     }
                   >
                     <Trash2 />
-                  </V3Button>
+                  </Button>
                 </div>
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-xs text-v3-ink-3">
+          <p className="mt-3 text-xs text-ink-3">
             依赖只做装载校验：员工执行任务时若未绑定所依赖的 MCP（或缺环境变量），派发会被阻断等待人工处理；依赖不会自动为员工开通能力。
           </p>
         </>
@@ -407,7 +407,7 @@ function SkillTagStrip({ tags }: { tags: string[] }) {
   return (
     <div className="mt-3 flex flex-wrap gap-2" data-testid="skill-detail-tags">
       {tags.map((tag) => (
-        <span className="rounded-lg bg-v3-mute-soft px-2.5 py-1 text-xs font-semibold text-v3-ink-2" key={tag}>
+        <span className="rounded-lg bg-mute-soft px-2.5 py-1 text-xs font-semibold text-ink-2" key={tag}>
           {tag}
         </span>
       ))}
@@ -419,7 +419,7 @@ function DetailSection({
   action,
   children,
   icon,
-  title,
+  title
 }: {
   action?: React.ReactNode;
   children: React.ReactNode;
@@ -428,12 +428,12 @@ function DetailSection({
 }) {
   return (
     <WorkSurface>
-      <div className="flex flex-col gap-3 border-b border-v3-line p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <IconTile tone="brand" size="sm">
             {icon}
           </IconTile>
-          <h3 className="text-base font-extrabold text-v3-ink">{title}</h3>
+          <h3 className="text-base font-extrabold text-ink">{title}</h3>
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
@@ -446,31 +446,31 @@ function BindingList({
   empty,
   icon,
   items,
-  title,
+  title
 }: {
   empty: string;
   icon: React.ReactNode;
-  items: Array<{ id: string; meta: string; name: string; tone: V3Tone }>;
+  items: Array<{ id: string; meta: string; name: string; tone: Tone }>;
   title: string;
 }) {
   const countText = `${items.length} 个`;
 
   if (items.length === 0) {
     return (
-      <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner">
+      <div className="min-w-0 rounded-inner border border-line bg-card-inner">
         <BindingListHeader count={countText} icon={icon} title={title} />
-        <V3EmptyState className="py-10" title={empty} description="安装能力暂未开放，当前仅展示已有绑定数据。" />
+        <EmptyState className="py-10" title={empty} description="安装能力暂未开放，当前仅展示已有绑定数据。" />
       </div>
     );
   }
 
   return (
-    <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner">
+    <div className="min-w-0 rounded-inner border border-line bg-card-inner">
       <BindingListHeader count={countText} icon={icon} title={title} />
       <div className="grid gap-3 p-3">
         {items.map((item) => (
           <div
-            className="flex min-w-0 items-center justify-between gap-3 rounded-[14px] border border-v3-line bg-v3-card p-3"
+            className="flex min-w-0 items-center justify-between gap-3 rounded-[14px] border border-line bg-card p-3"
             key={item.id}
           >
             <div className="flex min-w-0 items-center gap-3">
@@ -478,8 +478,8 @@ function BindingList({
                 {item.tone === "artifact" ? <Bot /> : <Users />}
               </IconTile>
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-v3-ink">{item.name}</p>
-                <p className="mt-0.5 text-xs text-v3-ink-3">{item.meta}</p>
+                <p className="truncate text-sm font-bold text-ink">{item.name}</p>
+                <p className="mt-0.5 text-xs text-ink-3">{item.meta}</p>
               </div>
             </div>
             <StatusPill tone={item.tone}>已安装</StatusPill>
@@ -493,19 +493,19 @@ function BindingList({
 function BindingListHeader({
   count,
   icon,
-  title,
+  title
 }: {
   count: string;
   icon: React.ReactNode;
   title: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-v3-line px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="text-v3-ink-3 [&_svg]:size-4">{icon}</span>
-        <p className="truncate text-sm font-extrabold text-v3-ink">{title}</p>
+        <span className="text-ink-3 [&_svg]:size-4">{icon}</span>
+        <p className="truncate text-sm font-extrabold text-ink">{title}</p>
       </div>
-      <span className="text-xs font-bold text-v3-ink-3">{count}</span>
+      <span className="text-xs font-bold text-ink-3">{count}</span>
     </div>
   );
 }
@@ -513,12 +513,12 @@ function BindingListHeader({
 function DependencyGroup({ items, label }: { items: string[]; label: string }) {
   return (
     <div className="not-last:mb-4">
-      <p className="mb-2 text-xs font-bold text-v3-ink-3">{label}</p>
+      <p className="mb-2 text-xs font-bold text-ink-3">{label}</p>
       {items.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {items.map((item) => (
             <span
-              className="rounded-lg bg-v3-warn-soft px-2.5 py-1 font-mono text-xs font-semibold text-v3-warn"
+              className="rounded-lg bg-warn-soft px-2.5 py-1 font-mono text-xs font-semibold text-warn"
               key={item}
             >
               {item}
@@ -536,7 +536,7 @@ function DataRow({
   label,
   mono,
   value,
-  wrap,
+  wrap
 }: {
   label: string;
   mono?: boolean;
@@ -544,14 +544,14 @@ function DataRow({
   wrap?: boolean;
 }) {
   return (
-    <div className="grid gap-1 border-b border-v3-line px-3 py-2.5 last:border-b-0 sm:grid-cols-[108px_minmax(0,1fr)] sm:items-center sm:gap-3">
-      <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-bold text-v3-ink-3">
+    <div className="grid gap-1 border-b border-line px-3 py-2.5 last:border-b-0 sm:grid-cols-[108px_minmax(0,1fr)] sm:items-center sm:gap-3">
+      <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-bold text-ink-3">
         <DataIcon label={label} />
         {label}
       </span>
       <span
         className={[
-          "min-w-0 text-sm font-semibold text-v3-ink",
+          "min-w-0 text-sm font-semibold text-ink",
           mono ? "font-mono text-xs" : "",
           wrap ? "break-all" : "truncate",
         ].join(" ")}
@@ -572,15 +572,15 @@ function DataIcon({ label }: { label: string }) {
 
 function MiniField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-v3-inner border border-v3-line bg-v3-card-inner px-3 py-2">
-      <span className="block text-[11px] font-bold text-v3-ink-3">{label}</span>
-      <span className="mt-1 block truncate text-[13px] font-bold text-v3-ink">{value || "未记录"}</span>
+    <div className="min-w-0 rounded-inner border border-line bg-card-inner px-3 py-2">
+      <span className="block text-[11px] font-bold text-ink-3">{label}</span>
+      <span className="mt-1 block truncate text-[13px] font-bold text-ink">{value || "未记录"}</span>
     </div>
   );
 }
 
 function EmptyText({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-v3-inner bg-v3-card-inner p-3 text-sm text-v3-ink-3">{children}</p>;
+  return <p className="rounded-inner bg-card-inner p-3 text-sm text-ink-3">{children}</p>;
 }
 
 function normalizeRisk(riskLevel: string) {
@@ -590,7 +590,7 @@ function normalizeRisk(riskLevel: string) {
   return "low";
 }
 
-function toneFromColor(colorToken: string): V3Tone {
+function toneFromColor(colorToken: string): Tone {
   if (colorToken === "violet") return "artifact";
   if (colorToken === "emerald") return "ok";
   if (colorToken === "cyan" || colorToken === "blue") return "info";
@@ -619,6 +619,6 @@ function formatDateTime(value?: string) {
     hour: "2-digit",
     minute: "2-digit",
     month: "2-digit",
-    year: "numeric",
-  }).format(date);
+    year: "numeric"
+}).format(date);
 }

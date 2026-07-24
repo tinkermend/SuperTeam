@@ -1,10 +1,10 @@
 import { X } from "lucide-react";
 import type { UserSummary } from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { UserIdentity } from "@/components/superteam/user-identity";
 import { UserSearchSelect } from "@/components/superteam/user-search-select";
 import type { ProjectCreateDraft } from "./create-project-draft";
+import { Button } from "@/components/superteam";
 
 type ProjectHumanOwnersStepProps = {
   apiBaseUrl: string;
@@ -19,7 +19,7 @@ export function ProjectHumanOwnersStep({
   currentUser,
   draft,
   fetcher,
-  onChange,
+  onChange
 }: ProjectHumanOwnersStepProps) {
   const excludedUserIds = [
     currentUser?.id,
@@ -30,16 +30,16 @@ export function ProjectHumanOwnersStep({
     <div className="grid gap-6">
       <section className="grid gap-2">
         <Label>主负责人（当前创建人）</Label>
-        <div className="rounded-xl border border-v3-line bg-v3-card-soft px-3 py-2">
-          {currentUser ? <UserIdentity showSecondary user={currentUser} /> : <p className="text-sm text-v3-ink-3">正在加载当前用户...</p>}
+        <div className="rounded-xl border border-line bg-card-soft px-3 py-2">
+          {currentUser ? <UserIdentity showSecondary user={currentUser} /> : <p className="text-sm text-ink-3">正在加载当前用户...</p>}
         </div>
-        <p className="text-xs text-v3-ink-3">主负责人用于默认审批、需求确认和最终验收；其他负责人作为项目 owner 成员参与管理。</p>
+        <p className="text-xs text-ink-3">主负责人用于默认审批、需求确认和最终验收；其他负责人作为项目 owner 成员参与管理。</p>
       </section>
 
       <section className="grid gap-3">
         <div>
           <Label>项目人类负责人</Label>
-          <p className="mt-1 text-xs text-v3-ink-3">可选。额外负责人会以 owner 成员加入项目，不拆分 Leader、验收负责人或审核人。</p>
+          <p className="mt-1 text-xs text-ink-3">可选。额外负责人会以 owner 成员加入项目，不拆分 Leader、验收负责人或审核人。</p>
         </div>
         <UserSearchSelect
           apiBaseUrl={apiBaseUrl}
@@ -55,7 +55,7 @@ export function ProjectHumanOwnersStep({
         {draft.ownerUsers.length > 0 ? (
           <ul className="grid gap-2">
             {draft.ownerUsers.map((owner) => (
-              <li className="flex items-center justify-between gap-3 rounded-xl border border-v3-line bg-v3-card-soft px-3 py-2" key={owner.id}>
+              <li className="flex items-center justify-between gap-3 rounded-xl border border-line bg-card-soft px-3 py-2" key={owner.id}>
                 <UserIdentity showSecondary user={owner} />
                 <Button
                   aria-label={`移除项目负责人 ${owner.username}`}

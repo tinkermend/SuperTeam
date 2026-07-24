@@ -3,18 +3,18 @@ import { Play, Pencil, Power, Trash2, X } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  EmptyState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr
 } from "@/components/superteam";
 import {
   formatAutomationScheduleSummary,
   type AutomationFire,
-  type AutomationRule,
+  type AutomationRule
 } from "@/lib/api/automations";
 import { formatRelativeFuture } from "@/lib/format-time";
 import { statusLabel } from "@/lib/status-labels";
@@ -54,7 +54,7 @@ export function AutomationRuleDetail({
   onEdit,
   onDelete,
   onTrigger,
-  onClose,
+  onClose
 }: AutomationRuleDetailProps) {
   const projectLabel = rule.project_name?.trim() || rule.project_id;
   const nextIso = nextFireIso ?? null;
@@ -64,9 +64,9 @@ export function AutomationRuleDetail({
       <SoftCard className="space-y-3 p-4">
         <div className="space-y-1">
           <div className="flex items-start justify-between gap-2">
-            <h2 className="text-base font-extrabold text-v3-ink">{rule.name}</h2>
+            <h2 className="text-base font-extrabold text-ink">{rule.name}</h2>
             {onClose ? (
-              <V3Button
+              <Button
                 aria-label="返回工作台"
                 size="icon"
                 type="button"
@@ -74,7 +74,7 @@ export function AutomationRuleDetail({
                 onClick={onClose}
               >
                 <X className="size-4" />
-              </V3Button>
+              </Button>
             ) : null}
           </div>
           <p className="text-sm text-muted-foreground">
@@ -119,61 +119,61 @@ export function AutomationRuleDetail({
 
         <div className="flex flex-wrap gap-2">
           {rule.enabled ? (
-            <V3Button disabled={busy} onClick={onDisable} size="sm" variant="outline">
+            <Button disabled={busy} onClick={onDisable} size="sm" variant="outline">
               <Power data-icon="inline-start" />
               停用
-            </V3Button>
+            </Button>
           ) : (
-            <V3Button disabled={busy} onClick={onEnable} size="sm" variant="outline">
+            <Button disabled={busy} onClick={onEnable} size="sm" variant="outline">
               <Power data-icon="inline-start" />
               启用
-            </V3Button>
+            </Button>
           )}
-          <V3Button disabled={busy || !rule.enabled} onClick={onTrigger} size="sm">
+          <Button disabled={busy || !rule.enabled} onClick={onTrigger} size="sm">
             <Play data-icon="inline-start" />
             立即试跑
-          </V3Button>
-          <V3Button disabled={busy} onClick={onEdit} size="sm" variant="outline">
+          </Button>
+          <Button disabled={busy} onClick={onEdit} size="sm" variant="outline">
             <Pencil data-icon="inline-start" />
             编辑
-          </V3Button>
-          <V3Button disabled={busy} onClick={onDelete} size="sm" variant="danger">
+          </Button>
+          <Button disabled={busy} onClick={onDelete} size="sm" variant="danger">
             <Trash2 data-icon="inline-start" />
             删除
-          </V3Button>
+          </Button>
         </div>
       </SoftCard>
 
       <SoftCard className="min-h-0 flex-1 space-y-3 p-4">
         <h3 className="text-sm font-medium text-foreground">最近触发</h3>
         {firesLoading ? (
-          <V3LoadingState label="加载触发记录…" />
+          <LoadingState label="加载触发记录…" />
         ) : fires.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             description="保存规则后可点「立即试跑」，或等待日程到点。"
             title="尚未触发"
           />
         ) : (
-          <V3Table>
+          <DataTable>
             <thead>
               <tr>
-                <V3Th>时间</V3Th>
-                <V3Th>结果</V3Th>
-                <V3Th>对象</V3Th>
+                <Th>时间</Th>
+                <Th>结果</Th>
+                <Th>对象</Th>
               </tr>
             </thead>
             <tbody>
               {fires.map((fire) => (
-                <V3Tr
+                <Tr
                   key={fire.id}
                   tone={automationFireTone(fire.status) === "danger" ? "danger" : undefined}
                 >
-                  <V3Td className="tabular-nums text-sm text-muted-foreground">
+                  <Td className="tabular-nums text-sm text-muted-foreground">
                     <time dateTime={fire.scheduled_fire_at}>
                       {new Date(fire.scheduled_fire_at).toLocaleString("zh-CN")}
                     </time>
-                  </V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td>
                     <StatusPill tone={automationFireTone(fire.status)}>
                       {statusLabel(fire.status)}
                     </StatusPill>
@@ -182,8 +182,8 @@ export function AutomationRuleDetail({
                         {fire.error_message}
                       </p>
                     ) : null}
-                  </V3Td>
-                  <V3Td className="text-sm">
+                  </Td>
+                  <Td className="text-sm">
                     {fire.demand_id ? (
                       <Link
                         className="text-primary underline-offset-2 hover:underline"
@@ -199,11 +199,11 @@ export function AutomationRuleDetail({
                     {!fire.demand_id && !fire.run_id ? (
                       <span className="text-muted-foreground">—</span>
                     ) : null}
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))}
             </tbody>
-          </V3Table>
+          </DataTable>
         )}
       </SoftCard>
     </div>

@@ -8,17 +8,17 @@ import { useAuth } from '@/features/auth/use-auth'
 import {
   ApiRequestError,
   getLoginCaptcha,
-  type CaptchaChallengeResponse,
+  type CaptchaChallengeResponse
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { V3Button, V3IconButton } from '@/components/superteam'
+import { Button, IconButton } from '@/components/superteam'
 import {
   Form,
   FormControl,
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
+  FormMessage
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/password-input'
@@ -26,7 +26,7 @@ import { PasswordInput } from '@/components/password-input'
 const baseFormSchema = z.object({
   username: z.string().min(1, '请输入用户名。'),
   password: z.string().min(1, '请输入密码。'),
-  captcha_code: z.string(),
+  captcha_code: z.string()
 })
 
 type LoginFormValues = z.infer<typeof baseFormSchema>
@@ -57,9 +57,9 @@ export function UserAuthForm({
     defaultValues: {
       username: '',
       password: '',
-      captcha_code: '',
-    },
-  })
+      captcha_code: ''
+}
+})
 
   const refreshCaptcha = useCallback(
     async (options?: { clearInput?: boolean }) => {
@@ -81,8 +81,8 @@ export function UserAuthForm({
           form.setValue('captcha_code', '', {
             shouldDirty: false,
             shouldTouch: false,
-            shouldValidate: false,
-          })
+            shouldValidate: false
+})
         }
       } catch {
         if (captchaRequestIdRef.current !== requestId) {
@@ -135,10 +135,10 @@ export function UserAuthForm({
         ...(captcha?.enabled
           ? {
               captcha_id: captcha.captcha_id,
-              captcha_code: data.captcha_code.toUpperCase(),
-            }
-          : {}),
-      }
+              captcha_code: data.captcha_code.toUpperCase()
+}
+          : {})
+}
       await login(credentials)
       navigate({ to: redirectTo || '/', replace: true })
     } catch (error) {
@@ -164,10 +164,10 @@ export function UserAuthForm({
           name='username'
           render={({ field }) => (
             <FormItem>
-              <FormLabel className='text-v3-ink-2'>账号</FormLabel>
+              <FormLabel className='text-ink-2'>账号</FormLabel>
               <FormControl>
                 <Input
-                  className='h-12 rounded-xl border-v3-line-strong bg-v3-card-soft px-4 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-v3-brand/20'
+                  className='h-12 rounded-xl border-line-strong bg-card-soft px-4 text-ink shadow-none placeholder:text-ink-3 focus-visible:border-brand focus-visible:ring-brand/20'
                   placeholder='请输入账号'
                   {...field}
                 />
@@ -181,10 +181,10 @@ export function UserAuthForm({
           name='password'
           render={({ field }) => (
             <FormItem>
-              <FormLabel className='text-v3-ink-2'>密码</FormLabel>
+              <FormLabel className='text-ink-2'>密码</FormLabel>
               <FormControl>
                 <PasswordInput
-                  className='h-12 rounded-xl border-v3-line-strong bg-v3-card-soft px-4 pe-11 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-v3-brand/20'
+                  className='h-12 rounded-xl border-line-strong bg-card-soft px-4 pe-11 text-ink shadow-none placeholder:text-ink-3 focus-visible:border-brand focus-visible:ring-brand/20'
                   placeholder='请输入密码'
                   {...field}
                 />
@@ -199,11 +199,11 @@ export function UserAuthForm({
             name='captcha_code'
             render={({ field }) => (
               <FormItem>
-                <FormLabel className='text-v3-ink-2'>图形验证码</FormLabel>
+                <FormLabel className='text-ink-2'>图形验证码</FormLabel>
                 <div className='flex min-w-0 items-center gap-2'>
                   <FormControl>
                     <Input
-                      className='h-12 min-w-0 flex-1 rounded-xl border-v3-line-strong bg-v3-card-soft px-4 text-v3-ink shadow-none placeholder:text-v3-ink-3 focus-visible:border-v3-brand focus-visible:ring-v3-brand/20'
+                      className='h-12 min-w-0 flex-1 rounded-xl border-line-strong bg-card-soft px-4 text-ink shadow-none placeholder:text-ink-3 focus-visible:border-brand focus-visible:ring-brand/20'
                       maxLength={4}
                       {...field}
                       onChange={(event) =>
@@ -211,7 +211,7 @@ export function UserAuthForm({
                       }
                     />
                   </FormControl>
-                  <div className='flex h-12 w-32 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-v3-line bg-v3-card-soft'>
+                  <div className='flex h-12 w-32 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-card-soft'>
                     {captcha?.enabled ? (
                       <img
                         alt='图形验证码'
@@ -220,19 +220,19 @@ export function UserAuthForm({
                       />
                     ) : isCaptchaLoading ? (
                       <Loader2
-                        className='size-5 animate-spin text-v3-ink-3'
+                        className='size-5 animate-spin text-ink-3'
                         data-testid='captcha-loading'
                       />
                     ) : (
                       <span
-                        className='text-xs font-semibold text-v3-ink-3'
+                        className='text-xs font-semibold text-ink-3'
                         data-testid='captcha-placeholder'
                       >
                         加载失败
                       </span>
                     )}
                   </div>
-                  <V3IconButton
+                  <IconButton
                     aria-label='刷新验证码'
                     className='size-12 shrink-0 disabled:pointer-events-none disabled:opacity-55'
                     disabled={isCaptchaLoading}
@@ -245,11 +245,11 @@ export function UserAuthForm({
                         isCaptchaLoading && 'animate-spin'
                       )}
                     />
-                  </V3IconButton>
+                  </IconButton>
                 </div>
                 <FormMessage />
                 {captchaError ? (
-                  <p className='text-sm font-medium text-v3-danger' role='alert'>
+                  <p className='text-sm font-medium text-danger' role='alert'>
                     {captchaError}
                   </p>
                 ) : null}
@@ -259,13 +259,13 @@ export function UserAuthForm({
         ) : null}
         {formError ? (
           <p
-            className='rounded-xl bg-v3-danger-soft px-3 py-2 text-sm font-bold text-v3-danger'
+            className='rounded-xl bg-danger-soft px-3 py-2 text-sm font-bold text-danger'
             role='alert'
           >
             {formError}
           </p>
         ) : null}
-        <V3Button
+        <Button
           className='mt-1 h-12 text-base'
           disabled={isLoading || isCaptchaLoading || isCaptchaUnavailable}
           type='submit'
@@ -276,7 +276,7 @@ export function UserAuthForm({
             <LogIn data-icon='inline-start' />
           )}
           登录
-        </V3Button>
+        </Button>
       </form>
     </Form>
   )

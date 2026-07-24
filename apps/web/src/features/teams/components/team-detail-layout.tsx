@@ -2,7 +2,7 @@ import { Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "@tanstack/react-router";
 import { TeamIconTile, type TeamDisplayMetadata } from "@/components/superteam/team-icon-tile";
-import { StatusPill, V3Button } from "@/components/superteam";
+import { StatusPill, Button } from "@/components/superteam";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,7 +11,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
@@ -21,7 +21,7 @@ import { TeamConstitutionTab } from "./team-constitution-tab";
 import {
   canConfigureTeamMembers,
   TeamHumanMembersChrome,
-  teamHeaderMetaLabel,
+  teamHeaderMetaLabel
 } from "./team-human-members";
 import { TeamOverviewTab } from "./team-overview-tab";
 
@@ -41,7 +41,7 @@ export function TeamDetailLayout({
   apiOptions,
   onDeleteTeam,
   onTeamChanged,
-  overview,
+  overview
 }: TeamDetailLayoutProps) {
   const location = useLocation();
   const team = overview.team;
@@ -64,7 +64,7 @@ export function TeamDetailLayout({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-v3-card bg-v3-card p-5 shadow-v3">
+      <div className="rounded-card bg-card p-5 shadow-card">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <TeamIconTile
@@ -73,7 +73,7 @@ export function TeamDetailLayout({
             />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[28px] font-extrabold tracking-tight text-v3-ink">
+                <p className="text-[28px] font-extrabold tracking-tight text-ink">
                   {team.name}
                 </p>
                 <TeamStatusPill status={team.status} />
@@ -81,7 +81,7 @@ export function TeamDetailLayout({
                   <StatusPill tone="warn">待审批 {overview.pending_item_count}</StatusPill>
                 ) : null}
               </div>
-              <p className="mt-1 text-[13px] text-v3-ink-2">
+              <p className="mt-1 text-[13px] text-ink-2">
                 {team.slug} / 负责人 {teamOwnerLabel(team)}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -92,11 +92,11 @@ export function TeamDetailLayout({
                   onConfigOpenChange={setConfigOpen}
                   teamId={team.id}
                 />
-                <p className="text-[12px] tabular-nums text-v3-ink-3">
+                <p className="text-[12px] tabular-nums text-ink-3">
                   {teamHeaderMetaLabel({
                     capabilityCount: overview.capability_count,
-                    digitalEmployeeCount: overview.digital_employee_count,
-                  })}
+                    digitalEmployeeCount: overview.digital_employee_count
+})}
                 </p>
               </div>
             </div>
@@ -104,7 +104,7 @@ export function TeamDetailLayout({
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {canConfigure ? (
-              <V3Button
+              <Button
                 onClick={() => setConfigOpen(true)}
                 size="sm"
                 type="button"
@@ -112,20 +112,20 @@ export function TeamDetailLayout({
               >
                 <Settings data-icon="inline-start" />
                 配置团队
-              </V3Button>
+              </Button>
             ) : null}
             {canDelete ? (
               <>
-                <V3Button
+                <Button
                   onClick={() => setDeleteOpen(true)}
                   size="sm"
                   type="button"
                   variant="ghost"
-                  className="text-v3-danger hover:bg-v3-danger-soft hover:text-v3-danger"
+                  className="text-danger hover:bg-danger-soft hover:text-danger"
                 >
                   <Trash2 data-icon="inline-start" />
                   删除团队
-                </V3Button>
+                </Button>
                 <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                   <AlertDialogContent>
                     <AlertDialogHeader>

@@ -2,7 +2,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CaretSortIcon,
-  EyeNoneIcon,
+  EyeNoneIcon
 } from '@radix-ui/react-icons'
 import { type Column } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
@@ -12,7 +12,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 
 type DataTableColumnHeaderProps<TData, TValue> =
@@ -24,7 +24,7 @@ type DataTableColumnHeaderProps<TData, TValue> =
 export function DataTableColumnHeader<TData, TValue>({
   column,
   title,
-  className,
+  className
 }: DataTableColumnHeaderProps<TData, TValue>) {
   if (!column.getCanSort()) {
     return <div className={cn(className)}>{title}</div>

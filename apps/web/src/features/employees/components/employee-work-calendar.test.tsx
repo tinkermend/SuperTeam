@@ -5,12 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   EmployeeWorkCalendar,
   employeeWeekQueryWindow,
-  employeeWeekStart,
+  employeeWeekStart
 } from "./employee-work-calendar";
 import type { DigitalEmployeeRunCalendarItem } from "@/lib/api/employees";
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>
 }));
 function item(overrides: Partial<DigitalEmployeeRunCalendarItem> = {}): DigitalEmployeeRunCalendarItem {
   return {
@@ -19,8 +19,8 @@ function item(overrides: Partial<DigitalEmployeeRunCalendarItem> = {}): DigitalE
     status: overrides.status ?? "completed",
     run_kind: overrides.run_kind ?? "task",
     created_at: overrides.created_at ?? new Date().toISOString(),
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 describe("employeeWeekQueryWindow", () => {
@@ -52,8 +52,8 @@ describe("EmployeeWorkCalendar", () => {
           item({
             id: "run-a",
             task_title: "新增知识库条目",
-            created_at: new Date(2026, 6, 21, 10, 0, 0).toISOString(),
-          }),
+            created_at: new Date(2026, 6, 21, 10, 0, 0).toISOString()
+}),
         ]}
         onItemClick={onItemClick}
         onRetry={() => undefined}
@@ -77,8 +77,8 @@ describe("EmployeeWorkCalendar", () => {
       item({
         id: `run-${index}`,
         task_title: `条目 ${index + 1}`,
-        created_at: new Date(2026, 6, 21, 8, index, 0).toISOString(),
-      }),
+        created_at: new Date(2026, 6, 21, 8, index, 0).toISOString()
+}),
     );
 
     const screen = await render(
@@ -125,8 +125,8 @@ describe("EmployeeWorkCalendar", () => {
           item({
             id: "run-long",
             task_title: longTitle,
-            created_at: new Date(2026, 6, 21, 15, 54, 0).toISOString(),
-          }),
+            created_at: new Date(2026, 6, 21, 15, 54, 0).toISOString()
+}),
         ]}
         onItemClick={() => undefined}
         onRetry={() => undefined}

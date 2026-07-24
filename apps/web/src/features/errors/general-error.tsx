@@ -1,14 +1,13 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-
+import { Button } from "@/components/superteam";
 type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
   minimal?: boolean
 }
 
 export function GeneralError({
   className,
-  minimal = false,
+  minimal = false
 }: GeneralErrorProps) {
   const navigate = useNavigate()
   const { history } = useRouter()

@@ -7,8 +7,8 @@ const LOGIN_DISPLAY_SRC = '/images/brand/jushu-platform-logo.png'
 export function AuthLayout({ children }: AuthLayoutProps) {
   return (
     <div
-      data-slot='v3-auth-shell'
-      className='relative grid min-h-svh place-items-center overflow-x-hidden overflow-y-auto bg-v3-bg px-4 py-6 text-v3-ink sm:py-10'
+      data-slot='auth-shell'
+      className='relative grid min-h-svh place-items-center overflow-x-hidden overflow-y-auto bg-background px-4 py-6 text-ink sm:py-10'
     >
       <div className='relative z-10 flex w-full max-w-[27rem] flex-col items-center'>
         <div className='mb-0 flex flex-col items-center text-center'>

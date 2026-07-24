@@ -5,29 +5,29 @@ import { render } from "vitest-browser-react";
 import { TaskLaunchView } from "@/features/task-launches";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@/features/auth/use-auth", () => ({
   useAuth: () => ({
-    user: { username: "admin", display_name: "平台管理员" },
-  }),
+    user: { username: "admin", display_name: "平台管理员" }
+})
 }));
 
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://control-plane.local",
+  resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 
 function jsonResponse(body: unknown, status = 200) {
@@ -52,8 +52,8 @@ beforeEach(() => {
         session_id: "session-1",
         user_agent: "Chrome",
         user_id: "user-1",
-        username: "admin",
-      },
+        username: "admin"
+},
       {
         client_ip: "10.0.0.8",
         created_at: "2026-06-22T23:00:00Z",
@@ -61,10 +61,10 @@ beforeEach(() => {
         failure_reason: "bad_password",
         id: "log-2",
         result: "failed",
-        username: "auditor",
-      },
-    ],
-      });
+        username: "auditor"
+},
+    ]
+});
     }
     return jsonResponse({ error: `unhandled ${url.pathname}` }, 500);
   }));
@@ -76,8 +76,8 @@ afterEach(() => {
 
 function createQueryClient() {
   return new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  });
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } }
+});
 }
 
 async function renderHomepageTaskHub() {

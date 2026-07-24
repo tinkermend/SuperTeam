@@ -14,23 +14,23 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
-  useSearch: () => routerSearch,
+  useSearch: () => routerSearch
 }));
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 const runtimeOverviewFixture = {
@@ -39,8 +39,8 @@ const runtimeOverviewFixture = {
     total_nodes: 8,
     pending_enrollments: 2,
     active_provider_sessions: 14,
-    blocked_events: 1,
-  },
+    blocked_events: 1
+},
   pending_enrollments: [
     {
       id: "11111111-1111-4111-8111-111111111111",
@@ -51,9 +51,9 @@ const runtimeOverviewFixture = {
       request_payload: {
         name: "customer-vm-east-01",
         supported_providers: ["codex"],
-        max_slots: 4,
-      },
-    },
+        max_slots: 4
+}
+},
   ],
   nodes: [
     {
@@ -63,8 +63,8 @@ const runtimeOverviewFixture = {
       max_slots: 10,
       current_load: 6,
       status: "online",
-      last_heartbeat_at: "2026-06-05T03:22:30Z",
-    },
+      last_heartbeat_at: "2026-06-05T03:22:30Z"
+},
   ],
   provider_capabilities: [
     {
@@ -72,8 +72,8 @@ const runtimeOverviewFixture = {
       node_count: 1,
       available_count: 1,
       healthy_count: 1,
-      last_seen_at: "2026-06-05T03:22:20Z",
-    },
+      last_seen_at: "2026-06-05T03:22:20Z"
+},
   ],
   recent_events: [
     {
@@ -84,9 +84,9 @@ const runtimeOverviewFixture = {
       title: "Runtime command completed",
       node_id: "prod-runtime-shanghai-01",
       provider_type: "claude-code",
-      created_at: "2026-06-05T03:22:20Z",
-    },
-  ],
+      created_at: "2026-06-05T03:22:20Z"
+},
+  ]
 } satisfies RuntimeOverview;
 
 const runtimeEnrollmentsFixture = [
@@ -100,9 +100,9 @@ const runtimeEnrollmentsFixture = [
     request_payload: {
       name: "pending-node-beyond-overview-cap",
       supported_providers: ["opencode"],
-      max_slots: 2,
-    },
-  },
+      max_slots: 2
+}
+},
   {
     id: "44444444-4444-4444-8444-444444444444",
     node_id: "approved-runtime-node",
@@ -111,16 +111,16 @@ const runtimeEnrollmentsFixture = [
     approved_at: "2026-06-05T03:20:00Z",
     request_payload: {
       supported_providers: ["claude-code"],
-      max_slots: 6,
-    },
-  },
+      max_slots: 6
+}
+},
   {
     id: "55555555-5555-4555-8555-555555555555",
     node_id: "rejected-runtime-node",
     status: "rejected",
     reject_reason: "节点归属未完成线下确认",
-    created_at: "2026-06-05T02:10:33Z",
-  },
+    created_at: "2026-06-05T02:10:33Z"
+},
 ] satisfies RuntimeOverview["pending_enrollments"];
 
 type RuntimeRequest = {
@@ -134,20 +134,20 @@ function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       mutations: {
-        retry: false,
-      },
+        retry: false
+},
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status: 200,
-  });
+    status: 200
+});
 }
 
 function createRuntimeFetcher() {
@@ -171,8 +171,8 @@ function createRuntimeFetcher() {
       return jsonResponse({
         items: url.searchParams.get("severity") ? [] : runtimeOverviewFixture.recent_events,
         limit: Number(url.searchParams.get("limit") ?? 50),
-        offset: Number(url.searchParams.get("offset") ?? 0),
-      });
+        offset: Number(url.searchParams.get("offset") ?? 0)
+});
     }
 
     if (url.pathname === "/api/v1/runtime/enrollments" && method === "GET") {
@@ -185,8 +185,8 @@ function createRuntimeFetcher() {
     ) {
       return jsonResponse({
         ...runtimeOverviewFixture.pending_enrollments[0],
-        status: "approved",
-      });
+        status: "approved"
+});
     }
 
     if (
@@ -195,14 +195,14 @@ function createRuntimeFetcher() {
     ) {
       return jsonResponse({
         ...runtimeOverviewFixture.pending_enrollments[0],
-        status: "rejected",
-      });
+        status: "rejected"
+});
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
-      status: 404,
-    });
+      status: 404
+});
   }) as unknown as typeof fetch;
 
   return { fetcher, requests };
@@ -285,9 +285,9 @@ describe("RuntimeNodesView", () => {
 
     await expect.element(screen.getByRole("heading", { name: "Runtime 节点" })).toBeVisible();
     await expect.element(screen.getByText("6 / 8")).toBeVisible();
-    expect(screen.container.querySelectorAll("[data-slot='v3-soft-card']").length).toBeGreaterThanOrEqual(3);
-    expect(screen.container.querySelector("[data-slot='v3-work-surface']")).not.toBeNull();
-    expect(screen.container.querySelector("[data-slot='v3-table']")).not.toBeNull();
+    expect(screen.container.querySelectorAll("[data-slot='soft-card']").length).toBeGreaterThanOrEqual(3);
+    expect(screen.container.querySelector("[data-slot='work-surface']")).not.toBeNull();
+    expect(screen.container.querySelector("[data-slot='data-table']")).not.toBeNull();
   });
 
   it("does not render out-of-scope runtime management surfaces", async () => {
@@ -325,8 +325,8 @@ describe("RuntimeNodesView", () => {
         body: { reason: "节点归属未完成线下确认" },
         method: "POST",
         pathname: "/api/v1/runtime/enrollments/11111111-1111-4111-8111-111111111111/reject",
-        search: "",
-      });
+        search: ""
+});
     });
 
     await vi.waitFor(() => {
@@ -396,8 +396,8 @@ describe("RuntimeNodesView", () => {
       expect(requests).toContainEqual({
         method: "POST",
         pathname: "/api/v1/runtime/enrollments/11111111-1111-4111-8111-111111111111/approve",
-        search: "",
-      });
+        search: ""
+});
     });
 
     await vi.waitFor(() => {
@@ -417,8 +417,8 @@ describe("RuntimeNodesView", () => {
       ) {
         return new Response(JSON.stringify({ error: "该 Runtime 接入申请已被其他管理员处理" }), {
           headers: { "content-type": "application/json" },
-          status: 409,
-        });
+          status: 409
+});
       }
 
       return fetcher(input, init);

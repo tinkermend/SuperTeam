@@ -10,15 +10,15 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
     params,
-    to,
-  }: {
+    to
+}: {
     children: ReactNode;
     params?: Record<string, string>;
     to: string;
   }) => {
     const href = params?.projectId ? to.replace("$projectId", params.projectId) : to;
     return <a href={href}>{children}</a>;
-  },
+  }
 }));
 
 const employeeId = "11111111-1111-4111-8111-111111111111";
@@ -41,7 +41,7 @@ const runningRun: DigitalEmployeeRunListItem = {
   timed_out: false,
   run_kind: "task",
   task_title: "数据库迁移脚本校验",
-  work_product_count: 0,
+  work_product_count: 0
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -154,8 +154,8 @@ describe("RunDetailDrawer", () => {
     const completedRun: DigitalEmployeeRunListItem = {
       ...runningRun,
       status: "completed",
-      result: { summary: "已生成**验收报告**\n\n- 覆盖 3 个文件", detail: { files: 3 } },
-    };
+      result: { summary: "已生成**验收报告**\n\n- 覆盖 3 个文件", detail: { files: 3 } }
+};
     const screen = await render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <RunDetailDrawer
@@ -185,8 +185,8 @@ describe("RunDetailDrawer", () => {
             Array.from({ length: eventCount }, (_, index) => ({
               event_type: "text_delta",
               sequence_number: index + 1,
-              payload: { text: `片段${index + 1} ` },
-            })),
+              payload: { text: `片段${index + 1} ` }
+})),
           );
         }
         return jsonResponse({ error: "unhandled" }, 404);
@@ -231,8 +231,8 @@ describe("RunDetailDrawer", () => {
   it("collapses expanded raw JSON when the drawer switches to a different run", async () => {
     const resultByRun: Record<string, Record<string, unknown>> = {
       "run-a": { summary: "A 运行结论", detail: "a" },
-      "run-b": { summary: "B 运行结论", detail: "b" },
-    };
+      "run-b": { summary: "B 运行结论", detail: "b" }
+};
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       const match = url.pathname.match(/\/runs\/([^/]+)\/events$/);
@@ -249,15 +249,15 @@ describe("RunDetailDrawer", () => {
       id: "run-a",
       status: "completed",
       result: resultByRun["run-a"],
-      task_title: "A 任务",
-    };
+      task_title: "A 任务"
+};
     const runB: DigitalEmployeeRunListItem = {
       ...runningRun,
       id: "run-b",
       status: "completed",
       result: resultByRun["run-b"],
-      task_title: "B 任务",
-    };
+      task_title: "B 任务"
+};
 
     const wrap = (run: DigitalEmployeeRunListItem) => (
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -297,8 +297,8 @@ describe("RunDetailDrawer", () => {
       project_id: "4e90dc0b-db29-46b7-bb87-1227f79101a0",
       project_name: "多owner决策可见性E2E",
       task_title: "执行 echo 命令",
-      run_kind: "task",
-    };
+      run_kind: "task"
+};
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/events")) {
@@ -334,8 +334,8 @@ describe("RunDetailDrawer", () => {
       project_id: "4e90dc0b-db29-46b7-bb87-1227f79101a0",
       project_name: "p2-session-1784772086",
       project_deleted: true,
-      task_title: "P2 smoke reply OK",
-    };
+      task_title: "P2 smoke reply OK"
+};
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/events")) {
@@ -393,8 +393,8 @@ describe("RunDetailDrawer", () => {
     const failedRun: DigitalEmployeeRunListItem = {
       ...runningRun,
       status: "failed",
-      error_message: "provider exited",
-    };
+      error_message: "provider exited"
+};
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       const method = init?.method ?? "GET";
@@ -404,8 +404,8 @@ describe("RunDetailDrawer", () => {
       if (url.pathname.endsWith("/acknowledge-failure") && method === "POST") {
         return jsonResponse({
           ...failedRun,
-          failure_acknowledged_at: "2026-07-20T12:00:00Z",
-        });
+          failure_acknowledged_at: "2026-07-20T12:00:00Z"
+});
       }
       return jsonResponse({ error: "unhandled" }, 404);
     }) as unknown as typeof fetch;

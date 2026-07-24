@@ -8,19 +8,19 @@ import { TeamDetailView, TeamsView } from "@/features/teams";
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => (
     <header>{children}</header>
-  ),
+  )
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -30,8 +30,8 @@ vi.mock("@tanstack/react-router", () => {
     to: string;
   };
   const useLocation = ({
-    select,
-  }: {
+    select
+}: {
     select?: (location: {
       hash: string;
       href: string;
@@ -41,8 +41,8 @@ vi.mock("@tanstack/react-router", () => {
     const location = {
       hash: window.location.hash.slice(1),
       href: window.location.href,
-      pathname: window.location.pathname,
-    };
+      pathname: window.location.pathname
+};
 
     return select ? select(location) : location;
   };
@@ -75,17 +75,17 @@ function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function fetchCalls(fetcher: typeof fetch) {
@@ -147,9 +147,9 @@ function makeTeamSummary(index: number) {
       avatar: {
         provider: "dicebear",
         seed: isPrimary ? "owner" : `owner-${index}`,
-        style: "adventurer",
-      },
-    }],
+        style: "adventurer"
+}
+}],
     member_count: isPrimary ? 18 : index,
     digital_employee_count: isPrimary ? 6 : 1,
     capability_count: isPrimary ? 12 : 2,
@@ -160,10 +160,10 @@ function makeTeamSummary(index: number) {
     metadata: {
       display: {
         color_tone: isPrimary ? "cyan" : "neutral",
-        icon_key: isPrimary ? "role-cloud-infrastructure" : "role-general-team",
-      },
-    },
-  };
+        icon_key: isPrimary ? "role-cloud-infrastructure" : "role-general-team"
+}
+}
+};
 }
 
 function createTeamsFetcher(
@@ -190,28 +190,28 @@ function createTeamsFetcher(
         constitution: {
           approval_policy: { high_risk: "required" },
           hard_rules: ["所有生产写操作必须审批"],
-          principles: ["安全优先，稳定可靠"],
-        },
+          principles: ["安全优先，稳定可靠"]
+},
         capability_policy: {
           external_capability_bindings: ["告警系统"],
           knowledge_base_bindings: ["运维知识库"],
           mcp_bindings: ["ops-mcp-server"],
-          skill_bindings: ["incident-diagnosis"],
-        },
+          skill_bindings: ["incident-diagnosis"]
+},
         context_policy: {},
         approval_policy: { high_risk: "required" },
         artifact_contract: {},
         internal_collaboration_policy: {},
         runtime_scope_policy: { provider_types: ["codex"] },
         human_owner_user_ids: ["human-owner-1"],
-        status: "active",
-      };
+        status: "active"
+};
       const governanceDraft = {
         ...governanceRevision,
         id: "governance-draft-1",
         revision_number: 8,
-        status: "draft",
-      };
+        status: "draft"
+};
 
       if (url.pathname === "/api/v1/teams" && method === "GET") {
         const offset = Number(url.searchParams.get("offset") ?? 0);
@@ -239,39 +239,39 @@ function createTeamsFetcher(
             avatar: {
               provider: "dicebear",
               seed: "owner",
-              style: "adventurer",
-            },
+              style: "adventurer"
+},
             id: "owner-user",
             status: "active",
-            username: "owner",
-          },
+            username: "owner"
+},
           {
             avatar: {
               provider: "dicebear",
               seed: "member",
-              style: "adventurer",
-            },
+              style: "adventurer"
+},
             id: "member-user",
             status: "active",
-            username: "member",
-          },
+            username: "member"
+},
           {
             avatar: {
               provider: "dicebear",
               seed: "viewer",
-              style: "adventurer",
-            },
+              style: "adventurer"
+},
             id: "viewer-user",
             status: "active",
-            username: "viewer",
-          },
+            username: "viewer"
+},
         ];
 
         return jsonResponse({
           items: q
             ? users.filter((user) => user.username.includes(q))
-            : users,
-        });
+            : users
+});
       }
 
       if (url.pathname === "/api/v1/teams" && method === "POST") {
@@ -286,15 +286,15 @@ function createTeamsFetcher(
               tenant_id: "tenant-1",
               name: "安全团队",
               slug: "security",
-              status: "active",
-            },
+              status: "active"
+},
             member_count: 3,
             digital_employee_count: 0,
             capability_count: 0,
             pending_draft_count: 0,
             pending_item_count: 0,
-            allowed_actions: [],
-          },
+            allowed_actions: []
+},
           201,
         );
       }
@@ -316,8 +316,9 @@ function createTeamsFetcher(
               username: "owner",
               display_name: "负责人甲",
               email: "owner@example.com",
-              status: "active",}],
-          },
+              status: "active"
+}]
+},
           member_count: 18,
           digital_employee_count: 6,
           capability_count: 12,
@@ -332,8 +333,8 @@ function createTeamsFetcher(
             "team.governance.edit",
             "team.governance.approve",
           ],
-          current_revision: governanceRevision,
-        });
+          current_revision: governanceRevision
+});
       }
 
       if (
@@ -362,8 +363,8 @@ function createTeamsFetcher(
           name: "运维团队",
           status: "active",
           constitution: body,
-          human_owner_user_ids: ["human-owner-1"],
-        });
+          human_owner_user_ids: ["human-owner-1"]
+});
       }
 
       if (url.pathname === "/api/v1/teams/team-1/members" && method === "GET") {
@@ -378,8 +379,8 @@ function createTeamsFetcher(
             email: "owner@example.com",
             account_status: "active",
             role: "owner",
-            membership_status: "active",
-          },
+            membership_status: "active"
+},
           {
             membership_id: "membership-admin",
             tenant_id: "tenant-1",
@@ -390,8 +391,8 @@ function createTeamsFetcher(
             email: "admin@example.com",
             account_status: "active",
             role: "admin",
-            membership_status: "active",
-          },
+            membership_status: "active"
+},
           {
             membership_id: "membership-approver",
             tenant_id: "tenant-1",
@@ -402,8 +403,8 @@ function createTeamsFetcher(
             email: "approver@example.com",
             account_status: "active",
             role: "approver",
-            membership_status: "active",
-          },
+            membership_status: "active"
+},
           {
             membership_id: "membership-member",
             tenant_id: "tenant-1",
@@ -415,12 +416,12 @@ function createTeamsFetcher(
             avatar: {
               provider: "dicebear",
               seed: "roster-member",
-              style: "adventurer",
-            },
+              style: "adventurer"
+},
             account_status: "active",
             role: "member",
-            membership_status: "active",
-          },
+            membership_status: "active"
+},
           {
             membership_id: "membership-viewer",
             tenant_id: "tenant-1",
@@ -432,12 +433,12 @@ function createTeamsFetcher(
             avatar: {
               provider: "dicebear",
               seed: "roster-viewer",
-              style: "adventurer",
-            },
+              style: "adventurer"
+},
             account_status: "active",
             role: "viewer",
-            membership_status: "active",
-          },
+            membership_status: "active"
+},
         ]);
       }
 
@@ -453,8 +454,8 @@ function createTeamsFetcher(
             email: "member-new@example.com",
             account_status: "active",
             role: "member",
-            membership_status: "active",
-          },
+            membership_status: "active"
+},
           201,
         );
       }
@@ -480,9 +481,9 @@ function createTeamsFetcher(
             risk_level: "medium",
             metadata: {
               effective_config_label: "v5（继承团队）",
-              effective_config_status: "approved",
-            },
-          },
+              effective_config_status: "approved"
+}
+},
           {
             id: "employee-draft",
             team_id: "team-1",
@@ -493,9 +494,9 @@ function createTeamsFetcher(
             risk_level: "low",
             metadata: {
               effective_config_label: "v1（本地草稿）",
-              effective_config_status: "draft",
-            },
-          },
+              effective_config_status: "draft"
+}
+},
           {
             id: "employee-stale",
             team_id: "team-1",
@@ -506,9 +507,9 @@ function createTeamsFetcher(
             risk_level: "medium",
             metadata: {
               effective_config_label: "v2（继承团队）",
-              effective_config_status: "stale",
-            },
-          },
+              effective_config_status: "stale"
+}
+},
           {
             id: "employee-unbound",
             team_id: "team-1",
@@ -519,9 +520,9 @@ function createTeamsFetcher(
             risk_level: "low",
             metadata: {
               effective_config_label: "v3（继承团队）",
-              effective_config_status: "approved",
-            },
-          },
+              effective_config_status: "approved"
+}
+},
           ...Array.from({ length: 6 }, (_, index) => ({
             id: `employee-extra-${index + 1}`,
             team_id: "team-1",
@@ -532,9 +533,9 @@ function createTeamsFetcher(
             risk_level: "low",
             metadata: {
               effective_config_label: "v4（继承团队）",
-              effective_config_status: "approved",
-            },
-          })),
+              effective_config_status: "approved"
+}
+})),
           {
             id: "employee-hidden-unbound",
             team_id: "team-1",
@@ -545,9 +546,9 @@ function createTeamsFetcher(
             risk_level: "low",
             metadata: {
               effective_config_label: "v6（继承团队）",
-              effective_config_status: "approved",
-            },
-          },
+              effective_config_status: "approved"
+}
+},
         ]);
       }
 
@@ -556,8 +557,8 @@ function createTeamsFetcher(
           name: "日志分析员工",
           role: "log_analyst",
           description: "分析异常日志",
-          team_id: "team-1",
-        });
+          team_id: "team-1"
+});
 
         return jsonResponse({
           id: "employee-created",
@@ -565,8 +566,8 @@ function createTeamsFetcher(
           name: "日志分析员工",
           role: "log_analyst",
           description: "分析异常日志",
-          status: "draft",
-        });
+          status: "draft"
+});
       }
 
       if (url.pathname === "/api/v1/teams/team-1/audit" && method === "GET") {
@@ -589,11 +590,11 @@ function createTeamsFetcher(
               resource_label: "运维团队",
               authorization_action: "team.create",
               before: { name: "-", slug: "-" },
-              after: { name: "运维团队", slug: "ops" },
-            },
+              after: { name: "运维团队", slug: "ops" }
+},
             ip_address: "10.20.2.15",
-            created_at: "2026-06-03T09:30:00Z",
-          },
+            created_at: "2026-06-03T09:30:00Z"
+},
           {
             id: "audit-member",
             tenant_id: "tenant-1",
@@ -609,11 +610,11 @@ function createTeamsFetcher(
               resource_label: "孙悦",
               authorization_action: "team.member.add",
               before: { role: "-" },
-              after: { role: "operator" },
-            },
+              after: { role: "operator" }
+},
             ip_address: "10.20.2.16",
-            created_at: "2026-06-03T09:20:00Z",
-          },
+            created_at: "2026-06-03T09:20:00Z"
+},
           {
             id: "audit-governance",
             tenant_id: "tenant-1",
@@ -629,11 +630,11 @@ function createTeamsFetcher(
               resource_label: "gov_draft_v7",
               authorization_action: "team.governance.approve",
               before: { status: "draft" },
-              after: { status: "active" },
-            },
+              after: { status: "active" }
+},
             ip_address: "10.20.2.17",
-            created_at: "2026-06-03T09:10:00Z",
-          },
+            created_at: "2026-06-03T09:10:00Z"
+},
           {
             id: "audit-capability",
             tenant_id: "tenant-1",
@@ -649,11 +650,11 @@ function createTeamsFetcher(
               resource_label: "监控告警 MCP",
               authorization_action: "team.capability.bind",
               before: { enabled: false },
-              after: { enabled: true },
-            },
+              after: { enabled: true }
+},
             ip_address: "10.20.2.18",
-            created_at: "2026-06-03T08:55:00Z",
-          },
+            created_at: "2026-06-03T08:55:00Z"
+},
           {
             id: "audit-rejected",
             tenant_id: "tenant-1",
@@ -669,11 +670,11 @@ function createTeamsFetcher(
               resource_label: "team.archive_20260603",
               authorization_action: "team.archive.confirm",
               before: { status: "active" },
-              after: { status: "active" },
-            },
+              after: { status: "active" }
+},
             ip_address: "10.20.2.19",
-            created_at: "2026-06-03T08:40:00Z",
-          },
+            created_at: "2026-06-03T08:40:00Z"
+},
         ]);
       }
 
@@ -719,15 +720,15 @@ describe("TeamsView", () => {
       name: "待确认团队",
       status: "pending_delete",
       deleted_at: "2026-07-10T10:00:00Z",
-      delete_requested_by: "user-1",
-    };
+      delete_requested_by: "user-1"
+};
     const fetcher = createTeamsFetcher({
       extraRoutes: {
         "GET /api/v1/teams/pending-deletes": [pendingTeam],
         "POST /api/v1/teams/team-pending-1/restore": { ...pendingTeam, status: "active" },
-        "POST /api/v1/teams/team-pending-1/confirm-delete": {},
-      },
-    });
+        "POST /api/v1/teams/team-pending-1/confirm-delete": {}
+}
+});
     const screen = await renderWithQueryClient(
       <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
@@ -750,14 +751,14 @@ describe("TeamsView", () => {
       slug: "pending-lab",
       name: "待彻底删除团队",
       status: "pending_delete",
-      deleted_at: "2026-07-01T10:00:00Z",
-    };
+      deleted_at: "2026-07-01T10:00:00Z"
+};
     const fetcher = createTeamsFetcher({
       extraRoutes: {
         "GET /api/v1/teams/pending-deletes": [pendingTeam],
-        "POST /api/v1/teams/team-pending-2/confirm-delete": {},
-      },
-    });
+        "POST /api/v1/teams/team-pending-2/confirm-delete": {}
+}
+});
     const screen = await renderWithQueryClient(
       <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
@@ -779,8 +780,8 @@ describe("TeamsView", () => {
 
   it("hides the pending-delete section when the queue is empty", async () => {
     const fetcher = createTeamsFetcher({
-      extraRoutes: { "GET /api/v1/teams/pending-deletes": [] },
-    });
+      extraRoutes: { "GET /api/v1/teams/pending-deletes": [] }
+});
     const screen = await renderWithQueryClient(
       <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
@@ -830,8 +831,8 @@ describe("TeamsView", () => {
     
     await expect.element(screen.getByText("已生效").first()).toBeVisible();
 
-    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="status-pill"]').length).toBeGreaterThan(0);
     expect(document.querySelector("[data-team-card-grid]")?.className).toContain("@5xl:grid-cols-3");
   });
 
@@ -848,8 +849,8 @@ describe("TeamsView", () => {
             digital_employee_count: 1,
             id: "team-long",
             name: longTeamName,
-            slug: "codex-execution-ledger-smoke",
-          },
+            slug: "codex-execution-ledger-smoke"
+},
         ]);
       }
       if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
@@ -995,8 +996,8 @@ describe("TeamDetailView", () => {
     await expect.element(screen.getByRole("button", { name: "归档团队" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "恢复团队" })).not.toBeInTheDocument();
 
-    expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="work-surface"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="data-table"]').length).toBeGreaterThan(0);
   });
 
   it("keeps constitution section available when arriving with the constitution hash", async () => {
@@ -1032,8 +1033,8 @@ describe("TeamDetailView", () => {
       "http://control-plane.local/api/v1/teams/team-1",
       expect.objectContaining({
         credentials: "include",
-        method: "DELETE",
-      }),
+        method: "DELETE"
+}),
     );
   });
 
@@ -1058,8 +1059,8 @@ describe("TeamDetailView", () => {
       created_by: "user-1",
       created_by_name: "开发管理员",
       team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
-      agent_bindings: [],
-    };
+      agent_bindings: []
+};
     const installableSkill = {
       id: "skill-diagnose",
       tenant_id: "tenant-1",
@@ -1080,8 +1081,8 @@ describe("TeamDetailView", () => {
       created_by: "user-1",
       created_by_name: "开发管理员",
       team_bindings: [],
-      agent_bindings: [],
-    };
+      agent_bindings: []
+};
     const fetcher = createTeamsFetcher({
       extraRoutes: {
         "GET /api/v1/skills": [installedSkill, installableSkill],
@@ -1100,8 +1101,8 @@ describe("TeamDetailView", () => {
             optional_env_vars: [],
             tool_allowlist: [],
             risk_level: "medium",
-            status: "active",
-          },
+            status: "active"
+},
         ],
         "GET /api/v1/teams/team-1/mcp-bindings": [
           {
@@ -1117,13 +1118,13 @@ describe("TeamDetailView", () => {
             credential_env_var: "GITHUB_TOKEN",
             required_env_vars: ["GITHUB_TOKEN"],
             source_scope: "team",
-            status: "active",
-          },
+            status: "active"
+},
         ],
         "POST /api/v1/teams/team-1/skills": {
           ...installableSkill,
-          team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
-        },
+          team_bindings: [{ team_id: "team-1", team_name: "运维团队" }]
+},
         "POST /api/v1/teams/team-1/mcp-bindings": {
           id: "binding-created",
           tenant_id: "tenant-1",
@@ -1134,12 +1135,12 @@ describe("TeamDetailView", () => {
           credential_env_var: "GITHUB_TOKEN",
           required_env_vars: ["GITHUB_TOKEN"],
           source_scope: "team",
-          status: "active",
-        },
+          status: "active"
+},
         "DELETE /api/v1/teams/team-1/skills/skill-observe": {},
-        "DELETE /api/v1/teams/team-1/mcp-bindings/binding-existing": {},
-      },
-    });
+        "DELETE /api/v1/teams/team-1/mcp-bindings/binding-existing": {}
+}
+});
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -1170,8 +1171,8 @@ describe("TeamDetailView", () => {
       )
       .toBe(true);
     expect(requestBody(fetcher, "/api/v1/teams/team-1/skills", "POST")).toEqual({
-      skill_id: "skill-diagnose",
-    });
+      skill_id: "skill-diagnose"
+});
     await userEvent.keyboard("{Escape}");
 
     // Bind a registered MCP server by mcp_server_id + credential_env_var.
@@ -1191,8 +1192,8 @@ describe("TeamDetailView", () => {
       .toBe(true);
     expect(requestBody(fetcher, "/api/v1/teams/team-1/mcp-bindings", "POST")).toEqual({
       mcp_server_id: "mcp-github",
-      credential_env_var: "GITHUB_TOKEN",
-    });
+      credential_env_var: "GITHUB_TOKEN"
+});
 
     await userEvent.click(screen.getByRole("button", { name: "移除 MCP GitHub MCP" }));
     await expect
@@ -1219,14 +1220,14 @@ describe("TeamDetailView", () => {
             optional_env_vars: [],
             tool_allowlist: [],
             risk_level: "medium",
-            status: "active",
-          },
+            status: "active"
+},
         ],
         "GET /api/v1/teams/team-1/mcp-bindings": [],
         "GET /api/v1/skills": [],
-        "GET /api/v1/teams/team-1/skills": [],
-      },
-    });
+        "GET /api/v1/teams/team-1/skills": []
+}
+});
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -1279,8 +1280,8 @@ describe("TeamDetailView", () => {
       "http://control-plane.local/api/v1/teams/team-1/constitution",
       expect.objectContaining({
         credentials: "include",
-        method: "PATCH",
-      }),
+        method: "PATCH"
+}),
     );
     expect(
       requestBody(
@@ -1291,8 +1292,8 @@ describe("TeamDetailView", () => {
     ).toEqual({
       approval_policy: { high_risk: "required" },
       hard_rules: ["所有生产写操作必须审批", "变更窗口必须登记"],
-      principles: ["安全优先，稳定可靠"],
-    });
+      principles: ["安全优先，稳定可靠"]
+});
   });
 
   it("does not render approval, principles, or diff fields in constitution section", async () => {
@@ -1352,8 +1353,8 @@ describe("TeamDetailView", () => {
             "team.update",
             "team.member.add",
             "team.governance.edit",
-          ],
-        })}
+          ]
+})}
         teamId="team-1"
       />,
     );
@@ -1369,8 +1370,8 @@ describe("TeamDetailView", () => {
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
         fetcher={createTeamsFetcher({
-          overviewAllowedActions: ["team.audit.read"],
-        })}
+          overviewAllowedActions: ["team.audit.read"]
+})}
         teamId="team-1"
       />,
     );
@@ -1422,8 +1423,8 @@ describe("TeamDetailView", () => {
     );
     expect(JSON.parse(String(addMemberCall?.[1]?.body))).toMatchObject({
       role: "member",
-      user_id: "member-user",
-    });
+      user_id: "member-user"
+});
   });
 
   it("renders digital employees in the overview tab list", async () => {
@@ -1452,8 +1453,8 @@ describe("TeamDetailView", () => {
       "http://control-plane.local/api/v1/digital-employees?team_id=team-1",
       expect.objectContaining({
         credentials: "include",
-        method: "GET",
-      }),
+        method: "GET"
+}),
     );
   });
 

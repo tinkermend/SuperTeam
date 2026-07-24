@@ -8,7 +8,7 @@ import {
   PencilLine,
   RefreshCw,
   SendHorizontal,
-  Sparkles,
+  Sparkles
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { GlassCard } from "@/components/superteam";
@@ -16,7 +16,7 @@ import { projectStatusLabel } from "@/lib/status-labels";
 import type {
   Project,
   ProjectDemandSourceType,
-  SubmitProjectDemandInput,
+  SubmitProjectDemandInput
 } from "@/lib/api/projects";
 import { PromptTemplateDialog } from "./prompt-template-dialog";
 import { applyPromptTemplate } from "@/lib/api/prompt-templates";
@@ -38,22 +38,22 @@ const MODE_CARDS: Array<{
     icon: <ListChecks aria-hidden />,
     label: "Plan 任务",
     tone: "brand",
-    value: "plan",
-  },
+    value: "plan"
+},
   {
     desc: "遇上游阻塞时自动补做上游任务并重跑下游",
     icon: <RefreshCw aria-hidden />,
     label: "Loop 任务",
     tone: "info",
-    value: "loop",
-  },
+    value: "loop"
+},
   {
     desc: "与指定数字员工单次对话，结果不进入项目流转",
     icon: <MessagesSquare aria-hidden />,
     label: "对话",
     tone: "warn",
-    value: "chat",
-  },
+    value: "chat"
+},
 ];
 
 type TaskLaunchFormProps = {
@@ -83,7 +83,7 @@ export function TaskLaunchForm({
   onProjectChange,
   onSubmit,
   projects,
-  selectedProjectId,
+  selectedProjectId
 }: TaskLaunchFormProps) {
   const activeProjects = useMemo(
     () => projects.filter((project) => project.status !== "archived"),
@@ -94,8 +94,8 @@ export function TaskLaunchForm({
 
   const apiOptions = useMemo(() => ({ baseUrl: resolveControlPlaneUrl() }), []);
   const { mutate: applyTemplate } = useMutation({
-    mutationFn: (id: string) => applyPromptTemplate(apiOptions, id),
-  });
+    mutationFn: (id: string) => applyPromptTemplate(apiOptions, id)
+});
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
 
   function handleProjectChange(nextProjectId: string) {
@@ -122,8 +122,8 @@ export function TaskLaunchForm({
       content: trimmedContent,
       source_refs: {},
       source_type: "manual" as ProjectDemandSourceType,
-      title: resolvedTitle,
-    });
+      title: resolvedTitle
+});
   }
 
   function handleInsertTemplate(text: string, templateId: string) {
@@ -250,7 +250,7 @@ export function TaskLaunchForm({
 export function ProjectPicker({
   onChange,
   projects,
-  value,
+  value
 }: {
   onChange: (projectId: string) => void;
   projects: Project[];
@@ -334,7 +334,7 @@ export function LaunchChip({
   children,
   icon,
   label,
-  required,
+  required
 }: {
   children: ReactNode;
   icon: ReactNode;

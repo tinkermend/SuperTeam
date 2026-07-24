@@ -1,18 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
-import { V3Button } from "@/components/superteam";
+import { Button } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import {
   createMcpServerDefinition,
-  type CreateMcpServerDefinitionInput,
+  type CreateMcpServerDefinitionInput
 } from "@/lib/api/capabilities";
 
 type RegisterMcpDialogProps = {
@@ -30,7 +30,7 @@ const EMPTY_FORM: CreateMcpServerDefinitionInput = {
   url: "",
   auth_strategy: "none",
   required_env_vars: [],
-  risk_level: "medium",
+  risk_level: "medium"
 };
 
 const inputClass = "h-10 w-full rounded-md border bg-background px-3 text-sm";
@@ -48,7 +48,7 @@ export function RegisterMcpDialog({
   apiBaseUrl,
   fetcher,
   open,
-  onOpenChange,
+  onOpenChange
 }: RegisterMcpDialogProps) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CreateMcpServerDefinitionInput>(EMPTY_FORM);
@@ -71,8 +71,8 @@ export function RegisterMcpDialog({
     },
     onError: (error: unknown) => {
       setFormError(error instanceof Error ? error.message : "创建 MCP 失败");
-    },
-  });
+    }
+});
 
   const addRequiredEnv = () => {
     const name = requiredEnvInput.trim();
@@ -82,8 +82,8 @@ export function RegisterMcpDialog({
     }
     setForm((prev) => ({
       ...prev,
-      required_env_vars: [...(prev.required_env_vars ?? []), name],
-    }));
+      required_env_vars: [...(prev.required_env_vars ?? []), name]
+}));
     setRequiredEnvInput("");
   };
 
@@ -169,8 +169,8 @@ export function RegisterMcpDialog({
                 onChange={(event) =>
                   setForm((prev) => ({
                     ...prev,
-                    transport: event.target.value as CreateMcpServerDefinitionInput["transport"],
-                  }))
+                    transport: event.target.value as CreateMcpServerDefinitionInput["transport"]
+}))
                 }
               >
                 <option value="streamable_http">streamable_http</option>
@@ -186,8 +186,8 @@ export function RegisterMcpDialog({
                   setForm((prev) => ({
                     ...prev,
                     auth_strategy:
-                      event.target.value as CreateMcpServerDefinitionInput["auth_strategy"],
-                  }))
+                      event.target.value as CreateMcpServerDefinitionInput["auth_strategy"]
+}))
                 }
               >
                 <option value="none">none</option>
@@ -230,8 +230,8 @@ export function RegisterMcpDialog({
                           ...prev,
                           required_env_vars: (prev.required_env_vars ?? []).filter(
                             (value) => value !== name,
-                          ),
-                        }))
+                          )
+}))
                       }
                     >
                       ×
@@ -254,19 +254,19 @@ export function RegisterMcpDialog({
                   }
                 }}
               />
-              <V3Button type="button" variant="outline" onClick={addRequiredEnv}>
+              <Button type="button" variant="outline" onClick={addRequiredEnv}>
                 添加
-              </V3Button>
+              </Button>
             </div>
           </div>
           {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           <DialogFooter>
-            <V3Button type="button" variant="ghost" onClick={resetAndClose}>
+            <Button type="button" variant="ghost" onClick={resetAndClose}>
               取消
-            </V3Button>
-            <V3Button type="submit" disabled={createMutation.isPending}>
+            </Button>
+            <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? "创建中…" : "创建"}
-            </V3Button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

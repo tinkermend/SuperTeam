@@ -1,5 +1,6 @@
 import { forwardRef, type ComponentProps, type ReactNode } from "react";
 import { Slot } from "@radix-ui/react-slot";
+import { buttonVariants } from "@/components/superteam/button-variants";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -7,51 +8,51 @@ import { cn } from "@/lib/utils";
  * SuperTeam v3 · Soft-Flat 组件族
  *
  * 设计基线见 DESIGN.md（容器选择规则）与 docs/design-system/{tokens,surfaces,data-display}.md。
- * 全部基于 theme.css 的 `--v3-*` token（Tailwind 暴露为 v3-* 颜色 / rounded-v3-* / shadow-v3）。
- * 一套语言两种容器：SoftCard 系列承载概览与外壳；WorkSurface + V3Table 承载密集数据本体。
+ * 全部基于 theme.css 的 Soft-Flat token（Tailwind：`text-ink` / `bg-brand` / `rounded-card` / `shadow-card` 等）。
+ * 一套语言两种容器：SoftCard 系列承载概览与外壳；WorkSurface + DataTable 承载密集数据本体。
  */
 
-export type V3Tone = "brand" | "info" | "ok" | "warn" | "danger" | "mute" | "artifact";
+export type Tone = "brand" | "info" | "ok" | "warn" | "danger" | "mute" | "artifact";
 
-const toneText: Record<V3Tone, string> = {
-  brand: "text-v3-brand",
-  info: "text-v3-info",
-  ok: "text-v3-ok",
-  warn: "text-v3-warn",
-  danger: "text-v3-danger",
-  mute: "text-v3-mute",
-  artifact: "text-v3-artifact",
+const toneText: Record<Tone, string> = {
+  brand: "text-brand",
+  info: "text-info",
+  ok: "text-ok",
+  warn: "text-warn",
+  danger: "text-danger",
+  mute: "text-mute",
+  artifact: "text-artifact"
 };
 
-const toneSoftBg: Record<V3Tone, string> = {
-  brand: "bg-v3-brand-soft",
-  info: "bg-v3-info-soft",
-  ok: "bg-v3-ok-soft",
-  warn: "bg-v3-warn-soft",
-  danger: "bg-v3-danger-soft",
-  mute: "bg-v3-mute-soft",
-  artifact: "bg-v3-artifact-soft",
+const toneSoftBg: Record<Tone, string> = {
+  brand: "bg-brand-soft",
+  info: "bg-info-soft",
+  ok: "bg-ok-soft",
+  warn: "bg-warn-soft",
+  danger: "bg-danger-soft",
+  mute: "bg-mute-soft",
+  artifact: "bg-artifact-soft"
 };
 
-/** soft 底上的文字层（--v3-*-text，比 solid 深两档，≥4.5:1）。 */
-const toneTextStrong: Record<V3Tone, string> = {
-  brand: "text-v3-brand-deep",
-  info: "text-v3-info-text",
-  ok: "text-v3-ok-text",
-  warn: "text-v3-warn-text",
-  danger: "text-v3-danger-text",
-  mute: "text-v3-mute-text",
-  artifact: "text-v3-artifact-text",
+/** soft 底上的文字层（--*-text，比 solid 深两档，≥4.5:1）。 */
+const toneTextStrong: Record<Tone, string> = {
+  brand: "text-brand-deep",
+  info: "text-info-text",
+  ok: "text-ok-text",
+  warn: "text-warn-text",
+  danger: "text-danger-text",
+  mute: "text-mute-text",
+  artifact: "text-artifact-text"
 };
 
-const toneSolidBg: Record<V3Tone, string> = {
-  brand: "bg-v3-brand",
-  info: "bg-v3-info",
-  ok: "bg-v3-ok",
-  warn: "bg-v3-warn",
-  danger: "bg-v3-danger",
-  mute: "bg-v3-mute",
-  artifact: "bg-v3-artifact",
+const toneSolidBg: Record<Tone, string> = {
+  brand: "bg-brand",
+  info: "bg-info",
+  ok: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  mute: "bg-mute",
+  artifact: "bg-artifact"
 };
 
 /** 柔和白卡：页面外壳、概览卡、面板、表格容器外壳。 */
@@ -62,11 +63,11 @@ function SoftCard({
 }: ComponentProps<"div"> & { interactive?: boolean }) {
   return (
     <div
-      data-slot="v3-soft-card"
+      data-slot="soft-card"
       className={cn(
-        "rounded-v3-card bg-v3-card text-v3-ink shadow-sm border border-v3-line",
+        "rounded-card bg-card text-ink shadow-sm border border-line",
         interactive &&
-          "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md hover:border-v3-line-strong active:scale-[0.99]",
+          "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-md hover:border-line-strong active:scale-[0.99]",
         className,
       )}
       {...props}
@@ -77,11 +78,11 @@ function SoftCard({
 /**
  * Tier A 玻璃卡（Glass Card）：沉浸极光玻璃外壳，仅用于 DESIGN.md 定义的 Tier A
  * 入口/创建画布（任务发起、技能上传、员工创建、登录/onboarding）。样式单一来源为
- * index.css 的 `.v3-glass`（取自 --v3-aurora-* token），禁止在 Tier B/C 数据/审计面使用。
+ * index.css 的 `.glass`（取自 --aurora-* token），禁止在 Tier B/C 数据/审计面使用。
  * 玻璃壳装实底内核：内部表单输入、逐行数据仍用实底 SoftCard/WorkSurface，不给每行套玻璃。
  */
 function GlassCard({ className, ...props }: ComponentProps<"div">) {
-  return <div data-slot="v3-glass-card" className={cn("v3-glass", className)} {...props} />;
+  return <div data-slot="glass-card" className={cn("glass", className)} {...props} />;
 }
 
 /** squircle 语义图标芯片：实底柔色背景 + 同色图标。 */
@@ -90,7 +91,7 @@ function IconTile({
   tone = "brand",
   size = "default",
   ...props
-}: ComponentProps<"span"> & { tone?: V3Tone; size?: "sm" | "default" | "lg" }) {
+}: ComponentProps<"span"> & { tone?: Tone; size?: "sm" | "default" | "lg" }) {
   const sizeClass =
     size === "sm"
       ? "size-9 rounded-[11px] [&_svg]:size-4"
@@ -99,7 +100,7 @@ function IconTile({
         : "size-11 rounded-[13px] [&_svg]:size-5";
   return (
     <span
-      data-slot="v3-icon-tile"
+      data-slot="icon-tile"
       className={cn(
         "inline-grid shrink-0 place-items-center border border-black/5 dark:border-white/5 shadow-sm shadow-black/5 dark:shadow-black/10",
         sizeClass,
@@ -119,10 +120,10 @@ function StatusPill({
   showDot = true,
   children,
   ...props
-}: ComponentProps<"span"> & { tone?: V3Tone; showDot?: boolean }) {
+}: ComponentProps<"span"> & { tone?: Tone; showDot?: boolean }) {
   return (
     <span
-      data-slot="v3-status-pill"
+      data-slot="status-pill"
       data-tone={tone}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap",
@@ -142,23 +143,23 @@ function StatusPill({
  * tone → 顶部色条渐变（对齐 TrendStatCard 的 accentGradient 语言）。
  * loud 时强制用 warn 渐变；mute 保持低调双灰。
  */
-const toneAccentGradient: Record<V3Tone, string> = {
-  brand:    "from-v3-brand    to-v3-brand/40",
-  info:     "from-v3-info     to-v3-info/40",
-  ok:       "from-v3-ok       to-v3-ok/40",
-  warn:     "from-v3-warn     to-v3-warn/40",
-  danger:   "from-v3-danger   to-v3-danger/40",
-  mute:     "from-v3-mute/50  to-v3-mute/10",
-  artifact: "from-v3-artifact to-v3-artifact/40",
+const toneAccentGradient: Record<Tone, string> = {
+  brand:    "from-brand    to-brand/40",
+  info:     "from-info     to-info/40",
+  ok:       "from-ok       to-ok/40",
+  warn:     "from-warn     to-warn/40",
+  danger:   "from-danger   to-danger/40",
+  mute:     "from-mute/50  to-mute/10",
+  artifact: "from-artifact to-artifact/40"
 };
 
 /**
  * 概览指标卡。动效对齐数字员工 TrendStatCard：
- * shadow-v3 基础阴影 → hover shadow-v3-pop（可感知的深度变化）+ -translate-y-0.5 上浮 + 200ms。
+ * shadow-card 基础阴影 → hover shadow-pop（可感知的深度变化）+ -translate-y-0.5 上浮 + 200ms。
  * 顶部 3px 色条作为视觉锚，与员工卡片保持同一设计语言。
  * loud=需人介入时，色条和数值切换为 warn 色。
  */
-function V3MetricCard({
+function MetricCard({
   className,
   icon,
   iconTone = "brand",
@@ -166,11 +167,11 @@ function V3MetricCard({
   value,
   meta,
   loud,
-  action,
+  action
 }: {
   className?: string;
   icon?: ReactNode;
-  iconTone?: V3Tone;
+  iconTone?: Tone;
   label: string;
   value: ReactNode;
   meta?: ReactNode;
@@ -179,19 +180,19 @@ function V3MetricCard({
 }) {
   const accentTone = loud ? "warn" : iconTone;
   return (
-    // 裸 div：不走 SoftCard，避免其 shadow-sm 与 shadow-v3 并存导致 tailwind-merge
+    // 裸 div：不走 SoftCard，避免其 shadow-sm 与 shadow-card 并存导致 tailwind-merge
     // 无法解决冲突（自定义 shadow token 不在 merge 内置组）。
-    // 完整基础类手动对齐 SoftCard：rounded-v3-card bg-v3-card border border-v3-line。
+    // 完整基础类手动对齐 SoftCard：rounded-card bg-card border border-line。
     <div
-      data-slot="v3-metric-card"
+      data-slot="metric-card"
       className={cn(
         "group relative cursor-pointer overflow-hidden",
-        "rounded-v3-card border border-v3-line bg-v3-card text-v3-ink",
-        // shadow-v3 起步，hover → shadow-v3-pop，与 TrendStatCard 完全一致
-        "shadow-v3",
+        "rounded-card border border-line bg-card text-ink",
+        // shadow-card 起步，hover → shadow-pop，与 TrendStatCard 完全一致
+        "shadow-card",
         "px-4 py-4",
-        "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-v3-pop active:scale-[0.98]",
-        loud && "bg-gradient-to-b from-v3-warn-soft to-v3-card",
+        "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-pop active:scale-[0.98]",
+        loud && "bg-gradient-to-b from-warn-soft to-card",
         className,
       )}
     >
@@ -211,7 +212,7 @@ function V3MetricCard({
             {icon}
           </IconTile>
         ) : null}
-        <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-v3-ink-2">{label}</p>
+        <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink-2">{label}</p>
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
 
@@ -219,14 +220,14 @@ function V3MetricCard({
       <p
         className={cn(
           "truncate text-[1.875rem] font-bold leading-none tracking-tight tabular-nums",
-          loud && "text-v3-warn",
+          loud && "text-warn",
         )}
       >
         {value}
       </p>
 
       {/* 补注行 */}
-      {meta ? <p className="mt-1.5 text-[11px] text-v3-ink-3">{meta}</p> : null}
+      {meta ? <p className="mt-1.5 text-[11px] text-ink-3">{meta}</p> : null}
     </div>
   );
 }
@@ -239,20 +240,20 @@ function V3MetricCard({
 function SignatureCard({ className, children, ...props }: ComponentProps<"div">) {
   return (
     <div
-      data-slot="v3-signature-card"
+      data-slot="signature-card"
       className={cn(
-        "relative isolate overflow-hidden rounded-v3-card p-6 text-[color:var(--v3-signature-ink)] shadow-v3-pop",
-        "border border-[color:var(--v3-signature-border)]",
+        "relative isolate overflow-hidden rounded-card p-6 text-[color:var(--signature-ink)] shadow-pop",
+        "border border-[color:var(--signature-border)]",
         className,
       )}
-      style={{ backgroundColor: "var(--v3-signature-surface)" }}
+      style={{ backgroundColor: "var(--signature-surface)" }}
       {...props}
     >
       {/* 顶部品牌色 accent 条：让 signature 一眼区别于普通白卡 */}
       <span
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
-        style={{ background: "var(--v3-brand-grad)" }}
+        style={{ background: "var(--brand-grad)" }}
       />
       {/* 细网格纹理 */}
       <span
@@ -260,43 +261,43 @@ function SignatureCard({ className, children, ...props }: ComponentProps<"div">)
         className="pointer-events-none absolute inset-0 -z-20"
         style={{
           backgroundImage:
-            "linear-gradient(to right, var(--v3-signature-grid) 1px, transparent 1px), linear-gradient(to bottom, var(--v3-signature-grid) 1px, transparent 1px)",
+            "linear-gradient(to right, var(--signature-grid) 1px, transparent 1px), linear-gradient(to bottom, var(--signature-grid) 1px, transparent 1px)",
           backgroundSize: "22px 22px",
           maskImage: "linear-gradient(135deg, #000 0%, rgba(0,0,0,0.68) 42%, transparent 86%)",
           WebkitMaskImage:
-            "linear-gradient(135deg, #000 0%, rgba(0,0,0,0.68) 42%, transparent 86%)",
-        }}
+            "linear-gradient(135deg, #000 0%, rgba(0,0,0,0.68) 42%, transparent 86%)"
+}}
       />
       {/* 轻量 surface wash，降低纯白卡与网格之间的生硬感 */}
       <span
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10"
-        style={{ background: "var(--v3-signature-wash)" }}
+        style={{ background: "var(--signature-wash)" }}
       />
       <span
         aria-hidden
         className="pointer-events-none absolute right-8 top-8 -z-10 h-px w-28"
-        style={{ background: "var(--v3-signature-route)" }}
+        style={{ background: "var(--signature-route)" }}
       />
       <span
         aria-hidden
         className="pointer-events-none absolute right-[7.5rem] top-8 -z-10 size-2 rounded-full"
-        style={{ background: "var(--v3-signature-node)" }}
+        style={{ background: "var(--signature-node)" }}
       />
       <span
         aria-hidden
         className="pointer-events-none absolute right-8 top-8 -z-10 size-2 rounded-full"
-        style={{ background: "var(--v3-signature-node)" }}
+        style={{ background: "var(--signature-node)" }}
       />
       <span
         aria-hidden
         className="pointer-events-none absolute right-8 top-8 -z-10 h-16 w-px"
-        style={{ background: "var(--v3-signature-route)" }}
+        style={{ background: "var(--signature-route)" }}
       />
       <span
         aria-hidden
         className="pointer-events-none absolute right-8 top-[5.75rem] -z-10 size-2 rounded-full"
-        style={{ background: "var(--v3-signature-node)" }}
+        style={{ background: "var(--signature-node)" }}
       />
       {children}
     </div>
@@ -307,19 +308,19 @@ function SignatureCard({ className, children, ...props }: ComponentProps<"div">)
 function WorkSurface({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      data-slot="v3-work-surface"
-      className={cn("overflow-hidden rounded-v3-card bg-v3-card border border-v3-line shadow-v3", className)}
+      data-slot="work-surface"
+      className={cn("overflow-hidden rounded-card bg-card border border-line shadow-card", className)}
       {...props}
     />
   );
 }
 
 /** 密集表格：实底高对比，sticky 表头，tabular 数字，危险/预警行左 accent bar。 */
-function V3Table({ className, ...props }: ComponentProps<"table">) {
+function DataTable({ className, ...props }: ComponentProps<"table">) {
   return (
     <div className="overflow-auto">
       <table
-        data-slot="v3-table"
+        data-slot="data-table"
         className={cn("w-full border-separate border-spacing-0 text-[13px]", className)}
         {...props}
       />
@@ -327,11 +328,11 @@ function V3Table({ className, ...props }: ComponentProps<"table">) {
   );
 }
 
-function V3Th({ className, ...props }: ComponentProps<"th">) {
+function Th({ className, ...props }: ComponentProps<"th">) {
   return (
     <th
       className={cn(
-        "sticky top-0 z-[1] border-b border-v3-line-strong bg-v3-card-soft px-4 py-2.5 text-left text-[11px] font-bold tracking-wide text-v3-ink-3 uppercase whitespace-nowrap",
+        "sticky top-0 z-[1] border-b border-line-strong bg-card-soft px-4 py-2.5 text-left text-[11px] font-bold tracking-wide text-ink-3 uppercase whitespace-nowrap",
         className,
       )}
       {...props}
@@ -339,17 +340,17 @@ function V3Th({ className, ...props }: ComponentProps<"th">) {
   );
 }
 
-function V3Td({ className, ...props }: ComponentProps<"td">) {
+function Td({ className, ...props }: ComponentProps<"td">) {
   return (
     <td
-      className={cn("border-b border-v3-line px-4 py-2.5 align-middle", className)}
+      className={cn("border-b border-line px-4 py-2.5 align-middle", className)}
       {...props}
     />
   );
 }
 
 /** 数据行。tone='danger'|'warn' 给整行实底软色 + 左侧实色 accent bar。 */
-function V3Tr({
+function Tr({
   className,
   tone,
   ...props
@@ -358,11 +359,11 @@ function V3Tr({
     <tr
       data-tone={tone}
       className={cn(
-        "transition-colors duration-200 [&:hover>td]:bg-v3-card-inner [&:last-child>td]:border-b-0",
+        "transition-colors duration-200 [&:hover>td]:bg-card-inner [&:last-child>td]:border-b-0",
         tone === "danger" &&
-          "[&>td]:bg-v3-danger-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-danger)]",
+          "[&>td]:bg-danger-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--danger)]",
         tone === "warn" &&
-          "[&>td]:bg-v3-warn-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-warn)]",
+          "[&>td]:bg-warn-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--warn)]",
         className,
       )}
       {...props}
@@ -370,60 +371,38 @@ function V3Tr({
   );
 }
 
-export type V3ButtonVariant = "primary" | "outline" | "ghost" | "danger" | "glass";
-export type V3ButtonSize = "default" | "sm" | "icon";
-export type V3Density = "comfortable" | "compact";
+export type ButtonVariant = "primary" | "outline" | "ghost" | "danger" | "glass" | "default" | "secondary" | "destructive" | "link";
+export type ButtonSize = "default" | "sm" | "icon" | "lg";
+export type Density = "comfortable" | "compact";
 
-const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-v3-bg";
-
-const buttonVariant: Record<V3ButtonVariant, string> = {
-  primary: "bg-v3-brand text-white shadow-v3 hover:bg-v3-brand-deep",
-  outline: "bg-v3-card text-v3-ink border border-v3-line-strong hover:bg-v3-card-soft",
-  ghost: "bg-transparent text-v3-ink-2 hover:bg-v3-card-soft hover:text-v3-ink",
-  danger: "bg-v3-danger-soft text-v3-danger hover:brightness-95",
-  // Tier A 玻璃卡内的次级按钮：半透明 aurora 面板底 + 品牌 accent 描边，融入玻璃（取自 --v3-aurora-* token）。
-  glass:
-    "border border-[color:var(--v3-aurora-accent-line)] bg-[color:var(--v3-aurora-panel)] text-v3-brand-deep hover:bg-[color:var(--v3-aurora-accent-soft)]",
-};
-
-const buttonSize: Record<V3ButtonSize, string> = {
-  default: "h-10 px-4 text-[13px]",
-  sm: "h-8 px-3 text-xs",
-  icon: "size-9 p-0",
-};
-
-const V3Button = forwardRef<HTMLButtonElement, ComponentProps<"button"> & {
-  variant?: V3ButtonVariant;
-  size?: V3ButtonSize;
-  asChild?: boolean;
-}>(({
-  className,
-  variant = "primary",
-  size = "default",
-  asChild,
-  ...props
-}, ref) => {
+const Button = forwardRef<
+  HTMLButtonElement,
+  ComponentProps<"button"> & {
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+    asChild?: boolean;
+  }
+>(({ className, variant = "primary", size = "default", asChild, ...props }, ref) => {
   const Comp = asChild ? Slot : "button";
   return (
     <Comp
       ref={ref}
-      data-slot="v3-button"
+      data-slot="app-button"
       data-variant={variant}
-      className={cn(buttonBase, buttonVariant[variant], buttonSize[size], className)}
+      className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
   );
 });
-V3Button.displayName = "V3Button";
+Button.displayName = "Button";
 
 /** 灰底圆角图标按钮（顶栏/行内操作）。 */
-function V3IconButton({ className, ...props }: ComponentProps<"button">) {
+function IconButton({ className, ...props }: ComponentProps<"button">) {
   return (
     <button
-      data-slot="v3-icon-button"
+      data-slot="icon-button"
       className={cn(
-        "inline-grid size-9 place-items-center rounded-xl bg-v3-card-soft text-v3-ink-2 shadow-v3 transition-all duration-200 ease-out hover:text-v3-ink hover:-translate-y-0.5 hover:shadow-v3-pop active:scale-[0.95]",
+        "inline-grid size-9 place-items-center rounded-xl bg-card-soft text-ink-2 shadow-card transition-all duration-200 ease-out hover:text-ink hover:-translate-y-0.5 hover:shadow-pop active:scale-[0.95]",
         className,
       )}
       {...props}
@@ -432,40 +411,44 @@ function V3IconButton({ className, ...props }: ComponentProps<"button">) {
 }
 
 /** 筛选 chip：未选中=白卡描边，选中=蓝柔底蓝字。 */
-function V3Chip({
+function Chip({
   className,
   active,
   count,
+  asChild,
   ...props
-}: ComponentProps<"button"> & { active?: boolean; count?: number }) {
+}: ComponentProps<"button"> & { active?: boolean; count?: number; asChild?: boolean }) {
+  // 标签装饰默认用 span，避免在可移除 tag 内再嵌套 button；筛选触发器用 button。
+  const interactive = Boolean(props.onClick) || props.type === "button" || asChild;
+  const Comp: "button" | "span" = interactive ? "button" : "span";
   return (
-    <button
-      data-slot="v3-chip"
+    <Comp
+      data-slot="chip"
       data-active={active || undefined}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all duration-200 ease-out active:scale-[0.97]",
+        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all duration-200 ease-out",
+        interactive && "active:scale-[0.97]",
         active
-          ? "bg-v3-brand-soft text-v3-brand-deep"
-          : "bg-v3-card text-v3-ink-2 border border-v3-line shadow-sm hover:text-v3-ink hover:-translate-y-0.5 hover:shadow-md",
+          ? "bg-brand-soft text-brand-deep"
+          : "bg-card text-ink-2 border border-line shadow-sm",
+        interactive && !active && "hover:text-ink hover:-translate-y-0.5 hover:shadow-md",
         className,
       )}
-      {...props}
+      {...(props as ComponentProps<"button">)}
     >
       {props.children}
       {count !== undefined ? (
-        <span className={cn("text-xs", active ? "text-v3-brand" : "text-v3-ink-3")}>{count}</span>
+        <span className={cn("text-xs", active ? "text-brand" : "text-ink-3")}>{count}</span>
       ) : null}
-    </button>
+    </Comp>
   );
-}
-
-/** 扁平 Tabs 容器（药丸式白卡内的一组 Tab）。配合 V3TabList + V3Tab。 */
-function V3Tabs({ className, ...props }: ComponentProps<"div">) {
+}/** 扁平 Tabs 容器（药丸式白卡内的一组 Tab）。配合 PageTabList + PageTab。 */
+function PageTabs({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      data-slot="v3-tabs"
+      data-slot="page-tabs"
       className={cn(
-        "inline-flex w-fit flex-wrap gap-1 rounded-[14px] bg-v3-card p-1.5 shadow-v3",
+        "inline-flex w-fit flex-wrap gap-1 rounded-[14px] bg-card p-1.5 shadow-card",
         className,
       )}
       {...props}
@@ -473,24 +456,24 @@ function V3Tabs({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-function V3TabList({ className, ...props }: ComponentProps<"div">) {
-  return <div data-slot="v3-tab-list" className={cn("flex flex-wrap gap-1", className)} {...props} />;
+function PageTabList({ className, ...props }: ComponentProps<"div">) {
+  return <div data-slot="page-tab-list" className={cn("flex flex-wrap gap-1", className)} {...props} />;
 }
 
-function V3Tab({
+function PageTab({
   className,
   active,
   ...props
 }: ComponentProps<"button"> & { active?: boolean }) {
   return (
     <button
-      data-slot="v3-tab"
+      data-slot="page-tab"
       aria-pressed={active}
       className={cn(
         "rounded-[10px] px-4 py-2 text-[13px] font-semibold transition-colors",
         active
-          ? "bg-v3-brand-soft text-v3-brand-deep"
-          : "text-v3-ink-2 hover:bg-v3-card-soft hover:text-v3-ink",
+          ? "bg-brand-soft text-brand-deep"
+          : "text-ink-2 hover:bg-card-soft hover:text-ink",
         className,
       )}
       {...props}
@@ -499,7 +482,7 @@ function V3Tab({
 }
 
 /** 分段控件：用于“舒适 / 紧凑”密度切换等二选一场景。 */
-function V3Segmented<T extends string>({
+function Segmented<T extends string>({
   className,
   options,
   value,
@@ -512,8 +495,8 @@ function V3Segmented<T extends string>({
 }) {
   return (
     <div
-      data-slot="v3-segmented"
-      className={cn("inline-flex gap-1 rounded-lg bg-v3-card-soft p-0.5", className)}
+      data-slot="segmented"
+      className={cn("inline-flex gap-1 rounded-lg bg-card-soft p-0.5", className)}
       {...props}
     >
       {options.map((opt) => (
@@ -525,8 +508,8 @@ function V3Segmented<T extends string>({
           className={cn(
             "rounded-[7px] px-2.5 py-1.5 text-xs font-semibold transition-colors",
             value === opt.value
-              ? "bg-v3-card text-v3-ink shadow-v3"
-              : "text-v3-ink-2 hover:text-v3-ink",
+              ? "bg-card text-ink shadow-card"
+              : "text-ink-2 hover:text-ink",
           )}
         >
           {opt.label}
@@ -537,7 +520,7 @@ function V3Segmented<T extends string>({
 }
 
 /** 页面标题区：标题 + 副标题 + 右侧主操作槽。 */
-function V3PageHeader({
+function PageHeader({
   className,
   variant = "page",
   title,
@@ -546,7 +529,7 @@ function V3PageHeader({
   actions,
   icon,
   iconTone = "brand",
-  back,
+  back
 }: {
   className?: string;
   variant?: "page" | "shell";
@@ -555,7 +538,7 @@ function V3PageHeader({
   action?: ReactNode;
   actions?: ReactNode;
   icon?: ReactNode;
-  iconTone?: V3Tone;
+  iconTone?: Tone;
   back?: ReactNode;
 }) {
   const isShell = variant === "shell";
@@ -565,7 +548,7 @@ function V3PageHeader({
 
   return (
     <header
-      data-slot="v3-page-header"
+      data-slot="page-header"
       data-variant={variant}
       className={cn(
         isShell
@@ -579,14 +562,14 @@ function V3PageHeader({
         <div className="min-w-0">
           <h1
             className={cn(
-              "leading-tight font-extrabold tracking-tight text-v3-ink",
+              "leading-tight font-extrabold tracking-tight text-ink",
               isShell ? "truncate text-[18px]" : "text-[28px]",
             )}
           >
             {title}
           </h1>
           {subtitle ? (
-            <p className={cn("truncate text-v3-ink-2", isShell ? "mt-0.5 text-xs" : "mt-1 text-[13px]")}>
+            <p className={cn("truncate text-ink-2", isShell ? "mt-0.5 text-xs" : "mt-1 text-[13px]")}>
               {subtitle}
             </p>
           ) : null}
@@ -598,21 +581,21 @@ function V3PageHeader({
 }
 
 /** 工具栏搜索框（无边框，嵌在白卡工具栏里）。 */
-function V3ToolbarSearch({
+function ToolbarSearch({
   className,
   ...props
 }: ComponentProps<"input"> & { className?: string }) {
   return (
     <label
-      data-slot="v3-toolbar-search"
+      data-slot="toolbar-search"
       className={cn(
-        "flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] bg-v3-card-soft px-3 py-2 text-v3-ink-3",
+        "flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] bg-card-soft px-3 py-2 text-ink-3",
         className,
       )}
     >
       <Search aria-hidden className="size-4" />
       <input
-        className="w-full border-0 bg-transparent text-[13px] text-v3-ink outline-none placeholder:text-v3-ink-3"
+        className="w-full border-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-3"
         {...props}
       />
     </label>
@@ -620,7 +603,7 @@ function V3ToolbarSearch({
 }
 
 /** 受控分页：上一页/页码/下一页 + 每页条数。 */
-function V3Pagination({
+function Pagination({
   className,
   total,
   page,
@@ -628,7 +611,7 @@ function V3Pagination({
   pageCount,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [10, 20, 50],
+  pageSizeOptions = [10, 20, 50]
 }: {
   className?: string;
   total: number;
@@ -642,14 +625,14 @@ function V3Pagination({
   const windowPages = Array.from({ length: Math.min(pageCount, 5) }, (_, i) => i + 1);
   return (
     <div
-      data-slot="v3-pagination"
+      data-slot="pagination"
       className={cn(
-        "flex flex-col gap-3 border-t border-v3-line px-4 py-3 text-[13px] text-v3-ink-2 md:flex-row md:items-center md:justify-between",
+        "flex flex-col gap-3 border-t border-line px-4 py-3 text-[13px] text-ink-2 md:flex-row md:items-center md:justify-between",
         className,
       )}
     >
       <span className="tabular-nums">
-        共 <b className="font-bold text-v3-ink">{total}</b> 条
+        共 <b className="font-bold text-ink">{total}</b> 条
       </span>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
@@ -658,7 +641,7 @@ function V3Pagination({
             aria-label="上一页"
             disabled={page <= 1}
             onClick={() => onPageChange(Math.max(1, page - 1))}
-            className="grid size-8 place-items-center rounded-md border border-v3-line bg-v3-card text-v3-ink-2 disabled:opacity-40"
+            className="grid size-8 place-items-center rounded-md border border-line bg-card text-ink-2 disabled:opacity-40"
           >
             ‹
           </button>
@@ -671,8 +654,8 @@ function V3Pagination({
               className={cn(
                 "grid size-8 place-items-center rounded-md border text-[13px]",
                 page === p
-                  ? "border-v3-brand bg-v3-brand text-white"
-                  : "border-v3-line bg-v3-card text-v3-ink-2",
+                  ? "border-brand bg-brand text-white"
+                  : "border-line bg-card text-ink-2",
               )}
             >
               {p}
@@ -684,7 +667,7 @@ function V3Pagination({
             aria-label="下一页"
             disabled={page >= pageCount}
             onClick={() => onPageChange(Math.min(pageCount, page + 1))}
-            className="grid size-8 place-items-center rounded-md border border-v3-line bg-v3-card text-v3-ink-2 disabled:opacity-40"
+            className="grid size-8 place-items-center rounded-md border border-line bg-card text-ink-2 disabled:opacity-40"
           >
             ›
           </button>
@@ -694,7 +677,7 @@ function V3Pagination({
             aria-label="每页条数"
             value={pageSize}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="rounded-md border border-v3-line bg-v3-card px-2 py-1.5 text-[13px] text-v3-ink-2 outline-none"
+            className="rounded-md border border-line bg-card px-2 py-1.5 text-[13px] text-ink-2 outline-none"
           >
             {pageSizeOptions.map((n) => (
               <option key={n} value={n}>
@@ -709,7 +692,7 @@ function V3Pagination({
 }
 
 /** 空状态。 */
-function V3EmptyState({
+function EmptyState({
   className,
   icon,
   title,
@@ -724,41 +707,41 @@ function V3EmptyState({
 }) {
   return (
     <div
-      data-slot="v3-empty-state"
+      data-slot="empty-state"
       role="status"
       className={cn("flex flex-col items-center gap-3 px-6 py-16 text-center", className)}
       {...props}
     >
-      {icon ? <span className="text-v3-ink-3 [&_svg]:size-10">{icon}</span> : null}
-      <p className="text-[15px] font-semibold text-v3-ink">{title}</p>
-      {description ? <p className="max-w-sm text-[13px] text-v3-ink-2">{description}</p> : null}
+      {icon ? <span className="text-ink-3 [&_svg]:size-10">{icon}</span> : null}
+      <p className="text-[15px] font-semibold text-ink">{title}</p>
+      {description ? <p className="max-w-sm text-[13px] text-ink-2">{description}</p> : null}
       {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );
 }
 
 /** 加载中。 */
-function V3LoadingState({
+function LoadingState({
   className,
   label = "加载中…",
   ...props
 }: ComponentProps<"div"> & { label?: ReactNode }) {
   return (
     <div
-      data-slot="v3-loading-state"
+      data-slot="loading-state"
       role="status"
       aria-busy="true"
-      className={cn("flex items-center justify-center gap-3 px-6 py-16 text-v3-ink-2", className)}
+      className={cn("flex items-center justify-center gap-3 px-6 py-16 text-ink-2", className)}
       {...props}
     >
-      <span className="size-5 animate-spin rounded-full border-2 border-v3-line-strong border-t-v3-brand" />
+      <span className="size-5 animate-spin rounded-full border-2 border-line-strong border-t-brand" />
       <span className="text-[13px]">{label}</span>
     </div>
   );
 }
 
 /** 错误态。 */
-function V3ErrorState({
+function ErrorState({
   className,
   title = "加载失败",
   description,
@@ -771,18 +754,18 @@ function V3ErrorState({
 }) {
   return (
     <div
-      data-slot="v3-error-state"
+      data-slot="error-state"
       role="alert"
-      className={cn("flex flex-col gap-3 rounded-v3-inner bg-v3-danger-soft p-5 text-v3-danger", className)}
+      className={cn("flex flex-col gap-3 rounded-inner bg-danger-soft p-5 text-danger", className)}
       {...props}
     >
       <p className="text-[15px] font-bold">{title}</p>
-      {description ? <p className="text-[13px] text-v3-ink-2">{description}</p> : null}
+      {description ? <p className="text-[13px] text-ink-2">{description}</p> : null}
       {onRetry ? (
         <div>
-          <V3Button variant="danger" size="sm" onClick={onRetry}>
+          <Button variant="danger" size="sm" onClick={onRetry}>
             重试
-          </V3Button>
+          </Button>
         </div>
       ) : null}
     </div>
@@ -790,7 +773,7 @@ function V3ErrorState({
 }
 
 /** 权限不足。 */
-function V3PermissionDenied({
+function PermissionDenied({
   className,
   title = "无访问权限",
   description = "你当前的身份没有访问该资源的权限，请联系管理员或切换身份。",
@@ -803,28 +786,28 @@ function V3PermissionDenied({
 }) {
   return (
     <div
-      data-slot="v3-permission-denied"
+      data-slot="permission-denied"
       role="alert"
       className={cn(
-        "flex flex-col items-center gap-3 rounded-v3-card bg-v3-card px-6 py-16 text-center shadow-v3",
+        "flex flex-col items-center gap-3 rounded-card bg-card px-6 py-16 text-center shadow-card",
         className,
       )}
       {...props}
     >
-      <span className="grid size-12 place-items-center rounded-[15px] bg-v3-mute-soft text-v3-mute [&_svg]:size-6">
+      <span className="grid size-12 place-items-center rounded-[15px] bg-mute-soft text-mute [&_svg]:size-6">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
         </svg>
       </span>
-      <p className="text-[15px] font-semibold text-v3-ink">{title}</p>
-      <p className="max-w-sm text-[13px] text-v3-ink-2">{description}</p>
+      <p className="text-[15px] font-semibold text-ink">{title}</p>
+      <p className="max-w-sm text-[13px] text-ink-2">{description}</p>
       {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );
 }
 
 /** 统一状态面：根据 isLoading/isError/error/denied 渲染对应态，否则渲染 children。 */
-function V3StateSurface({
+function StateSurface({
   isLoading,
   isError,
   error,
@@ -832,7 +815,7 @@ function V3StateSurface({
   empty,
   children,
   onRetry,
-  emptyState,
+  emptyState
 }: {
   isLoading?: boolean;
   isError?: boolean;
@@ -843,13 +826,13 @@ function V3StateSurface({
   children?: ReactNode;
   onRetry?: () => void;
 }) {
-  if (denied) return <V3PermissionDenied />;
+  if (denied) return <PermissionDenied />;
   if (isError) {
     const msg = error instanceof Error ? error.message : undefined;
-    return <V3ErrorState description={msg} onRetry={onRetry} />;
+    return <ErrorState description={msg} onRetry={onRetry} />;
   }
-  if (isLoading) return <V3LoadingState />;
-  if (empty) return <>{emptyState ?? <V3EmptyState title="暂无数据" />}</>;
+  if (isLoading) return <LoadingState />;
+  if (empty) return <>{emptyState ?? <EmptyState title="暂无数据" />}</>;
   return <>{children}</>;
 }
 
@@ -858,26 +841,76 @@ export {
   GlassCard,
   IconTile,
   StatusPill,
-  V3MetricCard,
+  MetricCard,
   SignatureCard,
   WorkSurface,
-  V3Table,
-  V3Th,
-  V3Td,
-  V3Tr,
-  V3Button,
-  V3IconButton,
-  V3Chip,
-  V3Tabs,
-  V3TabList,
-  V3Tab,
-  V3Segmented,
-  V3PageHeader,
-  V3ToolbarSearch,
-  V3Pagination,
-  V3EmptyState,
-  V3LoadingState,
-  V3ErrorState,
-  V3PermissionDenied,
-  V3StateSurface,
+  DataTable,
+  Th,
+  Td,
+  Tr,
+  Button,
+  IconButton,
+  Chip,
+  PageTabs,
+  PageTabList,
+  PageTab,
+  Segmented,
+  PageHeader,
+  ToolbarSearch,
+  Pagination,
+  EmptyState,
+  LoadingState,
+  ErrorState,
+  PermissionDenied,
+  StateSurface
 };
+
+/** @deprecated 使用新名（Soft-Flat 命名迁移）；将于迁移窗口结束后删除 */
+export const V3Button = Button;
+/** @deprecated 使用 IconButton */
+export const V3IconButton = IconButton;
+/** @deprecated 使用 Chip */
+export const V3Chip = Chip;
+/** @deprecated 使用 DataTable */
+export const V3Table = DataTable;
+/** @deprecated 使用 Th */
+export const V3Th = Th;
+/** @deprecated 使用 Td */
+export const V3Td = Td;
+/** @deprecated 使用 Tr */
+export const V3Tr = Tr;
+/** @deprecated 使用 EmptyState */
+export const V3EmptyState = EmptyState;
+/** @deprecated 使用 LoadingState */
+export const V3LoadingState = LoadingState;
+/** @deprecated 使用 ErrorState */
+export const V3ErrorState = ErrorState;
+/** @deprecated 使用 PermissionDenied */
+export const V3PermissionDenied = PermissionDenied;
+/** @deprecated 使用 StateSurface */
+export const V3StateSurface = StateSurface;
+/** @deprecated 使用 MetricCard */
+export const V3MetricCard = MetricCard;
+/** @deprecated 使用 Segmented */
+export const V3Segmented = Segmented;
+/** @deprecated 使用 PageTabs */
+export const V3Tabs = PageTabs;
+/** @deprecated 使用 PageTabList */
+export const V3TabList = PageTabList;
+/** @deprecated 使用 PageTab */
+export const V3Tab = PageTab;
+/** @deprecated 使用 PageHeader */
+export const V3PageHeader = PageHeader;
+/** @deprecated 使用 ToolbarSearch */
+export const V3ToolbarSearch = ToolbarSearch;
+/** @deprecated 使用 Pagination */
+export const V3Pagination = Pagination;
+/** @deprecated 使用 Tone */
+export type V3Tone = Tone;
+/** @deprecated 使用 ButtonVariant */
+export type V3ButtonVariant = ButtonVariant;
+/** @deprecated 使用 ButtonSize */
+export type V3ButtonSize = ButtonSize;
+/** @deprecated 使用 Density */
+export type V3Density = Density;
+

@@ -6,7 +6,7 @@ import {
   SelectItem,
   SelectLabel,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import type { TeamMemberRole } from "@/lib/api/teams";
 
@@ -15,7 +15,7 @@ export const teamRoleLabels = {
   approver: "审批人",
   member: "普通成员",
   owner: "负责人",
-  viewer: "只读观察者",
+  viewer: "只读观察者"
 } as const satisfies Record<TeamMemberRole, string>;
 
 export type TeamRole = TeamMemberRole;

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { GlassCard, V3Button } from "@/components/superteam";
+import { GlassCard, Button } from "@/components/superteam";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProjectDemand } from "@/lib/api/projects";
 import type { RuntimeOverviewActivityItem, RuntimeOverviewDTO, RuntimeOverviewEmployee } from "../runtime-overview-model";
@@ -9,10 +9,10 @@ import { formatCompactTokens, formatTime } from "../formatters";
 import { employeeStatusDotClass as statusDotClass } from "../status-maps";
 
 const activityDotClass: Record<string, string> = {
-  cancelled: "bg-v3-mute",
-  completed: "bg-v3-ok",
-  failed: "bg-v3-danger",
-  running: "bg-v3-info",
+  cancelled: "bg-mute",
+  completed: "bg-ok",
+  failed: "bg-danger",
+  running: "bg-info"
 };
 
 export function RuntimeOverviewSidePanel({
@@ -24,7 +24,7 @@ export function RuntimeOverviewSidePanel({
   lensLoading,
   demands,
   selectedDemandId,
-  onSelectDemand,
+  onSelectDemand
 }: {
   overview: RuntimeOverviewDTO;
   // 优先使用 activity 端点数据；未加载/失败时回退 overview 内聚合的近似动态。
@@ -53,8 +53,8 @@ export function RuntimeOverviewSidePanel({
   return (
     <GlassCard className="p-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-v3-ink">运行概况</h2>
-        <span className="rounded-full bg-v3-ok-soft px-2 py-1 text-xs font-semibold text-v3-ok">实时读取</span>
+        <h2 className="text-sm font-semibold text-ink">运行概况</h2>
+        <span className="rounded-full bg-ok-soft px-2 py-1 text-xs font-semibold text-ok">实时读取</span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <Metric label="团队" value={overview.summary.teamCount} />
@@ -66,18 +66,18 @@ export function RuntimeOverviewSidePanel({
       </div>
       <div className="mt-4 space-y-3">
         <div>
-          <div className="mb-2 flex items-center justify-between text-xs text-v3-ink-2">
+          <div className="mb-2 flex items-center justify-between text-xs text-ink-2">
             <span>容量使用</span>
-            <span className="font-semibold text-v3-ink tabular-nums">
+            <span className="font-semibold text-ink tabular-nums">
               {overview.summary.capacityUsed} / {overview.summary.capacityTotal}
             </span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--v3-aurora-hairline)]">
+          <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--aurora-hairline)]">
             <span
-              className="block h-full rounded-full bg-v3-brand"
+              className="block h-full rounded-full bg-brand"
               style={{
-                width: `${overview.summary.capacityTotal > 0 ? Math.min(100, Math.round((overview.summary.capacityUsed / overview.summary.capacityTotal) * 100)) : 0}%`,
-              }}
+                width: `${overview.summary.capacityTotal > 0 ? Math.min(100, Math.round((overview.summary.capacityUsed / overview.summary.capacityTotal) * 100)) : 0}%`
+}}
             />
           </div>
         </div>
@@ -101,21 +101,21 @@ export function RuntimeOverviewSidePanel({
       ) : null}
       {recentActivity.length > 0 ? (
         <div className="mt-5">
-          <div className="text-xs font-semibold text-v3-ink-2">最新动态</div>
+          <div className="text-xs font-semibold text-ink-2">最新动态</div>
           <ul className="mt-2 space-y-2" data-runtime-recent-activity>
             {recentActivity.slice(0, 5).map((item, index) => (
               <li
                 key={`${item.employeeId}-${item.label}-${index}`}
-                className="flex items-center gap-2 rounded-lg bg-v3-card-soft px-3 py-2 text-sm text-v3-ink-2"
+                className="flex items-center gap-2 rounded-lg bg-card-soft px-3 py-2 text-sm text-ink-2"
               >
-                <span className={`size-2 shrink-0 rounded-full ${activityDotClass[item.status] ?? "bg-v3-mute"}`} aria-hidden />
-                <span className="shrink-0 font-medium text-v3-ink">{item.employeeName}</span>
+                <span className={`size-2 shrink-0 rounded-full ${activityDotClass[item.status] ?? "bg-mute"}`} aria-hidden />
+                <span className="shrink-0 font-medium text-ink">{item.employeeName}</span>
                 <span className="min-w-0 flex-1 truncate">
                   {item.label}
                   {item.taskTitle ? ` · ${item.taskTitle}` : ""}
                 </span>
                 {item.occurredAt ? (
-                  <span className="shrink-0 text-xs tabular-nums text-v3-ink-3">{formatTime(item.occurredAt)}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-ink-3">{formatTime(item.occurredAt)}</span>
                 ) : null}
               </li>
             ))}
@@ -136,7 +136,7 @@ function ProjectLensBlock({
   lensLoading,
   demands,
   selectedDemandId,
-  onSelectDemand,
+  onSelectDemand
 }: {
   overview: RuntimeOverviewDTO;
   selectedProjectId?: string;
@@ -155,11 +155,11 @@ function ProjectLensBlock({
   return (
     <div className="mt-5" data-runtime-project-lens>
       <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold text-v3-ink-2">项目透镜</div>
+        <div className="text-xs font-semibold text-ink-2">项目透镜</div>
         {selectedProjectId ? (
           <button
             type="button"
-            className="text-xs font-medium text-v3-brand hover:underline"
+            className="text-xs font-medium text-brand hover:underline"
             onClick={() => onSelectProject(undefined)}
           >
             退出透镜
@@ -175,13 +175,13 @@ function ProjectLensBlock({
                 type="button"
                 data-runtime-lens-project={option.projectId}
                 aria-pressed={selected}
-                className={`v3-glass-inner flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition ${
-                  selected ? "ring-2 ring-v3-brand/60" : "hover:ring-1 hover:ring-v3-line"
+                className={`glass-inner flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition ${
+                  selected ? "ring-2 ring-brand/60" : "hover:ring-1 hover:ring-line"
                 }`}
                 onClick={() => onSelectProject(selected ? undefined : option.projectId)}
               >
-                <span className="min-w-0 truncate font-medium text-v3-ink">{option.name}</span>
-                <span className="shrink-0 text-xs text-v3-ink-3 tabular-nums">
+                <span className="min-w-0 truncate font-medium text-ink">{option.name}</span>
+                <span className="shrink-0 text-xs text-ink-3 tabular-nums">
                   {option.participantCount} 人{option.activeTaskCount > 0 ? ` · 活跃 ${option.activeTaskCount}` : ""}
                 </span>
               </button>
@@ -192,35 +192,35 @@ function ProjectLensBlock({
       {!showAll && options.length > activeOptions.length ? (
         <button
           type="button"
-          className="mt-2 text-xs font-medium text-v3-brand hover:underline"
+          className="mt-2 text-xs font-medium text-brand hover:underline"
           onClick={() => setShowAll(true)}
         >
           显示全部 {options.length} 个项目
         </button>
       ) : null}
       {selectedProjectId ? (
-        <div className="v3-glass-inner mt-3 px-3 py-3 text-sm" data-runtime-lens-summary>
+        <div className="glass-inner mt-3 px-3 py-3 text-sm" data-runtime-lens-summary>
           <DemandRow demands={demands} selectedDemandId={selectedDemandId} onSelectDemand={onSelectDemand} />
           {lens ? (
             <>
-              <p className="flex flex-wrap gap-x-3 gap-y-1 text-v3-ink-2 tabular-nums">
+              <p className="flex flex-wrap gap-x-3 gap-y-1 text-ink-2 tabular-nums">
                 <span>参与 {lens.participantEmployeeIds.length} 人</span>
                 <span>交接 {lens.edges.length} 段</span>
                 {lens.blockedTaskCount > 0 ? (
-                  <span className="font-semibold text-v3-danger">阻塞 {lens.blockedTaskCount}</span>
+                  <span className="font-semibold text-danger">阻塞 {lens.blockedTaskCount}</span>
                 ) : null}
                 {lens.unassignedTaskCount > 0 ? <span>待派发 {lens.unassignedTaskCount}</span> : null}
               </p>
-              <V3Button asChild size="sm" variant="glass" className="mt-2">
+              <Button asChild size="sm" variant="glass" className="mt-2">
                 <Link params={{ projectId: selectedProjectId }} to="/projects/$projectId">
                   查看项目详情
                 </Link>
-              </V3Button>
+              </Button>
             </>
           ) : lensLoading ? (
-            <p className="text-v3-ink-3">正在加载任务链路…</p>
+            <p className="text-ink-3">正在加载任务链路…</p>
           ) : (
-            <p className="text-v3-ink-3">该项目暂无可用任务链路</p>
+            <p className="text-ink-3">该项目暂无可用任务链路</p>
           )}
         </div>
       ) : null}
@@ -233,7 +233,7 @@ function ProjectLensBlock({
 function DemandRow({
   demands,
   selectedDemandId,
-  onSelectDemand,
+  onSelectDemand
 }: {
   demands?: ProjectDemand[];
   selectedDemandId?: string;
@@ -243,7 +243,7 @@ function DemandRow({
   const current = demands.find((demand) => demand.id === selectedDemandId) ?? demands[0];
   return (
     <div className="mb-2 flex items-center gap-2" data-runtime-lens-demand>
-      <span className="shrink-0 text-xs text-v3-ink-3">需求</span>
+      <span className="shrink-0 text-xs text-ink-3">需求</span>
       {demands.length > 1 && onSelectDemand ? (
         <Select value={current.id} onValueChange={onSelectDemand}>
           <SelectTrigger aria-label="切换需求" size="sm" className="h-7 min-w-0 flex-1 text-xs">
@@ -258,7 +258,7 @@ function DemandRow({
           </SelectContent>
         </Select>
       ) : (
-        <span className="min-w-0 truncate text-xs font-medium text-v3-ink" data-runtime-lens-demand-title>
+        <span className="min-w-0 truncate text-xs font-medium text-ink" data-runtime-lens-demand-title>
           {current.title}
         </span>
       )}
@@ -268,9 +268,9 @@ function DemandRow({
 
 function Metric({ label, value, tone }: { label: string; value: number | string; tone?: "danger" }) {
   return (
-    <div className="v3-glass-inner p-3">
-      <div className="text-xs text-v3-ink-2">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone === "danger" ? "text-v3-danger" : "text-v3-ink"}`}>{value}</div>
+    <div className="glass-inner p-3">
+      <div className="text-xs text-ink-2">{label}</div>
+      <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone === "danger" ? "text-danger" : "text-ink"}`}>{value}</div>
     </div>
   );
 }
@@ -278,11 +278,11 @@ function Metric({ label, value, tone }: { label: string; value: number | string;
 function StatusRow({ label, status, value }: { label: string; status: RuntimeOverviewEmployee["status"]; value: number }) {
   return (
     <div className="flex items-center justify-between text-sm">
-      <span className="inline-flex items-center gap-2 text-v3-ink-2">
+      <span className="inline-flex items-center gap-2 text-ink-2">
         <span className={`size-2.5 rounded-full ${statusDotClass[status]}`} aria-hidden />
         {label}
       </span>
-      <span className="font-semibold text-v3-ink tabular-nums">{value}</span>
+      <span className="font-semibold text-ink tabular-nums">{value}</span>
     </div>
   );
 }

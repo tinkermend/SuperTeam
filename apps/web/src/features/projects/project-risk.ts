@@ -1,4 +1,4 @@
-import type { V3Tone } from "@/components/superteam";
+import type { Tone } from "@/components/superteam";
 import type {
   Project,
   ProjectDecisionRequest,
@@ -417,7 +417,7 @@ export function sortProjectsByRisk(
   });
 }
 
-export function projectRiskLevelTone(level: ProjectRiskLevel): V3Tone {
+export function projectRiskLevelTone(level: ProjectRiskLevel): Tone {
   if (level === "danger") {
     return "danger";
   }

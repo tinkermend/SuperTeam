@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { MarkdownProse, StatusPill, type V3Tone } from "@/components/superteam";
+import { MarkdownProse, StatusPill, type Tone } from "@/components/superteam";
 import type { DigitalEmployeeRunEvent } from "@/lib/api/employees";
 
 type RunEventTimelineProps = {
@@ -12,7 +12,7 @@ type MarkerItem = {
   kind: "marker";
   key: string;
   label: string;
-  tone: V3Tone;
+  tone: Tone;
   detail?: string;
   mono?: boolean;
   events: DigitalEmployeeRunEvent[];
@@ -38,13 +38,13 @@ type UnknownItem = { kind: "unknown"; key: string; eventType: string; events: Di
 
 type TimelineItem = MarkerItem | TextItem | ToolItem | ErrorItem | UnknownItem;
 
-const LIFECYCLE_MARKERS: Record<string, { label: string; tone: V3Tone }> = {
+const LIFECYCLE_MARKERS: Record<string, { label: string; tone: Tone }> = {
   run_cancelled: { label: "运行已取消", tone: "warn" },
   run_completed: { label: "运行完成", tone: "ok" },
   run_dispatched: { label: "命令已下发", tone: "info" },
   run_failed: { label: "运行失败", tone: "danger" },
   run_reaped_stale: { label: "运行已被回收", tone: "danger" },
-  run_timed_out: { label: "运行已超时", tone: "danger" },
+  run_timed_out: { label: "运行已超时", tone: "danger" }
 };
 
 export function RunEventTimeline({ events, limitReached }: RunEventTimelineProps) {
@@ -54,7 +54,7 @@ export function RunEventTimeline({ events, limitReached }: RunEventTimelineProps
       {items.map((item) => (
         <TimelineRow item={item} key={item.key} />
       ))}
-      {limitReached ? <p className="text-xs text-v3-ink-3">仅显示前 {events.length} 条事件。</p> : null}
+      {limitReached ? <p className="text-xs text-ink-3">仅显示前 {events.length} 条事件。</p> : null}
     </div>
   );
 }
@@ -97,8 +97,8 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
           tone: "info",
           detail: stringField(payload, "session_id"),
           mono: true,
-          events: [event],
-        });
+          events: [event]
+});
         break;
       }
       case "turn_started": {
@@ -107,8 +107,8 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
           key: `event-${event.sequence_number}`,
           label: "回合开始",
           tone: "mute",
-          events: [event],
-        });
+          events: [event]
+});
         break;
       }
       case "text_delta": {
@@ -133,8 +133,8 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
           status: "running",
           inputExcerpt: stringField(payload, "input_excerpt"),
           truncated: payload.input_truncated === true,
-          events: [event],
-        };
+          events: [event]
+};
         items.push(item);
         openTools.set(toolId, item);
         break;
@@ -158,8 +158,8 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
             status,
             outputExcerpt: stringField(payload, "output_excerpt"),
             truncated: payload.output_truncated === true,
-            events: [event],
-          });
+            events: [event]
+});
         }
         break;
       }
@@ -181,8 +181,8 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
           label: "回合完成",
           tone: "ok",
           detail: detailParts.length ? detailParts.join(" · ") : undefined,
-          events: [event],
-        });
+          events: [event]
+});
         break;
       }
       case "turn_error": {
@@ -190,8 +190,8 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
           kind: "error",
           key: `event-${event.sequence_number}`,
           message: stringField(payload, "message") ?? "回合执行出错",
-          events: [event],
-        });
+          events: [event]
+});
         break;
       }
       default: {
@@ -202,15 +202,15 @@ function buildTimeline(events: DigitalEmployeeRunEvent[]): TimelineItem[] {
             key: `event-${event.sequence_number}`,
             label: marker.label,
             tone: marker.tone,
-            events: [event],
-          });
+            events: [event]
+});
         } else {
           items.push({
             kind: "unknown",
             key: `event-${event.sequence_number}`,
             eventType: event.event_type,
-            events: [event],
-          });
+            events: [event]
+});
         }
       }
     }
@@ -228,7 +228,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
             {item.detail ? (
               <span
                 className={
-                  item.mono ? "break-all font-mono text-xs text-v3-ink-2" : "text-xs text-v3-ink-2"
+                  item.mono ? "break-all font-mono text-xs text-ink-2" : "text-xs text-ink-2"
                 }
               >
                 {item.detail}
@@ -247,23 +247,23 @@ function TimelineRow({ item }: { item: TimelineItem }) {
       return (
         <TimelineCard events={item.events}>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-v3-ink-3">工具调用</span>
-            <span className="font-mono text-xs text-v3-ink">{item.name ?? item.toolId}</span>
+            <span className="text-[11px] text-ink-3">工具调用</span>
+            <span className="font-mono text-xs text-ink">{item.name ?? item.toolId}</span>
             <StatusPill tone={item.status === "error" ? "danger" : item.status === "ok" ? "ok" : "mute"}>
               {item.status === "error" ? "失败" : item.status === "ok" ? "成功" : "运行中"}
             </StatusPill>
           </div>
           {item.inputExcerpt ? <ExcerptBlock label="输入" value={item.inputExcerpt} /> : null}
           {item.outputExcerpt ? <ExcerptBlock label="输出" value={item.outputExcerpt} /> : null}
-          {item.truncated ? <p className="mt-1 text-[11px] text-v3-ink-3">内容已截断。</p> : null}
+          {item.truncated ? <p className="mt-1 text-[11px] text-ink-3">内容已截断。</p> : null}
         </TimelineCard>
       );
     case "error":
       return (
         <TimelineCard events={item.events}>
-          <div className="rounded-v3-inner bg-v3-danger-soft p-2">
-            <p className="text-xs font-medium text-v3-danger">回合出错</p>
-            <p className="mt-1 whitespace-pre-wrap break-words text-xs text-v3-ink-2">{item.message}</p>
+          <div className="rounded-inner bg-danger-soft p-2">
+            <p className="text-xs font-medium text-danger">回合出错</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-xs text-ink-2">{item.message}</p>
           </div>
         </TimelineCard>
       );
@@ -279,12 +279,12 @@ function TimelineRow({ item }: { item: TimelineItem }) {
 function TimelineCard({ children, events }: { children: ReactNode; events: DigitalEmployeeRunEvent[] }) {
   const [rawOpen, setRawOpen] = useState(false);
   return (
-    <div className="rounded-md border border-v3-line px-3 py-2">
+    <div className="rounded-md border border-line px-3 py-2">
       {children}
       <details className="mt-1" onToggle={(event) => setRawOpen(event.currentTarget.open)}>
-        <summary className="cursor-pointer text-[11px] text-v3-ink-3">原始 JSON</summary>
+        <summary className="cursor-pointer text-[11px] text-ink-3">原始 JSON</summary>
         {rawOpen ? (
-          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-v3-inner bg-v3-card-soft p-2 font-mono text-xs text-v3-ink-2">
+          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-inner bg-card-soft p-2 font-mono text-xs text-ink-2">
             {JSON.stringify(events.length === 1 ? events[0] : events, null, 2)}
           </pre>
         ) : null}
@@ -296,8 +296,8 @@ function TimelineCard({ children, events }: { children: ReactNode; events: Digit
 function ExcerptBlock({ label, value }: { label: string; value: string }) {
   return (
     <details className="mt-1 min-w-0">
-      <summary className="cursor-pointer text-[11px] text-v3-ink-3">{label}</summary>
-      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-v3-inner bg-v3-card-soft p-2 font-mono text-xs text-v3-ink-2">
+      <summary className="cursor-pointer text-[11px] text-ink-3">{label}</summary>
+      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-inner bg-card-soft p-2 font-mono text-xs text-ink-2">
         {value}
       </pre>
     </details>

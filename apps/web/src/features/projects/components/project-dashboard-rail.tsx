@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Inbox, ShieldCheck, UserCheck, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { IconTile, StatusPill, V3EmptyState, type V3Tone } from "@/components/superteam";
+import { IconTile, StatusPill, EmptyState, type Tone } from "@/components/superteam";
 import type { InboxItem } from "@/lib/api/inbox";
 import type {
   WorkflowInstanceStatus,
-  WorkflowInstanceSummary,
+  WorkflowInstanceSummary
 } from "@/lib/api/projects";
 import { statusLabel } from "@/lib/status-labels";
 import { compareIsoDesc, formatRelativeTime } from "@/lib/format-time";
@@ -18,14 +18,14 @@ import { compareIsoDesc, formatRelativeTime } from "@/lib/format-time";
  */
 
 const PANEL_CLASS =
-  "flex min-w-0 flex-col gap-2 rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm";
+  "flex min-w-0 flex-col gap-2 rounded-[14px] border border-line bg-card p-4 shadow-sm";
 
 export function ProjectDashboardRail({
   decisionItems,
   decisionOpenCount,
   decisionsError,
   decisionsLoading,
-  workflowInstances,
+  workflowInstances
 }: {
   decisionItems: InboxItem[];
   decisionOpenCount: number;
@@ -54,7 +54,7 @@ export function InboxDecisionsPanel({
   error,
   isLoading,
   items,
-  openCount,
+  openCount
 }: {
   error?: string;
   isLoading: boolean;
@@ -68,11 +68,11 @@ export function InboxDecisionsPanel({
       data-testid="dashboard-decisions-panel"
     >
       <header className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-extrabold text-v3-ink">
+        <h3 className="text-sm font-extrabold text-ink">
           待我决策{openCount > 0 ? ` · ${openCount}` : ""}
         </h3>
         <Link
-          className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-v3-brand hover:opacity-75"
+          className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-brand hover:opacity-75"
           to="/inbox"
         >
           查看收件箱
@@ -80,11 +80,11 @@ export function InboxDecisionsPanel({
         </Link>
       </header>
       {error ? (
-        <p className="text-[12px] leading-5 text-v3-danger">{error}</p>
+        <p className="text-[12px] leading-5 text-danger">{error}</p>
       ) : isLoading && items.length === 0 ? (
-        <p className="text-[12px] leading-5 text-v3-ink-3">正在加载决策事项…</p>
+        <p className="text-[12px] leading-5 text-ink-3">正在加载决策事项…</p>
       ) : items.length === 0 ? (
-        <V3EmptyState
+        <EmptyState
           description="没有等待你处理的审批或人工决策。"
           icon={<Inbox />}
           title="决策已清空"
@@ -109,8 +109,8 @@ function InboxDecisionRow({ item }: { item: InboxItem }) {
       ? {
           params: { projectId: item.source_project_id },
           search: { focus: item.source_id, tab: "approval" },
-          to: "/projects/$projectId" as const,
-        }
+          to: "/projects/$projectId" as const
+}
       : null;
 
   const rowBody = (
@@ -120,12 +120,12 @@ function InboxDecisionRow({ item }: { item: InboxItem }) {
       </IconTile>
       <span className="min-w-0 flex-1">
         <span
-          className="block min-w-0 line-clamp-2 break-words text-[12px] font-semibold leading-5 text-v3-ink"
+          className="block min-w-0 line-clamp-2 break-words text-[12px] font-semibold leading-5 text-ink"
           title={item.title}
         >
           {item.title}
         </span>
-        <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-v3-ink-3">
+        <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink-3">
           <span className="shrink-0">{typeLabel}</span>
           {isHighRisk ? <StatusPill tone="danger">高危</StatusPill> : null}
           <time className="shrink-0 tabular-nums" dateTime={item.last_activity_at}>
@@ -133,12 +133,12 @@ function InboxDecisionRow({ item }: { item: InboxItem }) {
           </time>
         </span>
       </span>
-      <ArrowRight aria-hidden className="size-3.5 shrink-0 self-center text-v3-ink-3" />
+      <ArrowRight aria-hidden className="size-3.5 shrink-0 self-center text-ink-3" />
     </>
   );
 
   const rowClass =
-    "flex min-w-0 items-start gap-2 rounded-[10px] bg-v3-card-soft/60 px-2.5 py-2 transition-colors hover:bg-v3-brand-soft/60";
+    "flex min-w-0 items-start gap-2 rounded-[10px] bg-card-soft/60 px-2.5 py-2 transition-colors hover:bg-brand-soft/60";
 
   return (
     <li className="min-w-0">
@@ -160,17 +160,17 @@ function InboxDecisionRow({ item }: { item: InboxItem }) {
   );
 }
 
-const runStatusTone: Partial<Record<WorkflowInstanceStatus, V3Tone>> = {
+const runStatusTone: Partial<Record<WorkflowInstanceStatus, Tone>> = {
   cancelled: "mute",
   completed: "ok",
   failed: "danger",
   planning: "info",
   running: "info",
-  waiting_human: "warn",
+  waiting_human: "warn"
 };
 
 export function RunActivityPanel({
-  instances,
+  instances
 }: {
   instances: WorkflowInstanceSummary[];
 }) {
@@ -185,10 +185,10 @@ export function RunActivityPanel({
       data-testid="dashboard-run-activity-panel"
     >
       <header className="flex items-center gap-2">
-        <h3 className="text-sm font-extrabold text-v3-ink">最近运行动态</h3>
+        <h3 className="text-sm font-extrabold text-ink">最近运行动态</h3>
       </header>
       {recent.length === 0 ? (
-        <V3EmptyState
+        <EmptyState
           description="项目产生运行实例后会在这里按时间倒序展示。"
           icon={<Workflow />}
           title="暂无运行记录"
@@ -198,18 +198,18 @@ export function RunActivityPanel({
           {recent.map((instance) => (
             <li className="min-w-0" key={instance.demand_id}>
               <Link
-                className="flex min-w-0 items-center gap-2 rounded-[10px] bg-v3-card-soft/60 px-2.5 py-2 transition-colors hover:bg-v3-brand-soft/60"
+                className="flex min-w-0 items-center gap-2 rounded-[10px] bg-card-soft/60 px-2.5 py-2 transition-colors hover:bg-brand-soft/60"
                 params={{ projectId: instance.project_id }}
                 to="/projects/$projectId"
               >
                 <span className="min-w-0 flex-1">
                   <span
-                    className="block min-w-0 truncate text-[12px] font-semibold leading-5 text-v3-ink"
+                    className="block min-w-0 truncate text-[12px] font-semibold leading-5 text-ink"
                     title={instance.project_name || instance.title}
                   >
                     {instance.project_name || instance.title}
                   </span>
-                  <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-v3-ink-3">
+                  <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-ink-3">
                     <StatusPill tone={runStatusTone[instance.status] ?? "mute"}>
                       {statusLabel(instance.status)}
                     </StatusPill>
@@ -223,7 +223,7 @@ export function RunActivityPanel({
                 </span>
                 <ArrowRight
                   aria-hidden
-                  className="size-3.5 shrink-0 text-v3-ink-3"
+                  className="size-3.5 shrink-0 text-ink-3"
                 />
               </Link>
             </li>

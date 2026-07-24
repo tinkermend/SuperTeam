@@ -3,7 +3,7 @@ import {
   keepPreviousData,
   useMutation,
   useQuery,
-  useQueryClient,
+  useQueryClient
 } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -11,7 +11,7 @@ import {
   Check,
   Copy,
   FolderKanban,
-  Plus,
+  Plus
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -20,11 +20,11 @@ import { Label } from "@/components/ui/label";
 import {
   MasterDetailLayout,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  WorkSurface,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  WorkSurface
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
@@ -32,7 +32,7 @@ import { apiErrorMessage } from "@/lib/api/api-error";
 import {
   getCurrentUser,
   listUserProjectTeamScopes,
-  type UserProjectTeamScope,
+  type UserProjectTeamScope
 } from "@/lib/api";
 import { deleteBlockerTypeLabel, statusLabel } from "@/lib/status-labels";
 import {
@@ -86,7 +86,7 @@ import {
   type ProjectExecutionTrace,
   type ProjectTask,
   type ProjectStatus,
-  type SubmitProjectDemandInput,
+  type SubmitProjectDemandInput
 } from "@/lib/api/projects";
 import { listDigitalEmployees } from "@/lib/api/employees";
 import { listUsers, type UserSummary } from "@/lib/api/auth";
@@ -96,7 +96,7 @@ import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
 import { ProjectRuntimePlacementPanel } from "./components/project-runtime-placement-panel";
@@ -107,14 +107,14 @@ import { ProjectDashboardRail } from "./components/project-dashboard-rail";
 import {
   ProjectPortfolioSummaryBar,
   ProjectRiskQueue,
-  ProjectTriagePanel,
+  ProjectTriagePanel
 } from "./components/project-risk-home";
 import { useProjectRiskSignals } from "./hooks/use-project-risk-signals";
 import {
   buildProjectPortfolioCounts,
   emptyProjectRiskSummary,
   type ProjectRiskFilter,
-  type ProjectRiskSummaryMap,
+  type ProjectRiskSummaryMap
 } from "./project-risk";
 
 type ProjectsPageProps = {
@@ -139,7 +139,7 @@ export function ProjectsPage({ fetcher }: ProjectsPageProps = {}) {
 
 export function ProjectDetailPage({
   fetcher,
-  projectId,
+  projectId
 }: ProjectsPageProps & { projectId: string }) {
   return (
     <ProjectsView
@@ -152,7 +152,7 @@ export function ProjectDetailPage({
 
 export function ProjectConfigPage({
   fetcher,
-  projectId,
+  projectId
 }: ProjectsPageProps & { projectId: string }) {
   return (
     <ProjectConfigView
@@ -174,7 +174,7 @@ export function CreateProjectPage({ fetcher }: ProjectsPageProps = {}) {
 
 export function CreateProjectView({
   apiBaseUrl,
-  fetcher,
+  fetcher
 }: Omit<ProjectsViewProps, "routeProjectId">) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -187,8 +187,8 @@ export function CreateProjectView({
     queryKey: ["auth", "current-user", "project-create"],
     queryFn: () => getCurrentUser(apiOptions),
     refetchOnMount: "always",
-    staleTime: 0,
-  });
+    staleTime: 0
+});
   const currentUser = currentUserQuery.data?.user;
   const currentUserId = currentUser?.id;
 
@@ -197,8 +197,8 @@ export function CreateProjectView({
     queryKey: ["auth", "users", currentUserId, "project-team-scopes", "project-create"],
     queryFn: () => listUserProjectTeamScopes(apiOptions, currentUserId as string),
     refetchOnMount: "always",
-    staleTime: 0,
-  });
+    staleTime: 0
+});
 
   const availableProjectTeamScopes = useMemo<UserProjectTeamScope[]>(
     () =>
@@ -218,10 +218,10 @@ export function CreateProjectView({
       queryClient.setQueryData(["project", response.project.id], response.project);
       void navigate({
         params: { projectId: response.project.id },
-        to: "/projects/$projectId",
-      });
-    },
-  });
+        to: "/projects/$projectId"
+});
+    }
+});
 
   return (
     <>
@@ -258,7 +258,7 @@ export function CreateProjectView({
 export function ProjectsView({
   apiBaseUrl,
   fetcher,
-  routeProjectId,
+  routeProjectId
 }: ProjectsViewProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -270,8 +270,8 @@ export function ProjectsView({
   const [filters, setFilters] = useState<UiProjectListFilters>({
     q: "",
     risk: "all",
-    status: "all",
-  });
+    status: "all"
+});
   const [selectedRuntimeNodeId, setSelectedRuntimeNodeId] = useState("");
   const [selectedQueueProjectId, setSelectedQueueProjectId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
@@ -299,41 +299,41 @@ export function ProjectsView({
   const projectsQuery = useQuery({
     queryKey: ["projects", listFilters],
     queryFn: () => listProjects(apiOptions, listFilters),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const workflowInstancesQuery = useQuery({
     enabled: !routeProjectId,
     queryKey: ["workflow-instances", "project-home", { limit: 50, offset: 0 }],
     queryFn: () => listWorkflowInstances(apiOptions, { limit: 50, offset: 0 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const inboxDecisionsQuery = useQuery({
     enabled: !routeProjectId,
     queryKey: ["inbox", "project-dashboard", "decisions"],
     queryFn: () =>
       listInboxItems(apiOptions, { limit: 8, status: "open", view: "mine" }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const inboxBadgeQuery = useQuery({
     enabled: !routeProjectId,
     queryKey: ["inbox", "project-dashboard", "badge"],
     queryFn: () => getInboxBadge(apiOptions),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   // 数字员工 / 用户目录：成员快照缺名时回退真实名称，避免项目列表/详情裸显负责人 UUID。
   // 列表页也要拉用户目录——风险队列负责人行依赖 principalNamesById，不能仅在进详情后启用。
   const digitalEmployeesQuery = useQuery({
     queryKey: ["digital-employees", "project-name-map"],
     queryFn: () => listDigitalEmployees(apiOptions),
     placeholderData: keepPreviousData,
-    staleTime: 60_000,
-  });
+    staleTime: 60_000
+});
   const usersQuery = useQuery({
     queryKey: ["auth-users", "member-name-lookup"],
     queryFn: () => listUsers({ ...apiOptions, limit: 200 }),
     placeholderData: keepPreviousData,
-    staleTime: 60_000,
-  });
+    staleTime: 60_000
+});
   const principalNamesById = useMemo(() => {
     const names = new Map<string, string>();
     for (const employee of digitalEmployeesQuery.data ?? []) {
@@ -367,8 +367,8 @@ export function ProjectsView({
   const currentPageRiskSignals = useProjectRiskSignals({
     apiOptions,
     principalNamesById: employeeNamesById,
-    projects: pagedProjects,
-  });
+    projects: pagedProjects
+});
   const isCurrentPageRiskSettling = pagedProjects.some(
     (project) => currentPageRiskSignals.summaries[project.id]?.state === "pending",
   );
@@ -421,8 +421,8 @@ export function ProjectsView({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project", effectiveProjectId],
     queryFn: () => getProject(apiOptions, effectiveProjectId as string),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const selectedProject =
     selectedProjectQuery.data?.id === effectiveProjectId
@@ -433,50 +433,50 @@ export function ProjectsView({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-overview", effectiveProjectId],
     queryFn: () => getProjectOverview(apiOptions, effectiveProjectId as string),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const tasksQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-tasks", effectiveProjectId],
     queryFn: () => listProjectTasks(apiOptions, effectiveProjectId as string, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const eventsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-events", effectiveProjectId],
     queryFn: () => listProjectEvents(apiOptions, effectiveProjectId as string, { limit: 30 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const demandsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-demands", effectiveProjectId],
     queryFn: () => listProjectDemands(apiOptions, effectiveProjectId as string, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const routeDecisionsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-route-decisions", effectiveProjectId],
     queryFn: () =>
       listProjectRouteDecisions(apiOptions, effectiveProjectId as string, { limit: 10 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const runtimeReadinessQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-runtime-readiness", effectiveProjectId],
-    queryFn: () => getProjectRuntimeReadiness(apiOptions, effectiveProjectId as string),
-  });
+    queryFn: () => getProjectRuntimeReadiness(apiOptions, effectiveProjectId as string)
+});
 
   const runtimeNodesQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["runtime-nodes", "project-placement"],
     queryFn: () => listRuntimeNodes({ ...apiOptions, limit: 100 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const currentProjectRuntimeReadiness =
     runtimeReadinessQuery.isSuccess ? runtimeReadinessQuery.data : undefined;
 
@@ -487,20 +487,20 @@ export function ProjectsView({
     queryFn: () =>
       listProjectPlanRevisions(apiOptions, effectiveProjectId as string, {
         demandId: latestDemandId as string,
-        limit: 10,
-      }),
-    placeholderData: keepPreviousData,
-  });
+        limit: 10
+}),
+    placeholderData: keepPreviousData
+});
 
   const taskGraphQuery = useQuery({
     enabled: Boolean(effectiveProjectId) && Boolean(latestDemandId),
     queryKey: ["project-task-graph", effectiveProjectId, latestDemandId],
     queryFn: () =>
       getProjectTaskGraph(apiOptions, effectiveProjectId as string, {
-        demandId: latestDemandId as string,
-    }),
-    placeholderData: keepPreviousData,
-  });
+        demandId: latestDemandId as string
+}),
+    placeholderData: keepPreviousData
+});
 
   useEffect(() => {
     const placedRuntimeNodeId = runtimeReadinessQuery.data?.runtime_node_id;
@@ -518,8 +518,8 @@ export function ProjectsView({
     activeTasks: overviewQuery.data?.active_tasks ?? [],
     fallbackTasks: tasksQuery.data ?? [],
     graphTasks: taskGraphQuery.data?.nodes ?? [],
-    projectId: effectiveProjectId,
-  });
+    projectId: effectiveProjectId
+});
   const dispatchGateTaskId = dispatchGateTask?.id;
 
   const dispatchGatesQuery = useQuery({
@@ -531,77 +531,77 @@ export function ProjectsView({
         effectiveProjectId as string,
         dispatchGateTaskId as string,
       ),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const coordinationJobsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-coordination-jobs", effectiveProjectId],
     queryFn: () =>
       listProjectCoordinationJobs(apiOptions, effectiveProjectId as string, { limit: 10 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const decisionRequestsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-decisions", effectiveProjectId],
     queryFn: () =>
       listProjectDecisionRequests(apiOptions, effectiveProjectId as string, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const executionSummariesQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-execution-summaries", effectiveProjectId],
     queryFn: () =>
       listProjectExecutionSummaries(apiOptions, effectiveProjectId as string, { limit: 10 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const executionTraceQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-execution-trace", effectiveProjectId],
     queryFn: () =>
       getProjectExecutionTrace(apiOptions, effectiveProjectId as string, { limit: 100 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const transferRequestsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-transfer-requests", effectiveProjectId],
     queryFn: () =>
       listProjectTransferRequests(apiOptions, effectiveProjectId as string, { limit: 10 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const evidenceQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-evidence", effectiveProjectId],
     queryFn: () => listProjectEvidence(apiOptions, effectiveProjectId as string, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const artifactsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-artifacts", effectiveProjectId],
     queryFn: () => listProjectArtifacts(apiOptions, effectiveProjectId as string, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const reportsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-reports", effectiveProjectId],
     queryFn: () => listProjectReports(apiOptions, effectiveProjectId as string, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const budgetLedgerQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-budget-ledger", effectiveProjectId],
     queryFn: () =>
       listProjectBudgetLedger(apiOptions, effectiveProjectId as string, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const budgetSummaryQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
@@ -611,8 +611,8 @@ export function ProjectsView({
       const summary = await getProjectBudgetSummary(apiOptions, projectId);
       return { projectId, summary };
     },
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const acceptanceQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
@@ -628,29 +628,29 @@ export function ProjectsView({
         throw error;
       }
     },
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const archivePreviewQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-archive-preview", effectiveProjectId],
     queryFn: () => getProjectArchivePreview(apiOptions, effectiveProjectId as string),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const archiveSnapshotsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-archive-snapshots", effectiveProjectId],
     queryFn: () =>
       listProjectArchiveSnapshots(apiOptions, effectiveProjectId as string, { limit: 10 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const deletePreviewQuery = useQuery({
     enabled: deleteDialogOpen && Boolean(effectiveProjectId),
     queryKey: ["project-delete-preview", effectiveProjectId],
-    queryFn: () => getProjectDeletePreview(apiOptions, effectiveProjectId as string),
-  });
+    queryFn: () => getProjectDeletePreview(apiOptions, effectiveProjectId as string)
+});
 
   const invalidateRuntimePlacementSurfaces = async (projectId?: string) => {
     if (!projectId) {
@@ -667,20 +667,20 @@ export function ProjectsView({
   const bindRuntimePlacementMutation = useMutation({
     mutationFn: (runtimeNodeId: string) =>
       addProjectRuntimeNode(apiOptions, effectiveProjectId as string, runtimeNodeId, {
-        reason: "project_runtime_placement_panel",
-      }),
+        reason: "project_runtime_placement_panel"
+}),
     onSuccess: async () => {
       await invalidateRuntimePlacementSurfaces(effectiveProjectId);
-    },
-  });
+    }
+});
 
   const releaseRuntimePlacementMutation = useMutation({
     mutationFn: (runtimeNodeId: string) =>
       removeProjectRuntimeNode(apiOptions, effectiveProjectId as string, runtimeNodeId),
     onSuccess: async () => {
       await invalidateRuntimePlacementSurfaces(effectiveProjectId);
-    },
-  });
+    }
+});
 
   const archiveMutation = useMutation({
     mutationFn: (projectId: string) => archiveProject(apiOptions, projectId),
@@ -691,8 +691,8 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
       ]);
-    },
-  });
+    }
+});
 
   const recloneWorkspaceMutation = useMutation({
     mutationFn: (projectId: string) =>
@@ -704,8 +704,8 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
         queryClient.invalidateQueries({ queryKey: ["project-events", project.id] }),
       ]);
-    },
-  });
+    }
+});
 
   const markWorkspaceReadyMutation = useMutation({
     mutationFn: (projectId: string) =>
@@ -717,8 +717,8 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
         queryClient.invalidateQueries({ queryKey: ["project-events", project.id] }),
       ]);
-    },
-  });
+    }
+});
 
   const submitDemandMutation = useMutation({
     mutationFn: (input: SubmitProjectDemandInput) =>
@@ -731,8 +731,8 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
       ]);
-    },
-  });
+    }
+});
 
   const resolveDecisionMutation = useMutation({
     mutationFn: (input: {
@@ -746,8 +746,8 @@ export function ProjectsView({
         input.decisionId,
         {
           decision: input.decision,
-          target_exit_deliverable: input.targetExitDeliverable,
-        },
+          target_exit_deliverable: input.targetExitDeliverable
+},
       ),
     onSuccess: async (decisionRequest) => {
       const projectId = decisionRequest.project_id || effectiveProjectId;
@@ -760,8 +760,8 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-task-graph", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-task-dispatch-gates", projectId] }),
       ]);
-    },
-  });
+    }
+});
 
   const dismissTaskMutation = useMutation({
     mutationFn: (taskId: string) =>
@@ -776,8 +776,8 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-risk-signals"] }),
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
       ]);
-    },
-  });
+    }
+});
 
   const createEvidenceMutation = useMutation({
     mutationFn: (input: CreateProjectEvidenceInput) =>
@@ -788,11 +788,11 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-evidence", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
         queryClient.invalidateQueries({
-          queryKey: ["project-archive-preview", projectId],
-        }),
+          queryKey: ["project-archive-preview", projectId]
+}),
       ]);
-    },
-  });
+    }
+});
 
   const patchEvidenceMutation = useMutation({
     mutationFn: (input: {
@@ -800,19 +800,19 @@ export function ProjectsView({
       verificationStatus: ProjectEvidenceVerificationStatus;
     }) =>
       patchProjectEvidence(apiOptions, effectiveProjectId as string, input.evidenceId, {
-        verification_status: input.verificationStatus,
-      }),
+        verification_status: input.verificationStatus
+}),
     onSuccess: async (evidence) => {
       const projectId = evidence.project_id || effectiveProjectId;
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["project-evidence", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
         queryClient.invalidateQueries({
-          queryKey: ["project-archive-preview", projectId],
-        }),
+          queryKey: ["project-archive-preview", projectId]
+}),
       ]);
-    },
-  });
+    }
+});
 
   const createArchiveSnapshotMutation = useMutation({
     mutationFn: (input: CreateProjectArchiveSnapshotInput) =>
@@ -821,16 +821,16 @@ export function ProjectsView({
       const projectId = snapshot.project_id || effectiveProjectId;
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["project-archive-snapshots", projectId],
-        }),
+          queryKey: ["project-archive-snapshots", projectId]
+}),
         queryClient.invalidateQueries({
-          queryKey: ["project-archive-preview", projectId],
-        }),
+          queryKey: ["project-archive-preview", projectId]
+}),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
       ]);
-    },
-  });
+    }
+});
 
   const deleteProjectMutation = useMutation({
     mutationFn: (projectId: string) => deleteProject(apiOptions, projectId),
@@ -853,8 +853,8 @@ export function ProjectsView({
       if (isProjectDeleteBlockedError(error)) {
         setDeleteBlocked(error.payload);
       }
-    },
-  });
+    }
+});
 
   const isInitialLoading = projectsQuery.isLoading && !projectsQuery.data;
   const overview =
@@ -869,8 +869,8 @@ export function ProjectsView({
     ? {
         ...overview.project,
         allowed_actions:
-          selectedProjectDetail?.allowed_actions ?? overview.project.allowed_actions,
-      }
+          selectedProjectDetail?.allowed_actions ?? overview.project.allowed_actions
+}
     : selectedProjectDetail;
   const isArchived = displayedProject?.status === "archived";
   const projectRouteDecisions = (routeDecisionsQuery.data ?? []).filter(
@@ -958,12 +958,12 @@ export function ProjectsView({
     <ShellPageHeaderBack ariaLabel="返回项目管理" to="/projects" />
   ) : undefined;
   const projectCreateAction = routeProjectId ? null : (
-    <V3Button asChild className="h-11 self-start px-5">
+    <Button asChild className="h-11 self-start px-5">
       <Link to="/projects/new">
         <Plus data-icon="inline-start" />
         新建项目
       </Link>
-    </V3Button>
+    </Button>
   );
   const projectName = displayedProject?.name ?? "";
   const deletePreview = deletePreviewQuery.data;
@@ -1003,11 +1003,11 @@ export function ProjectsView({
         <div className="flex min-w-0 flex-col gap-5">
           {isInitialLoading ? (
             <WorkSurface>
-              <V3LoadingState label="加载项目列表…" />
+              <LoadingState label="加载项目列表…" />
             </WorkSurface>
           ) : projectsQuery.isError ? (
             <WorkSurface className="p-4">
-              <V3ErrorState
+              <ErrorState
                 title="项目列表加载失败"
                 description={queryErrorMessage(projectsQuery.error)}
                 onRetry={() => void projectsQuery.refetch()}
@@ -1015,14 +1015,14 @@ export function ProjectsView({
             </WorkSurface>
           ) : isProjectPortfolioEmpty ? (
             <WorkSurface className="p-8">
-              <V3EmptyState
+              <EmptyState
                 action={
-                  <V3Button asChild className="h-11 px-5">
+                  <Button asChild className="h-11 px-5">
                     <Link to="/projects/new">
                       <Plus data-icon="inline-start" />
                       新建首个项目
                     </Link>
-                  </V3Button>
+                  </Button>
                 }
                 description="项目是目标、负责人、任务、证据、预算和验收结论的业务闭环容器。创建后可在此队列按需要介入程度巡检推进。"
                 icon={<FolderKanban />}
@@ -1169,8 +1169,8 @@ export function ProjectsView({
                         resolveDecisionMutation.mutate({
                           decisionId,
                           decision,
-                          targetExitDeliverable,
-                        });
+                          targetExitDeliverable
+});
                       }
                     }}
                     dismissTaskPending={dismissTaskMutation.isPending}
@@ -1239,7 +1239,7 @@ export function ProjectsView({
                 」？归档后项目停止推进、配置与需求提交将被禁用，且当前没有取消归档入口；历史记录仍可查看。
               </p>
               {archiveMutation.isError ? (
-                <p className="text-sm text-v3-danger">
+                <p className="text-sm text-danger">
                   {queryErrorMessage(archiveMutation.error)}
                 </p>
               ) : null}
@@ -1293,9 +1293,9 @@ export function ProjectsView({
           >
             <div className="space-y-2">
               <div className="space-y-1.5">
-                <p className="text-sm font-medium text-v3-ink">项目名称</p>
+                <p className="text-sm font-medium text-ink">项目名称</p>
                 <CopyableProjectName name={projectName} />
-                <p className="text-xs text-v3-ink-3">点击上方名称可复制，粘贴或手动输入后确认删除。</p>
+                <p className="text-xs text-ink-3">点击上方名称可复制，粘贴或手动输入后确认删除。</p>
               </div>
               <Label htmlFor="delete-project-confirmation">输入项目名称确认删除</Label>
               <Input
@@ -1315,12 +1315,12 @@ export function ProjectsView({
                 blocked={{
                   blockers: deletePreview.blockers,
                   code: "project_delete_blocked",
-                  message: deletePreview.message,
-                }}
+                  message: deletePreview.message
+}}
               />
             ) : null}
             {genericDeleteError ? (
-              <p className="text-sm text-v3-danger">{genericDeleteError}</p>
+              <p className="text-sm text-danger">{genericDeleteError}</p>
             ) : null}
           </form>
         </ConfirmDialog>
@@ -1376,7 +1376,7 @@ function selectDispatchGateTask({
   activeTasks,
   fallbackTasks,
   graphTasks,
-  projectId,
+  projectId
 }: {
   activeTasks: ProjectTask[];
   fallbackTasks: ProjectTask[];
@@ -1444,7 +1444,7 @@ function CopyableProjectName({ name }: { name: string }) {
 
   if (!name) {
     return (
-      <span className="block rounded-v3-inner border border-dashed border-v3-line bg-v3-card-soft px-3 py-2 text-sm text-v3-ink-3">
+      <span className="block rounded-inner border border-dashed border-line bg-card-soft px-3 py-2 text-sm text-ink-3">
         加载项目名称…
       </span>
     );
@@ -1470,13 +1470,13 @@ function CopyableProjectName({ name }: { name: string }) {
       aria-label={`复制项目名称 ${name}`}
       onClick={() => void copy()}
       className={cn(
-        "flex w-full min-w-0 items-center justify-between gap-2 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-left text-sm text-v3-ink-3 transition-colors",
-        "hover:border-v3-line-strong hover:text-v3-ink-2",
+        "flex w-full min-w-0 items-center justify-between gap-2 rounded-inner border border-line bg-card-soft px-3 py-2 text-left text-sm text-ink-3 transition-colors",
+        "hover:border-line-strong hover:text-ink-2",
       )}
     >
       <span className="min-w-0 break-all select-all">{name}</span>
       {copied ? (
-        <Check aria-hidden className="size-3.5 shrink-0 text-v3-ok" />
+        <Check aria-hidden className="size-3.5 shrink-0 text-ok" />
       ) : (
         <Copy aria-hidden className="size-3.5 shrink-0 opacity-70" />
       )}
@@ -1486,7 +1486,7 @@ function CopyableProjectName({ name }: { name: string }) {
 
 function ProjectDeleteDialogDescription({
   isLoading,
-  preview,
+  preview
 }: {
   isLoading: boolean;
   preview?: ProjectDeletePreview;
@@ -1545,12 +1545,12 @@ function formatProjectDeleteWarnings(preview: ProjectDeletePreview) {
 }
 
 function ProjectDeleteBlockedAlert({
-  blocked,
+  blocked
 }: {
   blocked: ProjectDeleteBlockedErrorResponse;
 }) {
   return (
-    <Alert className="border-v3-danger/30 bg-v3-danger-soft text-v3-danger" variant="destructive">
+    <Alert className="border-danger/30 bg-danger-soft text-danger" variant="destructive">
       <AlertTriangle className="size-4" />
       <AlertTitle>删除被阻断</AlertTitle>
       <AlertDescription>
@@ -1567,12 +1567,12 @@ function ProjectDeleteBlockedAlert({
 
 function ProjectDeleteBlockerItem({ blocker }: { blocker: ProjectDeleteBlocker }) {
   return (
-    <li className="rounded-v3-inner border border-v3-danger/25 bg-v3-card px-3 py-2 text-v3-ink">
+    <li className="rounded-inner border border-danger/25 bg-card px-3 py-2 text-ink">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{blocker.title}</span>
         <StatusPill tone="danger">{`${deleteBlockerTypeLabel(blocker.type)} · ${statusLabel(blocker.status)}`}</StatusPill>
       </div>
-      <p className="mt-1 break-all font-mono text-[11px] text-v3-ink-3">id {blocker.id}</p>
+      <p className="mt-1 break-all font-mono text-[11px] text-ink-3">id {blocker.id}</p>
     </li>
   );
 }

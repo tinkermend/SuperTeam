@@ -33,8 +33,8 @@ export function getUserIdentityLabel(user: UserIdentityData) {
   return {
     initials: primary.trim().slice(0, 1).toUpperCase() || "?",
     primary,
-    secondary,
-  };
+    secondary
+};
 }
 
 export function buildUserAvatarDataUri(avatar: UserAvatarDescriptor | null | undefined, username: string) {
@@ -48,8 +48,8 @@ export function buildUserAvatarDataUri(avatar: UserAvatarDescriptor | null | und
     radius: 50,
     seed: avatar.seed || `user:${username}`,
     size: 96,
-    ...options,
-  }).toDataUri();
+    ...options
+}).toDataUri();
 }
 
 type UserIdentityAvatarProps = {

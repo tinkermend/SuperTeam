@@ -8,41 +8,41 @@ import { groupInboxItems, readInboxProgress, resolveInboxHref } from "@/features
 import type { InboxItem, InboxListResponse } from "@/lib/api/inbox";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => (
     <a data-router-link="true" href={to}>{children}</a>
-  ),
+  )
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
-      queries: { retry: false },
-    },
-  });
+      queries: { retry: false }
+}
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function makeInboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
@@ -52,30 +52,30 @@ function makeInboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
         key: "approved",
         label: "Approve",
         requires_comment: false,
-        tone: "positive",
-      },
+        tone: "positive"
+},
       {
         key: "rejected",
         label: "Reject",
         requires_comment: true,
-        tone: "destructive",
-      },
+        tone: "destructive"
+},
       {
         key: "needs_more_evidence",
         label: "Request evidence",
         requires_comment: true,
-        tone: "warning",
-      },
+        tone: "warning"
+},
     ],
     context: {
       project_name: "客户接入项目",
-      source_title: "准入审批",
-    },
+      source_title: "准入审批"
+},
     created_at: "2026-06-12T01:30:00Z",
     deep_link: {
       anchor: "approval-1",
-      route: "/projects/project-1/approvals",
-    },
+      route: "/projects/project-1/approvals"
+},
     id: "inbox-item-1",
     item_type: "approval",
     last_activity_at: "2026-06-12T02:30:00Z",
@@ -92,8 +92,8 @@ function makeInboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
     tenant_id: "tenant-1",
     title: "确认客户 Runtime 接入",
     updated_at: "2026-06-12T02:30:00Z",
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function makeListResponse(items: InboxItem[]): InboxListResponse {
@@ -102,14 +102,14 @@ function makeListResponse(items: InboxItem[]): InboxListResponse {
     pagination: {
       has_more: false,
       limit: 50,
-      offset: 0,
-    },
+      offset: 0
+},
     summary: {
       blocked_count: 1,
       high_risk_count: 1,
-      open_count: items.length,
-    },
-  };
+      open_count: items.length
+}
+};
 }
 
 function createDeferred<T>() {
@@ -143,8 +143,8 @@ function createInboxFetcher(
       body: typeof init?.body === "string" ? init.body : undefined,
       method,
       pathname: url.pathname,
-      url: url.toString(),
-    });
+      url: url.toString()
+});
 
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       const view = url.searchParams.get("view") ?? "mine";
@@ -161,8 +161,8 @@ function createInboxFetcher(
                 id: "team-inbox-item-1",
                 summary: "团队负责人需要确认发布窗口。",
                 target_user_id: "human-owner-1",
-                title: "团队发布窗口确认",
-              }),
+                title: "团队发布窗口确认"
+}),
           ]),
         );
       }
@@ -189,15 +189,15 @@ function createInboxFetcher(
         source_result: {
           source_id: "approval-1",
           source_type: "approval_request",
-          status: "approved",
-        },
-      });
+          status: "approved"
+}
+});
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
-      status: 404,
-    });
+      status: 404
+});
   }) as unknown as typeof fetch & { requests: typeof requests };
 
   Object.assign(fetcher, { requests });
@@ -235,8 +235,8 @@ describe("InboxView", () => {
           deep_link: {},
           item_type: "project_decision",
           source_id: "decision-1",
-          source_project_id: "project-1",
-        }),
+          source_project_id: "project-1"
+}),
       ),
     ).toBe("/projects/project-1?tab=approval&focus=decision-1");
   });
@@ -247,12 +247,12 @@ describe("InboxView", () => {
         makeInboxItem({
           deep_link: {
             anchor: "decision-1",
-            route: "/projects/project-1",
-          },
+            route: "/projects/project-1"
+},
           item_type: "project_decision",
           source_id: "decision-1",
-          source_project_id: "project-1",
-        }),
+          source_project_id: "project-1"
+}),
       ),
     ).toBe("/projects/project-1?tab=approval&focus=decision-1");
   });
@@ -306,8 +306,8 @@ describe("InboxView", () => {
   it("renders resolved items as settled: no pending badge, no action buttons", async () => {
     const resolvedItem = makeInboxItem({
       status: "resolved",
-      resolved_at: "2026-07-19T05:05:00Z",
-    });
+      resolved_at: "2026-07-19T05:05:00Z"
+});
     const screen = await renderInboxView(createInboxFetcher({ mineItem: resolvedItem }));
 
     await userEvent.click(screen.getByText("需要确认客户侧 Runtime 节点接入证据。"));
@@ -337,7 +337,7 @@ describe("InboxView", () => {
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
-    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
     const itemRows = document.body.querySelectorAll('[role="button"][aria-label^="打开事项"]');
     expect(itemRows.length).toBeGreaterThanOrEqual(1);
   });
@@ -347,11 +347,11 @@ describe("InboxView", () => {
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
-    expect(document.body.querySelector('[data-slot="v3-page-header"] [data-slot="v3-icon-tile"]')).not.toBeNull();
-    expect(document.body.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThanOrEqual(2);
-    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-tabs"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="page-header"] [data-slot="icon-tile"]')).not.toBeNull();
+    expect(document.body.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThanOrEqual(2);
+    expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="page-tabs"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="status-pill"]')).not.toBeNull();
   });
 
   it("keeps summary metrics in cards instead of repeating them in the page header", async () => {
@@ -359,12 +359,12 @@ describe("InboxView", () => {
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
-    const pageHeader = document.body.querySelector('[data-slot="v3-page-header"]');
+    const pageHeader = document.body.querySelector('[data-slot="page-header"]');
     expect(pageHeader).not.toBeNull();
     expect(pageHeader?.textContent).not.toContain("开放 1");
     expect(pageHeader?.textContent).not.toContain("高风险 1");
     expect(pageHeader?.textContent).not.toContain("阻断 1");
-    const metricLabels = Array.from(document.body.querySelectorAll('[data-slot="v3-soft-card"] p'))
+    const metricLabels = Array.from(document.body.querySelectorAll('[data-slot="soft-card"] p'))
       .map((node) => node.textContent?.trim())
       .filter(Boolean);
     expect(metricLabels).toContain("开放事项");
@@ -375,8 +375,8 @@ describe("InboxView", () => {
   it("renders read-only inbox items when API returns null actions", async () => {
     const itemWithNullActions = makeInboxItem({
       actions: null as unknown as InboxItem["actions"],
-      title: "验收 · 帮我分析 Claude Code",
-    });
+      title: "验收 · 帮我分析 Claude Code"
+});
     const screen = await renderInboxView(createInboxFetcher({ mineItem: itemWithNullActions }));
 
     await expect.element(screen.getByText("验收 · 帮我分析 Claude Code")).toBeVisible();
@@ -394,23 +394,23 @@ describe("InboxView", () => {
             id: demandId,
             status: "completed",
             task_titles: ["分析服务器中的Claude Code配置合理性"],
-            title: "帮我分析 Claude Code",
-          },
+            title: "帮我分析 Claude Code"
+},
         ],
         primary_demand_id: demandId,
-        project_name: "测试项目",
-      },
+        project_name: "测试项目"
+},
       deep_link: {
         anchor: "decision-1",
-        route: `/workflows/${demandId}`,
-      },
+        route: `/workflows/${demandId}`
+},
       item_type: "project_decision",
       source_approval_request_id: undefined,
       source_project_name: "测试项目",
       source_task_id: undefined,
       source_type: "project_decision_request",
-      title: "验收 · 帮我分析 Claude Code",
-    });
+      title: "验收 · 帮我分析 Claude Code"
+});
     const screen = await renderInboxView(createInboxFetcher({ mineItem: acceptanceItem }));
 
     await expect.element(screen.getByText("验收 · 帮我分析 Claude Code")).toBeVisible();
@@ -584,10 +584,10 @@ describe("InboxView", () => {
     const unsafeItem = makeInboxItem({
       deep_link: {
         anchor: "approval-1",
-        route: "//evil.example/path",
-      },
-      source_project_id: "safe-project",
-    });
+        route: "//evil.example/path"
+},
+      source_project_id: "safe-project"
+});
     const screen = await renderInboxView(createInboxFetcher({ mineItem: unsafeItem }));
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
@@ -603,10 +603,10 @@ describe("InboxView", () => {
       deep_link: {
         anchor: "approval-1",
         route: "/projects/project-1",
-        primary_surface: "/workflows/demand-xyz",
-      },
-      source_project_id: "project-1",
-    });
+        primary_surface: "/workflows/demand-xyz"
+},
+      source_project_id: "project-1"
+});
     const screen = await renderInboxView(createInboxFetcher({ mineItem: item }));
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
@@ -645,27 +645,27 @@ describe("InboxView", () => {
             id: demandId,
             status: "completed",
             task_titles: ["分析服务器中的Claude Code配置合理性"],
-            title: "帮我分析一下当前服务器中的 claude code 配置是否合理",
-          },
+            title: "帮我分析一下当前服务器中的 claude code 配置是否合理"
+},
         ],
         primary_demand_id: demandId,
         project_id: "9a9418d6-f1cd-4ca3-94f6-83c16f0d7fb4",
-        project_name: "测试项目",
-      },
+        project_name: "测试项目"
+},
       // F3(§5.4.3): 服务端为 demand 关联决策下发的唯一权威落点。
       deep_link: {
         anchor: "approval-1",
         primary_surface: `/workflows/${demandId}`,
-        route: `/workflows/${demandId}`,
-      },
+        route: `/workflows/${demandId}`
+},
       item_type: "project_decision",
       source_project_name: "测试项目",
       source_task_id: undefined,
       source_type: "project_decision_request",
       summary:
         "项目「测试项目」· 需求「帮我分析一下当前服务器中的 claude code 配置是否合理」（含任务：分析服务器中的Claude Code配置合理性）已完成，请确认项目验收",
-      title: "验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理",
-    });
+      title: "验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理"
+});
     const screen = await renderInboxView(createInboxFetcher({ mineItem: acceptanceItem }));
 
     await expect
@@ -673,8 +673,8 @@ describe("InboxView", () => {
       .toBeVisible();
     await userEvent.click(
       screen.getByRole("button", {
-        name: "打开事项：验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理",
-      }),
+        name: "打开事项：验收 · 帮我分析一下当前服务器中的 claude code 配置是否合理"
+}),
     );
     await userEvent.click(screen.getByRole("button", { name: "同意" }));
 
@@ -709,12 +709,12 @@ describe("InboxView", () => {
       id: "inbox-item-2",
       source_id: "approval-2",
       summary: "第二条待批事项。",
-      title: "确认二号任务",
-    });
+      title: "确认二号任务"
+});
     const fetcher = createInboxFetcher({
       actionDelays: { "inbox-item-1": deferred.promise },
-      mineItems: [itemA, itemB],
-    });
+      mineItems: [itemA, itemB]
+});
     const screen = await renderInboxView(fetcher);
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
@@ -770,8 +770,8 @@ describe("InboxView", () => {
 
     expect(fetcher.requests.filter((request) => request.method === "POST")).toHaveLength(1);
     expect(JSON.parse(fetcher.requests.find((request) => request.method === "POST")?.body ?? "{}")).toMatchObject({
-      action: "approved",
-    });
+      action: "approved"
+});
     deferred.resolve();
   });
 });
@@ -810,16 +810,16 @@ describe("readInboxProgress (§6.1 闭环进度)", () => {
     expect(
       readInboxProgress(
         makeInboxItem({
-          progress: { step: 3, total: 4, label: "验收签署 待你" },
-        }),
+          progress: { step: 3, total: 4, label: "验收签署 待你" }
+}),
       ),
     ).toEqual({ step: 3, total: 4, label: "验收签署 待你" });
 
     expect(
       readInboxProgress(
         makeInboxItem({
-          context: { progress: { step: 4, total: 4, label: "结项确认 待你" } },
-        }),
+          context: { progress: { step: 4, total: 4, label: "结项确认 待你" } }
+}),
       ),
     ).toEqual({ step: 4, total: 4, label: "结项确认 待你" });
 

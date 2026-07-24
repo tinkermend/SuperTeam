@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { V3Button } from "@/components/superteam";
+import { Button } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
@@ -8,14 +8,14 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { ApiRequestError } from "@/lib/api/client";
 import {
   isHighDangerConfig,
   isStringConfig,
   updateSystemConfig,
-  type SystemConfigItem,
+  type SystemConfigItem
 } from "@/lib/api/system-config";
 import { displayDefaultValue, displayEffectiveValue, formatConfigValue, unitFor } from "./units";
 
@@ -28,7 +28,7 @@ type EditSystemConfigDialogProps = {
 export function EditSystemConfigDialog({
   apiBaseUrl,
   item,
-  onOpenChange,
+  onOpenChange
 }: EditSystemConfigDialogProps) {
   const queryClient = useQueryClient();
   const [inputValue, setInputValue] = useState("");
@@ -51,8 +51,8 @@ export function EditSystemConfigDialog({
     mutationFn: ({
       key,
       value,
-      stringValue,
-    }: {
+      stringValue
+}: {
       key: string;
       value?: number;
       stringValue?: string;
@@ -74,8 +74,8 @@ export function EditSystemConfigDialog({
             ? error.message
             : "保存配置失败",
       );
-    },
-  });
+    }
+});
 
   if (!item) return null;
 
@@ -166,17 +166,17 @@ export function EditSystemConfigDialog({
           </p>
           {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           <DialogFooter>
-            <V3Button
+            <Button
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={updateMutation.isPending}
             >
               取消
-            </V3Button>
-            <V3Button type="submit" disabled={updateMutation.isPending}>
+            </Button>
+            <Button type="submit" disabled={updateMutation.isPending}>
               {updateMutation.isPending ? "保存中…" : "保存"}
-            </V3Button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

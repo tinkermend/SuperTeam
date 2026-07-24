@@ -17,8 +17,8 @@ function criterion(
     judge_type: null,
     evidence_refs: [],
     task_summaries: [],
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 describe("CriteriaPanelView", () => {
@@ -31,15 +31,15 @@ describe("CriteriaPanelView", () => {
             statement: "接口在 500ms 内返回",
             verdict: "satisfied",
             judge_type: "executor",
-            verification_method: "automated_test",
-          }),
+            verification_method: "automated_test"
+}),
           criterion({
             criterion_id: "c2",
             statement: "文案由负责人确认",
             verdict: "unsatisfied",
             judge_type: "human",
-            severity: "non_blocking",
-          }),
+            severity: "non_blocking"
+}),
           criterion({ criterion_id: "c3", statement: "待判定项", verdict: null }),
         ]}
         demandStatus="completed"
@@ -73,8 +73,8 @@ describe("CriteriaPanelView", () => {
             verification_method: "automated_test",
             verdict: "not_applicable",
             judge_type: "executor",
-            evidence_refs: ["artifact:na-rationale"],
-          }),
+            evidence_refs: ["artifact:na-rationale"]
+}),
         ]}
         demandStatus="acceptance_pending"
         onFinalAccept={vi.fn()}
@@ -95,8 +95,8 @@ describe("CriteriaPanelView", () => {
         criteria={[
           criterion({
             criterion_id: "c1",
-            evidence_refs: ["attestation:abc-123", "artifact://report.md"],
-          }),
+            evidence_refs: ["attestation:abc-123", "artifact://report.md"]
+}),
         ]}
         demandStatus="completed"
       />,
@@ -123,8 +123,8 @@ describe("CriteriaPanelView", () => {
             criterion_id: "c3",
             verification_method: "automated_test",
             verdict: "satisfied",
-            judge_type: "executor",
-          }),
+            judge_type: "executor"
+}),
         ]}
         demandStatus="acceptance_pending"
         onFinalAccept={vi.fn()}
@@ -184,8 +184,8 @@ describe("CriteriaPanelView", () => {
     await userEvent.click(screen.getByTestId("final-acceptance-pass"));
 
     expect(onFinalAccept).toHaveBeenCalledWith("satisfied", "已核对产出", ["c1", "c2"], {
-      alsoCloseProject: false,
-    });
+      alsoCloseProject: false
+});
   });
 
   it("requires a reason before reject and submits unsatisfied for the gate", async () => {
@@ -216,8 +216,8 @@ describe("CriteriaPanelView", () => {
             satisfied_by: ["task-1"],
             task_summaries: [
               { task_id: "task-1", summary: "已交付并通过回归", deliverables: [] },
-            ],
-          }),
+            ]
+}),
         ]}
         demandStatus="acceptance_pending"
         onFinalAccept={vi.fn()}
@@ -243,17 +243,17 @@ describe("CriteriaPanelView", () => {
                     artifact_ref_id: "art-html",
                     title: "report.html",
                     content_type: "text/html",
-                    size_bytes: 462,
-                  },
+                    size_bytes: 462
+},
                   {
                     artifact_ref_id: "art-bin",
                     title: "data.bin",
-                    content_type: "application/octet-stream",
-                  },
-                ],
-              },
-            ],
-          }),
+                    content_type: "application/octet-stream"
+},
+                ]
+},
+            ]
+}),
         ]}
         demandStatus="acceptance_pending"
         onFinalAccept={vi.fn()}

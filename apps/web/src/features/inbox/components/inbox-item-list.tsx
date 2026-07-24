@@ -4,7 +4,7 @@ import {
   IconTile,
   StatusPill,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import type { InboxItem } from "@/lib/api/inbox";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-time";
@@ -23,28 +23,28 @@ export const riskLabel: Record<string, string> = {
   blocked: "阻断",
   high: "高风险",
   low: "低风险",
-  medium: "中风险",
+  medium: "中风险"
 };
 
-export const riskTone: Record<string, V3Tone> = {
+export const riskTone: Record<string, Tone> = {
   blocked: "danger",
   high: "danger",
   low: "mute",
-  medium: "warn",
+  medium: "warn"
 };
 
 const itemTypeLabel: Record<string, string> = {
   approval: "审批",
   project_decision: "项目决策",
   team_pending_delete: "团队待删",
-  digital_employee_run_recovery: "运行恢复",
+  digital_employee_run_recovery: "运行恢复"
 };
 
 const sourceTypeLabel: Record<string, string> = {
   approval_request: "审批请求",
   project_decision_request: "项目决策请求",
   team_pending_delete: "团队待删",
-  digital_employee_run: "数字员工运行",
+  digital_employee_run: "数字员工运行"
 };
 
 type InboxSection = { key: string; label: string; items: InboxItem[] };
@@ -111,13 +111,13 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
           const isHighRisk = item.risk_level === "blocked" || item.risk_level === "high";
           const isMediumRisk = item.risk_level === "medium";
           const accentShadow = isSelected
-            ? "shadow-[inset_3px_0_0_var(--v3-brand)]"
+            ? "shadow-[inset_3px_0_0_var(--brand)]"
             : isHighRisk
-              ? "shadow-[inset_3px_0_0_var(--v3-danger)]"
+              ? "shadow-[inset_3px_0_0_var(--danger)]"
               : isMediumRisk
-                ? "shadow-[inset_3px_0_0_var(--v3-warn)]"
-                : "shadow-[inset_3px_0_0_var(--v3-line-strong)]";
-          const iconTone: V3Tone = isHighRisk
+                ? "shadow-[inset_3px_0_0_var(--warn)]"
+                : "shadow-[inset_3px_0_0_var(--line-strong)]";
+          const iconTone: Tone = isHighRisk
             ? "danger"
             : item.item_type === "project_decision"
               ? "artifact"
@@ -138,10 +138,10 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
               aria-label={`打开事项：${item.title}`}
               aria-selected={isSelected}
               className={cn(
-                "flex cursor-pointer items-start gap-3 border-b border-v3-line px-4 py-3 transition-colors",
-                "hover:bg-v3-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-v3-brand/60",
+                "flex cursor-pointer items-start gap-3 border-b border-line px-4 py-3 transition-colors",
+                "hover:bg-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
                 accentShadow,
-                isSelected && "bg-v3-brand-soft",
+                isSelected && "bg-brand-soft",
               )}
               onClick={() => onSelect(item)}
               onKeyDown={(event) => {
@@ -158,8 +158,8 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span
                     className={cn(
-                      "text-left text-sm font-bold text-v3-ink",
-                      isSelected && "text-v3-brand-deep",
+                      "text-left text-sm font-bold text-ink",
+                      isSelected && "text-brand-deep",
                     )}
                   >
                     {item.title}
@@ -175,17 +175,17 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                   ) : null}
                 </div>
                 {item.summary ? (
-                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-v3-ink-2">
+                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-ink-2">
                     {item.summary}
                   </p>
                 ) : null}
                 {item.why ? (
-                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-v3-ink-2">
+                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-ink-2">
                     {item.why}
                   </p>
                 ) : null}
                 <InboxProgressBar progress={readInboxProgress(item)} />
-                <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-v3-ink-3">
+                <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-ink-3">
                   <StatusPill
                     tone={item.item_type === "approval" ? "info" : "artifact"}
                     showDot={false}
@@ -201,7 +201,7 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                     {formatRelativeTime(item.last_activity_at)}
                   </span>
                   <Link
-                    className="inline-flex w-fit items-center gap-1 font-semibold text-v3-brand-deep hover:text-v3-brand"
+                    className="inline-flex w-fit items-center gap-1 font-semibold text-brand-deep hover:text-brand"
                     onClick={(event) => event.stopPropagation()}
                     to={resolveInboxHref(item)}
                   >
@@ -216,24 +216,24 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
 
   return (
     <WorkSurface className="flex min-h-0 flex-col xl:h-full">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-v3-line bg-v3-card-soft px-5 py-3.5">
-        <span className="text-sm font-bold text-v3-ink">待处理事项</span>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-card-soft px-5 py-3.5">
+        <span className="text-sm font-bold text-ink">待处理事项</span>
         <div className="flex items-center gap-2">
           {highRiskCount > 0 ? (
             <StatusPill tone="danger" showDot={false} className="px-2 py-0.5 text-[11px]">
               {highRiskCount} 高风险
             </StatusPill>
           ) : null}
-          <span className="font-mono text-xs text-v3-ink-3">{items.length} 项 · 按类型分组</span>
+          <span className="font-mono text-xs text-ink-3">{items.length} 项 · 按类型分组</span>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {sections.map((section) => (
           <section key={section.key}>
             {/* §6.1 领域分组表头(计划确认/执行放行/阶段放行/验收签署/结项确认/异常处理);组内保持上游关注度排序。 */}
-            <div className="flex items-center justify-between gap-2 border-b border-v3-line bg-v3-card-soft/80 px-4 py-1.5 text-[11px] font-bold text-v3-ink-2">
+            <div className="flex items-center justify-between gap-2 border-b border-line bg-card-soft/80 px-4 py-1.5 text-[11px] font-bold text-ink-2">
               <span>{section.label}</span>
-              <span className="font-mono text-v3-ink-3">{section.items.length}</span>
+              <span className="font-mono text-ink-3">{section.items.length}</span>
             </div>
             {section.items.map(renderRow)}
           </section>
@@ -279,13 +279,13 @@ export function InboxProgressBar({ progress }: { progress: InboxProgress | null 
   const ratio = Math.max(0, Math.min(1, progress.step / progress.total));
   return (
     <div className="mt-1.5 grid gap-1" data-testid="inbox-progress-bar">
-      <div className="h-1 overflow-hidden rounded-full bg-v3-line">
+      <div className="h-1 overflow-hidden rounded-full bg-line">
         <div
-          className="h-full rounded-full bg-v3-brand transition-[width]"
+          className="h-full rounded-full bg-brand transition-[width]"
           style={{ width: `${Math.round(ratio * 100)}%` }}
         />
       </div>
-      <p className="line-clamp-1 text-[11px] leading-4 text-v3-ink-3">{progress.label}</p>
+      <p className="line-clamp-1 text-[11px] leading-4 text-ink-3">{progress.label}</p>
     </div>
   );
 }
@@ -332,8 +332,8 @@ export function readDemandRefs(item: InboxItem): InboxDemandRef[] {
       {
         id: demandId,
         title: demandTitle ?? demandId!,
-        taskTitles: [],
-      },
+        taskTitles: []
+},
     ];
   }
   return [];

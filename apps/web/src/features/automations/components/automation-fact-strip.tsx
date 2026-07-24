@@ -2,39 +2,39 @@ import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
-  UserCheck,
+  UserCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { V3Tone } from "@/components/superteam";
+import type { Tone } from "@/components/superteam";
 
-const accentBar: Record<V3Tone, string> = {
-  brand: "bg-v3-brand",
-  ok: "bg-v3-ok",
-  warn: "bg-v3-warn",
-  danger: "bg-v3-danger",
-  info: "bg-v3-info",
-  mute: "bg-v3-mute",
-  artifact: "bg-v3-artifact",
+const accentBar: Record<Tone, string> = {
+  brand: "bg-brand",
+  ok: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  info: "bg-info",
+  mute: "bg-mute",
+  artifact: "bg-artifact"
 };
 
-const softBg: Record<V3Tone, string> = {
-  brand: "bg-v3-brand-soft",
-  ok: "bg-v3-ok-soft",
-  warn: "bg-v3-warn-soft",
-  danger: "bg-v3-danger-soft",
-  info: "bg-v3-info-soft",
-  mute: "bg-v3-mute-soft",
-  artifact: "bg-v3-artifact-soft",
+const softBg: Record<Tone, string> = {
+  brand: "bg-brand-soft",
+  ok: "bg-ok-soft",
+  warn: "bg-warn-soft",
+  danger: "bg-danger-soft",
+  info: "bg-info-soft",
+  mute: "bg-mute-soft",
+  artifact: "bg-artifact-soft"
 };
 
-const numText: Record<V3Tone, string> = {
-  brand: "text-v3-brand-deep",
-  ok: "text-v3-ok-text",
-  warn: "text-v3-warn-text",
-  danger: "text-v3-danger-text",
-  info: "text-v3-info-text",
-  mute: "text-v3-mute-text",
-  artifact: "text-v3-artifact-text",
+const numText: Record<Tone, string> = {
+  brand: "text-brand-deep",
+  ok: "text-ok-text",
+  warn: "text-warn-text",
+  danger: "text-danger-text",
+  info: "text-info-text",
+  mute: "text-mute-text",
+  artifact: "text-artifact-text"
 };
 
 export type AutomationFactStripProps = {
@@ -48,33 +48,33 @@ export function AutomationFactStrip({
   enabledCount,
   dueSoonCount,
   attentionCount,
-  pendingDecisionCount,
+  pendingDecisionCount
 }: AutomationFactStripProps) {
   const items = [
     {
       icon: CheckCircle2,
       label: "启用中",
       value: enabledCount,
-      tone: (enabledCount > 0 ? "ok" : "mute") as V3Tone,
-    },
+      tone: (enabledCount > 0 ? "ok" : "mute") as Tone
+},
     {
       icon: CalendarClock,
       label: "72h 内待触发",
       value: dueSoonCount,
-      tone: (dueSoonCount > 0 ? "info" : "mute") as V3Tone,
-    },
+      tone: (dueSoonCount > 0 ? "info" : "mute") as Tone
+},
     {
       icon: AlertTriangle,
       label: "需关注",
       value: attentionCount,
-      tone: (attentionCount > 0 ? "warn" : "mute") as V3Tone,
-    },
+      tone: (attentionCount > 0 ? "warn" : "mute") as Tone
+},
     {
       icon: UserCheck,
       label: "待你处理",
       value: pendingDecisionCount,
-      tone: (pendingDecisionCount > 0 ? "warn" : "mute") as V3Tone,
-    },
+      tone: (pendingDecisionCount > 0 ? "warn" : "mute") as Tone
+},
   ];
 
   return (
@@ -88,7 +88,7 @@ export function AutomationFactStrip({
         return (
           <div
             key={item.label}
-            className="relative flex items-center gap-3 overflow-hidden rounded-[14px] border border-v3-line bg-v3-card px-3.5 py-3 shadow-sm"
+            className="relative flex items-center gap-3 overflow-hidden rounded-[14px] border border-line bg-card px-3.5 py-3 shadow-sm"
           >
             <span
               aria-hidden
@@ -111,7 +111,7 @@ export function AutomationFactStrip({
               >
                 {item.value}
               </dd>
-              <dt className="mt-1 text-[11.5px] font-medium text-v3-ink-3">{item.label}</dt>
+              <dt className="mt-1 text-[11.5px] font-medium text-ink-3">{item.label}</dt>
             </div>
           </div>
         );

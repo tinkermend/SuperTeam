@@ -30,116 +30,116 @@
   --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--v3-line-strong);
+  --sidebar-border: var(--line-strong);
   --sidebar-ring: var(--ring);
 
-  /* v3 Soft-Flat design tokens */
-  --v3-bg: #f8fafc;
-  --v3-shell-bg: #f6f8fb;
-  --v3-shell-background:
+  /* Soft-Flat design tokens */
+  --background: #f8fafc;
+  --shell-bg: #f6f8fb;
+  --shell-background:
     radial-gradient(circle at 18% 14%, rgba(47, 95, 255, 0.14), transparent 28%),
     radial-gradient(circle at 88% 12%, rgba(21, 160, 107, 0.10), transparent 30%),
     linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
-  --v3-shell-grid: rgba(47, 95, 255, 0.045);
-  --v3-shell-glass: #e8eef6;
-  --v3-shell-glass-strong: #fbfcff;
-  --v3-shell-glass-border: rgba(126, 143, 172, 0.20);
-  --v3-shell-control: rgba(255, 255, 255, 0.68);
-  --v3-shell-control-hover: rgba(248, 250, 252, 0.92);
-  --v3-shell-control-active: rgba(47, 95, 255, 0.1);
-  --v3-shell-menu-hover: rgba(255, 255, 255, 0.42);
-  --v3-shell-control-border: rgba(126, 143, 172, 0.20);
-  --v3-shell-search: rgba(255, 255, 255, 0.82);
-  --v3-shell-search-border: rgba(47, 95, 255, 0.14);
-  --v3-shell-search-shadow: 0 14px 34px rgba(39, 54, 75, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.86);
-  --v3-shell-glass-blur: 22px;
-  --v3-shell-glass-saturate: 1.35;
-  --v3-card: #ffffff;
-  --v3-card-soft: #f7f8fa;
-  --v3-card-inner: #fafbfc;
-  --v3-ink: #0b0d12;
-  --v3-ink-2: #4d586b;
-  --v3-ink-3: #6d7580;
-  --v3-line: #eef1f4;
-  --v3-line-strong: #dfe4ea;
-  --v3-brand: #2f5fff;
-  --v3-brand-deep: #2348e0;
-  --v3-brand-soft: #e9efff;
-  --v3-brand-grad: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
-  --v3-signature-surface: #f8faff;
-  --v3-signature-wash: linear-gradient(135deg, rgba(47, 95, 255, 0.08), rgba(248, 250, 255, 0) 46%);
-  --v3-signature-grid: rgba(47, 95, 255, 0.08);
-  --v3-signature-route: rgba(47, 95, 255, 0.22);
-  --v3-signature-node: rgba(47, 95, 255, 0.42);
-  --v3-signature-border: rgba(47, 95, 255, 0.20);
-  --v3-signature-ink: #0b0d12;
-  --v3-signature-ink-2: #5b667a;
+  --shell-grid: rgba(47, 95, 255, 0.045);
+  --shell-glass: #e8eef6;
+  --shell-glass-strong: #fbfcff;
+  --shell-glass-border: rgba(126, 143, 172, 0.20);
+  --shell-control: rgba(255, 255, 255, 0.68);
+  --shell-control-hover: rgba(248, 250, 252, 0.92);
+  --shell-control-active: rgba(47, 95, 255, 0.1);
+  --shell-menu-hover: rgba(255, 255, 255, 0.42);
+  --shell-control-border: rgba(126, 143, 172, 0.20);
+  --shell-search: rgba(255, 255, 255, 0.82);
+  --shell-search-border: rgba(47, 95, 255, 0.14);
+  --shell-search-shadow: 0 14px 34px rgba(39, 54, 75, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  --shell-glass-blur: 22px;
+  --shell-glass-saturate: 1.35;
+  --card: #ffffff;
+  --card-soft: #f7f8fa;
+  --card-inner: #fafbfc;
+  --ink: #0b0d12;
+  --ink-2: #4d586b;
+  --ink-3: #6d7580;
+  --line: #eef1f4;
+  --line-strong: #dfe4ea;
+  --brand: #2f5fff;
+  --brand-deep: #2348e0;
+  --brand-soft: #e9efff;
+  --brand-grad: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
+  --signature-surface: #f8faff;
+  --signature-wash: linear-gradient(135deg, rgba(47, 95, 255, 0.08), rgba(248, 250, 255, 0) 46%);
+  --signature-grid: rgba(47, 95, 255, 0.08);
+  --signature-route: rgba(47, 95, 255, 0.22);
+  --signature-node: rgba(47, 95, 255, 0.42);
+  --signature-border: rgba(47, 95, 255, 0.20);
+  --signature-ink: #0b0d12;
+  --signature-ink-2: #5b667a;
   /* 语义色派生公式（v3.1）：solid = oklch(0.60 0.15 H)、text = oklch(0.44 0.125 H)、
      soft = oklch(0.962 0.028 H)；danger 为唯一饱和度例外（C=0.175）。
      warn 例外：H=40（橙红，不偏棕），C=0.16，与蓝主色协调。
      text 层专用于 soft 底上的文字（≥4.5:1），solid 用于图标、圆点和 accent bar。 */
-  --v3-info: #0094b7;
-  --v3-info-text: #00617d;
-  --v3-info-soft: #def8fe;
-  --v3-ok: #009a60;
-  --v3-ok-text: #006639;
-  --v3-ok-soft: #e3f9ec;
-  --v3-warn: #cc572a;
-  --v3-warn-text: #893411;
-  --v3-warn-soft: #ffede5;
-  --v3-danger: #d14647;
-  --v3-danger-text: #8a2f2d;
-  --v3-danger-soft: #ffece9;
-  --v3-artifact: #9565c7;
-  --v3-artifact-text: #633d89;
-  --v3-artifact-soft: #f7eeff;
-  --v3-mute: #64748b;
-  --v3-mute-text: #4d586b;
-  --v3-mute-soft: #eef1f4;
-  --v3-r-card: 1.375rem;
-  --v3-r-inner: 0.875rem;
-  --v3-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 30px rgba(16, 24, 40, 0.055);
-  --v3-shadow-pop: 0 10px 44px rgba(16, 24, 40, 0.12);
+  --info: #0094b7;
+  --info-text: #00617d;
+  --info-soft: #def8fe;
+  --ok: #009a60;
+  --ok-text: #006639;
+  --ok-soft: #e3f9ec;
+  --warn: #cc572a;
+  --warn-text: #893411;
+  --warn-soft: #ffede5;
+  --danger: #d14647;
+  --danger-text: #8a2f2d;
+  --danger-soft: #ffece9;
+  --artifact: #9565c7;
+  --artifact-text: #633d89;
+  --artifact-soft: #f7eeff;
+  --mute: #64748b;
+  --mute-text: #4d586b;
+  --mute-soft: #eef1f4;
+  --token-radius-card: 1.375rem;
+  --token-radius-inner: 0.875rem;
+  --token-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 30px rgba(16, 24, 40, 0.055);
+  --token-shadow-pop: 0 10px 44px rgba(16, 24, 40, 0.12);
   /* 沉浸极光玻璃（受控特例风格，仅用于 Tier A 入口/创建画布，禁止用于密集数据/审计页）。
      适用与禁用边界见 DESIGN.md「沉浸极光玻璃（受控特例）」。 */
-  --v3-aurora-bg-color: #eaf2ff;
-  --v3-aurora-bg:
+  --aurora-bg-color: #eaf2ff;
+  --aurora-bg:
     radial-gradient(680px 520px at 8% 6%, rgba(95, 214, 200, 0.28), transparent 60%),
     radial-gradient(620px 520px at 92% 16%, rgba(167, 139, 250, 0.26), transparent 60%),
     radial-gradient(760px 600px at 72% 98%, rgba(99, 140, 255, 0.24), transparent 62%),
     linear-gradient(160deg, #eafcfb 0%, #f1edff 50%, #eaf2ff 100%);
-  --v3-aurora-ink: #0f1b3d;
-  --v3-aurora-ink-2: #4a5a82;
-  --v3-aurora-ink-3: #8a98b8;
-  --v3-aurora-title: linear-gradient(180deg, #16235a, #2f5fff);
-  --v3-aurora-glass: rgba(255, 255, 255, 0.55);
-  --v3-aurora-glass-border: rgba(255, 255, 255, 0.8);
-  --v3-aurora-panel: rgba(255, 255, 255, 0.7);
-  --v3-aurora-panel-border: rgba(47, 95, 255, 0.18);
-  --v3-aurora-chip: rgba(255, 255, 255, 0.66);
-  --v3-aurora-chip-border: rgba(255, 255, 255, 0.9);
-  --v3-aurora-field: rgba(255, 255, 255, 0.9);
-  --v3-aurora-field-border: rgba(15, 27, 61, 0.12);
-  --v3-aurora-sidebar: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.18) 100%);
-  --v3-aurora-sidebar-border: rgba(255, 255, 255, 0.55);
-  --v3-aurora-accent-soft: rgba(47, 95, 255, 0.1);
-  --v3-aurora-accent-line: rgba(47, 95, 255, 0.2);
-  --v3-aurora-hairline: rgba(15, 27, 61, 0.08);
-  --v3-aurora-actions-line: rgba(255, 255, 255, 0.7);
-  --v3-aurora-actions-bg: rgba(255, 255, 255, 0.4);
-  --v3-aurora-send: linear-gradient(180deg, #4f8cff, #2f5fff);
-  --v3-aurora-req: #ff4d5e;
-  --v3-aurora-r-card: 24px;
-  --v3-aurora-r-inner: 16px;
+  --aurora-ink: #0f1b3d;
+  --aurora-ink-2: #4a5a82;
+  --aurora-ink-3: #8a98b8;
+  --aurora-title: linear-gradient(180deg, #16235a, #2f5fff);
+  --aurora-glass: rgba(255, 255, 255, 0.55);
+  --aurora-glass-border: rgba(255, 255, 255, 0.8);
+  --aurora-panel: rgba(255, 255, 255, 0.7);
+  --aurora-panel-border: rgba(47, 95, 255, 0.18);
+  --aurora-chip: rgba(255, 255, 255, 0.66);
+  --aurora-chip-border: rgba(255, 255, 255, 0.9);
+  --aurora-field: rgba(255, 255, 255, 0.9);
+  --aurora-field-border: rgba(15, 27, 61, 0.12);
+  --aurora-sidebar: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.18) 100%);
+  --aurora-sidebar-border: rgba(255, 255, 255, 0.55);
+  --aurora-accent-soft: rgba(47, 95, 255, 0.1);
+  --aurora-accent-line: rgba(47, 95, 255, 0.2);
+  --aurora-hairline: rgba(15, 27, 61, 0.08);
+  --aurora-actions-line: rgba(255, 255, 255, 0.7);
+  --aurora-actions-bg: rgba(255, 255, 255, 0.4);
+  --aurora-send: linear-gradient(180deg, #4f8cff, #2f5fff);
+  --aurora-req: #ff4d5e;
+  --aurora-r-card: 24px;
+  --aurora-r-inner: 16px;
 
   /* v3 布局宪法 token：页面宽度档位 / 主从右栏档位 / 指标卡宽度界
      （见 docs/design-system/layout-density.md「宽度档位」；浅/深色不区分） */
-  --v3-layout-contained: 80rem;
-  --v3-layout-wide: 105rem;
-  --v3-layout-rail: 21.25rem;
-  --v3-layout-rail-lg: 26.25rem;
-  --v3-metric-min: 13rem;
-  --v3-metric-max: 21rem;
+  --layout-contained: 80rem;
+  --layout-wide: 105rem;
+  --layout-rail: 21.25rem;
+  --layout-rail-lg: 26.25rem;
+  --metric-min: 13rem;
+  --metric-max: 21rem;
 }
 
 .dark {
@@ -168,98 +168,98 @@
   --chart-5: #bf9be8;
 
   /* v3 Soft-Flat design tokens: dark */
-  --v3-bg: #0d1014;
-  --v3-shell-bg: #0d1014;
-  --v3-shell-background:
+  --background: #0d1014;
+  --shell-bg: #0d1014;
+  --shell-background:
     radial-gradient(circle at 18% 14%, rgba(91, 139, 255, 0.12), transparent 30%),
     radial-gradient(circle at 88% 12%, rgba(52, 211, 153, 0.08), transparent 32%),
     linear-gradient(180deg, #0d1014 0%, #111722 100%);
-  --v3-shell-grid: rgba(124, 150, 255, 0.055);
-  --v3-shell-glass: rgba(23, 27, 34, 0.74);
-  --v3-shell-glass-strong: rgba(23, 27, 34, 0.90);
-  --v3-shell-glass-border: rgba(255, 255, 255, 0.08);
-  --v3-shell-control: rgba(23, 27, 34, 0.52);
-  --v3-shell-control-hover: rgba(32, 38, 48, 0.72);
-  --v3-shell-control-active: rgba(91, 139, 255, 0.18);
-  --v3-shell-menu-hover: rgba(255, 255, 255, 0.07);
-  --v3-shell-control-border: rgba(255, 255, 255, 0.10);
-  --v3-shell-search: rgba(23, 27, 34, 0.86);
-  --v3-shell-search-border: rgba(124, 150, 255, 0.18);
-  --v3-shell-search-shadow: 0 14px 34px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --v3-shell-glass-blur: 22px;
-  --v3-shell-glass-saturate: 1.24;
-  --v3-card: #171b22;
-  --v3-card-soft: #1c212a;
-  --v3-card-inner: #1a1f27;
-  --v3-ink: #f3f5f8;
-  --v3-ink-2: #9aa6b4;
-  --v3-ink-3: #8b95a3;
-  --v3-line: #262c35;
-  --v3-line-strong: #333b45;
-  --v3-brand: #5b8bff;
-  --v3-brand-deep: #93b4ff;
-  --v3-brand-soft: rgba(91, 139, 255, 0.16);
-  --v3-brand-grad: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
-  --v3-signature-surface: #141a23;
-  --v3-signature-wash: linear-gradient(135deg, rgba(91, 139, 255, 0.14), rgba(20, 26, 35, 0) 48%);
-  --v3-signature-grid: rgba(124, 150, 255, 0.10);
-  --v3-signature-route: rgba(124, 150, 255, 0.26);
-  --v3-signature-node: rgba(124, 150, 255, 0.46);
-  --v3-signature-border: rgba(124, 150, 255, 0.24);
-  --v3-signature-ink: #f3f5f8;
-  --v3-signature-ink-2: rgba(214, 222, 244, 0.62);
+  --shell-grid: rgba(124, 150, 255, 0.055);
+  --shell-glass: rgba(23, 27, 34, 0.74);
+  --shell-glass-strong: rgba(23, 27, 34, 0.90);
+  --shell-glass-border: rgba(255, 255, 255, 0.08);
+  --shell-control: rgba(23, 27, 34, 0.52);
+  --shell-control-hover: rgba(32, 38, 48, 0.72);
+  --shell-control-active: rgba(91, 139, 255, 0.18);
+  --shell-menu-hover: rgba(255, 255, 255, 0.07);
+  --shell-control-border: rgba(255, 255, 255, 0.10);
+  --shell-search: rgba(23, 27, 34, 0.86);
+  --shell-search-border: rgba(124, 150, 255, 0.18);
+  --shell-search-shadow: 0 14px 34px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --shell-glass-blur: 22px;
+  --shell-glass-saturate: 1.24;
+  --card: #171b22;
+  --card-soft: #1c212a;
+  --card-inner: #1a1f27;
+  --ink: #f3f5f8;
+  --ink-2: #9aa6b4;
+  --ink-3: #8b95a3;
+  --line: #262c35;
+  --line-strong: #333b45;
+  --brand: #5b8bff;
+  --brand-deep: #93b4ff;
+  --brand-soft: rgba(91, 139, 255, 0.16);
+  --brand-grad: linear-gradient(140deg, #5b8bff 0%, #2f5fff 58%, #2348e0 100%);
+  --signature-surface: #141a23;
+  --signature-wash: linear-gradient(135deg, rgba(91, 139, 255, 0.14), rgba(20, 26, 35, 0) 48%);
+  --signature-grid: rgba(124, 150, 255, 0.10);
+  --signature-route: rgba(124, 150, 255, 0.26);
+  --signature-node: rgba(124, 150, 255, 0.46);
+  --signature-border: rgba(124, 150, 255, 0.24);
+  --signature-ink: #f3f5f8;
+  --signature-ink-2: rgba(214, 222, 244, 0.62);
   /* 深色端派生公式（v3.1）：solid = oklch(0.75 0.115 H)、text = oklch(0.80 0.10 H)、
      soft = solid 16% 透明叠加；与浅色端同色相，不再漂移。 */
-  --v3-info: #40c0db;
-  --v3-info-text: #69cee6;
-  --v3-info-soft: rgba(64, 192, 219, 0.16);
-  --v3-ok: #65c495;
-  --v3-ok-text: #82d2a8;
-  --v3-ok-soft: rgba(101, 196, 149, 0.16);
-  --v3-warn: #ec9475;
-  --v3-warn-text: #f6a88d;
-  --v3-warn-soft: rgba(236, 148, 117, 0.16);
-  --v3-danger: #ee9089;
-  --v3-danger-text: #f8a49d;
-  --v3-danger-soft: rgba(238, 144, 137, 0.16);
-  --v3-artifact: #bf9be8;
-  --v3-artifact-text: #cdaef2;
-  --v3-artifact-soft: rgba(191, 155, 232, 0.16);
-  --v3-mute: #94a3b8;
-  --v3-mute-text: #aab4c2;
-  --v3-mute-soft: rgba(148, 163, 184, 0.14);
-  --v3-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px rgba(0, 0, 0, 0.4);
-  --v3-shadow-pop: 0 14px 48px rgba(0, 0, 0, 0.5);
+  --info: #40c0db;
+  --info-text: #69cee6;
+  --info-soft: rgba(64, 192, 219, 0.16);
+  --ok: #65c495;
+  --ok-text: #82d2a8;
+  --ok-soft: rgba(101, 196, 149, 0.16);
+  --warn: #ec9475;
+  --warn-text: #f6a88d;
+  --warn-soft: rgba(236, 148, 117, 0.16);
+  --danger: #ee9089;
+  --danger-text: #f8a49d;
+  --danger-soft: rgba(238, 144, 137, 0.16);
+  --artifact: #bf9be8;
+  --artifact-text: #cdaef2;
+  --artifact-soft: rgba(191, 155, 232, 0.16);
+  --mute: #94a3b8;
+  --mute-text: #aab4c2;
+  --mute-soft: rgba(148, 163, 184, 0.14);
+  --token-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px rgba(0, 0, 0, 0.4);
+  --token-shadow-pop: 0 14px 48px rgba(0, 0, 0, 0.5);
   /* 沉浸极光玻璃 · 深色端（受控特例，见 DESIGN.md）。 */
-  --v3-aurora-bg-color: #0b1426;
-  --v3-aurora-bg:
+  --aurora-bg-color: #0b1426;
+  --aurora-bg:
     radial-gradient(680px 520px at 8% 6%, rgba(95, 214, 200, 0.16), transparent 60%),
     radial-gradient(620px 520px at 92% 16%, rgba(167, 139, 250, 0.16), transparent 60%),
     radial-gradient(760px 600px at 72% 98%, rgba(99, 140, 255, 0.14), transparent 62%),
     linear-gradient(160deg, #0a1120 0%, #121026 50%, #0b1426 100%);
-  --v3-aurora-ink: #eaf0ff;
-  --v3-aurora-ink-2: #a9b6d6;
-  --v3-aurora-ink-3: #7c88a8;
-  --v3-aurora-title: linear-gradient(180deg, #cfe0ff, #6f9bff);
-  --v3-aurora-glass: rgba(22, 28, 44, 0.55);
-  --v3-aurora-glass-border: rgba(120, 150, 255, 0.16);
-  --v3-aurora-panel: rgba(18, 24, 40, 0.6);
-  --v3-aurora-panel-border: rgba(120, 150, 255, 0.2);
-  --v3-aurora-chip: rgba(24, 30, 46, 0.6);
-  --v3-aurora-chip-border: rgba(120, 150, 255, 0.14);
-  --v3-aurora-field: rgba(14, 19, 32, 0.85);
-  --v3-aurora-field-border: rgba(120, 150, 255, 0.2);
-  --v3-aurora-sidebar: linear-gradient(180deg, rgba(24, 30, 46, 0.55) 0%, rgba(18, 24, 40, 0.35) 100%);
-  --v3-aurora-sidebar-border: rgba(120, 150, 255, 0.16);
-  --v3-aurora-accent-soft: rgba(120, 150, 255, 0.14);
-  --v3-aurora-accent-line: rgba(120, 150, 255, 0.24);
-  --v3-aurora-hairline: rgba(255, 255, 255, 0.08);
-  --v3-aurora-actions-line: rgba(255, 255, 255, 0.08);
-  --v3-aurora-actions-bg: rgba(255, 255, 255, 0.03);
-  --v3-aurora-send: linear-gradient(180deg, #4f8cff, #2f5fff);
-  --v3-aurora-req: #ff6b78;
-  --v3-aurora-r-card: 24px;
-  --v3-aurora-r-inner: 16px;
+  --aurora-ink: #eaf0ff;
+  --aurora-ink-2: #a9b6d6;
+  --aurora-ink-3: #7c88a8;
+  --aurora-title: linear-gradient(180deg, #cfe0ff, #6f9bff);
+  --aurora-glass: rgba(22, 28, 44, 0.55);
+  --aurora-glass-border: rgba(120, 150, 255, 0.16);
+  --aurora-panel: rgba(18, 24, 40, 0.6);
+  --aurora-panel-border: rgba(120, 150, 255, 0.2);
+  --aurora-chip: rgba(24, 30, 46, 0.6);
+  --aurora-chip-border: rgba(120, 150, 255, 0.14);
+  --aurora-field: rgba(14, 19, 32, 0.85);
+  --aurora-field-border: rgba(120, 150, 255, 0.2);
+  --aurora-sidebar: linear-gradient(180deg, rgba(24, 30, 46, 0.55) 0%, rgba(18, 24, 40, 0.35) 100%);
+  --aurora-sidebar-border: rgba(120, 150, 255, 0.16);
+  --aurora-accent-soft: rgba(120, 150, 255, 0.14);
+  --aurora-accent-line: rgba(120, 150, 255, 0.24);
+  --aurora-hairline: rgba(255, 255, 255, 0.08);
+  --aurora-actions-line: rgba(255, 255, 255, 0.08);
+  --aurora-actions-bg: rgba(255, 255, 255, 0.03);
+  --aurora-send: linear-gradient(180deg, #4f8cff, #2f5fff);
+  --aurora-req: #ff6b78;
+  --aurora-r-card: 24px;
+  --aurora-r-inner: 16px;
 }
 
 @theme inline {
@@ -303,39 +303,39 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* v3 Soft-Flat Tailwind exposure */
-  --color-v3-bg: var(--v3-bg);
-  --color-v3-card: var(--v3-card);
-  --color-v3-card-soft: var(--v3-card-soft);
-  --color-v3-card-inner: var(--v3-card-inner);
-  --color-v3-ink: var(--v3-ink);
-  --color-v3-ink-2: var(--v3-ink-2);
-  --color-v3-ink-3: var(--v3-ink-3);
-  --color-v3-line: var(--v3-line);
-  --color-v3-line-strong: var(--v3-line-strong);
-  --color-v3-brand: var(--v3-brand);
-  --color-v3-brand-deep: var(--v3-brand-deep);
-  --color-v3-brand-soft: var(--v3-brand-soft);
-  --color-v3-info: var(--v3-info);
-  --color-v3-info-text: var(--v3-info-text);
-  --color-v3-info-soft: var(--v3-info-soft);
-  --color-v3-ok: var(--v3-ok);
-  --color-v3-ok-text: var(--v3-ok-text);
-  --color-v3-ok-soft: var(--v3-ok-soft);
-  --color-v3-warn: var(--v3-warn);
-  --color-v3-warn-text: var(--v3-warn-text);
-  --color-v3-warn-soft: var(--v3-warn-soft);
-  --color-v3-danger: var(--v3-danger);
-  --color-v3-danger-text: var(--v3-danger-text);
-  --color-v3-danger-soft: var(--v3-danger-soft);
-  --color-v3-artifact: var(--v3-artifact);
-  --color-v3-artifact-text: var(--v3-artifact-text);
-  --color-v3-artifact-soft: var(--v3-artifact-soft);
-  --color-v3-mute: var(--v3-mute);
-  --color-v3-mute-text: var(--v3-mute-text);
-  --color-v3-mute-soft: var(--v3-mute-soft);
-  --radius-v3-card: var(--v3-r-card);
-  --radius-v3-inner: var(--v3-r-inner);
-  --shadow-v3: var(--v3-shadow);
-  --shadow-v3-pop: var(--v3-shadow-pop);
+  /* Soft-Flat Tailwind exposure */
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-card-soft: var(--card-soft);
+  --color-card-inner: var(--card-inner);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-soft: var(--brand-soft);
+  --color-info: var(--info);
+  --color-info-text: var(--info-text);
+  --color-info-soft: var(--info-soft);
+  --color-ok: var(--ok);
+  --color-ok-text: var(--ok-text);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-text: var(--warn-text);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-soft: var(--danger-soft);
+  --color-artifact: var(--artifact);
+  --color-artifact-text: var(--artifact-text);
+  --color-artifact-soft: var(--artifact-soft);
+  --color-mute: var(--mute);
+  --color-mute-text: var(--mute-text);
+  --color-mute-soft: var(--mute-soft);
+  --radius-card: var(--token-radius-card);
+  --radius-inner: var(--token-radius-inner);
+  --shadow-card: var(--token-shadow-card);
+  --shadow-pop: var(--token-shadow-pop);
 }

@@ -10,8 +10,8 @@
 
 | 档位 | token / 上限 | 适用页面 |
 | --- | --- | --- |
-| `contained` | `--v3-layout-contained`（80rem ≈ 1280px） | 表单、设置、新建/编辑流程、字段有限的单对象详情 |
-| `wide` | `--v3-layout-wide`（105rem ≈ 1680px） | 主从工作台（队列+右栏）、密集表格页、运营详情 |
+| `contained` | `--layout-contained`（80rem ≈ 1280px） | 表单、设置、新建/编辑流程、字段有限的单对象详情 |
+| `wide` | `--layout-wide`（105rem ≈ 1680px） | 主从工作台（队列+右栏）、密集表格页、运营详情 |
 | `canvas` | 不设上限 | 图形/拓扑类画布；多面板驾驶舱型工作台（铺满必须靠面板数量/宽度随容器扩展，单面板密度仍有界，禁止拉伸单一内容） |
 
 - 全站页面已显式定档；`Main` 未传 `width` 时默认 `contained`（安全默认），工作台/画布页必须显式选 `wide`/`canvas`。
@@ -27,14 +27,14 @@
 
 - 必须用 `MasterDetailLayout`（`@/components/superteam`），禁止新增手写 `grid-cols-[minmax(0,1fr)_NNNpx]`。
 - **详情层按需渲染**：未选中对象时不传 `detail`，主列独占全宽；禁止常驻"请选择"空态占位栏。选中后，宽容器下详情作为 in-flow 右栏展开，窄容器下自动改为右侧 Sheet 抽屉（组件内置，关闭抽屉经 `onDetailDismiss` 清除选中态）。
-- 右栏只有两档：`rail="md"`（上限 `--v3-layout-rail` 340px，容器 `@4xl` 展开）、`rail="lg"`（上限 `--v3-layout-rail-lg` 420px，容器 `@5xl` 展开）。右栏列宽可压缩（`minmax` 下限 16/18rem），任何环境下不产生横向越界。
+- 右栏只有两档：`rail="md"`（上限 `--layout-rail` 340px，容器 `@4xl` 展开）、`rail="lg"`（上限 `--layout-rail-lg` 420px，容器 `@5xl` 展开）。右栏列宽可压缩（`minmax` 下限 16/18rem），任何环境下不产生横向越界。
 - 右栏内的 sticky、间距等响应样式用与档位一致的 `@4xl/master-detail:` / `@5xl/master-detail:` 容器变体（Sheet 内这些变体不命中，自然失效）。
 - 页面级手写主从栅格已全部迁移至 `MasterDetailLayout`（右栏统一 340/420 两档）；新增页面禁止回退手写。
 
 ## 指标带（KPI 概览）
 
 - 必须用 `MetricGrid`（`@/components/superteam`），禁止新增手写 `sm:grid-cols-2 xl:grid-cols-4` 式指标栅格。
-- 卡片弹性填满整行、间距恒定（`gap` 12px）：空间不足压缩到 `--v3-metric-min`（208px）下限再换行；宽屏由卡片变宽吸收剩余空间，不放大间距、不留尾部空洞。指标带按「轻量指标带」定位应有 ≥3 项真实计数。
+- 卡片弹性填满整行、间距恒定（`gap` 12px）：空间不足压缩到 `--metric-min`（208px）下限再换行；宽屏由卡片变宽吸收剩余空间，不放大间距、不留尾部空洞。指标带按「轻量指标带」定位应有 ≥3 项真实计数。
 
 ## 字体与层级
 

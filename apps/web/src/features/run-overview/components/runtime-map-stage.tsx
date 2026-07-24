@@ -25,7 +25,7 @@ const floorShortLabel: Record<RuntimeOverviewFloorId, string> = {
   "floor-1": "1层",
   "floor-2": "2层",
   "floor-3": "3层",
-  lobby: "大厅",
+  lobby: "大厅"
 };
 
 export function RuntimeMapStage({ activeFloorId, lens, onSelectEmployee, onSelectFloor, overview, selectedEmployeeId }: RuntimeMapStageProps) {
@@ -83,24 +83,24 @@ export function RuntimeMapStage({ activeFloorId, lens, onSelectEmployee, onSelec
           style={{
             width: floor.layout.canvasWidth,
             height: floor.layout.canvasHeight,
-            transform: `scale(${scale})`,
-          }}
+            transform: `scale(${scale})`
+}}
         >
           <div
             data-runtime-map-scene={floor.floorId}
             className="absolute inset-0 z-0 overflow-hidden"
             style={{
               WebkitMaskImage: officeSceneVerticalFeather,
-              maskImage: officeSceneVerticalFeather,
-            }}
+              maskImage: officeSceneVerticalFeather
+}}
           >
             <div
               data-runtime-map-feather={floor.floorId}
               className="absolute inset-0"
               style={{
                 WebkitMaskImage: officeSceneHorizontalFeather,
-                maskImage: officeSceneHorizontalFeather,
-              }}
+                maskImage: officeSceneHorizontalFeather
+}}
             >
               <img
                 src={floor.layout.backgroundImageUrl}
@@ -112,8 +112,8 @@ export function RuntimeMapStage({ activeFloorId, lens, onSelectEmployee, onSelec
               <div
                 className="pointer-events-none absolute inset-0 z-[1]"
                 style={{
-                  background: "linear-gradient(180deg, rgba(246,248,251,0.018), rgba(232,238,246,0.028))",
-                }}
+                  background: "linear-gradient(180deg, rgba(246,248,251,0.018), rgba(232,238,246,0.028))"
+}}
               />
             </div>
           </div>
@@ -159,10 +159,10 @@ export function RuntimeMapStage({ activeFloorId, lens, onSelectEmployee, onSelec
               type="button"
               data-runtime-lens-portal={portal.targetFloorId}
               aria-label={`交接链路${portal.direction === "outgoing" ? "去往" : "来自"}${floorShortLabel[portal.targetFloorId]}，点击切换楼层`}
-              className={`absolute z-40 inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold shadow-v3 transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-v3-brand ${
+              className={`absolute z-40 inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold shadow-card transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand ${
                 portal.tone === "warning"
-                  ? "border-v3-warn/60 bg-v3-warn-soft text-v3-warn-text"
-                  : "border-v3-brand/50 bg-white/92 text-v3-brand-deep"
+                  ? "border-warn/60 bg-warn-soft text-warn-text"
+                  : "border-brand/50 bg-white/92 text-brand-deep"
               }`}
               style={{ left: portal.at.x + 26, top: portal.at.y - 90 - index * 4 }}
               onClick={() => onSelectFloor?.(portal.targetFloorId)}

@@ -3,11 +3,11 @@ import { render } from "vitest-browser-react";
 import { Route } from "./index";
 
 vi.mock("@/features/run-overview", () => ({
-  RunOverviewPage: () => <main>运行总览真实页面</main>,
+  RunOverviewPage: () => <main>运行总览真实页面</main>
 }));
 
 vi.mock("@/features/shared/unimplemented-page", () => ({
-  UnimplementedPage: () => <main>运行总览占位页面</main>,
+  UnimplementedPage: () => <main>运行总览占位页面</main>
 }));
 
 describe("RunOverviewRoute", () => {

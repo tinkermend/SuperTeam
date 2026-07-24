@@ -1,8 +1,8 @@
+import { Button } from '@/components/superteam';
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { UserSummary } from "@/lib/api";
 import { listUsers } from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UserIdentity } from "./user-identity";
 
@@ -25,7 +25,7 @@ export function UserSearchSelect({
   inputLabel,
   onSelect,
   placeholder = "搜索用户",
-  value,
+  value
 }: UserSearchSelectProps) {
   const [q, setQ] = useState("");
   const usersQuery = useQuery({
@@ -36,11 +36,11 @@ export function UserSearchSelect({
         limit: 20,
         offset: 0,
         q,
-        status: "active",
-      }),
+        status: "active"
+}),
     enabled: !disabled,
-    queryKey: ["superteam", "user-search-select", apiBaseUrl, q],
-  });
+    queryKey: ["superteam", "user-search-select", apiBaseUrl, q]
+});
   const excluded = new Set(excludedUserIds);
   const users = disabled ? [] : (usersQuery.data?.items ?? []).filter((user) => !excluded.has(user.id));
 

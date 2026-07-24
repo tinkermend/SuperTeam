@@ -13,8 +13,8 @@ describe("UserIdentity", () => {
           email: "zhoumin@example.com",
           id: "user-1",
           status: "active",
-          username: "zhoumin",
-        }}
+          username: "zhoumin"
+}}
       />,
     );
 
@@ -32,8 +32,8 @@ describe("UserIdentity", () => {
           display_name: "许越",
           id: "user-3",
           status: "active",
-          username: "xuyue",
-        }}
+          username: "xuyue"
+}}
       />,
     );
 
@@ -50,8 +50,8 @@ describe("UserIdentity", () => {
           display_name: "头像用户",
           id: "user-asset",
           status: "active",
-          username: "asset-user",
-        }}
+          username: "asset-user"
+}}
       />,
     );
 
@@ -70,8 +70,8 @@ describe("UserIdentity", () => {
           display_name: "默认头像用户",
           id: "user-dicebear",
           status: "active",
-          username: "dicebear-user",
-        }}
+          username: "dicebear-user"
+}}
       />,
     );
 
@@ -89,8 +89,8 @@ describe("UserIdentity", () => {
           email: null,
           id: "user-nullable",
           status: "active",
-          username: "nullable-user",
-        }}
+          username: "nullable-user"
+}}
       />,
     );
 
@@ -104,8 +104,8 @@ describe("UserIdentity", () => {
       getUserIdentityLabel({
         id: "user-2",
         status: "active",
-        username: "operator",
-      }),
+        username: "operator"
+}),
     ).toEqual({ primary: "operator", secondary: "user-2", initials: "O" });
   });
 

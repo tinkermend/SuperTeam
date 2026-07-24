@@ -4,7 +4,7 @@ import { render } from 'vitest-browser-react'
 import { SignIn } from './index'
 
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({ redirect: '/projects' }),
+  useSearch: () => ({ redirect: '/projects' })
 }))
 
 vi.mock('./components/user-auth-form', () => ({
@@ -12,13 +12,13 @@ vi.mock('./components/user-auth-form', () => ({
     <form aria-label='登录表单' data-redirect-to={redirectTo}>
       <button type='submit'>登录</button>
     </form>
-  ),
+  )
 }))
 
 vi.mock('../auth-layout', () => ({
   AuthLayout: ({ children }: { children: ReactNode }) => (
     <section data-testid='auth-layout'>{children}</section>
-  ),
+  )
 }))
 
 describe('SignIn', () => {
@@ -26,9 +26,9 @@ describe('SignIn', () => {
     const screen = await render(<SignIn />)
 
     await expect.element(screen.getByRole('heading', { name: '账号登录' })).toBeVisible()
-    const card = document.querySelector('[data-slot="v3-soft-card"]')
+    const card = document.querySelector('[data-slot="soft-card"]')
     expect(card).not.toBeNull()
-    expect(card?.getAttribute('class')).toContain('rounded-v3-card')
+    expect(card?.getAttribute('class')).toContain('rounded-card')
     await expect.element(screen.getByRole('form', { name: '登录表单' })).toHaveAttribute(
       'data-redirect-to',
       '/projects',

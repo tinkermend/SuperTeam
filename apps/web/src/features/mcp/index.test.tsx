@@ -9,34 +9,34 @@ import {
   deleteMcpServerDefinition,
   listMcpServerDefinitions,
   listMcpServerDependentSkills,
-  type McpServerDefinition,
+  type McpServerDefinition
 } from "@/lib/api/capabilities";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://control-plane.local",
+  resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 
 vi.mock("@/lib/api/capabilities", () => ({
   listMcpServerDefinitions: vi.fn(),
   createMcpServerDefinition: vi.fn(),
   deleteMcpServerDefinition: vi.fn(),
-  listMcpServerDependentSkills: vi.fn(),
+  listMcpServerDependentSkills: vi.fn()
 }));
 
 const githubDefinition = {
@@ -52,13 +52,13 @@ const githubDefinition = {
   optional_env_vars: [],
   tool_allowlist: [],
   risk_level: "medium",
-  status: "active",
+  status: "active"
 } satisfies McpServerDefinition;
 
 async function withClient(ui: ReactNode) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
+});
   return render(
     <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
   );
@@ -82,8 +82,8 @@ describe("MCP management page", () => {
     vi.mocked(listMcpServerDefinitions).mockResolvedValue([]);
     vi.mocked(createMcpServerDefinition).mockResolvedValue({
       ...githubDefinition,
-      id: "mcp-new",
-    } satisfies McpServerDefinition);
+      id: "mcp-new"
+} satisfies McpServerDefinition);
 
     const user = userEvent.setup();
     const screen = await withClient(<McpManagementPage />);
@@ -118,8 +118,8 @@ describe("MCP management page", () => {
           transport: "streamable_http",
           url: "https://api.githubcopilot.com/mcp/",
           auth_strategy: "none",
-          required_env_vars: ["GITHUB_TOKEN"],
-        }),
+          required_env_vars: ["GITHUB_TOKEN"]
+}),
       );
     });
 

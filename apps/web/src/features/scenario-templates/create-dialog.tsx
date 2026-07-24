@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { V3Button } from "@/components/superteam";
+import { Button } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { ApiRequestError } from "@/lib/api/client";
 import { createScenarioTemplate } from "@/lib/api/scenario-templates";
@@ -22,7 +22,7 @@ export const SCENARIO_TEMPLATE_SPEC_SKELETON = {
   exits: [{ deliverable: "outcome", label: "完成" }],
   constraints: [],
   collapse_rules: [],
-  default_acceptance_criteria: [{ statement: "工作按验收判据完成并留痕" }],
+  default_acceptance_criteria: [{ statement: "工作按验收判据完成并留痕" }]
 };
 
 const SPEC_SKELETON_TEXT = JSON.stringify(SCENARIO_TEMPLATE_SPEC_SKELETON, null, 2);
@@ -38,7 +38,7 @@ const EMPTY_FORM = {
   template_key: "",
   name: "",
   description: "",
-  specText: SPEC_SKELETON_TEXT,
+  specText: SPEC_SKELETON_TEXT
 };
 
 const inputClass = "h-10 w-full rounded-md border bg-background px-3 text-sm";
@@ -56,7 +56,7 @@ export function CreateScenarioTemplateDialog({
   apiBaseUrl,
   fetcher,
   open,
-  onOpenChange,
+  onOpenChange
 }: CreateScenarioTemplateDialogProps) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(EMPTY_FORM);
@@ -76,8 +76,8 @@ export function CreateScenarioTemplateDialog({
           template_key: form.template_key.trim(),
           name: form.name.trim(),
           description: form.description.trim(),
-          spec,
-        },
+          spec
+},
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["scenario-templates"] });
@@ -91,8 +91,8 @@ export function CreateScenarioTemplateDialog({
             ? error.message
             : "创建场景模板失败",
       );
-    },
-  });
+    }
+});
 
   return (
     <Dialog
@@ -178,12 +178,12 @@ export function CreateScenarioTemplateDialog({
           </div>
           {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           <DialogFooter>
-            <V3Button type="button" variant="ghost" onClick={resetAndClose}>
+            <Button type="button" variant="ghost" onClick={resetAndClose}>
               取消
-            </V3Button>
-            <V3Button type="submit" disabled={createMutation.isPending}>
+            </Button>
+            <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? "创建中…" : "创建"}
-            </V3Button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

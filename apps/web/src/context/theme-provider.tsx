@@ -27,7 +27,7 @@ const initialState: ThemeProviderState = {
   resolvedTheme: 'light',
   theme: DEFAULT_THEME,
   setTheme: () => null,
-  resetTheme: () => null,
+  resetTheme: () => null
 }
 
 const ThemeContext = createContext<ThemeProviderState>(initialState)
@@ -90,8 +90,8 @@ export function ThemeProvider({
     resolvedTheme,
     resetTheme,
     theme,
-    setTheme,
-  }
+    setTheme
+}
 
   return (
     <ThemeContext value={contextValue} {...props}>

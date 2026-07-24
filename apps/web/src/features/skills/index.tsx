@@ -16,34 +16,34 @@ import {
   UploadCloud,
   UserRoundCheck,
   Users,
-  type LucideIcon,
+  type LucideIcon
 } from "lucide-react";
 import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3Chip,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3ToolbarSearch,
+  Button,
+  Chip,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  ToolbarSearch,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
-  SheetTitle,
+  SheetTitle
 } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
@@ -69,14 +69,14 @@ type SkillMarketStatus = "installed" | "available" | "approval";
 type MetricDefinition = {
   icon: LucideIcon;
   label: string;
-  tone: V3Tone;
+  tone: Tone;
   value: number;
   loud?: boolean;
 };
 
 type StatusDisplay = {
   label: string;
-  tone: V3Tone;
+  tone: Tone;
   value: SkillMarketStatus;
 };
 
@@ -85,26 +85,26 @@ const iconMap: Record<string, LucideIcon> = {
   flask: FileText,
   "server-cog": ServerCog,
   "shield-check": ShieldCheck,
-  stethoscope: Stethoscope,
+  stethoscope: Stethoscope
 };
 
-const toneByColor: Record<string, V3Tone> = {
+const toneByColor: Record<string, Tone> = {
   blue: "info",
   cyan: "info",
   emerald: "ok",
   teal: "brand",
-  violet: "artifact",
+  violet: "artifact"
 };
 
 /** 左侧 accent bar 实色（按 tone）。 */
-const toneAccentBar: Record<V3Tone, string> = {
-  brand: "bg-v3-brand",
-  info: "bg-v3-info",
-  ok: "bg-v3-ok",
-  warn: "bg-v3-warn",
-  danger: "bg-v3-danger",
-  mute: "bg-v3-mute",
-  artifact: "bg-v3-artifact",
+const toneAccentBar: Record<Tone, string> = {
+  brand: "bg-brand",
+  info: "bg-info",
+  ok: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  mute: "bg-mute",
+  artifact: "bg-artifact"
 };
 
 export function SkillsPage() {
@@ -130,8 +130,8 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const apiOptions: ApiOpts = { baseUrl: apiBaseUrl, fetcher };
   const skills = useQuery({
     queryKey: ["skills", query],
-    queryFn: () => listSkills(apiOptions, { q: query }),
-  });
+    queryFn: () => listSkills(apiOptions, { q: query })
+});
   const deleteMutation = useMutation({
     mutationFn: (skillId: string) => deleteSkill(apiOptions, skillId),
     onSuccess: (_, skillId) => {
@@ -143,8 +143,8 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
     },
     onError: (error) => {
       setDeleteError(error instanceof Error ? error.message : "删除技能失败，请稍后重试。");
-    },
-  });
+    }
+});
 
   const skillRows = skills.data ?? [];
   const skillsError = skills.error instanceof Error ? skills.error.message : undefined;
@@ -174,12 +174,12 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-            <V3Button asChild className="h-11 self-start px-5">
+            <Button asChild className="h-11 self-start px-5">
               <Link to="/skills/upload">
                 <UploadCloud data-icon="inline-start" />
                 上传技能
               </Link>
-            </V3Button>
+            </Button>
           </div>
 
           {/* 顶部 pill 状态卡：左侧 accent bar + 图标 + 大数字 + 标签，紧凑横排 */}
@@ -223,10 +223,10 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             />
 
             {isInitialLoading ? (
-              <V3LoadingState label="加载技能数据…" />
+              <LoadingState label="加载技能数据…" />
             ) : isBlockingError ? (
               <div className="p-4">
-                <V3ErrorState
+                <ErrorState
                   title="技能数据加载失败"
                   description={skillsError ?? "请检查 Control Plane 技能接口和数据库迁移状态。"}
                 />
@@ -234,8 +234,8 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             ) : (
               <>
                 {skills.isError ? (
-                  <div className="border-b border-v3-line p-4">
-                    <V3ErrorState
+                  <div className="border-b border-line p-4">
+                    <ErrorState
                       title="技能数据加载失败"
                       description={skillsError ?? "请检查 Control Plane 技能接口和数据库迁移状态。"}
                     />
@@ -301,7 +301,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
                 : ""}
               归档文件将被清除，此操作不可撤销。
             </p>
-            {deleteError ? <p className="font-semibold text-v3-danger">{deleteError}</p> : null}
+            {deleteError ? <p className="font-semibold text-danger">{deleteError}</p> : null}
           </div>
         }
         confirmText="删除"
@@ -335,7 +335,7 @@ function SkillMarketPillStat({ metric }: { metric: MetricDefinition }) {
     <SoftCard
       className={cn(
         "relative flex items-center gap-3 overflow-hidden p-3.5",
-        metric.loud && "bg-gradient-to-b from-v3-warn-soft/50 to-v3-card",
+        metric.loud && "bg-gradient-to-b from-warn-soft/50 to-card",
       )}
     >
       <span aria-hidden className={cn("absolute inset-y-0 left-0 w-[3px]", toneAccentBar[metric.tone])} />
@@ -346,12 +346,12 @@ function SkillMarketPillStat({ metric }: { metric: MetricDefinition }) {
         <p
           className={cn(
             "text-[20px] font-extrabold leading-none tracking-tight tabular-nums",
-            metric.loud ? "text-v3-warn" : "text-v3-ink",
+            metric.loud ? "text-warn" : "text-ink",
           )}
         >
           {metric.value}
         </p>
-        <p className="mt-1 text-[11.5px] font-semibold text-v3-ink-3">{metric.label}</p>
+        <p className="mt-1 text-[11.5px] font-semibold text-ink-3">{metric.label}</p>
       </div>
     </SoftCard>
   );
@@ -368,14 +368,14 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
       className="min-w-0 overflow-hidden"
       role="region"
     >
-      <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line p-4 md:flex-row md:items-start md:justify-between">
+      <div className="flex min-w-0 flex-col gap-3 border-b border-line p-4 md:flex-row md:items-start md:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <SkillIcon skill={skill} size="sm" />
           <div className="min-w-0">
-            <h2 className="truncate text-base font-bold text-v3-ink">加载范围</h2>
-            <p className="mt-1 min-w-0 text-[13px] leading-5 text-v3-ink-2">
-              <span className="font-semibold text-v3-ink">{skill.name}</span>
-              <span className="px-2 text-v3-ink-3">·</span>
+            <h2 className="truncate text-base font-bold text-ink">加载范围</h2>
+            <p className="mt-1 min-w-0 text-[13px] leading-5 text-ink-2">
+              <span className="font-semibold text-ink">{skill.name}</span>
+              <span className="px-2 text-ink-3">·</span>
               <span className="font-mono">{skill.version}</span>
             </p>
           </div>
@@ -384,7 +384,7 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
       </div>
 
       {bindingCount === 0 ? (
-        <V3EmptyState
+        <EmptyState
           className="py-10"
           title="尚未加载到任何目标"
           description="通过“加载”把技能绑定到团队或数字员工;技能文件在下次任务派发时同步到运行环境。"
@@ -392,35 +392,35 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
       ) : (
         <div className="grid gap-3 p-4 md:grid-cols-2">
           <div>
-            <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-v3-ink-2">
-              <Users className="size-3.5 text-v3-ink-3" />团队（{skill.team_bindings.length}）
+            <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-ink-2">
+              <Users className="size-3.5 text-ink-3" />团队（{skill.team_bindings.length}）
             </p>
             {skill.team_bindings.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-v3-line-strong bg-v3-card-inner px-3 py-2 text-[12px] text-v3-ink-3">未绑定团队</p>
+              <p className="rounded-lg border border-dashed border-line-strong bg-card-inner px-3 py-2 text-[12px] text-ink-3">未绑定团队</p>
             ) : (
               <div className="space-y-1.5">
                 {skill.team_bindings.map((team) => (
-                  <div className="flex items-center gap-2 rounded-lg border border-v3-line bg-v3-card-inner px-3 py-1.5 text-[12px]" key={team.team_id}>
-                    <span className="font-semibold text-v3-ink">{team.team_name}</span>
-                    <span className="ml-auto font-mono text-[11px] text-v3-ink-3">{team.team_id}</span>
+                  <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={team.team_id}>
+                    <span className="font-semibold text-ink">{team.team_name}</span>
+                    <span className="ml-auto font-mono text-[11px] text-ink-3">{team.team_id}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
           <div>
-            <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-v3-ink-2">
-              <Bot className="size-3.5 text-v3-ink-3" />数字员工（{skill.agent_bindings.length}）
+            <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-ink-2">
+              <Bot className="size-3.5 text-ink-3" />数字员工（{skill.agent_bindings.length}）
             </p>
             {skill.agent_bindings.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-v3-line-strong bg-v3-card-inner px-3 py-2 text-[12px] text-v3-ink-3">未绑定数字员工</p>
+              <p className="rounded-lg border border-dashed border-line-strong bg-card-inner px-3 py-2 text-[12px] text-ink-3">未绑定数字员工</p>
             ) : (
               <div className="space-y-1.5">
                 {skill.agent_bindings.map((agent) => (
-                  <div className="flex items-center gap-2 rounded-lg border border-v3-line bg-v3-card-inner px-3 py-1.5 text-[12px]" key={agent.agent_id}>
-                    <span className="font-semibold text-v3-ink">{agent.agent_name}</span>
-                    {agent.team_name ? <span className="text-v3-ink-3">· {agent.team_name}</span> : null}
-                    <span className="ml-auto font-mono text-[11px] text-v3-ink-3">{agent.agent_id}</span>
+                  <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={agent.agent_id}>
+                    <span className="font-semibold text-ink">{agent.agent_name}</span>
+                    {agent.team_name ? <span className="text-ink-3">· {agent.team_name}</span> : null}
+                    <span className="ml-auto font-mono text-[11px] text-ink-3">{agent.agent_id}</span>
                   </div>
                 ))}
               </div>
@@ -437,7 +437,7 @@ function SkillDetailSheet({
   onDeleteSkill,
   onOpenChange,
   open,
-  skill,
+  skill
 }: {
   onDeleteSkill: (id: string) => void;
   onOpenChange: (open: boolean) => void;
@@ -453,107 +453,107 @@ function SkillDetailSheet({
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
       <SheetContent className="w-[92vw] gap-0 p-0 sm:w-[640px] sm:max-w-[640px]" side="right">
-        <SheetHeader className="flex-row items-center gap-3 border-b border-v3-line p-4 pr-12">
+        <SheetHeader className="flex-row items-center gap-3 border-b border-line p-4 pr-12">
           <SkillIcon skill={skill} size="sm" />
           <div className="min-w-0">
-            <SheetTitle className="truncate text-base font-bold text-v3-ink">{skill.name}</SheetTitle>
-            <SheetDescription className="mt-0.5 truncate font-mono text-[11px] text-v3-ink-3">
+            <SheetTitle className="truncate text-base font-bold text-ink">{skill.name}</SheetTitle>
+            <SheetDescription className="mt-0.5 truncate font-mono text-[11px] text-ink-3">
               {skill.version} · {skill.source}
             </SheetDescription>
           </div>
         </SheetHeader>
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
           <section>
-            <h3 className="mb-2.5 text-[11px] font-bold tracking-wide text-v3-ink-3 uppercase">基础信息</h3>
+            <h3 className="mb-2.5 text-[11px] font-bold tracking-wide text-ink-3 uppercase">基础信息</h3>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">风险等级</p>
+                <p className="text-[11px] font-semibold text-ink-3">风险等级</p>
                 <p className="mt-0.5"><StatusPill tone={risk.tone}>{risk.label}</StatusPill></p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">绑定状态</p>
+                <p className="text-[11px] font-semibold text-ink-3">绑定状态</p>
                 <p className="mt-0.5"><StatusPill tone={status.tone}>{status.label}</StatusPill></p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">版本</p>
-                <p className="mt-0.5 font-mono text-[13px] text-v3-ink">{skill.version}</p>
+                <p className="text-[11px] font-semibold text-ink-3">版本</p>
+                <p className="mt-0.5 font-mono text-[13px] text-ink">{skill.version}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">来源</p>
-                <p className="mt-0.5 truncate font-mono text-[13px] text-v3-ink">{skill.source}</p>
+                <p className="text-[11px] font-semibold text-ink-3">来源</p>
+                <p className="mt-0.5 truncate font-mono text-[13px] text-ink">{skill.source}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">团队绑定</p>
-                <p className="mt-0.5 text-[13px] font-semibold text-v3-ink">{skill.team_bindings.length} 个</p>
+                <p className="text-[11px] font-semibold text-ink-3">团队绑定</p>
+                <p className="mt-0.5 text-[13px] font-semibold text-ink">{skill.team_bindings.length} 个</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">数字员工绑定</p>
-                <p className="mt-0.5 text-[13px] font-semibold text-v3-ink">{skill.agent_bindings.length} 个</p>
+                <p className="text-[11px] font-semibold text-ink-3">数字员工绑定</p>
+                <p className="mt-0.5 text-[13px] font-semibold text-ink">{skill.agent_bindings.length} 个</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">运行依赖</p>
-                <p className="mt-0.5 text-[13px] font-semibold text-v3-ink">{depCount} 项</p>
+                <p className="text-[11px] font-semibold text-ink-3">运行依赖</p>
+                <p className="mt-0.5 text-[13px] font-semibold text-ink">{depCount} 项</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">创建人</p>
-                <p className="mt-0.5 text-[13px] text-v3-ink">{skill.created_by_name || "—"}</p>
+                <p className="text-[11px] font-semibold text-ink-3">创建人</p>
+                <p className="mt-0.5 text-[13px] text-ink">{skill.created_by_name || "—"}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-v3-ink-3">创建时间</p>
-                <p className="mt-0.5 font-mono text-[12px] text-v3-ink-2">{skill.created_at ?? "—"}</p>
+                <p className="text-[11px] font-semibold text-ink-3">创建时间</p>
+                <p className="mt-0.5 font-mono text-[12px] text-ink-2">{skill.created_at ?? "—"}</p>
               </div>
             </div>
           </section>
 
           <section>
-            <h3 className="mb-2.5 text-[11px] font-bold tracking-wide text-v3-ink-3 uppercase">运行依赖</h3>
+            <h3 className="mb-2.5 text-[11px] font-bold tracking-wide text-ink-3 uppercase">运行依赖</h3>
             {depCount === 0 ? (
-              <p className="text-[13px] text-v3-ink-3">无运行依赖</p>
+              <p className="text-[13px] text-ink-3">无运行依赖</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {depTools.map((tool) => (
-                  <span className="rounded-md bg-v3-info-soft px-2 py-1 font-mono text-[11px] font-semibold text-v3-info-text" key={`tool-${tool}`}>tool: {tool}</span>
+                  <span className="rounded-md bg-info-soft px-2 py-1 font-mono text-[11px] font-semibold text-info-text" key={`tool-${tool}`}>tool: {tool}</span>
                 ))}
                 {depEnv.map((env) => (
-                  <span className="rounded-md bg-v3-artifact-soft px-2 py-1 font-mono text-[11px] font-semibold text-v3-artifact-text" key={`env-${env}`}>env: {env}</span>
+                  <span className="rounded-md bg-artifact-soft px-2 py-1 font-mono text-[11px] font-semibold text-artifact-text" key={`env-${env}`}>env: {env}</span>
                 ))}
               </div>
             )}
           </section>
 
           <section>
-            <h3 className="mb-2.5 text-[11px] font-bold tracking-wide text-v3-ink-3 uppercase">绑定范围</h3>
+            <h3 className="mb-2.5 text-[11px] font-bold tracking-wide text-ink-3 uppercase">绑定范围</h3>
             <div className="space-y-3">
               <div>
-                <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-v3-ink-2">
-                  <Users className="size-3.5 text-v3-ink-3" />团队（{skill.team_bindings.length}）
+                <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-ink-2">
+                  <Users className="size-3.5 text-ink-3" />团队（{skill.team_bindings.length}）
                 </p>
                 {skill.team_bindings.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-v3-line-strong bg-v3-card-inner px-3 py-2 text-[12px] text-v3-ink-3">未绑定团队</p>
+                  <p className="rounded-lg border border-dashed border-line-strong bg-card-inner px-3 py-2 text-[12px] text-ink-3">未绑定团队</p>
                 ) : (
                   <div className="space-y-1.5">
                     {skill.team_bindings.map((team) => (
-                      <div className="flex items-center gap-2 rounded-lg border border-v3-line bg-v3-card-inner px-3 py-1.5 text-[12px]" key={team.team_id}>
-                        <span className="font-semibold text-v3-ink">{team.team_name}</span>
-                        <span className="ml-auto font-mono text-[11px] text-v3-ink-3">{team.team_id}</span>
+                      <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={team.team_id}>
+                        <span className="font-semibold text-ink">{team.team_name}</span>
+                        <span className="ml-auto font-mono text-[11px] text-ink-3">{team.team_id}</span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
               <div>
-                <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-v3-ink-2">
-                  <Bot className="size-3.5 text-v3-ink-3" />数字员工（{skill.agent_bindings.length}）
+                <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-ink-2">
+                  <Bot className="size-3.5 text-ink-3" />数字员工（{skill.agent_bindings.length}）
                 </p>
                 {skill.agent_bindings.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-v3-line-strong bg-v3-card-inner px-3 py-2 text-[12px] text-v3-ink-3">未绑定数字员工</p>
+                  <p className="rounded-lg border border-dashed border-line-strong bg-card-inner px-3 py-2 text-[12px] text-ink-3">未绑定数字员工</p>
                 ) : (
                   <div className="space-y-1.5">
                     {skill.agent_bindings.map((agent) => (
-                      <div className="flex items-center gap-2 rounded-lg border border-v3-line bg-v3-card-inner px-3 py-1.5 text-[12px]" key={agent.agent_id}>
-                        <span className="font-semibold text-v3-ink">{agent.agent_name}</span>
-                        {agent.team_name ? <span className="text-v3-ink-3">· {agent.team_name}</span> : null}
-                        <span className="ml-auto font-mono text-[11px] text-v3-ink-3">{agent.agent_id}</span>
+                      <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={agent.agent_id}>
+                        <span className="font-semibold text-ink">{agent.agent_name}</span>
+                        {agent.team_name ? <span className="text-ink-3">· {agent.team_name}</span> : null}
+                        <span className="ml-auto font-mono text-[11px] text-ink-3">{agent.agent_id}</span>
                       </div>
                     ))}
                   </div>
@@ -563,9 +563,9 @@ function SkillDetailSheet({
           </section>
 
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-v3-line p-4">
-          <p className="text-[12px] text-v3-ink-3">删除会同时解除全部绑定并清除归档文件。</p>
-          <V3Button
+        <div className="flex items-center justify-between gap-3 border-t border-line p-4">
+          <p className="text-[12px] text-ink-3">删除会同时解除全部绑定并清除归档文件。</p>
+          <Button
             aria-label={`删除技能 ${skill.name}`}
             onClick={() => onDeleteSkill(skill.id)}
             size="sm"
@@ -574,7 +574,7 @@ function SkillDetailSheet({
           >
             <Trash2 data-icon="inline-start" />
             删除技能
-          </V3Button>
+          </Button>
         </div>
       </SheetContent>
     </Sheet>
@@ -592,7 +592,7 @@ function SkillMarketToolbar({
   riskFilter,
   scopeFilter,
   statusCounts,
-  statusFilter,
+  statusFilter
 }: {
   dependencyFilter: DependencyFilter;
   onDependencyFilterChange: (value: DependencyFilter) => void;
@@ -607,8 +607,8 @@ function SkillMarketToolbar({
   statusFilter: StatusFilter;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-3 border-b border-v3-line p-3 lg:flex-row lg:items-center lg:gap-3">
-      <V3ToolbarSearch
+    <div className="flex min-w-0 flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:gap-3">
+      <ToolbarSearch
         aria-label="搜索技能"
         onChange={(event) => onQueryChange(event.target.value)}
         placeholder="搜索技能、标签、运行依赖"
@@ -616,38 +616,38 @@ function SkillMarketToolbar({
         value={query}
       />
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <V3Chip
+        <Chip
           active={statusFilter === "all"}
           count={statusCounts.all}
           onClick={() => onStatusFilterChange("all")}
           type="button"
         >
           全部
-        </V3Chip>
-        <V3Chip
+        </Chip>
+        <Chip
           active={statusFilter === "installed"}
           count={statusCounts.installed}
           onClick={() => onStatusFilterChange("installed")}
           type="button"
         >
           已绑定
-        </V3Chip>
-        <V3Chip
+        </Chip>
+        <Chip
           active={statusFilter === "available"}
           count={statusCounts.available}
           onClick={() => onStatusFilterChange("available")}
           type="button"
         >
           可绑定
-        </V3Chip>
-        <V3Chip
+        </Chip>
+        <Chip
           active={statusFilter === "approval"}
           count={statusCounts.approval}
           onClick={() => onStatusFilterChange("approval")}
           type="button"
         >
           需审批
-        </V3Chip>
+        </Chip>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:items-center">
         <FilterSelect
@@ -691,7 +691,7 @@ function FilterSelect({
   label,
   onValueChange,
   options,
-  value,
+  value
 }: {
   label: string;
   onValueChange: (value: string) => void;
@@ -702,7 +702,7 @@ function FilterSelect({
     <Select onValueChange={onValueChange} value={value}>
       <SelectTrigger
         aria-label={label}
-        className="w-full min-w-0 rounded-[10px] border-transparent bg-v3-card-soft text-v3-ink shadow-none hover:bg-v3-mute-soft lg:w-[124px]"
+        className="w-full min-w-0 rounded-[10px] border-transparent bg-card-soft text-ink shadow-none hover:bg-mute-soft lg:w-[124px]"
       >
         <SelectValue />
       </SelectTrigger>
@@ -724,7 +724,7 @@ function SkillMarketGrid({
   onOpenDetail,
   onSelectSkill,
   rows,
-  selectedSkillId,
+  selectedSkillId
 }: {
   onDeleteSkill: (id: string) => void;
   onInstallSkill: (id: string) => void;
@@ -735,7 +735,7 @@ function SkillMarketGrid({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="p-8 text-center text-sm text-v3-ink-3">
+      <div className="p-8 text-center text-sm text-ink-3">
         暂无匹配技能，请调整搜索或筛选条件
       </div>
     );
@@ -753,7 +753,7 @@ function SkillMarketGrid({
             aria-label={`选中 ${skill.name}`}
             className={cn(
               "relative flex min-w-0 flex-col gap-3 overflow-hidden p-4",
-              selected && "border-v3-brand ring-1 ring-v3-brand",
+              selected && "border-brand ring-1 ring-brand",
             )}
             interactive
             key={skill.id}
@@ -765,13 +765,13 @@ function SkillMarketGrid({
             <div className="flex min-w-0 items-start gap-3">
               <SkillIcon skill={skill} />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-bold text-v3-ink">{skill.name}</p>
-                <p className="mt-0.5 truncate font-mono text-[11px] text-v3-ink-3">
+                <p className="truncate font-bold text-ink">{skill.name}</p>
+                <p className="mt-0.5 truncate font-mono text-[11px] text-ink-3">
                   {skill.version} · {skill.source}
                 </p>
               </div>
             </div>
-            <p className="line-clamp-2 min-h-[38px] text-[13px] leading-5 text-v3-ink-2">
+            <p className="line-clamp-2 min-h-[38px] text-[13px] leading-5 text-ink-2">
               {skill.description}
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -782,21 +782,21 @@ function SkillMarketGrid({
               ) : null}
             </div>
             <SkillTagStack tags={skill.tags} className="max-w-none" />
-            <div className="mt-auto flex items-center justify-between gap-3 border-t border-v3-line pt-3 text-[13px] text-v3-ink-2">
+            <div className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-3 text-[13px] text-ink-2">
               <div className="flex items-center gap-3">
                 <span className="inline-flex items-center gap-1">
-                  <Users className="size-3.5 text-v3-ink-3" />
-                  <span className="font-bold tabular-nums text-v3-ink">{skill.team_bindings.length}</span>
+                  <Users className="size-3.5 text-ink-3" />
+                  <span className="font-bold tabular-nums text-ink">{skill.team_bindings.length}</span>
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <Bot className="size-3.5 text-v3-ink-3" />
-                  <span className="font-bold tabular-nums text-v3-ink">{skill.agent_bindings.length}</span>
+                  <Bot className="size-3.5 text-ink-3" />
+                  <span className="font-bold tabular-nums text-ink">{skill.agent_bindings.length}</span>
                 </span>
               </div>
               <div className="flex gap-2">
-                <V3Button
+                <Button
                   aria-label={`删除 ${skill.name}`}
-                  className="text-v3-ink-3 hover:text-v3-danger"
+                  className="text-ink-3 hover:text-danger"
                   onClick={(event) => {
                     event.stopPropagation();
                     onDeleteSkill(skill.id);
@@ -806,8 +806,8 @@ function SkillMarketGrid({
                   variant="ghost"
                 >
                   <Trash2 />
-                </V3Button>
-                <V3Button
+                </Button>
+                <Button
                   aria-label={`查看详情 ${skill.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -818,8 +818,8 @@ function SkillMarketGrid({
                   variant="outline"
                 >
                   查看详情
-                </V3Button>
-                <V3Button
+                </Button>
+                <Button
                   aria-label={`加载 ${skill.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -830,7 +830,7 @@ function SkillMarketGrid({
                   type="button"
                 >
                   加载
-                </V3Button>
+                </Button>
               </div>
             </div>
           </SoftCard>
@@ -846,7 +846,7 @@ function SkillMarketPagination({
   onPageSizeChange,
   pageCount,
   pageSize,
-  total,
+  total
 }: {
   currentPage: number;
   onPageChange: (page: number) => void;
@@ -858,11 +858,11 @@ function SkillMarketPagination({
   const pages = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => index + 1);
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 border-t border-v3-line p-4 text-sm text-v3-ink-2 md:flex-row md:items-center md:justify-between">
+    <div className="flex min-w-0 flex-col gap-3 border-t border-line p-4 text-sm text-ink-2 md:flex-row md:items-center md:justify-between">
       <span className="tabular-nums">共 {total} 条</span>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
-          <V3Button
+          <Button
             aria-label="上一页"
             disabled={currentPage <= 1}
             onClick={() => onPageChange(Math.max(1, currentPage - 1))}
@@ -871,9 +871,9 @@ function SkillMarketPagination({
             variant="ghost"
           >
             <ChevronLeft />
-          </V3Button>
+          </Button>
           {pages.map((pageNumber) => (
-            <V3Button
+            <Button
               aria-current={currentPage === pageNumber ? "page" : undefined}
               className={cn(
                 "size-8 px-0 tabular-nums",
@@ -886,10 +886,10 @@ function SkillMarketPagination({
               variant={currentPage === pageNumber ? "primary" : "ghost"}
             >
               {pageNumber}
-            </V3Button>
+            </Button>
           ))}
           {pageCount > 5 ? <span className="px-2">...</span> : null}
-          <V3Button
+          <Button
             aria-label="下一页"
             disabled={currentPage >= pageCount}
             onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}
@@ -898,12 +898,12 @@ function SkillMarketPagination({
             variant="ghost"
           >
             <ChevronRight />
-          </V3Button>
+          </Button>
         </div>
         <Select onValueChange={(value) => onPageSizeChange(Number(value))} value={`${pageSize}`}>
           <SelectTrigger
             aria-label="每页条数"
-            className="w-[112px] rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft"
+            className="w-[112px] rounded-xl border-line-strong bg-card text-ink shadow-none hover:bg-card-soft"
           >
             <SelectValue />
           </SelectTrigger>
@@ -926,14 +926,14 @@ function SkillTagStack({ className, tags }: { className?: string; tags: string[]
     <div className={cn("flex max-w-[180px] flex-wrap gap-1.5", className)}>
       {visibleTags.map((tag) => (
         <span
-          className="rounded-[6px] border border-v3-line-strong bg-v3-mute-soft/60 px-2 py-[1px] text-xs font-medium text-v3-ink-2"
+          className="rounded-[6px] border border-line-strong bg-mute-soft/60 px-2 py-[1px] text-xs font-medium text-ink-2"
           key={tag}
         >
           {tag}
         </span>
       ))}
       {extraCount > 0 ? (
-        <span className="rounded-[6px] border border-v3-line-strong bg-v3-mute-soft/60 px-2 py-[1px] text-xs font-medium text-v3-ink-2">
+        <span className="rounded-[6px] border border-line-strong bg-mute-soft/60 px-2 py-[1px] text-xs font-medium text-ink-2">
           +{extraCount}
         </span>
       ) : null}
@@ -959,21 +959,21 @@ function buildMarketMetrics(skills: Skill[]): MetricDefinition[] {
       icon: CheckCircle2,
       label: "可绑定",
       tone: "ok",
-      value: skills.filter((skill) => statusDisplay(skill).value === "available").length,
-    },
+      value: skills.filter((skill) => statusDisplay(skill).value === "available").length
+},
     {
       icon: ServerCog,
       label: "有运行依赖",
       tone: "info",
       value: dependencyCount,
-      loud: dependencyCount > 0,
-    },
+      loud: dependencyCount > 0
+},
     {
       icon: UserRoundCheck,
       label: "需审批",
       tone: "danger",
-      value: approvalCount,
-    },
+      value: approvalCount
+},
     { icon: Blocks, label: "团队绑定", tone: "info", value: countTeamBindings(skills) },
     { icon: Bot, label: "数字员工绑定", tone: "artifact", value: countAgentBindings(skills) },
   ];
@@ -984,8 +984,8 @@ function countByStatus(skills: Skill[]): { all: number; installed: number; avail
     all: skills.length,
     installed: skills.filter((skill) => statusDisplay(skill).value === "installed").length,
     available: skills.filter((skill) => statusDisplay(skill).value === "available").length,
-    approval: skills.filter((skill) => statusDisplay(skill).value === "approval").length,
-  };
+    approval: skills.filter((skill) => statusDisplay(skill).value === "approval").length
+};
 }
 
 function filterSkills(
@@ -1024,7 +1024,7 @@ function statusDisplay(skill: Skill): StatusDisplay {
   return { label: "可绑定", tone: "info", value: "available" };
 }
 
-function riskDisplay(riskLevel: string): { label: string; tone: V3Tone } {
+function riskDisplay(riskLevel: string): { label: string; tone: Tone } {
   const risk = normalizeRisk(riskLevel);
   if (risk === "high") return { label: "高风险", tone: "danger" };
   if (risk === "medium") return { label: "中风险", tone: "warn" };

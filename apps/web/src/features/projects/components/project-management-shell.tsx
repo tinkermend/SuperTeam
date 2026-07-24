@@ -16,7 +16,7 @@ export function ProjectManagementShell({
   back,
   children,
   description,
-  title,
+  title
 }: ProjectManagementShellProps) {
   return (
     <>

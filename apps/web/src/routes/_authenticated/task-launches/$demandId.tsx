@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 export const Route = createFileRoute("/_authenticated/task-launches/$demandId")({
-  component: TaskLaunchDetailRedirectRoute,
+  component: TaskLaunchDetailRedirectRoute
 });
 
 function TaskLaunchDetailRedirectRoute() {
@@ -13,8 +13,8 @@ function TaskLaunchDetailRedirectRoute() {
     void navigate({
       params: { demandId },
       replace: true,
-      to: "/workflows/$demandId",
-    });
+      to: "/workflows/$demandId"
+});
   }, [demandId, navigate]);
 
   return <div className="text-sm text-muted-foreground">正在打开流程编排</div>;

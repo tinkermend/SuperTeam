@@ -14,9 +14,9 @@
     @apply overflow-x-hidden;
   }
   body {
-    @apply min-h-svh w-full text-v3-ink;
-    background-color: var(--v3-shell-bg);
-    background-image: var(--v3-shell-background);
+    @apply min-h-svh w-full text-ink;
+    background-color: var(--shell-bg);
+    background-image: var(--shell-background);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -44,52 +44,52 @@
 }
 
 @layer components {
-  :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell'], [data-slot='v3-auth-shell']) {
+  :is([data-slot='sidebar-wrapper'], [data-slot='authenticated-shell'], [data-slot='auth-shell']) {
     position: relative;
     isolation: isolate;
-    color: var(--v3-ink);
-    background-color: var(--v3-shell-bg);
-    background-image: var(--v3-shell-background);
+    color: var(--ink);
+    background-color: var(--shell-bg);
+    background-image: var(--shell-background);
   }
 
-  :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell'], [data-slot='v3-auth-shell'])::before {
+  :is([data-slot='sidebar-wrapper'], [data-slot='authenticated-shell'], [data-slot='auth-shell'])::before {
     content: '';
     position: fixed;
     inset: 0;
     z-index: -2;
     background-image:
-      linear-gradient(to right, var(--v3-shell-grid) 1px, transparent 1px),
-      linear-gradient(to bottom, var(--v3-shell-grid) 1px, transparent 1px);
+      linear-gradient(to right, var(--shell-grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--shell-grid) 1px, transparent 1px);
     background-size: 34px 34px;
     mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.42) 58%, transparent 100%);
     pointer-events: none;
   }
 
-  :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell']) > [data-slot='sidebar-inset'] {
+  :is([data-slot='sidebar-wrapper'], [data-slot='authenticated-shell']) > [data-slot='sidebar-inset'] {
     background: transparent;
     box-shadow: none;
   }
 
   /* 全局沉浸极光背景底：由 <AuroraBackground /> 渲染，铺满视口、置于内容之下。
-     浅/深色由 --v3-aurora-* token 自动切换。见 DESIGN.md「沉浸极光玻璃」。 */
-  .v3-aurora-background {
+     浅/深色由 --aurora-* token 自动切换。见 DESIGN.md「沉浸极光玻璃」。 */
+  .aurora-background {
     position: fixed;
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-color: var(--v3-aurora-bg-color);
-    background-image: var(--v3-aurora-bg);
+    background-color: var(--aurora-bg-color);
+    background-image: var(--aurora-bg);
   }
 
-  /* Tier A 玻璃卡（Glass Card）复用基元：半透明玻璃外壳，色值/圆角/模糊全部取自 --v3-aurora-* /
-     --v3-shell-glass-* token（浅/深色自动切换）。仅供 <GlassCard> 组件与 Tier A 入口/创建画布复用，
+  /* Tier A 玻璃卡（Glass Card）复用基元：半透明玻璃外壳，色值/圆角/模糊全部取自 --aurora-* /
+     --shell-glass-* token（浅/深色自动切换）。仅供 <GlassCard> 组件与 Tier A 入口/创建画布复用，
      禁止用于 Tier B/C 数据/审计面。规范见 DESIGN.md「沉浸极光玻璃」与 docs/design-system/surfaces.md「玻璃卡」。 */
-  .v3-glass {
-    background: var(--v3-aurora-glass);
-    border: 1px solid var(--v3-aurora-glass-border);
-    border-radius: var(--v3-aurora-r-card);
-    backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
-    -webkit-backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
+  .glass {
+    background: var(--aurora-glass);
+    border: 1px solid var(--aurora-glass-border);
+    border-radius: var(--aurora-r-card);
+    backdrop-filter: blur(var(--shell-glass-blur)) saturate(var(--shell-glass-saturate));
+    -webkit-backdrop-filter: blur(var(--shell-glass-blur)) saturate(var(--shell-glass-saturate));
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.9) inset,
       0 24px 56px -24px rgba(36, 58, 140, 0.35);
@@ -97,23 +97,23 @@
   }
 
   /* 玻璃壳内的二级面板（表单区、摘要卡、预检面板）。逐行数据/输入仍走实底，不套此类。 */
-  .v3-glass-inner {
-    background: var(--v3-aurora-panel);
-    border: 1px solid var(--v3-aurora-panel-border);
-    border-radius: var(--v3-aurora-r-inner);
+  .glass-inner {
+    background: var(--aurora-panel);
+    border: 1px solid var(--aurora-panel-border);
+    border-radius: var(--aurora-r-inner);
   }
 
   /* 低端设备 / 减弱动态：去掉主导成本的 backdrop-filter，退回接近实底的表面。 */
   @media (prefers-reduced-motion: reduce) {
-    .v3-glass {
+    .glass {
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
-      background: var(--v3-card);
+      background: var(--card);
     }
   }
 
   [data-slot='sidebar-container'] {
-    border-inline-end: 1px solid var(--v3-shell-glass-border);
+    border-inline-end: 1px solid var(--shell-glass-border);
     box-shadow: 12px 0 32px rgba(16, 24, 40, 0.045);
   }
 
@@ -124,22 +124,22 @@
   /* 侧栏改为半透明玻璃，让全局极光背景底透过导航区延伸（token 驱动）。 */
   [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     border-inline-end: 0;
-    background: var(--v3-aurora-sidebar);
+    background: var(--aurora-sidebar);
     background-color: transparent;
-    backdrop-filter: blur(var(--v3-shell-glass-blur)) saturate(var(--v3-shell-glass-saturate));
+    backdrop-filter: blur(var(--shell-glass-blur)) saturate(var(--shell-glass-saturate));
     box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.5);
   }
 
   [data-variant='floating'] [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     overflow: hidden;
-    border: 1px solid var(--v3-aurora-sidebar-border) !important;
+    border: 1px solid var(--aurora-sidebar-border) !important;
     border-radius: 1.625rem;
-    background: var(--v3-aurora-sidebar);
+    background: var(--aurora-sidebar);
     background-color: transparent;
     box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.5);
   }
 
-  [data-slot='v3-shell-header'] {
+  [data-slot='shell-header'] {
     border-bottom: 0;
     background: transparent;
     box-shadow: none;
@@ -193,7 +193,7 @@
     height: 1.5rem !important;
     margin-block-start: 0.375rem;
     padding-inline: 0.875rem;
-    color: var(--v3-ink-3) !important;
+    color: var(--ink-3) !important;
     font-size: 0.75rem;
     font-weight: 500;
     letter-spacing: 0.05em;
@@ -241,20 +241,20 @@
 
   [data-slot='sidebar-menu-button']:hover {
     border-color: transparent;
-    background: var(--v3-shell-menu-hover) !important;
-    color: var(--v3-ink) !important;
+    background: var(--shell-menu-hover) !important;
+    color: var(--ink) !important;
     box-shadow: none;
   }
 
   [data-slot='sidebar-menu-button']:hover svg {
-    color: var(--v3-ink-2) !important;
+    color: var(--ink-2) !important;
   }
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] {
     border-color: rgba(47, 95, 255, 0.16);
-    background-color: var(--v3-shell-control-active) !important;
+    background-color: var(--shell-control-active) !important;
     background-image: none !important;
-    color: var(--v3-brand-deep) !important;
+    color: var(--brand-deep) !important;
     font-weight: 600 !important;
     box-shadow: none !important;
     text-shadow: none;
@@ -268,58 +268,58 @@
     width: 3px;
     height: 18px;
     border-radius: 999px;
-    background: var(--v3-brand);
+    background: var(--brand);
     transform: translateY(-50%);
   }
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] > span,
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] svg {
-    color: var(--v3-brand-deep) !important;
+    color: var(--brand-deep) !important;
     text-shadow: none;
   }
 
   [data-slot='sidebar-menu-sub'] {
-    border-color: var(--v3-line-strong);
+    border-color: var(--line-strong);
   }
 
   [data-slot='card'] {
-    border-color: var(--v3-line);
-    background: var(--v3-card);
-    box-shadow: var(--v3-shadow);
+    border-color: var(--line);
+    background: var(--card);
+    box-shadow: var(--shadow-card);
   }
 
   [data-slot='input'] {
-    border-color: var(--v3-line-strong);
-    background: var(--v3-card);
-    color: var(--v3-ink);
+    border-color: var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
     box-shadow: none;
   }
 
   [data-slot='table-row']:hover {
-    background: var(--v3-card-soft);
+    background: var(--card-soft);
   }
 
   [data-slot='table-row'][data-state='selected'] {
-    background: var(--v3-brand-soft);
+    background: var(--brand-soft);
   }
 
   .dark body {
-    background-color: var(--v3-shell-bg);
-    background-image: var(--v3-shell-background);
+    background-color: var(--shell-bg);
+    background-image: var(--shell-background);
   }
 
-  .dark :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell'], [data-slot='v3-auth-shell']) {
-    background-color: var(--v3-shell-bg);
-    background-image: var(--v3-shell-background);
+  .dark :is([data-slot='sidebar-wrapper'], [data-slot='authenticated-shell'], [data-slot='auth-shell']) {
+    background-color: var(--shell-bg);
+    background-image: var(--shell-background);
   }
 
-  .dark :is([data-slot='sidebar-wrapper'], [data-slot='v3-authenticated-shell']) > [data-slot='sidebar-inset'] {
+  .dark :is([data-slot='sidebar-wrapper'], [data-slot='authenticated-shell']) > [data-slot='sidebar-inset'] {
     background: transparent;
     box-shadow: none;
   }
 
   .dark [data-slot='sidebar-container'] {
-    border-inline-end: 1px solid var(--v3-shell-glass-border);
+    border-inline-end: 1px solid var(--shell-glass-border);
     box-shadow: none;
   }
 
@@ -329,14 +329,14 @@
 
   .dark [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
     border-inline-end: 0;
-    background: var(--v3-aurora-sidebar);
+    background: var(--aurora-sidebar);
     background-color: transparent;
     box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
   }
 
   .dark [data-variant='floating'] [data-slot='sidebar-inner'][data-sidebar='sidebar'] {
-    border: 1px solid var(--v3-aurora-sidebar-border);
-    background: var(--v3-aurora-sidebar);
+    border: 1px solid var(--aurora-sidebar-border);
+    background: var(--aurora-sidebar);
     background-color: transparent;
     box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
   }
@@ -344,11 +344,11 @@
   /* Base menu text/icon colors are hardcoded to light-mode hex above; without these
      overrides inactive items render near-black on the dark glass and become unreadable. */
   .dark [data-slot='sidebar-menu-button'] {
-    color: var(--v3-ink) !important;
+    color: var(--ink) !important;
   }
 
   .dark [data-slot='sidebar-menu-button'] svg {
-    color: var(--v3-ink-2) !important;
+    color: var(--ink-2) !important;
   }
 
   .dark [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] {
@@ -359,9 +359,9 @@
   }
 
   .dark [data-slot='card'] {
-    border-color: var(--v3-line);
-    background: var(--v3-card);
-    box-shadow: var(--v3-shadow);
+    border-color: var(--line);
+    background: var(--card);
+    box-shadow: var(--shadow-card);
   }
 }
 

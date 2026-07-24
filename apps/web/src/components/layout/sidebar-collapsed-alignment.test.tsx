@@ -10,7 +10,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarProvider,
+  SidebarProvider
 } from '@/components/ui/sidebar'
 import '@/styles/index.css'
 
@@ -87,7 +87,7 @@ describe('collapsed sidebar alignment', () => {
                         <Activity data-testid='collapsed-link-icon' />
                         <span data-testid='collapsed-link-label'>收件箱</span>
                         <span
-                          className='ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-v3-brand-soft px-1.5 py-0 text-xs font-bold text-v3-brand-deep'
+                          className='ms-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-soft px-1.5 py-0 text-xs font-bold text-brand-deep'
                           data-testid='collapsed-link-badge'
                         >
                           4
@@ -143,7 +143,7 @@ describe('collapsed sidebar alignment', () => {
                       className='size-8 rounded-lg'
                       data-testid='collapsed-account-avatar'
                     >
-                      <AvatarFallback className='rounded-lg bg-v3-brand text-white'>
+                      <AvatarFallback className='rounded-lg bg-brand text-white'>
                         开发
                       </AvatarFallback>
                     </Avatar>
@@ -151,15 +151,15 @@ describe('collapsed sidebar alignment', () => {
                       className='grid flex-1 text-start text-sm leading-tight'
                       data-testid='collapsed-account-labels'
                     >
-                      <span className='truncate font-semibold text-v3-ink'>
+                      <span className='truncate font-semibold text-ink'>
                         开发管理员
                       </span>
-                      <span className='truncate text-xs text-v3-ink-2'>
+                      <span className='truncate text-xs text-ink-2'>
                         admin@superteam.local
                       </span>
                     </div>
                     <ChevronsUpDown
-                      className='ms-auto size-4 text-v3-ink-3'
+                      className='ms-auto size-4 text-ink-3'
                       data-testid='collapsed-account-chevron'
                     />
                   </SidebarMenuButton>

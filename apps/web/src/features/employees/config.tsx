@@ -5,10 +5,9 @@ import { useEffect, useState } from "react";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
-import { MarkdownProse, SoftCard, StatusPill } from "@/components/superteam";
-import { Button } from "@/components/ui/button";
+import { MarkdownProse, SoftCard, StatusPill , Button} from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +20,7 @@ import {
   type CapabilityBindings,
   type CreateDigitalEmployeeConfigRevisionInput,
   type DigitalEmployee,
-  type SubmitPermissionChangeInput,
+  type SubmitPermissionChangeInput
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { riskLevelLabel, statusLabel } from "@/lib/status-labels";
@@ -67,8 +66,8 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
 
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
-    queryFn: () => getDigitalEmployee(apiOptions, employeeId),
-  });
+    queryFn: () => getDigitalEmployee(apiOptions, employeeId)
+});
 
   const createRevision = useMutation({
     mutationFn: (input: CreateDigitalEmployeeConfigRevisionInput) =>
@@ -77,8 +76,8 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       setImmediateDirty(false);
       setBudgetError("");
       queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
-    },
-  });
+    }
+});
 
   useEffect(() => {
     if (!employee.data || hydratedEmployeeId === employee.data.id) return;
@@ -112,14 +111,14 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
     const capabilityBindings: CapabilityBindings = {
       ...otherCapabilityKeys,
       external_capabilities: externalCapabilities,
-      environment_variable_refs: environmentVariableRefs,
-    };
+      environment_variable_refs: environmentVariableRefs
+};
 
     const input: CreateDigitalEmployeeConfigRevisionInput = {
       persona_memory_markdown: personaMemoryMarkdown.trim(),
       capability_bindings: capabilityBindings,
-      budget_policy: budgetPolicy,
-    };
+      budget_policy: budgetPolicy
+};
     createRevision.mutate(input);
   };
 
@@ -137,7 +136,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         subtitle="即时生效配置与权限审批配置分层管理"
       />
       <Main width="contained" className="space-y-4">
-        {employee.isLoading ? <p className="text-sm text-v3-ink-2">加载中</p> : null}
+        {employee.isLoading ? <p className="text-sm text-ink-2">加载中</p> : null}
         {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}
 
         {employee.data ? (
@@ -155,7 +154,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
               <form className="space-y-4" noValidate onSubmit={handleImmediateSubmit}>
                 <SoftCard className="space-y-3 p-5">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-v3-ink">人格记忆.md</div>
+                    <div className="text-sm font-semibold text-ink">人格记忆.md</div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -168,11 +167,11 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
                   </div>
                   {personaPreview ? (
                     personaMemoryMarkdown.trim() ? (
-                      <MarkdownProse className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3">
+                      <MarkdownProse className="rounded-[14px] border border-line bg-card-soft p-3">
                         {personaMemoryMarkdown}
                       </MarkdownProse>
                     ) : (
-                      <p className="rounded-[14px] border border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">
+                      <p className="rounded-[14px] border border-line bg-card-soft p-3 text-sm text-ink-3">
                         未设置
                       </p>
                     )
@@ -189,13 +188,13 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
                       className="font-mono text-xs"
                     />
                   )}
-                  <p className="text-xs text-v3-ink-3">
+                  <p className="text-xs text-ink-3">
                     人格记忆随任务注入；项目宪法由所属项目在执行时注入，不属于数字员工配置。
                   </p>
                 </SoftCard>
 
                 <SoftCard className="space-y-4 p-5">
-                  <div className="text-sm font-semibold text-v3-ink">能力绑定</div>
+                  <div className="text-sm font-semibold text-ink">能力绑定</div>
                   <ChipsEditor
                     label="外部能力（external_capabilities）"
                     placeholder="输入能力标识后回车添加"
@@ -214,14 +213,14 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
                       markImmediateDirty();
                     }}
                   />
-                  <p className="text-xs text-v3-ink-3">
+                  <p className="text-xs text-ink-3">
                     技能与 MCP 是逻辑绑定，请在下方「技能 / MCP / 环境变量」区管理。
                   </p>
                 </SoftCard>
 
                 <SoftCard className="space-y-2 p-5">
-                  <div className="text-sm font-semibold text-v3-ink">预算策略</div>
-                  <Label htmlFor="config-daily-token-limit" className="text-xs text-v3-ink-3">
+                  <div className="text-sm font-semibold text-ink">预算策略</div>
+                  <Label htmlFor="config-daily-token-limit" className="text-xs text-ink-3">
                     每日 Token 预算上限
                   </Label>
                   <Input
@@ -253,7 +252,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
                     <p className="text-sm text-destructive">保存失败</p>
                   ) : null}
                 </div>
-                <p className="text-xs text-v3-ink-3">
+                <p className="text-xs text-ink-3">
                   人格记忆 / 能力 / 预算保存后即时生效为新配置版本，无需审批；角色 / 权限变更走下方「权限审批配置」。
                 </p>
               </form>
@@ -277,8 +276,8 @@ function LocatorHeader({ employee }: { employee: DigitalEmployee }) {
   return (
     <SoftCard className="space-y-3 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-base font-semibold text-v3-ink">{employee.name}</span>
-        <span className="font-mono text-xs text-v3-ink-3">{employee.id}</span>
+        <span className="text-base font-semibold text-ink">{employee.name}</span>
+        <span className="font-mono text-xs text-ink-3">{employee.id}</span>
         <StatusPill tone={statusTone(employee.status)}>{statusLabel(employee.status)}</StatusPill>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -288,7 +287,7 @@ function LocatorHeader({ employee }: { employee: DigitalEmployee }) {
         <LocatorItem label="所属团队" value={employee.team_id ? "已分配" : "未分配"} />
       </div>
       {effectiveStatus ? (
-        <p className="text-xs text-v3-ink-3">
+        <p className="text-xs text-ink-3">
           当前生效配置：{employee.metadata?.effective_config_label ?? "—"}（{statusLabel(effectiveStatus)}）
         </p>
       ) : null}
@@ -298,7 +297,7 @@ function LocatorHeader({ employee }: { employee: DigitalEmployee }) {
 
 function EmployeeDescriptionEditor({
   apiOptions,
-  employee,
+  employee
 }: {
   apiOptions: ApiClientOptions;
   employee: DigitalEmployee;
@@ -318,23 +317,23 @@ function EmployeeDescriptionEditor({
   const saveProfile = useMutation({
     mutationFn: () =>
       updateDigitalEmployeeProfile(apiOptions, employee.id, {
-        description: description.trim(),
-      }),
+        description: description.trim()
+}),
     onSuccess: (updated) => {
       setDescription(updated.description ?? "");
       setDirty(false);
       queryClient.setQueryData(["digital-employee", employee.id], updated);
       queryClient.invalidateQueries({ queryKey: ["digital-employees"] });
       queryClient.invalidateQueries({ queryKey: ["digital-employee-overview"] });
-    },
-  });
+    }
+});
 
   return (
     <section className="space-y-3">
       <TierHeading title="身份资料" hint="保存后即时生效，无需审批" />
       <SoftCard className="space-y-3 p-5">
         <div className="space-y-2">
-          <Label htmlFor="employee-profile-description" className="text-sm font-semibold text-v3-ink">
+          <Label htmlFor="employee-profile-description" className="text-sm font-semibold text-ink">
             员工说明
           </Label>
           <Textarea
@@ -348,7 +347,7 @@ function EmployeeDescriptionEditor({
               setDirty(true);
             }}
           />
-          <p className="text-xs text-v3-ink-3">可选。会出现在数字员工卡片上，超出两行以省略号截断。</p>
+          <p className="text-xs text-ink-3">可选。会出现在数字员工卡片上，超出两行以省略号截断。</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -372,8 +371,8 @@ function EmployeeDescriptionEditor({
 function LocatorItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11px] text-v3-ink-3">{label}</p>
-      <p className="truncate text-sm font-medium text-v3-ink">{value}</p>
+      <p className="text-[11px] text-ink-3">{label}</p>
+      <p className="truncate text-sm font-medium text-ink">{value}</p>
     </div>
   );
 }
@@ -381,15 +380,15 @@ function LocatorItem({ label, value }: { label: string; value: string }) {
 function TierHeading({ title, hint }: { title: string; hint: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-2">
-      <h2 className="text-sm font-semibold text-v3-ink">{title}</h2>
-      <span className="text-xs text-v3-ink-3">{hint}</span>
+      <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      <span className="text-xs text-ink-3">{hint}</span>
     </div>
   );
 }
 
 function PermissionTierSection({
   apiOptions,
-  employee,
+  employee
 }: {
   apiOptions: ApiClientOptions;
   employee: DigitalEmployee;
@@ -426,8 +425,8 @@ function PermissionTierSection({
     onSuccess: () => {
       setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["digital-employee", employee.id] });
-    },
-  });
+    }
+});
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -442,8 +441,8 @@ function PermissionTierSection({
       input.permission_policy = {
         ...permissionPolicy,
         grants,
-        allowed_actions: allowedActions,
-      };
+        allowed_actions: allowedActions
+};
     }
     if (!input.role && !input.permission_policy) return;
     submitChange.mutate(input);
@@ -455,11 +454,11 @@ function PermissionTierSection({
       <form onSubmit={handleSubmit}>
         <SoftCard className="space-y-4 p-5">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-v3-ink-2" />
-            <span className="text-sm font-semibold text-v3-ink">角色与权限</span>
+            <ShieldCheck className="size-4 text-ink-2" />
+            <span className="text-sm font-semibold text-ink">角色与权限</span>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="permission-role" className="text-xs text-v3-ink-3">
+            <Label htmlFor="permission-role" className="text-xs text-ink-3">
               角色（role）· 当前：{employee.role || "未设置"}
             </Label>
             <Input
@@ -508,7 +507,7 @@ function PermissionTierSection({
               </p>
             ) : null}
           </div>
-          <p className="text-xs text-v3-ink-3">
+          <p className="text-xs text-ink-3">
             提交后生成权限审批请求，由团队审批人在权限中心批准后写回生效；员工有进行中工作时会被拒绝提交。
           </p>
         </SoftCard>
@@ -539,7 +538,7 @@ function ChipsEditor({
   label,
   placeholder,
   values,
-  onChange,
+  onChange
 }: {
   label: string;
   placeholder: string;
@@ -560,19 +559,19 @@ function ChipsEditor({
 
   return (
     <div className="space-y-2">
-      <Label className="text-xs text-v3-ink-3">{label}</Label>
+      <Label className="text-xs text-ink-3">{label}</Label>
       {values.length ? (
         <div className="flex flex-wrap gap-1.5">
           {values.map((value) => (
             <span
               key={value}
-              className="inline-flex items-center gap-1 rounded-v3-inner border border-v3-line bg-v3-card px-2 py-1 text-xs text-v3-ink"
+              className="inline-flex items-center gap-1 rounded-inner border border-line bg-card px-2 py-1 text-xs text-ink"
             >
               <span className="font-mono">{value}</span>
               <button
                 type="button"
                 aria-label={`移除 ${value}`}
-                className="text-v3-ink-3 hover:text-v3-danger"
+                className="text-ink-3 hover:text-danger"
                 onClick={() => onChange(values.filter((item) => item !== value))}
               >
                 <X className="size-3" />

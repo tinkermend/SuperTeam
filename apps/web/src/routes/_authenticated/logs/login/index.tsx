@@ -3,20 +3,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import {
   listLoginLogs,
   type LoginLogEventType,
   type LoginLogRecord,
-  type LoginLogResult,
+  type LoginLogResult
 } from "@/lib/api/auth";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import {
@@ -25,17 +25,17 @@ import {
   LogFilterBar,
   LogPagination,
   LogSelectFilter,
-  formatLogDateTime,
+  formatLogDateTime
 } from "../-shared";
 
 export const Route = createFileRoute("/_authenticated/logs/login/")({
-  component: LoginLogsRoute,
+  component: LoginLogsRoute
 });
 
 const eventTypeLabel: Record<LoginLogEventType, string> = {
   login_succeeded: "登录成功",
   login_failed: "登录失败",
-  logout_succeeded: "登出成功",
+  logout_succeeded: "登出成功"
 };
 
 const chipOptions = [
@@ -63,8 +63,8 @@ function LoginLogsRoute() {
     queryKey: ["web-login-logs", filters, offset],
     queryFn: () =>
       listLoginLogs({ baseUrl: apiBaseUrl, limit: LOG_PAGE_SIZE, offset, ...filters }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const updateFilter = <K extends keyof LoginLogFilters>(key: K, value: LoginLogFilters[K]) => {
     setOffset(0);
@@ -100,49 +100,49 @@ function LoginLogsRoute() {
         </LogFilterBar>
 
         {logsQuery.isLoading && !logsQuery.data ? (
-          <V3LoadingState label="正在加载登录日志…" />
+          <LoadingState label="正在加载登录日志…" />
         ) : logsQuery.isError ? (
-          <V3ErrorState title="登录日志加载失败" description="请稍后重试，或确认当前账号仍有访问权限。" />
+          <ErrorState title="登录日志加载失败" description="请稍后重试，或确认当前账号仍有访问权限。" />
         ) : records.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             title={hasFilter ? "筛选后无登录日志" : "暂无登录日志"}
             description="账号登录后会显示在这里。"
           />
         ) : (
-          <V3Table>
+          <DataTable>
             <thead>
-              <V3Tr>
-                <V3Th className="min-w-[150px]">时间</V3Th>
-                <V3Th>事件类型</V3Th>
-                <V3Th>结果</V3Th>
-                <V3Th>用户</V3Th>
-                <V3Th>来源 IP</V3Th>
-                <V3Th className="min-w-[180px]">失败原因</V3Th>
-              </V3Tr>
+              <Tr>
+                <Th className="min-w-[150px]">时间</Th>
+                <Th>事件类型</Th>
+                <Th>结果</Th>
+                <Th>用户</Th>
+                <Th>来源 IP</Th>
+                <Th className="min-w-[180px]">失败原因</Th>
+              </Tr>
             </thead>
             <tbody>
               {records.map((record: LoginLogRecord) => (
-                <V3Tr key={record.id}>
-                  <V3Td className="whitespace-nowrap text-xs text-v3-ink-2 tabular-nums">
+                <Tr key={record.id}>
+                  <Td className="whitespace-nowrap text-xs text-ink-2 tabular-nums">
                     {formatLogDateTime(record.created_at)}
-                  </V3Td>
-                  <V3Td className="whitespace-nowrap text-sm">
+                  </Td>
+                  <Td className="whitespace-nowrap text-sm">
                     {eventTypeLabel[record.event_type] ?? record.event_type}
-                  </V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td>
                     <StatusPill tone={record.result === "succeeded" ? "ok" : "danger"}>
                       {record.result === "succeeded" ? "成功" : "失败"}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td className="max-w-[200px] truncate text-sm">{record.username}</V3Td>
-                  <V3Td className="whitespace-nowrap font-mono text-xs">{record.client_ip || "-"}</V3Td>
-                  <V3Td className="max-w-[240px] truncate text-xs text-v3-ink-3">
+                  </Td>
+                  <Td className="max-w-[200px] truncate text-sm">{record.username}</Td>
+                  <Td className="whitespace-nowrap font-mono text-xs">{record.client_ip || "-"}</Td>
+                  <Td className="max-w-[240px] truncate text-xs text-ink-3">
                     {record.failure_reason || "-"}
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))}
             </tbody>
-          </V3Table>
+          </DataTable>
         )}
 
         <LogPagination

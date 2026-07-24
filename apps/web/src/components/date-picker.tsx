@@ -5,7 +5,7 @@ import { Calendar } from '@/components/ui/calendar'
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger,
+  PopoverTrigger
 } from '@/components/ui/popover'
 
 type DatePickerProps = {
@@ -17,7 +17,7 @@ type DatePickerProps = {
 export function DatePicker({
   selected,
   onSelect,
-  placeholder = 'Pick a date',
+  placeholder = 'Pick a date'
 }: DatePickerProps) {
   return (
     <Popover>

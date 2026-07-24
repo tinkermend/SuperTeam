@@ -10,7 +10,7 @@ export function SignIn() {
     <AuthLayout>
       <SoftCard className='w-full p-7'>
         <div className='mb-5 text-center'>
-          <h1 className='text-2xl font-extrabold tracking-tight text-v3-ink'>
+          <h1 className='text-2xl font-extrabold tracking-tight text-ink'>
             账号登录
           </h1>
         </div>

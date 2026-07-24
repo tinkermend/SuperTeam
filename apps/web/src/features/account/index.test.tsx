@@ -15,50 +15,50 @@ const currentUser = {
   avatar: {
     provider: "dicebear" as const,
     style: "adventurer" as const,
-    seed: "operator-avatar",
-  },
+    seed: "operator-avatar"
+}
 };
 
 vi.mock("@/features/auth/use-auth", () => ({
   useAuth: () => ({
     refreshCurrentUser,
-    user: currentUser,
-  }),
+    user: currentUser
+})
 }));
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
   Main: ({ children, width }: { children: ReactNode; width?: string }) => (
     <main data-width={width}>{children}</main>
-  ),
+  )
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status: 200,
-  });
+    status: 200
+});
 }
 
 function createAccountFetcher() {
@@ -78,10 +78,10 @@ function createAccountFetcher() {
             client_ip: "127.0.0.1",
             user_agent: "Chrome 125 / macOS",
             result: "succeeded",
-            created_at: "2026-06-12T08:00:00Z",
-          },
-        ],
-      });
+            created_at: "2026-06-12T08:00:00Z"
+},
+        ]
+});
     }
 
     if (url.pathname === "/api/auth/account/profile" && method === "PATCH") {
@@ -95,10 +95,10 @@ function createAccountFetcher() {
           avatar: {
             provider: "dicebear",
             style: "adventurer",
-            seed: "operator-v2",
-          },
-        },
-      });
+            seed: "operator-v2"
+}
+}
+});
     }
 
     if (url.pathname === "/api/auth/account/password" && method === "POST") {
@@ -112,16 +112,16 @@ function createAccountFetcher() {
           avatar: {
             provider: "dicebear",
             style: "adventurer",
-            seed: "operator-avatar",
-          },
-        },
-      });
+            seed: "operator-avatar"
+}
+}
+});
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
-      status: 404,
-    });
+      status: 404
+});
   });
 }
 
@@ -144,10 +144,10 @@ describe("AccountSettings", () => {
     await expect.element(screen.getByText("operator@example.com")).toBeInTheDocument();
     await expect.element(screen.getByAltText("值班负责人 的头像")).toBeInTheDocument();
     await expect.element(screen.getByText("Chrome 125 / macOS")).toBeInTheDocument();
-    expect(document.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="status-pill"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="work-surface"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="data-table"]').length).toBeGreaterThan(0);
     expect(fetcher).toHaveBeenCalledWith(
       expect.stringContaining("/api/auth/account/login-logs?limit=10&offset=0"),
       expect.any(Object),
@@ -176,11 +176,11 @@ describe("AccountSettings", () => {
               avatar: {
                 provider: "dicebear",
                 seed: "operator-v2",
-                style: "adventurer",
-              },
+                style: "adventurer"
+},
               display_name: "新值班负责人",
-              email: "new-operator@example.com",
-            })
+              email: "new-operator@example.com"
+})
         );
       }),
     ).toBe(true);
@@ -204,8 +204,8 @@ describe("AccountSettings", () => {
           init.body ===
             JSON.stringify({
               current_password: "old-secret",
-              password: "new-secret",
-            })
+              password: "new-secret"
+})
         );
       }),
     ).toBe(true);

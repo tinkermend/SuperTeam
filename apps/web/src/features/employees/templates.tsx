@@ -5,35 +5,35 @@ import {
   Bot,
   CheckCircle2,
   LayoutTemplate,
-  Sparkles,
+  Sparkles
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import {
   IconTile,
   MasterDetailLayout,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +45,7 @@ import {
   listEmployeeTemplates,
   setEmployeeTemplateStatus,
   updateEmployeeTemplate,
-  type EmployeeTemplate,
+  type EmployeeTemplate
 } from "@/lib/api/employee-templates";
 import { listSkills } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -57,7 +57,7 @@ import {
   templateRisk,
   templateStatusLabel,
   templateStatusTone,
-  templateUnlistedRecommendations,
+  templateUnlistedRecommendations
 } from "./template-utils";
 
 type TemplateViewProps = {
@@ -105,8 +105,8 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
     },
     onError: (mutationError: unknown) => {
       setActionError(mutationError instanceof Error ? mutationError.message : "更新模板状态失败");
-    },
-  });
+    }
+});
 
   const deleteMutation = useMutation({
     mutationFn: (template: EmployeeTemplate) => deleteEmployeeTemplate(state.apiOptions, template.id),
@@ -117,8 +117,8 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
     },
     onError: (mutationError: unknown) => {
       setActionError(mutationError instanceof Error ? mutationError.message : "删除模板失败");
-    },
-  });
+    }
+});
 
   return (
     <TemplateShell
@@ -126,27 +126,27 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
       subtitle="创建和管理数字员工模板，用于在创建数字员工时带入默认画像与能力建议"
       actions={
         <>
-          <V3Button variant="outline" onClick={() => setFormState({ mode: "create" })}>
+          <Button variant="outline" onClick={() => setFormState({ mode: "create" })}>
             <LayoutTemplate className="size-4" />
             新建模板
-          </V3Button>
-          <V3Button asChild>
+          </Button>
+          <Button asChild>
             <Link to="/employees/new">
               <Bot className="size-4" />
               创建数字员工
             </Link>
-          </V3Button>
+          </Button>
         </>
       }
     >
       <TemplateQuerySurface state={state}>
         <div className="flex flex-col gap-4">
           {actionError ? (
-            <div className="flex items-start justify-between gap-3 rounded-v3-inner bg-v3-danger-soft px-4 py-3 text-[13px] font-semibold text-v3-danger">
+            <div className="flex items-start justify-between gap-3 rounded-inner bg-danger-soft px-4 py-3 text-[13px] font-semibold text-danger">
               <span>{actionError}</span>
               <button
                 type="button"
-                className="shrink-0 text-v3-danger underline underline-offset-2"
+                className="shrink-0 text-danger underline underline-offset-2"
                 onClick={() => setActionError("")}
               >
                 关闭
@@ -155,36 +155,36 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
           ) : null}
           {templates.length === 0 ? (
             <SoftCard>
-              <V3EmptyState
+              <EmptyState
                 title="还没有数字员工模板"
                 description="点击“新建模板”创建第一个模板，定义默认角色、能力建议和治理策略默认值。"
                 action={
-                  <V3Button onClick={() => setFormState({ mode: "create" })}>
+                  <Button onClick={() => setFormState({ mode: "create" })}>
                     <LayoutTemplate className="size-4" />
                     新建模板
-                  </V3Button>
+                  </Button>
                 }
               />
             </SoftCard>
           ) : (
             <WorkSurface>
-              <div className="flex flex-col gap-1 border-b border-v3-line px-5 py-4 md:flex-row md:items-end md:justify-between">
+              <div className="flex flex-col gap-1 border-b border-line px-5 py-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <h2 className="text-[17px] font-bold text-v3-ink">模板目录</h2>
-                  <p className="mt-1 text-[13px] text-v3-ink-2">
+                  <h2 className="text-[17px] font-bold text-ink">模板目录</h2>
+                  <p className="mt-1 text-[13px] text-ink-2">
                     当前租户下可用于创建数字员工的模板。
                   </p>
                 </div>
               </div>
-              <V3Table>
+              <DataTable>
                 <thead>
                   <tr>
-                    <V3Th>模板</V3Th>
-                    <V3Th>默认角色</V3Th>
-                    <V3Th>模板能力</V3Th>
-                    <V3Th>默认注入</V3Th>
-                    <V3Th>状态</V3Th>
-                    <V3Th>操作</V3Th>
+                    <Th>模板</Th>
+                    <Th>默认角色</Th>
+                    <Th>模板能力</Th>
+                    <Th>默认注入</Th>
+                    <Th>状态</Th>
+                    <Th>操作</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -203,7 +203,7 @@ export function TemplateListView({ apiBaseUrl, fetcher }: TemplateViewProps) {
                     />
                   ))}
                 </tbody>
-              </V3Table>
+              </DataTable>
             </WorkSurface>
           )}
         </div>
@@ -250,13 +250,13 @@ export function TemplateDetailView({ apiBaseUrl, fetcher, templateType }: Templa
       <TemplateQuerySurface state={state}>
         {!template ? (
           <SoftCard>
-            <V3EmptyState
+            <EmptyState
               title="模板不存在"
               description="当前租户下没有找到这个模板。"
               action={
-                <V3Button asChild variant="outline">
+                <Button asChild variant="outline">
                   <Link to="/employees/templates">返回模板管理</Link>
-                </V3Button>
+                </Button>
               }
             />
           </SoftCard>
@@ -280,7 +280,7 @@ function TemplateShell({
   back,
   children,
   subtitle,
-  title,
+  title
 }: {
   actions?: React.ReactNode;
   back?: React.ReactNode;
@@ -313,7 +313,7 @@ function TemplateShell({
 
 function TemplateQuerySurface({
   children,
-  state,
+  state
 }: {
   children: React.ReactNode;
   state: ReturnType<typeof useTemplateCatalog>;
@@ -321,14 +321,14 @@ function TemplateQuerySurface({
   if (state.isLoading) {
     return (
       <SoftCard>
-        <V3LoadingState label="加载模板目录..." />
+        <LoadingState label="加载模板目录..." />
       </SoftCard>
     );
   }
 
   if (state.error) {
     return (
-      <V3ErrorState
+      <ErrorState
         title="加载模板失败"
         description={state.error instanceof Error ? state.error.message : undefined}
         onRetry={() => {
@@ -346,7 +346,7 @@ function TemplateTableRow({
   unlisted,
   onConfigure,
   onDelete,
-  onToggleStatus,
+  onToggleStatus
 }: {
   template: EmployeeTemplate;
   unlisted: ReturnType<typeof templateUnlistedRecommendations>;
@@ -355,47 +355,47 @@ function TemplateTableRow({
   onToggleStatus: () => void;
 }) {
   return (
-    <V3Tr>
-      <V3Td className="min-w-[240px]">
+    <Tr>
+      <Td className="min-w-[240px]">
         <div className="flex min-w-0 items-start gap-3">
           <IconTile tone="brand" size="sm">
             <Sparkles />
           </IconTile>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-bold text-v3-ink">{template.label}</p>
+              <p className="font-bold text-ink">{template.label}</p>
               {template.is_system ? (
                 <StatusPill tone="info" showDot={false}>
                   内置
                 </StatusPill>
               ) : null}
             </div>
-            <p className="mt-1 line-clamp-2 max-w-md text-[12px] text-v3-ink-2">
+            <p className="mt-1 line-clamp-2 max-w-md text-[12px] text-ink-2">
               {template.description}
             </p>
           </div>
         </div>
-      </V3Td>
-      <V3Td>
-        <code className="rounded-md bg-v3-card-soft px-2 py-1 font-mono text-[12px] text-v3-ink">
+      </Td>
+      <Td>
+        <code className="rounded-md bg-card-soft px-2 py-1 font-mono text-[12px] text-ink">
           {template.default_role}
         </code>
-      </V3Td>
-      <V3Td>
+      </Td>
+      <Td>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="min-w-0">{templateCapabilityPreview(template)}</span>
           {unlisted.total > 0 ? (
             <StatusPill tone="warn">推荐未上架 {unlisted.total}</StatusPill>
           ) : null}
         </div>
-      </V3Td>
-      <V3Td>{templateDefaultInjectionLine(template)}</V3Td>
-      <V3Td>
+      </Td>
+      <Td>{templateDefaultInjectionLine(template)}</Td>
+      <Td>
         <StatusPill tone={templateStatusTone(template)}>{templateStatusLabel(template)}</StatusPill>
-      </V3Td>
-      <V3Td>
+      </Td>
+      <Td>
         <div className="flex items-center gap-2">
-          <V3Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm">
             <Link
               aria-label={`查看${template.label}模板详情`}
               to="/employees/templates/$templateType"
@@ -403,25 +403,25 @@ function TemplateTableRow({
             >
               查看详情
             </Link>
-          </V3Button>
-          <V3Button variant="outline" size="sm" onClick={onConfigure}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={onConfigure}>
             配置
-          </V3Button>
-          <V3Button variant="outline" size="sm" onClick={onToggleStatus}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={onToggleStatus}>
             {template.status === "active" ? "禁用" : "启用"}
-          </V3Button>
-          <V3Button variant="outline" size="sm" onClick={onDelete}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={onDelete}>
             删除
-          </V3Button>
+          </Button>
         </div>
-      </V3Td>
-    </V3Tr>
+      </Td>
+    </Tr>
   );
 }
 
 function TemplateDetailContent({
   template,
-  unlisted,
+  unlisted
 }: {
   template: EmployeeTemplate;
   unlisted: ReturnType<typeof templateUnlistedRecommendations>;
@@ -445,14 +445,14 @@ function TemplateDetailContent({
                 </IconTile>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-[24px] font-extrabold text-v3-ink">{template.label}</h2>
+                    <h2 className="text-[24px] font-extrabold text-ink">{template.label}</h2>
                     {template.is_system ? (
                       <StatusPill tone="info" showDot={false}>
                         内置
                       </StatusPill>
                     ) : null}
                   </div>
-                  <p className="mt-1 max-w-2xl text-[13px] text-v3-ink-2">{template.description}</p>
+                  <p className="mt-1 max-w-2xl text-[13px] text-ink-2">{template.description}</p>
                 </div>
               </div>
               <StatusPill tone={templateStatusTone(template)}>{templateStatusLabel(template)}</StatusPill>
@@ -466,24 +466,24 @@ function TemplateDetailContent({
           </SoftCard>
 
           <WorkSurface>
-            <div className="border-b border-v3-line px-5 py-4">
+            <div className="border-b border-line px-5 py-4">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-[17px] font-bold text-v3-ink">模板能力</h3>
+                <h3 className="text-[17px] font-bold text-ink">模板能力</h3>
                 {unlisted.total > 0 ? (
                   <StatusPill tone="warn">推荐未上架 {unlisted.total}</StatusPill>
                 ) : null}
               </div>
-              <p className="mt-1 text-[13px] text-v3-ink-2">
+              <p className="mt-1 text-[13px] text-ink-2">
                 模板已定义的技能、MCP 与 Provider 能力，不代表默认全部启用。
               </p>
               {unlisted.total > 0 ? (
-                <p className="mt-1 text-[13px] text-v3-ink-2">
+                <p className="mt-1 text-[13px] text-ink-2">
                   标注"未上架"的推荐项在注册表中不存在,创建向导中不可选:去
-                  <Link className="text-v3-brand hover:underline" to="/skills">
+                  <Link className="text-brand hover:underline" to="/skills">
                     技能市场
                   </Link>
                   或
-                  <Link className="text-v3-brand hover:underline" to="/mcp">
+                  <Link className="text-brand hover:underline" to="/mcp">
                     MCP 注册表
                   </Link>
                   补齐,或从模板中移除该推荐。
@@ -498,9 +498,9 @@ function TemplateDetailContent({
           </WorkSurface>
 
           <WorkSurface>
-            <div className="border-b border-v3-line px-5 py-4">
-              <h3 className="text-[17px] font-bold text-v3-ink">默认注入</h3>
-              <p className="mt-1 text-[13px] text-v3-ink-2">
+            <div className="border-b border-line px-5 py-4">
+              <h3 className="text-[17px] font-bold text-ink">默认注入</h3>
+              <p className="mt-1 text-[13px] text-ink-2">
                 创建时由模板带入的默认能力选择。
               </p>
             </div>
@@ -520,8 +520,8 @@ function TemplateDetailContent({
                 <CheckCircle2 />
               </IconTile>
               <div className="min-w-0">
-                <h3 className="text-[17px] font-bold text-v3-ink">继承基线</h3>
-                <p className="mt-1 text-[13px] text-v3-ink-2">
+                <h3 className="text-[17px] font-bold text-ink">继承基线</h3>
+                <p className="mt-1 text-[13px] text-ink-2">
                   模板默认值以此为准；创建时可能叠加团队治理基线。
                 </p>
               </div>
@@ -529,15 +529,15 @@ function TemplateDetailContent({
           </SoftCard>
 
           <SoftCard className="p-5">
-            <h3 className="text-[17px] font-bold text-v3-ink">创建入口</h3>
-            <p className="mt-1 text-[13px] text-v3-ink-2">
+            <h3 className="text-[17px] font-bold text-ink">创建入口</h3>
+            <p className="mt-1 text-[13px] text-ink-2">
               使用此模板进入创建向导，模板只负责带入默认画像和能力建议。
             </p>
-            <V3Button asChild className="mt-4 w-full">
+            <Button asChild className="mt-4 w-full">
               <Link to="/employees/new" search={{ template: template.type }}>
                 用此模板创建数字员工
               </Link>
-            </V3Button>
+            </Button>
           </SoftCard>
         </div>
       }
@@ -548,16 +548,16 @@ function TemplateDetailContent({
 function DetailFact({
   label,
   monospace,
-  value,
+  value
 }: {
   label: string;
   monospace?: boolean;
   value: string;
 }) {
   return (
-    <div className="rounded-v3-inner bg-v3-card-soft p-3">
-      <dt className="text-[12px] font-semibold text-v3-ink-3">{label}</dt>
-      <dd className={monospace ? "mt-1 font-mono text-[13px] text-v3-ink" : "mt-1 text-[13px] text-v3-ink"}>
+    <div className="rounded-inner bg-card-soft p-3">
+      <dt className="text-[12px] font-semibold text-ink-3">{label}</dt>
+      <dd className={monospace ? "mt-1 font-mono text-[13px] text-ink" : "mt-1 text-[13px] text-ink"}>
         {value}
       </dd>
     </div>
@@ -567,20 +567,20 @@ function DetailFact({
 function CapabilityBlock({
   title,
   unavailableKeys,
-  values,
+  values
 }: {
   title: string;
   unavailableKeys?: ReadonlySet<string>;
   values: string[];
 }) {
   return (
-    <div className="min-w-0 rounded-v3-inner bg-v3-card-soft p-3">
-      <p className="text-[12px] font-semibold text-v3-ink-3">{title}</p>
+    <div className="min-w-0 rounded-inner bg-card-soft p-3">
+      <p className="text-[12px] font-semibold text-ink-3">{title}</p>
       {values.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-2">
           {values.map((value) => (
             <span className="inline-flex min-w-0 items-center gap-1" key={value}>
-              <code className="rounded-md bg-v3-card px-2 py-1 font-mono text-[12px] text-v3-ink">
+              <code className="rounded-md bg-card px-2 py-1 font-mono text-[12px] text-ink">
                 {value}
               </code>
               {unavailableKeys?.has(value) ? (
@@ -592,7 +592,7 @@ function CapabilityBlock({
           ))}
         </div>
       ) : (
-        <p className="mt-2 text-[13px] text-v3-ink-3">无</p>
+        <p className="mt-2 text-[13px] text-ink-3">无</p>
       )}
     </div>
   );
@@ -600,9 +600,9 @@ function CapabilityBlock({
 
 function InjectionCount({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-v3-inner bg-v3-card-soft p-3">
-      <p className="text-[12px] font-semibold text-v3-ink-3">{label}</p>
-      <p className="mt-1 text-[18px] font-extrabold tabular-nums text-v3-ink">
+    <div className="rounded-inner bg-card-soft p-3">
+      <p className="text-[12px] font-semibold text-ink-3">{label}</p>
+      <p className="mt-1 text-[18px] font-extrabold tabular-nums text-ink">
         {label} {value}
       </p>
     </div>
@@ -614,12 +614,12 @@ function InjectionCount({ label, value }: { label: string; value: number }) {
 function useCapabilityRegistryKeys(apiOptions: { baseUrl: string; fetcher?: typeof fetch }) {
   const skillsQuery = useQuery({
     queryKey: ["skills"],
-    queryFn: () => listSkills(apiOptions),
-  });
+    queryFn: () => listSkills(apiOptions)
+});
   const mcpQuery = useQuery({
     queryKey: ["mcp-server-definitions"],
-    queryFn: () => listMcpServerDefinitions(apiOptions),
-  });
+    queryFn: () => listMcpServerDefinitions(apiOptions)
+});
   const availableSkillKeys = useMemo(
     () => (skillsQuery.data ? new Set(skillsQuery.data.map((skill) => skill.slug)) : undefined),
     [skillsQuery.data],
@@ -636,8 +636,8 @@ function useTemplateCatalog(apiBaseUrl: string, fetcher?: typeof fetch) {
   const queryClient = useQueryClient();
   const templatesQuery = useQuery({
     queryKey: ["employee-templates"],
-    queryFn: () => listEmployeeTemplates(apiOptions),
-  });
+    queryFn: () => listEmployeeTemplates(apiOptions)
+});
 
   return {
     apiOptions,
@@ -647,8 +647,8 @@ function useTemplateCatalog(apiBaseUrl: string, fetcher?: typeof fetch) {
     refetch: async () => {
       await templatesQuery.refetch();
     },
-    invalidate: () => queryClient.invalidateQueries({ queryKey: ["employee-templates"] }),
-  };
+    invalidate: () => queryClient.invalidateQueries({ queryKey: ["employee-templates"] })
+};
 }
 
 type TemplateFormDialogProps = {
@@ -684,8 +684,8 @@ function draftFromTemplate(template?: EmployeeTemplate): TemplateFormDraft {
     recommendedProviderTypes: (template?.recommended_provider_types ?? []).join(", "),
     personaMemoryMarkdown: template?.persona_memory_markdown ?? "",
     capabilityBindings: JSON.stringify(template?.capability_bindings ?? {}, null, 2),
-    budgetPolicy: JSON.stringify(template?.budget_policy ?? {}, null, 2),
-  };
+    budgetPolicy: JSON.stringify(template?.budget_policy ?? {}, null, 2)
+};
 }
 
 function parseCommaList(value: string): string[] {
@@ -698,7 +698,7 @@ function TemplateFormDialog({
   template,
   apiOptions,
   onOpenChange,
-  onSaved,
+  onSaved
 }: TemplateFormDialogProps) {
   const [draft, setDraft] = useState<TemplateFormDraft>(() => draftFromTemplate(template));
   const [error, setError] = useState("");
@@ -729,8 +729,8 @@ function TemplateFormDialog({
         recommended_provider_types: parseCommaList(draft.recommendedProviderTypes),
         persona_memory_markdown: draft.personaMemoryMarkdown.trim(),
         capability_bindings: capabilityBindings,
-        budget_policy: budgetPolicy,
-      };
+        budget_policy: budgetPolicy
+};
       if (mode === "create") {
         await createEmployeeTemplate(apiOptions, { ...payload, type: draft.type.trim() });
       } else if (template) {
@@ -742,8 +742,8 @@ function TemplateFormDialog({
     },
     onSuccess: () => {
       onSaved();
-    },
-  });
+    }
+});
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -837,15 +837,15 @@ function TemplateFormDialog({
           {error ? <p className="text-sm font-semibold text-destructive">{error}</p> : null}
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <V3Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             取消
-          </V3Button>
-          <V3Button
+          </Button>
+          <Button
             disabled={mutation.isPending || !draft.label.trim() || (mode === "create" && !draft.type.trim())}
             onClick={() => mutation.mutate()}
           >
             保存
-          </V3Button>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

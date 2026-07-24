@@ -7,19 +7,19 @@ import { Route } from "./index";
 const projectId = "11111111-1111-4111-8111-111111111111";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -29,31 +29,31 @@ vi.mock("@tanstack/react-router", async () => {
 
   return {
     ...actual,
-    useSearch: () => ({ project_id: projectId }),
-  };
+    useSearch: () => ({ project_id: projectId })
+};
 });
 
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://control-plane.local",
+  resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: {
-      "content-type": "application/json",
-    },
-    status: 200,
-  });
+      "content-type": "application/json"
+},
+    status: 200
+});
 }
 
 function createAuditFetcher() {
@@ -73,17 +73,17 @@ function createAuditFetcher() {
           ip_address: "127.0.0.1",
           resource_id: projectId,
           resource_type: "project",
-          tenant_id: "tenant-1",
-        },
+          tenant_id: "tenant-1"
+},
       ]);
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: {
-        "content-type": "application/json",
-      },
-      status: 404,
-    });
+        "content-type": "application/json"
+},
+      status: 404
+});
   }) as unknown as typeof fetch;
 }
 
@@ -105,7 +105,7 @@ describe("AuditRoute", () => {
     await expect.element(screen.getByRole("heading", { name: "审计中心" })).toBeVisible();
     await expect.element(screen.getByText("project.updated")).toBeVisible();
 
-    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-table"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="data-table"]')).not.toBeNull();
   });
 });

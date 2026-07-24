@@ -7,15 +7,15 @@ import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import { UserIdentityAvatar, getUserIdentityLabel } from "@/components/superteam/user-identity";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import {
   updateCurrentUserPassword,
   updateCurrentUserProfile,
   type ApiClientOptions,
-  type LoginLogRecord,
+  type LoginLogRecord
 } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
@@ -55,19 +55,19 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
   const apiOptions = useMemo(
     () => ({
       baseUrl: apiBaseUrl,
-      fetcher,
-    }),
+      fetcher
+}),
     [fetcher],
   );
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>({
     avatarSeed: "",
     displayName: "",
-    email: "",
-  });
+    email: ""
+});
   const [passwordDraft, setPasswordDraft] = useState<PasswordDraft>({
     currentPassword: "",
-    password: "",
-  });
+    password: ""
+});
   const [profileMessage, setProfileMessage] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
 
@@ -78,8 +78,8 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
     setProfileDraft({
       avatarSeed: user.avatar.seed,
       displayName: user.display_name ?? user.username,
-      email: user.email ?? "",
-    });
+      email: user.email ?? ""
+});
   }, [user?.avatar.seed, user?.display_name, user?.email, user?.id, user?.username]);
 
   const loginLogsQuery = useQuery({
@@ -88,10 +88,10 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
       listCurrentUserLoginLogs({
         ...apiOptions,
         limit: 10,
-        offset: 0,
-      }),
-    queryKey: ["account", "login-logs", user?.id],
-  });
+        offset: 0
+}),
+    queryKey: ["account", "login-logs", user?.id]
+});
 
   const profileMutation = useMutation({
     mutationFn: (draft: ProfileDraft) =>
@@ -99,29 +99,29 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
         avatar: {
           provider: "dicebear",
           seed: draft.avatarSeed.trim() || user?.username || "account",
-          style: "adventurer",
-        },
+          style: "adventurer"
+},
         display_name: draft.displayName.trim(),
-        email: draft.email.trim(),
-      }),
+        email: draft.email.trim()
+}),
     onSuccess: async () => {
       setProfileMessage("资料已保存");
       await refreshCurrentUser({ showLoading: false });
       void queryClient.invalidateQueries({ queryKey: ["account", "login-logs"] });
-    },
-  });
+    }
+});
 
   const passwordMutation = useMutation({
     mutationFn: (draft: PasswordDraft) =>
       updateCurrentUserPassword(apiOptions, {
         current_password: draft.currentPassword,
-        password: draft.password,
-      }),
+        password: draft.password
+}),
     onSuccess: () => {
       setPasswordDraft({ currentPassword: "", password: "" });
       setPasswordMessage("密码已更新");
-    },
-  });
+    }
+});
 
   if (!user) {
     return (
@@ -133,7 +133,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
           subtitle="当前控制台账号资料与安全设置。"
         />
         <Main width="contained" className="min-w-0 overflow-x-hidden">
-          <SoftCard className="p-6 text-sm text-v3-ink-2">未登录</SoftCard>
+          <SoftCard className="p-6 text-sm text-ink-2">未登录</SoftCard>
         </Main>
       </>
     );
@@ -165,8 +165,8 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
             <div className="mb-5 flex items-center gap-3">
               <UserIdentityAvatar className="size-14" user={user} />
               <div className="min-w-0">
-                <h2 className="text-base font-bold text-v3-ink">个人资料</h2>
-                <p className="truncate text-sm text-v3-ink-2">{user.username}</p>
+                <h2 className="text-base font-bold text-ink">个人资料</h2>
+                <p className="truncate text-sm text-ink-2">{user.username}</p>
               </div>
             </div>
               <form
@@ -200,10 +200,10 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
                   />
                 </Field>
                 <div className="flex items-center gap-3 md:col-span-2">
-                  <V3Button disabled={profileMutation.isPending} type="submit">
+                  <Button disabled={profileMutation.isPending} type="submit">
                     <Save data-icon="inline-start" />
                     保存资料
-                  </V3Button>
+                  </Button>
                   <MutationMessage
                     error={profileMutation.error}
                     message={profileMessage}
@@ -217,7 +217,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
               <IconTile tone="brand">
                 <KeyRound />
               </IconTile>
-              <h2 className="text-base font-bold text-v3-ink">密码</h2>
+              <h2 className="text-base font-bold text-ink">密码</h2>
             </div>
               <form
                 className="grid gap-4"
@@ -244,10 +244,10 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
                   />
                 </Field>
                 <div className="flex items-center gap-3">
-                  <V3Button disabled={passwordMutation.isPending} type="submit">
+                  <Button disabled={passwordMutation.isPending} type="submit">
                     <ShieldCheck data-icon="inline-start" />
                     修改密码
-                  </V3Button>
+                  </Button>
                   <MutationMessage
                     error={passwordMutation.error}
                     message={passwordMessage}
@@ -262,30 +262,30 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
             <IconTile tone="artifact">
               <Clock3 />
             </IconTile>
-            <h2 className="text-base font-bold text-v3-ink">最近登录</h2>
+            <h2 className="text-base font-bold text-ink">最近登录</h2>
           </div>
           <WorkSurface>
             {loginLogsQuery.isError ? (
-              <V3ErrorState title="登录记录加载失败" />
+              <ErrorState title="登录记录加载失败" />
             ) : loginLogsQuery.isLoading ? (
-              <V3LoadingState label="加载登录记录中" />
+              <LoadingState label="加载登录记录中" />
             ) : loginLogs.length === 0 ? (
-              <V3EmptyState title="暂无登录记录" />
+              <EmptyState title="暂无登录记录" />
             ) : (
-              <V3Table>
+              <DataTable>
                 <thead>
-                  <V3Tr>
-                    <V3Th>事件</V3Th>
-                    <V3Th>IP 地址</V3Th>
-                    <V3Th>时间</V3Th>
-                  </V3Tr>
+                  <Tr>
+                    <Th>事件</Th>
+                    <Th>IP 地址</Th>
+                    <Th>时间</Th>
+                  </Tr>
                 </thead>
                 <tbody>
                 {loginLogs.map((record) => (
                   <LoginLogRow key={record.id} record={record} />
                 ))}
                 </tbody>
-              </V3Table>
+              </DataTable>
             )}
           </WorkSurface>
         </SoftCard>
@@ -297,7 +297,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
 function Field({
   children,
   className,
-  label,
+  label
 }: {
   children: ReactNode;
   className?: string;
@@ -316,25 +316,25 @@ function MutationMessage({ error, message }: { error: Error | null; message: str
     return <span className="text-sm text-destructive">{error.message}</span>;
   }
   if (message) {
-    return <span className="text-sm text-v3-ok">{message}</span>;
+    return <span className="text-sm text-ok">{message}</span>;
   }
   return null;
 }
 
 function LoginLogRow({ record }: { record: LoginLogRecord }) {
   return (
-    <V3Tr tone={record.result === "failed" ? "danger" : undefined}>
-      <V3Td className="min-w-56">
-        <div className="font-medium text-v3-ink">{formatLoginEvent(record.event_type)}</div>
-        <div className="truncate text-v3-ink-2">{record.user_agent ?? "未知设备"}</div>
-      </V3Td>
-      <V3Td className="text-v3-ink-2">{record.client_ip ?? "未知 IP"}</V3Td>
-      <V3Td className="text-v3-ink-2 tabular-nums">
+    <Tr tone={record.result === "failed" ? "danger" : undefined}>
+      <Td className="min-w-56">
+        <div className="font-medium text-ink">{formatLoginEvent(record.event_type)}</div>
+        <div className="truncate text-ink-2">{record.user_agent ?? "未知设备"}</div>
+      </Td>
+      <Td className="text-ink-2">{record.client_ip ?? "未知 IP"}</Td>
+      <Td className="text-ink-2 tabular-nums">
         <time dateTime={record.created_at}>
         {formatDateTime(record.created_at)}
       </time>
-      </V3Td>
-    </V3Tr>
+      </Td>
+    </Tr>
   );
 }
 
@@ -354,6 +354,6 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
+    year: "numeric"
+}).format(new Date(value));
 }

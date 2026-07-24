@@ -29,11 +29,11 @@ const baseSkillEntry = {
     created_by: "user-1",
     created_by_name: "Tester",
     team_bindings: [],
-    agent_bindings: [],
-  },
+    agent_bindings: []
+},
   source_scope: "employee",
   inherited: false,
-  read_only: false,
+  read_only: false
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -60,8 +60,8 @@ function createPanelFetcher(overrides: Record<string, unknown> = {}) {
     [`/api/v1/digital-employees/${employeeId}/mcp-bindings-v2`]: [],
     [`/api/v1/digital-employees/${employeeId}/effective-mcp-config`]: [],
     [`/api/v1/digital-employees/${employeeId}/environment-variables`]: [],
-    [`/api/v1/digital-employees/${employeeId}/skill-mcp-dependency-status`]: [],
-  };
+    [`/api/v1/digital-employees/${employeeId}/skill-mcp-dependency-status`]: []
+};
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     for (const [suffix, body] of Object.entries(overrides)) {
@@ -74,8 +74,8 @@ function createPanelFetcher(overrides: Record<string, unknown> = {}) {
 
 function withClient(ui: ReactNode) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
+});
   return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
 }
 
@@ -92,12 +92,12 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
               server_key: "github-mcp",
               server_name: "GitHub MCP",
               status: "missing_binding",
-              missing_env_vars: [],
-            },
-          ],
-        },
-      ],
-    });
+              missing_env_vars: []
+},
+          ]
+},
+      ]
+});
     const screen = await render(
       withClient(<EmployeeCapabilitiesPanel apiOptions={{ baseUrl: "http://cp", fetcher }} employeeId={employeeId} />),
     );
@@ -117,12 +117,12 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
               server_key: "github-mcp",
               server_name: "GitHub MCP",
               status: "blocked_missing_env",
-              missing_env_vars: ["GITHUB_TOKEN", "GITHUB_ORG"],
-            },
-          ],
-        },
-      ],
-    });
+              missing_env_vars: ["GITHUB_TOKEN", "GITHUB_ORG"]
+},
+          ]
+},
+      ]
+});
     const screen = await render(
       withClient(<EmployeeCapabilitiesPanel apiOptions={{ baseUrl: "http://cp", fetcher }} employeeId={employeeId} />),
     );
@@ -143,12 +143,12 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
               server_key: "github-mcp",
               server_name: "GitHub MCP",
               status: "satisfied",
-              missing_env_vars: [],
-            },
-          ],
-        },
-      ],
-    });
+              missing_env_vars: []
+},
+          ]
+},
+      ]
+});
     const screen = await render(
       withClient(<EmployeeCapabilitiesPanel apiOptions={{ baseUrl: "http://cp", fetcher }} employeeId={employeeId} />),
     );
@@ -186,8 +186,8 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
       optional_env_vars: [],
       tool_allowlist: [],
       risk_level: "low",
-      status: "active",
-    } satisfies McpServerDefinition;
+      status: "active"
+} satisfies McpServerDefinition;
 
     let bound = false;
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -201,8 +201,8 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
           server_key: definition.server_key,
           server_name: definition.name,
           status: "active",
-          missing_env_vars: [],
-        });
+          missing_env_vars: []
+});
       }
       if (url.pathname.endsWith("/skill-mcp-dependency-status")) {
         return jsonResponse([
@@ -215,10 +215,10 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
                 server_key: definition.server_key,
                 server_name: definition.name,
                 status: bound ? "satisfied" : "missing_binding",
-                missing_env_vars: [],
-              },
-            ],
-          },
+                missing_env_vars: []
+},
+            ]
+},
         ]);
       }
       if (url.pathname.endsWith("/mcp-servers")) return jsonResponse([definition]);

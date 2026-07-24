@@ -3,19 +3,19 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import {
   listOperationLogs,
   type OperationLogRecord,
-  type OperationLogResult,
+  type OperationLogResult
 } from "@/lib/api/auth";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import {
@@ -25,11 +25,11 @@ import {
   LogPagination,
   LogSelectFilter,
   LogTextFilter,
-  formatLogDateTime,
+  formatLogDateTime
 } from "../-shared";
 
 export const Route = createFileRoute("/_authenticated/logs/operation/")({
-  component: OperationLogsRoute,
+  component: OperationLogsRoute
 });
 
 const chipOptions = [
@@ -60,8 +60,8 @@ function OperationLogsRoute() {
     queryKey: ["web-operation-logs", filters, offset],
     queryFn: () =>
       listOperationLogs({ baseUrl: apiBaseUrl, limit: LOG_PAGE_SIZE, offset, ...filters }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const updateFilter = <K extends keyof OperationLogFilters>(key: K, value: OperationLogFilters[K]) => {
     setOffset(0);
@@ -104,49 +104,49 @@ function OperationLogsRoute() {
         </LogFilterBar>
 
         {logsQuery.isLoading && !logsQuery.data ? (
-          <V3LoadingState label="正在加载操作日志…" />
+          <LoadingState label="正在加载操作日志…" />
         ) : logsQuery.isError ? (
-          <V3ErrorState title="操作日志加载失败" description="请稍后重试，或确认当前账号仍有访问权限。" />
+          <ErrorState title="操作日志加载失败" description="请稍后重试，或确认当前账号仍有访问权限。" />
         ) : records.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             title={hasFilter ? "筛选后无操作日志" : "暂无操作日志"}
             description="控制台管理操作产生后会显示在这里。"
           />
         ) : (
-          <V3Table>
+          <DataTable>
             <thead>
-              <V3Tr>
-                <V3Th className="min-w-[150px]">时间</V3Th>
-                <V3Th>模块</V3Th>
-                <V3Th>动作</V3Th>
-                <V3Th>结果</V3Th>
-                <V3Th>用户</V3Th>
-                <V3Th className="min-w-[180px]">资源</V3Th>
-                <V3Th>来源 IP</V3Th>
-              </V3Tr>
+              <Tr>
+                <Th className="min-w-[150px]">时间</Th>
+                <Th>模块</Th>
+                <Th>动作</Th>
+                <Th>结果</Th>
+                <Th>用户</Th>
+                <Th className="min-w-[180px]">资源</Th>
+                <Th>来源 IP</Th>
+              </Tr>
             </thead>
             <tbody>
               {records.map((record: OperationLogRecord) => (
-                <V3Tr key={record.id}>
-                  <V3Td className="whitespace-nowrap text-xs text-v3-ink-2 tabular-nums">
+                <Tr key={record.id}>
+                  <Td className="whitespace-nowrap text-xs text-ink-2 tabular-nums">
                     {formatLogDateTime(record.created_at)}
-                  </V3Td>
-                  <V3Td className="whitespace-nowrap text-sm">{record.module}</V3Td>
-                  <V3Td><StatusPill tone="mute">{record.action}</StatusPill></V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td className="whitespace-nowrap text-sm">{record.module}</Td>
+                  <Td><StatusPill tone="mute">{record.action}</StatusPill></Td>
+                  <Td>
                     <StatusPill tone={record.result === "succeeded" ? "ok" : "danger"}>
                       {record.result === "succeeded" ? "成功" : "失败"}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td className="max-w-[160px] truncate text-sm">{record.username || "-"}</V3Td>
-                  <V3Td className="max-w-[220px] truncate font-mono text-xs text-v3-ink-3">
+                  </Td>
+                  <Td className="max-w-[160px] truncate text-sm">{record.username || "-"}</Td>
+                  <Td className="max-w-[220px] truncate font-mono text-xs text-ink-3">
                     {record.resource_type ? `${record.resource_type}:${record.resource_id || "-"}` : "-"}
-                  </V3Td>
-                  <V3Td className="whitespace-nowrap font-mono text-xs">{record.client_ip || "-"}</V3Td>
-                </V3Tr>
+                  </Td>
+                  <Td className="whitespace-nowrap font-mono text-xs">{record.client_ip || "-"}</Td>
+                </Tr>
               ))}
             </tbody>
-          </V3Table>
+          </DataTable>
         )}
 
         <LogPagination

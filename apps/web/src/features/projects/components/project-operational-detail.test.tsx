@@ -10,7 +10,7 @@ import type {
   ProjectMember,
   ProjectOverview,
   ProjectPlanRevision,
-  ProjectTask,
+  ProjectTask
 } from "@/lib/api/projects";
 
 vi.mock("@tanstack/react-router", () => {
@@ -35,8 +35,8 @@ vi.mock("@tanstack/react-router", () => {
           {children}
         </a>
       );
-    },
-  };
+    }
+};
 });
 
 const project: Project = {
@@ -50,7 +50,7 @@ const project: Project = {
   name: "客户接入验收",
   status: "running",
   tenant_id: "tenant-1",
-  workspace_ready_status: "ready",
+  workspace_ready_status: "ready"
 };
 
 function member(overrides: Partial<ProjectMember>): ProjectMember {
@@ -64,8 +64,8 @@ function member(overrides: Partial<ProjectMember>): ProjectMember {
     settings: {},
     status: "active",
     tenant_id: "tenant-1",
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 const overview: ProjectOverview = {
@@ -78,20 +78,20 @@ const overview: ProjectOverview = {
       status: "running",
       summary: "整理客户接入证据",
       tenant_id: "tenant-1",
-      title: "整理接入证据",
-    },
+      title: "整理接入证据"
+},
   ],
   coordination_workflow: {
     status: "registered",
-    workflow_id: "project-coordinator:project-1",
-  },
+    workflow_id: "project-coordinator:project-1"
+},
   digital_employee_pool: [
     member({
       display_name_snapshot: "验收执行员工",
       id: "member-employee-1",
       principal_id: "employee-1",
-      principal_type: "digital_employee",
-    }),
+      principal_type: "digital_employee"
+}),
   ],
   human_roles: [
     member({
@@ -99,8 +99,8 @@ const overview: ProjectOverview = {
       id: "member-owner-1",
       principal_id: "human-owner-1",
       principal_type: "human_user",
-      project_role: "owner",
-    }),
+      project_role: "owner"
+}),
   ],
   project,
   recent_events: [],
@@ -109,8 +109,8 @@ const overview: ProjectOverview = {
     active_tasks: 1,
     completed_tasks: 0,
     failed_tasks: 0,
-    pending_human_tasks: 0,
-  },
+    pending_human_tasks: 0
+}
 };
 
 const demands: ProjectDemand[] = [
@@ -125,8 +125,8 @@ const demands: ProjectDemand[] = [
     status: "submitted",
     submitted_by_user_id: "human-owner-1",
     tenant_id: "tenant-1",
-    title: "补充上线验收说明",
-  },
+    title: "补充上线验收说明"
+},
 ];
 
 const decisionRequests: ProjectDecisionRequest[] = [
@@ -139,8 +139,8 @@ const decisionRequests: ProjectDecisionRequest[] = [
     summary_snapshot: "需要确认上线风险",
     target_user_id: "human-owner-1",
     tenant_id: "tenant-1",
-    title_snapshot: "确认上线风险",
-  },
+    title_snapshot: "确认上线风险"
+},
 ];
 
 const longAcceptanceStatement =
@@ -156,13 +156,13 @@ const planRevisions: ProjectPlanRevision[] = [
         {
           id: "evidence_complete",
           satisfied_by: ["collect-evidence"],
-          statement: longAcceptanceStatement,
-        },
+          statement: longAcceptanceStatement
+},
         {
           id: "review_complete",
           satisfied_by: ["review-evidence"],
-          statement: "验收结论已由负责人复核。",
-        },
+          statement: "验收结论已由负责人复核。"
+},
       ],
       summary: "生成客户接入验收计划。",
       tasks: [
@@ -170,17 +170,17 @@ const planRevisions: ProjectPlanRevision[] = [
           employee_selection_reason: "负责收集客户接入材料。",
           planned_task_key: "collect-evidence",
           selected_employee_id: "employee-collector",
-          title: "收集接入证据",
-        },
+          title: "收集接入证据"
+},
         {
           depends_on: ["collect-evidence"],
           employee_selection_reason: "负责复核证据并形成结论。",
           planned_task_key: "review-evidence",
           selected_employee_id: "employee-reviewer",
-          title: "复核接入证据",
-        },
-      ],
-    },
+          title: "复核接入证据"
+},
+      ]
+},
     plan_fingerprint: "fingerprint",
     project_id: "project-1",
     review_required: true,
@@ -188,8 +188,8 @@ const planRevisions: ProjectPlanRevision[] = [
     status: "pending_review",
     tenant_id: "tenant-1",
     validation_errors: [],
-    validation_warnings: [],
-  },
+    validation_warnings: []
+},
 ];
 
 function detailElement(
@@ -295,16 +295,16 @@ describe("ProjectOperationalDetail", () => {
       ...overview,
       active_tasks: [],
       digital_employee_pool: [],
-      recent_events: [],
-    };
+      recent_events: []
+};
     const screen = await renderDetail({
       decisionRequests: [],
       demands: [],
       events: [],
       overview: emptyOverview,
       planRevisions: [],
-      tasks: [],
-    });
+      tasks: []
+});
 
     await expect.element(screen.getByTestId("project-ops-pulse")).toBeVisible();
     await expect.element(screen.getByTestId("project-ops-pulse-empty")).toBeVisible();
@@ -323,8 +323,8 @@ describe("ProjectOperationalDetail", () => {
           display_name_snapshot: undefined,
           id: "member-employee-unnamed",
           principal_id: "employee-unnamed-1",
-          principal_type: "digital_employee",
-        }),
+          principal_type: "digital_employee"
+}),
       ],
       human_roles: [
         member({
@@ -332,10 +332,10 @@ describe("ProjectOperationalDetail", () => {
           id: "member-owner-unnamed",
           principal_id: "human-owner-unnamed-1",
           principal_type: "human_user",
-          project_role: "owner",
-        }),
-      ],
-    };
+          project_role: "owner"
+}),
+      ]
+};
     const screen = await renderDetail({
       overview: unnamedOverview,
       principalNamesById: new Map([
@@ -344,9 +344,9 @@ describe("ProjectOperationalDetail", () => {
       ]),
       project: {
         ...project,
-        human_owner_user_id: "human-owner-unnamed-1",
-      },
-    });
+        human_owner_user_id: "human-owner-unnamed-1"
+}
+});
 
     await expect.element(screen.getByRole("button", { name: "负责人 李娜" })).toBeVisible();
     await expect.element(screen.getByRole("link", { name: /运维检索员工/ })).toHaveAttribute(
@@ -369,8 +369,8 @@ describe("ProjectOperationalDetail", () => {
             created_at: "2026-07-10T08:00:00Z",
             message: "项目员工池无法满足审查独立性约束（需≥2名可调度员工）",
             reason_code: "no_suitable_employee",
-            recommended_action: "为项目补充可调度员工或换用模板",
-          },
+            recommended_action: "为项目补充可调度员工或换用模板"
+},
         ],
         decision_requests: [],
         edges: [],
@@ -378,9 +378,9 @@ describe("ProjectOperationalDetail", () => {
         execution_summaries: [],
         nodes: [],
         recent_events: [],
-        runs: [],
-      },
-    });
+        runs: []
+}
+});
 
     await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
     await expect
@@ -409,8 +409,8 @@ describe("ProjectOperationalDetail", () => {
     const screen = await renderDetail({
       focusDecisionId: "decision-1",
       initialTab: "approval",
-      onResolveDecision,
-    });
+      onResolveDecision
+});
 
     await expect
       .element(screen.getByRole("tab", { name: "决策历史", selected: true }))
@@ -501,30 +501,30 @@ describe("ProjectOperationalDetail", () => {
             id: "automated_check",
             satisfied_by: ["collect-evidence"],
             statement: "自动化测试用例全部通过。",
-            verification_method: "automated_test",
-          },
+            verification_method: "automated_test"
+},
           {
             id: "human_review",
             satisfied_by: [],
             statement: "负责人确认交付满足业务预期。",
-            verification_method: "human_judgment",
-          },
+            verification_method: "human_judgment"
+},
           {
             id: "non_blocking_check",
             satisfied_by: ["review-evidence"],
             severity: "non_blocking",
-            statement: "补充材料齐全（非阻断）。",
-          },
+            statement: "补充材料齐全（非阻断）。"
+},
           {
             ambiguity_flag: true,
             evidence_hint: "上传验收报告截图作为证据。",
             id: "ambiguous_check",
             satisfied_by: ["review-evidence"],
-            statement: "系统表现良好。",
-          },
-        ],
-      },
-    };
+            statement: "系统表现良好。"
+},
+        ]
+}
+};
     const screen = await renderDetail({ initialTab: "approval", planRevisions: [semanticCriteriaRevision] });
 
     expect(
@@ -587,14 +587,14 @@ describe("ProjectOperationalDetail", () => {
           {
             kind: "human_gate",
             message:
-              "发布任务已强制人类审批：由 human_gate@software_delivery v2 触发",
-          },
+              "发布任务已强制人类审批：由 human_gate@software_delivery v2 触发"
+},
         ],
         exit_deliverable: "review_verdict",
         template_key: "software_delivery",
-        template_version: 2,
-      },
-    };
+        template_version: 2
+}
+};
     const screen = await renderDetail({ initialTab: "approval", planRevisions: [templatedRevision] });
 
     await expect.element(screen.getByText("software_delivery@v2")).toBeVisible();
@@ -617,9 +617,9 @@ describe("ProjectOperationalDetail", () => {
         // template_version binding marker, neither the 场景模板 nor 交付出口 row
         // may render.
         exit_deliverable: "risk_report",
-        template_key: "tech_risk_analysis",
-      },
-    };
+        template_key: "tech_risk_analysis"
+}
+};
     const screen = await renderDetail({ initialTab: "approval", planRevisions: [unboundRevision] });
 
     await expect.element(screen.getByText("调度顺序")).toBeVisible();
@@ -641,9 +641,9 @@ describe("ProjectOperationalDetail", () => {
         ],
         exit_deliverable: "review_verdict",
         template_key: "software_delivery",
-        template_version: 2,
-      },
-    };
+        template_version: 2
+}
+};
     const planReviewDecision: ProjectDecisionRequest = {
       approval_request_id: "approval-2",
       coordination_job_id: "coordination-job-1",
@@ -654,14 +654,14 @@ describe("ProjectOperationalDetail", () => {
       summary_snapshot: "确认计划版本 v1",
       target_user_id: "human-owner-1",
       tenant_id: "tenant-1",
-      title_snapshot: "确认计划版本 v1",
-    };
+      title_snapshot: "确认计划版本 v1"
+};
     const screen = await renderDetail({
       decisionRequests: [planReviewDecision],
       initialTab: "approval",
       onResolveDecision,
-      planRevisions: [templatedRevision],
-    });
+      planRevisions: [templatedRevision]
+});
 
     await expect
       .element(screen.getByTestId("plan-review-inbox-only"))
@@ -692,10 +692,10 @@ describe("ProjectOperationalDetail", () => {
         ],
         exit_deliverable: "review_verdict",
         template_key: "software_delivery",
-        template_version: 2,
-      },
-      revision_number: 1,
-    };
+        template_version: 2
+},
+      revision_number: 1
+};
     const revisionB: ProjectPlanRevision = {
       ...revisionA,
       id: "plan-revision-b",
@@ -705,10 +705,10 @@ describe("ProjectOperationalDetail", () => {
           { deliverable: "review_verdict", label: "审查通过并合入" },
           { deliverable: "hotfix_notes", label: "补丁说明就绪" },
         ],
-        exit_deliverable: "review_verdict",
-      },
-      revision_number: 2,
-    };
+        exit_deliverable: "review_verdict"
+},
+      revision_number: 2
+};
     const planReviewDecision: ProjectDecisionRequest = {
       approval_request_id: "approval-2",
       coordination_job_id: "coordination-job-1",
@@ -719,15 +719,15 @@ describe("ProjectOperationalDetail", () => {
       summary_snapshot: "确认计划版本",
       target_user_id: "human-owner-1",
       tenant_id: "tenant-1",
-      title_snapshot: "确认计划版本",
-    };
+      title_snapshot: "确认计划版本"
+};
     const screen = await render(
       detailElement({
         decisionRequests: [planReviewDecision],
         initialTab: "approval",
         onResolveDecision,
-        planRevisions: [revisionA],
-      }),
+        planRevisions: [revisionA]
+}),
     );
 
     await expect
@@ -739,8 +739,8 @@ describe("ProjectOperationalDetail", () => {
         decisionRequests: [planReviewDecision],
         initialTab: "approval",
         onResolveDecision,
-        planRevisions: [revisionB],
-      }),
+        planRevisions: [revisionB]
+}),
     );
 
     await expect
@@ -762,18 +762,18 @@ describe("ProjectOperationalDetail", () => {
             employee_selection_reason: "负责收集客户接入材料。",
             planned_task_key: "collect-evidence",
             selected_employee_id: "employee-collector",
-            title: "收集接入证据",
-          },
+            title: "收集接入证据"
+},
           {
             blocked_by_keys: ["collect-evidence"],
             employee_selection_reason: "负责复核证据并形成结论。",
             planned_task_key: "review-evidence",
             selected_employee_id: "employee-reviewer",
-            title: "复核接入证据",
-          },
-        ],
-      },
-    };
+            title: "复核接入证据"
+},
+        ]
+}
+};
     const screen = await renderDetail({ initialTab: "approval", planRevisions: [blockedByKeysRevision] });
     const dispatchOrderText =
       screen.container.querySelector("[data-testid='plan-dispatch-order']")?.textContent ?? "";
@@ -790,9 +790,9 @@ describe("ProjectOperationalDetail", () => {
       onDeleteProject,
       project: {
         ...project,
-        allowed_actions: ["project.archive", "project.delete"],
-      },
-    });
+        allowed_actions: ["project.archive", "project.delete"]
+}
+});
 
     await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
     await expect
@@ -811,9 +811,9 @@ describe("ProjectOperationalDetail", () => {
       onDeleteProject: vi.fn(),
       project: {
         ...project,
-        allowed_actions: ["project.demand.submit"],
-      },
-    });
+        allowed_actions: ["project.demand.submit"]
+}
+});
 
     await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
     await expect
@@ -838,11 +838,11 @@ describe("ProjectOperationalDetail", () => {
             project_id: "project-1",
             sequence_number: 1,
             summary: "接入证据整理完成",
-            tenant_id: "tenant-1",
-          },
-        ],
-      },
-    });
+            tenant_id: "tenant-1"
+},
+        ]
+}
+});
 
     await expect.element(screen.getByText("接入证据整理完成")).toBeVisible();
     const time = screen.container.querySelector('time[datetime="2026-07-20T01:00:00Z"]');

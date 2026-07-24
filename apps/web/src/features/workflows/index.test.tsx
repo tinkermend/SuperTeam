@@ -2,7 +2,7 @@ import {
   forwardRef,
   type AnchorHTMLAttributes,
   type MouseEvent,
-  type ReactNode,
+  type ReactNode
 } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
@@ -18,22 +18,22 @@ import type {
   ProjectTaskGraph,
   ProjectTaskGraphNode,
   ProjectTaskGraphRun,
-  WorkflowInstanceSummary,
+  WorkflowInstanceSummary
 } from "@/lib/api/projects";
 
 const mocks = vi.hoisted(() => ({
-  navigate: vi.fn(),
+  navigate: vi.fn()
 }));
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({
     children,
-    showSidebarTrigger = true,
-  }: {
+    showSidebarTrigger = true
+}: {
     children?: ReactNode;
     showSidebarTrigger?: boolean;
   }) => (
-    <header data-slot="v3-shell-header">
+    <header data-slot="shell-header">
       {showSidebarTrigger ? (
         <button data-slot="sidebar-trigger" type="button">
           切换侧栏
@@ -48,21 +48,21 @@ vi.mock("@/components/layout/header", () => ({
         搜索任务、数字员工、能力、文档或快捷命令... ⌘ K
       </button>
     </header>
-  ),
+  )
 }));
 
 vi.mock("@/components/layout/main", () => ({
   Main: ({ children, className }: { children: ReactNode; className?: string }) => (
     <main className={className}>{children}</main>
-  ),
+  )
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@xyflow/react", () => {
@@ -98,8 +98,8 @@ vi.mock("@xyflow/react", () => {
       edges = [],
       nodes = [],
       onNodeClick,
-      onPaneClick,
-    }: MockReactFlowProps) => (
+      onPaneClick
+}: MockReactFlowProps) => (
       <div data-testid="workflow-canvas">
         <button onClick={onPaneClick} type="button">
           canvas pane
@@ -116,8 +116,8 @@ vi.mock("@xyflow/react", () => {
         ))}
         {children}
       </div>
-    ),
-  };
+    )
+};
 });
 
 vi.mock("@tanstack/react-router", () => {
@@ -144,25 +144,25 @@ vi.mock("@tanstack/react-router", () => {
 
   return {
     Link,
-    useNavigate: () => mocks.navigate,
-  };
+    useNavigate: () => mocks.navigate
+};
 });
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function makeWorkflowInstance(
@@ -177,8 +177,8 @@ function makeWorkflowInstance(
       completed_nodes: 0,
       running_nodes: 0,
       total_nodes: 0,
-      waiting_human_nodes: 0,
-    },
+      waiting_human_nodes: 0
+},
     project_id: "project-1",
     project_name: "支付项目",
     selected_coordination_job_id: "job-1",
@@ -188,8 +188,8 @@ function makeWorkflowInstance(
     submitted_by_user_id: "owner-1",
     title: "支付成功率下降",
     updated_at: "2026-06-15T08:05:00Z",
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function makeProject(): Project {
@@ -204,8 +204,8 @@ function makeProject(): Project {
     name: "支付项目",
     status: "running",
     tenant_id: "tenant-1",
-    workspace_ready_status: "ready",
-  };
+    workspace_ready_status: "ready"
+};
 }
 
 function makeLaunchDetail(
@@ -222,8 +222,8 @@ function makeLaunchDetail(
         project_id: "project-1",
         status: "running",
         tenant_id: "tenant-1",
-        workflow_id: "project-coordinator:project-1",
-      },
+        workflow_id: "project-coordinator:project-1"
+},
     ],
     decision_requests: [],
     demand: {
@@ -237,16 +237,16 @@ function makeLaunchDetail(
       status: "planning_pending",
       submitted_by_user_id: "owner-1",
       tenant_id: "tenant-1",
-      title: "支付成功率下降",
-    },
+      title: "支付成功率下降"
+},
     execution_summaries: [],
     project: makeProject(),
     project_tasks: [],
     recent_events: [],
     reviewer: null,
     route_decisions: [],
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function makeGraph(
@@ -262,8 +262,8 @@ function makeGraph(
     recent_events: [],
     runs: overrides.runs ?? [],
     blocking_facts: overrides.blocking_facts ?? [],
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function makeGraphNode(
@@ -283,8 +283,8 @@ function makeGraphNode(
     status,
     tenant_id: "tenant-1",
     title,
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function makeProjectEvent(
@@ -300,8 +300,8 @@ function makeProjectEvent(
     payload,
     project_id: "project-1",
     sequence_number: 1,
-    tenant_id: "tenant-1",
-  };
+    tenant_id: "tenant-1"
+};
 }
 
 function createWorkflowFetcher({
@@ -319,14 +319,14 @@ function createWorkflowFetcher({
         completed_nodes: 2,
         running_nodes: 1,
         total_nodes: 4,
-        waiting_human_nodes: 0,
-      },
+        waiting_human_nodes: 0
+},
       project_name: "代码审查项目",
       status: "running",
       status_reason: "",
-      title: "PR 审查",
-    }),
-  ],
+      title: "PR 审查"
+}),
+  ]
 }: {
   demandStatus?: ProjectDemandLaunchDetail["demand"]["status"];
   detailOverrides?: Partial<ProjectDemandLaunchDetail>;
@@ -350,8 +350,8 @@ function createWorkflowFetcher({
       return jsonResponse(
         makeLaunchDetail("demand-running", {
           demand: { ...makeLaunchDetail("demand-running").demand, status: demandStatus },
-          ...detailOverrides,
-        }),
+          ...detailOverrides
+}),
       );
     }
 
@@ -362,9 +362,9 @@ function createWorkflowFetcher({
       return jsonResponse(makeLaunchDetail("demand-pr", {
         demand: {
           ...makeLaunchDetail("demand-pr").demand,
-          title: "PR 审查",
-        },
-      }));
+          title: "PR 审查"
+}
+}));
     }
 
     if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
@@ -437,11 +437,11 @@ describe("WorkflowView", () => {
 
     // v3.1 流水线运行流：入口不渲染 signature/指标卡带/数据表格，
     // 首屏是工作面 + 统计筛选条 + 分组运行列表
-    expect(document.body.querySelector('[data-slot="v3-signature-card"]')).toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-table"]')).toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-work-surface"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-chip"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="signature-card"]')).toBeNull();
+    expect(document.body.querySelector('[data-slot="data-table"]')).toBeNull();
+    expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="chip"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="status-pill"]')).not.toBeNull();
     expect(document.body.innerHTML).not.toContain(["superteam", ""].join("-"));
   });
 
@@ -449,13 +449,13 @@ describe("WorkflowView", () => {
     const screen = await renderWorkflowView({ demandId: undefined });
 
     const heading = screen.getByRole("heading", { name: "流程编排" }).element() as HTMLElement;
-    const shellHeader = document.body.querySelector('[data-slot="v3-shell-header"]');
-    const mainHeader = document.body.querySelector('main [data-slot="v3-page-header"]');
+    const shellHeader = document.body.querySelector('[data-slot="shell-header"]');
+    const mainHeader = document.body.querySelector('main [data-slot="page-header"]');
     const sidebarTrigger = document.body.querySelector('[data-slot="sidebar-trigger"]');
     const subtitle = screen.getByText("查看需求触发的规划、执行、阻塞和结果状态").element() as HTMLElement;
     const search = screen.getByRole("button", {
-      name: /搜索任务、数字员工、能力、文档或快捷命令/,
-    }).element() as HTMLElement;
+      name: /搜索任务、数字员工、能力、文档或快捷命令/
+}).element() as HTMLElement;
 
     expect(shellHeader).toBeInstanceOf(HTMLElement);
     expect(shellHeader?.contains(heading)).toBe(true);
@@ -464,7 +464,7 @@ describe("WorkflowView", () => {
     expect(subtitle.className).toContain("text-xs");
     expect(search.className).toContain("justify-self-center");
     expect(search.className).toContain("max-w-sm");
-    expect(document.body.querySelector("main")?.className).not.toContain("bg-v3-bg");
+    expect(document.body.querySelector("main")?.className).not.toContain("bg-background");
   });
 
   it("shows optional SLA priority and risk on workflow cards only when present", async () => {
@@ -476,30 +476,30 @@ describe("WorkflowView", () => {
             priority: {
               label: "P1",
               source: "project_profile",
-              value: "p1",
-            },
+              value: "p1"
+},
             risk: {
               label: "高风险",
               level: "high",
-              source: "risk_policy",
-            },
+              source: "risk_policy"
+},
             sla: {
               breached: false,
               label: "剩余 18 分钟",
               remaining_seconds: 1080,
-              source: "sla_policy",
-            },
-          }),
+              source: "sla_policy"
+}
+}),
           makeWorkflowInstance("demand-pr", {
             demand_id: "demand-pr",
             project_name: "代码审查项目",
             status: "running",
             status_reason: "",
-            title: "PR 审查",
-          }),
-        ],
-      }),
-    });
+            title: "PR 审查"
+}),
+        ]
+})
+});
 
     await expect.element(screen.getByText("P1")).toBeVisible();
     await expect.element(screen.getByText("高风险")).toBeVisible();
@@ -518,15 +518,15 @@ describe("WorkflowView", () => {
   it("renders the selected demand task graph full width without a sidebar list", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
-        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
-      }),
-    });
+        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")])
+})
+});
 
     await expect.element(screen.getByText("服务健康巡检").first()).toBeVisible();
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
-    expect(document.body.querySelector('[data-slot="v3-soft-card"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-icon-tile"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-slot="v3-status-pill"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="soft-card"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="icon-tile"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="status-pill"]')).not.toBeNull();
 
     // 节点详情仅在点击节点后以弹窗形式出现，进入页面时不预选、不渲染固定卡片
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
@@ -538,9 +538,9 @@ describe("WorkflowView", () => {
   it("renders the demand summary in the graph surface above the canvas", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
-        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
-      }),
-    });
+        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")])
+})
+});
 
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
 
@@ -568,18 +568,18 @@ describe("WorkflowView", () => {
               {
                 blocker_task_id: "task-1",
                 dependent_task_id: "task-2",
-                edge_status: "waiting_human",
-              },
+                edge_status: "waiting_human"
+},
               {
                 blocker_task_id: "task-2",
                 dependent_task_id: "task-3",
-                edge_status: "completed",
-              },
-            ],
-          },
-        ),
-      }),
-    });
+                edge_status: "completed"
+},
+            ]
+},
+        )
+})
+});
 
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
 
@@ -593,9 +593,9 @@ describe("WorkflowView", () => {
   it("renders the canvas full width without a fixed inspector column", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
-        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
-      }),
-    });
+        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")])
+})
+});
 
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
 
@@ -619,12 +619,12 @@ describe("WorkflowView", () => {
             {
               reason_code: "runtime_placement_missing",
               message: "项目还没有可用执行位置",
-              recommended_action: "先选择 Runtime 节点或创建执行位置",
-            },
-          ],
-        }),
-      }),
-    });
+              recommended_action: "先选择 Runtime 节点或创建执行位置"
+},
+          ]
+})
+})
+});
 
     await expect.element(screen.getByText("协调已阻塞：项目还没有可用执行位置")).toBeVisible();
     await expect.element(screen.getByText("下一步：先选择 Runtime 节点或创建执行位置")).toBeVisible();
@@ -639,9 +639,9 @@ describe("WorkflowView", () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
         demandStatus: "planning_pending",
-        graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
-      }),
-    });
+        graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] })
+})
+});
 
     await expect.element(screen.getByRole("heading", { name: "支付成功率下降" })).toBeVisible();
     // 顶部的红色阻塞横幅（完整句子含 message）与缺口面板必须消失——这两个是
@@ -662,22 +662,22 @@ describe("WorkflowView", () => {
         constraint_kind: "role_independence",
         options: ["restaff", "exempt"],
         required_capabilities: ["code_review"],
-        roles: ["reviewer", "developer"],
-      },
+        roles: ["reviewer", "developer"]
+},
       message: "项目员工池无法满足审查独立性约束（需≥2名可调度员工）",
       reason_code: "no_suitable_employee",
       recommended_action: "为项目补充可调度员工或换用模板",
-      ...overrides,
-    };
+      ...overrides
+};
   }
 
   it("renders a staffing gap panel with staffing and exempt actions when the blocking fact carries a structural gap", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
         demandStatus: "failed",
-        graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
-      }),
-    });
+        graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] })
+})
+});
 
     await expect.element(screen.getByTestId("workflow-gap-panel")).toBeVisible();
     await expect.element(screen.getByText("规划缺口：审查独立性约束")).toBeVisible();
@@ -694,10 +694,10 @@ describe("WorkflowView", () => {
       fetcher: createWorkflowFetcher({
         demandStatus: "failed",
         graph: makeGraph([], {
-          blocking_facts: [makeGapBlockingFact({ decision_request_id: undefined })],
-        }),
-      }),
-    });
+          blocking_facts: [makeGapBlockingFact({ decision_request_id: undefined })]
+})
+})
+});
 
     await expect.element(screen.getByTestId("workflow-gap-panel")).toBeVisible();
     await expect
@@ -715,12 +715,12 @@ describe("WorkflowView", () => {
             {
               message: "项目还没有可用执行位置",
               reason_code: "runtime_placement_missing",
-              recommended_action: "先选择 Runtime 节点或创建执行位置",
-            },
-          ],
-        }),
-      }),
-    });
+              recommended_action: "先选择 Runtime 节点或创建执行位置"
+},
+          ]
+})
+})
+});
 
     await expect.element(screen.getByText("协调已阻塞：项目还没有可用执行位置")).toBeVisible();
     await expect.element(screen.getByTestId("workflow-gap-panel")).not.toBeInTheDocument();
@@ -729,9 +729,9 @@ describe("WorkflowView", () => {
   it("does not render the gap panel when there is no blocking fact at all", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
-        graph: makeGraph([makeGraphNode("task-1", "主机操作系统健康检查", "running")]),
-      }),
-    });
+        graph: makeGraph([makeGraphNode("task-1", "主机操作系统健康检查", "running")])
+})
+});
 
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
     await expect.element(screen.getByTestId("workflow-gap-panel")).not.toBeInTheDocument();
@@ -740,8 +740,8 @@ describe("WorkflowView", () => {
   it("resolves the planning_gap decision as exempted after confirming the consequences", async () => {
     const baseFetcher = createWorkflowFetcher({
       demandStatus: "failed",
-      graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] }),
-    });
+      graph: makeGraph([], { blocking_facts: [makeGapBlockingFact()] })
+});
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (
@@ -756,8 +756,8 @@ describe("WorkflowView", () => {
           status_snapshot: "rejected",
           target_user_id: "owner-1",
           tenant_id: "tenant-1",
-          title_snapshot: "规划缺口",
-        });
+          title_snapshot: "规划缺口"
+});
       }
       return baseFetcher(input, init);
     }) as unknown as typeof fetch;
@@ -783,12 +783,12 @@ describe("WorkflowView", () => {
         events: [
           makeProjectEvent("project_task.dispatch_gate.replan_required", {
             project_task_id: "task-1",
-            status: "replan_required",
-          }),
+            status: "replan_required"
+}),
         ],
-        graph: makeGraph([makeGraphNode("task-1", "主机操作系统健康检查", "waiting_human")]),
-      }),
-    });
+        graph: makeGraph([makeGraphNode("task-1", "主机操作系统健康检查", "waiting_human")])
+})
+});
 
     await expect.element(screen.getByText("计划需要调整")).toBeVisible();
     await expect
@@ -804,12 +804,12 @@ describe("WorkflowView", () => {
         graphsByDemandId: {
           "demand-pr": makeGraph([
             makeGraphNode("task-stale", "上一需求任务", "assigned", {
-              demand_id: "demand-running",
-            }),
-          ]),
-        },
-      }),
-    });
+              demand_id: "demand-running"
+}),
+          ])
+}
+})
+});
 
     await expect.element(screen.getByText("PR 审查").first()).toBeVisible();
     await expect.element(screen.getByText("任务正在规划")).toBeVisible();
@@ -831,12 +831,12 @@ describe("WorkflowView", () => {
               summary_snapshot: "计划包含 1 个任务：列出当前目录文件。",
               target_user_id: "owner-1",
               tenant_id: "tenant-1",
-              title_snapshot: "确认项目计划版本",
-            } satisfies ProjectDecisionRequest,
-          ],
-        },
-      }),
-    });
+              title_snapshot: "确认项目计划版本"
+} satisfies ProjectDecisionRequest,
+          ]
+}
+})
+});
 
     await expect.element(screen.getByRole("heading", { name: "计划版本待确认" })).toBeVisible();
     await expect.element(screen.getByText("确认项目计划版本")).toBeVisible();
@@ -861,8 +861,8 @@ describe("WorkflowView", () => {
             project_name: "代码审查项目",
             status: "running",
             status_reason: "",
-            title: "PR 审查",
-          }),
+            title: "PR 审查"
+}),
         ]);
       }
 
@@ -872,8 +872,8 @@ describe("WorkflowView", () => {
       ) {
         return jsonResponse(
           makeLaunchDetail("demand-running", {
-            demand: { ...makeLaunchDetail("demand-running").demand, status: "failed" },
-          }),
+            demand: { ...makeLaunchDetail("demand-running").demand, status: "failed" }
+}),
         );
       }
 
@@ -884,9 +884,9 @@ describe("WorkflowView", () => {
         return jsonResponse(makeLaunchDetail("demand-pr", {
           demand: {
             ...makeLaunchDetail("demand-pr").demand,
-            title: "PR 审查",
-          },
-        }));
+            title: "PR 审查"
+}
+}));
       }
 
       if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
@@ -897,10 +897,10 @@ describe("WorkflowView", () => {
               {
                 reason_code: "runtime_placement_missing",
                 message: "上一需求缺少 Runtime 执行位置",
-                recommended_action: "先给上一需求选择 Runtime",
-              },
-            ],
-          }));
+                recommended_action: "先给上一需求选择 Runtime"
+},
+            ]
+}));
         }
 
         if (demandId === "demand-pr") {
@@ -937,8 +937,8 @@ describe("WorkflowView", () => {
 
     resolveDemandPrGraph?.(jsonResponse(makeGraph([
       makeGraphNode("task-pr", "PR 审查任务", "assigned", {
-        demand_id: "demand-pr",
-      }),
+        demand_id: "demand-pr"
+}),
     ])));
 
     await expect.element(screen.getByText("PR 审查任务").first()).toBeVisible();
@@ -948,11 +948,11 @@ describe("WorkflowView", () => {
     const graph = makeGraph(
       [
         makeGraphNode("task-failed", "失败任务", "failed", {
-          expected_outputs: ["失败报告"],
-        }),
+          expected_outputs: ["失败报告"]
+}),
         makeGraphNode("task-assigned", "巡检任务", "assigned", {
-          expected_outputs: ["巡检报告"],
-        }),
+          expected_outputs: ["巡检报告"]
+}),
       ],
       {
         execution_summaries: [
@@ -967,8 +967,8 @@ describe("WorkflowView", () => {
             project_id: "project-1",
             project_task_id: "task-failed",
             requires_human_review: false,
-            tenant_id: "tenant-1",
-          } satisfies ProjectExecutionSummary,
+            tenant_id: "tenant-1"
+} satisfies ProjectExecutionSummary,
           {
             artifact_refs: [],
             confidence_factors: {},
@@ -980,8 +980,8 @@ describe("WorkflowView", () => {
             project_id: "project-1",
             project_task_id: "task-assigned",
             requires_human_review: false,
-            tenant_id: "tenant-1",
-          } satisfies ProjectExecutionSummary,
+            tenant_id: "tenant-1"
+} satisfies ProjectExecutionSummary,
         ],
         runs: [
           {
@@ -989,21 +989,21 @@ describe("WorkflowView", () => {
             provider_type: "codex",
             runtime_node_summary: "runtime-a",
             runtime_task_id: "runtime-task-failed",
-            status: "failed",
-          } satisfies ProjectTaskGraphRun,
+            status: "failed"
+} satisfies ProjectTaskGraphRun,
           {
             project_task_id: "task-assigned",
             provider_type: "codex",
             runtime_node_summary: "runtime-b",
             runtime_task_id: "runtime-task-assigned",
-            status: "queued",
-          } satisfies ProjectTaskGraphRun,
-        ],
-      },
+            status: "queued"
+} satisfies ProjectTaskGraphRun,
+        ]
+},
     );
     const screen = await renderWorkflowView({
-      fetcher: createWorkflowFetcher({ graph }),
-    });
+      fetcher: createWorkflowFetcher({ graph })
+});
 
     // 进入页面时不预选节点，节点详情弹窗不出现，也不会泄露其他节点内容
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
@@ -1029,11 +1029,11 @@ describe("WorkflowView", () => {
     const graph = makeGraph(
       [
         makeGraphNode("task-failed", "失败任务", "failed", {
-          expected_outputs: ["失败报告"],
-        }),
+          expected_outputs: ["失败报告"]
+}),
         makeGraphNode("task-review", "待审批任务", "waiting_human", {
-          expected_outputs: ["审批结果"],
-        }),
+          expected_outputs: ["审批结果"]
+}),
       ],
       {
         decision_requests: [
@@ -1046,14 +1046,14 @@ describe("WorkflowView", () => {
             status_snapshot: "pending",
             target_user_id: "owner-1",
             tenant_id: "tenant-1",
-            title_snapshot: "确认上线风险",
-          } satisfies ProjectDecisionRequest,
-        ],
-      },
+            title_snapshot: "确认上线风险"
+} satisfies ProjectDecisionRequest,
+        ]
+},
     );
     const screen = await renderWorkflowView({
-      fetcher: createWorkflowFetcher({ graph }),
-    });
+      fetcher: createWorkflowFetcher({ graph })
+});
 
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
 
@@ -1089,8 +1089,8 @@ describe("WorkflowView", () => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-running" },
         replace: true,
-        to: "/workflows/$demandId",
-      });
+        to: "/workflows/$demandId"
+});
     });
 
     expect(requestedUrls(fetcher)).not.toContain(
@@ -1112,8 +1112,8 @@ describe("WorkflowView", () => {
             project_name: "代码审查项目",
             status: "running",
             status_reason: "",
-            title: "PR 审查",
-          }),
+            title: "PR 审查"
+}),
         ]);
       }
 
@@ -1125,9 +1125,9 @@ describe("WorkflowView", () => {
           makeLaunchDetail("demand-off-page", {
             demand: {
               ...makeLaunchDetail("demand-off-page").demand,
-              title: "失败告警需求",
-            },
-          }),
+              title: "失败告警需求"
+}
+}),
         );
       }
 
@@ -1135,8 +1135,8 @@ describe("WorkflowView", () => {
         return jsonResponse(
           makeGraph([
             makeGraphNode("task-off-page", "离线巡检任务", "failed", {
-              demand_id: "demand-off-page",
-            }),
+              demand_id: "demand-off-page"
+}),
           ]),
         );
       }
@@ -1178,8 +1178,8 @@ describe("WorkflowView", () => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-running" },
         replace: true,
-        to: "/workflows/$demandId",
-      });
+        to: "/workflows/$demandId"
+});
     });
   });
 });

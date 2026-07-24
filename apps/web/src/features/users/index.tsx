@@ -10,31 +10,31 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   UserPlus,
-  UsersRound,
+  UsersRound
 } from "lucide-react";
 import {
   MasterDetailLayout,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  V3Segmented,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3ToolbarSearch,
-  V3Tr,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  Segmented,
+  DataTable,
+  Td,
+  Th,
+  ToolbarSearch,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import {
   UserIdentity,
   UserIdentityAvatar,
   getUserIdentityLabel,
-  type UserIdentityData,
+  type UserIdentityData
 } from "@/components/superteam/user-identity";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -44,7 +44,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,12 +60,12 @@ import {
   type AuthzMemberRecord,
   type CreateUserRequest,
   type FeishuIdentity,
-  type UserSummary,
+  type UserSummary
 } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import {
   CreateUserDrawer,
-  type CreateUserDraft,
+  type CreateUserDraft
 } from "./components/create-user-drawer";
 
 const apiBaseUrl = resolveControlPlaneUrl();
@@ -86,7 +86,7 @@ type UsersViewProps = {
 
 const defaultUserFilters: UserManagementFilters = {
   q: "",
-  status: "all",
+  status: "all"
 };
 
 export function Users({ initialUserId }: { initialUserId?: string } = {}) {
@@ -107,8 +107,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
   const apiOptions = useMemo(
     () => ({
       baseUrl: apiBaseUrl,
-      fetcher,
-    }),
+      fetcher
+}),
     [fetcher],
   );
 
@@ -119,30 +119,30 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
         limit: 50,
         offset: 0,
         q: filters.q,
-        status: filters.status === "all" ? undefined : filters.status,
-      }),
-    queryKey: ["users", "management", filters],
-  });
+        status: filters.status === "all" ? undefined : filters.status
+}),
+    queryKey: ["users", "management", filters]
+});
   const authzMembersQuery = useQuery({
     queryFn: () =>
       listAuthzMembers({
         ...apiOptions,
         limit: 100,
-        offset: 0,
-      }),
-    queryKey: ["users", "authz-members"],
-  });
+        offset: 0
+}),
+    queryKey: ["users", "authz-members"]
+});
 
   const feishuIdentitiesQuery = useQuery({
     queryFn: () => listFeishuIdentities(apiOptions),
-    queryKey: ["users", "feishu-identities"],
-  });
+    queryKey: ["users", "feishu-identities"]
+});
   const contactSyncMutation = useMutation({
     mutationFn: () => syncFeishuContacts(apiOptions),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users", "feishu-identities"] });
-    },
-  });
+    }
+});
 
   const users = usersQuery.data?.items ?? [];
   const authzMembersByUserId = useMemo(() => {
@@ -156,8 +156,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
         (acc, report) => ({
           bound: acc.bound + report.bound,
           alreadyBound: acc.alreadyBound + report.already_bound,
-          unmatched: acc.unmatched + report.unmatched,
-        }),
+          unmatched: acc.unmatched + report.unmatched
+}),
         { bound: 0, alreadyBound: 0, unmatched: 0 },
       )
     : undefined;
@@ -197,8 +197,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
       updateUserStatus(apiOptions, input.userId, input.status),
     onSuccess: () => {
       void invalidateUserWorkspace();
-    },
-  });
+    }
+});
   const resetPasswordMutation = useMutation({
     mutationFn: (input: { password: string; userId: string }) =>
       resetUserPassword(apiOptions, input.userId, input.password),
@@ -206,8 +206,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
       setResetPasswordOpen(false);
       setResetPasswordValue("");
       void invalidateUserWorkspace();
-    },
-  });
+    }
+});
   const createUserMutation = useMutation({
     mutationFn: (input: CreateUserDraft) => {
       const payload: CreateUserRequest = {
@@ -215,8 +215,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
         display_name: input.display_name,
         password: input.password,
         avatar: input.avatar,
-        selectable_team_ids: input.selectable_team_ids,
-      };
+        selectable_team_ids: input.selectable_team_ids
+};
       return createUser(apiOptions, payload);
     },
     onSuccess: async (response) => {
@@ -225,8 +225,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
       setPendingCreatedUserId(response.user.id);
       setSelectedUserId(response.user.id);
       await invalidateUserWorkspace();
-    },
-  });
+    }
+});
 
   const handleCreateUserOpenChange = (open: boolean) => {
     createUserMutation.reset();
@@ -249,24 +249,24 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
           {contactSyncSummary ? (
-            <span className="text-sm text-v3-ink-2 tabular-nums" data-testid="feishu-contact-sync-summary">
+            <span className="text-sm text-ink-2 tabular-nums" data-testid="feishu-contact-sync-summary">
               飞书同步:新绑 {contactSyncSummary.bound} · 已绑 {contactSyncSummary.alreadyBound} · 未匹配 {contactSyncSummary.unmatched}
             </span>
           ) : null}
           {contactSyncMutation.isError ? (
-            <span className="text-sm text-v3-danger-text" data-testid="feishu-contact-sync-error">
+            <span className="text-sm text-danger-text" data-testid="feishu-contact-sync-error">
               飞书同步失败,请检查应用配置
             </span>
           ) : null}
-          <V3Button
+          <Button
             disabled={contactSyncMutation.isPending}
             onClick={() => contactSyncMutation.mutate()}
             type="button"
             variant="outline"
           >
             {contactSyncMutation.isPending ? "同步中…" : "同步飞书绑定"}
-          </V3Button>
-          <V3Button
+          </Button>
+          <Button
             onClick={() => {
               // OAuth 授权是外部整页跳转,允许原生 location 导航。
               window.location.href = feishuOAuthStartUrl(apiOptions, "/users");
@@ -275,11 +275,11 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
             variant="outline"
           >
             绑定我的飞书
-          </V3Button>
-          <V3Button onClick={() => handleCreateUserOpenChange(true)} type="button">
+          </Button>
+          <Button onClick={() => handleCreateUserOpenChange(true)} type="button">
             <UserPlus data-icon="inline-start" />
             新建用户
-          </V3Button>
+          </Button>
         </div>
 
         <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -313,8 +313,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
               onToggleStatus={(user) =>
                 statusMutation.mutate({
                   status: user.status === "active" ? "disabled" : "active",
-                  userId: user.id,
-                })
+                  userId: user.id
+})
               }
               selectedUserId={selectedUser?.id}
               users={users}
@@ -331,8 +331,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
                 }
                 statusMutation.mutate({
                   status: selectedUser.status === "active" ? "disabled" : "active",
-                  userId: selectedUser.id,
-                });
+                  userId: selectedUser.id
+});
               }}
               user={selectedIdentity}
             />
@@ -348,8 +348,8 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
             onSubmit={() =>
               resetPasswordMutation.mutate({
                 password: resetPasswordValue,
-                userId: selectedUser.id,
-              })
+                userId: selectedUser.id
+})
             }
             password={resetPasswordValue}
             setPassword={setResetPasswordValue}
@@ -384,7 +384,7 @@ function UserGovernanceTable({
   onSelectUser,
   onToggleStatus,
   selectedUserId,
-  users,
+  users
 }: {
   authzMembersByUserId: Map<string, AuthzMemberRecord>;
   feishuIdentitiesByUserId: Map<string, FeishuIdentity>;
@@ -403,13 +403,13 @@ function UserGovernanceTable({
 }) {
   return (
     <WorkSurface className="min-w-0" data-testid="users-governance-table">
-      <div className="flex flex-col gap-3 border-b border-v3-line p-4">
+      <div className="flex flex-col gap-3 border-b border-line p-4">
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <h2 className="text-base font-bold text-v3-ink">用户治理表</h2>
-            <p className="text-sm text-v3-ink-2">逐行治理人类用户的账号状态、控制台访问与成员身份。</p>
+            <h2 className="text-base font-bold text-ink">用户治理表</h2>
+            <p className="text-sm text-ink-2">逐行治理人类用户的账号状态、控制台访问与成员身份。</p>
           </div>
-          <V3Segmented
+          <Segmented
             aria-label="表格密度"
             onChange={onDensityChange}
             options={[
@@ -420,13 +420,13 @@ function UserGovernanceTable({
           />
         </div>
         <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
-          <V3ToolbarSearch
+          <ToolbarSearch
             aria-label="搜索用户"
             onChange={(event) =>
               onFiltersChange({
                 ...filters,
-                q: event.target.value,
-              })
+                q: event.target.value
+})
             }
             placeholder="搜索用户名、姓名或邮箱"
             type="search"
@@ -438,45 +438,45 @@ function UserGovernanceTable({
               ["active", "活跃"],
               ["disabled", "禁用"],
             ].map(([status, label]) => (
-              <V3Button
+              <Button
                 aria-pressed={filters.status === status}
                 key={status}
                 onClick={() =>
                   onFiltersChange({
                     ...filters,
-                    status: status as UserStatusFilter,
-                  })
+                    status: status as UserStatusFilter
+})
                 }
                 size="sm"
                 type="button"
                 variant={filters.status === status ? "primary" : "outline"}
               >
                 {label}
-              </V3Button>
+              </Button>
             ))}
           </div>
         </div>
       </div>
 
-      {isLoading ? <V3LoadingState className="min-h-[360px]" label="加载用户中" /> : null}
+      {isLoading ? <LoadingState className="min-h-[360px]" label="加载用户中" /> : null}
       {isError ? (
-        <V3ErrorState className="m-4" title="用户列表加载失败" description="请刷新页面或检查 Control Plane 连接。" />
+        <ErrorState className="m-4" title="用户列表加载失败" description="请刷新页面或检查 Control Plane 连接。" />
       ) : null}
       {!isLoading && !isError && users.length === 0 ? (
-        <V3EmptyState className="min-h-[360px]" title="暂无匹配用户。" />
+        <EmptyState className="min-h-[360px]" title="暂无匹配用户。" />
       ) : null}
       {!isLoading && !isError && users.length > 0 ? (
         <>
-          <V3Table className={density === "compact" ? "[&_td]:py-2 [&_th]:py-2" : undefined}>
+          <DataTable className={density === "compact" ? "[&_td]:py-2 [&_th]:py-2" : undefined}>
             <thead>
-              <V3Tr>
-                <V3Th>用户</V3Th>
-                <V3Th>状态</V3Th>
-                <V3Th>控制台访问</V3Th>
-                <V3Th>飞书</V3Th>
-                <V3Th>成员身份</V3Th>
-                <V3Th>操作</V3Th>
-              </V3Tr>
+              <Tr>
+                <Th>用户</Th>
+                <Th>状态</Th>
+                <Th>控制台访问</Th>
+                <Th>飞书</Th>
+                <Th>成员身份</Th>
+                <Th>操作</Th>
+              </Tr>
             </thead>
             <tbody>
               {users.map((user) => {
@@ -484,24 +484,24 @@ function UserGovernanceTable({
                 const selected = user.id === selectedUserId;
                 const identity = mergeUserIdentity(user, member);
                 return (
-                  <V3Tr
-                    className={selected ? "[&>td]:bg-v3-brand-soft/55" : undefined}
+                  <Tr
+                    className={selected ? "[&>td]:bg-brand-soft/55" : undefined}
                     key={user.id}
                     onClick={() => onSelectUser(user.id)}
                     tone={user.status === "disabled" ? "danger" : undefined}
                   >
-                    <V3Td className="min-w-[220px]">
+                    <Td className="min-w-[220px]">
                       <UserIdentity className="min-w-0" showSecondary user={identity} />
-                    </V3Td>
-                    <V3Td>
+                    </Td>
+                    <Td>
                       <StatusPill tone={userStatusTone(user.status)}>{formatUserStatus(user.status)}</StatusPill>
-                    </V3Td>
-                    <V3Td>
+                    </Td>
+                    <Td>
                       <StatusPill tone={member?.console_access ? "ok" : "mute"}>
                         {member?.console_access ? "允许" : "未确认"}
                       </StatusPill>
-                    </V3Td>
-                    <V3Td>
+                    </Td>
+                    <Td>
                       {(() => {
                         const identity = feishuIdentitiesByUserId.get(user.id);
                         return (
@@ -513,11 +513,11 @@ function UserGovernanceTable({
                           </StatusPill>
                         );
                       })()}
-                    </V3Td>
-                    <V3Td className="min-w-[150px]">{formatMembershipSummary(member)}</V3Td>
-                    <V3Td>
+                    </Td>
+                    <Td className="min-w-[150px]">{formatMembershipSummary(member)}</Td>
+                    <Td>
                       <div className="flex min-w-max gap-2">
-                        <V3Button
+                        <Button
                           onClick={(event) => {
                             event.stopPropagation();
                             onSelectUser(user.id);
@@ -527,8 +527,8 @@ function UserGovernanceTable({
                           variant="outline"
                         >
                           详情
-                        </V3Button>
-                        <V3Button
+                        </Button>
+                        <Button
                           disabled={isStatusPending}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -539,8 +539,8 @@ function UserGovernanceTable({
                           variant={user.status === "active" ? "danger" : "outline"}
                         >
                           {user.status === "active" ? "禁用账号" : "启用账号"}
-                        </V3Button>
-                        <V3Button
+                        </Button>
+                        <Button
                           onClick={(event) => {
                             event.stopPropagation();
                             onResetPassword(user.id);
@@ -550,15 +550,15 @@ function UserGovernanceTable({
                           variant="outline"
                         >
                           重置密码
-                        </V3Button>
+                        </Button>
                       </div>
-                    </V3Td>
-                  </V3Tr>
+                    </Td>
+                  </Tr>
                 );
               })}
             </tbody>
-          </V3Table>
-          <div className="flex flex-col gap-2 border-t border-v3-line px-4 py-3 text-sm text-v3-ink-2 sm:flex-row sm:items-center sm:justify-between">
+          </DataTable>
+          <div className="flex flex-col gap-2 border-t border-line px-4 py-3 text-sm text-ink-2 sm:flex-row sm:items-center sm:justify-between">
             <span className="tabular-nums">共 {users.length} 个用户</span>
             <span className="inline-flex items-center gap-2">
               <SlidersHorizontal className="size-4" />
@@ -576,7 +576,7 @@ function UserGovernancePreview({
   member,
   onResetPassword,
   onToggleStatus,
-  user,
+  user
 }: {
   isStatusPending: boolean;
   member?: AuthzMemberRecord;
@@ -588,7 +588,7 @@ function UserGovernancePreview({
     return (
       <aside className="flex min-w-0 flex-col gap-4">
         <SoftCard className="min-h-[420px]">
-          <V3EmptyState className="min-h-[420px]" title="请选择一个用户查看详情" />
+          <EmptyState className="min-h-[420px]" title="请选择一个用户查看详情" />
         </SoftCard>
       </aside>
     );
@@ -603,7 +603,7 @@ function UserGovernancePreview({
         <div className="mb-4 flex min-w-0 items-start gap-3">
           <UserIdentityAvatar className="size-14" user={user} />
           <div className="min-w-0">
-            <h2 className="truncate text-xl font-bold tracking-normal text-v3-ink">{label.primary}</h2>
+            <h2 className="truncate text-xl font-bold tracking-normal text-ink">{label.primary}</h2>
             <div className="mt-2 flex flex-wrap gap-2">
               <StatusPill tone={userStatusTone(user.status)}>{formatUserStatus(user.status)}</StatusPill>
               <StatusPill tone={member?.console_access ? "ok" : "mute"}>
@@ -619,7 +619,7 @@ function UserGovernancePreview({
           <InfoRow label="成员身份" value={formatMembershipSummary(member)} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <V3Button
+          <Button
             disabled={isStatusPending}
             onClick={onToggleStatus}
             size="sm"
@@ -628,35 +628,35 @@ function UserGovernancePreview({
           >
             {user.status === "active" ? <Ban data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
             {user.status === "active" ? "禁用账号" : "启用账号"}
-          </V3Button>
-          <V3Button onClick={onResetPassword} size="sm" type="button" variant="outline">
+          </Button>
+          <Button onClick={onResetPassword} size="sm" type="button" variant="outline">
             <LockKeyhole data-icon="inline-start" />
             重置密码
-          </V3Button>
-          <V3Button asChild size="sm" variant="outline">
+          </Button>
+          <Button asChild size="sm" variant="outline">
             <Link to="/teams">
               <UsersRound data-icon="inline-start" />
               去团队管理分配
             </Link>
-          </V3Button>
+          </Button>
         </div>
       </SoftCard>
 
       <SoftCard className="p-5">
         <div className="mb-4">
-          <h3 className="text-base font-bold text-v3-ink">成员身份</h3>
-          <p className="text-sm text-v3-ink-2">来自权限中心成员视图；角色调整仍通过团队管理页完成。</p>
+          <h3 className="text-base font-bold text-ink">成员身份</h3>
+          <p className="text-sm text-ink-2">来自权限中心成员视图；角色调整仍通过团队管理页完成。</p>
         </div>
         {memberships.length === 0 ? (
-          <V3EmptyState className="py-8" title="暂无成员身份。" />
+          <EmptyState className="py-8" title="暂无成员身份。" />
         ) : (
           <div className="flex flex-col gap-2">
             {memberships.map((membership) => (
               <div
-                className="flex items-center justify-between gap-3 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-sm"
+                className="flex items-center justify-between gap-3 rounded-inner border border-line bg-card-soft px-3 py-2 text-sm"
                 key={`${membership.tenant_id}-${membership.team_id ?? "tenant"}-${membership.role}`}
               >
-                <span className="truncate text-v3-ink">{formatMembershipScope(membership)}</span>
+                <span className="truncate text-ink">{formatMembershipScope(membership)}</span>
                 <StatusPill tone={membership.status === "active" ? "ok" : "mute"}>
                   {membership.status === "active" ? "有效" : membership.status}
                 </StatusPill>
@@ -678,7 +678,7 @@ function ResetPasswordDialog({
   onSubmit,
   password,
   setPassword,
-  username,
+  username
 }: {
   error: unknown;
   isOpen: boolean;
@@ -717,12 +717,12 @@ function ResetPasswordDialog({
           </div>
           {error instanceof Error ? <p className="text-sm text-destructive">{error.message}</p> : null}
           <DialogFooter>
-            <V3Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
               取消
-            </V3Button>
-            <V3Button disabled={isPending || password.length < 4} type="submit">
+            </Button>
+            <Button disabled={isPending || password.length < 4} type="submit">
               确认重置
-            </V3Button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -734,15 +734,15 @@ function UserMetric({
   icon,
   label,
   tone,
-  value,
+  value
 }: {
   icon: ReactNode;
   label: string;
-  tone: V3Tone;
+  tone: Tone;
   value: number;
 }) {
   return (
-    <V3MetricCard
+    <MetricCard
       icon={icon}
       iconTone={tone}
       label={label}
@@ -754,9 +754,9 @@ function UserMetric({
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2">
-      <span className="shrink-0 text-v3-ink-2">{label}</span>
-      <span className="min-w-0 truncate text-right font-medium text-v3-ink">{value}</span>
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-inner border border-line bg-card-soft px-3 py-2">
+      <span className="shrink-0 text-ink-2">{label}</span>
+      <span className="min-w-0 truncate text-right font-medium text-ink">{value}</span>
     </div>
   );
 }
@@ -769,8 +769,8 @@ function mergeUserIdentity(user: UserSummary, member?: AuthzMemberRecord): UserI
     email: member?.email ?? user.email ?? undefined,
     id: user.id,
     status: member?.account_status ?? user.status,
-    username: member?.username ?? user.username,
-  };
+    username: member?.username ?? user.username
+};
 }
 
 function getUserStats(users: UserSummary[], members: AuthzMemberRecord[]) {
@@ -786,8 +786,8 @@ function getUserStats(users: UserSummary[], members: AuthzMemberRecord[]) {
     active,
     consoleAccess,
     disabled,
-    tenantRoles,
-  };
+    tenantRoles
+};
 }
 
 function formatUserStatus(status: string) {
@@ -801,7 +801,7 @@ function formatUserStatus(status: string) {
   return status;
 }
 
-function userStatusTone(status: string): V3Tone {
+function userStatusTone(status: string): Tone {
   if (status === "active") {
     return "ok";
   }

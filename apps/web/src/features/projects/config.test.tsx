@@ -7,19 +7,19 @@ import { ProjectConfigView } from "@/features/projects/components/project-config
 import type { ProjectConfig, ProjectConfigRevision } from "@/lib/api/projects";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -50,15 +50,15 @@ vi.mock("@tanstack/react-router", () => {
 
 function createQueryClient() {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false } }
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
@@ -75,8 +75,8 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     name: "客户接入验收",
     status,
     tenant_id: "tenant-1",
-    workspace_ready_status: "ready" as const,
-  } as const;
+    workspace_ready_status: "ready" as const
+} as const;
   const humanMember = {
     display_name_snapshot: "负责人甲",
     id: "member-1",
@@ -86,8 +86,8 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     project_role: "owner",
     settings: {},
     status: "active",
-    tenant_id: "tenant-1",
-  } as const;
+    tenant_id: "tenant-1"
+} as const;
   const digitalMember = {
     display_name_snapshot: "验收执行员工",
     id: "member-2",
@@ -97,20 +97,20 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     project_role: "executor",
     settings: { lane: "qa" },
     status: "active",
-    tenant_id: "tenant-1",
-  } as const;
+    tenant_id: "tenant-1"
+} as const;
 
   return {
     coordination_policy: project.coordination_policy,
     coordination_workflow: {
       status: "registered",
-      workflow_id: "project-coordinator:project-1",
-    },
+      workflow_id: "project-coordinator:project-1"
+},
     digital_employee_pool: [digitalMember],
     human_roles: [humanMember],
     members: [humanMember, digitalMember],
-    project,
-  };
+    project
+};
 }
 
 function makeConfigRevisions(): ProjectConfigRevision[] {
@@ -119,8 +119,8 @@ function makeConfigRevisions(): ProjectConfigRevision[] {
       changed_sections: ["coordination_policy"],
       change_summary: "提高协调频率",
       config_snapshot: {
-        coordination_policy: { cadence: "continuous" },
-      },
+        coordination_policy: { cadence: "continuous" }
+},
       created_at: "2026-01-03T08:00:00Z",
       created_by_user_id: "human-owner-1",
       diff_summary: { coordination_policy: "changed" },
@@ -129,14 +129,14 @@ function makeConfigRevisions(): ProjectConfigRevision[] {
       project_id: "project-1",
       revision_number: 3,
       tenant_id: "tenant-1",
-      previous_revision_id: "revision-2",
-    },
+      previous_revision_id: "revision-2"
+},
     {
       changed_sections: ["coordinationPolicy"],
       change_summary: "调整协调策略",
       config_snapshot: {
-        coordination_policy: { cadence: "hourly" },
-      },
+        coordination_policy: { cadence: "hourly" }
+},
       created_at: "2026-01-02T08:00:00Z",
       created_by_user_id: "leader-user-1",
       diff_summary: { coordinationPolicy: "changed" },
@@ -145,22 +145,22 @@ function makeConfigRevisions(): ProjectConfigRevision[] {
       project_id: "project-1",
       revision_number: 2,
       tenant_id: "tenant-1",
-      previous_revision_id: "revision-1",
-    },
+      previous_revision_id: "revision-1"
+},
     {
       changed_sections: [],
       change_summary: "初始配置",
       config_snapshot: {
-        coordination_policy: { cadence: "daily" },
-      },
+        coordination_policy: { cadence: "daily" }
+},
       created_at: "2026-01-01T08:00:00Z",
       created_by_user_id: "human-owner-1",
       diff_summary: {},
       id: "revision-1",
       project_id: "project-1",
       revision_number: 1,
-      tenant_id: "tenant-1",
-    },
+      tenant_id: "tenant-1"
+},
   ];
 }
 
@@ -169,8 +169,8 @@ function makeLatestRevision(): ProjectConfigRevision {
     changed_sections: ["coordination_policy"],
     change_summary: "新增最新修订",
     config_snapshot: {
-      coordination_policy: { cadence: "minute" },
-    },
+      coordination_policy: { cadence: "minute" }
+},
     created_at: "2026-01-04T08:00:00Z",
     created_by_user_id: "human-owner-1",
     diff_summary: { coordination_policy: "changed" },
@@ -179,8 +179,8 @@ function makeLatestRevision(): ProjectConfigRevision {
     project_id: "project-1",
     revision_number: 4,
     tenant_id: "tenant-1",
-    previous_revision_id: "revision-3",
-  };
+    previous_revision_id: "revision-3"
+};
 }
 
 function makeMalformedConfigRevision(): ProjectConfigRevision {
@@ -193,8 +193,8 @@ function makeMalformedConfigRevision(): ProjectConfigRevision {
     id: "revision-malformed",
     project_id: "project-1",
     revision_number: 4,
-    tenant_id: "tenant-1",
-  } as unknown as ProjectConfigRevision;
+    tenant_id: "tenant-1"
+} as unknown as ProjectConfigRevision;
 }
 
 function createConfigFetcher(
@@ -234,8 +234,8 @@ function createConfigFetcher(
           status: "completed",
           summary: "完成验收材料整理",
           tenant_id: "tenant-1",
-          title: "整理历史任务",
-        },
+          title: "整理历史任务"
+},
       ]);
     }
     if (
@@ -349,8 +349,8 @@ describe("ProjectConfigView", () => {
 
     revisions.unshift(makeLatestRevision());
     await queryClient.refetchQueries({
-      queryKey: ["project-config-revisions", "project-1"],
-    });
+      queryKey: ["project-config-revisions", "project-1"]
+});
 
     await expect.element(screen.getByText(/hourly/)).toBeInTheDocument();
     await expect.element(screen.getByText(/minute/)).not.toBeInTheDocument();
@@ -360,8 +360,8 @@ describe("ProjectConfigView", () => {
     );
     revisions.splice(selectedRevisionIndex, 1);
     await queryClient.refetchQueries({
-      queryKey: ["project-config-revisions", "project-1"],
-    });
+      queryKey: ["project-config-revisions", "project-1"]
+});
 
     await expect.element(screen.getByText(/minute/)).toBeInTheDocument();
     await expect.element(screen.getByText(/hourly/)).not.toBeInTheDocument();
@@ -376,13 +376,13 @@ describe("ProjectConfigView", () => {
       .toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "任务历史" })).toBeInTheDocument();
     const container = screen.container;
-    expect(container.querySelectorAll('[data-slot="v3-soft-card"]').length).toBeGreaterThan(
+    expect(container.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThan(
       0,
     );
-    expect(container.querySelectorAll('[data-slot="v3-status-pill"]').length).toBeGreaterThan(
+    expect(container.querySelectorAll('[data-slot="status-pill"]').length).toBeGreaterThan(
       0,
     );
-    expect(container.querySelectorAll('[data-slot="v3-tab"]').length).toBeGreaterThan(
+    expect(container.querySelectorAll('[data-slot="page-tab"]').length).toBeGreaterThan(
       0,
     );
     await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
@@ -399,8 +399,8 @@ describe("ProjectConfigView", () => {
       });
       expect(putCall).toBeTruthy();
       expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
-        coordination_policy: { cadence: "hourly" },
-      });
+        coordination_policy: { cadence: "hourly" }
+});
       // 负责人不再从配置页发送(改由成员管理),PUT body 不应含 human_owner_user_id
       expect(
         Object.prototype.hasOwnProperty.call(
@@ -423,8 +423,8 @@ describe("ProjectConfigView", () => {
         {
           principal_id: "human-owner-1",
           principal_type: "human_user",
-          project_role: "owner",
-        },
+          project_role: "owner"
+},
       ]),
     );
     await userEvent.click(screen.getByRole("button", { name: "保存成员池" }));
@@ -442,10 +442,10 @@ describe("ProjectConfigView", () => {
           {
             principal_id: "human-owner-1",
             principal_type: "human_user",
-            project_role: "owner",
-          },
-        ],
-      });
+            project_role: "owner"
+},
+        ]
+});
     });
   });
 
@@ -482,8 +482,8 @@ describe("ProjectConfigView", () => {
         project_role: "executor",
         settings: {},
         status: "active",
-        tenant_id: "tenant-1",
-      },
+        tenant_id: "tenant-1"
+},
     ];
     refreshedConfig.digital_employee_pool = refreshedConfig.members;
     refreshedConfig.human_roles = [];
@@ -503,8 +503,8 @@ describe("ProjectConfigView", () => {
         {
           principal_id: "human-owner-1",
           principal_type: "human_user",
-          project_role: "owner",
-        },
+          project_role: "owner"
+},
       ]),
     );
 
@@ -523,8 +523,8 @@ describe("ProjectConfigView", () => {
           {
             principal_id: "human-owner-1",
             principal_type: "human_user",
-            project_role: "owner",
-          },
+            project_role: "owner"
+},
         ]),
       );
   });
@@ -551,7 +551,7 @@ describe("ProjectConfigView", () => {
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
 
     expect(
-      screen.container.querySelector('[data-slot="v3-work-surface"]'),
+      screen.container.querySelector('[data-slot="work-surface"]'),
     ).toBeTruthy();
     await expect
       .element(screen.getByRole("heading", { name: "人类成员" }))
@@ -564,7 +564,7 @@ describe("ProjectConfigView", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "任务历史" }));
 
-    expect(screen.container.querySelector('[data-slot="v3-table"]')).toBeTruthy();
+    expect(screen.container.querySelector('[data-slot="data-table"]')).toBeTruthy();
     await expect.element(screen.getByText("整理历史任务")).toBeInTheDocument();
   });
 });

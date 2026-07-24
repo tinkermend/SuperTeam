@@ -7,15 +7,15 @@ import { CreateTeamView } from "./create-team-page";
 
 function createQueryClient() {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false } }
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function fetchCalls(fetcher: typeof fetch) {
@@ -51,12 +51,12 @@ function createFetcher(
         avatar: { provider: "dicebear", seed: username, style: "adventurer" },
         id: `${username}-user`,
         status: "active",
-        username,
-      }));
+        username
+}));
 
       return jsonResponse({
-        items: q ? users.filter((user) => user.username.includes(q)) : users,
-      });
+        items: q ? users.filter((user) => user.username.includes(q)) : users
+});
     }
 
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
@@ -78,15 +78,15 @@ function createFetcher(
             tenant_id: "tenant-1",
             name: "安全团队",
             slug: "security",
-            status: "active",
-          },
+            status: "active"
+},
           member_count: 1,
           digital_employee_count: 0,
           capability_count: 0,
           pending_draft_count: 0,
           pending_item_count: 0,
-          allowed_actions: [],
-        },
+          allowed_actions: []
+},
         201,
       );
     }
@@ -236,12 +236,12 @@ describe("CreateTeamView", () => {
       metadata: {
         display: {
           color_tone: "teal",
-          icon_key: "role-application-security",
-        },
-      },
+          icon_key: "role-application-security"
+}
+},
       name: "安全团队",
-      slug: "security",
-    });
+      slug: "security"
+});
     await expect.poll(() => onCreated.mock.calls.length).toBe(1);
     expect(onCreated.mock.calls[0][1]).toEqual({ goToConstitution: false });
   });
@@ -253,10 +253,10 @@ describe("CreateTeamView", () => {
           id: "employee-1",
           name: "事件分析员",
           role: "安全事件分析",
-          status: "ready",
-        },
-      ],
-    });
+          status: "ready"
+},
+      ]
+});
     const screen = await renderView(
       <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
@@ -300,12 +300,12 @@ describe("CreateTeamView", () => {
       metadata: {
         display: {
           color_tone: "teal",
-          icon_key: "role-application-security",
-        },
-      },
+          icon_key: "role-application-security"
+}
+},
       name: "安全团队",
-      slug: "security",
-    });
+      slug: "security"
+});
   });
 
   it("paginates the digital employee library instead of extending the create page", async () => {
@@ -314,9 +314,9 @@ describe("CreateTeamView", () => {
         id: `employee-${index + 1}`,
         name: `数字员工 ${index + 1}`,
         role: "执行专员",
-        status: "ready",
-      })),
-    });
+        status: "ready"
+}))
+});
     const screen = await renderView(
       <CreateTeamView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );

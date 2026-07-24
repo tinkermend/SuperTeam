@@ -5,7 +5,7 @@ import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 
 export const Route = createFileRoute("/_authenticated/logs")({
-  component: LogsLayout,
+  component: LogsLayout
 });
 
 const tabItems = [
@@ -27,17 +27,17 @@ function LogsLayout() {
         subtitle="登录审计、操作追溯与平台事件"
       />
       <Main width="canvas" className="min-w-0 overflow-x-hidden">
-        <div className="flex w-full flex-col gap-4 text-v3-ink">
-          <nav className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-v3-card p-1.5 shadow-v3 flex">
+        <div className="flex w-full flex-col gap-4 text-ink">
+          <nav className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-card p-1.5 shadow-card flex">
             {tabItems.map((tab) => (
               <Link
                 key={tab.value}
                 to={tab.to}
                 className={cn(
-                  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
+                  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold shadow-none transition-colors hover:bg-card-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
                   activeValue === tab.value
-                    ? "bg-v3-brand-soft text-v3-brand-deep"
-                    : "text-v3-ink-2"
+                    ? "bg-brand-soft text-brand-deep"
+                    : "text-ink-2"
                 )}
               >
                 {tab.label}

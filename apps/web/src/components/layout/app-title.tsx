@@ -11,7 +11,7 @@ export function AppTitle() {
         <span
           aria-hidden="true"
           data-testid="brand-route-line"
-          className="pointer-events-none absolute inset-x-1 top-1 h-px bg-gradient-to-r from-transparent via-v3-brand/35 to-transparent group-data-[collapsible=icon]:hidden"
+          className="pointer-events-none absolute inset-x-1 top-1 h-px bg-gradient-to-r from-transparent via-brand/35 to-transparent group-data-[collapsible=icon]:hidden"
         />
         <span
           aria-hidden="true"
@@ -21,11 +21,11 @@ export function AppTitle() {
         <span className="relative flex size-[72px] shrink-0 items-center justify-center group-data-[collapsible=icon]:size-11">
           <span
             aria-hidden="true"
-            className="absolute left-1/2 top-1/2 h-px w-[82px] -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-transparent via-v3-brand/20 to-transparent group-data-[collapsible=icon]:hidden"
+            className="absolute left-1/2 top-1/2 h-px w-[82px] -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-transparent via-brand/20 to-transparent group-data-[collapsible=icon]:hidden"
           />
           <span
             aria-hidden="true"
-            className="absolute left-1/2 top-1/2 h-[82px] w-px -translate-x-1/2 -translate-y-1/2 bg-gradient-to-b from-transparent via-v3-brand/20 to-transparent group-data-[collapsible=icon]:hidden"
+            className="absolute left-1/2 top-1/2 h-[82px] w-px -translate-x-1/2 -translate-y-1/2 bg-gradient-to-b from-transparent via-brand/20 to-transparent group-data-[collapsible=icon]:hidden"
           />
           <img
             src={BRAND_MARK_SRC}
@@ -35,14 +35,14 @@ export function AppTitle() {
           />
         </span>
         <span className="relative flex min-w-0 flex-col leading-none group-data-[collapsible=icon]:hidden">
-          <span className="truncate text-[24px] font-extrabold leading-none text-v3-brand-deep">
+          <span className="truncate text-[24px] font-extrabold leading-none text-brand-deep">
             炬枢平台
           </span>
-          <span className="mt-2 flex min-w-0 items-center gap-2 text-[13px] font-bold leading-none text-v3-ink-2">
+          <span className="mt-2 flex min-w-0 items-center gap-2 text-[13px] font-bold leading-none text-ink-2">
             <span
               aria-hidden="true"
               data-testid="brand-subtitle-rule"
-              className="h-px w-7 shrink-0 bg-gradient-to-r from-v3-brand/70 to-transparent"
+              className="h-px w-7 shrink-0 bg-gradient-to-r from-brand/70 to-transparent"
             />
             <span className="truncate">新炬网络</span>
           </span>

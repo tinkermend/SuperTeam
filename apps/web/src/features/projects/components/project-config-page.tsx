@@ -3,7 +3,7 @@ import {
   keepPreviousData,
   useMutation,
   useQuery,
-  useQueryClient,
+  useQueryClient
 } from "@tanstack/react-query";
 import {
   Archive,
@@ -13,14 +13,14 @@ import {
   ClipboardList,
   ExternalLink,
   GitBranch,
-  UserRound,
+  UserRound
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger,
+  CollapsibleTrigger
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,14 +32,14 @@ import {
   ObjectRef,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  EmptyState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
@@ -58,14 +58,14 @@ import {
   type ProjectMember,
   type ProjectMemberInput,
   type ProjectTask,
-  type UpdateProjectConfigInput,
+  type UpdateProjectConfigInput
 } from "@/lib/api/projects";
 import {
   principalTypeLabel,
   projectRoleLabel,
   projectStatusLabel,
   statusLabel as genericStatusLabel,
-  taskStatusLabel,
+  taskStatusLabel
 } from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime, formatRelativeTime } from "@/lib/format-time";
 import { ProjectManagementShell } from "./project-management-shell";
@@ -95,7 +95,7 @@ type RevisionSelection = {
   revisionId?: string;
 };
 
-function statusTone(status: string): V3Tone {
+function statusTone(status: string): Tone {
   if (status === "running") return "ok";
   if (status === "archived") return "mute";
   if (status === "paused" || status === "acceptance") return "warn";
@@ -106,7 +106,7 @@ function statusTone(status: string): V3Tone {
 export function ProjectConfigView({
   apiBaseUrl,
   fetcher,
-  projectId,
+  projectId
 }: ProjectConfigViewProps) {
   const queryClient = useQueryClient();
   const apiOptions = useMemo<ApiClientOptions>(
@@ -116,23 +116,23 @@ export function ProjectConfigView({
   const configQuery = useQuery({
     queryKey: ["project-config", projectId],
     queryFn: () => getProjectConfig(apiOptions, projectId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const tasksQuery = useQuery({
     queryKey: ["project-tasks", projectId],
     queryFn: () => listProjectTasks(apiOptions, projectId, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const configRevisionsQuery = useQuery({
     queryKey: ["project-config-revisions", projectId],
     queryFn: () => listProjectConfigRevisions(apiOptions, projectId, { limit: 20 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const employeesQuery = useQuery({
     queryKey: ["digital-employees"],
     queryFn: () => listDigitalEmployees(apiOptions),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const employeeById = useMemo(() => {
     const map = new Map<string, DigitalEmployee>();
     for (const employee of employeesQuery.data ?? []) {
@@ -143,8 +143,8 @@ export function ProjectConfigView({
   const usersQuery = useQuery({
     queryKey: ["auth-users", "member-name-lookup"],
     queryFn: () => listUsers({ ...apiOptions, limit: 200 }),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const userNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const user of usersQuery.data?.items ?? []) {
@@ -164,8 +164,8 @@ export function ProjectConfigView({
   const [isConfigDirty, setConfigDirty] = useState(false);
   const [isMembersDirty, setMembersDirty] = useState(false);
   const [revisionSelection, setRevisionSelection] = useState<RevisionSelection>(() => ({
-    projectId,
-  }));
+    projectId
+}));
 
   const projectConfigRevisions = useMemo(
     () =>
@@ -216,8 +216,8 @@ export function ProjectConfigView({
       return getProjectConfigRevision(apiOptions, projectId, selectedRevisionId);
     },
     enabled: Boolean(selectedRevisionId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const selectedRevision =
     configRevisionDetailQuery.data?.id === selectedRevisionId
       ? configRevisionDetailQuery.data
@@ -287,20 +287,20 @@ export function ProjectConfigView({
             ? {
                 ...current,
                 coordination_policy: project.coordination_policy,
-                project,
-              }
+                project
+}
             : current,
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["project-config", projectId] }),
         queryClient.invalidateQueries({
-          queryKey: ["project-config-revisions", projectId],
-        }),
+          queryKey: ["project-config-revisions", projectId]
+}),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
       ]);
-    },
-  });
+    }
+});
 
   const replaceMembersMutation = useMutation({
     mutationFn: (members: ProjectMemberInput[]) =>
@@ -319,16 +319,16 @@ export function ProjectConfigView({
                 human_roles: members.filter(
                   (member) => member.principal_type === "human_user",
                 ),
-                members,
-              }
+                members
+}
             : current,
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["project-config", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
       ]);
-    },
-  });
+    }
+});
   const isConfigSaving = updateMutation.isPending;
   const isMembersSaving = replaceMembersMutation.isPending;
   const configFieldsDisabled = isArchived || isConfigSaving;
@@ -391,37 +391,37 @@ export function ProjectConfigView({
                 </IconTile>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-xl font-bold tracking-normal text-v3-ink">
+                    <h2 className="truncate text-xl font-bold tracking-normal text-ink">
                       {config.project.name}
                     </h2>
                     <StatusPill tone={statusTone(config.project.status)}>
                       {projectStatusLabel(config.project.status)}
                     </StatusPill>
                   </div>
-                  <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
+                  <p className="mt-1 max-w-3xl text-sm text-ink-2">
                     {config.project.goal}
                   </p>
                 </div>
               </div>
-              <V3Button
+              <Button
                 disabled={configFieldsDisabled}
                 type="button"
                 onClick={saveConfig}
               >
                 <Check data-icon="inline-start" />
                 保存配置
-              </V3Button>
+              </Button>
             </div>
             {isArchived ? (
-              <Alert className="mt-4 border-v3-warn/30 bg-v3-warn-soft text-v3-ink">
-                <Archive className="text-v3-warn" />
+              <Alert className="mt-4 border-warn/30 bg-warn-soft text-ink">
+                <Archive className="text-warn" />
                 <AlertTitle>项目已归档</AlertTitle>
                 <AlertDescription>配置页只读，保存与成员替换已禁用。</AlertDescription>
               </Alert>
             ) : null}
             {isConfigDirty ? (
-              <Alert className="mt-4 border-v3-info/30 bg-v3-info-soft text-v3-ink">
-                <GitBranch className="text-v3-info" />
+              <Alert className="mt-4 border-info/30 bg-info-soft text-ink">
+                <GitBranch className="text-info" />
                 <AlertTitle>协调 Workflow 将收到配置变更</AlertTitle>
                 <AlertDescription>
                   保存后会向当前项目协调 Workflow 发送策略变更 signal，新的项目任务将使用最新策略。
@@ -454,8 +454,8 @@ export function ProjectConfigView({
 
           <Tabs defaultValue="overview" className="gap-4">
             <TabsList
-              className="inline-flex h-auto w-fit flex-wrap gap-1 rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3"
-              data-slot="v3-tab-list"
+              className="inline-flex h-auto w-fit flex-wrap gap-1 rounded-[14px] bg-card p-1.5 text-ink-2 shadow-card"
+              data-slot="page-tab-list"
             >
               <ProjectConfigTab value="overview">概览</ProjectConfigTab>
               <ProjectConfigTab value="members">成员</ProjectConfigTab>
@@ -473,27 +473,27 @@ export function ProjectConfigView({
                       onChange={(event) =>
                         updateDraft((current) => ({
                           ...current,
-                          name: event.target.value,
-                        }))
+                          name: event.target.value
+}))
                       }
                     />
                   </Field>
                   <Field label="项目负责人">
                     <div className="flex flex-wrap gap-2">
                       {ownerIDs.length === 0 ? (
-                        <span className="text-[13px] text-v3-ink-3">暂无负责人</span>
+                        <span className="text-[13px] text-ink-3">暂无负责人</span>
                       ) : (
                         ownerIDs.map((id) => (
                           <span
                             key={id}
-                            className="inline-flex items-center rounded-[10px] border border-v3-line bg-v3-card-soft px-2.5 py-1 text-[13px] text-v3-ink"
+                            className="inline-flex items-center rounded-[10px] border border-line bg-card-soft px-2.5 py-1 text-[13px] text-ink"
                           >
                             <ObjectRef id={id} name={resolvePrincipalName(id)} />
                           </span>
                         ))
                       )}
                     </div>
-                    <span className="mt-1 block text-[12px] text-v3-ink-3">
+                    <span className="mt-1 block text-[12px] text-ink-3">
                       多个平级负责人,任一可审批/验收;在「成员」标签页增删负责人(至少保留一位)。
                     </span>
                   </Field>
@@ -504,8 +504,8 @@ export function ProjectConfigView({
                       onChange={(event) =>
                         updateDraft((current) => ({
                           ...current,
-                          goal: event.target.value,
-                        }))
+                          goal: event.target.value
+}))
                       }
                     />
                   </Field>
@@ -519,8 +519,8 @@ export function ProjectConfigView({
                       onChange={(event) =>
                         updateDraft((current) => ({
                           ...current,
-                          description: event.target.value,
-                        }))
+                          description: event.target.value
+}))
                       }
                     />
                   </Field>
@@ -538,13 +538,13 @@ export function ProjectConfigView({
                   resolveName={resolvePrincipalName}
                 />
                 <Collapsible className="grid gap-3">
-                  <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-[14px] border border-v3-line bg-v3-card px-5 py-3 text-left shadow-v3">
+                  <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-[14px] border border-line bg-card px-5 py-3 text-left shadow-card">
                     <div className="flex items-center gap-2">
-                      <UserRound className="size-4 text-v3-ink-3" />
-                      <span className="font-semibold text-v3-ink">高级：成员完整替换 JSON</span>
-                      <span className="text-[12px] text-v3-ink-3">按 principal_id 全量覆盖，仅供排障</span>
+                      <UserRound className="size-4 text-ink-3" />
+                      <span className="font-semibold text-ink">高级：成员完整替换 JSON</span>
+                      <span className="text-[12px] text-ink-3">按 principal_id 全量覆盖，仅供排障</span>
                     </div>
-                    <ChevronDown className="size-4 text-v3-ink-3 transition-transform group-data-[state=open]:rotate-180" />
+                    <ChevronDown className="size-4 text-ink-3 transition-transform group-data-[state=open]:rotate-180" />
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <MemberJsonPanel
@@ -586,8 +586,8 @@ function emptyConfigDraft(): ConfigDraft {
     coordinationPolicy: "{}",
     description: "",
     goal: "",
-    name: "",
-  };
+    name: ""
+};
 }
 
 function getLatestConfigRevision(revisions: ProjectConfigRevision[]) {
@@ -602,8 +602,8 @@ function configToDraft(config: ProjectConfig): ConfigDraft {
     coordinationPolicy: JSON.stringify(config.coordination_policy ?? {}, null, 2),
     description: config.project.description ?? "",
     goal: config.project.goal,
-    name: config.project.name,
-  };
+    name: config.project.name
+};
 }
 
 function configToMemberDraft(config: ProjectConfig): MemberDraft {
@@ -614,12 +614,12 @@ function configToMemberDraft(config: ProjectConfig): MemberDraft {
         principal_id: member.principal_id,
         principal_type: member.principal_type,
         project_role: member.project_role,
-        settings: member.settings,
-      })),
+        settings: member.settings
+})),
       null,
       2,
-    ),
-  };
+    )
+};
 }
 
 function draftToInput(draft: ConfigDraft): UpdateProjectConfigInput {
@@ -627,8 +627,8 @@ function draftToInput(draft: ConfigDraft): UpdateProjectConfigInput {
     coordination_policy: parseJsonObject(draft.coordinationPolicy, "协调策略"),
     description: draft.description.trim() || undefined,
     goal: draft.goal.trim() || undefined,
-    name: draft.name.trim() || undefined,
-  };
+    name: draft.name.trim() || undefined
+};
 }
 
 function parseJsonObject(value: string, label: string): Record<string, unknown> {
@@ -687,14 +687,14 @@ function parseMembers(value: string): ProjectMemberInput[] {
       principal_id: candidate.principal_id.trim(),
       principal_type: candidate.principal_type,
       project_role: candidate.project_role,
-      settings: candidate.settings as Record<string, unknown> | undefined,
-    };
+      settings: candidate.settings as Record<string, unknown> | undefined
+};
   });
 }
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <Label className="grid gap-2 text-v3-ink">
+    <Label className="grid gap-2 text-ink">
       <span className="text-[13px] font-semibold">{label}</span>
       {children}
     </Label>
@@ -703,15 +703,15 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
 
 function ProjectConfigTab({
   children,
-  value,
+  value
 }: {
   children: ReactNode;
   value: string;
 }) {
   return (
     <TabsTrigger
-      className="h-auto rounded-[10px] px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none"
-      data-slot="v3-tab"
+      className="h-auto rounded-[10px] px-4 py-2 text-[13px] font-semibold text-ink-2 shadow-none transition-colors hover:bg-card-soft hover:text-ink data-[state=active]:bg-brand-soft data-[state=active]:text-brand-deep data-[state=active]:shadow-none"
+      data-slot="page-tab"
       value={value}
     >
       {children}
@@ -722,7 +722,7 @@ function ProjectConfigTab({
 function CoordinationPolicyPanel({
   disabled,
   onChange,
-  value,
+  value
 }: {
   disabled?: boolean;
   onChange: (value: string) => void;
@@ -763,26 +763,26 @@ function CoordinationPolicyPanel({
     <div className="grid gap-4">
       <SoftCard className="p-5">
         <div className="mb-4 flex items-center gap-2">
-          <span className="text-v3-brand [&_svg]:size-4">
+          <span className="text-brand [&_svg]:size-4">
             <GitBranch />
           </span>
-          <h3 className="font-semibold text-v3-ink">协调策略</h3>
+          <h3 className="font-semibold text-ink">协调策略</h3>
         </div>
-        <p className="mb-4 text-sm text-v3-ink-2">
+        <p className="mb-4 text-sm text-ink-2">
           驱动项目协调线程的规划与门禁行为，保存后对后续新任务生效。
         </p>
         {invalid ? (
-          <Alert className="mb-4 border-v3-warn/30 bg-v3-warn-soft text-v3-ink">
-            <GitBranch className="text-v3-warn" />
+          <Alert className="mb-4 border-warn/30 bg-warn-soft text-ink">
+            <GitBranch className="text-warn" />
             <AlertTitle>协调策略 JSON 无法解析</AlertTitle>
             <AlertDescription>请在下方「高级」区修正 JSON 后再使用上方开关。</AlertDescription>
           </Alert>
         ) : null}
         <div className="grid gap-4">
-          <label className="flex items-start justify-between gap-4 rounded-[12px] border border-v3-line bg-v3-card-soft p-4">
+          <label className="flex items-start justify-between gap-4 rounded-[12px] border border-line bg-card-soft p-4">
             <div className="min-w-0">
-              <span className="text-[13px] font-semibold text-v3-ink">新需求需人工复核</span>
-              <p className="mt-0.5 text-[12px] text-v3-ink-3">
+              <span className="text-[13px] font-semibold text-ink">新需求需人工复核</span>
+              <p className="mt-0.5 text-[12px] text-ink-3">
                 开启后，协调线程对新提交需求强制人工复核，并将新任务标记为需审批。
               </p>
             </div>
@@ -795,9 +795,9 @@ function CoordinationPolicyPanel({
               }
             />
           </label>
-          <div className="grid gap-2 rounded-[12px] border border-v3-line bg-v3-card-soft p-4">
-            <span className="text-[13px] font-semibold text-v3-ink">最大规划迭代次数</span>
-            <p className="text-[12px] text-v3-ink-3">
+          <div className="grid gap-2 rounded-[12px] border border-line bg-card-soft p-4">
+            <span className="text-[13px] font-semibold text-ink">最大规划迭代次数</span>
+            <p className="text-[12px] text-ink-3">
               对抗式返工的规划迭代上限（正整数）；留空使用平台默认。
             </p>
             <Input
@@ -825,10 +825,10 @@ function CoordinationPolicyPanel({
       </SoftCard>
       <SoftCard className="p-5">
         <div className="mb-1.5 flex items-center gap-2">
-          <GitBranch className="size-4 text-v3-ink-3" />
-          <h3 className="font-semibold text-v3-ink">完整协调策略 JSON</h3>
+          <GitBranch className="size-4 text-ink-3" />
+          <h3 className="font-semibold text-ink">完整协调策略 JSON</h3>
         </div>
-        <p className="mb-3 text-[12px] text-v3-ink-3">
+        <p className="mb-3 text-[12px] text-ink-3">
           上方开关会同步写入此处；其它识别键（adversarial_review_judges / review_gate_conditions /
           selection_score_threshold 等）在此直接编辑。
         </p>
@@ -851,7 +851,7 @@ function MemberJsonPanel({
   members,
   showWorkflowImpactNotice,
   onMembersChange,
-  onSave,
+  onSave
 }: {
   disabled?: boolean;
   error?: string;
@@ -865,16 +865,16 @@ function MemberJsonPanel({
     <SoftCard className="p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <UserRound className="size-4 text-v3-brand" />
-          <h3 className="font-semibold text-v3-ink">成员完整替换 JSON</h3>
+          <UserRound className="size-4 text-brand" />
+          <h3 className="font-semibold text-ink">成员完整替换 JSON</h3>
         </div>
-        <V3Button disabled={disabled || isSaving} type="button" onClick={onSave}>
+        <Button disabled={disabled || isSaving} type="button" onClick={onSave}>
           保存成员池
-        </V3Button>
+        </Button>
       </div>
       {showWorkflowImpactNotice ? (
-        <Alert className="mb-4 border-v3-ok/30 bg-v3-ok-soft text-v3-ink">
-          <UserRound className="text-v3-ok" />
+        <Alert className="mb-4 border-ok/30 bg-ok-soft text-ink">
+          <UserRound className="text-ok" />
           <AlertTitle>数字员工池变更将影响新任务</AlertTitle>
           <AlertDescription>
             保存成员后会向当前项目协调 Workflow 发送成员变更 signal，后续分派只能使用最新 active 数字员工池。
@@ -898,7 +898,7 @@ function MembersHumanizedPanel({
   employeeById,
   humanMembers,
   ownerUserIDs,
-  resolveName,
+  resolveName
 }: {
   digitalMembers: ProjectMember[];
   employeeById: Map<string, DigitalEmployee>;
@@ -947,7 +947,7 @@ function MemberGroup({
   count,
   emptyLabel,
   icon,
-  title,
+  title
 }: {
   children: ReactNode;
   count: number;
@@ -957,17 +957,17 @@ function MemberGroup({
 }) {
   return (
     <WorkSurface>
-      <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+      <div className="flex items-center justify-between gap-3 border-b border-line p-4">
         <div className="flex items-center gap-2">
-          <span className="text-v3-brand [&_svg]:size-4">{icon}</span>
-          <h3 className="font-semibold text-v3-ink">{title}</h3>
+          <span className="text-brand [&_svg]:size-4">{icon}</span>
+          <h3 className="font-semibold text-ink">{title}</h3>
         </div>
         <StatusPill tone="mute">{count} 个</StatusPill>
       </div>
       {count === 0 ? (
-        <V3EmptyState title={emptyLabel} />
+        <EmptyState title={emptyLabel} />
       ) : (
-        <div className="divide-y divide-v3-line">{children}</div>
+        <div className="divide-y divide-line">{children}</div>
       )}
     </WorkSurface>
   );
@@ -977,7 +977,7 @@ function ConfigMemberRow({
   employee,
   isOwner,
   member,
-  resolvedName,
+  resolvedName
 }: {
   employee?: DigitalEmployee;
   isOwner?: boolean;
@@ -994,8 +994,8 @@ function ConfigMemberRow({
         <EmployeeAvatar
           asset={employeeAvatarAsset({
             id: member.principal_id,
-            metadata: employee?.metadata,
-          })}
+            metadata: employee?.metadata
+})}
           name={name || member.principal_id}
           size="sm"
         />
@@ -1006,16 +1006,16 @@ function ConfigMemberRow({
       )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="min-w-0 font-bold text-v3-ink">
+          <span className="min-w-0 font-bold text-ink">
             <ObjectRef id={member.principal_id} name={name} />
           </span>
           {isOwner ? <StatusPill tone="info">负责人</StatusPill> : null}
           <StatusPill tone="mute">{projectRoleLabel(member.project_role)}</StatusPill>
         </div>
         {description ? (
-          <p className="mt-1 line-clamp-2 text-sm text-v3-ink-2">{description}</p>
+          <p className="mt-1 line-clamp-2 text-sm text-ink-2">{description}</p>
         ) : null}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-v3-ink-3">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-3">
           <span>{principalTypeLabel(member.principal_type)}</span>
           <span aria-hidden>·</span>
           <span>{genericStatusLabel(member.status)}</span>
@@ -1025,7 +1025,7 @@ function ConfigMemberRow({
             <>
               <span aria-hidden>·</span>
               <Link
-                className="inline-flex items-center gap-1 text-v3-brand hover:underline"
+                className="inline-flex items-center gap-1 text-brand hover:underline"
                 params={{ employeeId: member.principal_id }}
                 to="/employees/$employeeId"
               >
@@ -1047,44 +1047,44 @@ function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
 
   return (
     <WorkSurface>
-      <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+      <div className="flex items-center justify-between gap-3 border-b border-line p-4">
         <div className="flex items-center gap-2">
-          <ClipboardList className="size-4 text-v3-brand" />
-          <h3 className="font-semibold text-v3-ink">任务历史</h3>
+          <ClipboardList className="size-4 text-brand" />
+          <h3 className="font-semibold text-ink">任务历史</h3>
         </div>
         <StatusPill tone="mute">{tasks.length} 条</StatusPill>
       </div>
-      <V3Table>
+      <DataTable>
         <thead>
           <tr>
-            <V3Th>任务</V3Th>
-            <V3Th>状态</V3Th>
-            <V3Th>更新</V3Th>
-            <V3Th>摘要</V3Th>
+            <Th>任务</Th>
+            <Th>状态</Th>
+            <Th>更新</Th>
+            <Th>摘要</Th>
           </tr>
         </thead>
         <tbody>
           {orderedTasks.length === 0 ? (
             <tr>
-              <V3Td colSpan={4}>
-                <V3EmptyState title="暂无任务历史" />
-              </V3Td>
+              <Td colSpan={4}>
+                <EmptyState title="暂无任务历史" />
+              </Td>
             </tr>
           ) : (
             orderedTasks.map((task) => {
               const activityAt = task.updated_at ?? task.created_at;
               return (
-              <V3Tr key={task.id}>
-                <V3Td className="min-w-[220px]">
-                  <p className="truncate font-bold text-v3-ink">{task.title}</p>
-                  <p className="mt-0.5 truncate font-mono text-[12px] text-v3-ink-3">
+              <Tr key={task.id}>
+                <Td className="min-w-[220px]">
+                  <p className="truncate font-bold text-ink">{task.title}</p>
+                  <p className="mt-0.5 truncate font-mono text-[12px] text-ink-3">
                     {task.id}
                   </p>
-                </V3Td>
-                <V3Td>
+                </Td>
+                <Td>
                   <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
-                </V3Td>
-                <V3Td className="whitespace-nowrap tabular-nums text-xs text-v3-ink-2">
+                </Td>
+                <Td className="whitespace-nowrap tabular-nums text-xs text-ink-2">
                   {activityAt ? (
                     <time dateTime={activityAt} title={formatDateTime(activityAt)}>
                       {formatRelativeTime(activityAt)}
@@ -1092,16 +1092,16 @@ function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
                   ) : (
                     "—"
                   )}
-                </V3Td>
-                <V3Td className="min-w-[320px] whitespace-normal text-v3-ink-2">
+                </Td>
+                <Td className="min-w-[320px] whitespace-normal text-ink-2">
                   <p className="line-clamp-2">{task.summary || "暂无摘要"}</p>
-                </V3Td>
-              </V3Tr>
+                </Td>
+              </Tr>
               );
             })
           )}
         </tbody>
-      </V3Table>
+      </DataTable>
     </WorkSurface>
   );
 }

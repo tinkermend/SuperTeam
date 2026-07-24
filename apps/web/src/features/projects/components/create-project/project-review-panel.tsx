@@ -6,7 +6,7 @@ import { StatusPill, WorkSurface } from "@/components/superteam";
 import {
   directoryNameHintFromGitURL,
   projectCreateValidation,
-  type ProjectCreateDraft,
+  type ProjectCreateDraft
 } from "./create-project-draft";
 
 type ProjectReviewPanelProps = {
@@ -22,7 +22,7 @@ export function ProjectReviewPanel({
   currentUser,
   draft,
   fetcher,
-  selectableTeams,
+  selectableTeams
 }: ProjectReviewPanelProps) {
   const sourceTeams = selectableTeams.filter((scope) => draft.sourceTeamIds.includes(scope.team_id));
   const validation = projectCreateValidation(draft, currentUser?.id, selectableTeams);
@@ -36,8 +36,8 @@ export function ProjectReviewPanel({
   ].filter(Boolean).length;
   const nodesQuery = useQuery({
     queryKey: ["project-create", "runtime-nodes"],
-    queryFn: () => listRuntimeNodes({ baseUrl: apiBaseUrl, fetcher }),
-  });
+    queryFn: () => listRuntimeNodes({ baseUrl: apiBaseUrl, fetcher })
+});
   const directoryPreview =
     draft.directoryName.trim() ||
     (draft.sourceKind === "git" ? directoryNameHintFromGitURL(draft.repoUrl) : null) ||
@@ -46,13 +46,13 @@ export function ProjectReviewPanel({
     {
       group: "项目事实",
       label: "项目名称",
-      value: draft.name || "未填写",
-    },
+      value: draft.name || "未填写"
+},
     {
       group: "项目事实",
       label: "项目目录名",
-      value: directoryPreview,
-    },
+      value: directoryPreview
+},
     {
       group: "项目事实",
       label: "源码来源",
@@ -61,46 +61,46 @@ export function ProjectReviewPanel({
           ? draft.repoUrl.trim()
             ? `${draft.repoUrl.trim()} @ ${draft.repoDefaultBranch.trim() || "main"}`
             : "Git（未填 URL）"
-          : "非 Git（空目录）",
-    },
+          : "非 Git（空目录）"
+},
     {
       group: "项目事实",
       label: "来源团队",
-      value: sourceTeams.length > 0 ? `${sourceTeams.length} 个已选` : "未选择",
-    },
+      value: sourceTeams.length > 0 ? `${sourceTeams.length} 个已选` : "未选择"
+},
     { group: "项目事实", label: "目标", value: draft.goal || "未填写" },
     {
       group: "人类负责人",
       label: "主负责人",
-      value: currentUser?.display_name ?? currentUser?.username ?? "未加载",
-    },
+      value: currentUser?.display_name ?? currentUser?.username ?? "未加载"
+},
     { group: "人类负责人", label: "额外负责人", value: `${draft.ownerUsers.length} 位已选` },
     { group: "数字员工池", label: "执行员工", value: `${draft.selectedDigitalEmployees.length} 位已选` },
     {
       group: "可运行节点",
       label: "已选节点",
-      value: runtimeNodesReviewValue(draft.runtimeNodeIds, nodesQuery.data),
-    },
+      value: runtimeNodesReviewValue(draft.runtimeNodeIds, nodesQuery.data)
+},
     { group: "协调策略", label: "协调预设", value: policyPresetLabel(draft.policyPreset) },
     {
       group: "协调策略",
       label: "审计日志",
-      value: draft.policyToggles.auditLogEnabled ? "自动开启" : "未开启",
-    },
+      value: draft.policyToggles.auditLogEnabled ? "自动开启" : "未开启"
+},
     {
       group: "协调策略",
       label: "新需求需人工确认",
-      value: draft.policyToggles.newDemandNeedsHumanConfirmation ? "是" : "否",
-    },
+      value: draft.policyToggles.newDemandNeedsHumanConfirmation ? "是" : "否"
+},
   ];
 
   return (
     <aside className="grid content-start gap-4">
       <WorkSurface className="rounded-[14px] p-0 shadow-sm">
-        <div className="flex items-start justify-between gap-3 border-b border-v3-line px-3 py-3">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-3 py-3">
           <div>
-            <h3 className="text-base font-extrabold text-v3-ink">创建前审阅</h3>
-            <p className="mt-1 text-[12px] text-v3-ink-2">将要创建的项目对象字段。</p>
+            <h3 className="text-base font-extrabold text-ink">创建前审阅</h3>
+            <p className="mt-1 text-[12px] text-ink-2">将要创建的项目对象字段。</p>
           </div>
           <StatusPill tone="warn">待创建</StatusPill>
         </div>
@@ -112,27 +112,27 @@ export function ProjectReviewPanel({
           >
             <thead>
               <tr>
-                <th className="border-b border-v3-line-strong bg-v3-card-soft px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
+                <th className="border-b border-line-strong bg-card-soft px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink-3">
                   分组
                 </th>
-                <th className="border-b border-v3-line-strong bg-v3-card-soft px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
+                <th className="border-b border-line-strong bg-card-soft px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink-3">
                   字段
                 </th>
-                <th className="border-b border-v3-line-strong bg-v3-card-soft px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
+                <th className="border-b border-line-strong bg-card-soft px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink-3">
                   当前值
                 </th>
               </tr>
             </thead>
             <tbody>
               {reviewRows.map((row) => (
-                <tr key={`${row.group}:${row.label}`} className="[&:hover>td]:bg-v3-card-inner">
-                  <td className="border-b border-v3-line px-3 py-2 align-top font-semibold text-v3-ink-2">
+                <tr key={`${row.group}:${row.label}`} className="[&:hover>td]:bg-card-inner">
+                  <td className="border-b border-line px-3 py-2 align-top font-semibold text-ink-2">
                     {row.group}
                   </td>
-                  <td className="border-b border-v3-line px-3 py-2 align-top text-v3-ink-3">
+                  <td className="border-b border-line px-3 py-2 align-top text-ink-3">
                     {row.label}
                   </td>
-                  <td className="min-w-0 border-b border-v3-line px-3 py-2 align-top font-semibold text-v3-ink">
+                  <td className="min-w-0 border-b border-line px-3 py-2 align-top font-semibold text-ink">
                     <span className="line-clamp-2 break-words">{row.value}</span>
                   </td>
                 </tr>
@@ -141,7 +141,7 @@ export function ProjectReviewPanel({
           </table>
         </div>
 
-        <div className="m-3 rounded-[10px] border border-v3-info/20 bg-v3-info-soft px-3 py-2.5 text-[12px] leading-5 text-v3-info">
+        <div className="m-3 rounded-[10px] border border-info/20 bg-info-soft px-3 py-2.5 text-[12px] leading-5 text-info">
           <div className="flex gap-2">
             <Network className="mt-0.5 size-4 shrink-0" />
             <span>创建完成后，系统会注册项目协调线程，并可在任务发起中选择该项目提交需求。</span>
@@ -149,12 +149,12 @@ export function ProjectReviewPanel({
         </div>
       </WorkSurface>
 
-      <div className="rounded-[14px] border border-v3-line bg-v3-card p-4 shadow-sm">
-        <div className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
-          <CheckCircle2 className="size-4 text-v3-ok" />
+      <div className="rounded-[14px] border border-line bg-card p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <CheckCircle2 className="size-4 text-ok" />
           必备项 {requiredPassed} / 4 已就绪
         </div>
-        <div className="mt-3 grid gap-2 text-[13px] text-v3-ink-2">
+        <div className="mt-3 grid gap-2 text-[13px] text-ink-2">
           <CheckLine checked={basicsReady} label="基础信息已填写" />
           <CheckLine checked={sourceTeams.length > 0} label="来源团队已选择" />
           <CheckLine checked={runtimeNodesReady} label="可运行节点已就绪" />
@@ -170,7 +170,7 @@ function CheckLine({ checked, label }: { checked: boolean; label: string }) {
   const Icon = checked ? CheckCircle2 : CircleDot;
   return (
     <div className="flex items-center gap-2">
-      <Icon className={checked ? "size-4 text-v3-ok" : "size-4 text-v3-ink-3"} />
+      <Icon className={checked ? "size-4 text-ok" : "size-4 text-ink-3"} />
       <span>{label}</span>
     </div>
   );

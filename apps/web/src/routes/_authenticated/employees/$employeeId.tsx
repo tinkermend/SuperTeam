@@ -2,7 +2,7 @@ import { Outlet, createFileRoute, useRouterState } from "@tanstack/react-router"
 import { EmployeeDetailPage } from "@/features/employees/detail";
 
 export const Route = createFileRoute("/_authenticated/employees/$employeeId")({
-  component: EmployeeDetailRoute,
+  component: EmployeeDetailRoute
 });
 
 function EmployeeDetailRoute() {

@@ -68,8 +68,8 @@ export function LayoutProvider({ children }: LayoutProviderProps) {
     setCollapsible,
     defaultVariant: DEFAULT_VARIANT,
     variant,
-    setVariant,
-  }
+    setVariant
+}
 
   return <LayoutContext value={contextValue}>{children}</LayoutContext>
 }

@@ -1,4 +1,4 @@
-import { V3TabList, V3Tabs } from "@/components/superteam";
+import { PageTabList, PageTabs } from "@/components/superteam";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   CreateProjectArchiveSnapshotInput,
@@ -11,7 +11,7 @@ import type {
   ProjectBudgetSummary,
   ProjectEvidenceRef,
   ProjectEvidenceVerificationStatus,
-  ProjectReportRef,
+  ProjectReportRef
 } from "@/lib/api/projects";
 import { ProjectAcceptancePanel } from "./project-acceptance-panel";
 import { ProjectArchivePanel } from "./project-archive-panel";
@@ -20,7 +20,7 @@ import { ProjectBudgetPanel } from "./project-budget-panel";
 import { ProjectEvidencePanel } from "./project-evidence-panel";
 
 const governanceTabTriggerClass =
-  "h-auto flex-none shrink-0 rounded-[10px] border-0 bg-transparent px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none";
+  "h-auto flex-none shrink-0 rounded-[10px] border-0 bg-transparent px-4 py-2 text-[13px] font-semibold text-ink-2 shadow-none transition-colors hover:bg-card-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-brand-soft data-[state=active]:text-brand-deep data-[state=active]:shadow-none";
 
 type ProjectGovernanceTabsProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -62,7 +62,7 @@ export function ProjectGovernanceTabs({
   onPatchEvidence,
   reports = [],
   routeDecisionCount,
-  taskCount,
+  taskCount
 }: ProjectGovernanceTabsProps) {
   const unresolvedRiskCount = acceptance?.unresolved_risks.length ?? 0;
 
@@ -71,12 +71,12 @@ export function ProjectGovernanceTabs({
       <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch]">
         <TabsList
           aria-label="项目详情治理视图"
-          className="h-auto w-max min-w-full max-w-none justify-start overflow-visible rounded-[14px] bg-v3-card p-1.5 text-v3-ink shadow-v3"
+          className="h-auto w-max min-w-full max-w-none justify-start overflow-visible rounded-[14px] bg-card p-1.5 text-ink shadow-card"
         >
-          <V3Tabs
+          <PageTabs
             className="w-full min-w-0 bg-transparent p-0 shadow-none"
           >
-            <V3TabList className="flex-nowrap">
+            <PageTabList className="flex-nowrap">
               <TabsTrigger className={governanceTabTriggerClass} value="evidence">
                 证据链
               </TabsTrigger>
@@ -92,8 +92,8 @@ export function ProjectGovernanceTabs({
               <TabsTrigger className={governanceTabTriggerClass} value="archive">
                 归档预览
               </TabsTrigger>
-            </V3TabList>
-          </V3Tabs>
+            </PageTabList>
+          </PageTabs>
         </TabsList>
       </div>
 

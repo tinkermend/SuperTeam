@@ -1,12 +1,12 @@
 import { RotateCcw, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/superteam";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import type { GovernanceSummaryStatus, TeamStatus } from "@/lib/api/teams";
 import { governanceStatusLabel, teamStatusLabel } from "@/lib/status-labels";
@@ -26,7 +26,7 @@ type TeamManagementToolbarProps = {
 export function TeamManagementToolbar({
   filters,
   onChange,
-  onReset,
+  onReset
 }: TeamManagementToolbarProps) {
   return (
     <div className="mb-6 flex flex-col gap-3 rounded-lg border bg-card/60 p-2 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center">
@@ -48,8 +48,8 @@ export function TeamManagementToolbar({
           onValueChange={(value) =>
             onChange({
               ...filters,
-              status: value === "all" ? undefined : (value as TeamStatus),
-            })
+              status: value === "all" ? undefined : (value as TeamStatus)
+})
           }
           value={filters.status ?? "all"}
         >
@@ -69,8 +69,8 @@ export function TeamManagementToolbar({
             onChange({
               ...filters,
               governance_status:
-                value === "all" ? undefined : (value as GovernanceSummaryStatus),
-            })
+                value === "all" ? undefined : (value as GovernanceSummaryStatus)
+})
           }
           value={filters.governance_status ?? "all"}
         >

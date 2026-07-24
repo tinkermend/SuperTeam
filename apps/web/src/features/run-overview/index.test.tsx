@@ -11,8 +11,8 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     params,
     search,
-    to,
-  }: {
+    to
+}: {
     children: ReactNode;
     params?: Record<string, string>;
     search?: Record<string, string | undefined>;
@@ -30,19 +30,19 @@ vi.mock("@tanstack/react-router", () => ({
     return <a href={`${href}${query}`}>{children}</a>;
   },
   useSearch: () => routerSearch,
-  useNavigate: () => () => Promise.resolve(),
+  useNavigate: () => () => Promise.resolve()
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main data-testid="run-overview-main">{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main data-testid="run-overview-main">{children}</main>
 }));
 
 vi.mock("@/components/layout/shell-page-header", () => ({
   ShellPageHeader: ({
     actions,
     subtitle,
-    title,
-  }: {
+    title
+}: {
     actions?: ReactNode;
     subtitle?: ReactNode;
     title: ReactNode;
@@ -52,7 +52,7 @@ vi.mock("@/components/layout/shell-page-header", () => ({
       {subtitle ? <p>{subtitle}</p> : null}
       {actions ? <div data-testid="run-overview-shell-header-actions">{actions}</div> : null}
     </header>
-  ),
+  )
 }));
 
 import { RunOverviewView } from "@/features/run-overview";
@@ -61,14 +61,14 @@ import {
   digitalEmployeeOverviewFixture,
   digitalEmployeeOverviewWithUnassignedFixture,
   projectTaskGraphFixture,
-  teamListFixture,
+  teamListFixture
 } from "./runtime-overview-fixtures";
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status: 200,
-  });
+    status: 200
+});
 }
 
 const emptyTaskGraph = {
@@ -79,14 +79,14 @@ const emptyTaskGraph = {
   execution_summaries: [],
   recent_events: [],
   decision_requests: [],
-  blocking_facts: [],
+  blocking_facts: []
 };
 
 function createFetcher({
   withActivity = true,
   withUnassigned = false,
   withSecondDemand = false,
-  withGrowingDemands = false,
+  withGrowingDemands = false
 }: {
   withActivity?: boolean;
   withUnassigned?: boolean;
@@ -137,9 +137,9 @@ function createFetcher({
 function queryClient() {
   return new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
-    },
-  });
+      queries: { retry: false }
+}
+});
 }
 
 async function renderPage(fetcher: typeof fetch, search: Record<string, string | undefined> = {}) {
@@ -235,10 +235,10 @@ describe("RunOverviewView", () => {
     expect(mapScene).not.toBeNull();
     expect(mapFeather).not.toBeNull();
     expect(mapBackground).not.toBeNull();
-    expect(mapStage?.className).not.toContain("border-[var(--v3-shell-glass-border)]");
-    expect(mapStage?.className).not.toContain("bg-[var(--v3-shell-glass)]");
+    expect(mapStage?.className).not.toContain("border-[var(--shell-glass-border)]");
+    expect(mapStage?.className).not.toContain("bg-[var(--shell-glass)]");
     expect(mapStage?.className).not.toContain("p-1");
-    expect(mapStage?.className).not.toContain("shadow-v3");
+    expect(mapStage?.className).not.toContain("shadow-card");
     expect(mapScene?.style.clipPath).not.toContain("polygon(");
     expect(
       `${mapScene?.style.maskImage ?? ""} ${mapScene?.style.getPropertyValue("-webkit-mask-image")}`,
@@ -371,8 +371,8 @@ describe("RunOverviewView", () => {
         listeners[type] = listener;
       },
       removeEventListener: () => {},
-      close: () => {},
-    } as unknown as EventSource;
+      close: () => {}
+} as unknown as EventSource;
     const streamUrls: string[] = [];
     routerSearch = {};
     const screen = await render(

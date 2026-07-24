@@ -18,7 +18,7 @@ type AuthenticatedLayoutProps = {
 
 function AuthenticatedShell({
   children,
-  inboxEventSourceFactory,
+  inboxEventSourceFactory
 }: {
   children?: React.ReactNode
   inboxEventSourceFactory?: (url: string) => EventSource
@@ -31,9 +31,9 @@ function AuthenticatedShell({
     <SearchProvider>
       <LayoutProvider>
         <SidebarProvider
-          data-slot='v3-authenticated-shell'
+          data-slot='authenticated-shell'
           defaultOpen={defaultOpen}
-          className='text-v3-ink'
+          className='text-ink'
         >
           <AuroraBackground />
           <SkipToMain />
@@ -42,7 +42,7 @@ function AuthenticatedShell({
             className={cn(
               // Set content container, so we can use container queries
               '@container/content',
-              'min-w-0 overflow-x-hidden bg-transparent text-v3-ink',
+              'min-w-0 overflow-x-hidden bg-transparent text-ink',
 
               // If layout is fixed, set the height
               // to 100svh to prevent overflow
@@ -63,7 +63,7 @@ function AuthenticatedShell({
 
 export function AuthenticatedLayout({
   children,
-  inboxEventSourceFactory,
+  inboxEventSourceFactory
 }: AuthenticatedLayoutProps) {
   const { isAuthenticated, isLoading } = useAuth()
   const location = useLocation()

@@ -17,7 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
     <a href={to} {...rest}>
       {children}
     </a>
-  ),
+  )
 }));
 
 const employee = {
@@ -33,7 +33,7 @@ const employee = {
   permission_policy: {},
   context_policy: {},
   approval_policy: {},
-  risk_level: "medium",
+  risk_level: "medium"
 };
 
 const stats = {
@@ -45,7 +45,7 @@ const stats = {
   avg_duration_sec: 29 * 60,
   p90_duration_sec: 48 * 60,
   last_7d_count: 12,
-  prev_7d_count: 10,
+  prev_7d_count: 10
 };
 
 describe("EmployeeDetailHeader", () => {
@@ -73,8 +73,8 @@ describe("EmployeeDetailHeader", () => {
         employee={{
           ...employee,
           team_id: "22222222-2222-4222-8222-222222222222",
-          team_name: "平台组",
-        }}
+          team_name: "平台组"
+}}
       />,
     );
 
@@ -137,10 +137,10 @@ describe("EmployeeDetailHeader", () => {
           ...employee,
           metadata: {
             avatar: {
-              id: "engineer-f-01",
-            },
-          },
-        }}
+              id: "engineer-f-01"
+}
+}
+}}
       />,
     );
 
@@ -156,9 +156,9 @@ describe("EmployeeDetailHeader", () => {
         employee={{
           ...employee,
           metadata: {
-            avatar_asset_id: "engineer-m-02",
-          },
-        }}
+            avatar_asset_id: "engineer-m-02"
+}
+}}
       />,
     );
 
@@ -175,10 +175,10 @@ describe("EmployeeDetailHeader", () => {
           ...employee,
           metadata: {
             avatar: {
-              id: "engineer-m-14",
-            },
-          },
-        }}
+              id: "engineer-m-14"
+}
+}
+}}
       />,
     );
 

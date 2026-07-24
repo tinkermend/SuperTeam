@@ -4,19 +4,19 @@ import { FileClock, MoreHorizontal, Settings, Trash2 } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
-  V3Button,
-  type V3Tone,
+  Button,
+  type Tone
 } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import type { DigitalEmployee, DigitalEmployeeRunStats } from "@/lib/api/employees";
 import { employeeStatusLabel } from "@/lib/status-labels";
@@ -31,18 +31,18 @@ type EmployeeDetailHeaderProps = {
   onDelete?: () => void;
 };
 
-const identityStatusTone: Record<string, V3Tone> = {
+const identityStatusTone: Record<string, Tone> = {
   active: "ok",
   ready: "info",
   disabled: "mute",
   archived: "mute",
-  error: "danger",
+  error: "danger"
 };
 
 export function EmployeeDetailHeader({
   employee,
   stats,
-  onDelete,
+  onDelete
 }: EmployeeDetailHeaderProps) {
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
   const avatarAsset = employeeAvatarAsset(employee);
@@ -65,7 +65,7 @@ export function EmployeeDetailHeader({
         <div className="flex min-w-0 items-center gap-3">
           <button
             aria-label={`查看 ${employee.name} 的大图头像`}
-            className="shrink-0 cursor-pointer rounded-full outline-none transition-[box-shadow,transform] hover:scale-[1.03] hover:ring-2 hover:ring-v3-brand/40 focus-visible:ring-2 focus-visible:ring-v3-brand"
+            className="shrink-0 cursor-pointer rounded-full outline-none transition-[box-shadow,transform] hover:scale-[1.03] hover:ring-2 hover:ring-brand/40 focus-visible:ring-2 focus-visible:ring-brand"
             onClick={() => setAvatarPreviewOpen(true)}
             type="button"
           >
@@ -73,7 +73,7 @@ export function EmployeeDetailHeader({
           </button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-lg font-extrabold tracking-tight text-v3-ink">
+              <h2 className="truncate text-lg font-extrabold tracking-tight text-ink">
                 {employee.name}
               </h2>
               {operationalStatus ? (
@@ -86,49 +86,49 @@ export function EmployeeDetailHeader({
               </StatusPill>
             </div>
             {showOperationalReasons ? (
-              <p className="mt-1 text-[13px] text-v3-danger">
+              <p className="mt-1 text-[13px] text-danger">
                 {operationalReasons.map((reason) => reason.message).join("；")}
               </p>
             ) : null}
-            <p className="mt-1 text-[13px] text-v3-ink-2">
-              <span className="font-medium text-v3-ink">{employee.role}</span>
-              <span className="text-v3-ink-3"> · Provider {providerDisplayName(employee.provider_type)}</span>
+            <p className="mt-1 text-[13px] text-ink-2">
+              <span className="font-medium text-ink">{employee.role}</span>
+              <span className="text-ink-3"> · Provider {providerDisplayName(employee.provider_type)}</span>
             </p>
-            <p className="mt-0.5 text-[13px] text-v3-ink-2">
-              <span className="text-v3-ink-3">团队 · </span>
+            <p className="mt-0.5 text-[13px] text-ink-2">
+              <span className="text-ink-3">团队 · </span>
               {employee.team_id && employee.team_name?.trim() ? (
                 <Link
-                  className="font-medium text-v3-brand underline-offset-2 hover:underline"
+                  className="font-medium text-brand underline-offset-2 hover:underline"
                   params={{ teamId: employee.team_id }}
                   to="/teams/$teamId"
                 >
                   {employee.team_name.trim()}
                 </Link>
               ) : (
-                <span className="font-medium text-v3-ink">
+                <span className="font-medium text-ink">
                   {employee.team_name?.trim() || "无团队归属"}
                 </span>
               )}
             </p>
             {employee.description ? (
-              <p className="mt-0.5 line-clamp-1 text-[13px] leading-5 text-v3-ink-3">{employee.description}</p>
+              <p className="mt-0.5 line-clamp-1 text-[13px] leading-5 text-ink-3">{employee.description}</p>
             ) : (
-              <p className="mt-0.5 text-[13px] text-v3-ink-3">尚未填写职责说明，可在配置页补充。</p>
+              <p className="mt-0.5 text-[13px] text-ink-3">尚未填写职责说明，可在配置页补充。</p>
             )}
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <V3Button asChild variant="primary">
+          <Button asChild variant="primary">
             <Link params={{ employeeId: employee.id }} to="/employees/$employeeId/config">
               <Settings className="size-4" />
               编辑配置
             </Link>
-          </V3Button>
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <V3Button aria-label="更多员工操作" type="button" variant="outline">
+              <Button aria-label="更多员工操作" type="button" variant="outline">
                 <MoreHorizontal className="size-4" />
-              </V3Button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
@@ -150,34 +150,34 @@ export function EmployeeDetailHeader({
 
       <dl
         aria-label="工作节奏摘要"
-        className="flex flex-wrap gap-x-4 gap-y-1 border-t border-v3-line pt-2.5 text-[12px] text-v3-ink-2"
+        className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-2.5 text-[12px] text-ink-2"
       >
         <div className="flex items-baseline gap-1.5">
-          <dt className="text-v3-ink-3">近7天</dt>
-          <dd className="font-semibold tabular-nums text-v3-ink">
+          <dt className="text-ink-3">近7天</dt>
+          <dd className="font-semibold tabular-nums text-ink">
             {stats ? stats.last_7d_count : "—"}
           </dd>
-          {stats ? <span className="text-v3-ink-3">{formatTrend(stats)}</span> : null}
+          {stats ? <span className="text-ink-3">{formatTrend(stats)}</span> : null}
         </div>
         <div className="flex items-baseline gap-1.5">
-          <dt className="text-v3-ink-3">成功率</dt>
-          <dd className="font-semibold tabular-nums text-v3-ink">
+          <dt className="text-ink-3">成功率</dt>
+          <dd className="font-semibold tabular-nums text-ink">
             {stats?.success_rate != null ? formatPercent(stats.success_rate) : "—"}
           </dd>
         </div>
         <div className="flex items-baseline gap-1.5">
-          <dt className="text-v3-ink-3">平均耗时</dt>
-          <dd className="font-semibold tabular-nums text-v3-ink">
+          <dt className="text-ink-3">平均耗时</dt>
+          <dd className="font-semibold tabular-nums text-ink">
             {stats?.avg_duration_sec != null ? formatDuration(stats.avg_duration_sec) : "—"}
           </dd>
         </div>
         <div className="flex items-baseline gap-1.5">
-          <dt className="text-v3-ink-3">失败</dt>
-          <dd className="font-semibold tabular-nums text-v3-ink">
+          <dt className="text-ink-3">失败</dt>
+          <dd className="font-semibold tabular-nums text-ink">
             {stats ? stats.failed_count : "—"}
           </dd>
           {stats ? (
-            <span className="text-v3-ink-3">
+            <span className="text-ink-3">
               成功 {stats.succeeded_count} · 累计 {stats.total_count}
             </span>
           ) : null}
@@ -193,7 +193,7 @@ export function EmployeeDetailHeader({
           <DialogTitle className="sr-only">{employee.name} 的头像</DialogTitle>
           <img
             alt={`${employee.name} 的大图头像`}
-            className="max-h-[min(80vh,36rem)] max-w-[min(90vw,28rem)] rounded-2xl object-cover shadow-v3"
+            className="max-h-[min(80vh,36rem)] max-w-[min(90vw,28rem)] rounded-2xl object-cover shadow-card"
             src={previewUrl}
           />
         </DialogContent>

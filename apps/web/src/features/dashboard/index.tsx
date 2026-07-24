@@ -10,15 +10,15 @@ import {
   IconTile,
   SignatureCard,
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 
 const apiBaseUrl = resolveControlPlaneUrl();
@@ -27,12 +27,12 @@ export function Dashboard() {
   const { user } = useAuth();
   const healthQuery = useQuery({
     queryKey: ["control-plane-health"],
-    queryFn: () => getHealth({ baseUrl: apiBaseUrl }),
-  });
+    queryFn: () => getHealth({ baseUrl: apiBaseUrl })
+});
   const loginLogsQuery = useQuery({
     queryKey: ["login-logs", 5],
-    queryFn: () => listLoginLogs({ baseUrl: apiBaseUrl, limit: 5, offset: 0 }),
-  });
+    queryFn: () => listLoginLogs({ baseUrl: apiBaseUrl, limit: 5, offset: 0 })
+});
 
   const healthStatus = healthQuery.isLoading
     ? "检查中"
@@ -57,7 +57,7 @@ export function Dashboard() {
           </StatusPill>
         }
       />
-      <Main width="wide" className="space-y-6 text-v3-ink">
+      <Main width="wide" className="space-y-6 text-ink">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
           <SignatureCard className="min-h-[14rem]">
             <div className="flex h-full flex-col justify-between gap-8">
@@ -79,7 +79,7 @@ export function Dashboard() {
           </SignatureCard>
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-            <V3MetricCard
+            <MetricCard
               label="Control Plane"
               icon={<Activity />}
               iconTone={healthQuery.data?.status === "ok" ? "ok" : "mute"}
@@ -87,7 +87,7 @@ export function Dashboard() {
               meta={healthQuery.data?.status === "ok" ? "后端健康" : "状态"}
               loud={healthQuery.isError}
             />
-            <V3MetricCard
+            <MetricCard
               label="当前用户"
               icon={<Users />}
               iconTone="info"
@@ -98,7 +98,7 @@ export function Dashboard() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
-          <V3MetricCard
+          <MetricCard
             label="最近登录"
             icon={<ShieldCheck />}
             iconTone={loginLogsQuery.isError ? "danger" : "artifact"}
@@ -118,7 +118,7 @@ export function Dashboard() {
             }
             loud={loginLogsQuery.isError}
           />
-          <V3MetricCard
+          <MetricCard
             label="失败登录"
             icon={<LogIn />}
             iconTone={failedLoginCount > 0 ? "danger" : "ok"}
@@ -126,7 +126,7 @@ export function Dashboard() {
             meta="最近 5 条登录日志内"
             loud={failedLoginCount > 0}
           />
-          <V3MetricCard
+          <MetricCard
             label="当前身份"
             icon={<Clock3 />}
             iconTone="brand"
@@ -136,12 +136,12 @@ export function Dashboard() {
         </div>
 
         <WorkSurface>
-          <div className="flex flex-col gap-3 border-b border-v3-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-extrabold tracking-tight text-v3-ink">
+              <h2 className="text-lg font-extrabold tracking-tight text-ink">
                 最近登录日志
               </h2>
-              <p className="mt-1 text-sm text-v3-ink-2">
+              <p className="mt-1 text-sm text-ink-2">
                 来自 /api/auth/login-logs，展示最近 5 条账号活动。
               </p>
             </div>
@@ -150,21 +150,21 @@ export function Dashboard() {
             </IconTile>
           </div>
           {loginLogsQuery.isLoading ? (
-            <V3LoadingState label="加载登录日志…" />
+            <LoadingState label="加载登录日志…" />
           ) : loginLogsQuery.isError ? (
             <div className="p-5">
-              <V3ErrorState title="登录日志加载失败" description="请检查 Auth API 连接。" />
+              <ErrorState title="登录日志加载失败" description="请检查 Auth API 连接。" />
             </div>
           ) : loginLogs.length === 0 ? (
-            <V3EmptyState title="暂无登录日志" description="当前账号还没有可展示的登录记录。" />
+            <EmptyState title="暂无登录日志" description="当前账号还没有可展示的登录记录。" />
           ) : (
-            <V3Table>
+            <DataTable>
               <thead>
                 <tr>
-                  <V3Th>事件</V3Th>
-                  <V3Th>账号</V3Th>
-                  <V3Th>来源</V3Th>
-                  <V3Th>时间</V3Th>
+                  <Th>事件</Th>
+                  <Th>账号</Th>
+                  <Th>来源</Th>
+                  <Th>时间</Th>
                 </tr>
               </thead>
               <tbody>
@@ -172,7 +172,7 @@ export function Dashboard() {
                   <LoginLogRow key={record.id} record={record} />
                 ))}
               </tbody>
-            </V3Table>
+            </DataTable>
           )}
         </WorkSurface>
       </Main>
@@ -183,23 +183,23 @@ export function Dashboard() {
 function LoginLogRow({ record }: { record: LoginLogRecord }) {
   const failed = record.result === "failed";
   return (
-    <V3Tr tone={failed ? "danger" : undefined}>
-      <V3Td>
+    <Tr tone={failed ? "danger" : undefined}>
+      <Td>
         <StatusPill tone={failed ? "danger" : "ok"}>
           {formatLoginEvent(record.event_type)}
         </StatusPill>
-      </V3Td>
-      <V3Td>
-        <span className="font-semibold text-v3-ink">{record.username}</span>
-      </V3Td>
-      <V3Td className="max-w-[20rem] text-v3-ink-2">
+      </Td>
+      <Td>
+        <span className="font-semibold text-ink">{record.username}</span>
+      </Td>
+      <Td className="max-w-[20rem] text-ink-2">
         <span className="block truncate">{record.user_agent ?? "未知设备"}</span>
-        <span className="font-mono text-xs text-v3-ink-3">{record.client_ip ?? "未知 IP"}</span>
-      </V3Td>
-      <V3Td className="whitespace-nowrap text-v3-ink-2 tabular-nums">
+        <span className="font-mono text-xs text-ink-3">{record.client_ip ?? "未知 IP"}</span>
+      </Td>
+      <Td className="whitespace-nowrap text-ink-2 tabular-nums">
         <time dateTime={record.created_at}>{formatDateTime(record.created_at)}</time>
-      </V3Td>
-    </V3Tr>
+      </Td>
+    </Tr>
   );
 }
 
@@ -219,6 +219,6 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
+    year: "numeric"
+}).format(new Date(value));
 }

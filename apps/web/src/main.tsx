@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import {
   QueryCache,
   QueryClient,
-  QueryClientProvider,
+  QueryClientProvider
 } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -38,9 +38,9 @@ const queryClient = new QueryClient({
         }
 
         toast.error('Something went wrong!')
-      },
-    },
-  },
+      }
+}
+},
   queryCache: new QueryCache({
     onError: (error) => {
       if (error instanceof ApiRequestError && error.status === 401) {
@@ -54,8 +54,8 @@ const queryClient = new QueryClient({
       ) {
         void router.navigate({ to: '/500' })
       }
-    },
-  }),
+    }
+})
 })
 
 // Create a new router instance
@@ -63,7 +63,7 @@ const router = createRouter({
   routeTree,
   context: { queryClient },
   defaultPreload: 'intent',
-  defaultPreloadStaleTime: 0,
+  defaultPreloadStaleTime: 0
 })
 
 // Register the router instance for type safety

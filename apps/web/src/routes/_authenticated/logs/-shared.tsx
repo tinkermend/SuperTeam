@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { V3Button } from "@/components/superteam";
+import { Button } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -8,7 +8,7 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 
 export const LOG_PAGE_SIZE = 20;
@@ -27,15 +27,15 @@ export function formatLogDateTime(value?: string): string {
     minute: "2-digit",
     month: "2-digit",
     second: "2-digit",
-    year: "numeric",
-  }).format(date);
+    year: "numeric"
+}).format(date);
 }
 
 export type LogSelectOption = { label: string; value: string };
 
 export function LogFilterBar({ children }: { children: ReactNode }) {
   return (
-    <div className="grid gap-3 border-b border-v3-line px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 border-b border-line px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
       {children}
     </div>
   );
@@ -47,7 +47,7 @@ export function LogSelectFilter({
   onValueChange,
   options,
   placeholder = "全部",
-  value,
+  value
 }: {
   id: string;
   label: string;
@@ -58,14 +58,14 @@ export function LogSelectFilter({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <Label htmlFor={id} className="text-xs font-semibold text-v3-ink-2">
+      <Label htmlFor={id} className="text-xs font-semibold text-ink-2">
         {label}
       </Label>
       <Select
         value={value ?? "all"}
         onValueChange={(nextValue) => onValueChange(nextValue === "all" ? undefined : nextValue)}
       >
-        <SelectTrigger id={id} className="w-full border-v3-line-strong bg-v3-card text-v3-ink shadow-none">
+        <SelectTrigger id={id} className="w-full border-line-strong bg-card text-ink shadow-none">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
@@ -92,7 +92,7 @@ export function LogTextFilter({
   label,
   onCommit,
   placeholder,
-  value,
+  value
 }: {
   id: string;
   label: string;
@@ -113,12 +113,12 @@ export function LogTextFilter({
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <Label htmlFor={id} className="text-xs font-semibold text-v3-ink-2">
+      <Label htmlFor={id} className="text-xs font-semibold text-ink-2">
         {label}
       </Label>
       <Input
         id={id}
-        className="w-full border-v3-line-strong bg-v3-card text-v3-ink shadow-none"
+        className="w-full border-line-strong bg-card text-ink shadow-none"
         placeholder={placeholder ?? "输入后回车筛选"}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -138,7 +138,7 @@ export function LogPagination({
   itemCount,
   offset,
   onOffsetChange,
-  pageSize,
+  pageSize
 }: {
   isFetching: boolean;
   itemCount: number;
@@ -151,27 +151,27 @@ export function LogPagination({
   const canNext = itemCount >= pageSize;
 
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-v3-line px-5 py-3">
-      <p className="text-xs text-v3-ink-2 tabular-nums">
+    <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-3">
+      <p className="text-xs text-ink-2 tabular-nums">
         第 {currentPage} 页 · 本页 {itemCount} 条{isFetching ? " · 加载中…" : ""}
       </p>
       <div className="flex items-center gap-2">
-        <V3Button
+        <Button
           variant="outline"
           size="sm"
           disabled={!canPrev || isFetching}
           onClick={() => onOffsetChange(Math.max(0, offset - pageSize))}
         >
           上一页
-        </V3Button>
-        <V3Button
+        </Button>
+        <Button
           variant="outline"
           size="sm"
           disabled={!canNext || isFetching}
           onClick={() => onOffsetChange(offset + pageSize)}
         >
           下一页
-        </V3Button>
+        </Button>
       </div>
     </div>
   );
@@ -180,7 +180,7 @@ export function LogPagination({
 export function LogChips({
   onValueChange,
   options,
-  value,
+  value
 }: {
   onValueChange: (value: string | undefined) => void;
   options: Array<{ label: string; value: string }>;
@@ -199,8 +199,8 @@ export function LogChips({
           className={[
             "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
             current === opt.value
-              ? "border-v3-brand bg-v3-brand-soft text-v3-brand-deep"
-              : "border-v3-line bg-v3-card text-v3-ink-2 hover:border-v3-line-strong hover:text-v3-ink",
+              ? "border-brand bg-brand-soft text-brand-deep"
+              : "border-line bg-card text-ink-2 hover:border-line-strong hover:text-ink",
           ].join(" ")}
         >
           {opt.label}

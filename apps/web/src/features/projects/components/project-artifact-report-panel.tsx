@@ -4,27 +4,27 @@ import {
   FileArchive,
   FileOutput,
   FileText,
-  PackageCheck,
+  PackageCheck
 } from "lucide-react";
 import { useState } from "react";
 import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3EmptyState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  EmptyState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import type { ProjectArtifactRef, ProjectReportRef } from "@/lib/api/projects";
 import { statusLabel } from "@/lib/status-labels";
 import {
   ArtifactPreviewSheet,
   artifactContentHref,
-  artifactPreviewKind,
+  artifactPreviewKind
 } from "./artifact-preview-sheet";
 
 type ProjectArtifactReportPanelProps = {
@@ -43,7 +43,7 @@ const DECLARED_TYPES = new Set(["declared", "declared_skipped"]);
 
 export function ProjectArtifactReportPanel({
   artifacts = [],
-  reports = [],
+  reports = []
 }: ProjectArtifactReportPanelProps) {
   const [previewArtifact, setPreviewArtifact] =
     useState<ProjectArtifactRef | null>(null);
@@ -67,8 +67,8 @@ export function ProjectArtifactReportPanel({
             <FileArchive />
           </IconTile>
           <div className="min-w-0">
-            <h3 className="font-semibold text-v3-ink">工件报告</h3>
-            <p className="truncate text-xs text-v3-ink-2">
+            <h3 className="font-semibold text-ink">工件报告</h3>
+            <p className="truncate text-xs text-ink-2">
               执行输出、工件保留状态与报告对象引用
             </p>
           </div>
@@ -80,131 +80,131 @@ export function ProjectArtifactReportPanel({
 
       <OutputFilesSection
         artifacts={declared}
-        icon={<PackageCheck className="size-4 text-v3-artifact" />}
+        icon={<PackageCheck className="size-4 text-artifact" />}
         onPreview={setPreviewArtifact}
         subtitle="契约声明的交付物(deliverables/),平台已核对对象存在;内容为原样产出"
         title="正式交付物"
       />
       <OutputFilesSection
         artifacts={attachments}
-        icon={<FileOutput className="size-4 text-v3-artifact" />}
+        icon={<FileOutput className="size-4 text-artifact" />}
         onPreview={setPreviewArtifact}
         subtitle="数字员工执行时新产生的文件,原样采集,未经平台核实与脱敏"
         title="执行输出附件"
       />
 
       <WorkSurface>
-        <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
-          <h4 className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
-            <FileArchive className="size-4 text-v3-artifact" />
+        <div className="flex items-center justify-between gap-3 border-b border-line p-4">
+          <h4 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <FileArchive className="size-4 text-artifact" />
             证据与其他工件
           </h4>
-          <span className="text-xs text-v3-ink-2">
+          <span className="text-xs text-ink-2">
             {evidenceArtifacts.length} 条
           </span>
         </div>
-        <V3Table>
+        <DataTable>
           <thead>
             <tr>
-              <V3Th className="min-w-[180px]">标题</V3Th>
-              <V3Th>类型</V3Th>
-              <V3Th>保留状态</V3Th>
-              <V3Th className="min-w-[220px]">Object Ref</V3Th>
-              <V3Th>内容</V3Th>
+              <Th className="min-w-[180px]">标题</Th>
+              <Th>类型</Th>
+              <Th>保留状态</Th>
+              <Th className="min-w-[220px]">Object Ref</Th>
+              <Th>内容</Th>
             </tr>
           </thead>
           <tbody>
             {evidenceArtifacts.length === 0 ? (
-              <V3Tr>
-                <V3Td colSpan={5}>
-                  <V3EmptyState title="暂无工件引用" />
-                </V3Td>
-              </V3Tr>
+              <Tr>
+                <Td colSpan={5}>
+                  <EmptyState title="暂无工件引用" />
+                </Td>
+              </Tr>
             ) : (
               evidenceArtifacts.map((artifact) => (
-                <V3Tr key={artifact.id}>
-                  <V3Td className="max-w-[260px] whitespace-normal">
-                    <span className="line-clamp-2 font-medium text-v3-ink">
+                <Tr key={artifact.id}>
+                  <Td className="max-w-[260px] whitespace-normal">
+                    <span className="line-clamp-2 font-medium text-ink">
                       {artifact.title}
                     </span>
-                  </V3Td>
-                  <V3Td className="text-v3-ink-2">{artifact.artifact_type}</V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td className="text-ink-2">{artifact.artifact_type}</Td>
+                  <Td>
                     <StatusPill tone={retentionTone(artifact.retention_status)}>
                       {statusLabel(artifact.retention_status)}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td className="max-w-[280px]">
-                    <span className="block truncate font-mono text-xs text-v3-ink">
+                  </Td>
+                  <Td className="max-w-[280px]">
+                    <span className="block truncate font-mono text-xs text-ink">
                       {artifact.object_ref}
                     </span>
-                  </V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td>
                     <ArtifactContentActions
                       artifact={artifact}
                       onPreview={setPreviewArtifact}
                     />
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))
             )}
           </tbody>
-        </V3Table>
+        </DataTable>
       </WorkSurface>
 
       <WorkSurface>
-        <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
-          <h4 className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
-            <FileText className="size-4 text-v3-info" />
+        <div className="flex items-center justify-between gap-3 border-b border-line p-4">
+          <h4 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <FileText className="size-4 text-info" />
             报告
           </h4>
-          <span className="text-xs text-v3-ink-2">{reports.length} 条</span>
+          <span className="text-xs text-ink-2">{reports.length} 条</span>
         </div>
-        <V3Table>
+        <DataTable>
           <thead>
             <tr>
-              <V3Th className="min-w-[180px]">标题</V3Th>
-              <V3Th>类型</V3Th>
-              <V3Th>Report Format</V3Th>
-              <V3Th className="min-w-[220px]">Object Ref</V3Th>
+              <Th className="min-w-[180px]">标题</Th>
+              <Th>类型</Th>
+              <Th>Report Format</Th>
+              <Th className="min-w-[220px]">Object Ref</Th>
             </tr>
           </thead>
           <tbody>
             {reports.length === 0 ? (
-              <V3Tr>
-                <V3Td colSpan={4}>
-                  <V3EmptyState title="暂无报告引用" />
-                </V3Td>
-              </V3Tr>
+              <Tr>
+                <Td colSpan={4}>
+                  <EmptyState title="暂无报告引用" />
+                </Td>
+              </Tr>
             ) : (
               reports.map((report) => (
-                <V3Tr key={report.id}>
-                  <V3Td className="max-w-[260px] whitespace-normal">
+                <Tr key={report.id}>
+                  <Td className="max-w-[260px] whitespace-normal">
                     <div className="grid gap-1">
-                      <span className="line-clamp-2 font-medium text-v3-ink">
+                      <span className="line-clamp-2 font-medium text-ink">
                         {report.title}
                       </span>
                       {report.summary ? (
-                        <span className="line-clamp-1 text-xs text-v3-ink-2">
+                        <span className="line-clamp-1 text-xs text-ink-2">
                           {report.summary}
                         </span>
                       ) : null}
                     </div>
-                  </V3Td>
-                  <V3Td className="text-v3-ink-2">{report.report_type}</V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td className="text-ink-2">{report.report_type}</Td>
+                  <Td>
                     <StatusPill tone="info">{report.format}</StatusPill>
-                  </V3Td>
-                  <V3Td className="max-w-[280px]">
-                    <span className="block truncate font-mono text-xs text-v3-ink">
+                  </Td>
+                  <Td className="max-w-[280px]">
+                    <span className="block truncate font-mono text-xs text-ink">
                       {report.object_ref}
                     </span>
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))
             )}
           </tbody>
-        </V3Table>
+        </DataTable>
       </WorkSurface>
 
       <ArtifactPreviewSheet
@@ -221,7 +221,7 @@ function OutputFilesSection({
   icon,
   onPreview,
   subtitle,
-  title,
+  title
 }: {
   artifacts: ProjectArtifactRef[];
   icon: React.ReactNode;
@@ -234,86 +234,86 @@ function OutputFilesSection({
   }
   return (
     <WorkSurface>
-      <div className="flex items-center justify-between gap-3 border-b border-v3-line p-4">
+      <div className="flex items-center justify-between gap-3 border-b border-line p-4">
         <div className="min-w-0">
-          <h4 className="flex items-center gap-2 text-sm font-semibold text-v3-ink">
+          <h4 className="flex items-center gap-2 text-sm font-semibold text-ink">
             {icon}
             {title}
           </h4>
-          <p className="mt-0.5 text-xs text-v3-ink-2">{subtitle}</p>
+          <p className="mt-0.5 text-xs text-ink-2">{subtitle}</p>
         </div>
-        <span className="shrink-0 text-xs text-v3-ink-2">
+        <span className="shrink-0 text-xs text-ink-2">
           {artifacts.length} 条
         </span>
       </div>
-      <V3Table>
+      <DataTable>
         <thead>
           <tr>
-            <V3Th className="min-w-[200px]">文件</V3Th>
-            <V3Th>格式</V3Th>
-            <V3Th>大小</V3Th>
-            <V3Th>保留状态</V3Th>
-            <V3Th>内容</V3Th>
+            <Th className="min-w-[200px]">文件</Th>
+            <Th>格式</Th>
+            <Th>大小</Th>
+            <Th>保留状态</Th>
+            <Th>内容</Th>
           </tr>
         </thead>
         <tbody>
           {artifacts.map((artifact) => (
-            <V3Tr key={artifact.id}>
-              <V3Td className="max-w-[300px] whitespace-normal">
+            <Tr key={artifact.id}>
+              <Td className="max-w-[300px] whitespace-normal">
                 <div className="grid gap-0.5">
-                  <span className="line-clamp-2 font-medium text-v3-ink">
+                  <span className="line-clamp-2 font-medium text-ink">
                     {artifact.title}
                   </span>
                   {attachmentRelativePath(artifact) ? (
-                    <span className="truncate font-mono text-xs text-v3-ink-2">
+                    <span className="truncate font-mono text-xs text-ink-2">
                       {attachmentRelativePath(artifact)}
                     </span>
                   ) : null}
                 </div>
-              </V3Td>
-              <V3Td className="text-v3-ink-2">
+              </Td>
+              <Td className="text-ink-2">
                 {formatLabel(artifact.content_type)}
-              </V3Td>
-              <V3Td className="text-v3-ink-2 tabular-nums">
+              </Td>
+              <Td className="text-ink-2 tabular-nums">
                 {formatSize(artifact.size_bytes)}
-              </V3Td>
-              <V3Td>
+              </Td>
+              <Td>
                 <StatusPill tone={retentionTone(artifact.retention_status)}>
                   {statusLabel(artifact.retention_status)}
                 </StatusPill>
-              </V3Td>
-              <V3Td>
+              </Td>
+              <Td>
                 <ArtifactContentActions
                   artifact={artifact}
                   onPreview={onPreview}
                 />
-              </V3Td>
-            </V3Tr>
+              </Td>
+            </Tr>
           ))}
         </tbody>
-      </V3Table>
+      </DataTable>
     </WorkSurface>
   );
 }
 
 function ArtifactContentActions({
   artifact,
-  onPreview,
+  onPreview
 }: {
   artifact: ProjectArtifactRef;
   onPreview: (artifact: ProjectArtifactRef) => void;
 }) {
   if (artifact.artifact_type.endsWith("_skipped")) {
-    return <span className="text-xs text-v3-ink-2">未采集(超限)</span>;
+    return <span className="text-xs text-ink-2">未采集(超限)</span>;
   }
   if (!isRetrievableArtifact(artifact)) {
-    return <span className="text-xs text-v3-ink-2">不可取回</span>;
+    return <span className="text-xs text-ink-2">不可取回</span>;
   }
   return (
     <div className="flex items-center gap-3">
       {artifactPreviewKind(artifact) != null ? (
         <button
-          className="inline-flex items-center gap-1 text-xs font-medium text-v3-brand hover:underline"
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
           onClick={() => onPreview(artifact)}
           type="button"
         >
@@ -323,7 +323,7 @@ function ArtifactContentActions({
       ) : null}
       {/* 下载走 302 → presigned GET,属外部下载场景,原生 <a> 合规。 */}
       <a
-        className="inline-flex items-center gap-1 text-xs font-medium text-v3-brand hover:underline"
+        className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
         href={artifactContentHref(artifact.id)}
         rel="noreferrer"
         target="_blank"
@@ -360,8 +360,8 @@ function formatLabel(contentType?: string): string {
     json: "JSON",
     msword: "Word",
     "vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
-    "vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
-  };
+    "vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel"
+};
   return known[subtype] ?? subtype;
 }
 
@@ -378,7 +378,7 @@ function formatSize(sizeBytes?: number): string {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function retentionTone(status: string): V3Tone {
+function retentionTone(status: string): Tone {
   if (["retained", "locked", "hold"].includes(status)) {
     return "ok";
   }

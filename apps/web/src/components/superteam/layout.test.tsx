@@ -32,7 +32,7 @@ describe("MasterDetailLayout", () => {
       const grid = (screen.getByTestId("layout-root").element() as HTMLElement)
         .firstElementChild as HTMLElement;
       expect(grid.className).toContain(
-        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--v3-layout-rail-lg))]",
+        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--layout-rail-lg))]",
       );
       expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
     } finally {
@@ -85,7 +85,7 @@ describe("MetricGrid", () => {
     expect(grid.tagName).toBe("SECTION");
     expect(grid.className).toContain("flex-wrap");
     expect(grid.className).toContain("gap-3");
-    expect(grid.className).toContain("[&>*]:flex-[1_1_var(--v3-metric-min)]");
+    expect(grid.className).toContain("[&>*]:flex-[1_1_var(--metric-min)]");
     // 宽屏由卡片变宽吸收空间：无宽度上限、无间距分布
     expect(grid.className).not.toContain("max-w-");
     expect(grid.className).not.toContain("justify-between");

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_TEAM_ROLE_ICON_KEY,
-  getTeamRoleIcon,
+  getTeamRoleIcon
 } from "./team-role-icon-catalog";
 
 const toneClasses = {
@@ -9,7 +9,7 @@ const toneClasses = {
   cyan: "border-cyan-200 bg-cyan-50 text-cyan-700",
   neutral: "border-slate-200 bg-slate-50 text-slate-600",
   teal: "border-teal-200 bg-teal-50 text-teal-700",
-  violet: "border-violet-200 bg-violet-50 text-violet-600",
+  violet: "border-violet-200 bg-violet-50 text-violet-600"
 } as const;
 
 type TeamTone = keyof typeof toneClasses;
@@ -34,8 +34,8 @@ export function getTeamDisplayConfig(metadata: TeamDisplayMetadata) {
     imageSrc: roleIcon.src,
     label: roleIcon.label,
     tone: resolvedTone,
-    toneClassName: toneClasses[resolvedTone],
-  };
+    toneClassName: toneClasses[resolvedTone]
+};
 }
 
 type TeamIconTileProps = {

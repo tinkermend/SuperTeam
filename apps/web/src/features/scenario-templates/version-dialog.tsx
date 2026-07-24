@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { V3Button } from "@/components/superteam";
+import { Button } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { ApiRequestError } from "@/lib/api/client";
 import {
   createScenarioTemplateVersion,
-  type ScenarioTemplate,
+  type ScenarioTemplate
 } from "@/lib/api/scenario-templates";
 
 type CreateScenarioTemplateVersionDialogProps = {
@@ -26,7 +26,7 @@ export function CreateScenarioTemplateVersionDialog({
   apiBaseUrl,
   fetcher,
   template,
-  onOpenChange,
+  onOpenChange
 }: CreateScenarioTemplateVersionDialogProps) {
   const queryClient = useQueryClient();
   const [specText, setSpecText] = useState("");
@@ -59,8 +59,8 @@ export function CreateScenarioTemplateVersionDialog({
       void queryClient.invalidateQueries({ queryKey: ["scenario-templates"] });
       if (template) {
         void queryClient.invalidateQueries({
-          queryKey: ["scenario-template-versions", template.template_key],
-        });
+          queryKey: ["scenario-template-versions", template.template_key]
+});
       }
       close();
     },
@@ -72,8 +72,8 @@ export function CreateScenarioTemplateVersionDialog({
             ? error.message
             : "创建新版本失败",
       );
-    },
-  });
+    }
+});
 
   return (
     <Dialog
@@ -118,12 +118,12 @@ export function CreateScenarioTemplateVersionDialog({
           </label>
           {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           <DialogFooter>
-            <V3Button type="button" variant="ghost" onClick={close}>
+            <Button type="button" variant="ghost" onClick={close}>
               取消
-            </V3Button>
-            <V3Button type="submit" disabled={versionMutation.isPending}>
+            </Button>
+            <Button type="submit" disabled={versionMutation.isPending}>
               {versionMutation.isPending ? "提交中…" : "提交新版本"}
-            </V3Button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

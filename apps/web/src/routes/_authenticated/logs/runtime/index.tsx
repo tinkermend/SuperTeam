@@ -3,24 +3,24 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  type V3Tone,
-  WorkSurface,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  type Tone,
+  WorkSurface
 } from "@/components/superteam";
 import {
   Sheet,
-  SheetContent,
+  SheetContent
 } from "@/components/ui/sheet";
 import {
   listRuntimeEvents,
   type RuntimeEvent,
-  type RuntimeEventSeverity,
+  type RuntimeEventSeverity
 } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import {
@@ -29,25 +29,25 @@ import {
   LogFilterBar,
   LogPagination,
   LogTextFilter,
-  formatLogDateTime,
+  formatLogDateTime
 } from "../-shared";
 
 export const Route = createFileRoute("/_authenticated/logs/runtime/")({
-  component: RuntimeEventLogsRoute,
+  component: RuntimeEventLogsRoute
 });
 
 const severityLabel: Record<RuntimeEventSeverity, string> = {
   error: "错误",
   info: "信息",
   success: "成功",
-  warning: "预警",
+  warning: "预警"
 };
 
-const severityTone: Record<RuntimeEventSeverity, V3Tone> = {
+const severityTone: Record<RuntimeEventSeverity, Tone> = {
   error: "danger",
   info: "info",
   success: "ok",
-  warning: "warn",
+  warning: "warn"
 };
 
 const chipOptions = [
@@ -76,10 +76,10 @@ function RuntimeEventLogsRoute() {
         baseUrl: apiBaseUrl,
         limit: LOG_PAGE_SIZE,
         offset,
-        ...filters,
-      }),
-    placeholderData: keepPreviousData,
-  });
+        ...filters
+}),
+    placeholderData: keepPreviousData
+});
 
   const updateFilter = <Key extends keyof RuntimeEventFilters>(
     key: Key,
@@ -118,59 +118,59 @@ function RuntimeEventLogsRoute() {
         </LogFilterBar>
 
         {eventsQuery.isLoading && !eventsQuery.data ? (
-          <V3LoadingState label="正在加载平台事件…" />
+          <LoadingState label="正在加载平台事件…" />
         ) : eventsQuery.isError ? (
-          <V3ErrorState
+          <ErrorState
             title="平台事件加载失败"
             description="请稍后重试，或确认当前账号仍有访问权限。"
           />
         ) : events.length === 0 ? (
-          <V3EmptyState
+          <EmptyState
             title={hasFilter ? "筛选后无平台事件" : "暂无平台事件"}
             description="平台或 Runtime 事件产生后会显示在这里。"
           />
         ) : (
-          <V3Table>
+          <DataTable>
             <thead>
-              <V3Tr>
-                <V3Th className="min-w-[150px]">时间</V3Th>
-                <V3Th>级别</V3Th>
-                <V3Th>事件类型</V3Th>
-                <V3Th>节点</V3Th>
-                <V3Th className="min-w-[260px]">标题</V3Th>
-              </V3Tr>
+              <Tr>
+                <Th className="min-w-[150px]">时间</Th>
+                <Th>级别</Th>
+                <Th>事件类型</Th>
+                <Th>节点</Th>
+                <Th className="min-w-[260px]">标题</Th>
+              </Tr>
             </thead>
             <tbody>
               {events.map((event: RuntimeEvent) => (
-                <V3Tr
+                <Tr
                   key={event.id}
                   className="cursor-pointer"
                   onClick={() => setSelectedEvent(event)}
                 >
-                  <V3Td className="whitespace-nowrap text-xs text-v3-ink-2 tabular-nums">
+                  <Td className="whitespace-nowrap text-xs text-ink-2 tabular-nums">
                     {formatLogDateTime(event.created_at)}
-                  </V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td>
                     <StatusPill tone={severityTone[event.severity] ?? "mute"}>
                       {severityLabel[event.severity] ?? event.severity}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td className="whitespace-nowrap text-sm">{event.event_type}</V3Td>
-                  <V3Td className="max-w-[160px] truncate font-mono text-xs">
+                  </Td>
+                  <Td className="whitespace-nowrap text-sm">{event.event_type}</Td>
+                  <Td className="max-w-[160px] truncate font-mono text-xs">
                     {event.node_id || "-"}
-                  </V3Td>
-                  <V3Td className="max-w-[320px] truncate text-sm">
+                  </Td>
+                  <Td className="max-w-[320px] truncate text-sm">
                     {event.title}
                     {event.description ? (
-                      <span className="block truncate text-xs text-v3-ink-3">
+                      <span className="block truncate text-xs text-ink-3">
                         {event.description}
                       </span>
                     ) : null}
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))}
             </tbody>
-          </V3Table>
+          </DataTable>
         )}
 
         <LogPagination
@@ -192,22 +192,22 @@ function RuntimeEventLogsRoute() {
           {selectedEvent && (
             <div className="flex h-full flex-col">
               {/* Header */}
-              <div className="border-b border-v3-line px-5 py-4">
+              <div className="border-b border-line px-5 py-4">
                 <div className="mb-2 flex items-center gap-2">
                   <StatusPill tone={severityTone[selectedEvent.severity] ?? "mute"}>
                     {severityLabel[selectedEvent.severity] ?? selectedEvent.severity}
                   </StatusPill>
-                  <span className="font-mono text-xs text-v3-ink-3">{selectedEvent.event_type}</span>
+                  <span className="font-mono text-xs text-ink-3">{selectedEvent.event_type}</span>
                 </div>
-                <h3 className="text-sm font-semibold text-v3-ink leading-snug">{selectedEvent.title}</h3>
+                <h3 className="text-sm font-semibold text-ink leading-snug">{selectedEvent.title}</h3>
                 {selectedEvent.description && (
-                  <p className="mt-1 text-xs text-v3-ink-2 leading-relaxed">{selectedEvent.description}</p>
+                  <p className="mt-1 text-xs text-ink-2 leading-relaxed">{selectedEvent.description}</p>
                 )}
               </div>
 
               {/* Event Info */}
-              <div className="border-b border-v3-line px-5 py-4">
-                <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-v3-ink-3">事件信息</div>
+              <div className="border-b border-line px-5 py-4">
+                <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3">事件信息</div>
                 <div className="flex flex-col gap-2.5">
                   <InfoRow label="来源">{selectedEvent.source}</InfoRow>
                   <InfoRow label="时间">{formatLogDateTime(selectedEvent.created_at)}</InfoRow>
@@ -228,10 +228,10 @@ function RuntimeEventLogsRoute() {
 
               {/* Node Info */}
               {selectedEvent.node_id && (
-                <div className="border-b border-v3-line px-5 py-4">
-                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-v3-ink-3">节点</div>
-                  <div className="flex items-center gap-2 rounded-lg bg-v3-card-soft px-3 py-2">
-                    <span className="font-mono text-xs text-v3-ink">{selectedEvent.node_id}</span>
+                <div className="border-b border-line px-5 py-4">
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3">节点</div>
+                  <div className="flex items-center gap-2 rounded-lg bg-card-soft px-3 py-2">
+                    <span className="font-mono text-xs text-ink">{selectedEvent.node_id}</span>
                   </div>
                 </div>
               )}
@@ -239,8 +239,8 @@ function RuntimeEventLogsRoute() {
               {/* Payload */}
               {selectedEvent.payload && (
                 <div className="flex-1 px-5 py-4">
-                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-v3-ink-3">Payload</div>
-                  <pre className="max-h-64 overflow-auto rounded-lg bg-v3-card-soft p-3 text-[11px] leading-relaxed text-v3-ink">
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Payload</div>
+                  <pre className="max-h-64 overflow-auto rounded-lg bg-card-soft p-3 text-[11px] leading-relaxed text-ink">
                     {JSON.stringify(selectedEvent.payload, null, 2)}
                   </pre>
                 </div>
@@ -256,8 +256,8 @@ function RuntimeEventLogsRoute() {
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="w-16 shrink-0 text-xs text-v3-ink-2">{label}</span>
-      <span className="min-w-0 break-all text-xs text-v3-ink">{children}</span>
+      <span className="w-16 shrink-0 text-xs text-ink-2">{label}</span>
+      <span className="min-w-0 break-all text-xs text-ink">{children}</span>
     </div>
   );
 }

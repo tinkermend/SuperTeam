@@ -11,7 +11,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,15 +20,15 @@ import {
   IconTile,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -38,23 +38,23 @@ type RuntimeScopesProps = {
 
 const defaultScopeType: RuntimeScopeType = "tenant";
 const fieldClassName =
-  "rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none focus-visible:ring-v3-brand/60 focus-visible:ring-offset-v3-bg";
-const labelClassName = "text-[13px] font-semibold text-v3-ink-2";
+  "rounded-xl border-line-strong bg-card text-ink shadow-none focus-visible:ring-brand/60 focus-visible:ring-offset-background";
+const labelClassName = "text-[13px] font-semibold text-ink-2";
 
 export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
   const queryClient = useQueryClient();
   const scopesQuery = useQuery({
     queryKey: ["runtime-scopes", apiOptions.baseUrl],
-    queryFn: () => listRuntimeScopes(apiOptions),
-  });
+    queryFn: () => listRuntimeScopes(apiOptions)
+});
   const createScopeMutation = useMutation({
     mutationFn: (input: CreateRuntimeScopeRequest) => createRuntimeScope(apiOptions, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["runtime-scopes"] }),
-  });
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["runtime-scopes"] })
+});
   const updateScopeMutation = useMutation({
     mutationFn: ({ scopeId, status }: { scopeId: string; status: RuntimeScope["status"] }) => updateRuntimeScope(apiOptions, scopeId, status),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["runtime-scopes"] }),
-  });
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["runtime-scopes"] })
+});
   const [runtimeNodeId, setRuntimeNodeId] = useState("");
   const [tenantId, setTenantId] = useState("");
   const [teamId, setTeamId] = useState("");
@@ -87,8 +87,8 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
       tenant_id: trimmedTenantId,
       scope_type: scopeType,
       scope_value: derivedScopeValue,
-      ...(scopeType === "team" ? { team_id: trimmedTeamId } : {}),
-    };
+      ...(scopeType === "team" ? { team_id: trimmedTeamId } : {})
+};
 
     setFormError(null);
     createScopeMutation.mutate(input, {
@@ -97,8 +97,8 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
         setTenantId("");
         setTeamId("");
         setScopeType(defaultScopeType);
-      },
-    });
+      }
+});
   }
 
   function handleConfirmToggleScope() {
@@ -109,11 +109,11 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
     updateScopeMutation.mutate(
       {
         scopeId: scopePendingConfirmation.id,
-        status: pendingStatus,
-      },
+        status: pendingStatus
+},
       {
-        onSettled: () => setScopePendingConfirmation(null),
-      },
+        onSettled: () => setScopePendingConfirmation(null)
+},
     );
   }
 
@@ -125,8 +125,8 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
             <Server />
           </IconTile>
           <div>
-            <h2 className="text-base font-bold text-v3-ink">新增 Runtime 范围</h2>
-            <p className="mt-1 text-sm text-v3-ink-2">为 Runtime 节点绑定可领取任务的租户或团队范围。</p>
+            <h2 className="text-base font-bold text-ink">新增 Runtime 范围</h2>
+            <p className="mt-1 text-sm text-ink-2">为 Runtime 节点绑定可领取任务的租户或团队范围。</p>
           </div>
         </div>
         <form className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_160px_1fr_auto]" noValidate onSubmit={handleSubmit}>
@@ -161,37 +161,37 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
             <Input className={fieldClassName} id="runtime-scope-value" readOnly value={derivedScopeValue || "待填写"} />
           </div>
           <div className="flex items-end">
-            <V3Button type="submit" disabled={createScopeMutation.isPending}>
+            <Button type="submit" disabled={createScopeMutation.isPending}>
               新增
-            </V3Button>
+            </Button>
           </div>
         </form>
-        <p className="mt-3 text-sm text-v3-ink-2">
+        <p className="mt-3 text-sm text-ink-2">
           范围值将由{scopeType === "tenant" ? "租户 ID" : "团队 ID"}自动生成：{derivedScopeValue || "待填写"}
         </p>
-        {formError ? <p className="mt-3 text-sm text-v3-danger">{formError}</p> : null}
-        {createScopeMutation.isError ? <p className="mt-3 text-sm text-v3-danger">Runtime 范围创建失败。</p> : null}
+        {formError ? <p className="mt-3 text-sm text-danger">{formError}</p> : null}
+        {createScopeMutation.isError ? <p className="mt-3 text-sm text-danger">Runtime 范围创建失败。</p> : null}
       </SoftCard>
       <WorkSurface>
-        <div className="flex items-start gap-3 border-b border-v3-line px-5 py-4">
+        <div className="flex items-start gap-3 border-b border-line px-5 py-4">
           <IconTile tone="info" size="sm">
             <Server />
           </IconTile>
           <div>
-            <h2 className="text-base font-bold text-v3-ink">Runtime 范围</h2>
-            <p className="mt-1 text-sm text-v3-ink-2">节点心跳状态、Provider 支持能力和已绑定授权范围。</p>
+            <h2 className="text-base font-bold text-ink">Runtime 范围</h2>
+            <p className="mt-1 text-sm text-ink-2">节点心跳状态、Provider 支持能力和已绑定授权范围。</p>
           </div>
         </div>
         {scopesQuery.isLoading ? (
-          <V3LoadingState label="加载 Runtime 范围…" />
+          <LoadingState label="加载 Runtime 范围…" />
         ) : scopesQuery.isError ? (
-          <V3ErrorState
+          <ErrorState
             className="m-5"
             title="Runtime 范围加载失败"
             description="请稍后刷新或检查 Control Plane 连接。"
           />
         ) : nodes.length === 0 ? (
-          <V3EmptyState icon={<ShieldAlert />} title="暂无 Runtime 授权范围" description="创建范围后，节点领取任务的边界会显示在这里。" />
+          <EmptyState icon={<ShieldAlert />} title="暂无 Runtime 授权范围" description="创建范围后，节点领取任务的边界会显示在这里。" />
         ) : (
           <RuntimeScopeTable nodes={nodes} onToggleScope={setScopePendingConfirmation} toggling={updateScopeMutation.isPending} />
         )}
@@ -221,63 +221,63 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
 function RuntimeScopeTable({
   nodes,
   onToggleScope,
-  toggling,
+  toggling
 }: {
   nodes: RuntimeScopeNode[];
   onToggleScope: (scope: RuntimeScope) => void;
   toggling: boolean;
 }) {
   return (
-    <V3Table>
+    <DataTable>
       <thead>
-        <V3Tr>
-          <V3Th>Runtime 节点</V3Th>
-          <V3Th>状态</V3Th>
-          <V3Th>租户</V3Th>
-          <V3Th>团队</V3Th>
-          <V3Th>范围</V3Th>
-          <V3Th>操作</V3Th>
-        </V3Tr>
+        <Tr>
+          <Th>Runtime 节点</Th>
+          <Th>状态</Th>
+          <Th>租户</Th>
+          <Th>团队</Th>
+          <Th>范围</Th>
+          <Th>操作</Th>
+        </Tr>
       </thead>
       <tbody>
         {nodes.flatMap((node) => renderNodeRows(node, onToggleScope, toggling))}
       </tbody>
-    </V3Table>
+    </DataTable>
   );
 }
 
 function renderNodeRows(node: RuntimeScopeNode, onToggleScope: (scope: RuntimeScope) => void, toggling: boolean) {
   if (node.scopes.length === 0) {
     return [
-      <V3Tr key={`${node.runtime_node_id}-empty`}>
-        <V3Td>{formatNode(node)}</V3Td>
-        <V3Td>
+      <Tr key={`${node.runtime_node_id}-empty`}>
+        <Td>{formatNode(node)}</Td>
+        <Td>
           <StatusPill tone={node.status === "online" ? "ok" : "mute"}>{statusLabel(node.status)}</StatusPill>
-        </V3Td>
-        <V3Td colSpan={4} className="text-v3-ink-3">
+        </Td>
+        <Td colSpan={4} className="text-ink-3">
           暂无范围
-        </V3Td>
-      </V3Tr>,
+        </Td>
+      </Tr>,
     ];
   }
 
   return node.scopes.map((scope) => (
-    <V3Tr key={scope.id}>
-      <V3Td>{formatNode(node)}</V3Td>
-      <V3Td>
+    <Tr key={scope.id}>
+      <Td>{formatNode(node)}</Td>
+      <Td>
         <StatusPill tone={scope.status === "active" ? "ok" : "mute"}>{scope.status === "active" ? "启用" : "禁用"}</StatusPill>
-      </V3Td>
-      <V3Td>{scope.tenant_id}</V3Td>
-      <V3Td>{scope.team_id ?? "-"}</V3Td>
-      <V3Td>
+      </Td>
+      <Td>{scope.tenant_id}</Td>
+      <Td>{scope.team_id ?? "-"}</Td>
+      <Td>
         {scope.scope_type}:{scope.scope_value}
-      </V3Td>
-      <V3Td>
-        <V3Button type="button" variant="outline" size="sm" disabled={toggling} onClick={() => onToggleScope(scope)}>
+      </Td>
+      <Td>
+        <Button type="button" variant="outline" size="sm" disabled={toggling} onClick={() => onToggleScope(scope)}>
           {scope.status === "active" ? "禁用" : "启用"}
-        </V3Button>
-      </V3Td>
-    </V3Tr>
+        </Button>
+      </Td>
+    </Tr>
   ));
 }
 

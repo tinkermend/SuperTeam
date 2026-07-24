@@ -3,14 +3,14 @@ import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { FileClock } from "lucide-react";
 import {
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -18,7 +18,7 @@ import { buildApiUrl, parseJson } from "@/lib/api/client";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
 export const Route = createFileRoute("/_authenticated/audit/")({
-  component: AuditRoute,
+  component: AuditRoute
 });
 
 type AuditEvent = {
@@ -48,8 +48,8 @@ function AuditRoute() {
     enabled: Boolean(projectId),
     queryKey: ["project-audit-events", projectId],
     queryFn: () => listProjectAuditEvents(apiBaseUrl, projectId as string),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const eventData = eventsQuery.data;
   let currentEvents: AuditEvent[] | undefined;
   if (eventData && eventData.projectId === projectId) {
@@ -65,7 +65,7 @@ function AuditRoute() {
         subtitle={projectId ? `项目 ${projectId}` : "等待项目上下文"}
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 text-v3-ink">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 text-ink">
 
       {!projectId ? (
         <AuditEmptyState />
@@ -98,15 +98,15 @@ async function listProjectAuditEvents(
   const params = new URLSearchParams({
     limit: "50",
     resource_id: projectId,
-    resource_type: "project",
-  });
+    resource_type: "project"
+});
   const response = await fetch(
     buildApiUrl(apiBaseUrl, `/api/v1/audit/events?${params.toString()}`),
     {
       credentials: "include",
       headers: { accept: "application/json" },
-      method: "GET",
-    },
+      method: "GET"
+},
   );
   const events = await parseJson<AuditEvent[]>(response, "project audit events");
   return { projectId, events };
@@ -115,7 +115,7 @@ async function listProjectAuditEvents(
 function AuditEmptyState() {
   return (
     <WorkSurface>
-      <V3EmptyState
+      <EmptyState
         icon={<FileClock />}
         title="请选择项目后查看审计"
         description="从项目详情进入审计中心，或在地址中提供 project_id。"
@@ -128,7 +128,7 @@ function ProjectAuditTable({
   events,
   isError,
   isFetching,
-  isLoading,
+  isLoading
 }: {
   events: AuditEvent[];
   isError: boolean;
@@ -138,14 +138,14 @@ function ProjectAuditTable({
   if (isLoading) {
     return (
       <WorkSurface>
-        <V3LoadingState label="正在加载项目审计事件…" />
+        <LoadingState label="正在加载项目审计事件…" />
       </WorkSurface>
     );
   }
 
   if (isError) {
     return (
-      <V3ErrorState
+      <ErrorState
         title="项目审计加载失败"
         description="请稍后重试，或确认当前账号仍有项目访问权限。"
       />
@@ -154,10 +154,10 @@ function ProjectAuditTable({
 
   return (
     <WorkSurface>
-      <div className="flex items-start justify-between gap-3 border-b border-v3-line px-5 py-4">
+      <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
         <div>
-          <h2 className="text-base font-bold text-v3-ink">项目审计事件</h2>
-          <p className="mt-1 text-sm text-v3-ink-2">
+          <h2 className="text-base font-bold text-ink">项目审计事件</h2>
+          <p className="mt-1 text-sm text-ink-2">
             按项目资源筛选最近 50 条操作记录
           </p>
         </div>
@@ -167,44 +167,44 @@ function ProjectAuditTable({
         </div>
       </div>
       {events.length === 0 ? (
-        <V3EmptyState title="暂无项目审计事件" description="项目相关操作产生后会显示在这里。" />
+        <EmptyState title="暂无项目审计事件" description="项目相关操作产生后会显示在这里。" />
       ) : (
-        <V3Table>
+        <DataTable>
           <thead>
-            <V3Tr>
-              <V3Th className="min-w-[150px]">时间</V3Th>
-              <V3Th>动作</V3Th>
-              <V3Th>事件类型</V3Th>
-              <V3Th>Actor</V3Th>
-              <V3Th>来源 IP</V3Th>
-              <V3Th className="min-w-[220px]">详情</V3Th>
-            </V3Tr>
+            <Tr>
+              <Th className="min-w-[150px]">时间</Th>
+              <Th>动作</Th>
+              <Th>事件类型</Th>
+              <Th>Actor</Th>
+              <Th>来源 IP</Th>
+              <Th className="min-w-[220px]">详情</Th>
+            </Tr>
           </thead>
           <tbody>
             {events.map((event) => (
-              <V3Tr key={event.id}>
-                <V3Td className="whitespace-nowrap text-xs text-v3-ink-2 tabular-nums">
+              <Tr key={event.id}>
+                <Td className="whitespace-nowrap text-xs text-ink-2 tabular-nums">
                   {formatDateTime(event.created_at)}
-                </V3Td>
-                <V3Td>
+                </Td>
+                <Td>
                   <StatusPill tone="mute">{event.action}</StatusPill>
-                </V3Td>
-                <V3Td className="whitespace-nowrap text-sm">
+                </Td>
+                <Td className="whitespace-nowrap text-sm">
                   {event.event_type}
-                </V3Td>
-                <V3Td className="max-w-[220px] truncate font-mono text-xs">
+                </Td>
+                <Td className="max-w-[220px] truncate font-mono text-xs">
                   {event.actor_type}:{event.actor_id || "-"}
-                </V3Td>
-                <V3Td className="whitespace-nowrap font-mono text-xs">
+                </Td>
+                <Td className="whitespace-nowrap font-mono text-xs">
                   {event.ip_address || "-"}
-                </V3Td>
-                <V3Td className="max-w-[280px] truncate font-mono text-xs text-v3-ink-3">
+                </Td>
+                <Td className="max-w-[280px] truncate font-mono text-xs text-ink-3">
                   {formatDetails(event.details)}
-                </V3Td>
-              </V3Tr>
+                </Td>
+              </Tr>
             ))}
           </tbody>
-        </V3Table>
+        </DataTable>
       )}
     </WorkSurface>
   );
@@ -223,8 +223,8 @@ function formatDateTime(value?: string) {
     hour: "2-digit",
     minute: "2-digit",
     month: "2-digit",
-    year: "numeric",
-  }).format(date);
+    year: "numeric"
+}).format(date);
 }
 
 function formatDetails(value: Record<string, unknown>) {

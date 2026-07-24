@@ -50,8 +50,8 @@ vi.mock("@xyflow/react", () => {
       fitView,
       minZoom,
       nodes = [],
-      proOptions,
-    }: MockReactFlowProps) => (
+      proOptions
+}: MockReactFlowProps) => (
       <div
         data-edge-count={String(edges.length)}
         data-fit-view={String(Boolean(fitView))}
@@ -83,8 +83,8 @@ vi.mock("@xyflow/react", () => {
         ))}
         {children}
       </div>
-    ),
-  };
+    )
+};
 });
 
 function makeGraph(): ProjectTaskGraph {
@@ -104,8 +104,8 @@ function makeGraph(): ProjectTaskGraph {
         expected_outputs: [],
         input_requirements: {},
         handoff_contract: {},
-        planner_metadata: {},
-      },
+        planner_metadata: {}
+},
       {
         id: "task-b",
         tenant_id: "tenant-1",
@@ -120,15 +120,15 @@ function makeGraph(): ProjectTaskGraph {
         expected_outputs: [],
         input_requirements: {},
         handoff_contract: {},
-        planner_metadata: {},
-      },
+        planner_metadata: {}
+},
     ],
     edges: [
       {
         blocker_task_id: "task-a",
         dependent_task_id: "task-b",
-        edge_status: "planned",
-      },
+        edge_status: "planned"
+},
     ],
     employees: [
       {
@@ -136,15 +136,15 @@ function makeGraph(): ProjectTaskGraph {
         display_name: "高乐驹",
         project_role: "executor",
         status: "active",
-        employee_role: "代码库入职导师·工程部",
-      },
+        employee_role: "代码库入职导师·工程部"
+},
       {
         digital_employee_id: "employee-2",
         display_name: "安特妍",
         project_role: "executor",
         status: "active",
-        employee_role: "安全工程师·工程部",
-      },
+        employee_role: "安全工程师·工程部"
+},
     ],
     runs: [],
     execution_summaries: [],
@@ -159,8 +159,8 @@ function makeGraph(): ProjectTaskGraph {
         completed_nodes: 0,
         running_nodes: 0,
         waiting_human_nodes: 0,
-        blocked_nodes: 0,
-      },
+        blocked_nodes: 0
+},
       {
         stage_index: 1,
         title: "第 2 阶段",
@@ -168,10 +168,10 @@ function makeGraph(): ProjectTaskGraph {
         completed_nodes: 0,
         running_nodes: 0,
         waiting_human_nodes: 1,
-        blocked_nodes: 0,
-      },
-    ],
-  };
+        blocked_nodes: 0
+},
+    ]
+};
 }
 
 describe("PlanGraphCanvas", () => {
@@ -243,16 +243,16 @@ describe("PlanGraphCanvas", () => {
       id: `task-${index + 1}`,
       assigned_digital_employee_id: `employee-${index + 1}`,
       stage_index: 0,
-      title: `计划任务 ${index + 1}`,
-    }));
+      title: `计划任务 ${index + 1}`
+}));
     graph.edges = [];
     graph.employees = graph.nodes.map((task, index) => ({
       digital_employee_id: task.assigned_digital_employee_id ?? `employee-${index + 1}`,
       display_name: `数字员工 ${index + 1}`,
       project_role: "executor",
       status: "active",
-      employee_role: "通用工程执行",
-    }));
+      employee_role: "通用工程执行"
+}));
     graph.stage_summaries = [
       {
         stage_index: 0,
@@ -261,8 +261,8 @@ describe("PlanGraphCanvas", () => {
         completed_nodes: 0,
         running_nodes: 0,
         waiting_human_nodes: 0,
-        blocked_nodes: 0,
-      },
+        blocked_nodes: 0
+},
     ];
 
     const screen = await render(<PlanGraphCanvas graph={graph} />);

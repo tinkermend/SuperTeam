@@ -1,11 +1,11 @@
+import { Button } from '@/components/superteam';
 import { useMemo, useState } from "react";
 import { ChevronDown, Search, Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger,
+  PopoverTrigger
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -23,7 +23,7 @@ type TeamIconPickerProps = {
 export function TeamIconPicker({
   colorTone,
   onSelect,
-  value,
+  value
 }: TeamIconPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

@@ -14,18 +14,18 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
-  useSearch: () => routerSearch,
+  useSearch: () => routerSearch
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/layout/shell-page-header", () => ({
   ShellPageHeader: ({
     subtitle,
-    title,
-  }: {
+    title
+}: {
     subtitle?: ReactNode;
     title: ReactNode;
   }) => (
@@ -33,23 +33,23 @@ vi.mock("@/components/layout/shell-page-header", () => ({
       <h1>{title}</h1>
       {subtitle ? <p>{subtitle}</p> : null}
     </header>
-  ),
+  )
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
-      queries: { retry: false },
-    },
-  });
+      queries: { retry: false }
+}
+});
 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status,
-  });
+    status
+});
 }
 
 function makeApprovalItem(overrides: Partial<InboxItem> = {}): InboxItem {
@@ -59,13 +59,13 @@ function makeApprovalItem(overrides: Partial<InboxItem> = {}): InboxItem {
         key: "approved",
         label: "Approve",
         requires_comment: false,
-        tone: "positive",
-      },
+        tone: "positive"
+},
     ],
     context: {
       project_name: "客户接入项目",
-      source_title: "上线审批",
-    },
+      source_title: "上线审批"
+},
     created_at: "2026-07-06T09:00:00Z",
     deep_link: {},
     id: "approval-item-1",
@@ -83,8 +83,8 @@ function makeApprovalItem(overrides: Partial<InboxItem> = {}): InboxItem {
     tenant_id: "tenant-1",
     title: "确认上线风险",
     updated_at: "2026-07-06T09:20:00Z",
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 function makeListResponse(items: InboxItem[]): InboxListResponse {
@@ -93,14 +93,14 @@ function makeListResponse(items: InboxItem[]): InboxListResponse {
     pagination: {
       has_more: false,
       limit: 50,
-      offset: 0,
-    },
+      offset: 0
+},
     summary: {
       blocked_count: 0,
       high_risk_count: items.filter((item) => item.risk_level === "high").length,
-      open_count: items.length,
-    },
-  };
+      open_count: items.length
+}
+};
 }
 
 function createApprovalsFetcher(options: { actionStatus?: number } = {}) {
@@ -112,8 +112,8 @@ function createApprovalsFetcher(options: { actionStatus?: number } = {}) {
       body: typeof init?.body === "string" ? init.body : undefined,
       method,
       pathname: url.pathname,
-      url: url.toString(),
-    });
+      url: url.toString()
+});
 
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       return jsonResponse(makeListResponse([makeApprovalItem()]));
@@ -128,9 +128,9 @@ function createApprovalsFetcher(options: { actionStatus?: number } = {}) {
         source_result: {
           source_id: "decision-1",
           source_type: "project_decision_request",
-          status: "approved",
-        },
-      });
+          status: "approved"
+}
+});
     }
 
     return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);
@@ -155,8 +155,8 @@ describe("ApprovalsCenterView", () => {
     const screen = await renderApprovals(fetcher, {
       project: "project-1",
       risk: "high",
-      status: "open",
-    });
+      status: "open"
+});
 
     await expect.element(screen.getByRole("heading", { name: "审批中心" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "确认上线风险" })).toBeVisible();

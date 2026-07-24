@@ -9,19 +9,19 @@ import "@/styles/index.css";
 
 vi.mock("@/context/search-provider", () => ({
   useSearch: () => ({
-    setOpen: vi.fn(),
-  }),
+    setOpen: vi.fn()
+})
 }));
 
 vi.mock("@/context/theme-provider", () => ({
   useTheme: () => ({
     setTheme: vi.fn(),
-    theme: "system",
-  }),
+    theme: "system"
+})
 }));
 
 vi.mock("@/components/sign-out-dialog", () => ({
-  SignOutDialog: () => null,
+  SignOutDialog: () => null
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -60,10 +60,10 @@ function renderInShell(children: ReactNode) {
           avatar: {
             provider: "dicebear",
             seed: "anna",
-            style: "adventurer",
-          },
-        },
-      }}
+            style: "adventurer"
+}
+}
+}}
     >
       <SidebarProvider>{children}</SidebarProvider>
     </AuthContext>,
@@ -81,12 +81,12 @@ describe("ShellPageHeader", () => {
       />,
     );
 
-    const shellHeader = document.body.querySelector('[data-slot="v3-shell-header"]');
-    const pageHeader = document.body.querySelector('[data-slot="v3-page-header"]');
+    const shellHeader = document.body.querySelector('[data-slot="shell-header"]');
+    const pageHeader = document.body.querySelector('[data-slot="page-header"]');
     const heading = screen.getByRole("heading", { name: "流程编排" }).element();
     const search = screen.getByRole("button", {
-      name: /搜索任务、数字员工、能力、文档或快捷命令/,
-    }).element() as HTMLElement;
+      name: /搜索任务、数字员工、能力、文档或快捷命令/
+}).element() as HTMLElement;
 
     expect(shellHeader).toBeInstanceOf(HTMLElement);
     expect(pageHeader).toBeInstanceOf(HTMLElement);
@@ -111,7 +111,7 @@ describe("ShellPageHeader", () => {
     expect(backLink.getAttribute("data-router-link")).toBe("true");
     expect(backLink.className).toContain("h-10");
     expect(backLink.className).toContain("w-10");
-    expect(backLink.className).toContain("border-v3-line");
+    expect(backLink.className).toContain("border-line");
     expect(backLink.querySelector("svg")).toBeInstanceOf(SVGElement);
   });
 

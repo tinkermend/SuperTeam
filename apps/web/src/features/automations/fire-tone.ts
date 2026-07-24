@@ -1,7 +1,7 @@
-import type { V3Tone } from "@/components/superteam";
+import type { Tone } from "@/components/superteam";
 
 /** Shared fire status → tone for table dots, rail, and detail. */
-export function automationFireTone(status: string): V3Tone {
+export function automationFireTone(status: string): Tone {
   switch (status) {
     case "succeeded":
       return "ok";

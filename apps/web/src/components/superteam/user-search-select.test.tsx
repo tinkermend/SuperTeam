@@ -10,10 +10,10 @@ function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
-      },
-    },
-  });
+        retry: false
+}
+}
+});
 }
 
 async function renderWithQueryClient(children: ReactNode) {
@@ -23,15 +23,15 @@ async function renderWithQueryClient(children: ReactNode) {
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status: 200,
-  });
+    status: 200
+});
 }
 
 const selectedUser: UserSummary = {
   avatar: { provider: "dicebear", seed: "selected-user", style: "adventurer" },
   id: "user-current",
   status: "active",
-  username: "selected",
+  username: "selected"
 };
 
 describe("UserSearchSelect", () => {
@@ -41,14 +41,14 @@ describe("UserSearchSelect", () => {
       avatar: { provider: "dicebear", seed: "visible-user", style: "adventurer" },
       id: "user-visible",
       status: "active",
-      username: "zhoumin",
-    };
+      username: "zhoumin"
+};
     const excludedUser: UserSummary = {
       avatar: { provider: "dicebear", seed: "excluded-user", style: "adventurer" },
       id: "user-excluded",
       status: "active",
-      username: "excluded",
-    };
+      username: "excluded"
+};
     const fetcher = vi.fn(async () => jsonResponse({ items: [visibleUser, excludedUser] }));
 
     const screen = await renderWithQueryClient(
@@ -82,8 +82,8 @@ describe("UserSearchSelect", () => {
       avatar: { provider: "dicebear", seed: "visible-user", style: "adventurer" },
       id: "user-visible",
       status: "active",
-      username: "zhoumin",
-    };
+      username: "zhoumin"
+};
     const fetcher = vi.fn(async () => jsonResponse({ items: [visibleUser] }));
 
     const screen = await renderWithQueryClient(

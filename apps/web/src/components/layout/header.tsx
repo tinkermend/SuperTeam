@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Search } from '@/components/search'
@@ -47,10 +47,10 @@ export function Header({
 
   return (
     <header
-      data-slot='v3-shell-header'
+      data-slot='shell-header'
       data-variant='global'
       className={cn(
-        'z-50 h-14 text-v3-ink',
+        'z-50 h-14 text-ink',
         fixed && 'header-fixed peer/header sticky top-0 w-[inherit]',
         className
       )}
@@ -63,20 +63,20 @@ export function Header({
             : 'relative grid h-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-2 sm:px-5 md:grid-cols-[minmax(12rem,1fr)_minmax(12rem,20rem)_minmax(12rem,1fr)]',
           offset > 10 &&
             fixed &&
-            'after:absolute after:inset-0 after:-z-10 after:border-b after:border-[var(--v3-shell-glass-border)] after:bg-[var(--v3-shell-glass)] after:backdrop-blur-md'
+            'after:absolute after:inset-0 after:-z-10 after:border-b after:border-[var(--shell-glass-border)] after:bg-[var(--shell-glass)] after:backdrop-blur-md'
         )}
       >
         {showSidebarTrigger ? (
           <SidebarTrigger
             variant='ghost'
-            className='justify-self-start rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep max-md:scale-125'
+            className='justify-self-start rounded-xl border border-[var(--shell-control-border)] bg-[var(--shell-control)] text-ink-2 shadow-none backdrop-blur-md hover:bg-[var(--shell-control-hover)] hover:text-brand-deep max-md:scale-125'
           />
         ) : (
           <div className='min-w-0 w-full'>{children}</div>
         )}
         <Search
           className={cn(
-            'h-10 w-full rounded-full border-[var(--v3-shell-search-border)] bg-[var(--v3-shell-search)] px-4 [box-shadow:var(--v3-shell-search-shadow)] backdrop-blur-xl',
+            'h-10 w-full rounded-full border-[var(--shell-search-border)] bg-[var(--shell-search)] px-4 [box-shadow:var(--shell-search-shadow)] backdrop-blur-xl',
             showSidebarTrigger
               ? 'mx-auto max-w-2xl sm:w-full md:w-full lg:w-full xl:w-full'
               : 'max-w-sm justify-self-center md:w-64 lg:w-72 xl:w-80 max-md:size-10 max-md:flex-none max-md:justify-center max-md:px-0 max-md:[&>span]:sr-only max-md:[&_svg]:left-1/2 max-md:[&_svg]:-translate-x-1/2'
@@ -101,21 +101,21 @@ function NotificationButton() {
         <button
           type='button'
           aria-label='通知'
-          className='relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] text-v3-ink-2 shadow-none backdrop-blur-md transition-colors hover:bg-[var(--v3-shell-control-hover)] hover:text-v3-brand-deep focus-visible:ring-2 focus-visible:ring-v3-brand/30 focus-visible:outline-none'
+          className='relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--shell-control-border)] bg-[var(--shell-control)] text-ink-2 shadow-none backdrop-blur-md transition-colors hover:bg-[var(--shell-control-hover)] hover:text-brand-deep focus-visible:ring-2 focus-visible:ring-brand/30 focus-visible:outline-none'
         >
           <Bell className='size-[1.15rem]' aria-hidden='true' />
-          <span className='absolute top-1.5 right-1.5 size-2 rounded-full border border-white/80 bg-v3-artifact' />
+          <span className='absolute top-1.5 right-1.5 size-2 rounded-full border border-white/80 bg-artifact' />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align='end'
-        className='min-w-56 rounded-v3-inner border-v3-line bg-v3-card text-v3-ink shadow-v3-pop'
+        className='min-w-56 rounded-inner border-line bg-card text-ink shadow-pop'
       >
-        <DropdownMenuLabel className='px-2 py-1.5 text-xs font-semibold text-v3-ink-2'>
+        <DropdownMenuLabel className='px-2 py-1.5 text-xs font-semibold text-ink-2'>
           通知
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled className='text-v3-ink-2'>
+        <DropdownMenuItem disabled className='text-ink-2'>
           暂无新通知
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -139,10 +139,10 @@ function HeaderUserMenu() {
           <button
             type='button'
             aria-label={`用户信息：${displayName}`}
-            className='flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border border-[var(--v3-shell-control-border)] bg-[var(--v3-shell-control)] py-1 pr-3 pl-1 text-v3-ink shadow-none backdrop-blur-md transition-colors hover:bg-[var(--v3-shell-control-hover)] focus-visible:ring-2 focus-visible:ring-v3-brand/30 focus-visible:outline-none max-md:pr-1'
+            className='flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border border-[var(--shell-control-border)] bg-[var(--shell-control)] py-1 pr-3 pl-1 text-ink shadow-none backdrop-blur-md transition-colors hover:bg-[var(--shell-control-hover)] focus-visible:ring-2 focus-visible:ring-brand/30 focus-visible:outline-none max-md:pr-1'
           >
             <Avatar className='size-8 rounded-full'>
-              <AvatarFallback className='rounded-full bg-v3-brand text-xs font-semibold text-white'>
+              <AvatarFallback className='rounded-full bg-brand text-xs font-semibold text-white'>
                 {fallback}
               </AvatarFallback>
             </Avatar>
@@ -153,18 +153,18 @@ function HeaderUserMenu() {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align='end'
-          className='min-w-56 rounded-v3-inner border-v3-line bg-v3-card text-v3-ink shadow-v3-pop'
+          className='min-w-56 rounded-inner border-line bg-card text-ink shadow-pop'
         >
           <DropdownMenuLabel className='p-0 font-normal'>
             <div className='flex items-center gap-2 px-1 py-1.5 text-start text-sm'>
               <Avatar className='size-8 rounded-lg'>
-                <AvatarFallback className='rounded-lg bg-v3-brand text-white'>
+                <AvatarFallback className='rounded-lg bg-brand text-white'>
                   {fallback}
                 </AvatarFallback>
               </Avatar>
               <div className='grid min-w-0 flex-1 text-start text-sm leading-tight'>
                 <span className='truncate font-semibold'>{displayName}</span>
-                <span className='truncate text-xs text-v3-ink-2'>{displayEmail}</span>
+                <span className='truncate text-xs text-ink-2'>{displayEmail}</span>
               </div>
             </div>
           </DropdownMenuLabel>

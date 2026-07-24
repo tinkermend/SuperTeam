@@ -2,9 +2,6 @@ import { Boxes, KeyRound, Network, Plus, ShieldCheck, Trash2 } from "lucide-reac
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,18 +10,20 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import {
+  Button,
+  Chip,
+  DataTable,
   IconTile,
   SoftCard,
   StatusPill,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone,
 } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -37,7 +36,7 @@ import {
   type EffectiveMcpServer,
   type EmployeeSkillMcpDependencyItem,
   type McpBinding,
-  type McpServerDefinition,
+  type McpServerDefinition
 } from "@/lib/api/capabilities";
 import {
   bindEmployeeSkill,
@@ -45,13 +44,13 @@ import {
   listSkills,
   unbindEmployeeSkill,
   type EffectiveEmployeeSkill,
-  type Skill,
+  type Skill
 } from "@/lib/api/skills";
 import {
   deleteEmployeeEnvironmentVariable,
   listEmployeeEnvironmentVariables,
   upsertEmployeeEnvironmentVariable,
-  type DigitalEmployeeEnvironmentVariableSummary,
+  type DigitalEmployeeEnvironmentVariableSummary
 } from "@/lib/api/employees";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -69,43 +68,43 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
   const marketplace = useQuery({
     queryKey: ["skills", ""],
     queryFn: () => listSkills(apiOptions),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const employeeSkills = useQuery({
     queryKey: ["employee-skills", employeeId],
     queryFn: () => listEmployeeSkills(apiOptions, employeeId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const mcpDefinitions = useQuery({
     queryKey: ["mcp-server-definitions"],
     queryFn: () => listMcpServerDefinitions(apiOptions),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const employeeMcpBindings = useQuery({
     queryKey: ["employee-mcp-bindings-v2", employeeId],
     queryFn: () => listEmployeeMcpBindingsV2(apiOptions, employeeId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   // Registry-resolved effective MCP config (migration 037): shows inherited vs personal
   // source and surfaces blocked_missing_env so the operator knows which env vars to set.
   const effectiveMcpConfig = useQuery({
     queryKey: ["effective-mcp-config", employeeId],
     queryFn: () => listEffectiveMcpConfig(apiOptions, employeeId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const envVars = useQuery({
     queryKey: ["employee-environment-variables", employeeId],
     queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   // Skill-level MCP dependency preflight (Task 6): flags skills whose declared MCP
   // dependencies are not yet bound or are blocked on missing env vars, so the operator
   // sees the exact skill row that will fail dispatch.
   const skillMcpDependencyStatus = useQuery({
     queryKey: ["skill-mcp-dependency-status", employeeId],
     queryFn: () => listEmployeeSkillMcpDependencyStatus(apiOptions, employeeId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const unsatisfiedMcpDepsBySkillId = useMemo(() => {
     const map = new Map<string, EmployeeSkillMcpDependencyItem[]>();
@@ -146,8 +145,8 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
         queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
-    },
-  });
+    }
+});
 
   const unbindSkillMutation = useMutation({
     mutationFn: (skillId: string) => unbindEmployeeSkill(apiOptions, employeeId, skillId),
@@ -162,8 +161,8 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
         queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
-    },
-  });
+    }
+});
 
   const createMcpMutation = useMutation({
     mutationFn: (input: { mcp_server_id: string; credential_env_var?: string }) =>
@@ -179,8 +178,8 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
         queryClient.invalidateQueries({ queryKey: ["effective-mcp-config", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
-    },
-  });
+    }
+});
 
   const deleteMcpMutation = useMutation({
     mutationFn: (serverId: string) => deleteEmployeeMcpBindingV2(apiOptions, employeeId, serverId),
@@ -191,21 +190,21 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
         queryClient.invalidateQueries({ queryKey: ["effective-mcp-config", employeeId] }),
         queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] }),
       ]);
-    },
-  });
+    }
+});
   const upsertEnvMutation = useMutation({
     mutationFn: (input: { name: string; value: string; sensitive: boolean }) =>
       upsertEmployeeEnvironmentVariable(apiOptions, employeeId, input.name, {
         value: input.value,
-        sensitive: input.sensitive,
-      }),
+        sensitive: input.sensitive
+}),
     onSuccess: async (_summary, input) => {
       setReplacementValues((current) => ({ ...current, [input.name]: "" }));
       await queryClient.invalidateQueries({ queryKey: ["employee-environment-variables", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] });
-    },
-  });
+    }
+});
   const deleteEnvMutation = useMutation({
     mutationFn: (name: string) => deleteEmployeeEnvironmentVariable(apiOptions, employeeId, name),
     onSuccess: async (_result, name) => {
@@ -217,8 +216,8 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       await queryClient.invalidateQueries({ queryKey: ["employee-environment-variables", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] });
       await queryClient.invalidateQueries({ queryKey: ["skill-mcp-dependency-status", employeeId] });
-    },
-  });
+    }
+});
 
   const selectedDefinition = useMemo(
     () => (mcpDefinitions.data ?? []).find((definition) => definition.id === selectedServerId),
@@ -242,22 +241,22 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       mcp_server_id: selectedServerId,
       ...(credentialEnvVar.trim().length > 0
         ? { credential_env_var: credentialEnvVar.trim() }
-        : {}),
-    });
+        : {})
+});
   };
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       <SoftCard className="min-w-0">
-        <CardHeader className="gap-3 pb-3">
+        <div className="gap-3 pb-3">
           <PanelTitle
             icon={<Boxes />}
             meta={`${employeeSkills.data?.length ?? 0} 个生效`}
             title="个人技能"
             tone="artifact"
           />
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        </div>
+        <div className="flex flex-col gap-4">
           <section className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium">已生效技能</h3>
@@ -324,19 +323,19 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
               ))}
             </div>
           </section>
-        </CardContent>
+        </div>
       </SoftCard>
 
       <SoftCard className="min-w-0">
-        <CardHeader className="gap-3 pb-3">
+        <div className="gap-3 pb-3">
           <PanelTitle
             icon={<Network />}
             meta={`${employeeMcpBindings.data?.length ?? 0} 个绑定`}
             title="个人 MCP"
             tone="info"
           />
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        </div>
+        <div className="flex flex-col gap-4">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="min-w-0 space-y-2">
               <Label htmlFor="employee-mcp-server">注册表 MCP</Label>
@@ -419,7 +418,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
             isFetching={effectiveMcpConfig.isFetching}
             isLoading={effectiveMcpConfig.isLoading}
           />
-        </CardContent>
+        </div>
       </SoftCard>
     </div>
   );
@@ -429,12 +428,12 @@ function PanelTitle({
   icon,
   meta,
   title,
-  tone,
+  tone
 }: {
   icon: ReactNode;
   meta: string;
   title: string;
-  tone: Extract<V3Tone, "artifact" | "info">;
+  tone: Extract<Tone, "artifact" | "info">;
 }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
@@ -442,7 +441,7 @@ function PanelTitle({
         <IconTile tone={tone} size="sm">
           {icon}
         </IconTile>
-        <CardTitle className="truncate text-base">{title}</CardTitle>
+        <div className="truncate text-base">{title}</div>
       </div>
       <StatusPill tone={tone}>{meta}</StatusPill>
     </div>
@@ -453,7 +452,7 @@ function EmployeeSkillRow({
   entry,
   onRemove,
   pending,
-  unsatisfiedMcpDeps,
+  unsatisfiedMcpDeps
 }: {
   entry: EffectiveEmployeeSkill;
   onRemove: () => void;
@@ -471,9 +470,9 @@ function EmployeeSkillRow({
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <p className="truncate text-sm font-medium">{entry.skill.name}</p>
             {entry.inherited ? <StatusPill tone="mute">团队继承</StatusPill> : null}
-            <Badge variant="outline" className="shrink-0">
+            <Chip  className="shrink-0">
               {entry.skill.version}
-            </Badge>
+            </Chip>
             <StatusPill tone={skillRiskTone(entry.skill.risk_level)}>
               {skillRiskLabel(entry.skill.risk_level)}
             </StatusPill>
@@ -525,7 +524,7 @@ function EmployeeEnvironmentPanel({
   onReplacementValueChange,
   pendingDelete,
   pendingReplace,
-  replacementValues,
+  replacementValues
 }: {
   envVars: DigitalEmployeeEnvironmentVariableSummary[];
   isError: boolean;
@@ -542,7 +541,7 @@ function EmployeeEnvironmentPanel({
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
-          <KeyRound className="size-4 text-v3-ok" />
+          <KeyRound className="size-4 text-ok" />
           环境变量
         </h3>
         {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
@@ -554,28 +553,28 @@ function EmployeeEnvironmentPanel({
       ) : null}
       {envVars.length > 0 ? (
         <WorkSurface>
-          <V3Table>
+          <DataTable>
             <thead>
               <tr>
-                <V3Th>名称</V3Th>
-                <V3Th>状态</V3Th>
-                <V3Th>指纹</V3Th>
-                <V3Th>更新时间</V3Th>
-                <V3Th className="min-w-[260px]">操作</V3Th>
+                <Th>名称</Th>
+                <Th>状态</Th>
+                <Th>指纹</Th>
+                <Th>更新时间</Th>
+                <Th className="min-w-[260px]">操作</Th>
               </tr>
             </thead>
             <tbody>
               {envVars.map((envVar) => (
-                <V3Tr key={envVar.name}>
-                  <V3Td className="font-medium">{envVar.name}</V3Td>
-                  <V3Td>
+                <Tr key={envVar.name}>
+                  <Td className="font-medium">{envVar.name}</Td>
+                  <Td>
                     <StatusPill tone={envVar.configured ? "ok" : "warn"}>
                       {envVar.configured ? "已配置" : "缺失"}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td className="font-mono text-xs text-v3-ink-2">{envVar.fingerprint || "-"}</V3Td>
-                  <V3Td className="text-xs text-v3-ink-2">{formatDateTime(envVar.updated_at)}</V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td className="font-mono text-xs text-ink-2">{envVar.fingerprint || "-"}</Td>
+                  <Td className="text-xs text-ink-2">{formatDateTime(envVar.updated_at)}</Td>
+                  <Td>
                     <span className="flex items-center gap-2">
                       <Input
                         aria-label={`替换 ${envVar.name}`}
@@ -604,11 +603,11 @@ function EmployeeEnvironmentPanel({
                         <Trash2 />
                       </Button>
                     </span>
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))}
             </tbody>
-          </V3Table>
+          </DataTable>
         </WorkSurface>
       ) : null}
     </section>
@@ -618,7 +617,7 @@ function EmployeeEnvironmentPanel({
 function SkillInstallRow({
   onInstall,
   pending,
-  skill,
+  skill
 }: {
   onInstall: () => void;
   pending: boolean;
@@ -633,9 +632,9 @@ function SkillInstallRow({
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <p className="truncate text-sm font-medium">{skill.name}</p>
-            <Badge variant="outline" className="shrink-0">
+            <Chip  className="shrink-0">
               {skill.version}
-            </Badge>
+            </Chip>
           </div>
           <p className="truncate text-xs text-muted-foreground">{skill.description}</p>
         </div>
@@ -655,7 +654,7 @@ function EffectiveMcpRegistrySection({
   config,
   isError,
   isFetching,
-  isLoading,
+  isLoading
 }: {
   config: EffectiveMcpServer[];
   isError: boolean;
@@ -689,7 +688,7 @@ function EffectiveMcpRegistrySection({
                 <StatusPill tone="mute">
                   {server.source_scope === "team" ? "团队继承" : "个人"}
                 </StatusPill>
-                <StatusPill tone={tone as Extract<V3Tone, "ok" | "warn">}>
+                <StatusPill tone={tone as Extract<Tone, "ok" | "warn">}>
                   {blocked ? "缺少环境变量" : statusLabel(server.status)}
                 </StatusPill>
               </div>
@@ -739,7 +738,7 @@ function EmployeeMcpBindingsSection({
   isLoading,
   onRemove,
   removing,
-  removeError,
+  removeError
 }: {
   bindings: McpBinding[];
   isError: boolean;
@@ -815,13 +814,13 @@ function skillRiskLabel(riskLevel: string) {
   const labels: Record<string, string> = {
     high: "高风险",
     low: "低风险",
-    medium: "中风险",
-  };
+    medium: "中风险"
+};
 
   return labels[riskLevel] ?? riskLevel;
 }
 
-function skillLoadStatePills(entry: EffectiveEmployeeSkill): Array<{ label: string; tone: V3Tone }> {
+function skillLoadStatePills(entry: EffectiveEmployeeSkill): Array<{ label: string; tone: Tone }> {
   const status = entry.runtime_dependency_status;
   const missingTools = status?.missing_tools ?? [];
   const missingEnv = status?.missing_env ?? [];

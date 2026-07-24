@@ -9,19 +9,19 @@ import "@/styles/index.css";
 
 vi.mock("@/context/search-provider", () => ({
   useSearch: () => ({
-    setOpen: vi.fn(),
-  }),
+    setOpen: vi.fn()
+})
 }));
 
 vi.mock("@/context/theme-provider", () => ({
   useTheme: () => ({
     setTheme: vi.fn(),
-    theme: "system",
-  }),
+    theme: "system"
+})
 }));
 
 vi.mock("@/components/sign-out-dialog", () => ({
-  SignOutDialog: () => null,
+  SignOutDialog: () => null
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -61,10 +61,10 @@ describe("Header", () => {
             avatar: {
               provider: "dicebear",
               seed: "anna",
-              style: "adventurer",
-            },
-          },
-        }}
+              style: "adventurer"
+}
+}
+}}
       >
         <SidebarProvider>
           <Header>
@@ -78,22 +78,22 @@ describe("Header", () => {
     const trigger = document.querySelector('[data-slot="sidebar-trigger"]');
     const headerStyle = getComputedStyle(header);
     const search = screen.getByRole("button", {
-      name: /搜索任务、数字员工、能力、文档或快捷命令/,
-    }).element() as HTMLElement;
+      name: /搜索任务、数字员工、能力、文档或快捷命令/
+}).element() as HTMLElement;
 
-    expect(header.dataset.slot).toBe("v3-shell-header");
+    expect(header.dataset.slot).toBe("shell-header");
     expect(header.dataset.variant).toBe("global");
     expect(headerStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
     expect(headerStyle.backdropFilter).toBe("none");
     expect(header.className).toContain("h-14");
     expect(trigger).toBeInstanceOf(HTMLElement);
-    expect((trigger as HTMLElement).className).toContain("--v3-shell-control");
-    expect((trigger as HTMLElement).className).toContain("text-v3-ink-2");
+    expect((trigger as HTMLElement).className).toContain("--shell-control");
+    expect((trigger as HTMLElement).className).toContain("text-ink-2");
     expect(search.className).toContain("mx-auto");
     expect(search.className).toContain("rounded-full");
-    expect(search.className).toContain("--v3-shell-search");
-    expect(search.className).toContain("--v3-shell-search-border");
-    expect(search.className).toContain("[box-shadow:var(--v3-shell-search-shadow)]");
+    expect(search.className).toContain("--shell-search");
+    expect(search.className).toContain("--shell-search-border");
+    expect(search.className).toContain("[box-shadow:var(--shell-search-shadow)]");
     expect(header.firstElementChild?.className).toContain(
       "grid-cols-[auto_minmax(0,1fr)_auto]",
     );
@@ -129,10 +129,10 @@ describe("Header", () => {
             avatar: {
               provider: "dicebear",
               seed: "anna",
-              style: "adventurer",
-            },
-          },
-        }}
+              style: "adventurer"
+}
+}
+}}
       >
         <SidebarProvider>
           <Header showSidebarTrigger={false}>
@@ -144,8 +144,8 @@ describe("Header", () => {
 
     const titleSlot = screen.getByTestId("page-title-slot").element();
     const search = screen.getByRole("button", {
-      name: /搜索任务、数字员工、能力、文档或快捷命令/,
-    }).element() as HTMLElement;
+      name: /搜索任务、数字员工、能力、文档或快捷命令/
+}).element() as HTMLElement;
 
     expect(titleSlot).toBeInstanceOf(HTMLElement);
     expect(document.querySelector('[data-slot="sidebar-trigger"]')).toBeNull();
@@ -172,10 +172,10 @@ describe("Header", () => {
             avatar: {
               provider: "dicebear",
               seed: "anna",
-              style: "adventurer",
-            },
-          },
-        }}
+              style: "adventurer"
+}
+}
+}}
       >
         <SidebarProvider>
           <Header />

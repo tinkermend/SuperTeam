@@ -10,5 +10,5 @@ export const Route = createFileRoute("/_authenticated/collaboration/")({
       title="协作集成"
       description="接入钉钉、飞书等企业通讯软件，承载消息交互、审批触达和结果通知。"
     />
-  ),
+  )
 });

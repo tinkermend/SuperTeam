@@ -5,16 +5,16 @@ import { getAuthzOverview } from "@/lib/api";
 import {
   IconTile,
   StatusPill,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  V3MetricCard,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -25,15 +25,15 @@ type AuthorizationOverviewProps = {
 export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps) {
   const overviewQuery = useQuery({
     queryKey: ["authz-overview", apiOptions.baseUrl],
-    queryFn: () => getAuthzOverview(apiOptions),
-  });
+    queryFn: () => getAuthzOverview(apiOptions)
+});
 
   if (overviewQuery.isLoading) {
     return (
       <div className="grid gap-4 md:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <WorkSurface key={index}>
-            <V3LoadingState className="py-9" label="加载授权概览…" />
+            <LoadingState className="py-9" label="加载授权概览…" />
           </WorkSurface>
         ))}
       </div>
@@ -42,7 +42,7 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
 
   if (overviewQuery.isError) {
     return (
-      <V3ErrorState
+      <ErrorState
         title="授权概览加载失败"
         description="请稍后刷新或检查 Control Plane 连接。"
       />
@@ -54,7 +54,7 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
   if (!overview) {
     return (
       <WorkSurface>
-        <V3EmptyState icon={<ShieldAlert />} title="暂无授权概览" description="授权引擎尚未返回概览数据。" />
+        <EmptyState icon={<ShieldAlert />} title="暂无授权概览" description="授权引擎尚未返回概览数据。" />
       </WorkSurface>
     );
   }
@@ -63,7 +63,7 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
     description: string;
     details?: Array<{ label: string; value: string }>;
     icon: typeof ShieldCheck;
-    iconTone: V3Tone;
+    iconTone: Tone;
     loud?: boolean;
     title: string;
     value: string;
@@ -74,31 +74,31 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
       description: engineStatusDescription(overview.engine),
       icon: ShieldCheck,
       iconTone: overview.engine.status === "ok" ? "ok" : "warn",
-      details: engineDetails(overview.engine),
-    },
+      details: engineDetails(overview.engine)
+},
     {
       title: "总决策",
       value: formatNumber(overview.totals.total),
       description: "全部授权决策",
       icon: Sigma,
-      iconTone: "info",
-    },
+      iconTone: "info"
+},
     {
       title: "拒绝次数",
       value: formatNumber(overview.totals.denied),
       description: `${formatNumber(overview.totals.allowed)} 次允许`,
       icon: ShieldAlert,
       iconTone: overview.totals.denied > 0 ? "danger" : "ok",
-      loud: overview.totals.denied > 0,
-    },
+      loud: overview.totals.denied > 0
+},
     {
       title: "拒绝率",
       value: formatRate(overview.totals.denied_rate),
       description: "Denied / Total",
       icon: Gauge,
       iconTone: overview.totals.denied_rate > 0 ? "warn" : "ok",
-      loud: overview.totals.denied_rate > 0,
-    },
+      loud: overview.totals.denied_rate > 0
+},
   ];
 
   return (
@@ -108,7 +108,7 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
           const Icon = metric.icon;
 
           return (
-            <V3MetricCard
+            <MetricCard
               key={metric.title}
               icon={<Icon />}
               iconTone={metric.iconTone}
@@ -134,17 +134,17 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
         })}
       </div>
       <WorkSurface>
-        <div className="flex items-start gap-3 border-b border-v3-line px-5 py-4">
+        <div className="flex items-start gap-3 border-b border-line px-5 py-4">
           <IconTile tone="info" size="sm">
             <ShieldCheck />
           </IconTile>
           <div>
-            <h2 className="text-base font-bold text-v3-ink">最近授权事件</h2>
-            <p className="mt-1 text-sm text-v3-ink-2">授权引擎返回的最近决策记录。</p>
+            <h2 className="text-base font-bold text-ink">最近授权事件</h2>
+            <p className="mt-1 text-sm text-ink-2">授权引擎返回的最近决策记录。</p>
           </div>
         </div>
         {overview.recent_events.length === 0 ? (
-          <V3EmptyState title="暂无最近授权事件" description="新的授权决策会显示在这里。" />
+          <EmptyState title="暂无最近授权事件" description="新的授权决策会显示在这里。" />
         ) : (
           <RecentEventsTable events={overview.recent_events} />
         )}
@@ -155,30 +155,30 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
 
 function RecentEventsTable({ events }: { events: AuthzDecisionRecord[] }) {
   return (
-    <V3Table>
+    <DataTable>
       <thead>
-        <V3Tr>
-          <V3Th>时间</V3Th>
-          <V3Th>结果</V3Th>
-          <V3Th>动作</V3Th>
-          <V3Th>资源</V3Th>
-          <V3Th>原因</V3Th>
-        </V3Tr>
+        <Tr>
+          <Th>时间</Th>
+          <Th>结果</Th>
+          <Th>动作</Th>
+          <Th>资源</Th>
+          <Th>原因</Th>
+        </Tr>
       </thead>
       <tbody>
         {events.map((event) => (
-          <V3Tr key={event.id} tone={event.result === "succeeded" ? undefined : "danger"}>
-            <V3Td className="whitespace-nowrap tabular-nums">{formatTime(event.created_at)}</V3Td>
-            <V3Td>
+          <Tr key={event.id} tone={event.result === "succeeded" ? undefined : "danger"}>
+            <Td className="whitespace-nowrap tabular-nums">{formatTime(event.created_at)}</Td>
+            <Td>
               <DecisionBadge result={event.result} />
-            </V3Td>
-            <V3Td>{event.action}</V3Td>
-            <V3Td>{formatResource(event.resource_type, event.resource_id)}</V3Td>
-            <V3Td className="max-w-64 truncate">{event.reason ?? "-"}</V3Td>
-          </V3Tr>
+            </Td>
+            <Td>{event.action}</Td>
+            <Td>{formatResource(event.resource_type, event.resource_id)}</Td>
+            <Td className="max-w-64 truncate">{event.reason ?? "-"}</Td>
+          </Tr>
         ))}
       </tbody>
-    </V3Table>
+    </DataTable>
   );
 }
 
@@ -215,8 +215,8 @@ function formatTime(value: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    month: "2-digit",
-  }).format(new Date(value));
+    month: "2-digit"
+}).format(new Date(value));
 }
 
 function formatResource(type?: string | null, id?: string | null) {

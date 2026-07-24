@@ -22,16 +22,16 @@ describe('AuthLayout', () => {
       ?.getAttribute('class')
 
     expect(headerImage).toBeNull()
-    const shell = document.querySelector('[data-slot="v3-auth-shell"]')
+    const shell = document.querySelector('[data-slot="auth-shell"]')
     expect(shell).not.toBeNull()
-    expect(shell?.getAttribute('class')).toContain('bg-v3-bg')
+    expect(shell?.getAttribute('class')).toContain('bg-background')
     expect(logoImage).not.toBeNull()
     if (logoImage && !logoImage.complete) {
       await new Promise<void>((resolve, reject) => {
         logoImage.addEventListener('load', () => resolve(), { once: true })
         logoImage.addEventListener('error', () => reject(new Error('logo image failed to load')), {
-          once: true,
-        })
+          once: true
+})
       })
     }
     expect(logoImage?.naturalWidth).toBe(900)

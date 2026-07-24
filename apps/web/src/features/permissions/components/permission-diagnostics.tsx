@@ -6,7 +6,7 @@ import { checkPermission } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { IconTile, MasterDetailLayout, SoftCard, StatusPill, V3Button } from "@/components/superteam";
+import { IconTile, MasterDetailLayout, SoftCard, StatusPill, Button } from "@/components/superteam";
 
 type PermissionDiagnosticsProps = {
   apiOptions: ApiClientOptions;
@@ -35,8 +35,8 @@ const actionOptions: CheckPermissionRequest["action"][] = [
   "team.audit.read",
 ];
 const fieldClassName =
-  "rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none focus-visible:ring-v3-brand/60 focus-visible:ring-offset-v3-bg";
-const labelClassName = "text-[13px] font-semibold text-v3-ink-2";
+  "rounded-xl border-line-strong bg-card text-ink shadow-none focus-visible:ring-brand/60 focus-visible:ring-offset-background";
+const labelClassName = "text-[13px] font-semibold text-ink-2";
 
 export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps) {
   const [actorType, setActorType] = useState("user");
@@ -48,8 +48,8 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
   const [teamId, setTeamId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const checkMutation = useMutation({
-    mutationFn: (input: CheckPermissionRequest) => checkPermission(apiOptions, input),
-  });
+    mutationFn: (input: CheckPermissionRequest) => checkPermission(apiOptions, input)
+});
   const trimmedActorId = actorId.trim();
   const trimmedTenantId = tenantId.trim();
   const trimmedTeamId = teamId.trim();
@@ -64,8 +64,8 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
       resourceId: trimmedResourceId,
       resourceType,
       teamId: trimmedTeamId,
-      tenantId: trimmedTenantId,
-    });
+      tenantId: trimmedTenantId
+});
 
     if (validationError) {
       setFormError(validationError);
@@ -81,16 +81,16 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
     checkMutation.mutate({
       actor: {
         id: trimmedActorId,
-        type: actorType.trim(),
-      },
+        type: actorType.trim()
+},
       action,
       resource: {
         id: trimmedResourceId,
-        type: resourceType.trim(),
-      },
+        type: resourceType.trim()
+},
       tenant_id: trimmedTenantId,
-      team_id: trimmedTeamId || undefined,
-    });
+      team_id: trimmedTeamId || undefined
+});
   }
 
   function handleActionChange(nextAction: CheckPermissionRequest["action"]) {
@@ -99,8 +99,8 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
 
     const defaults = getResourceDefaults(nextAction, {
       teamId: trimmedTeamId,
-      tenantId: trimmedTenantId,
-    });
+      tenantId: trimmedTenantId
+});
     setResourceType(defaults.resourceType);
     setResourceId(defaults.resourceId);
   }
@@ -134,8 +134,8 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
             <ShieldQuestion />
           </IconTile>
           <div>
-            <h2 className="text-base font-bold text-v3-ink">权限诊断</h2>
-            <p className="mt-1 text-sm text-v3-ink-2">用当前授权引擎检查 Actor 对资源动作的访问结果。</p>
+            <h2 className="text-base font-bold text-ink">权限诊断</h2>
+            <p className="mt-1 text-sm text-ink-2">用当前授权引擎检查 Actor 对资源动作的访问结果。</p>
           </div>
         </div>
         <form className="grid gap-3 md:grid-cols-2" noValidate onSubmit={handleSubmit}>
@@ -192,13 +192,13 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
               <Input className={fieldClassName} id="diagnostic-team-id" required={usesTeamResource(action, resourceType)} aria-invalid={Boolean(formError && usesTeamResource(action, resourceType) && !trimmedTeamId)} value={teamId} onChange={(event) => handleTeamIdChange(event.target.value)} />
             </div>
             <div className="flex items-end">
-              <V3Button type="submit" disabled={checkMutation.isPending}>
+              <Button type="submit" disabled={checkMutation.isPending}>
                 开始诊断
-              </V3Button>
+              </Button>
             </div>
         </form>
-        {formError ? <p className="mt-3 text-sm text-v3-danger">{formError}</p> : null}
-        {checkMutation.isError ? <p className="mt-3 text-sm text-v3-danger">权限诊断失败。</p> : null}
+        {formError ? <p className="mt-3 text-sm text-danger">{formError}</p> : null}
+        {checkMutation.isError ? <p className="mt-3 text-sm text-danger">权限诊断失败。</p> : null}
         </SoftCard>
       }
       detail={<DiagnosticsResult result={checkMutation.data} />}
@@ -217,27 +217,27 @@ function getResourceDefaults(
     case "console.access":
       return {
         resourceId: "web",
-        resourceType: "console",
-      };
+        resourceType: "console"
+};
     case "tenant.access":
     case "authz_center.read":
     case "runtime_scope.manage":
     case "team.create":
       return {
         resourceId: scopeIds.tenantId,
-        resourceType: "tenant",
-      };
+        resourceType: "tenant"
+};
     case "team.read":
       if (scopeIds.teamId) {
         return {
           resourceId: scopeIds.teamId,
-          resourceType: "team",
-        };
+          resourceType: "team"
+};
       }
       return {
         resourceId: scopeIds.tenantId,
-        resourceType: "tenant",
-      };
+        resourceType: "tenant"
+};
     case "team.access":
     case "team.update":
     case "team.member.add":
@@ -253,13 +253,13 @@ function getResourceDefaults(
     case "team.audit.read":
       return {
         resourceId: scopeIds.teamId,
-        resourceType: "team",
-      };
+        resourceType: "team"
+};
     case "task.claim":
       return {
         resourceId: "",
-        resourceType: "task",
-      };
+        resourceType: "task"
+};
   }
 }
 
@@ -304,7 +304,7 @@ function validateDiagnosticForm({
   resourceId,
   resourceType,
   teamId,
-  tenantId,
+  tenantId
 }: {
   action: CheckPermissionRequest["action"];
   actorId: string;
@@ -345,9 +345,9 @@ function DiagnosticsResult({ result }: { result?: CheckPermissionResponse }) {
   if (!result) {
     return (
       <SoftCard className="p-5">
-        <h2 className="text-base font-bold text-v3-ink">诊断结果</h2>
-        <p className="mt-1 text-sm text-v3-ink-2">提交后展示授权引擎、命中规则和快照。</p>
-        <div className="mt-6 rounded-v3-inner bg-v3-card-soft px-4 py-8 text-center text-sm text-v3-ink-3">
+        <h2 className="text-base font-bold text-ink">诊断结果</h2>
+        <p className="mt-1 text-sm text-ink-2">提交后展示授权引擎、命中规则和快照。</p>
+        <div className="mt-6 rounded-inner bg-card-soft px-4 py-8 text-center text-sm text-ink-3">
           暂无诊断结果。
         </div>
       </SoftCard>
@@ -358,15 +358,15 @@ function DiagnosticsResult({ result }: { result?: CheckPermissionResponse }) {
     <SoftCard className="p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-v3-ink">诊断结果</h2>
-          <p className="mt-1 text-sm text-v3-ink-2">{result.engine}</p>
+          <h2 className="text-base font-bold text-ink">诊断结果</h2>
+          <p className="mt-1 text-sm text-ink-2">{result.engine}</p>
         </div>
         <StatusPill tone={result.allowed ? "ok" : "danger"}>{result.allowed ? "允许" : "拒绝"}</StatusPill>
       </div>
-      <div className="mt-5 rounded-v3-inner bg-v3-card-soft p-4">
-        <p className="text-sm font-bold text-v3-ink">{result.reason}</p>
-        <p className="mt-2 text-sm text-v3-ink-2">命中规则：{result.matched_rule || "-"}</p>
-        <p className="mt-1 text-sm text-v3-ink-2">快照字段：{result.snapshot ? Object.keys(result.snapshot).length : 0}</p>
+      <div className="mt-5 rounded-inner bg-card-soft p-4">
+        <p className="text-sm font-bold text-ink">{result.reason}</p>
+        <p className="mt-2 text-sm text-ink-2">命中规则：{result.matched_rule || "-"}</p>
+        <p className="mt-1 text-sm text-ink-2">快照字段：{result.snapshot ? Object.keys(result.snapshot).length : 0}</p>
       </div>
     </SoftCard>
   );

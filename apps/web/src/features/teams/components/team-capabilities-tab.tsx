@@ -5,22 +5,22 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import {
   IconTile,
   StatusPill,
-  V3Button,
-  V3ErrorState,
-  V3LoadingState,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
+  Button,
+  ErrorState,
+  LoadingState,
+  DataTable,
+  Td,
+  Th,
+  Tr,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,14 +30,14 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   bindTeamMcpServer,
   deleteTeamMcpBinding,
   listMcpServerDefinitions,
-  listTeamMcpBindings,
+  listTeamMcpBindings
 } from "@/lib/api/capabilities";
 import type { McpBinding } from "@/lib/api/capabilities";
 import { statusLabel } from "@/lib/status-labels";
@@ -61,24 +61,24 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
     enabled: skillDialogOpen,
     queryKey: ["skills", ""],
     queryFn: () => listSkills(apiOptions),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const teamSkills = useQuery({
     queryKey: ["team-skills", teamId],
     queryFn: () => listTeamSkills(apiOptions, teamId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const mcpDefinitions = useQuery({
     enabled: mcpDialogOpen,
     queryKey: ["mcp-server-definitions"],
     queryFn: () => listMcpServerDefinitions(apiOptions),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
   const mcpBindings = useQuery({
     queryKey: ["team-mcp-bindings", teamId],
     queryFn: () => listTeamMcpBindings(apiOptions, teamId),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const selectedDefinition = useMemo(
     () => (mcpDefinitions.data ?? []).find((definition) => definition.id === selectedServerId),
@@ -107,8 +107,8 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
         queryClient.invalidateQueries({ queryKey: ["team-skills", teamId] }),
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
       ]);
-    },
-  });
+    }
+});
   const unbindSkillMutation = useMutation({
     mutationFn: (skillId: string) => unbindTeamSkill(apiOptions, teamId, skillId),
     onSuccess: async (_result, skillId) => {
@@ -119,29 +119,29 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
         queryClient.invalidateQueries({ queryKey: ["team-skills", teamId] }),
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
       ]);
-    },
-  });
+    }
+});
   const createMcpMutation = useMutation({
     mutationFn: () =>
       bindTeamMcpServer(apiOptions, teamId, {
         mcp_server_id: selectedServerId,
         ...(credentialEnvVar.trim().length > 0
           ? { credential_env_var: credentialEnvVar.trim() }
-          : {}),
-      }),
+          : {})
+}),
     onSuccess: async () => {
       setSelectedServerId("");
       setCredentialEnvVar("");
       setMcpDialogOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["team-mcp-bindings", teamId] });
-    },
-  });
+    }
+});
   const deleteMcpMutation = useMutation({
     mutationFn: (bindingId: string) => deleteTeamMcpBinding(apiOptions, teamId, bindingId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["team-mcp-bindings", teamId] });
-    },
-  });
+    }
+});
 
   const canCreateMcp =
     canEdit && selectedServerId.length > 0 && !createMcpMutation.isPending;
@@ -155,7 +155,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
           <PanelHeader
             action={
               canEdit ? (
-                <V3Button
+                <Button
                   onClick={() => setSkillDialogOpen(true)}
                   size="sm"
                   type="button"
@@ -163,7 +163,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
                 >
                   <Plus data-icon="inline-start" className="size-3.5" />
                   安装技能
-                </V3Button>
+                </Button>
               ) : null
             }
             icon={<Boxes />}
@@ -172,7 +172,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             tone="artifact"
           />
           <div className="p-4">
-            {unbindSkillMutation.isError ? <V3ErrorState title="公共技能移除失败" /> : null}
+            {unbindSkillMutation.isError ? <ErrorState title="公共技能移除失败" /> : null}
             <SkillTable
               actionLabel={(skill) => `移除 ${skill.name}`}
               canEdit={canEdit}
@@ -191,7 +191,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
           <PanelHeader
             action={
               canEdit ? (
-                <V3Button
+                <Button
                   onClick={() => setMcpDialogOpen(true)}
                   size="sm"
                   type="button"
@@ -199,7 +199,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
                 >
                   <Plus data-icon="inline-start" className="size-3.5" />
                   绑定 MCP
-                </V3Button>
+                </Button>
               ) : null
             }
             icon={<Network />}
@@ -208,58 +208,58 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             tone="info"
           />
           <div className="p-4">
-            {deleteMcpMutation.isError ? <V3ErrorState title="公共 MCP 移除失败" /> : null}
+            {deleteMcpMutation.isError ? <ErrorState title="公共 MCP 移除失败" /> : null}
             {mcpBindings.isLoading ? (
-              <V3LoadingState label="公共 MCP 加载中" />
+              <LoadingState label="公共 MCP 加载中" />
             ) : mcpBindings.isError ? (
-              <V3ErrorState title="公共 MCP 加载失败" />
+              <ErrorState title="公共 MCP 加载失败" />
             ) : bindingCount === 0 ? (
-              <p className="py-2 text-[13px] text-v3-ink-2">暂无公共 MCP</p>
+              <p className="py-2 text-[13px] text-ink-2">暂无公共 MCP</p>
             ) : (
-              <V3Table>
+              <DataTable>
                 <thead>
                   <tr>
-                    <V3Th>服务</V3Th>
-                    <V3Th>凭据环境变量</V3Th>
-                    <V3Th>状态</V3Th>
-                    <V3Th className="text-right">操作</V3Th>
+                    <Th>服务</Th>
+                    <Th>凭据环境变量</Th>
+                    <Th>状态</Th>
+                    <Th className="text-right">操作</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {(mcpBindings.data ?? []).map((binding: McpBinding) => (
-                    <V3Tr key={binding.id}>
-                      <V3Td>
+                    <Tr key={binding.id}>
+                      <Td>
                         <div className="flex min-w-0 items-center gap-3">
                           <IconTile tone="info" size="sm">
                             <Network />
                           </IconTile>
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-v3-ink">
+                            <p className="truncate text-sm font-medium text-ink">
                               {binding.server_name ?? binding.server_key}
                             </p>
-                            <p className="truncate font-mono text-xs text-v3-ink-2">
+                            <p className="truncate font-mono text-xs text-ink-2">
                               {binding.url ?? binding.server_key}
                             </p>
                           </div>
                         </div>
-                      </V3Td>
-                      <V3Td>
+                      </Td>
+                      <Td>
                         {binding.credential_env_var ? (
-                          <span className="flex min-w-0 items-center gap-1 font-mono text-xs text-v3-ink-2">
+                          <span className="flex min-w-0 items-center gap-1 font-mono text-xs text-ink-2">
                             <KeyRound className="size-3 shrink-0" />
                             <span className="truncate">{binding.credential_env_var}</span>
                           </span>
                         ) : (
-                          <span className="text-xs text-v3-ink-3">无</span>
+                          <span className="text-xs text-ink-3">无</span>
                         )}
-                      </V3Td>
-                      <V3Td>
+                      </Td>
+                      <Td>
                         <StatusPill tone={binding.status === "active" ? "ok" : "warn"}>
                           {statusLabel(binding.status)}
                         </StatusPill>
-                      </V3Td>
-                      <V3Td className="text-right">
-                        <V3Button
+                      </Td>
+                      <Td className="text-right">
+                        <Button
                           aria-label={`移除 MCP ${binding.server_name ?? binding.server_key}`}
                           disabled={!canEdit || deleteMcpMutation.isPending}
                           onClick={() => deleteMcpMutation.mutate(binding.id)}
@@ -268,12 +268,12 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
                           variant="ghost"
                         >
                           <Trash2 />
-                        </V3Button>
-                      </V3Td>
-                    </V3Tr>
+                        </Button>
+                      </Td>
+                    </Tr>
                   ))}
                 </tbody>
-              </V3Table>
+              </DataTable>
             )}
           </div>
         </WorkSurface>
@@ -281,12 +281,12 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
 
       <Dialog open={skillDialogOpen} onOpenChange={setSkillDialogOpen}>
         <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-          <DialogHeader className="border-b border-v3-line px-6 py-5 text-left">
+          <DialogHeader className="border-b border-line px-6 py-5 text-left">
             <DialogTitle>安装公共技能</DialogTitle>
             <DialogDescription>从技能市场选择并安装到本团队。</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            {bindSkillMutation.isError ? <V3ErrorState title="技能安装失败" /> : null}
+            {bindSkillMutation.isError ? <ErrorState title="技能安装失败" /> : null}
             <SkillTable
               actionLabel={(skill) => `安装 ${skill.name}`}
               canEdit={canEdit}
@@ -331,15 +331,15 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
                 <SelectContent>
                   <SelectGroup>
                     {mcpDefinitions.isLoading ? (
-                      <div className="px-2 py-4 text-center text-sm text-v3-ink-2">
+                      <div className="px-2 py-4 text-center text-sm text-ink-2">
                         加载中…
                       </div>
                     ) : mcpDefinitions.isError ? (
-                      <div className="px-2 py-4 text-center text-sm text-v3-danger-text">
+                      <div className="px-2 py-4 text-center text-sm text-danger-text">
                         MCP 定义加载失败
                       </div>
                     ) : (mcpDefinitions.data ?? []).length === 0 ? (
-                      <div className="px-2 py-4 text-center text-sm text-v3-ink-2">
+                      <div className="px-2 py-4 text-center text-sm text-ink-2">
                         暂无已注册 MCP
                       </div>
                     ) : (
@@ -366,20 +366,20 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
               </div>
             ) : null}
             {selectedDefinition && selectedDefinition.required_env_vars.length > 0 ? (
-              <p className="text-xs text-v3-ink-2">
+              <p className="text-xs text-ink-2">
                 该 MCP 需要环境变量 {selectedDefinition.required_env_vars.join("、")}
                 ，请在各数字员工环境变量中配置；团队级绑定为建议性。
               </p>
             ) : null}
-            {createMcpMutation.isError ? <V3ErrorState title="公共 MCP 绑定失败" /> : null}
-            <V3Button
+            {createMcpMutation.isError ? <ErrorState title="公共 MCP 绑定失败" /> : null}
+            <Button
               disabled={!canCreateMcp}
               onClick={() => createMcpMutation.mutate()}
               type="button"
             >
               <Plus data-icon="inline-start" />
               绑定公共 MCP
-            </V3Button>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -392,7 +392,7 @@ function PanelHeader({
   icon,
   meta,
   title,
-  tone,
+  tone
 }: {
   action?: ReactNode;
   icon: ReactNode;
@@ -401,12 +401,12 @@ function PanelHeader({
   tone: "artifact" | "info";
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-v3-line px-5 py-4">
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-line px-5 py-4">
       <div className="flex min-w-0 items-center gap-3">
         <IconTile tone={tone} size="sm">
           {icon}
         </IconTile>
-        <h2 className="truncate text-base font-bold text-v3-ink">{title}</h2>
+        <h2 className="truncate text-base font-bold text-ink">{title}</h2>
         <StatusPill tone={tone}>{meta}</StatusPill>
       </div>
       {action}
@@ -423,7 +423,7 @@ function SkillTable({
   onAction,
   pending,
   skills,
-  variant,
+  variant
 }: {
   actionLabel: (skill: Skill) => string;
   canEdit: boolean;
@@ -436,28 +436,28 @@ function SkillTable({
   variant: "available" | "installed";
 }) {
   if (isLoading) {
-    return <V3LoadingState label="公共技能加载中" />;
+    return <LoadingState label="公共技能加载中" />;
   }
 
   if (isError) {
     return (
-      <V3ErrorState
+      <ErrorState
         title={variant === "installed" ? "公共技能加载失败" : "技能市场加载失败"}
       />
     );
   }
 
   if (skills.length === 0) {
-    return <p className="py-2 text-[13px] text-v3-ink-2">{emptyTitle}</p>;
+    return <p className="py-2 text-[13px] text-ink-2">{emptyTitle}</p>;
   }
 
   return (
-    <V3Table>
+    <DataTable>
       <thead>
         <tr>
-          <V3Th>技能</V3Th>
-          <V3Th>风险</V3Th>
-          <V3Th className="text-right">操作</V3Th>
+          <Th>技能</Th>
+          <Th>风险</Th>
+          <Th className="text-right">操作</Th>
         </tr>
       </thead>
       <tbody>
@@ -473,7 +473,7 @@ function SkillTable({
           />
         ))}
       </tbody>
-    </V3Table>
+    </DataTable>
   );
 }
 
@@ -483,7 +483,7 @@ function SkillRow({
   onAction,
   pending,
   skill,
-  variant,
+  variant
 }: {
   actionLabel: string;
   canEdit: boolean;
@@ -493,27 +493,27 @@ function SkillRow({
   variant: "available" | "installed";
 }) {
   return (
-    <V3Tr>
-      <V3Td>
+    <Tr>
+      <Td>
         <div className="flex min-w-0 items-center gap-3">
           <IconTile tone={variant === "installed" ? "ok" : "artifact"} size="sm">
             {variant === "installed" ? <ShieldCheck /> : <Boxes />}
           </IconTile>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-v3-ink">{skill.name}</p>
-            <p className="truncate text-xs text-v3-ink-2">{skill.description}</p>
-            <p className="mt-0.5 truncate text-xs text-v3-ink-3">v{skill.version}</p>
+            <p className="truncate text-sm font-medium text-ink">{skill.name}</p>
+            <p className="truncate text-xs text-ink-2">{skill.description}</p>
+            <p className="mt-0.5 truncate text-xs text-ink-3">v{skill.version}</p>
           </div>
         </div>
-      </V3Td>
-      <V3Td>
+      </Td>
+      <Td>
         <StatusPill tone={skillRiskTone(skill.risk_level)}>
           {skillRiskLabel(skill.risk_level)}
         </StatusPill>
-      </V3Td>
-      <V3Td className="text-right">
+      </Td>
+      <Td className="text-right">
         {variant === "installed" ? (
-          <V3Button
+          <Button
             aria-label={actionLabel}
             disabled={!canEdit || pending}
             onClick={onAction}
@@ -523,9 +523,9 @@ function SkillRow({
           >
             <Trash2 className="size-4" />
             <span className="sr-only">{actionLabel}</span>
-          </V3Button>
+          </Button>
         ) : (
-          <V3Button
+          <Button
             disabled={!canEdit || pending}
             onClick={onAction}
             size="sm"
@@ -534,14 +534,14 @@ function SkillRow({
           >
             <Plus data-icon="inline-start" />
             {actionLabel}
-          </V3Button>
+          </Button>
         )}
-      </V3Td>
-    </V3Tr>
+      </Td>
+    </Tr>
   );
 }
 
-function skillRiskTone(riskLevel: string): V3Tone {
+function skillRiskTone(riskLevel: string): Tone {
   if (riskLevel === "high") {
     return "danger";
   }
@@ -555,8 +555,8 @@ function skillRiskLabel(riskLevel: string) {
   const labels: Record<string, string> = {
     high: "高风险",
     low: "低风险",
-    medium: "中风险",
-  };
+    medium: "中风险"
+};
 
   return labels[riskLevel] ?? riskLevel;
 }

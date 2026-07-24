@@ -3,7 +3,7 @@ import {
   keepPreviousData,
   useMutation,
   useQuery,
-  useQueryClient,
+  useQueryClient
 } from "@tanstack/react-query";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -13,7 +13,7 @@ import {
   type InboxAction,
   type InboxItem,
   type InboxListFilters,
-  type InboxViewMode,
+  type InboxViewMode
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { inboxListRefetchInterval } from "./inbox-stream-status";
@@ -23,7 +23,7 @@ import {
   type InboxFilterChangeValue,
   type InboxFilterKey,
   type InboxUuidFilterDrafts,
-  type InboxUuidFilterKey,
+  type InboxUuidFilterKey
 } from "./components/inbox-shell";
 import { useInboxStreamStatus } from "./use-inbox-stream-status";
 
@@ -47,12 +47,12 @@ const DEFAULT_INBOX_FILTERS = {
   // 默认只看 open:服务端无 status 过滤时会返回 resolved/cancelled 项,
   // "待处理事项"列表会把几天前已处理的旧项继续标成待处理(外部渠道 resolve
   // 后该项也因此永不消失)。用户可用状态筛选切回"所有"。
-  status: "open",
+  status: "open"
 } satisfies InboxListFilters;
 
 const EMPTY_UUID_FILTER_DRAFTS = {
   project_id: "",
-  target_user_id: "",
+  target_user_id: ""
 } satisfies InboxUuidFilterDrafts;
 
 const UUID_FILTER_ERROR = "请输入有效 UUID";
@@ -82,11 +82,11 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   );
   const [view, setView] = useState<InboxViewMode>("mine");
   const [filters, setFilters] = useState<InboxListFilters>(() => ({
-    ...DEFAULT_INBOX_FILTERS,
-  }));
+    ...DEFAULT_INBOX_FILTERS
+}));
   const [uuidFilterDrafts, setUuidFilterDrafts] = useState<InboxUuidFilterDrafts>(() => ({
-    ...EMPTY_UUID_FILTER_DRAFTS,
-  }));
+    ...EMPTY_UUID_FILTER_DRAFTS
+}));
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
   // 提交按事项并行:记录在飞事项 id,弹窗仅在"当前事项在飞"时置提交中,不同事项互不阻塞。
   const [pendingItemIds, setPendingItemIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -97,8 +97,8 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   const uuidFilterErrors = useMemo(
     () => ({
       project_id: getUuidFilterError(uuidFilterDrafts.project_id),
-      target_user_id: getUuidFilterError(uuidFilterDrafts.target_user_id),
-    }),
+      target_user_id: getUuidFilterError(uuidFilterDrafts.target_user_id)
+}),
     [uuidFilterDrafts],
   );
 
@@ -120,14 +120,14 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     // 主刷新由全局 SSE（含 onopen 重连追平）驱动；连上时 15s 兜底，断流 5s 快拉。
     // 覆盖 main.tsx 里 DEV 关闭的 refetchOnWindowFocus——守候人切回 tab 必须追平。
     refetchInterval: inboxListRefetchInterval(streamStatus.connection),
-    refetchOnWindowFocus: true,
-  });
+    refetchOnWindowFocus: true
+});
 
   const actionMutation = useMutation({
     mutationFn: ({
       itemId,
-      input,
-    }: {
+      input
+}: {
       itemId: string;
       input: ExecuteInboxActionInput;
     }) => executeInboxAction(apiOptions, itemId, input),
@@ -157,8 +157,8 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
         next.delete(itemId);
         return next;
       });
-    },
-  });
+    }
+});
 
   return (
     <>
@@ -208,8 +208,8 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
 
           return actionMutation.mutateAsync({
             input,
-            itemId: current.item.id,
-          });
+            itemId: current.item.id
+});
         }}
         open={Boolean(selectedAction)}
         pending={selectedAction ? pendingItemIds.has(selectedAction.item.id) : false}

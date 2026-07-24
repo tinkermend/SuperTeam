@@ -12,9 +12,8 @@ import {
   Link as LinkIcon,
   Plus,
   Search as SearchIcon,
-  XCircle,
+  XCircle
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -22,7 +21,7 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -30,11 +29,11 @@ import {
   MasterDetailLayout,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3EmptyState,
-  V3ErrorState,
-  V3LoadingState,
-  type V3Tone,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  type Tone
 } from "@/components/superteam";
 import {
   getDigitalEmployeeOverview,
@@ -42,7 +41,7 @@ import {
   type DigitalEmployeeOverview,
   type DigitalEmployeeOverviewFilters,
   type DigitalEmployeeOverviewItem,
-  type OverviewFilterOption,
+  type OverviewFilterOption
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
@@ -78,15 +77,15 @@ type EmployeesViewProps = {
 export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
   const [filters, setFilters] = useState<DigitalEmployeeOverviewFilters>({
     limit: DEFAULT_PAGE_SIZE,
-    offset: 0,
-  });
+    offset: 0
+});
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>();
 
   const overview = useQuery({
     queryKey: ["digital-employee-overview", filters],
     queryFn: () => getDigitalEmployeeOverview({ baseUrl: apiBaseUrl, fetcher }, filters),
-    placeholderData: keepPreviousData,
-  });
+    placeholderData: keepPreviousData
+});
 
   const filterOptions = overview.data?.filters;
   const items = overview.data?.items ?? [];
@@ -120,8 +119,8 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
   const handlePageChange = (offset: number) => {
     setFilters((current) => ({
       ...current,
-      offset: Math.max(0, offset),
-    }));
+      offset: Math.max(0, offset)
+}));
   };
 
   const handlePageSizeChange = (value: string) => {
@@ -129,8 +128,8 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
     setFilters((current) => ({
       ...current,
       limit: Number.isFinite(nextLimit) && nextLimit > 0 ? nextLimit : DEFAULT_PAGE_SIZE,
-      offset: 0,
-    }));
+      offset: 0
+}));
   };
 
   return (
@@ -174,7 +173,7 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
                   />
                   {items.length === 0 ? (
                     <SoftCard>
-                      <V3EmptyState title="暂无数字员工" />
+                      <EmptyState title="暂无数字员工" />
                     </SoftCard>
                   ) : (
                     <div className="flex flex-col gap-4">
@@ -208,11 +207,11 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
           ) : null}
           {overview.isLoading ? (
             <SoftCard>
-              <V3LoadingState label="加载数字员工..." />
+              <LoadingState label="加载数字员工..." />
             </SoftCard>
           ) : null}
           {overview.isError ? (
-            <V3ErrorState title="加载失败" onRetry={() => void overview.refetch()} />
+            <ErrorState title="加载失败" onRetry={() => void overview.refetch()} />
           ) : null}
         </div>
       </Main>
@@ -278,24 +277,24 @@ function GalleryTrendStrip({ overview }: { overview: DigitalEmployeeOverview }) 
 }
 
 /** 静态映射：避免 Tailwind JIT 无法识别动态拼接的 class。 */
-const toneIconText: Record<V3Tone, string> = {
-  brand: "text-v3-brand",
-  info: "text-v3-info",
-  ok: "text-v3-ok",
-  warn: "text-v3-warn",
-  danger: "text-v3-danger",
-  mute: "text-v3-mute",
-  artifact: "text-v3-artifact",
+const toneIconText: Record<Tone, string> = {
+  brand: "text-brand",
+  info: "text-info",
+  ok: "text-ok",
+  warn: "text-warn",
+  danger: "text-danger",
+  mute: "text-mute",
+  artifact: "text-artifact"
 };
 
-const toneIconSoftBg: Record<V3Tone, string> = {
-  brand: "bg-v3-brand-soft",
-  info: "bg-v3-info-soft",
-  ok: "bg-v3-ok-soft",
-  warn: "bg-v3-warn-soft",
-  danger: "bg-v3-danger-soft",
-  mute: "bg-v3-mute-soft",
-  artifact: "bg-v3-artifact-soft",
+const toneIconSoftBg: Record<Tone, string> = {
+  brand: "bg-brand-soft",
+  info: "bg-info-soft",
+  ok: "bg-ok-soft",
+  warn: "bg-warn-soft",
+  danger: "bg-danger-soft",
+  mute: "bg-mute-soft",
+  artifact: "bg-artifact-soft"
 };
 
 function TrendStatCard({
@@ -304,17 +303,17 @@ function TrendStatCard({
   label,
   value,
   accentGradient,
-  distribution,
+  distribution
 }: {
   icon: ReactNode;
-  iconTone: V3Tone;
+  iconTone: Tone;
   label: string;
   value: string;
   accentGradient: string;
   distribution?: ReactNode;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-v3-card border border-v3-line bg-v3-card p-4 shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-v3-pop">
+    <div className="group relative overflow-hidden rounded-card border border-line bg-card p-4 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-pop">
       <span
         aria-hidden
         className={cn("absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r", accentGradient)}
@@ -330,10 +329,10 @@ function TrendStatCard({
           {icon}
         </span>
       </div>
-      <p className="text-[22px] font-extrabold leading-none tracking-tight tabular-nums text-v3-ink">
+      <p className="text-[22px] font-extrabold leading-none tracking-tight tabular-nums text-ink">
         {value}
       </p>
-      <p className="mt-1.5 text-[12px] font-semibold text-v3-ink-2">{label}</p>
+      <p className="mt-1.5 text-[12px] font-semibold text-ink-2">{label}</p>
       {distribution ? <div className="mt-2.5">{distribution}</div> : null}
     </div>
   );
@@ -341,19 +340,19 @@ function TrendStatCard({
 
 function StatusDistributionBar({
   counts,
-  total,
+  total
 }: {
   counts: Partial<Record<DigitalEmployeeOperationalStatus, number>>;
   total: number;
 }) {
   const segments: Array<{ status: DigitalEmployeeOperationalStatus; count: number; color: string }> = [
-    { status: "idle", count: counts.idle ?? 0, color: "bg-v3-ok" },
-    { status: "working", count: counts.working ?? 0, color: "bg-v3-info" },
-    { status: "queued", count: counts.queued ?? 0, color: "bg-v3-warn" },
-    { status: "waiting_human", count: counts.waiting_human ?? 0, color: "bg-v3-warn" },
-    { status: "error", count: counts.error ?? 0, color: "bg-v3-danger" },
-    { status: "unavailable", count: counts.unavailable ?? 0, color: "bg-v3-mute" },
-    { status: "needs_configuration", count: counts.needs_configuration ?? 0, color: "bg-v3-mute" },
+    { status: "idle", count: counts.idle ?? 0, color: "bg-ok" },
+    { status: "working", count: counts.working ?? 0, color: "bg-info" },
+    { status: "queued", count: counts.queued ?? 0, color: "bg-warn" },
+    { status: "waiting_human", count: counts.waiting_human ?? 0, color: "bg-warn" },
+    { status: "error", count: counts.error ?? 0, color: "bg-danger" },
+    { status: "unavailable", count: counts.unavailable ?? 0, color: "bg-mute" },
+    { status: "needs_configuration", count: counts.needs_configuration ?? 0, color: "bg-mute" },
   ];
 
   const active = segments.filter((s) => s.count > 0);
@@ -372,7 +371,7 @@ function StatusDistributionBar({
           title={`${operationalStatusLabel[seg.status]} ${seg.count}`}
         />
       ))}
-      <span className="ml-1.5 shrink-0 text-[10px] font-medium tabular-nums text-v3-ink-3">
+      <span className="ml-1.5 shrink-0 text-[10px] font-medium tabular-nums text-ink-3">
         {total}
       </span>
     </div>
@@ -388,7 +387,7 @@ function GalleryFilterBar({
   filters,
   filterOptions,
   onFilterChange,
-  onSearchChange,
+  onSearchChange
 }: {
   filters: DigitalEmployeeOverviewFilters;
   filterOptions?: DigitalEmployeeOverview["filters"];
@@ -398,7 +397,7 @@ function GalleryFilterBar({
   const [showMore, setShowMore] = useState(false);
 
   return (
-    <SoftCard className="rounded-v3-card">
+    <SoftCard className="rounded-card">
       <div className="flex flex-col gap-3 p-3.5">
         <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[minmax(200px,1.4fr)_repeat(3,minmax(120px,1fr))]">
           <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
@@ -460,7 +459,7 @@ function GalleryFilterBar({
         <button
           type="button"
           onClick={() => setShowMore((v) => !v)}
-          className="self-start text-xs font-semibold text-v3-brand transition-colors hover:text-v3-brand-deep"
+          className="self-start text-xs font-semibold text-brand transition-colors hover:text-brand-deep"
         >
           {showMore ? "收起筛选" : "更多筛选"}
         </button>
@@ -478,7 +477,7 @@ function GalleryFilterBar({
 function AvatarGalleryCard({
   item,
   selected,
-  onSelect,
+  onSelect
 }: {
   item: DigitalEmployeeOverviewItem;
   selected: boolean;
@@ -501,11 +500,11 @@ function AvatarGalleryCard({
       }}
       tabIndex={0}
       className={cn(
-        "group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-v3-card border border-v3-line bg-v3-card p-4 text-left shadow-v3 transition-all duration-200 hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v3-brand/60",
-        selected && "border-v3-brand bg-v3-brand-soft/40 shadow-v3-pop ring-1 ring-v3-brand/20",
+        "group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-card border border-line bg-card p-4 text-left shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+        selected && "border-brand bg-brand-soft/40 shadow-pop ring-1 ring-brand/20",
       )}
     >
-      {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-v3-brand" /> : null}
+      {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-brand" /> : null}
 
       {/* 状态：独立置于右上角一行，不挤压名称宽度 */}
       <div className="flex justify-end">
@@ -516,16 +515,16 @@ function AvatarGalleryCard({
       <div className="mt-2 flex items-center gap-3.5">
         <EmployeeAvatar asset={avatarAsset} name={identity.name} size="xxl" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[14.5px] font-bold text-v3-ink">{identity.name}</p>
-          <p className="mt-0.5 truncate text-[11.5px] text-v3-ink-3">
+          <p className="truncate text-[14.5px] font-bold text-ink">{identity.name}</p>
+          <p className="mt-0.5 truncate text-[11.5px] text-ink-3">
             {identity.team_name?.trim() || "无团队归属"}
           </p>
         </div>
       </div>
 
       {/* 主角指标：最近运行 */}
-      <div className="mt-3.5 rounded-v3-inner bg-v3-card-soft px-3 py-2.5">
-        <p className="text-[11px] font-medium text-v3-ink-3">最近运行</p>
+      <div className="mt-3.5 rounded-inner bg-card-soft px-3 py-2.5">
+        <p className="text-[11px] font-medium text-ink-3">最近运行</p>
         <p
           className={cn(
             "mt-1 truncate text-[17px] font-extrabold leading-tight tracking-tight",
@@ -537,11 +536,11 @@ function AvatarGalleryCard({
       </div>
 
       {/* 次级元信息：治理 + 预算 */}
-      <p className="mt-2.5 text-[11px] text-v3-ink-3">{governanceLine(item)}</p>
+      <p className="mt-2.5 text-[11px] text-ink-3">{governanceLine(item)}</p>
       <BudgetBar summary={item.budget_summary} />
 
       {/* 操作：单一主操作 + 次操作 */}
-      <div className="mt-auto flex items-center gap-2 border-t border-v3-line pt-2.5">
+      <div className="mt-auto flex items-center gap-2 border-t border-line pt-2.5">
         <Button asChild size="sm" className="flex-1" onClick={(event) => event.stopPropagation()}>
           <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
             详情
@@ -559,24 +558,24 @@ function AvatarGalleryCard({
 
 function BudgetBar({ summary }: { summary: DigitalEmployeeOverviewItem["budget_summary"] }) {
   if (!summary.daily_token_limit) {
-    return <p className="mt-2 text-[11px] text-v3-ink-3">Token 预算：无预算上限</p>;
+    return <p className="mt-2 text-[11px] text-ink-3">Token 预算：无预算上限</p>;
   }
 
   const percent = Math.min(summary.usage_percent_today ?? 0, 100);
 
   return (
     <div className="mt-2 flex flex-col gap-1">
-      <div className="flex items-center justify-between gap-2 text-[11px] text-v3-ink-3">
+      <div className="flex items-center justify-between gap-2 text-[11px] text-ink-3">
         <span>Token 预算</span>
         <span className="tabular-nums">
           {formatNumber(summary.usage_tokens_today)} / {formatNumber(summary.daily_token_limit)}
         </span>
       </div>
-      <div className="h-1 overflow-hidden rounded-full bg-v3-line">
+      <div className="h-1 overflow-hidden rounded-full bg-line">
         <div
           className={cn(
             "h-full rounded-full transition-all",
-            summary.limit_exceeded ? "bg-v3-danger" : "bg-v3-brand",
+            summary.limit_exceeded ? "bg-danger" : "bg-brand",
           )}
           style={{ width: `${percent}%` }}
         />
@@ -594,7 +593,7 @@ function EmployeeCardPagination({
   onOffsetChange,
   onPageSizeChange,
   pagination,
-  visibleCount,
+  visibleCount
 }: {
   isFetching: boolean;
   onOffsetChange: (offset: number) => void;
@@ -611,7 +610,7 @@ function EmployeeCardPagination({
   const canNext = offset + limit < totalCount;
 
   return (
-    <div className="flex flex-col gap-3 rounded-v3-inner border border-v3-line bg-v3-card px-4 py-3 shadow-v3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-inner border border-line bg-card px-4 py-3 shadow-card sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">
           第 {formatNumber(start)}-{formatNumber(end)} 条，共 {formatNumber(totalCount)} 个
@@ -622,7 +621,7 @@ function EmployeeCardPagination({
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">每页</span>
           <Select value={String(limit)} onValueChange={onPageSizeChange}>
-            <SelectTrigger aria-label="每页数量" className="h-9 w-[84px] rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft">
+            <SelectTrigger aria-label="每页数量" className="h-9 w-[84px] rounded-xl border-line-strong bg-card text-ink shadow-none hover:bg-card-soft">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -670,7 +669,7 @@ function EmployeeCardPagination({
 
 function GalleryRail({
   overview,
-  selectedItem,
+  selectedItem
 }: {
   overview: DigitalEmployeeOverview;
   selectedItem?: DigitalEmployeeOverviewItem;
@@ -719,11 +718,11 @@ function QueueRow({
   label,
   tone,
   to,
-  value,
+  value
 }: {
   action: string;
   label: string;
-  tone: V3Tone;
+  tone: Tone;
   to: string;
   value: number;
 }) {
@@ -761,11 +760,11 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
         <h2 className="font-semibold">选中员工</h2>
       </div>
       <div className="flex flex-col items-center gap-3">
-        <div className="flex size-[5.5rem] items-center justify-center rounded-full bg-v3-card-soft ring-1 ring-v3-line">
+        <div className="flex size-[5.5rem] items-center justify-center rounded-full bg-card-soft ring-1 ring-line">
           <EmployeeAvatar asset={avatarAsset} name={identity.name} size="hero" />
         </div>
         <div className="w-full text-center">
-          <p className="truncate font-semibold text-v3-ink">{identity.name}</p>
+          <p className="truncate font-semibold text-ink">{identity.name}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {identity.team_name?.trim() || "无团队归属"}
           </p>
@@ -775,16 +774,16 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
         </div>
       </div>
       {description ? (
-        <div className="max-h-40 overflow-y-auto rounded-v3-inner bg-v3-card-soft px-3 py-2.5 text-left">
-          <p className="text-sm leading-5 text-v3-ink-2 whitespace-pre-wrap break-words">{description}</p>
+        <div className="max-h-40 overflow-y-auto rounded-inner bg-card-soft px-3 py-2.5 text-left">
+          <p className="text-sm leading-5 text-ink-2 whitespace-pre-wrap break-words">{description}</p>
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">暂无员工说明</p>
       )}
       <div className="flex flex-col gap-1.5 text-xs">
-        <div className="flex items-center justify-between rounded-lg bg-v3-card-soft px-3 py-2">
-          <span className="text-v3-ink-3">Provider</span>
-          <span className="text-right font-semibold text-v3-ink">{identityProviderLine(item)}</span>
+        <div className="flex items-center justify-between rounded-lg bg-card-soft px-3 py-2">
+          <span className="text-ink-3">Provider</span>
+          <span className="text-right font-semibold text-ink">{identityProviderLine(item)}</span>
         </div>
       </div>
       <div className="flex flex-col gap-2">
@@ -798,7 +797,7 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
                 <span
                   className={cn(
                     "mt-1 size-2 rounded-full",
-                    event.status === "failed" ? "bg-v3-danger" : "bg-v3-brand",
+                    event.status === "failed" ? "bg-danger" : "bg-brand",
                   )}
                 />
                 <div className="min-w-0 flex-1">
@@ -812,11 +811,11 @@ function GallerySelectedPanel({ item }: { item: DigitalEmployeeOverviewItem }) {
           </ol>
         )}
       </div>
-      <V3Button asChild className="w-full" variant="outline">
+      <Button asChild className="w-full" variant="outline">
         <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
           查看详情
         </Link>
-      </V3Button>
+      </Button>
     </div>
   );
 }
@@ -844,7 +843,7 @@ function FilterSelect({ label, value, options, onValueChange }: FilterSelectProp
         <SelectTrigger
           id={selectId}
           aria-label={label}
-          className="h-9 w-full rounded-xl border-v3-line-strong bg-v3-card text-v3-ink shadow-none hover:bg-v3-card-soft"
+          className="h-9 w-full rounded-xl border-line-strong bg-card text-ink shadow-none hover:bg-card-soft"
         >
           <SelectValue placeholder="全部" />
         </SelectTrigger>
@@ -976,8 +975,8 @@ function runTimeLabel(run: NonNullable<DigitalEmployeeOverviewItem["latest_run_s
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
-  }).format(date);
+    hour12: false
+}).format(date);
 }
 
 function eventTimeLabel(value: string) {
@@ -989,6 +988,6 @@ function eventTimeLabel(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
-  }).format(date);
+    hour12: false
+}).format(date);
 }

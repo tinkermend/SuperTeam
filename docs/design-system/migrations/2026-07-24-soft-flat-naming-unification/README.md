@@ -1,6 +1,8 @@
 # Soft-Flat 命名去版本化 + 组件双轨收敛
 
-> **状态**：草案（Draft）——仅文档，**禁止开工实现**，直至人类在 `11-human-review-checklist.md` 全部勾选确认。  
+> **状态**：In Progress（人类已于 2026-07-24 放行 A–F）  
+> **分支**：`codex/soft-flat-naming-unification`  
+> **worktree**：`.worktrees/soft-flat-naming-unification`  
 > **日期**：2026-07-24  
 > **范围**：`apps/web` 设计语言命名、项目级组件 API、Button 双实现、import 边界；不改业务行为与视觉意图。  
 > **风格终态名**：Soft-Flat（不再称为 v3 风格）

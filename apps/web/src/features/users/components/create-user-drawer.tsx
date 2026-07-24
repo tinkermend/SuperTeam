@@ -2,15 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/superteam";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
-  SheetTitle,
+  SheetTitle
 } from "@/components/ui/sheet";
 import { buildUserAvatarDataUri } from "@/components/superteam/user-identity";
 import { listTeamSummaries, type UserAvatar } from "@/lib/api";
@@ -45,7 +45,7 @@ const emptyDraft: CreateUserDraftState = {
   display_name: "",
   password: "",
   selectable_team_ids: [],
-  username: "",
+  username: ""
 };
 
 export function CreateUserDrawer({
@@ -55,21 +55,21 @@ export function CreateUserDrawer({
   onOpenChange,
   onSubmit,
   open,
-  submitError,
+  submitError
 }: CreateUserDrawerProps) {
   const [draft, setDraft] = useState<CreateUserDraftState>(emptyDraft);
   const apiOptions = useMemo(
     () => ({
       baseUrl: apiBaseUrl,
-      fetcher,
-    }),
+      fetcher
+}),
     [apiBaseUrl, fetcher],
   );
   const teamsQuery = useQuery({
     enabled: open,
     queryFn: () => listTeamSummaries(apiOptions, { status: "active" }),
-    queryKey: ["users", "create", "teams"],
-  });
+    queryKey: ["users", "create", "teams"]
+});
   const teams = teamsQuery.data ?? [];
   const activeTeams = teams.filter((team) => team.status === "active");
   const teamsHasError = Boolean(teamsQuery.error);
@@ -121,8 +121,8 @@ export function CreateUserDrawer({
                 display_name: draft.display_name.trim(),
                 password: draft.password,
                 selectable_team_ids: draft.selectable_team_ids,
-                username: draft.username.trim(),
-              });
+                username: draft.username.trim()
+});
             }
           }}
         >
@@ -231,7 +231,7 @@ function AvatarSelection({
   onSelect,
   presets,
   previewUsername,
-  selectedAvatar,
+  selectedAvatar
 }: {
   disabled: boolean;
   onSelect: (value: UserAvatar) => void;

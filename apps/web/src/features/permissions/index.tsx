@@ -35,7 +35,7 @@ export function PermissionsCenter({
   apiBaseUrl = resolveControlPlaneUrl(),
   fetcher,
   activeTab,
-  onTabChange,
+  onTabChange
 }: PermissionsCenterProps) {
   const apiOptions = useMemo<ApiClientOptions>(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
   const [internalTab, setInternalTab] = useState(DEFAULT_TAB);
@@ -53,14 +53,14 @@ export function PermissionsCenter({
         title="权限中心"
         subtitle="集中查看授权决策、Runtime 执行范围和成员角色。"
       />
-      <Main width="wide" className="min-w-0 text-v3-ink">
+      <Main width="wide" className="min-w-0 text-ink">
         <Tabs value={value} onValueChange={handleValueChange} className="gap-4">
-          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-v3-card p-1.5 text-v3-ink-2 shadow-v3">
+          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-card p-1.5 text-ink-2 shadow-card">
             {tabItems.map((tab) => (
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
-                className="h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-v3-ink-2 shadow-none transition-colors hover:bg-v3-card-soft hover:text-v3-ink focus-visible:ring-v3-brand/60 focus-visible:ring-offset-v3-bg data-[state=active]:bg-v3-brand-soft data-[state=active]:text-v3-brand-deep data-[state=active]:shadow-none dark:text-v3-ink-2 dark:data-[state=active]:bg-v3-brand-soft dark:data-[state=active]:text-v3-brand-deep"
+                className="h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-ink-2 shadow-none transition-colors hover:bg-card-soft hover:text-ink focus-visible:ring-brand/60 focus-visible:ring-offset-background data-[state=active]:bg-brand-soft data-[state=active]:text-brand-deep data-[state=active]:shadow-none dark:text-ink-2 dark:data-[state=active]:bg-brand-soft dark:data-[state=active]:text-brand-deep"
               >
                 {tab.label}
               </TabsTrigger>

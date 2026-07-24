@@ -11,7 +11,7 @@ import { NotFoundError } from '@/features/errors/not-found-error'
 import { UnauthorisedError } from '@/features/errors/unauthorized-error'
 
 export const Route = createFileRoute('/_authenticated/errors/$error')({
-  component: RouteComponent,
+  component: RouteComponent
 })
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -23,8 +23,8 @@ function RouteComponent() {
     forbidden: ForbiddenError,
     'not-found': NotFoundError,
     'internal-server-error': GeneralError,
-    'maintenance-error': MaintenanceError,
-  }
+    'maintenance-error': MaintenanceError
+}
   const ErrorComponent = errorMap[error] || NotFoundError
 
   return (

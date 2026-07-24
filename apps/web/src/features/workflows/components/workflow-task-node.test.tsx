@@ -22,8 +22,8 @@ function makeTaskData(overrides: Partial<WorkflowTaskNodeData> = {}): WorkflowTa
     summary: "任务摘要",
     task: {} as ProjectTaskGraphNode,
     title: "任务标题",
-    ...overrides,
-  };
+    ...overrides
+};
 }
 
 describe("WorkflowTaskNode", () => {
@@ -35,9 +35,9 @@ describe("WorkflowTaskNode", () => {
         id: "avatar-1",
         label: "Adventurer 1",
         imageUrl: TEST_AVATAR_SRC,
-        thumbnailUrl: TEST_AVATAR_SRC,
-      },
-    });
+        thumbnailUrl: TEST_AVATAR_SRC
+}
+});
 
     const screen = await render(
       <ReactFlowProvider>
@@ -71,8 +71,8 @@ describe("WorkflowTaskNode", () => {
   it("renders known employee role identifiers as Chinese labels", async () => {
     const data = makeTaskData({
       employeeName: "通用执行员",
-      employeeRole: "general_engineer",
-    });
+      employeeRole: "general_engineer"
+});
 
     const screen = await render(
       <ReactFlowProvider>
@@ -126,8 +126,8 @@ describe("WorkflowTaskNode", () => {
   it("renders task and run statuses in Chinese labels", async () => {
     const data = makeTaskData({
       runStatus: "queued",
-      status: "waiting_human",
-    });
+      status: "waiting_human"
+});
 
     const screen = await render(
       <ReactFlowProvider>
@@ -162,8 +162,8 @@ describe("WorkflowTaskNode", () => {
             employeeCount: 2,
             stageIndex: 1,
             taskCount: 2,
-            title: "并行审查",
-          }}
+            title: "并行审查"
+}}
           deletable={false}
           dragging={false}
           draggable={false}

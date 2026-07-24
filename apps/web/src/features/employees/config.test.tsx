@@ -6,39 +6,39 @@ import { render } from "vitest-browser-react";
 import { EmployeeConfigView } from "./config";
 
 vi.mock("@/components/layout/header", () => ({
-  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
+  Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
 }));
 
 vi.mock("@/components/layout/main", () => ({
-  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  Main: ({ children }: { children: ReactNode }) => <main>{children}</main>
 }));
 
 vi.mock("@/components/search", () => ({
-  Search: () => <button type="button">Search</button>,
+  Search: () => <button type="button">Search</button>
 }));
 
 vi.mock("@/components/theme-switch", () => ({
-  ThemeSwitch: () => <button type="button">Toggle theme</button>,
+  ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
 
 // 能力面板有自己的数据获取与测试;配置页单测在此边界打桩,只验 config.tsx 自身逻辑。
 vi.mock("./components/employee-capabilities-panel", () => ({
-  EmployeeCapabilitiesPanel: () => <div data-testid="capabilities-panel" />,
+  EmployeeCapabilitiesPanel: () => <div data-testid="capabilities-panel" />
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string; params?: unknown }) => (
     <a href={to}>{children}</a>
-  ),
+  )
 }));
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
-      queries: { retry: false },
-    },
-  });
+      queries: { retry: false }
+}
+});
 }
 
 const employee = {
@@ -59,12 +59,12 @@ const employee = {
     skills: ["incident-diagnosis"],
     mcp_servers: ["postgres-readonly"],
     external_capabilities: [],
-    environment_variable_refs: ["PG_DSN"],
-  },
+    environment_variable_refs: ["PG_DSN"]
+},
   budget_policy: {},
   risk_level: "medium",
   created_at: "2026-06-07T00:00:00Z",
-  updated_at: "2026-06-07T00:00:00Z",
+  updated_at: "2026-06-07T00:00:00Z"
 };
 
 function requestUrl(input: RequestInfo | URL) {
@@ -83,8 +83,8 @@ function routeKey(input: RequestInfo | URL, init?: RequestInit) {
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
-  });
+    headers: { "content-type": "application/json" }
+});
 }
 
 function createEmployeeConfigFetcher() {
@@ -193,10 +193,10 @@ describe("EmployeeConfigView", () => {
       persona_memory_markdown: "# 人格画像\n需求拆解优先",
       capability_bindings: {
         external_capabilities: [],
-        environment_variable_refs: ["PG_DSN"],
-      },
-      budget_policy: {},
-    });
+        environment_variable_refs: ["PG_DSN"]
+},
+      budget_policy: {}
+});
   });
 
   it.each(["0", "12.5"])("blocks invalid daily token budget %s when saving", async (invalidValue) => {

@@ -2,7 +2,7 @@
 
 ## 使用方式
 
-这是 SuperTeam Web 设计系统的总入口。前端页面、布局或样式变更前必须先读本文件；只有当任务涉及具体组件族时，再按下方路由表读取对应子文档，避免每次加载完整设计上下文。
+这是 SuperTeam Web 设计系统的总入口。 **命名迁移进行中**：去 V3 前缀与 Button 双轨收敛见 `docs/design-system/migrations/2026-07-24-soft-flat-naming-unification/`（分支 `codex/soft-flat-naming-unification`）。前端页面、布局或样式变更前必须先读本文件；只有当任务涉及具体组件族时，再按下方路由表读取对应子文档，避免每次加载完整设计上下文。
 
 本文件只定义通用视觉方向、设计尺度、文档路由和收尾检查，不定义具体业务内容模板。页面中的名称、指标、事件、状态、模型、时间线和说明文案必须来自当前业务需求、真实接口、已有 mock 约定或明确的占位数据说明。
 
@@ -16,7 +16,7 @@ SuperTeam Web 是企业级平台，用于管理、观察、审批和验收 AI �
 
 SuperTeam Web 的目标风格为 **“软扁平 + 蓝色主强调 + 一套语言两种容器 + 统一语义状态 + 矩枢视觉母题”**：近白冷灰打底、大圆角白卡、极淡弥散阴影、黑色粗体大数字配灰色小标签，通过节点、网络、中枢、调度的细线/网格语言形成平台识别。整体明亮、克制、扁平、有质感，但不做高饱和、强霓虹、营销页或纯装饰界面。
 
-v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/` 仅作为视觉参考（dashboard / project-detail / skills / employees / projects），不得复制其中的内联 CSS 或把原型样式当作新的规则文件。
+Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/` 仅作为视觉参考（dashboard / project-detail / skills / employees / projects），不得复制其中的内联 CSS 或把原型样式当作新的规则文件。
 
 设计尺度：
 
@@ -47,12 +47,12 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 
 **玻璃卡用不用，看内容密度，不看页面身份。** 判定口径只看"这块内容是否需要逐行密集扫读 / 审计"：低密度面（单一主动作的入口/创建画布、KPI/概览、字段有限的实体详情、摘要/预检面板）可在极光背景上叠加玻璃卡（Glass Card）；高密度 / 审计面（逐行密集表格、日志、审计）一律用不透明 Soft Card / 脆数据面。玻璃只做外壳，内部逐行内容与输入仍退回实底（见「玻璃壳装实底内核」）。Glass Card 的具体样式规范见 `docs/design-system/surfaces.md`「玻璃卡」章节。
 
-- **唯一实现来源（三层）**：① **Token**——极光背景、玻璃、色值、圆角全部来自 `apps/web/src/styles/theme.css` 的 `--v3-aurora-*` token（浅/深色自动切换）；② **表面基元**——全局极光背景、半透明侧栏与玻璃卡表面（`.v3-glass` / `.v3-glass-inner`）在 `apps/web/src/styles/index.css` 统一定义，玻璃卡对外只经组件 `GlassCard`（`@/components/superteam`）复用；③ **页面组合**——feature 内的 `*aurora.css`（`.tl-*` 等）**只承载该页专属布局**（如 task-launch 的 `.tl-cmd/.tl-textarea/.tl-params`），不得重新声明玻璃表面或复制色值。扩展玻璃必须先改 `--v3-aurora-*` token，再落到 `.v3-glass` / `GlassCard`；不得在页面重抄内联极光 CSS 或新建平行 `*-glass` 类。
+- **唯一实现来源（三层）**：① **Token**——极光背景、玻璃、色值、圆角全部来自 `apps/web/src/styles/theme.css` 的 `--aurora-*` token（浅/深色自动切换）；② **表面基元**——全局极光背景、半透明侧栏与玻璃卡表面（`.glass` / `.glass-inner`）在 `apps/web/src/styles/index.css` 统一定义，玻璃卡对外只经组件 `GlassCard`（`@/components/superteam`）复用；③ **页面组合**——feature 内的 `*aurora.css`（`.tl-*` 等）**只承载该页专属布局**（如 task-launch 的 `.tl-cmd/.tl-textarea/.tl-params`），不得重新声明玻璃表面或复制色值。扩展玻璃必须先改 `--aurora-*` token，再落到 `.glass` / `GlassCard`；不得在页面重抄内联极光 CSS 或新建平行 `*-glass` 类。
 - **背景底不需要每页开关**：全局背景由共享 shell 组件承载，页面无需任何 per-page class 或 effect；不要再引入 `body.*-page` 之类的每页切换。
 
 玻璃分层（按内容密度，与页面身份无关）：
 
-- **低密度面 · 玻璃外壳可选**（单一主 CTA、KPI/概览、字段有限的实体详情、摘要/预检面板）：入口/创建画布如任务发起 `/task-launches`（基准实现）、技能上传 `/skills/upload`、登录与 onboarding 空状态；概览/详情如运行总览 `/run-overview` 右侧概况卡与员工详情卡。玻璃只做外壳，内部逐行内容/输入退回实底（当前任务、消耗、日志行用 `.v3-glass-inner` 或实底，进度/分隔线用 `--v3-aurora-hairline`）。玻璃是"可选强调"而非必须：首页 hub `/`、实体目录（数字员工/技能/团队）、详情头卡等继续以不透明 Soft Card 为主，只有需要沉浸感的入口/概览面才叠玻璃。
+- **低密度面 · 玻璃外壳可选**（单一主 CTA、KPI/概览、字段有限的实体详情、摘要/预检面板）：入口/创建画布如任务发起 `/task-launches`（基准实现）、技能上传 `/skills/upload`、登录与 onboarding 空状态；概览/详情如运行总览 `/run-overview` 右侧概况卡与员工详情卡。玻璃只做外壳，内部逐行内容/输入退回实底（当前任务、消耗、日志行用 `.glass-inner` 或实底，进度/分隔线用 `--aurora-hairline`）。玻璃是"可选强调"而非必须：首页 hub `/`、实体目录（数字员工/技能/团队）、详情头卡等继续以不透明 Soft Card 为主，只有需要沉浸感的入口/概览面才叠玻璃。
 - **高密度 / 审计面 · 必须实底脆数据面**（背景仍是极光，但内容**禁半透明、禁模糊**）：任何需逐行扫读、比较、判断的数据本体——项目队列、收件箱、流程编排/运行视图、注册表与配置（自动化/外部能力/MCP/协作集成）、审批队列、Runtime 监控、权限/成本/用户治理表格。**审计中心 `/audit`、日志管理 `/logs` 尤其严格**：内容面不得半透明、不得模糊，保证可读性与可审计可信度。
 
 判据的三条硬理由（为何高密度/审计面禁玻璃）：① 半透明下文字实际对比度随背后极光深浅漂移，密集小字/等宽 UUID/长日志最先掉到不可读；② `backdrop-filter` 每帧重绘，长滚动表格/日志在中低端设备会卡；③ 审计/日志面需要"确凿实底"的可信感。一旦某面从低密度概览演进为承载逐行密集数据或审计，必须退回不透明脆数据面，不得为保持观感把内容面继续套玻璃。
@@ -66,7 +66,7 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 - **默认安静，例外强调**：后台工作台默认保持中性卡面、高可读文字和克制边框。语义色优先用于状态点、图标、数字、pill、左侧 accent bar、焦点和关键动作；不要因为“有数量、有风险、有待处理”就使用大面积暖色、渐变或高饱和背景。
 - **状态色表达语义，不表达情绪**：危险、预警、成功、信息等颜色只表达状态含义。大面积危险/预警底色只用于真正需要打断用户判断、阻断流程或确认危险操作的场景；普通工作对象列表优先用左侧 accent bar、状态 pill 和文字说明。
 - **状态色和类别色分家**：ok / warn / danger / mute 只允许出现在状态 pill、状态圆点、accent bar 和 tone 行；类别/装饰图标（IconTile 等）默认 mute 或 brand-soft，不按实体类型换色；artifact 紫只表示"工件"这一个类别，不进状态词表。数值为 0 或无需人工介入的指标不点亮语义色。
-- **彩色文字只保留两种**：链接/主操作（brand）与 danger 警示。时间、结果等元信息一律灰阶文字 + 前置语义色圆点（如"上次运行成功 · 7 小时前"），不用绿字/橙字直接写正文；soft 底上的文字必须用对应 `--v3-*-text` 层（≥4.5:1），不得直接用 solid。一行或一卡最多 1 个语义色状态编码，同屏指标/图标带最多 2 种非灰色调。
+- **彩色文字只保留两种**：链接/主操作（brand）与 danger 警示。时间、结果等元信息一律灰阶文字 + 前置语义色圆点（如"上次运行成功 · 7 小时前"），不用绿字/橙字直接写正文；soft 底上的文字必须用对应 `--*-text` 层（≥4.5:1），不得直接用 solid。一行或一卡最多 1 个语义色状态编码，同屏指标/图标带最多 2 种非灰色调。
 - **长内容列内消化**：标题、摘要、ID、路径、错误信息、来源对象和时间等字段必须有换行、截断、两行 clamp、等宽断行、展开详情或 tooltip 策略。除日志、代码、diff、宽矩阵等天然横向内容外，不应让用户横向滚动才能读完一列信息。
 - **时间可见**：工作对象列表/队列每一行必须展示一个主时间字段。相对时间为主、使用 `tabular-nums`；绝对时间可用 tooltip 或 `dateTime` 属性补充。不得只展示标题、摘要和状态而省略时间。
 - **默认新近优先**：无领域分组时按主时间倒序；有稳定业务分组（如流程河道的需介入 / 进行中 / 已完成）时，组内仍按主时间倒序。主时间口径：任务用 `updated_at`（活动），审批用 `created_at`（待办等待感；已决议可辅以 `resolved_at`），流程实例用 `created_at`（创建）。
@@ -93,7 +93,7 @@ v3 Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/
 
 ## Token 落地策略
 
-v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。新增或调整 token 必须先改 `apps/web/src/styles/theme.css` 事实源，再同步本设计文档；不要为单页或非 v3 样式重新引入平行 token 体系。
+Soft-Flat token 是当前唯一项目级设计 token 基线，命名族为 `--*`。新增或调整 token 必须先改 `apps/web/src/styles/theme.css` 事实源，再同步本设计文档；不要为单页或非 v3 样式重新引入平行 token 体系。
 
 ## 概念到代码（组件与 token 速查）
 
@@ -102,31 +102,31 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 | 概念 / 场景 | 组件 |
 | --- | --- |
 | 柔和卡片（外壳 / 面板 / 表格容器） | `SoftCard` |
-| 玻璃卡（低密度入口/概览/详情面板） | `GlassCard`（唯一实现 `.v3-glass`，取自 `--v3-aurora-*`；内层用 `.v3-glass-inner`、按钮用 `V3Button variant="glass"`；禁用于密集表格/审计/日志） |
-| 概览指标卡（大数字 + 标签） | `V3MetricCard` |
+| 玻璃卡（低密度入口/概览/详情面板） | `GlassCard`（唯一实现 `.glass`，取自 `--aurora-*`；内层用 `.glass-inner`、按钮用 `Button variant="glass"`；禁用于密集表格/审计/日志） |
+| 概览指标卡（大数字 + 标签） | `MetricCard` |
 | 页面宽度档位（contained/wide/canvas） | `Main width`（`@/components/layout/main`，档位规则见 `docs/design-system/layout-density.md`「宽度档位」） |
 | 主从布局（队列 + 按需详情层） | `MasterDetailLayout`（detail 选中才传入，宽容器 in-flow 右栏 / 窄容器 Sheet；rail 两档 340/420 可压缩；禁手写 `grid-cols-[…_NNNpx]` 与常驻空态右栏） |
 | KPI 指标带（宽度有界的指标卡栅格） | `MetricGrid`（卡片 208–336px 自动换行左对齐） |
 | signature 母题卡（每屏最多一块） | `SignatureCard` |
 | 脆数据面（装密集表格的软壳） | `WorkSurface` |
-| 密集表格及其单元 | `V3Table` / `V3Th` / `V3Td` / `V3Tr`（`tone="danger"\|"warn"` 给整行 accent bar） |
+| 密集表格及其单元 | `DataTable` / `Th` / `Td` / `Tr`（`tone="danger"\|"warn"` 给整行 accent bar） |
 | 语义状态胶囊 | `StatusPill`（`tone` 表达状态紧迫度） |
 | 语义图标芯片 | `IconTile` |
-| 页面标题区（标题 + 副标题 + 主操作） | `V3PageHeader` |
-| 主 / 次 / 危险 / 幽灵按钮 | `V3Button`（`variant`、`asChild` 用于 Link 按钮化） |
-| 图标按钮 / 筛选 chip / 分段 / Tabs | `V3IconButton` / `V3Chip` / `V3Segmented` / `V3Tabs` + `V3TabList` + `V3Tab` |
-| 工具栏搜索 / 分页 | `V3ToolbarSearch` / `V3Pagination` |
-| 加载 / 空 / 错误 / 无权限四态 | `V3StateSurface`（或单用 `V3LoadingState` / `V3EmptyState` / `V3ErrorState` / `V3PermissionDenied`） |
+| 页面标题区（标题 + 副标题 + 主操作） | `PageHeader` |
+| 主 / 次 / 危险 / 幽灵按钮 | `Button`（`variant`、`asChild` 用于 Link 按钮化） |
+| 图标按钮 / 筛选 chip / 分段 / Tabs | `IconButton` / `Chip` / `Segmented` / `PageTabs` + `PageTabList` + `PageTab` |
+| 工具栏搜索 / 分页 | `ToolbarSearch` / `Pagination` |
+| 加载 / 空 / 错误 / 无权限四态 | `StateSurface`（或单用 `LoadingState` / `EmptyState` / `ErrorState` / `PermissionDenied`） |
 
-最小页面骨架（页头 + 指标 + 软壳装脆数据 + 统一四态；组件 props 以 `apps/web/src/components/superteam/v3-components.tsx` 为准，文案 / 数据来自当前业务）：
+最小页面骨架（页头 + 指标 + 软壳装脆数据 + 统一四态；组件 props 以 `apps/web/src/components/superteam/primitives.tsx` 为准，文案 / 数据来自当前业务）：
 
 
 ## 落地策略
 
-- **统一基线**：新增页面、被触达页面和设计文档都按 v3 Soft-Flat 表达，不再把非 v3 视觉作为可选目标。
+- **统一基线**：新增页面、被触达页面和设计文档都按 Soft-Flat 表达，不再把非 Soft-Flat 视觉作为可选目标。
 - **组件沉淀**：以 `apps/web/src/components/superteam/` 的项目级组合组件承载柔和卡片、脆数据面、状态 pill、空状态和浮层骨架。
 - **验证纪律**：每次页面改造都走与改动范围匹配的真实端到端验证，不在 mock/组件测试层面声明完成。
-- **跨会话约定**：其他任务会话若基于本风格构建新功能/菜单页，应先读本文件“容器选择规则 / Token 落地策略 / 落地策略”和 `docs/design-system/` 下的 `tokens.md`、`surfaces.md`、`data-display.md`，再复用项目级 v3 组件与 `theme.css` 的 `--v3-*` token，不在单页重造卡片、表格、pill 或浮层样式。
+- **跨会话约定**：其他任务会话若基于本风格构建新功能/菜单页，应先读本文件“容器选择规则 / Token 落地策略 / 落地策略”和 `docs/design-system/` 下的 `tokens.md`、`surfaces.md`、`data-display.md`，再复用项目级 Soft-Flat 组件与 `theme.css` 的 `--*` token，不在单页重造卡片、表格、pill 或浮层样式。
 
 ## 不变量
 
@@ -135,11 +135,11 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 - **主栈一致**：优先使用 `apps/web/src/styles/theme.css` 的 token、`apps/web/src/components/superteam/` 的组合组件和 `apps/web/src/components/ui/` 的 shadcn/Radix primitive。
 - **组件优先复用**：跨页面出现的视觉模式、状态标签、图标容器、空状态、错误提示和面板布局，应优先沉淀成复用组件。
 - **状态可解释**：运行中、待确认、失败、受限、已完成、需人工处理等状态必须在视觉上可区分，并配有可追踪的原因、时间或下一步动作。
-- **统一演进**：新增页面和重构页面必须使用 v3 设计语言；清理存量页面时同步移除非 v3 视觉依赖。
+- **统一演进**：新增页面和重构页面必须使用 Soft-Flat 设计语言；清理存量页面时同步移除非 Soft-Flat 视觉依赖。
 
 ## 文档路由
 
-> **v3 优先级声明**：构建或改造页面时，视觉以 `DESIGN.md`（容器选择规则）+ `tokens.md` / `surfaces.md` / `data-display.md` + `components/superteam/` 的项目级组件 + `theme.css` 的 `--v3-*` token 为准。其他组件族文档若出现非 v3 视觉描述，以本声明和这三份 v3 子文档为准；保留其结构、可访问性、焦点、禁用、错误态、密度和图标语义规则。
+> **Soft-Flat 优先级声明**：构建或改造页面时，视觉以 `DESIGN.md`（容器选择规则）+ `tokens.md` / `surfaces.md` / `data-display.md` + `components/superteam/` 的项目级组件 + `theme.css` 的 `--*` token 为准。其他组件族文档若出现非 Soft-Flat 视觉描述，以本声明和这三份 Soft-Flat 子文档为准；保留其结构、可访问性、焦点、禁用、错误态、密度和图标语义规则。
 
 按任务读取最小必要上下文：
 
@@ -163,7 +163,7 @@ v3 token 是当前唯一项目级设计 token 基线，命名族为 `--v3-*`。�
 
 - `apps/web/src/styles/theme.css`：颜色、radius、shadow 和项目级 token 的代码事实源。
 - `apps/web/src/components/ui/`：shadcn/Radix primitive 层。除全站基础行为外，不承载业务组合组件。
-- `apps/web/src/components/superteam/`：SuperTeam 项目级设计组件层，用于组合 shadcn/ui 基础组件和项目 token。Tier A 玻璃卡基元 `GlassCard` 在此，样式单一来源为 `apps/web/src/styles/index.css` 的 `.v3-glass` / `.v3-glass-inner`（取自 `--v3-aurora-*` token）。
+- `apps/web/src/components/superteam/`：SuperTeam 项目级设计组件层，用于组合 shadcn/ui 基础组件和项目 token。Tier A 玻璃卡基元 `GlassCard` 在此，样式单一来源为 `apps/web/src/styles/index.css` 的 `.glass` / `.glass-inner`（取自 `--aurora-*` token）。
 - `docs/design-system/`：可读设计规范。文档指导实现，但不能取代代码 token 的事实源。
 - `docs/prototypes/design-direction-v3/`：v3 视觉方向参考；不是生产组件库，也不是 token 事实源。
 

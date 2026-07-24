@@ -18,16 +18,16 @@ import {
   SlidersHorizontal,
   Sparkles,
   X,
-  Zap,
+  Zap
 } from "lucide-react";
 import {
   ObjectRef,
   SoftCard,
   StatusPill,
-  V3Button,
-  V3StateSurface,
-  V3Tabs,
-  V3Tab,
+  Button,
+  StateSurface,
+  PageTabs,
+  PageTab
 } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -40,7 +40,7 @@ import type {
   InboxListFilters,
   InboxListResponse,
   InboxStatus,
-  InboxViewMode,
+  InboxViewMode
 } from "@/lib/api/inbox";
 import { cn } from "@/lib/utils";
 import type { InboxStreamConnection } from "../inbox-stream-status";
@@ -60,7 +60,7 @@ import {
   readDemandRefs,
   resolveInboxHref,
   riskLabel,
-  riskTone,
+  riskTone
 } from "./inbox-item-list";
 
 export type InboxFilterKey = "status" | "item_type" | "risk_level" | "project_id" | "target_user_id";
@@ -118,7 +118,7 @@ export function InboxShell({
   streamConnection,
   uuidFilterDrafts,
   uuidFilterErrors,
-  view,
+  view
 }: InboxShellProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const hasItems = Boolean(data?.items.length);
@@ -151,7 +151,7 @@ export function InboxShell({
         icon={<Inbox />}
         iconTone="brand"
       />
-      <Main width="wide" fixed className="flex min-h-0 flex-col gap-3 py-4 text-v3-ink">
+      <Main width="wide" fixed className="flex min-h-0 flex-col gap-3 py-4 text-ink">
         {/* 顶部：4 张对等小卡概览 + 视图分段 + 筛选工具条 */}
         <InboxSummaryCards summary={data?.summary} maxWaitMs={maxWaitMs} />
         <InboxToolbar
@@ -170,17 +170,17 @@ export function InboxShell({
 
         {mutationError ? (
           <div
-            className="shrink-0 rounded-v3-inner bg-v3-danger-soft p-4 text-sm text-v3-danger"
+            className="shrink-0 rounded-inner bg-danger-soft p-4 text-sm text-danger"
             role="alert"
           >
             <p className="font-bold">操作未完成</p>
-            <p className="mt-1 text-v3-ink-2">{mutationError.message}</p>
+            <p className="mt-1 text-ink-2">{mutationError.message}</p>
           </div>
         ) : null}
 
         {/* 工作台：三栏在桌面端填满视口，各自内部滚动；移动端整列纵向滚动 */}
         <div className="min-h-0 flex-1 overflow-y-auto xl:overflow-hidden">
-          <V3StateSurface
+          <StateSurface
             isLoading={isLoading && !data}
             isError={Boolean(error && !data)}
             error={error}
@@ -188,7 +188,7 @@ export function InboxShell({
             onRetry={onRetry}
             emptyState={
               <SoftCard>
-                <div className="px-6 py-12 text-center text-sm text-v3-ink-2">
+                <div className="px-6 py-12 text-center text-sm text-ink-2">
                   当前没有需要处理的事项。
                 </div>
               </SoftCard>
@@ -208,7 +208,7 @@ export function InboxShell({
                 <InboxActionPanel item={selectedItem} onAction={onAction} view={view} />
               </div>
             ) : null}
-          </V3StateSurface>
+          </StateSurface>
         </div>
       </Main>
     </>
@@ -222,33 +222,33 @@ export function InboxShell({
 type InboxSummaryTone = "brand" | "danger" | "warn" | "info" | "mute";
 
 const summaryCardSoftBg: Record<InboxSummaryTone, string> = {
-  brand: "bg-v3-brand-soft",
-  danger: "bg-v3-danger-soft",
-  warn: "bg-v3-warn-soft",
-  info: "bg-v3-info-soft",
-  mute: "bg-v3-mute-soft",
+  brand: "bg-brand-soft",
+  danger: "bg-danger-soft",
+  warn: "bg-warn-soft",
+  info: "bg-info-soft",
+  mute: "bg-mute-soft"
 };
 
 // 与项目管理 KPI 卡一致：语义 text 层做数字与图标色（过 AA），保持色彩搭配
 const summaryCardNumText: Record<InboxSummaryTone, string> = {
-  brand: "text-v3-brand-deep",
-  danger: "text-v3-danger-text",
-  warn: "text-v3-warn-text",
-  info: "text-v3-info-text",
-  mute: "text-v3-mute-text",
+  brand: "text-brand-deep",
+  danger: "text-danger-text",
+  warn: "text-warn-text",
+  info: "text-info-text",
+  mute: "text-mute-text"
 };
 
 const summaryCardAccent: Record<InboxSummaryTone, string> = {
-  brand: "bg-v3-brand",
-  danger: "bg-v3-danger",
-  warn: "bg-v3-warn",
-  info: "bg-v3-info",
-  mute: "bg-v3-line-strong",
+  brand: "bg-brand",
+  danger: "bg-danger",
+  warn: "bg-warn",
+  info: "bg-info",
+  mute: "bg-line-strong"
 };
 
 function InboxSummaryCards({
   summary,
-  maxWaitMs,
+  maxWaitMs
 }: {
   summary?: InboxListResponse["summary"];
   maxWaitMs: number;
@@ -265,27 +265,27 @@ function InboxSummaryCards({
       icon: Inbox,
       label: "开放事项",
       value: summary ? summary.open_count : "—",
-      tone: "brand",
-    },
+      tone: "brand"
+},
     {
       icon: AlertTriangle,
       label: "高风险",
       value: summary ? highRisk : "—",
       // 语义色只在需要人工介入（>0）时点亮，0 保持灰阶（对齐 DESIGN.md）
-      tone: highRisk > 0 ? "danger" : "mute",
-    },
+      tone: highRisk > 0 ? "danger" : "mute"
+},
     {
       icon: ShieldCheck,
       label: "阻断",
       value: summary ? blocked : "—",
-      tone: blocked > 0 ? "warn" : "mute",
-    },
+      tone: blocked > 0 ? "warn" : "mute"
+},
     {
       icon: Clock,
       label: "等待最久",
       value: maxWaitMs > 0 ? formatWaitShort(maxWaitMs) : "—",
-      tone: "info",
-    },
+      tone: "info"
+},
   ];
 
   return (
@@ -298,7 +298,7 @@ function InboxSummaryCards({
         return (
           <SoftCard
             key={card.label}
-            className="group relative flex flex-col gap-2 overflow-hidden px-4 py-3.5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-v3-brand/40 hover:shadow-v3-pop"
+            className="group relative flex flex-col gap-2 overflow-hidden px-4 py-3.5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-pop"
           >
             <span
               aria-hidden
@@ -320,7 +320,7 @@ function InboxSummaryCards({
             >
               {card.value}
             </span>
-            <p className="text-[11.5px] font-medium leading-none text-v3-ink-3">{card.label}</p>
+            <p className="text-[11.5px] font-medium leading-none text-ink-3">{card.label}</p>
           </SoftCard>
         );
       })}
@@ -357,12 +357,12 @@ function InboxToolbar({
   onResetFilters,
   streamConnection,
   uuidFilterDrafts,
-  uuidFilterErrors,
+  uuidFilterErrors
 }: InboxToolbarProps) {
   return (
     <SoftCard className="flex shrink-0 flex-wrap items-center gap-2 p-3">
-      <V3Tabs role="tablist" aria-label="收件箱视图">
-        <V3Tab
+      <PageTabs role="tablist" aria-label="收件箱视图">
+        <PageTab
           type="button"
           role="tab"
           active={view === "mine"}
@@ -370,8 +370,8 @@ function InboxToolbar({
           onClick={() => onViewChange("mine")}
         >
           我的待办
-        </V3Tab>
-        <V3Tab
+        </PageTab>
+        <PageTab
           type="button"
           role="tab"
           active={view === "team"}
@@ -379,9 +379,9 @@ function InboxToolbar({
           onClick={() => onViewChange("team")}
         >
           团队待办
-        </V3Tab>
-      </V3Tabs>
-      <span aria-hidden className="hidden h-6 w-px bg-v3-line sm:block" />
+        </PageTab>
+      </PageTabs>
+      <span aria-hidden className="hidden h-6 w-px bg-line sm:block" />
       <InboxFilters
         filters={filters}
         onFilterChange={onFilterChange}
@@ -410,7 +410,7 @@ function InboxSyncControls({
   dataUpdatedAt,
   isFetching,
   onRefresh,
-  streamConnection,
+  streamConnection
 }: InboxSyncControlsProps) {
   const disconnected = streamConnection !== "connected";
   const syncedLabel =
@@ -423,7 +423,7 @@ function InboxSyncControls({
       <p
         className={cn(
           "hidden items-center gap-1.5 text-[11.5px] font-medium sm:flex",
-          disconnected ? "text-v3-warn-text" : "text-v3-ink-3",
+          disconnected ? "text-warn-text" : "text-ink-3",
         )}
         role="status"
       >
@@ -431,12 +431,12 @@ function InboxSyncControls({
           aria-hidden
           className={cn(
             "size-1.5 rounded-full",
-            disconnected ? "bg-v3-warn" : "bg-v3-ok",
+            disconnected ? "bg-warn" : "bg-ok",
           )}
         />
         {disconnected ? "同步中断，正在重连…" : (syncedLabel ?? "实时同步")}
       </p>
-      <V3Button
+      <Button
         aria-label="刷新收件箱"
         disabled={isFetching}
         onClick={onRefresh}
@@ -446,7 +446,7 @@ function InboxSyncControls({
       >
         <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
         刷新
-      </V3Button>
+      </Button>
     </div>
   );
 }
@@ -469,17 +469,17 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
   return (
     <SoftCard className="flex min-h-0 flex-col overflow-hidden xl:h-full">
       {/* 详情头：KI 编号 + 更新时间 kicker + 标题 + pills（固定，不随正文滚动） */}
-      <div className="shrink-0 border-b border-v3-line px-5 py-4">
+      <div className="shrink-0 border-b border-line px-5 py-4">
         {/* 数据真实性修正 #2：KI 编号 = item_type + source_id 前 8 位 */}
         <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-v3-brand-deep">
+          <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-brand-deep">
             {formatKiNumber(item)}
           </p>
-          <p className="shrink-0 font-mono text-[11px] text-v3-ink-3">
+          <p className="shrink-0 font-mono text-[11px] text-ink-3">
             更新 {formatRelativeTime(item.last_activity_at)}
           </p>
         </div>
-        <h2 className="text-lg font-extrabold leading-tight text-v3-ink">{item.title}</h2>
+        <h2 className="text-lg font-extrabold leading-tight text-ink">{item.title}</h2>
         <div className="mt-2.5 flex flex-wrap gap-2">
           <StatusPill tone={item.item_type === "approval" ? "info" : "artifact"}>
             {formatItemType(item)}
@@ -507,54 +507,54 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
       {/* 正文：内部滚动 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
       {/* 为什么需要你处理 */}
-      <section className="border-b border-v3-line px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-v3-ink">为什么需要你处理</h3>
+      <section className="border-b border-line px-5 py-4">
+        <h3 className="text-[13px] font-extrabold text-ink">为什么需要你处理</h3>
         <dl className="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px]">
-          <dt className="font-semibold text-v3-ink-3">关联对象</dt>
-          <dd className="min-w-0 font-semibold text-v3-ink">
+          <dt className="font-semibold text-ink-3">关联对象</dt>
+          <dd className="min-w-0 font-semibold text-ink">
             <RelatedObjectSummary item={item} />
           </dd>
-          <dt className="font-semibold text-v3-ink-3">当前节点</dt>
-          <dd className="min-w-0 font-semibold text-v3-ink">{formatCurrentNode(item)}</dd>
-          <dt className="font-semibold text-v3-ink-3">发起来源</dt>
-          <dd className="min-w-0 font-semibold text-v3-ink">{formatSourceType(item)}</dd>
-          <dt className="font-semibold text-v3-ink-3">更新时间</dt>
-          <dd className="min-w-0 font-semibold text-v3-ink">{formatDateTime(item.last_activity_at)}</dd>
+          <dt className="font-semibold text-ink-3">当前节点</dt>
+          <dd className="min-w-0 font-semibold text-ink">{formatCurrentNode(item)}</dd>
+          <dt className="font-semibold text-ink-3">发起来源</dt>
+          <dd className="min-w-0 font-semibold text-ink">{formatSourceType(item)}</dd>
+          <dt className="font-semibold text-ink-3">更新时间</dt>
+          <dd className="min-w-0 font-semibold text-ink">{formatDateTime(item.last_activity_at)}</dd>
           {item.source_task_id ? (
             <>
-              <dt className="font-semibold text-v3-ink-3">关联任务</dt>
-              <dd className="min-w-0 text-xs font-semibold text-v3-ink-2">
+              <dt className="font-semibold text-ink-3">关联任务</dt>
+              <dd className="min-w-0 text-xs font-semibold text-ink-2">
                 <ObjectRef name={item.source_task_name} id={item.source_task_id} />
               </dd>
             </>
           ) : null}
         </dl>
         {item.summary ? (
-          <p className="mt-3 rounded-v3-inner bg-v3-card-soft px-3 py-2 text-[13px] leading-5 text-v3-ink-2">
+          <p className="mt-3 rounded-inner bg-card-soft px-3 py-2 text-[13px] leading-5 text-ink-2">
             {item.summary}
           </p>
         ) : null}
       </section>
 
       {/* 过程记录 — 数据真实性修正 #3：仅 created_at / last_activity_at 两真实时间点 + 当前状态 */}
-      <section className="border-b border-v3-line px-5 py-4">
-        <h3 className="flex items-center gap-2 text-[13px] font-extrabold text-v3-ink">
+      <section className="border-b border-line px-5 py-4">
+        <h3 className="flex items-center gap-2 text-[13px] font-extrabold text-ink">
           过程记录
-          <span className="font-mono text-[10px] font-semibold text-v3-ink-3">
+          <span className="font-mono text-[10px] font-semibold text-ink-3">
             {item.status === "open" ? "2 时间点 · 进行中" : `${item.resolved_at ? 3 : 2} 时间点 · 已完结`}
           </span>
         </h3>
         <div className="mt-3 flex flex-col gap-3.5">
           <TimelineItem
             dot={<CheckCircle2 className="size-3" />}
-            dotClassName="bg-v3-ok-soft text-v3-ok"
+            dotClassName="bg-ok-soft text-ok"
             title="事项已创建"
             description="事项进入收件箱，等待人工处理。"
             timestamp={`${formatDateTime(item.created_at)} · created_at`}
           />
           <TimelineItem
             dot={<CheckCircle2 className="size-3" />}
-            dotClassName="bg-v3-ok-soft text-v3-ok"
+            dotClassName="bg-ok-soft text-ok"
             title="最近活动"
             description="来源对象更新了上下文快照。"
             timestamp={`${formatRelativeTime(item.last_activity_at)} · last_activity_at`}
@@ -562,7 +562,7 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
           {item.status === "open" ? (
             <TimelineItem
               dot={<Clock className="size-3" />}
-              dotClassName="bg-v3-brand-soft text-v3-brand"
+              dotClassName="bg-brand-soft text-brand"
               title="等待人类决策"
               description="选择同意、驳回或要求补证后将推动流程进入下一节点。"
               timestamp="进行中"
@@ -570,7 +570,7 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
           ) : (
             <TimelineItem
               dot={<CheckCircle2 className="size-3" />}
-              dotClassName="bg-v3-ok-soft text-v3-ok"
+              dotClassName="bg-ok-soft text-ok"
               title={item.status === "resolved" ? "已处理" : "已取消"}
               description={
                 item.status === "resolved"
@@ -585,9 +585,9 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
 
       {/* 关联引用 — 数据真实性修正 #4：source_*_id 跳转入口，不编造 artifacts */}
       <section className="px-5 py-4">
-        <h3 className="flex items-center gap-2 text-[13px] font-extrabold text-v3-ink">
+        <h3 className="flex items-center gap-2 text-[13px] font-extrabold text-ink">
           关联引用
-          <span className="font-mono text-[10px] font-semibold text-v3-ink-3">
+          <span className="font-mono text-[10px] font-semibold text-ink-3">
             {countRelatedReferences(item)} 项 · 跳转
           </span>
         </h3>
@@ -607,7 +607,7 @@ function TimelineItem({
   dotClassName,
   title,
   description,
-  timestamp,
+  timestamp
 }: {
   dot: React.ReactNode;
   dotClassName: string;
@@ -621,9 +621,9 @@ function TimelineItem({
         {dot}
       </span>
       <div className="min-w-0">
-        <p className="text-[13px] font-bold text-v3-ink">{title}</p>
-        <p className="mt-0.5 text-xs leading-5 text-v3-ink-3">{description}</p>
-        <p className="mt-0.5 font-mono text-[11px] text-v3-ink-3">{timestamp}</p>
+        <p className="text-[13px] font-bold text-ink">{title}</p>
+        <p className="mt-0.5 text-xs leading-5 text-ink-3">{description}</p>
+        <p className="mt-0.5 font-mono text-[11px] text-ink-3">{timestamp}</p>
       </div>
     </div>
   );
@@ -653,7 +653,7 @@ function RelatedObjectSummary({ item }: { item: InboxItem }) {
             : demandLabel}
         </p>
         {projectName ? (
-          <p className="truncate text-xs font-medium text-v3-ink-3">项目 · {projectName}</p>
+          <p className="truncate text-xs font-medium text-ink-3">项目 · {projectName}</p>
         ) : null}
       </div>
     );
@@ -670,60 +670,60 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
   for (const demand of demandRefs) {
     refs.push({
       key: `demand-${demand.id ?? demand.title}`,
-      icon: <Layers className="size-4 shrink-0 text-v3-ink-3" />,
+      icon: <Layers className="size-4 shrink-0 text-ink-3" />,
       label: `关联需求 · ${demand.title}`,
       meta: demand.id ? "demand_id ↗" : "demand",
-      href: demand.id ? `/workflows/${encodeURIComponent(demand.id)}` : undefined,
-    });
+      href: demand.id ? `/workflows/${encodeURIComponent(demand.id)}` : undefined
+});
     for (const taskTitle of demand.taskTitles) {
       if (seenTaskTitles.has(taskTitle)) continue;
       seenTaskTitles.add(taskTitle);
       refs.push({
         key: `task-title-${taskTitle}`,
-        icon: <FileText className="size-4 shrink-0 text-v3-ink-3" />,
+        icon: <FileText className="size-4 shrink-0 text-ink-3" />,
         label: `关联任务 · ${taskTitle}`,
         meta: "task_title",
-        href: item.source_task_id ? resolveInboxHref(item) : undefined,
-      });
+        href: item.source_task_id ? resolveInboxHref(item) : undefined
+});
     }
   }
 
   if (item.source_task_id && !seenTaskTitles.has(item.source_task_name ?? item.source_task_id)) {
     refs.push({
       key: "task",
-      icon: <FileText className="size-4 shrink-0 text-v3-ink-3" />,
+      icon: <FileText className="size-4 shrink-0 text-ink-3" />,
       label: `关联任务 · ${item.source_task_name ?? item.source_task_id}`,
       meta: "source_task_id ↗",
-      href: resolveInboxHref(item),
-    });
+      href: resolveInboxHref(item)
+});
   }
 
   if (item.source_project_id) {
     refs.push({
       key: "project",
-      icon: <FolderKanban className="size-4 shrink-0 text-v3-ink-3" />,
+      icon: <FolderKanban className="size-4 shrink-0 text-ink-3" />,
       label: `关联项目 · ${item.source_project_name ?? readStringFromContext(item.context, ["project_name", "project_title"]) ?? item.source_project_id}`,
       meta: "source_project_id ↗",
-      href: `/projects/${encodeURIComponent(item.source_project_id)}`,
-    });
+      href: `/projects/${encodeURIComponent(item.source_project_id)}`
+});
   }
 
   if (item.source_approval_request_id) {
     refs.push({
       key: "approval",
-      icon: <ShieldQuestion className="size-4 shrink-0 text-v3-ink-3" />,
+      icon: <ShieldQuestion className="size-4 shrink-0 text-ink-3" />,
       label: "关联审批请求",
       meta: "source_approval_request_id ↗",
-      href: resolveInboxHref(item),
-    });
+      href: resolveInboxHref(item)
+});
   }
 
   refs.push({
     key: "audit",
-    icon: <ShieldCheck className="size-4 shrink-0 text-v3-ink-3" />,
+    icon: <ShieldCheck className="size-4 shrink-0 text-ink-3" />,
     label: "操作将写入审计日志",
-    meta: "审计",
-  });
+    meta: "审计"
+});
 
   return refs;
 }
@@ -736,15 +736,15 @@ function RelatedReferenceRow({ reference }: { reference: RelatedReference }) {
   const content = (
     <>
       {reference.icon}
-      <span className="min-w-0 flex-1 truncate font-semibold text-v3-ink">{reference.label}</span>
-      <span className="shrink-0 font-mono text-[11px] text-v3-ink-3">{reference.meta}</span>
+      <span className="min-w-0 flex-1 truncate font-semibold text-ink">{reference.label}</span>
+      <span className="shrink-0 font-mono text-[11px] text-ink-3">{reference.meta}</span>
     </>
   );
 
   if (reference.href) {
     return (
       <Link
-        className="flex min-w-0 items-center gap-2.5 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-[13px] transition-colors hover:border-v3-brand hover:bg-v3-card"
+        className="flex min-w-0 items-center gap-2.5 rounded-inner border border-line bg-card-soft px-3 py-2 text-[13px] transition-colors hover:border-brand hover:bg-card"
         to={reference.href}
       >
         {content}
@@ -753,7 +753,7 @@ function RelatedReferenceRow({ reference }: { reference: RelatedReference }) {
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-2.5 rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2 text-[13px]">
+    <div className="flex min-w-0 items-center gap-2.5 rounded-inner border border-line bg-card-soft px-3 py-2 text-[13px]">
       {content}
     </div>
   );
@@ -775,14 +775,14 @@ const actionToneVariant: Record<string, "primary" | "outline" | "danger"> = {
   positive: "primary",
   primary: "primary",
   success: "outline",
-  warning: "outline",
+  warning: "outline"
 };
 
 const actionToneClass: Record<string, string> = {
   primary: "",
   positive: "",
-  success: "border-v3-ok text-v3-ok hover:bg-v3-ok-soft",
-  warning: "border-v3-warn text-v3-warn hover:bg-v3-warn-soft",
+  success: "border-ok text-ok hover:bg-ok-soft",
+  warning: "border-warn text-warn hover:bg-warn-soft"
 };
 
 function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
@@ -790,9 +790,9 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
     return (
       <div className="flex min-h-0 flex-col gap-3 xl:h-full xl:overflow-y-auto">
         <SoftCard className="px-5 py-8 text-center">
-          <Sparkles aria-hidden className="mx-auto mb-3 size-8 text-v3-ink-3" />
-          <p className="text-sm font-bold text-v3-ink">选择事项后可操作</p>
-          <p className="mt-1.5 text-xs text-v3-ink-3">
+          <Sparkles aria-hidden className="mx-auto mb-3 size-8 text-ink-3" />
+          <p className="text-sm font-bold text-ink">选择事项后可操作</p>
+          <p className="mt-1.5 text-xs text-ink-3">
             从左侧列表选择一条事项，这里会展示已等待时长、可执行动作和快速跳转。
           </p>
         </SoftCard>
@@ -808,7 +808,7 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
     <div className="flex min-h-0 flex-col gap-3 xl:h-full xl:overflow-y-auto">
       {/* 已等待/处理耗时 — 数据真实性修正 #5:open 用 now-created_at;终态用 resolved_at-created_at */}
       <SoftCard className="overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
+        <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
           <Clock aria-hidden className="size-3.5" />
           {item.status === "open" ? "已等待时长" : "处理耗时"}
         </div>
@@ -819,13 +819,13 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
 
       {/* 可执行动作 — 仅 open 事项渲染按钮;终态事项动作已失效 */}
       <SoftCard className="overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
+        <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
           <Zap aria-hidden className="size-3.5" />
           可执行动作
         </div>
         <div className="px-4 py-3.5">
           {item.status !== "open" ? (
-            <p className="text-[13px] font-semibold text-v3-ink-2">
+            <p className="text-[13px] font-semibold text-ink-2">
               {item.status === "resolved"
                 ? `该事项已处理${item.resolved_at ? `（${formatDateTime(item.resolved_at)}）` : ""}，动作已失效。`
                 : "该事项已取消，无需处理。"}
@@ -834,7 +834,7 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
             <>
               <div className="grid grid-cols-2 gap-2">
                 {actions.map((action) => (
-                  <V3Button
+                  <Button
                     className={cn("justify-center", actionToneClass[action.tone])}
                     key={action.key}
                     onClick={() => onAction(item, action)}
@@ -843,15 +843,15 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
                     size="sm"
                   >
                     {formatInboxActionLabel(action)}
-                  </V3Button>
+                  </Button>
                 ))}
               </div>
-              <p className="mt-2.5 text-[11px] leading-5 text-v3-ink-3">
+              <p className="mt-2.5 text-[11px] leading-5 text-ink-3">
                 动作将写入审计日志，并推动流程进入下一节点。
               </p>
             </>
           ) : (
-            <p className="text-[13px] font-semibold text-v3-ink-2">
+            <p className="text-[13px] font-semibold text-ink-2">
               {view === "mine" ? "该事项暂无可执行动作。" : "团队视图仅用于查看上下文。"}
             </p>
           )}
@@ -860,7 +860,7 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
 
       {/* 快速跳转 */}
       <SoftCard className="overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-v3-line bg-v3-card-soft px-4 py-3 text-[13px] font-bold text-v3-ink">
+        <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
           <Layers aria-hidden className="size-3.5" />
           快速跳转
         </div>
@@ -887,42 +887,42 @@ function WaitTimeRing({ waitMs, riskLevel, settled }: { waitMs: number; riskLeve
   const ringPercentage = Math.min(100, Math.max(0, (totalHours / 24) * 100));
   // 终态事项没有紧迫度可言,统一降为非紧急配色。
   const isUrgent = !settled && (riskLevel === "blocked" || riskLevel === "high");
-  const ringColor = isUrgent ? "var(--v3-danger)" : "var(--v3-warn)";
-  const ringSoft = isUrgent ? "var(--v3-danger-soft)" : "var(--v3-warn-soft)";
+  const ringColor = isUrgent ? "var(--danger)" : "var(--warn)";
+  const ringSoft = isUrgent ? "var(--danger-soft)" : "var(--warn-soft)";
   const shortLabel = totalHours >= 1 ? `${Math.floor(totalHours)}h` : `${Math.floor(clamped / 60000)}m`;
 
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-v3-inner border px-3.5 py-3",
+        "flex items-center gap-3 rounded-inner border px-3.5 py-3",
         isUrgent
-          ? "border-v3-danger/20 bg-gradient-to-br from-v3-danger-soft to-v3-card"
-          : "border-v3-warn/20 bg-gradient-to-br from-v3-warn-soft to-v3-card",
+          ? "border-danger/20 bg-gradient-to-br from-danger-soft to-card"
+          : "border-warn/20 bg-gradient-to-br from-warn-soft to-card",
       )}
     >
       <div
         className="relative grid size-12 shrink-0 place-items-center rounded-full text-[13px] font-extrabold"
         style={{
           background: `conic-gradient(${ringColor} ${ringPercentage}%, ${ringSoft} 0)`,
-          color: isUrgent ? "var(--v3-danger)" : "var(--v3-warn)",
-        }}
+          color: isUrgent ? "var(--danger)" : "var(--warn)"
+}}
       >
-        <span className="absolute inset-1 rounded-full bg-v3-card" />
+        <span className="absolute inset-1 rounded-full bg-card" />
         <span className="relative z-10">{shortLabel}</span>
       </div>
       <div className="min-w-0 flex-1">
         <p
           className={cn(
             "text-[11px] font-bold uppercase tracking-wide",
-            isUrgent ? "text-v3-danger-text" : "text-v3-warn-text",
+            isUrgent ? "text-danger-text" : "text-warn-text",
           )}
         >
           {settled ? "处理耗时" : "已等待"}
         </p>
-        <p className="mt-0.5 text-lg font-extrabold tabular-nums text-v3-ink">
+        <p className="mt-0.5 text-lg font-extrabold tabular-nums text-ink">
           {formatElapsedDuration(clamped)}
         </p>
-        <p className="mt-0.5 text-[11px] text-v3-ink-3">
+        <p className="mt-0.5 text-[11px] text-ink-3">
           {settled ? "created_at 至 resolved_at" : "基于 created_at 计算"}
           {isUrgent ? " · 阻断级建议尽快处理" : ""}
         </p>
@@ -934,7 +934,7 @@ function WaitTimeRing({ waitMs, riskLevel, settled }: { waitMs: number; riskLeve
 function QuickLink({
   to,
   icon,
-  children,
+  children
 }: {
   to: string;
   icon: React.ReactNode;
@@ -942,12 +942,12 @@ function QuickLink({
 }) {
   return (
     <Link
-      className="flex items-center gap-2.5 rounded-v3-inner px-3 py-2.5 text-[13px] font-semibold text-v3-ink-2 transition-colors hover:bg-v3-card-soft hover:text-v3-brand-deep"
+      className="flex items-center gap-2.5 rounded-inner px-3 py-2.5 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-card-soft hover:text-brand-deep"
       to={to}
     >
-      <span className="text-v3-ink-3">{icon}</span>
+      <span className="text-ink-3">{icon}</span>
       <span className="flex-1 text-left">{children}</span>
-      <ArrowUpRight aria-hidden className="size-3 text-v3-ink-3" />
+      <ArrowUpRight aria-hidden className="size-3 text-ink-3" />
     </Link>
   );
 }
@@ -959,34 +959,34 @@ function QuickLink({
 function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
   return (
     <SoftCard className="min-h-0 overflow-y-auto xl:h-full">
-      <div className="border-b border-v3-line px-5 py-5">
-        <h2 className="text-lg font-extrabold text-v3-ink">选择一条事项查看详情</h2>
-        <p className="mt-2 text-[13px] leading-5 text-v3-ink-2">
+      <div className="border-b border-line px-5 py-5">
+        <h2 className="text-lg font-extrabold text-ink">选择一条事项查看详情</h2>
+        <p className="mt-2 text-[13px] leading-5 text-ink-2">
           左侧列出所有需要你同意、审核、确认或验收的事项。选择任一事项后，这里会展示过程记录、关联引用和可执行动作。
         </p>
       </div>
-      <section className="border-b border-v3-line px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-v3-ink">今日待处理摘要</h3>
+      <section className="border-b border-line px-5 py-4">
+        <h3 className="text-[13px] font-extrabold text-ink">今日待处理摘要</h3>
         <div className="mt-3 grid grid-cols-3 gap-2">
           <MiniSummary label="待我处理" value={data.summary.open_count} />
           <MiniSummary label="高风险" value={data.summary.high_risk_count} tone="danger" />
           <MiniSummary label="阻断" value={data.summary.blocked_count} tone="warn" />
         </div>
       </section>
-      <section className="border-b border-v3-line px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-v3-ink">处理顺序建议</h3>
-        <ol className="mt-3 space-y-2 text-[13px] text-v3-ink-2">
-          <li className="flex gap-2"><span className="font-bold text-v3-ink">1.</span>先处理阻断与高风险审批。</li>
-          <li className="flex gap-2"><span className="font-bold text-v3-ink">2.</span>再处理等待最久的事项。</li>
-          <li className="flex gap-2"><span className="font-bold text-v3-ink">3.</span>最后处理普通同意或复核事项。</li>
+      <section className="border-b border-line px-5 py-4">
+        <h3 className="text-[13px] font-extrabold text-ink">处理顺序建议</h3>
+        <ol className="mt-3 space-y-2 text-[13px] text-ink-2">
+          <li className="flex gap-2"><span className="font-bold text-ink">1.</span>先处理阻断与高风险审批。</li>
+          <li className="flex gap-2"><span className="font-bold text-ink">2.</span>再处理等待最久的事项。</li>
+          <li className="flex gap-2"><span className="font-bold text-ink">3.</span>最后处理普通同意或复核事项。</li>
         </ol>
       </section>
       <section className="px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-v3-ink">选择事项后可执行</h3>
-        <div className="mt-3 grid gap-2 text-[13px] text-v3-ink-2">
+        <h3 className="text-[13px] font-extrabold text-ink">选择事项后可执行</h3>
+        <div className="mt-3 grid gap-2 text-[13px] text-ink-2">
           {["查看完整详情", "查看过程记录", "查看关联引用", "同意 / 驳回 / 要求补证", "跳转到关联流程或项目"].map((label) => (
             <div className="flex items-center gap-2" key={label}>
-              <CheckCircle2 className="size-4 text-v3-ok" />
+              <CheckCircle2 className="size-4 text-ok" />
               <span>{label}</span>
             </div>
           ))}
@@ -999,21 +999,21 @@ function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
 function MiniSummary({
   label,
   tone = "info",
-  value,
+  value
 }: {
   label: string;
   tone?: "danger" | "info" | "warn";
   value: number;
 }) {
   const valueToneClass = {
-    danger: "text-v3-danger",
-    info: "text-v3-brand",
-    warn: "text-v3-warn",
-  }[tone];
+    danger: "text-danger",
+    info: "text-brand",
+    warn: "text-warn"
+}[tone];
 
   return (
-    <div className="rounded-v3-inner border border-v3-line bg-v3-card-soft px-3 py-2">
-      <p className="text-[11px] font-bold text-v3-ink-2">{label}</p>
+    <div className="rounded-inner border border-line bg-card-soft px-3 py-2">
+      <p className="text-[11px] font-bold text-ink-2">{label}</p>
       <p className={cn("mt-1 text-2xl font-extrabold tabular-nums", valueToneClass)}>{value}</p>
     </div>
   );
@@ -1096,7 +1096,7 @@ function InboxFilters({
   onFilterChange,
   onReset,
   uuidFilterDrafts,
-  uuidFilterErrors,
+  uuidFilterErrors
 }: InboxFiltersProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const hasUuidFilterError = Boolean(
@@ -1136,7 +1136,7 @@ function InboxFilters({
         onToggle={() => setShowAdvanced((v) => !v)}
       />
       {showAdvanced ? (
-        <div className="flex w-full flex-wrap items-center gap-2 border-t border-dashed border-v3-line-strong pt-3">
+        <div className="flex w-full flex-wrap items-center gap-2 border-t border-dashed border-line-strong pt-3">
           <FilterInput
             invalid={Boolean(uuidFilterErrors.project_id)}
             label="项目 ID"
@@ -1152,13 +1152,13 @@ function InboxFilters({
             onValueChange={(value) => onFilterChange("target_user_id", value)}
           />
           {hasUuidFilterError ? (
-            <p className="text-xs font-semibold text-v3-danger" role="alert">
+            <p className="text-xs font-semibold text-danger" role="alert">
               请输入有效 UUID
             </p>
           ) : null}
         </div>
       ) : null}
-      <V3Button
+      <Button
         className="shrink-0"
         onClick={onReset}
         type="button"
@@ -1167,7 +1167,7 @@ function InboxFilters({
       >
         <RotateCcw className="size-4" />
         重置
-      </V3Button>
+      </Button>
     </div>
   );
 }
@@ -1185,7 +1185,7 @@ function FilterChip<Value extends string>({
   neutralValue,
   onValueChange,
   options,
-  value,
+  value
 }: FilterChipProps<Value>) {
   const isActive = value !== neutralValue;
   const selected = options.find((o) => o.value === value);
@@ -1197,8 +1197,8 @@ function FilterChip<Value extends string>({
         className={cn(
           "inline-flex items-center gap-1 rounded-xl py-1.5 pl-3.5 pr-2 text-[13px] font-semibold transition-all duration-200 ease-out",
           isActive
-            ? "bg-v3-brand-soft text-v3-brand-deep"
-            : "border border-v3-line bg-v3-card text-v3-ink-2 shadow-sm hover:-translate-y-0.5 hover:text-v3-ink hover:shadow-md",
+            ? "bg-brand-soft text-brand-deep"
+            : "border border-line bg-card text-ink-2 shadow-sm hover:-translate-y-0.5 hover:text-ink hover:shadow-md",
         )}
       >
         <PopoverTrigger asChild>
@@ -1234,8 +1234,8 @@ function FilterChip<Value extends string>({
             className={cn(
               "flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
               opt.value === value
-                ? "font-semibold text-v3-brand-deep"
-                : "text-v3-ink-2 hover:bg-v3-card-soft hover:text-v3-ink",
+                ? "font-semibold text-brand-deep"
+                : "text-ink-2 hover:bg-card-soft hover:text-ink",
             )}
             onClick={() => {
               onValueChange(opt.value);
@@ -1254,7 +1254,7 @@ function FilterChip<Value extends string>({
 function MoreFiltersButton({
   active,
   count,
-  onToggle,
+  onToggle
 }: {
   active: boolean;
   count: number;
@@ -1267,14 +1267,14 @@ function MoreFiltersButton({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all",
         active
-          ? "bg-v3-brand-soft text-v3-brand-deep"
-          : "border border-dashed border-v3-line-strong bg-transparent text-v3-ink-3 hover:border-v3-ink-3 hover:text-v3-ink-2",
+          ? "bg-brand-soft text-brand-deep"
+          : "border border-dashed border-line-strong bg-transparent text-ink-3 hover:border-ink-3 hover:text-ink-2",
       )}
     >
       <SlidersHorizontal aria-hidden className="size-3.5" />
       更多筛选
       {count > 0 ? (
-        <span className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-v3-brand px-1 text-[11px] font-bold text-white">
+        <span className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-white">
           {count}
         </span>
       ) : null}
@@ -1298,7 +1298,7 @@ function FilterInput({ invalid = false, label, onValueChange, placeholder, value
       aria-invalid={invalid || undefined}
       aria-label={label}
       id={inputId}
-      className="h-9 w-[10.5rem] rounded-xl border-v3-line bg-v3-card-soft text-[13px] text-v3-ink shadow-none placeholder:text-v3-ink-3 aria-invalid:border-v3-danger"
+      className="h-9 w-[10.5rem] rounded-xl border-line bg-card-soft text-[13px] text-ink shadow-none placeholder:text-ink-3 aria-invalid:border-danger"
       onChange={(event) => onValueChange(event.target.value)}
       placeholder={placeholder}
       value={value}

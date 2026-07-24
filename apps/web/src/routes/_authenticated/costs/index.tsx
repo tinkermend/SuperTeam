@@ -6,20 +6,20 @@ import {
   CircleDollarSign,
   Hash,
   Play,
-  TrendingUp,
+  TrendingUp
 } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
-  V3EmptyState,
-  V3MetricCard,
-  V3Segmented,
-  V3StateSurface,
-  V3Table,
-  V3Td,
-  V3Th,
-  V3Tr,
-  WorkSurface,
+  EmptyState,
+  MetricCard,
+  Segmented,
+  StateSurface,
+  DataTable,
+  Td,
+  Th,
+  Tr,
+  WorkSurface
 } from "@/components/superteam";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -28,7 +28,7 @@ import { getCostSummary } from "@/lib/api/costs";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
 export const Route = createFileRoute("/_authenticated/costs/")({
-  component: CostsRoute,
+  component: CostsRoute
 });
 
 const PERIOD_OPTIONS: Array<{ label: string; value: CostPeriod }> = [
@@ -41,7 +41,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
   opencode: "OpenCode",
   codex: "Codex",
-  unknown: "未知",
+  unknown: "未知"
 };
 
 function formatTokens(n: number): string {
@@ -63,8 +63,8 @@ function CostsRoute() {
     queryKey: ["costs-summary", period],
     queryFn: () => getCostSummary({ baseUrl: apiBaseUrl }, period),
     placeholderData: keepPreviousData,
-    staleTime: 60 * 1000,
-  });
+    staleTime: 60 * 1000
+});
 
   const summary: CostSummary | undefined = summaryQuery.data;
 
@@ -86,7 +86,7 @@ function CostsRoute() {
         title="成本管理"
         subtitle="数字员工 Token 用量统计"
         actions={
-          <V3Segmented<CostPeriod>
+          <Segmented<CostPeriod>
             options={PERIOD_OPTIONS}
             value={period}
             onChange={setPeriod}
@@ -98,28 +98,28 @@ function CostsRoute() {
 
       {/* 顶部指标卡 */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <V3MetricCard
+        <MetricCard
           icon={<Hash />}
           iconTone="brand"
           label="总 Token 用量"
           value={formatTokens(totalTokens)}
           meta={`近 ${periodDays} 天`}
         />
-        <V3MetricCard
+        <MetricCard
           icon={<Play />}
           iconTone="info"
           label="总执行次数"
           value={totalRuns.toLocaleString()}
           meta={`近 ${periodDays} 天`}
         />
-        <V3MetricCard
+        <MetricCard
           icon={<Bot />}
           iconTone="ok"
           label="活跃员工数"
           value={activeEmployees}
           meta="有 Token 消耗"
         />
-        <V3MetricCard
+        <MetricCard
           icon={<TrendingUp />}
           iconTone="artifact"
           label="日均 Token"
@@ -131,7 +131,7 @@ function CostsRoute() {
       {/* Provider 分布进度条 */}
       {providerKeys.length > 0 && (
         <SoftCard className="p-5">
-          <p className="mb-4 text-[13px] font-semibold text-v3-ink">
+          <p className="mb-4 text-[13px] font-semibold text-ink">
             Provider 分布
           </p>
           <div className="flex flex-col gap-3">
@@ -145,17 +145,17 @@ function CostsRoute() {
                 return (
                   <div key={key} className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[13px]">
-                      <span className="font-medium text-v3-ink">
+                      <span className="font-medium text-ink">
                         {PROVIDER_LABELS[key] ?? key}
                       </span>
-                      <span className="tabular-nums text-v3-ink-2">
+                      <span className="tabular-nums text-ink-2">
                         {formatTokens(tokens)}{" "}
-                        <span className="text-v3-ink-3">({pct})</span>
+                        <span className="text-ink-3">({pct})</span>
                       </span>
                     </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-v3-card-soft">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-card-soft">
                       <div
-                        className="h-full rounded-full bg-v3-brand transition-all"
+                        className="h-full rounded-full bg-brand transition-all"
                         style={{ width: `${widthPct}%` }}
                       />
                     </div>
@@ -168,68 +168,68 @@ function CostsRoute() {
 
       {/* 员工 Token 明细表 */}
       <WorkSurface>
-        <div className="flex items-center justify-between border-b border-v3-line px-4 py-3">
-          <p className="text-[13px] font-semibold text-v3-ink">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <p className="text-[13px] font-semibold text-ink">
             数字员工 Token 明细
           </p>
-          <span className="text-xs text-v3-ink-3">
+          <span className="text-xs text-ink-3">
             近 {periodDays} 天 · 按用量降序
           </span>
         </div>
-        <V3StateSurface
+        <StateSurface
           isLoading={summaryQuery.isPending}
           isError={summaryQuery.isError}
           error={summaryQuery.error}
           empty={employees.length === 0}
           emptyState={
-            <V3EmptyState
+            <EmptyState
               icon={<CircleDollarSign />}
               title="暂无执行数据"
               description="本周期内没有已完成的数字员工执行记录"
             />
           }
         >
-          <V3Table>
+          <DataTable>
             <thead>
               <tr>
-                <V3Th>员工名称</V3Th>
-                <V3Th>Provider</V3Th>
-                <V3Th align="right">执行次数</V3Th>
-                <V3Th align="right">Token 用量</V3Th>
-                <V3Th align="right">占比</V3Th>
+                <Th>员工名称</Th>
+                <Th>Provider</Th>
+                <Th align="right">执行次数</Th>
+                <Th align="right">Token 用量</Th>
+                <Th align="right">占比</Th>
               </tr>
             </thead>
             <tbody>
               {employees.map((row) => (
-                <V3Tr key={`${row.employee_id}-${row.provider_type}`}>
-                  <V3Td>
+                <Tr key={`${row.employee_id}-${row.provider_type}`}>
+                  <Td>
                     <Link
                       to="/employees/$employeeId"
                       params={{ employeeId: row.employee_id }}
-                      className="text-v3-brand hover:underline"
+                      className="text-brand hover:underline"
                     >
                       {row.employee_name || row.employee_id.slice(0, 8)}
                     </Link>
-                  </V3Td>
-                  <V3Td>
+                  </Td>
+                  <Td>
                     <StatusPill tone="info">
                       {PROVIDER_LABELS[row.provider_type] ?? row.provider_type}
                     </StatusPill>
-                  </V3Td>
-                  <V3Td align="right" className="tabular-nums">
+                  </Td>
+                  <Td align="right" className="tabular-nums">
                     {row.run_count.toLocaleString()}
-                  </V3Td>
-                  <V3Td align="right" className="tabular-nums font-medium">
+                  </Td>
+                  <Td align="right" className="tabular-nums font-medium">
                     {formatTokens(row.total_tokens)}
-                  </V3Td>
-                  <V3Td align="right" className="tabular-nums text-v3-ink-2">
+                  </Td>
+                  <Td align="right" className="tabular-nums text-ink-2">
                     {tokenPercent(row.total_tokens, totalTokens)}
-                  </V3Td>
-                </V3Tr>
+                  </Td>
+                </Tr>
               ))}
             </tbody>
-          </V3Table>
-        </V3StateSurface>
+          </DataTable>
+        </StateSurface>
       </WorkSurface>
         </div>
       </Main>

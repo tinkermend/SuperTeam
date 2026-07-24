@@ -7,7 +7,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,14 +16,14 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
-import { V3Button } from "@/components/superteam";
+import { Button } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployee,
   listDigitalEmployeeAvatarAssets,
-  type DigitalEmployee,
+  type DigitalEmployee
 } from "@/lib/api/employees";
 import { listEmployeeTemplates, type EmployeeTemplate } from "@/lib/api/employee-templates";
 import {
@@ -33,7 +33,7 @@ import {
   resolveProjectDecision,
   type ProjectMember,
   type ProjectMemberInput,
-  type ProjectTaskGraphBlockingFactGap,
+  type ProjectTaskGraphBlockingFactGap
 } from "@/lib/api/projects";
 
 const DEFAULT_PROVIDER_TYPE = "claude-code";
@@ -61,7 +61,7 @@ export function StaffGapDialog({
   onOpenChange,
   onStaffed,
   open,
-  projectId,
+  projectId
 }: StaffGapDialogProps) {
   const queryClient = useQueryClient();
   const [templateType, setTemplateType] = useState("");
@@ -77,19 +77,19 @@ export function StaffGapDialog({
   const templatesQuery = useQuery({
     enabled: open,
     queryFn: () => listEmployeeTemplates(apiOptions),
-    queryKey: ["employee-templates", apiOptions.baseUrl],
-  });
+    queryKey: ["employee-templates", apiOptions.baseUrl]
+});
   // 补员员工必须带团队归属（参与门禁）：新员工默认归入项目自身团队。
   const projectQuery = useQuery({
     enabled: open,
     queryFn: () => getProject(apiOptions, projectId),
-    queryKey: ["staff-gap-project", apiOptions.baseUrl, projectId],
-  });
+    queryKey: ["staff-gap-project", apiOptions.baseUrl, projectId]
+});
   const avatarAssetsQuery = useQuery({
     enabled: open,
     queryFn: () => listDigitalEmployeeAvatarAssets(apiOptions),
-    queryKey: ["digital-employee-avatar-assets", apiOptions.baseUrl],
-  });
+    queryKey: ["digital-employee-avatar-assets", apiOptions.baseUrl]
+});
 
   const systemTemplates = useMemo(
     () => (templatesQuery.data ?? []).filter((template) => template.is_system),
@@ -149,8 +149,8 @@ export function StaffGapDialog({
           persona_memory_markdown: selectedTemplate.persona_memory_markdown,
           provider_type: providerType,
           role: selectedTemplate.default_role,
-          team_id: projectTeamId,
-        });
+          team_id: projectTeamId
+});
         createdEmployeeRef.current = employee;
       }
       // Step 2: 追加进项目成员（读改写）——若上次重试已写入成功则跳过，追加本身幂等。
@@ -166,15 +166,15 @@ export function StaffGapDialog({
             principal_id: employee.id,
             principal_type: "digital_employee",
             project_role: "executor",
-            settings: {},
-          },
+            settings: {}
+},
         ];
         await replaceProjectMembers(apiOptions, projectId, nextMembers);
       }
       // Step 3: resolve planning_gap 决策为 restaffed，触发需求重开+重规划。
       await resolveProjectDecision(apiOptions, projectId, decisionRequestId, {
-        decision: "restaffed",
-      });
+        decision: "restaffed"
+});
       return employee;
     },
     onError: (mutationError: unknown) => {
@@ -191,8 +191,8 @@ export function StaffGapDialog({
       ]);
       onOpenChange(false);
       onStaffed?.();
-    },
-  });
+    }
+});
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -245,18 +245,18 @@ export function StaffGapDialog({
               </SelectContent>
             </Select>
           </div>
-          {error ? <p className="text-sm font-semibold text-v3-danger">{error}</p> : null}
+          {error ? <p className="text-sm font-semibold text-danger">{error}</p> : null}
         </div>
         <DialogFooter>
-          <V3Button onClick={() => onOpenChange(false)} variant="outline">
+          <Button onClick={() => onOpenChange(false)} variant="outline">
             取消
-          </V3Button>
-          <V3Button
+          </Button>
+          <Button
             disabled={mutation.isPending || !templateType || !name.trim()}
             onClick={() => mutation.mutate()}
           >
             创建并补员
-          </V3Button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -269,8 +269,8 @@ function toMemberInput(member: ProjectMember): ProjectMemberInput {
     principal_id: member.principal_id,
     principal_type: member.principal_type,
     project_role: member.project_role,
-    settings: member.settings,
-  };
+    settings: member.settings
+};
 }
 
 /** 按 gap.required_capabilities 命中系统模板的 external_capabilities，命中第一个就选它

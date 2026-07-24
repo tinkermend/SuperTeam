@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 export function ObjectRef({
   className,
   id,
-  name,
+  name
 }: {
   className?: string;
   id?: string | null;
@@ -45,7 +45,7 @@ function shortId(id: string) {
 export function ObjectIdChip({
   className,
   full = false,
-  id,
+  id
 }: {
   className?: string;
   full?: boolean;
@@ -81,7 +81,7 @@ export function ObjectIdChip({
       aria-label={`复制标识符 ${id}`}
       onClick={copy}
       className={cn(
-        "inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md border border-v3-line bg-v3-card-soft px-1.5 py-0.5 font-mono text-[11px] leading-4 text-v3-ink-3 transition-colors hover:border-v3-line-strong hover:text-v3-ink-2",
+        "inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md border border-line bg-card-soft px-1.5 py-0.5 font-mono text-[11px] leading-4 text-ink-3 transition-colors hover:border-line-strong hover:text-ink-2",
         full && "max-w-full shrink",
         className,
       )}
@@ -90,7 +90,7 @@ export function ObjectIdChip({
         {full ? id : shortId(id)}
       </span>
       {copied ? (
-        <Check aria-hidden className="size-3 shrink-0 text-v3-ok" />
+        <Check aria-hidden className="size-3 shrink-0 text-ok" />
       ) : (
         <Copy aria-hidden className="size-3 shrink-0 opacity-70" />
       )}

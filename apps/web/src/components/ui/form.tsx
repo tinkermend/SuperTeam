@@ -6,7 +6,7 @@ import {
   useFormState,
   type ControllerProps,
   type FieldPath,
-  type FieldValues,
+  type FieldValues
 } from 'react-hook-form'
 import * as LabelPrimitive from '@radix-ui/react-label'
 import { Slot } from '@radix-ui/react-slot'
@@ -58,8 +58,8 @@ const useFormField = () => {
     formItemId: `${id}-form-item`,
     formDescriptionId: `${id}-form-item-description`,
     formMessageId: `${id}-form-item-message`,
-    ...fieldState,
-  }
+    ...fieldState
+}
 }
 
 type FormItemContextValue = {
@@ -160,5 +160,5 @@ export {
   FormControl,
   FormDescription,
   FormMessage,
-  FormField,
+  FormField
 }

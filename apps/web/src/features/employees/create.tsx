@@ -18,10 +18,9 @@ import {
   Plus,
   ShieldCheck,
   Sparkles,
-  Trash2,
+  Trash2
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,25 +30,26 @@ import {
   GlassCard,
   IconTile,
   StatusPill,
-  V3Button,
+  Chip,
+  Button,
   WorkSurface,
-  type V3Tone,
+  type Tone
 } from "@/components/superteam";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
-  ShellPageHeaderBack,
+  ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import type {
   DigitalEmployeeAvatarAsset,
   DigitalEmployeeCapabilityOptionItem,
   DigitalEmployeeCreateOptions,
-  DigitalEmployeeTypeOption,
+  DigitalEmployeeTypeOption
 } from "@/lib/api/employees";
 import {
   createDigitalEmployee,
   getDigitalEmployeeCreateOptions,
-  listDigitalEmployeeAvatarAssets,
+  listDigitalEmployeeAvatarAssets
 } from "@/lib/api/employees";
 import { ApiRequestError } from "@/lib/api/client";
 import { apiErrorMessage } from "@/lib/api/api-error";
@@ -67,7 +67,7 @@ import {
   templateCapabilitySummary,
   templateDefaultInjectionLine,
   templateRisk,
-  templateSearchText,
+  templateSearchText
 } from "./template-utils";
 
 const BLANK_CUSTOM_EMPLOYEE_TYPE = "custom_agent";
@@ -124,8 +124,8 @@ const emptyDraft: WizardDraft = {
   creation_mode: "template",
   capability_binding_draft: {
     mcp_servers: [],
-    skills: [],
-  },
+    skills: []
+},
   daily_token_limit: "",
   description: "",
   employee_type: "",
@@ -138,7 +138,7 @@ const emptyDraft: WizardDraft = {
   runtime_binding: "",
   runtime_node_id: "",
   team_id: "",
-  environment_variables: [],
+  environment_variables: []
 };
 
 export function CreateEmployeePage() {
@@ -161,19 +161,19 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
   const teams = useQuery({
     queryKey: ["teams"],
-    queryFn: () => listTeams({ baseUrl: apiBaseUrl, fetcher }),
-  });
+    queryFn: () => listTeams({ baseUrl: apiBaseUrl, fetcher })
+});
 
   const createOptions = useQuery({
     enabled: !teams.isLoading,
     queryKey: ["digital-employee-create-options", draft.team_id || "team-less"],
-    queryFn: () => getDigitalEmployeeCreateOptions({ baseUrl: apiBaseUrl, fetcher }, draft.team_id || undefined),
-  });
+    queryFn: () => getDigitalEmployeeCreateOptions({ baseUrl: apiBaseUrl, fetcher }, draft.team_id || undefined)
+});
 
   const avatarAssets = useQuery({
     queryKey: ["digital-employee-avatar-assets"],
-    queryFn: () => listDigitalEmployeeAvatarAssets({ baseUrl: apiBaseUrl, fetcher }),
-  });
+    queryFn: () => listDigitalEmployeeAvatarAssets({ baseUrl: apiBaseUrl, fetcher })
+});
   // 头像独占：已被在册员工占用的头像不进入候选。
   const availableAvatarAssets = useMemo(
     () => (avatarAssets.data ?? []).filter((asset) => asset.status === "active" && !asset.in_use),
@@ -215,8 +215,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           ...current,
           runtime_binding: "",
           runtime_node_id: "",
-          provider_type: candidateProviders[0],
-        };
+          provider_type: candidateProviders[0]
+};
       }
       if (current.provider_type && !candidateProviders.includes(current.provider_type)) {
         return { ...current, provider_type: "", runtime_binding: "", runtime_node_id: "" };
@@ -250,8 +250,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             provider_type: draft.provider_type,
             environment_variables: draft.environment_variables
               .filter((row) => row.name.trim() && row.value)
-              .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive })),
-          },
+              .map((row) => ({ name: row.name.trim(), value: row.value, sensitive: row.sensitive }))
+},
         );
       } catch (err) {
         // 中文化落在 mutationFn 层：横幅与全局失败 toast（main.tsx onError 透传
@@ -266,10 +266,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     onSuccess: (employee) => {
       void navigate({
         params: { employeeId: employee.id },
-        to: "/employees/$employeeId",
-      });
-    },
-  });
+        to: "/employees/$employeeId"
+});
+    }
+});
 
   const currentStep = configSteps[stepIndex];
   const teamOptions = useMemo(() => (teams.data ?? []).filter((team) => team.status === "active"), [teams.data]);
@@ -311,8 +311,8 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     updateDraft({
       provider_type: providerType,
       runtime_binding: "",
-      runtime_node_id: "",
-    });
+      runtime_node_id: ""
+});
     setErrors((current) => ({ ...current, runtime: undefined }));
   }
 
@@ -423,10 +423,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         }
         actions={
           flowStep !== "template" ? (
-            <V3Button onClick={requestTemplateChange} type="button" variant="outline">
+            <Button onClick={requestTemplateChange} type="button" variant="outline">
               <ArrowLeft className="size-4" />
               返回
-            </V3Button>
+            </Button>
           ) : undefined
         }
       />
@@ -484,15 +484,15 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         {flowStep === "configure" ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
             <GlassCard className="flex min-w-0 flex-col xl:max-h-[calc(100vh-220px)] xl:min-h-[560px]">
-              <div className="border-b border-[color:var(--v3-aurora-hairline)] p-4">
+              <div className="border-b border-[color:var(--aurora-hairline)] p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex items-center gap-2.5">
                     <IconTile tone="brand" size="sm">
                         <Bot />
                       </IconTile>
                       <div>
-                        <h2 className="text-lg font-semibold text-v3-ink">员工画像蓝图</h2>
-                        <p className="mt-0.5 text-sm text-v3-ink-3">
+                        <h2 className="text-lg font-semibold text-ink">员工画像蓝图</h2>
+                        <p className="mt-0.5 text-sm text-ink-3">
                         按职责定位、可用能力和 Provider 类型完成员工画像。
                       </p>
                     </div>
@@ -504,7 +504,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4">
                 <div className="min-h-0">
                   {shouldShowConfigureLoading ? (
-                    <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-v3-ink-3">
+                    <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-ink-3">
                       <Loader2 className="size-4 animate-spin" />
                       加载创建选项
                     </div>
@@ -538,13 +538,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               </div>
 
               {createEmployee.isError ? (
-                <p className="px-4 text-sm text-v3-danger">{getErrorMessage(createEmployee.error, CREATE_EMPLOYEE_FALLBACK_MESSAGE)}</p>
+                <p className="px-4 text-sm text-danger">{getErrorMessage(createEmployee.error, CREATE_EMPLOYEE_FALLBACK_MESSAGE)}</p>
               ) : null}
               <div
-                className="flex justify-between gap-3 border-t border-[color:var(--v3-aurora-hairline)] p-4"
+                className="flex justify-between gap-3 border-t border-[color:var(--aurora-hairline)] p-4"
                 data-testid="employee-configure-actions"
               >
-                <V3Button
+                <Button
                   disabled={createEmployee.isPending}
                   onClick={() => {
                     clearCreateError();
@@ -559,9 +559,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 >
                   <ChevronLeft className="size-4" />
                   {stepIndex === 0 ? "返回创建方式" : "上一步"}
-                </V3Button>
+                </Button>
                 {stepIndex < configSteps.length - 1 ? (
-                  <V3Button
+                  <Button
                     disabled={
                       createOptions.isLoading ||
                       createOptions.isError ||
@@ -574,9 +574,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   >
                     下一步
                     <ChevronRight className="size-4" />
-                  </V3Button>
+                  </Button>
                 ) : (
-                  <V3Button
+                  <Button
                     disabled={
                       createEmployee.isPending ||
                       createOptions.isLoading ||
@@ -592,7 +592,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   >
                     进入确认创建
                     <ChevronRight className="size-4" />
-                  </V3Button>
+                  </Button>
                 )}
               </div>
             </GlassCard>
@@ -623,7 +623,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
 function CreationStageProgress({
   flowStep,
-  onNavigate,
+  onNavigate
 }: {
   flowStep: CreateFlowStep;
   onNavigate?: (stage: CreateFlowStep) => void;
@@ -659,25 +659,25 @@ function CreationStageProgress({
               <span
                 className={cn(
                   "flex size-8 shrink-0 items-center justify-center rounded-[11px] text-[13px] font-bold tabular-nums transition-colors",
-                  active ? "bg-v3-brand text-white shadow-v3" : "",
-                  done ? "bg-v3-brand-soft text-v3-brand-deep" : "",
-                  !active && !done ? "bg-v3-card-soft text-v3-ink-3" : "",
+                  active ? "bg-brand text-white shadow-card" : "",
+                  done ? "bg-brand-soft text-brand-deep" : "",
+                  !active && !done ? "bg-card-soft text-ink-3" : "",
                 )}
               >
                 {done ? <Check className="size-4" /> : index + 1}
               </span>
               <span className="min-w-0">
-                <span className={cn("block text-sm font-semibold", active ? "text-v3-brand-deep" : "text-v3-ink")}>
+                <span className={cn("block text-sm font-semibold", active ? "text-brand-deep" : "text-ink")}>
                   {stage.title}
                 </span>
-                <span className="block truncate text-xs text-v3-ink-3">{stage.description}</span>
+                <span className="block truncate text-xs text-ink-3">{stage.description}</span>
               </span>
               {index < stages.length - 1 ? (
                 <span
                   aria-hidden
                   className={cn(
                     "ml-auto hidden h-px w-6 shrink-0 md:block",
-                    done ? "bg-v3-brand/40" : "bg-v3-line",
+                    done ? "bg-brand/40" : "bg-line",
                   )}
                 />
               ) : null}
@@ -691,7 +691,7 @@ function CreationStageProgress({
 
 function CreationPathPanel({
   creationMode,
-  onSelectMode,
+  onSelectMode
 }: {
   creationMode: CreationMode;
   onSelectMode: (mode: CreationMode) => void;
@@ -703,32 +703,32 @@ function CreationPathPanel({
       icon: Sparkles,
       mode: "template" as const,
       badge: "推荐",
-      disabled: false,
-    },
+      disabled: false
+},
     {
       title: "空白自定义",
       description: "直接定义自定义身份，逐项手动配置职责定位、能力和 Provider 类型。",
       icon: FileText,
       mode: "blank_custom" as const,
       badge: "可用",
-      disabled: false,
-    },
+      disabled: false
+},
     {
       title: "从团队角色复制",
       description: "复用团队内已验证的角色画像和能力配置。",
       icon: ClipboardCheck,
       mode: undefined,
       badge: "暂未开放",
-      disabled: true,
-    },
+      disabled: true
+},
     {
       title: "从历史员工克隆",
       description: "基于已有员工配置生成新草稿，保留审计来源。",
       icon: GitBranch,
       mode: undefined,
       badge: "暂未开放",
-      disabled: true,
-    },
+      disabled: true
+},
   ];
 
   return (
@@ -738,8 +738,8 @@ function CreationPathPanel({
           <Sparkles />
         </IconTile>
         <div>
-          <h2 className="text-base font-semibold text-v3-ink">创建路径</h2>
-          <p className="text-xs text-v3-ink-3">先选入口，再进入配置。</p>
+          <h2 className="text-base font-semibold text-ink">创建路径</h2>
+          <p className="text-xs text-ink-3">先选入口，再进入配置。</p>
         </div>
       </div>
       <div className="grid gap-2">
@@ -752,11 +752,11 @@ function CreationPathPanel({
               className={cn(
                 "rounded-[14px] border p-3 text-left transition-all duration-200",
                 active
-                  ? "border-v3-brand/40 bg-v3-brand-soft shadow-v3"
-                  : "border-v3-line bg-v3-card/70",
+                  ? "border-brand/40 bg-brand-soft shadow-card"
+                  : "border-line bg-card/70",
                 path.disabled
                   ? "cursor-not-allowed opacity-60"
-                  : "hover:-translate-y-0.5 hover:border-v3-brand/30 hover:shadow-md",
+                  : "hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-md",
               )}
               disabled={path.disabled}
               key={path.title}
@@ -773,20 +773,20 @@ function CreationPathPanel({
                 </IconTile>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
-                    <span className={cn("text-sm font-semibold", active ? "text-v3-brand-deep" : "text-v3-ink")}>
+                    <span className={cn("text-sm font-semibold", active ? "text-brand-deep" : "text-ink")}>
                       {path.title}
                     </span>
-                    <Badge variant={active ? "default" : "secondary"}>{path.badge}</Badge>
+                    <Chip active={active}>{path.badge}</Chip>
                   </span>
-                  <span className="mt-1 block text-xs leading-5 text-v3-ink-3">{path.description}</span>
+                  <span className="mt-1 block text-xs leading-5 text-ink-3">{path.description}</span>
                 </span>
               </span>
             </button>
           );
         })}
       </div>
-      <div className="mt-3.5 flex items-start gap-2 rounded-[14px] border border-v3-info/20 bg-v3-info-soft p-3 text-xs leading-5 text-v3-ink">
-        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-v3-info" />
+      <div className="mt-3.5 flex items-start gap-2 rounded-[14px] border border-info/20 bg-info-soft p-3 text-xs leading-5 text-ink">
+        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-info" />
         <span>创建后进入 ready，不会自动执行任务；项目或任务调度可手动发起。</span>
       </div>
     </GlassCard>
@@ -799,7 +799,7 @@ function TemplateSelectionPanel({
   selectedTeamName,
   selectedType,
   onEnterConfiguration,
-  onSelectType,
+  onSelectType
 }: {
   draft: WizardDraft;
   options?: DigitalEmployeeCreateOptions;
@@ -827,20 +827,20 @@ function TemplateSelectionPanel({
 
   return (
     <GlassCard className="@container/template flex min-w-0 flex-col">
-      <div className="border-b border-[color:var(--v3-aurora-hairline)] p-4">
+      <div className="border-b border-[color:var(--aurora-hairline)] p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-2.5">
             <IconTile tone="brand" size="sm">
               <Sparkles />
             </IconTile>
             <div>
-              <h2 className="text-base font-semibold text-v3-ink">选择内置模板</h2>
-              <p className="mt-0.5 text-sm text-v3-ink-3">模板只负责带出默认角色、模板能力和 Provider 默认值。</p>
+              <h2 className="text-base font-semibold text-ink">选择内置模板</h2>
+              <p className="mt-0.5 text-sm text-ink-3">模板只负责带出默认角色、模板能力和 Provider 默认值。</p>
             </div>
           </div>
-          <Badge variant="secondary">
+          <Chip>
             {employeeTypes.length} 个模板 · 已筛选 {filteredEmployeeTypes.length}
-          </Badge>
+          </Chip>
         </div>
         <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(220px,1fr)_160px]">
           <Input
@@ -864,7 +864,7 @@ function TemplateSelectionPanel({
         </div>
       </div>
       {employeeTypes.length === 0 ? (
-        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-[14px] border border-v3-line bg-v3-card-soft p-6 text-sm text-v3-ink-3">
+        <div className="m-4 flex min-h-[420px] flex-1 items-center justify-center rounded-[14px] border border-line bg-card-soft p-6 text-sm text-ink-3">
           当前创建选项未返回可用专业模板。
         </div>
       ) : (
@@ -888,14 +888,14 @@ function TemplateSelectionPanel({
                       <th
                         key={label}
                         className={cn(
-                          "sticky top-0 z-10 border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-v3-ink-3",
+                          "sticky top-0 z-10 border-b border-line-strong bg-card-soft px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-ink-3",
                           w,
                         )}
                       >
                         {label}
                       </th>
                     ))}
-                    <th className="sticky top-0 z-10 w-[100px] border-b border-v3-line-strong bg-v3-card-soft px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-v3-ink-3">
+                    <th className="sticky top-0 z-10 w-[100px] border-b border-line-strong bg-card-soft px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-ink-3">
                       选择
                     </th>
                   </tr>
@@ -912,7 +912,7 @@ function TemplateSelectionPanel({
                 </tbody>
               </table>
               {filteredEmployeeTypes.length === 0 ? (
-                <div className="flex min-h-[220px] items-center justify-center border-t border-v3-line bg-v3-card-soft p-6 text-sm text-v3-ink-3">
+                <div className="flex min-h-[220px] items-center justify-center border-t border-line bg-card-soft p-6 text-sm text-ink-3">
                   没有匹配当前筛选条件的专业模板。
                 </div>
               ) : null}
@@ -920,24 +920,24 @@ function TemplateSelectionPanel({
           </WorkSurface>
         </div>
       )}
-      <div className="border-t border-[color:var(--v3-aurora-hairline)] px-4 py-3.5">
+      <div className="border-t border-[color:var(--aurora-hairline)] px-4 py-3.5">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-semibold text-v3-ink">已选模板摘要</span>
-              <Badge variant="secondary">团队 {selectedTeamName || "无（租户级）"}</Badge>
-              <Badge variant="secondary">模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Badge>
-              <Badge variant="secondary">默认角色 {draft.role || selectedType?.default_role || "未生成"}</Badge>
-              <Badge variant="secondary">风险 {riskLabel(draft.risk_level || "medium")}</Badge>
+              <span className="font-semibold text-ink">已选模板摘要</span>
+              <Chip>团队 {selectedTeamName || "无（租户级）"}</Chip>
+              <Chip>模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Chip>
+              <Chip>默认角色 {draft.role || selectedType?.default_role || "未生成"}</Chip>
+              <Chip>风险 {riskLabel(draft.risk_level || "medium")}</Chip>
             </div>
-            <p className="mt-2 text-sm text-v3-ink-3">
+            <p className="mt-2 text-sm text-ink-3">
               没有合适的模板？可在左侧选择空白自定义。
             </p>
           </div>
-          <V3Button disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
+          <Button disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
             进入完成配置
             <ChevronRight className="size-4" />
-          </V3Button>
+          </Button>
         </div>
       </div>
       {selectedType ? <span className="sr-only">当前选择：{selectedType.label}</span> : null}
@@ -948,7 +948,7 @@ function TemplateSelectionPanel({
 function TemplateTableRow({
   selected,
   typeOption,
-  onSelect,
+  onSelect
 }: {
   selected: boolean;
   typeOption: DigitalEmployeeTypeOption;
@@ -960,8 +960,8 @@ function TemplateTableRow({
   return (
     <tr
       className={cn(
-        "transition-colors [&>td]:border-b [&>td]:border-v3-line [&:last-child>td]:border-b-0 [&:hover>td]:bg-v3-card-inner",
-        selected ? "[&>td]:bg-v3-brand-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--v3-brand)]" : "",
+        "transition-colors [&>td]:border-b [&>td]:border-line [&:last-child>td]:border-b-0 [&:hover>td]:bg-card-inner",
+        selected ? "[&>td]:bg-brand-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--brand)]" : "",
       )}
     >
       <td className="px-3 py-3 align-top">
@@ -970,36 +970,36 @@ function TemplateTableRow({
             <Code2 />
           </IconTile>
           <div className="min-w-0">
-            <div className="font-semibold text-v3-ink">{typeOption.label}</div>
-            <div className="mt-1 line-clamp-2 text-xs leading-5 text-v3-ink-3">{typeOption.description}</div>
+            <div className="font-semibold text-ink">{typeOption.label}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-5 text-ink-3">{typeOption.description}</div>
           </div>
         </div>
       </td>
       <td className="px-3 py-3 align-top">
-        <span className="block max-w-[180px] truncate font-mono text-xs text-v3-ink-2">
+        <span className="block max-w-[180px] truncate font-mono text-xs text-ink-2">
           {typeOption.default_role || typeOption.type}
         </span>
       </td>
       <td className="px-3 py-3 align-top">
         <div className="grid gap-1.5">
           <div className="flex flex-wrap gap-1.5">
-            <Badge variant="secondary">{`技能 ${capability.skills.length}`}</Badge>
-            <Badge variant="secondary">{`MCP ${capability.mcpServers.length}`}</Badge>
-            <Badge variant="secondary">{`Provider ${capability.providerTypes.length}`}</Badge>
+            <Chip>{`技能 ${capability.skills.length}`}</Chip>
+            <Chip>{`MCP ${capability.mcpServers.length}`}</Chip>
+            <Chip>{`Provider ${capability.providerTypes.length}`}</Chip>
           </div>
-          <div className="truncate text-xs text-v3-ink-3">{templateCapabilityPreview(typeOption)}</div>
+          <div className="truncate text-xs text-ink-3">{templateCapabilityPreview(typeOption)}</div>
         </div>
       </td>
       <td className="px-3 py-3 align-top">
         <RiskPill risk={risk} />
       </td>
       <td className="px-3 py-3 align-top">
-        <span className="line-clamp-2 text-xs leading-5 text-v3-ink-3">
+        <span className="line-clamp-2 text-xs leading-5 text-ink-3">
           {templateDefaultInjectionLine(typeOption)}
         </span>
       </td>
       <td className="px-3 py-3 text-right align-top">
-        <V3Button
+        <Button
           aria-label={`${selected ? "已选择" : "选择"}${typeOption.label}模板`}
           aria-pressed={selected}
           className="ml-auto whitespace-nowrap"
@@ -1010,7 +1010,7 @@ function TemplateTableRow({
         >
           {selected ? <Check className="size-4" /> : null}
           {selected ? "已选" : "选择"}
-        </V3Button>
+        </Button>
       </td>
     </tr>
   );
@@ -1026,9 +1026,9 @@ function displayablePreflightChecks<T extends { key: string }>(checks: T[]) {
 
 function InlineSummary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="v3-glass-inner flex items-center justify-between gap-3 px-3 py-2">
-      <span className="text-v3-ink-3">{label}</span>
-      <span className="max-w-[180px] truncate font-medium text-v3-ink">{value}</span>
+    <div className="glass-inner flex items-center justify-between gap-3 px-3 py-2">
+      <span className="text-ink-3">{label}</span>
+      <span className="max-w-[180px] truncate font-medium text-ink">{value}</span>
     </div>
   );
 }
@@ -1037,7 +1037,7 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
   const currentIndex = configSteps.indexOf(currentStep);
 
   return (
-    <div className="v3-glass-inner flex flex-wrap gap-1 p-1.5">
+    <div className="glass-inner flex flex-wrap gap-1 p-1.5">
         {configSteps.map((step, index) => {
           const active = step === currentStep;
           const done = index < currentIndex;
@@ -1046,17 +1046,17 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
             <div
               className={cn(
                 "flex h-8 items-center gap-2 rounded-[10px] px-2.5 text-xs font-semibold transition-colors",
-                active ? "bg-v3-brand-soft text-v3-brand-deep" : "text-v3-ink-3",
-                done && !active ? "text-v3-ink-2" : "",
+                active ? "bg-brand-soft text-brand-deep" : "text-ink-3",
+                done && !active ? "text-ink-2" : "",
               )}
               key={step}
             >
               <span
                 className={cn(
                   "flex size-5 items-center justify-center rounded-full text-[11px] tabular-nums",
-                  active ? "bg-v3-brand text-white" : "",
-                  done && !active ? "bg-v3-brand-soft text-v3-brand-deep" : "",
-                  !active && !done ? "bg-v3-card text-v3-ink-3" : "",
+                  active ? "bg-brand text-white" : "",
+                  done && !active ? "bg-brand-soft text-brand-deep" : "",
+                  !active && !done ? "bg-card text-ink-3" : "",
                 )}
               >
                 {done ? <Check className="size-3" /> : index + 1}
@@ -1072,7 +1072,7 @@ function StepTabs({ currentStep }: { currentStep: StepName }) {
 function CreationPreflightPanel({
   draft,
   options,
-  selectedType,
+  selectedType
 }: {
   draft: WizardDraft;
   options?: DigitalEmployeeCreateOptions;
@@ -1083,33 +1083,33 @@ function CreationPreflightPanel({
 
   return (
     <aside className="grid content-start">
-      <GlassCard className="divide-y divide-[color:var(--v3-aurora-hairline)]">
+      <GlassCard className="divide-y divide-[color:var(--aurora-hairline)]">
       <section className="p-4">
         <div className="mb-3 flex items-center gap-2">
           <IconTile tone="ok" size="sm">
             <ShieldCheck />
           </IconTile>
           <div>
-            <h2 className="text-base font-semibold text-v3-ink">预检项目</h2>
-            <p className="text-xs text-v3-ink-3">来自 Control Plane 创建候选接口。</p>
+            <h2 className="text-base font-semibold text-ink">预检项目</h2>
+            <p className="text-xs text-ink-3">来自 Control Plane 创建候选接口。</p>
           </div>
         </div>
         <div className="grid gap-2">
           {checks.length === 0 ? (
-            <p className="v3-glass-inner p-3 text-sm text-v3-ink-3">等待创建候选加载。</p>
+            <p className="glass-inner p-3 text-sm text-ink-3">等待创建候选加载。</p>
           ) : (
             checks.map((check) => (
               <div
-                className="v3-glass-inner flex items-start gap-2 p-3"
+                className="glass-inner flex items-start gap-2 p-3"
                 key={check.key}
               >
                 <span className={cn("mt-1 size-2 shrink-0 rounded-full", checkDotClassName(check.status))} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-v3-ink">{check.label}</span>
+                    <span className="text-sm font-medium text-ink">{check.label}</span>
                     <StatusPill tone={checkTone(check.status)}>{checkStatusLabel(check.status)}</StatusPill>
                   </span>
-                  <span className="mt-1 block text-xs leading-5 text-v3-ink-3">{check.message}</span>
+                  <span className="mt-1 block text-xs leading-5 text-ink-3">{check.message}</span>
                 </span>
               </div>
             ))
@@ -1123,8 +1123,8 @@ function CreationPreflightPanel({
             <Gauge />
           </IconTile>
           <div>
-            <h2 className="text-base font-semibold text-v3-ink">画像摘要</h2>
-            <p className="text-xs text-v3-ink-3">随配置实时更新。</p>
+            <h2 className="text-base font-semibold text-ink">画像摘要</h2>
+            <p className="text-xs text-ink-3">随配置实时更新。</p>
           </div>
         </div>
         <div className="grid gap-3 text-sm">
@@ -1145,9 +1145,9 @@ function CreationPreflightPanel({
         </div>
       </section>
 
-      <section className="p-4 text-xs leading-5 text-v3-ink-3">
-        <div className="mb-2 flex items-center gap-2 font-semibold text-v3-ink">
-          <Cpu className="size-4 text-v3-brand" />
+      <section className="p-4 text-xs leading-5 text-ink-3">
+        <div className="mb-2 flex items-center gap-2 font-semibold text-ink">
+          <Cpu className="size-4 text-brand" />
           创建后事实
         </div>
         <div className="grid gap-2">
@@ -1169,7 +1169,7 @@ function ConfirmCreationStep({
   selectedTeamName,
   selectedType,
   onBack,
-  onSubmit,
+  onSubmit
 }: {
   createError: unknown;
   creating: boolean;
@@ -1183,22 +1183,22 @@ function ConfirmCreationStep({
 
   return (
     <GlassCard className="flex flex-col">
-      <div className="border-b border-[color:var(--v3-aurora-hairline)] p-4">
+      <div className="border-b border-[color:var(--aurora-hairline)] p-4">
         <div className="flex items-center gap-2.5">
           <IconTile tone="brand" size="sm">
             <ClipboardCheck />
           </IconTile>
           <div>
-            <h2 className="text-lg font-semibold text-v3-ink">确认创建</h2>
-            <p className="mt-0.5 text-sm text-v3-ink-3">
+            <h2 className="text-lg font-semibold text-ink">确认创建</h2>
+            <p className="mt-0.5 text-sm text-ink-3">
               核对本次将提交给 Control Plane 的员工配置；确认后创建 ready 状态数字员工。
             </p>
           </div>
         </div>
       </div>
       <div className="grid gap-4 p-4 lg:grid-cols-2">
-        <section className="v3-glass-inner p-4">
-          <h3 className="text-sm font-semibold text-v3-ink">身份与模板</h3>
+        <section className="glass-inner p-4">
+          <h3 className="text-sm font-semibold text-ink">身份与模板</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary label="归属团队" value={selectedTeamName || "无（租户级）"} />
             <InlineSummary label="创建路径" value={draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : "专业模板"} />
@@ -1215,8 +1215,8 @@ function ConfirmCreationStep({
           </div>
         </section>
 
-        <section className="v3-glass-inner p-4">
-          <h3 className="text-sm font-semibold text-v3-ink">能力与 Provider 类型</h3>
+        <section className="glass-inner p-4">
+          <h3 className="text-sm font-semibold text-ink">能力与 Provider 类型</h3>
           <div className="mt-3 grid gap-2 text-sm">
             <InlineSummary
               label="能力选择"
@@ -1236,17 +1236,17 @@ function ConfirmCreationStep({
         </section>
       </div>
       {createError ? (
-        <p className="px-4 pb-2 text-sm text-v3-danger">{getErrorMessage(createError, CREATE_EMPLOYEE_FALLBACK_MESSAGE)}</p>
+        <p className="px-4 pb-2 text-sm text-danger">{getErrorMessage(createError, CREATE_EMPLOYEE_FALLBACK_MESSAGE)}</p>
       ) : null}
-      <div className="flex justify-between gap-3 border-t border-[color:var(--v3-aurora-hairline)] p-4">
-        <V3Button disabled={creating} onClick={onBack} type="button" variant="glass">
+      <div className="flex justify-between gap-3 border-t border-[color:var(--aurora-hairline)] p-4">
+        <Button disabled={creating} onClick={onBack} type="button" variant="glass">
           <ChevronLeft className="size-4" />
           返回配置
-        </V3Button>
-        <V3Button disabled={creating} onClick={onSubmit} type="button">
+        </Button>
+        <Button disabled={creating} onClick={onSubmit} type="button">
           {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
           确认创建
-        </V3Button>
+        </Button>
       </div>
     </GlassCard>
   );
@@ -1261,7 +1261,7 @@ function IdentityStep({
   teamOptions,
   onSelectTeam,
   onSelectAvatar,
-  onUpdate,
+  onUpdate
 }: {
   avatarAssets: DigitalEmployeeAvatarAsset[];
   draft: WizardDraft;
@@ -1278,8 +1278,8 @@ function IdentityStep({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold text-v3-ink">身份</h2>
-        <p className="text-sm text-v3-ink-3">确定团队、名称、职责定位与员工说明。负责人由后端按当前登录身份注入。</p>
+        <h2 className="text-lg font-semibold text-ink">身份</h2>
+        <p className="text-sm text-ink-3">确定团队、名称、职责定位与员工说明。负责人由后端按当前登录身份注入。</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="归属团队" error={errors.team_id ?? teamCapacityError}>
@@ -1297,7 +1297,7 @@ function IdentityStep({
               </option>
             ))}
           </select>
-          <p className="text-xs text-v3-ink-3">选择“无”将创建租户级独立数字员工。</p>
+          <p className="text-xs text-ink-3">选择“无”将创建租户级独立数字员工。</p>
         </Field>
         <Field label="名称" error={errors.name}>
           <Input
@@ -1337,15 +1337,15 @@ function IdentityStep({
               value={draft.description}
               onChange={(event) => onUpdate({ description: event.target.value })}
             />
-            <p className="text-xs text-v3-ink-3">可选。会出现在数字员工卡片上，超出两行以省略号截断。</p>
+            <p className="text-xs text-ink-3">可选。会出现在数字员工卡片上，超出两行以省略号截断。</p>
           </Field>
         </div>
       </div>
-      <div className="v3-glass-inner p-3 text-sm">
-        <div className="font-semibold text-v3-ink">
+      <div className="glass-inner p-3 text-sm">
+        <div className="font-semibold text-ink">
           {isBlankCustom ? BLANK_CUSTOM_TITLE : selectedType?.label ?? "专业模板"}
         </div>
-        <div className="mt-1 text-v3-ink-3">
+        <div className="mt-1 text-ink-3">
           {isBlankCustom ? "从空白配置开始，后续按职责逐项补齐能力和 Provider。" : selectedType?.description}
         </div>
       </div>
@@ -1363,7 +1363,7 @@ function AvatarSelection({
   assets,
   error,
   onSelect,
-  selectedAssetId,
+  selectedAssetId
 }: {
   assets: DigitalEmployeeAvatarAsset[];
   error?: string;
@@ -1373,8 +1373,8 @@ function AvatarSelection({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="text-sm font-semibold text-v3-ink">头像</span>
-        <span className="text-xs text-v3-ink-3">每个头像只能被一名数字员工使用，已占用的不再显示。</span>
+        <span className="text-sm font-semibold text-ink">头像</span>
+        <span className="text-xs text-ink-3">每个头像只能被一名数字员工使用，已占用的不再显示。</span>
       </div>
       <div className="flex flex-wrap gap-3">
         {assets.map((asset) => {
@@ -1383,8 +1383,8 @@ function AvatarSelection({
             <button
               aria-pressed={selected}
               className={cn(
-                "flex size-20 shrink-0 items-center justify-center rounded-full border bg-v3-card-soft p-0.5 transition-all duration-200",
-                selected ? "border-v3-brand ring-2 ring-v3-brand/30" : "hover:-translate-y-0.5 hover:border-v3-brand/60",
+                "flex size-20 shrink-0 items-center justify-center rounded-full border bg-card-soft p-0.5 transition-all duration-200",
+                selected ? "border-brand ring-2 ring-brand/30" : "hover:-translate-y-0.5 hover:border-brand/60",
               )}
               key={asset.id}
               onClick={() => onSelect(asset.id)}
@@ -1396,9 +1396,9 @@ function AvatarSelection({
         })}
       </div>
       {assets.length === 0 ? (
-        <p className="mt-2 text-sm text-v3-ink-3">头像库已全部被现有数字员工占用，请先扩充头像库再创建。</p>
+        <p className="mt-2 text-sm text-ink-3">头像库已全部被现有数字员工占用，请先扩充头像库再创建。</p>
       ) : null}
-      {error ? <span className="mt-2 block text-sm text-v3-danger">{error}</span> : null}
+      {error ? <span className="mt-2 block text-sm text-danger">{error}</span> : null}
     </div>
   );
 }
@@ -1407,7 +1407,7 @@ function CapabilityStep({
   draft,
   errors,
   options,
-  onUpdate,
+  onUpdate
 }: {
   draft: WizardDraft;
   errors: ValidationErrors;
@@ -1419,8 +1419,8 @@ function CapabilityStep({
   const templateBindingsSummary = formatTemplateBindingsSummary(draft);
   const extensionCapabilityOptions = {
     mcp_servers: withoutInheritedItems(capabilityOptions?.mcp_servers ?? [], inheritedCapabilities.mcp_servers),
-    skills: withoutInheritedItems(capabilityOptions?.skills ?? [], inheritedCapabilities.skills),
-  };
+    skills: withoutInheritedItems(capabilityOptions?.skills ?? [], inheritedCapabilities.skills)
+};
 
   function toggle(kind: keyof WizardDraft["capability_binding_draft"], value: string) {
     const currentValues = draft.capability_binding_draft[kind];
@@ -1430,21 +1430,21 @@ function CapabilityStep({
     onUpdate({
       capability_binding_draft: {
         ...draft.capability_binding_draft,
-        [kind]: nextValues,
-      },
-    });
+        [kind]: nextValues
+}
+});
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold text-v3-ink">能力</h2>
-        <p className="text-sm text-v3-ink-3">团队基线能力只读继承；这里只为员工补充个人技能和 MCP。</p>
+        <h2 className="text-lg font-semibold text-ink">能力</h2>
+        <p className="text-sm text-ink-3">团队基线能力只读继承；这里只为员工补充个人技能和 MCP。</p>
       </div>
-      <section className="v3-glass-inner px-3.5 py-3">
+      <section className="glass-inner px-3.5 py-3">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className="text-sm font-semibold text-v3-ink">团队继承能力</span>
-          <span className="text-xs text-v3-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</span>
+          <span className="text-sm font-semibold text-ink">团队继承能力</span>
+          <span className="text-xs text-ink-3">团队绑定能力只读展示，不会作为员工扩展能力重复提交。</span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
           <CapabilityReadOnlyList label="技能" values={inheritedCapabilities.skills} />
@@ -1452,8 +1452,8 @@ function CapabilityStep({
         </div>
       </section>
       <div>
-        <div className="text-sm font-semibold text-v3-ink">员工扩展能力</div>
-        <p className="mt-1 text-xs text-v3-ink-3">
+        <div className="text-sm font-semibold text-ink">员工扩展能力</div>
+        <p className="mt-1 text-xs text-ink-3">
           这里只提交员工个人扩展项。
           {templateBindingsSummary ? `模板另带出：${templateBindingsSummary}。` : null}
         </p>
@@ -1461,9 +1461,9 @@ function CapabilityStep({
       <CapabilityGroup
         checkedValues={draft.capability_binding_draft.skills}
         emptyState={
-          <p className="text-sm text-v3-ink-3">
+          <p className="text-sm text-ink-3">
             注册表暂无可选技能。候选来自租户技能市场,先
-            <Link className="text-v3-brand hover:underline" to="/skills">
+            <Link className="text-brand hover:underline" to="/skills">
               去技能市场上架
             </Link>
             ,回到这里即可选用;创建后也可在员工详情"扩展能力"中加载。
@@ -1476,9 +1476,9 @@ function CapabilityStep({
       <CapabilityGroup
         checkedValues={draft.capability_binding_draft.mcp_servers}
         emptyState={
-          <p className="text-sm text-v3-ink-3">
+          <p className="text-sm text-ink-3">
             注册表暂无可选 MCP Server。候选来自 MCP 注册表,先
-            <Link className="text-v3-brand hover:underline" to="/mcp">
+            <Link className="text-brand hover:underline" to="/mcp">
               去 MCP 注册表登记
             </Link>
             ,回到这里即可选用。
@@ -1490,7 +1490,7 @@ function CapabilityStep({
       />
       <Field label="人格记忆.md">
         <Textarea
-          className="min-h-[160px] border-v3-line bg-v3-card font-mono text-xs text-v3-ink"
+          className="min-h-[160px] border-line bg-card font-mono text-xs text-ink"
           id="persona-memory-markdown"
           onChange={(event) => onUpdate({ persona_memory_markdown: event.target.value })}
           placeholder="# 人格画像"
@@ -1507,7 +1507,7 @@ function CapabilityStep({
             placeholder="例如 200000"
             value={draft.daily_token_limit}
           />
-          <p className="text-xs text-v3-ink-3">留空表示不设置每日预算上限；填写时必须为正整数。</p>
+          <p className="text-xs text-ink-3">留空表示不设置每日预算上限；填写时必须为正整数。</p>
         </Field>
       </section>
     </div>
@@ -1517,12 +1517,12 @@ function CapabilityStep({
 function CapabilityReadOnlyList({ label, values }: { label: string; values: string[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs text-v3-ink-3">{label}</span>
-      {values.length === 0 ? <span className="text-sm text-v3-ink-3">无</span> : null}
+      <span className="text-xs text-ink-3">{label}</span>
+      {values.length === 0 ? <span className="text-sm text-ink-3">无</span> : null}
       {values.map((value) => (
-        <Badge key={value} variant="secondary">
+        <Chip key={value}>
           {value}
-        </Badge>
+        </Chip>
       ))}
     </span>
   );
@@ -1533,7 +1533,7 @@ function CapabilityGroup({
   emptyState,
   label,
   onToggle,
-  values,
+  values
 }: {
   checkedValues: string[];
   emptyState: ReactNode;
@@ -1544,8 +1544,8 @@ function CapabilityGroup({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline gap-2">
-        <span className="text-sm font-medium text-v3-ink">{label}</span>
-        <span className="text-xs text-v3-ink-3 tabular-nums">已选 {checkedValues.length}</span>
+        <span className="text-sm font-medium text-ink">{label}</span>
+        <span className="text-xs text-ink-3 tabular-nums">已选 {checkedValues.length}</span>
       </div>
       <div className="grid gap-2 md:grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
         {values.map((item) => {
@@ -1556,10 +1556,10 @@ function CapabilityGroup({
               className={cn(
                 "flex items-start gap-2 rounded-[12px] border px-3 py-2 text-sm transition-colors",
                 disabled
-                  ? "cursor-not-allowed border-v3-line bg-v3-card-soft opacity-60"
+                  ? "cursor-not-allowed border-line bg-card-soft opacity-60"
                   : checked
-                    ? "cursor-pointer border-v3-brand/40 bg-v3-brand-soft text-v3-brand-deep"
-                    : "cursor-pointer border-v3-line bg-v3-card text-v3-ink hover:bg-v3-card-soft",
+                    ? "cursor-pointer border-brand/40 bg-brand-soft text-brand-deep"
+                    : "cursor-pointer border-line bg-card text-ink hover:bg-card-soft",
               )}
               key={item.key}
             >
@@ -1573,21 +1573,21 @@ function CapabilityGroup({
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="min-w-0 truncate font-medium">{item.label}</span>
                   {item.recommended ? (
-                    <Badge className="shrink-0" variant="secondary">
+                    <Chip className="shrink-0">
                       推荐
-                    </Badge>
+                    </Chip>
                   ) : null}
                   {disabled ? (
-                    <Badge className="shrink-0" variant="outline">
+                    <Chip className="shrink-0">
                       未上架
-                    </Badge>
+                    </Chip>
                   ) : null}
                 </span>
                 {item.label !== item.key ? (
-                  <span className="truncate font-mono text-xs text-v3-ink-3">{item.key}</span>
+                  <span className="truncate font-mono text-xs text-ink-3">{item.key}</span>
                 ) : null}
                 {item.description ? (
-                  <span className="line-clamp-2 text-xs text-v3-ink-3">{item.description}</span>
+                  <span className="line-clamp-2 text-xs text-ink-3">{item.description}</span>
                 ) : null}
               </span>
             </label>
@@ -1601,9 +1601,9 @@ function CapabilityGroup({
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="v3-glass-inner p-3">
-      <div className="text-xs text-v3-ink-3">{label}</div>
-      <div className="mt-1 text-sm font-medium text-v3-ink">{value}</div>
+    <div className="glass-inner p-3">
+      <div className="text-xs text-ink-3">{label}</div>
+      <div className="mt-1 text-sm font-medium text-ink">{value}</div>
     </div>
   );
 }
@@ -1613,7 +1613,7 @@ function ProviderStep({
   error,
   options,
   onSelectProvider,
-  onUpdate,
+  onUpdate
 }: {
   draft: WizardDraft;
   error?: string;
@@ -1626,8 +1626,8 @@ function ProviderStep({
     onUpdate({
       environment_variables: draft.environment_variables.map((row) =>
         row.id === rowId ? { ...row, ...patch } : row,
-      ),
-    });
+      )
+});
   };
   const removeEnvironmentRow = (rowId: string) => {
     onUpdate({ environment_variables: draft.environment_variables.filter((row) => row.id !== rowId) });
@@ -1636,8 +1636,8 @@ function ProviderStep({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold text-v3-ink">Provider 类型</h2>
-        <p className="text-sm text-v3-ink-3">数字员工必须选择一个 Provider 类型；Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
+        <h2 className="text-lg font-semibold text-ink">Provider 类型</h2>
+        <p className="text-sm text-ink-3">数字员工必须选择一个 Provider 类型；Runtime 节点会在项目运行准备中决定，不在创建时绑定到员工。</p>
       </div>
       <RadioGroup onValueChange={onSelectProvider} value={draft.provider_type}>
         <div className="grid gap-3">
@@ -1653,18 +1653,18 @@ function ProviderStep({
         </div>
       </RadioGroup>
       {providers.length === 0 ? (
-        <p className="rounded-v3-inner border border-dashed border-v3-line bg-v3-card-soft p-3 text-sm text-v3-ink-3">
+        <p className="rounded-inner border border-dashed border-line bg-card-soft p-3 text-sm text-ink-3">
           当前创建选项没有返回可选 Provider 类型。
         </p>
       ) : null}
-      {error ? <p className="text-sm text-v3-danger">{error}</p> : null}
-      <section className="v3-glass-inner p-3.5">
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      <section className="glass-inner p-3.5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="text-sm font-medium text-v3-ink">员工环境变量</h3>
-            <p className="text-xs text-v3-ink-3">用于技能运行依赖；创建请求会提交值，接口不会回显明文。</p>
+            <h3 className="text-sm font-medium text-ink">员工环境变量</h3>
+            <p className="text-xs text-ink-3">用于技能运行依赖；创建请求会提交值，接口不会回显明文。</p>
           </div>
-          <V3Button
+          <Button
             onClick={() =>
               onUpdate({ environment_variables: [...draft.environment_variables, newEnvironmentVariableRow()] })
             }
@@ -1674,15 +1674,15 @@ function ProviderStep({
           >
             <Plus className="size-4" />
             添加环境变量
-          </V3Button>
+          </Button>
         </div>
         <div className="mt-3 grid gap-2">
           {draft.environment_variables.length === 0 ? (
-            <p className="rounded-[12px] border border-dashed border-v3-line p-3 text-sm text-v3-ink-3">暂无环境变量。</p>
+            <p className="rounded-[12px] border border-dashed border-line p-3 text-sm text-ink-3">暂无环境变量。</p>
           ) : null}
           {draft.environment_variables.map((row, index) => (
             <div
-              className="grid gap-2 rounded-[12px] border border-v3-line bg-v3-card p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end"
+              className="grid gap-2 rounded-[12px] border border-line bg-card p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end"
               key={row.id}
             >
               <div className="grid gap-1.5">
@@ -1703,14 +1703,14 @@ function ProviderStep({
                   value={row.value}
                 />
               </div>
-              <label className="flex h-10 items-center gap-2 rounded-xl border border-v3-line px-3 text-sm text-v3-ink">
+              <label className="flex h-10 items-center gap-2 rounded-xl border border-line px-3 text-sm text-ink">
                 <Checkbox
                   checked={row.sensitive}
                   onCheckedChange={(checked) => updateEnvironmentRow(row.id, { sensitive: checked === true })}
                 />
                 敏感
               </label>
-              <V3Button
+              <Button
                 aria-label={`移除环境变量 ${index + 1}`}
                 onClick={() => removeEnvironmentRow(row.id)}
                 size="icon"
@@ -1718,7 +1718,7 @@ function ProviderStep({
                 variant="ghost"
               >
                 <Trash2 />
-              </V3Button>
+              </Button>
             </div>
           ))}
         </div>
@@ -1731,7 +1731,7 @@ function ProviderOption({
   onSelectProvider,
   options,
   providerType,
-  selected,
+  selected
 }: {
   onSelectProvider: (providerType: string) => void;
   options?: DigitalEmployeeCreateOptions;
@@ -1744,10 +1744,10 @@ function ProviderOption({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-v3-inner border p-3 text-sm transition-colors",
+        "flex cursor-pointer items-start gap-3 rounded-inner border p-3 text-sm transition-colors",
         selected
-          ? "border-v3-brand/40 bg-v3-brand-soft"
-          : "border-v3-line bg-v3-card hover:bg-v3-card-soft",
+          ? "border-brand/40 bg-brand-soft"
+          : "border-line bg-card hover:bg-card-soft",
       )}
       onClick={(event) => {
         event.preventDefault();
@@ -1756,10 +1756,10 @@ function ProviderOption({
     >
       <RadioGroupItem aria-label={providerDisplayName(providerType)} value={providerType} />
       <span className="min-w-0 flex-1">
-        <span className={cn("block font-semibold", selected ? "text-v3-brand-deep" : "text-v3-ink")}>
+        <span className={cn("block font-semibold", selected ? "text-brand-deep" : "text-ink")}>
           {providerDisplayName(providerType)}
         </span>
-        <span className="mt-1 block text-v3-ink-3">{dispatchPreviewText}</span>
+        <span className="mt-1 block text-ink-3">{dispatchPreviewText}</span>
       </span>
     </label>
   );
@@ -1768,7 +1768,7 @@ function ProviderOption({
 function Field({
   children,
   error,
-  label,
+  label
 }: {
   children: ReactNode;
   error?: string;
@@ -1778,9 +1778,9 @@ function Field({
 
   return (
     <div className="grid gap-2">
-      <Label className="text-v3-ink" htmlFor={id}>{label}</Label>
+      <Label className="text-ink" htmlFor={id}>{label}</Label>
       {children}
-      {error ? <span className="text-sm text-v3-danger">{error}</span> : null}
+      {error ? <span className="text-sm text-danger">{error}</span> : null}
     </div>
   );
 }
@@ -1792,11 +1792,11 @@ const labelId: Record<string, string> = {
   职责定位: "employee-role",
   员工说明: "employee-description",
   风险等级: "employee-risk",
-  "每日 Token 预算上限": "daily-token-limit",
+  "每日 Token 预算上限": "daily-token-limit"
 };
 
 const selectClassName =
-  "h-10 w-full rounded-xl border border-v3-line bg-v3-card px-3 py-1 text-sm text-v3-ink shadow-sm outline-none transition-[color,box-shadow] focus-visible:border-v3-brand focus-visible:ring-2 focus-visible:ring-v3-brand/40 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-10 w-full rounded-xl border border-line bg-card px-3 py-1 text-sm text-ink shadow-sm outline-none transition-[color,box-shadow] focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/40 disabled:cursor-not-allowed disabled:opacity-50";
 
 function applyTypeDefaults(
   current: WizardDraft,
@@ -1816,8 +1816,8 @@ function applyTypeDefaults(
     employee_type: typeOption.type,
     persona_memory_markdown: typeOption.persona_memory_markdown ?? "",
     risk_level: stringValue(policyDefaults?.approval_policy?.min_risk_for_human) || "medium",
-    role: typeOption.default_role || typeOption.type,
-  };
+    role: typeOption.default_role || typeOption.type
+};
 }
 
 function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
@@ -1827,14 +1827,14 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
     capability_bindings: {},
     capability_binding_draft: {
       mcp_servers: [],
-      skills: [],
-    },
+      skills: []
+},
     description: "",
     employee_type: BLANK_CUSTOM_EMPLOYEE_TYPE,
     persona_memory_markdown: "",
     risk_level: "medium",
-    role: "",
-  };
+    role: ""
+};
 }
 
 // recommendedCapabilitySelection preselects the template's recommended
@@ -1856,8 +1856,8 @@ function recommendedCapabilitySelection(
   ]);
   return {
     mcp_servers: recommendedMCPServers.filter((key) => availableMCPServers.has(key)),
-    skills: recommendedSkills.filter((key) => availableSkills.has(key)),
-  };
+    skills: recommendedSkills.filter((key) => availableSkills.has(key))
+};
 }
 
 function availableOptionKeys(items: DigitalEmployeeCapabilityOptionItem[] | undefined): Set<string> {
@@ -1869,8 +1869,8 @@ function inheritedCapabilityBindings(options: DigitalEmployeeCreateOptions | und
 
   return {
     mcp_servers: uniqueStringList(teamConfig?.mcp_servers),
-    skills: uniqueStringList(teamConfig?.skills),
-  };
+    skills: uniqueStringList(teamConfig?.skills)
+};
 }
 
 function employeeExtensionCapabilityBindings(
@@ -1881,8 +1881,8 @@ function employeeExtensionCapabilityBindings(
 
   return {
     mcp_servers: withoutValues(selection.mcp_servers, inherited.mcp_servers),
-    skills: withoutValues(selection.skills, inherited.skills),
-  };
+    skills: withoutValues(selection.skills, inherited.skills)
+};
 }
 
 // capabilitySelectionFromDraft is the top-level skills/mcp_servers payload:
@@ -1896,8 +1896,8 @@ function capabilitySelectionFromDraft(
   const extension = employeeExtensionCapabilityBindings(draft.capability_binding_draft, options);
   return {
     skills: uniqueStringList(extension.skills),
-    mcp_servers: uniqueStringList(extension.mcp_servers),
-  };
+    mcp_servers: uniqueStringList(extension.mcp_servers)
+};
 }
 
 function capabilityBindingsFromDraft(draft: WizardDraft): Record<string, unknown> {
@@ -2000,8 +2000,8 @@ function validateDraftForCreate(draft: WizardDraft): ValidationErrors {
   return {
     ...validateStep("身份", draft),
     ...validateStep("能力", draft),
-    ...validateStep("Provider 类型", draft),
-  };
+    ...validateStep("Provider 类型", draft)
+};
 }
 
 function budgetPolicyFromDraft(draft: WizardDraft) {
@@ -2045,8 +2045,8 @@ function providerDispatchPreview(options: DigitalEmployeeCreateOptions | undefin
     matchingCount: matchingOptions.length,
     availableCount: matchingOptions.filter((option) => option.available).length,
     inactiveSessionCount,
-    onlineHealthyCount,
-  };
+    onlineHealthyCount
+};
 }
 
 function providerDispatchPreviewText(preview: ReturnType<typeof providerDispatchPreview>) {
@@ -2070,22 +2070,22 @@ function newEnvironmentVariableRow(): EnvironmentVariableDraftRow {
     id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
     name: "",
     value: "",
-    sensitive: true,
-  };
+    sensitive: true
+};
 }
 
-const riskTone: Record<string, V3Tone> = {
+const riskTone: Record<string, Tone> = {
   critical: "danger",
   high: "danger",
   medium: "warn",
-  low: "ok",
+  low: "ok"
 };
 
 const riskLabels: Record<string, string> = {
   low: "低",
   medium: "中",
   high: "高",
-  critical: "严重",
+  critical: "严重"
 };
 
 const canonicalProviderTypes = ["codex", "opencode", "claude-code"] as const;
@@ -2103,16 +2103,16 @@ function RiskPill({ risk }: { risk: string }) {
   return <StatusPill tone={riskTone[risk] ?? "mute"}>{riskLabel(risk)}</StatusPill>;
 }
 
-function checkTone(status: string): V3Tone {
+function checkTone(status: string): Tone {
   if (status === "passed") return "ok";
   if (status === "warning") return "warn";
   return "danger";
 }
 
 function checkDotClassName(status: string) {
-  if (status === "passed") return "bg-v3-ok";
-  if (status === "warning") return "bg-v3-warn";
-  return "bg-v3-danger";
+  if (status === "passed") return "bg-ok";
+  if (status === "warning") return "bg-warn";
+  return "bg-danger";
 }
 
 function checkStatusLabel(status: string) {

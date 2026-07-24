@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,14 +16,14 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { listScenarioTemplates } from "@/lib/api/scenario-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import type {
   ProjectDemandSourceType,
-  SubmitProjectDemandInput,
+  SubmitProjectDemandInput
 } from "@/lib/api/projects";
 
 const NO_TEMPLATE_VALUE = "__none__";
@@ -51,7 +51,7 @@ export function SubmitDemandDialog({
   onSubmit,
   open,
   projectName,
-  submitError,
+  submitError
 }: SubmitDemandDialogProps) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -65,8 +65,8 @@ export function SubmitDemandDialog({
   const apiBaseUrl = resolveControlPlaneUrl();
   const templates = useQuery({
     queryKey: ["scenario-templates"],
-    queryFn: () => listScenarioTemplates({ baseUrl: apiBaseUrl }),
-  });
+    queryFn: () => listScenarioTemplates({ baseUrl: apiBaseUrl })
+});
   const templateOptions = (templates.data ?? []).filter(
     (template) => template.status === "active",
   );
@@ -111,8 +111,8 @@ export function SubmitDemandDialog({
       scenario_template_key: scenarioTemplateKey || undefined,
       source_refs: refs,
       source_type: sourceType,
-      title: title.trim(),
-    });
+      title: title.trim()
+});
   }
 
   return (

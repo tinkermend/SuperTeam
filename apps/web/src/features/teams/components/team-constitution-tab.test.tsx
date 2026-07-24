@@ -7,23 +7,23 @@ import type { ApiClientOptions } from "@/lib/api/client";
 import { TeamConstitutionTab } from "./team-constitution-tab";
 
 const { updateTeamConstitution } = vi.hoisted(() => ({
-  updateTeamConstitution: vi.fn(),
+  updateTeamConstitution: vi.fn()
 }));
 
 vi.mock("@/lib/api/teams", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/teams")>();
   return {
     ...actual,
-    updateTeamConstitution,
-  };
+    updateTeamConstitution
+};
 });
 
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
-    },
-  });
+      queries: { retry: false }
+}
+});
 }
 
 async function renderView(node: ReactNode) {
@@ -36,7 +36,7 @@ async function renderView(node: ReactNode) {
 
 const apiOptions: ApiClientOptions = {
   baseUrl: "http://control-plane.local",
-  fetcher: vi.fn() as unknown as typeof fetch,
+  fetcher: vi.fn() as unknown as typeof fetch
 };
 
 describe("TeamConstitutionTab", () => {
@@ -44,9 +44,9 @@ describe("TeamConstitutionTab", () => {
     updateTeamConstitution.mockReset();
     updateTeamConstitution.mockResolvedValue({
       constitution: {
-        hard_rules: ["规则一", "规则二"],
-      },
-    });
+        hard_rules: ["规则一", "规则二"]
+}
+});
   });
 
   it("renders hard rules and saves edited constitution", async () => {
@@ -68,8 +68,8 @@ describe("TeamConstitutionTab", () => {
 
     await expect.poll(() => updateTeamConstitution.mock.calls.length).toBe(1);
     expect(updateTeamConstitution).toHaveBeenCalledWith(apiOptions, "team-1", {
-      hard_rules: ["规则一", "规则二"],
-    });
+      hard_rules: ["规则一", "规则二"]
+});
     await expect.poll(() => onSaved.mock.calls.length).toBe(1);
   });
 
@@ -81,8 +81,8 @@ describe("TeamConstitutionTab", () => {
         constitution={{
           approval_policy: { high_risk: "required" },
           hard_rules: ["规则一"],
-          principles: ["安全优先"],
-        }}
+          principles: ["安全优先"]
+}}
         teamId="team-1"
       />,
     );
@@ -94,8 +94,8 @@ describe("TeamConstitutionTab", () => {
     expect(updateTeamConstitution).toHaveBeenCalledWith(apiOptions, "team-1", {
       approval_policy: { high_risk: "required" },
       hard_rules: ["规则一", "规则二"],
-      principles: ["安全优先"],
-    });
+      principles: ["安全优先"]
+});
   });
 
   it("does not render approval or diff UI", async () => {

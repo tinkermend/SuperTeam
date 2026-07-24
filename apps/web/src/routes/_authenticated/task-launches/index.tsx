@@ -21,5 +21,5 @@ export const Route = createFileRoute("/_authenticated/task-launches/")({
       result.mode = search.mode;
     }
     return result;
-  },
+  }
 });

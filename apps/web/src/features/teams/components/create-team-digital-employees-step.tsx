@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
 import { employeeStatusLabel } from "@/lib/status-labels";
 import type { CreateTeamDraft } from "./create-team-draft";
+import { Button } from "@/components/superteam";
 
 type CreateTeamDigitalEmployeesStepProps = {
   apiBaseUrl: string;
@@ -19,7 +19,7 @@ export function CreateTeamDigitalEmployeesStep({
   apiBaseUrl,
   draft,
   fetcher,
-  onChange,
+  onChange
 }: CreateTeamDigitalEmployeesStepProps) {
   const [query, setQuery] = useState("");
   const employeesQuery = useQuery({
@@ -28,13 +28,13 @@ export function CreateTeamDigitalEmployeesStep({
       listDigitalEmployees(
         {
           baseUrl: apiBaseUrl,
-          fetcher,
-        },
+          fetcher
+},
         {
-          assignment: "unassigned",
-        },
-      ),
-  });
+          assignment: "unassigned"
+},
+      )
+});
 
   const selectedIds = useMemo(
     () => new Set(draft.initial_digital_employees.map((emp) => emp.id)),
@@ -49,8 +49,8 @@ export function CreateTeamDigitalEmployeesStep({
     if (selectedIds.has(employee.id)) return;
     onChange({
       ...draft,
-      initial_digital_employees: [...draft.initial_digital_employees, employee],
-    });
+      initial_digital_employees: [...draft.initial_digital_employees, employee]
+});
   }
 
   function removeEmployee(employeeId: string) {
@@ -58,8 +58,8 @@ export function CreateTeamDigitalEmployeesStep({
       ...draft,
       initial_digital_employees: draft.initial_digital_employees.filter(
         (emp) => emp.id !== employeeId,
-      ),
-    });
+      )
+});
   }
 
   return (

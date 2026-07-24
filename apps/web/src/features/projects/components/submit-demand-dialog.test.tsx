@@ -5,19 +5,19 @@ import { userEvent } from "vitest/browser";
 import { SubmitDemandDialog } from "./submit-demand-dialog";
 import {
   listScenarioTemplates,
-  type ScenarioTemplate,
+  type ScenarioTemplate
 } from "@/lib/api/scenario-templates";
 
 vi.mock("@/lib/config/control-plane-url", () => ({
-  resolveControlPlaneUrl: () => "http://control-plane.local",
+  resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 vi.mock("@/lib/api/scenario-templates", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/api/scenario-templates")>();
   return {
     ...original,
-    listScenarioTemplates: vi.fn(),
-  };
+    listScenarioTemplates: vi.fn()
+};
 });
 
 const softwareDelivery = {
@@ -29,7 +29,7 @@ const softwareDelivery = {
   spec: {},
   status: "active",
   created_at: "2026-07-13T00:00:00Z",
-  updated_at: "2026-07-13T00:00:00Z",
+  updated_at: "2026-07-13T00:00:00Z"
 } satisfies ScenarioTemplate;
 
 const draftTemplate = {
@@ -37,15 +37,15 @@ const draftTemplate = {
   id: "00000000-0000-0000-0000-000000000402",
   template_key: "draft_template",
   name: "草稿模板",
-  status: "draft",
+  status: "draft"
 } satisfies ScenarioTemplate;
 
 async function renderDialog(
   props: Partial<React.ComponentProps<typeof SubmitDemandDialog>> = {},
 ) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+    defaultOptions: { queries: { retry: false } }
+});
   return await render(
     <QueryClientProvider client={queryClient}>
       <SubmitDemandDialog
@@ -96,8 +96,8 @@ describe("SubmitDemandDialog", () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         scenario_template_key: "software_delivery",
-        title: "验证发布任务",
-      }),
+        title: "验证发布任务"
+}),
     );
   });
 
