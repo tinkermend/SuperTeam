@@ -8,7 +8,12 @@ import { AppSidebar } from "./app-sidebar";
 const getInboxBadge = vi.fn();
 
 vi.mock("@/lib/api/inbox", () => ({
-  getInboxBadge: (...args: unknown[]) => getInboxBadge(...args)
+  getInboxBadge: (...args: unknown[]) => getInboxBadge(...args),
+  listInboxItems: vi.fn().mockResolvedValue({
+    items: [],
+    pagination: { limit: 50, offset: 0, has_more: false },
+    summary: { open_count: 0, high_risk_count: 0, blocked_count: 0 }
+  })
 }));
 
 vi.mock("@/lib/config/control-plane-url", () => ({

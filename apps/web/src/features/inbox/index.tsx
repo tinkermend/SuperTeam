@@ -16,6 +16,10 @@ import {
   type InboxViewMode
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import {
+  DEFAULT_INBOX_LIST_FILTERS,
+  inboxItemsQueryKey
+} from "./inbox-query";
 import { inboxListRefetchInterval } from "./inbox-stream-status";
 import { InboxActionDialog } from "./components/inbox-action-dialog";
 import {
@@ -41,14 +45,10 @@ type SelectedAction = {
   item: InboxItem;
 };
 
-const DEFAULT_INBOX_FILTERS = {
-  limit: 50,
-  offset: 0,
-  // 默认只看 open:服务端无 status 过滤时会返回 resolved/cancelled 项,
-  // "待处理事项"列表会把几天前已处理的旧项继续标成待处理(外部渠道 resolve
-  // 后该项也因此永不消失)。用户可用状态筛选切回"所有"。
-  status: "open"
-} satisfies InboxListFilters;
+// 默认只看 open:服务端无 status 过滤时会返回 resolved/cancelled 项,
+// "待处理事项"列表会把几天前已处理的旧项继续标成待处理(外部渠道 resolve
+// 后该项也因此永不消失)。用户可用状态筛选切回"所有"。
+const DEFAULT_INBOX_FILTERS = DEFAULT_INBOX_LIST_FILTERS;
 
 const EMPTY_UUID_FILTER_DRAFTS = {
   project_id: "",
@@ -114,7 +114,7 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   };
 
   const inboxQuery = useQuery({
-    queryKey: ["inbox-items", view, filters],
+    queryKey: inboxItemsQueryKey(view, filters),
     queryFn: () => listInboxItems(apiOptions, { ...filters, view }),
     placeholderData: keepPreviousData,
     // 主刷新由全局 SSE（含 onopen 重连追平）驱动；连上时 15s 兜底，断流 5s 快拉。

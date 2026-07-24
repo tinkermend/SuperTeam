@@ -81,6 +81,7 @@ function NavIcon({ item }: { item: NavItem }) {
 
 function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
   const { setOpenMobile } = useSidebar()
+  const prefetch = item.onPrefetch
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -88,7 +89,12 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         isActive={checkIsActive(href, item)}
         tooltip={item.title}
       >
-        <Link to={item.url} onClick={() => setOpenMobile(false)}>
+        <Link
+          to={item.url}
+          onClick={() => setOpenMobile(false)}
+          onFocus={prefetch}
+          onMouseEnter={prefetch}
+        >
           <NavIcon item={item} />
           <span>{item.title}</span>
           {item.badge && <NavBadge>{item.badge}</NavBadge>}
@@ -129,7 +135,12 @@ function SidebarMenuCollapsible({
                   asChild
                   isActive={checkIsActive(href, subItem)}
                 >
-                  <Link to={subItem.url} onClick={() => setOpenMobile(false)}>
+                  <Link
+                    to={subItem.url}
+                    onClick={() => setOpenMobile(false)}
+                    onFocus={subItem.onPrefetch}
+                    onMouseEnter={subItem.onPrefetch}
+                  >
                     <NavIcon item={subItem} />
                     <span>{subItem.title}</span>
                     {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}

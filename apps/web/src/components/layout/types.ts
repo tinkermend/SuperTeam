@@ -17,6 +17,8 @@ type BaseNavItem = {
   badge?: string;
   icon?: React.ElementType;
   iconTone?: NavIconTone;
+  /** 悬停/聚焦时预热目标页数据（如收件箱列表）。 */
+  onPrefetch?: () => void;
 };
 
 type NavLink = BaseNavItem & {

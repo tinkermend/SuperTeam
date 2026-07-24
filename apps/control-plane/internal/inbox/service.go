@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -106,21 +107,34 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	}
 	fetchReq := req
 	fetchReq.Limit = req.Limit + 1
-	items, err := s.repository.ListItems(ctx, fetchReq)
-	if err != nil {
+	// 远程库单次 RTT ~35ms：列表与两个 summary count 并行，避免 3 次串行叠加。
+	var (
+		items         []Item
+		openCount     int64
+		highRiskCount int64
+	)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		var err error
+		items, err = s.repository.ListItems(groupCtx, fetchReq)
+		return err
+	})
+	group.Go(func() error {
+		var err error
+		openCount, err = s.repository.CountOpenItems(groupCtx, req.TenantID, req.TargetUserID)
+		return err
+	})
+	group.Go(func() error {
+		var err error
+		highRiskCount, err = s.repository.CountHighRiskOpenItems(groupCtx, req.TenantID, req.TargetUserID)
+		return err
+	})
+	if err := group.Wait(); err != nil {
 		return ListItemsResult{}, err
 	}
 	hasMore := len(items) > int(req.Limit)
 	if hasMore {
 		items = items[:req.Limit]
-	}
-	openCount, err := s.repository.CountOpenItems(ctx, req.TenantID, req.TargetUserID)
-	if err != nil {
-		return ListItemsResult{}, err
-	}
-	highRiskCount, err := s.repository.CountHighRiskOpenItems(ctx, req.TenantID, req.TargetUserID)
-	if err != nil {
-		return ListItemsResult{}, err
 	}
 	if err := s.enrichSourceNames(ctx, req.TenantID, items); err != nil {
 		return ListItemsResult{}, err
@@ -152,12 +166,30 @@ func (s *Service) enrichSourceNames(ctx context.Context, tenantID uuid.UUID, ite
 	if len(projectIDs) == 0 && len(taskIDs) == 0 {
 		return nil
 	}
-	projectNames, err := s.repository.ProjectNames(ctx, tenantID, projectIDs)
-	if err != nil {
-		return err
+	var (
+		projectNames map[uuid.UUID]string
+		taskTitles   map[uuid.UUID]string
+	)
+	group, groupCtx := errgroup.WithContext(ctx)
+	if len(projectIDs) > 0 {
+		group.Go(func() error {
+			var err error
+			projectNames, err = s.repository.ProjectNames(groupCtx, tenantID, projectIDs)
+			return err
+		})
+	} else {
+		projectNames = map[uuid.UUID]string{}
 	}
-	taskTitles, err := s.repository.ProjectTaskTitles(ctx, tenantID, taskIDs)
-	if err != nil {
+	if len(taskIDs) > 0 {
+		group.Go(func() error {
+			var err error
+			taskTitles, err = s.repository.ProjectTaskTitles(groupCtx, tenantID, taskIDs)
+			return err
+		})
+	} else {
+		taskTitles = map[uuid.UUID]string{}
+	}
+	if err := group.Wait(); err != nil {
 		return err
 	}
 	for i := range items {
@@ -181,22 +213,33 @@ func (s *Service) GetBadge(ctx context.Context, tenantID, actorUserID uuid.UUID,
 	if tenantID == uuid.Nil || actorUserID == uuid.Nil {
 		return Badge{}, ErrInvalidItem
 	}
-	mine, err := s.repository.CountOpenItems(ctx, tenantID, &actorUserID)
-	if err != nil {
-		return Badge{}, err
-	}
-	high, err := s.repository.CountHighRiskOpenItems(ctx, tenantID, &actorUserID)
-	if err != nil {
-		return Badge{}, err
-	}
-	var team int64
+	var (
+		mine int64
+		high int64
+		team int64
+	)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		var err error
+		mine, err = s.repository.CountOpenItems(groupCtx, tenantID, &actorUserID)
+		return err
+	})
+	group.Go(func() error {
+		var err error
+		high, err = s.repository.CountHighRiskOpenItems(groupCtx, tenantID, &actorUserID)
+		return err
+	})
 	// Team badge visibility is authorized by the caller; this method only applies
 	// the already-authorized includeTeam projection.
 	if includeTeam {
-		team, err = s.repository.CountOpenItems(ctx, tenantID, nil)
-		if err != nil {
-			return Badge{}, err
-		}
+		group.Go(func() error {
+			var err error
+			team, err = s.repository.CountOpenItems(groupCtx, tenantID, nil)
+			return err
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return Badge{}, err
 	}
 	return Badge{MineOpenCount: mine, TeamOpenCount: team, HighRiskCount: high}, nil
 }
