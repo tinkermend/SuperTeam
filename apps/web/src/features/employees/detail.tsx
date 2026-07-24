@@ -8,8 +8,9 @@ import {
   ShellPageHeader,
   ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
-import { MasterDetailLayout, StatusPill, Segmented } from "@/components/superteam";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { MasterDetailLayout, StatusPill, Segmented,
+  Callout
+} from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiRequestError } from "@/lib/api/client";
@@ -467,18 +468,14 @@ function getDeleteErrorMessage(error: unknown) {
 
 function DeleteBlockedAlert({ blocked }: { blocked: DigitalEmployeeDeleteBlockedErrorResponse }) {
   return (
-    <Alert className="border-danger/30 bg-danger-soft text-danger" variant="destructive">
-      <AlertTriangle className="size-4" />
-      <AlertTitle>删除被阻断</AlertTitle>
-      <AlertDescription>
-        <p>{blocked.message}</p>
-        <ul className="mt-3 space-y-2">
-          {blocked.blockers.map((blocker) => (
-            <DeleteBlockerItem blocker={blocker} key={`${blocker.type}:${blocker.id}`} />
-          ))}
-        </ul>
-      </AlertDescription>
-    </Alert>
+    <Callout tone="danger" title="删除被阻断" icon={<AlertTriangle aria-hidden className="size-4" />}>
+      <p>{blocked.message}</p>
+      <ul className="mt-3 space-y-2">
+        {blocked.blockers.map((blocker) => (
+          <DeleteBlockerItem blocker={blocker} key={`${blocker.type}:${blocker.id}`} />
+        ))}
+      </ul>
+    </Callout>
   );
 }
 

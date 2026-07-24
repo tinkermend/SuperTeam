@@ -58,3 +58,12 @@ Shell 是所有页面的视觉基准。新增功能页不得单独发明另一�
 - 激活锚点使用 `--brand`，必须贴近胶囊底部，不穿过中文文字。
 - 中文长标签需要支持换行或横向滚动，不应压缩文字、改变行高或造成页面横向溢出。
 - `apps/web/src/components/ui/tabs.tsx` 保持 primitive 层；SuperTeam Tab 视觉应沉淀在 `apps/web/src/components/superteam/`。
+
+## 面包屑与 Tabs 边界（Batch D）
+
+- **单级返回**：`ShellPageHeaderBack`。
+- **多级路径**：`Breadcrumb`（可与页头并存）。
+- **页面级 Tab 条**（非 Radix content）：`PageTabs` / `PageTabList` / `PageTab`。
+- **面板/需要 Tabs 状态机**：`SoftTabs` / `SoftTabsList` / `SoftTabsTrigger` / `SoftTabsContent`。
+- **禁止**业务新代码直接使用未换肤的 `components/ui/tabs` 默认 muted 样式；触达时改为 `SoftTabs` 或 `PageTabs`。
+

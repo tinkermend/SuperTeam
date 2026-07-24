@@ -15,7 +15,7 @@
 | 首屏加载 | 尚无可用 UI 骨架 | 页级 `LoadingState` 或 `StateSurface isLoading` |
 | 局部刷新 | 表/卡/详情布局已知 | `TableSkeleton` / `CardGridSkeleton` / `DetailSkeleton` |
 | 局部刷新 | 已有内容，后台再取 | 保持旧数据 + 轻量指示（角标「刷新中」、按钮 spinner）；**不要**整页替换成全屏转圈 |
-| 空 | 成功响应但无条目 | `EmptyState`：标题 + 原因/说明 + 主行动（可选） |
+| 空 | 成功响应但无条目 | `EmptyNoData` / 通用 `EmptyState` |
 | 错误 | 请求/校验/系统失败 | `ErrorState` 或表单字段错；可重试则给 `onRetry` |
 | 权限不足 | 401/403 或鉴权拒绝 | `PermissionDenied`；未登录走登录重定向（布局已处理） |
 | 提交中 | 写操作进行中 | 主按钮 loading/disabled，防重复提交 |
@@ -28,7 +28,7 @@
 | 场景 | 做法 | 禁止 |
 | --- | --- | --- |
 | 进入列表首次加载 | 主区 `LoadingState` | 空白主区无说明 |
-| 筛选后无结果 | `EmptyState` 文案区分「无数据」vs「无匹配」，提供清筛选 | 与首次空列表同一句「暂无数据」且无行动 |
+| 筛选后无结果 | `EmptyNoMatch`（清筛选行动），勿与 `EmptyNoData` 同文案 | 与首次空列表同一句「暂无数据」且无行动 |
 | 列表请求失败 | `ErrorState` + 重试 | 仅 Toast 后留下空白表 |
 | 保存成功仍留页 | Toast「已保存」+ 表单去 dirty | 只改按钮文字一闪而过 |
 | 保存失败 | 字段错优先；无字段则 Toast/顶栏错误 + 保留输入 | 清空用户已填内容 |
@@ -78,7 +78,7 @@
 | `ErrorState` | 错 + 可选重试 |
 | `PermissionDenied` | 无权限 |
 | Button `loading`/disabled | 提交中 |
-| Sonner Toast | 轻量结果 |
+| Sonner Toast | 轻量结果；业务优先 `notifySuccess` / `notifyError` / `notifyWarning` / `notifyInfo` |
 
 ## 检查清单
 
@@ -87,3 +87,12 @@
 - [ ] 写操作有进行中与结果反馈
 - [ ] 403 不用 Empty 冒充
 - [ ] 文案来自业务，结构符合槽位
+
+### 空态预设（Batch D）
+
+| 预设 | 场景 |
+| --- | --- |
+| `EmptyNoData` | 列表/集合本身为空 |
+| `EmptyNoMatch` | 筛选/搜索后无命中 |
+| `EmptyUnconfigured` | 能力未开通或必填配置缺失 |
+

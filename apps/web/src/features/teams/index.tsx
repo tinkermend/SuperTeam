@@ -106,6 +106,10 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
       )
 });
 
+  const isFiltered = Boolean(
+    filters.q.trim() || filters.status || filters.governance_status,
+  );
+
   return (
     <>
       <ShellPageHeader
@@ -140,6 +144,7 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
           />
           <TeamCardGrid
             isError={teams.isError}
+            isFiltered={isFiltered}
             isLoading={teams.isLoading}
             teams={teams.data ?? []}
           />

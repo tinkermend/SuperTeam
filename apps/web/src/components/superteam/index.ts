@@ -3,6 +3,7 @@ export * from './layout'
 export * from './foundation'
 export * from './patterns'
 export * from './process'
+export * from './converge'
 export * from './markdown-prose'
 export * from './object-ref'
 export * from "./team-icon-tile";

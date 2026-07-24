@@ -800,22 +800,26 @@ describe("TeamsView", () => {
       .element(screen.getByRole("heading", { name: "团队管理" }))
       .toBeVisible();
 
-    // Summary stats
-    await expect.element(screen.getByText("20 个团队")).toBeVisible();
-    await expect.element(screen.getByText("25 名数字员工")).toBeVisible();
-    await expect.element(screen.getByText("50 项能力绑定")).toBeVisible();
+    // Soft-Flat MetricGrid 概览
+    const metrics = screen.getByRole("region", { name: "团队概览指标" });
+    await expect.element(metrics.getByText("团队总数")).toBeVisible();
+    await expect.element(metrics.getByText("20")).toBeVisible();
+    await expect.element(metrics.getByText("数字员工").first()).toBeVisible();
+    await expect.element(metrics.getByText("25")).toBeVisible();
+    await expect.element(metrics.getByText("能力绑定").first()).toBeVisible();
+    await expect.element(metrics.getByText("50")).toBeVisible();
 
     // Card details
     await expect.element(screen.getByText("运维团队")).toBeVisible();
     await expect
       .element(screen.getByText("负责生产稳定性与云基础设施的设计、运行和演进。"))
       .toBeVisible();
-    await expect.element(screen.getByText("团队说明").first()).toBeVisible();
-    
+    await expect.element(screen.getByText("说明").first()).toBeVisible();
+
     const links = screen.getByRole("link", { name: "查看 运维团队 团队详情" }).all();
     await expect.element(links[0]).toHaveAttribute("data-router-link", "true");
     await expect.element(links[0]).toHaveAttribute("href", "/teams/team-1");
-    
+
     await expect
       .element(screen.getByLabelText("云基础设施"))
       .toBeVisible();
@@ -825,13 +829,12 @@ describe("TeamsView", () => {
     await expect
       .element(screen.getByText("owner@example.com", { exact: true }))
       .toBeVisible();
-      
-    const employeeCounts = screen.getByText("6 名数字员工").all();
-    await expect.element(employeeCounts[0]).toBeVisible();
-    
+
+    await expect.element(screen.getByText("6 名").first()).toBeVisible();
+
     await expect.element(screen.getByText("已生效").first()).toBeVisible();
 
-    expect(document.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-slot="entity-card"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="status-pill"]').length).toBeGreaterThan(0);
     expect(document.querySelector("[data-team-card-grid]")?.className).toContain("@5xl:grid-cols-3");
   });
@@ -868,16 +871,16 @@ describe("TeamsView", () => {
     await expect.element(headingLocator).toBeVisible();
     const heading = headingLocator.element();
     const textColumn = heading.parentElement;
-    const identityGroup = textColumn?.parentElement;
-    const cardHeader = identityGroup?.parentElement;
+    const titleRow = textColumn?.parentElement;
+    const identityRow = titleRow?.parentElement;
 
     await expect.element(screen.getByText("活跃")).toBeVisible();
     expect(heading).toHaveAttribute("title", longTeamName);
     expect(heading).toHaveClass("line-clamp-2");
-    expect(textColumn).toHaveClass("min-w-0");
-    expect(identityGroup).toHaveClass("min-w-0");
-    expect(identityGroup).toHaveClass("flex-1");
-    expect(cardHeader).toHaveClass("min-w-0");
+    expect(textColumn).toHaveClass("min-w-0", "flex-1");
+    expect(titleRow).toHaveClass("min-w-0");
+    expect(identityRow).toHaveClass("min-w-0");
+    expect(heading.closest("[data-slot='entity-card']")).not.toBeNull();
   });
 
 
@@ -897,7 +900,7 @@ describe("TeamsView", () => {
 
     await expect.element(screen.getByText("团队管理")).toBeInTheDocument();
     await userEvent.type(
-      screen.getByPlaceholder("搜索团队名称、slug、负责人..."),
+      screen.getByPlaceholder("搜索团队名称、slug、负责人…"),
       "安全",
     );
     await userEvent.click(screen.getByRole("combobox", { name: "团队状态" }));

@@ -1,12 +1,15 @@
-import { RotateCcw, Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/superteam";
+import { RotateCcw } from "lucide-react";
+import {
+  Button,
+  ListToolbar,
+  ToolbarSearch,
+} from "@/components/superteam";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue
+  SelectValue,
 } from "@/components/ui/select";
 import type { GovernanceSummaryStatus, TeamStatus } from "@/lib/api/teams";
 import { governanceStatusLabel, teamStatusLabel } from "@/lib/status-labels";
@@ -26,78 +29,88 @@ type TeamManagementToolbarProps = {
 export function TeamManagementToolbar({
   filters,
   onChange,
-  onReset
+  onReset,
 }: TeamManagementToolbarProps) {
   return (
-    <div className="mb-6 flex flex-col gap-3 rounded-lg border bg-card/60 p-2 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center">
-      <div className="relative flex-1">
-        <span className="sr-only">搜索团队名称、slug、负责人</span>
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="h-10 border-none bg-background/50 pl-9 shadow-none focus-visible:ring-1"
+    <ListToolbar
+      className="rounded-card border border-line bg-card px-3 py-2.5 shadow-sm sm:px-4"
+      search={
+        <ToolbarSearch
+          aria-label="搜索团队名称、slug、负责人"
           onChange={(event) => onChange({ ...filters, q: event.target.value })}
-          placeholder="搜索团队名称、slug、负责人..."
+          placeholder="搜索团队名称、slug、负责人…"
           value={filters.q}
         />
-      </div>
-      
-      <div className="flex items-center gap-2">
-        <div className="h-6 w-px bg-border max-sm:hidden" />
-        
-        <Select
-          onValueChange={(value) =>
-            onChange({
-              ...filters,
-              status: value === "all" ? undefined : (value as TeamStatus)
-})
-          }
-          value={filters.status ?? "all"}
-        >
-          <SelectTrigger aria-label="团队状态" className="h-10 w-[140px] border-none bg-background/50 shadow-none focus:ring-1">
-            <SelectValue placeholder="团队状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            <SelectItem value="active">{teamStatusLabel("active")}</SelectItem>
-            <SelectItem value="disabled">{teamStatusLabel("disabled")}</SelectItem>
-            <SelectItem value="archived">{teamStatusLabel("archived")}</SelectItem>
-          </SelectContent>
-        </Select>
+      }
+      filters={
+        <>
+          <Select
+            onValueChange={(value) =>
+              onChange({
+                ...filters,
+                status: value === "all" ? undefined : (value as TeamStatus),
+              })
+            }
+            value={filters.status ?? "all"}
+          >
+            <SelectTrigger
+              aria-label="团队状态"
+              className="h-9 w-[132px] border-line bg-card-soft shadow-none"
+            >
+              <SelectValue placeholder="团队状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="active">{teamStatusLabel("active")}</SelectItem>
+              <SelectItem value="disabled">{teamStatusLabel("disabled")}</SelectItem>
+              <SelectItem value="archived">{teamStatusLabel("archived")}</SelectItem>
+            </SelectContent>
+          </Select>
 
-        <Select
-          onValueChange={(value) =>
-            onChange({
-              ...filters,
-              governance_status:
-                value === "all" ? undefined : (value as GovernanceSummaryStatus)
-})
-          }
-          value={filters.governance_status ?? "all"}
-        >
-          <SelectTrigger aria-label="治理状态" className="h-10 w-[140px] border-none bg-background/50 shadow-none focus:ring-1">
-            <SelectValue placeholder="治理状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部治理</SelectItem>
-            <SelectItem value="not_configured">{governanceStatusLabel("not_configured")}</SelectItem>
-            <SelectItem value="draft_pending">{governanceStatusLabel("draft_pending")}</SelectItem>
-            <SelectItem value="active">{governanceStatusLabel("active")}</SelectItem>
-            <SelectItem value="needs_update">{governanceStatusLabel("needs_update")}</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className="h-6 w-px bg-border" />
-
-        <Button 
-          className="h-10 px-3" 
-          onClick={onReset} 
-          size="sm" 
+          <Select
+            onValueChange={(value) =>
+              onChange({
+                ...filters,
+                governance_status:
+                  value === "all" ? undefined : (value as GovernanceSummaryStatus),
+              })
+            }
+            value={filters.governance_status ?? "all"}
+          >
+            <SelectTrigger
+              aria-label="治理状态"
+              className="h-9 w-[132px] border-line bg-card-soft shadow-none"
+            >
+              <SelectValue placeholder="治理状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部治理</SelectItem>
+              <SelectItem value="not_configured">
+                {governanceStatusLabel("not_configured")}
+              </SelectItem>
+              <SelectItem value="draft_pending">
+                {governanceStatusLabel("draft_pending")}
+              </SelectItem>
+              <SelectItem value="active">{governanceStatusLabel("active")}</SelectItem>
+              <SelectItem value="needs_update">
+                {governanceStatusLabel("needs_update")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </>
+      }
+      actions={
+        <Button
+          type="button"
           variant="ghost"
+          size="sm"
+          onClick={onReset}
+          aria-label="重置筛选"
         >
           <RotateCcw className="size-4" />
-          <span className="sr-only sm:not-sr-only sm:ml-2">重置</span>
+          <span className="max-sm:sr-only">重置</span>
         </Button>
-      </div>
-    </div>
+      }
+    />
   );
 }

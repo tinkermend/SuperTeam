@@ -1,8 +1,13 @@
+import {
+  SoftTabs,
+  SoftTabsContent,
+  SoftTabsList,
+  SoftTabsTrigger,
+} from "@/components/superteam";
 import { useMemo, useState } from "react";
 import type { ApiClientOptions } from "@/lib/api";
 import { ShieldCheck } from "lucide-react";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { AuthorizationAuditTable } from "./components/authorization-audit-table";
@@ -54,37 +59,37 @@ export function PermissionsCenter({
         subtitle="集中查看授权决策、Runtime 执行范围和成员角色。"
       />
       <Main width="wide" className="min-w-0 text-ink">
-        <Tabs value={value} onValueChange={handleValueChange} className="gap-4">
-          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-card p-1.5 text-ink-2 shadow-card">
+        <SoftTabs value={value} onValueChange={handleValueChange} className="gap-4">
+          <SoftTabsList className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-card p-1.5 text-ink-2 shadow-card">
             {tabItems.map((tab) => (
-              <TabsTrigger
+              <SoftTabsTrigger
                 key={tab.value}
                 value={tab.value}
                 className="h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold text-ink-2 shadow-none transition-colors hover:bg-card-soft hover:text-ink focus-visible:ring-brand/60 focus-visible:ring-offset-background data-[state=active]:bg-brand-soft data-[state=active]:text-brand-deep data-[state=active]:shadow-none dark:text-ink-2 dark:data-[state=active]:bg-brand-soft dark:data-[state=active]:text-brand-deep"
               >
                 {tab.label}
-              </TabsTrigger>
+              </SoftTabsTrigger>
             ))}
-          </TabsList>
-          <TabsContent value="overview">
+          </SoftTabsList>
+          <SoftTabsContent value="overview">
             <AuthorizationOverview apiOptions={apiOptions} />
-          </TabsContent>
-          <TabsContent value="permission-approvals">
+          </SoftTabsContent>
+          <SoftTabsContent value="permission-approvals">
             <PermissionApprovalsQueue apiOptions={apiOptions} />
-          </TabsContent>
-          <TabsContent value="audit">
+          </SoftTabsContent>
+          <SoftTabsContent value="audit">
             <AuthorizationAuditTable apiOptions={apiOptions} />
-          </TabsContent>
-          <TabsContent value="runtime-scopes">
+          </SoftTabsContent>
+          <SoftTabsContent value="runtime-scopes">
             <RuntimeScopes apiOptions={apiOptions} />
-          </TabsContent>
-          <TabsContent value="member-roles">
+          </SoftTabsContent>
+          <SoftTabsContent value="member-roles">
             <MemberRoles apiOptions={apiOptions} />
-          </TabsContent>
-          <TabsContent value="diagnostics">
+          </SoftTabsContent>
+          <SoftTabsContent value="diagnostics">
             <PermissionDiagnostics apiOptions={apiOptions} />
-          </TabsContent>
-        </Tabs>
+          </SoftTabsContent>
+        </SoftTabs>
       </Main>
     </>
   );

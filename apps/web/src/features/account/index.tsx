@@ -155,11 +155,11 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
             <span className="truncate">{identity.secondary}</span>
           </span>
         }
-        actions={
-          <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{statusLabel(user.status)}</StatusPill>
-        }
       />
       <Main width="contained" className="min-w-0 overflow-x-hidden">
+        <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+          <StatusPill tone={user.status === "active" ? "ok" : "danger"}>{statusLabel(user.status)}</StatusPill>
+        </div>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <SoftCard className="min-w-0 p-6">
             <div className="mb-5 flex items-center gap-3">

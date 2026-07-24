@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/superteam";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button,
+  Callout
+} from "@/components/superteam";
 import {
   Dialog,
   DialogContent,
@@ -133,13 +134,11 @@ export function EditSystemConfigDialog({
           }}
         >
           {isHighDangerConfig(item) ? (
-            <Alert variant="destructive">
-              <AlertTitle>高危配置</AlertTitle>
-              <AlertDescription>
-                不宜改动。改后不自动迁存量数据；节点本地 config.yaml /
-                RUNTIME_AGENT_WORKSPACE_DIR 仍可覆盖平台值。
-              </AlertDescription>
-            </Alert>
+            <Callout
+              tone="danger"
+              title="高危配置"
+              description="不宜改动。改后不自动迁存量数据；节点本地 config.yaml / RUNTIME_AGENT_WORKSPACE_DIR 仍可覆盖平台值。"
+            />
           ) : null}
           <label className="flex flex-col gap-1.5">
             <span className="text-sm text-muted-foreground">

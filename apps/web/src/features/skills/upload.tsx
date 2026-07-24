@@ -25,9 +25,9 @@ import {
   StatusPill,
   Chip,
   Button,
-  type Tone
+  type Tone,
+  Callout
 } from "@/components/superteam";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -291,10 +291,11 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     </p>
                   </div>
                   {upload.error instanceof Error ? (
-                    <Alert variant="destructive">
-                      <AlertTitle>上传失败</AlertTitle>
-                      <AlertDescription>{skillUploadErrorMessage(upload.error)}</AlertDescription>
-                    </Alert>
+                    <Callout
+                      tone="danger"
+                      title="上传失败"
+                      description={skillUploadErrorMessage(upload.error)}
+                    />
                   ) : null}
                   <div className="flex flex-col gap-2.5 border-t pt-4">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">

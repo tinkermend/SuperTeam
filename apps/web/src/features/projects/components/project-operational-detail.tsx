@@ -37,9 +37,12 @@ import {
   Th,
   Tr,
   WorkSurface,
-  type Tone
+  type Tone,
+  SoftTabs,
+  SoftTabsList,
+  SoftTabsTrigger,
+  SoftTabsContent
 } from "@/components/superteam";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type {
   Project,
@@ -398,32 +401,32 @@ export function ProjectOperationalDetail({
         </div>
       </SoftCard>
 
-      <Tabs
+      <SoftTabs
         className="grid min-w-0 gap-3"
         value={activeSection}
         onValueChange={(value) => setActiveSection(value as ProjectDetailSection)}
       >
         <div className="min-w-0 w-full border-b border-line">
-          <TabsList
+          <SoftTabsList
             aria-label="项目工作区段"
             className="flex h-auto w-full min-w-0 max-w-none justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 text-ink shadow-none"
           >
-            <TabsTrigger className={sectionTriggerClass} value="workbench">
+            <SoftTabsTrigger className={sectionTriggerClass} value="workbench">
               工作台
-            </TabsTrigger>
-            <TabsTrigger className={sectionTriggerClass} value="tasks">
+            </SoftTabsTrigger>
+            <SoftTabsTrigger className={sectionTriggerClass} value="tasks">
               任务
-            </TabsTrigger>
-            <TabsTrigger className={sectionTriggerClass} value="approval">
+            </SoftTabsTrigger>
+            <SoftTabsTrigger className={sectionTriggerClass} value="approval">
               决策历史
-            </TabsTrigger>
-            <TabsTrigger className={sectionTriggerClass} value="assets">
+            </SoftTabsTrigger>
+            <SoftTabsTrigger className={sectionTriggerClass} value="assets">
               资产
-            </TabsTrigger>
-          </TabsList>
+            </SoftTabsTrigger>
+          </SoftTabsList>
         </div>
 
-        <TabsContent className="m-0 grid min-w-0 gap-4" value="workbench">
+        <SoftTabsContent className="m-0 grid min-w-0 gap-4" value="workbench">
           <ProjectOpsHome
             artifactsCount={artifacts?.length}
             budgetSummary={budgetSummary}
@@ -540,18 +543,18 @@ export function ProjectOperationalDetail({
               </CollapsibleContent>
             </div>
           </Collapsible>
-        </TabsContent>
+        </SoftTabsContent>
 
-        <TabsContent className="m-0" value="tasks">
+        <SoftTabsContent className="m-0" value="tasks">
           <ProjectTasksPanel
             decisionRequests={decisionRequests}
             dismissTaskPending={dismissTaskPending}
             onDismissTask={onDismissTask}
             tasks={tasks}
           />
-        </TabsContent>
+        </SoftTabsContent>
 
-        <TabsContent className="m-0 grid min-w-0 gap-4" value="approval">
+        <SoftTabsContent className="m-0 grid min-w-0 gap-4" value="approval">
 
                       <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-plan">
                         <PanelHeader
@@ -779,9 +782,9 @@ export function ProjectOperationalDetail({
             decisionRequests={decisionRequests}
             focusDecisionId={focusDecisionId}
           />
-        </TabsContent>
+        </SoftTabsContent>
 
-        <TabsContent className="m-0" value="assets">
+        <SoftTabsContent className="m-0" value="assets">
           <ProjectAssetsPanel
             acceptance={acceptance}
             artifacts={artifacts}
@@ -790,8 +793,8 @@ export function ProjectOperationalDetail({
             initialTab={assetsInitial}
             reports={reports}
           />
-        </TabsContent>
-      </Tabs>
+        </SoftTabsContent>
+      </SoftTabs>
     </div>
   );
 }

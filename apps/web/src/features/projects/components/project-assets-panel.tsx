@@ -1,4 +1,9 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  SoftTabs,
+  SoftTabsContent,
+  SoftTabsList,
+  SoftTabsTrigger,
+} from "@/components/superteam";
 import type {
   ProjectAcceptanceRecord,
   ProjectArtifactRef,
@@ -32,33 +37,33 @@ export function ProjectAssetsPanel({
   reports = []
 }: ProjectAssetsPanelProps) {
   return (
-    <Tabs className="flex w-full min-w-0 flex-col gap-3" defaultValue={initialTab}>
+    <SoftTabs className="flex w-full min-w-0 flex-col gap-3" defaultValue={initialTab}>
       <div className="min-w-0 overflow-x-auto pb-1">
-        <TabsList
+        <SoftTabsList
           aria-label="项目资产"
           className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[12px] bg-card p-1 text-ink shadow-card sm:min-w-0"
         >
-          <TabsTrigger className={assetsTabTriggerClass} value="artifacts">
+          <SoftTabsTrigger className={assetsTabTriggerClass} value="artifacts">
             工件
-          </TabsTrigger>
-          <TabsTrigger className={assetsTabTriggerClass} value="budget">
+          </SoftTabsTrigger>
+          <SoftTabsTrigger className={assetsTabTriggerClass} value="budget">
             预算
-          </TabsTrigger>
-          <TabsTrigger className={assetsTabTriggerClass} value="acceptance">
+          </SoftTabsTrigger>
+          <SoftTabsTrigger className={assetsTabTriggerClass} value="acceptance">
             结项
-          </TabsTrigger>
-        </TabsList>
+          </SoftTabsTrigger>
+        </SoftTabsList>
       </div>
 
-      <TabsContent className="m-0" value="artifacts">
+      <SoftTabsContent className="m-0" value="artifacts">
         <ProjectArtifactReportPanel artifacts={artifacts} reports={reports} />
-      </TabsContent>
-      <TabsContent className="m-0" value="budget">
+      </SoftTabsContent>
+      <SoftTabsContent className="m-0" value="budget">
         <ProjectBudgetPanel budgetLedger={budgetLedger} budgetSummary={budgetSummary} />
-      </TabsContent>
-      <TabsContent className="m-0" value="acceptance">
+      </SoftTabsContent>
+      <SoftTabsContent className="m-0" value="acceptance">
         <ProjectAcceptancePanel acceptance={acceptance} />
-      </TabsContent>
-    </Tabs>
+      </SoftTabsContent>
+    </SoftTabs>
   );
 }

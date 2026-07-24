@@ -496,17 +496,15 @@ describe("SkillsView", () => {
     expect(main?.textContent).toContain("上传技能");
   });
 
-  it("renders a v3 loading state inside the page shell", async () => {
+  it("renders a Soft-Flat card grid skeleton while skills load", async () => {
     const pending = createPendingSkillsFetcher();
-    const loadingScreen = await renderSkillsView(pending.fetcher);
-    await expect.element(loadingScreen.getByText("加载技能数据…")).toBeVisible();
-    expect(document.body.querySelector('[data-slot="loading-state"]')).not.toBeNull();
+    await renderSkillsView(pending.fetcher);
+    expect(document.body.querySelector('[data-slot="card-grid-skeleton"]')).not.toBeNull();
 
     pending.resolveSkills();
-    loadingScreen.unmount();
   });
 
-  it("renders a v3 error state inside the page shell", async () => {
+  it("renders a Soft-Flat error state inside the page shell", async () => {
     const errorScreen = await renderSkillsView(createFailingSkillsFetcher());
     await expect.element(errorScreen.getByText("技能数据加载失败")).toBeVisible();
     await expect.element(errorScreen.getByText(/skills API offline/)).toBeVisible();
@@ -554,7 +552,8 @@ describe("SkillsView", () => {
   it("renders an empty binding state for a selected skill without bindings", async () => {
     const screen = await renderSkillsView();
 
-    await userEvent.click(screen.getByRole("button", { name: "选中 接口文档生成" }));
+    // 点标题区，避免卡中心落在 footer 动作钮上被 stopPropagation 吞掉
+    await userEvent.click(screen.getByRole("heading", { name: "接口文档生成" }));
 
     await expect.element(screen.getByRole("region", { name: "接口文档生成 加载范围" })).toBeVisible();
     await expect.element(screen.getByText("尚未加载到任何目标")).toBeVisible();

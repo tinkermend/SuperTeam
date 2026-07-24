@@ -1,13 +1,15 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { CriteriaPanel } from "./components/criteria-panel";
 import { WorkflowDetail } from "./components/workflow-detail";
 import { WorkflowRiverView } from "./components/workflow-river-view";
 import { WorkflowShell } from "./components/workflow-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { IconTile, SoftCard, StatusPill, Button } from "@/components/superteam";
+import { IconTile, SoftCard, StatusPill, Button,
+  notifySuccess,
+  notifyError
+} from "@/components/superteam";
 import { StaffGapDialog } from "@/features/projects/components/staff-gap-dialog";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
@@ -220,10 +222,10 @@ function WorkflowGapPanel({
 });
     },
     onError: (error: unknown) => {
-      toast.error(error instanceof Error ? error.message : "豁免失败");
+      notifyError(error instanceof Error ? error.message : "豁免失败");
     },
     onSuccess: async () => {
-      toast.success("已豁免约束，重新规划已触发");
+      notifySuccess("已豁免约束，重新规划已触发");
       setExemptDialogOpen(false);
       await invalidateWorkflowGapQueries(queryClient);
     }

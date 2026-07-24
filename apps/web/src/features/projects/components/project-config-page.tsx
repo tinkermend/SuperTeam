@@ -16,7 +16,6 @@ import {
   UserRound
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Collapsible,
   CollapsibleContent,
@@ -25,7 +24,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   IconTile,
@@ -39,7 +37,13 @@ import {
   Th,
   Tr,
   WorkSurface,
-  type Tone
+  type Tone,
+  SoftTabs,
+  SoftTabsList,
+  SoftTabsTrigger,
+  SoftTabsContent,
+
+  Callout
 } from "@/components/superteam";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
@@ -413,20 +417,22 @@ export function ProjectConfigView({
               </Button>
             </div>
             {isArchived ? (
-              <Alert className="mt-4 border-warn/30 bg-warn-soft text-ink">
-                <Archive className="text-warn" />
-                <AlertTitle>项目已归档</AlertTitle>
-                <AlertDescription>配置页只读，保存与成员替换已禁用。</AlertDescription>
-              </Alert>
+              <Callout
+                className="mt-4"
+                tone="warn"
+                title="项目已归档"
+                description="配置页只读，保存与成员替换已禁用。"
+                icon={<Archive aria-hidden className="size-4" />}
+              />
             ) : null}
             {isConfigDirty ? (
-              <Alert className="mt-4 border-info/30 bg-info-soft text-ink">
-                <GitBranch className="text-info" />
-                <AlertTitle>协调 Workflow 将收到配置变更</AlertTitle>
-                <AlertDescription>
-                  保存后会向当前项目协调 Workflow 发送策略变更 signal，新的项目任务将使用最新策略。
-                </AlertDescription>
-              </Alert>
+              <Callout
+                className="mt-4"
+                tone="info"
+                title="协调 Workflow 将收到配置变更"
+                description="保存后会向当前项目协调 Workflow 发送策略变更 signal，新的项目任务将使用最新策略。"
+                icon={<GitBranch aria-hidden className="size-4" />}
+              />
             ) : null}
             {error || updateMutation.error ? (
               <p className="mt-3 text-sm text-destructive">
@@ -452,8 +458,8 @@ export function ProjectConfigView({
             }
           />
 
-          <Tabs defaultValue="overview" className="gap-4">
-            <TabsList
+          <SoftTabs defaultValue="overview" className="gap-4">
+            <SoftTabsList
               className="inline-flex h-auto w-fit flex-wrap gap-1 rounded-[14px] bg-card p-1.5 text-ink-2 shadow-card"
               data-slot="page-tab-list"
             >
@@ -461,9 +467,9 @@ export function ProjectConfigView({
               <ProjectConfigTab value="members">成员</ProjectConfigTab>
               <ProjectConfigTab value="coordination">协调策略</ProjectConfigTab>
               <ProjectConfigTab value="history">任务历史</ProjectConfigTab>
-            </TabsList>
+            </SoftTabsList>
 
-            <TabsContent value="overview">
+            <SoftTabsContent value="overview">
               <SoftCard className="p-5">
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Field label="项目名称">
@@ -526,9 +532,9 @@ export function ProjectConfigView({
                   </Field>
                 </div>
               </SoftCard>
-            </TabsContent>
+            </SoftTabsContent>
 
-            <TabsContent value="members">
+            <SoftTabsContent value="members">
               <div className="grid gap-4">
                 <MembersHumanizedPanel
                   digitalMembers={config.digital_employee_pool}
@@ -559,9 +565,9 @@ export function ProjectConfigView({
                   </CollapsibleContent>
                 </Collapsible>
               </div>
-            </TabsContent>
+            </SoftTabsContent>
 
-            <TabsContent value="coordination">
+            <SoftTabsContent value="coordination">
               <CoordinationPolicyPanel
                 disabled={configFieldsDisabled}
                 value={draft.coordinationPolicy}
@@ -569,12 +575,12 @@ export function ProjectConfigView({
                   updateDraft((current) => ({ ...current, coordinationPolicy: value }))
                 }
               />
-            </TabsContent>
+            </SoftTabsContent>
 
-            <TabsContent value="history">
+            <SoftTabsContent value="history">
               <TaskHistoryPanel tasks={tasksQuery.data ?? []} />
-            </TabsContent>
-          </Tabs>
+            </SoftTabsContent>
+          </SoftTabs>
         </div>
       ) : null}
     </ProjectManagementShell>
@@ -709,13 +715,13 @@ function ProjectConfigTab({
   value: string;
 }) {
   return (
-    <TabsTrigger
+    <SoftTabsTrigger
       className="h-auto rounded-[10px] px-4 py-2 text-[13px] font-semibold text-ink-2 shadow-none transition-colors hover:bg-card-soft hover:text-ink data-[state=active]:bg-brand-soft data-[state=active]:text-brand-deep data-[state=active]:shadow-none"
       data-slot="page-tab"
       value={value}
     >
       {children}
-    </TabsTrigger>
+    </SoftTabsTrigger>
   );
 }
 
@@ -772,11 +778,13 @@ function CoordinationPolicyPanel({
           驱动项目协调线程的规划与门禁行为，保存后对后续新任务生效。
         </p>
         {invalid ? (
-          <Alert className="mb-4 border-warn/30 bg-warn-soft text-ink">
-            <GitBranch className="text-warn" />
-            <AlertTitle>协调策略 JSON 无法解析</AlertTitle>
-            <AlertDescription>请在下方「高级」区修正 JSON 后再使用上方开关。</AlertDescription>
-          </Alert>
+          <Callout
+            className="mb-4"
+            tone="warn"
+            title="协调策略 JSON 无法解析"
+            description="请在下方「高级」区修正 JSON 后再使用上方开关。"
+            icon={<GitBranch aria-hidden className="size-4" />}
+          />
         ) : null}
         <div className="grid gap-4">
           <label className="flex items-start justify-between gap-4 rounded-[12px] border border-line bg-card-soft p-4">
@@ -873,13 +881,13 @@ function MemberJsonPanel({
         </Button>
       </div>
       {showWorkflowImpactNotice ? (
-        <Alert className="mb-4 border-ok/30 bg-ok-soft text-ink">
-          <UserRound className="text-ok" />
-          <AlertTitle>数字员工池变更将影响新任务</AlertTitle>
-          <AlertDescription>
-            保存成员后会向当前项目协调 Workflow 发送成员变更 signal，后续分派只能使用最新 active 数字员工池。
-          </AlertDescription>
-        </Alert>
+        <Callout
+          className="mb-4"
+          tone="ok"
+          title="数字员工池变更将影响新任务"
+          description="保存成员后会向当前项目协调 Workflow 发送成员变更 signal，后续分派只能使用最新 active 数字员工池。"
+          icon={<UserRound aria-hidden className="size-4" />}
+        />
       ) : null}
       <Textarea
         aria-label="项目成员 JSON"

@@ -5,8 +5,6 @@ import {
   Blocks,
   Bot,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   ClipboardList,
   FileText,
   ServerCog,
@@ -19,14 +17,20 @@ import {
   type LucideIcon
 } from "lucide-react";
 import {
-  IconTile,
-  SoftCard,
-  StatusPill,
   Button,
+  CardGridSkeleton,
   Chip,
+  EmptyNoData,
+  EmptyNoMatch,
   EmptyState,
+  EntityCard,
   ErrorState,
-  LoadingState,
+  IconTile,
+  ListToolbar,
+  MetricCard,
+  MetricGrid,
+  Pagination,
+  StatusPill,
   ToolbarSearch,
   WorkSurface,
   type Tone
@@ -96,16 +100,6 @@ const toneByColor: Record<string, Tone> = {
   violet: "artifact"
 };
 
-/** 左侧 accent bar 实色（按 tone）。 */
-const toneAccentBar: Record<Tone, string> = {
-  brand: "bg-brand",
-  info: "bg-info",
-  ok: "bg-ok",
-  warn: "bg-warn",
-  danger: "bg-danger",
-  mute: "bg-mute",
-  artifact: "bg-artifact"
-};
 
 export function SkillsPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -182,15 +176,21 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             </Button>
           </div>
 
-          {/* 顶部 pill 状态卡：左侧 accent bar + 图标 + 大数字 + 标签，紧凑横排 */}
-          <section
-            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-            aria-label="技能市场指标"
-          >
-            {metrics.map((metric) => (
-              <SkillMarketPillStat key={metric.label} metric={metric} />
-            ))}
-          </section>
+          <MetricGrid aria-label="技能市场指标">
+            {metrics.map((metric) => {
+              const Icon = metric.icon;
+              return (
+                <MetricCard
+                  key={metric.label}
+                  label={metric.label}
+                  value={String(metric.value)}
+                  loud={metric.loud}
+                  icon={<Icon />}
+                  iconTone={metric.tone}
+                />
+              );
+            })}
+          </MetricGrid>
 
           <WorkSurface className="min-w-0">
             <SkillMarketToolbar
@@ -223,7 +223,9 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             />
 
             {isInitialLoading ? (
-              <LoadingState label="加载技能数据…" />
+              <div className="p-4">
+                <CardGridSkeleton count={8} className="sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" />
+              </div>
             ) : isBlockingError ? (
               <div className="p-4">
                 <ErrorState
@@ -242,6 +244,13 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
                   </div>
                 ) : null}
                 <SkillMarketGrid
+                  hasActiveFilters={Boolean(
+                    query.trim() ||
+                      riskFilter !== "all" ||
+                      scopeFilter !== "all" ||
+                      dependencyFilter !== "all" ||
+                      statusFilter !== "all"
+                  )}
                   onDeleteSkill={(id) => {
                     setDeleteError(undefined);
                     setDeleteSkillId(id);
@@ -254,19 +263,22 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
                   onSelectSkill={setSelectedSkillId}
                   rows={pagedRows}
                   selectedSkillId={selectedSkill?.id}
+                  totalUnfiltered={skillRows.length}
                 />
 
-                <SkillMarketPagination
-                  currentPage={activePage}
-                  onPageChange={setPage}
-                  onPageSizeChange={(value) => {
-                    setPageSize(value);
-                    setPage(1);
-                  }}
-                  pageCount={pageCount}
-                  pageSize={pageSize}
-                  total={filteredRows.length}
-                />
+                <div className="border-t border-line p-3">
+                  <Pagination
+                    total={filteredRows.length}
+                    page={activePage}
+                    pageSize={pageSize}
+                    pageCount={pageCount}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                      setPageSize(size);
+                      setPage(1);
+                    }}
+                  />
+                </div>
               </>
             )}
           </WorkSurface>
@@ -325,35 +337,6 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
         skill={installSkillTarget}
       />
     </>
-  );
-}
-
-/** 紧凑 pill 状态卡：左侧 3px accent bar + 图标芯片 + 大数字 + 标签。 */
-function SkillMarketPillStat({ metric }: { metric: MetricDefinition }) {
-  const Icon = metric.icon;
-  return (
-    <SoftCard
-      className={cn(
-        "relative flex items-center gap-3 overflow-hidden p-3.5",
-        metric.loud && "bg-gradient-to-b from-warn-soft/50 to-card",
-      )}
-    >
-      <span aria-hidden className={cn("absolute inset-y-0 left-0 w-[3px]", toneAccentBar[metric.tone])} />
-      <IconTile tone={metric.loud ? "warn" : metric.tone} size="sm">
-        <Icon />
-      </IconTile>
-      <div className="min-w-0">
-        <p
-          className={cn(
-            "text-[20px] font-extrabold leading-none tracking-tight tabular-nums",
-            metric.loud ? "text-warn" : "text-ink",
-          )}
-        >
-          {metric.value}
-        </p>
-        <p className="mt-1 text-[11.5px] font-semibold text-ink-3">{metric.label}</p>
-      </div>
-    </SoftCard>
   );
 }
 
@@ -607,83 +590,86 @@ function SkillMarketToolbar({
   statusFilter: StatusFilter;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:gap-3">
-      <ToolbarSearch
-        aria-label="搜索技能"
-        onChange={(event) => onQueryChange(event.target.value)}
-        placeholder="搜索技能、标签、运行依赖"
-        type="search"
-        value={query}
-      />
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <Chip
-          active={statusFilter === "all"}
-          count={statusCounts.all}
-          onClick={() => onStatusFilterChange("all")}
-          type="button"
-        >
-          全部
-        </Chip>
-        <Chip
-          active={statusFilter === "installed"}
-          count={statusCounts.installed}
-          onClick={() => onStatusFilterChange("installed")}
-          type="button"
-        >
-          已绑定
-        </Chip>
-        <Chip
-          active={statusFilter === "available"}
-          count={statusCounts.available}
-          onClick={() => onStatusFilterChange("available")}
-          type="button"
-        >
-          可绑定
-        </Chip>
-        <Chip
-          active={statusFilter === "approval"}
-          count={statusCounts.approval}
-          onClick={() => onStatusFilterChange("approval")}
-          type="button"
-        >
-          需审批
-        </Chip>
-      </div>
-      <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:items-center">
-        <FilterSelect
-          label="风险等级"
-          onValueChange={(value) => onRiskFilterChange(value as RiskFilter)}
-          options={[
-            { label: "全部风险", value: "all" },
-            { label: "低风险", value: "low" },
-            { label: "中风险", value: "medium" },
-            { label: "高风险", value: "high" },
-          ]}
-          value={riskFilter}
+    <ListToolbar
+      className="border-b border-line px-3 py-3"
+      search={
+        <ToolbarSearch
+          aria-label="搜索技能"
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="搜索技能、标签、运行依赖"
+          type="search"
+          value={query}
         />
-        <FilterSelect
-          label="绑定范围"
-          onValueChange={(value) => onScopeFilterChange(value as ScopeFilter)}
-          options={[
-            { label: "全部范围", value: "all" },
-            { label: "团队绑定", value: "team" },
-            { label: "员工绑定", value: "employee" },
-            { label: "未绑定", value: "unbound" },
-          ]}
-          value={scopeFilter}
-        />
-        <FilterSelect
-          label="运行依赖"
-          onValueChange={(value) => onDependencyFilterChange(value as DependencyFilter)}
-          options={[
-            { label: "全部依赖", value: "all" },
-            { label: "无依赖", value: "none" },
-            { label: "有依赖", value: "required" },
-          ]}
-          value={dependencyFilter}
-        />
-      </div>
-    </div>
+      }
+      filters={
+        <>
+          <Chip
+            active={statusFilter === "all"}
+            count={statusCounts.all}
+            onClick={() => onStatusFilterChange("all")}
+            type="button"
+          >
+            全部
+          </Chip>
+          <Chip
+            active={statusFilter === "installed"}
+            count={statusCounts.installed}
+            onClick={() => onStatusFilterChange("installed")}
+            type="button"
+          >
+            已绑定
+          </Chip>
+          <Chip
+            active={statusFilter === "available"}
+            count={statusCounts.available}
+            onClick={() => onStatusFilterChange("available")}
+            type="button"
+          >
+            可绑定
+          </Chip>
+          <Chip
+            active={statusFilter === "approval"}
+            count={statusCounts.approval}
+            onClick={() => onStatusFilterChange("approval")}
+            type="button"
+          >
+            需审批
+          </Chip>
+          <FilterSelect
+            label="风险等级"
+            onValueChange={(value) => onRiskFilterChange(value as RiskFilter)}
+            options={[
+              { label: "全部风险", value: "all" },
+              { label: "低风险", value: "low" },
+              { label: "中风险", value: "medium" },
+              { label: "高风险", value: "high" },
+            ]}
+            value={riskFilter}
+          />
+          <FilterSelect
+            label="绑定范围"
+            onValueChange={(value) => onScopeFilterChange(value as ScopeFilter)}
+            options={[
+              { label: "全部范围", value: "all" },
+              { label: "团队绑定", value: "team" },
+              { label: "员工绑定", value: "employee" },
+              { label: "未绑定", value: "unbound" },
+            ]}
+            value={scopeFilter}
+          />
+          <FilterSelect
+            label="运行依赖"
+            onValueChange={(value) => onDependencyFilterChange(value as DependencyFilter)}
+            options={[
+              { label: "全部依赖", value: "all" },
+              { label: "无依赖", value: "none" },
+              { label: "有依赖", value: "required" },
+            ]}
+            value={dependencyFilter}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -717,27 +703,43 @@ function FilterSelect({
   );
 }
 
-/** 方向 B · 能力矩阵卡片：左侧状态 accent bar + 图标 + 名称 + 描述 + pill + 标签 + 绑定数 + 操作。 */
+/** Soft-Flat 目录卡：EntityCard + 事实行 + 卡内动作 */
 function SkillMarketGrid({
+  hasActiveFilters,
   onDeleteSkill,
   onInstallSkill,
   onOpenDetail,
   onSelectSkill,
   rows,
-  selectedSkillId
+  selectedSkillId,
+  totalUnfiltered,
 }: {
+  hasActiveFilters: boolean;
   onDeleteSkill: (id: string) => void;
   onInstallSkill: (id: string) => void;
   onOpenDetail: (id: string) => void;
   onSelectSkill: (id: string) => void;
   rows: Skill[];
   selectedSkillId?: string;
+  totalUnfiltered: number;
 }) {
   if (rows.length === 0) {
+    if (hasActiveFilters || totalUnfiltered > 0) {
+      return (
+        <EmptyNoMatch
+          className="py-12"
+          title="无匹配技能"
+          description="请调整搜索词或筛选条件后再试。"
+        />
+      );
+    }
     return (
-      <div className="p-8 text-center text-sm text-ink-3">
-        暂无匹配技能，请调整搜索或筛选条件
-      </div>
+      <EmptyNoData
+        className="py-12"
+        icon={<Blocks />}
+        title="还没有技能"
+        description="上传技能包后可在此发现、绑定并治理。"
+      />
     );
   }
 
@@ -749,51 +751,48 @@ function SkillMarketGrid({
         const selected = selectedSkillId === skill.id;
         const depCount = runtimeDependencyCount(skill);
         return (
-          <SoftCard
-            aria-label={`选中 ${skill.name}`}
-            className={cn(
-              "relative flex min-w-0 flex-col gap-3 overflow-hidden p-4",
-              selected && "border-brand ring-1 ring-brand",
-            )}
-            interactive
+          <EntityCard
             key={skill.id}
-            onClick={() => onSelectSkill(skill.id)}
+            interactive
+            selected={selected}
+            data-skill-card={skill.id}
             role="button"
             tabIndex={0}
-          >
-            <span aria-hidden className={cn("absolute inset-y-0 left-0 w-[3px]", toneAccentBar[status.tone])} />
-            <div className="flex min-w-0 items-start gap-3">
-              <SkillIcon skill={skill} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-bold text-ink">{skill.name}</p>
-                <p className="mt-0.5 truncate font-mono text-[11px] text-ink-3">
-                  {skill.version} · {skill.source}
-                </p>
-              </div>
-            </div>
-            <p className="line-clamp-2 min-h-[38px] text-[13px] leading-5 text-ink-2">
-              {skill.description}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              <StatusPill tone={risk.tone}>{risk.label}</StatusPill>
-              <StatusPill tone={status.tone}>{status.label}</StatusPill>
-              {depCount > 0 ? (
-                <StatusPill tone="artifact" showDot={false}>{depCount} 依赖</StatusPill>
-              ) : null}
-            </div>
-            <SkillTagStack tags={skill.tags} className="max-w-none" />
-            <div className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-3 text-[13px] text-ink-2">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1">
-                  <Users className="size-3.5 text-ink-3" />
-                  <span className="font-bold tabular-nums text-ink">{skill.team_bindings.length}</span>
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Bot className="size-3.5 text-ink-3" />
-                  <span className="font-bold tabular-nums text-ink">{skill.agent_bindings.length}</span>
-                </span>
-              </div>
-              <div className="flex gap-2">
+            aria-label={`选中 ${skill.name}`}
+            aria-pressed={selected}
+            onClick={() => onSelectSkill(skill.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelectSkill(skill.id);
+              }
+            }}
+            leading={<SkillIcon skill={skill} />}
+            title={skill.name}
+            subtitle={`${skill.version} · ${skill.source}`}
+            status={<StatusPill tone={status.tone}>{status.label}</StatusPill>}
+            facts={[
+              {
+                key: "desc",
+                label: "说明",
+                value: skill.description || "暂无描述",
+              },
+              {
+                key: "risk",
+                label: "风险",
+                value: <StatusPill tone={risk.tone}>{risk.label}</StatusPill>,
+              },
+              {
+                key: "bind",
+                label: "绑定",
+                value: `团队 ${skill.team_bindings.length} · 员工 ${skill.agent_bindings.length}`,
+              },
+              ...(depCount > 0
+                ? [{ key: "dep", label: "依赖", value: `${depCount} 项` }]
+                : []),
+            ]}
+            actions={
+              <div className="flex items-center gap-1">
                 <Button
                   aria-label={`删除 ${skill.name}`}
                   className="text-ink-3 hover:text-danger"
@@ -807,116 +806,46 @@ function SkillMarketGrid({
                 >
                   <Trash2 />
                 </Button>
-                <Button
-                  aria-label={`查看详情 ${skill.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenDetail(skill.id);
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  查看详情
-                </Button>
-                <Button
-                  aria-label={`加载 ${skill.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectSkill(skill.id);
-                    onInstallSkill(skill.id);
-                  }}
-                  size="sm"
-                  type="button"
-                >
-                  加载
-                </Button>
               </div>
-            </div>
-          </SoftCard>
+            }
+            footer={
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <SkillTagStack tags={skill.tags} className="max-w-[min(100%,14rem)]" />
+                <div className="flex gap-2">
+                  <Button
+                    aria-label={`查看详情 ${skill.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenDetail(skill.id);
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    查看详情
+                  </Button>
+                  <Button
+                    aria-label={`加载 ${skill.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectSkill(skill.id);
+                      onInstallSkill(skill.id);
+                    }}
+                    size="sm"
+                    type="button"
+                  >
+                    加载
+                  </Button>
+                </div>
+              </div>
+            }
+          />
         );
       })}
     </div>
   );
 }
 
-function SkillMarketPagination({
-  currentPage,
-  onPageChange,
-  onPageSizeChange,
-  pageCount,
-  pageSize,
-  total
-}: {
-  currentPage: number;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
-  pageCount: number;
-  pageSize: number;
-  total: number;
-}) {
-  const pages = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => index + 1);
-
-  return (
-    <div className="flex min-w-0 flex-col gap-3 border-t border-line p-4 text-sm text-ink-2 md:flex-row md:items-center md:justify-between">
-      <span className="tabular-nums">共 {total} 条</span>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1">
-          <Button
-            aria-label="上一页"
-            disabled={currentPage <= 1}
-            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <ChevronLeft />
-          </Button>
-          {pages.map((pageNumber) => (
-            <Button
-              aria-current={currentPage === pageNumber ? "page" : undefined}
-              className={cn(
-                "size-8 px-0 tabular-nums",
-                currentPage === pageNumber && "pointer-events-none",
-              )}
-              key={pageNumber}
-              onClick={() => onPageChange(pageNumber)}
-              size="sm"
-              type="button"
-              variant={currentPage === pageNumber ? "primary" : "ghost"}
-            >
-              {pageNumber}
-            </Button>
-          ))}
-          {pageCount > 5 ? <span className="px-2">...</span> : null}
-          <Button
-            aria-label="下一页"
-            disabled={currentPage >= pageCount}
-            onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <ChevronRight />
-          </Button>
-        </div>
-        <Select onValueChange={(value) => onPageSizeChange(Number(value))} value={`${pageSize}`}>
-          <SelectTrigger
-            aria-label="每页条数"
-            className="w-[112px] rounded-xl border-line-strong bg-card text-ink shadow-none hover:bg-card-soft"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="10">10 条/页</SelectItem>
-            <SelectItem value="20">20 条/页</SelectItem>
-            <SelectItem value="50">50 条/页</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
-  );
-}
 
 function SkillTagStack({ className, tags }: { className?: string; tags: string[] }) {
   const visibleTags = tags.slice(0, 2);

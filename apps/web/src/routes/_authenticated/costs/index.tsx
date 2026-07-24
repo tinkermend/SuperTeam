@@ -85,16 +85,16 @@ function CostsRoute() {
         iconTone="warn"
         title="成本管理"
         subtitle="数字员工 Token 用量统计"
-        actions={
-          <Segmented<CostPeriod>
-            options={PERIOD_OPTIONS}
-            value={period}
-            onChange={setPeriod}
-          />
-        }
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+        <Segmented<CostPeriod>
+          options={PERIOD_OPTIONS}
+          value={period}
+          onChange={setPeriod}
+        />
+      </div>
 
       {/* 顶部指标卡 */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

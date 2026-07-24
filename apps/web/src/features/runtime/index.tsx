@@ -29,7 +29,11 @@ import {
   Th,
   Tr,
   WorkSurface,
-  type Tone
+  type Tone,
+  SoftTabs,
+  SoftTabsList,
+  SoftTabsTrigger,
+  SoftTabsContent
 } from "@/components/superteam";
 import {
   AlertDialog,
@@ -51,7 +55,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -257,22 +260,22 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
         iconTone="info"
         title="Runtime 节点"
         subtitle="运行节点接入、Provider 能力、事件审计和阻断信号的首屏视图。"
-        actions={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void overview.refetch();
-              void events.refetch();
-            }}
-          >
-            <RefreshCw data-icon="inline-start" />
-            刷新
-          </Button>
-        }
       />
       <Main width="wide">
         <div className="flex min-w-0 flex-col gap-5 text-ink">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void overview.refetch();
+                void events.refetch();
+              }}
+            >
+              <RefreshCw data-icon="inline-start" />
+              刷新
+            </Button>
+          </div>
           {overview.isLoading ? (
             <WorkSurface>
               <LoadingState label="加载 Runtime 总览中" />
@@ -293,28 +296,28 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
             <>
               <SummaryMetrics summary={overviewData.summary} />
 
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
+              <SoftTabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
                 <div className="min-w-0 overflow-x-auto pb-1">
-                  <TabsList
+                  <SoftTabsList
                     aria-label="Runtime 管理视图"
                     className="h-auto w-max min-w-full max-w-none justify-start gap-1 overflow-visible rounded-[14px] bg-card p-1.5 text-ink shadow-card sm:min-w-0"
                   >
-                    <TabsTrigger className={runtimeTabTriggerClass} value="overview">
+                    <SoftTabsTrigger className={runtimeTabTriggerClass} value="overview">
                       节点总览
-                    </TabsTrigger>
-                    <TabsTrigger className={runtimeTabTriggerClass} value="enrollments">
+                    </SoftTabsTrigger>
+                    <SoftTabsTrigger className={runtimeTabTriggerClass} value="enrollments">
                       接入审批
-                    </TabsTrigger>
-                    <TabsTrigger className={runtimeTabTriggerClass} value="capabilities">
+                    </SoftTabsTrigger>
+                    <SoftTabsTrigger className={runtimeTabTriggerClass} value="capabilities">
                       能力范围
-                    </TabsTrigger>
-                    <TabsTrigger className={runtimeTabTriggerClass} value="events">
+                    </SoftTabsTrigger>
+                    <SoftTabsTrigger className={runtimeTabTriggerClass} value="events">
                       事件审计
-                    </TabsTrigger>
-                  </TabsList>
+                    </SoftTabsTrigger>
+                  </SoftTabsList>
                 </div>
 
-                <TabsContent value="overview">
+                <SoftTabsContent value="overview">
                   <MasterDetailLayout
                     narrowDetail="stack"
                     rail="md"
@@ -335,9 +338,9 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                       </div>
                     }
                   />
-                </TabsContent>
+                </SoftTabsContent>
 
-                <TabsContent value="enrollments">
+                <SoftTabsContent value="enrollments">
                   <PendingEnrollmentPanel
                     enrollments={enrollmentItems}
                     isError={enrollments.isError}
@@ -346,13 +349,13 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                     onReject={openRejectDialog}
                     showDescription
                   />
-                </TabsContent>
+                </SoftTabsContent>
 
-                <TabsContent value="capabilities">
+                <SoftTabsContent value="capabilities">
                   <ProviderCapabilityPanel capabilities={overviewData.provider_capabilities} />
-                </TabsContent>
+                </SoftTabsContent>
 
-                <TabsContent value="events">
+                <SoftTabsContent value="events">
                   <EventAuditPanel
                     events={eventItems}
                     filters={eventFilters}
@@ -362,8 +365,8 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                     isLoading={events.isLoading}
                     onFilterChange={updateEventFilter}
                   />
-                </TabsContent>
-              </Tabs>
+                </SoftTabsContent>
+              </SoftTabs>
             </>
           ) : null}
         </div>

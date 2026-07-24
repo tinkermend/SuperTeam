@@ -14,9 +14,9 @@ import {
   Th,
   Tr,
   WorkSurface,
-  type Tone
+  type Tone,
+  Callout
 } from "@/components/superteam";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -128,10 +128,7 @@ export function McpManagementPage() {
           </MetricGrid>
 
           {deleteError ? (
-            <Alert variant="destructive">
-              <AlertTitle>删除失败</AlertTitle>
-              <AlertDescription>{deleteError}</AlertDescription>
-            </Alert>
+            <Callout tone="danger" title="删除失败" description={deleteError} />
           ) : null}
 
           <WorkSurface className="min-w-0">

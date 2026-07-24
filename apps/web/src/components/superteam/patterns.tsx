@@ -127,9 +127,12 @@ const EntityCard = forwardRef<HTMLDivElement, EntityCardProps>(function EntityCa
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start gap-2">
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-bold leading-5 tracking-tight text-ink">
+              <h3
+                className="line-clamp-2 text-[15px] font-bold leading-5 tracking-tight text-ink"
+                title={typeof title === "string" ? title : undefined}
+              >
                 {title}
-              </div>
+              </h3>
               {subtitle ? (
                 <div className="mt-0.5 truncate text-[12px] text-ink-3">{subtitle}</div>
               ) : null}
@@ -166,11 +169,7 @@ const EntityCard = forwardRef<HTMLDivElement, EntityCardProps>(function EntityCa
       ) : null}
       {children}
       {footer ? (
-        <div
-          data-slot="entity-card-footer"
-          className="border-t border-line pt-3"
-          onClick={(event) => event.stopPropagation()}
-        >
+        <div data-slot="entity-card-footer" className="border-t border-line pt-3">
           {footer}
         </div>
       ) : null}

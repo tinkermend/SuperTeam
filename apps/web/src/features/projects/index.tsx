@@ -14,7 +14,6 @@ import {
   Plus
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -24,7 +23,8 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
-  WorkSurface
+  WorkSurface,
+  Callout
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
@@ -1550,18 +1550,14 @@ function ProjectDeleteBlockedAlert({
   blocked: ProjectDeleteBlockedErrorResponse;
 }) {
   return (
-    <Alert className="border-danger/30 bg-danger-soft text-danger" variant="destructive">
-      <AlertTriangle className="size-4" />
-      <AlertTitle>删除被阻断</AlertTitle>
-      <AlertDescription>
-        <p>{blocked.message}</p>
-        <ul className="mt-3 space-y-2">
+    <Callout tone="danger" title="删除被阻断" icon={<AlertTriangle aria-hidden className="size-4" />}>
+      <p>{blocked.message}</p>
+      <ul className="mt-3 space-y-2">
           {blocked.blockers.map((blocker) => (
             <ProjectDeleteBlockerItem blocker={blocker} key={`${blocker.type}:${blocker.id}`} />
           ))}
         </ul>
-      </AlertDescription>
-    </Alert>
+      </Callout>
   );
 }
 

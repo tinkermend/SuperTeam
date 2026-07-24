@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldAlert } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/superteam";
+import { Button, Callout } from "@/components/superteam";
 import {
   Sheet,
   SheetContent,
@@ -186,11 +185,12 @@ export function CreateUserDrawer({
                   <p className="text-sm text-muted-foreground">加载团队中</p>
                 ) : null}
                 {teamsHasError ? (
-                  <Alert variant="destructive">
-                    <ShieldAlert />
-                    <AlertTitle>团队列表加载失败</AlertTitle>
-                    <AlertDescription>请检查团队服务后重试。</AlertDescription>
-                  </Alert>
+                  <Callout
+                    tone="danger"
+                    title="团队列表加载失败"
+                    description="请检查团队服务后重试。"
+                    icon={<ShieldAlert aria-hidden className="size-4" />}
+                  />
                 ) : null}
                 {!teamsQuery.isLoading && !teamsQuery.isFetching && !teamsHasError && activeTeams.length === 0 ? (
                   <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">

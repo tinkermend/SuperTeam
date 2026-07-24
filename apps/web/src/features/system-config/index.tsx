@@ -14,9 +14,9 @@ import {
   Td,
   Th,
   Tr,
-  WorkSurface
+  WorkSurface,
+  Callout
 } from "@/components/superteam";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -126,10 +126,7 @@ export function SystemConfigPage() {
           ) : null}
 
           {actionError ? (
-            <Alert variant="destructive">
-              <AlertTitle>操作失败</AlertTitle>
-              <AlertDescription>{actionError}</AlertDescription>
-            </Alert>
+            <Callout tone="danger" title="操作失败" description={actionError} />
           ) : null}
 
           <WorkSurface className="min-w-0">

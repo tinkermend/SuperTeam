@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +17,9 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { Button } from "@/components/superteam";
+import { Button,
+  notifySuccess
+} from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployee,
@@ -181,7 +182,7 @@ export function StaffGapDialog({
       setError(mutationError instanceof Error ? mutationError.message : "补员失败");
     },
     onSuccess: async (employee) => {
-      toast.success(`已创建数字员工「${employee.name}」，重新规划已触发`);
+      notifySuccess(`已创建数字员工「${employee.name}」，重新规划已触发`);
       setError("");
       createdEmployeeRef.current = null;
       await Promise.all([

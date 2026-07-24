@@ -699,7 +699,7 @@ function EmptyState({
   description,
   action,
   ...props
-}: ComponentProps<"div"> & {
+}: Omit<ComponentProps<"div">, "title"> & {
   icon?: ReactNode;
   title: ReactNode;
   description?: ReactNode;

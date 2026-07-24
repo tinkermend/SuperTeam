@@ -92,18 +92,16 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
             "加载技能详情"
           )
         }
-        actions={
-          skill.data ? (
-            <>
-              <Button disabled className="h-10 px-4" type="button">
-                安装到...
-              </Button>
-              <StatusPill tone="mute">即将支持</StatusPill>
-            </>
-          ) : undefined
-        }
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
+        {skill.data ? (
+          <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <Button disabled className="h-10 px-4" type="button">
+              安装到...
+            </Button>
+            <StatusPill tone="mute">即将支持</StatusPill>
+          </div>
+        ) : null}
         {skill.isPending ? (
           <WorkSurface>
             <LoadingState label="加载技能档案…" />

@@ -14,7 +14,7 @@
 
 | 页面类型 | `Main` 宽度 | 主容器 | 页头 | 主区 | 辅区 | 主 CTA |
 | --- | --- | --- | --- | --- | --- | --- |
-| 实体目录 | `wide` | SoftCard 包网格或表 | `ShellPageHeader` | 筛条 + 卡/表 | 可选侧栏队列 | 新建/创建（唯一主按钮） |
+| 实体目录 | `wide` | SoftCard 包网格或表 | `ShellPageHeader`（仅标题/说明） | 主 CTA + 筛条 + 卡/表 | 可选侧栏队列 | 新建/创建（在 `Main` 内，不进顶栏 Header） |
 | 主从工作台 | `wide` + 常 `fixed` | 左密表/列表 + 右详情 | 同上 | `MasterDetailLayout` | 详情按需，无选中不占空栏 | 上下文动作，避免双主 CTA |
 | 创建/上传向导 | `contained` 或 `canvas`（沉浸） | SoftCard 或 Tier A `GlassCard` | 步骤标题 + 返回 | 分步表单 | 右侧摘要/预检（可选） | 下一步 / 提交 |
 | 运营/对象详情 | `wide` | 头卡 SoftCard + 多 Tab | 对象头（名+状态+主操作） | Tab 内容 | 风险/待办/成员轨 | 随状态变化，同时仅一个主 CTA |
@@ -35,14 +35,15 @@
 - 目录/详情：`EntityCard` / `ObjectHeader` / `DescriptionList` / `ActionMenu`
 - 局部骨架：`TableSkeleton` / `CardGridSkeleton` / `DetailSkeleton`
 - 向导/审计：`Stepper` / `Timeline` / `Progress` / `FileDropzone` / `CopyableMono`
+- 收敛：`Breadcrumb` / `SectionHeader` / `SoftTabs*` / `EmptyNoData|NoMatch|Unconfigured` / `RelativeTime`
 
 ## 各类型细则
 
 ### 1. 实体目录（项目/员工/技能/团队列表）
 
-- **必须**：`ShellPageHeader`（标题、一句职责说明、主 CTA）；筛选用 `ListToolbar`（可折叠实现仍可本地）；空列表用 `EmptyState` 且给「创建」路径。
+- **必须**：`ShellPageHeader` 只放标题与一句职责说明（**不要**把「新建/上传」塞进顶栏 `Header`/`actions`——顶栏留给命令搜索、主题与账户）；主 CTA 放在 `Main` 内容区顶部（指标带/筛条之上），对齐数字员工目录；筛选用 `ListToolbar`；空列表用 `EmptyState`/`EmptyNoData` 且给「创建」路径。
 - **推荐**：顶部 KPI 仅 3～6 个，用 `MetricCard` 或统一指标带；目录卡用 `EntityCard`，禁止每页自造第三套 pill 卡。
-- **禁止**：营销 hero；目录页整页玻璃；主 CTA 与次要「模板管理」同权重实心蓝。
+- **禁止**：营销 hero；目录页整页玻璃；主 CTA 进 Shell 顶栏；主 CTA 与次要「模板管理」同权重实心蓝。
 
 ### 2. 主从工作台（收件箱、部分权限/运行面）
 

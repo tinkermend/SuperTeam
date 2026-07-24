@@ -20,7 +20,6 @@ import {
   Sparkles,
   Trash2
 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,7 +32,8 @@ import {
   Chip,
   Button,
   WorkSurface,
-  type Tone
+  type Tone,
+  Callout
 } from "@/components/superteam";
 import { Main } from "@/components/layout/main";
 import {
@@ -421,39 +421,47 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           ? "先选择创建方式，再完成配置并确认创建。"
           : "按职责定位、能力选择和必选 Provider 类型完成员工画像。"
         }
-        actions={
-          flowStep !== "template" ? (
+      />
+      <Main width="canvas">
+        {flowStep !== "template" ? (
+          <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <Button onClick={requestTemplateChange} type="button" variant="outline">
               <ArrowLeft className="size-4" />
               返回
             </Button>
-          ) : undefined
-        }
-      />
-      <Main width="canvas">
+          </div>
+        ) : null}
         {teams.isError ? (
-          <Alert className="mb-4" variant="destructive">
-            <AlertTitle>团队列表加载失败</AlertTitle>
-            <AlertDescription>{getErrorMessage(teams.error, "加载团队列表失败，请稍后重试。")}</AlertDescription>
-          </Alert>
+          <Callout
+            className="mb-4"
+            tone="danger"
+            title="团队列表加载失败"
+            description={getErrorMessage(teams.error, "加载团队列表失败，请稍后重试。")}
+          />
         ) : null}
         {!teams.isLoading && !teams.isError && teamOptions.length === 0 ? (
-          <Alert className="mb-4">
-            <AlertTitle>暂无可用团队</AlertTitle>
-            <AlertDescription>可将归属团队选择为“无”，创建租户级独立数字员工。</AlertDescription>
-          </Alert>
+          <Callout
+            className="mb-4"
+            tone="info"
+            title="暂无可用团队"
+            description="可将归属团队选择为“无”，创建租户级独立数字员工。"
+          />
         ) : null}
         {createOptions.isError ? (
-          <Alert className="mb-4" variant="destructive">
-            <AlertTitle>创建选项加载失败</AlertTitle>
-            <AlertDescription>请稍后重试，或切换团队后重新加载创建选项。</AlertDescription>
-          </Alert>
+          <Callout
+            className="mb-4"
+            tone="danger"
+            title="创建选项加载失败"
+            description="请稍后重试，或切换团队后重新加载创建选项。"
+          />
         ) : null}
         {avatarAssets.isError ? (
-          <Alert className="mb-4" variant="destructive">
-            <AlertTitle>头像库加载失败</AlertTitle>
-            <AlertDescription>{getErrorMessage(avatarAssets.error, "加载头像库失败，请稍后重试。")}</AlertDescription>
-          </Alert>
+          <Callout
+            className="mb-4"
+            tone="danger"
+            title="头像库加载失败"
+            description={getErrorMessage(avatarAssets.error, "加载头像库失败，请稍后重试。")}
+          />
         ) : null}
 
         <CreationStageProgress

@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, FileCheck2 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import {
   SoftCard,
   StatusPill,
@@ -9,7 +8,10 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
-  type Tone
+  type Tone,
+
+  notifySuccess,
+  notifyError
 } from "@/components/superteam";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
@@ -426,10 +428,10 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
         error instanceof ApiRequestError && error.status === 409
           ? "该判据已被签署或需求已收敛，请刷新后重试"
           : "签署失败，请重试";
-      toast.error(message);
+      notifyError(message);
     },
     onSuccess: () => {
-      toast.success("已记录最终验收");
+      notifySuccess("已记录最终验收");
       void queryClient.invalidateQueries({
         queryKey: ["demand-acceptance-criteria", apiBaseUrl, demandId]
 });

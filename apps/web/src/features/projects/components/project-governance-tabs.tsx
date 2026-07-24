@@ -1,5 +1,11 @@
-import { PageTabList, PageTabs } from "@/components/superteam";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  PageTabList,
+  PageTabs,
+  SoftTabs,
+  SoftTabsContent,
+  SoftTabsList,
+  SoftTabsTrigger,
+} from "@/components/superteam";
 import type {
   CreateProjectArchiveSnapshotInput,
   CreateProjectEvidenceInput,
@@ -67,9 +73,9 @@ export function ProjectGovernanceTabs({
   const unresolvedRiskCount = acceptance?.unresolved_risks.length ?? 0;
 
   return (
-    <Tabs className="flex w-full min-w-0 flex-col gap-3" defaultValue={initialTab}>
+    <SoftTabs className="flex w-full min-w-0 flex-col gap-3" defaultValue={initialTab}>
       <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch]">
-        <TabsList
+        <SoftTabsList
           aria-label="项目详情治理视图"
           className="h-auto w-max min-w-full max-w-none justify-start overflow-visible rounded-[14px] bg-card p-1.5 text-ink shadow-card"
         >
@@ -77,46 +83,46 @@ export function ProjectGovernanceTabs({
             className="w-full min-w-0 bg-transparent p-0 shadow-none"
           >
             <PageTabList className="flex-nowrap">
-              <TabsTrigger className={governanceTabTriggerClass} value="evidence">
+              <SoftTabsTrigger className={governanceTabTriggerClass} value="evidence">
                 证据链
-              </TabsTrigger>
-              <TabsTrigger className={governanceTabTriggerClass} value="artifacts">
+              </SoftTabsTrigger>
+              <SoftTabsTrigger className={governanceTabTriggerClass} value="artifacts">
                 工件报告
-              </TabsTrigger>
-              <TabsTrigger className={governanceTabTriggerClass} value="budget">
+              </SoftTabsTrigger>
+              <SoftTabsTrigger className={governanceTabTriggerClass} value="budget">
                 预算流水
-              </TabsTrigger>
-              <TabsTrigger className={governanceTabTriggerClass} value="acceptance">
+              </SoftTabsTrigger>
+              <SoftTabsTrigger className={governanceTabTriggerClass} value="acceptance">
                 结项结论
-              </TabsTrigger>
-              <TabsTrigger className={governanceTabTriggerClass} value="archive">
+              </SoftTabsTrigger>
+              <SoftTabsTrigger className={governanceTabTriggerClass} value="archive">
                 归档预览
-              </TabsTrigger>
+              </SoftTabsTrigger>
             </PageTabList>
           </PageTabs>
-        </TabsList>
+        </SoftTabsList>
       </div>
 
-      <TabsContent className="m-0" value="evidence">
+      <SoftTabsContent className="m-0" value="evidence">
         <ProjectEvidencePanel
           evidence={evidence}
           onCreateEvidence={onCreateEvidence}
           onPatchEvidence={onPatchEvidence}
         />
-      </TabsContent>
-      <TabsContent className="m-0" value="artifacts">
+      </SoftTabsContent>
+      <SoftTabsContent className="m-0" value="artifacts">
         <ProjectArtifactReportPanel artifacts={artifacts} reports={reports} />
-      </TabsContent>
-      <TabsContent className="m-0" value="budget">
+      </SoftTabsContent>
+      <SoftTabsContent className="m-0" value="budget">
         <ProjectBudgetPanel
           budgetLedger={budgetLedger}
           budgetSummary={budgetSummary}
         />
-      </TabsContent>
-      <TabsContent className="m-0" value="acceptance">
+      </SoftTabsContent>
+      <SoftTabsContent className="m-0" value="acceptance">
         <ProjectAcceptancePanel acceptance={acceptance} />
-      </TabsContent>
-      <TabsContent className="m-0" value="archive">
+      </SoftTabsContent>
+      <SoftTabsContent className="m-0" value="archive">
         <ProjectArchivePanel
           archivePreview={archivePreview}
           archiveSnapshots={archiveSnapshots}
@@ -132,7 +138,7 @@ export function ProjectGovernanceTabs({
           taskCount={taskCount}
           unresolvedRiskCount={unresolvedRiskCount}
         />
-      </TabsContent>
-    </Tabs>
+      </SoftTabsContent>
+    </SoftTabs>
   );
 }

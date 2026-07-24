@@ -1,4 +1,4 @@
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Callout } from "@/components/superteam";
 import type { AutomationCoordinationMode } from "@/lib/api/automations";
 
 const GATE_COPY: Record<
@@ -39,15 +39,12 @@ type HumanGateCalloutProps = {
 export function HumanGateCallout({ mode, className }: HumanGateCalloutProps) {
   const copy = GATE_COPY[mode];
   return (
-    <Alert className={className}>
-      <AlertTitle>{copy.title}</AlertTitle>
-      <AlertDescription>
-        <ul className="mt-1 list-disc space-y-1 pl-4 text-sm">
-          {copy.lines.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-      </AlertDescription>
-    </Alert>
+    <Callout className={className} tone="info" title={copy.title}>
+      <ul className="list-disc space-y-1 pl-4">
+        {copy.lines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+    </Callout>
   );
 }

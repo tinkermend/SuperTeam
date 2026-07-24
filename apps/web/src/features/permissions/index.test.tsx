@@ -212,7 +212,7 @@ describe("PermissionsCenter", () => {
     await expect.element(screen.getByText(/^db$/)).toBeVisible();
 
     const iconTile = document.body.querySelector('[data-slot="icon-tile"]');
-    const tabSurface = document.body.querySelector('[data-slot="tabs-list"]');
+    const tabSurface = document.body.querySelector('[data-slot="soft-tabs-list"]');
 
     expect(iconTile).not.toBeNull();
     expect(iconTile?.className).toContain("bg-artifact-soft");

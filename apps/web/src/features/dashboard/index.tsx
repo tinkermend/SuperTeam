@@ -51,13 +51,13 @@ export function Dashboard() {
         subtitle={`欢迎回来，${displayName}。`}
         icon={<LayoutDashboard />}
         iconTone="brand"
-        actions={
+      />
+      <Main width="wide" className="space-y-6 text-ink">
+        <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
           <StatusPill tone={healthQuery.data?.status === "ok" ? "ok" : "mute"}>
             Control Plane {healthStatus}
           </StatusPill>
-        }
-      />
-      <Main width="wide" className="space-y-6 text-ink">
+        </div>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
           <SignatureCard className="min-h-[14rem]">
             <div className="flex h-full flex-col justify-between gap-8">

@@ -132,3 +132,15 @@
 - `RunEventTimeline` 等业务归并逻辑可继续本地实现，展示壳优先 `Timeline`。
 - 进度色走 `Tone`；不确定进度不编造百分比。
 
+## 标签 / 时间 / 日志（Batch D）
+
+| 用途 | 组件 |
+| --- | --- |
+| 状态 | `StatusPill`（**不要**用 `ui/badge` 表达状态） |
+| 筛选 chip | `Chip` |
+| 相对时间 | `RelativeTime`（格式化见 `lib/format-time`） |
+| 多人头像堆 | `AvatarStack`（单人用 `UserIdentity`） |
+| 日志行 / 代码块 | `LogLine` / `CodeBlock`，外壳 `WorkSurface` |
+
+`components/ui/badge`：仅内部或第三方复合；**业务 features 禁止新增引用**。存量触达时改为 `StatusPill` 或 `Chip`。
+

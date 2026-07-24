@@ -131,6 +131,12 @@ Soft-Flat token 是当前唯一项目级设计 token 基线（如 `--brand` / `-
 | 进度 | `Progress`（线形）/ `ProgressRing`（Signature/概览，克制） |
 | 文件上传区 | `FileDropzone`（拖拽+点击；校验展示由业务 error 传入） |
 | 等宽可复制 | `CopyableMono`（路径/hash；对象名+id 仍用 `ObjectRef`） |
+| 面包屑 / 面板分区头 | `Breadcrumb` / `SectionHeader` |
+| 空态预设 | `EmptyNoData` / `EmptyNoMatch` / `EmptyUnconfigured`（通用壳仍可用 `EmptyState`） |
+| 面板级 Tabs | `SoftTabs*`（Radix；页面级按钮条仍用 `PageTabs`） |
+| 相对时间 / 按钮组 / 头像堆 | `RelativeTime` / `ButtonGroup` / `AvatarStack` |
+| Toast 语义封装 | `notifySuccess` / `notifyError` / `notifyWarning` / `notifyInfo` |
+| 日志行 / 代码块 | `LogLine` / `CodeBlock`（装 `WorkSurface`） |
 | 加载 / 空 / 错误 / 无权限四态 | `StateSurface`（或单用 `LoadingState` / `EmptyState` / `ErrorState` / `PermissionDenied`） |
 
 最小页面骨架（页头 + 指标 + 软壳装脆数据 + 统一四态；组件 props 以 `apps/web/src/components/superteam/primitives.tsx` 为准，文案 / 数据来自当前业务）：

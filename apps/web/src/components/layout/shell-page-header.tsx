@@ -5,7 +5,15 @@ import { Header } from "@/components/layout/header";
 import { cn } from "@/lib/utils";
 import { Button, PageHeader } from "@/components/superteam";
 
-type ShellPageHeaderProps = Omit<ComponentProps<typeof PageHeader>, "action" | "variant">;
+/**
+ * 壳顶栏页头：只承载标题 / 副标题 / 返回 / 图标。
+ * 故意去掉 `action`/`actions`——顶栏留给命令搜索、主题与账户；
+ * 新建/上传/刷新/分段筛选等一律放 `Main` 内容区（见 page-archetypes「实体目录」）。
+ */
+type ShellPageHeaderProps = Omit<
+  ComponentProps<typeof PageHeader>,
+  "action" | "actions" | "variant"
+>;
 
 type ShellPageHeaderBackProps = Omit<
   AnchorHTMLAttributes<HTMLAnchorElement>,
