@@ -10,12 +10,16 @@ const repoRoot = path.resolve(designDir, "../..");
 const prototypeDir = path.join(repoRoot, "docs/prototypes/design-system");
 const requiredDesignDocs = [
   "actions.md",
+  "a11y-and-dark.md",
   "data-display.md",
+  "feedback.md",
+  "form-flows.md",
   "forms.md",
   "icons.md",
   "layout-density.md",
   "navigation.md",
   "overlays.md",
+  "page-archetypes.md",
   "principles.md",
   "surfaces.md",
   "tokens.md",

@@ -145,7 +145,7 @@ Soft-Flat token 是当前唯一项目级设计 token 基线（如 `--brand` / `-
 
 | 任务内容 | 必读文档 |
 | --- | --- |
-| 基于 Soft-Flat 构建新功能/菜单页（跨会话冷启动） | `DESIGN.md`（容器选择规则 / 工作对象界面规则 / Token 落地策略 / 落地策略）、`docs/design-system/tokens.md`、`surfaces.md`、`data-display.md` |
+| 基于 Soft-Flat 构建新功能/菜单页（跨会话冷启动） | `DESIGN.md`（容器选择规则 / 工作对象界面规则 / Token 落地策略 / 落地策略）、`docs/design-system/page-archetypes.md`、`tokens.md`、`surfaces.md`、`data-display.md`、`feedback.md` |
 | 判断整体视觉方向、避免业务内容污染设计规范 | `DESIGN.md`、`docs/design-system/principles.md`、`docs/design-system/visual-language.md` |
 | 落地矩枢平台专属视觉母题、命令中心、状态标签、步骤链 | `docs/design-system/visual-language.md` |
 | 调整颜色、radius、shadow、语义色、Tailwind token | `docs/design-system/tokens.md` |
@@ -153,6 +153,10 @@ Soft-Flat token 是当前唯一项目级设计 token 基线（如 `--brand` / `-
 | 调整按钮、图标按钮、链接、主操作、危险操作 | `docs/design-system/actions.md` |
 | 调整侧栏、顶部栏、菜单、Tabs、导航选中态 | `docs/design-system/navigation.md` |
 | 调整 Input、Textarea、Select、表单布局、字段错误 | `docs/design-system/forms.md` |
+| 选择页面类型骨架（目录/主从/向导/审计/画布） | `docs/design-system/page-archetypes.md` |
+| 加载/空/错/权限/Toast/长任务等反馈 | `docs/design-system/feedback.md` |
+| 创建编辑向导、校验、草稿、离开拦截、危险提交 | `docs/design-system/form-flows.md`（控件外观仍读 `forms.md`） |
+| 键盘焦点、状态非仅颜色、暗色纪律与禁止硬编码浅色 | `docs/design-system/a11y-and-dark.md` |
 | 调整 Dialog、AlertDialog、Sheet、Popover、Tooltip、Toast | `docs/design-system/overlays.md` |
 | 调整表格、列表、Badge、状态、指标卡、图表、拓扑、数据展示 | `docs/design-system/data-display.md` |
 | 调整图标尺寸、图标颜色、图标容器、语义图标 | `docs/design-system/icons.md` |
@@ -191,6 +195,10 @@ Soft-Flat token 是当前唯一项目级设计 token 基线（如 `--brand` / `-
 - 桌面和移动端是否无明显文字溢出、组件重叠、不可点击区域。
 - 是否检查列表首尾边框、圆角、阴影没有被滚动容器裁剪。
 - 是否覆盖 loading、empty、error、permission denied、disabled 和长任务执行中状态。
+- 是否能指出页面所属类型蓝图（`page-archetypes.md`），宽度与容器选择一致。
+- 是否覆盖反馈矩阵中的加载/空/错/权限（`feedback.md`），写操作有进行中与结果反馈。
+- 表单是否防重提交、失败保留输入；危险操作是否二次确认（`form-flows.md`）。
+- 是否检查键盘焦点、图标按钮中文名、状态非仅颜色；暗色下无大面积 `bg-white/*` 硬编码（`a11y-and-dark.md`）。
 - 若引入或修改复用组件，是否用 `rg` 检查公共导出和调用点。
 - 若页面存在报错，是否先修复路由懒加载、接口参数、公共工具导出等根因，再进行视觉改造。
 - 是否所有面向用户的状态/枚举经 `lib/status-labels.ts` 映射为中文；业务对象指称是否为名称（必要时"名称 (id)"）而非裸 UUID。
