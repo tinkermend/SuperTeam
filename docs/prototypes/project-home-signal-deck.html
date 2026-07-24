@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>项目管理 · 例外信号台 · SuperTeam</title>
+<style>
+/* ============================================================
+   项目管理首页 · 例外信号台（单页，无 Tab）
+   主张：
+   - 只保留一条叙事：例外优先 → 项目闭环卡片
+   - 不做「项目闭环 / 执行车流」双 Tab
+   - 车流不消失，而是浓缩进每张项目卡的「流量仪」
+   - 展开任务：点卡进入侧栏，默认展示前 3 条活跃任务
+   Signature：顶栏例外信号轨 + 项目卡上的四态流量仪
+   ============================================================ */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@500;600;700&family=IBM+Plex+Mono:wght@500&display=swap");
+
+:root{
+  --brand:#2F5FFF; --brand-deep:#2348E0; --brand-soft:#E9EFFF;
+  --bg:#F5F7FA; --card:#FFFFFF; --card-soft:#F7F8FA; --card-inner:#FBFCFE;
+  --ink:#0B0D12; --ink-2:#4D586B; --ink-3:#6D7580; --ink-4:#9AA3AF;
+  --line:#EEF1F4; --line-strong:#DFE4EA;
+  --info:#0094B7; --info-text:#00617D; --info-soft:#DEF8FE;
+  --ok:#009A60; --ok-text:#006639; --ok-soft:#E3F9EC;
+  --warn:#BB6900; --warn-text:#7F3F00; --warn-soft:#FFEFDF;
+  --danger:#D14647; --danger-text:#8A2F2D; --danger-soft:#FFECE9;
+  --mute:#64748B; --mute-soft:#EEF1F4;
+  --r-card:22px; --r-inner:14px; --r-ctl:11px;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 14px 36px rgba(16,24,40,.06);
+  --shadow-pop:0 20px 56px rgba(16,24,40,.16);
+  --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{min-height:100%;}
+body{
+  font-family:var(--sans);background:var(--bg);color:var(--ink);
+  -webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.5;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 48% 38% at 8% -6%,rgba(47,95,255,.08),transparent 58%),
+    radial-gradient(ellipse 36% 32% at 96% 4%,rgba(0,148,183,.05),transparent 52%),
+    linear-gradient(180deg,#F8FAFC,#F5F7FA);
+}
+body::after{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.4;
+  background-image:radial-gradient(circle at 1px 1px,rgba(77,88,107,.13) 1px,transparent 0);
+  background-size:28px 28px;
+  mask-image:linear-gradient(180deg,#000 0%,transparent 70%);
+}
+.num{font-variant-numeric:tabular-nums;} .mono{font-family:var(--mono);}
+button{font-family:inherit;cursor:pointer;}
+::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:6px;}
+
+.topbar{
+  position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:16px;padding:12px 28px;
+  background:rgba(248,250,252,.9);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);
+}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;}
+.logo .mk{
+  width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:700;
+  background:linear-gradient(135deg,#4D7CFF,#2348E0);box-shadow:0 4px 14px rgba(47,95,255,.28);
+}
+.crumb{color:var(--ink-3);font-size:12.5px;} .crumb b{color:var(--ink);}
+.topbar .sp{flex:1;}
+.poll{
+  display:flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;
+  background:var(--info-soft);color:var(--info-text);font-size:12px;font-weight:600;
+}
+.poll .dot{width:7px;height:7px;border-radius:50%;background:var(--info);animation:blink 2.4s infinite;}
+@keyframes blink{50%{opacity:.35;}}
+.ghost{
+  display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r-ctl);
+  border:1px solid var(--line-strong);background:var(--card);color:var(--ink-2);font-size:12.5px;font-weight:600;
+}
+.ghost:hover{border-color:var(--brand);color:var(--brand-deep);}
+.pri{
+  padding:9px 18px;border:none;border-radius:var(--r-ctl);background:var(--brand);color:#fff;
+  font-size:13px;font-weight:700;box-shadow:0 4px 14px rgba(47,95,255,.28);
+}
+.pri:hover{background:var(--brand-deep);}
+
+.page{position:relative;z-index:1;padding:22px 28px 56px;max-width:1280px;margin:0 auto;}
+.pagehead{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+.pagehead h1{font-size:26px;font-weight:700;letter-spacing:-.03em;}
+.pagehead .sub{margin-top:4px;color:var(--ink-3);font-size:12.5px;max-width:460px;}
+.pagehead .sp{flex:1;}
+
+/* ===== Signature: 例外信号轨 ===== */
+.signal{
+  position:relative;margin-bottom:22px;border-radius:var(--r-card);overflow:hidden;
+  background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);
+}
+.signal::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:linear-gradient(180deg,var(--danger),var(--warn),var(--brand));
+}
+.signal-head{display:flex;align-items:center;gap:12px;padding:16px 20px 8px 22px;flex-wrap:wrap;}
+.signal-head .badge{
+  font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--brand-deep);
+  background:var(--brand-soft);border-radius:6px;padding:3px 8px;
+}
+.signal-head h2{font-size:15px;font-weight:700;}
+.signal-head .hint{font-size:12px;color:var(--ink-3);}
+.signal-head .sp{flex:1;}
+.signal-count{display:flex;align-items:baseline;gap:6px;}
+.signal-count .n{font-size:36px;font-weight:700;letter-spacing:-.04em;line-height:1;}
+.signal-count .n.danger{color:var(--danger-text);}
+.signal-count .n.warn{color:var(--warn-text);}
+.signal-count .u{font-size:12px;color:var(--ink-3);font-weight:600;}
+
+.signal-rail{position:relative;padding:6px 18px 18px 22px;}
+.signal-spine{
+  position:absolute;left:36px;right:36px;top:50%;height:2px;margin-top:-1px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(47,95,255,.2) 10%,rgba(47,95,255,.2) 90%,transparent);
+}
+.signal-spine i{
+  position:absolute;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;
+  background:var(--brand);box-shadow:0 0 0 4px rgba(47,95,255,.14);
+}
+.signal-spine i:first-child{left:0;} .signal-spine i:last-child{right:0;}
+.signal-track{position:relative;z-index:1;display:flex;gap:12px;overflow-x:auto;padding:6px 2px;scroll-snap-type:x mandatory;}
+.signal-card{
+  flex:0 0 268px;scroll-snap-align:start;background:var(--card-inner);border:1px solid var(--line-strong);
+  border-radius:var(--r-inner);padding:12px 14px;cursor:pointer;transition:.15s;position:relative;overflow:hidden;
+}
+.signal-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ac);}
+.signal-card:hover{border-color:var(--brand);transform:translateY(-2px);box-shadow:0 10px 24px rgba(47,95,255,.12);}
+.signal-card .kind{font-size:10.5px;font-weight:700;color:var(--ac-text);display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.signal-card .kind .sd{width:6px;height:6px;border-radius:50%;background:var(--ac);}
+.signal-card .title{font-size:13.5px;font-weight:700;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.signal-card .meta{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-3);}
+.signal-card .meta .proj{font-weight:600;color:var(--ink-2);}
+.signal-card .ago{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-4);}
+.signal-empty{padding:16px 22px 22px;color:var(--ink-3);font-size:13px;}
+
+/* ===== 项目港湾：非表格的特色卡片 ===== */
+.harbor-h{display:flex;align-items:baseline;gap:12px;margin:4px 2px 14px;flex-wrap:wrap;}
+.harbor-h h3{font-size:15px;font-weight:700;}
+.harbor-h .sub{font-size:12px;color:var(--ink-3);}
+.harbor-h .sp{flex:1;}
+.harbor-h .done-link{
+  border:none;background:transparent;color:var(--brand-deep);font-size:12.5px;font-weight:700;padding:4px 0;
+}
+.harbor-h .done-link:hover{text-decoration:underline;}
+
+.harbor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+
+.pcard{
+  position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);padding:18px 18px 16px;cursor:pointer;transition:.18s;
+  display:flex;flex-direction:column;gap:14px;overflow:hidden;
+  animation:rise .45s ease both;
+}
+.pcard:nth-child(1){animation-delay:.02s;}
+.pcard:nth-child(2){animation-delay:.06s;}
+.pcard:nth-child(3){animation-delay:.1s;}
+.pcard:nth-child(4){animation-delay:.14s;}
+@keyframes rise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+.pcard::after{
+  content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;
+  background:radial-gradient(circle,rgba(47,95,255,.07),transparent 68%);pointer-events:none;
+}
+.pcard:hover{border-color:rgba(47,95,255,.35);transform:translateY(-3px);box-shadow:0 18px 40px rgba(16,24,40,.1);}
+.pcard:focus-visible{outline:2px solid var(--brand);outline-offset:2px;}
+.pcard.hot{border-color:rgba(209,70,71,.28);}
+.pcard.hot::before{
+  content:"";position:absolute;left:0;top:18px;bottom:18px;width:3px;border-radius:2px;background:var(--danger);
+}
+
+.pcard-top{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:14px;align-items:center;position:relative;z-index:1;}
+.ring{width:64px;height:64px;position:relative;}
+.ring svg{width:64px;height:64px;transform:rotate(-90deg);}
+.ring .bg{fill:none;stroke:var(--mute-soft);stroke-width:6;}
+.ring .fg{fill:none;stroke-width:6;stroke-linecap:round;}
+.ring .lbl{position:absolute;inset:0;display:grid;place-items:center;text-align:center;}
+.ring .lbl b{display:block;font-size:15px;font-weight:700;letter-spacing:-.02em;line-height:1;}
+.ring .lbl span{display:block;font-size:9.5px;color:var(--ink-4);font-weight:600;margin-top:2px;}
+
+.pid .name{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;}
+.pid .name .hd{width:8px;height:8px;border-radius:50%;flex:none;}
+.pid .goal{margin-top:5px;font-size:12.5px;color:var(--ink-3);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.owners{display:flex;align-items:center;}
+.owners b{
+  width:24px;height:24px;border-radius:8px;background:var(--brand-soft);color:var(--brand-deep);
+  font-size:10px;display:grid;place-items:center;font-weight:700;margin-left:-5px;border:1.5px solid #fff;
+}
+.owners b:first-child{margin-left:0;}
+
+/* 流量仪：车流浓缩成一条仪器 */
+.flow{
+  position:relative;z-index:1;background:var(--card-soft);border:1px solid var(--line);
+  border-radius:16px;padding:12px 14px 14px;
+}
+.flow-h{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.flow-h .t{font-size:11px;font-weight:700;color:var(--ink-3);letter-spacing:.04em;}
+.flow-h .sp{flex:1;}
+.flow-h .enter{font-size:11.5px;font-weight:700;color:var(--brand-deep);opacity:.7;}
+.pcard:hover .flow-h .enter{opacity:1;}
+
+.meter{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.seg{
+  position:relative;border-radius:12px;padding:10px 8px 8px;background:var(--card);border:1px solid var(--line);
+  text-align:center;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.seg .n{font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1;}
+.seg .l{margin-top:4px;font-size:10.5px;font-weight:600;color:var(--ink-4);}
+.seg.q .n{color:var(--mute);}
+.seg.r .n{color:var(--info-text);}
+.seg.w .n{color:var(--warn-text);}
+.seg.f .n{color:var(--danger-text);}
+.seg.lit{box-shadow:inset 0 0 0 1px rgba(47,95,255,.12);}
+.seg.f.lit{background:linear-gradient(180deg,var(--danger-soft),var(--card));border-color:rgba(209,70,71,.25);}
+.seg.w.lit{background:linear-gradient(180deg,var(--warn-soft),var(--card));border-color:rgba(187,105,0,.22);}
+.seg.r.lit{background:linear-gradient(180deg,var(--info-soft),var(--card));}
+
+/* 轨道光点：有执行中时轻轻流 */
+.rail{
+  position:relative;height:3px;margin:12px 2px 0;border-radius:2px;overflow:hidden;
+  background:linear-gradient(90deg,var(--mute-soft),rgba(47,95,255,.12),rgba(0,148,183,.12),rgba(187,105,0,.12),rgba(209,70,71,.12));
+}
+.rail .dot{
+  position:absolute;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;
+  background:var(--brand);box-shadow:0 0 8px rgba(47,95,255,.45);animation:slide 3.6s linear infinite;
+}
+@keyframes slide{0%{left:-4%;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:104%;opacity:0;}}
+
+.pcard-foot{
+  position:relative;z-index:1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding-top:2px;
+}
+.budget{font-size:12px;color:var(--ink-2);font-weight:600;}
+.budget span{color:var(--ink-4);font-weight:500;}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;}
+.chip{
+  font-size:11px;font-weight:700;padding:3px 8px;border-radius:7px;background:var(--mute-soft);color:var(--mute);
+}
+.chip.warn{background:var(--warn-soft);color:var(--warn-text);}
+.chip.danger{background:var(--danger-soft);color:var(--danger-text);}
+
+/* drawer */
+.mask{position:fixed;inset:0;z-index:70;background:rgba(11,13,18,.28);opacity:0;pointer-events:none;transition:.25s;}
+.mask.on{opacity:1;pointer-events:auto;}
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;z-index:71;width:440px;max-width:94vw;background:var(--card);
+  border-left:1px solid var(--line);box-shadow:var(--shadow-pop);transform:translateX(105%);
+  transition:transform .28s cubic-bezier(.32,.72,.24,1);display:flex;flex-direction:column;
+}
+.drawer.on{transform:translateX(0);}
+.drawer .dh{padding:18px 22px 14px;border-bottom:1px solid var(--line);}
+.drawer .dh .row{display:flex;gap:10px;align-items:flex-start;}
+.drawer .dh h2{font-size:16px;font-weight:700;flex:1;line-height:1.35;}
+.drawer .dh .x{width:28px;height:28px;border-radius:8px;border:1px solid var(--line-strong);background:var(--card);color:var(--ink-3);}
+.drawer .meta{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:7px;padding:2px 9px;}
+.drawer .db{flex:1;overflow-y:auto;padding:16px 22px;}
+.sect{font-size:11px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;margin:16px 0 8px;}
+.sect:first-child{margin-top:0;}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:7px 12px;font-size:12.5px;}
+.kv .k{color:var(--ink-3);} .kv .v{font-weight:600;}
+.stack{display:flex;flex-direction:column;gap:8px;}
+.task{
+  background:var(--card);border:1px solid var(--line-strong);border-radius:var(--r-inner);
+  padding:10px 12px;cursor:pointer;transition:.15s;
+}
+.task:hover{border-color:var(--brand);}
+.task .tt{font-size:13px;font-weight:700;display:flex;gap:7px;align-items:flex-start;}
+.task .tt .sd{width:7px;height:7px;border-radius:50%;margin-top:5px;flex:none;}
+.task .tm{margin-top:6px;font-size:11.5px;color:var(--ink-3);display:flex;gap:8px;align-items:center;}
+.task .stuck{margin-top:6px;font-size:11px;font-weight:700;color:var(--danger-text);background:var(--danger-soft);border-radius:6px;padding:2px 8px;display:inline-block;}
+.more-btn{
+  align-self:flex-start;margin-top:4px;border:none;background:var(--brand-soft);color:var(--brand-deep);
+  font-size:12px;font-weight:700;border-radius:8px;padding:6px 11px;
+}
+.drawer .df{padding:14px 22px 28px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:9px;background:var(--card-soft);}
+.act{padding:9px 12px;border-radius:var(--r-ctl);font-size:12.5px;font-weight:700;border:1px solid var(--line-strong);background:var(--card);color:var(--ink-2);}
+.act.pri{background:var(--brand);border-color:var(--brand);color:#fff;}
+.act.dgr{color:var(--danger-text);}
+.act.wide{grid-column:1/-1;}
+.act:disabled{opacity:.4;cursor:not-allowed;}
+
+.toast{
+  position:fixed;left:50%;bottom:28px;transform:translate(-50%,16px);z-index:80;background:var(--ink);color:#fff;
+  font-size:12.5px;font-weight:600;padding:9px 18px;border-radius:11px;opacity:0;pointer-events:none;transition:.25s;box-shadow:var(--shadow-pop);
+}
+.toast.on{opacity:1;transform:translate(-50%,0);}
+
+@media (max-width:920px){.harbor{grid-template-columns:1fr;}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><span class="mk">S</span>SuperTeam</div>
+  <div class="crumb">项目 / <b>项目管理</b></div>
+  <div class="sp"></div>
+  <div class="poll"><span class="dot"></span>轮询 · 12s 前</div>
+  <button class="ghost" onclick="toast('已刷新 listProjects + overview / events')">⟳ 刷新</button>
+</header>
+
+<div class="page">
+  <div class="pagehead">
+    <div>
+      <h1>项目管理</h1>
+      <div class="sub">一页只做一件事：先接住例外，再扫组合闭环。车流收进每张项目卡的流量仪。</div>
+    </div>
+    <div class="sp"></div>
+    <button class="ghost" onclick="toast('POST /api/v1/projects')">＋ 新建项目</button>
+    <button class="pri" onclick="location.href='task-hub-launch-console.html'">＋ 发起任务</button>
+  </div>
+
+  <section class="signal" aria-label="例外信号轨">
+    <div class="signal-head">
+      <span class="badge">SIGNAL</span>
+      <h2>此刻需要你</h2>
+      <span class="hint">跨项目 · 等待人工 / 失败阻塞</span>
+      <div class="sp"></div>
+      <div class="signal-count">
+        <span class="n" id="sigN">0</span>
+        <span class="u">条例外</span>
+      </div>
+    </div>
+    <div class="signal-rail" id="signalRail">
+      <div class="signal-spine" aria-hidden="true"><i></i><i></i></div>
+      <div class="signal-track" id="signalTrack"></div>
+    </div>
+  </section>
+
+  <div class="harbor-h">
+    <h3>项目港湾</h3>
+    <span class="sub">一张卡 = 一个业务闭环 · 流量仪替代整页车流看板</span>
+    <div class="sp"></div>
+    <button class="done-link" onclick="openDoneDrawer()">今日完成 <span class="num" id="doneCnt">0</span> →</button>
+  </div>
+
+  <div class="harbor" id="harbor"></div>
+</div>
+
+<div class="mask" id="mask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="dh">
+    <div class="row"><h2 id="dTitle">—</h2><button class="x" onclick="closeDrawer()">✕</button></div>
+    <div class="meta" id="dMeta"></div>
+  </div>
+  <div class="db" id="dBody"></div>
+  <div class="df" id="dActs"></div>
+</aside>
+<div class="toast" id="toast"></div>
+
+<script>
+const MAX_SHOW = 3;
+const STATUS_LABEL = {
+  planned:"已计划", queued:"排队中", running:"运行中",
+  waiting_human:"等待人工", failed:"失败", completed:"已完成",
+};
+const STATUS_COLOR = {
+  planned:"var(--info)", queued:"var(--info)", running:"var(--warn)",
+  waiting_human:"var(--warn)", failed:"var(--danger)", completed:"var(--ok)",
+};
+
+const PROJECTS = [
+  { id:"proj-g4", name:"G4 补货 E2E",
+    goal:"打通补货规则引擎到库存域的端到端验收闭环",
+    owners:["王","李","陈"],
+    task_summary:{ active_tasks:9, pending_human_tasks:1, completed_tasks:18, failed_tasks:1 },
+    budget:{ estimated_tokens:500000, actual_tokens:310000 } },
+  { id:"proj-dm", name:"目录投影 smoke",
+    goal:"验证目录投影作业在权限边界下的全量回归",
+    owners:["赵","钱"],
+    task_summary:{ active_tasks:5, pending_human_tasks:1, completed_tasks:9, failed_tasks:1 },
+    budget:{ estimated_tokens:220000, actual_tokens:90200 } },
+  { id:"proj-sec", name:"安全响应专项",
+    goal:"CVE-2026-1187 影响面分析与热修复补丁发布",
+    owners:["秦","周"],
+    task_summary:{ active_tasks:4, pending_human_tasks:1, completed_tasks:11, failed_tasks:0 },
+    budget:{ estimated_tokens:180000, actual_tokens:140400 } },
+  { id:"proj-dash", name:"数据看板改版",
+    goal:"趋势图组件迁移到 v3 Soft-Flat 并统一指标口径",
+    owners:["吴"],
+    task_summary:{ active_tasks:3, pending_human_tasks:0, completed_tasks:2, failed_tasks:0 },
+    budget:{ estimated_tokens:120000, actual_tokens:27600 } },
+];
+
+const EMP = {
+  "emp-wang":{n:"开发-小王",c:"#2F5FFF"},
+  "emp-lin":{n:"测试-阿琳",c:"#0094B7"},
+  "emp-zhou":{n:"架构-老周",c:"#9565C7"},
+  "emp-op":{n:"目录-opencode",c:"#009A60"},
+  "emp-sec":{n:"安全-小秦",c:"#D14647"},
+};
+
+const TASKS = [
+  // started_at / finished_at / status_reason：生产侧来自 task-graph 节点投影，非 listProjectTasks 裸字段
+  {id:"t-4821",project_id:"proj-g4",title:"补货规则引擎实现",status:"running",emp:"emp-wang",started_at:agoH(3.4),updated_at:agoM(2)},
+  {id:"t-4825",project_id:"proj-g4",title:"E2E 用例补全（库存域）",status:"running",emp:"emp-lin",started_at:agoH(1.1),updated_at:agoM(5)},
+  {id:"t-4826",project_id:"proj-g4",title:"策略链单元测试",status:"running",emp:"emp-wang",started_at:agoH(0.8),updated_at:agoM(8)},
+  {id:"t-4827",project_id:"proj-g4",title:"库存快照对账脚本",status:"running",emp:"emp-lin",started_at:agoH(0.5),updated_at:agoM(12)},
+  {id:"t-4817",project_id:"proj-g4",title:"模型 ASCII 校验失败修复",status:"failed",emp:"emp-wang",updated_at:agoH(2.2),status_reason:"project_name must be ASCII"},
+  {id:"t-4810",project_id:"proj-g4",title:"库存接口联调报告",status:"waiting_human",emp:"emp-lin",updated_at:agoH(18),decision:true},
+  {id:"t-4833",project_id:"proj-g4",title:"灰度发布清单整理",status:"queued",emp:"emp-wang",updated_at:agoM(40)},
+  {id:"t-4834",project_id:"proj-g4",title:"补货频率回归基线",status:"planned",emp:"emp-lin",updated_at:agoM(28)},
+  {id:"t-4835",project_id:"proj-g4",title:"监控告警阈值校准",status:"queued",emp:"emp-zhou",updated_at:agoM(22)},
+  {id:"t-4790",project_id:"proj-g4",title:"库存 schema 迁移",status:"completed",emp:"emp-wang",finished_at:today(8,40)},
+  {id:"t-4788",project_id:"proj-g4",title:"补货域 fixture 准备",status:"completed",emp:"emp-lin",finished_at:today(9,10)},
+  {id:"t-4785",project_id:"proj-g4",title:"契约 v3 对齐",status:"completed",emp:"emp-zhou",finished_at:today(7,55)},
+  {id:"t-4781",project_id:"proj-g4",title:"环境变量清单核对",status:"completed",emp:"emp-wang",finished_at:today(11,20)},
+  {id:"t-3902",project_id:"proj-dm",title:"投影作业全量回归",status:"running",emp:"emp-op",started_at:agoM(52),updated_at:agoM(1)},
+  {id:"t-3898",project_id:"proj-dm",title:"目录权限用例失败",status:"failed",emp:"emp-op",updated_at:agoM(47),status_reason:"EACCES: /var/lib/proj/acl"},
+  {id:"t-3885",project_id:"proj-dm",title:"smoke 报告汇总与归档",status:"waiting_human",emp:"emp-op",updated_at:agoH(2),decision:true},
+  {id:"t-3911",project_id:"proj-dm",title:"增量投影压测",status:"queued",emp:"emp-op",updated_at:agoM(12)},
+  {id:"t-7720",project_id:"proj-sec",title:"CVE-2026-1187 影响面分析",status:"running",emp:"emp-sec",started_at:agoH(2.7),updated_at:agoM(3)},
+  {id:"t-7724",project_id:"proj-sec",title:"漏洞扫描基线更新",status:"queued",emp:"emp-sec",updated_at:agoM(25)},
+  {id:"t-7715",project_id:"proj-sec",title:"热修复补丁验证报告",status:"waiting_human",emp:"emp-sec",updated_at:agoH(1),decision:true},
+  {id:"t-7701",project_id:"proj-sec",title:"入侵痕迹取证快照",status:"completed",emp:"emp-sec",finished_at:today(10,2)},
+  {id:"t-2210",project_id:"proj-dash",title:"趋势图组件迁移 v3",status:"running",emp:"emp-lin",started_at:agoM(18),updated_at:agoM(1)},
+  {id:"t-2214",project_id:"proj-dash",title:"指标口径梳理",status:"planned",emp:"emp-zhou",updated_at:agoM(6)},
+  {id:"t-2208",project_id:"proj-dash",title:"看板信息架构评审稿",status:"queued",emp:"emp-zhou",updated_at:agoM(30)},
+];
+
+function agoH(h){return new Date(Date.now()-h*3600e3).toISOString();}
+function agoM(m){return new Date(Date.now()-m*60e3).toISOString();}
+function today(h,m){const d=new Date();d.setHours(h,m,0,0);return d.toISOString();}
+function isToday(iso){if(!iso)return false;return new Date(iso).toDateString()===new Date().toDateString();}
+function dur(iso){if(!iso)return "—";const m=Math.floor((Date.now()-new Date(iso))/6e4);if(m<60)return m+"m";return Math.floor(m/60)+"h "+(m%60)+"m";}
+function budgetPct(b){return b.estimated_tokens?Math.min(100,Math.round(b.actual_tokens/b.estimated_tokens*100)):0;}
+function ratio(s){const t=s.completed_tasks+s.active_tasks+s.failed_tasks;return t?Math.round(s.completed_tasks/t*100):0;}
+function proj(id){return PROJECTS.find(p=>p.id===id);}
+function counts(pid){
+  const tasks=TASKS.filter(t=>t.project_id===pid);
+  return {
+    queued: tasks.filter(t=>t.status==="planned"||t.status==="queued").length,
+    running: tasks.filter(t=>t.status==="running").length,
+    waiting: tasks.filter(t=>t.status==="waiting_human").length,
+    failed: tasks.filter(t=>t.status==="failed").length,
+    active: tasks.filter(t=>!["completed","cancelled"].includes(t.status)),
+  };
+}
+
+function buildSignals(){
+  return TASKS
+    .filter(t=>t.status==="waiting_human"||t.status==="failed")
+    .sort((a,b)=>{
+      const r=(a.status==="failed"?0:1)-(b.status==="failed"?0:1);
+      return r||new Date(a.updated_at)-new Date(b.updated_at);
+    })
+    .map(t=>{
+      const p=proj(t.project_id); const failed=t.status==="failed";
+      return {
+        id:t.id, title:t.title, project:p.name,
+        kind:failed?"失败阻塞":"等待人工",
+        ac:failed?"var(--danger)":"var(--warn)",
+        acText:failed?"var(--danger-text)":"var(--warn-text)",
+        ago:dur(t.updated_at), status:t.status, emp:EMP[t.emp]?.n||"—",
+      };
+    });
+}
+
+function renderSignals(){
+  const sigs=buildSignals();
+  const n=document.getElementById("sigN");
+  n.textContent=sigs.length;
+  n.className="n "+(sigs.some(s=>s.status==="failed")?"danger":sigs.length?"warn":"");
+  const rail=document.getElementById("signalRail");
+  if(!sigs.length){
+    rail.innerHTML=`<div class="signal-empty">此刻没有跨项目例外。组合运行平稳 — 可直接扫下方项目港湾。</div>`;
+    return;
+  }
+  document.getElementById("signalTrack").innerHTML=sigs.map(s=>`
+    <article class="signal-card" style="--ac:${s.ac};--ac-text:${s.acText}" onclick="openTask('${s.id}')">
+      <div class="kind"><span class="sd"></span>${s.kind}</div>
+      <div class="title">${s.title}</div>
+      <div class="meta"><span class="proj">${s.project}</span><span>·</span><span>${s.emp}</span><span class="ago">${s.ago}</span></div>
+    </article>`).join("");
+}
+
+function ringSVG(pct, color){
+  const r=26, c=2*Math.PI*r, off=c*(1-pct/100);
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">
+    <circle class="bg" cx="32" cy="32" r="${r}"/>
+    <circle class="fg" cx="32" cy="32" r="${r}" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${off}"/>
+  </svg><div class="lbl"><b class="num">${pct}%</b><span>完成比</span></div>`;
+}
+
+function renderHarbor(){
+  const done=TASKS.filter(t=>t.status==="completed"&&isToday(t.finished_at)).length;
+  document.getElementById("doneCnt").textContent=done;
+
+  document.getElementById("harbor").innerHTML=PROJECTS.map(p=>{
+    const c=counts(p.id);
+    const pct=ratio(p.task_summary);
+    const hot=c.failed>0;
+    const tone=hot?"danger":c.waiting>0?"warn":"ok";
+    const color=tone==="danger"?"var(--danger)":tone==="warn"?"var(--warn)":"var(--brand)";
+    const hd=tone==="danger"?"var(--danger)":tone==="warn"?"var(--warn)":"var(--ok)";
+    const bp=budgetPct(p.budget);
+    return `<article class="pcard${hot?" hot":""}" tabindex="0"
+      onclick="openProject('${p.id}')" onkeydown="if(event.key==='Enter')this.click()">
+      <div class="pcard-top">
+        <div class="ring">${ringSVG(pct,color)}</div>
+        <div class="pid">
+          <div class="name"><span class="hd" style="background:${hd}"></span>${p.name}</div>
+          <div class="goal">${p.goal}</div>
+        </div>
+        <div class="owners">${p.owners.map(o=>`<b>${o}</b>`).join("")}</div>
+      </div>
+      <div class="flow">
+        <div class="flow-h"><span class="t">流量仪 · 四态分布</span><div class="sp"></div><span class="enter">打开详情 →</span></div>
+        <div class="meter">
+          <div class="seg q${c.queued?" lit":""}"><div class="n num">${c.queued}</div><div class="l">排队</div></div>
+          <div class="seg r${c.running?" lit":""}"><div class="n num">${c.running}</div><div class="l">执行中</div></div>
+          <div class="seg w${c.waiting?" lit":""}"><div class="n num">${c.waiting}</div><div class="l">等待人工</div></div>
+          <div class="seg f${c.failed?" lit":""}"><div class="n num">${c.failed}</div><div class="l">失败</div></div>
+        </div>
+        ${c.running?`<div class="rail" aria-hidden="true"><span class="dot"></span></div>`:`<div class="rail" style="opacity:.35"></div>`}
+      </div>
+      <div class="pcard-foot">
+        <div class="budget">预算 ${bp}% <span>· ${p.budget.actual_tokens.toLocaleString()} tok</span></div>
+        <div class="chips">
+          ${c.waiting?`<span class="chip warn">等待 ${c.waiting}</span>`:""}
+          ${c.failed?`<span class="chip danger">失败 ${c.failed}</span>`:""}
+          ${!c.waiting&&!c.failed?`<span class="chip">平稳</span>`:""}
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function taskCard(t){
+  const e=EMP[t.emp]||{n:"未指派",c:"#64748B"};
+  const failed=t.status==="failed";
+  return `<div class="task" onclick="event.stopPropagation();openTask('${t.id}')">
+    <div class="tt"><span class="sd" style="background:${STATUS_COLOR[t.status]}"></span><span>${t.title}</span></div>
+    <div class="tm">${e.n}<span>·</span><span>${STATUS_LABEL[t.status]}</span>
+      <span style="margin-left:auto" class="mono" style="font-size:11px">${dur(t.updated_at||t.started_at)}</span></div>
+    ${failed&&t.status_reason?`<span class="stuck">${t.status_reason}</span>`:""}
+  </div>`;
+}
+
+function openProject(id){
+  const p=proj(id); const c=counts(id);
+  const active=c.active.sort((a,b)=>{
+    const rank=s=>({failed:0,waiting_human:1,running:2,queued:3,planned:4}[s]??9);
+    return rank(a.status)-rank(b.status)||new Date(a.updated_at)-new Date(b.updated_at);
+  });
+  const shown=active.slice(0,MAX_SHOW);
+  const extra=active.length-shown.length;
+  document.getElementById("dTitle").textContent=p.name;
+  document.getElementById("dMeta").innerHTML=`
+    <span class="pill" style="background:var(--brand-soft);color:var(--brand-deep)">完成比 ${ratio(p.task_summary)}%</span>
+    <span class="pill" style="background:var(--mute-soft);color:var(--mute)">预算 ${budgetPct(p.budget)}%</span>
+    <span class="pill" style="background:var(--mute-soft);color:var(--mute)">活跃 ${active.length}</span>`;
+  document.getElementById("dBody").innerHTML=`
+    <div class="sect">目标</div>
+    <div style="font-size:13px;color:var(--ink-2);line-height:1.5">${p.goal}</div>
+    <div class="sect">活跃任务（默认前 ${MAX_SHOW}）</div>
+    <div class="stack">${shown.map(taskCard).join("")||`<div style="color:var(--ink-4);font-size:12.5px">暂无活跃任务</div>`}
+      ${extra>0?`<button class="more-btn" onclick="showAllActive('${id}')">展开更多 +${extra}</button>`:""}
+    </div>
+    <div class="sect">数据来源</div>
+    <div class="kv">
+      <span class="k">列表</span><span class="v mono" style="font-weight:500;font-size:11.5px">GET /projects · /overview</span>
+      <span class="k">任务</span><span class="v mono" style="font-weight:500;font-size:11.5px">GET /projects/{id}/tasks</span>
+    </div>`;
+  document.getElementById("dActs").innerHTML=`
+    <button class="act pri" onclick="toast('导航 /projects/${id} 运营首页')">进入运营首页</button>
+    <button class="act" onclick="toast('发起任务 · 绑定 ${p.name}')">发起任务</button>
+    <button class="act wide" onclick="closeDrawer()">关闭</button>`;
+  openDrawer();
+}
+
+function showAllActive(id){
+  const active=counts(id).active;
+  const stack=document.querySelector("#dBody .stack");
+  if(!stack)return;
+  stack.innerHTML=active.map(taskCard).join("")+`<button class="more-btn" onclick="openProject('${id}')">收起为前 ${MAX_SHOW}</button>`;
+}
+
+function openDoneDrawer(){
+  const list=TASKS.filter(t=>t.status==="completed"&&isToday(t.finished_at));
+  document.getElementById("dTitle").textContent="今日完成";
+  document.getElementById("dMeta").innerHTML=`<span class="pill" style="background:var(--ok-soft);color:var(--ok-text)">${list.length} 条</span>`;
+  document.getElementById("dBody").innerHTML=list.length
+    ?`<div class="stack">${list.map(t=>{
+      const p=proj(t.project_id);
+      return `<div class="task" onclick="openTask('${t.id}')"><div class="tt"><span class="sd" style="background:var(--ok)"></span><span>${t.title}</span></div>
+        <div class="tm">${p.name}</div></div>`;
+    }).join("")}</div>`
+    :`<div style="color:var(--ink-4)">今日尚无完成任务</div>`;
+  document.getElementById("dActs").innerHTML=`<button class="act wide" onclick="closeDrawer()">关闭</button>`;
+  openDrawer();
+}
+
+function openTask(id){
+  const t=TASKS.find(x=>x.id===id); if(!t)return;
+  const p=proj(t.project_id); const e=EMP[t.emp]||{n:"未指派"};
+  const bg=t.status==="failed"?["var(--danger-soft)","var(--danger-text)"]
+    :t.status==="waiting_human"?["var(--warn-soft)","var(--warn-text)"]
+    :t.status==="running"?["var(--info-soft)","var(--info-text)"]
+    :["var(--mute-soft)","var(--mute)"];
+  document.getElementById("dTitle").textContent=t.title;
+  document.getElementById("dMeta").innerHTML=`
+    <span class="pill" style="background:${bg[0]};color:${bg[1]}"><span style="width:6px;height:6px;border-radius:50%;background:${STATUS_COLOR[t.status]};display:inline-block"></span>${STATUS_LABEL[t.status]}</span>
+    <span class="pill" style="background:var(--mute-soft);color:var(--mute)">${p.name}</span>`;
+  document.getElementById("dBody").innerHTML=`
+    <div class="sect">基本信息</div>
+    <div class="kv">
+      <span class="k">负责员工</span><span class="v">${e.n}</span>
+      <span class="k">状态</span><span class="v">${STATUS_LABEL[t.status]}</span>
+      <span class="k">活动</span><span class="v num">${dur(t.started_at||t.updated_at)}</span>
+      ${t.status_reason?`<span class="k">原因</span><span class="v" style="color:var(--danger-text)">${t.status_reason}</span>`:""}
+    </div>`;
+  const acts=[];
+  if(t.status==="waiting_human"){
+    acts.push(`<button class="act pri" onclick="act('resolveDecision · approve')">通过</button>`);
+    acts.push(`<button class="act dgr" onclick="act('resolveDecision · reject')">驳回</button>`);
+  }else if(t.status==="failed"){
+    acts.push(`<button class="act" onclick="act('查看 dispatch-gates')">查看 gate</button>`);
+    acts.push(`<button class="act" onclick="act('处理阻塞')">处理阻塞</button>`);
+  }else{
+    acts.push(`<button class="act" onclick="openProject('${p.id}')">返回项目</button>`);
+    acts.push(`<button class="act" disabled>催办（无）</button>`);
+  }
+  acts.push(`<button class="act wide" onclick="toast('导航 /projects/${p.id}')">进入项目运营首页 →</button>`);
+  document.getElementById("dActs").innerHTML=acts.join("");
+  openDrawer();
+}
+
+function openDrawer(){document.getElementById("drawer").classList.add("on");document.getElementById("mask").classList.add("on");}
+function closeDrawer(){document.getElementById("drawer").classList.remove("on");document.getElementById("mask").classList.remove("on");}
+let toastTimer;
+function toast(msg){const el=document.getElementById("toast");el.textContent=msg;el.classList.add("on");clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove("on"),2000);}
+function act(msg){toast(msg);}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer();});
+
+renderSignals();
+renderHarbor();
+</script>
+</body>
+</html>

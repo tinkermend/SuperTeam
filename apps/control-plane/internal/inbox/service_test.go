@@ -329,6 +329,7 @@ func TestServiceRejectsActionsFromNonTargetUser(t *testing.T) {
 	targetUserID := uuid.New()
 	actorUserID := uuid.New()
 	approvalID := uuid.New()
+	repo.userNames[targetUserID] = "张三"
 	item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
 		TenantID:     tenantID,
 		TargetUserID: targetUserID,
@@ -352,8 +353,73 @@ func TestServiceRejectsActionsFromNonTargetUser(t *testing.T) {
 	if !errors.Is(err, ErrActionForbidden) {
 		t.Fatalf("expected forbidden action, got %v", err)
 	}
+	var forbiddenErr *ActionForbiddenError
+	if !errors.As(err, &forbiddenErr) {
+		t.Fatalf("expected ActionForbiddenError, got %T", err)
+	}
+	if !strings.Contains(err.Error(), "张三") {
+		t.Fatalf("expected message to name the designated handler, got %q", err.Error())
+	}
 	if resolver.calls != 0 {
 		t.Fatalf("expected source resolver not to be called, got %d calls", resolver.calls)
+	}
+}
+
+// any-of-N: 项目决策事项不严格限 target,资格最终由 project.ResolveDecision 判定
+// (负责人+active 人类成员,先到生效);非指定处理人在 inbox 层不再被 403 拦截。
+func TestServiceAllowsProjectDecisionActionFromNonTargetMember(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	resolver := &fakeProjectDecisionResolver{
+		result: SourceActionResult{
+			SourceType: string(SourceTypeProjectDecisionRequest),
+			Status:     string(StatusResolved),
+		},
+	}
+	service.SetProjectDecisionActionResolver(resolver)
+	tenantID := uuid.New()
+	targetUserID := uuid.New()
+	actorUserID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    targetUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        decisionID,
+		SourceProjectID: &projectID,
+		Title:           "确认项目计划版本",
+		Actions:         []Action{{Key: "approved", Label: "批准"}},
+	})
+	if err != nil {
+		t.Fatalf("upsert item: %v", err)
+	}
+	resolver.onResolve = func(req SourceActionRequest) {
+		repo.resolveItem(t, tenantID, item.ID, req.Action)
+	}
+
+	updated, _, err := service.ExecuteAction(context.Background(), ExecuteActionRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		ItemID:      item.ID,
+		Action:      "approved",
+	})
+	if err != nil {
+		t.Fatalf("expected non-target project member to act, got %v", err)
+	}
+	if updated.Status != StatusResolved {
+		t.Fatalf("expected resolved item, got %s", updated.Status)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("expected one project decision resolver call, got %d", resolver.calls)
+	}
+	if resolver.last.ActorUserID != actorUserID {
+		t.Fatalf("expected actor %s forwarded to source, got %s", actorUserID, resolver.last.ActorUserID)
 	}
 }
 
@@ -978,6 +1044,7 @@ type memoryRepository struct {
 	itemsByApproval             map[uuid.UUID]uuid.UUID
 	projectNames                map[uuid.UUID]string
 	taskTitles                  map[uuid.UUID]string
+	userNames                   map[uuid.UUID]string
 	upsertItemCalls             int
 	upsertByApprovalSourceCalls int
 }
@@ -989,6 +1056,7 @@ func newMemoryRepository() *memoryRepository {
 		itemsByApproval: map[uuid.UUID]uuid.UUID{},
 		projectNames:    map[uuid.UUID]string{},
 		taskTitles:      map[uuid.UUID]string{},
+		userNames:       map[uuid.UUID]string{},
 	}
 }
 
@@ -1016,6 +1084,13 @@ func (r *memoryRepository) ProjectTaskTitles(_ context.Context, _ uuid.UUID, ids
 		}
 	}
 	return titles, nil
+}
+
+func (r *memoryRepository) UserDisplayName(_ context.Context, userID uuid.UUID) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.userNames[userID], nil
 }
 
 func (r *memoryRepository) UpsertItem(_ context.Context, req UpsertItemRequest) (Item, error) {

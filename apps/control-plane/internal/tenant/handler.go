@@ -478,6 +478,7 @@ var overviewActions = []string{
 	authz.ActionTeamUpdate,
 	authz.ActionTeamDelete,
 	authz.ActionTeamMemberAdd,
+	authz.ActionTeamMemberRemove,
 	authz.ActionTeamMemberRequestPrivilegedRole,
 	authz.ActionTeamGovernanceEdit,
 	authz.ActionTeamGovernanceApprove,
@@ -485,6 +486,7 @@ var overviewActions = []string{
 	authz.ActionTeamCapabilityUnbind,
 	authz.ActionTeamAuditRead,
 }
+
 
 func (h *HTTPHandler) allowedTeamActions(r *http.Request, tenantID, teamID uuid.UUID) []AllowedTeamAction {
 	if h == nil || h.authorizer == nil {

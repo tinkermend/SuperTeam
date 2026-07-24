@@ -194,11 +194,10 @@ function makeWorkflowInstance(
 
 function makeProject(): Project {
   return {
-    approval_policy: {},
     coordination_policy: {},
     coordination_status: "registered",
     coordination_workflow_id: "project-coordinator:project-1",
-    evidence_policy: {},
+    directory_name: "payment-project",
     goal: "恢复支付成功率",
     human_owner_user_id: "owner-1",
     id: "project-1",
@@ -295,6 +294,7 @@ function makeProjectEvent(
   return {
     actor_id: "coordinator",
     actor_type: "system",
+    created_at: "2026-06-15T08:00:00Z",
     event_type: eventType,
     id: `event-${eventType}`,
     payload,
@@ -306,6 +306,7 @@ function makeProjectEvent(
 
 function createWorkflowFetcher({
   demandStatus = "planning_pending",
+  detailOverrides = {},
   events = [],
   graph = makeGraph(),
   graphsByDemandId,
@@ -328,6 +329,7 @@ function createWorkflowFetcher({
   ],
 }: {
   demandStatus?: ProjectDemandLaunchDetail["demand"]["status"];
+  detailOverrides?: Partial<ProjectDemandLaunchDetail>;
   events?: ProjectEvent[];
   graph?: ProjectTaskGraph;
   graphsByDemandId?: Record<string, ProjectTaskGraph>;
@@ -348,6 +350,7 @@ function createWorkflowFetcher({
       return jsonResponse(
         makeLaunchDetail("demand-running", {
           demand: { ...makeLaunchDetail("demand-running").demand, status: demandStatus },
+          ...detailOverrides,
         }),
       );
     }
@@ -811,6 +814,37 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("PR 审查").first()).toBeVisible();
     await expect.element(screen.getByText("任务正在规划")).toBeVisible();
     await expect.element(screen.getByText("上一需求任务")).not.toBeInTheDocument();
+  });
+
+  it("shows the pending human decision with an inbox entry instead of the planning placeholder", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        detailOverrides: {
+          decision_requests: [
+            {
+              approval_request_id: "approval-1",
+              decision_type: "plan_review",
+              id: "decision-1",
+              project_id: "project-1",
+              risk_level_snapshot: "medium",
+              status_snapshot: "pending",
+              summary_snapshot: "计划包含 1 个任务：列出当前目录文件。",
+              target_user_id: "owner-1",
+              tenant_id: "tenant-1",
+              title_snapshot: "确认项目计划版本",
+            } satisfies ProjectDecisionRequest,
+          ],
+        },
+      }),
+    });
+
+    await expect.element(screen.getByRole("heading", { name: "计划版本待确认" })).toBeVisible();
+    await expect.element(screen.getByText("确认项目计划版本")).toBeVisible();
+    await expect.element(screen.getByText("计划确认")).toBeVisible();
+    await expect.element(screen.getByText("中风险")).toBeVisible();
+    await expect.element(screen.getByText(/列出当前目录文件/)).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "前往收件箱处理" })).toBeVisible();
+    await expect.element(screen.getByText("任务正在规划")).not.toBeInTheDocument();
   });
 
   it("does not render a previous zero-node blocker while the selected demand graph is loading", async () => {

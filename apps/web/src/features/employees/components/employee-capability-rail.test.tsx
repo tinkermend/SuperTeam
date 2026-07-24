@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
+import type { DigitalEmployeeSchedulingReadiness } from "@/lib/api/employees";
 import { EmployeeCapabilityRail } from "./employee-capability-rail";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -24,7 +25,7 @@ const employee = {
   risk_level: "medium",
 };
 
-const readiness = {
+const readiness: DigitalEmployeeSchedulingReadiness = {
   employee_id: "employee-1",
   status: "active",
   ready_for_project_scheduling: true,

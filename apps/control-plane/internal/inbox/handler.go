@@ -30,9 +30,9 @@ type HTTPHandler struct {
 
 const defaultStreamInterval = 2 * time.Second
 const streamKeepaliveEvery = 8 // 每 N 个空探测发一次注释行保活(2s 间隔 ≈ 16s 一次)
-// 流启动游标回拨量:updated_at 由 DB NOW() 生成,与应用时钟可能有偏差。宁可多推一次
-// 脏通知(客户端只是多一次 refetch),不漏掉建流瞬间落库的变更。
-const streamCursorSlack = 5 * time.Second
+// 流启动/重连游标回拨:覆盖时钟偏差、典型 EventSource 断窗与 CP 短重启。
+// 宁可多推一次脏通知;客户端 onopen 仍会强制 invalidate 作双保险。
+const streamCursorSlack = 60 * time.Second
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}

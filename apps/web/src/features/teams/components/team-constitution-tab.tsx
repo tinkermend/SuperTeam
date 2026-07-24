@@ -1,9 +1,7 @@
 import { Save, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { MasterDetailLayout, V3Button } from "@/components/superteam";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusPill, V3Button, WorkSurface } from "@/components/superteam";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { ApiClientOptions } from "@/lib/api/client";
@@ -51,54 +49,45 @@ export function TeamConstitutionTab({
   const hardRuleCount = lineList(hardRulesText).length;
 
   return (
-    <MasterDetailLayout
-      narrowDetail="stack"
-      rail="md"
-      master={
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-base">团队宪法</CardTitle>
-              <Badge variant="secondary">硬性规则</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="size-4" />
-                <Label htmlFor="team-constitution-hard-rules">团队宪法</Label>
-              </div>
-              <Textarea
-                disabled={!canEdit}
-                id="team-constitution-hard-rules"
-                onChange={(event) => setHardRulesText(event.target.value)}
-                rows={8}
-                value={hardRulesText}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      }
-      detail={
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">保存</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">当前内容</span>
-              <Badge variant="outline">{hardRuleCount} 条硬性规则</Badge>
-            </div>
-            <V3Button disabled={!canEdit || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-              <Save data-icon="inline-start" />
-              保存宪法
-            </V3Button>
-            {saveMutation.isSuccess ? <p className="text-muted-foreground">团队宪法已保存。</p> : null}
-            {saveMutation.isError ? <p className="text-destructive">团队宪法保存失败。</p> : null}
-          </CardContent>
-        </Card>
-      }
-    />
+    <WorkSurface>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-v3-line px-5 py-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-bold text-v3-ink">团队宪法</h2>
+            <StatusPill tone="mute">{hardRuleCount} 条硬性规则</StatusPill>
+          </div>
+          <p className="mt-1 text-[13px] text-v3-ink-2">约束执行边界的硬性规则，一行一条。</p>
+        </div>
+        <V3Button
+          disabled={!canEdit || saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+          size="sm"
+        >
+          <Save data-icon="inline-start" />
+          保存宪法
+        </V3Button>
+      </div>
+      <div className="flex flex-col gap-3 p-5">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="size-4 text-v3-ink-3" />
+          <Label htmlFor="team-constitution-hard-rules">团队宪法</Label>
+        </div>
+        <Textarea
+          disabled={!canEdit}
+          id="team-constitution-hard-rules"
+          onChange={(event) => setHardRulesText(event.target.value)}
+          placeholder={"例如：\n生产写操作必须审批\n变更窗口必须登记"}
+          rows={6}
+          value={hardRulesText}
+        />
+        {saveMutation.isSuccess ? (
+          <p className="text-[13px] text-v3-ink-2">团队宪法已保存。</p>
+        ) : null}
+        {saveMutation.isError ? (
+          <p className="text-[13px] text-v3-danger">团队宪法保存失败。</p>
+        ) : null}
+      </div>
+    </WorkSurface>
   );
 }
 

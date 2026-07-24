@@ -146,6 +146,20 @@ func (r *PgRepository) ProjectTaskTitles(ctx context.Context, tenantID uuid.UUID
 	return titles, nil
 }
 
+func (r *PgRepository) UserDisplayName(ctx context.Context, userID uuid.UUID) (string, error) {
+	user, err := r.q.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	if user.DisplayName.Valid && user.DisplayName.String != "" {
+		return user.DisplayName.String, nil
+	}
+	return user.Username, nil
+}
+
 func upsertParams(req UpsertItemRequest) (queries.UpsertInboxItemParams, error) {
 	actionSchema, contextPayload, deepLink, err := marshalItemJSON(req)
 	if err != nil {

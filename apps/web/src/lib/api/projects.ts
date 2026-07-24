@@ -1160,7 +1160,7 @@ export function recloneProjectWorkspace(
   projectId: string,
   reason?: string,
 ): Promise<Project> {
-  return postJson<Project, { reason?: string }>(
+  return postJson<Project>(
     options,
     projectPath(projectId, "/workspace/reclone"),
     reason ? { reason } : {},
@@ -1173,7 +1173,7 @@ export function markProjectWorkspaceReady(
   projectId: string,
   reason?: string,
 ): Promise<Project> {
-  return postJson<Project, { reason?: string }>(
+  return postJson<Project>(
     options,
     projectPath(projectId, "/workspace/mark-ready"),
     reason ? { reason } : {},

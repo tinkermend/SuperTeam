@@ -14,6 +14,7 @@ export function normalizeProjectDetailSection(
       return "tasks";
     case "approval":
       return "approval";
+    case "assets":
     case "artifacts":
     case "budget":
     case "acceptance":

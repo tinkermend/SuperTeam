@@ -42,6 +42,7 @@ const (
 	TeamGovernanceApprove           AllowedTeamAction = "team.governance.approve"
 	TeamGovernanceEdit              AllowedTeamAction = "team.governance.edit"
 	TeamMemberAdd                   AllowedTeamAction = "team.member.add"
+	TeamMemberRemove                AllowedTeamAction = "team.member.remove"
 	TeamMemberRequestPrivilegedRole AllowedTeamAction = "team.member.request_privileged_role"
 	TeamUpdate                      AllowedTeamAction = "team.update"
 )
@@ -62,6 +63,8 @@ func (e AllowedTeamAction) Valid() bool {
 	case TeamGovernanceEdit:
 		return true
 	case TeamMemberAdd:
+		return true
+	case TeamMemberRemove:
 		return true
 	case TeamMemberRequestPrivilegedRole:
 		return true

@@ -31,6 +31,7 @@ export default defineConfig({
     unstubEnvs: true,
     browser: {
       enabled: true,
+      headless: true,
       provider: playwright(
         chromiumExecutablePath
           ? {

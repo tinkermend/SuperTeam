@@ -2,6 +2,7 @@ package inbox
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +17,31 @@ var (
 	ErrViewForbidden        = errors.New("inbox view forbidden")
 	ErrProjectionNotApplied = errors.New("inbox projection not applied")
 )
+
+// ActionForbiddenError 表示 actor 不是事项的指定处理人;携带处理人展示名,
+// 让 API 层能返回可读提示而非裸 403。errors.Is 仍匹配 ErrActionForbidden。
+type ActionForbiddenError struct {
+	TargetUserName string
+}
+
+func (e *ActionForbiddenError) Error() string {
+	if e.TargetUserName != "" {
+		return fmt.Sprintf("该事项由 %s 处理，只有指定处理人可以执行此操作", e.TargetUserName)
+	}
+	return "该事项由其他指定处理人处理，只有指定处理人可以执行此操作"
+}
+
+func (e *ActionForbiddenError) Unwrap() error { return ErrActionForbidden }
+
+// DecisionForbiddenError 表示 actor 不在项目决策的 any-of-N 资格集合内
+// (非项目人类成员/负责人)。errors.Is 仍匹配 ErrActionForbidden。
+type DecisionForbiddenError struct{}
+
+func (e *DecisionForbiddenError) Error() string {
+	return "只有该项目的人类成员（含负责人）可以处理该决策"
+}
+
+func (e *DecisionForbiddenError) Unwrap() error { return ErrActionForbidden }
 
 type Status string
 

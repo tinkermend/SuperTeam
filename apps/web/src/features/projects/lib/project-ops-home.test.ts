@@ -61,6 +61,23 @@ describe("project-ops-home helpers", () => {
     expect(today?.chips[0]?.timeLabel).toMatch(/\d{2}:\d{2}/);
   });
 
+  it("keeps up to 15 pulse chips for a single day", () => {
+    const now = new Date("2026-07-22T12:00:00");
+    const tasks = Array.from({ length: 18 }, (_, index) =>
+      task({
+        created_at: `2026-07-22T${String(8 + Math.floor(index / 6)).padStart(2, "0")}:${String(
+          (index * 3) % 60,
+        ).padStart(2, "0")}:00`,
+        id: `t-${index}`,
+        status: "running",
+        title: `任务 ${index}`,
+      }),
+    );
+    const days = buildWeekPulse({ demands: [], now, tasks });
+    const today = days.find((day) => day.isToday);
+    expect(today?.chips).toHaveLength(15);
+  });
+
   it("selects active or blocked tasks and filters ops events", () => {
     expect(
       selectActiveOrBlockedTasks([

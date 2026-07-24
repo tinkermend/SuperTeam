@@ -33,6 +33,7 @@ import {
   resolveTaskMode,
   selectActiveOrBlockedTasks,
   type OpsLaunchMode,
+  type OpsPulseDay,
 } from "../lib/project-ops-home";
 
 type ProjectOpsHomeProps = {
@@ -59,6 +60,9 @@ const modePillClass: Record<OpsLaunchMode, string> = {
   loop: "bg-v3-artifact-soft text-v3-artifact-text",
   chat: "bg-emerald-50 text-emerald-700",
 };
+
+/** 日格高度按约 10–12 条芯片估，超出可滚；数据侧最多保留 15 条。 */
+const PULSE_DAY_MIN_HEIGHT_CLASS = "min-h-[28rem]";
 
 function modeToneClass(mode: OpsLaunchMode) {
   return modePillClass[mode] ?? modePillClass.plan;
@@ -127,8 +131,8 @@ export function ProjectOpsHome({
     (a, b) => b.revision_number - a.revision_number,
   )[0];
   const demandsById = new Map(demands.map((d) => [d.id, d]));
-  const hasActivity =
-    pulseCount > 0 || runningSlice.length > 0 || dedupedTasks.length > 0;
+  const hasPulseActivity = pulseCount > 0;
+  const hasRunningSlice = runningSlice.length > 0;
   const railIsQuiet = pendingBlockers.length === 0 && opsEvents.length === 0;
 
   return (
@@ -137,32 +141,32 @@ export function ProjectOpsHome({
       data-testid="project-ops-home"
     >
       <div className="flex min-w-0 flex-col gap-3">
-        {!hasActivity ? (
-          <SoftCard
-            className="flex min-h-0 flex-1 flex-col justify-center overflow-hidden px-4 py-3.5"
-            data-testid="project-ops-startup"
-            id="project-overview-execution"
-          >
-            <h3 className="text-sm font-extrabold text-v3-ink">启动项目推进</h3>
-            <p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-v3-ink-2">
-              项目已就绪，还没有任务活动。用头卡「提交需求」发起后，这里会出现运行脉搏与执行态。
-            </p>
-            <p className="mt-1.5 text-[12px] text-v3-ink-3">本周 0 次活动</p>
-          </SoftCard>
-        ) : (
-          <>
-            <SoftCard className="overflow-hidden p-3.5" data-testid="project-ops-pulse">
-              <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-extrabold text-v3-ink">运行脉搏 · 本周</h3>
-                  <p className="mt-0.5 text-[11.5px] text-v3-ink-3">
-                    时间 + Plan/Loop/对话 · 本周 {pulseCount} 次
-                  </p>
-                </div>
-                <V3Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
-                  全部任务
-                </V3Button>
+        <SoftCard
+          className="flex min-h-0 flex-1 flex-col overflow-hidden p-3.5"
+          data-testid="project-ops-pulse"
+          id="project-overview-pulse"
+        >
+          <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-extrabold text-v3-ink">运行脉搏</h3>
+                <span className="rounded-md bg-v3-brand-soft px-1.5 py-0.5 text-[11px] font-bold text-v3-brand-deep">
+                  本周
+                </span>
               </div>
+              {hasPulseActivity ? (
+                <p className="mt-0.5 text-[11.5px] text-v3-ink-3">
+                  时间 + Plan/Loop/对话 · {pulseCount} 次
+                </p>
+              ) : null}
+            </div>
+            <V3Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
+              全部任务
+            </V3Button>
+          </div>
+
+          {hasPulseActivity ? (
+            <>
               <div className="mb-2 flex flex-wrap gap-1.5 text-[11px]">
                 <span className={cn("rounded-md px-1.5 py-0.5 font-bold", modeToneClass("plan"))}>
                   Plan
@@ -174,130 +178,111 @@ export function ProjectOpsHome({
                   对话
                 </span>
               </div>
-              <div className="grid grid-cols-7 gap-1.5">
+              <WeekPulseGrid days={pulseDays} />
+            </>
+          ) : (
+            <div
+              className={cn(
+                "relative flex-1 overflow-hidden rounded-[12px] border border-v3-line bg-v3-card-soft/40",
+                PULSE_DAY_MIN_HEIGHT_CLASS,
+              )}
+              data-testid="project-ops-pulse-empty"
+            >
+              <div
+                aria-hidden
+                className={cn(
+                  "pointer-events-none grid h-full grid-cols-7 divide-x divide-v3-line/80",
+                  PULSE_DAY_MIN_HEIGHT_CLASS,
+                )}
+              >
                 {pulseDays.map((day) => (
                   <div
                     className={cn(
-                      "flex min-h-[72px] min-w-0 flex-col gap-1 rounded-[10px] bg-v3-card-soft p-1.5",
-                      day.isToday && "border border-v3-brand/35 bg-v3-card",
+                      "flex min-w-0 flex-col px-1.5 py-1.5",
+                      day.isToday && "bg-v3-brand-soft/35",
                     )}
                     key={day.dayKey}
                   >
-                    <div className="flex justify-between text-[10.5px] text-v3-ink-3">
+                    <div className="flex items-baseline justify-between gap-1 text-[10.5px] text-v3-ink-3">
                       <span>
                         {day.weekdayLabel}
                         {day.isToday ? " · 今" : ""}
                       </span>
-                      <b className="font-extrabold text-v3-ink tabular-nums">
+                      <b className="font-extrabold tabular-nums text-v3-ink/70">
                         {day.dayOfMonth}
                       </b>
-                    </div>
-                    <div className="flex min-h-0 flex-1 flex-col gap-1">
-                      {day.chips.length === 0 ? (
-                        <div className="grid flex-1 place-items-center text-[10.5px] text-v3-ink-3">
-                          —
-                        </div>
-                      ) : (
-                        day.chips.map((chip) => (
-                          <div
-                            className="grid grid-cols-[6px_minmax(0,1fr)] gap-1 rounded-md border border-v3-line bg-v3-card px-1 py-0.5"
-                            key={chip.taskId}
-                            title={chip.title}
-                          >
-                            <span
-                              className={cn(
-                                "mt-1 size-1.5 rounded-full",
-                                chip.statusTone === "ok" && "bg-v3-ok",
-                                chip.statusTone === "warn" && "bg-v3-warn",
-                                chip.statusTone === "info" && "bg-v3-brand",
-                                chip.statusTone === "danger" && "bg-v3-danger",
-                                chip.statusTone === "mute" && "bg-v3-ink-3",
-                              )}
-                            />
-                            <div className="min-w-0">
-                              <p className="truncate text-[10.5px] font-bold leading-4">
-                                {chip.title}
-                              </p>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-v3-ink-3">
-                                <span className="tabular-nums">{chip.timeLabel}</span>
-                                <span
-                                  className={cn(
-                                    "rounded px-1 font-bold",
-                                    modeToneClass(chip.mode),
-                                  )}
-                                >
-                                  {coordinationModeLabel(chip.mode)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
                     </div>
                   </div>
                 ))}
               </div>
-            </SoftCard>
-
-            <SoftCard
-              className="overflow-hidden p-3.5"
-              data-testid="project-ops-running"
-              id="project-overview-execution"
-            >
-              <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-extrabold text-v3-ink">执行中与阻塞</h3>
-                  <p className="mt-0.5 text-[11.5px] text-v3-ink-3">最多 3 条</p>
-                </div>
-                <V3Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
-                  全部任务
-                </V3Button>
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
+                <p className="text-center text-base font-extrabold tracking-tight text-v3-ink sm:text-lg">
+                  本周暂无任务活动
+                </p>
               </div>
-              {runningSlice.length === 0 ? (
-                <p className="text-[12.5px] text-v3-ink-3">暂无执行中或阻塞任务</p>
-              ) : (
-                <ul className="divide-y divide-v3-line">
-                  {runningSlice.map((task) => {
-                    const mode = resolveTaskMode(task, demandsById);
-                    return (
-                      <li
-                        className="flex items-start justify-between gap-2 py-2 first:pt-0 last:pb-0"
-                        key={task.id}
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-[12.5px] font-bold">{task.title}</p>
-                          <p className="mt-0.5 line-clamp-1 text-[11.5px] text-v3-ink-2">
-                            {task.summary || "等待系统推进"}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-v3-ink-3">
-                            <span
-                              className={cn(
-                                "rounded px-1 font-bold",
-                                modeToneClass(mode),
-                              )}
-                            >
-                              {coordinationModeLabel(mode)}
+            </div>
+          )}
+        </SoftCard>
+
+        {hasRunningSlice || hasPulseActivity ? (
+          <SoftCard
+            className="overflow-hidden p-3.5"
+            data-testid="project-ops-running"
+            id="project-overview-execution"
+          >
+            <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-extrabold text-v3-ink">执行中与阻塞</h3>
+                <p className="mt-0.5 text-[11.5px] text-v3-ink-3">最多 3 条</p>
+              </div>
+              <V3Button size="sm" type="button" variant="ghost" onClick={onShowAllTasks}>
+                全部任务
+              </V3Button>
+            </div>
+            {runningSlice.length === 0 ? (
+              <p className="text-[12.5px] text-v3-ink-3">暂无执行中或阻塞任务</p>
+            ) : (
+              <ul className="divide-y divide-v3-line">
+                {runningSlice.map((task) => {
+                  const mode = resolveTaskMode(task, demandsById);
+                  return (
+                    <li
+                      className="flex items-start justify-between gap-2 py-2 first:pt-0 last:pb-0"
+                      key={task.id}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[12.5px] font-bold">{task.title}</p>
+                        <p className="mt-0.5 line-clamp-1 text-[11.5px] text-v3-ink-2">
+                          {task.summary || "等待系统推进"}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-v3-ink-3">
+                          <span
+                            className={cn(
+                              "rounded px-1 font-bold",
+                              modeToneClass(mode),
+                            )}
+                          >
+                            {coordinationModeLabel(mode)}
+                          </span>
+                          {task.assigned_digital_employee_id ? (
+                            <span>
+                              {principalNamesById?.get(
+                                task.assigned_digital_employee_id,
+                              ) || "数字员工"}
                             </span>
-                            {task.assigned_digital_employee_id ? (
-                              <span>
-                                {principalNamesById?.get(
-                                  task.assigned_digital_employee_id,
-                                ) || "数字员工"}
-                              </span>
-                            ) : null}
-                          </div>
+                          ) : null}
                         </div>
-                        <StatusPill tone={statusTone(task.status)}>
-                          {taskStatusLabel(task.status)}
-                        </StatusPill>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </SoftCard>
-          </>
-        )}
+                      </div>
+                      <StatusPill tone={statusTone(task.status)}>
+                        {taskStatusLabel(task.status)}
+                      </StatusPill>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </SoftCard>
+        ) : null}
 
         <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           <SoftCard
@@ -605,6 +590,68 @@ export function ProjectOpsHome({
           </>
         )}
       </aside>
+    </div>
+  );
+}
+
+function WeekPulseGrid({ days }: { days: OpsPulseDay[] }) {
+  return (
+    <div className={cn("grid grid-cols-7 gap-1.5", PULSE_DAY_MIN_HEIGHT_CLASS)}>
+      {days.map((day) => (
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden rounded-[10px] bg-v3-card-soft p-1.5",
+            PULSE_DAY_MIN_HEIGHT_CLASS,
+            day.isToday && "border border-v3-brand/35 bg-v3-card",
+          )}
+          key={day.dayKey}
+        >
+          <div className="flex shrink-0 justify-between text-[10.5px] text-v3-ink-3">
+            <span>
+              {day.weekdayLabel}
+              {day.isToday ? " · 今" : ""}
+            </span>
+            <b className="font-extrabold text-v3-ink tabular-nums">{day.dayOfMonth}</b>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+            {day.chips.length === 0 ? (
+              <div className="grid flex-1 place-items-center text-[10.5px] text-v3-ink-3">
+                —
+              </div>
+            ) : (
+              day.chips.map((chip) => (
+                <div
+                  className="grid shrink-0 grid-cols-[6px_minmax(0,1fr)] gap-1 rounded-md border border-v3-line bg-v3-card px-1 py-0.5"
+                  key={chip.taskId}
+                  title={chip.title}
+                >
+                  <span
+                    className={cn(
+                      "mt-1 size-1.5 rounded-full",
+                      chip.statusTone === "ok" && "bg-v3-ok",
+                      chip.statusTone === "warn" && "bg-v3-warn",
+                      chip.statusTone === "info" && "bg-v3-brand",
+                      chip.statusTone === "danger" && "bg-v3-danger",
+                      chip.statusTone === "mute" && "bg-v3-ink-3",
+                    )}
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-[10.5px] font-bold leading-4">{chip.title}</p>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-v3-ink-3">
+                      <span className="tabular-nums">{chip.timeLabel}</span>
+                      <span
+                        className={cn("rounded px-1 font-bold", modeToneClass(chip.mode))}
+                      >
+                        {coordinationModeLabel(chip.mode)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

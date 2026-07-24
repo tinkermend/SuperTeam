@@ -67,6 +67,7 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     coordination_status: "registered",
     coordination_workflow_id: "project-coordinator:project-1",
     description: "配置说明",
+    directory_name: "customer-acceptance",
     goal: "完成客户接入验收",
     human_owner_user_id: "human-owner-1",
     human_owner_user_ids: ["human-owner-1"] as string[],
@@ -74,6 +75,7 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     name: "客户接入验收",
     status,
     tenant_id: "tenant-1",
+    workspace_ready_status: "ready" as const,
   } as const;
   const humanMember = {
     display_name_snapshot: "负责人甲",

@@ -29,9 +29,9 @@ describe("resolveControlPlaneUrl", () => {
     expect(resolveControlPlaneUrl(undefined, browserLocation)).toBe("http://127.0.0.1:8080");
   });
 
-  it("falls back to localhost when no browser location is available", () => {
+  it("falls back to 127.0.0.1 when no browser location is available", () => {
     vi.stubEnv("VITE_CONTROL_PLANE_URL", "");
 
-    expect(resolveControlPlaneUrl(undefined, undefined)).toBe("http://localhost:8080");
+    expect(resolveControlPlaneUrl(undefined, null)).toBe("http://127.0.0.1:8080");
   });
 });

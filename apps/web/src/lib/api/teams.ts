@@ -19,6 +19,8 @@ export type AllowedTeamAction =
   | "team.update"
   | "team.delete"
   | "team.member.add"
+  | "team.member.remove"
+  | "team.member.request_privileged_role"
   | "team.governance.edit"
   | "team.governance.approve"
   | "team.capability.bind"

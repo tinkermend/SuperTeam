@@ -91,7 +91,7 @@ import {
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
 import { listDigitalEmployees } from "@/lib/api/employees";
-import { listUsers } from "@/lib/api/auth";
+import { listUsers, type UserSummary } from "@/lib/api/auth";
 import { getInboxBadge, listInboxItems } from "@/lib/api/inbox";
 import { listRuntimeNodes } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -351,6 +351,13 @@ export function ProjectsView({
     }
     return names;
   }, [digitalEmployeesQuery.data, usersQuery.data]);
+  const usersById = useMemo(() => {
+    const map = new Map<string, UserSummary>();
+    for (const user of usersQuery.data?.items ?? []) {
+      map.set(user.id, user);
+    }
+    return map;
+  }, [usersQuery.data]);
   const employeeNamesById = principalNamesById;
   const projects = projectsQuery.data ?? [];
   const projectListPageCount = Math.max(1, Math.ceil(projects.length / projectListPageSize));
@@ -1195,6 +1202,7 @@ export function ProjectsView({
                     onSubmitDemand={() => setDemandOpen(true)}
                     overview={overview}
                     principalNamesById={principalNamesById}
+                    usersById={usersById}
                     project={displayedProject}
                     reports={projectReports}
                     planRevisions={projectPlanRevisions}

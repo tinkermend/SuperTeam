@@ -170,6 +170,7 @@ function createTeamsFetcher(
   options: {
     createStatus?: number;
     extraRoutes?: ExtraRoutes;
+    overviewAllowedActions?: string[];
     secondPageMode?: "empty" | "error" | "normal";
   } = {},
 ) {
@@ -322,10 +323,11 @@ function createTeamsFetcher(
           capability_count: 12,
           pending_draft_count: 3,
           pending_item_count: 3,
-          allowed_actions: [
+          allowed_actions: options.overviewAllowedActions ?? [
             "team.update",
             "team.delete",
             "team.member.add",
+            "team.member.remove",
             "team.member.request_privileged_role",
             "team.governance.edit",
             "team.governance.approve",
@@ -925,7 +927,7 @@ describe("TeamsView", () => {
 });
 
 describe("TeamDetailView", () => {
-  it("shows only overview, capabilities, and constitution tabs on team detail", async () => {
+  it("renders team detail as a single page without top-level tabs", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -937,15 +939,17 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
-    for (const tab of ["概览", "能力", "宪法"]) {
-      await expect.element(screen.getByRole("tab", { name: tab })).toBeVisible();
-    }
-    await expect
-      .element(screen.getByRole("tab", { name: "借调" }))
-      .not.toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("tab", { name: "审计记录" }))
-      .not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "公共技能" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "团队宪法" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "配置团队" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "删除团队" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "概览" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "能力" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "宪法" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "借调" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "审计记录" })).not.toBeInTheDocument();
   });
 
   it("separates digital employees from human management members in overview", async () => {
@@ -958,15 +962,20 @@ describe("TeamDetailView", () => {
     );
 
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
-    await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
     await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: /人类成员/ }))
+      .toBeVisible();
+    await expect.element(screen.getByText("负责人甲", { exact: true })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
+    await expect.element(screen.getByRole("heading", { name: "配置团队" })).toBeVisible();
     await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
     await expect
       .element(screen.getByText("团队成员与代理"))
       .not.toBeInTheDocument();
   });
 
-  it("renders detail tabs for the team shell", async () => {
+  it("renders detail shell actions and work surfaces", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -978,25 +987,19 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
-    for (const tab of ["概览", "能力", "宪法"]) {
-      await expect
-        .element(screen.getByRole("tab", { name: tab }))
-        .toBeVisible();
-    }
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
-    await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).toBeVisible();
-    // 生命周期收敛：详情页只有删除一个生命周期动作，无归档/禁用/恢复。
+    // 生命周期收敛：详情页只有删除一个生命周期动作，无归档/禁用/恢复；配置与删除直接露出。
+    await expect.element(screen.getByRole("button", { name: "配置团队" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "删除团队" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "禁用团队" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "归档团队" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "恢复团队" })).not.toBeInTheDocument();
 
-    expect(document.querySelectorAll('[data-slot="v3-tabs"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-work-surface"]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-slot="v3-table"]').length).toBeGreaterThan(0);
   });
 
-  it("opens the constitution tab when arriving with the constitution hash", async () => {
+  it("keeps constitution section available when arriving with the constitution hash", async () => {
     window.history.replaceState({}, "", "/teams/team-1#constitution");
 
     const screen = await renderWithQueryClient(
@@ -1007,13 +1010,9 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await expect
-      .element(screen.getByRole("tab", { name: "宪法" }))
-      .toHaveAttribute("data-state", "active");
     await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
-    await expect
-      .element(screen.getByRole("heading", { name: "数字员工" }))
-      .not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
+    expect(document.getElementById("team-section-constitution")).not.toBeNull();
   });
 
   it("deletes the team through the confirm dialog from detail actions", async () => {
@@ -1149,14 +1148,21 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
-
     await expect
       .element(screen.getByRole("heading", { name: "公共技能" }))
       .toBeVisible();
     await expect
       .element(screen.getByRole("heading", { name: "公共 MCP" }))
       .toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "移除 observe" }));
+    await expect
+      .poll(() =>
+        hasRequest(fetcher, "/api/v1/teams/team-1/skills/skill-observe", "DELETE"),
+      )
+      .toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "安装技能" }));
     await userEvent.click(screen.getByRole("button", { name: "安装 diagnose" }));
     await expect
       .poll(() =>
@@ -1166,15 +1172,10 @@ describe("TeamDetailView", () => {
     expect(requestBody(fetcher, "/api/v1/teams/team-1/skills", "POST")).toEqual({
       skill_id: "skill-diagnose",
     });
-
-    await userEvent.click(screen.getByRole("button", { name: "移除 observe" }));
-    await expect
-      .poll(() =>
-        hasRequest(fetcher, "/api/v1/teams/team-1/skills/skill-observe", "DELETE"),
-      )
-      .toBe(true);
+    await userEvent.keyboard("{Escape}");
 
     // Bind a registered MCP server by mcp_server_id + credential_env_var.
+    await userEvent.click(screen.getByRole("button", { name: "绑定 MCP" }));
     await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
     await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
     await userEvent.fill(
@@ -1234,7 +1235,7 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
+    await userEvent.click(screen.getByRole("button", { name: "绑定 MCP" }));
 
     await expect
       .element(screen.getByRole("textbox", { name: "凭据环境变量（可选）" }))
@@ -1255,8 +1256,6 @@ describe("TeamDetailView", () => {
         teamId="team-1"
       />,
     );
-
-    await userEvent.click(screen.getByRole("tab", { name: "宪法" }));
 
     await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
     await expect.element(screen.getByText("1 条硬性规则")).toBeVisible();
@@ -1296,7 +1295,7 @@ describe("TeamDetailView", () => {
     });
   });
 
-  it("does not render approval, principles, or diff fields in constitution tab", async () => {
+  it("does not render approval, principles, or diff fields in constitution section", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -1304,8 +1303,6 @@ describe("TeamDetailView", () => {
         teamId="team-1"
       />,
     );
-
-    await userEvent.click(screen.getByRole("tab", { name: "宪法" }));
 
     await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
     await expect.element(screen.getByText("JSON 快照预览")).not.toBeInTheDocument();
@@ -1324,13 +1321,12 @@ describe("TeamDetailView", () => {
       />,
     );
 
+    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
     await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
     for (const label of [
-      "人类",
       "负责人",
       "管理员",
       "审批人",
-      "直接生效角色",
     ]) {
       expect(document.body.textContent).toContain(label);
     }
@@ -1343,6 +1339,46 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("combobox", { name: "直接生效角色" }))
       .toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "移除 管理员乙" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "移除 负责人甲" })).not.toBeInTheDocument();
+  });
+
+  it("hides member remove controls without team.member.remove", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher({
+          overviewAllowedActions: [
+            "team.update",
+            "team.member.add",
+            "team.governance.edit",
+          ],
+        })}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
+    await expect.element(screen.getByText("管理员乙")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "移除 管理员乙" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("combobox", { name: "直接生效角色" })).toBeVisible();
+  });
+
+  it("hides configure entry points without member management actions", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher({
+          overviewAllowedActions: ["team.audit.read"],
+        })}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByRole("button", { name: "配置团队" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /人类成员/ }));
+    await expect.element(screen.getByText("人类成员 · 5")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "配置" })).not.toBeInTheDocument();
   });
 
   it("uses user search for direct member add", async () => {
@@ -1355,6 +1391,7 @@ describe("TeamDetailView", () => {
       />,
     );
 
+    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
     await expect
       .element(screen.getByRole("searchbox", { name: "搜索直接添加用户" }))
       .toBeVisible();
@@ -1366,7 +1403,7 @@ describe("TeamDetailView", () => {
       screen.getByRole("button", { name: /member/ }).first(),
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "添加成员" }).last(),
+      screen.getByRole("button", { name: "添加成员" }),
     );
 
     await expect
@@ -1387,9 +1424,6 @@ describe("TeamDetailView", () => {
       role: "member",
       user_id: "member-user",
     });
-    await expect
-      .element(screen.getByRole("button", { name: "添加成员" }).last())
-      .toBeDisabled();
   });
 
   it("renders digital employees in the overview tab list", async () => {
@@ -1421,5 +1455,57 @@ describe("TeamDetailView", () => {
         method: "GET",
       }),
     );
+  });
+
+  it("paginates digital employees and keeps page size in localStorage", async () => {
+    localStorage.removeItem("superteam.team-detail.digital-employees.page-size");
+
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await expect.element(screen.getByText("共 11 条")).toBeVisible();
+    await expect
+      .element(screen.getByRole("combobox", { name: "每页条数" }))
+      .toHaveValue("5");
+    await expect
+      .element(screen.getByText("第二页未绑定员工"))
+      .not.toBeInTheDocument();
+
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "每页条数" }),
+      "10",
+    );
+    expect(localStorage.getItem("superteam.team-detail.digital-employees.page-size")).toBe(
+      "10",
+    );
+    await expect
+      .element(screen.getByRole("combobox", { name: "每页条数" }))
+      .toHaveValue("10");
+    await expect.element(screen.getByText("巡检员工 6")).toBeVisible();
+    await expect
+      .element(screen.getByText("第二页未绑定员工"))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await expect.element(screen.getByText("第二页未绑定员工")).toBeVisible();
+
+    screen.unmount();
+    const remounted = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+    await expect
+      .element(remounted.getByRole("combobox", { name: "每页条数" }))
+      .toHaveValue("10");
   });
 });

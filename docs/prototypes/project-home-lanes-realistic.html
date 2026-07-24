@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>项目管理 · 项目组合车流（数据契约对齐）· SuperTeam</title>
+<style>
+/* ============================================================
+   项目管理首页 · 全局车流 v2（可落地版）
+   相对 project-home-traffic.html 的约束：
+   - 只保留全局车流，不做项目编排 DAG
+   - 栏位对齐 ProjectTask 真实状态，不造 dispatched / progress%
+   - KPI / 车道元数据只使用现有 API 可直接取或可派生的字段
+   - 「实时」降级为按项目轮询 events（无跨项目 project SSE）
+   v3 Soft-Flat 蓝基线，状态五色：info/ok/warn/danger/mute
+   ============================================================ */
+:root{
+  --brand:#2F5FFF; --brand-deep:#2348E0; --brand-soft:#E9EFFF;
+  --bg:#F8FAFC; --shell:#F6F8FB; --card:#FFFFFF; --card-soft:#F7F8FA; --card-inner:#FBFCFE;
+  --ink:#0B0D12; --ink-2:#4D586B; --ink-3:#6D7580; --ink-4:#9AA3AF;
+  --line:#EEF1F4; --line-strong:#DFE4EA;
+  --info:#0094B7; --info-text:#00617D; --info-soft:#DEF8FE;
+  --ok:#009A60; --ok-text:#006639; --ok-soft:#E3F9EC;
+  --warn:#BB6900; --warn-text:#7F3F00; --warn-soft:#FFEFDF;
+  --danger:#D14647; --danger-text:#8A2F2D; --danger-soft:#FFECE9;
+  --mute:#64748B; --mute-text:#4D586B; --mute-soft:#EEF1F4;
+  --r-card:22px; --r-inner:14px; --r-ctl:11px;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.055);
+  --shadow-pop:0 18px 50px rgba(16,24,40,.14);
+  --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.55;}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 55% 38% at 8% 0%,rgba(47,95,255,.05),transparent 55%),
+             radial-gradient(ellipse 45% 36% at 94% 6%,rgba(0,148,183,.04),transparent 55%);}
+.mono{font-family:var(--mono);} .num{font-variant-numeric:tabular-nums;}
+::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:6px;}
+button{font-family:inherit;cursor:pointer;}
+
+.topbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:18px;padding:12px 28px;
+  background:rgba(248,250,252,.86);backdrop-filter:blur(14px) saturate(1.15);border-bottom:1px solid var(--line);}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:15px;letter-spacing:.01em;}
+.logo .mk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;
+  background:linear-gradient(135deg,#4D7CFF,#2348E0);box-shadow:0 4px 14px rgba(47,95,255,.32);}
+.crumb{color:var(--ink-3);font-size:12.5px;}
+.crumb b{color:var(--ink);font-weight:700;}
+.topbar .sp{flex:1;}
+.poll{display:flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;background:var(--info-soft);color:var(--info-text);font-size:12px;font-weight:600;}
+.poll .dot{width:7px;height:7px;border-radius:50%;background:var(--info);animation:blink 2.4s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.ghost-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r-ctl);border:1px solid var(--line-strong);background:var(--card);color:var(--ink-2);font-size:12.5px;font-weight:600;transition:.15s;}
+.ghost-btn:hover{border-color:var(--brand);color:var(--brand-deep);}
+.launch-btn{padding:9px 20px;border-radius:var(--r-ctl);border:none;background:var(--brand);color:#fff;font-size:13px;font-weight:800;
+  box-shadow:0 4px 14px rgba(47,95,255,.32);transition:.15s;}
+.launch-btn:hover{background:var(--brand-deep);}
+
+.page{position:relative;z-index:1;padding:22px 28px 90px;max-width:1560px;margin:0 auto;}
+.pagehead{display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;margin-bottom:14px;}
+.pagehead h1{font-size:22px;font-weight:800;letter-spacing:.01em;}
+.pagehead .sub{color:var(--ink-3);font-size:12.5px;margin-top:3px;}
+.pagehead .sp{flex:1;}
+
+.contract{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;
+  background:linear-gradient(180deg,var(--brand-soft),var(--card));border:1px solid rgba(47,95,255,.18);border-radius:var(--r-inner);}
+.contract .tag{flex:none;font-size:10.5px;font-weight:800;letter-spacing:.04em;background:var(--brand);color:#fff;border-radius:6px;padding:2px 8px;}
+.contract .body{flex:1;min-width:240px;font-size:12px;color:var(--ink-2);line-height:1.55;}
+.contract code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.7);border:1px solid rgba(47,95,255,.15);border-radius:5px;padding:0 5px;}
+
+.filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+.filters .lbl{font-size:12px;color:var(--ink-3);font-weight:600;margin-right:2px;}
+.chip{padding:6px 13px;border-radius:999px;border:1px solid var(--line-strong);background:var(--card);color:var(--ink-2);font-size:12.5px;font-weight:600;transition:.15s;display:flex;align-items:center;gap:7px;}
+.chip .hd{width:7px;height:7px;border-radius:50%;}
+.chip:hover{border-color:var(--brand);}
+.chip.on{background:var(--brand);border-color:var(--brand);color:#fff;}
+.chip .cnt{font-size:11px;opacity:.75;font-variant-numeric:tabular-nums;}
+
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:20px;}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);padding:16px 18px 14px;box-shadow:var(--shadow);position:relative;overflow:hidden;}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--kc,var(--line-strong));}
+.kpi .k{font-size:12px;color:var(--ink-3);font-weight:600;}
+.kpi .v{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;letter-spacing:-.01em;}
+.kpi .d{font-size:11.5px;color:var(--ink-3);margin-top:2px;}
+.kpi .d b{font-weight:700;}
+.kpi.danger .v{color:var(--danger-text);}
+.kpi.danger::before{background:var(--danger);}
+.kpi .src{margin-top:8px;font-size:10.5px;color:var(--ink-4);font-family:var(--mono);}
+
+.board{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;}
+.board-head{display:grid;grid-template-columns:210px repeat(5,1fr);border-bottom:1px solid var(--line);background:var(--card-soft);}
+.board-head .corner{padding:12px 16px;font-size:12px;color:var(--ink-3);font-weight:600;display:flex;align-items:center;}
+.stage-h{padding:12px 14px;border-left:1px solid var(--line);display:flex;align-items:center;gap:8px;}
+.stage-h .ico{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:800;}
+.stage-h .nm{font-size:12.5px;font-weight:700;}
+.stage-h .hint{display:block;font-size:10.5px;color:var(--ink-4);font-weight:500;margin-top:1px;}
+.stage-h .ct{margin-left:auto;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink-2);
+  background:var(--card);border:1px solid var(--line-strong);border-radius:7px;padding:1px 8px;}
+.stage-h.hot .ct{background:var(--danger-soft);color:var(--danger-text);border-color:transparent;}
+
+.lane{display:grid;grid-template-columns:210px repeat(5,1fr);border-bottom:1px solid var(--line);position:relative;transition:.2s;min-height:108px;}
+.lane:last-child{border-bottom:none;}
+.lane.dim{opacity:.28;filter:saturate(.4);}
+.lane-label{padding:14px 16px;border-right:1px solid var(--line);background:linear-gradient(180deg,var(--card-inner),var(--card));cursor:pointer;}
+.lane-label .pn{font-size:13px;font-weight:800;display:flex;align-items:center;gap:7px;}
+.lane-label .pn .hd{width:8px;height:8px;border-radius:50%;flex:none;}
+.lane-label .goal{font-size:11.5px;color:var(--ink-3);margin-top:6px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.lane-label .pm{font-size:11.5px;color:var(--ink-3);margin-top:6px;font-variant-numeric:tabular-nums;}
+.lane-label .pw{margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;}
+.lane-label .pw i{font-style:normal;font-size:10.5px;padding:1px 7px;border-radius:6px;background:var(--mute-soft);color:var(--mute-text);font-weight:600;}
+.ratio{display:flex;align-items:center;gap:7px;margin-top:8px;background:var(--card-soft);border-radius:7px;padding:3px 8px 3px 7px;}
+.ratio::before{content:"任务完成";font-size:10px;color:var(--ink-4);font-weight:600;white-space:nowrap;}
+.ratio i{display:block;height:4px;border-radius:2px;background:linear-gradient(90deg,var(--brand),var(--info));flex:1;min-width:20px;}
+.ratio span{font-size:10.5px;color:var(--ink-2);font-weight:700;}
+.lane-label .own{display:flex;align-items:center;gap:4px;margin-top:8px;}
+.lane-label .own b{width:19px;height:19px;border-radius:6px;background:var(--brand-soft);color:var(--brand-deep);font-size:10px;display:grid;place-items:center;font-weight:800;}
+.lane-label .own .enter{margin-left:auto;font-size:10.5px;color:var(--brand-deep);font-weight:700;opacity:0;transition:.15s;}
+.lane:hover .own .enter{opacity:1;}
+
+.lane .rail{position:absolute;left:210px;right:0;top:50%;height:2px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(47,95,255,.12) 12%,rgba(47,95,255,.12) 88%,transparent);}
+.flowdot{position:absolute;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:var(--brand);
+  box-shadow:0 0 8px rgba(47,95,255,.45);opacity:0;animation:flow linear infinite;pointer-events:none;z-index:1;}
+@keyframes flow{0%{left:210px;opacity:0;}6%{opacity:.85;}94%{opacity:.85;}100%{left:calc(100% - 7px);opacity:0;}}
+
+.cell{position:relative;border-left:1px dashed var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;overflow:visible;}
+.task{position:relative;z-index:2;background:var(--card);border:1px solid var(--line-strong);border-radius:var(--r-inner);
+  padding:8px 10px;cursor:pointer;transition:.15s;box-shadow:0 1px 3px rgba(16,24,40,.05);}
+.task:hover{border-color:var(--brand);box-shadow:0 4px 14px rgba(47,95,255,.14);transform:translateY(-1px);}
+.task .tt{font-size:12.5px;font-weight:700;line-height:1.35;display:flex;gap:6px;align-items:flex-start;}
+.task .tt .sd{width:7px;height:7px;border-radius:50%;margin-top:5px;flex:none;}
+.task .tm{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11px;color:var(--ink-3);}
+.task .tm .av{width:16px;height:16px;border-radius:5px;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;flex:none;}
+.task .sub{margin-top:5px;font-size:10.5px;color:var(--ink-4);}
+.task.failed{border-color:rgba(209,70,71,.5);background:linear-gradient(180deg,#FFF7F6,var(--card));}
+.task.failed::after{content:"";position:absolute;inset:-1px;border-radius:var(--r-inner);border:1.5px solid var(--danger);opacity:.65;animation:halo 1.8s infinite;pointer-events:none;}
+@keyframes halo{0%,100%{opacity:.6;box-shadow:0 0 0 0 rgba(209,70,71,.28);}50%{opacity:.2;box-shadow:0 0 0 5px rgba(209,70,71,0);}}
+.task .stuck{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:10.5px;font-weight:700;color:var(--danger-text);background:var(--danger-soft);border-radius:6px;padding:1px 7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.task.done{opacity:.62;}
+.task.done .tt{text-decoration:line-through;text-decoration-color:var(--ink-4);text-decoration-thickness:1px;}
+.more{align-self:flex-start;font-size:11px;color:var(--ink-3);background:var(--card-soft);border:1px dashed var(--line-strong);border-radius:8px;padding:3px 9px;font-weight:600;}
+.empty-cell{font-size:11px;color:var(--ink-4);padding:4px 2px;}
+
+.legend{display:flex;align-items:center;gap:16px;padding:10px 18px;border-top:1px solid var(--line);background:var(--card-soft);font-size:11.5px;color:var(--ink-3);flex-wrap:wrap;}
+.legend .it{display:flex;align-items:center;gap:6px;}
+.legend .sd{width:8px;height:8px;border-radius:50%;}
+.legend .fd{width:14px;height:2px;background:var(--brand);border-radius:1px;position:relative;}
+.legend .fd::after{content:"";position:absolute;right:-2px;top:-2.5px;width:7px;height:7px;border-radius:50%;background:var(--brand);}
+
+.ticker{position:fixed;left:0;right:0;bottom:0;z-index:55;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);display:flex;align-items:center;gap:0;height:44px;overflow:hidden;}
+.ticker .th{flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;height:100%;border-right:1px solid var(--line);font-size:12px;font-weight:800;color:var(--ink-2);}
+.ticker .th .dot{width:7px;height:7px;border-radius:50%;background:var(--info);}
+.ticker .stream{flex:1;overflow:hidden;position:relative;height:100%;}
+.ticker .track{position:absolute;display:flex;align-items:center;gap:34px;height:100%;white-space:nowrap;padding-left:20px;animation:tick 42s linear infinite;}
+@keyframes tick{0%{transform:translateX(0);}100%{transform:translateX(-50%);}}
+.ev{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2);}
+.ev .sd{width:7px;height:7px;border-radius:50%;}
+.ev .t{color:var(--ink-4);font-family:var(--mono);font-size:11px;}
+.ev b{color:var(--ink);font-weight:700;}
+.ev .etype{font-size:10.5px;color:var(--ink-4);font-family:var(--mono);}
+
+.mask{position:fixed;inset:0;z-index:70;background:rgba(11,13,18,.28);opacity:0;pointer-events:none;transition:.25s;}
+.mask.on{opacity:1;pointer-events:auto;}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:71;width:440px;max-width:92vw;background:var(--card);border-left:1px solid var(--line);
+  box-shadow:var(--shadow-pop);transform:translateX(105%);transition:transform .28s cubic-bezier(.32,.72,.24,1);display:flex;flex-direction:column;}
+.drawer.on{transform:translateX(0);}
+.drawer .dh{padding:18px 22px 14px;border-bottom:1px solid var(--line);}
+.drawer .dh .row{display:flex;align-items:flex-start;gap:10px;}
+.drawer .dh h2{font-size:16px;font-weight:800;flex:1;line-height:1.4;}
+.drawer .dh .x{width:28px;height:28px;border-radius:8px;border:1px solid var(--line-strong);background:var(--card);color:var(--ink-3);font-size:14px;}
+.drawer .meta{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:7px;padding:2px 9px;}
+.drawer .db{flex:1;overflow-y:auto;padding:16px 22px 20px;}
+.sect{font-size:11.5px;font-weight:800;color:var(--ink-3);letter-spacing:.06em;margin:18px 0 8px;}
+.sect:first-child{margin-top:0;}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:7px 12px;font-size:12.5px;}
+.kv .k{color:var(--ink-3);}
+.kv .v{color:var(--ink);font-weight:600;}
+.kv .v.mono{font-weight:500;font-size:12px;}
+.api{margin-top:10px;padding:8px 10px;border-radius:10px;background:var(--card-soft);border:1px dashed var(--line-strong);font-size:11px;color:var(--ink-3);line-height:1.5;}
+.api code{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);}
+.tl{position:relative;padding-left:18px;}
+.tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1.5px;background:var(--line-strong);}
+.tl .ti{position:relative;padding:5px 0 9px;font-size:12.5px;}
+.tl .ti::before{content:"";position:absolute;left:-16.5px;top:11px;width:8px;height:8px;border-radius:50%;background:var(--tc,var(--mute));box-shadow:0 0 0 2.5px var(--card);}
+.tl .ti .w{color:var(--ink-4);font-family:var(--mono);font-size:11px;margin-left:6px;}
+.tl .ti .et{display:block;font-size:10.5px;color:var(--ink-4);font-family:var(--mono);margin-top:2px;}
+.drawer .df{padding:14px 22px 44px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:9px;background:var(--card-soft);}
+.act{padding:9px 12px;border-radius:var(--r-ctl);font-size:12.5px;font-weight:700;border:1px solid var(--line-strong);background:var(--card);color:var(--ink-2);transition:.15s;}
+.act:hover{border-color:var(--brand);color:var(--brand-deep);}
+.act.pri{background:var(--brand);border-color:var(--brand);color:#fff;}
+.act.pri:hover{background:var(--brand-deep);}
+.act.dgr{color:var(--danger-text);}
+.act.wide{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:6px;}
+.act:disabled{opacity:.45;cursor:not-allowed;}
+
+.toast{position:fixed;left:50%;bottom:64px;transform:translate(-50%,20px);z-index:80;background:var(--ink);color:#fff;
+  font-size:12.5px;font-weight:600;padding:9px 18px;border-radius:11px;opacity:0;pointer-events:none;transition:.25s;box-shadow:var(--shadow-pop);}
+.toast.on{opacity:1;transform:translate(-50%,0);}
+
+@media (max-width:1180px){.kpis{grid-template-columns:repeat(3,1fr);}}
+@media (max-width:900px){
+  .board-head,.lane{grid-template-columns:160px repeat(5,minmax(140px,1fr));overflow-x:auto;}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><span class="mk">S</span>SuperTeam</div>
+  <div class="crumb">项目 / <b>项目管理</b></div>
+  <div class="sp"></div>
+  <div class="poll" title="无跨项目 project-events SSE；落地用 listProjects 后按项目轮询 overview/events">
+    <span class="dot"></span>轮询 · 最近刷新 12s 前
+  </div>
+  <button class="ghost-btn" onclick="toast('已重新拉取 listProjects + 各项目 overview / tasks / budget-summary / events')">⟳ 刷新</button>
+</header>
+
+<div class="page">
+  <div class="pagehead">
+    <div>
+      <h1>项目管理</h1>
+      <div class="sub">项目组合车流 · 栏位对齐 ProjectTask 真实状态 · 发起、监控、人工决议在此</div>
+    </div>
+    <div class="sp"></div>
+    <button class="ghost-btn" onclick="toast('POST /api/v1/projects（新建项目向导）')">＋ 新建项目</button>
+    <button class="launch-btn" onclick="location.href='task-hub-launch-console.html'">＋ 发起任务 →</button>
+  </div>
+
+  <div class="contract">
+    <span class="tag">数据契约</span>
+    <div class="body">
+      本页只消费现有读路径：<code>GET /projects</code>、
+      <code>GET /projects/{id}/overview</code>（含 <code>task_summary</code> / <code>active_tasks</code> / <code>recent_events</code>）、
+      <code>GET /projects/{id}/tasks</code>、<code>GET /projects/{id}/budget-summary</code>、<code>GET /projects/{id}/events</code>；
+      抽屉补充 <code>.../tasks/{id}/liveness</code> 与 <code>decision_requests</code>。
+      栏位 = <b>planned+queued</b> / <b>running</b> / <b>waiting_human</b> / <b>failed</b> / <b>今日 completed</b>。
+      不做任务进度条、不做「已派发」独立态、不把 <code>goal</code> 文案当百分比。
+    </div>
+  </div>
+
+  <div class="filters" id="projFilters">
+    <span class="lbl">项目</span>
+    <button class="chip on" data-p="all" onclick="filterProj('all')">全部 <span class="cnt num" id="chipAll">4</span></button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="board" id="lanesView">
+    <div class="board-head">
+      <div class="corner">项目（任务完成比）→</div>
+      <div class="stage-h">
+        <span class="ico" style="background:var(--mute-soft);color:var(--mute-text)">①</span>
+        <div><span class="nm">排队</span><span class="hint">planned · queued</span></div>
+        <span class="ct num" id="ctQueued">0</span>
+      </div>
+      <div class="stage-h">
+        <span class="ico" style="background:var(--info-soft);color:var(--info-text)">②</span>
+        <div><span class="nm">执行中</span><span class="hint">running</span></div>
+        <span class="ct num" id="ctRunning">0</span>
+      </div>
+      <div class="stage-h">
+        <span class="ico" style="background:var(--warn-soft);color:var(--warn-text)">③</span>
+        <div><span class="nm">等待人工</span><span class="hint">waiting_human</span></div>
+        <span class="ct num" id="ctWait">0</span>
+      </div>
+      <div class="stage-h hot">
+        <span class="ico" style="background:var(--danger-soft);color:var(--danger-text)">④</span>
+        <div><span class="nm">失败</span><span class="hint">failed · 需关注</span></div>
+        <span class="ct num" id="ctFailed">0</span>
+      </div>
+      <div class="stage-h">
+        <span class="ico" style="background:var(--ok-soft);color:var(--ok-text)">⑤</span>
+        <div><span class="nm">今日完成</span><span class="hint">completed · finished_at∈今日</span></div>
+        <span class="ct num" id="ctDone">0</span>
+      </div>
+    </div>
+    <div id="lanes"></div>
+    <div class="legend">
+      <span class="it"><span class="fd"></span>光点 = 该项目有 running 任务（装饰）</span>
+      <span class="it"><span class="sd" style="background:var(--mute)"></span>排队</span>
+      <span class="it"><span class="sd" style="background:var(--info)"></span>执行中</span>
+      <span class="it"><span class="sd" style="background:var(--warn)"></span>等待人工</span>
+      <span class="it"><span class="sd" style="background:var(--danger)"></span>失败</span>
+      <span class="it"><span class="sd" style="background:var(--ok)"></span>今日完成</span>
+      <span style="margin-left:auto">cancelled / dismissed 不进车流 · 点击任务卡打开抽屉</span>
+    </div>
+  </div>
+</div>
+
+<div class="ticker">
+  <div class="th"><span class="dot"></span>最近事件</div>
+  <div class="stream"><div class="track" id="tickerTrack"></div></div>
+</div>
+
+<div class="mask" id="mask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="dh">
+    <div class="row"><h2 id="dTitle">—</h2><button class="x" onclick="closeDrawer()">✕</button></div>
+    <div class="meta" id="dMeta"></div>
+  </div>
+  <div class="db">
+    <div class="sect">基本信息</div>
+    <div class="kv" id="dKv"></div>
+    <div class="api" id="dApi"></div>
+    <div class="sect">事件时间线</div>
+    <div class="tl" id="dTl"></div>
+  </div>
+  <div class="df" id="dActs"></div>
+</aside>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   模拟数据形状 = 控制平面真实契约的前端投影
+   字段名刻意贴近 OpenAPI / apps/web/src/lib/api/projects.ts
+   ============================================================ */
+
+const STATUS_LABEL = {
+  planned: "已计划",
+  queued: "排队中",
+  running: "运行中",
+  waiting_human: "等待人工",
+  failed: "失败",
+  completed: "已完成",
+  cancelled: "已取消",
+};
+const STATUS_COLOR = {
+  planned: "var(--info)",
+  queued: "var(--info)",
+  running: "var(--warn)",
+  waiting_human: "var(--warn)",
+  failed: "var(--danger)",
+  completed: "var(--ok)",
+};
+const COLUMNS = [
+  { key: "queued", match: (t) => t.status === "planned" || t.status === "queued" },
+  { key: "running", match: (t) => t.status === "running" },
+  { key: "waiting_human", match: (t) => t.status === "waiting_human" },
+  { key: "failed", match: (t) => t.status === "failed" },
+  // finished_at 在 ProjectTaskGraphNode，不在基础 ProjectTask；落地须 join task-graph
+  { key: "done_today", match: (t) => t.status === "completed" && isToday(t.finished_at) },
+];
+
+/** listProjects 条目 + overview / budget 拼装后的车道投影 */
+const PROJECTS = [
+  {
+    id: "proj-g4",
+    name: "G4 补货 E2E",
+    status: "running",
+    goal: "打通补货规则引擎到库存域的端到端验收闭环",
+    human_owner_user_ids: ["u-wang", "u-li", "u-chen"],
+    owners: ["王", "李", "陈"],
+    task_summary: { active_tasks: 6, pending_human_tasks: 1, completed_tasks: 18, failed_tasks: 1 },
+    budget: { estimated_tokens: 500000, actual_tokens: 310000 },
+    attention: true,
+  },
+  {
+    id: "proj-dm",
+    name: "目录投影 smoke",
+    status: "running",
+    goal: "验证目录投影作业在权限边界下的全量回归",
+    human_owner_user_ids: ["u-zhao", "u-qian"],
+    owners: ["赵", "钱"],
+    task_summary: { active_tasks: 3, pending_human_tasks: 1, completed_tasks: 9, failed_tasks: 1 },
+    budget: { estimated_tokens: 220000, actual_tokens: 90200 },
+    attention: true,
+  },
+  {
+    id: "proj-sec",
+    name: "安全响应专项",
+    status: "running",
+    goal: "CVE-2026-1187 影响面分析与热修复补丁发布",
+    human_owner_user_ids: ["u-qin", "u-zhou"],
+    owners: ["秦", "周"],
+    task_summary: { active_tasks: 3, pending_human_tasks: 1, completed_tasks: 11, failed_tasks: 0 },
+    budget: { estimated_tokens: 180000, actual_tokens: 140400 },
+    attention: false,
+  },
+  {
+    id: "proj-dash",
+    name: "数据看板改版",
+    status: "running",
+    goal: "趋势图组件迁移到 v3 Soft-Flat 并统一指标口径",
+    human_owner_user_ids: ["u-wu"],
+    owners: ["吴"],
+    task_summary: { active_tasks: 3, pending_human_tasks: 0, completed_tasks: 2, failed_tasks: 0 },
+    budget: { estimated_tokens: 120000, actual_tokens: 27600 },
+    attention: false,
+  },
+];
+
+const EMP = {
+  "emp-wang": { name: "开发-小王", color: "#2F5FFF" },
+  "emp-lin":  { name: "测试-阿琳", color: "#0094B7" },
+  "emp-zhou": { name: "架构-老周", color: "#9565C7" },
+  "emp-op":   { name: "目录-opencode", color: "#009A60" },
+  "emp-sec":  { name: "安全-小秦", color: "#D14647" },
+};
+
+  // NOTE: started_at / finished_at / status_reason / blocking_fact 属 graph 节点投影；
+  // 落地勿假设 listProjectTasks 直接返回这些字段。
+  const TASKS = [
+  // G4
+  { id: "t-4821", project_id: "proj-g4", title: "补货规则引擎实现", status: "running",
+    assigned_digital_employee_id: "emp-wang", started_at: hoursAgo(3.4), updated_at: minutesAgo(2),
+    requires_human_approval: false },
+  { id: "t-4825", project_id: "proj-g4", title: "E2E 用例补全（库存域）", status: "running",
+    assigned_digital_employee_id: "emp-lin", started_at: hoursAgo(1.1), updated_at: minutesAgo(5),
+    requires_human_approval: false },
+  { id: "t-4817", project_id: "proj-g4", title: "模型 ASCII 校验失败修复", status: "failed",
+    assigned_digital_employee_id: "emp-wang", started_at: hoursAgo(4), updated_at: hoursAgo(2.2),
+    status_reason: "project_name must be ASCII",
+    blocking_fact: { reason_code: "runtime.provider_error", message: "project_name must be ASCII", recommended_action: "fix_input_or_retry" },
+    requires_human_approval: false },
+  { id: "t-4810", project_id: "proj-g4", title: "库存接口联调报告", status: "waiting_human",
+    assigned_digital_employee_id: "emp-lin", finished_at: null, updated_at: hoursAgo(18),
+    decision_request_id: "dec-4810", requires_human_approval: true },
+  { id: "t-4833", project_id: "proj-g4", title: "灰度发布清单整理", status: "queued",
+    assigned_digital_employee_id: "emp-wang", updated_at: minutesAgo(40), requires_human_approval: false },
+  { id: "t-4834", project_id: "proj-g4", title: "补货频率回归基线", status: "planned",
+    assigned_digital_employee_id: "emp-lin", updated_at: minutesAgo(28), requires_human_approval: false },
+  { id: "t-4790", project_id: "proj-g4", title: "库存 schema 迁移", status: "completed",
+    assigned_digital_employee_id: "emp-wang", finished_at: todayAt(8, 40), updated_at: todayAt(8, 40),
+    requires_human_approval: false },
+  // 目录投影
+  { id: "t-3902", project_id: "proj-dm", title: "投影作业全量回归", status: "running",
+    assigned_digital_employee_id: "emp-op", started_at: minutesAgo(52), updated_at: minutesAgo(1),
+    requires_human_approval: false },
+  { id: "t-3898", project_id: "proj-dm", title: "目录权限用例失败", status: "failed",
+    assigned_digital_employee_id: "emp-op", started_at: hoursAgo(1.5), updated_at: minutesAgo(47),
+    status_reason: "EACCES: /var/lib/proj/acl",
+    blocking_fact: { reason_code: "runtime.permission_denied", message: "EACCES: /var/lib/proj/acl", recommended_action: "fix_runtime_acl" },
+    requires_human_approval: false },
+  { id: "t-3885", project_id: "proj-dm", title: "smoke 报告汇总与归档", status: "waiting_human",
+    assigned_digital_employee_id: "emp-op", updated_at: hoursAgo(2), decision_request_id: "dec-3885",
+    requires_human_approval: true },
+  { id: "t-3911", project_id: "proj-dm", title: "增量投影压测", status: "queued",
+    assigned_digital_employee_id: "emp-op", updated_at: minutesAgo(12), requires_human_approval: false },
+  // 安全
+  { id: "t-7720", project_id: "proj-sec", title: "CVE-2026-1187 影响面分析", status: "running",
+    assigned_digital_employee_id: "emp-sec", started_at: hoursAgo(2.7), updated_at: minutesAgo(3),
+    requires_human_approval: false },
+  { id: "t-7724", project_id: "proj-sec", title: "漏洞扫描基线更新", status: "queued",
+    assigned_digital_employee_id: "emp-sec", updated_at: minutesAgo(25), requires_human_approval: false },
+  { id: "t-7715", project_id: "proj-sec", title: "热修复补丁验证报告", status: "waiting_human",
+    assigned_digital_employee_id: "emp-sec", updated_at: hoursAgo(1), decision_request_id: "dec-7715",
+    requires_human_approval: true },
+  { id: "t-7701", project_id: "proj-sec", title: "入侵痕迹取证快照", status: "completed",
+    assigned_digital_employee_id: "emp-sec", finished_at: todayAt(10, 2), updated_at: todayAt(10, 2),
+    requires_human_approval: false },
+  // 看板
+  { id: "t-2210", project_id: "proj-dash", title: "趋势图组件迁移 v3", status: "running",
+    assigned_digital_employee_id: "emp-lin", started_at: minutesAgo(18), updated_at: minutesAgo(1),
+    requires_human_approval: false },
+  { id: "t-2214", project_id: "proj-dash", title: "指标口径梳理", status: "planned",
+    assigned_digital_employee_id: "emp-zhou", updated_at: minutesAgo(6), requires_human_approval: false },
+  { id: "t-2208", project_id: "proj-dash", title: "看板信息架构评审稿", status: "queued",
+    assigned_digital_employee_id: "emp-zhou", updated_at: minutesAgo(30), requires_human_approval: false },
+];
+
+/** ProjectEvent — 形状贴近 listProjectEvents / overview.recent_events */
+const EVENTS = [
+  { project_id: "proj-g4", event_type: "project_task.dispatched", summary: "补货规则引擎实现已派发", created_at: clock(14, 31), resource_id: "t-4821", tone: "info" },
+  { project_id: "proj-dm", event_type: "project_task.failed", summary: "目录权限用例失败 · EACCES", created_at: clock(14, 28), resource_id: "t-3898", tone: "danger" },
+  { project_id: "proj-sec", event_type: "project_task.completed", summary: "入侵痕迹取证快照已完成", created_at: clock(14, 15), resource_id: "t-7701", tone: "ok" },
+  { project_id: "proj-dash", event_type: "project_task.created", summary: "增量任务：指标口径梳理", created_at: clock(14, 26), resource_id: "t-2214", tone: "brand" },
+  { project_id: "proj-sec", event_type: "decision.requested", summary: "热修复补丁验证报告 · 等待负责人", created_at: clock(14, 12), resource_id: "t-7715", tone: "warn" },
+  { project_id: "proj-g4", event_type: "project_task.dispatch_gate.blocked", summary: "ASCII 校验任务连续失败，gate blocked", created_at: clock(12, 31), resource_id: "t-4817", tone: "danger" },
+  { project_id: "proj-dm", event_type: "project_task.dispatched", summary: "投影作业全量回归已派发", created_at: clock(13, 39), resource_id: "t-3902", tone: "info" },
+  { project_id: "proj-g4", event_type: "decision.requested", summary: "库存接口联调报告 · 等待验收", created_at: clock(16, 40), resource_id: "t-4810", tone: "warn", yesterday: true },
+];
+
+const TASK_EVENTS = {
+  "t-4821": [
+    { event_type: "project_task.created", summary: "任务创建", at: "09:12", tone: "mute" },
+    { event_type: "project_task.dispatched", summary: "派发到 local-dev-node · codex", at: "09:14", tone: "info" },
+    { event_type: "project_task.dispatched", summary: "上下文切片注入完成", at: "09:15", tone: "info" },
+  ],
+  "t-4817": [
+    { event_type: "project_task.created", summary: "任务创建", at: "10:18", tone: "mute" },
+    { event_type: "project_task.dispatched", summary: "派发到 local-dev-node · codex", at: "10:20", tone: "info" },
+    { event_type: "project_task.failed", summary: "运行失败：project_name must be ASCII", at: "12:31", tone: "danger" },
+    { event_type: "project_task.dispatch_gate.blocked", summary: "连续重试失败，gate blocked", at: "12:31", tone: "danger" },
+  ],
+  "t-4810": [
+    { event_type: "project_task.completed", summary: "执行完成，进入等待人工", at: "昨天 16:40", tone: "ok" },
+    { event_type: "decision.requested", summary: "decision.requested · any-of-N 负责人", at: "昨天 16:41", tone: "warn" },
+  ],
+  "t-3898": [
+    { event_type: "project_task.dispatched", summary: "派发到 gpu-node-2", at: "12:58", tone: "info" },
+    { event_type: "project_task.failed", summary: "EACCES: /var/lib/proj/acl", at: "13:42", tone: "danger" },
+  ],
+};
+
+/* ---------- helpers ---------- */
+function todayAt(h, m) {
+  const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString();
+}
+function hoursAgo(h) { return new Date(Date.now() - h * 3600e3).toISOString(); }
+function minutesAgo(m) { return new Date(Date.now() - m * 60e3).toISOString(); }
+function clock(h, m) {
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+function isToday(iso) {
+  if (!iso) return false;
+  const d = new Date(iso), n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+}
+function durSince(iso) {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return "—";
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return m + "m";
+  const h = Math.floor(m / 60), rm = m % 60;
+  return h + "h " + rm + "m";
+}
+function budgetPct(b) {
+  if (!b.estimated_tokens) return 0;
+  return Math.min(100, Math.round((b.actual_tokens / b.estimated_tokens) * 100));
+}
+function completionRatio(s) {
+  const total = s.completed_tasks + s.active_tasks + s.failed_tasks;
+  if (!total) return 0;
+  return Math.round((s.completed_tasks / total) * 100);
+}
+function shortId(id) { return id.slice(0, 8); }
+function projectById(id) { return PROJECTS.find((p) => p.id === id); }
+function attentionTone(p) {
+  if (p.task_summary.failed_tasks > 0) return "danger";
+  if (p.task_summary.pending_human_tasks > 0) return "warn";
+  return "ok";
+}
+
+/* ---------- KPI ---------- */
+function renderKpis() {
+  const runningProjects = PROJECTS.filter((p) => p.status === "running").length;
+  const attention = PROJECTS.filter((p) => p.task_summary.failed_tasks > 0 || p.attention).length;
+  const runningTasks = TASKS.filter((t) => t.status === "running").length;
+  const waiting = TASKS.filter((t) => t.status === "waiting_human").length;
+  const doneToday = TASKS.filter((t) => t.status === "completed" && isToday(t.finished_at)).length;
+  const budgets = PROJECTS.map((p) => budgetPct(p.budget));
+  const avgBudget = Math.round(budgets.reduce((a, b) => a + b, 0) / budgets.length);
+  const todayTokens = PROJECTS.reduce((a, p) => a + Math.round(p.budget.actual_tokens * 0.08), 0);
+
+  const items = [
+    { k: "进行中项目", v: runningProjects, d: `status = running`, kc: "var(--brand)", src: "listProjects.status" },
+    { k: "需要关注", v: attention, d: `含失败任务的项目`, kc: "var(--danger)", danger: true, src: "task_summary.failed_tasks" },
+    { k: "执行中任务", v: runningTasks, d: `status = running`, kc: "var(--info)", src: "overview.active_tasks" },
+    { k: "等待人工", v: waiting, d: `最久等待 <b class="num">${durSince(TASKS.find(t=>t.status==="waiting_human")?.updated_at)}</b>`, kc: "var(--warn)", src: "waiting_human + decisions" },
+    { k: "今日完成", v: doneToday, d: `finished_at ∈ 今日`, kc: "var(--ok)", src: "tasks / graph.finished_at" },
+    { k: "预算消耗", v: avgBudget + "%", d: `${PROJECTS.length} 项目 · 累计 <b class="num">${avgBudget}</b>% · 示意今日 <b class="num">${todayTokens.toLocaleString()}</b> tokens`, kc: "var(--mute)", src: "budget-summary 派生" },
+  ];
+  document.getElementById("kpis").innerHTML = items.map((it) => `
+    <div class="kpi${it.danger ? " danger" : ""}" style="--kc:${it.kc}">
+      <div class="k">${it.k}</div>
+      <div class="v num">${it.v}</div>
+      <div class="d">${it.d}</div>
+      <div class="src">${it.src}</div>
+    </div>`).join("");
+}
+
+/* ---------- filters ---------- */
+function renderFilters() {
+  const host = document.getElementById("projFilters");
+  const rest = PROJECTS.map((p) => {
+    const tone = attentionTone(p);
+    const color = tone === "danger" ? "var(--danger)" : tone === "warn" ? "var(--warn)" : "var(--ok)";
+    const n = TASKS.filter((t) => t.project_id === p.id && t.status !== "cancelled").length;
+    return `<button class="chip" data-p="${p.id}" onclick="filterProj('${p.id}')">
+      <span class="hd" style="background:${color}"></span>${p.name} <span class="cnt num">${n}</span>
+    </button>`;
+  }).join("");
+  host.innerHTML = `<span class="lbl">项目</span>
+    <button class="chip on" data-p="all" onclick="filterProj('all')">全部 <span class="cnt num">${PROJECTS.length}</span></button>${rest}`;
+}
+
+let curProj = "all";
+function filterProj(p) {
+  curProj = p;
+  document.querySelectorAll("#projFilters .chip").forEach((c) => c.classList.toggle("on", c.dataset.p === p));
+  document.querySelectorAll(".lane").forEach((l) => l.classList.toggle("dim", p !== "all" && l.dataset.p !== p));
+}
+
+/* ---------- lanes ---------- */
+function avatar(empId) {
+  const e = EMP[empId]; if (!e) return "";
+  return `<span class="av" style="background:${e.color}">${e.name.slice(-1)}</span>`;
+}
+function taskCard(t) {
+  const e = EMP[t.assigned_digital_employee_id] || { name: "未指派", color: "#64748B" };
+  const sc = STATUS_COLOR[t.status];
+  const failed = t.status === "failed";
+  const done = t.status === "completed";
+  let meta = "";
+  if (t.status === "running" && t.started_at) meta = `<div class="sub">已进行 ${durSince(t.started_at)}</div>`;
+  if (t.status === "planned") meta = `<div class="sub">${STATUS_LABEL.planned}</div>`;
+  if (t.status === "queued") meta = `<div class="sub">${STATUS_LABEL.queued}</div>`;
+  if (t.status === "waiting_human") meta = `<div class="sub">待负责人决议 · any-of-N</div>`;
+  if (failed && t.blocking_fact) {
+    meta += `<span class="stuck">失败 · ${t.blocking_fact.message}</span>`;
+  }
+  return `<div class="task${failed ? " failed" : ""}${done ? " done" : ""}" onclick="openTask('${t.id}')">
+    <div class="tt"><span class="sd" style="background:${sc}"></span><span>${t.title}</span></div>
+    <div class="tm">${avatar(t.assigned_digital_employee_id)}<span>${e.name}</span>
+      <span style="margin-left:auto" class="mono num">${shortId(t.id)}</span></div>
+    ${meta}
+  </div>`;
+}
+
+function renderLanes() {
+  const counts = { queued: 0, running: 0, waiting_human: 0, failed: 0, done_today: 0 };
+  let html = "";
+  for (const p of PROJECTS) {
+    const tasks = TASKS.filter((t) => t.project_id === p.id && !t.dismissed_at);
+    const byCol = COLUMNS.map((c) => tasks.filter(c.match));
+    byCol.forEach((list, i) => { counts[COLUMNS[i].key] += list.length; });
+    const running = byCol[1].length;
+    const failed = byCol[3].length;
+    const waiting = byCol[2].length;
+    const ratio = completionRatio(p.task_summary);
+    const bp = budgetPct(p.budget);
+    const tone = attentionTone(p);
+    const hd = tone === "danger" ? "var(--danger)" : tone === "warn" ? "var(--warn)" : "var(--ok)";
+    const dots = running > 0
+      ? Array.from({ length: Math.min(2, running) }, (_, i) =>
+          `<span class="flowdot" style="animation-duration:${8 + i * 2.2}s;animation-delay:${i * 1.6}s"></span>`).join("")
+      : "";
+    html += `<div class="lane" data-p="${p.id}">
+      <div class="rail"></div>${dots}
+      <div class="lane-label" onclick="toast('进入项目详情 · GET /projects/${p.id}/overview')" title="进入项目运营首页">
+        <div class="pn"><span class="hd" style="background:${hd}"></span>${p.name}</div>
+        <div class="goal" title="${p.goal}">${p.goal}</div>
+        <div class="ratio"><i style="width:${ratio}%"></i><span class="num">${ratio}%</span></div>
+        <div class="pm">负责人 ${p.owners.length} · 预算 ${bp}% · ${p.task_summary.completed_tasks} 已完成</div>
+        <div class="pw">
+          <i>执行 ${running}</i>
+          ${failed ? `<i style="background:var(--danger-soft);color:var(--danger-text)">失败 ${failed}</i>` : ""}
+          ${waiting ? `<i style="background:var(--warn-soft);color:var(--warn-text)">等待 ${waiting}</i>` : ""}
+        </div>
+        <div class="own">${p.owners.map((o) => `<b>${o}</b>`).join("")}<span class="enter">进入项目 →</span></div>
+      </div>
+      ${byCol.map((list, idx) => {
+        const isDone = COLUMNS[idx].key === "done_today";
+        const shown = isDone ? list.slice(0, 2) : list;
+        const extra = list.length - shown.length;
+        const body = shown.map(taskCard).join("") || `<div class="empty-cell">—</div>`;
+        return `<div class="cell">${body}${extra > 0 ? `<span class="more">+${extra}</span>` : ""}</div>`;
+      }).join("")}
+    </div>`;
+  }
+  document.getElementById("lanes").innerHTML = html;
+  document.getElementById("ctQueued").textContent = counts.queued;
+  document.getElementById("ctRunning").textContent = counts.running;
+  document.getElementById("ctWait").textContent = counts.waiting_human;
+  document.getElementById("ctFailed").textContent = counts.failed;
+  document.getElementById("ctDone").textContent = counts.done_today;
+  if (curProj !== "all") filterProj(curProj);
+}
+
+/* ---------- drawer ---------- */
+const drawer = document.getElementById("drawer");
+const mask = document.getElementById("mask");
+function pill(status) {
+  const map = {
+    planned: ["var(--mute-soft)", "var(--mute-text)"],
+    queued: ["var(--mute-soft)", "var(--mute-text)"],
+    running: ["var(--info-soft)", "var(--info-text)"],
+    waiting_human: ["var(--warn-soft)", "var(--warn-text)"],
+    failed: ["var(--danger-soft)", "var(--danger-text)"],
+    completed: ["var(--ok-soft)", "var(--ok-text)"],
+  };
+  const [bg, fg] = map[status] || map.queued;
+  return `<span class="pill" style="background:${bg};color:${fg}"><span class="sd" style="background:${STATUS_COLOR[status]};width:6px;height:6px;border-radius:50%;display:inline-block"></span>${STATUS_LABEL[status]}</span>`;
+}
+function openTask(id) {
+  const t = TASKS.find((x) => x.id === id); if (!t) return;
+  const p = projectById(t.project_id);
+  const e = EMP[t.assigned_digital_employee_id] || { name: "未指派" };
+  document.getElementById("dTitle").textContent = t.title;
+  document.getElementById("dMeta").innerHTML =
+    pill(t.status) +
+    `<span class="pill" style="background:var(--mute-soft);color:var(--mute-text)">${p.name}</span>` +
+    `<span class="pill" style="background:var(--mute-soft);color:var(--mute-text)" class="mono">${shortId(t.id)}</span>`;
+
+  const rows = [
+    ["负责员工", e.name],
+    ["任务状态", STATUS_LABEL[t.status]],
+    ["已进行", t.started_at ? durSince(t.started_at) : (t.finished_at ? "已结束" : "—")],
+  ];
+  if (t.status_reason) rows.push(["失败原因", `<span class="mono" style="color:var(--danger-text)">${t.status_reason}</span>`]);
+  if (t.blocking_fact) rows.push(["阻塞事实", `${t.blocking_fact.reason_code} · ${t.blocking_fact.recommended_action}`]);
+  if (t.decision_request_id) rows.push(["决策单", `<span class="mono">${t.decision_request_id}</span>`]);
+  document.getElementById("dKv").innerHTML = rows.map(([k, v]) =>
+    `<span class="k">${k}</span><span class="v">${v}</span>`).join("");
+
+  document.getElementById("dApi").innerHTML =
+    `读：<code>GET /projects/${p.id}/tasks</code> · <code>.../tasks/${shortId(t.id)}/liveness</code><br/>` +
+    (t.status === "waiting_human"
+      ? `写：<code>POST .../decisions/{id}/resolve</code>`
+      : t.status === "failed"
+        ? `写：无通用「一键重试」控制台 API；需看 dispatch-gate / 协调决策`
+        : `写：本态无抽屉主操作，下钻项目运营页`);
+
+  const toneMap = { mute: "var(--mute)", info: "var(--info)", ok: "var(--ok)", danger: "var(--danger)", warn: "var(--warn)", brand: "var(--brand)" };
+  const tl = TASK_EVENTS[t.id] || [
+    { event_type: "project_task.created", summary: "任务已存在于列表", at: "—", tone: "mute" },
+  ];
+  document.getElementById("dTl").innerHTML = tl.map((ev) =>
+    `<div class="ti" style="--tc:${toneMap[ev.tone]}">${ev.summary}<span class="w">${ev.at}</span>
+      <span class="et">${ev.event_type}</span></div>`).join("");
+
+  const acts = [];
+  if (t.status === "waiting_human") {
+    acts.push(`<button class="act pri" onclick="act('POST resolveDecision · approve')">通过</button>`);
+    acts.push(`<button class="act dgr" onclick="act('POST resolveDecision · reject / request_changes')">驳回</button>`);
+  } else if (t.status === "failed") {
+    acts.push(`<button class="act" onclick="act('GET .../dispatch-gates')">查看 gate</button>`);
+    acts.push(`<button class="act" onclick="act('进入项目运营页处理阻塞')">处理阻塞</button>`);
+  } else if (t.status === "running") {
+    acts.push(`<button class="act" onclick="act('GET .../liveness')">查看活性</button>`);
+    acts.push(`<button class="act" disabled title="控制平面无「催办」一等 API">催办（无）</button>`);
+  } else if (t.status === "queued" || t.status === "planned") {
+    acts.push(`<button class="act" disabled title="无置顶优先字段">置顶（无）</button>`);
+    acts.push(`<button class="act" onclick="act('进入项目详情')">打开项目</button>`);
+  } else {
+    acts.push(`<button class="act" onclick="act('打开项目运营页')">打开项目</button>`);
+  }
+  acts.push(`<button class="act wide" onclick="closeDrawer();toast('导航 /projects/${p.id} 运营首页')">⌘ 进入项目运营首页 →</button>`);
+  document.getElementById("dActs").innerHTML = acts.join("");
+  drawer.classList.add("on"); mask.classList.add("on");
+}
+function closeDrawer() { drawer.classList.remove("on"); mask.classList.remove("on"); }
+
+/* ---------- ticker ---------- */
+function renderTicker() {
+  const tone = { info: "var(--info)", danger: "var(--danger)", ok: "var(--ok)", warn: "var(--warn)", brand: "var(--brand)", mute: "var(--mute)" };
+  const html = EVENTS.map((ev) => {
+    const p = projectById(ev.project_id);
+    const t = ev.yesterday ? "昨天 " + ev.created_at : ev.created_at;
+    return `<span class="ev"><span class="sd" style="background:${tone[ev.tone]}"></span>
+      <span class="t">${t}</span><b>${p.name}</b> · ${ev.summary}
+      <span class="etype">${ev.event_type}</span></span>`;
+  }).join("");
+  document.getElementById("tickerTrack").innerHTML = html + html;
+}
+
+/* ---------- boot ---------- */
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg; el.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("on"), 2200);
+}
+function act(msg) { toast(msg); }
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+
+renderFilters();
+renderKpis();
+renderLanes();
+renderTicker();
+</script>
+</body>
+</html>

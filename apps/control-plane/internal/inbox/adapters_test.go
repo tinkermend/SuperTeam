@@ -656,6 +656,55 @@ func TestProjectDecisionActionAdapterNormalizesSourceErrors(t *testing.T) {
 	}
 }
 
+// any-of-N 资格由 project.ResolveDecision 判定:actor 既非负责人也非项目人类成员时,
+// ErrProjectDecisionForbidden 必须映射为 403(ErrActionForbidden)而非 500。
+func TestProjectDecisionActionAdapterMapsForbiddenForNonMember(t *testing.T) {
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	repo := &projectActionRepository{
+		project: project.Project{
+			ID:               projectID,
+			TenantID:         uuid.New(),
+			Name:             "Customer rollout",
+			Goal:             "Ship safely",
+			HumanOwnerUserID: uuid.New(),
+		},
+		decision: project.DecisionRequest{
+			ID:             decisionID,
+			ProjectID:      projectID,
+			TargetUserID:   uuid.New(),
+			DecisionType:   "plan_review",
+			TitleSnapshot:  "确认项目计划版本",
+			StatusSnapshot: "pending",
+		},
+	}
+	repo.decision.TenantID = repo.project.TenantID
+	service, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, project.NoopCoordinatorSignalClient{}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("new project service: %v", err)
+	}
+	adapter := NewProjectDecisionActionAdapter(service)
+
+	_, err = adapter.ResolveProjectDecisionAction(context.Background(), SourceActionRequest{
+		TenantID:        repo.project.TenantID,
+		ActorUserID:     uuid.New(), // 既非负责人也非项目成员
+		SourceID:        decisionID,
+		SourceProjectID: &projectID,
+		Action:          "approved",
+	})
+
+	if !errors.Is(err, ErrActionForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+	var forbidden *DecisionForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("expected DecisionForbiddenError, got %T", err)
+	}
+	if got := err.Error(); got != "只有该项目的人类成员（含负责人）可以处理该决策" {
+		t.Fatalf("unexpected message: %q", got)
+	}
+}
+
 type approvalActionRepository struct {
 	resolveInput approval.ResolveRequestInput
 	resolveErr   error

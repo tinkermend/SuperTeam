@@ -21,6 +21,7 @@ function project(id: string, overrides: Partial<Project> = {}): Project {
     coordination_policy: {},
     coordination_status: "registered",
     coordination_workflow_id: `project-coordinator:${id}`,
+    directory_name: id,
     goal: "完成项目闭环",
     human_owner_user_id: ownerId,
     id,

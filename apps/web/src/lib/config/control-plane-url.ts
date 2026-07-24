@@ -1,21 +1,30 @@
 const DEFAULT_CONTROL_PLANE_PORT = "8080";
-const DEFAULT_CONTROL_PLANE_URL = `http://localhost:${DEFAULT_CONTROL_PLANE_PORT}`;
+/** 无浏览器 location 时的兜底；本地规范宿主是 127.0.0.1（见 canonical-local-dev-host）。 */
+const DEFAULT_CONTROL_PLANE_URL = `http://127.0.0.1:${DEFAULT_CONTROL_PLANE_PORT}`;
 
 type BrowserLocationLike = Pick<Location, "hostname" | "protocol">;
 
 export function resolveControlPlaneUrl(
   configuredUrl = import.meta.env.VITE_CONTROL_PLANE_URL?.trim(),
-  locationLike: BrowserLocationLike | undefined = getBrowserLocation(),
+  /**
+   * `undefined`：用浏览器 location；显式 `null`：无 location（SSR/测试兜底 DEFAULT）。
+   * 注意：调用方传 `undefined` 时 JS 默认参数会触发 `getBrowserLocation()`，
+   * 因此「无 location」必须传 `null`。
+   */
+  locationLike: BrowserLocationLike | null | undefined = undefined,
 ) {
-  if (!locationLike) {
+  const location =
+    locationLike === undefined ? getBrowserLocation() : locationLike;
+
+  if (!location) {
     return configuredUrl || DEFAULT_CONTROL_PLANE_URL;
   }
 
   if (configuredUrl) {
-    return resolveBrowserControlPlaneUrl(configuredUrl, locationLike);
+    return resolveBrowserControlPlaneUrl(configuredUrl, location);
   }
 
-  return `${locationLike.protocol}//${locationLike.hostname}:${DEFAULT_CONTROL_PLANE_PORT}`;
+  return `${location.protocol}//${location.hostname}:${DEFAULT_CONTROL_PLANE_PORT}`;
 }
 
 function getBrowserLocation() {

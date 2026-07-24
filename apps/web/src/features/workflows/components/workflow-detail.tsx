@@ -17,10 +17,12 @@ import {
   V3LoadingState,
 } from "@/components/superteam";
 import type {
+  ProjectDecisionRequest,
   ProjectDemandLaunchDetail,
   ProjectTaskGraph,
   WorkflowInstanceSummary,
 } from "@/lib/api/projects";
+import { decisionTypeLabel, riskLevelLabel } from "@/lib/status-labels";
 import { taskNodeId } from "../workflow-graph-adapter";
 import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
 import { WorkflowGraphCanvas } from "./workflow-graph-canvas";
@@ -79,13 +81,29 @@ export function WorkflowDetail({
   const blockingFacts = graph?.blocking_facts ?? [];
   const hasBlockingFacts = blockingFacts.length > 0;
   const hasGraphContent = nodes.length > 0 || hasBlockingFacts;
+  // 空图且有待处理人工决策（如计划版本 pending_review）时，必须如实呈现"等待人工决策"，
+  // 不能用"任务正在规划"误导——此时协调线程挂起等审批，不批准永远不会分解出任务节点。
+  const pendingDecision = detail.decision_requests.find(
+    (decision) => decision.status_snapshot === "pending",
+  );
   const orchestrationTitle = nodes.length > 0
     ? "流程图已就绪"
     : hasBlockingFacts
       ? "协调已阻塞"
-    : detail.coordination_jobs.length === 0
-      ? "等待项目协调线程接收"
-      : "任务正在规划";
+      : pendingDecision
+        ? pendingDecision.decision_type === "plan_review"
+          ? "计划版本待确认"
+          : "等待人工决策"
+        : detail.coordination_jobs.length === 0
+          ? "等待项目协调线程接收"
+          : "任务正在规划";
+  const orchestrationSubtitle = nodes.length > 0
+    ? `${nodes.length} 个任务节点已从真实 task graph 读取`
+    : hasBlockingFacts
+      ? "协调线程已写入阻塞事实，等待处理后继续规划"
+      : pendingDecision
+        ? "任务节点将在人工决策完成后分解生成"
+        : "等待 Control Plane 继续写入协调事实";
 
   return (
     <div className="min-w-0">
@@ -102,11 +120,7 @@ export function WorkflowDetail({
                 {orchestrationTitle}
               </h2>
               <p className="mt-1 text-xs text-v3-ink-2">
-                {nodes.length > 0
-                  ? `${nodes.length} 个任务节点已从真实 task graph 读取`
-                  : hasBlockingFacts
-                    ? "协调线程已写入阻塞事实，等待处理后继续规划"
-                  : "等待 Control Plane 继续写入协调事实"}
+                {orchestrationSubtitle}
               </p>
             </div>
           </div>
@@ -121,6 +135,8 @@ export function WorkflowDetail({
               selectedNodeId={selectedNodeId}
             />
           </div>
+        ) : pendingDecision ? (
+          <PendingDecisionPanel decision={pendingDecision} />
         ) : (
           <div className="p-5 text-sm leading-6 text-v3-ink-2">
             当前需求已进入流程实例，任务节点会在协调线程规划完成后显示。
@@ -218,4 +234,41 @@ function DemandSummaryBar({
       </div>
     </div>
   );
+}
+
+// 空图 + 待处理人工决策：展示决策类型/标题/摘要与审批入口，
+// 让人能直接判断"该去批准还是驳回"，而不是面对一句"任务正在规划"。
+function PendingDecisionPanel({ decision }: { decision: ProjectDecisionRequest }) {
+  return (
+    <div className="p-5">
+      <div className="rounded-v3-inner border border-v3-line p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone="warn">{decisionTypeLabel(decision.decision_type)}</StatusPill>
+          {decision.risk_level_snapshot ? (
+            <StatusPill tone={decisionRiskTone(decision.risk_level_snapshot)}>
+              {riskLevelLabel(decision.risk_level_snapshot)}
+            </StatusPill>
+          ) : null}
+        </div>
+        <p className="mt-3 text-sm font-semibold text-v3-ink">{decision.title_snapshot}</p>
+        {decision.summary_snapshot ? (
+          <p className="mt-1 line-clamp-3 text-xs leading-5 text-v3-ink-2">
+            {decision.summary_snapshot}
+          </p>
+        ) : null}
+        <div className="mt-4">
+          <V3Button asChild size="sm" variant="primary">
+            <Link to="/inbox">前往收件箱处理</Link>
+          </V3Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function decisionRiskTone(level: string | undefined): "danger" | "warn" | "mute" {
+  const normalized = level?.trim().toLowerCase();
+  if (normalized === "high" || normalized === "blocked") return "danger";
+  if (normalized === "medium") return "warn";
+  return "mute";
 }

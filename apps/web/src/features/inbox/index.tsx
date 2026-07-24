@@ -16,6 +16,7 @@ import {
   type InboxViewMode,
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { inboxListRefetchInterval } from "./inbox-stream-status";
 import { InboxActionDialog } from "./components/inbox-action-dialog";
 import {
   InboxShell,
@@ -24,6 +25,7 @@ import {
   type InboxUuidFilterDrafts,
   type InboxUuidFilterKey,
 } from "./components/inbox-shell";
+import { useInboxStreamStatus } from "./use-inbox-stream-status";
 
 type InboxPageProps = {
   fetcher?: typeof fetch;
@@ -73,6 +75,7 @@ export function InboxPage({ fetcher }: InboxPageProps = {}) {
 
 export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   const queryClient = useQueryClient();
+  const streamStatus = useInboxStreamStatus();
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
@@ -114,8 +117,10 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     queryKey: ["inbox-items", view, filters],
     queryFn: () => listInboxItems(apiOptions, { ...filters, view }),
     placeholderData: keepPreviousData,
-    // 主刷新由已登录布局上的全局 SSE 脏通知驱动;这里只留低频轮询兜底流断开窗口。
-    refetchInterval: 60_000,
+    // 主刷新由全局 SSE（含 onopen 重连追平）驱动；连上时 15s 兜底，断流 5s 快拉。
+    // 覆盖 main.tsx 里 DEV 关闭的 refetchOnWindowFocus——守候人切回 tab 必须追平。
+    refetchInterval: inboxListRefetchInterval(streamStatus.connection),
+    refetchOnWindowFocus: true,
   });
 
   const actionMutation = useMutation({
@@ -159,7 +164,9 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     <>
       <InboxShell
         data={inboxQuery.data}
+        dataUpdatedAt={inboxQuery.dataUpdatedAt}
         error={inboxQuery.error}
+        isFetching={inboxQuery.isFetching}
         isLoading={inboxQuery.isLoading}
         mutationError={backgroundActionError}
         onAction={(item, action) => {
@@ -167,6 +174,9 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
           setSelectedAction({ action, item });
         }}
         onFilterChange={handleFilterChange}
+        onRefresh={() => {
+          void inboxQuery.refetch();
+        }}
         onRetry={() => {
           void inboxQuery.refetch();
         }}
@@ -176,6 +186,7 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
         }}
         onViewChange={setView}
         filters={filters}
+        streamConnection={streamStatus.connection}
         uuidFilterDrafts={uuidFilterDrafts}
         uuidFilterErrors={uuidFilterErrors}
         view={view}

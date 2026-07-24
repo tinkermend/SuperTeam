@@ -19,6 +19,8 @@ func CORS() func(http.Handler) http.Handler {
 }
 
 func allowedOrigins() []string {
+	// 本地规范宿主是 127.0.0.1（Web 入口会把 localhost 跳过去）；仍保留
+	// localhost 以免跳转落地前的首请求 CORS 失败。
 	origins := []string{"http://127.0.0.1:3000", "http://localhost:3000"}
 	for _, origin := range strings.Split(os.Getenv("CONTROL_PLANE_CORS_ALLOWED_ORIGINS"), ",") {
 		origin = strings.TrimSpace(origin)

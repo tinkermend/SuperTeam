@@ -7,16 +7,13 @@ import {
   Bot,
   Trash2,
   ChevronDown,
-  CircleDot,
   ClipboardList,
   FileCheck2,
   ExternalLink,
   FileText,
   GitBranch,
-  History,
   MoreHorizontal,
   Settings2,
-  UserRound,
 } from "lucide-react";
 import {
   Collapsible,
@@ -87,7 +84,6 @@ import type {
 } from "@/lib/api/projects";
 import {
   decisionStatusLabel,
-  demandStatusLabel,
   dispatchGateStatusLabel,
   projectStatusLabel,
   statusLabel,
@@ -100,11 +96,13 @@ import { ProjectAssetsPanel } from "./project-assets-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { PlanGraphCanvas } from "./plan-graph-canvas";
 import { ProjectOpsHome } from "./project-ops-home";
+import { ProjectOwnerAvatarStack } from "./project-owner-avatar-stack";
 import {
   assetsInitialTabFromQuery,
   normalizeProjectDetailSection,
   type ProjectDetailSection,
 } from "../lib/project-detail-section";
+import type { UserIdentityData } from "@/components/superteam/user-identity";
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -153,6 +151,8 @@ type ProjectOperationalDetailProps = {
   planRevisions: ProjectPlanRevision[];
   /** 成员快照缺名时回退到用户/数字员工真实名称，避免侧栏裸显 UUID。 */
   principalNamesById?: ReadonlyMap<string, string>;
+  /** 人类负责人头像/身份补全（来自用户列表）。 */
+  usersById?: ReadonlyMap<string, UserIdentityData>;
   project?: Project;
   reports?: ProjectReportRef[];
   routeDecisions: ProjectRouteDecision[];
@@ -204,6 +204,7 @@ export function ProjectOperationalDetail({
   overview,
   planRevisions,
   principalNamesById,
+  usersById,
   project,
   reports,
   routeDecisions,
@@ -252,19 +253,12 @@ export function ProjectOperationalDetail({
   const servicePool = digitalPool;
   const projectOwners = ownerMembers(humanRoles, project.human_owner_user_id);
   const latestDemand = demands[0];
-  const latestResult = executionSummaries[0];
   const pendingOwnerDecisions = decisionRequests.filter(
     (decision) => decision.status_snapshot === "pending",
   );
-  const pendingOwnerActionItems = pendingOwnerDecisions.filter(
-    (decision) => decision.decision_type !== "plan_review",
-  );
-  const businessBlocker = projectBusinessBlocker(dispatchGates ?? []);
   const activeTasks = (overview?.active_tasks?.length ? overview.active_tasks : tasks).filter(
     (task) => !task.dismissed_at,
   );
-  const recentEvents = overview?.recent_events?.length ? overview.recent_events : events;
-  const currentPhase = overview?.status_summary.current_phase || project.status;
   const latestPlanReviewDecision = decisionRequests.find(
     (decision) =>
       decision.decision_type === "plan_review" &&
@@ -306,40 +300,25 @@ export function ProjectOperationalDetail({
                 <StatusPill tone={projectStatusTone(project.status)}>
                   {projectStatusLabel(project.status)}
                 </StatusPill>
-                <StatusPill tone={workspaceReadyTone(project.workspace_ready_status)}>
-                  {workspaceReadyStatusLabel(project.workspace_ready_status)}
-                </StatusPill>
+                {project.workspace_ready_status &&
+                project.workspace_ready_status !== "ready" ? (
+                  <StatusPill tone={workspaceReadyTone(project.workspace_ready_status)}>
+                    {workspaceReadyStatusLabel(project.workspace_ready_status)}
+                  </StatusPill>
+                ) : null}
               </div>
-              <p className="mt-1 max-w-3xl text-sm text-v3-ink-2">
-                {project.goal}
-              </p>
               {projectOwners.length > 0 ? (
-                <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-v3-ink-2">
-                  <span>负责人</span>
-                  {projectOwners.map((owner) => {
-                    const name =
-                      owner.display_name_snapshot ||
-                      principalNamesById?.get(owner.principal_id) ||
-                      "负责人";
-                    const href = projectMemberHref(owner);
-                    return href ? (
-                      <Link
-                        className="font-semibold text-v3-ink underline-offset-2 hover:underline"
-                        key={owner.id}
-                        to={href}
-                      >
-                        {name}
-                      </Link>
-                    ) : (
-                      <span className="font-semibold" key={owner.id}>
-                        {name}
-                      </span>
-                    );
-                  })}
-                </p>
+                <ProjectOwnerAvatarStack
+                  owners={projectOwners}
+                  principalNamesById={principalNamesById}
+                  usersById={usersById}
+                />
               ) : null}
               <p className="mt-1 text-xs text-v3-ink-3">
-                目录名 {project.directory_name || project.name}
+                <span>目录名</span>{" "}
+                <span className="font-mono text-[12px] font-medium text-v3-ink">
+                  {project.directory_name || project.name}
+                </span>
                 {project.workspace_ready_error
                   ? ` · ${project.workspace_ready_error}`
                   : ""}
@@ -352,11 +331,6 @@ export function ProjectOperationalDetail({
                 <span aria-hidden className="text-v3-ink-3">·</span>
                 <HeroFactLink
                   label={`执行中 ${activeTasks.length}`}
-                  targetId="project-overview-execution"
-                />
-                <span aria-hidden className="text-v3-ink-3">·</span>
-                <HeroFactLink
-                  label={`阶段 ${projectStatusLabel(currentPhase)}`}
                   targetId="project-overview-execution"
                 />
                 {latestDemand ? (
@@ -1266,7 +1240,7 @@ function PanelHeader({
   );
 }
 
-function MemberPanel({
+export function MemberPanel({
   emptyLabel,
   icon,
   members,
@@ -1337,7 +1311,7 @@ function MemberRow({
   );
 }
 
-function DemandTitle({ demand }: { demand: ProjectDemand }) {
+export function DemandTitle({ demand }: { demand: ProjectDemand }) {
   if (!demand.id) {
     return <p className="text-sm font-semibold text-v3-ink">{demand.title}</p>;
   }
@@ -1800,7 +1774,7 @@ function projectMemberHref(member: ProjectMember) {
   return undefined;
 }
 
-function projectEventDisplay(event: ProjectEvent) {
+export function projectEventDisplay(event: ProjectEvent) {
   const labels: Record<string, { summary: string; title: string }> = {
     "coordination_job.created": {
       summary: "系统已开始推进下一步项目工作。",
@@ -1922,7 +1896,7 @@ function projectEventDisplay(event: ProjectEvent) {
   };
 }
 
-function projectEventActorLabel(
+export function projectEventActorLabel(
   event: ProjectEvent,
   principalNamesById?: ReadonlyMap<string, string>,
 ) {
@@ -1936,7 +1910,7 @@ function projectEventActorLabel(
   return "系统";
 }
 
-function eventSummaryDuplicatesTitle(title: string, summary: string) {
+export function eventSummaryDuplicatesTitle(title: string, summary: string) {
   const normalize = (value: string) => value.trim().replace(/[。.!！]+$/u, "");
   return normalize(summary) === normalize(title);
 }
@@ -2204,7 +2178,7 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter((value) => value.trim() !== "")));
 }
 
-function planTaskGraphSummaryLabel(graph: ProjectTaskGraph): string {
+export function planTaskGraphSummaryLabel(graph: ProjectTaskGraph): string {
   const stageCount = new Set(graph.nodes.map((node) => node.stage_index ?? -1)).size;
   const assignedEmployeeIds = new Set(
     graph.nodes.flatMap((node) =>
@@ -2282,7 +2256,7 @@ function dispatchGateTone(status: DispatchGateStatus): V3Tone {
   return "mute";
 }
 
-function projectBusinessBlocker(gates: DispatchGateResult[]) {
+export function projectBusinessBlocker(gates: DispatchGateResult[]) {
   const latest = gates[0];
   if (!latest || latest.status === "passed") {
     return undefined;

@@ -9,6 +9,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { AuthProvider } from '@/features/auth/auth-provider'
 import { ApiRequestError } from '@/lib/api'
+import { redirectToCanonicalLocalDevHost } from '@/lib/config/canonical-local-dev-host'
 import { resolveControlPlaneUrl } from '@/lib/config/control-plane-url'
 import { shouldRetryQuery } from '@/query-client'
 import { DirectionProvider } from './context/direction-provider'
@@ -72,23 +73,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
-// Render the app
-const rootElement = document.getElementById('root')!
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement)
-  root.render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <FontProvider>
-            <DirectionProvider>
-              <AuthProvider apiBaseUrl={resolveControlPlaneUrl()}>
-                <RouterProvider router={router} />
-              </AuthProvider>
-            </DirectionProvider>
-          </FontProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </StrictMode>
-  )
+// 本地开发强制 127.0.0.1，避免与 localhost 双 cookie 导致 badge/SSE 401。
+// replace 进行中则停止挂载，避免在旧宿主上再开一条无效会话流。
+if (!redirectToCanonicalLocalDevHost()) {
+  const rootElement = document.getElementById('root')!
+  if (!rootElement.innerHTML) {
+    const root = ReactDOM.createRoot(rootElement)
+    root.render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <FontProvider>
+              <DirectionProvider>
+                <AuthProvider apiBaseUrl={resolveControlPlaneUrl()}>
+                  <RouterProvider router={router} />
+                </AuthProvider>
+              </DirectionProvider>
+            </FontProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </StrictMode>
+    )
+  }
 }

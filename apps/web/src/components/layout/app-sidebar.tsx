@@ -7,6 +7,8 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { inboxBadgeRefetchInterval } from "@/features/inbox/inbox-stream-status";
+import { useInboxStreamStatus } from "@/features/inbox/use-inbox-stream-status";
 import { getInboxBadge } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { AppTitle } from "./app-title";
@@ -16,18 +18,15 @@ import { NavGroup } from "./nav-group";
 export function AppSidebar() {
   const { collapsible, variant } = useLayout();
   const apiBaseUrl = resolveControlPlaneUrl();
+  const streamStatus = useInboxStreamStatus();
+  // 401 必须抛出：QueryCache 会导向 /login；勿吞成全零——否则失效会话被伪装成「无待办」。
   const inboxBadgeQuery = useQuery({
     queryKey: ["inbox-badge"],
-    queryFn: async () => {
-      try {
-        return await getInboxBadge({ baseUrl: apiBaseUrl });
-      } catch {
-        return { mine_open_count: 0, team_open_count: 0, high_risk_count: 0 };
-      }
-    },
+    queryFn: () => getInboxBadge({ baseUrl: apiBaseUrl }),
     staleTime: 60 * 1000,
-    // 主刷新由已登录布局上的全局 SSE 脏通知 invalidate；此处低频轮询兜底流断开窗口。
-    refetchInterval: 60 * 1000,
+    // 主刷新由全局 SSE（含 onopen 重连追平）；断流时与列表同频 5s 快拉。
+    refetchInterval: inboxBadgeRefetchInterval(streamStatus.connection),
+    refetchOnWindowFocus: true,
   });
   const inboxBadge =
     inboxBadgeQuery.data && inboxBadgeQuery.data.mine_open_count > 0

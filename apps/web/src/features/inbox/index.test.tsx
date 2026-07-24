@@ -542,6 +542,18 @@ describe("InboxView", () => {
     await expect.poll(() => inboxRequestUrls(fetcher).length).toBeGreaterThan(before);
   });
 
+  it("refetches inbox items when the explicit refresh button is clicked", async () => {
+    const fetcher = createInboxFetcher();
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    const before = inboxRequestUrls(fetcher).length;
+
+    await userEvent.click(screen.getByRole("button", { name: "刷新收件箱" }));
+    await expect.poll(() => inboxRequestUrls(fetcher).length).toBeGreaterThan(before);
+    await expect.element(screen.getByRole("status")).toBeVisible();
+  });
+
   it("keeps existing data while switching to team inbox", async () => {
     const fetcher = createInboxFetcher({ slowTeamView: true });
     const screen = await renderInboxView(fetcher);

@@ -12,6 +12,7 @@ describe("project-detail-section", () => {
     expect(normalizeProjectDetailSection("workbench")).toBe("workbench");
     expect(normalizeProjectDetailSection("tasks")).toBe("tasks");
     expect(normalizeProjectDetailSection("approval")).toBe("approval");
+    expect(normalizeProjectDetailSection("assets")).toBe("assets");
     expect(normalizeProjectDetailSection("artifacts")).toBe("assets");
     expect(normalizeProjectDetailSection("budget")).toBe("assets");
     expect(normalizeProjectDetailSection("acceptance")).toBe("assets");

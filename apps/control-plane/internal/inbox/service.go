@@ -198,6 +198,16 @@ func (s *Service) PeekChanges(ctx context.Context, req PeekChangeRequest) (*Chan
 	return s.repository.PeekChange(ctx, req)
 }
 
+// delegatesDecisionEligibility 报告事项的执行业务资格是否下放给来源服务判定。
+// 项目决策是 any-of-N(项目人类成员同等身份、任一处理即生效):可见性查询已按此口径
+// 放行,执行也下放给 project.ResolveDecision 的 isEligibleDecider(负责人+active 人类成员),
+// 不再严格限 target 一人;审批/催办/run 恢复等其他事项仍严格限指定处理人。
+func delegatesDecisionEligibility(item Item) bool {
+	return item.ItemType == ItemTypeProjectDecision &&
+		item.SourceType == SourceTypeProjectDecisionRequest &&
+		item.SourceProjectID != nil && *item.SourceProjectID != uuid.Nil
+}
+
 func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (Item, SourceActionResult, error) {
 	req.Action = strings.TrimSpace(req.Action)
 	req.Comment = strings.TrimSpace(req.Comment)
@@ -211,8 +221,13 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 	if item.Status != StatusOpen {
 		return item, SourceActionResult{}, ErrInvalidAction
 	}
-	if item.TargetUserID != req.ActorUserID {
-		return item, SourceActionResult{}, ErrActionForbidden
+	if item.TargetUserID != req.ActorUserID && !delegatesDecisionEligibility(item) {
+		// 处理人名称仅用于提示文案,best-effort:查询失败不影响 403 语义。
+		name, nameErr := s.repository.UserDisplayName(ctx, item.TargetUserID)
+		if nameErr != nil {
+			name = ""
+		}
+		return item, SourceActionResult{}, &ActionForbiddenError{TargetUserName: name}
 	}
 	action, ok := findAction(item.Actions, req.Action)
 	if !ok {

@@ -181,6 +181,9 @@ func normalizeSourceActionError(err error) error {
 		return nil
 	case errors.Is(err, approval.ErrInvalidApprovalRequest), errors.Is(err, approval.ErrApprovalAlreadyResolved), errors.Is(err, project.ErrInvalidProject):
 		return ErrInvalidAction
+	// 项目决策 any-of-N 资格由 project.ResolveDecision 判定;不合格映射为 403 而非 500。
+	case errors.Is(err, project.ErrProjectDecisionForbidden):
+		return &DecisionForbiddenError{}
 	case errors.Is(err, approval.ErrApprovalNotFound), errors.Is(err, project.ErrProjectNotFound), errors.Is(err, pgx.ErrNoRows):
 		return ErrSourceUnavailable
 	default:

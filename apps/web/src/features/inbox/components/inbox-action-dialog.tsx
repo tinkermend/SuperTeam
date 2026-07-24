@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { ApiRequestError } from "@/lib/api/client";
 import type { ExecuteInboxActionInput, InboxAction, InboxItem } from "@/lib/api/inbox";
 import { ObjectIdChip, ObjectRef, StatusPill, V3Button, V3ErrorState } from "@/components/superteam";
 import {
@@ -83,7 +84,14 @@ export function InboxActionDialog({
     } catch (error) {
       // 用户已切换到其他事项或关闭弹窗:失败由页面横幅承接,不写进当前弹窗。
       if (currentKeyRef.current === submittedKey) {
-        setSubmitError(error instanceof Error ? error.message : "操作提交失败");
+        // 优先展示服务端 detail(如"该事项由 X 处理"),避免裸 "request failed with status 403"。
+        setSubmitError(
+          error instanceof ApiRequestError && error.detail
+            ? error.detail
+            : error instanceof Error
+              ? error.message
+              : "操作提交失败",
+        );
       }
     } finally {
       if (inFlightKeyRef.current === submittedKey) {

@@ -100,6 +100,7 @@ function makeProject(id: string, name: string, status: Project["status"] = "runn
     coordination_policy: { cadence: "daily" },
     coordination_status: "registered",
     coordination_workflow_id: `project-coordinator:${id}`,
+    directory_name: id.replace(/[^a-zA-Z0-9._-]/g, "-") || "project-dir",
     goal: `${name} 闭环目标`,
     human_owner_user_id: "human-owner-1",
     id,
@@ -1581,6 +1582,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("未选择")).toBeInTheDocument();
 
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "auth-check");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "auth-check");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "确认来源团队可见");
     await expect.element(screen.getByText("必备项 2 / 3 已就绪")).toBeInTheDocument();
 
@@ -1806,7 +1808,8 @@ describe("ProjectsView", () => {
     const layout = screen.getByTestId("projects-risk-home-layout").element();
     expect(layout.className).not.toContain("grid-cols");
     expect(screen.container.querySelector('[data-testid="project-risk-queue"]')).toBeNull();
-    expect(screen.container.querySelector('[data-testid="plan-graph-canvas"]')).toBeTruthy();
+    // 详情默认工作台为运营首屏，不再内嵌 plan-graph-canvas。
+    expect(screen.container.querySelector('[data-testid="project-ops-home"]')).toBeTruthy();
   });
 
   it("keeps project filtering and v3 pagination controls working", async () => {
@@ -1844,8 +1847,6 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
-    await expect.element(screen.getByText("当前阻塞")).toBeInTheDocument();
-    await expect.element(screen.getByText("运行节点暂不可用，系统会稍后重试")).toBeInTheDocument();
     expect(pageText()).not.toContain("Dispatch gate 技术详情");
     expect(pageText()).not.toContain("runtime.node_offline");
 
@@ -1958,7 +1959,9 @@ describe("ProjectsView", () => {
     });
     const screen = await renderProjectRouteSwitcher(fetcher);
 
-    await expect.element(screen.getByText("已就绪")).toBeInTheDocument();
+    await expect
+      .element(screen.getByTestId("project-runtime-placement-panel").getByText("已就绪"))
+      .toBeInTheDocument();
     // 已就绪的运行落点默认折叠为一行摘要，先展开再操作绑定动作。
     await userEvent.click(screen.getByRole("button", { name: "展开运行落点" }));
     await expect.element(screen.getByRole("button", { name: "释放绑定" })).toBeEnabled();
@@ -2025,9 +2028,10 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("menuitem", { name: "配置项目" }))
       .toHaveAttribute("href", "/projects/project-1/config");
 
-    const visibleLinkLabels = Array.from(screen.container.querySelectorAll("a")).map((link) =>
-      link.textContent?.trim(),
-    );
+    const opsHome = screen.container.querySelector('[data-testid="project-ops-home"]');
+    const visibleLinkLabels = Array.from(screen.container.querySelectorAll("a"))
+      .filter((link) => !opsHome?.contains(link))
+      .map((link) => link.textContent?.trim());
     expect(visibleLinkLabels).not.toContain("审计");
     expect(visibleLinkLabels).not.toContain("成本");
   });
@@ -2113,6 +2117,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "auth-check");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "auth-check");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "确认来源团队可见");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2164,6 +2169,7 @@ describe("ProjectsView", () => {
     );
     const screen = await renderProjectCreate(fetcher, queryClient);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "cached-auth-project");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "cached-auth-project");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "等待授权范围刷新后才能提交");
 
     try {
@@ -2194,6 +2200,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "customer-acceptance");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "customer-acceptance");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "完成客户验收闭环");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2296,6 +2303,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "runtime-node-select");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "runtime-pick");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "验证可运行节点多选");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2319,6 +2327,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "missing-runtime-node");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "missing-runtime-node");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "未选择运行节点时不能创建项目");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2341,6 +2350,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "unauthorized-team");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "unauthorized-team");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "尝试提交未授权团队");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2364,6 +2374,7 @@ describe("ProjectsView", () => {
     const queryClient = createQueryClient();
     const screen = await renderProjectCreate(fetcher, queryClient);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "clear-source-teams");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "clear-source-teams");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "刷新授权范围后仍保持清空");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2397,6 +2408,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher({ projectTeamScopesStatus: "empty" });
     const screen = await renderProjectCreate(fetcher);
     await userEvent.fill(screen.getByLabelText("项目名称 *"), "customer-acceptance");
+    await userEvent.fill(screen.getByLabelText("项目目录名 *"), "customer-acceptance");
     await userEvent.fill(screen.getByLabelText("项目目标 *"), "完成客户验收闭环");
 
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2417,6 +2429,7 @@ describe("ProjectsView", () => {
 
     try {
       await userEvent.fill(screen.getByLabelText("项目名称 *"), "loading-user");
+      await userEvent.fill(screen.getByLabelText("项目目录名 *"), "loading-user");
       await userEvent.fill(screen.getByLabelText("项目目标 *"), "等待当前用户加载");
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await expect.element(screen.getByText("正在加载当前用户...")).toBeInTheDocument();
@@ -2454,6 +2467,7 @@ describe("ProjectsView", () => {
 
     try {
       await userEvent.fill(screen.getByLabelText("项目名称 *"), "waiting-teams");
+      await userEvent.fill(screen.getByLabelText("项目目录名 *"), "waiting-teams");
       await userEvent.fill(screen.getByLabelText("项目目标 *"), "团队加载中");
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
       await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -2476,26 +2490,10 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
-    await userEvent.click(screen.getByRole("button", { name: "提交需求" }));
-    await userEvent.fill(screen.getByLabelText("需求标题"), "补充回归证据");
-    await userEvent.fill(screen.getByLabelText("来源引用 JSON"), '{"ticket":"SUP-42"}');
-    await userEvent.fill(screen.getByLabelText("附件引用"), "s3://evidence/report.md");
-    await userEvent.click(screen.getByRole("button", { name: "提交" }));
-
-    await vi.waitFor(() => {
-      const postCall = fetchCalls(fetcher).find(([url, init]) => {
-        return (
-          String(url).endsWith("/api/v1/projects/project-1/demands") &&
-          init?.method === "POST"
-        );
-      });
-      expect(postCall).toBeTruthy();
-      expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
-        attachments: ["s3://evidence/report.md"],
-        source_refs: { ticket: "SUP-42" },
-        title: "补充回归证据",
-      });
-    });
+    // 提交需求已改为深链任务中枢，不再打开页内对话框。
+    await expect
+      .element(screen.getByRole("link", { name: "提交需求" }))
+      .toHaveAttribute("href", "/task-launches?mode=plan&project=project-1");
   });
 
   it("keeps previous list content visible while a filter request is refreshing", async () => {
@@ -2574,8 +2572,15 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
-    await expect.element(screen.getByText("待负责人处理").first()).toBeInTheDocument();
-    await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
+    // 业务阻塞已迁到运营首屏「本项目阻塞」，不再用 Dispatch gate 业务文案。
+    await expect
+      .element(screen.getByTestId("project-ops-blockers").getByText("需要负责人确认"))
+      .toBeInTheDocument();
+    await expect
+      .element(
+        screen.getByTestId("project-ops-blockers").getByText("待处理", { exact: true }).first(),
+      )
+      .toBeInTheDocument();
     expect(pageText()).not.toContain("路由决策");
     expect(pageText()).not.toContain("转派请求");
 
@@ -2588,7 +2593,10 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("转派请求")).toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole("button", { name: "批准 需要负责人确认" }),
+      screen
+        .getByTestId("project-ops-blockers")
+        .getByRole("button", { name: "批准" })
+        .first(),
     );
 
     await vi.waitFor(() => {
@@ -2730,7 +2738,7 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeVisible();
     await expect.element(screen.getByText("整理接入证据")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "提交需求" })).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "提交需求" })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "更多项目操作" }));
     await expect.element(screen.getByRole("menuitem", { name: "归档项目" })).toBeVisible();
     await userEvent.keyboard("{Escape}");

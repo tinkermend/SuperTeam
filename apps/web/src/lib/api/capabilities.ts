@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, postJson, putJson } from "./client";
+import { deleteJson, getJson, postJson } from "./client";
 
 function encodePathSegment(value: string) {
   return encodeURIComponent(value);

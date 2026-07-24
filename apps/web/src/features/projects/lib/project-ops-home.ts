@@ -181,7 +181,7 @@ export function buildWeekPulse(input: {
     date.setDate(monday.getDate() + i);
     const key = dayKeyFromDate(date);
     days.push({
-      chips: (chipsByDay.get(key) ?? []).slice(0, 4),
+      chips: (chipsByDay.get(key) ?? []).slice(0, 15),
       dayKey: key,
       dayOfMonth: date.getDate(),
       isToday: key === dayKeyFromDate(today),

@@ -12,6 +12,7 @@ import {
   Inbox,
   Layers,
   ListChecks,
+  RefreshCw,
   RotateCcw,
   Route as RouteIcon,
   ShieldCheck,
@@ -44,6 +45,7 @@ import type {
   InboxViewMode,
 } from "@/lib/api/inbox";
 import { cn } from "@/lib/utils";
+import type { InboxStreamConnection } from "../inbox-stream-status";
 import { formatInboxActionLabel } from "./action-format";
 import {
   formatContext,
@@ -81,15 +83,21 @@ type InboxFilterChangeHandler = <Key extends InboxFilterKey>(
 
 type InboxShellProps = {
   data?: InboxListResponse;
+  /** React Query dataUpdatedAt（ms）；用于「同步于 …」提示。 */
+  dataUpdatedAt?: number;
   error: Error | null;
   filters: InboxListFilters;
+  isFetching?: boolean;
   isLoading: boolean;
   mutationError: Error | null;
   onAction: (item: InboxItem, action: InboxAction) => void;
   onFilterChange: InboxFilterChangeHandler;
+  /** 显式刷新列表——勿与「重置筛选」混淆。 */
+  onRefresh: () => void;
   onRetry: () => void;
   onResetFilters: () => void;
   onViewChange: (view: InboxViewMode) => void;
+  streamConnection: InboxStreamConnection;
   uuidFilterDrafts: InboxUuidFilterDrafts;
   uuidFilterErrors: InboxUuidFilterErrors;
   view: InboxViewMode;
@@ -97,15 +105,19 @@ type InboxShellProps = {
 
 export function InboxShell({
   data,
+  dataUpdatedAt,
   error,
   filters,
+  isFetching = false,
   isLoading,
   mutationError,
   onAction,
   onFilterChange,
+  onRefresh,
   onRetry,
   onResetFilters,
   onViewChange,
+  streamConnection,
   uuidFilterDrafts,
   uuidFilterErrors,
   view,
@@ -145,11 +157,15 @@ export function InboxShell({
         {/* 顶部：4 张对等小卡概览 + 视图分段 + 筛选工具条 */}
         <InboxSummaryCards summary={data?.summary} maxWaitMs={maxWaitMs} />
         <InboxToolbar
+          dataUpdatedAt={dataUpdatedAt}
           view={view}
           onViewChange={onViewChange}
           filters={filters}
+          isFetching={isFetching}
           onFilterChange={onFilterChange}
+          onRefresh={onRefresh}
           onResetFilters={onResetFilters}
+          streamConnection={streamConnection}
           uuidFilterDrafts={uuidFilterDrafts}
           uuidFilterErrors={uuidFilterErrors}
         />
@@ -319,21 +335,29 @@ function InboxSummaryCards({
 // ---------------------------------------------------------------------------
 
 type InboxToolbarProps = {
+  dataUpdatedAt?: number;
   view: InboxViewMode;
   onViewChange: (view: InboxViewMode) => void;
   filters: InboxListFilters;
+  isFetching: boolean;
   onFilterChange: InboxFilterChangeHandler;
+  onRefresh: () => void;
   onResetFilters: () => void;
+  streamConnection: InboxStreamConnection;
   uuidFilterDrafts: InboxUuidFilterDrafts;
   uuidFilterErrors: InboxUuidFilterErrors;
 };
 
 function InboxToolbar({
+  dataUpdatedAt,
   view,
   onViewChange,
   filters,
+  isFetching,
   onFilterChange,
+  onRefresh,
   onResetFilters,
+  streamConnection,
   uuidFilterDrafts,
   uuidFilterErrors,
 }: InboxToolbarProps) {
@@ -367,7 +391,65 @@ function InboxToolbar({
         uuidFilterDrafts={uuidFilterDrafts}
         uuidFilterErrors={uuidFilterErrors}
       />
+      <InboxSyncControls
+        dataUpdatedAt={dataUpdatedAt}
+        isFetching={isFetching}
+        onRefresh={onRefresh}
+        streamConnection={streamConnection}
+      />
     </SoftCard>
+  );
+}
+
+type InboxSyncControlsProps = {
+  dataUpdatedAt?: number;
+  isFetching: boolean;
+  onRefresh: () => void;
+  streamConnection: InboxStreamConnection;
+};
+
+function InboxSyncControls({
+  dataUpdatedAt,
+  isFetching,
+  onRefresh,
+  streamConnection,
+}: InboxSyncControlsProps) {
+  const disconnected = streamConnection !== "connected";
+  const syncedLabel =
+    dataUpdatedAt && dataUpdatedAt > 0
+      ? `同步于 ${formatRelativeTime(new Date(dataUpdatedAt).toISOString())}`
+      : null;
+
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-2">
+      <p
+        className={cn(
+          "hidden items-center gap-1.5 text-[11.5px] font-medium sm:flex",
+          disconnected ? "text-v3-warn-text" : "text-v3-ink-3",
+        )}
+        role="status"
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 rounded-full",
+            disconnected ? "bg-v3-warn" : "bg-v3-ok",
+          )}
+        />
+        {disconnected ? "同步中断，正在重连…" : (syncedLabel ?? "实时同步")}
+      </p>
+      <V3Button
+        aria-label="刷新收件箱"
+        disabled={isFetching}
+        onClick={onRefresh}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
+        刷新
+      </V3Button>
+    </div>
   );
 }
 
@@ -1111,7 +1193,7 @@ function InboxFilters({
         </div>
       ) : null}
       <V3Button
-        className="ml-auto shrink-0"
+        className="shrink-0"
         onClick={onReset}
         type="button"
         variant="ghost"

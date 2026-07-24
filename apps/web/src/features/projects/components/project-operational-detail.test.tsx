@@ -43,6 +43,7 @@ const project: Project = {
   coordination_policy: {},
   coordination_status: "registered",
   coordination_workflow_id: "project-coordinator:project-1",
+  directory_name: "customer-acceptance",
   goal: "完成客户接入验收闭环",
   human_owner_user_id: "human-owner-1",
   id: "project-1",
@@ -245,8 +246,11 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByRole("tab", { name: "资产" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "概览" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "配置" })).not.toBeInTheDocument();
-    await expect.element(screen.getByText("工作区就绪")).toBeVisible();
-    await expect.element(screen.getByText("目录名 客户接入验收")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "客户接入验收" })).toBeVisible();
+    await expect.element(screen.getByText("工作区就绪")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("目录名")).toBeVisible();
+    await expect.element(screen.getByText("阶段 已就绪")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("完成客户接入验收闭环")).not.toBeInTheDocument();
     await expect.element(screen.getByRole("link", { name: /提交需求/ })).toHaveAttribute(
       "href",
       "/task-launches?mode=plan&project=project-1",
@@ -256,7 +260,11 @@ describe("ProjectOperationalDetail", () => {
       "href",
       "/employees/employee-1",
     );
-    await expect.element(screen.getByRole("link", { name: /负责人甲/ })).toHaveAttribute(
+    await expect.element(screen.getByTestId("project-owner-avatars")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "负责人 负责人甲" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "负责人 负责人甲" }));
+    await expect.element(screen.getByText("负责人甲")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "在用户管理中查看" })).toHaveAttribute(
       "href",
       "/users",
     );
@@ -283,7 +291,7 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(overviewScreen.getByTestId("project-ops-home")).toBeVisible();
   });
 
-  it("compresses empty project into a startup card instead of giant empty vaults", async () => {
+  it("shows week pulse calendar with centered empty copy when project has no activity", async () => {
     const emptyOverview: ProjectOverview = {
       ...overview,
       active_tasks: [],
@@ -299,23 +307,13 @@ describe("ProjectOperationalDetail", () => {
       tasks: [],
     });
 
-    await expect.element(screen.getByTestId("project-ops-startup")).toBeVisible();
-    await expect
-      .element(
-        screen.getByText(
-          "项目已就绪，还没有任务活动。用头卡「提交需求」发起后，这里会出现运行脉搏与执行态。",
-        ),
-      )
-      .toBeVisible();
-    await expect.element(screen.getByText("本周 0 次活动")).toBeVisible();
+    await expect.element(screen.getByTestId("project-ops-pulse")).toBeVisible();
+    await expect.element(screen.getByTestId("project-ops-pulse-empty")).toBeVisible();
+    await expect.element(screen.getByText("本周暂无任务活动")).toBeVisible();
     await expect.element(screen.getByTestId("project-ops-rail")).toBeVisible();
     await expect.element(screen.getByText("当前无阻塞")).toBeVisible();
-    await expect.element(screen.getByText("暂无执行/审批事件")).toBeVisible();
-    await expect.element(screen.getByTestId("project-ops-pulse")).not.toBeInTheDocument();
     await expect.element(screen.getByTestId("project-ops-running")).not.toBeInTheDocument();
-    // 主 CTA 只在头卡，启动区不重复「提交需求」按钮
-    const submitLinks = screen.getByRole("link", { name: /提交需求/ });
-    await expect.element(submitLinks).toBeVisible();
+    await expect.element(screen.getByTestId("project-ops-startup")).not.toBeInTheDocument();
   });
 
   it("resolves owner and service-pool names when membership snapshots are empty", async () => {
@@ -351,10 +349,7 @@ describe("ProjectOperationalDetail", () => {
       },
     });
 
-    await expect.element(screen.getByRole("link", { name: /李娜/ })).toHaveAttribute(
-      "href",
-      "/users",
-    );
+    await expect.element(screen.getByRole("button", { name: "负责人 李娜" })).toBeVisible();
     await expect.element(screen.getByRole("link", { name: /运维检索员工/ })).toHaveAttribute(
       "href",
       "/employees/employee-unnamed-1",

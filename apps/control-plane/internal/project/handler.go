@@ -1840,7 +1840,9 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrUnauthorizedProjectTeamScope):
 		http.Error(w, "当前用户无权使用该团队创建项目。", http.StatusForbidden)
-	case errors.Is(err, ErrProjectTaskForbidden), errors.Is(err, ErrProjectDecisionForbidden):
+	case errors.Is(err, ErrProjectDecisionForbidden):
+		http.Error(w, "只有该项目的人类成员（含负责人）可以处理该决策。", http.StatusForbidden)
+	case errors.Is(err, ErrProjectTaskForbidden):
 		http.Error(w, "project task forbidden", http.StatusForbidden)
 	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict), errors.Is(err, ErrProjectTaskNotDismissible):
 		http.Error(w, err.Error(), http.StatusConflict)
