@@ -23,6 +23,20 @@ Toast 只承载短反馈，不替代页面内错误、表单校验和需要决�
 
 Dialog、AlertDialog、短表单和确认框应优先复用 `components/superteam` 的 Soft-Flat 组合组件；组件不足时在 `primitives.tsx` 扩展。项目级组合样式负责遮罩、实底容器、标题区、内容区、底部操作区和关闭按钮；不得定义业务字段。
 
+### 代码锚点（Batch A）
+
+| 场景 | 组件 |
+| --- | --- |
+| 自定义内容 Dialog | `SoftDialog` + `SoftDialogContent` + `SoftDialogHeader` / `Title` / `Description` + `SoftDialogBody` + `SoftDialogFooter` |
+| 详情 / 编辑抽屉 | `SoftSheet` + `SoftSheetContent` + `Header` / `Body` / `Footer` |
+| 简单确认 / 危险确认 | `ConfirmDialog`（AlertDialog 语义 + SoftDialog 同款视觉；一站式 API） |
+| 底层 Radix | `components/ui/dialog`、`components/ui/sheet` 仅作 primitive；**业务 feature 新代码不要直接拼默认 `DialogContent` 样式** |
+
+`SoftDialogContent` 宽度：`size` 取 `sm` / `md` / `lg`（短确认 / 短表单 / 需更宽内容）。`SoftSheetContent`：`side` 默认 `right`，`size` 取 `md` / `lg`。
+
+关闭按钮必须中文可访问名「关闭」；底栏主操作唯一最高权重，主按钮 `Button variant="primary"`，危险用 `danger`。
+
+
 Dialog 和 AlertDialog 应采用 Soft-Flat 实底外壳：
 
 - 背景：`--card`

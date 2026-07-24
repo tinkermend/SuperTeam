@@ -48,3 +48,18 @@
 - 必填标识应低调但清楚。
 - 除非表单已提交或服务端数据本身无效，否则避免用户操作前就显示错误。
 - 异步提交期间应禁用重复提交入口。
+
+## Field / FormSection（Batch A）
+
+- **`Field`**：标签、必填星号、hint、error 的视觉壳；不绑定 react-hook-form。
+- **`FormSection`**：分组标题 + 说明 + 字段堆叠间距。
+- 控件本体继续用 `components/ui` 的 Input / Select / Textarea / Checkbox / Switch / Radio。
+- 与 `components/ui/form` 的 RHF `FormField` 并存：需要 RHF 时在 Controller/`FormField` 的 render 里外包 `Field`，或继续用 `FormItem`+`FormLabel`+`FormMessage`（触达时对齐 `Field` 的字号与间距）。
+- 错误文案靠近字段，使用 `text-danger`；不要用 Toast 替代字段级校验。
+
+## 文件上传（Batch C）
+
+- 使用 `FileDropzone`：虚线实底区、品牌 drag ring、键盘可激活、错误靠近控件。
+- 类型/大小校验与业务规则留在页面；通过 `error` / `files` / `onFilesChange` 接入。
+- 技能发布等 Signature 画布可在外壳内嵌 `FileDropzone`，不要重造拖拽区。
+

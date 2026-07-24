@@ -116,6 +116,21 @@ Soft-Flat token 是当前唯一项目级设计 token 基线（如 `--brand` / `-
 | 主 / 次 / 危险 / 幽灵按钮 | `Button`（`variant`、`asChild` 用于 Link 按钮化） |
 | 图标按钮 / 筛选 chip / 分段 / Tabs | `IconButton` / `Chip` / `Segmented` / `PageTabs` + `PageTabList` + `PageTab` |
 | 工具栏搜索 / 分页 | `ToolbarSearch` / `Pagination` |
+| 列表筛条（搜索 + 筛选 + 分段 + 动作） | `ListToolbar`（槽位组合 `ToolbarSearch` / `Chip` / `Segmented`） |
+| 表单字段壳 / 分组 | `Field` / `FormSection`（控件仍用 `components/ui`；勿与 RHF `FormField` 混淆） |
+| 行内提示 / 次级 Banner | `Callout`（`tone`；整页失败仍用 `ErrorState`） |
+| 命令快捷键 keycap | `Kbd` |
+| Soft-Flat 对话框 / 抽屉骨架 | `SoftDialog*` / `SoftSheet*`（标题区 / 可滚动 body / 稳定底栏）；简单确认用 `ConfirmDialog` |
+| 身份目录卡 / 事实行 | `EntityCard` / `FactRow`（选中 inset bar；actions 防冒泡） |
+| 对象详情头 | `ObjectHeader`（leading + 名 + 状态 + 主操作 + overflow） |
+| 键值摘要 | `DescriptionList`（1/2 列，`mono`） |
+| 溢出操作菜单 | `ActionMenu`（默认 `IconButton` 触发；`destructive` 项） |
+| 布局骨架屏 | `TableSkeleton` / `CardGridSkeleton` / `DetailSkeleton`（局部刷新；首屏仍可用 `LoadingState`） |
+| 向导步骤链 | `Stepper`（水平/垂直；可选回退 `onStepChange`） |
+| 事件时间线 | `Timeline` / `TimelineItem`（tone 点 + 标题/说明/时间） |
+| 进度 | `Progress`（线形）/ `ProgressRing`（Signature/概览，克制） |
+| 文件上传区 | `FileDropzone`（拖拽+点击；校验展示由业务 error 传入） |
+| 等宽可复制 | `CopyableMono`（路径/hash；对象名+id 仍用 `ObjectRef`） |
 | 加载 / 空 / 错误 / 无权限四态 | `StateSurface`（或单用 `LoadingState` / `EmptyState` / `ErrorState` / `PermissionDenied`） |
 
 最小页面骨架（页头 + 指标 + 软壳装脆数据 + 统一四态；组件 props 以 `apps/web/src/components/superteam/primitives.tsx` 为准，文案 / 数据来自当前业务）：

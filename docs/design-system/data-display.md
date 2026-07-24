@@ -105,3 +105,30 @@
 - permission denied
 - disabled
 - 适用时的长任务执行中状态
+
+## 目录卡与详情块（Batch B）
+
+| 场景 | 组件 |
+| --- | --- |
+| 身份型实体目录卡 | `EntityCard` + `FactRow`（2–4 事实；`selected` 品牌边+inset bar） |
+| 对象详情头 | `ObjectHeader` |
+| 键值摘要 | `DescriptionList` |
+| 表/卡/详情局部加载 | `TableSkeleton` / `CardGridSkeleton` / `DetailSkeleton` |
+
+- 状态仍用 `StatusPill`；不要在卡上再造 Badge 色系。
+- 整卡可点时卡内不要再放主按钮；次要操作进 `actions` / `ActionMenu`。
+- 首屏无布局时用 `LoadingState`；已知表/卡结构的刷新用 Skeleton 面。
+
+## 步骤 / 时间线 / 进度（Batch C）
+
+| 场景 | 组件 |
+| --- | --- |
+| 创建向导步骤 | `Stepper` |
+| 审计/运行/修订事件流 | `Timeline` + `TimelineItem` |
+| 线形进度 | `Progress` |
+| 环形进度（Signature） | `ProgressRing` |
+| 路径/hash/request id | `CopyableMono` |
+
+- `RunEventTimeline` 等业务归并逻辑可继续本地实现，展示壳优先 `Timeline`。
+- 进度色走 `Tone`；不确定进度不编造百分比。
+

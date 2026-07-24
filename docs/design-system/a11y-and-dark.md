@@ -41,7 +41,7 @@
 
 - 筛选 Chip 需要 `onClick` 时用 button 语义。
 - 展示型标签用 span（`Chip` 无 onClick 时已降级为 span）；**禁止 button 嵌 button**。
-- 整卡可点：优先 `<Link>`/`<a>` 包卡，或单层 button，避免卡内再套主按钮抢事件（卡内次要动作须 stopPropagation 且可键盘操作）。
+- 整卡可点：优先 `<Link>`/`<a>` 包卡（`EntityCard asChild`），或单层 button，避免卡内再套主按钮抢事件；卡内次要动作用 `EntityCard` 的 `actions` / `ActionMenu`（已 stopPropagation）。
 
 ### 跳过与结构
 

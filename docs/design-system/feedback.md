@@ -13,6 +13,7 @@
 | 类型 | 含义 | 首选 UI |
 | --- | --- | --- |
 | 首屏加载 | 尚无可用 UI 骨架 | 页级 `LoadingState` 或 `StateSurface isLoading` |
+| 局部刷新 | 表/卡/详情布局已知 | `TableSkeleton` / `CardGridSkeleton` / `DetailSkeleton` |
 | 局部刷新 | 已有内容，后台再取 | 保持旧数据 + 轻量指示（角标「刷新中」、按钮 spinner）；**不要**整页替换成全屏转圈 |
 | 空 | 成功响应但无条目 | `EmptyState`：标题 + 原因/说明 + 主行动（可选） |
 | 错误 | 请求/校验/系统失败 | `ErrorState` 或表单字段错；可重试则给 `onRetry` |
@@ -20,7 +21,7 @@
 | 提交中 | 写操作进行中 | 主按钮 loading/disabled，防重复提交 |
 | 长任务 | 超短请求时长的异步活 | 进度/阶段文案或入口跳转查看；禁止无限转圈无文案 |
 | 成功轻反馈 | 写成功且停留本页 | Toast 短文案；列表需同步更新或 invalidate |
-| 警告/提示 | 非阻断信息 | 行内说明或次级 Banner，不用 Error 实心大红整页 |
+| 警告/提示 | 非阻断信息 | `Callout`（次级 Banner），不用 Error 实心大红整页 |
 
 ## 选用矩阵
 

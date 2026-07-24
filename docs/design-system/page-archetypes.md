@@ -30,13 +30,18 @@
 - 主从：`MasterDetailLayout`（`components/superteam/layout.tsx`）
 - 容器：`SoftCard` / `WorkSurface` / `GlassCard`（`primitives.tsx`）
 - 四态：`LoadingState` / `EmptyState` / `ErrorState` / `PermissionDenied` / `StateSurface`
+- 筛条：`ListToolbar`（+ `ToolbarSearch` / `Chip` / `Segmented`）
+- 浮层：`SoftDialog*` / `SoftSheet*` / `ConfirmDialog`；行内提示：`Callout`
+- 目录/详情：`EntityCard` / `ObjectHeader` / `DescriptionList` / `ActionMenu`
+- 局部骨架：`TableSkeleton` / `CardGridSkeleton` / `DetailSkeleton`
+- 向导/审计：`Stepper` / `Timeline` / `Progress` / `FileDropzone` / `CopyableMono`
 
 ## 各类型细则
 
 ### 1. 实体目录（项目/员工/技能/团队列表）
 
-- **必须**：`ShellPageHeader`（标题、一句职责说明、主 CTA）；筛选可折叠；空列表用 `EmptyState` 且给「创建」路径。
-- **推荐**：顶部 KPI 仅 3～6 个，用 `MetricCard` 或统一指标带，禁止每页自造第三套 pill 卡。
+- **必须**：`ShellPageHeader`（标题、一句职责说明、主 CTA）；筛选用 `ListToolbar`（可折叠实现仍可本地）；空列表用 `EmptyState` 且给「创建」路径。
+- **推荐**：顶部 KPI 仅 3～6 个，用 `MetricCard` 或统一指标带；目录卡用 `EntityCard`，禁止每页自造第三套 pill 卡。
 - **禁止**：营销 hero；目录页整页玻璃；主 CTA 与次要「模板管理」同权重实心蓝。
 
 ### 2. 主从工作台（收件箱、部分权限/运行面）
@@ -47,13 +52,13 @@
 
 ### 3. 创建/上传向导
 
-- **必须**：可见步骤或阶段；返回列表用 `ShellPageHeaderBack`；提交中按钮 loading 且防重复。
+- **必须**：可见步骤用 `Stepper`；返回列表用 `ShellPageHeaderBack`；提交中按钮 loading 且防重复。
 - **Tier A**：仅发起/上传/登录类沉浸页可用 `GlassCard`；表单项实底。
 - **禁止**：向导内嵌密集审计表还套玻璃。
 
 ### 4. 运营/对象详情
 
-- **必须**：头区展示对象**名称**（`ObjectRef`），UUID 仅 chip；状态经 `status-labels`。
+- **必须**：头区用 `ObjectHeader`（名称经 `ObjectRef`），UUID 仅 chip；状态经 `status-labels`。
 - **Tab**：业务 Tab 用路由或受控 Tabs；避免同页两套 Tab 视觉（优先 `PageTabs` 或统一 Radix Tabs 皮肤）。
 - **禁止**：详情页复制一套与目录完全不同的按钮圆角/颜色体系。
 

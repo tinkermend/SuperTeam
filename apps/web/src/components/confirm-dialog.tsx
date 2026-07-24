@@ -27,6 +27,11 @@ type ConfirmDialogProps = {
   | { form?: undefined; handleConfirm: () => void }
 )
 
+/**
+ * 一站式确认框（危险/普通）。保留 AlertDialog 语义（role=alertdialog）。
+ * 视觉与 SoftDialog 对齐（rounded-card / shadow-pop / 底栏节奏）。
+ * 自定义结构弹窗请用 SoftDialog* / SoftSheet*，不要在此扩展业务字段。
+ */
 export function ConfirmDialog(props: ConfirmDialogProps) {
   const {
     title,
@@ -44,15 +49,31 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   } = props
   return (
     <AlertDialog {...actions}>
-      <AlertDialogContent className={cn('bg-card border border-line shadow-pop rounded-card sm:rounded-[22px] p-6', className)}>
-        <AlertDialogHeader className='text-start'>
-          <AlertDialogTitle className="text-xl font-extrabold tracking-tight text-ink">{title}</AlertDialogTitle>
+      <AlertDialogContent
+        className={cn(
+          'gap-0 overflow-hidden rounded-card border border-line bg-card p-0 text-ink shadow-pop sm:max-w-md sm:rounded-card',
+          className,
+        )}
+      >
+        <AlertDialogHeader className="gap-1.5 border-b border-line px-6 py-5 text-start">
+          <AlertDialogTitle className="text-xl font-extrabold tracking-tight text-ink">
+            {title}
+          </AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="text-[15px] text-ink-2">{desc}</div>
+            <div className="text-[15px] leading-snug text-ink-2">{desc}</div>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {children}
-        <AlertDialogFooter className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-2">
+        {children ? (
+          <div data-slot="confirm-dialog-body" className="px-6 py-4">
+            {children}
+          </div>
+        ) : null}
+        <AlertDialogFooter
+          className={cn(
+            'flex flex-col-reverse gap-3 border-t border-line bg-card-soft/60 px-6 py-4 sm:flex-row sm:justify-end sm:gap-2',
+            !children && 'border-t-0 bg-transparent',
+          )}
+        >
           <AlertDialogPrimitive.Cancel asChild>
             <Button variant="outline" disabled={isLoading}>
               {cancelBtnText ?? '取消'}
