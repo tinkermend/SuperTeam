@@ -2,7 +2,7 @@
 
 ## 使用方式
 
-这是 SuperTeam Web 设计系统的总入口。 **命名迁移进行中**：去 V3 前缀与 Button 双轨收敛见 `docs/design-system/migrations/2026-07-24-soft-flat-naming-unification/`（分支 `codex/soft-flat-naming-unification`）。前端页面、布局或样式变更前必须先读本文件；只有当任务涉及具体组件族时，再按下方路由表读取对应子文档，避免每次加载完整设计上下文。
+这是 SuperTeam Web 设计系统的总入口。现行基线为 **Soft-Flat**（历史上曾用 v3 批次名；命名去版本化与 Button 同源已合并 main，见 `docs/design-system/migrations/2026-07-24-soft-flat-naming-unification/`）。前端页面、布局或样式变更前必须先读本文件；只有当任务涉及具体组件族时，再按下方路由表读取对应子文档，避免每次加载完整设计上下文。
 
 本文件只定义通用视觉方向、设计尺度、文档路由和收尾检查，不定义具体业务内容模板。页面中的名称、指标、事件、状态、模型、时间线和说明文案必须来自当前业务需求、真实接口、已有 mock 约定或明确的占位数据说明。
 
@@ -29,7 +29,7 @@ Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/` �
 
 矩枢平台专属视觉语言见 `docs/design-system/visual-language.md`。它定义左侧导航图标收敛、顶部命令中心、统一状态标签、弱化蓝紫渐变、上传技能步骤感、圆角/阴影/边框/间距尺度，以及“节点 / 网络 / 中枢 / 调度”母题。该文件只约束视觉表达，不约束业务字段、接口数据或状态口径。
 
-## 容器选择规则（v3 核心不变量）
+## 容器选择规则（Soft-Flat 核心不变量）
 
 一套设计语言，三种容器，按"页面 Tier 分类 + 是否需要逐行扫读"选择，三者共用同一套 token、同一个蓝、同一组语义状态色：
 
@@ -93,7 +93,7 @@ Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/` �
 
 ## Token 落地策略
 
-Soft-Flat token 是当前唯一项目级设计 token 基线，命名族为 `--*`。新增或调整 token 必须先改 `apps/web/src/styles/theme.css` 事实源，再同步本设计文档；不要为单页或非 v3 样式重新引入平行 token 体系。
+Soft-Flat token 是当前唯一项目级设计 token 基线（如 `--brand` / `--ink` / `--line` / `--card` / `--aurora-*` 等语义名，无版本前缀）。新增或调整 token 必须先改 `apps/web/src/styles/theme.css` 事实源，再同步本设计文档；不要为单页样式重新引入平行 token 体系。
 
 ## 概念到代码（组件与 token 速查）
 
@@ -145,7 +145,7 @@ Soft-Flat token 是当前唯一项目级设计 token 基线，命名族为 `--*`
 
 | 任务内容 | 必读文档 |
 | --- | --- |
-| 基于 v3 风格构建新功能/菜单页（跨会话冷启动） | `DESIGN.md`（容器选择规则 / 工作对象界面规则 / Token 落地策略 / 落地策略）、`docs/design-system/tokens.md`、`surfaces.md`、`data-display.md` |
+| 基于 Soft-Flat 构建新功能/菜单页（跨会话冷启动） | `DESIGN.md`（容器选择规则 / 工作对象界面规则 / Token 落地策略 / 落地策略）、`docs/design-system/tokens.md`、`surfaces.md`、`data-display.md` |
 | 判断整体视觉方向、避免业务内容污染设计规范 | `DESIGN.md`、`docs/design-system/principles.md`、`docs/design-system/visual-language.md` |
 | 落地矩枢平台专属视觉母题、命令中心、状态标签、步骤链 | `docs/design-system/visual-language.md` |
 | 调整颜色、radius、shadow、语义色、Tailwind token | `docs/design-system/tokens.md` |
@@ -165,7 +165,7 @@ Soft-Flat token 是当前唯一项目级设计 token 基线，命名族为 `--*`
 - `apps/web/src/components/ui/`：shadcn/Radix primitive 层。除全站基础行为外，不承载业务组合组件。
 - `apps/web/src/components/superteam/`：SuperTeam 项目级设计组件层，用于组合 shadcn/ui 基础组件和项目 token。Tier A 玻璃卡基元 `GlassCard` 在此，样式单一来源为 `apps/web/src/styles/index.css` 的 `.glass` / `.glass-inner`（取自 `--aurora-*` token）。
 - `docs/design-system/`：可读设计规范。文档指导实现，但不能取代代码 token 的事实源。
-- `docs/prototypes/design-direction-v3/`：v3 视觉方向参考；不是生产组件库，也不是 token 事实源。
+- `docs/prototypes/design-direction-v3/`：Soft-Flat 方向**历史原型**（目录名保留 v3 代号）；不是生产组件库，也不是 token 事实源。
 
 如需扩展项目级 token，优先在 `apps/web/src/styles/theme.css` 中补充语义变量，再通过 Tailwind token 使用。不要在单个页面内复制一组独立视觉 class。
 

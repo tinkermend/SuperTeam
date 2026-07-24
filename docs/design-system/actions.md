@@ -7,7 +7,7 @@
 ## 按钮层级
 
 - 一个区域只应有一个最高权重主操作。
-- 主操作默认使用 v3 品牌蓝实底；只有 signature 场景才使用克制的 `--brand-grad`，并具备清晰 hover、active、focus-visible、loading 和 disabled 状态。
+- 主操作默认使用 Soft-Flat 品牌蓝实底；只有 signature 场景才使用克制的 `--brand-grad`，并具备清晰 hover、active、focus-visible、loading 和 disabled 状态。
 - 次要操作使用 `secondary`、`outline` 或 `ghost`。
 - 危险操作使用 destructive / `--danger` 语义，不使用品牌主按钮样式。
 - 工具型操作优先使用图标按钮；不常见图标需要 tooltip 或可访问标签。

@@ -21,14 +21,14 @@ Toast 只承载短反馈，不替代页面内错误、表单校验和需要决�
 
 ## Dialog 容器
 
-Dialog、AlertDialog、短表单和确认框应优先复用 `components/superteam` 的 v3 组合组件；组件不足时在 `v3-components.tsx` 扩展。项目级组合样式负责遮罩、实底容器、标题区、内容区、底部操作区和关闭按钮；不得定义业务字段。
+Dialog、AlertDialog、短表单和确认框应优先复用 `components/superteam` 的 Soft-Flat 组合组件；组件不足时在 `primitives.tsx` 扩展。项目级组合样式负责遮罩、实底容器、标题区、内容区、底部操作区和关闭按钮；不得定义业务字段。
 
-Dialog 和 AlertDialog 应采用 v3 Soft-Flat 实底外壳：
+Dialog 和 AlertDialog 应采用 Soft-Flat 实底外壳：
 
-- 背景：`--v3-card`
-- 边框：`--v3-line` / `--v3-line-strong`
-- 圆角：`--v3-r-card`
-- 阴影：普通弹窗不超过 `--v3-shadow-pop`
+- 背景：`--card`
+- 边框：`--line` / `--line-strong`
+- 圆角：`--token-radius-card`（Tailwind：`rounded-card`）
+- 阴影：普通弹窗不超过 `--token-shadow-pop`（Tailwind：`shadow-pop`）
 - 避免在单个弹窗内重造独立背景、边框或阴影体系
 
 宽度按内容复杂度分级：
@@ -58,7 +58,7 @@ Dialog 和 AlertDialog 应采用 v3 Soft-Flat 实底外壳：
 - 关闭按钮必须是独立图标按钮。
 - 使用 `lucide-react`。
 - 提供可访问名称。
-- 具备 v3 轻量 hover、清晰 focus-visible 和必要的 disabled 状态。
+- 具备 Soft-Flat 轻量 hover、清晰 focus-visible 和必要的 disabled 状态。
 - 避免裸露、过大、过浅或未样式化的默认关闭图标。
 
 ## 内容区
@@ -76,7 +76,7 @@ Dialog 和 AlertDialog 应采用 v3 Soft-Flat 实底外壳：
 - 业务需要时，可在左侧放可选说明或状态。
 - 移动端按钮可纵向堆叠或全宽显示。
 - 只有一个操作拥有最高视觉权重。
-- 主操作使用 v3 品牌蓝按钮。
+- 主操作使用 Soft-Flat 品牌蓝按钮（`Button variant="primary"`）。
 - 取消和次要操作使用 outline、secondary 或 ghost。
 - 危险动作使用 destructive 语义，不套用主色渐变。
 
@@ -89,14 +89,14 @@ Dialog 和 AlertDialog 应采用 v3 Soft-Flat 实底外壳：
 ## Popover、Dropdown 与 Tooltip
 
 - 这些轻量浮层应比 Dialog 更轻。
-- 使用更小圆角、更弱阴影和更紧凑的 v3 实底面。
+- 使用更小圆角、更弱阴影和更紧凑的 Soft-Flat 实底面。
 - 不要把轻量浮层做成完整弹窗质感。
 
 ## 命令菜单
 
 顶部命令中心展开的搜索结果、快捷动作和任务发起建议使用 Popover / 命令菜单级别的轻量浮层。
 
-- 容器使用 `--v3-card` 实底、`--v3-line` 边框和轻量阴影，不使用大面积蓝紫渐变或透明科技面板。
+- 容器使用 `--card` 实底、`--line` 边框和轻量阴影，不使用大面积蓝紫渐变或透明科技面板。
 - 分组标题、快捷键 keycap、状态 pill 和图标容器应复用 `navigation.md`、`actions.md`、`data-display.md` 的规则。
 - 命令项 hover 和 active 态只改变背景、边框或左侧品牌线，不改变行高。
 - 命令菜单只组织当前可执行入口、搜索结果和真实状态，不新增业务字段或伪造数据。

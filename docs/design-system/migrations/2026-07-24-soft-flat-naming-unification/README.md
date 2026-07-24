@@ -1,11 +1,11 @@
 # Soft-Flat 命名去版本化 + 组件双轨收敛
 
-> **状态**：In Progress（人类已于 2026-07-24 放行 A–F）  
-> **分支**：`codex/soft-flat-naming-unification`  
-> **worktree**：`.worktrees/soft-flat-naming-unification`  
-> **日期**：2026-07-24  
+> **状态**：**Done**（已合并 `main` @ `87de7748`，2026-07-24）  
+> **分支 / worktree**：已删除（`codex/soft-flat-naming-unification`）  
+> **日期**：2026-07-24（文档收口 2026-07-25）  
 > **范围**：`apps/web` 设计语言命名、项目级组件 API、Button 双实现、import 边界；不改业务行为与视觉意图。  
-> **风格终态名**：Soft-Flat（不再称为 v3 风格）
+> **风格终态名**：Soft-Flat（不再称为 v3 风格）  
+> **已知残留（可选后续）**：`primitives.tsx` 仍保留 `V3*` deprecated alias（Q8）；删除 alias 需单独 PR。
 
 ## 读法（按顺序）
 
@@ -55,3 +55,9 @@ A 立法门禁 → B 组件改名(+alias) → C Button 同源 → D 业务 impor
 - 盘点数字以 `01-inventory` 为准；开工当日必须重跑 inventory 命令并更新「刷新日期」。
 - 映射表以 `02-naming-map` 为准；实现不得口头另起名字。
 - 开放决策未在 `11-human-review-checklist` 勾选前，**不得进入实现**。
+
+## 合并记录
+
+- 2026-07-24：实现合并 `main`，commit `87de7748`。
+- 2026-07-25：现行设计文档路径/token/用语收口；本 README 标 Done。
+

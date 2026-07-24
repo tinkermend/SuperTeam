@@ -23,9 +23,9 @@
 - `--chart-*`：图表和辅助可视化颜色，应接近语义色。
 - `--radius`：基础圆角。
 
-## v3 色彩基准（当前唯一基线，Soft-Flat 蓝）
+## Soft-Flat 色彩基准（当前唯一基线）
 
-v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--*` token 的浅色基准（暗色端在 `theme.css` 的 `.dark`/`[data-theme=dark]` 内另给一套）：
+Soft-Flat 为当前唯一设计基线，主色为蓝色。下表色值为 Soft-Flat 语义 token 的浅色基准（暗色端在 `theme.css` 的 `.dark`/`[data-theme=dark]` 内另给一套）：
 
 矩枢平台的色彩使用边界见 `visual-language.md`：蓝色用于品牌、主操作、焦点、选中和小面积节点/线条；大面积蓝紫渐变不再作为默认页面识别方式。
 
@@ -48,9 +48,9 @@ v3 为当前唯一设计基线，主色为蓝色。下表色值为 v3 `--*` toke
 
 语义色由 OKLCH 公式派生，保证同明度同饱和、并排不打架：浅色端 solid = `oklch(0.60 0.15 H)`、text = `oklch(0.44 0.125 H)`、soft = `oklch(0.962 0.028 H)`；深色端 solid = `oklch(0.75 0.115 H)`、text = `oklch(0.80 0.10 H)`、soft = solid 16% 透明叠加。danger 是唯一饱和度例外（C=0.175，保警示强度）。**text 层专用于 soft 底上的文字（≥4.5:1 对比度）；solid 用于图标、状态点和 accent bar，不再直接当小字号文字色。**
 
-注意：v3 把“颜色 = 紧迫度/状态”收敛为 5 个状态色（info/ok/warn/danger/mute）+ artifact，**类别（task/runtime/employee 等）改用图标 + 文字编码，不再每类各占一个色**。色彩比例：约 70% 中性面、20% 灰蓝文字与边框、10% 主色与语义色。
+注意：Soft-Flat 把“颜色 = 紧迫度/状态”收敛为 5 个状态色（info/ok/warn/danger/mute）+ artifact，**类别（task/runtime/employee 等）改用图标 + 文字编码，不再每类各占一个色**。色彩比例：约 70% 中性面、20% 灰蓝文字与边框、10% 主色与语义色。
 
-### v3 圆角、阴影、字体
+### Soft-Flat 圆角、阴影、字体
 
 - 圆角：`--r-card ~22px`、`--r-inner ~14px`、按钮/输入控件 `10px-12px`、pill/keycap `~8px`。
 - 边框：默认 `--line`，强调或控件边框 `--line-strong`，焦点边框 `--brand`。
