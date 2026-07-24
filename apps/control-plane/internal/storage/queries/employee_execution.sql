@@ -222,6 +222,16 @@ WHERE id = sqlc.arg('id')::uuid
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: UpdateDigitalEmployeeProfile :one
+-- 身份资料写路径：当前仅员工说明（description）；空串落 NULL，与创建 trimOptionalString 口径一致。
+UPDATE digital_employees
+SET description = NULLIF(BTRIM(sqlc.arg('description')::text), ''),
+    updated_at = NOW()
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND deleted_at IS NULL
+RETURNING *;
+
 -- name: UpdateDigitalEmployeeRolePermission :one
 -- 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
 -- 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。

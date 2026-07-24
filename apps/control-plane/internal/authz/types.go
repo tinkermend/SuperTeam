@@ -40,6 +40,7 @@ const (
 	ActionEmployeeRead           = "employee.read"
 	ActionEmployeeStatusUpdate   = "employee.status.update"
 	ActionEmployeeTeamUpdate     = "employee.team.update"
+	ActionEmployeeProfileUpdate  = "employee.profile.update"
 	ActionEmployeeDelete         = "employee.delete"
 	ActionEmployeeExecutionBind  = "employee.execution.bind"
 	ActionEmployeeConfigCreate   = "employee.config.create"

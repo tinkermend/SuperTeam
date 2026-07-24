@@ -1314,6 +1314,7 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "delete", method: http.MethodDelete, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeDelete, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "profile", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/profile", body: `{"description":"负责需求拆解"}`, action: authz.ActionEmployeeProfileUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get scheduling readiness", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/scheduling-readiness", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
@@ -1373,6 +1374,51 @@ func TestDeleteDigitalEmployeeRouteReturnsNoContent(t *testing.T) {
 	}
 	if service.deleteReq.ActorUserID == uuid.Nil {
 		t.Fatalf("expected delete actor user id, got %#v", service.deleteReq)
+	}
+}
+
+func TestUpdateDigitalEmployeeProfileRouteReturnsUpdatedEmployee(t *testing.T) {
+	server, service, cookie := newEmployeeRouteTestServer(t, &routeAuthorizer{allowed: true})
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/profile", strings.NewReader(`{"description":"负责需求拆解和交付风险识别"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected profile update to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !service.updateProfileCalled {
+		t.Fatal("expected UpdateProfile to be called")
+	}
+	if service.updateProfileReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("expected employee id %s, got %#v", employeeID, service.updateProfileReq)
+	}
+	if service.updateProfileReq.Description == nil || *service.updateProfileReq.Description != "负责需求拆解和交付风险识别" {
+		t.Fatalf("expected description payload, got %#v", service.updateProfileReq.Description)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["description"] != "负责需求拆解和交付风险识别" {
+		t.Fatalf("expected description in response, got %#v", body["description"])
+	}
+}
+
+func TestUpdateDigitalEmployeeProfileRouteRejectsMissingDescription(t *testing.T) {
+	server, service, cookie := newEmployeeRouteTestServer(t, &routeAuthorizer{allowed: true})
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/profile", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected missing description to return 400, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.updateProfileCalled {
+		t.Fatal("expected UpdateProfile not to be called when description is missing")
 	}
 }
 
@@ -1616,11 +1662,13 @@ type routeEmployeeService struct {
 	deleteReq                        employee.DeleteDigitalEmployeeRequest
 	deleteErr                        error
 	updateReq                        employee.UpdateStatusRequest
+	updateProfileReq                 employee.UpdateProfileRequest
 	getTenantID                      uuid.UUID
 	createCalled                     bool
 	listCalled                       bool
 	getCalled                        bool
 	updateCalled                     bool
+	updateProfileCalled              bool
 	configRevisionReq                employee.CreateDigitalEmployeeConfigRevisionRequest
 	configCalled                     bool
 	getSchedulingReadinessCalled     bool
@@ -1837,6 +1885,28 @@ func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.Up
 	}, nil
 }
 
+func (s *routeEmployeeService) UpdateProfile(ctx context.Context, req employee.UpdateProfileRequest) (*employee.DigitalEmployee, error) {
+	s.updateProfileCalled = true
+	s.updateProfileReq = req
+	now := time.Now().UTC()
+	return &employee.DigitalEmployee{
+		ID:               req.DigitalEmployeeID,
+		TenantID:         req.TenantID,
+		OwnerUserID:      uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+		EmployeeType:     "database_admin",
+		Name:             "Database administrator",
+		Role:             "database_admin",
+		Description:      req.Description,
+		Status:           employee.DigitalEmployeeStatusReady,
+		PermissionPolicy: map[string]any{},
+		RiskLevel:        "medium",
+		Metadata:         map[string]any{},
+		ProjectSummary:   employee.DigitalEmployeeProjectSummary{Projects: []employee.DigitalEmployeeProjectLinkSummary{}},
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}, nil
+}
+
 func (s *routeEmployeeService) SubmitPermissionChange(ctx context.Context, req employee.SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error) {
 	return nil, employee.ErrPermissionApprovalNotConfigured
 }
@@ -1928,6 +1998,7 @@ func (s *routeEmployeeService) called() bool {
 		s.listCalled ||
 		s.getCalled ||
 		s.updateCalled ||
+		s.updateProfileCalled ||
 		s.configCalled ||
 		s.getSchedulingReadinessCalled
 }

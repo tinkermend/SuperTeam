@@ -31,6 +31,7 @@ type HandlerService interface {
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployee, error)
 	DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
+	UpdateProfile(ctx context.Context, req UpdateProfileRequest) (*DigitalEmployee, error)
 	ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
 	SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error)
@@ -587,6 +588,42 @@ func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 		Status:            req.Status,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, employeeResponseFromDomain(employee))
+}
+
+func (h *HTTPHandler) UpdateDigitalEmployeeProfile(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeProfileUpdate, &employeeID, "digital employee profile update")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Description *string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Description == nil {
+		http.Error(w, "description is required", http.StatusBadRequest)
+		return
+	}
+	employee, err := service.UpdateProfile(r.Context(), UpdateProfileRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Description:       req.Description,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1311,12 +1348,13 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrRuntimeUnavailable), errors.Is(err, ErrProviderUnavailable):
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-	case errors.Is(err, ErrInvalidInput), errors.Is(err, ErrInvalidRunKind), errors.Is(err, ErrInvalidResumeRun):
+	case errors.Is(err, ErrInvalidInput), errors.Is(err, ErrInvalidRunKind), errors.Is(err, ErrInvalidResumeRun),
+		errors.Is(err, ErrPermissionChangeEmpty), errors.Is(err, ErrPermissionApprovalNotConfigured):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
-	case errors.Is(err, ErrConflict):
-		// 带出错误文本（重名/头像占用/容量满等均为受控措辞），前端据关键词映射中文提示。
+	case errors.Is(err, ErrConflict), errors.Is(err, ErrPermissionChangeBusy):
+		// 带出错误文本（重名/头像占用/容量满/权限变更遇在役工作等均为受控措辞），前端据关键词映射中文提示。
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		// 500 兜底必须留下服务端痕迹：此前吞错导致迁移087残留只能逐条SQL手试定位。

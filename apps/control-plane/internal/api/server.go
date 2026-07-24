@@ -355,6 +355,7 @@ func (s *Server) registerRoutes() {
 				r.Put("/digital-employees/{employeeId}/environment-variables/{envName}", s.employeeHandler.UpsertEnvironmentVariable)
 				r.Delete("/digital-employees/{employeeId}/environment-variables/{envName}", s.employeeHandler.DeleteEnvironmentVariable)
 				r.Put("/digital-employees/{employeeId}/status", s.employeeHandler.UpdateDigitalEmployeeStatus)
+				r.Put("/digital-employees/{employeeId}/profile", s.employeeHandler.UpdateDigitalEmployeeProfile)
 				r.Put("/digital-employees/{employeeId}/team", s.employeeHandler.ReassignDigitalEmployeeTeam)
 				r.Post("/digital-employees/{employeeId}/config-revisions", s.employeeHandler.CreateDigitalEmployeeConfigRevision)
 				r.Post("/digital-employees/{employeeId}/permission-changes", s.employeeHandler.SubmitPermissionChange)

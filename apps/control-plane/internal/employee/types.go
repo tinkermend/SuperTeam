@@ -776,3 +776,9 @@ type UpdateStatusRequest struct {
 	DigitalEmployeeID uuid.UUID
 	Status            DigitalEmployeeStatus
 }
+
+type UpdateProfileRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Description       *string
+}

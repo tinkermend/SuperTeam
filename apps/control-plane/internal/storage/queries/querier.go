@@ -642,6 +642,8 @@ type Querier interface {
 	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
 	UpdateAutomationFire(ctx context.Context, arg UpdateAutomationFireParams) (AutomationFire, error)
 	UpdateAutomationRule(ctx context.Context, arg UpdateAutomationRuleParams) (AutomationRule, error)
+	// 身份资料写路径：当前仅员工说明（description）；空串落 NULL，与创建 trimOptionalString 口径一致。
+	UpdateDigitalEmployeeProfile(ctx context.Context, arg UpdateDigitalEmployeeProfileParams) (DigitalEmployee, error)
 	// 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
 	// 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。
 	UpdateDigitalEmployeeRolePermission(ctx context.Context, arg UpdateDigitalEmployeeRolePermissionParams) (DigitalEmployee, error)

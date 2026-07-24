@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, deleteJson, getJson, parseJson, postJson, putJson } from "./client";
+import { deleteJson, getJson, postJson, putJson } from "./client";
 
 export type DigitalEmployeeStatus =
   | "draft"
@@ -837,6 +837,27 @@ export function reassignDigitalEmployeeTeam(
     `/api/v1/digital-employees/${encodedEmployeeId}/team`,
     { team_id: teamId },
     "reassign digital employee team",
+  );
+}
+
+export type UpdateDigitalEmployeeProfileInput = {
+  /** 员工说明；空字符串清空。 */
+  description: string;
+};
+
+/** 更新数字员工身份资料（当前仅员工说明），即时生效，不进入 config-revision。 */
+export function updateDigitalEmployeeProfile(
+  options: ApiClientOptions,
+  employeeId: string,
+  input: UpdateDigitalEmployeeProfileInput,
+): Promise<DigitalEmployee> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return putJson<DigitalEmployee>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/profile`,
+    input,
+    "update digital employee profile",
   );
 }
 

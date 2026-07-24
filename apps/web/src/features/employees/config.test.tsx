@@ -94,6 +94,10 @@ function createEmployeeConfigFetcher() {
     if (key === `GET /api/v1/digital-employees/${employee.id}`) {
       return jsonResponse(employee);
     }
+    if (key === `PUT /api/v1/digital-employees/${employee.id}/profile`) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { description?: string };
+      return jsonResponse({ ...employee, description: body.description ?? "" });
+    }
     if (key === `POST /api/v1/digital-employees/${employee.id}/config-revisions`) {
       return jsonResponse({ id: "revision-1", status: "draft" }, 201);
     }
@@ -134,6 +138,11 @@ describe("EmployeeConfigView", () => {
     await expect.element(screen.getByText("Provider（不可改）")).toBeVisible();
     await expect.element(screen.getByText("Codex")).toBeVisible();
 
+    // 身份资料：员工说明可编辑
+    await expect.element(screen.getByRole("heading", { name: "身份资料" })).toBeVisible();
+    await expect.element(screen.getByLabelText("员工说明")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "保存员工说明" })).toBeDisabled();
+
     // 分层标题
     await expect.element(screen.getByRole("heading", { name: "即时生效配置" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "权限审批配置" })).toBeVisible();
@@ -146,6 +155,18 @@ describe("EmployeeConfigView", () => {
     // 权限审批层为只读呈现(role/grants),无编辑控件
     await expect.element(screen.getByText("角色与权限")).toBeVisible();
     await expect.element(screen.getByText("database.read:dev_db")).toBeVisible();
+  });
+
+  it("saves employee description via profile endpoint", async () => {
+    const fetcher = createEmployeeConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.fill(screen.getByLabelText("员工说明"), "更新后的员工说明");
+    await userEvent.click(screen.getByRole("button", { name: "保存员工说明" }));
+
+    await expect.element(screen.getByText("已保存")).toBeVisible();
+    const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/profile`, "PUT");
+    expect(body).toEqual({ description: "更新后的员工说明" });
   });
 
   it("keeps save disabled until an immediate field is edited", async () => {

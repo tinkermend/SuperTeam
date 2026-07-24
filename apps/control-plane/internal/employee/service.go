@@ -1146,6 +1146,35 @@ func (s *Service) UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*D
 	return employeeFromRecord(record), nil
 }
 
+func (s *Service) UpdateProfile(ctx context.Context, req UpdateProfileRequest) (*DigitalEmployee, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
+	}
+	description := trimOptionalString(req.Description)
+	record, err := s.repository.UpdateDigitalEmployeeProfile(ctx, req.TenantID, req.DigitalEmployeeID, description)
+	if err != nil {
+		return nil, fmt.Errorf("update digital employee profile: %w", err)
+	}
+	employee := employeeFromRecord(record)
+	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
+		return nil, err
+	}
+	if affiliation, affiliationErr := s.repository.GetDigitalEmployeeDetailAffiliation(ctx, req.TenantID, req.DigitalEmployeeID); affiliationErr != nil {
+		slog.Default().Warn("attach detail affiliation failed", "employee_id", req.DigitalEmployeeID, "error", affiliationErr)
+		employee.ProjectSummary = DigitalEmployeeProjectSummary{Projects: []DigitalEmployeeProjectLinkSummary{}}
+	} else {
+		employee.TeamName = affiliation.TeamName
+		employee.ProjectSummary = affiliation.ProjectSummary
+		if employee.ProjectSummary.Projects == nil {
+			employee.ProjectSummary.Projects = []DigitalEmployeeProjectLinkSummary{}
+		}
+	}
+	return employee, nil
+}
+
 type ReassignDigitalEmployeeTeamRequest struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID

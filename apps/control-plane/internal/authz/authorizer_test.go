@@ -577,6 +577,7 @@ func TestDBAuthorizerEmployeeOwnerCanUsePersonalEmployeeActions(t *testing.T) {
 		ActionEmployeeConfigPreview,
 		ActionEmployeeConfigApprove,
 		ActionEmployeeCapabilityEdit,
+		ActionEmployeeProfileUpdate,
 	}
 	for _, action := range ownerActions {
 		t.Run("owner "+action, func(t *testing.T) {

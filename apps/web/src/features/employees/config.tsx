@@ -17,6 +17,7 @@ import {
   createDigitalEmployeeConfigRevision,
   getDigitalEmployee,
   submitEmployeePermissionChange,
+  updateDigitalEmployeeProfile,
   type CapabilityBindings,
   type CreateDigitalEmployeeConfigRevisionInput,
   type DigitalEmployee,
@@ -142,6 +143,8 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         {employee.data ? (
           <>
             <LocatorHeader employee={employee.data} />
+
+            <EmployeeDescriptionEditor apiOptions={apiOptions} employee={employee.data} />
 
             <section className="space-y-3">
               <TierHeading
@@ -290,6 +293,79 @@ function LocatorHeader({ employee }: { employee: DigitalEmployee }) {
         </p>
       ) : null}
     </SoftCard>
+  );
+}
+
+function EmployeeDescriptionEditor({
+  apiOptions,
+  employee,
+}: {
+  apiOptions: ApiClientOptions;
+  employee: DigitalEmployee;
+}) {
+  const queryClient = useQueryClient();
+  const [description, setDescription] = useState(employee.description ?? "");
+  const [dirty, setDirty] = useState(false);
+  const [hydratedId, setHydratedId] = useState("");
+
+  useEffect(() => {
+    if (hydratedId === employee.id) return;
+    setDescription(employee.description ?? "");
+    setDirty(false);
+    setHydratedId(employee.id);
+  }, [employee.description, employee.id, hydratedId]);
+
+  const saveProfile = useMutation({
+    mutationFn: () =>
+      updateDigitalEmployeeProfile(apiOptions, employee.id, {
+        description: description.trim(),
+      }),
+    onSuccess: (updated) => {
+      setDescription(updated.description ?? "");
+      setDirty(false);
+      queryClient.setQueryData(["digital-employee", employee.id], updated);
+      queryClient.invalidateQueries({ queryKey: ["digital-employees"] });
+      queryClient.invalidateQueries({ queryKey: ["digital-employee-overview"] });
+    },
+  });
+
+  return (
+    <section className="space-y-3">
+      <TierHeading title="身份资料" hint="保存后即时生效，无需审批" />
+      <SoftCard className="space-y-3 p-5">
+        <div className="space-y-2">
+          <Label htmlFor="employee-profile-description" className="text-sm font-semibold text-v3-ink">
+            员工说明
+          </Label>
+          <Textarea
+            id="employee-profile-description"
+            aria-label="员工说明"
+            placeholder="简述这位数字员工负责什么、边界与协作方式，便于列表扫读识别。"
+            rows={3}
+            value={description}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              setDirty(true);
+            }}
+          />
+          <p className="text-xs text-v3-ink-3">可选。会出现在数字员工卡片上，超出两行以省略号截断。</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            disabled={!dirty || saveProfile.isPending}
+            onClick={() => saveProfile.mutate()}
+          >
+            <Save />
+            保存员工说明
+          </Button>
+          {saveProfile.isSuccess && !dirty ? (
+            <p className="text-sm text-green-600">已保存</p>
+          ) : null}
+          {saveProfile.isError ? <p className="text-sm text-destructive">保存失败</p> : null}
+        </div>
+      </SoftCard>
+    </section>
   );
 }
 

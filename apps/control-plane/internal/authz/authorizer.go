@@ -121,7 +121,8 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 	case ActionEmployeeConfigCreate,
 		ActionEmployeeConfigPreview,
 		ActionEmployeeConfigApprove,
-		ActionEmployeeCapabilityEdit:
+		ActionEmployeeCapabilityEdit,
+		ActionEmployeeProfileUpdate:
 		if !validUUIDResource(req.Resource, ResourceEmployee) {
 			decision = deny(ReasonInvalidResource)
 			break

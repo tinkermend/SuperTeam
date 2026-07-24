@@ -104,6 +104,10 @@ func (s *fakeTemplateHandlerService) UpdateStatus(ctx context.Context, req Updat
 	return nil, nil
 }
 
+func (s *fakeTemplateHandlerService) UpdateProfile(ctx context.Context, req UpdateProfileRequest) (*DigitalEmployee, error) {
+	return nil, nil
+}
+
 func (s *fakeTemplateHandlerService) ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error) {
 	return nil, nil
 }

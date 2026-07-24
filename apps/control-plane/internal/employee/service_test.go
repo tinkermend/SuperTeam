@@ -508,6 +508,38 @@ func TestServiceDeleteDigitalEmployeeSoftDeletesCascadeAndAudits(t *testing.T) {
 	require.Equal(t, 1, repo.transactionCommitCount)
 }
 
+func TestServiceUpdateProfileTrimsAndClearsDescription(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	now := time.Now().UTC()
+	old := "旧说明"
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID: employeeID, TenantID: tenantID, OwnerUserID: uuid.New(), EmployeeType: "devops_engineer",
+		ProviderType: "codex", Name: "说明员工", Role: "devops", Description: &old,
+		Status: DigitalEmployeeStatusReady, CreatedAt: now, UpdatedAt: now,
+	}
+
+	next := "  新的员工说明  "
+	updated, err := svc.UpdateProfile(context.Background(), UpdateProfileRequest{
+		TenantID: tenantID, DigitalEmployeeID: employeeID, Description: &next,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated.Description)
+	require.Equal(t, "新的员工说明", *updated.Description)
+	require.Equal(t, "新的员工说明", *repo.employees[employeeID].Description)
+
+	blank := "   "
+	cleared, err := svc.UpdateProfile(context.Background(), UpdateProfileRequest{
+		TenantID: tenantID, DigitalEmployeeID: employeeID, Description: &blank,
+	})
+	require.NoError(t, err)
+	require.Nil(t, cleared.Description)
+	require.Nil(t, repo.employees[employeeID].Description)
+}
+
 func TestServiceDeleteDigitalEmployeeValidatesRequiredIDs(t *testing.T) {
 	svc, err := NewService(newMemoryRepository())
 	require.NoError(t, err)
@@ -2506,6 +2538,17 @@ func (r *memoryRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenant
 		return DigitalEmployeeRecord{}, ErrNotFound
 	}
 	record.Status = status
+	record.UpdatedAt = time.Now().UTC()
+	r.employees[employeeID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) UpdateDigitalEmployeeProfile(_ context.Context, tenantID, employeeID uuid.UUID, description *string) (DigitalEmployeeRecord, error) {
+	record, ok := r.employees[employeeID]
+	if !ok || record.TenantID != tenantID {
+		return DigitalEmployeeRecord{}, ErrNotFound
+	}
+	record.Description = cloneStringPtrForTest(description)
 	record.UpdatedAt = time.Now().UTC()
 	r.employees[employeeID] = record
 	return record, nil

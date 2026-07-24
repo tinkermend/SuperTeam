@@ -34,6 +34,8 @@ type Repository interface {
 	ListRuntimeProviderOptionsForCreate(ctx context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error)
 	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]RuntimeProviderOption, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
+	// UpdateDigitalEmployeeProfile 写回身份资料（当前仅 description）；空说明落 NULL。
+	UpdateDigitalEmployeeProfile(ctx context.Context, tenantID, employeeID uuid.UUID, description *string) (DigitalEmployeeRecord, error)
 	// UpdateDigitalEmployeeRolePermission 写回经权限中心批准的 role/permission_policy(方案2:
 	// 权限变更不进 config_revision,值由审批请求 ContextPayload 承载,批准时落库员工行)。
 	UpdateDigitalEmployeeRolePermission(ctx context.Context, tenantID, employeeID uuid.UUID, role string, permissionPolicy map[string]any) (DigitalEmployeeRecord, error)

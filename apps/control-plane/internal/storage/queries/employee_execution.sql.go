@@ -3252,6 +3252,49 @@ func (q *Queries) SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Co
 	return items, nil
 }
 
+const UpdateDigitalEmployeeProfile = `-- name: UpdateDigitalEmployeeProfile :one
+UPDATE digital_employees
+SET description = NULLIF(BTRIM($1::text), ''),
+    updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
+`
+
+type UpdateDigitalEmployeeProfileParams struct {
+	Description string    `json:"description"`
+	ID          uuid.UUID `json:"id"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+}
+
+// 身份资料写路径：当前仅员工说明（description）；空串落 NULL，与创建 trimOptionalString 口径一致。
+func (q *Queries) UpdateDigitalEmployeeProfile(ctx context.Context, arg UpdateDigitalEmployeeProfileParams) (DigitalEmployee, error) {
+	row := q.db.QueryRow(ctx, UpdateDigitalEmployeeProfile, arg.Description, arg.ID, arg.TenantID)
+	var i DigitalEmployee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Role,
+		&i.Description,
+		&i.Status,
+		&i.PermissionPolicy,
+		&i.RiskLevel,
+		&i.Metadata,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.EmployeeType,
+		&i.ProviderType,
+	)
+	return i, err
+}
+
 const UpdateDigitalEmployeeRolePermission = `-- name: UpdateDigitalEmployeeRolePermission :one
 UPDATE digital_employees
 SET role = $1::varchar,

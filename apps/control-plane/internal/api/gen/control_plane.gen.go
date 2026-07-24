@@ -5734,6 +5734,29 @@ type StopDigitalEmployeeRunRequest struct {
 	Reason string `json:"reason"`
 }
 
+// SubmitDigitalEmployeePermissionChangeRequest role 与 permission_policy 至少提供一项；省略的字段表示不改。
+type SubmitDigitalEmployeePermissionChangeRequest struct {
+	// PermissionPolicy 目标权限策略；省略表示不改。常见键 grants、allowed_actions。
+	PermissionPolicy *map[string]interface{} `json:"permission_policy,omitempty"`
+
+	// Role 目标角色；省略表示不改 role
+	Role *string `json:"role,omitempty"`
+}
+
+// SubmitDigitalEmployeePermissionChangeResponse defines model for SubmitDigitalEmployeePermissionChangeResponse.
+type SubmitDigitalEmployeePermissionChangeResponse struct {
+	// Category 固定为 permission
+	Category string `json:"category"`
+
+	// Id 新建审批请求 ID
+	Id           openapi_types.UUID `json:"id"`
+	ResourceType string             `json:"resource_type"`
+	Status       string             `json:"status"`
+
+	// TargetUserId 解析出的主审批人
+	TargetUserId openapi_types.UUID `json:"target_user_id"`
+}
+
 // SubmitProjectDemandRequest defines model for SubmitProjectDemandRequest.
 type SubmitProjectDemandRequest struct {
 	Attachments             *[]interface{}                                     `json:"attachments,omitempty"`
@@ -5998,6 +6021,12 @@ type TeamUserAvatarProvider string
 
 // TeamUserAvatarStyle defines model for TeamUserAvatar.Style.
 type TeamUserAvatarStyle string
+
+// UpdateDigitalEmployeeProfileRequest defines model for UpdateDigitalEmployeeProfileRequest.
+type UpdateDigitalEmployeeProfileRequest struct {
+	// Description 员工说明；空字符串表示清空
+	Description string `json:"description"`
+}
 
 // UpdateDigitalEmployeeStatusRequest defines model for UpdateDigitalEmployeeStatusRequest.
 type UpdateDigitalEmployeeStatusRequest struct {
@@ -6771,6 +6800,12 @@ type UpsertEmployeeEnvironmentVariableJSONRequestBody = UpsertEnvironmentVariabl
 
 // CreateEmployeeMCPBindingV2JSONRequestBody defines body for CreateEmployeeMCPBindingV2 for application/json ContentType.
 type CreateEmployeeMCPBindingV2JSONRequestBody = CreateMCPBindingRequest
+
+// SubmitDigitalEmployeePermissionChangeJSONRequestBody defines body for SubmitDigitalEmployeePermissionChange for application/json ContentType.
+type SubmitDigitalEmployeePermissionChangeJSONRequestBody = SubmitDigitalEmployeePermissionChangeRequest
+
+// UpdateDigitalEmployeeProfileJSONRequestBody defines body for UpdateDigitalEmployeeProfile for application/json ContentType.
+type UpdateDigitalEmployeeProfileJSONRequestBody = UpdateDigitalEmployeeProfileRequest
 
 // CreateProviderSessionForDigitalEmployeeJSONRequestBody defines body for CreateProviderSessionForDigitalEmployee for application/json ContentType.
 type CreateProviderSessionForDigitalEmployeeJSONRequestBody = CreateProviderSessionRequest
@@ -7581,6 +7616,12 @@ type ServerInterface interface {
 	// Delete a digital employee personal MCP binding
 	// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
 	DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID)
+	// Submit a digital employee permission change for approval
+	// (POST /api/v1/digital-employees/{employeeId}/permission-changes)
+	SubmitDigitalEmployeePermissionChange(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Update a digital employee identity profile
+	// (PUT /api/v1/digital-employees/{employeeId}/profile)
+	UpdateDigitalEmployeeProfile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List provider sessions for a digital employee
 	// (GET /api/v1/digital-employees/{employeeId}/provider-sessions)
 	ListProviderSessionsForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListProviderSessionsForDigitalEmployeeParams)
@@ -8388,6 +8429,18 @@ func (_ Unimplemented) CreateEmployeeMCPBindingV2(w http.ResponseWriter, r *http
 // Delete a digital employee personal MCP binding
 // (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
 func (_ Unimplemented) DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a digital employee permission change for approval
+// (POST /api/v1/digital-employees/{employeeId}/permission-changes)
+func (_ Unimplemented) SubmitDigitalEmployeePermissionChange(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update a digital employee identity profile
+// (PUT /api/v1/digital-employees/{employeeId}/profile)
+func (_ Unimplemented) UpdateDigitalEmployeeProfile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10978,6 +11031,58 @@ func (siw *ServerInterfaceWrapper) DeleteEmployeeMCPBindingV2(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteEmployeeMCPBindingV2(w, r, employeeId, bindingId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitDigitalEmployeePermissionChange operation middleware
+func (siw *ServerInterfaceWrapper) SubmitDigitalEmployeePermissionChange(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitDigitalEmployeePermissionChange(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDigitalEmployeeProfile operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeProfile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDigitalEmployeeProfile(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17277,6 +17382,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", wrapper.DeleteEmployeeMCPBindingV2)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/permission-changes", wrapper.SubmitDigitalEmployeePermissionChange)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/profile", wrapper.UpdateDigitalEmployeeProfile)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/provider-sessions", wrapper.ListProviderSessionsForDigitalEmployee)

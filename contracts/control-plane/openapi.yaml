@@ -3931,6 +3931,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeConfigRevision"
+  /api/v1/digital-employees/{employeeId}/permission-changes:
+    post:
+      operationId: submitDigitalEmployeePermissionChange
+      summary: Submit a digital employee permission change for approval
+      description: >-
+        提交 role / permission_policy 治理变更，产生 category=permission 的审批请求（方案2：目标值随 ContextPayload 承载，不进 config-revision；批准后写回员工行）。鉴权同 employee.config.create。role 与 permission_policy 至少提供一项；员工须已归属团队；有进行中工作时拒绝提交。
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitDigitalEmployeePermissionChangeRequest"
+      responses:
+        "201":
+          description: Permission-change approval request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitDigitalEmployeePermissionChangeResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/profile:
+    put:
+      operationId: updateDigitalEmployeeProfile
+      summary: Update a digital employee identity profile
+      description: >-
+        更新数字员工身份资料（当前仅员工说明 description）。空字符串清空说明。
+        即时生效，不进入 config-revision。
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDigitalEmployeeProfileRequest"
+      responses:
+        "200":
+          description: Digital employee profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployee"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/status:
     put:
       operationId: updateDigitalEmployeeStatus
@@ -12338,6 +12393,43 @@ components:
         status:
           type: string
           enum: [draft, active, archived]
+    SubmitDigitalEmployeePermissionChangeRequest:
+      type: object
+      description: >-
+        role 与 permission_policy 至少提供一项；省略的字段表示不改。
+      properties:
+        role:
+          type: string
+          description: 目标角色；省略表示不改 role
+        permission_policy:
+          type: object
+          additionalProperties: true
+          description: >-
+            目标权限策略；省略表示不改。常见键 grants、allowed_actions。
+    SubmitDigitalEmployeePermissionChangeResponse:
+      type: object
+      required:
+        - id
+        - resource_type
+        - status
+        - category
+        - target_user_id
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 新建审批请求 ID
+        resource_type:
+          type: string
+        status:
+          type: string
+        category:
+          type: string
+          description: 固定为 permission
+        target_user_id:
+          type: string
+          format: uuid
+          description: 解析出的主审批人
     EffectiveConfigValidationIssue:
       type: object
       required:
@@ -12371,6 +12463,14 @@ components:
       properties:
         status:
           $ref: "#/components/schemas/DigitalEmployeeStatus"
+    UpdateDigitalEmployeeProfileRequest:
+      type: object
+      required:
+        - description
+      properties:
+        description:
+          type: string
+          description: 员工说明；空字符串表示清空
     ReassignDigitalEmployeeTeamRequest:
       type: object
       required:

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-07-24 14:10（补齐 `permission-changes` OpenAPI）：登记既有 `POST /api/v1/digital-employees/{employeeId}/permission-changes` 及请求/响应 schema；顺手把 empty/未配置→400、busy→409 与契约对齐。验证：`generate:control-plane` + `verify:contracts` PASS；employee 定向测试 PASS。
+- 2026-07-24 11:33（数字员工创建后可编辑「员工说明」）：新增 `PUT /api/v1/digital-employees/{id}/profile`（`UpdateDigitalEmployeeProfileRequest.description`，空串清空；authz `employee.profile.update` 走员工 owner）；配置页「身份资料」区可编辑保存，不进入 config-revision。验证：Go employee/api/authz 定向 PASS；config Vitest 6/6；restart CP+web 后真实 API 写读清空/回写 PASS，浏览器配置页编辑保存见「已保存」且 GET 一致。`verify:contracts` 仍被既有 OpenAPI 缺 `permission-changes`（无关）挡住。
 - 2026-07-24 00:42（任务中枢项目选择改下拉）：平铺项目卡改为「触发器 + Popover 下拉」结构——触发器单行显示状态点+名称+状态词，下拉内搜索框（名称/目标过滤）+ 富信息选项卡滚动列表（max-height 收口），项目多时不再撑破排版；任务表单与对话锚点仍共用 `ProjectPicker`。顺带清理测试工厂里已被 `badabba2` 退役的 `approval_policy`/`evidence_policy` 残留并补 `directory_name`。验证：task-launches Vitest 20/20；task-launch 相关 tsc 零错误；真实浏览器验证下拉开合、22 项注入滚动收口、搜索过滤。全量 verify:web 仍受其他会话未完成改动（workflows/lib/api）阻断。
 - 2026-07-24 00:28（任务中枢发起页改版）：删除顶部「提交后由协调线程动态编排」eyebrow；三模式卡升级为带选中圈/默认徽标/分色图标块的新设计；项目选择由下拉改为卡片单选（状态点+名称+目标+状态词），任务表单与对话锚点共用 `ProjectPicker`；顺带修复 HEAD 遗留的 index.test.tsx 多余 `}));` 语法错误。验证：task-launches Vitest 20/20；真实浏览器（admin 登录 + 真实项目数据）核对 Plan/对话两模式渲染。全量 verify:web 受工作树中其他会话未完成的 workflows/lib/api 改动阻断，未全绿。
 - 2026-07-23 23:12（项目详情首屏视觉迭代）：区段导航改全宽底边线；空态右栏合并为单卡行级空态；去掉启动区重复 CTA；左右列等高；高级事实收成虚线轻栏。验证：Vitest 21/21；restart web 后空项目 1440 视觉自验满意。
