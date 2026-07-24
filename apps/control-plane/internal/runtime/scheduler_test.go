@@ -41,6 +41,17 @@ func (m *mockSchedulerRepository) GetNode(ctx context.Context, nodeID string) (N
 	return NodeRecord{}, ErrNodeNotFound
 }
 
+func (m *mockSchedulerRepository) GetNodeByID(ctx context.Context, id uuid.UUID) (NodeRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, node := range m.nodes {
+		if node.ID == id {
+			return node, nil
+		}
+	}
+	return NodeRecord{}, ErrNodeNotFound
+}
+
 func (m *mockSchedulerRepository) ListNodes(ctx context.Context, params ListNodesParams) ([]NodeRecord, error) {
 	return nil, nil
 }

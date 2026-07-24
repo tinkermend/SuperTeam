@@ -531,6 +531,15 @@ func (f *enrollmentFake) GetNode(_ context.Context, nodeID string) (NodeRecord, 
 	return record, nil
 }
 
+func (f *enrollmentFake) GetNodeByID(_ context.Context, id uuid.UUID) (NodeRecord, error) {
+	for _, record := range f.nodes {
+		if record.ID == id {
+			return record, nil
+		}
+	}
+	return NodeRecord{}, errors.New("not found")
+}
+
 func (f *enrollmentFake) ListNodes(context.Context, ListNodesParams) ([]NodeRecord, error) {
 	return nil, nil
 }

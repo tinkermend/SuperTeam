@@ -51,6 +51,14 @@ func (m *MockRepository) GetNode(ctx context.Context, nodeID string) (NodeRecord
 	return args.Get(0).(NodeRecord), args.Error(1)
 }
 
+func (m *MockRepository) GetNodeByID(ctx context.Context, id uuid.UUID) (NodeRecord, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return NodeRecord{}, args.Error(1)
+	}
+	return args.Get(0).(NodeRecord), args.Error(1)
+}
+
 func (m *MockRepository) ListNodes(ctx context.Context, params ListNodesParams) ([]NodeRecord, error) {
 	args := m.Called(ctx, params)
 	return args.Get(0).([]NodeRecord), args.Error(1)
