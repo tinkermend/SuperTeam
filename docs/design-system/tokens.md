@@ -33,7 +33,7 @@ Soft-Flat 为当前唯一设计基线，主色为蓝色。下表色值为 Soft-F
 | --- | --- | --- | --- | --- |
 | 品牌主色 `--brand` | `#2F5FFF` | `--brand-deep`（兼任） | `#E9EFFF` | 主按钮、导航激活、焦点、关键链接、signature 线条和局部 accent |
 | 品牌深色 `--brand-deep` | `#2348E0` | — | — | 强调文字、按钮 hover、焦点边缘、小面积渐变终点 |
-| 中性底 `--bg` | `#F8FAFC` | — | — | 页面底色（近白冷灰，不带色相） |
+| 中性底 `--background` | `#F8FAFC` | — | — | 页面底色（近白冷灰，不带色相） |
 | Shell 底 `--shell-bg` / `--shell-background` | `#F6F8FB` + 低对比渐变 | — | — | 登录页与控制台外壳背景，允许柔和 wash 与低对比网格，但不进入数据面 |
 | Shell 毛玻璃 `--shell-glass*` | 侧栏基底 `#FBFCFF` → `#F1F5FB` → `#E8EEF6`，叠弱蓝/绿反射，边界 `rgba(126,143,172,.20)` | — | — | 左侧导航、顶栏等壳层表面；侧栏要与页面渐变拉开层级，内容卡片、表格和表单仍使用实底 token |
 | 卡片面 `--card` | `#FFFFFF` | — | `--card-soft #F7F8FA` | 柔和卡片、面板、表格容器外壳 |
@@ -64,7 +64,7 @@ Soft-Flat 为当前唯一设计基线，主色为蓝色。下表色值为 Soft-F
 
 | 概念 / 用途 | CSS token | Tailwind class |
 | --- | --- | --- |
-| 页面底色 | `--bg` | `bg-bg` |
+| 页面底色 | `--background` | `bg-background` |
 | 卡片面 / 软底 / 内层 | `--card` / `--card-soft` / `--card-inner` | `bg-card` / `bg-card-soft` / `bg-card-inner` |
 | 主 / 次 / 三级文字 | `--ink` / `--ink-2` / `--ink-3` | `text-ink` / `text-ink-2` / `text-ink-3` |
 | 分隔线 / 强边框 | `--line` / `--line-strong` | `border-line` / `border-line-strong` |
@@ -97,7 +97,7 @@ Soft-Flat 为当前唯一设计基线，主色为蓝色。下表色值为 Soft-F
 - `--shell-glass-border`
 - `--shell-glass-blur`
 - `--shell-glass-saturate`
-- `--bg`
+- `--background`
 - `--card`
 - `--card-soft`
 - `--card-inner`

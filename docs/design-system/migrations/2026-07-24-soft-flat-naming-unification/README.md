@@ -5,7 +5,7 @@
 > **日期**：2026-07-24（文档收口 2026-07-25）  
 > **范围**：`apps/web` 设计语言命名、项目级组件 API、Button 双实现、import 边界；不改业务行为与视觉意图。  
 > **风格终态名**：Soft-Flat（不再称为 v3 风格）  
-> **已知残留（可选后续）**：`primitives.tsx` 仍保留 `V3*` deprecated alias（Q8）；删除 alias 需单独 PR。
+> **收尾**：`V3*` deprecated alias 已删除；`verify:design-system` 护栏禁止现行文档写 `v3-components` / `--v3-*` / `bg-v3-*` 等旧名。
 
 ## 读法（按顺序）
 
@@ -60,4 +60,4 @@ A 立法门禁 → B 组件改名(+alias) → C Button 同源 → D 业务 impor
 
 - 2026-07-24：实现合并 `main`，commit `87de7748`。
 - 2026-07-25：现行设计文档路径/token/用语收口；本 README 标 Done。
-
+- 2026-07-25：删除 `V3*` deprecated alias；设计文档护栏上线。
