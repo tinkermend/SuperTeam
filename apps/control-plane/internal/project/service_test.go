@@ -11201,6 +11201,7 @@ func TestGetProjectDeletePreviewIncludesWarnings(t *testing.T) {
 
 type memoryRepository struct {
 	projects                         map[uuid.UUID]Project
+	consumedTokens                   map[uuid.UUID]int64
 	members                          map[uuid.UUID][]ProjectMember
 	tasks                            []ProjectTask
 	taskDependents                   map[uuid.UUID][]uuid.UUID
@@ -11527,6 +11528,7 @@ type workflowInstanceServiceRepository struct {
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
 		projects:                   map[uuid.UUID]Project{},
+		consumedTokens:             map[uuid.UUID]int64{},
 		members:                    map[uuid.UUID][]ProjectMember{},
 		projectTeamScopes:          map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool{},
 		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
@@ -11816,6 +11818,20 @@ func (r *memoryRepository) GetProject(ctx context.Context, tenantID, projectID u
 	if !ok || project.TenantID != tenantID {
 		return Project{}, ErrProjectNotFound
 	}
+	return project, nil
+}
+
+func (r *memoryRepository) SumProjectConsumedTokens(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error) {
+	return r.consumedTokens[projectID], nil
+}
+
+func (r *memoryRepository) SetProjectBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (Project, error) {
+	project, ok := r.projects[projectID]
+	if !ok || project.TenantID != tenantID {
+		return Project{}, ErrProjectNotFound
+	}
+	project.BudgetTokenLimit = limit
+	r.projects[projectID] = project
 	return project, nil
 }
 

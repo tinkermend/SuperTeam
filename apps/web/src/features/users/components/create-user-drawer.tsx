@@ -11,7 +11,7 @@ import {
   SheetHeader,
   SheetTitle
 } from "@/components/ui/sheet";
-import { buildUserAvatarDataUri } from "@/components/superteam/user-identity";
+import { buildUserAvatarDataUri } from "@/lib/avatar-dicebear";
 import { listTeamSummaries, type UserAvatar } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { HUMAN_AVATAR_PRESETS, type HumanAvatarPreset } from "../human-avatar-presets";

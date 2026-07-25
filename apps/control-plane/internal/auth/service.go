@@ -31,6 +31,7 @@ type Repository interface {
 	UpdateUserStatus(ctx context.Context, userID uuid.UUID, status string) (*User, error)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) (*User, error)
 	UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error)
+	SetUserAvatarSVG(ctx context.Context, userID uuid.UUID, svg string) error
 	CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (*RuntimeToken, error)
 	CreateSession(ctx context.Context, session *Session, tokenHash string) error
@@ -403,6 +404,16 @@ func (s *Service) syncProjectTeamScopeChanges(ctx context.Context, tenantID, use
 			log.Printf("openfga project team scope sync failed: tenant_id=%s user_id=%s team_id=%s status=revoked err=%v", tenantID, userID, scope.TeamID, err)
 		}
 	}
+}
+
+// SetCurrentUserAvatarSVG 自愈写回当前用户预渲染头像 data-URI(P1-D 2b)。校验非空与
+// 长度上限;仅写调用者自己(userID 由会话解析,不接受任意用户)。
+func (s *Service) SetCurrentUserAvatarSVG(ctx context.Context, userID uuid.UUID, svg string) error {
+	svg = strings.TrimSpace(svg)
+	if svg == "" || len(svg) > 65536 {
+		return ErrInvalidManagedUserInput
+	}
+	return s.repo.SetUserAvatarSVG(ctx, userID, svg)
 }
 
 func (s *Service) UpdateCurrentUserProfile(ctx context.Context, actor Actor, input UpdateUserProfileInput) (*User, error) {

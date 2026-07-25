@@ -181,6 +181,29 @@ func (h *HTTPHandler) ListCurrentUserLoginLogs(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, LoginLogListResponse{Items: items})
 }
 
+// SetCurrentUserAvatarSVG 自愈写回当前用户预渲染头像(P1-D 2b)。仅写当前登录用户自己。
+func (h *HTTPHandler) SetCurrentUserAvatarSVG(w http.ResponseWriter, r *http.Request) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	var body SetCurrentUserAvatarSVGJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.service.SetCurrentUserAvatarSVG(r.Context(), actorUser.ID, body.Svg); err != nil {
+		if errors.Is(err, ErrInvalidManagedUserInput) {
+			writeError(w, http.StatusBadRequest, "invalid avatar svg")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *HTTPHandler) UpdateCurrentUserProfile(w http.ResponseWriter, r *http.Request) {
 	_, actorUser, err := h.currentSessionUser(r)
 	if err != nil {
@@ -604,12 +627,17 @@ func toGeneratedUserAvatar(avatar UserAvatarConfig) UserAvatar {
 	if options == nil {
 		options = map[string]any{}
 	}
-	return UserAvatar{
+	generated := UserAvatar{
 		Options:  &options,
 		Provider: UserAvatarProvider(avatar.Provider),
 		Seed:     avatar.Seed,
 		Style:    UserAvatarStyle(avatar.Style),
 	}
+	if avatar.SVG != "" {
+		svg := avatar.SVG
+		generated.Svg = &svg
+	}
+	return generated
 }
 
 func userAvatarFromGenerated(avatar *UserAvatar) UserAvatarConfig {

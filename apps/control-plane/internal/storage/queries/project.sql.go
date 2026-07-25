@@ -141,7 +141,7 @@ SET status = 'archived',
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
 `
 
 type ArchiveProjectParams struct {
@@ -180,6 +180,7 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }
@@ -797,7 +798,7 @@ INSERT INTO projects (
     $19::text,
     COALESCE($20::varchar, 'ready'),
     $21::timestamptz
-) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
+) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
 `
 
 type CreateProjectParams struct {
@@ -877,6 +878,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }
@@ -2938,7 +2940,7 @@ func (q *Queries) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.C
 }
 
 const GetProject = `-- name: GetProject :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -2980,6 +2982,7 @@ func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }
@@ -3351,7 +3354,7 @@ func (q *Queries) GetProjectEventByTypeAndActor(ctx context.Context, arg GetProj
 }
 
 const GetProjectForDelete = `-- name: GetProjectForDelete :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -3394,6 +3397,7 @@ func (q *Queries) GetProjectForDelete(ctx context.Context, arg GetProjectForDele
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }
@@ -6290,7 +6294,7 @@ func (q *Queries) ListProjectTransferRequests(ctx context.Context, arg ListProje
 }
 
 const ListProjects = `-- name: ListProjects :many
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit FROM projects
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
   AND ($2::varchar IS NULL OR status = $2::varchar)
@@ -6355,6 +6359,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.WorkspaceReadyError,
 			&i.WorkspaceReadyAt,
 			&i.DirectoryName,
+			&i.BudgetTokenLimit,
 		); err != nil {
 			return nil, err
 		}
@@ -8489,6 +8494,60 @@ func (q *Queries) ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProj
 	return i, err
 }
 
+const SetProjectBudgetTokenLimit = `-- name: SetProjectBudgetTokenLimit :one
+UPDATE projects
+SET budget_token_limit = $1::bigint,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
+`
+
+type SetProjectBudgetTokenLimitParams struct {
+	BudgetTokenLimit pgtype.Int8 `json:"budget_token_limit"`
+	TenantID         uuid.UUID   `json:"tenant_id"`
+	ID               uuid.UUID   `json:"id"`
+}
+
+// 提额/设限/清限(P1-A):直接置列而非 COALESCE——列本身可空(NULL=不限),
+// 需要能显式清回不限,不能用 COALESCE 区分"不改"与"设为不限"。
+func (q *Queries) SetProjectBudgetTokenLimit(ctx context.Context, arg SetProjectBudgetTokenLimitParams) (Project, error) {
+	row := q.db.QueryRow(ctx, SetProjectBudgetTokenLimit, arg.BudgetTokenLimit, arg.TenantID, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Description,
+		&i.Goal,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.CoordinationWorkflowID,
+		&i.CoordinationStatus,
+		&i.CoordinationPolicy,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
+		&i.DeletedAt,
+		&i.ScenarioTemplateKey,
+		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
+		&i.BudgetTokenLimit,
+	)
+	return i, err
+}
+
 const SetProjectDecisionRequestDispatchGate = `-- name: SetProjectDecisionRequestDispatchGate :one
 UPDATE project_decision_requests
 SET dispatch_gate_result_id = $1::uuid,
@@ -8674,7 +8733,7 @@ WHERE tenant_id = $4::uuid
       ELSE TRUE
     END
   )
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
 `
 
 type SetProjectWorkspaceReadyParams struct {
@@ -8723,6 +8782,7 @@ func (q *Queries) SetProjectWorkspaceReady(ctx context.Context, arg SetProjectWo
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }
@@ -8735,7 +8795,7 @@ SET deleted_at = COALESCE(deleted_at, $1::timestamptz),
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
 `
 
 type SoftDeleteProjectParams struct {
@@ -8775,6 +8835,7 @@ func (q *Queries) SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectPa
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }
@@ -8866,6 +8927,29 @@ func (q *Queries) StartProjectTaskAttempt(ctx context.Context, arg StartProjectT
 	return i, err
 }
 
+const SumProjectConsumedTokens = `-- name: SumProjectConsumedTokens :one
+SELECT COALESCE(SUM(a.budget_consumed_tokens), 0)::bigint AS consumed_tokens
+FROM project_task_attempts a
+JOIN project_tasks t
+    ON t.tenant_id = a.tenant_id AND t.id = a.project_task_id
+WHERE a.tenant_id = $1::uuid
+  AND t.project_id = $2::uuid
+`
+
+type SumProjectConsumedTokensParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+// 项目 token 已消耗:对项目下所有任务的所有 attempt 的心跳累加值求和(P1-A 预算熔断)。
+// budget_consumed_tokens 由 runtime 心跳单调累加,天然把失败与返工的消耗算进去。
+func (q *Queries) SumProjectConsumedTokens(ctx context.Context, arg SumProjectConsumedTokensParams) (int64, error) {
+	row := q.db.QueryRow(ctx, SumProjectConsumedTokens, arg.TenantID, arg.ProjectID)
+	var consumed_tokens int64
+	err := row.Scan(&consumed_tokens)
+	return consumed_tokens, err
+}
+
 const SupersedeOpenProjectPlanRevisions = `-- name: SupersedeOpenProjectPlanRevisions :exec
 UPDATE project_plan_revisions
 SET status = 'superseded',
@@ -8934,7 +9018,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND status = ANY($4::varchar[])
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
 `
 
 type TransitionProjectStatusParams struct {
@@ -8983,6 +9067,7 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }
@@ -9022,7 +9107,7 @@ SET
 WHERE tenant_id = $13::uuid
   AND id = $14::uuid
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
 `
 
 type UpdateProjectParams struct {
@@ -9088,6 +9173,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.WorkspaceReadyError,
 		&i.WorkspaceReadyAt,
 		&i.DirectoryName,
+		&i.BudgetTokenLimit,
 	)
 	return i, err
 }

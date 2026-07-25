@@ -1776,6 +1776,12 @@ func (s *routeProjectService) GetBudgetSummary(ctx context.Context, tenantID, pr
 	return &project.ProjectBudgetSummary{EstimatedTokens: 1000, ActualTokens: 800, EstimatedCost: "1.00", ActualCost: "0.80", LedgerCount: 1}, nil
 }
 
+func (s *routeProjectService) SetBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (*project.ProjectBudgetSummary, error) {
+	s.budgetSummaryTenantID = tenantID
+	s.budgetSummaryProjectID = projectID
+	return &project.ProjectBudgetSummary{TokenLimit: limit, ConsumedTokens: 800}, nil
+}
+
 func (s *routeProjectService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectAcceptanceRecord, error) {
 	record := routeAcceptance(tenantID, projectID, uuid.New())
 	return &record, nil

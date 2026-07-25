@@ -120,7 +120,29 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		if shouldStop {
 			return nil
 		}
-		if shouldContinueAsNew(ctx) {
+		// Continue-as-new must not run while signals are still buffered. Select
+		// consumes exactly one signal per iteration, so a workflow task that
+		// delivered several signals at once leaves the rest sitting in their
+		// channels. Those events are already part of the completed workflow task,
+		// so the server's unhandled-command protection does not fire for them and
+		// continuing-as-new here would drop them silently — losing an
+		// EmployeeTaskCompleted (task stuck running forever) or a
+		// HumanDecisionSubmitted (project deadlocked with no recovery path). The
+		// trigger is load-correlated: GetContinueAsNewSuggested only turns true once
+		// history has grown, which is exactly when signals arrive in batches.
+		//
+		// HasPending defers the continue-as-new until the buffer is drained; the loop
+		// keeps processing, so nothing is lost and history keeps growing only by real
+		// work. The suggestion fires at roughly a fifth of the hard history limit, so
+		// there is ample headroom to finish draining before the limit is reached.
+		//
+		// No GetVersion fence: HasPending only reads in-memory channel state and
+		// records nothing in history, so it is deterministic on replay, and `&&`
+		// short-circuits it away unless shouldContinueAsNew is already true. Every
+		// past decision point of a still-running history evaluated shouldContinueAsNew
+		// as false (a true would have closed the execution), so replay never reaches
+		// the new call and cannot diverge.
+		if shouldContinueAsNew(ctx) && !selector.HasPending() {
 			return workflow.NewContinueAsNewError(ctx, ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
 				TenantID:   input.TenantID,
 				ProjectID:  input.ProjectID,

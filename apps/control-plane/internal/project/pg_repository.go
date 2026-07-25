@@ -135,6 +135,26 @@ func (r *PgRepository) GetProject(ctx context.Context, tenantID, projectID uuid.
 	return projectFromRecord(row)
 }
 
+func (r *PgRepository) SumProjectConsumedTokens(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error) {
+	consumed, err := r.q.SumProjectConsumedTokens(ctx, queries.SumProjectConsumedTokensParams{TenantID: tenantID, ProjectID: projectID})
+	if err != nil {
+		return 0, projectRepositoryError(err)
+	}
+	return consumed, nil
+}
+
+func (r *PgRepository) SetProjectBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (Project, error) {
+	row, err := r.q.SetProjectBudgetTokenLimit(ctx, queries.SetProjectBudgetTokenLimitParams{
+		TenantID:         tenantID,
+		ID:               projectID,
+		BudgetTokenLimit: int8Ptr(limit),
+	})
+	if err != nil {
+		return Project{}, projectRepositoryError(err)
+	}
+	return projectFromRecord(row)
+}
+
 // SetProjectHumanOwners 重同步项目负责人集合(数组权威 + scalar=首个过渡镜像)。
 func (r *PgRepository) SetProjectHumanOwners(ctx context.Context, tenantID, projectID uuid.UUID, ownerIDs []uuid.UUID) error {
 	if len(ownerIDs) == 0 {
@@ -700,8 +720,24 @@ func (r *PgRepository) listProjectTasksByDemand(ctx context.Context, tenantID, p
 	return tasksFromRecords(rows)
 }
 
+// AppendProjectEvent runs inside a transaction so the per-project advisory lock
+// taken by appendProjectEventWithQueries actually holds.
+//
+// pg_advisory_xact_lock is transaction-scoped. Running it on the pooled
+// connection outside an explicit transaction puts it in its own implicit
+// transaction, which commits — and releases the lock — the moment that single
+// statement returns, long before the read-max/insert pair that it is supposed to
+// serialize. The lock was a no-op on this path and concurrent appends collided on
+// uq_project_events_project_sequence, leaving only the retry loop; under real
+// concurrency that overflowed and surfaced as 500s and, worse, could also defeat
+// the coordinator's failure-recording append so a failed signal left no trace at
+// all. Callers are all service-level and never already hold this lock, so opening
+// a transaction here cannot self-deadlock; transactional callers keep using
+// appendProjectEventWithQueries with their own tx-bound queries.
 func (r *PgRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
-	return r.appendProjectEventWithQueries(ctx, r.q, event)
+	return withProjectQueries(ctx, r, "append project event", func(q *queries.Queries) (ProjectEvent, error) {
+		return r.appendProjectEventWithQueries(ctx, q, event)
+	})
 }
 
 func (r *PgRepository) appendProjectEventWithQueries(ctx context.Context, q *queries.Queries, event AppendProjectEventRequest) (ProjectEvent, error) {
@@ -845,21 +881,48 @@ func (r *PgRepository) CreateConfigRevision(ctx context.Context, req UpdateProje
 	if err != nil {
 		return ProjectConfigRevision{}, err
 	}
+	// Serialize revision-number allocation on the per-project advisory lock, the
+	// same one project event appends and demand-status advances use. Without it,
+	// concurrent config updates all read the same latest revision number and
+	// collide on uq_project_config_revisions_project_rev; once the retry budget
+	// was exhausted the raw constraint error escaped to the handler as a 500. The
+	// lock is transaction-scoped, so this must run inside a transaction to hold.
+	return withProjectQueries(ctx, r, "create project config revision", func(q *queries.Queries) (ProjectConfigRevision, error) {
+		return r.createConfigRevisionWithQueries(ctx, q, req, eventID, snapshot, changedSections, diffSummary, policyFingerprint)
+	})
+}
+
+func (r *PgRepository) createConfigRevisionWithQueries(
+	ctx context.Context,
+	q *queries.Queries,
+	req UpdateProjectConfigRequest,
+	eventID uuid.UUID,
+	snapshot []byte,
+	changedSections []byte,
+	diffSummary []byte,
+	policyFingerprint string,
+) (ProjectConfigRevision, error) {
+	if err := q.LockProjectEventSequence(ctx, queries.LockProjectEventSequenceParams{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+	}); err != nil {
+		return ProjectConfigRevision{}, err
+	}
 	var lastErr error
 	for attempt := 0; attempt < maxProjectConfigRevisionAttempts; attempt++ {
-		latest, err := r.q.GetLatestProjectConfigRevisionNumber(ctx, queries.GetLatestProjectConfigRevisionNumberParams{TenantID: req.TenantID, ProjectID: req.ProjectID})
+		latest, err := q.GetLatestProjectConfigRevisionNumber(ctx, queries.GetLatestProjectConfigRevisionNumberParams{TenantID: req.TenantID, ProjectID: req.ProjectID})
 		if err != nil {
 			return ProjectConfigRevision{}, err
 		}
 		var previousRevisionID uuid.NullUUID
-		latestRevision, err := r.q.GetLatestProjectConfigRevision(ctx, queries.GetLatestProjectConfigRevisionParams{TenantID: req.TenantID, ProjectID: req.ProjectID})
+		latestRevision, err := q.GetLatestProjectConfigRevision(ctx, queries.GetLatestProjectConfigRevisionParams{TenantID: req.TenantID, ProjectID: req.ProjectID})
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return ProjectConfigRevision{}, err
 		}
 		if err == nil {
 			previousRevisionID = uuid.NullUUID{UUID: latestRevision.ID, Valid: true}
 		}
-		row, err := r.q.CreateProjectConfigRevisionWithGovernanceFields(ctx, queries.CreateProjectConfigRevisionWithGovernanceFieldsParams{
+		row, err := q.CreateProjectConfigRevisionWithGovernanceFields(ctx, queries.CreateProjectConfigRevisionWithGovernanceFieldsParams{
 			TenantID:           req.TenantID,
 			ProjectID:          req.ProjectID,
 			RevisionNumber:     latest + 1,
@@ -6341,6 +6404,7 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		PrimaryRuntimeNodeID:   ptrUUID(row.PrimaryRuntimeNodeID),
 		WorkspaceReadyError:    ptrText(row.WorkspaceReadyError),
 		WorkspaceReadyAt:       ptrTime(row.WorkspaceReadyAt),
+		BudgetTokenLimit:       ptrInt8(row.BudgetTokenLimit),
 		ArchivedAt:             ptrTime(row.ArchivedAt),
 		DeletedAt:              ptrTime(row.DeletedAt),
 		CreatedAt:              row.CreatedAt.Time,

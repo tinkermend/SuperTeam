@@ -239,6 +239,8 @@ type AuthUser struct {
 	AvatarOptions []byte `json:"avatar_options"`
 	// 人类用户选择的内置头像资产 ID；创建用户流程以该字段作为头像事实来源
 	AvatarAssetID pgtype.Text `json:"avatar_asset_id"`
+	// 预渲染的头像 data-URI(dicebear 确定性产物);NULL 表示未生成,前端懒加载 dicebear 兜底并可自愈写回。
+	AvatarSvg pgtype.Text `json:"avatar_svg"`
 }
 
 // 自动化规则每次触发审计行；幂等键 rule_id+scheduled_fire_at
@@ -810,6 +812,8 @@ type Project struct {
 	WorkspaceReadyAt pgtype.Timestamptz `json:"workspace_ready_at"`
 	// Runtime 工作区相对目录名(ASCII,全局唯一);与 name 分离
 	DirectoryName string `json:"directory_name"`
+	// 项目 token 预算上限;NULL 表示不限。已消耗达到此值后,派发前闸阻止开启新任务(运行中任务不打断)。
+	BudgetTokenLimit pgtype.Int8 `json:"budget_token_limit"`
 }
 
 // 项目验收记录表，保存人类验收结论、证据引用和未解决风险

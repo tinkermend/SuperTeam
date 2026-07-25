@@ -32,6 +32,9 @@ type UserAvatarConfig struct {
 	Style    string         `json:"style"`
 	Seed     string         `json:"seed"`
 	Options  map[string]any `json:"options,omitempty"`
+	// SVG 是预渲染的头像 data-URI(P1-D 2b)。非空时前端直接渲染、不加载 dicebear;
+	// 空表示未生成,前端懒加载 dicebear 兜底并可自愈写回。
+	SVG string `json:"svg,omitempty"`
 }
 
 // Session 会话模型

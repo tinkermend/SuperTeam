@@ -223,6 +223,23 @@ export async function getCurrentUser(options: ApiClientOptions): Promise<Current
   return parseJson<CurrentUserResponse>(response, "auth current user");
 }
 
+// 自愈写回当前用户预渲染头像 data-URI（P1-D 2b）。仅写当前登录用户自己。
+export async function setCurrentUserAvatarSvg(
+  options: ApiClientOptions,
+  svg: string,
+): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/auth/me/avatar-svg"), {
+    body: JSON.stringify({ svg }),
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    method: "PUT",
+  });
+  if (!response.ok) {
+    throw new Error(`set avatar svg failed: ${response.status}`);
+  }
+}
+
 export async function logout(options: ApiClientOptions): Promise<void> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, "/api/auth/logout"), {

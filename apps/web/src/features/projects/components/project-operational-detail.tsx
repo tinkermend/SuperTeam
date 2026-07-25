@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -41,7 +41,8 @@ import {
   SoftTabs,
   SoftTabsList,
   SoftTabsTrigger,
-  SoftTabsContent
+  SoftTabsContent,
+  LoadingState
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import type {
@@ -88,7 +89,6 @@ import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativ
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectAssetsPanel } from "./project-assets-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
-import { PlanGraphCanvas } from "./plan-graph-canvas";
 import { ProjectOpsHome } from "./project-ops-home";
 import { ProjectOwnerAvatarStack } from "./project-owner-avatar-stack";
 import {
@@ -97,6 +97,12 @@ import {
   type ProjectDetailSection
 } from "../lib/project-detail-section";
 import type { UserIdentityData } from "@/components/superteam/user-identity";
+
+// 计划图画布依赖 @xyflow/react（重）。懒加载让它离开入口包——仅在有任务节点的执行图
+// 区块渲染，首屏不需要（P1-D Step 1）。
+const PlanGraphCanvas = lazy(() =>
+  import("./plan-graph-canvas").then((m) => ({ default: m.PlanGraphCanvas })),
+);
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -492,7 +498,9 @@ export function ProjectOperationalDetail({
                             <ClipboardList className="size-4 text-ink-2" />
                             <h3 className="text-sm font-semibold tracking-normal">当前执行图</h3>
                           </div>
-                          <PlanGraphCanvas graph={taskGraph} />
+                          <Suspense fallback={<LoadingState />}>
+                            <PlanGraphCanvas graph={taskGraph} />
+                          </Suspense>
                         </section>
                       ) : null}
                       <DispatchGateSummary

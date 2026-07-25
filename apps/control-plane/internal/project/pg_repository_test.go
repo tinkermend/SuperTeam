@@ -5057,3 +5057,116 @@ func (r *memoryRepository) ListConfigRevisions(ctx context.Context, tenantID, pr
 func (r *memoryRepository) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error) {
 	return ProjectConfigRevision{}, nil
 }
+
+// recordingDB logs the SQL it is asked to run, so a test can prove which
+// statements went through a transaction and which went through the pool.
+type recordingDB struct {
+	statements []string
+}
+
+func (d *recordingDB) record(sql string) { d.statements = append(d.statements, sql) }
+
+func (d *recordingDB) ran(fragment string) bool {
+	for _, sql := range d.statements {
+		if strings.Contains(sql, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *recordingDB) Exec(_ context.Context, sql string, _ ...interface{}) (pgconn.CommandTag, error) {
+	d.record(sql)
+	return pgconn.CommandTag{}, nil
+}
+
+func (d *recordingDB) Query(_ context.Context, sql string, _ ...interface{}) (pgx.Rows, error) {
+	d.record(sql)
+	return nil, pgx.ErrNoRows
+}
+
+func (d *recordingDB) QueryRow(_ context.Context, sql string, _ ...interface{}) pgx.Row {
+	d.record(sql)
+	return noRowsRow{}
+}
+
+// recordingTx is a pgx.Tx whose data methods land in an embedded recordingDB.
+// The embedded pgx.Tx is nil on purpose: any method this test does not exercise
+// panics loudly rather than silently succeeding.
+type recordingTx struct {
+	pgx.Tx
+	db        *recordingDB
+	commits   int
+	rollbacks int
+}
+
+func (t *recordingTx) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+	return t.db.Exec(ctx, sql, args...)
+}
+
+func (t *recordingTx) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	return t.db.Query(ctx, sql, args...)
+}
+
+func (t *recordingTx) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	return t.db.QueryRow(ctx, sql, args...)
+}
+
+func (t *recordingTx) Commit(context.Context) error   { t.commits++; return nil }
+func (t *recordingTx) Rollback(context.Context) error { t.rollbacks++; return nil }
+
+type recordingBeginner struct {
+	begins int
+	tx     *recordingTx
+}
+
+func (b *recordingBeginner) Begin(context.Context) (pgx.Tx, error) {
+	b.begins++
+	return b.tx, nil
+}
+
+func newRecordingRepository() (*PgRepository, *recordingDB, *recordingDB, *recordingBeginner) {
+	poolDB := &recordingDB{}
+	txDB := &recordingDB{}
+	beginner := &recordingBeginner{tx: &recordingTx{db: txDB}}
+	repo := NewPgRepository(queries.New(poolDB), beginner).(*PgRepository)
+	return repo, poolDB, txDB, beginner
+}
+
+// pg_advisory_xact_lock is transaction-scoped: run on the pooled connection
+// outside an explicit transaction it commits — and releases — with its own
+// statement, long before the read-max/insert pair it must serialize. These two
+// tests pin the append and revision-number paths to a transaction so the lock
+// actually holds; without it concurrent writers collided on
+// uq_project_events_project_sequence / uq_project_config_revisions_project_rev.
+func TestAppendProjectEventTakesItsAdvisoryLockInsideATransaction(t *testing.T) {
+	repo, poolDB, txDB, beginner := newRecordingRepository()
+
+	_, _ = repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:  uuid.New(),
+		ProjectID: uuid.New(),
+		EventType: ProjectEventConfigChanged,
+		ActorType: "human_user",
+		ActorID:   uuid.New().String(),
+	})
+
+	require.Equal(t, 1, beginner.begins, "append must open a transaction")
+	require.True(t, txDB.ran("pg_advisory_xact_lock"), "advisory lock must run on the transaction")
+	require.False(t, poolDB.ran("pg_advisory_xact_lock"), "advisory lock must not run on the pool")
+}
+
+func TestCreateConfigRevisionTakesItsAdvisoryLockInsideATransaction(t *testing.T) {
+	repo, poolDB, txDB, beginner := newRecordingRepository()
+	tenantID, projectID := uuid.New(), uuid.New()
+
+	_, _ = repo.CreateConfigRevision(
+		context.Background(),
+		UpdateProjectConfigRequest{TenantID: tenantID, ProjectID: projectID, ActorUserID: uuid.New()},
+		Project{ID: projectID, TenantID: tenantID},
+		uuid.New(),
+	)
+
+	require.Equal(t, 1, beginner.begins, "revision creation must open a transaction")
+	require.True(t, txDB.ran("pg_advisory_xact_lock"), "advisory lock must run on the transaction")
+	require.False(t, poolDB.ran("pg_advisory_xact_lock"), "advisory lock must not run on the pool")
+}

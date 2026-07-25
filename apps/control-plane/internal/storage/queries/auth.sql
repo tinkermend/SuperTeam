@@ -180,3 +180,11 @@ RETURNING *;
 -- name: DeleteExpiredSessions :exec
 DELETE FROM auth_sessions
 WHERE expires_at < NOW();
+
+-- name: UpdateUserAvatarSVG :exec
+-- 自愈写回预渲染头像 data-URI(P1-D 2b)。仅由「当前用户写自己」的端点调用:后端跑不了
+-- dicebear、无法校验他人提交的 SVG,故不开放写他人头像。
+UPDATE auth_users
+SET avatar_svg = sqlc.arg('avatar_svg')::text,
+    updated_at = NOW()
+WHERE id = sqlc.arg('id')::uuid;

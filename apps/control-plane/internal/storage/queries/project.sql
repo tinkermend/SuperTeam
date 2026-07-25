@@ -2421,3 +2421,24 @@ WHERE ar.tenant_id = sqlc.arg('tenant_id')::uuid
   AND pdr.project_id = sqlc.arg('project_id')::uuid
   AND ar.status = 'pending'
 RETURNING ar.id;
+
+-- name: SumProjectConsumedTokens :one
+-- 项目 token 已消耗:对项目下所有任务的所有 attempt 的心跳累加值求和(P1-A 预算熔断)。
+-- budget_consumed_tokens 由 runtime 心跳单调累加,天然把失败与返工的消耗算进去。
+SELECT COALESCE(SUM(a.budget_consumed_tokens), 0)::bigint AS consumed_tokens
+FROM project_task_attempts a
+JOIN project_tasks t
+    ON t.tenant_id = a.tenant_id AND t.id = a.project_task_id
+WHERE a.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND t.project_id = sqlc.arg('project_id')::uuid;
+
+-- name: SetProjectBudgetTokenLimit :one
+-- 提额/设限/清限(P1-A):直接置列而非 COALESCE——列本身可空(NULL=不限),
+-- 需要能显式清回不限,不能用 COALESCE 区分"不改"与"设为不限"。
+UPDATE projects
+SET budget_token_limit = sqlc.narg('budget_token_limit')::bigint,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL
+RETURNING *;

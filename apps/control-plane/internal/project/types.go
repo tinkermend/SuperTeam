@@ -476,10 +476,13 @@ type Project struct {
 	PrimaryRuntimeNodeID   *uuid.UUID
 	WorkspaceReadyError    *string
 	WorkspaceReadyAt       *time.Time
-	ArchivedAt             *time.Time
-	DeletedAt              *time.Time
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	// BudgetTokenLimit 是项目 token 预算上限;nil = 不限。达到后派发前闸阻止开新任务
+	// (运行中任务不打断)。已消耗见 SumProjectConsumedTokens。
+	BudgetTokenLimit *int64
+	ArchivedAt       *time.Time
+	DeletedAt        *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type ProjectRepoBindingStatus string
@@ -1395,6 +1398,11 @@ type ProjectBudgetSummary struct {
 	EstimatedCost   string
 	ActualCost      string
 	LedgerCount     int32
+	// Token 预算熔断(P1-A):TokenLimit 为 nil = 不限;ConsumedTokens 为项目下所有
+	// attempt 心跳累加之和;Exhausted = 已设额度且已消耗达到上限,此时派发前闸拦新任务。
+	TokenLimit     *int64
+	ConsumedTokens int64
+	Exhausted      bool
 }
 
 type ProjectAcceptanceRecord struct {

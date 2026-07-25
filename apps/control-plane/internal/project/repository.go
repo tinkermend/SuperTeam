@@ -12,6 +12,10 @@ type Repository interface {
 	CreateProject(ctx context.Context, req CreateProjectRequest, projectID uuid.UUID, workflowID string) (Project, error)
 	SetProjectWorkspaceReady(ctx context.Context, tenantID, projectID uuid.UUID, status WorkspaceReadyStatus, primaryNodeID *uuid.UUID, readyError *string) (Project, error)
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
+	// SumProjectConsumedTokens 项目 token 已消耗:项目下所有 attempt 心跳累加之和(P1-A 预算熔断)。
+	SumProjectConsumedTokens(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error)
+	// SetProjectBudgetTokenLimit 提额/设限/清限;limit 为 nil 表示不限。
+	SetProjectBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (Project, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error)

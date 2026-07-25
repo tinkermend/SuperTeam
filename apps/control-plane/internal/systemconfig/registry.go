@@ -11,6 +11,7 @@ const (
 	DomainExecution    = "execution"
 	DomainSecurity     = "security"
 	DomainOrganization = "organization"
+	DomainRetention    = "retention"
 )
 
 // 各配置项 key。使用点经 Reader 取值时引用这些常量。
@@ -31,6 +32,14 @@ const (
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
 	KeyEmployeeMaxPerTeam                 = "employee.max_per_team"
+	KeyRetentionRuntimeEventsDays         = "retention.runtime_events_days"
+	KeyRetentionProviderSessionEventsDays = "retention.provider_session_events_days"
+	KeyRetentionCommandReceiptsDays       = "retention.runtime_command_receipts_days"
+	KeyRetentionTaskEventsDays            = "retention.task_events_days"
+	KeyRetentionAuthzAllowLogsDays        = "retention.authz_allow_logs_days"
+	KeyRetentionOperationLogsDays         = "retention.operation_logs_days"
+	KeyRetentionPurgedProjectDays         = "retention.purged_project_days"
+	KeyRetentionSweepBatchSize            = "retention.sweep_batch_size"
 )
 
 // registry 是配置项注册表:非封闭枚举,新增配置项 = 此处加一条 + 使用点接入,
@@ -203,6 +212,90 @@ var registry = []Definition{
 		DefaultValue: 10,
 		MinValue:     1,
 		MaxValue:     500,
+	},
+	{
+		Key:    KeyRetentionRuntimeEventsDays,
+		Domain: DomainRetention,
+		Label:  "Runtime 事件保留天数",
+		Description: "runtime_events 超过此天数的行由保留作业分批删除。该表只服务 Runtime 概览的近期视图,过期后无读者。" +
+			"业务事实表(项目事件、执行账本、审计)不按此清理。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 30,
+		MinValue:     7,
+		MaxValue:     3650,
+	},
+	{
+		Key:          KeyRetentionProviderSessionEventsDays,
+		Domain:       DomainRetention,
+		Label:        "Provider 会话事件保留天数",
+		Description:  "provider_session_events 超过此天数的行由保留作业分批删除;排障用,过期无价值。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 30,
+		MinValue:     7,
+		MaxValue:     3650,
+	},
+	{
+		Key:          KeyRetentionCommandReceiptsDays,
+		Domain:       DomainRetention,
+		Label:        "Runtime 命令回执保留天数",
+		Description:  "runtime_command_receipts 超过此天数的行由保留作业分批删除。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 30,
+		MinValue:     7,
+		MaxValue:     3650,
+	},
+	{
+		Key:          KeyRetentionTaskEventsDays,
+		Domain:       DomainRetention,
+		Label:        "任务事件保留天数",
+		Description:  "task_events(通用任务体系)超过此天数的行由保留作业分批删除;取值比 Runtime 遥测保守。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 90,
+		MinValue:     7,
+		MaxValue:     3650,
+	},
+	{
+		Key:    KeyRetentionAuthzAllowLogsDays,
+		Domain: DomainRetention,
+		Label:  "授权放行日志保留天数",
+		Description: "web_operation_logs 中 module=authz 且 result=succeeded 的放行记录保留天数。" +
+			"放行记录量极大而审计价值极低(实测 177,090 条放行对 19 条拒绝),拒绝记录不走本项、按「操作日志保留天数」保留。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 7,
+		MinValue:     1,
+		MaxValue:     3650,
+	},
+	{
+		Key:          KeyRetentionOperationLogsDays,
+		Domain:       DomainRetention,
+		Label:        "操作日志保留天数",
+		Description:  "web_operation_logs 中除授权放行以外的记录(含全部拒绝记录)的保留天数。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 90,
+		MinValue:     7,
+		MaxValue:     3650,
+	},
+	{
+		Key:    KeyRetentionPurgedProjectDays,
+		Domain: DomainRetention,
+		Label:  "已删项目事实行清除天数",
+		Description: "项目删除是软删(只置 deleted_at,不清行),其项目事件与执行账本在应用层已完全不可见。" +
+			"软删超过此天数后连同这些事实行一并清除。调大只是推迟清除,不影响在册项目。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 30,
+		MinValue:     7,
+		MaxValue:     3650,
+	},
+	{
+		Key:    KeyRetentionSweepBatchSize,
+		Domain: DomainRetention,
+		Label:  "保留作业单批删除行数",
+		Description: "保留作业每条语句一次删除的最大行数。分批是为了让每个事务都很短——远程库上一次性删几十万行会拖长事务并放大锁竞争。" +
+			"调大提升清理速度但增加单次锁持有时间。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 5000,
+		MinValue:     100,
+		MaxValue:     50000,
 	},
 }
 

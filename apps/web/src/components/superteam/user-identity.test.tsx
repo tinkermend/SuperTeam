@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
-import { UserIdentity, UserIdentityAvatar, buildUserAvatarDataUri, getUserIdentityLabel } from "./user-identity";
+import { UserIdentity, UserIdentityAvatar, getUserIdentityLabel } from "./user-identity";
+import { buildUserAvatarDataUri } from "@/lib/avatar-dicebear";
 
 describe("UserIdentity", () => {
   it("renders display name, email and avatar image", async () => {

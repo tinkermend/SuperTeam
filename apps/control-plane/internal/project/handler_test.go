@@ -2732,6 +2732,10 @@ func (s *handlerTestService) GetBudgetSummary(ctx context.Context, tenantID, pro
 	return &ProjectBudgetSummary{EstimatedTokens: 1000, ActualTokens: 800, EstimatedCost: "1.00", ActualCost: "0.80", LedgerCount: 1}, nil
 }
 
+func (s *handlerTestService) SetBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (*ProjectBudgetSummary, error) {
+	return &ProjectBudgetSummary{TokenLimit: limit, ConsumedTokens: 800, Exhausted: limit != nil && *limit > 0 && 800 >= *limit}, nil
+}
+
 func (s *handlerTestService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {
 	if s.getAcceptanceErr != nil {
 		return nil, s.getAcceptanceErr

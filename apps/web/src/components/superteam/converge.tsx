@@ -2,6 +2,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import { Link } from "@tanstack/react-router";
 import { ChevronRight, FilterX, Inbox, Settings2 } from "lucide-react";
 import { toast, type ExternalToast } from "sonner";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
@@ -66,13 +67,15 @@ function Breadcrumb({
                   {item.label}
                 </span>
               ) : item.href ? (
-                <a
-                  href={item.href}
+                // 站内路由用 TanStack Link 而非原生 <a>：既渲染真 href（可访问 / 右键新开），
+                // 又走 SPA 导航不整页刷新。原生 <a href> 会整页刷新，也触发 navigation-rules 护栏。
+                <Link
+                  to={item.href}
                   onClick={item.onClick}
                   className="min-w-0 truncate font-medium text-ink-3 transition-colors hover:text-brand"
                 >
                   {item.label}
-                </a>
+                </Link>
               ) : (
                 <button
                   type="button"
@@ -508,8 +511,8 @@ export {
  * Breadcrumb vs ShellPageHeaderBack
  *   - 单级返回：ShellPageHeaderBack。
  *   - ≥2 级路径：Breadcrumb（可与页头并存于标题上方）。
- *   - 站内路由：优先传入 onClick + TanStack navigate，或外层用 Link 包自定义项；
- *     href 适合真 URL / 需可新开的链接。
+ *   - href 走 TanStack Link（SPA 导航 + 真 href，可右键新开）；纯动作项传 onClick 走 button。
+ *     外部 URL / 下载不走 Breadcrumb.href。
  *
  * SectionHeader vs PageHeader / ObjectHeader
  *   - 页面级：PageHeader / ShellPageHeader。

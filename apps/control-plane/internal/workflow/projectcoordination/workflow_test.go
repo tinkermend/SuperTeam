@@ -2221,6 +2221,55 @@ func TestProjectCoordinatorContinuesAsNewWhenSuggestedAfterSignal(t *testing.T) 
 	require.Equal(t, []string{"AppendProjectEvent"}, store.calls)
 }
 
+// Continue-as-new must drain buffered signals first. Select consumes one signal
+// per iteration, so signals delivered together leave the rest in their channels;
+// continuing-as-new before they are drained loses them silently (the server's
+// unhandled-command protection does not cover events already carried by the
+// completed workflow task). Three signals are delivered at the same instant with
+// the suggestion already on: all three must be observed before the workflow
+// continues as new, and the continue-as-new must still happen afterwards so
+// history stays bounded.
+func TestProjectCoordinatorDrainsBufferedSignalsBeforeContinuingAsNew(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.SetContinueAsNewSuggested(true)
+	projectID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:      CoordinationSnapshot{ProjectID: projectID},
+		dispatchEvent: uuid.New(),
+	}
+	activities := NewActivities(store, HeuristicRoutePlanner{})
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalProjectPolicyChanged, ProjectPolicyChanged{
+			ProjectID:        projectID,
+			ConfigRevisionID: uuid.New(),
+			ChangedEventID:   uuid.New(),
+		})
+		env.SignalWorkflow(SignalProjectMemberChanged, ProjectMemberChanged{
+			ProjectID:      projectID,
+			ChangedEventID: uuid.New(),
+		})
+		env.SignalWorkflow(SignalEmployeeTransferRequested, EmployeeTransferRequested{
+			ProjectTaskID:     uuid.New(),
+			TransferRequestID: uuid.New(),
+			RequestedEventID:  uuid.New(),
+		})
+	}, time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+		Generation: 3,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+	require.Contains(t, env.GetWorkflowError().Error(), "continue as new")
+	require.Equal(t, []string{"AppendProjectEvent", "AppendProjectEvent", "AppendProjectEvent"}, store.calls)
+}
+
 func TestActivitiesDispatchProjectTaskWrapsTerminalErrorAsNonRetryable(t *testing.T) {
 	store := &recordingActivityStore{dispatchErr: &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject}}
 	activities := NewActivities(store, HeuristicRoutePlanner{})

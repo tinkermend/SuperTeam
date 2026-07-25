@@ -1804,14 +1804,38 @@ func (s *Service) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
-	if _, err := s.repository.GetProject(ctx, tenantID, projectID); err != nil {
+	project, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
 		return nil, err
 	}
 	summary, err := s.repository.GetBudgetSummary(ctx, tenantID, projectID)
 	if err != nil {
 		return nil, err
 	}
+	// Token 预算熔断状态(P1-A):额度取自项目,已消耗按 attempt 心跳累加求和。
+	consumed, err := s.repository.SumProjectConsumedTokens(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	summary.TokenLimit = project.BudgetTokenLimit
+	summary.ConsumedTokens = consumed
+	summary.Exhausted = project.BudgetTokenLimit != nil && *project.BudgetTokenLimit > 0 && consumed >= *project.BudgetTokenLimit
 	return &summary, nil
+}
+
+// SetBudgetTokenLimit 提额/设限/清限(P1-A):limit 为 nil 表示清回不限。
+// 提额后已消耗 < 新额度即自动放行下次派发,不是一次性审批。
+func (s *Service) SetBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (*ProjectBudgetSummary, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	if limit != nil && *limit < 0 {
+		return nil, fmt.Errorf("%w: budget_token_limit must be non-negative", ErrInvalidProject)
+	}
+	if _, err := s.repository.SetProjectBudgetTokenLimit(ctx, tenantID, projectID, limit); err != nil {
+		return nil, err
+	}
+	return s.GetBudgetSummary(ctx, tenantID, projectID)
 }
 
 func (s *Service) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error) {

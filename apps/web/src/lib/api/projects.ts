@@ -771,6 +771,12 @@ export type ProjectBudgetSummary = {
   estimated_cost: string;
   actual_cost: string;
   ledger_count: number;
+  /** token 预算上限；缺省表示不限（P1-A 熔断）。 */
+  token_limit?: number | null;
+  /** 项目下所有 attempt 心跳累加的 token 消耗之和。 */
+  consumed_tokens: number;
+  /** 已设额度且已消耗达到上限；为真时前端禁用发起、后端派发前闸拦新任务。 */
+  exhausted: boolean;
 };
 
 export type ProjectAcceptanceRecord = {
@@ -1687,6 +1693,20 @@ export function getProjectBudgetSummary(
     options,
     projectPath(projectId, "/budget-summary"),
     "project budget summary",
+  );
+}
+
+/** 提额/设限/清限（P1-A）。tokenLimit 传 null 清回不限。 */
+export function setProjectBudget(
+  options: ApiClientOptions,
+  projectId: string,
+  tokenLimit: number | null,
+): Promise<ProjectBudgetSummary> {
+  return putJson<ProjectBudgetSummary>(
+    options,
+    projectPath(projectId, "/budget-summary"),
+    { token_limit: tokenLimit },
+    "project budget",
   );
 }
 

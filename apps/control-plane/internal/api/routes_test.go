@@ -2028,6 +2028,15 @@ func (r *routeAuthRepo) UpdateUserProfile(ctx context.Context, userID uuid.UUID,
 	return user, nil
 }
 
+func (r *routeAuthRepo) SetUserAvatarSVG(ctx context.Context, userID uuid.UUID, svg string) error {
+	user, ok := r.usersByID[userID]
+	if !ok {
+		return auth.ErrUnauthorized
+	}
+	user.Avatar.SVG = svg
+	return nil
+}
+
 func (r *routeAuthRepo) CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error {
 	return nil
 }

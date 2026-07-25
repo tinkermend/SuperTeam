@@ -119,6 +119,10 @@ type PreDispatchBudgetSnapshot struct {
 	TaskBudgetPresent    bool
 	NeedsApproval        bool
 	ApprovalGranted      bool
+	// TokenLimit / ConsumedTokens 记录 token 预算判定依据(P1-A);TokenLimit 为 nil
+	// 表示项目未设额度(不限),此时 ProjectBudgetAllowed 恒为 true。
+	TokenLimit     *int64
+	ConsumedTokens int64
 }
 
 type PreDispatchRiskSnapshot struct {
@@ -346,6 +350,18 @@ func EvaluatePreDispatchGate(input PreDispatchGateInput, snapshot PreDispatchGat
 		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionBudgetApproval, HumanWaitReasonBudgetApproval, "project_task_budget_approval", "任务预算缺失", "需要确认任务预算和超时策略后才能分派任务", "medium")
 		addCheck("budget.ready", "failed", map[string]any{"task_budget_present": false})
 		addBlocker("budget.task_budget_missing", PreDispatchGateStatusWaitingHuman, "human", false, nil)
+		setStatus(PreDispatchGateStatusWaitingHuman)
+	} else if !snapshot.Budget.ProjectBudgetAllowed && snapshot.Budget.TokenLimit != nil {
+		// Token 预算耗尽:提示提额而非泛泛「确认预算」。提额(改大 budget_token_limit)后
+		// 下次派发 consumed < limit 自动放行,不是一次性审批。
+		summary := fmt.Sprintf("项目 token 预算已耗尽（已用 %d / 上限 %d），提高额度后可继续派发任务", snapshot.Budget.ConsumedTokens, *snapshot.Budget.TokenLimit)
+		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionBudgetApproval, HumanWaitReasonBudgetApproval, "project_task_budget_approval", "项目 token 预算已耗尽", summary, "medium")
+		addCheck("budget.ready", "failed", map[string]any{
+			"project_budget_allowed": false,
+			"token_limit":            *snapshot.Budget.TokenLimit,
+			"consumed_tokens":        snapshot.Budget.ConsumedTokens,
+		})
+		addBlocker("budget.token_exhausted", PreDispatchGateStatusWaitingHuman, "human", false, nil)
 		setStatus(PreDispatchGateStatusWaitingHuman)
 	} else if !snapshot.Budget.ProjectBudgetAllowed || (snapshot.Budget.NeedsApproval && !snapshot.Budget.ApprovalGranted) {
 		result.HumanActionRequest = humanGateRequest(PreDispatchHumanActionBudgetApproval, HumanWaitReasonBudgetApproval, "project_task_budget_approval", "项目预算需要确认", "需要人类确认预算后才能分派任务", "medium")

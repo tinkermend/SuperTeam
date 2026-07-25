@@ -345,6 +345,9 @@ type UserAvatar struct {
 	Provider UserAvatarProvider      `json:"provider"`
 	Seed     string                  `json:"seed"`
 	Style    UserAvatarStyle         `json:"style"`
+
+	// Svg 预渲染的头像 data-URI（P1-D 2b）；空/缺省表示未生成，前端懒加载 dicebear 兜底渲染。
+	Svg *string `json:"svg,omitempty"`
 }
 
 // UserAvatarProvider defines model for UserAvatar.Provider.
@@ -467,6 +470,12 @@ type ListLoginLogsParamsEventType string
 // ListLoginLogsParamsResult defines parameters for ListLoginLogs.
 type ListLoginLogsParamsResult string
 
+// SetCurrentUserAvatarSVGJSONBody defines parameters for SetCurrentUserAvatarSVG.
+type SetCurrentUserAvatarSVGJSONBody struct {
+	// Svg 预渲染的头像 data-URI。
+	Svg string `json:"svg"`
+}
+
 // ListOperationLogsParams defines parameters for ListOperationLogs.
 type ListOperationLogsParams struct {
 	Limit  *int32                         `form:"limit,omitempty" json:"limit,omitempty"`
@@ -499,6 +508,9 @@ type UpdateCurrentUserProfileJSONRequestBody = UpdateCurrentUserProfileRequest
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
+
+// SetCurrentUserAvatarSVGJSONRequestBody defines body for SetCurrentUserAvatarSVG for application/json ContentType.
+type SetCurrentUserAvatarSVGJSONRequestBody SetCurrentUserAvatarSVGJSONBody
 
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = CreateUserRequest
@@ -538,6 +550,9 @@ type ServerInterface interface {
 	// 获取当前登录用户信息
 	// (GET /api/auth/me)
 	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+	// 自愈写回当前用户预渲染头像（P1-D 2b）
+	// (PUT /api/auth/me/avatar-svg)
+	SetCurrentUserAvatarSVG(w http.ResponseWriter, r *http.Request)
 	// 查询 Web 控制台操作日志
 	// (GET /api/auth/operation-logs)
 	ListOperationLogs(w http.ResponseWriter, r *http.Request, params ListOperationLogsParams)
@@ -610,6 +625,12 @@ func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request) {
 // 获取当前登录用户信息
 // (GET /api/auth/me)
 func (_ Unimplemented) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 自愈写回当前用户预渲染头像（P1-D 2b）
+// (PUT /api/auth/me/avatar-svg)
+func (_ Unimplemented) SetCurrentUserAvatarSVG(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -893,6 +914,26 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCurrentUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetCurrentUserAvatarSVG operation middleware
+func (siw *ServerInterfaceWrapper) SetCurrentUserAvatarSVG(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetCurrentUserAvatarSVG(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1355,6 +1396,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/auth/me", wrapper.GetCurrentUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/auth/me/avatar-svg", wrapper.SetCurrentUserAvatarSVG)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/auth/operation-logs", wrapper.ListOperationLogs)

@@ -73,6 +73,8 @@ type Querier interface {
 	CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error)
 	CountProjectTaskDispatchFailureEvents(ctx context.Context, arg CountProjectTaskDispatchFailureEventsParams) (int64, error)
 	CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error)
+	// 观测用:不删,只报当前各类超期行的规模,供日志与人工核对。
+	CountRetentionCandidates(ctx context.Context, runtimeDays int32) (CountRetentionCandidatesRow, error)
 	CountRuntimeEnrollmentsForTenant(ctx context.Context, arg CountRuntimeEnrollmentsForTenantParams) (int64, error)
 	CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountTeamOwners(ctx context.Context, arg CountTeamOwnersParams) (int32, error)
@@ -175,13 +177,37 @@ type Querier interface {
 	DeleteAutomationRulesByProject(ctx context.Context, arg DeleteAutomationRulesByProjectParams) (int64, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
+	DeleteExecutionLedgerEventsForPurgedProjects(ctx context.Context, arg DeleteExecutionLedgerEventsForPurgedProjectsParams) (int64, error)
+	DeleteExpiredAuthSessions(ctx context.Context, batchSize int32) (int64, error)
+	// authz 放行日志单独一条更短的保留期:实测 177,090 条 succeeded 对 19 条 failed,
+	// 放行记录几乎没有审计价值,拒绝记录才是信号。拒绝走下面的通用规则。
+	DeleteExpiredAuthzAllowOperationLogs(ctx context.Context, arg DeleteExpiredAuthzAllowOperationLogsParams) (int64, error)
 	DeleteExpiredCaptchaChallenges(ctx context.Context, before pgtype.Timestamptz) error
+	DeleteExpiredOperationLogs(ctx context.Context, arg DeleteExpiredOperationLogsParams) (int64, error)
+	DeleteExpiredProviderSessionEvents(ctx context.Context, arg DeleteExpiredProviderSessionEventsParams) (int64, error)
+	DeleteExpiredRuntimeCommandReceipts(ctx context.Context, arg DeleteExpiredRuntimeCommandReceiptsParams) (int64, error)
+	// 数据保留清理查询(P1-B)。
+	//
+	// 每张表一条静态语句而不是一条动态 SQL:表名不进参数,既避免注入面,也让 sqlc
+	// 保持类型检查。保留策略的"表驱动"体现在 internal/retention 的注册表上,注册表项
+	// 各自挂一条本文件里的语句。
+	//
+	// 全部按批删除(LIMIT + ctid 子查询):远程库上一次性删几十万行会拖长事务、放大锁
+	// 竞争,分批让每个事务都很短。调用方循环到单批删不满为止。
+	//
+	// 业务事实表(project_events / execution_ledger_events / audit_events)不按时间删,
+	// 只在其所属项目已软删且超期后随项目一起清(见文件末尾)。
+	DeleteExpiredRuntimeEvents(ctx context.Context, arg DeleteExpiredRuntimeEventsParams) (int64, error)
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteExpiredTaskEvents(ctx context.Context, arg DeleteExpiredTaskEventsParams) (int64, error)
 	DeleteFeishuIdentityByUser(ctx context.Context, arg DeleteFeishuIdentityByUserParams) error
 	DeleteMCPServerDefinition(ctx context.Context, arg DeleteMCPServerDefinitionParams) error
 	DeleteProjectEmployeeNodeAffinitiesForDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForDeleteParams) ([]uuid.UUID, error)
 	DeleteProjectEmployeeNodeAffinitiesForEmployeeDelete(ctx context.Context, arg DeleteProjectEmployeeNodeAffinitiesForEmployeeDeleteParams) ([]uuid.UUID, error)
+	// 以下三条清理"已软删且超期项目"的事实行。项目软删只置 deleted_at、不清行
+	// (SoftDeleteProject),这些行在应用层已完全不可见,却是最大的一块死重。
+	DeleteProjectEventsForPurgedProjects(ctx context.Context, arg DeleteProjectEventsForPurgedProjectsParams) (int64, error)
 	DeleteProjectRuntimeNodesForDelete(ctx context.Context, arg DeleteProjectRuntimeNodesForDeleteParams) ([]uuid.UUID, error)
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
@@ -604,6 +630,9 @@ type Querier interface {
 	SetAutomationRuleEnabled(ctx context.Context, arg SetAutomationRuleEnabledParams) (AutomationRule, error)
 	SetAutomationRuleScheduleID(ctx context.Context, arg SetAutomationRuleScheduleIDParams) (AutomationRule, error)
 	SetEmployeeTemplateStatus(ctx context.Context, arg SetEmployeeTemplateStatusParams) (DigitalEmployeeTemplate, error)
+	// 提额/设限/清限(P1-A):直接置列而非 COALESCE——列本身可空(NULL=不限),
+	// 需要能显式清回不限,不能用 COALESCE 区分"不改"与"设为不限"。
+	SetProjectBudgetTokenLimit(ctx context.Context, arg SetProjectBudgetTokenLimitParams) (Project, error)
 	SetProjectDecisionRequestDispatchGate(ctx context.Context, arg SetProjectDecisionRequestDispatchGateParams) (ProjectDecisionRequest, error)
 	// 多负责人:成员变更后按 owner 角色人类成员重同步负责人集合(数组权威,scalar=首个过渡镜像)。
 	SetProjectHumanOwners(ctx context.Context, arg SetProjectHumanOwnersParams) error
@@ -624,6 +653,9 @@ type Querier interface {
 	// 而静默不进 ledger(07-13 记档缺陷)。runtime 在 started 回写带 command_id,
 	// 此处按 task_runs.command_id(全局唯一)补上缺失的关联。
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
+	// 项目 token 已消耗:对项目下所有任务的所有 attempt 的心跳累加值求和(P1-A 预算熔断)。
+	// budget_consumed_tokens 由 runtime 心跳单调累加,天然把失败与返工的消耗算进去。
+	SumProjectConsumedTokens(ctx context.Context, arg SumProjectConsumedTokensParams) (int64, error)
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
 	SupersedePendingFeishuOutboxByResource(ctx context.Context, arg SupersedePendingFeishuOutboxByResourceParams) error
 	// 人类解决等待、任务转入重派发或终态时,旧 waiting_human attempt 必须先出让
@@ -680,6 +712,9 @@ type Querier interface {
 	UpdateTenantTeamConstitution(ctx context.Context, arg UpdateTenantTeamConstitutionParams) (TenantTeam, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)
 	UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) (AuthUser, error)
+	// 自愈写回预渲染头像 data-URI(P1-D 2b)。仅由「当前用户写自己」的端点调用:后端跑不了
+	// dicebear、无法校验他人提交的 SVG,故不开放写他人头像。
+	UpdateUserAvatarSVG(ctx context.Context, arg UpdateUserAvatarSVGParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuAppConfigParams) (FeishuAppConfig, error)
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)

@@ -20,8 +20,24 @@ import (
 
 type Config struct {
 	PostgresURL string
+	Postgres    PostgresPoolConfig
 	RedisURL    string
 	ObjectStore ObjectStoreConfig
+}
+
+// PostgresPoolConfig sizes the connection pool. Zero values fall back to pgx's
+// own defaults, which are CPU-shaped (MaxConns = max(4, NumCPU)) and wrong for a
+// remote database: throughput is bounded by MaxConns/RTT, not by cores. See
+// config.PostgresConfig for the reasoning and the shipped defaults.
+// PostgresApplicationName tags Control Plane connections in pg_stat_activity.
+const PostgresApplicationName = "superteam-control-plane"
+
+type PostgresPoolConfig struct {
+	MaxConns          int32
+	MinConns          int32
+	MaxConnLifetime   time.Duration
+	MaxConnIdleTime   time.Duration
+	HealthCheckPeriod time.Duration
 }
 
 type ObjectStoreConfig struct {
@@ -39,6 +55,48 @@ type Clients struct {
 	ObjectStore *S3ObjectStore
 }
 
+// applyPoolConfig overrides pgx's defaults with the configured sizing. Values
+// left at zero keep whatever the connection string or pgx itself supplied, so a
+// caller can opt out field by field. MinConns is clamped to MaxConns because pgx
+// treats a MinConns above MaxConns as a permanent over-subscription.
+func applyPoolConfig(poolConfig *pgxpool.Config, cfg PostgresPoolConfig) {
+	if poolConfig == nil {
+		return
+	}
+	// Tag connections so pg_stat_activity can tell Control Plane sessions apart
+	// from the runtime agent, the connector, migrations and ad-hoc psql. Without
+	// it every backend shows an empty application_name and pool problems are
+	// impossible to attribute. Respect an application_name already supplied in
+	// the connection string.
+	if poolConfig.ConnConfig != nil {
+		if poolConfig.ConnConfig.RuntimeParams == nil {
+			poolConfig.ConnConfig.RuntimeParams = map[string]string{}
+		}
+		if poolConfig.ConnConfig.RuntimeParams["application_name"] == "" {
+			poolConfig.ConnConfig.RuntimeParams["application_name"] = PostgresApplicationName
+		}
+	}
+	if cfg.MaxConns > 0 {
+		poolConfig.MaxConns = cfg.MaxConns
+	}
+	if cfg.MinConns > 0 {
+		minConns := cfg.MinConns
+		if minConns > poolConfig.MaxConns {
+			minConns = poolConfig.MaxConns
+		}
+		poolConfig.MinConns = minConns
+	}
+	if cfg.MaxConnLifetime > 0 {
+		poolConfig.MaxConnLifetime = cfg.MaxConnLifetime
+	}
+	if cfg.MaxConnIdleTime > 0 {
+		poolConfig.MaxConnIdleTime = cfg.MaxConnIdleTime
+	}
+	if cfg.HealthCheckPeriod > 0 {
+		poolConfig.HealthCheckPeriod = cfg.HealthCheckPeriod
+	}
+}
+
 func NewClients(ctx context.Context, cfg Config) (*Clients, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -48,6 +106,7 @@ func NewClients(ctx context.Context, cfg Config) (*Clients, error) {
 	if err != nil {
 		return nil, err
 	}
+	applyPoolConfig(poolConfig, cfg.Postgres)
 	postgres, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, err

@@ -4916,7 +4916,8 @@ func TestProjectStoreDispatchProjectTaskWaitingHumanGateDoesNotStartRun(t *testi
 	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatchGateWaitingHuman), 1)
 	require.Len(t, eventsByType(repo.events, project.ProjectEventDecisionRequested), 1)
 	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatched))
-	require.Equal(t, 1, repo.getProjectCalls)
+	// 2 次 GetProject:既有的风险审批路径一次 + 新增的 token 预算判定一次(P1-A)。
+	require.Equal(t, 2, repo.getProjectCalls)
 	require.Zero(t, repo.getProjectDemandCalls)
 }
 
@@ -4971,7 +4972,9 @@ func TestProjectStoreDispatchProjectTaskRetryLaterGateIsRetryable(t *testing.T) 
 	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatched))
 	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatchFailed))
 	require.Equal(t, project.ProjectTaskStatusPlanned, repo.tasks[0].Status)
-	require.Zero(t, repo.getProjectCalls)
+	// 预算判定在 snapshot 加载阶段读一次项目(即使本例最终因槽位不足 retry-later);
+	// 与"先收集全量再评估"的既有模式一致(P1-A)。
+	require.Equal(t, 1, repo.getProjectCalls)
 	require.Zero(t, repo.getProjectDemandCalls)
 }
 
@@ -5819,12 +5822,13 @@ func TestDispatchErrorRetryableClassification(t *testing.T) {
 type projectStoreMemoryRepository struct {
 	project.Repository
 
-	projectRecord project.Project
-	demand        project.ProjectDemand
-	demands       []project.ProjectDemand
-	members       []project.ProjectMember
-	tasks         []project.ProjectTask
-	approvalID    uuid.UUID
+	projectRecord  project.Project
+	demand         project.ProjectDemand
+	demands        []project.ProjectDemand
+	members        []project.ProjectMember
+	tasks          []project.ProjectTask
+	approvalID     uuid.UUID
+	consumedTokens int64
 
 	bindRequests                          []project.BindProjectTaskRunRequest
 	bindAttemptRunRequests                []project.BindProjectTaskAttemptRunRequest
@@ -5992,6 +5996,10 @@ func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID,
 		return r.projectRecord, nil
 	}
 	return project.Project{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) SumProjectConsumedTokens(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error) {
+	return r.consumedTokens, nil
 }
 
 // ListProjectRuntimeNodes mirrors GetActiveProjectPlacement's presence
@@ -7970,4 +7978,60 @@ func TestLoadSnapshotResolutionFailureEmitsProjectEvent(t *testing.T) {
 	if found.Payload["source"] != "demand" {
 		t.Fatalf("expected payload source=demand, got %#v", found.Payload)
 	}
+}
+
+// Token 预算耗尽时,派发前闸必须把「开新工」挡成 waiting_human 而不启动 run,并落
+// budget.token_exhausted。这是 P1-A 熔断从 snapshot 读取(项目额度 + attempt 消耗和)
+// 到闸判定到派发拦截的整条集成路径,补上单测只覆盖闸评估、真实链路只覆盖读取的缺口。
+func TestProjectStoreDispatchProjectTaskBlocksWhenTokenBudgetExhausted(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	approvalID := uuid.New()
+	limit := int64(1000)
+	repo := &projectStoreMemoryRepository{
+		// 额度 1000,已消耗 1200 → 耗尽。
+		projectRecord:  project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID, BudgetTokenLimit: &limit},
+		consumedTokens: 1200,
+		demand:         project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{{
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			// 不设 RequiresHumanApproval:确保拦截来自预算而非风险闸。
+		}},
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, approvals, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Empty(t, starter.requests, "over-budget must not start a run")
+	require.Empty(t, repo.queueRequests)
+	require.Len(t, repo.dispatchGateResults, 1)
+	gate := repo.dispatchGateResults[0]
+	require.Equal(t, project.PreDispatchGateStatusWaitingHuman, gate.Status)
+	require.Equal(t, project.ProjectTaskStatusWaitingHuman, repo.tasks[0].Status)
+	blockers := make([]string, 0, len(gate.Blockers))
+	for _, b := range gate.Blockers {
+		blockers = append(blockers, b.Key)
+	}
+	require.Contains(t, blockers, "budget.token_exhausted")
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatched))
 }

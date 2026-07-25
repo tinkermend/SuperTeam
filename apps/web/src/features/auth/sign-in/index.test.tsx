@@ -4,7 +4,10 @@ import { render } from 'vitest-browser-react'
 import { SignIn } from './index'
 
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({ redirect: '/projects' })
+  useSearch: () => ({ redirect: '/projects' }),
+  // superteam barrel 里的 Breadcrumb 现在静态 import Link（P1-D nav 修复），
+  // mock 需提供它，否则导入图解析失败。
+  Link: ({ children }: { children?: ReactNode }) => <a>{children}</a>
 }))
 
 vi.mock('./components/user-auth-form', () => ({

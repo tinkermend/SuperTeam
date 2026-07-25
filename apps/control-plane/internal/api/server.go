@@ -429,6 +429,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/reports", s.projectHandler.ListReports)
 				r.Get("/projects/{projectId}/budget-ledger", s.projectHandler.ListBudgetLedger)
 				r.Get("/projects/{projectId}/budget-summary", s.projectHandler.GetBudgetSummary)
+				r.Put("/projects/{projectId}/budget-summary", s.projectHandler.SetBudget)
 				r.Get("/projects/{projectId}/acceptance", s.projectHandler.GetAcceptance)
 				r.Get("/projects/{projectId}/archive-preview", s.projectHandler.GetArchivePreview)
 				r.Post("/projects/{projectId}/archive-snapshot", s.projectHandler.CreateArchiveSnapshot)

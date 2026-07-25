@@ -1,5 +1,5 @@
 import type { UserAvatar as UserAvatarConfig } from "@/lib/api";
-import { UserIdentityAvatar, buildUserAvatarDataUri } from "@/components/superteam/user-identity";
+import { UserIdentityAvatar } from "@/components/superteam/user-identity";
 
 type UserAvatarProps = {
   avatar: UserAvatarConfig;
@@ -14,5 +14,3 @@ export function UserAvatar({ avatar, username }: UserAvatarProps) {
     />
   );
 }
-
-export { buildUserAvatarDataUri };

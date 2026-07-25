@@ -559,3 +559,82 @@ func readyPreDispatchGateSnapshot(projectID, taskID, employeeID uuid.UUID) PreDi
 func int32Ptr(v int32) *int32 {
 	return &v
 }
+
+func budgetTestInt64Ptr(v int64) *int64 { return &v }
+
+// Token 预算耗尽(consumed >= limit)时,派发前闸必须拦成 waiting_human，且用「提额」
+// 语义的 blocker/消息，而不是泛泛的「确认预算」。这是 P1-A 熔断的判定核心。
+func TestEvaluatePreDispatchGateBlocksOnTokenBudgetExhausted(t *testing.T) {
+	now := time.Date(2026, 6, 21, 9, 30, 0, 0, time.UTC)
+	projectID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	taskID := uuid.MustParse("00000000-0000-0000-0000-000000000202")
+	employeeID := uuid.MustParse("00000000-0000-0000-0000-000000000203")
+	revisionID := uuid.MustParse("00000000-0000-0000-0000-000000000204")
+	key := "inspect-db"
+
+	base := PreDispatchGateSnapshot{
+		Task: ProjectTask{
+			ID:                        taskID,
+			ProjectID:                 projectID,
+			Status:                    ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			AcceptedPlanRevisionID:    &revisionID,
+			PlannedTaskKey:            &key,
+			MaxAttempts:               int32Ptr(3),
+			AttemptCount:              0,
+		},
+		Employee: PreDispatchEmployeeSnapshot{
+			ID:                 employeeID,
+			IsProjectExecutor:  true,
+			Status:             "active",
+			PolicyAllowed:      true,
+			RequiredLoadSlots:  1,
+			AvailableLoadSlots: 1,
+		},
+		Runtime: PreDispatchRuntimeSnapshot{
+			PlacementPresent:        true,
+			NodeOnline:              true,
+			ProviderAvailable:       true,
+			WorkspaceReady:          true,
+			SlotAvailable:           true,
+			ContractVersionAccepted: true,
+		},
+		Context: PreDispatchContextSnapshot{RequiredRefsResolved: true, InjectionAllowed: true},
+	}
+
+	input := PreDispatchGateInput{
+		ProjectID:              projectID,
+		ProjectTaskID:          taskID,
+		AcceptedPlanRevisionID: &revisionID,
+		PlannedTaskKey:         &key,
+		SelectedEmployeeID:     employeeID,
+		AttemptNo:              1,
+		DispatchReason:         DispatchReasonDependencyUnlocked,
+	}
+
+	// 耗尽:已用 1200 >= 上限 1000 → waiting_human + token_exhausted。
+	exhausted := base
+	exhausted.Budget = PreDispatchBudgetSnapshot{
+		ProjectBudgetAllowed: false,
+		TaskBudgetPresent:    true,
+		TokenLimit:           budgetTestInt64Ptr(1000),
+		ConsumedTokens:       1200,
+	}
+	result := EvaluatePreDispatchGate(input, exhausted, now)
+	require.Equal(t, PreDispatchGateStatusWaitingHuman, result.Status)
+	require.NotNil(t, result.HumanActionRequest)
+	require.Contains(t, result.CheckKeys(), "budget.ready")
+	found := false
+	for _, blocker := range result.Blockers {
+		if blocker.Key == "budget.token_exhausted" {
+			found = true
+		}
+	}
+	require.True(t, found, "expected budget.token_exhausted blocker, got %+v", result.Blockers)
+
+	// 未设额度(TokenLimit nil, ProjectBudgetAllowed true)= 不限 → 正常放行。
+	unlimited := base
+	unlimited.Budget = PreDispatchBudgetSnapshot{ProjectBudgetAllowed: true, TaskBudgetPresent: true}
+	passResult := EvaluatePreDispatchGate(input, unlimited, now)
+	require.Equal(t, PreDispatchGateStatusPassed, passResult.Status)
+}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -34,8 +35,28 @@ type HTTPConfig struct {
 	Addr string `yaml:"addr"`
 }
 
+// PostgresConfig carries the connection string plus explicit pool sizing.
+//
+// The pool is sized by round-trip latency, not by CPU. pgx's default MaxConns is
+// max(4, NumCPU), which is a CPU-shaped heuristic and wrong here: the Control
+// Plane talks to a remote Postgres (~39ms RTT measured against the shared dev
+// database), so a single connection sustains only ~1/RTT round trips per second
+// and pool throughput is roughly MaxConns/RTT. Four connections cap the whole
+// process at ~100 round trips per second no matter how large the machine is,
+// and long-lived readers (the SSE change-probe loops) hold connections for a
+// full RTT on every tick. Size these from latency and expected concurrency.
 type PostgresConfig struct {
 	URL string `yaml:"url"`
+	// MaxConns caps concurrent connections. Keep well under the server's
+	// max_connections so several Control Plane replicas can coexist.
+	MaxConns int32 `yaml:"maxConns"`
+	// MinConns keeps warm connections ready. Establishing one costs several
+	// round trips (TCP, TLS, auth), which is why cold pools show up as first
+	// request latency spikes on a remote database.
+	MinConns          int32         `yaml:"minConns"`
+	MaxConnLifetime   time.Duration `yaml:"maxConnLifetime"`
+	MaxConnIdleTime   time.Duration `yaml:"maxConnIdleTime"`
+	HealthCheckPeriod time.Duration `yaml:"healthCheckPeriod"`
 }
 
 type RedisConfig struct {
@@ -123,6 +144,17 @@ func defaultConfig() Config {
 		HTTP: HTTPConfig{
 			Addr: ":8080",
 		},
+		Postgres: PostgresConfig{
+			// Sized for a remote database (~39ms RTT): 25 connections give the
+			// process roughly 600 round trips per second of headroom, while
+			// staying far enough under a default max_connections of 100 that
+			// several replicas plus migrations and psql sessions still fit.
+			MaxConns:          25,
+			MinConns:          5,
+			MaxConnLifetime:   30 * time.Minute,
+			MaxConnIdleTime:   5 * time.Minute,
+			HealthCheckPeriod: 30 * time.Second,
+		},
 		ObjectStore: ObjectStoreConfig{
 			Region: "us-east-1",
 		},
@@ -151,6 +183,11 @@ func defaultConfig() Config {
 func applyEnv(cfg Config) Config {
 	cfg.HTTP.Addr = envOrDefault("CONTROL_PLANE_ADDR", cfg.HTTP.Addr)
 	cfg.Postgres.URL = envOrDefault("DATABASE_URL", cfg.Postgres.URL)
+	cfg.Postgres.MaxConns = envInt32OrDefault("DATABASE_MAX_CONNS", cfg.Postgres.MaxConns)
+	cfg.Postgres.MinConns = envInt32OrDefault("DATABASE_MIN_CONNS", cfg.Postgres.MinConns)
+	cfg.Postgres.MaxConnLifetime = envDurationOrDefault("DATABASE_MAX_CONN_LIFETIME", cfg.Postgres.MaxConnLifetime)
+	cfg.Postgres.MaxConnIdleTime = envDurationOrDefault("DATABASE_MAX_CONN_IDLE_TIME", cfg.Postgres.MaxConnIdleTime)
+	cfg.Postgres.HealthCheckPeriod = envDurationOrDefault("DATABASE_HEALTH_CHECK_PERIOD", cfg.Postgres.HealthCheckPeriod)
 	cfg.Redis.URL = envOrDefault("REDIS_URL", cfg.Redis.URL)
 	cfg.ObjectStore.Endpoint = envOrDefault("S3_ENDPOINT", cfg.ObjectStore.Endpoint)
 	cfg.ObjectStore.Region = envOrDefault("S3_REGION", cfg.ObjectStore.Region)
@@ -274,6 +311,30 @@ func envBool(key string) bool {
 		return false
 	}
 	return parseBool(value)
+}
+
+func envInt32OrDefault(key string, fallback int32) int32 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return int32(parsed)
+}
+
+func envDurationOrDefault(key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func parseBool(value string) bool {

@@ -14,27 +14,27 @@ import (
 )
 
 type mockRepo struct {
-	users                       map[string]*User
-	usersByID                   map[uuid.UUID]*User
-	runtimeTokens               map[string]*RuntimeToken
-	sessions                    map[string]*Session
-	loginLogs                   []LoginLog
-	operationLogs               []mockOperationLog
-	captchaChallenges           map[uuid.UUID]*CaptchaChallengeRecord
-	captchaConsumeCalls         []uuid.UUID
-	lastCaptchaCleanup          *time.Time
-	failCaptchaGet              error
-	failCaptchaConsume          error
-	failCaptchaCleanup          error
-	failLoginLogInTx            bool
-	scopeTeamIDs                map[uuid.UUID][]uuid.UUID
-	invalidTeamIDs              map[uuid.UUID]bool
-	failScopeReplace            error
-	lastListUsersFilter         ListUsersFilter
-	lastLoginLogFilter          ListLoginLogsFilter
-	transactionCalls            int
-	inTransaction               bool
-	updateSessionLastSeenCalls  int
+	users                      map[string]*User
+	usersByID                  map[uuid.UUID]*User
+	runtimeTokens              map[string]*RuntimeToken
+	sessions                   map[string]*Session
+	loginLogs                  []LoginLog
+	operationLogs              []mockOperationLog
+	captchaChallenges          map[uuid.UUID]*CaptchaChallengeRecord
+	captchaConsumeCalls        []uuid.UUID
+	lastCaptchaCleanup         *time.Time
+	failCaptchaGet             error
+	failCaptchaConsume         error
+	failCaptchaCleanup         error
+	failLoginLogInTx           bool
+	scopeTeamIDs               map[uuid.UUID][]uuid.UUID
+	invalidTeamIDs             map[uuid.UUID]bool
+	failScopeReplace           error
+	lastListUsersFilter        ListUsersFilter
+	lastLoginLogFilter         ListLoginLogsFilter
+	transactionCalls           int
+	inTransaction              bool
+	updateSessionLastSeenCalls int
 }
 
 type recordingProjectTeamScopeSyncer struct {
@@ -166,6 +166,15 @@ func (m *mockRepo) UpdateUserPassword(ctx context.Context, userID uuid.UUID, pas
 	user.PasswordHash = passwordHash
 	user.UpdatedAt = time.Now()
 	return user, nil
+}
+
+func (m *mockRepo) SetUserAvatarSVG(ctx context.Context, userID uuid.UUID, svg string) error {
+	user, ok := m.usersByID[userID]
+	if !ok {
+		return errors.New("user not found")
+	}
+	user.Avatar.SVG = svg
+	return nil
 }
 
 func (m *mockRepo) UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error) {

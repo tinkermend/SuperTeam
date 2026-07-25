@@ -1,4 +1,4 @@
-h1:xEKZ+EqIGf0gucWa9HOqqakP7cMusohImgZHQHPPJVc=
+h1:btUisWoMwkD0bguavI587A3tQix3UB9H7XST4zQdCUo=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -104,3 +104,6 @@ h1:xEKZ+EqIGf0gucWa9HOqqakP7cMusohImgZHQHPPJVc=
 20260723074713_cancel_inbox_for_deleted_project_anchored_runs.sql h1:cKYGw8e1PWmXiASzr8RQnWisYI+6D+sYzMPHKjW8oW0=
 20260723075000_delete_automation_for_deleted_projects.sql h1:O+N1w9dpmoDBSp3xl1Koq2HzYRICul7PfUuU4dC2L0k=
 20260723141500_cleanup_orphan_employee_failures_for_deleted_projects.sql h1:yEWfjPix8Y1nP7ti4OLXHzr+QuJUC+JHw2Gv+xSWbF8=
+20260724183529_inbox_change_notify.sql h1:L/1F1h6Br/TIy0LJ+5P1XKFHBB/ROvCCYS5sVxHM5MY=
+20260725041840_project_budget_token_limit.sql h1:uKdOaIRwxWkvriOOoXZ1OrzLRs6abqOmu514pnkUrXo=
+20260725120334_auth_user_avatar_svg.sql h1:PGlRmn8tIsW+i2cJEG1GVQck+SBwZl+eoJspF9DigvQ=

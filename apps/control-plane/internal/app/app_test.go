@@ -16,11 +16,15 @@ import (
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/artifact"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/automation"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage"
+	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
+	temporalclient "go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
 )
 
 func TestHealthOnlyRouterIsExplicit(t *testing.T) {
@@ -504,4 +508,30 @@ func (r *fakeArtifactRepository) CreateRetentionHold(ctx context.Context, req ar
 
 func (r *fakeArtifactRepository) CountActiveRetentionHolds(ctx context.Context, tenantID, artifactID uuid.UUID) (int32, error) {
 	return 0, nil
+}
+
+// Project coordination and automation share one Temporal task queue, so they must
+// share one worker: two workers polling the same queue with disjoint registrations
+// get tasks routed to them at random and each side intermittently receives types it
+// cannot execute. Sharing a worker only works while their registered names stay
+// disjoint — a collision panics at registration. This locks that precondition in.
+func TestCoordinationAndAutomationRegisterOnOneWorkerWithoutNameCollision(t *testing.T) {
+	temporalClient, err := temporalclient.NewLazyClient(temporalclient.Options{
+		HostPort:  "127.0.0.1:7233",
+		Namespace: "default",
+	})
+	if err != nil {
+		t.Fatalf("lazy temporal client: %v", err)
+	}
+	defer temporalClient.Close()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("coordination and automation cannot share a worker: %v", r)
+		}
+	}()
+
+	shared := worker.New(temporalClient, "superteam-project-coordination-test", worker.Options{})
+	projectcoordination.RegisterWith(shared, projectcoordination.NewActivities(nil))
+	automation.RegisterWith(shared, automation.NewActivities(nil))
 }

@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ChevronsUpDown,
   FolderOpen,
@@ -13,10 +13,11 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { GlassCard } from "@/components/superteam";
 import { projectStatusLabel } from "@/lib/status-labels";
-import type {
-  Project,
-  ProjectDemandSourceType,
-  SubmitProjectDemandInput
+import {
+  getProjectBudgetSummary,
+  type Project,
+  type ProjectDemandSourceType,
+  type SubmitProjectDemandInput
 } from "@/lib/api/projects";
 import { PromptTemplateDialog } from "./prompt-template-dialog";
 import { applyPromptTemplate } from "@/lib/api/prompt-templates";
@@ -98,6 +99,15 @@ export function TaskLaunchForm({
 });
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
 
+  // Token 预算熔断(P1-A):选中项目预算耗尽时禁止发起新任务。前端禁用是 UX,真正的
+  // 强制在后端派发前闸;两者一致(自动化不走前端,只受后端闸约束)。
+  const { data: budget } = useQuery({
+    enabled: Boolean(projectId),
+    queryKey: ["project-budget-summary", projectId],
+    queryFn: () => getProjectBudgetSummary(apiOptions, projectId),
+  });
+  const budgetExhausted = budget?.exhausted ?? false;
+
   function handleProjectChange(nextProjectId: string) {
     setError("");
     onProjectChange(nextProjectId);
@@ -113,6 +123,10 @@ export function TaskLaunchForm({
     }
     if (!projectId) {
       setError("请选择项目");
+      return;
+    }
+    if (budgetExhausted) {
+      setError("该项目 token 预算已耗尽，提高额度后才能发起新任务");
       return;
     }
 
@@ -217,6 +231,13 @@ export function TaskLaunchForm({
               </LaunchChip>
             </div>
 
+            {budgetExhausted ? (
+              <div className="tl-err" data-testid="budget-exhausted-notice">
+                ⚠ 该项目 token 预算已耗尽（已用 {budget?.consumed_tokens ?? 0}
+                {budget?.token_limit != null ? ` / 上限 ${budget.token_limit}` : ""}
+                ），提高额度后才能发起新任务。
+              </div>
+            ) : null}
             {error ? <div className="tl-err">⚠ {error}</div> : null}
 
             <div className="tl-actions">
@@ -226,7 +247,7 @@ export function TaskLaunchForm({
               </button>
               <button
                 className="tl-btn-send"
-                disabled={isSubmitting}
+                disabled={isSubmitting || budgetExhausted}
                 onClick={handleSubmit}
                 type="button"
               >

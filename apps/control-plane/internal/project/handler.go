@@ -70,6 +70,7 @@ type HandlerService interface {
 	ListReports(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error)
 	ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error)
 	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectBudgetSummary, error)
+	SetBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (*ProjectBudgetSummary, error)
 	GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error)
 	GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error)
 	CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotServiceRequest) (*ProjectArchiveSnapshot, error)
@@ -1276,6 +1277,29 @@ func (h *HTTPHandler) GetBudgetSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, budgetSummaryResponseFromDomain(*summary))
+}
+
+// SetBudget 提额/设限/清限(P1-A)。与项目配置编辑同为配置级写入,沿用 projectRouteContext
+// 的项目访问判权。token_limit 省略或为 null 表示清回不限。
+func (h *HTTPHandler) SetBudget(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	var body setProjectBudgetBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	summary, err := service.SetBudgetTokenLimit(r.Context(), tenantID, projectID, body.TokenLimit)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, budgetSummaryResponseFromDomain(*summary))
+}
+
+type setProjectBudgetBody struct {
+	TokenLimit *int64 `json:"token_limit"`
 }
 
 func (h *HTTPHandler) GetAcceptance(w http.ResponseWriter, r *http.Request) {
@@ -2866,6 +2890,9 @@ type projectBudgetSummaryResponse struct {
 	EstimatedCost   string `json:"estimated_cost"`
 	ActualCost      string `json:"actual_cost"`
 	LedgerCount     int32  `json:"ledger_count"`
+	TokenLimit      *int64 `json:"token_limit,omitempty"`
+	ConsumedTokens  int64  `json:"consumed_tokens"`
+	Exhausted       bool   `json:"exhausted"`
 }
 
 type projectAcceptanceResponse struct {
@@ -3911,6 +3938,9 @@ func budgetSummaryResponseFromDomain(summary ProjectBudgetSummary) projectBudget
 		EstimatedCost:   summary.EstimatedCost,
 		ActualCost:      summary.ActualCost,
 		LedgerCount:     summary.LedgerCount,
+		TokenLimit:      summary.TokenLimit,
+		ConsumedTokens:  summary.ConsumedTokens,
+		Exhausted:       summary.Exhausted,
 	}
 }
 

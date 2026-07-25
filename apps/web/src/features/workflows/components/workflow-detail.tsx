@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FolderKanban, ListChecks } from "lucide-react";
 import {
@@ -25,8 +25,13 @@ import type {
 import { decisionTypeLabel, riskLevelLabel } from "@/lib/status-labels";
 import { taskNodeId } from "../workflow-graph-adapter";
 import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
-import { WorkflowGraphCanvas } from "./workflow-graph-canvas";
 import { WorkflowNodeInspector } from "./workflow-node-inspector";
+
+// 流程图画布依赖 @xyflow/react（重）。懒加载让它离开入口包——图只在有节点内容的
+// 流程详情才渲染，首屏不需要（P1-D Step 1）。
+const WorkflowGraphCanvas = lazy(() =>
+  import("./workflow-graph-canvas").then((m) => ({ default: m.WorkflowGraphCanvas })),
+);
 
 type WorkflowDetailProps = {
   detail?: ProjectDemandLaunchDetail;
@@ -128,12 +133,14 @@ export function WorkflowDetail({
 
         {hasGraphContent && graph ? (
           <div className="min-w-0 p-4">
-            <WorkflowGraphCanvas
-              graph={graph}
-              onNodeOpen={setSelectedNodeId}
-              onSelectedNodeChange={setSelectedNodeId}
-              selectedNodeId={selectedNodeId}
-            />
+            <Suspense fallback={<LoadingState />}>
+              <WorkflowGraphCanvas
+                graph={graph}
+                onNodeOpen={setSelectedNodeId}
+                onSelectedNodeChange={setSelectedNodeId}
+                selectedNodeId={selectedNodeId}
+              />
+            </Suspense>
           </div>
         ) : pendingDecision ? (
           <PendingDecisionPanel decision={pendingDecision} />

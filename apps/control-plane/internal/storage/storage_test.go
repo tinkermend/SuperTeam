@@ -2,6 +2,9 @@ package storage
 
 import (
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	_ "github.com/stretchr/testify/assert"
@@ -84,5 +87,58 @@ func TestLoadS3AWSConfigUsesStaticCredentialsAndCustomEndpoint(t *testing.T) {
 	}
 	if endpoint.HostnameImmutable {
 		t.Fatal("expected mutable hostname so virtual-hosted bucket addressing remains available")
+	}
+}
+
+// The pool is sized by round-trip latency, not by CPU: throughput is roughly
+// MaxConns/RTT, so pgx's CPU-shaped default (max(4, NumCPU)) caps a remote-database
+// deployment far below what it needs. These tests pin that the configured sizing
+// actually reaches pgxpool, and that a MinConns above MaxConns is clamped rather
+// than left as permanent over-subscription.
+func TestApplyPoolConfigOverridesPgxDefaults(t *testing.T) {
+	poolConfig, err := pgxpool.ParseConfig("postgres://user:pass@127.0.0.1:5432/db?sslmode=disable")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	applyPoolConfig(poolConfig, PostgresPoolConfig{
+		MaxConns:          25,
+		MinConns:          5,
+		MaxConnLifetime:   30 * time.Minute,
+		MaxConnIdleTime:   5 * time.Minute,
+		HealthCheckPeriod: 30 * time.Second,
+	})
+
+	if poolConfig.MaxConns != 25 {
+		t.Fatalf("expected MaxConns 25, got %d", poolConfig.MaxConns)
+	}
+	if poolConfig.MinConns != 5 {
+		t.Fatalf("expected MinConns 5, got %d", poolConfig.MinConns)
+	}
+	if poolConfig.MaxConnLifetime != 30*time.Minute {
+		t.Fatalf("expected MaxConnLifetime 30m, got %s", poolConfig.MaxConnLifetime)
+	}
+	if poolConfig.MaxConnIdleTime != 5*time.Minute {
+		t.Fatalf("expected MaxConnIdleTime 5m, got %s", poolConfig.MaxConnIdleTime)
+	}
+	if poolConfig.HealthCheckPeriod != 30*time.Second {
+		t.Fatalf("expected HealthCheckPeriod 30s, got %s", poolConfig.HealthCheckPeriod)
+	}
+}
+
+func TestApplyPoolConfigClampsMinConnsAndKeepsZeroValues(t *testing.T) {
+	poolConfig, err := pgxpool.ParseConfig("postgres://user:pass@127.0.0.1:5432/db?sslmode=disable")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	lifetime := poolConfig.MaxConnLifetime
+
+	applyPoolConfig(poolConfig, PostgresPoolConfig{MaxConns: 4, MinConns: 50})
+
+	if poolConfig.MinConns != 4 {
+		t.Fatalf("expected MinConns clamped to MaxConns 4, got %d", poolConfig.MinConns)
+	}
+	if poolConfig.MaxConnLifetime != lifetime {
+		t.Fatalf("zero-valued fields must be left untouched, got %s", poolConfig.MaxConnLifetime)
 	}
 }

@@ -154,6 +154,14 @@ func (r *PgRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUID,
 	return toDomainUser(user), nil
 }
 
+// SetUserAvatarSVG 自愈写回预渲染头像 data-URI(P1-D 2b)。仅由当前用户写自己的端点调用。
+func (r *PgRepository) SetUserAvatarSVG(ctx context.Context, userID uuid.UUID, svg string) error {
+	return r.q.UpdateUserAvatarSVG(ctx, queries.UpdateUserAvatarSVGParams{
+		ID:        userID,
+		AvatarSvg: svg,
+	})
+}
+
 func (r *PgRepository) UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error) {
 	user, err := r.q.UpdateUser(ctx, queries.UpdateUserParams{
 		ID: userID,
@@ -195,6 +203,7 @@ func toDomainUser(user queries.AuthUser) *User {
 		Style:    user.AvatarStyle,
 		Seed:     user.AvatarSeed.String,
 		Options:  userAvatarOptions(user.AvatarOptions),
+		SVG:      user.AvatarSvg.String,
 	})
 	return &User{
 		ID:            user.ID,

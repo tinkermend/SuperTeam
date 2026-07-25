@@ -163,7 +163,7 @@ export function AccountSettings({ fetcher }: AccountSettingsProps = {}) {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <SoftCard className="min-w-0 p-6">
             <div className="mb-5 flex items-center gap-3">
-              <UserIdentityAvatar className="size-14" user={user} />
+              <UserIdentityAvatar className="size-14" selfHeal user={user} />
               <div className="min-w-0">
                 <h2 className="text-base font-bold text-ink">个人资料</h2>
                 <p className="truncate text-sm text-ink-2">{user.username}</p>

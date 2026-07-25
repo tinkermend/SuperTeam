@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,12 +25,21 @@ type HandlerService interface {
 type HTTPHandler struct {
 	service    HandlerService
 	authorizer authz.Authorizer
-	// streamInterval 覆盖 SSE 探测间隔,零值用 defaultStreamInterval;测试注入用。
+	// streamInterval 覆盖 SSE 兜底轮询间隔,零值用 defaultStreamInterval;测试注入用。
 	streamInterval time.Duration
+	// notifier 是 LISTEN/NOTIFY 扇出;非 nil 时探测由通知驱动,轮询降为兜底。
+	notifier *ChangeNotifier
 }
 
-const defaultStreamInterval = 2 * time.Second
-const streamKeepaliveEvery = 8 // 每 N 个空探测发一次注释行保活(2s 间隔 ≈ 16s 一次)
+// defaultStreamInterval 是兜底轮询间隔。
+//
+// 接入 LISTEN/NOTIFY 后它不再是主唤醒源:正常情况下 inbox_items 的触发器一有写入就
+// 广播,SSE 立刻探测,延迟从"最多一个间隔"降到近实时。轮询只负责补 NOTIFY 不保证送达
+// 的那部分——监听连接断开重连期间产生的通知会丢,兜底轮询保证最迟一个间隔内仍能发现。
+// 因此这个值可以从原来的 2s 放宽到 30s:每连接每秒的库压降到约 1/15,而用户可感知的
+// 延迟反而变好。未接 notifier 时(测试/降级)它退回成唯一唤醒源。
+const defaultStreamInterval = 30 * time.Second
+const streamKeepaliveEvery = 1 // 每 N 个空探测发一次注释行保活(30s 间隔 ≈ 30s 一次)
 // 流启动/重连游标回拨:覆盖时钟偏差、典型 EventSource 断窗与 CP 短重启。
 // 宁可多推一次脏通知;客户端 onopen 仍会强制 invalidate 作双保险。
 const streamCursorSlack = 60 * time.Second
@@ -40,6 +50,13 @@ func NewHandler(service HandlerService) *HTTPHandler {
 
 func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
 	h.authorizer = authorizer
+}
+
+// SetChangeNotifier switches the SSE stream from polling-driven to
+// notification-driven. Without it the handler still works, just on the fallback
+// poll alone.
+func (h *HTTPHandler) SetChangeNotifier(notifier *ChangeNotifier) {
+	h.notifier = notifier
 }
 
 func (h *HTTPHandler) ListItems(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +155,15 @@ func (h *HTTPHandler) StreamItems(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// 通知驱动:触发器一有写入就唤醒本流,立即探测游标。轮询保留为兜底,补 NOTIFY
+	// 不保证送达的窗口(监听连接重连期间的通知会丢)。notifier 为空则退回纯轮询。
+	var changed <-chan struct{}
+	if h.notifier != nil {
+		var unsubscribe func()
+		changed, unsubscribe = h.notifier.Subscribe(tenantID)
+		defer unsubscribe()
+	}
+
 	cursorAt := time.Now().UTC().Add(-streamCursorSlack)
 	cursorID := uuid.Nil
 	idleTicks := 0
@@ -145,6 +171,7 @@ func (h *HTTPHandler) StreamItems(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-changed:
 		case <-ticker.C:
 		}
 		change, err := service.PeekChanges(r.Context(), PeekChangeRequest{
@@ -431,20 +458,27 @@ type itemResponse struct {
 	RiskLevel               *string        `json:"risk_level,omitempty"`
 	Priority                *string        `json:"priority,omitempty"`
 	Status                  Status         `json:"status"`
-	// Kind/Layer are the canonical HumanTask classification (spec §4.1/§4.2),
-	// additive read-model metadata the console uses to group and label cards.
-	Kind     string         `json:"kind,omitempty"`
-	Layer    string         `json:"layer,omitempty"`
-	Why      string         `json:"why,omitempty"`
-	Evidence []any          `json:"evidence,omitempty"`
-	Progress map[string]any `json:"progress,omitempty"`
-	Actions  []Action       `json:"actions"`
-	Context  map[string]any `json:"context"`
-	DeepLink map[string]any `json:"deep_link"`
-	LastActivityAt          string         `json:"last_activity_at"`
-	CreatedAt               string         `json:"created_at"`
-	UpdatedAt               string         `json:"updated_at"`
-	ResolvedAt              *string        `json:"resolved_at,omitempty"`
+	// HumanTask read fields (2026-07-25 §4): named schema fields, not context map.
+	Kind            string               `json:"kind,omitempty"`
+	Layer           string               `json:"layer,omitempty"`
+	Why             string               `json:"why,omitempty"`
+	Evidence        []map[string]any     `json:"evidence,omitempty"`
+	Progress        *humanTaskProgressDTO `json:"progress,omitempty"`
+	PrimarySurface  string               `json:"primary_surface,omitempty"`
+	Actions         []Action             `json:"actions"`
+	Context         map[string]any       `json:"context"`
+	DeepLink        map[string]any       `json:"deep_link"`
+	LastActivityAt  string               `json:"last_activity_at"`
+	CreatedAt       string               `json:"created_at"`
+	UpdatedAt       string               `json:"updated_at"`
+	ResolvedAt      *string              `json:"resolved_at,omitempty"`
+}
+
+// humanTaskProgressDTO is the named progress object (OpenAPI HumanTaskProgress).
+type humanTaskProgressDTO struct {
+	Step  int    `json:"step"`
+	Total int    `json:"total"`
+	Label string `json:"label"`
 }
 
 type errorResponse struct {
@@ -464,6 +498,7 @@ func listResponseFromDomain(result ListItemsResult) listResponse {
 }
 
 func itemResponseFromDomain(item Item) itemResponse {
+	deepLink := mapOrEmpty(item.DeepLink)
 	return itemResponse{
 		ID:                      item.ID.String(),
 		TenantID:                item.TenantID.String(),
@@ -485,15 +520,82 @@ func itemResponseFromDomain(item Item) itemResponse {
 		Kind:                    contextString(item.ContextPayload, "kind"),
 		Layer:                   contextString(item.ContextPayload, "layer"),
 		Why:                     contextString(item.ContextPayload, "why"),
-		Evidence:                contextAnySlice(item.ContextPayload, "evidence"),
-		Progress:                contextMap(item.ContextPayload, "progress"),
+		Evidence:                contextObjectSlice(item.ContextPayload, "evidence"),
+		Progress:                progressFromContext(item.ContextPayload),
+		PrimarySurface:          primarySurfaceFromDeepLink(deepLink),
 		Actions:                 actionsOrEmpty(item.Actions),
 		Context:                 mapOrEmpty(item.ContextPayload),
-		DeepLink:                mapOrEmpty(item.DeepLink),
+		DeepLink:                deepLink,
 		LastActivityAt:          timeValue(item.LastActivityAt),
 		CreatedAt:               timeValue(item.CreatedAt),
 		UpdatedAt:               timeValue(item.UpdatedAt),
 		ResolvedAt:              optionalTimeString(item.ResolvedAt),
+	}
+}
+
+func primarySurfaceFromDeepLink(deepLink map[string]any) string {
+	if deepLink == nil {
+		return ""
+	}
+	if surface, ok := deepLink["primary_surface"].(string); ok {
+		return strings.TrimSpace(surface)
+	}
+	return ""
+}
+
+func progressFromContext(context map[string]any) *humanTaskProgressDTO {
+	raw := contextMap(context, "progress")
+	if raw == nil {
+		return nil
+	}
+	step, okStep := intFromAny(raw["step"])
+	total, okTotal := intFromAny(raw["total"])
+	label, _ := raw["label"].(string)
+	if !okStep || !okTotal || strings.TrimSpace(label) == "" {
+		return nil
+	}
+	return &humanTaskProgressDTO{Step: step, Total: total, Label: strings.TrimSpace(label)}
+}
+
+func intFromAny(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int32:
+		return int(typed), true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func contextObjectSlice(context map[string]any, key string) []map[string]any {
+	if context == nil {
+		return nil
+	}
+	value, ok := context[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []map[string]any:
+		return append([]map[string]any(nil), typed...)
+	case []any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, entry := range typed {
+			if asMap, ok := entry.(map[string]any); ok {
+				out = append(out, asMap)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
 	}
 }
 

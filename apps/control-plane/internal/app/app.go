@@ -30,6 +30,7 @@ import (
 	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
+	"github.com/superteam/control-plane/internal/retention"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
@@ -41,6 +42,7 @@ import (
 	"github.com/superteam/control-plane/internal/tenant"
 	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
 	temporalclient "go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
 )
 
 type lifecycleWorker interface {
@@ -49,28 +51,32 @@ type lifecycleWorker interface {
 }
 
 type Container struct {
-	Queries                        *queries.Queries
-	TaskService                    *task.Service
-	RuntimeService                 *runtimepkg.Service
-	EmployeeService                *employee.Service
-	ProjectService                 *project.Service
-	SystemConfig                   systemconfig.Reader
-	ApprovalService                *approval.Service
-	InboxService                   *inbox.Service
-	ArtifactService                *artifact.Service
-	EmployeeRun                    *employee.DigitalEmployeeRunService
-	EmployeeRunWriteback           *employee.DigitalEmployeeRunWritebackService
-	SkillService                   *skill.Service
-	CapabilityService              *capability.Service
-	TenantService                  *tenant.Service
-	AuditService                   *audit.Service
-	RuntimeCommands                *runtimepkg.ConnectionRegistry
-	AuthService                    *auth.Service
-	Authorizer                     authz.Authorizer
-	AuthzCenter                    *authzcenter.Service
-	Poller                         *runtimepkg.Poller
+	Queries              *queries.Queries
+	TaskService          *task.Service
+	RuntimeService       *runtimepkg.Service
+	EmployeeService      *employee.Service
+	ProjectService       *project.Service
+	SystemConfig         systemconfig.Reader
+	ApprovalService      *approval.Service
+	InboxService         *inbox.Service
+	ArtifactService      *artifact.Service
+	EmployeeRun          *employee.DigitalEmployeeRunService
+	EmployeeRunWriteback *employee.DigitalEmployeeRunWritebackService
+	SkillService         *skill.Service
+	CapabilityService    *capability.Service
+	TenantService        *tenant.Service
+	AuditService         *audit.Service
+	RuntimeCommands      *runtimepkg.ConnectionRegistry
+	AuthService          *auth.Service
+	Authorizer           authz.Authorizer
+	AuthzCenter          *authzcenter.Service
+	Poller               *runtimepkg.Poller
+	Retention            *retention.Service
+	InboxChangeNotifier  *inbox.ChangeNotifier
+	// CoordinationWorker serves the whole Temporal task queue: project
+	// coordination plus automation, which registers onto it rather than running a
+	// second worker on the same queue.
 	CoordinationWorker             lifecycleWorker
-	AutomationWorker               lifecycleWorker
 	TemporalClientClose            func()
 	TaskHandler                    *handlers.TaskHandler
 	RuntimeHandler                 *handlers.RuntimeHandler
@@ -571,6 +577,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
+	// One worker serves the Temporal task queue. Automation registers onto this
+	// same worker further down rather than starting a second one: two workers on
+	// one queue with disjoint registrations get tasks routed to them at random,
+	// so each side intermittently receives types it cannot execute. See
+	// automation.RegisterWith.
+	var temporalWorker worker.Worker
 	var temporalClient temporalclient.Client
 	var temporalClientClose func()
 	// coordinationStore is declared here (rather than with := inside the
@@ -625,7 +637,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			projectcoordination.NewOpenAICompatibleChatCompletionClient(cfg.Planner.BaseURL, cfg.Planner.APIKey),
 			cfg.Planner.Model,
 		)
-		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
+		temporalWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
+		coordinationWorker = temporalWorker
 	}
 	projectService, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(
 		projectRepository,
@@ -745,6 +758,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	authzCenterHandler := authzcenter.NewHandler(authzCenterService, authService)
 
 	poller := runtimepkg.NewPoller()
+	// 数据保留作业(P1-B):此前 append-only 表无任何清理通道。singleton 用会话级
+	// advisory lock 保证多副本下只有一个进程真的删,待 leader 选举落地后可替换。
+	retentionService := retention.NewService(q, systemConfigService, retention.NewPgSingleton(stores.Postgres))
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
 	// 通用 runtime 命令回执写回(runtimecommand 包)随 install_skills 命令一并
@@ -752,6 +768,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
 	inboxHandler := inbox.NewHandler(inboxService)
+	// 收件箱 SSE 由 LISTEN/NOTIFY 驱动(P1-C2):一条常驻监听连接扇出给本进程所有流,
+	// 取代每流每 2 秒各打一次库的轮询;轮询降为兜底(NOTIFY 不保证送达)。
+	inboxChangeNotifier := inbox.NewChangeNotifier(stores.Postgres)
+	inboxHandler.SetChangeNotifier(inboxChangeNotifier)
 	auditHandler := audit.NewHandler(auditService)
 	projectHandler := project.NewHandler(projectService)
 	automationRepo := automation.NewPgRepository(q)
@@ -766,9 +786,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	projectService.SetAutomationActorRemover(automationService)
 	projectService.SetAutomationProjectCascade(automationService)
 	authService.SetUserDeactivatedHook(automationUserDeactivatedHook{service: automationService})
-	var automationWorker lifecycleWorker
-	if temporalClient != nil {
-		automationWorker = automation.NewWorker(temporalClient, cfg.Temporal.TaskQueue, automation.NewActivities(automationService))
+	if temporalWorker != nil {
+		// Same task queue as coordination, so the same worker must serve both.
+		automation.RegisterWith(temporalWorker, automation.NewActivities(automationService))
 	}
 	automationHandler := automation.NewHandler(automationService)
 	skillHandler := skill.NewHandler(skillService)
@@ -846,8 +866,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		Authorizer:                     authorizer,
 		AuthzCenter:                    authzCenterService,
 		Poller:                         poller,
+		Retention:                      retentionService,
+		InboxChangeNotifier:            inboxChangeNotifier,
 		CoordinationWorker:             coordinationWorker,
-		AutomationWorker:               automationWorker,
 		TemporalClientClose:            temporalClientClose,
 		TaskHandler:                    taskHandler,
 		RuntimeHandler:                 runtimeHandler,
@@ -869,7 +890,14 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 func Run(ctx context.Context, cfg config.Config) error {
 	stores, err := storage.NewClients(ctx, storage.Config{
 		PostgresURL: cfg.Postgres.URL,
-		RedisURL:    cfg.Redis.URL,
+		Postgres: storage.PostgresPoolConfig{
+			MaxConns:          cfg.Postgres.MaxConns,
+			MinConns:          cfg.Postgres.MinConns,
+			MaxConnLifetime:   cfg.Postgres.MaxConnLifetime,
+			MaxConnIdleTime:   cfg.Postgres.MaxConnIdleTime,
+			HealthCheckPeriod: cfg.Postgres.HealthCheckPeriod,
+		},
+		RedisURL: cfg.Redis.URL,
 		ObjectStore: storage.ObjectStoreConfig{
 			Endpoint:        cfg.ObjectStore.Endpoint,
 			Region:          cfg.ObjectStore.Region,
@@ -901,12 +929,6 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 		}
 		defer container.CoordinationWorker.Stop()
 	}
-	if container.AutomationWorker != nil {
-		if err := container.AutomationWorker.Start(); err != nil {
-			return err
-		}
-		defer container.AutomationWorker.Stop()
-	}
 	if container.EmployeeRun != nil {
 		// 调度韧性:预确认态 run 的超时看门狗(残债交接 §1 第 2 层)。
 		go container.EmployeeRun.StartStaleRunWatchdog(ctx, time.Minute)
@@ -918,6 +940,14 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 	if container.ProjectService != nil && container.SystemConfig != nil {
 		// 僵尸任务收敛看门狗(卡死任务收敛 spec P1):孤儿 running 任务兜底 + 既有 attempt 恢复接线。
 		go startStuckTaskReconciler(ctx, container.ProjectService, container.SystemConfig)
+	}
+	if container.InboxChangeNotifier != nil {
+		go container.InboxChangeNotifier.Start(ctx)
+	}
+	if container.Retention != nil {
+		// 数据保留作业(P1-B):append-only 表此前无任何清理通道。作业自带 advisory lock
+		// 单跑保护,多副本下只有一个进程真的删。
+		go container.Retention.Start(ctx, retention.SweepInterval)
 	}
 	stopWatching := make(chan struct{})
 	go func() {

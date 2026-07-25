@@ -150,6 +150,22 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 	} else if !errors.Is(err, project.ErrProjectNotFound) {
 		return project.PreDispatchGateSnapshot{}, err
 	}
+	// Token 预算熔断(P1-A):项目设了 budget_token_limit 且已消耗达到上限时,阻止派发
+	// 新任务。闸在派发前,已在跑的 attempt 不受影响(其心跳继续累加,允许超标);超额后的
+	// 下一次派发被挡,直到人类提额。未设额度(nil)= 不限,行为与现状一致。
+	if proj, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID); err == nil {
+		if proj.BudgetTokenLimit != nil && *proj.BudgetTokenLimit > 0 {
+			consumed, sumErr := s.repository.SumProjectConsumedTokens(ctx, input.TenantID, input.ProjectID)
+			if sumErr != nil {
+				return project.PreDispatchGateSnapshot{}, sumErr
+			}
+			snapshot.Budget.TokenLimit = proj.BudgetTokenLimit
+			snapshot.Budget.ConsumedTokens = consumed
+			snapshot.Budget.ProjectBudgetAllowed = consumed < *proj.BudgetTokenLimit
+		}
+	} else if !errors.Is(err, project.ErrProjectNotFound) {
+		return project.PreDispatchGateSnapshot{}, err
+	}
 	// PlacementPresent now reflects the project's runtime eligibility set
 	// (project_runtime_nodes), not the legacy single active project_placement —
 	// Plan B projects never create a project_placement, so gating on it would

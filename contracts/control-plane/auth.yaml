@@ -92,6 +92,36 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/me/avatar-svg:
+    put:
+      summary: 自愈写回当前用户预渲染头像（P1-D 2b）
+      description: 前端懒加载 dicebear 生成头像 data-URI 后写回，供后续展示直接读取、不再加载 dicebear。仅写当前登录用户自己。
+      operationId: setCurrentUserAvatarSVG
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [svg]
+              properties:
+                svg:
+                  type: string
+                  minLength: 1
+                  maxLength: 65536
+                  description: 预渲染的头像 data-URI。
+      responses:
+        '204':
+          description: 已写回
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/auth/logout:
     post:
       summary: 用户登出
@@ -878,6 +908,9 @@ components:
         options:
           type: object
           additionalProperties: true
+        svg:
+          type: string
+          description: 预渲染的头像 data-URI（P1-D 2b）；空/缺省表示未生成，前端懒加载 dicebear 兜底渲染。
 
     ErrorResponse:
       type: object
