@@ -876,6 +876,27 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for HumanTaskLayer.
+const (
+	HumanTaskLayerDemand  HumanTaskLayer = "demand"
+	HumanTaskLayerProject HumanTaskLayer = "project"
+	HumanTaskLayerTask    HumanTaskLayer = "task"
+)
+
+// Valid indicates whether the value is a known member of the HumanTaskLayer enum.
+func (e HumanTaskLayer) Valid() bool {
+	switch e {
+	case HumanTaskLayerDemand:
+		return true
+	case HumanTaskLayerProject:
+		return true
+	case HumanTaskLayerTask:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InboxItemItemType.
 const (
 	InboxItemItemTypeApproval                   InboxItemItemType = "approval"
@@ -894,6 +915,27 @@ func (e InboxItemItemType) Valid() bool {
 	case InboxItemItemTypeProjectDecision:
 		return true
 	case InboxItemItemTypeTeamPendingDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InboxItemLayer.
+const (
+	InboxItemLayerDemand  InboxItemLayer = "demand"
+	InboxItemLayerProject InboxItemLayer = "project"
+	InboxItemLayerTask    InboxItemLayer = "task"
+)
+
+// Valid indicates whether the value is a known member of the InboxItemLayer enum.
+func (e InboxItemLayer) Valid() bool {
+	switch e {
+	case InboxItemLayerDemand:
+		return true
+	case InboxItemLayerProject:
+		return true
+	case InboxItemLayerTask:
 		return true
 	default:
 		return false
@@ -3864,6 +3906,50 @@ type HealthResponseService string
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
 
+// HumanTask 人类待办读权威。列表/详情经 Inbox 投影下发；inbox_items 为存储实现，非第二真相。 见 docs/superpowers/specs/2026-07-25-human-task-load-budget-and-channel-grading.md §4。
+type HumanTask struct {
+	// Evidence 判据/结论/交付物摘录，卡上直接可读。
+	Evidence *[]HumanTaskEvidenceItem `json:"evidence,omitempty"`
+
+	// Kind 规范化的人类待办 kind，由服务端从内部 decision_type 映射得到 (如 dispatch_release / downstream_release / acceptance_sign / closure_confirm / plan_review / planning_gap / task_failure_recovery)。 不改内部 decision_type；控制台据此分组与命名。项目决策以外的事项可能为空。
+	Kind *string `json:"kind,omitempty"`
+
+	// Layer 人类待办层级：task / demand / project。项目决策以外的事项可能为空。
+	Layer *HumanTaskLayer `json:"layer,omitempty"`
+
+	// PrimarySurface 唯一权威落点 URL，服务端唯一来源（基线 §5.4.3）。前端不得再各自推导深链。
+	PrimarySurface *string `json:"primary_surface,omitempty"`
+
+	// Progress 人类待办闭环进度(HumanTask §4.1 / §6.1)：{step,total,label}， 供收件箱进度条渲染（如「任务完成 → 验收签署 待你 → 结项 未开始」）。
+	Progress *HumanTaskProgress `json:"progress,omitempty"`
+
+	// Why 一句话说明「为什么需要你」，服务端产出中文。
+	Why *string `json:"why,omitempty"`
+}
+
+// HumanTaskLayer 人类待办层级：task / demand / project。项目决策以外的事项可能为空。
+type HumanTaskLayer string
+
+// HumanTaskEvidenceItem 判据/结论/交付物摘录条目。形态随 kind 变化（验收签署多为判据行，结项多为需求行）。
+type HumanTaskEvidenceItem struct {
+	Conclusion           *string                `json:"conclusion,omitempty"`
+	Id                   *string                `json:"id,omitempty"`
+	Statement            *string                `json:"statement,omitempty"`
+	Status               *string                `json:"status,omitempty"`
+	Summary              *string                `json:"summary,omitempty"`
+	Title                *string                `json:"title,omitempty"`
+	Verdict              *string                `json:"verdict,omitempty"`
+	VerificationMethod   *string                `json:"verification_method,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// HumanTaskProgress 人类待办闭环进度(HumanTask §4.1 / §6.1)：{step,total,label}， 供收件箱进度条渲染（如「任务完成 → 验收签署 待你 → 结项 未开始」）。
+type HumanTaskProgress struct {
+	Label string `json:"label"`
+	Step  int    `json:"step"`
+	Total int    `json:"total"`
+}
+
 // InboxBadge defines model for InboxBadge.
 type InboxBadge struct {
 	HighRiskCount int64 `json:"high_risk_count"`
@@ -3873,30 +3959,31 @@ type InboxBadge struct {
 
 // InboxItem defines model for InboxItem.
 type InboxItem struct {
-	Actions   []InboxItemAction      `json:"actions"`
+	Actions []InboxItemAction `json:"actions"`
+
+	// Context 原始快照与尚未收编的辅助字段。why / evidence / progress / primary_surface 已提升为 HumanTask 具名字段，不得再作为这些语义的默认读路径。
 	Context   map[string]interface{} `json:"context"`
 	CreatedAt time.Time              `json:"created_at"`
 	DeepLink  map[string]interface{} `json:"deep_link"`
 
-	// Evidence 人类待办 evidence(HumanTask §4.1)：判据/结论/交付物摘录，卡上直接可读。 验收签署卡携带 pending_criteria_detail；结项卡携带需求清单。
-	Evidence *[]map[string]interface{} `json:"evidence,omitempty"`
-	Id       openapi_types.UUID        `json:"id"`
-	ItemType InboxItemItemType         `json:"item_type"`
+	// Evidence 判据/结论/交付物摘录，卡上直接可读。
+	Evidence *[]HumanTaskEvidenceItem `json:"evidence,omitempty"`
+	Id       openapi_types.UUID       `json:"id"`
+	ItemType InboxItemItemType        `json:"item_type"`
 
-	// Kind 规范化的人类待办 kind(HumanTask §4.2),由服务端从内部 decision_type 映射得到 (如 dispatch_release / downstream_release / acceptance_sign / closure_confirm / plan_review / planning_gap / task_failure_recovery)。 附加读模型元数据,不改内部 decision_type;控制台据此分组与命名。项目决策以外的事项可能为空。
+	// Kind 规范化的人类待办 kind，由服务端从内部 decision_type 映射得到 (如 dispatch_release / downstream_release / acceptance_sign / closure_confirm / plan_review / planning_gap / task_failure_recovery)。 不改内部 decision_type；控制台据此分组与命名。项目决策以外的事项可能为空。
 	Kind           *string   `json:"kind,omitempty"`
 	LastActivityAt time.Time `json:"last_activity_at"`
 
-	// Layer 人类待办层级(HumanTask §4.1):task / demand / project。项目决策以外的事项可能为空。
-	Layer    *string `json:"layer,omitempty"`
-	Priority *string `json:"priority,omitempty"`
+	// Layer 人类待办层级：task / demand / project。项目决策以外的事项可能为空。
+	Layer *InboxItemLayer `json:"layer,omitempty"`
+
+	// PrimarySurface 唯一权威落点 URL，服务端唯一来源（基线 §5.4.3）。前端不得再各自推导深链。
+	PrimarySurface *string `json:"primary_surface,omitempty"`
+	Priority       *string `json:"priority,omitempty"`
 
 	// Progress 人类待办闭环进度(HumanTask §4.1 / §6.1)：{step,total,label}， 供收件箱进度条渲染（如「任务完成 → 验收签署 待你 → 结项 未开始」）。
-	Progress *struct {
-		Label *string `json:"label,omitempty"`
-		Step  *int    `json:"step,omitempty"`
-		Total *int    `json:"total,omitempty"`
-	} `json:"progress,omitempty"`
+	Progress                *HumanTaskProgress  `json:"progress,omitempty"`
 	ResolvedAt              *time.Time          `json:"resolved_at,omitempty"`
 	RiskLevel               *string             `json:"risk_level,omitempty"`
 	SourceApprovalRequestId *openapi_types.UUID `json:"source_approval_request_id,omitempty"`
@@ -3918,12 +4005,15 @@ type InboxItem struct {
 	Title          string              `json:"title"`
 	UpdatedAt      time.Time           `json:"updated_at"`
 
-	// Why 人类待办 why(HumanTask §4.1)：一句话说明「为什么需要你」，服务端产出中文。 附加读模型元数据；项目决策以外的事项可能为空。
+	// Why 一句话说明「为什么需要你」，服务端产出中文。
 	Why *string `json:"why,omitempty"`
 }
 
 // InboxItemItemType defines model for InboxItem.ItemType.
 type InboxItemItemType string
+
+// InboxItemLayer 人类待办层级：task / demand / project。项目决策以外的事项可能为空。
+type InboxItemLayer string
 
 // InboxItemSourceType defines model for InboxItem.SourceType.
 type InboxItemSourceType string
@@ -4386,11 +4476,20 @@ type ProjectBudgetLedgerEntry struct {
 
 // ProjectBudgetSummary defines model for ProjectBudgetSummary.
 type ProjectBudgetSummary struct {
-	ActualCost      string `json:"actual_cost"`
-	ActualTokens    int64  `json:"actual_tokens"`
+	ActualCost   string `json:"actual_cost"`
+	ActualTokens int64  `json:"actual_tokens"`
+
+	// ConsumedTokens 项目下所有 attempt 心跳累加的 token 消耗之和。
+	ConsumedTokens  int64  `json:"consumed_tokens"`
 	EstimatedCost   string `json:"estimated_cost"`
 	EstimatedTokens int64  `json:"estimated_tokens"`
-	LedgerCount     int32  `json:"ledger_count"`
+
+	// Exhausted 已设额度且已消耗达到上限；为真时派发前闸阻止开启新任务（运行中不打断）。
+	Exhausted   bool  `json:"exhausted"`
+	LedgerCount int32 `json:"ledger_count"`
+
+	// TokenLimit 项目 token 预算上限；缺省/为空表示不限（P1-A 预算熔断）。
+	TokenLimit *int64 `json:"token_limit,omitempty"`
 }
 
 // ProjectConfig defines model for ProjectConfig.
@@ -5608,6 +5707,12 @@ type SetEmployeeTemplateStatusRequest struct {
 
 // SetEmployeeTemplateStatusRequestStatus defines model for SetEmployeeTemplateStatusRequest.Status.
 type SetEmployeeTemplateStatusRequestStatus string
+
+// SetProjectBudgetRequest defines model for SetProjectBudgetRequest.
+type SetProjectBudgetRequest struct {
+	// TokenLimit 新的 token 上限；置空（null 或省略）表示清回不限。
+	TokenLimit *int64 `json:"token_limit,omitempty"`
+}
 
 // SignDemandCriterionVerdictRequest defines model for SignDemandCriterionVerdictRequest.
 type SignDemandCriterionVerdictRequest struct {
@@ -6849,6 +6954,9 @@ type UpdateProjectJSONRequestBody = UpdateProjectConfigRequest
 // CreateProjectArchiveSnapshotJSONRequestBody defines body for CreateProjectArchiveSnapshot for application/json ContentType.
 type CreateProjectArchiveSnapshotJSONRequestBody = CreateProjectArchiveSnapshotRequest
 
+// SetProjectBudgetJSONRequestBody defines body for SetProjectBudget for application/json ContentType.
+type SetProjectBudgetJSONRequestBody = SetProjectBudgetRequest
+
 // UpdateProjectConfigJSONRequestBody defines body for UpdateProjectConfig for application/json ContentType.
 type UpdateProjectConfigJSONRequestBody = UpdateProjectConfigRequest
 
@@ -7013,6 +7121,179 @@ type BindTeamSkillJSONRequestBody BindTeamSkillJSONBody
 
 // CreatePromptTemplateJSONRequestBody defines body for CreatePromptTemplate for application/json ContentType.
 type CreatePromptTemplateJSONRequestBody = CreatePromptTemplateRequest
+
+// Getter for additional properties for HumanTaskEvidenceItem. Returns the specified
+// element and whether it was found
+func (a HumanTaskEvidenceItem) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for HumanTaskEvidenceItem
+func (a *HumanTaskEvidenceItem) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for HumanTaskEvidenceItem to handle AdditionalProperties
+func (a *HumanTaskEvidenceItem) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["conclusion"]; found {
+		err = json.Unmarshal(raw, &a.Conclusion)
+		if err != nil {
+			return fmt.Errorf("error reading 'conclusion': %w", err)
+		}
+		delete(object, "conclusion")
+	}
+
+	if raw, found := object["id"]; found {
+		err = json.Unmarshal(raw, &a.Id)
+		if err != nil {
+			return fmt.Errorf("error reading 'id': %w", err)
+		}
+		delete(object, "id")
+	}
+
+	if raw, found := object["statement"]; found {
+		err = json.Unmarshal(raw, &a.Statement)
+		if err != nil {
+			return fmt.Errorf("error reading 'statement': %w", err)
+		}
+		delete(object, "statement")
+	}
+
+	if raw, found := object["status"]; found {
+		err = json.Unmarshal(raw, &a.Status)
+		if err != nil {
+			return fmt.Errorf("error reading 'status': %w", err)
+		}
+		delete(object, "status")
+	}
+
+	if raw, found := object["summary"]; found {
+		err = json.Unmarshal(raw, &a.Summary)
+		if err != nil {
+			return fmt.Errorf("error reading 'summary': %w", err)
+		}
+		delete(object, "summary")
+	}
+
+	if raw, found := object["title"]; found {
+		err = json.Unmarshal(raw, &a.Title)
+		if err != nil {
+			return fmt.Errorf("error reading 'title': %w", err)
+		}
+		delete(object, "title")
+	}
+
+	if raw, found := object["verdict"]; found {
+		err = json.Unmarshal(raw, &a.Verdict)
+		if err != nil {
+			return fmt.Errorf("error reading 'verdict': %w", err)
+		}
+		delete(object, "verdict")
+	}
+
+	if raw, found := object["verification_method"]; found {
+		err = json.Unmarshal(raw, &a.VerificationMethod)
+		if err != nil {
+			return fmt.Errorf("error reading 'verification_method': %w", err)
+		}
+		delete(object, "verification_method")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for HumanTaskEvidenceItem to handle AdditionalProperties
+func (a HumanTaskEvidenceItem) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Conclusion != nil {
+		object["conclusion"], err = json.Marshal(a.Conclusion)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'conclusion': %w", err)
+		}
+	}
+
+	if a.Id != nil {
+		object["id"], err = json.Marshal(a.Id)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'id': %w", err)
+		}
+	}
+
+	if a.Statement != nil {
+		object["statement"], err = json.Marshal(a.Statement)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'statement': %w", err)
+		}
+	}
+
+	if a.Status != nil {
+		object["status"], err = json.Marshal(a.Status)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'status': %w", err)
+		}
+	}
+
+	if a.Summary != nil {
+		object["summary"], err = json.Marshal(a.Summary)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'summary': %w", err)
+		}
+	}
+
+	if a.Title != nil {
+		object["title"], err = json.Marshal(a.Title)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'title': %w", err)
+		}
+	}
+
+	if a.Verdict != nil {
+		object["verdict"], err = json.Marshal(a.Verdict)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'verdict': %w", err)
+		}
+	}
+
+	if a.VerificationMethod != nil {
+		object["verification_method"], err = json.Marshal(a.VerificationMethod)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'verification_method': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // AsAppendProviderSessionEventRequest0 returns the union data inside the AppendProviderSessionEventRequest as a AppendProviderSessionEventRequest0
 func (t AppendProviderSessionEventRequest) AsAppendProviderSessionEventRequest0() (AppendProviderSessionEventRequest0, error) {
@@ -7757,6 +8038,9 @@ type ServerInterface interface {
 	// Get project budget summary
 	// (GET /api/v1/projects/{projectId}/budget-summary)
 	GetProjectBudgetSummary(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Set project token budget limit (提额/设限/清限)
+	// (PUT /api/v1/projects/{projectId}/budget-summary)
+	SetProjectBudget(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Get current project configuration facts
 	// (GET /api/v1/projects/{projectId}/config)
 	GetProjectConfig(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -8711,6 +8995,12 @@ func (_ Unimplemented) ListProjectBudgetLedger(w http.ResponseWriter, r *http.Re
 // Get project budget summary
 // (GET /api/v1/projects/{projectId}/budget-summary)
 func (_ Unimplemented) GetProjectBudgetSummary(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Set project token budget limit (提额/设限/清限)
+// (PUT /api/v1/projects/{projectId}/budget-summary)
+func (_ Unimplemented) SetProjectBudget(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -12744,6 +13034,32 @@ func (siw *ServerInterfaceWrapper) GetProjectBudgetSummary(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProjectBudgetSummary(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetProjectBudget operation middleware
+func (siw *ServerInterfaceWrapper) SetProjectBudget(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetProjectBudget(w, r, projectId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17523,6 +17839,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/budget-summary", wrapper.GetProjectBudgetSummary)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/budget-summary", wrapper.SetProjectBudget)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/config", wrapper.GetProjectConfig)

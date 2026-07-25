@@ -25,7 +25,7 @@ func TestPlanReviewCardHasApproveAndRequestChanges(t *testing.T) {
 		"risk_level":    "high",
 	}, "dec-1", "proj-1", "http://web.local:3000")
 	mustValid(t, cardJSON)
-	for _, want := range []string{"approved", "request_changes", "resolve_decision", "dec-1", "proj-1", "登录接口加固计划", "计划评审", "red"} {
+	for _, want := range []string{"approved", "request_changes", "resolve_decision", "dec-1", "proj-1", "登录接口加固计划", "计划确认", "red"} {
 		if !strings.Contains(cardJSON, want) {
 			t.Fatalf("plan_review card missing %q:\n%s", want, cardJSON)
 		}

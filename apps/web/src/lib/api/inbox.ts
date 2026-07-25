@@ -27,7 +27,41 @@ export type InboxItemAction = {
 
 export type InboxAction = InboxItemAction;
 
-export type InboxItem = {
+/** HumanTask 闭环进度（OpenAPI HumanTaskProgress）。 */
+export type HumanTaskProgress = {
+  step: number;
+  total: number;
+  label: string;
+};
+
+/** HumanTask 证据条目（OpenAPI HumanTaskEvidenceItem）。 */
+export type HumanTaskEvidenceItem = {
+  id?: string;
+  statement?: string;
+  title?: string;
+  status?: string;
+  verification_method?: string;
+  verdict?: string;
+  summary?: string;
+  conclusion?: string;
+  [key: string]: unknown;
+};
+
+/**
+ * 人类待办读权威（OpenAPI HumanTask）。
+ * InboxItem 嵌入本类型；inbox_items 仅为存储实现，非第二真相。
+ */
+export type HumanTask = {
+  kind?: string;
+  layer?: "task" | "demand" | "project" | string;
+  why?: string;
+  evidence?: HumanTaskEvidenceItem[];
+  progress?: HumanTaskProgress;
+  /** 唯一权威落点 URL，服务端唯一来源。 */
+  primary_surface?: string;
+};
+
+export type InboxItem = HumanTask & {
   id: string;
   tenant_id: string;
   team_id?: string;
@@ -43,23 +77,10 @@ export type InboxItem = {
   title: string;
   summary?: string;
   status: InboxStatus;
-  // 规范化 HumanTask 分类(§4.1/§4.2):kind 如 dispatch_release/acceptance_sign/…,
-  // layer 为 task/demand/project。服务端附加读模型元数据,用于分组与命名。
-  kind?: string;
-  layer?: string;
-  /** §4.1 why：一句话说明为什么需要你（服务端中文）。 */
-  why?: string;
-  /** §4.1 evidence：判据/结论/交付物摘录。 */
-  evidence?: Array<Record<string, unknown>>;
-  /** §4.1/§6.1 闭环进度条数据。 */
-  progress?: {
-    step: number;
-    total: number;
-    label: string;
-  };
   risk_level?: string;
   priority?: string;
   actions: InboxItemAction[];
+  /** 原始快照；why/evidence/progress/primary_surface 已提升为具名字段。 */
   context: Record<string, unknown>;
   deep_link: Record<string, unknown>;
   last_activity_at: string;

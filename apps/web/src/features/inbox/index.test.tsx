@@ -596,10 +596,10 @@ describe("InboxView", () => {
     await expect.element(contextLink).toHaveAttribute("data-router-link", "true");
   });
 
-  // F3(§5.4.3): primary_surface 是服务端算好的唯一权威落点,前端一律以它为准,
-  // 覆盖 route 的本地推导。
+  // F3(§5.4.3) + 2026-07-25 §4: primary_surface 具名字段优先，deep_link 兼容。
   it("prefers the server-computed primary_surface as the single deep link", async () => {
     const item = makeInboxItem({
+      primary_surface: "/workflows/demand-top",
       deep_link: {
         anchor: "approval-1",
         route: "/projects/project-1",
@@ -611,7 +611,7 @@ describe("InboxView", () => {
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
     const contextLink = screen.getByRole("link", { name: "查看上下文" });
-    await expect.element(contextLink).toHaveAttribute("href", "/workflows/demand-xyz");
+    await expect.element(contextLink).toHaveAttribute("href", "/workflows/demand-top");
     await expect.element(contextLink).toHaveAttribute("data-router-link", "true");
   });
 

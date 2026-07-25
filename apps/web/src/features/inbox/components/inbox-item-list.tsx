@@ -49,14 +49,14 @@ const sourceTypeLabel: Record<string, string> = {
 
 type InboxSection = { key: string; label: string; items: InboxItem[] };
 
-// §6.1 收件箱按人类待办类型分组:计划确认 / 执行放行 / 阶段放行 / 验收签署 / 结项确认 /
+// §6.1 收件箱按人类待办类型分组:计划确认 / 执行放行 / 下游放行 / 验收签署 / 结项确认 /
 // 异常处理。类型取自服务端 HumanTask kind(§4.2);其余(planning_gap / task_failure_recovery /
 // 其它 project_task_* 以及审批 / 运行恢复 / 团队待删)归入"异常处理"。组内保持上游顺序
 // (上游按风险/关注度排序),不再二次排序。
 const INBOX_CATEGORY_ORDER: { key: string; label: string; kinds: string[] }[] = [
   { key: "plan_review", label: "计划确认", kinds: ["plan_review"] },
   { key: "dispatch_release", label: "执行放行", kinds: ["dispatch_release"] },
-  { key: "downstream_release", label: "阶段放行", kinds: ["downstream_release"] },
+  { key: "downstream_release", label: "下游放行", kinds: ["downstream_release"] },
   { key: "acceptance_sign", label: "验收签署", kinds: ["acceptance_sign"] },
   { key: "closure_confirm", label: "结项确认", kinds: ["closure_confirm"] },
 ];
@@ -230,7 +230,7 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
       <div className="min-h-0 flex-1 overflow-y-auto">
         {sections.map((section) => (
           <section key={section.key}>
-            {/* §6.1 领域分组表头(计划确认/执行放行/阶段放行/验收签署/结项确认/异常处理);组内保持上游关注度排序。 */}
+            {/* §6.1 领域分组表头(计划确认/执行放行/下游放行/验收签署/结项确认/异常处理);组内保持上游关注度排序。 */}
             <div className="flex items-center justify-between gap-2 border-b border-line bg-card-soft/80 px-4 py-1.5 text-[11px] font-bold text-ink-2">
               <span>{section.label}</span>
               <span className="font-mono text-ink-3">{section.items.length}</span>
@@ -416,8 +416,10 @@ export function resolveInboxHref(item: InboxItem) {
   // F3(§5.4.3): primary_surface 是服务端算好的唯一权威落点。前端一律以它为准,不再各自
   // 推导深链(旧的 resolveWorkflowInstanceHref / resolveWorkflowTemplateHref / reviewHref
   // 已下线),从根上消除"同一待办在不同入口跳不同页"。
+  // 优先读 HumanTask.primary_surface 具名字段；deep_link 仅作旧载荷兼容。
   const primarySurface =
-    typeof item.deep_link.primary_surface === "string" ? item.deep_link.primary_surface : undefined;
+    (typeof item.primary_surface === "string" ? item.primary_surface : undefined) ||
+    (typeof item.deep_link.primary_surface === "string" ? item.deep_link.primary_surface : undefined);
   if (primarySurface && isSafeAppPath(primarySurface)) {
     return primarySurface;
   }

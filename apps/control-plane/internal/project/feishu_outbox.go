@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/superteam/control-plane/internal/humantask"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -101,6 +102,11 @@ func BuildDecisionCardPayload(ctx context.Context, q *queries.Queries, decision 
 		"project_name":   projectName,
 		"plan_revision":  uuidPtrString(decision.PlanRevisionID),
 		"target_user_id": decision.TargetUserID.String(),
+	}
+	// 2026-07-25 §5.2: outbox carries kind from the single KindAndLayer map so
+	// the connector never re-derives decision_type → kind.
+	if kind, _ := humantask.KindAndLayer(decision.DecisionType); kind != "" {
+		payload["kind"] = kind
 	}
 	if decision.SummarySnapshot != nil {
 		payload["summary"] = *decision.SummarySnapshot
@@ -227,6 +233,9 @@ func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q
 		// 原卡快照 best-effort 打底;历史行 payload 损坏时仍能发出薄终态卡。
 		_ = json.Unmarshal(row.Payload, &payload)
 		payload["decision_type"] = decision.DecisionType
+		if kind, _ := humantask.KindAndLayer(decision.DecisionType); kind != "" {
+			payload["kind"] = kind
+		}
 		payload["title"] = decision.TitleSnapshot
 		payload["resolved_status"] = decision.StatusSnapshot
 		payload["feishu_message_id"] = row.FeishuMessageID.String

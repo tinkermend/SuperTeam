@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/superteam/control-plane/internal/approval"
+	"github.com/superteam/control-plane/internal/humantask"
 	"github.com/superteam/control-plane/internal/project"
 )
 
@@ -125,11 +126,11 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 	}
 	// P1.6 (§4.2): expose the canonical HumanTask kind + layer as additive
 	// read-model metadata so the console can group/label by human-task semantics
-	// (计划确认 / 执行放行 / 阶段放行 / 验收签署 / 结项确认 / 异常处理) without renaming the
+	// (计划确认 / 执行放行 / 下游放行 / 验收签署 / 结项确认 / 异常处理) without renaming the
 	// internal decision_type values. Also persist decision_type so it is reliably
 	// present on the card (F2 noted demand_acceptance open state lacked it, which
 	// broke the web decisionFraming copy).
-	kind, layer := humanTaskKindAndLayer(decision.DecisionType)
+	kind, layer := humantask.KindAndLayer(decision.DecisionType)
 	if kind != "" {
 		contextPayload["kind"] = kind
 	}
@@ -261,7 +262,7 @@ func humanTaskEvidence(contextPayload map[string]any) any {
 }
 
 // humanTaskProgress returns the closed-loop step marker for §6.1 progress bars.
-// Steps: 1 计划确认 → 2 执行/阶段放行 → 3 验收签署 → 4 结项确认.
+// Steps: 1 计划确认 → 2 执行/下游放行 → 3 验收签署 → 4 结项确认.
 func humanTaskProgress(kind string) map[string]any {
 	switch kind {
 	case "plan_review":
@@ -269,49 +270,13 @@ func humanTaskProgress(kind string) map[string]any {
 	case "dispatch_release":
 		return map[string]any{"step": 2, "total": 4, "label": "计划 已过 → 执行放行 待你 → 验收 未开始 → 结项 未开始"}
 	case "downstream_release":
-		return map[string]any{"step": 2, "total": 4, "label": "计划 已过 → 阶段放行 待你 → 验收 未开始 → 结项 未开始"}
+		return map[string]any{"step": 2, "total": 4, "label": "计划 已过 → 下游放行 待你 → 验收 未开始 → 结项 未开始"}
 	case "acceptance_sign":
 		return map[string]any{"step": 3, "total": 4, "label": "任务完成 → 验收签署 待你 → 结项 未开始"}
 	case "closure_confirm":
 		return map[string]any{"step": 4, "total": 4, "label": "任务完成 → 验收签署 已过 → 结项确认 待你"}
 	default:
 		return nil
-	}
-}
-
-// humanTaskKindAndLayer maps an internal decision_type to the canonical HumanTask
-// kind name and layer (spec §4.2). This is ADDITIVE read-model metadata: the
-// internal decision_type values are intentionally left unchanged (renaming them
-// touches the coordinator switch, DB values and many tests — a separate change);
-// the console instead groups and labels cards by these canonical kind/layer.
-//   task | demand | project layers per §4.1.
-func humanTaskKindAndLayer(decisionType string) (kind string, layer string) {
-	switch strings.TrimSpace(decisionType) {
-	case "plan_review":
-		return "plan_review", "demand"
-	case "project_task_approval":
-		return "dispatch_release", "task"
-	case "project_task_acceptance":
-		return "downstream_release", "task"
-	case "demand_acceptance":
-		return "acceptance_sign", "demand"
-	case "project_acceptance":
-		return "closure_confirm", "project"
-	case "planning_failed":
-		return "planning_failed", "demand"
-	case "planning_gap":
-		return "planning_gap", "demand"
-	case "task_failure_recovery":
-		return "task_failure_recovery", "task"
-	case "":
-		return "", ""
-	default:
-		// Other project_task_* gates (recovery/runtime_recovery/clarification/…)
-		// stay at the task layer with their own decision type as the kind.
-		if strings.HasPrefix(decisionType, "project_task_") {
-			return decisionType, "task"
-		}
-		return decisionType, ""
 	}
 }
 

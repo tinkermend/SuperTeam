@@ -1,0 +1,10 @@
+{
+  "plan_review": "计划确认",
+  "dispatch_release": "执行放行",
+  "downstream_release": "下游放行",
+  "acceptance_sign": "验收签署",
+  "closure_confirm": "结项确认",
+  "planning_failed": "规划失败",
+  "planning_gap": "规划缺口",
+  "task_failure_recovery": "任务失败恢复"
+}

@@ -1964,6 +1964,30 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+    put:
+      operationId: setProjectBudget
+      summary: Set project token budget limit (提额/设限/清限)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetProjectBudgetRequest"
+      responses:
+        "200":
+          description: Updated project budget summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectBudgetSummary"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/acceptance:
     get:
       operationId: getProjectAcceptance
@@ -5335,140 +5359,184 @@ components:
         metadata:
           type: object
           additionalProperties: true
-    InboxItem:
+    HumanTaskProgress:
       type: object
+      description: >-
+        人类待办闭环进度(HumanTask §4.1 / §6.1)：{step,total,label}，
+        供收件箱进度条渲染（如「任务完成 → 验收签署 待你 → 结项 未开始」）。
       required:
-        - id
-        - tenant_id
-        - target_user_id
-        - item_type
-        - source_type
-        - source_id
-        - title
-        - status
-        - actions
-        - context
-        - deep_link
-        - last_activity_at
-        - created_at
-        - updated_at
+        - step
+        - total
+        - label
+      properties:
+        step:
+          type: integer
+        total:
+          type: integer
+        label:
+          type: string
+      additionalProperties: false
+    HumanTaskEvidenceItem:
+      type: object
+      description: >-
+        判据/结论/交付物摘录条目。形态随 kind 变化（验收签署多为判据行，结项多为需求行）。
       properties:
         id:
           type: string
-          format: uuid
-        tenant_id:
+        statement:
           type: string
-          format: uuid
-        team_id:
-          type: string
-          format: uuid
-        target_user_id:
-          type: string
-          format: uuid
-        item_type:
-          type: string
-          enum:
-            - approval
-            - project_decision
-            - team_pending_delete
-            - digital_employee_run_recovery
-        source_type:
-          type: string
-          enum:
-            - approval_request
-            - project_decision_request
-            - team_pending_delete
-            - digital_employee_run
-        source_id:
-          type: string
-          format: uuid
-        source_project_id:
-          type: string
-          format: uuid
-        source_task_id:
-          type: string
-          format: uuid
-        source_approval_request_id:
-          type: string
-          format: uuid
-        source_project_name:
-          type: string
-          description: 来源项目名称(读时批量补名;来源已删除时缺省)
-        source_task_name:
-          type: string
-          description: 来源任务标题(读时批量补名;来源已删除时缺省)
         title:
-          type: string
-        summary:
-          type: string
-        risk_level:
-          type: string
-        priority:
           type: string
         status:
           type: string
-          enum:
-            - open
-            - resolved
-            - cancelled
+        verification_method:
+          type: string
+        verdict:
+          type: string
+        summary:
+          type: string
+        conclusion:
+          type: string
+      additionalProperties: true
+    HumanTask:
+      type: object
+      description: >-
+        人类待办读权威。列表/详情经 Inbox 投影下发；inbox_items 为存储实现，非第二真相。
+        见 docs/superpowers/specs/2026-07-25-human-task-load-budget-and-channel-grading.md §4。
+      properties:
         kind:
           type: string
           description: >-
-            规范化的人类待办 kind(HumanTask §4.2),由服务端从内部 decision_type 映射得到
+            规范化的人类待办 kind，由服务端从内部 decision_type 映射得到
             (如 dispatch_release / downstream_release / acceptance_sign /
             closure_confirm / plan_review / planning_gap / task_failure_recovery)。
-            附加读模型元数据,不改内部 decision_type;控制台据此分组与命名。项目决策以外的事项可能为空。
+            不改内部 decision_type；控制台据此分组与命名。项目决策以外的事项可能为空。
         layer:
           type: string
-          description: 人类待办层级(HumanTask §4.1):task / demand / project。项目决策以外的事项可能为空。
+          description: 人类待办层级：task / demand / project。项目决策以外的事项可能为空。
+          enum:
+            - task
+            - demand
+            - project
         why:
           type: string
-          description: >-
-            人类待办 why(HumanTask §4.1)：一句话说明「为什么需要你」，服务端产出中文。
-            附加读模型元数据；项目决策以外的事项可能为空。
+          description: 一句话说明「为什么需要你」，服务端产出中文。
         evidence:
           type: array
-          description: >-
-            人类待办 evidence(HumanTask §4.1)：判据/结论/交付物摘录，卡上直接可读。
-            验收签署卡携带 pending_criteria_detail；结项卡携带需求清单。
+          description: 判据/结论/交付物摘录，卡上直接可读。
           items:
-            type: object
-            additionalProperties: true
+            $ref: "#/components/schemas/HumanTaskEvidenceItem"
         progress:
-          type: object
+          $ref: "#/components/schemas/HumanTaskProgress"
+        primary_surface:
+          type: string
           description: >-
-            人类待办闭环进度(HumanTask §4.1 / §6.1)：{step,total,label}，
-            供收件箱进度条渲染（如「任务完成 → 验收签署 待你 → 结项 未开始」）。
+            唯一权威落点 URL，服务端唯一来源（基线 §5.4.3）。前端不得再各自推导深链。
+    InboxItem:
+      allOf:
+        - $ref: "#/components/schemas/HumanTask"
+        - type: object
+          description: >-
+            Inbox 列表投影行。承载 HumanTask 读字段；底层表 inbox_items 仅为存储实现。
+          required:
+            - id
+            - tenant_id
+            - target_user_id
+            - item_type
+            - source_type
+            - source_id
+            - title
+            - status
+            - actions
+            - context
+            - deep_link
+            - last_activity_at
+            - created_at
+            - updated_at
           properties:
-            step:
-              type: integer
-            total:
-              type: integer
-            label:
+            id:
               type: string
-          additionalProperties: false
-        actions:
-          type: array
-          items:
-            $ref: "#/components/schemas/InboxItemAction"
-        context:
-          type: object
-          additionalProperties: true
-        deep_link:
-          type: object
-          additionalProperties: true
-        last_activity_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        resolved_at:
-          type: string
-          format: date-time
+              format: uuid
+            tenant_id:
+              type: string
+              format: uuid
+            team_id:
+              type: string
+              format: uuid
+            target_user_id:
+              type: string
+              format: uuid
+            item_type:
+              type: string
+              enum:
+                - approval
+                - project_decision
+                - team_pending_delete
+                - digital_employee_run_recovery
+            source_type:
+              type: string
+              enum:
+                - approval_request
+                - project_decision_request
+                - team_pending_delete
+                - digital_employee_run
+            source_id:
+              type: string
+              format: uuid
+            source_project_id:
+              type: string
+              format: uuid
+            source_task_id:
+              type: string
+              format: uuid
+            source_approval_request_id:
+              type: string
+              format: uuid
+            source_project_name:
+              type: string
+              description: 来源项目名称(读时批量补名;来源已删除时缺省)
+            source_task_name:
+              type: string
+              description: 来源任务标题(读时批量补名;来源已删除时缺省)
+            title:
+              type: string
+            summary:
+              type: string
+            risk_level:
+              type: string
+            priority:
+              type: string
+            status:
+              type: string
+              enum:
+                - open
+                - resolved
+                - cancelled
+            actions:
+              type: array
+              items:
+                $ref: "#/components/schemas/InboxItemAction"
+            context:
+              type: object
+              description: >-
+                原始快照与尚未收编的辅助字段。why / evidence / progress / primary_surface
+                已提升为 HumanTask 具名字段，不得再作为这些语义的默认读路径。
+              additionalProperties: true
+            deep_link:
+              type: object
+              additionalProperties: true
+            last_activity_at:
+              type: string
+              format: date-time
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+            resolved_at:
+              type: string
+              format: date-time
     InboxListResponse:
       type: object
       required:
@@ -8053,6 +8121,8 @@ components:
         - estimated_cost
         - actual_cost
         - ledger_count
+        - consumed_tokens
+        - exhausted
       properties:
         estimated_tokens:
           type: integer
@@ -8067,6 +8137,27 @@ components:
         ledger_count:
           type: integer
           format: int32
+        token_limit:
+          type: integer
+          format: int64
+          nullable: true
+          description: 项目 token 预算上限；缺省/为空表示不限（P1-A 预算熔断）。
+        consumed_tokens:
+          type: integer
+          format: int64
+          description: 项目下所有 attempt 心跳累加的 token 消耗之和。
+        exhausted:
+          type: boolean
+          description: 已设额度且已消耗达到上限；为真时派发前闸阻止开启新任务（运行中不打断）。
+    SetProjectBudgetRequest:
+      type: object
+      properties:
+        token_limit:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+          description: 新的 token 上限；置空（null 或省略）表示清回不限。
     ProjectAcceptanceRecord:
       type: object
       required:

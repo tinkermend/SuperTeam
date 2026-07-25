@@ -1,7 +1,7 @@
 // Package cards 渲染飞书交互卡片(纯函数,输出卡片 JSON 字符串)。
-// 分级规则(spec §8.2):plan_review / planning_gap 卡内可操作;clarification 与
-// demand_acceptance(判据签署)只给富信息+深链 Console——签署控件必须紧邻证据,
-// 防橡皮图章;result_notice 只读。
+// 分级规则见 2026-07-25 human-task-load-budget §5.3：按 HumanTask kind 查
+// kindInteractionGrades；acceptance_sign 卡内逐条签署、禁止一键全过；
+// result_notice 只读。
 package cards
 
 import (
@@ -168,7 +168,7 @@ func listSection(title string, lines []string, maxItems int) map[string]any {
 
 // decisionHeadElements 渲染决策卡头部信息区:项目/类型/风险/摘要。
 func decisionHeadElements(payload map[string]any) []map[string]any {
-	decisionType, _ := payload["decision_type"].(string)
+	kind := resolvePayloadKind(payload)
 	summary, _ := payload["summary"].(string)
 	risk, _ := payload["risk_level"].(string)
 	projectName, _ := payload["project_name"].(string)
@@ -177,7 +177,7 @@ func decisionHeadElements(payload map[string]any) []map[string]any {
 	if projectName != "" {
 		info = fmt.Sprintf("**项目**:%s\n", projectName)
 	}
-	info += fmt.Sprintf("**类型**:%s", decisionTypeLabel(decisionType))
+	info += fmt.Sprintf("**类型**:%s", humanTaskKindLabel(kind))
 	if risk != "" {
 		info += fmt.Sprintf("  **风险**:%s", riskLabel(risk))
 	}
@@ -188,14 +188,14 @@ func decisionHeadElements(payload map[string]any) []map[string]any {
 	return elements
 }
 
-// decisionBodyElements 渲染决策卡信息区:头部+按决策类型展开的富上下文(静态,无按钮)。
+// decisionBodyElements 渲染决策卡信息区:头部+按 kind 展开的富上下文(静态,无按钮)。
 // 决策卡与终态卡共用——批准之后卡片必须保留"批的是什么",不逼人回控制台。
 func decisionBodyElements(payload map[string]any) []map[string]any {
-	decisionType, _ := payload["decision_type"].(string)
+	kind := resolvePayloadKind(payload)
 	elements := decisionHeadElements(payload)
 	context, _ := payload["context"].(map[string]any)
 	if context != nil {
-		elements = append(elements, decisionContextElements(decisionType, context, payload)...)
+		elements = append(elements, decisionContextElements(kind, context, payload)...)
 	}
 	return elements
 }
@@ -282,10 +282,10 @@ func acceptanceSignElements(payload map[string]any, verdicts map[string]string, 
 	return elements
 }
 
-// decisionContextElements 按决策类型渲染富上下文区块;未知类型静默跳过(薄卡兜底)。
-func decisionContextElements(decisionType string, context map[string]any, payload map[string]any) []map[string]any {
+// decisionContextElements 按 HumanTask kind 渲染富上下文区块;未知 kind 静默跳过(薄卡兜底)。
+func decisionContextElements(kind string, context map[string]any, payload map[string]any) []map[string]any {
 	var sections []map[string]any
-	switch decisionType {
+	switch kind {
 	case "plan_review":
 		employeeNames, _ := payload["employee_names"].(map[string]any)
 		tasks := mapSlice(context["tasks"])
@@ -325,14 +325,14 @@ func decisionContextElements(decisionType string, context map[string]any, payloa
 				sections = append(sections, mdBlock("**需人工确认原因**:"+clamp(strings.Join(reasons, ";"), 300)))
 			}
 		}
-	case "demand_acceptance":
+	case "acceptance_sign":
 		// 静态渲染(终态卡等场景):同一判据行渲染器,无签署按钮。
 		sections = append(sections, acceptanceSignElements(payload, verdictOverlay(payload["criterion_verdicts"]), false, "", "")...)
 	case "planning_gap":
 		if gap, ok := context["gap"].(map[string]any); ok {
 			gapInfo := ""
-			if kind, _ := gap["constraint_kind"].(string); kind != "" {
-				gapInfo += "**缺口类型**:" + kind + "\n"
+			if constraintKind, _ := gap["constraint_kind"].(string); constraintKind != "" {
+				gapInfo += "**缺口类型**:" + constraintKind + "\n"
 			}
 			if roles := strSlice(gap["roles"]); len(roles) > 0 {
 				gapInfo += "**缺口角色**:" + clamp(strings.Join(roles, "、"), 150) + "\n"
@@ -347,7 +347,37 @@ func decisionContextElements(decisionType string, context map[string]any, payloa
 				sections = append(sections, mdBlock(strings.TrimRight(gapInfo, "\n")))
 			}
 		}
-	case "upstream_supplement_review":
+	case "dispatch_release", "downstream_release":
+		if risk, _ := payload["risk_level"].(string); risk != "" {
+			sections = append(sections, mdBlock("**风险等级**:"+riskLabel(risk)))
+		}
+		if summary, _ := payload["summary"].(string); summary != "" {
+			sections = append(sections, mdBlock("**动作意图**:"+clamp(summary, 400)))
+		}
+		if title, _ := context["task_title"].(string); title != "" {
+			sections = append(sections, mdBlock("**任务**:"+clamp(title, 120)))
+		}
+	case "closure_confirm":
+		if demands := mapSlice(context["demands"]); len(demands) > 0 {
+			lines := make([]string, 0, len(demands))
+			for _, demand := range demands {
+				title, _ := demand["title"].(string)
+				if title == "" {
+					continue
+				}
+				lines = append(lines, "• "+clamp(title, 100))
+			}
+			if len(lines) > 0 {
+				sections = append(sections, listSection("需求清单", lines, 8))
+			}
+		}
+	case "planning_failed":
+		if reason, _ := context["failure_reason"].(string); reason != "" {
+			sections = append(sections, mdBlock("**失败原因**:"+clamp(reason, 400)))
+		} else if summary, _ := payload["summary"].(string); summary != "" {
+			sections = append(sections, mdBlock("**失败原因**:"+clamp(summary, 400)))
+		}
+	case "upstream_supplement_review", "project_task_upstream_supplement_review":
 		if missing := strSlice(context["missing_inputs"]); len(missing) > 0 {
 			lines := make([]string, 0, len(missing))
 			for _, item := range missing {
@@ -363,9 +393,9 @@ func decisionContextElements(decisionType string, context map[string]any, payloa
 	return sections
 }
 
-// DecisionCard 审批卡:按决策类型分级渲染。payload 来自控制平面 outbox 快照。
+// DecisionCard 审批卡:按 HumanTask kind 查交互分级表渲染。payload 来自 CP outbox。
 func DecisionCard(payload map[string]any, decisionID, projectID, webOrigin string) string {
-	decisionType, _ := payload["decision_type"].(string)
+	kind := resolvePayloadKind(payload)
 	title, _ := payload["title"].(string)
 	risk, _ := payload["risk_level"].(string)
 	deepLink := webOrigin + "/inbox"
@@ -380,31 +410,23 @@ func DecisionCard(payload map[string]any, decisionID, projectID, webOrigin strin
 		}
 	}
 
+	grade, hasGrade := gradeForKind(kind)
 	var actions []map[string]any
-	switch decisionType {
-	case "plan_review":
-		actions = []map[string]any{
-			actionButton("批准", "primary", resolveValue("approved")),
-			actionButton("请求修改", "danger", resolveValue("request_changes")),
-			linkButton("查看计划详情", deepLink),
-		}
-	case "planning_gap":
-		actions = []map[string]any{
-			actionButton("已补员,重新规划", "primary", resolveValue("restaffed")),
-			actionButton("豁免约束", "default", resolveValue("exempted")),
-			actionButton("关闭需求", "danger", resolveValue("rejected")),
-			linkButton("查看详情", deepLink),
-		}
-	case "demand_acceptance":
-		// 卡内逐条签署:判据原文与证据摘录就在卡上,签署紧邻证据(逐条按钮由
-		// acceptanceSignElements 渲染);深链只作完整证据血缘兜底,不给一键全过。
+	switch {
+	case hasGrade && grade.Mode == ModePerCriterionSign:
+		// 卡内逐条签署;深链只作完整证据血缘兜底,不给一键全过。
 		actions = []map[string]any{linkButton("在 Console 查看完整证据", deepLink)}
+	case hasGrade && grade.Mode == ModeCardActions:
+		for _, entry := range grade.Actions {
+			actions = append(actions, actionButton(entry.Label, entry.ButtonType, resolveValue(entry.Decision)))
+		}
+		actions = append(actions, linkButton("查看详情", deepLink))
 	default:
 		actions = []map[string]any{linkButton("到 Console 处理", deepLink)}
 	}
 
 	var elements []map[string]any
-	if decisionType == "demand_acceptance" {
+	if hasGrade && grade.Mode == ModePerCriterionSign {
 		elements = decisionHeadElements(payload)
 		elements = append(elements, acceptanceSignElements(payload, verdictOverlay(payload["criterion_verdicts"]), true, decisionID, projectID)...)
 	} else {
@@ -526,34 +548,6 @@ func ResultNoticeCard(payload map[string]any, webOrigin string) string {
 		linkButton("查看详情", fmt.Sprintf("%s/workflows/%s", strings.TrimRight(webOrigin, "/"), demandID)),
 	}})
 	return card(header(fmt.Sprintf("需求%s:%s", label, clamp(title, 70)), template), elements...)
-}
-
-func decisionTypeLabel(decisionType string) string {
-	switch decisionType {
-	case "plan_review":
-		return "计划评审"
-	case "planning_gap":
-		return "规划缺口"
-	case "demand_acceptance":
-		return "需求验收(判据签署)"
-	case "clarification":
-		return "需求澄清"
-	case "task_failure_recovery":
-		return "任务失败恢复"
-	case "project_task_iteration_exhausted":
-		return "任务返工次数耗尽"
-	case "upstream_supplement_review":
-		return "上游输入补充评审"
-	case "project_acceptance":
-		return "项目验收"
-	case "project_task_recovery":
-		return "任务派发恢复"
-	default:
-		if decisionType == "" {
-			return "人类决策"
-		}
-		return decisionType
-	}
 }
 
 func riskLabel(risk string) string {

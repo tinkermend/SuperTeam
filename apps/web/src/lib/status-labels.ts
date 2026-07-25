@@ -211,10 +211,12 @@ export function decisionTypeLabel(type: string | undefined): string {
 
 // 规范化 HumanTask kind(§4.2)的中文名。kind 是服务端从 decision_type 映射出的读模型
 // 元数据(见 InboxItem.kind),控制台按此分组/命名人类待办。
-const HUMAN_TASK_KIND_LABELS: Record<string, string> = {
+// 必须与 contracts/control-plane/human-task-kind-labels.json 逐键逐值一致
+// （见 human-task-kind-labels.guard.test.ts；2026-07-25 §5.4）。
+export const HUMAN_TASK_KIND_LABELS: Record<string, string> = {
   plan_review: "计划确认",
   dispatch_release: "执行放行",
-  downstream_release: "阶段放行",
+  downstream_release: "下游放行",
   acceptance_sign: "验收签署",
   closure_confirm: "结项确认",
   planning_failed: "规划失败",

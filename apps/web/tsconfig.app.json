@@ -10,6 +10,7 @@
     /* Bundler mode */
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
@@ -17,7 +18,10 @@
 
     /* Alias */
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@human-task-kind-labels": [
+        "../../contracts/control-plane/human-task-kind-labels.json"
+      ]
     },
 
     /* Linting */
