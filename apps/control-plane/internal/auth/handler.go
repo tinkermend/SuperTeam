@@ -315,6 +315,7 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		DisplayName:       body.DisplayName,
 		Password:          body.Password,
 		Avatar:            userAvatarFromGenerated(&body.Avatar),
+		TenantRole:        string(body.TenantRole),
 		SelectableTeamIDs: uuidSliceFromOpenAPI(selectableTeamIDs),
 	})
 	if err != nil {
@@ -322,6 +323,61 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
+func (h *HTTPHandler) GetUserTenantMembership(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeRead, "user tenant membership read") {
+		return
+	}
+	membership, err := h.service.GetUserTenantMembership(r.Context(), platform.DefaultTenantID, uuid.UUID(id))
+	if err != nil {
+		h.writeManagedUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, TenantMembershipResponse{Membership: toGeneratedTenantMembership(membership)})
+}
+
+func (h *HTTPHandler) UpsertUserTenantMembership(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeManage, "user tenant membership upsert") {
+		return
+	}
+	var body UpsertUserTenantMembershipJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	membership, err := h.service.UpsertUserTenantMembership(r.Context(), toActor(actorUser), platform.DefaultTenantID, uuid.UUID(id), string(body.Role))
+	if err != nil {
+		h.writeManagedUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, TenantMembershipResponse{Membership: toGeneratedTenantMembership(membership)})
+}
+
+func (h *HTTPHandler) DeleteUserTenantMembership(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeManage, "user tenant membership delete") {
+		return
+	}
+	if err := h.service.DeleteUserTenantMembership(r.Context(), toActor(actorUser), platform.DefaultTenantID, uuid.UUID(id)); err != nil {
+		h.writeManagedUserError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
@@ -513,15 +569,30 @@ func (h *HTTPHandler) writeAuthError(w http.ResponseWriter, err error) {
 }
 
 func (h *HTTPHandler) writeManagedUserError(w http.ResponseWriter, err error) {
-	if errors.Is(err, ErrInvalidManagedUserInput) {
+	switch {
+	case errors.Is(err, ErrInvalidManagedUserInput):
 		writeError(w, http.StatusBadRequest, "invalid managed user input")
-		return
-	}
-	if errors.Is(err, ErrManagedUserNotFound) {
+	case errors.Is(err, ErrManagedUserNotFound), errors.Is(err, ErrTenantMembershipNotFound):
 		writeError(w, http.StatusNotFound, "managed user not found")
-		return
+	case errors.Is(err, ErrOwnerGrantForbidden):
+		writeError(w, http.StatusForbidden, "only a tenant owner can grant the owner role")
+	case errors.Is(err, ErrLastTenantOwner):
+		writeError(w, http.StatusConflict, "cannot demote or revoke the last tenant owner")
+	default:
+		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
-	writeError(w, http.StatusInternalServerError, "internal server error")
+}
+
+func toGeneratedTenantMembership(membership *TenantLevelMembership) TenantMembership {
+	return TenantMembership{
+		Id:        openapi_types.UUID(membership.ID),
+		TenantId:  openapi_types.UUID(membership.TenantID),
+		UserId:    openapi_types.UUID(membership.UserID),
+		Role:      TenantRole(membership.Role),
+		Status:    TenantMembershipStatus(membership.Status),
+		CreatedAt: membership.CreatedAt,
+		UpdatedAt: membership.UpdatedAt,
+	}
 }
 
 func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {

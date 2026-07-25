@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -744,6 +745,7 @@ type memoryRepository struct {
 
 	bindTeamDigitalEmployeeParams []BindTeamDigitalEmployeeParams
 	bindTeamDigitalEmployeeErr    error
+	rejectTenantLevelMembership   bool
 }
 
 type memoryAuditEvent struct {
@@ -984,6 +986,15 @@ func (r *memoryRepository) GetTeamMember(_ context.Context, tenantID, teamID, me
 func (r *memoryRepository) BindTeamDigitalEmployee(_ context.Context, params BindTeamDigitalEmployeeParams) error {
 	r.bindTeamDigitalEmployeeParams = append(r.bindTeamDigitalEmployeeParams, params)
 	return r.bindTeamDigitalEmployeeErr
+}
+
+func (r *memoryRepository) RequireActiveTenantLevelMembership(_ context.Context, tenantID, userID uuid.UUID) error {
+	if r.rejectTenantLevelMembership {
+		return fmt.Errorf("%w: user must have tenant membership before joining a team", ErrInvalidInput)
+	}
+	_ = tenantID
+	_ = userID
+	return nil
 }
 
 func (r *memoryRepository) AddTeamMember(_ context.Context, params AddTeamMemberParams) (TeamMemberRecord, error) {

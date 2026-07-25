@@ -48,7 +48,10 @@ type Querier interface {
 	ConsumeCaptchaChallenge(ctx context.Context, arg ConsumeCaptchaChallengeParams) (int64, error)
 	CountActiveArtifactRetentionHolds(ctx context.Context, arg CountActiveArtifactRetentionHoldsParams) (int32, error)
 	CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CountActiveTenantLevelMemberships(ctx context.Context, tenantID uuid.UUID) (int32, error)
+	CountActiveTenantLevelOwners(ctx context.Context, tenantID uuid.UUID) (int32, error)
 	CountActiveTenantTeamsByIDs(ctx context.Context, arg CountActiveTenantTeamsByIDsParams) (int32, error)
+	CountActiveUsersWithoutTenantMembership(ctx context.Context, tenantID uuid.UUID) (int32, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
 	CountAuthzDecisionDiffsSince(ctx context.Context, arg CountAuthzDecisionDiffsSinceParams) (int64, error)
 	CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error)
@@ -221,6 +224,7 @@ type Querier interface {
 	DisableAutomationRuleSystem(ctx context.Context, arg DisableAutomationRuleSystemParams) (AutomationRule, error)
 	DisableSkillAgentBindingsForDelete(ctx context.Context, arg DisableSkillAgentBindingsForDeleteParams) ([]uuid.UUID, error)
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
+	DisableTenantLevelMembership(ctx context.Context, arg DisableTenantLevelMembershipParams) (TenantMember, error)
 	// 仅终态 failed/cancelled、尚未了结、且无 pending/requested 决策时可清理。
 	DismissProjectTask(ctx context.Context, arg DismissProjectTaskParams) (ProjectTask, error)
 	// §5.4.1: true when a project decision request already owns this approval —
@@ -238,6 +242,7 @@ type Querier interface {
 	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
 	GetActiveRuntimeSessionByLookupHash(ctx context.Context, tokenLookupHash string) (GetActiveRuntimeSessionByLookupHashRow, error)
 	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
+	GetActiveTenantLevelMembership(ctx context.Context, arg GetActiveTenantLevelMembershipParams) (TenantMember, error)
 	GetActiveTenantMembership(ctx context.Context, arg GetActiveTenantMembershipParams) (TenantMember, error)
 	GetActiveTenantUserForTeamCreate(ctx context.Context, arg GetActiveTenantUserForTeamCreateParams) (GetActiveTenantUserForTeamCreateRow, error)
 	GetApprovalRequest(ctx context.Context, arg GetApprovalRequestParams) (ApprovalRequest, error)
@@ -374,6 +379,7 @@ type Querier interface {
 	IncrementPromptTemplateUseCount(ctx context.Context, arg IncrementPromptTemplateUseCountParams) error
 	InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error)
 	InsertSkillMCPDependency(ctx context.Context, arg InsertSkillMCPDependencyParams) error
+	InsertTenantLevelMembership(ctx context.Context, arg InsertTenantLevelMembershipParams) (TenantMember, error)
 	LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error)
 	LinkProjectTaskDispatchGateAttempt(ctx context.Context, arg LinkProjectTaskDispatchGateAttemptParams) (ProjectTaskDispatchGateResult, error)
 	LinkProjectTaskDispatchGateDecisionRequest(ctx context.Context, arg LinkProjectTaskDispatchGateDecisionRequestParams) (ProjectTaskDispatchGateResult, error)
@@ -708,6 +714,7 @@ type Querier interface {
 	UpdateTaskRun(ctx context.Context, arg UpdateTaskRunParams) (TaskRun, error)
 	UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) (Task, error)
 	UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error)
+	UpdateTenantLevelMembershipRole(ctx context.Context, arg UpdateTenantLevelMembershipRoleParams) (TenantMember, error)
 	UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamParams) (TenantTeam, error)
 	UpdateTenantTeamConstitution(ctx context.Context, arg UpdateTenantTeamConstitutionParams) (TenantTeam, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)

@@ -334,6 +334,21 @@ export function privilegedRoleLabel(role: string | undefined): string {
   return PRIVILEGED_ROLE_LABELS[normalized] ?? role;
 }
 
+const TENANT_ROLE_LABELS: Record<string, string> = {
+  admin: "管理员",
+  member: "成员",
+  owner: "所有者",
+  viewer: "观察者",
+};
+
+export function tenantRoleLabel(role: string | undefined): string {
+  if (!role) {
+    return "未知";
+  }
+  const normalized = role.trim().toLowerCase();
+  return TENANT_ROLE_LABELS[normalized] ?? role;
+}
+
 const DELETE_BLOCKER_TYPE_LABELS: Record<string, string> = {
   project_task: "项目任务",
   run: "执行运行",

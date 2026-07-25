@@ -603,6 +603,20 @@ func (r *PgRepository) GetTeamMember(ctx context.Context, tenantID, teamID, memb
 	return teamMemberRecordFromGetRow(row)
 }
 
+func (r *PgRepository) RequireActiveTenantLevelMembership(ctx context.Context, tenantID, userID uuid.UUID) error {
+	_, err := r.q.GetActiveTenantLevelMembership(ctx, queries.GetActiveTenantLevelMembershipParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: user must have tenant membership before joining a team", ErrInvalidInput)
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *PgRepository) AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error) {
 	member, err := r.q.AddTeamMember(ctx, queries.AddTeamMemberParams{
 		TenantID: params.TenantID,

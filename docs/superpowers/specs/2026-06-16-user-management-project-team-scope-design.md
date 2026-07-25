@@ -1,5 +1,8 @@
 # 用户管理可选团队授权设计
 
+> **修订（2026-07-25）**：创建用户现须同时写入租户级成员（`tenant_role` → `tenant_members`，`team_id IS NULL`）以授予控制台访问。`user_project_team_scopes` 语义不变，仍不等于成员身份。详见 [2026-07-25-tenant-membership-and-console-access](2026-07-25-tenant-membership-and-console-access.md)。
+
+
 日期：2026-06-16
 状态：已确认，待实现计划
 

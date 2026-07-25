@@ -10,6 +10,9 @@ import (
 var (
 	ErrInvalidManagedUserInput = errors.New("invalid managed user input")
 	ErrManagedUserNotFound     = errors.New("managed user not found")
+	ErrTenantMembershipNotFound = errors.New("tenant membership not found")
+	ErrLastTenantOwner         = errors.New("cannot demote or revoke the last tenant owner")
+	ErrOwnerGrantForbidden     = errors.New("only a tenant owner can grant the owner role")
 )
 
 // User 用户模型
@@ -111,8 +114,16 @@ const (
 	OperationActionUserResetPassword     = "user.reset_password"
 	OperationActionUserUpdateOwnProfile  = "user.update_own_profile"
 	OperationActionUserChangeOwnPassword = "user.change_own_password"
-	OperationResultSucceeded             = "succeeded"
-	OperationResultFailed                = "failed"
+	OperationActionTenantMembershipUpsert = "user.tenant_membership.upsert"
+	OperationActionTenantMembershipDelete = "user.tenant_membership.delete"
+
+	TenantRoleOwner  = "owner"
+	TenantRoleAdmin  = "admin"
+	TenantRoleMember = "member"
+	TenantRoleViewer = "viewer"
+
+	OperationResultSucceeded = "succeeded"
+	OperationResultFailed    = "failed"
 )
 
 // Actor 表示执行 Web 管理操作的当前登录用户。
@@ -137,7 +148,20 @@ type CreateManagedUserInput struct {
 	Password          string
 	Avatar            UserAvatarConfig
 	AvatarAssetID     string
+	TenantRole        string
 	SelectableTeamIDs []uuid.UUID
+}
+
+// TenantLevelMembership 租户级成员（team_id IS NULL），是 console.access 的事实源。
+// 名称避开 OpenAPI 生成的 TenantMembership，避免包内类型冲突。
+type TenantLevelMembership struct {
+	ID        uuid.UUID
+	TenantID  uuid.UUID
+	UserID    uuid.UUID
+	Role      string
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // UserProjectTeamScopeSummary 表示人类用户创建项目时可选择的团队授权范围。

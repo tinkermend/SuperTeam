@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { UserIdentity } from "./user-identity";
 
 export type UserSearchSelectProps = {
+  /** 若提供，仅展示这些用户（例如仅租户成员可选入团队）。 */
+  allowedUserIds?: string[];
   apiBaseUrl: string;
   disabled?: boolean;
   excludedUserIds?: string[];
@@ -18,6 +20,7 @@ export type UserSearchSelectProps = {
 };
 
 export function UserSearchSelect({
+  allowedUserIds,
   apiBaseUrl,
   disabled = false,
   excludedUserIds = [],
@@ -42,7 +45,18 @@ export function UserSearchSelect({
     queryKey: ["superteam", "user-search-select", apiBaseUrl, q]
 });
   const excluded = new Set(excludedUserIds);
-  const users = disabled ? [] : (usersQuery.data?.items ?? []).filter((user) => !excluded.has(user.id));
+  const allowed = allowedUserIds ? new Set(allowedUserIds) : null;
+  const users = disabled
+    ? []
+    : (usersQuery.data?.items ?? []).filter((user) => {
+        if (excluded.has(user.id)) {
+          return false;
+        }
+        if (allowed && !allowed.has(user.id)) {
+          return false;
+        }
+        return true;
+      });
 
   return (
     <div className="flex min-w-0 flex-col gap-2">

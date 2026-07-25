@@ -62,12 +62,29 @@ export type ListUsersOptions = ApiClientOptions & {
   status?: UserSummary["status"];
 };
 
+export type TenantRole = "owner" | "admin" | "member" | "viewer";
+
 export type CreateUserRequest = {
   avatar: UserAvatar;
   display_name: string;
   password: string;
   selectable_team_ids: string[];
+  tenant_role: TenantRole;
   username: string;
+};
+
+export type TenantMembership = {
+  created_at: string;
+  id: string;
+  role: TenantRole;
+  status: "active" | "disabled";
+  tenant_id: string;
+  updated_at: string;
+  user_id: string;
+};
+
+export type TenantMembershipResponse = {
+  membership: TenantMembership;
 };
 
 export type UserProjectTeamSummary = {
@@ -376,6 +393,59 @@ export async function createUser(options: ApiClientOptions, input: CreateUserReq
   });
 
   return parseJson<UserResponse>(response, "auth create user");
+}
+
+export async function getUserTenantMembership(
+  options: ApiClientOptions,
+  userID: string,
+): Promise<TenantMembershipResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedUserID = encodeURIComponent(userID);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${encodedUserID}/tenant-membership`), {
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+    },
+    method: "GET",
+  });
+
+  return parseJson<TenantMembershipResponse>(response, "auth user tenant membership");
+}
+
+export async function upsertUserTenantMembership(
+  options: ApiClientOptions,
+  userID: string,
+  role: TenantRole,
+): Promise<TenantMembershipResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedUserID = encodeURIComponent(userID);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${encodedUserID}/tenant-membership`), {
+    body: JSON.stringify({ role }),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "PUT",
+  });
+
+  return parseJson<TenantMembershipResponse>(response, "auth upsert user tenant membership");
+}
+
+export async function deleteUserTenantMembership(options: ApiClientOptions, userID: string): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedUserID = encodeURIComponent(userID);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${encodedUserID}/tenant-membership`), {
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+    },
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    await parseJson<unknown>(response, "auth delete user tenant membership");
+  }
 }
 
 export async function listUserProjectTeamScopes(

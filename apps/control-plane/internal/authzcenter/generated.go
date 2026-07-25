@@ -44,12 +44,10 @@ const (
 	RuntimeScopeManage              CheckPermissionRequestAction = "runtime_scope.manage"
 	TaskClaim                       CheckPermissionRequestAction = "task.claim"
 	TeamAccess                      CheckPermissionRequestAction = "team.access"
-	TeamArchive                     CheckPermissionRequestAction = "team.archive"
 	TeamAuditRead                   CheckPermissionRequestAction = "team.audit.read"
 	TeamCapabilityBind              CheckPermissionRequestAction = "team.capability.bind"
 	TeamCapabilityUnbind            CheckPermissionRequestAction = "team.capability.unbind"
 	TeamCreate                      CheckPermissionRequestAction = "team.create"
-	TeamDisable                     CheckPermissionRequestAction = "team.disable"
 	TeamGovernanceApprove           CheckPermissionRequestAction = "team.governance.approve"
 	TeamGovernanceEdit              CheckPermissionRequestAction = "team.governance.edit"
 	TeamGovernanceRead              CheckPermissionRequestAction = "team.governance.read"
@@ -59,7 +57,6 @@ const (
 	TeamMemberRemove                CheckPermissionRequestAction = "team.member.remove"
 	TeamMemberRequestPrivilegedRole CheckPermissionRequestAction = "team.member.request_privileged_role"
 	TeamRead                        CheckPermissionRequestAction = "team.read"
-	TeamRestore                     CheckPermissionRequestAction = "team.restore"
 	TeamUpdate                      CheckPermissionRequestAction = "team.update"
 	TenantAccess                    CheckPermissionRequestAction = "tenant.access"
 )
@@ -77,8 +74,6 @@ func (e CheckPermissionRequestAction) Valid() bool {
 		return true
 	case TeamAccess:
 		return true
-	case TeamArchive:
-		return true
 	case TeamAuditRead:
 		return true
 	case TeamCapabilityBind:
@@ -86,8 +81,6 @@ func (e CheckPermissionRequestAction) Valid() bool {
 	case TeamCapabilityUnbind:
 		return true
 	case TeamCreate:
-		return true
-	case TeamDisable:
 		return true
 	case TeamGovernanceApprove:
 		return true
@@ -106,8 +99,6 @@ func (e CheckPermissionRequestAction) Valid() bool {
 	case TeamMemberRequestPrivilegedRole:
 		return true
 	case TeamRead:
-		return true
-	case TeamRestore:
 		return true
 	case TeamUpdate:
 		return true

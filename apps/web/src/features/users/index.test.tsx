@@ -242,6 +242,28 @@ function createUsersFetcher({
       return jsonResponse({ items: [] });
     }
 
+    if (
+      (url.pathname === `/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes` ||
+        url.pathname === `/api/auth/users/${USER_CREATED_ID}/project-team-scopes`) &&
+      method === "PUT"
+    ) {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      const teamIds = Array.isArray(body.team_ids) ? body.team_ids : [];
+      return jsonResponse({
+        items: teamIds.map((teamId: string, index: number) => ({
+          created_at: "2026-06-04T02:28:13Z",
+          granted_by_user_id: USER_ADMIN_ID,
+          id: `scope-${index}`,
+          revoked_at: null,
+          status: "active",
+          team_id: teamId,
+          tenant_id: TENANT_ID,
+          updated_at: "2026-06-04T02:28:13Z",
+          user_id: url.pathname.includes(USER_CREATED_ID) ? USER_CREATED_ID : USER_OPERATOR_ID
+        }))
+      });
+    }
+
     if (url.pathname === "/api/v1/teams" && method === "GET") {
       if (teamsStatus === "loading" && teamsDeferred) {
         return teamsDeferred.promise;
@@ -394,7 +416,8 @@ describe("Users", () => {
     const governanceLayout = screen.getByTestId("users-management-layout");
     await expect.element(screen.getByText("租户 Owner")).toBeInTheDocument();
     await expect.element(screen.getByText("团队 Admin")).toBeInTheDocument();
-    await expect.element(governanceLayout.getByText("可选团队", { exact: true })).not.toBeInTheDocument();
+    await expect.element(governanceLayout.getByText("创建项目时可选择的团队")).toBeInTheDocument();
+    await expect.element(screen.getByTestId("tenant-iam-summary")).toBeInTheDocument();
     await expect.element(governanceLayout.getByText("审计日志", { exact: true })).not.toBeInTheDocument();
     await expect.element(screen.getByText("账号操作", { exact: true })).not.toBeInTheDocument();
     await expect.element(screen.getByText("登录事件", { exact: true })).not.toBeInTheDocument();
@@ -420,7 +443,7 @@ describe("Users", () => {
     await expect.element(avatar).not.toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/auth/users?limit=50&offset=0"), expect.any(Object));
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/authz/members?limit=100&offset=0"), expect.any(Object));
-    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname.endsWith("/project-team-scopes"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname.endsWith("/project-team-scopes"))).toBe(true);
     expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname === "/api/auth/login-logs")).toBe(false);
     expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname === "/api/authz/decisions")).toBe(false);
   });
@@ -460,7 +483,8 @@ describe("Users", () => {
     await expect.element(createDialog.getByLabelText("密码")).toBeInTheDocument();
     await expect.element(createDialog.getByText("头像", { exact: true })).toBeInTheDocument();
     await expect.element(createDialog.getByRole("button", { name: "选择头像 人类头像 03" })).toBeInTheDocument();
-    await expect.element(createDialog.getByText("可管理的团队")).toBeInTheDocument();
+    await expect.element(createDialog.getByText("创建项目时可选择的团队")).toBeInTheDocument();
+    await expect.element(createDialog.getByLabelText("租户角色")).toBeInTheDocument();
     await expect.element(createDialog.getByText("（可选）")).toBeInTheDocument();
     await expect.element(createDialog.getByText("平台运营")).toBeInTheDocument();
     await expect.element(createDialog.getByText("风控审查")).toBeInTheDocument();
@@ -515,6 +539,7 @@ describe("Users", () => {
       display_name: "新管理员",
       password: "secret-pass",
       selectable_team_ids: [TEAM_OPS_ID, TEAM_RISK_ID],
+      tenant_role: "member",
       username: "new-operator"
 });
     await expect.element(screen.getByLabelText("用户名")).not.toBeInTheDocument();
@@ -737,7 +762,7 @@ return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
     teamsDeferred.resolve(jsonResponse([]));
   });
 
-  it("does not render selected user selectable team scopes in the governance details panel", async () => {
+  it("renders and saves selected user selectable team scopes in the governance details panel", async () => {
     const fetcher = createUsersFetcher();
     vi.stubGlobal("fetch", fetcher);
 
@@ -748,9 +773,28 @@ return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
     );
 
     const governanceLayout = screen.getByTestId("users-management-layout");
-    await expect.element(governanceLayout.getByText("当前用户创建或协作项目时可选择的团队范围。")).not.toBeInTheDocument();
-    await expect.element(governanceLayout.getByText("可选团队", { exact: true })).not.toBeInTheDocument();
-    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname.endsWith("/project-team-scopes"))).toBe(false);
+    await expect
+      .element(governanceLayout.getByText("当前用户创建或协作项目时可选择的团队范围。不等于团队成员身份，也不授予控制台访问。"))
+      .toBeInTheDocument();
+    await expect.element(governanceLayout.getByText("创建项目时可选择的团队")).toBeInTheDocument();
+    expect(fetcher.mock.calls.some(([input]) => new URL(String(input)).pathname.endsWith("/project-team-scopes"))).toBe(
+      true,
+    );
+
+    // 默认已选 ops+risk；取消风控审查以产生脏状态并保存
+    await userEvent.click(governanceLayout.getByRole("checkbox", { name: "风控审查" }));
+    const saveButton = governanceLayout.getByRole("button", { name: "保存可选团队" });
+    await expect.element(saveButton).not.toBeDisabled();
+    await userEvent.click(saveButton);
+
+    expect(
+      fetcher.mock.calls.some(([input, init]) => {
+        const url = new URL(String(input));
+        return (
+          url.pathname === `/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes` && init?.method === "PUT"
+        );
+      }),
+    ).toBe(true);
   });
 
   it("renders feishu binding status per user from the identities endpoint", async () => {

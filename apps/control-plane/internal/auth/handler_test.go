@@ -254,6 +254,7 @@ func TestHTTPHandlerCreatesManagedUserWithSelectableTeams(t *testing.T) {
 		"username":"zhoumin",
 		"display_name":"周敏",
 		"password":"secret",
+		"tenant_role":"member",
 		"avatar":{"provider":"dicebear","style":"adventurer","seed":"user:zhoumin"},
 		"selectable_team_ids":["%s","%s"]
 	}`, teamA, teamB)))
@@ -286,6 +287,7 @@ func TestHTTPHandlerDeniedCreateUserWithSelectableTeamsDoesNotCreateUserOrScopes
 		"username":"denied-create",
 		"display_name":"Denied Create",
 		"password":"secret",
+		"tenant_role":"member",
 		"avatar":{"provider":"dicebear","style":"adventurer","seed":"user:denied-create"},
 		"selectable_team_ids":["%s"]
 	}`, teamID)))

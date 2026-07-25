@@ -3,6 +3,8 @@
 > 约定见 CLAUDE.md「延后工作」条。每条一行:日期 + 要做的事 + 参考文档。
 > 完成后删除该行(历史归 git);这里不是任务系统,只是"别忘了"清单。
 
+- [ ] 2026-07-26 租户角色与控制台业务模块能力矩阵——当前仅打通「账号→租户成员→console.access」；`member` 对团队/数字员工/技能等租户级列表仍 403（需 admin），侧栏未按权限裁剪。待其他功能完善后补齐：角色可读/可写范围、导航裁剪、无权限空态。参考 `docs/superpowers/specs/2026-07-25-tenant-membership-and-console-access.md` 与 authz `ActionTeamRead`/`ActionSkillRead`/`ActionEmployeeRead`
+- [ ] 2026-07-25 团队人类成员普通角色变更 UI + 高权限申请接线——后端加人已要求租户成员；团队页仍只能 add member/viewer 与 remove，不能改角色；`requestTeamPrivilegedRole` 客户端已有未接 UI。参考 `docs/superpowers/specs/2026-07-25-tenant-membership-and-console-access.md` 与计划 P1
 - [ ] 2026-07-24 P2 planner 判据中文 E2E 验证——提示词已约束 `statement` 必须中文;真实产出依赖 planner(F6 deepseek 不稳),需独占环境稳定规划后抽查新卡判据无英文原文。参考 §6.2 / §12
 - [ ] 2026-07-22 项目详情概览「需求→计划→执行→结果」横向管道可视化——概览重构时明确延后；需动计划确认卡约 300 行业务逻辑，独立一轮做。落点 `apps/web/src/features/projects/components/project-operational-detail.tsx`
 - [ ] 2026-07-19 飞书剩余联调 7 项(结果结论卡/卡内签署/any-of-N 双人/投影不阻塞/通讯录反查/换绑/重推幂等)——照 `docs/superpowers/manual-test-plans/2026-07-19-feishu-remaining-verification.md` 逐项执行,双人项需先备第二个真人飞书账号

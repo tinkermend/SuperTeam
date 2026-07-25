@@ -410,6 +410,108 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/auth/users/{id}/tenant-membership:
+    get:
+      summary: 查询用户租户级成员（控制台访问前提）
+      operationId: getUserTenantMembership
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantMembershipResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: 设置或变更用户租户级成员角色
+      description: |
+        写入 tenant_members（team_id IS NULL）。授予 owner 要求操作者本身为租户 owner。
+        不可撤销或降级最后一个活跃 owner。
+      operationId: upsertUserTenantMembership
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTenantMembershipRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantMembershipResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 违反最后 owner 保护等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: 撤销用户租户级成员（失去控制台访问，保留账号）
+      operationId: deleteUserTenantMembership
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 已撤销
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 不可撤销最后一个活跃 owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/auth/users/{id}/status:
     patch:
       summary: 启用或禁用平台用户
@@ -604,9 +706,14 @@ components:
         user:
           $ref: '#/components/schemas/UserSummary'
 
+    TenantRole:
+      type: string
+      enum: [owner, admin, member, viewer]
+      description: 租户级角色（team_id IS NULL）。owner/admin/member/viewer 均可获得 console.access。
+
     CreateUserRequest:
       type: object
-      required: [username, display_name, password, avatar]
+      required: [username, display_name, password, avatar, tenant_role]
       properties:
         username:
           type: string
@@ -622,12 +729,53 @@ components:
           minLength: 1
         avatar:
           $ref: '#/components/schemas/UserAvatar'
+        tenant_role:
+          $ref: '#/components/schemas/TenantRole'
         selectable_team_ids:
           type: array
           items:
             type: string
             format: uuid
-          description: 可选。此用户可以管理的团队范围，创建后可在团队管理中修改。
+          description: 可选。此用户创建项目时可选择的团队范围（非团队成员身份）。
+
+    UpsertTenantMembershipRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: '#/components/schemas/TenantRole'
+
+    TenantMembership:
+      type: object
+      required: [id, tenant_id, user_id, role, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/TenantRole'
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TenantMembershipResponse:
+      type: object
+      required: [membership]
+      properties:
+        membership:
+          $ref: '#/components/schemas/TenantMembership'
 
     ReplaceUserProjectTeamScopesRequest:
       type: object

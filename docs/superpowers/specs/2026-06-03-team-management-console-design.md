@@ -120,6 +120,8 @@ team.audit.read
 
 成员新增第一版只支持从已有租户用户中搜索并添加。邀请、开户、账号禁用留在用户管理模块。
 
+> **实现注记（2026-07-25）**：「已有租户用户」= 活跃租户级成员（`tenant_members.team_id IS NULL`，即有 `console.access`）。`AddTeamMember` 后端会 `RequireActiveTenantLevelMembership`；团队页加人候选同步按权限中心 `console_access` 过滤。详见 [2026-07-25-tenant-membership-and-console-access](2026-07-25-tenant-membership-and-console-access.md)。
+
 角色变更规则：
 
 - 团队创建时，团队负责人由基础信息字段指定；初始成员步骤不能直接添加负责人、管理员或审批人。

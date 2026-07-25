@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/platform"
 )
 
@@ -51,11 +52,16 @@ type Repository interface {
 	CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error)
 	EnsureActiveUser(ctx context.Context, userID uuid.UUID) error
 	ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uuid.UUID, teamIDs []uuid.UUID) error
+	GetActiveTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*TenantLevelMembership, error)
+	UpsertTenantMembership(ctx context.Context, tenantID, userID uuid.UUID, role string) (*TenantLevelMembership, error)
+	DisableTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*TenantLevelMembership, error)
+	CountActiveTenantOwners(ctx context.Context, tenantID uuid.UUID) (int32, error)
 }
 
 type Service struct {
 	repo                   Repository
 	projectTeamScopeSyncer ProjectTeamScopeSyncer
+	membershipSyncer       MembershipSyncer
 	captchaEnabled         bool
 	captchaSecret          []byte
 	captchaTTL             time.Duration
@@ -135,6 +141,10 @@ type ProjectTeamScopeSyncer interface {
 	SyncProjectTeamScope(ctx context.Context, tenantID, userID, teamID uuid.UUID, status string) error
 }
 
+type MembershipSyncer interface {
+	SyncMembership(ctx context.Context, membership authz.Membership) error
+}
+
 type CurrentUserContext struct {
 	User     *User
 	TenantID uuid.UUID
@@ -172,6 +182,12 @@ func (s *Service) SetProjectTeamScopeSyncer(syncer ProjectTeamScopeSyncer) {
 	}
 }
 
+func (s *Service) SetMembershipSyncer(syncer MembershipSyncer) {
+	if s != nil {
+		s.membershipSyncer = syncer
+	}
+}
+
 func (s *Service) CreateUser(ctx context.Context, username, password string) (*User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -200,11 +216,16 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 		_ = s.recordUserOperation(ctx, actor, uuid.Nil, OperationActionUserCreate, OperationResultFailed)
 		return nil, err
 	}
+	if err := s.authorizeTenantRoleGrant(ctx, actor, input.TenantID, input.TenantRole); err != nil {
+		_ = s.recordUserOperation(ctx, actor, uuid.Nil, OperationActionUserCreate, OperationResultFailed)
+		return nil, err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
 	var user *User
+	var membership *TenantLevelMembership
 	err = s.repo.WithTransaction(ctx, func(repo Repository) error {
 		if err := repo.ValidateActiveTenantTeamIDs(ctx, input.TenantID, input.SelectableTeamIDs); err != nil {
 			return err
@@ -218,10 +239,15 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 		if err != nil {
 			return err
 		}
+		createdMembership, err := repo.UpsertTenantMembership(ctx, input.TenantID, created.ID, input.TenantRole)
+		if err != nil {
+			return err
+		}
 		if _, err := repo.ReplaceUserProjectTeamScopes(ctx, input.TenantID, created.ID, actor.UserID, input.SelectableTeamIDs); err != nil {
 			return err
 		}
 		user = created
+		membership = createdMembership
 		return nil
 	})
 	if err != nil {
@@ -229,6 +255,7 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 		return nil, err
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultSucceeded)
+	s.syncTenantMembership(ctx, nil, membership)
 	s.syncProjectTeamScopeChanges(ctx, input.TenantID, user.ID, nil, input.SelectableTeamIDs)
 	return user, nil
 }
@@ -237,6 +264,7 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 	input.Username = strings.TrimSpace(input.Username)
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.AvatarAssetID = strings.ToLower(strings.TrimSpace(input.AvatarAssetID))
+	input.TenantRole = strings.TrimSpace(strings.ToLower(input.TenantRole))
 	if input.TenantID == uuid.Nil {
 		input.TenantID = platform.DefaultTenantID
 	}
@@ -244,6 +272,7 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 		input.DisplayName == "" ||
 		input.Password == "" ||
 		input.AvatarAssetID != "" ||
+		!isValidTenantRole(input.TenantRole) ||
 		!isExplicitSupportedUserAvatar(input.Avatar) {
 		return input, ErrInvalidManagedUserInput
 	}
@@ -256,6 +285,15 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 		input.SelectableTeamIDs = teamIDs
 	}
 	return input, nil
+}
+
+func isValidTenantRole(role string) bool {
+	switch role {
+	case TenantRoleOwner, TenantRoleAdmin, TenantRoleMember, TenantRoleViewer:
+		return true
+	default:
+		return false
+	}
 }
 
 func isExplicitSupportedUserAvatar(avatar UserAvatarConfig) bool {
@@ -383,6 +421,139 @@ func (s *Service) CanUseTeamForProject(ctx context.Context, tenantID, userID, te
 		tenantID = platform.DefaultTenantID
 	}
 	return s.repo.CanUseTeamForProject(ctx, tenantID, userID, teamID)
+}
+
+func (s *Service) GetUserTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*TenantLevelMembership, error) {
+	if tenantID == uuid.Nil {
+		tenantID = platform.DefaultTenantID
+	}
+	membership, err := s.repo.GetActiveTenantMembership(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if membership == nil {
+		return nil, ErrTenantMembershipNotFound
+	}
+	return membership, nil
+}
+
+func (s *Service) UpsertUserTenantMembership(ctx context.Context, actor Actor, tenantID, userID uuid.UUID, role string) (*TenantLevelMembership, error) {
+	if tenantID == uuid.Nil {
+		tenantID = platform.DefaultTenantID
+	}
+	role = strings.TrimSpace(strings.ToLower(role))
+	if !isValidTenantRole(role) || userID == uuid.Nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipUpsert, OperationResultFailed)
+		return nil, ErrInvalidManagedUserInput
+	}
+	if err := s.authorizeTenantRoleGrant(ctx, actor, tenantID, role); err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipUpsert, OperationResultFailed)
+		return nil, err
+	}
+	if err := s.repo.EnsureActiveUser(ctx, userID); err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipUpsert, OperationResultFailed)
+		return nil, err
+	}
+	previous, _ := s.repo.GetActiveTenantMembership(ctx, tenantID, userID)
+	if previous != nil && previous.Role == TenantRoleOwner && role != TenantRoleOwner {
+		if err := s.ensureNotLastTenantOwner(ctx, tenantID); err != nil {
+			_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipUpsert, OperationResultFailed)
+			return nil, err
+		}
+	}
+	membership, err := s.repo.UpsertTenantMembership(ctx, tenantID, userID, role)
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipUpsert, OperationResultFailed)
+		return nil, err
+	}
+	_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipUpsert, OperationResultSucceeded)
+	s.syncTenantMembership(ctx, previous, membership)
+	return membership, nil
+}
+
+func (s *Service) DeleteUserTenantMembership(ctx context.Context, actor Actor, tenantID, userID uuid.UUID) error {
+	if tenantID == uuid.Nil {
+		tenantID = platform.DefaultTenantID
+	}
+	if userID == uuid.Nil {
+		return ErrInvalidManagedUserInput
+	}
+	previous, err := s.repo.GetActiveTenantMembership(ctx, tenantID, userID)
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipDelete, OperationResultFailed)
+		return err
+	}
+	if previous == nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipDelete, OperationResultFailed)
+		return ErrTenantMembershipNotFound
+	}
+	if previous.Role == TenantRoleOwner {
+		if err := s.ensureNotLastTenantOwner(ctx, tenantID); err != nil {
+			_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipDelete, OperationResultFailed)
+			return err
+		}
+	}
+	disabled, err := s.repo.DisableTenantMembership(ctx, tenantID, userID)
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipDelete, OperationResultFailed)
+		return err
+	}
+	_ = s.recordUserOperation(ctx, actor, userID, OperationActionTenantMembershipDelete, OperationResultSucceeded)
+	s.syncTenantMembership(ctx, previous, disabled)
+	return nil
+}
+
+func (s *Service) authorizeTenantRoleGrant(ctx context.Context, actor Actor, tenantID uuid.UUID, role string) error {
+	if role != TenantRoleOwner {
+		return nil
+	}
+	actorMembership, err := s.repo.GetActiveTenantMembership(ctx, tenantID, actor.UserID)
+	if err != nil {
+		return err
+	}
+	if actorMembership == nil || actorMembership.Role != TenantRoleOwner {
+		return ErrOwnerGrantForbidden
+	}
+	return nil
+}
+
+func (s *Service) ensureNotLastTenantOwner(ctx context.Context, tenantID uuid.UUID) error {
+	count, err := s.repo.CountActiveTenantOwners(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if count <= 1 {
+		return ErrLastTenantOwner
+	}
+	return nil
+}
+
+func (s *Service) syncTenantMembership(ctx context.Context, previous, current *TenantLevelMembership) {
+	if s == nil || s.membershipSyncer == nil {
+		return
+	}
+	if previous != nil && (current == nil || previous.Role != current.Role || previous.Status != current.Status) {
+		if err := s.membershipSyncer.SyncMembership(ctx, authz.Membership{
+			TenantID:      previous.TenantID,
+			PrincipalType: authz.ActorUser,
+			PrincipalID:   previous.UserID,
+			Role:          previous.Role,
+			Status:        "disabled",
+		}); err != nil {
+			log.Printf("openfga tenant membership sync failed: tenant_id=%s user_id=%s role=%s status=disabled err=%v", previous.TenantID, previous.UserID, previous.Role, err)
+		}
+	}
+	if current != nil && current.Status == "active" {
+		if err := s.membershipSyncer.SyncMembership(ctx, authz.Membership{
+			TenantID:      current.TenantID,
+			PrincipalType: authz.ActorUser,
+			PrincipalID:   current.UserID,
+			Role:          current.Role,
+			Status:        current.Status,
+		}); err != nil {
+			log.Printf("openfga tenant membership sync failed: tenant_id=%s user_id=%s role=%s status=%s err=%v", current.TenantID, current.UserID, current.Role, current.Status, err)
+		}
+	}
 }
 
 func (s *Service) syncProjectTeamScopeChanges(ctx context.Context, tenantID, userID uuid.UUID, previous []UserProjectTeamScopeSummary, activeTeamIDs []uuid.UUID) {

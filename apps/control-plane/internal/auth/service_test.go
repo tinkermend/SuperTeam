@@ -30,6 +30,7 @@ type mockRepo struct {
 	scopeTeamIDs               map[uuid.UUID][]uuid.UUID
 	invalidTeamIDs             map[uuid.UUID]bool
 	failScopeReplace           error
+	tenantMemberships          map[uuid.UUID]*TenantLevelMembership
 	lastListUsersFilter        ListUsersFilter
 	lastLoginLogFilter         ListLoginLogsFilter
 	transactionCalls           int
@@ -106,12 +107,18 @@ func (m *mockRepo) WithTransaction(ctx context.Context, fn func(Repository) erro
 		copied := *value
 		captchaChallenges[key] = &copied
 	}
+	tenantMemberships := make(map[uuid.UUID]*TenantLevelMembership, len(m.tenantMemberships))
+	for key, value := range m.tenantMemberships {
+		copied := *value
+		tenantMemberships[key] = &copied
+	}
 	captchaConsumeCalls := append([]uuid.UUID(nil), m.captchaConsumeCalls...)
 	if err := fn(m); err != nil {
 		m.users = users
 		m.usersByID = usersByID
 		m.scopeTeamIDs = scopeTeamIDs
 		m.captchaChallenges = captchaChallenges
+		m.tenantMemberships = tenantMemberships
 		m.captchaConsumeCalls = captchaConsumeCalls
 		return err
 	}
@@ -473,6 +480,71 @@ func (m *mockRepo) ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uui
 	return nil
 }
 
+func (m *mockRepo) GetActiveTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*TenantLevelMembership, error) {
+	if m.tenantMemberships == nil {
+		return nil, nil
+	}
+	membership, ok := m.tenantMemberships[userID]
+	if !ok || membership.TenantID != tenantID || membership.Status != "active" {
+		return nil, nil
+	}
+	copied := *membership
+	return &copied, nil
+}
+
+func (m *mockRepo) UpsertTenantMembership(ctx context.Context, tenantID, userID uuid.UUID, role string) (*TenantLevelMembership, error) {
+	if m.tenantMemberships == nil {
+		m.tenantMemberships = make(map[uuid.UUID]*TenantLevelMembership)
+	}
+	now := time.Now().UTC()
+	existing, _ := m.GetActiveTenantMembership(ctx, tenantID, userID)
+	if existing != nil {
+		existing.Role = role
+		existing.Status = "active"
+		existing.UpdatedAt = now
+		m.tenantMemberships[userID] = existing
+		copied := *existing
+		return &copied, nil
+	}
+	membership := &TenantLevelMembership{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		UserID:    userID,
+		Role:      role,
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	m.tenantMemberships[userID] = membership
+	copied := *membership
+	return &copied, nil
+}
+
+func (m *mockRepo) DisableTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*TenantLevelMembership, error) {
+	existing, err := m.GetActiveTenantMembership(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, ErrTenantMembershipNotFound
+	}
+	existing.Status = "disabled"
+	existing.UpdatedAt = time.Now().UTC()
+	m.tenantMemberships[userID] = existing
+	copied := *existing
+	return &copied, nil
+}
+
+func (m *mockRepo) CountActiveTenantOwners(ctx context.Context, tenantID uuid.UUID) (int32, error) {
+	var count int32
+	for _, membership := range m.tenantMemberships {
+		if membership.TenantID == tenantID && membership.Role == TenantRoleOwner && membership.Status == "active" {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func TestCaptchaEnabledDefaultsToFalse(t *testing.T) {
 	repo := newMockRepo()
 	svc, err := NewService(repo, WithCaptchaOptions(CaptchaOptions{
@@ -596,6 +668,7 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 		Username:          "operator",
 		DisplayName:       "Operator",
 		Password:          "secret",
+		TenantRole:        TenantRoleMember,
 		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:operator"},
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
 		TenantID:          platform.DefaultTenantID,
@@ -635,6 +708,7 @@ func TestCreateManagedUserPersistsDisplayNameHumanAvatarAndScopes(t *testing.T) 
 		Username:          "zhoumin",
 		DisplayName:       "周敏",
 		Password:          "secret",
+		TenantRole:        TenantRoleMember,
 		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:zhoumin"},
 		SelectableTeamIDs: []uuid.UUID{teamA, teamB},
 		TenantID:          platform.DefaultTenantID,
@@ -663,6 +737,7 @@ func TestCreateManagedUserRollsBackCreatedUserWhenScopeReplacementFails(t *testi
 		Username:          "rollback-user",
 		DisplayName:       "Rollback User",
 		Password:          "secret",
+		TenantRole:        TenantRoleMember,
 		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:rollback-user"},
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
 		TenantID:          platform.DefaultTenantID,
@@ -687,6 +762,7 @@ func TestCreateManagedUserRequiresSelectableTeams(t *testing.T) {
 		Username:    "empty-scope",
 		DisplayName: "空范围",
 		Password:    "secret",
+		TenantRole:        TenantRoleMember,
 		Avatar:      UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:empty-scope"},
 		TenantID:    platform.DefaultTenantID,
 	})
@@ -773,6 +849,7 @@ func TestCreateManagedUserRejectsDigitalEmployeeAvatarAssetOnly(t *testing.T) {
 		Username:          "reviewer",
 		DisplayName:       "Reviewer",
 		Password:          "secret",
+		TenantRole:        TenantRoleMember,
 		AvatarAssetID:     " ENGINEER-F-01 ",
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
 		TenantID:          platform.DefaultTenantID,

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -567,6 +568,87 @@ func (r *PgRepository) CanUseTeamForProject(ctx context.Context, tenantID, userI
 		UserID:   userID,
 		TeamID:   teamID,
 	})
+}
+
+func (r *PgRepository) GetActiveTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*TenantLevelMembership, error) {
+	row, err := r.q.GetActiveTenantLevelMembership(ctx, queries.GetActiveTenantLevelMembershipParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toDomainTenantMembership(row), nil
+}
+
+func (r *PgRepository) UpsertTenantMembership(ctx context.Context, tenantID, userID uuid.UUID, role string) (*TenantLevelMembership, error) {
+	existing, err := r.GetActiveTenantMembership(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		if existing.Role == role {
+			return existing, nil
+		}
+		row, err := r.q.UpdateTenantLevelMembershipRole(ctx, queries.UpdateTenantLevelMembershipRoleParams{
+			Role:     role,
+			ID:       existing.ID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return toDomainTenantMembership(row), nil
+	}
+	row, err := r.q.InsertTenantLevelMembership(ctx, queries.InsertTenantLevelMembershipParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     role,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toDomainTenantMembership(row), nil
+}
+
+func (r *PgRepository) DisableTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*TenantLevelMembership, error) {
+	existing, err := r.GetActiveTenantMembership(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, ErrTenantMembershipNotFound
+	}
+	row, err := r.q.DisableTenantLevelMembership(ctx, queries.DisableTenantLevelMembershipParams{
+		ID:       existing.ID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrTenantMembershipNotFound
+		}
+		return nil, err
+	}
+	return toDomainTenantMembership(row), nil
+}
+
+func (r *PgRepository) CountActiveTenantOwners(ctx context.Context, tenantID uuid.UUID) (int32, error) {
+	return r.q.CountActiveTenantLevelOwners(ctx, tenantID)
+}
+
+func toDomainTenantMembership(row queries.TenantMember) *TenantLevelMembership {
+	return &TenantLevelMembership{
+		ID:        row.ID,
+		TenantID:  row.TenantID,
+		UserID:    row.PrincipalID,
+		Role:      row.Role,
+		Status:    row.Status,
+		CreatedAt: row.CreatedAt.Time,
+		UpdatedAt: row.UpdatedAt.Time,
+	}
 }
 
 func nullUUID(value *uuid.UUID) uuid.NullUUID {

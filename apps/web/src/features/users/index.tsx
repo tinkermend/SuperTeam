@@ -51,29 +51,42 @@ import { Label } from "@/components/ui/label";
 import {
   listAuthzMembers,
   createUser,
+  deleteUserTenantMembership,
   feishuOAuthStartUrl,
   listFeishuIdentities,
+  listTeams,
+  listUserProjectTeamScopes,
   listUsers,
+  replaceUserProjectTeamScopes,
   resetUserPassword,
   syncFeishuContacts,
   updateUserStatus,
+  upsertUserTenantMembership,
+  type ApiClientOptions,
   type AuthzMemberRecord,
   type CreateUserRequest,
   type FeishuIdentity,
+  type TenantRole,
   type UserSummary
 } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { tenantRoleLabel } from "@/lib/status-labels";
 import {
   CreateUserDrawer,
   type CreateUserDraft
 } from "./components/create-user-drawer";
+import { SelectableTeamList } from "./components/selectable-team-list";
 
 const apiBaseUrl = resolveControlPlaneUrl();
+/** 与 control-plane `platform.DefaultTenantID` 对齐；摘要在无成员数据时回退展示。 */
+const TENANT_SUMMARY_FALLBACK_ID = "00000000-0000-0000-0000-000000000001";
 
 type UserStatusFilter = "all" | "active" | "disabled";
+type ConsoleAccessFilter = "all" | "granted" | "ghost";
 type UserTableDensity = "comfortable" | "compact";
 
 type UserManagementFilters = {
+  consoleAccess: ConsoleAccessFilter;
   q: string;
   status: UserStatusFilter;
 };
@@ -85,6 +98,7 @@ type UsersViewProps = {
 };
 
 const defaultUserFilters: UserManagementFilters = {
+  consoleAccess: "all",
   q: "",
   status: "all"
 };
@@ -144,7 +158,7 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
     }
 });
 
-  const users = usersQuery.data?.items ?? [];
+  const listedUsers = usersQuery.data?.items ?? [];
   const authzMembersByUserId = useMemo(() => {
     return new Map((authzMembersQuery.data?.items ?? []).map((member) => [member.user_id, member]));
   }, [authzMembersQuery.data?.items]);
@@ -161,10 +175,23 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
         { bound: 0, alreadyBound: 0, unmatched: 0 },
       )
     : undefined;
+  const users = useMemo(() => {
+    if (filters.consoleAccess === "all") {
+      return listedUsers;
+    }
+    return listedUsers.filter((user) => {
+      const hasAccess = Boolean(authzMembersByUserId.get(user.id)?.console_access);
+      return filters.consoleAccess === "granted" ? hasAccess : !hasAccess;
+    });
+  }, [authzMembersByUserId, filters.consoleAccess, listedUsers]);
   const selectedUser = users.find((user) => user.id === selectedUserId) ?? users[0];
   const selectedMember = selectedUser ? authzMembersByUserId.get(selectedUser.id) : undefined;
   const selectedIdentity = selectedUser ? mergeUserIdentity(selectedUser, selectedMember) : undefined;
-  const stats = getUserStats(users, authzMembersQuery.data?.items ?? []);
+  const stats = getUserStats(listedUsers, authzMembersQuery.data?.items ?? []);
+  const tenantSummaryId =
+    authzMembersQuery.data?.items
+      .flatMap((member) => member.memberships)
+      .find((membership) => !membership.team_id)?.tenant_id ?? TENANT_SUMMARY_FALLBACK_ID;
 
   useEffect(() => {
     if (initialUserId) {
@@ -215,6 +242,7 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
         display_name: input.display_name,
         password: input.password,
         avatar: input.avatar,
+        tenant_role: input.tenant_role,
         selectable_team_ids: input.selectable_team_ids
 };
       return createUser(apiOptions, payload);
@@ -227,6 +255,28 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
       await invalidateUserWorkspace();
     }
 });
+  const upsertTenantMembershipMutation = useMutation({
+    mutationFn: (input: { role: TenantRole; userId: string }) =>
+      upsertUserTenantMembership(apiOptions, input.userId, input.role),
+    onSuccess: () => {
+      void invalidateUserWorkspace();
+    }
+  });
+  const deleteTenantMembershipMutation = useMutation({
+    mutationFn: (userId: string) => deleteUserTenantMembership(apiOptions, userId),
+    onSuccess: () => {
+      void invalidateUserWorkspace();
+    }
+  });
+  const replaceScopesMutation = useMutation({
+    mutationFn: (input: { teamIds: string[]; userId: string }) =>
+      replaceUserProjectTeamScopes(apiOptions, input.userId, { team_ids: input.teamIds }),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["users", "project-team-scopes", variables.userId]
+      });
+    }
+  });
 
   const handleCreateUserOpenChange = (open: boolean) => {
     createUserMutation.reset();
@@ -244,7 +294,7 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
             <StatusPill className="align-middle" tone="info" showDot={false}>用户治理台</StatusPill>
           </span>
         }
-        subtitle="管理平台人类用户、账号状态、控制台访问与成员身份；本页只处理账号治理动作。"
+        subtitle="管理平台人类用户、租户角色（控制台访问）、账号状态；团队角色请到团队管理页调整。"
       />
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
@@ -282,11 +332,43 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
           </Button>
         </div>
 
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SoftCard className="mb-4 p-4" data-testid="tenant-iam-summary">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-ink">当前租户（单租户）</p>
+              <p className="mt-1 truncate text-xs text-ink-3 font-mono">{tenantSummaryId}</p>
+            </div>
+            <p className="text-sm text-ink-2">
+              租户成员 {stats.tenantRoles} · 控制台访问 {stats.consoleAccess} · 无控制台访问（幽灵账号）{" "}
+              {stats.ghostAccounts}
+            </p>
+          </div>
+        </SoftCard>
+
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <UserMetric icon={<CheckCircle2 />} label="活跃用户" tone="ok" value={stats.active} />
           <UserMetric icon={<Ban />} label="禁用用户" tone="danger" value={stats.disabled} />
-          <UserMetric icon={<ShieldCheck />} label="控制台访问" tone="brand" value={stats.consoleAccess} />
-          <UserMetric icon={<KeyRound />} label="成员身份" tone="artifact" value={stats.tenantRoles} />
+          <UserMetric
+            icon={<ShieldCheck />}
+            label="控制台访问"
+            onSelect={() => setFilters((current) => ({ ...current, consoleAccess: "granted" }))}
+            tone="brand"
+            value={stats.consoleAccess}
+          />
+          <UserMetric icon={<KeyRound />} label="租户成员" tone="artifact" value={stats.tenantRoles} />
+          <UserMetric
+            icon={<UsersRound />}
+            label="无控制台访问"
+            onSelect={() =>
+              setFilters((current) => ({
+                ...current,
+                consoleAccess: "ghost",
+                status: "active"
+              }))
+            }
+            tone="warn"
+            value={stats.ghostAccounts}
+          />
         </div>
 
         <MasterDetailLayout
@@ -322,8 +404,32 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
           }
           detail={
             <UserGovernancePreview
+              apiOptions={apiOptions}
+              isMembershipPending={
+                upsertTenantMembershipMutation.isPending || deleteTenantMembershipMutation.isPending
+              }
+              isScopesPending={replaceScopesMutation.isPending}
               isStatusPending={statusMutation.isPending}
               member={selectedMember}
+              membershipError={
+                upsertTenantMembershipMutation.error instanceof Error
+                  ? upsertTenantMembershipMutation.error.message
+                  : deleteTenantMembershipMutation.error instanceof Error
+                    ? deleteTenantMembershipMutation.error.message
+                    : undefined
+              }
+              onDeleteTenantMembership={() => {
+                if (!selectedUser) {
+                  return;
+                }
+                deleteTenantMembershipMutation.mutate(selectedUser.id);
+              }}
+              onReplaceScopes={(teamIds) => {
+                if (!selectedUser) {
+                  return;
+                }
+                replaceScopesMutation.mutate({ teamIds, userId: selectedUser.id });
+              }}
               onResetPassword={() => setResetPasswordOpen(true)}
               onToggleStatus={() => {
                 if (!selectedUser) {
@@ -332,9 +438,21 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
                 statusMutation.mutate({
                   status: selectedUser.status === "active" ? "disabled" : "active",
                   userId: selectedUser.id
-});
+                });
               }}
+              onUpsertTenantMembership={(role) => {
+                if (!selectedUser) {
+                  return;
+                }
+                upsertTenantMembershipMutation.mutate({ role, userId: selectedUser.id });
+              }}
+              scopesError={
+                replaceScopesMutation.error instanceof Error
+                  ? replaceScopesMutation.error.message
+                  : undefined
+              }
               user={selectedIdentity}
+              userId={selectedUser?.id}
             />
           }
         />
@@ -445,11 +563,32 @@ function UserGovernanceTable({
                   onFiltersChange({
                     ...filters,
                     status: status as UserStatusFilter
-})
+                  })
                 }
                 size="sm"
                 type="button"
                 variant={filters.status === status ? "primary" : "outline"}
+              >
+                {label}
+              </Button>
+            ))}
+            {[
+              ["all", "控制台：全部"],
+              ["granted", "有访问"],
+              ["ghost", "无访问"],
+            ].map(([consoleAccess, label]) => (
+              <Button
+                aria-pressed={filters.consoleAccess === consoleAccess}
+                key={consoleAccess}
+                onClick={() =>
+                  onFiltersChange({
+                    ...filters,
+                    consoleAccess: consoleAccess as ConsoleAccessFilter
+                  })
+                }
+                size="sm"
+                type="button"
+                variant={filters.consoleAccess === consoleAccess ? "primary" : "outline"}
               >
                 {label}
               </Button>
@@ -572,18 +711,64 @@ function UserGovernanceTable({
 }
 
 function UserGovernancePreview({
+  apiOptions,
+  isMembershipPending,
+  isScopesPending,
   isStatusPending,
   member,
+  membershipError,
+  onDeleteTenantMembership,
+  onReplaceScopes,
   onResetPassword,
   onToggleStatus,
-  user
+  onUpsertTenantMembership,
+  scopesError,
+  user,
+  userId
 }: {
+  apiOptions: ApiClientOptions;
+  isMembershipPending: boolean;
+  isScopesPending: boolean;
   isStatusPending: boolean;
   member?: AuthzMemberRecord;
+  membershipError?: string;
+  onDeleteTenantMembership: () => void;
+  onReplaceScopes: (teamIds: string[]) => void;
   onResetPassword: () => void;
   onToggleStatus: () => void;
+  onUpsertTenantMembership: (role: TenantRole) => void;
+  scopesError?: string;
   user?: UserIdentityData;
+  userId?: string;
 }) {
+  const tenantMembership = member?.memberships.find((item) => !item.team_id && item.status === "active");
+  const [draftRole, setDraftRole] = useState<TenantRole>(
+    (tenantMembership?.role as TenantRole | undefined) ?? "member",
+  );
+  const [draftTeamIds, setDraftTeamIds] = useState<string[]>([]);
+
+  const scopesQuery = useQuery({
+    enabled: Boolean(userId),
+    queryFn: () => listUserProjectTeamScopes(apiOptions, userId as string),
+    queryKey: ["users", "project-team-scopes", userId]
+  });
+  const teamsQuery = useQuery({
+    enabled: Boolean(userId),
+    queryFn: () => listTeams(apiOptions),
+    queryKey: ["users", "teams", "scope-editor"]
+  });
+
+  useEffect(() => {
+    setDraftRole((tenantMembership?.role as TenantRole | undefined) ?? "member");
+  }, [tenantMembership?.role, user?.id]);
+
+  useEffect(() => {
+    const activeIds = (scopesQuery.data?.items ?? [])
+      .filter((scope) => scope.status === "active" && !scope.revoked_at)
+      .map((scope) => scope.team_id);
+    setDraftTeamIds(activeIds);
+  }, [scopesQuery.data?.items, userId]);
+
   if (!user) {
     return (
       <aside className="flex min-w-0 flex-col gap-4">
@@ -596,6 +781,15 @@ function UserGovernancePreview({
 
   const label = getUserIdentityLabel(user);
   const memberships = member?.memberships ?? [];
+  const hasConsoleAccess = Boolean(member?.console_access);
+  const activeTeams = (teamsQuery.data ?? []).filter((team) => team.status === "active");
+  const savedScopeIds = (scopesQuery.data?.items ?? [])
+    .filter((scope) => scope.status === "active" && !scope.revoked_at)
+    .map((scope) => scope.team_id)
+    .sort()
+    .join(",");
+  const draftScopeIds = [...draftTeamIds].sort().join(",");
+  const scopesDirty = savedScopeIds !== draftScopeIds;
 
   return (
     <aside className="flex min-w-0 flex-col gap-4">
@@ -606,8 +800,8 @@ function UserGovernancePreview({
             <h2 className="truncate text-xl font-bold tracking-normal text-ink">{label.primary}</h2>
             <div className="mt-2 flex flex-wrap gap-2">
               <StatusPill tone={userStatusTone(user.status)}>{formatUserStatus(user.status)}</StatusPill>
-              <StatusPill tone={member?.console_access ? "ok" : "mute"}>
-                控制台访问：{member?.console_access ? "允许" : "未确认"}
+              <StatusPill tone={hasConsoleAccess ? "ok" : "warn"}>
+                控制台访问：{hasConsoleAccess ? "允许" : "无"}
               </StatusPill>
             </div>
           </div>
@@ -616,6 +810,10 @@ function UserGovernancePreview({
           <InfoRow label="邮箱/标识" value={label.secondary} />
           <InfoRow label="用户名" value={user.username ?? "-"} />
           <InfoRow label="用户 ID" value={shortId(user.id)} />
+          <InfoRow
+            label="租户角色"
+            value={tenantMembership ? tenantRoleLabel(tenantMembership.role) : "未授予"}
+          />
           <InfoRow label="成员身份" value={formatMembershipSummary(member)} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -644,8 +842,95 @@ function UserGovernancePreview({
 
       <SoftCard className="p-5">
         <div className="mb-4">
-          <h3 className="text-base font-bold text-ink">成员身份</h3>
-          <p className="text-sm text-ink-2">来自权限中心成员视图；角色调整仍通过团队管理页完成。</p>
+          <h3 className="text-base font-bold text-ink">租户成员 / 控制台访问</h3>
+          <p className="text-sm text-ink-2">
+            租户级成员（非团队角色）决定能否进入控制台。撤销后保留账号，但无法通过 `/me`。
+          </p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="tenant-role-select">租户角色</Label>
+            <select
+              className="h-10 rounded-md border border-line bg-card-soft px-3 text-sm"
+              disabled={isMembershipPending}
+              id="tenant-role-select"
+              onChange={(event) => setDraftRole(event.target.value as TenantRole)}
+              value={draftRole}
+            >
+              <option value="member">{tenantRoleLabel("member")}</option>
+              <option value="viewer">{tenantRoleLabel("viewer")}</option>
+              <option value="admin">{tenantRoleLabel("admin")}</option>
+              <option value="owner">{tenantRoleLabel("owner")}</option>
+            </select>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={isMembershipPending}
+              onClick={() => onUpsertTenantMembership(draftRole)}
+              size="sm"
+              type="button"
+            >
+              {tenantMembership ? "更新租户角色" : "授予控制台访问"}
+            </Button>
+            <Button
+              disabled={isMembershipPending || !tenantMembership}
+              onClick={onDeleteTenantMembership}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              撤销租户成员
+            </Button>
+          </div>
+          {membershipError ? <p className="text-sm text-danger-text">{membershipError}</p> : null}
+        </div>
+      </SoftCard>
+
+      <SoftCard className="p-5">
+        <div className="mb-4">
+          <h3 className="text-base font-bold text-ink">创建项目时可选择的团队</h3>
+          <p className="text-sm text-ink-2">
+            当前用户创建或协作项目时可选择的团队范围。不等于团队成员身份，也不授予控制台访问。
+          </p>
+        </div>
+        {scopesQuery.isLoading || teamsQuery.isLoading ? (
+          <LoadingState label="加载可选团队" />
+        ) : scopesQuery.isError || teamsQuery.isError ? (
+          <ErrorState title="可选团队加载失败" description="请稍后重试或检查 Control Plane 连接。" />
+        ) : activeTeams.length === 0 ? (
+          <EmptyState className="py-8" title="暂无可用团队。" />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <SelectableTeamList
+              disabled={isScopesPending}
+              onChange={setDraftTeamIds}
+              selectedTeamIds={draftTeamIds}
+              teams={activeTeams}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                disabled={isScopesPending || !scopesDirty}
+                onClick={() => onReplaceScopes(draftTeamIds)}
+                size="sm"
+                type="button"
+              >
+                保存可选团队
+              </Button>
+              {scopesDirty ? (
+                <span className="text-xs text-ink-3">有未保存变更</span>
+              ) : (
+                <span className="text-xs text-ink-3">已与服务器一致</span>
+              )}
+            </div>
+            {scopesError ? <p className="text-sm text-danger-text">{scopesError}</p> : null}
+          </div>
+        )}
+      </SoftCard>
+
+      <SoftCard className="p-5">
+        <div className="mb-4">
+          <h3 className="text-base font-bold text-ink">成员身份一览</h3>
+          <p className="text-sm text-ink-2">只读展示租户与团队成员；团队角色仍在团队管理页调整。</p>
         </div>
         {memberships.length === 0 ? (
           <EmptyState className="py-8" title="暂无成员身份。" />
@@ -733,16 +1018,25 @@ function ResetPasswordDialog({
 function UserMetric({
   icon,
   label,
+  onSelect,
   tone,
   value
 }: {
   icon: ReactNode;
   label: string;
+  onSelect?: () => void;
   tone: Tone;
   value: number;
 }) {
   return (
     <MetricCard
+      action={
+        onSelect ? (
+          <Button onClick={onSelect} size="sm" type="button" variant="ghost">
+            筛选
+          </Button>
+        ) : undefined
+      }
       icon={icon}
       iconTone={tone}
       label={label}
@@ -776,16 +1070,25 @@ function mergeUserIdentity(user: UserSummary, member?: AuthzMemberRecord): UserI
 function getUserStats(users: UserSummary[], members: AuthzMemberRecord[]) {
   const active = users.filter((user) => user.status === "active").length;
   const disabled = users.filter((user) => user.status === "disabled").length;
+  const membersByID = new Map(members.map((member) => [member.user_id, member]));
   const consoleAccess = members.filter((member) => member.console_access).length;
   const tenantRoles = members.reduce(
     (count, member) => count + member.memberships.filter((membership) => !membership.team_id).length,
     0,
   );
+  const ghostAccounts = users.filter((user) => {
+    if (user.status !== "active") {
+      return false;
+    }
+    const member = membersByID.get(user.id);
+    return !member?.console_access;
+  }).length;
 
   return {
     active,
     consoleAccess,
     disabled,
+    ghostAccounts,
     tenantRoles
 };
 }

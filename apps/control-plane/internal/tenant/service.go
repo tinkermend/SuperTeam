@@ -442,6 +442,9 @@ func (s *Service) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (
 	if !isDirectTeamRole(role) {
 		return nil, fmt.Errorf("%w: privileged role requires approval", ErrInvalidInput)
 	}
+	if err := s.repository.RequireActiveTenantLevelMembership(ctx, req.TenantID, req.UserID); err != nil {
+		return nil, err
+	}
 	record, err := s.repository.AddTeamMember(ctx, AddTeamMemberParams{
 		TenantID: req.TenantID,
 		TeamID:   req.TeamID,

@@ -22,6 +22,7 @@ import {
   SheetTitle
 } from "@/components/ui/sheet";
 import type { UserSummary } from "@/lib/api";
+import { listAuthzMembers } from "@/lib/api";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type { AllowedTeamAction, TeamMember } from "@/lib/api/teams";
 import { addTeamMember, listTeamMembers, removeTeamMember } from "@/lib/api/teams";
@@ -53,9 +54,17 @@ export function TeamHumanMembersChrome({
     queryKey: ["team-members", teamId],
     queryFn: () => listTeamMembers(apiOptions, teamId)
 });
+  const tenantMembersQuery = useQuery({
+    enabled: canAddMember,
+    queryFn: () => listAuthzMembers({ ...apiOptions, limit: 200, offset: 0 }),
+    queryKey: ["authz-members", "team-add-candidates", apiOptions.baseUrl]
+  });
 
   const members = membersQuery.data ?? [];
   const existingUserIds = members.map((member) => member.user_id);
+  const tenantMemberUserIds = (tenantMembersQuery.data?.items ?? [])
+    .filter((member) => member.console_access && member.account_status === "active")
+    .map((member) => member.user_id);
 
   const addMutation = useMutation({
     mutationFn: (input: { role: "member" | "viewer"; user_id: string }) =>
@@ -94,7 +103,9 @@ export function TeamHumanMembersChrome({
         <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-lg">
           <SheetHeader className="border-b border-line px-6 py-5 text-left">
             <SheetTitle>配置团队</SheetTitle>
-            <SheetDescription>管理人类成员与角色；普通成员和只读观察者会立即生效。</SheetDescription>
+            <SheetDescription>
+              从已有租户成员中添加人类成员（直接角色：普通成员 / 只读观察者）。移除仅取消团队身份，不影响租户成员与控制台访问。角色变更与高权限申请见后续能力。
+            </SheetDescription>
           </SheetHeader>
           <div className="flex flex-col gap-6 px-6 py-5">
             <section className="flex flex-col gap-3">
@@ -149,12 +160,16 @@ export function TeamHumanMembersChrome({
             {canAddMember ? (
               <section className="flex flex-col gap-3 border-t border-line pt-5">
                 <h3 className="text-sm font-bold text-ink">添加成员</h3>
+                <p className="text-[12px] text-ink-3">
+                  仅列出已有控制台访问（租户成员）的用户；无租户成员请先到用户管理授予。
+                </p>
                 <DirectAddForm
+                  allowedUserIds={tenantMemberUserIds}
                   apiBaseUrl={apiOptions.baseUrl}
                   canAdd={canAddMember}
                   existingUserIds={existingUserIds}
                   fetcher={apiOptions.fetcher}
-                  isPending={addMutation.isPending}
+                  isPending={addMutation.isPending || tenantMembersQuery.isLoading}
                   onSubmit={(input) => addMutation.mutate(input)}
                   resetToken={addResetToken}
                 />
@@ -273,6 +288,7 @@ function TeamMemberAvatarStack({
 }
 
 function DirectAddForm({
+  allowedUserIds,
   apiBaseUrl,
   canAdd,
   existingUserIds,
@@ -281,6 +297,7 @@ function DirectAddForm({
   onSubmit,
   resetToken
 }: {
+  allowedUserIds: string[];
   apiBaseUrl: string;
   canAdd: boolean;
   existingUserIds: string[];
@@ -310,12 +327,14 @@ function DirectAddForm({
       <div className="flex flex-col gap-2">
         <Label>用户</Label>
         <UserSearchSelect
+          allowedUserIds={allowedUserIds}
           apiBaseUrl={apiBaseUrl}
           disabled={!canAdd || isPending}
           excludedUserIds={existingUserIds}
           fetcher={fetcher}
           inputLabel="搜索直接添加用户"
           onSelect={setSelectedUser}
+          placeholder="搜索已有租户成员"
           value={selectedUser}
         />
       </div>

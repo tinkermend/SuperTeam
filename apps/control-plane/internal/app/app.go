@@ -730,7 +730,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			ModelID:  cfg.Authz.OpenFGA.ModelID,
 			APIToken: cfg.Authz.OpenFGA.APIToken,
 		})
-		authService.SetProjectTeamScopeSyncer(authz.NewOpenFGATupleSyncer(openFGAClient, authzRepository))
+		tupleSyncer := authz.NewOpenFGATupleSyncer(openFGAClient, authzRepository)
+		authService.SetProjectTeamScopeSyncer(tupleSyncer)
+		authService.SetMembershipSyncer(tupleSyncer)
 		switch cfg.Authz.Engine {
 		case "openfga_shadow":
 			authorizer = authz.NewShadowAuthorizer(dbAuthorizer, openFGAClient, authz.ShadowOptions{

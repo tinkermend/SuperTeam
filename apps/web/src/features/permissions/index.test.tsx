@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -26,6 +26,23 @@ vi.mock("@/components/search", () => ({
 vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>
 }));
+
+vi.mock("@tanstack/react-router", () => {
+  type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: ReactNode;
+    to: string;
+  };
+  const Link = forwardRef<HTMLAnchorElement, MockLinkProps>(
+    ({ children, to, ...props }, ref) => (
+      <a {...props} data-router-link="true" href={to} ref={ref}>
+        {children}
+      </a>
+    ),
+  );
+  Link.displayName = "MockRouterLink";
+
+  return { Link };
+});
 
 function createQueryClient() {
   return new QueryClient({

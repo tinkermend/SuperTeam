@@ -12,7 +12,7 @@ import {
   SheetTitle
 } from "@/components/ui/sheet";
 import { buildUserAvatarDataUri } from "@/lib/avatar-dicebear";
-import { listTeamSummaries, type UserAvatar } from "@/lib/api";
+import { listTeamSummaries, type TenantRole, type UserAvatar } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { HUMAN_AVATAR_PRESETS, type HumanAvatarPreset } from "../human-avatar-presets";
 import { SelectableTeamList } from "./selectable-team-list";
@@ -22,8 +22,16 @@ export type CreateUserDraft = {
   display_name: string;
   password: string;
   selectable_team_ids: string[];
+  tenant_role: TenantRole;
   username: string;
 };
+
+const TENANT_ROLE_OPTIONS: Array<{ value: TenantRole; label: string; hint: string }> = [
+  { value: "member", label: "成员", hint: "可进入控制台，常规使用" },
+  { value: "viewer", label: "观察者", hint: "可进入控制台，偏只读" },
+  { value: "admin", label: "管理员", hint: "可管理用户与租户治理" },
+  { value: "owner", label: "所有者", hint: "最高租户权限；仅所有者可授予" }
+];
 
 type CreateUserDrawerProps = {
   apiBaseUrl: string;
@@ -44,6 +52,7 @@ const emptyDraft: CreateUserDraftState = {
   display_name: "",
   password: "",
   selectable_team_ids: [],
+  tenant_role: "member",
   username: ""
 };
 
@@ -81,6 +90,7 @@ export function CreateUserDrawer({
     draft.username.trim() &&
       draft.display_name.trim() &&
       draft.password.trim() &&
+      draft.tenant_role &&
       draft.avatar &&
       selectedTeamIdsAreCurrent,
   );
@@ -120,6 +130,7 @@ export function CreateUserDrawer({
                 display_name: draft.display_name.trim(),
                 password: draft.password,
                 selectable_team_ids: draft.selectable_team_ids,
+                tenant_role: draft.tenant_role,
                 username: draft.username.trim()
 });
             }
@@ -158,6 +169,28 @@ export function CreateUserDrawer({
                 />
               </div>
 
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="create-user-tenant-role">租户角色</Label>
+                <select
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  disabled={isSubmitting}
+                  id="create-user-tenant-role"
+                  onChange={(event) =>
+                    setDraft({ ...draft, tenant_role: event.target.value as TenantRole })
+                  }
+                  value={draft.tenant_role}
+                >
+                  {TENANT_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} — {option.hint}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  租户角色决定能否进入控制台；与下方「创建项目时可选团队」不是同一关系。
+                </p>
+              </div>
+
               <AvatarSelection
                 disabled={isSubmitting}
                 onSelect={(avatar) => setDraft({ ...draft, avatar })}
@@ -169,7 +202,7 @@ export function CreateUserDrawer({
               <section className="rounded-md border p-3">
                 <div className="mb-1 flex min-w-0 items-center justify-between gap-3">
                   <h3 className="text-sm font-medium">
-                    可管理的团队
+                    创建项目时可选择的团队
                     <span className="ml-1.5 text-xs font-normal text-muted-foreground">（可选）</span>
                   </h3>
                   {draft.selectable_team_ids.length > 0 && (
@@ -179,7 +212,7 @@ export function CreateUserDrawer({
                   )}
                 </div>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  选择此用户可以管理的团队范围。创建后可在团队管理中修改。
+                  仅限制创建项目时的团队选择器，不授予团队成员身份或控制台访问。
                 </p>
                 {teamsQuery.isLoading || teamsQuery.isFetching ? (
                   <p className="text-sm text-muted-foreground">加载团队中</p>

@@ -183,7 +183,11 @@ func (r *PgRepository) ListMembers(ctx context.Context, filter MemberFilter) ([]
 				Status:        row.MembershipStatus,
 			}
 			members[index].Memberships = append(members[index].Memberships, membership)
-			if row.AccountStatus == "active" && membership.Status == "active" && roleAllowsConsoleAccess(membership.Role) {
+			// console.access 仅认租户级成员（team_id IS NULL），与 DBAuthorizer.checkTenantAccess 对齐。
+			if row.AccountStatus == "active" &&
+				membership.Status == "active" &&
+				membership.TeamID == nil &&
+				roleAllowsConsoleAccess(membership.Role) {
 				members[index].ConsoleAccess = true
 			}
 		}

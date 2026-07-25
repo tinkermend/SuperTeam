@@ -283,11 +283,23 @@ export function UserAuthForm({
 }
 
 function loginErrorMessage(error: unknown) {
-  if (
-    error instanceof ApiRequestError &&
-    error.message.includes('验证码不正确或已过期')
-  ) {
+  if (!(error instanceof ApiRequestError)) {
+    return '用户名或密码不正确'
+  }
+  if (error.message.includes('验证码不正确或已过期')) {
     return '验证码不正确或已过期'
   }
-  return '用户名或密码不正确'
+  if (
+    error.status === 403 &&
+    (error.detail?.includes('disabled') || error.message.includes('disabled'))
+  ) {
+    return '账号已禁用，请联系管理员'
+  }
+  if (error.status === 403) {
+    return '账号无控制台访问权限，请联系管理员授予租户成员'
+  }
+  if (error.status === 401) {
+    return '用户名或密码不正确'
+  }
+  return '登录失败，请稍后重试'
 }

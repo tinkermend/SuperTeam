@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Users } from "lucide-react";
 import type { ApiClientOptions, AuthzMemberRecord } from "@/lib/api";
 import { listAuthzMembers } from "@/lib/api";
 import {
   IconTile,
   StatusPill,
+  Button,
   EmptyState,
   ErrorState,
   LoadingState,
@@ -28,14 +30,21 @@ export function MemberRoles({ apiOptions }: MemberRolesProps) {
 
   return (
     <WorkSurface>
-      <div className="flex items-start gap-3 border-b border-line px-5 py-4">
-        <IconTile tone="brand" size="sm">
-          <Users />
-        </IconTile>
-        <div>
-          <h2 className="text-base font-bold text-ink">成员角色</h2>
-          <p className="mt-1 text-sm text-ink-2">当前只读展示成员、租户/团队角色和控制台访问能力。</p>
+      <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+        <div className="flex items-start gap-3">
+          <IconTile tone="brand" size="sm">
+            <Users />
+          </IconTile>
+          <div>
+            <h2 className="text-base font-bold text-ink">成员角色</h2>
+            <p className="mt-1 text-sm text-ink-2">
+              只读观察面：展示成员、租户/团队角色与控制台访问。授予或撤销租户成员请到用户管理。
+            </p>
+          </div>
         </div>
+        <Button asChild size="sm" type="button" variant="outline">
+          <Link to="/users">去用户管理</Link>
+        </Button>
       </div>
       {membersQuery.isLoading ? (
         <LoadingState label="加载成员角色…" />
