@@ -43,6 +43,7 @@ type ProjectOpsHomeProps = {
   demands: ProjectDemand[];
   events: ProjectEvent[];
   isArchived?: boolean;
+  onOpenTask?: (taskId: string) => void;
   onResolveDecision: (decisionId: string, decision: string) => void;
   onShowAllTasks: () => void;
   overview?: ProjectOverview;
@@ -64,7 +65,7 @@ const modePillClass: Record<OpsLaunchMode, string> = {
 /** 日格高度按约 10–12 条芯片估，超出可滚；数据侧最多保留 15 条。 */
 const PULSE_DAY_MIN_HEIGHT_CLASS = "min-h-[28rem]";
 
-function modeToneClass(mode: OpsLaunchMode) {
+export function modeToneClass(mode: OpsLaunchMode) {
   return modePillClass[mode] ?? modePillClass.plan;
 }
 
@@ -96,6 +97,7 @@ export function ProjectOpsHome({
   demands,
   events,
   isArchived,
+  onOpenTask,
   onResolveDecision,
   onShowAllTasks,
   overview,
@@ -156,7 +158,7 @@ export function ProjectOpsHome({
               </div>
               {hasPulseActivity ? (
                 <p className="mt-0.5 text-[11.5px] text-ink-3">
-                  时间 + Plan/Loop/对话 · {pulseCount} 次
+                  时间 + Plan/Loop · {pulseCount} 次
                 </p>
               ) : null}
             </div>
@@ -167,6 +169,7 @@ export function ProjectOpsHome({
 
           {hasPulseActivity ? (
             <>
+              {/* 「对话」不设图例：chat 运行不产生 project_task，脉搏数据源里不存在该模式。 */}
               <div className="mb-2 flex flex-wrap gap-1.5 text-[11px]">
                 <span className={cn("rounded-md px-1.5 py-0.5 font-bold", modeToneClass("plan"))}>
                   Plan
@@ -174,11 +177,8 @@ export function ProjectOpsHome({
                 <span className={cn("rounded-md px-1.5 py-0.5 font-bold", modeToneClass("loop"))}>
                   Loop
                 </span>
-                <span className={cn("rounded-md px-1.5 py-0.5 font-bold", modeToneClass("chat"))}>
-                  对话
-                </span>
               </div>
-              <WeekPulseGrid days={pulseDays} />
+              <WeekPulseGrid days={pulseDays} onOpenTask={onOpenTask} />
             </>
           ) : (
             <div
@@ -246,9 +246,11 @@ export function ProjectOpsHome({
                 {runningSlice.map((task) => {
                   const mode = resolveTaskMode(task, demandsById);
                   return (
-                    <li
-                      className="flex items-start justify-between gap-2 py-2 first:pt-0 last:pb-0"
-                      key={task.id}
+                    <li className="py-2 first:pt-0 last:pb-0" key={task.id}>
+                    <button
+                      className="flex w-full items-start justify-between gap-2 rounded-md text-left transition-colors hover:bg-card-soft focus-visible:outline-2 focus-visible:outline-brand"
+                      onClick={() => onOpenTask?.(task.id)}
+                      type="button"
                     >
                       <div className="min-w-0">
                         <p className="truncate text-[12.5px] font-bold">{task.title}</p>
@@ -276,6 +278,7 @@ export function ProjectOpsHome({
                       <StatusPill tone={statusTone(task.status)}>
                         {taskStatusLabel(task.status)}
                       </StatusPill>
+                    </button>
                     </li>
                   );
                 })}
@@ -594,7 +597,13 @@ export function ProjectOpsHome({
   );
 }
 
-function WeekPulseGrid({ days }: { days: OpsPulseDay[] }) {
+function WeekPulseGrid({
+  days,
+  onOpenTask
+}: {
+  days: OpsPulseDay[];
+  onOpenTask?: (taskId: string) => void;
+}) {
   return (
     <div className={cn("grid grid-cols-7 gap-1.5", PULSE_DAY_MIN_HEIGHT_CLASS)}>
       {days.map((day) => (
@@ -620,10 +629,12 @@ function WeekPulseGrid({ days }: { days: OpsPulseDay[] }) {
               </div>
             ) : (
               day.chips.map((chip) => (
-                <div
-                  className="grid shrink-0 grid-cols-[6px_minmax(0,1fr)] gap-1 rounded-md border border-line bg-card px-1 py-0.5"
+                <button
+                  className="grid shrink-0 grid-cols-[6px_minmax(0,1fr)] gap-1 rounded-md border border-line bg-card px-1 py-0.5 text-left transition-colors hover:border-brand/40 hover:bg-card-soft focus-visible:outline-2 focus-visible:outline-brand"
                   key={chip.taskId}
+                  onClick={() => onOpenTask?.(chip.taskId)}
                   title={chip.title}
+                  type="button"
                 >
                   <span
                     className={cn(
@@ -646,7 +657,7 @@ function WeekPulseGrid({ days }: { days: OpsPulseDay[] }) {
                       </span>
                     </div>
                   </div>
-                </div>
+                </button>
               ))
             )}
           </div>
@@ -656,7 +667,7 @@ function WeekPulseGrid({ days }: { days: OpsPulseDay[] }) {
   );
 }
 
-function BlockerActions({
+export function BlockerActions({
   decision,
   onResolveDecision
 }: {

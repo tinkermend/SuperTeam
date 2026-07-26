@@ -315,6 +315,67 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByTestId("project-ops-startup")).not.toBeInTheDocument();
   });
 
+  it("opens project task detail dialog from pulse chip and resolves decision inline", async () => {
+    const onResolveDecision = vi.fn();
+    const nowIso = new Date().toISOString();
+    const weekTask: ProjectTask = {
+      assigned_digital_employee_id: "employee-1",
+      created_at: nowIso,
+      demand_id: "demand-1",
+      id: "task-1",
+      project_id: "project-1",
+      requires_human_approval: false,
+      status: "running",
+      summary: "整理客户接入证据",
+      tenant_id: "tenant-1",
+      title: "整理接入证据",
+      updated_at: nowIso
+};
+    const taskDecision: ProjectDecisionRequest = {
+      ...decisionRequests[0],
+      project_task_id: "task-1"
+};
+    const screen = await renderDetail({
+      decisionRequests: [taskDecision],
+      onResolveDecision,
+      overview: { ...overview, active_tasks: [weekTask] },
+      tasks: [weekTask]
+});
+
+    // 脉搏芯片(带 title 的按钮)点击应打开任务详情弹层
+    await userEvent.click(screen.getByTitle("整理接入证据"));
+    const dialog = screen.getByTestId("project-task-detail-dialog");
+    await expect.element(dialog).toBeVisible();
+
+    // 任务自身事实 + 编排降级 + 运行空态
+    await expect.element(dialog.getByText("整理客户接入证据")).toBeVisible();
+    await expect.element(dialog.getByText("验收执行员工")).toBeVisible();
+    await expect.element(dialog.getByText(/当前执行图未包含该任务/)).toBeVisible();
+    await expect.element(dialog.getByText("暂无运行记录")).toBeVisible();
+
+    // 待决事项就地处理,走与工作台同一条 onResolveDecision 出口
+    await expect
+      .element(dialog.getByText("确认上线风险", { exact: true }))
+      .toBeVisible();
+    await userEvent.click(dialog.getByRole("button", { name: "批准" }));
+    expect(onResolveDecision).toHaveBeenCalledWith("decision-1", "approved");
+
+    // 编排深链
+    await expect
+      .element(dialog.getByRole("link", { name: "查看该任务所在流程编排" }))
+      .toHaveAttribute("href", "/workflows/demand-1");
+  });
+
+  it("opens the same task detail dialog from the tasks tab title", async () => {
+    const screen = await renderDetail();
+
+    await userEvent.click(screen.getByRole("tab", { name: "任务" }));
+    await userEvent.click(screen.getByRole("button", { name: "整理接入证据" }));
+    await expect
+      .element(screen.getByTestId("project-task-detail-dialog"))
+      .toBeVisible();
+  });
+
   it("resolves owner and service-pool names when membership snapshots are empty", async () => {
     const unnamedOverview: ProjectOverview = {
       ...overview,

@@ -76,9 +76,10 @@ export function WorkflowNodeInspector({
           action={
             decisions.length > 0 ? (
               <Button asChild size="sm" variant="outline">
-                <Link aria-label={`查看${selectedTask.title}审批`} to="/approvals">
+                {/* 项目任务决策在收件箱处理（审批中心已退役，/approvals 现指权限中心）。 */}
+                <Link aria-label={`处理${selectedTask.title}决策`} to="/inbox">
                   <ExternalLink className="size-3.5" />
-                  审批
+                  收件箱
                 </Link>
               </Button>
             ) : null
@@ -133,7 +134,7 @@ export function taskStatusTone(status: string): Tone {
   return "mute";
 }
 
-function formatBlocker(task: ProjectTaskGraphNode): string {
+export function formatBlocker(task: ProjectTaskGraphNode): string {
   if (!task.current_blocker) return "暂无阻塞";
 
   return [
@@ -145,7 +146,7 @@ function formatBlocker(task: ProjectTaskGraphNode): string {
     .join(" · ");
 }
 
-function InspectorRow({
+export function InspectorRow({
   action,
   label,
   value
@@ -167,7 +168,7 @@ function InspectorRow({
   );
 }
 
-function formatValue(value: unknown): string {
+export function formatValue(value: unknown): string {
   if (Array.isArray(value)) {
     if (value.length === 0) return "暂无";
     return value.map((item) => formatLeaf(item)).join(" · ");

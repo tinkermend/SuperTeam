@@ -1063,7 +1063,10 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
     await expect.element(screen.getByText("审批结果")).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "查看待审批任务审批" })).toBeVisible();
+    // 项目任务决策在收件箱处理（/approvals 已退役重定向权限中心）
+    await expect
+      .element(screen.getByRole("link", { name: "处理待审批任务决策" }))
+      .toHaveAttribute("href", "/inbox");
   });
 
   it("does not navigate to the first visible instance when no demand id is provided", async () => {

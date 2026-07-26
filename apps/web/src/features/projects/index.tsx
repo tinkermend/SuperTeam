@@ -366,6 +366,9 @@ export function ProjectsView({
   );
   const currentPageRiskSignals = useProjectRiskSignals({
     apiOptions,
+    // 详情路由不渲染风险队列（riskLabel 也未接线），跳过每项目 4 个信号请求，
+    // 避免几十个并发请求把 task-graph/plan-revisions 压后数秒。
+    enabled: !routeProjectId,
     principalNamesById: employeeNamesById,
     projects: pagedProjects
 });

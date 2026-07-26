@@ -90,6 +90,7 @@ import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectAssetsPanel } from "./project-assets-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { ProjectOpsHome } from "./project-ops-home";
+import { ProjectTaskDetailDialog } from "./project-task-detail-dialog";
 import { ProjectOwnerAvatarStack } from "./project-owner-avatar-stack";
 import {
   assetsInitialTabFromQuery,
@@ -212,6 +213,7 @@ export function ProjectOperationalDetail({
   transferRequests
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [detailTaskId, setDetailTaskId] = useState<string | undefined>();
   const initialSection = normalizeProjectDetailSection(
     typeof initialTab === "string" ? initialTab : undefined,
   );
@@ -440,6 +442,7 @@ export function ProjectOperationalDetail({
             demands={demands}
             events={events}
             isArchived={isArchived}
+            onOpenTask={setDetailTaskId}
             onResolveDecision={onResolveDecision}
             onShowAllTasks={() => setActiveSection("tasks")}
             overview={overview}
@@ -558,6 +561,8 @@ export function ProjectOperationalDetail({
             decisionRequests={decisionRequests}
             dismissTaskPending={dismissTaskPending}
             onDismissTask={onDismissTask}
+            onOpenTask={setDetailTaskId}
+            principalNamesById={principalNamesById}
             tasks={tasks}
           />
         </SoftTabsContent>
@@ -803,6 +808,20 @@ export function ProjectOperationalDetail({
           />
         </SoftTabsContent>
       </SoftTabs>
+
+      <ProjectTaskDetailDialog
+        decisionRequests={decisionRequests}
+        demands={demands}
+        onOpenChange={(open) => {
+          if (!open) setDetailTaskId(undefined);
+        }}
+        onResolveDecision={onResolveDecision}
+        overview={overview}
+        principalNamesById={principalNamesById}
+        taskGraph={taskGraph}
+        taskId={detailTaskId}
+        tasks={tasks}
+      />
     </div>
   );
 }
@@ -1281,7 +1300,25 @@ function DemandFailureDiagnosis({
   );
 }
 
-function ProjectTaskLink({ task }: { task: ProjectTask }) {
+function ProjectTaskLink({
+  task,
+  onOpen
+}: {
+  task: ProjectTask;
+  onOpen?: (taskId: string) => void;
+}) {
+  if (onOpen) {
+    return (
+      <button
+        className="block min-w-0 max-w-full truncate text-left text-sm font-medium text-brand-deep hover:text-brand"
+        onClick={() => onOpen(task.id)}
+        type="button"
+      >
+        {task.title}
+      </button>
+    );
+  }
+
   if (task.assigned_digital_employee_id) {
     return (
       <Link
@@ -1301,11 +1338,15 @@ function ProjectTasksPanel({
   decisionRequests,
   dismissTaskPending,
   onDismissTask,
+  onOpenTask,
+  principalNamesById,
   tasks
 }: {
   decisionRequests?: ProjectDecisionRequest[];
   dismissTaskPending?: boolean;
   onDismissTask?: (taskId: string) => void;
+  onOpenTask?: (taskId: string) => void;
+  principalNamesById?: ReadonlyMap<string, string>;
   tasks: ProjectTask[];
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1378,7 +1419,7 @@ function ProjectTasksPanel({
             <option value="all">全部员工</option>
             {employeeIds.map((employeeId) => (
               <option key={employeeId} value={employeeId}>
-                {employeeId}
+                {principalNamesById?.get(employeeId) ?? employeeId}
               </option>
             ))}
           </select>
@@ -1418,7 +1459,7 @@ function ProjectTasksPanel({
               return (
               <Tr key={task.id}>
                 <Td className="min-w-[220px]">
-                  <ProjectTaskLink task={task} />
+                  <ProjectTaskLink onOpen={onOpenTask} task={task} />
                   {task.summary ? (
                     <p className="mt-1 line-clamp-2 text-xs text-ink-2">{task.summary}</p>
                   ) : null}
@@ -1426,14 +1467,19 @@ function ProjectTasksPanel({
                 <Td>
                   <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
                 </Td>
-                <Td className="font-mono text-xs text-ink-2">
+                <Td className="text-xs text-ink-2">
                   {task.assigned_digital_employee_id ? (
                     <Link
-                      className="text-brand-deep hover:text-brand"
+                      className={cn(
+                        "text-brand-deep hover:text-brand",
+                        !principalNamesById?.get(task.assigned_digital_employee_id) &&
+                          "font-mono",
+                      )}
                       params={{ employeeId: task.assigned_digital_employee_id }}
                       to="/employees/$employeeId"
                     >
-                      {task.assigned_digital_employee_id}
+                      {principalNamesById?.get(task.assigned_digital_employee_id) ??
+                        task.assigned_digital_employee_id}
                     </Link>
                   ) : (
                     "未分派"
