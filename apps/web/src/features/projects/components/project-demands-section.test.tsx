@@ -247,7 +247,7 @@ describe("ProjectDemandsSection", () => {
     await expect.element(screen.getByText("暂无需求")).toBeVisible();
   });
 
-  it("renders the authoritative graph in live mode with a 5s polling loop", async () => {
+  it("renders the authoritative graph in live mode with a 30s fallback polling loop", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const fetchTaskGraph = vi
@@ -262,12 +262,58 @@ describe("ProjectDemandsSection", () => {
         .element(screen.getByTestId("flow-graph-canvas"))
         .toHaveAttribute("data-live", "true");
 
-      // 数据活性：5s 轮询驱动 graph 重取（动画状态纯由数据推导）。
+      // 数据活性（spec §5 P2-E）：秒级刷新走 SSE invalidate，轮询降为 30s 保底。
       const callsBeforePoll = fetchTaskGraph.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(5_500);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fetchTaskGraph.mock.calls.length).toBe(callsBeforePoll);
+      await vi.advanceTimersByTimeAsync(21_000);
       expect(fetchTaskGraph.mock.calls.length).toBeGreaterThan(callsBeforePoll);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("refetches the graph when the activity SSE pushes an event of this project", async () => {
+    const listeners: Record<string, Array<(event: { data: string }) => void>> = {};
+    const streamUrls: string[] = [];
+    const fakeSource = {
+      addEventListener: (type: string, listener: (event: { data: string }) => void) => {
+        (listeners[type] ??= []).push(listener);
+      },
+      close: () => undefined,
+      removeEventListener: () => undefined
+} as unknown as EventSource;
+    const fetchTaskGraph = vi
+      .fn()
+      .mockImplementation((demandId: string) =>
+        Promise.resolve(graphFor(demandId, "整理材料任务")),
+      );
+    const screen = await renderSection({
+      eventSourceFactory: (url) => {
+        streamUrls.push(url);
+        return fakeSource;
+      },
+      fetchTaskGraph
+});
+    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
+    expect(streamUrls).toEqual([
+      "http://cp.test/api/v1/digital-employees/activity/stream",
+    ]);
+
+    // 非本项目事件被过滤：不触发重取。
+    const callsBefore = fetchTaskGraph.mock.calls.length;
+    for (const listener of listeners["activity"] ?? []) {
+      listener({ data: JSON.stringify({ event_id: "evt-x", project_id: "project-2" }) });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(fetchTaskGraph.mock.calls.length).toBe(callsBefore);
+
+    // 本项目事件：invalidate ["project-task-graph", projectId] → 活跃 graph 查询重取。
+    for (const listener of listeners["activity"] ?? []) {
+      listener({ data: JSON.stringify({ event_id: "evt-1", project_id: "project-1" }) });
+    }
+    await expect
+      .poll(() => fetchTaskGraph.mock.calls.length)
+      .toBeGreaterThan(callsBefore);
   });
 });

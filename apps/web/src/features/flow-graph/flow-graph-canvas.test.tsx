@@ -10,6 +10,7 @@ vi.mock("@xyflow/react", () => {
       employeeCount?: number;
       employeeName?: string;
       employeeRole?: string;
+      status?: string;
       taskCount?: number;
       title?: string;
     };
@@ -81,6 +82,8 @@ vi.mock("@xyflow/react", () => {
         ))}
         {nodes.map((node) => (
           <button
+            data-node-status={node.data?.status ?? ""}
+            data-testid={`flow-graph-node-${node.id}`}
             key={node.id}
             onClick={(event) => onNodeClick?.(event, node)}
             type="button"
@@ -183,6 +186,26 @@ function makeScaleGraph(taskCount: number, stageCount: 1 | 2): ProjectTaskGraph 
     edge_status: "unblocked"
 }));
   graph.employees = [];
+  return graph;
+}
+
+/** 带真实起止时间的终态图：a 0–4 分钟完成，b 4–8 分钟失败（总时长 8 分钟）。 */
+function makeTimedGraph(): ProjectTaskGraph {
+  const graph = makeGraph();
+  graph.nodes = [
+    {
+      ...graph.nodes[0],
+      finished_at: "2026-07-27T00:04:00Z",
+      started_at: "2026-07-27T00:00:00Z",
+      status: "completed"
+},
+    {
+      ...graph.nodes[1],
+      finished_at: "2026-07-27T00:08:00Z",
+      started_at: "2026-07-27T00:04:00Z",
+      status: "failed"
+},
+  ];
   return graph;
 }
 
@@ -342,6 +365,42 @@ describe("FlowGraphCanvas", () => {
     ).toBe(false);
   });
 
+  // 单测内禁手动 unmount + 二次 render：实测会触发 overlapping act() 并拖垮
+  // 同文件后续用例，故拆成两个用例。
+  it("hides the replay control outside live mode", async () => {
+    const screen = await renderCanvas(makeGraph());
+    await expect
+      .element(screen.getByTestId("flow-graph-canvas"))
+      .toHaveAttribute("data-live", "false");
+    expect(
+      screen.container.querySelector('[data-testid="flow-replay-toggle"]'),
+    ).toBeNull();
+  });
+
+  it("disables the replay control with a reason when timing data is missing", async () => {
+    // makeGraph 无任何 started_at：按钮禁用并以 title 说明原因（挂外层 span）。
+    const screen = await renderCanvas(makeGraph(), vi.fn(), true);
+    const toggle = screen.getByTestId("flow-replay-toggle");
+    await expect.element(toggle).toBeDisabled();
+    expect(toggle.element().parentElement?.getAttribute("title")).toBe(
+      "任务节点暂无起止时间数据，无法回放",
+    );
+  });
+
+  it("stops the replay immediately when the toggle is clicked again", async () => {
+    const screen = await renderCanvas(makeTimedGraph(), vi.fn(), true);
+    const canvas = screen.getByTestId("flow-graph-canvas");
+
+    await screen.getByTestId("flow-replay-toggle").click();
+    await expect.element(canvas).toHaveAttribute("data-replay", "true");
+
+    await screen.getByTestId("flow-replay-toggle").click();
+    expect(canvas.element().hasAttribute("data-replay")).toBe(false);
+    await expect
+      .element(screen.getByTestId("flow-graph-node-task:task-b"))
+      .toHaveAttribute("data-node-status", "failed");
+  });
+
   it("reports node opens for task nodes when clicked", async () => {
     const onNodeOpen = vi.fn();
     const screen = await renderCanvas(makeGraph(), onNodeOpen);
@@ -410,5 +469,48 @@ describe("FlowGraphCanvas", () => {
     expect(
       screen.getByTestId("flow-graph-canvas").element().clientHeight,
     ).toBeGreaterThan(2100);
+  });
+
+  // 真实计时（不开 fake timers：实测会让本用例首次提交挂起）+ 防御性放全文件
+  // 末位（8 秒真实播放的持续 interval 提交不再影响后续用例，但污染面最小化）：
+  // 8 秒压缩窗口内用带超时的轮询断言跟播放阶段走。
+  it("plays the compressed timeline with virtual statuses and returns to live on finish", async () => {
+    const screen = await renderCanvas(makeTimedGraph(), vi.fn(), true);
+    const canvas = screen.getByTestId("flow-graph-canvas");
+    const nodeA = screen.getByTestId("flow-graph-node-task:task-a");
+    const nodeB = screen.getByTestId("flow-graph-node-task:task-b");
+    const edge = screen.getByTestId("flow-graph-edge-edge:task-a:task-b");
+
+    // 回放前：真实状态（a completed / b failed → 边红停流）。
+    await expect.element(canvas).toHaveAttribute("data-live", "true");
+    await expect.element(edge).toHaveAttribute("data-edge-activity", "failed");
+    expect(canvas.element().hasAttribute("data-replay")).toBe(false);
+
+    await screen.getByTestId("flow-replay-toggle").click();
+
+    // t≈0（a 的运行窗口占前 4 秒）：a 运行中、b 未到 started_at 排队；
+    // 上游出边 flowing；进度标注告知压缩自真实总时长。
+    await expect.element(canvas).toHaveAttribute("data-replay", "true");
+    await expect.element(screen.getByText("回放中…点击停止")).toBeVisible();
+    await expect.element(nodeA).toHaveAttribute("data-node-status", "running");
+    await expect.element(nodeB).toHaveAttribute("data-node-status", "queued");
+    await expect.element(edge).toHaveAttribute("data-edge-activity", "flowing");
+    await expect
+      .element(screen.getByTestId("flow-replay-progress"))
+      .toHaveTextContent("压缩自 8 分钟");
+
+    // 过 4 秒边界：a 落真实终态 completed，b 进入运行窗口。
+    await expect
+      .element(nodeA, { timeout: 6_000 })
+      .toHaveAttribute("data-node-status", "completed");
+    await expect.element(nodeB).toHaveAttribute("data-node-status", "running");
+
+    // 播放结束（8 秒）自动回实时：data-replay 摘除，恢复真实状态与按钮文案。
+    await expect
+      .element(nodeB, { timeout: 6_000 })
+      .toHaveAttribute("data-node-status", "failed");
+    expect(canvas.element().hasAttribute("data-replay")).toBe(false);
+    await expect.element(edge).toHaveAttribute("data-edge-activity", "failed");
+    await expect.element(screen.getByText("回放执行")).toBeVisible();
   });
 });

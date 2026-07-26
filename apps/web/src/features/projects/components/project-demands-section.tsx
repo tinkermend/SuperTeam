@@ -25,6 +25,7 @@ import {
 import { decisionStatusLabel, demandStatusLabel } from "@/lib/status-labels";
 import { formatRelativeTime } from "@/lib/format-time";
 import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
+import { useProjectActivityInvalidate } from "../hooks/use-project-activity-invalidate";
 import { DemandCriteriaPanel } from "./demand-criteria-panel";
 import { StaffGapDialog } from "./staff-gap-dialog";
 
@@ -41,6 +42,8 @@ type ProjectDemandsSectionProps = {
   demands: ProjectDemand[];
   /** 当前打开的任务详情弹层任务 id（画布选中态与弹层同源）。 */
   detailTaskId?: string;
+  /** 测试注入用（SSE 活动流）；生产默认用带凭据的原生 EventSource。 */
+  eventSourceFactory?: (url: string) => EventSource;
   /** 项目事件（父页已拉取）；用于派发闸阻塞横幅（原流程编排详情职责迁入）。 */
   events?: ProjectEvent[];
   /** 按 demand 拉执行图；queryKey 与页面预载同族（project-task-graph）复用缓存。 */
@@ -70,6 +73,7 @@ export function ProjectDemandsSection({
   apiOptions,
   demands,
   detailTaskId,
+  eventSourceFactory,
   events,
   fetchTaskGraph,
   onClearTask,
@@ -80,15 +84,26 @@ export function ProjectDemandsSection({
   const selectedDemand =
     demands.find((demand) => demand.id === selectedDemandId) ?? demands[0];
 
+  // 数据活性升级（spec 2026-07-27 §5 P2-E）：主通道是既有跨员工活动 SSE 的
+  // 项目维度事件驱动 invalidate；组件测试注入 fetcher 时默认不开真实流（避免
+  // 连不上的重连噪音，run-overview 先例），显式给 factory 则照常开。
+  useProjectActivityInvalidate({
+    apiBaseUrl,
+    enabled: !(apiOptions.fetcher && !eventSourceFactory),
+    eventSourceFactory,
+    projectId
+});
+
   const graphQuery = useQuery({
     enabled: Boolean(selectedDemand && fetchTaskGraph),
     placeholderData: keepPreviousData,
     queryFn: () => fetchTaskGraph!(selectedDemand!.id),
     // 与页面预载/任务弹层同 key 族：最新需求直接命中缓存。
     queryKey: ["project-task-graph", projectId, selectedDemand?.id],
-    // 数据活性（spec 2026-07-27 §1.4）：活图动画状态纯由 graph 数据推导，
-    // 5s 轮询与平台既有口径一致；SSE 升级属后续。
-    refetchInterval: 5000
+    // 保底轮询 30s（spec §5 P2-E）：秒级活性由 SSE invalidate 承担；SSE 不可用
+    // （连接失败/环境降级）时 EventSource 自动重连 + 本轮询兜底。刻意不探测
+    // 流健康后回升 5s——双通道并存会放大请求洪峰，且 30s 兜底已保证最终一致。
+    refetchInterval: 30_000
 });
   const graph = graphQuery.data;
 
@@ -225,7 +240,9 @@ export function ProjectDemandsSection({
             </div>
             {graph && graph.nodes.length > 0 ? (
               <Suspense fallback={<LoadingState />}>
+                {/* key 按需求重挂画布：切需求即终止上一需求可能在进行的回放会话。 */}
                 <FlowGraphCanvas
+                  key={selectedDemand.id}
                   graph={graph}
                   live
                   onNodeOpen={(nodeId) => {
