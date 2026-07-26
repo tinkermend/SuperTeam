@@ -280,6 +280,63 @@ describe("ProjectOperationalDetail", () => {
     );
   });
 
+  it("renders the stage pipeline with deep links and per-stage status", async () => {
+    const screen = await renderDetail({ planRevisions });
+
+    const pipeline = screen.getByTestId("project-stage-pipeline");
+    await expect.element(pipeline).toBeVisible();
+
+    // 需求格：状态 + 计数 + 深链 ?tab=demands
+    const demandCell = screen.getByTestId("pipeline-stage-demands");
+    await expect.element(demandCell).toHaveAttribute("href", ".?tab=demands");
+    await expect.element(demandCell.getByText("待计划")).toBeVisible();
+    await expect.element(demandCell.getByText("共 1 条")).toBeVisible();
+
+    // 执行格：任务计数 + 深链任务区
+    const executionCell = screen.getByTestId("pipeline-stage-execution");
+    await expect.element(executionCell).toHaveAttribute("href", ".?tab=tasks");
+    await expect
+      .element(executionCell.getByText("执行中 1 · 共 1 项"))
+      .toBeVisible();
+
+    // 结果格：验收/工件深链（?tab=acceptance 映射资产区验收页签）
+    const resultsCell = screen.getByTestId("pipeline-stage-results");
+    await expect.element(resultsCell).toHaveAttribute("href", ".?tab=acceptance");
+    await expect.element(resultsCell.getByText("未验收")).toBeVisible();
+    await expect.element(resultsCell.getByText("工件 0 项")).toBeVisible();
+
+    // 计划格：就地展开/收起计划确认卡
+    const planCell = screen.getByTestId("pipeline-stage-plan");
+    await expect.element(planCell.getByText("计划 v1")).toBeVisible();
+    await expect.element(planCell).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(planCell);
+    await expect.element(planCell).toHaveAttribute("aria-expanded", "true");
+    await expect.element(screen.getByText("调度顺序")).toBeVisible();
+    await expect.element(screen.getByText("验收判据")).toBeVisible();
+    await userEvent.click(planCell);
+    await expect.element(screen.getByText("调度顺序")).not.toBeInTheDocument();
+  });
+
+  it("surfaces failed demand and failed task counts as pipeline pending actions", async () => {
+    const failedTask: ProjectTask = {
+      id: "task-failed",
+      project_id: "project-1",
+      requires_human_approval: false,
+      status: "failed",
+      tenant_id: "tenant-1",
+      title: "失败任务"
+};
+    const screen = await renderDetail({
+      demands: [{ ...demands[0], status: "failed" }],
+      tasks: [failedTask]
+});
+
+    const demandCell = screen.getByTestId("pipeline-stage-demands");
+    await expect.element(demandCell.getByText("1 条失败待处理 →")).toBeVisible();
+    const executionCell = screen.getByTestId("pipeline-stage-execution");
+    await expect.element(executionCell.getByText("1 项失败待处理 →")).toBeVisible();
+  });
+
   it("maps legacy tab deep links onto sections and assets sub-tabs", async () => {
     const artifactsScreen = await renderDetail({ initialTab: "artifacts" });
     await expect
@@ -625,7 +682,8 @@ describe("ProjectOperationalDetail", () => {
   });
 
   it("shows dispatch order and acceptance criteria from the latest plan revision", async () => {
-    const screen = await renderDetail({ initialTab: "approval", planRevisions });
+    const screen = await renderDetail({ planRevisions });
+    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
     const dispatchOrder = screen.getByTestId("plan-dispatch-order");
     const acceptanceCriteria = screen.getByTestId("plan-acceptance-criteria");
 
@@ -668,7 +726,8 @@ describe("ProjectOperationalDetail", () => {
   });
 
   it("defaults to automated-verification badge and no ambiguity warning for legacy criteria payload", async () => {
-    const screen = await renderDetail({ initialTab: "approval", planRevisions });
+    const screen = await renderDetail({ planRevisions });
+    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
 
     expect(
       screen.container.querySelector(
@@ -726,7 +785,8 @@ describe("ProjectOperationalDetail", () => {
         ]
 }
 };
-    const screen = await renderDetail({ initialTab: "approval", planRevisions: [semanticCriteriaRevision] });
+    const screen = await renderDetail({ planRevisions: [semanticCriteriaRevision] });
+    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
 
     expect(
       screen.container.querySelector(
@@ -796,7 +856,8 @@ describe("ProjectOperationalDetail", () => {
         template_version: 2
 }
 };
-    const screen = await renderDetail({ initialTab: "approval", planRevisions: [templatedRevision] });
+    const screen = await renderDetail({ planRevisions: [templatedRevision] });
+    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
 
     await expect.element(screen.getByText("software_delivery@v2")).toBeVisible();
     await expect.element(screen.getByText("审查通过并合入")).toBeVisible();
@@ -821,7 +882,8 @@ describe("ProjectOperationalDetail", () => {
         template_key: "tech_risk_analysis"
 }
 };
-    const screen = await renderDetail({ initialTab: "approval", planRevisions: [unboundRevision] });
+    const screen = await renderDetail({ planRevisions: [unboundRevision] });
+    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
 
     await expect.element(screen.getByText("调度顺序")).toBeVisible();
     await expect.element(screen.getByText("tech_risk_analysis")).not.toBeInTheDocument();
@@ -829,7 +891,7 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByText("交付出口")).not.toBeInTheDocument();
   });
 
-  it("keeps plan review read-only on decision-history tab (inbox is the write entry)", async () => {
+  it("keeps plan review read-only in the pipeline plan cell (inbox is the write entry)", async () => {
     const onResolveDecision = vi.fn();
     const templatedRevision: ProjectPlanRevision = {
       ...planRevisions[0],
@@ -859,11 +921,15 @@ describe("ProjectOperationalDetail", () => {
 };
     const screen = await renderDetail({
       decisionRequests: [planReviewDecision],
-      initialTab: "approval",
       onResolveDecision,
       planRevisions: [templatedRevision]
 });
 
+    const planCell = screen.getByTestId("pipeline-stage-plan");
+    await expect
+      .element(planCell.getByText("待收件箱确认 · 点击查看详情"))
+      .toBeVisible();
+    await userEvent.click(planCell);
     await expect
       .element(screen.getByTestId("plan-review-inbox-only"))
       .toBeVisible();
@@ -929,13 +995,13 @@ describe("ProjectOperationalDetail", () => {
       <QueryClientProvider client={queryClient}>
         {detailElement({
           decisionRequests: [planReviewDecision],
-          initialTab: "approval",
           onResolveDecision,
           planRevisions: [revisionA]
 })}
       </QueryClientProvider>,
     );
 
+    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
     await expect
       .element(screen.getByTestId("plan-review-inbox-only"))
       .toBeVisible();
@@ -944,7 +1010,6 @@ describe("ProjectOperationalDetail", () => {
       <QueryClientProvider client={queryClient}>
         {detailElement({
           decisionRequests: [planReviewDecision],
-          initialTab: "approval",
           onResolveDecision,
           planRevisions: [revisionB]
 })}
@@ -982,7 +1047,8 @@ describe("ProjectOperationalDetail", () => {
         ]
 }
 };
-    const screen = await renderDetail({ initialTab: "approval", planRevisions: [blockedByKeysRevision] });
+    const screen = await renderDetail({ planRevisions: [blockedByKeysRevision] });
+    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
     const dispatchOrderText =
       screen.container.querySelector("[data-testid='plan-dispatch-order']")?.textContent ?? "";
     expect(dispatchOrderText.indexOf("收集接入证据")).toBeLessThan(

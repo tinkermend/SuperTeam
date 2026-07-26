@@ -78,13 +78,16 @@ import type {
   WorkspaceReadyStatus
 } from "@/lib/api/projects";
 import {
+  acceptanceStatusLabel,
   decisionStatusLabel,
+  demandStatusLabel,
   dispatchGateStatusLabel,
   projectStatusLabel,
   statusLabel,
   taskStatusLabel,
   workspaceReadyStatusLabel
 } from "@/lib/status-labels";
+import { attentionTone } from "../lib/project-ops-home";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
 import type { ApiClientOptions } from "@/lib/api/client";
 import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
@@ -476,6 +479,17 @@ export function ProjectOperationalDetail({
         </div>
 
         <SoftTabsContent className="m-0 grid min-w-0 gap-4" value="workbench">
+          <ProjectStagePipeline
+            acceptance={acceptance}
+            artifactsCount={artifacts?.length}
+            demands={demands}
+            latestPlanReviewDecision={latestPlanReviewDecision}
+            latestPlanRevision={latestPlanRevision}
+            principalNamesById={principalNamesById}
+            servicePool={servicePool}
+            tasks={tasks}
+          />
+
           <ProjectOpsHome
             artifactsCount={artifacts?.length}
             budgetSummary={budgetSummary}
@@ -642,229 +656,6 @@ export function ProjectOperationalDetail({
         </SoftTabsContent>
 
         <SoftTabsContent className="m-0 grid min-w-0 gap-4" value="approval">
-
-                      <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-plan">
-                        <PanelHeader
-                          icon={<GitBranch />}
-                          title="计划确认"
-                          meta={
-                            latestPlanRevision
-                              ? `v${latestPlanRevision.revision_number}`
-                              : "暂无版本"
-                          }
-                        />
-                        {latestPlanRevision ? (
-                          <div className="grid gap-4 p-4">
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
-                                    {statusLabel(latestPlanRevision.status)}
-                                  </StatusPill>
-                                  {latestPlanRevision.review_required ? (
-                                    <StatusPill tone="warn">需人工复核</StatusPill>
-                                  ) : (
-                                    <StatusPill tone="ok">自动接受</StatusPill>
-                                  )}
-                                </div>
-                                <p className="mt-2 line-clamp-2 text-sm text-ink-2">
-                                  {planRevisionSummary(latestPlanRevision)}
-                                </p>
-                              </div>
-                              {latestPlanReviewDecision ? (
-                                <div
-                                  className="flex shrink-0 flex-col items-end gap-2"
-                                  data-testid="plan-review-inbox-only"
-                                >
-                                  <StatusPill tone="warn">待收件箱处理</StatusPill>
-                                  <p className="max-w-[220px] text-right text-[11px] leading-4 text-ink-3">
-                                    计划确认请在收件箱处理（§6.3 决策历史只读）
-                                  </p>
-                                </div>
-                              ) : null}
-                            </div>
-                            {planRevisionHasBoundTemplate(latestPlanRevision) &&
-                            planRevisionTemplateKey(latestPlanRevision) ? (
-                              <RuntimeMeta
-                                label="场景模板"
-                                value={planRevisionTemplateKey(latestPlanRevision)}
-                              />
-                            ) : null}
-                            {planRevisionHasBoundTemplate(latestPlanRevision) &&
-                            planRevisionExitLabel(latestPlanRevision) ? (
-                              <RuntimeMeta
-                                label="交付出口"
-                                value={planRevisionExitLabel(latestPlanRevision)}
-                              />
-                            ) : null}
-                            <div className="grid gap-3 md:grid-cols-3">
-                              <FactTile
-                                icon={<ClipboardList />}
-                                label="计划任务"
-                                value={`${planRevisionTasks(latestPlanRevision).length} 项`}
-                              />
-                              <FactTile
-                                icon={<Bot />}
-                                label="能力需求"
-                                value={formatShortList(planRevisionCapabilityLabels(latestPlanRevision))}
-                              />
-                              <FactTile
-                                icon={<FileCheck2 />}
-                                label="风险等级"
-                                value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
-                              />
-                            </div>
-                            <div className="grid gap-3">
-                              <div className="grid gap-2" data-testid="plan-dispatch-order">
-                                <div className="flex items-center gap-2 px-1">
-                                  <ClipboardList className="size-4 text-ink-2" />
-                                  <h4 className="text-sm font-semibold text-ink">调度顺序</h4>
-                                </div>
-                                <div className="divide-y divide-line rounded-inner border border-line">
-                                  {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
-                                    (task, index) => (
-                                      <div
-                                        className="grid gap-2 p-3"
-                                        key={`${planRevisionTaskKey(task)}-${index}`}
-                                      >
-                                        <div className="flex items-start justify-between gap-3">
-                                          <p className="min-w-0 text-sm font-medium text-ink">
-                                            {planRevisionTaskTitle(task)}
-                                          </p>
-                                          <StatusPill tone="info">第 {index + 1} 步</StatusPill>
-                                        </div>
-                                        <RuntimeMeta
-                                          label="执行员工"
-                                          value={planRevisionTaskEmployee(
-                                            task,
-                                            servicePool,
-                                            principalNamesById,
-                                          )}
-                                        />
-                                        <RuntimeMeta
-                                          label="选择原因"
-                                          value={
-                                            stringField(task, "employee_selection_reason") ||
-                                            "未说明选择原因"
-                                          }
-                                        />
-                                      </div>
-                                    ),
-                                  )}
-                                  {planRevisionTasks(latestPlanRevision).length === 0 ? (
-                                    <EmptyLine label="计划版本尚未包含可展示任务" />
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              <div className="grid gap-2" data-testid="plan-acceptance-criteria">
-                                <div className="flex items-center gap-2 px-1">
-                                  <FileCheck2 className="size-4 text-ink-2" />
-                                  <h4 className="text-sm font-semibold text-ink">验收判据</h4>
-                                </div>
-                                <div className="divide-y divide-line rounded-inner border border-line">
-                                  {planRevisionAcceptanceCriteria(latestPlanRevision).map(
-                                    (criterion, index) => {
-                                      const criterionId =
-                                        stringField(criterion, "id") || `criterion-${index}`;
-                                      const method =
-                                        planAcceptanceCriterionVerificationMethod(criterion);
-                                      const severity = planAcceptanceCriterionSeverity(criterion);
-                                      const isAmbiguous =
-                                        planAcceptanceCriterionAmbiguityFlag(criterion);
-                                      const evidenceHint =
-                                        planAcceptanceCriterionEvidenceHint(criterion);
-
-                                      return (
-                                        <div className="grid gap-2 p-3" key={`${criterionId}-${index}`}>
-                                          <div className="flex flex-wrap items-center gap-1.5">
-                                            <StatusPill
-                                              data-testid={`plan-acceptance-criterion-method-${criterionId}`}
-                                              showDot={false}
-                                              tone={method === "human_judgment" ? "info" : "mute"}
-                                            >
-                                              {method === "human_judgment" ? "人类判定" : "自动验证"}
-                                            </StatusPill>
-                                            {severity === "non_blocking" ? (
-                                              <StatusPill
-                                                data-testid={`plan-acceptance-criterion-severity-${criterionId}`}
-                                                showDot={false}
-                                                tone="mute"
-                                              >
-                                                非阻断
-                                              </StatusPill>
-                                            ) : null}
-                                          </div>
-                                          <PlanAcceptanceCriterionStatement
-                                            criterionId={criterionId}
-                                            statement={stringField(criterion, "statement")}
-                                          />
-                                          {isAmbiguous ? (
-                                            <p
-                                              className="flex items-center gap-1.5 text-xs font-medium text-warn-text"
-                                              data-testid={`plan-acceptance-criterion-ambiguity-${criterionId}`}
-                                            >
-                                              <AlertTriangle className="size-3.5 shrink-0" />
-                                              断言可能不可判定，请改写后再批准
-                                            </p>
-                                          ) : null}
-                                          {evidenceHint ? (
-                                            <p
-                                              className="text-xs text-ink-3"
-                                              data-testid={`plan-acceptance-criterion-evidence-hint-${criterionId}`}
-                                            >
-                                              证据提示：{evidenceHint}
-                                            </p>
-                                          ) : null}
-                                          <RuntimeMeta
-                                            label="满足任务"
-                                            value={planRevisionCriterionSatisfiedLabel(
-                                              criterion,
-                                              latestPlanRevision,
-                                            )}
-                                          />
-                                        </div>
-                                      );
-                                    },
-                                  )}
-                                  {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
-                                    <EmptyLine label="本计划未声明验收判据" />
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              {planRevisionConstraintNotes(latestPlanRevision).length > 0 ? (
-                                <div className="grid gap-2" data-testid="plan-constraint-notes">
-                                  <div className="flex items-center gap-2 px-1">
-                                    <FileCheck2 className="size-4 text-ink-2" />
-                                    <h4 className="text-sm font-semibold text-ink">约束说明</h4>
-                                  </div>
-                                  <div className="divide-y divide-line rounded-inner border border-line">
-                                    {planRevisionConstraintNotes(latestPlanRevision).map(
-                                      (note, index) => (
-                                        <div
-                                          className="flex items-start gap-2 p-3"
-                                          key={`${note.kind}-${index}`}
-                                        >
-                                          <StatusPill tone={constraintNoteTone(note.kind)}>
-                                            {constraintNoteKindLabel(note.kind)}
-                                          </StatusPill>
-                                          <p className="min-w-0 flex-1 text-xs text-ink-2">
-                                            {note.message}
-                                          </p>
-                                        </div>
-                                      ),
-                                    )}
-                                  </div>
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : (
-                          <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
-                        )}
-                      </SoftCard>
-
           <ProjectApprovalPanel
             decisionRequests={decisionRequests}
             focusDecisionId={focusDecisionId}
@@ -899,6 +690,445 @@ export function ProjectOperationalDetail({
         tasks={tasks}
       />
     </div>
+  );
+}
+
+const pipelineStageCellClass =
+  "flex min-w-0 flex-col rounded-[14px] border border-line bg-card px-3 py-2.5 text-left transition-colors hover:border-brand/40 hover:bg-card-soft focus-visible:outline-2 focus-visible:outline-brand";
+
+/**
+ * 推进管道（IA Phase 2 P2a-2）：把概览里分散的需求状态、计划确认、执行进度、
+ * 结果验收收敛为「需求→计划→执行→结果」四阶段横排格。纯布局与导航重构——
+ * 数据全部来自页面已加载的 queries，不新增接口；三格深链到对应区
+ * （?tab=demands / ?tab=tasks / ?tab=acceptance），计划格就地展开计划确认卡。
+ * 状态色用盯守面 attentionTone（与流程图的权威状态色刻意分工，见 lib 注释）。
+ * 窄视口经 grid 断点降级为纵向堆叠。
+ */
+function ProjectStagePipeline({
+  acceptance,
+  artifactsCount,
+  demands,
+  latestPlanReviewDecision,
+  latestPlanRevision,
+  principalNamesById,
+  servicePool,
+  tasks
+}: {
+  acceptance?: ProjectAcceptanceRecord;
+  artifactsCount?: number;
+  demands: ProjectDemand[];
+  latestPlanReviewDecision?: ProjectDecisionRequest;
+  latestPlanRevision?: ProjectPlanRevision;
+  principalNamesById?: ReadonlyMap<string, string>;
+  servicePool: ProjectMember[];
+  tasks: ProjectTask[];
+}) {
+  const [planOpen, setPlanOpen] = useState(false);
+
+  const latestDemand = demands[0];
+  const failedDemandCount = demands.filter((d) => d.status === "failed").length;
+
+  const visibleTasks = tasks.filter((task) => !task.dismissed_at);
+  const failedTaskCount = visibleTasks.filter((t) => t.status === "failed").length;
+  const runningTaskCount = visibleTasks.filter(
+    (t) => t.status === "running" || t.status === "waiting_human",
+  ).length;
+  const queuedTaskCount = visibleTasks.filter(
+    (t) => t.status === "planned" || t.status === "queued",
+  ).length;
+  const completedTaskCount = visibleTasks.filter(
+    (t) => t.status === "completed",
+  ).length;
+  const executionStatus =
+    failedTaskCount > 0
+      ? "failed"
+      : runningTaskCount > 0
+        ? "running"
+        : queuedTaskCount > 0
+          ? "queued"
+          : completedTaskCount > 0 && completedTaskCount === visibleTasks.length
+            ? "completed"
+            : undefined;
+
+  return (
+    <section className="grid min-w-0 gap-3" data-testid="project-stage-pipeline">
+      <SoftCard className="p-3.5">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-extrabold text-ink">推进管道</h3>
+          <span aria-hidden className="text-[11px] text-ink-3">
+            需求 → 计划 → 执行 → 结果
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <Link
+            className={pipelineStageCellClass}
+            data-testid="pipeline-stage-demands"
+            from="/projects/$projectId"
+            search={{ tab: "demands" }}
+            to="."
+          >
+            <PipelineStageCellBody
+              hint={
+                failedDemandCount > 0
+                  ? `${failedDemandCount} 条失败待处理 →`
+                  : "进入需求流程 →"
+              }
+              label="1 · 需求"
+              meta={demands.length > 0 ? `共 ${demands.length} 条` : "尚未提交需求"}
+              pillLabel={
+                latestDemand ? demandStatusLabel(latestDemand.status) : "暂无需求"
+              }
+              tone={latestDemand ? attentionTone(latestDemand.status) : "mute"}
+            />
+          </Link>
+          <button
+            aria-expanded={planOpen}
+            className={pipelineStageCellClass}
+            data-testid="pipeline-stage-plan"
+            type="button"
+            onClick={() => setPlanOpen((value) => !value)}
+          >
+            <PipelineStageCellBody
+              hint={
+                latestPlanReviewDecision
+                  ? "待收件箱确认 · 点击查看详情"
+                  : planOpen
+                    ? "收起计划确认"
+                    : "展开计划确认"
+              }
+              label="2 · 计划"
+              meta={
+                latestPlanRevision
+                  ? `计划 v${latestPlanRevision.revision_number}`
+                  : "暂无计划版本"
+              }
+              pillLabel={
+                latestPlanRevision ? statusLabel(latestPlanRevision.status) : "未生成"
+              }
+              tone={
+                latestPlanRevision ? attentionTone(latestPlanRevision.status) : "mute"
+              }
+            />
+          </button>
+          <Link
+            className={pipelineStageCellClass}
+            data-testid="pipeline-stage-execution"
+            from="/projects/$projectId"
+            search={{ tab: "tasks" }}
+            to="."
+          >
+            <PipelineStageCellBody
+              hint={
+                failedTaskCount > 0
+                  ? `${failedTaskCount} 项失败待处理 →`
+                  : "进入任务列表 →"
+              }
+              label="3 · 执行"
+              meta={
+                visibleTasks.length > 0
+                  ? `执行中 ${runningTaskCount} · 共 ${visibleTasks.length} 项`
+                  : "尚无执行任务"
+              }
+              pillLabel={executionStatus ? taskStatusLabel(executionStatus) : "暂无任务"}
+              tone={executionStatus ? attentionTone(executionStatus) : "mute"}
+            />
+          </Link>
+          <Link
+            className={pipelineStageCellClass}
+            data-testid="pipeline-stage-results"
+            from="/projects/$projectId"
+            search={{ tab: "acceptance" }}
+            to="."
+          >
+            <PipelineStageCellBody
+              hint="查看验收与交付物 →"
+              label="4 · 结果"
+              meta={artifactsCount != null ? `工件 ${artifactsCount} 项` : "工件 —"}
+              pillLabel={
+                acceptance ? acceptanceStatusLabel(acceptance.status) : "未验收"
+              }
+              tone={acceptance ? attentionTone(acceptance.status) : "mute"}
+            />
+          </Link>
+        </div>
+      </SoftCard>
+      {planOpen ? (
+        <PlanConfirmationCard
+          latestPlanReviewDecision={latestPlanReviewDecision}
+          latestPlanRevision={latestPlanRevision}
+          principalNamesById={principalNamesById}
+          servicePool={servicePool}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function PipelineStageCellBody({
+  hint,
+  label,
+  meta,
+  pillLabel,
+  tone
+}: {
+  hint: string;
+  label: string;
+  meta: string;
+  pillLabel: string;
+  tone: Tone;
+}) {
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-bold text-ink-3">{label}</span>
+        <StatusPill tone={tone}>{pillLabel}</StatusPill>
+      </div>
+      <p className="mt-1.5 truncate text-[13px] font-extrabold tabular-nums text-ink">
+        {meta}
+      </p>
+      <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{hint}</p>
+    </>
+  );
+}
+
+/**
+ * 计划确认卡（07-22 概览重构延后的计划确认业务逻辑，IA P2a-2 搬入推进管道
+ * 「计划」格展开区）：最新计划版本状态 + 调度顺序 + 验收判据 + 约束说明。
+ * 计划确认的批准/驳回写入口仍在收件箱（spec §6.3 项目侧只读），此处只读呈现。
+ */
+function PlanConfirmationCard({
+  latestPlanReviewDecision,
+  latestPlanRevision,
+  principalNamesById,
+  servicePool
+}: {
+  latestPlanReviewDecision?: ProjectDecisionRequest;
+  latestPlanRevision?: ProjectPlanRevision;
+  principalNamesById?: ReadonlyMap<string, string>;
+  servicePool: ProjectMember[];
+}) {
+  return (
+    <SoftCard className="overflow-hidden scroll-mt-20" id="project-overview-plan">
+      <PanelHeader
+        icon={<GitBranch />}
+        title="计划确认"
+        meta={
+          latestPlanRevision
+            ? `v${latestPlanRevision.revision_number}`
+            : "暂无版本"
+        }
+      />
+      {latestPlanRevision ? (
+        <div className="grid gap-4 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill tone={planRevisionTone(latestPlanRevision.status)}>
+                  {statusLabel(latestPlanRevision.status)}
+                </StatusPill>
+                {latestPlanRevision.review_required ? (
+                  <StatusPill tone="warn">需人工复核</StatusPill>
+                ) : (
+                  <StatusPill tone="ok">自动接受</StatusPill>
+                )}
+              </div>
+              <p className="mt-2 line-clamp-2 text-sm text-ink-2">
+                {planRevisionSummary(latestPlanRevision)}
+              </p>
+            </div>
+            {latestPlanReviewDecision ? (
+              <div
+                className="flex shrink-0 flex-col items-end gap-2"
+                data-testid="plan-review-inbox-only"
+              >
+                <StatusPill tone="warn">待收件箱处理</StatusPill>
+                <p className="max-w-[220px] text-right text-[11px] leading-4 text-ink-3">
+                  计划确认请在收件箱处理（§6.3 项目侧只读）
+                </p>
+              </div>
+            ) : null}
+          </div>
+          {planRevisionHasBoundTemplate(latestPlanRevision) &&
+          planRevisionTemplateKey(latestPlanRevision) ? (
+            <RuntimeMeta
+              label="场景模板"
+              value={planRevisionTemplateKey(latestPlanRevision)}
+            />
+          ) : null}
+          {planRevisionHasBoundTemplate(latestPlanRevision) &&
+          planRevisionExitLabel(latestPlanRevision) ? (
+            <RuntimeMeta
+              label="交付出口"
+              value={planRevisionExitLabel(latestPlanRevision)}
+            />
+          ) : null}
+          <div className="grid gap-3 md:grid-cols-3">
+            <FactTile
+              icon={<ClipboardList />}
+              label="计划任务"
+              value={`${planRevisionTasks(latestPlanRevision).length} 项`}
+            />
+            <FactTile
+              icon={<Bot />}
+              label="能力需求"
+              value={formatShortList(planRevisionCapabilityLabels(latestPlanRevision))}
+            />
+            <FactTile
+              icon={<FileCheck2 />}
+              label="风险等级"
+              value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
+            />
+          </div>
+          <div className="grid gap-3">
+            <div className="grid gap-2" data-testid="plan-dispatch-order">
+              <div className="flex items-center gap-2 px-1">
+                <ClipboardList className="size-4 text-ink-2" />
+                <h4 className="text-sm font-semibold text-ink">调度顺序</h4>
+              </div>
+              <div className="divide-y divide-line rounded-inner border border-line">
+                {planRevisionTasksInDispatchOrder(latestPlanRevision).map(
+                  (task, index) => (
+                    <div
+                      className="grid gap-2 p-3"
+                      key={`${planRevisionTaskKey(task)}-${index}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="min-w-0 text-sm font-medium text-ink">
+                          {planRevisionTaskTitle(task)}
+                        </p>
+                        <StatusPill tone="info">第 {index + 1} 步</StatusPill>
+                      </div>
+                      <RuntimeMeta
+                        label="执行员工"
+                        value={planRevisionTaskEmployee(
+                          task,
+                          servicePool,
+                          principalNamesById,
+                        )}
+                      />
+                      <RuntimeMeta
+                        label="选择原因"
+                        value={
+                          stringField(task, "employee_selection_reason") ||
+                          "未说明选择原因"
+                        }
+                      />
+                    </div>
+                  ),
+                )}
+                {planRevisionTasks(latestPlanRevision).length === 0 ? (
+                  <EmptyLine label="计划版本尚未包含可展示任务" />
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid gap-2" data-testid="plan-acceptance-criteria">
+              <div className="flex items-center gap-2 px-1">
+                <FileCheck2 className="size-4 text-ink-2" />
+                <h4 className="text-sm font-semibold text-ink">验收判据</h4>
+              </div>
+              <div className="divide-y divide-line rounded-inner border border-line">
+                {planRevisionAcceptanceCriteria(latestPlanRevision).map(
+                  (criterion, index) => {
+                    const criterionId =
+                      stringField(criterion, "id") || `criterion-${index}`;
+                    const method =
+                      planAcceptanceCriterionVerificationMethod(criterion);
+                    const severity = planAcceptanceCriterionSeverity(criterion);
+                    const isAmbiguous =
+                      planAcceptanceCriterionAmbiguityFlag(criterion);
+                    const evidenceHint =
+                      planAcceptanceCriterionEvidenceHint(criterion);
+
+                    return (
+                      <div className="grid gap-2 p-3" key={`${criterionId}-${index}`}>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusPill
+                            data-testid={`plan-acceptance-criterion-method-${criterionId}`}
+                            showDot={false}
+                            tone={method === "human_judgment" ? "info" : "mute"}
+                          >
+                            {method === "human_judgment" ? "人类判定" : "自动验证"}
+                          </StatusPill>
+                          {severity === "non_blocking" ? (
+                            <StatusPill
+                              data-testid={`plan-acceptance-criterion-severity-${criterionId}`}
+                              showDot={false}
+                              tone="mute"
+                            >
+                              非阻断
+                            </StatusPill>
+                          ) : null}
+                        </div>
+                        <PlanAcceptanceCriterionStatement
+                          criterionId={criterionId}
+                          statement={stringField(criterion, "statement")}
+                        />
+                        {isAmbiguous ? (
+                          <p
+                            className="flex items-center gap-1.5 text-xs font-medium text-warn-text"
+                            data-testid={`plan-acceptance-criterion-ambiguity-${criterionId}`}
+                          >
+                            <AlertTriangle className="size-3.5 shrink-0" />
+                            断言可能不可判定，请改写后再批准
+                          </p>
+                        ) : null}
+                        {evidenceHint ? (
+                          <p
+                            className="text-xs text-ink-3"
+                            data-testid={`plan-acceptance-criterion-evidence-hint-${criterionId}`}
+                          >
+                            证据提示：{evidenceHint}
+                          </p>
+                        ) : null}
+                        <RuntimeMeta
+                          label="满足任务"
+                          value={planRevisionCriterionSatisfiedLabel(
+                            criterion,
+                            latestPlanRevision,
+                          )}
+                        />
+                      </div>
+                    );
+                  },
+                )}
+                {planRevisionAcceptanceCriteria(latestPlanRevision).length === 0 ? (
+                  <EmptyLine label="本计划未声明验收判据" />
+                ) : null}
+              </div>
+            </div>
+
+            {planRevisionConstraintNotes(latestPlanRevision).length > 0 ? (
+              <div className="grid gap-2" data-testid="plan-constraint-notes">
+                <div className="flex items-center gap-2 px-1">
+                  <FileCheck2 className="size-4 text-ink-2" />
+                  <h4 className="text-sm font-semibold text-ink">约束说明</h4>
+                </div>
+                <div className="divide-y divide-line rounded-inner border border-line">
+                  {planRevisionConstraintNotes(latestPlanRevision).map(
+                    (note, index) => (
+                      <div
+                        className="flex items-start gap-2 p-3"
+                        key={`${note.kind}-${index}`}
+                      >
+                        <StatusPill tone={constraintNoteTone(note.kind)}>
+                          {constraintNoteKindLabel(note.kind)}
+                        </StatusPill>
+                        <p className="min-w-0 flex-1 text-xs text-ink-2">
+                          {note.message}
+                        </p>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <EmptyLine label="暂无计划，提交需求后由系统生成下一步计划。" />
+      )}
+    </SoftCard>
   );
 }
 

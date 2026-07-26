@@ -92,23 +92,37 @@ export function taskActivityAt(
  * 与 flow-graph/inspector-primitives 的权威 `taskStatusTone`（状态色语义，
  * running=info）是刻意分工的两套色系，不要互相收敛；状态呈现（流程图节点、
  * 任务弹层、列表 pill）用权威版，扫视/盯守面（脉搏芯片、工作台行）用本函数。
- * 除任务状态外也覆盖决策快照状态（resolved/approved/pending/rejected）。
+ * 除任务状态外也覆盖决策快照状态（resolved/approved/pending/rejected）、
+ * 需求状态（submitted/executing/acceptance_pending…）、计划版本状态
+ * （pending_review/accepted/decomposed…）与验收结论状态——推进管道四阶段格
+ * 与脉搏共用这一套盯守色。
  */
 export function attentionTone(status: string): OpsPulseChip["statusTone"] {
   switch (status) {
     case "completed":
     case "resolved":
     case "approved":
+    case "accepted":
+    case "decomposed":
       return "ok";
     case "running":
     case "waiting_human":
     case "pending":
+    case "pending_review":
+    case "executing":
+    case "acceptance_pending":
+    case "needs_more_evidence":
+    case "partially_accepted":
       return "warn";
     case "planned":
     case "queued":
+    case "submitted":
+    case "planning_pending":
+    case "decomposing":
       return "info";
     case "failed":
     case "rejected":
+    case "validation_failed":
       return "danger";
     default:
       return "mute";

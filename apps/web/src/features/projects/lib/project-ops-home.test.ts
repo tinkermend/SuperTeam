@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDemand, ProjectEvent, ProjectTask } from "@/lib/api/projects";
 import {
+  attentionTone,
   buildWeekPulse,
   filterOpsEvents,
   resolveTaskMode,
@@ -32,6 +33,26 @@ const task = (overrides: Partial<ProjectTask> = {}): ProjectTask => ({
 });
 
 describe("project-ops-home helpers", () => {
+  it("maps demand/plan/acceptance statuses onto attention tones for the stage pipeline", () => {
+    // 需求状态
+    expect(attentionTone("submitted")).toBe("info");
+    expect(attentionTone("planning_pending")).toBe("info");
+    expect(attentionTone("executing")).toBe("warn");
+    expect(attentionTone("acceptance_pending")).toBe("warn");
+    // 计划版本状态
+    expect(attentionTone("pending_review")).toBe("warn");
+    expect(attentionTone("accepted")).toBe("ok");
+    expect(attentionTone("decomposed")).toBe("ok");
+    expect(attentionTone("validation_failed")).toBe("danger");
+    // 验收结论状态
+    expect(attentionTone("needs_more_evidence")).toBe("warn");
+    expect(attentionTone("partially_accepted")).toBe("warn");
+    // 既有任务/决策语义不回归
+    expect(attentionTone("running")).toBe("warn");
+    expect(attentionTone("failed")).toBe("danger");
+    expect(attentionTone("recorded")).toBe("mute");
+  });
+
   it("resolves coordination mode from demand", () => {
     const demands = new Map([
       ["demand-1", demand({ coordination_mode: "loop" })],
