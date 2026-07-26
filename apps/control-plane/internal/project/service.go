@@ -5111,7 +5111,7 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 			TargetUserID:      projectRecord.HumanOwnerUserID,
 			DecisionType:      projectTaskHumanWaitDecisionType(reason),
 			TitleSnapshot:     task.Title,
-			SummarySnapshot:   req.FailureSummary,
+			SummarySnapshot:   humanReadableFailureSummary(req.FailureFamily, req.FailureSummary),
 			RiskLevelSnapshot: stringValue(task.RiskLevel),
 			StatusSnapshot:    "pending",
 			CreatedEventID:    &result.Event.ID,
@@ -5149,6 +5149,33 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 		return nil, err
 	}
 	return &result.Task, nil
+}
+
+// humanReadableFailureSummary frames a runtime/provider failure for a human
+// card: a Chinese lead derived from the failure family, with the raw failure
+// text kept as the detail after it (G8: cards must lead with a readable
+// reason, but the operator still needs the original error to act on it).
+func humanReadableFailureSummary(failureFamily, raw string) string {
+	var lead string
+	switch failureFamily {
+	case FailureFamilyTransientProvider, FailureFamilyProviderStart:
+		lead = "执行器启动或运行失败"
+	case FailureFamilyProviderConfig:
+		lead = "执行器配置有误"
+	case FailureFamilyTimeout, FailureFamilyRuntimeStartTimeout:
+		lead = "执行超时"
+	case FailureFamilyTransientRuntime, FailureFamilyRuntimeLeaseLost, FailureFamilyDispatchTransient:
+		lead = "执行环境暂时不可用"
+	case FailureFamilyInvalidContract:
+		lead = "执行结果不符合交付契约"
+	default:
+		lead = "任务执行失败"
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return lead
+	}
+	return lead + "：" + raw
 }
 
 func (s *Service) WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHumanProjectTaskAttemptRequest) (*ProjectTask, error) {
@@ -6289,6 +6316,15 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		if decision.StatusSnapshot == req.Decision {
 			if err := s.resolveProjectTaskWaitDecision(ctx, decision, req); err != nil {
 				return nil, err
+			}
+			// Self-heal: re-project the already-resolved decision so an inbox
+			// card that missed the resolution projection (e.g. a historical
+			// zombie left open by an unmapped resolution verb) converges to
+			// resolved on the retry instead of failing "projection not applied".
+			if s.inbox != nil {
+				if err := s.inbox.ResolveProjectDecisionRequest(ctx, decision); err != nil {
+					return nil, err
+				}
 			}
 			return &decision, nil
 		}

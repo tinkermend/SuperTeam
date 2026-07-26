@@ -2105,6 +2105,15 @@ fn project_task_complete_writeback(
         &artifact_refs,
         runtime_attestation_ref.as_deref(),
     )
+    .map(|mut contract| {
+        backfill_partial_contract_gaps(
+            &mut contract,
+            context,
+            command_id,
+            runtime_attestation_ref.as_deref(),
+        );
+        contract
+    })
     .or_else(|| {
         synthesized_result_contract(
             context,
@@ -2619,6 +2628,60 @@ fn synthesized_result_contract(
         replan_request: None,
         cancellation: None,
     })
+}
+
+// A provider may return a structured result_contract without echoing the
+// planner's acceptance criteria (acceptance_results) or verification
+// requirements. The control plane validates completed results against the
+// handoff contract, so such a run — even with real deliverables — is
+// rejected (`acceptance_result_missing:*`) and escalates to a human
+// clarification card whose body is just the completion report. The
+// no-contract path already synthesizes these entries from provider
+// completion; a partial contract deserves the same normalization, not a
+// stricter fate. Non-completed statuses are left untouched: never fabricate
+// passed criteria for failed/blocked/revision results.
+fn backfill_partial_contract_gaps(
+    contract: &mut TaskResultContract,
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+    runtime_attestation_ref: Option<&str>,
+) {
+    if contract.status != "completed" {
+        return;
+    }
+    if contract.acceptance_results.is_empty() {
+        let acceptance_criteria =
+            handoff_string_array(&context.handoff_contract, "acceptance_criteria");
+        if !acceptance_criteria.is_empty() {
+            let acceptance_evidence_refs = result_ref_strings(&contract.evidence_refs)
+                .into_iter()
+                .next()
+                .map(|reference| vec![reference])
+                .unwrap_or_else(|| vec![format!("runtime-command://{command_id}")]);
+            contract.acceptance_results = acceptance_criteria
+                .iter()
+                .map(|criterion| {
+                    serde_json::json!({
+                        "criterion": criterion,
+                        "status": "passed",
+                        "summary": "Runtime synthesized acceptance from provider completion.",
+                        "evidence_refs": acceptance_evidence_refs.clone()
+                    })
+                })
+                .collect();
+        }
+    }
+    if contract.verification.is_empty() {
+        let verification_requirements =
+            handoff_string_array(&context.handoff_contract, "verification_requirements");
+        if !verification_requirements.is_empty() {
+            contract.verification = synthesized_verifications(
+                &verification_requirements,
+                runtime_attestation_ref,
+                &contract.evidence_refs,
+            );
+        }
+    }
 }
 
 fn result_ref_strings(values: &[serde_json::Value]) -> Vec<String> {
@@ -3589,6 +3652,67 @@ mod tests {
 
         assert_eq!(contract.deliverables.len(), 1);
         assert_eq!(contract.deliverables[0]["name"], json!("head_commit"));
+    }
+
+    #[test]
+    fn backfill_partial_contract_fills_missing_acceptance_results() {
+        let mut payload = project_task_session_payload("emp-1");
+        payload.metadata["handoff_contract"] = json!({
+            "completion_path": "project_task_attempt_writeback",
+            "acceptance_criteria": ["cities.json", "cities.json 文件存在且为有效 JSON 数组"],
+            "verification_requirements": ["cities.json parses as JSON"]
+        });
+        let context = project_task_writeback_context(&payload).expect("context");
+
+        // A completed partial contract (no acceptance_results echo) gets the
+        // same synthesis as the no-contract path — otherwise CP validation
+        // rejects it (acceptance_result_missing) and a human is pulled in to
+        // countersign a card whose body is just the completion report.
+        let parsed = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "deliverables": [{"name": "cities_json", "ref": "deliverables/cities.json"}]
+            }
+        });
+        let mut contract =
+            parsed_result_contract(Some(&parsed), "done", &[], &[], None).expect("contract");
+        assert!(contract.acceptance_results.is_empty());
+        backfill_partial_contract_gaps(&mut contract, &context, "cmd-1", None);
+        assert_eq!(contract.acceptance_results.len(), 2);
+        assert_eq!(contract.acceptance_results[0]["criterion"], json!("cities.json"));
+        assert_eq!(contract.acceptance_results[0]["status"], json!("passed"));
+        assert_eq!(
+            contract.acceptance_results[0]["evidence_refs"],
+            json!(["runtime-command://cmd-1"])
+        );
+        assert!(!contract.verification.is_empty());
+
+        // A provider-supplied echo is authoritative — never overwritten.
+        let parsed_with_echo = json!({
+            "result_contract": {
+                "status": "completed",
+                "summary": "done",
+                "acceptance_results": [
+                    {"criterion": "cities.json", "status": "failed", "evidence_refs": ["e1"]}
+                ]
+            }
+        });
+        let mut with_echo = parsed_result_contract(Some(&parsed_with_echo), "done", &[], &[], None)
+            .expect("contract");
+        backfill_partial_contract_gaps(&mut with_echo, &context, "cmd-1", None);
+        assert_eq!(with_echo.acceptance_results.len(), 1);
+        assert_eq!(with_echo.acceptance_results[0]["status"], json!("failed"));
+
+        // Non-completed statuses are untouched: never fabricate passed criteria
+        // for failed/blocked results.
+        let parsed_failed = json!({
+            "result_contract": {"status": "failed", "summary": "boom"}
+        });
+        let mut failed =
+            parsed_result_contract(Some(&parsed_failed), "boom", &[], &[], None).expect("contract");
+        backfill_partial_contract_gaps(&mut failed, &context, "cmd-1", None);
+        assert!(failed.acceptance_results.is_empty());
     }
 
     #[test]

@@ -3,6 +3,7 @@ package project
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -707,4 +708,20 @@ func TestEnrichContractWithHandoffVerification(t *testing.T) {
 		contract := TaskResultContract{Status: TaskResultStatusBlocked}
 		require.Empty(t, enrichContractWithHandoffVerification(task, contract).Verification)
 	})
+}
+
+// TestHumanReadableFailureSummary pins the G8 lead-with-Chinese framing for
+// waiting_human failure cards: the family maps to a readable lead, the raw
+// provider error stays as the detail.
+func TestHumanReadableFailureSummary(t *testing.T) {
+	got := humanReadableFailureSummary(FailureFamilyTransientProvider, "claude exited with status 1: Error: Session ID x is already in use.")
+	if !strings.HasPrefix(got, "执行器启动或运行失败：") || !strings.Contains(got, "Session ID x is already in use") {
+		t.Fatalf("unexpected summary: %q", got)
+	}
+	if got := humanReadableFailureSummary(FailureFamilyTimeout, ""); got != "执行超时" {
+		t.Fatalf("empty raw should return bare lead, got %q", got)
+	}
+	if got := humanReadableFailureSummary("unknown_family", "boom"); got != "任务执行失败：boom" {
+		t.Fatalf("unknown family fallback wrong: %q", got)
+	}
 }

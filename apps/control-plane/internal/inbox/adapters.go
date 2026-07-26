@@ -366,29 +366,22 @@ func statusFromApproval(status approval.ApprovalStatus) Status {
 }
 
 func statusFromDecisionSnapshot(status string) Status {
-	// Plan-review request_changes resolves the decision request (the replan
-	// opens a fresh one), so the inbox item must not stay open.
-	if status == project.PlanReviewDecisionRequestChanges {
-		return StatusResolved
-	}
-	// planning_gap restaffed/exempted likewise resolve the decision — the demand
-	// is reopened and a fresh planning cycle (with its own review) begins.
-	if status == project.PlanningGapDecisionRestaffed || status == project.PlanningGapDecisionExempted {
-		return StatusResolved
-	}
-	// task_failure_recovery explicit actions also close the card.
-	if status == "retry" || status == "cancel_downstream" || status == "reassign" {
-		return StatusResolved
-	}
-	switch approval.ApprovalStatus(status) {
-	case approval.ApprovalStatusPending:
+	// status_snapshot is dual-meaning by design: "pending" while open, then the
+	// resolving human-decision verb (approved / rejected / request_changes /
+	// restaffed / exempted / retry / reassign / retry_planning / close_demand /
+	// ...) once resolved. This function used to enumerate the resolution verbs
+	// and default unknown ones to open — every new verb that missed the list
+	// (§5.5's retry_planning/close_demand did) produced a zombie open card whose
+	// actions then 500 ("inbox projection not applied"). Invert the mapping:
+	// only pending means open, cancelled stays cancelled, and any other
+	// non-empty snapshot is by construction a resolution.
+	switch approval.ApprovalStatus(strings.TrimSpace(status)) {
+	case "", approval.ApprovalStatusPending:
 		return StatusOpen
 	case approval.ApprovalStatusCancelled:
 		return StatusCancelled
-	case approval.ApprovalStatusApproved, approval.ApprovalStatusRejected, approval.ApprovalStatusNeedsMoreEvidence:
-		return StatusResolved
 	default:
-		return StatusOpen
+		return StatusResolved
 	}
 }
 

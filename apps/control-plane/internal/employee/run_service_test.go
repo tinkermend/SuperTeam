@@ -3111,3 +3111,29 @@ func TestGetRunCalendarRejectsInvalidWindow(t *testing.T) {
 		})
 	}
 }
+
+// TestStandaloneDispatchCommandTypeResumesAnyRunKindWithSession pins the fix
+// for the task-retry session death loop: ANY run carrying a prior
+// provider_session_id (chat follow-up OR project task lineage resume) must
+// dispatch resume_session — start_session would spawn
+// `claude --session-id <id>` to create a session with an already-used id,
+// which the provider rejects ("Session ID already in use") on every retry.
+func TestStandaloneDispatchCommandTypeResumesAnyRunKindWithSession(t *testing.T) {
+	withSession := map[string]any{"provider_session_id": "d57a0da7-4058-4a5f-bb0a-7c5ad5512019"}
+	cases := []struct {
+		name string
+		req  CreateDigitalEmployeeRunRequest
+		want string
+	}{
+		{"chat with session", CreateDigitalEmployeeRunRequest{RunKind: RunKindChat, Metadata: withSession}, "resume_session"},
+		{"task with session", CreateDigitalEmployeeRunRequest{RunKind: RunKindTask, Metadata: withSession}, "resume_session"},
+		{"task without session", CreateDigitalEmployeeRunRequest{RunKind: RunKindTask, Metadata: map[string]any{}}, "start_session"},
+		{"task blank session", CreateDigitalEmployeeRunRequest{RunKind: RunKindTask, Metadata: map[string]any{"provider_session_id": "  "}}, "start_session"},
+		{"chat without session", CreateDigitalEmployeeRunRequest{RunKind: RunKindChat}, "start_session"},
+	}
+	for _, tc := range cases {
+		if got := standaloneDispatchCommandType(tc.req); got != tc.want {
+			t.Fatalf("%s: expected %s, got %s", tc.name, tc.want, got)
+		}
+	}
+}

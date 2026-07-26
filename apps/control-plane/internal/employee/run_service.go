@@ -572,26 +572,26 @@ type teamConstitutionReader interface {
 }
 
 // standaloneDispatchCommandType picks the runtime command type for the
-// standalone (chat/workbench) dispatch path handled by dispatchStartSession.
-// A chat follow-up (RunKind==RunKindChat) carries the prior turn's live
-// provider_session_id in req.Metadata (injected by CreateRun's resume
-// validation above) — dispatching that as "start_session" would make the
-// runtime executor spawn `claude --session-id <id>` to *create* a session
-// with an already-used id, which the provider rejects. "resume_session"
-// tells the runtime to continue the existing session instead (see
+// dispatch path handled by dispatchStartSession. Any run that carries a
+// prior provider_session_id in req.Metadata is a session continuation:
+// chat follow-ups (injected by CreateRun's resume validation) and project
+// task lineage resume (StartProjectTaskRun via FindProviderSessionForTaskRoot,
+// covering retries and revision tasks). Dispatching those as "start_session"
+// would make the runtime executor spawn `claude --session-id <id>` to
+// *create* a session with an already-used id, which the provider rejects
+// ("Session ID already in use") — on a retry this loops forever because
+// every attempt re-injects the same lineage session. "resume_session" tells
+// the runtime to continue the existing session instead (see
 // apps/runtime-agent/src/commands/executor.rs: continue_session is true only
 // for ResumeSession/SendInput).
 //
-// Scoped to RunKind==RunKindChat only: StartProjectTaskRun's task-lineage
-// resume (run_service.go, projectTaskRunMetadata/FindProviderSessionForTaskRoot)
-// also injects provider_session_id but always dispatches via RunKind ==
-// RunKindTask, and its own start_session-vs-resume_session gap is left
-// untouched here — same latent bug, but out of scope for this fix.
+// Known trade-off: if the recorded session's local state was pruned (LRU
+// cleanup) or the attempt lands on a different node, resume fails fast with
+// "no conversation found" instead of silently starting an unrelated session
+// under the lineage id — an honest failure surfaced to task_failure_recovery.
 func standaloneDispatchCommandType(req CreateDigitalEmployeeRunRequest) string {
-	if req.RunKind == RunKindChat {
-		if sessionID, ok := req.Metadata["provider_session_id"].(string); ok && strings.TrimSpace(sessionID) != "" {
-			return "resume_session"
-		}
+	if sessionID, ok := req.Metadata["provider_session_id"].(string); ok && strings.TrimSpace(sessionID) != "" {
+		return "resume_session"
 	}
 	return "start_session"
 }

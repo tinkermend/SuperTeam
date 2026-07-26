@@ -3973,16 +3973,17 @@ func (s *ProjectStore) MarkDemandPlanningFailed(ctx context.Context, input MarkD
 	if s.repository == nil {
 		return ErrActivityStoreRequired
 	}
-	diagnosis := strings.TrimSpace(input.Diagnosis)
-	if diagnosis == "" {
-		diagnosis = "需求规划失败（规划器超时或上游错误），请重新规划、补员后重试，或关闭需求。"
-	}
+	rawDiagnosis := strings.TrimSpace(input.Diagnosis)
+	// G8: the workflow hands over the raw planner failure (an English Temporal
+	// activity-error dump). Cards and events carry a clean Chinese reason; the
+	// raw text survives as diagnosis_raw evidence in the payloads below.
+	diagnosis := humanizePlanningFailureReason(rawDiagnosis) + "，请重新规划、补员后重试，或关闭需求。"
 	if err := s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, input.DemandID, project.ProjectDemandStatusPlanningFailed); err != nil {
 		return err
 	}
 	var decisionRequestID uuid.UUID
 	if s.approvals != nil {
-		id, err := s.ensurePlanningFailedDecision(ctx, input, diagnosis)
+		id, err := s.ensurePlanningFailedDecision(ctx, input, diagnosis, rawDiagnosis)
 		if err != nil {
 			return err
 		}
@@ -3992,6 +3993,9 @@ func (s *ProjectStore) MarkDemandPlanningFailed(ctx context.Context, input MarkD
 		"demand_id":          input.DemandID.String(),
 		"reason_code":        "planning_failed",
 		"recommended_action": "重新规划、补员后重试，或关闭需求",
+	}
+	if rawDiagnosis != "" {
+		payload["diagnosis_raw"] = rawDiagnosis
 	}
 	if decisionRequestID != uuid.Nil {
 		payload["decision_request_id"] = decisionRequestID.String()
@@ -4018,7 +4022,30 @@ const (
 	planningFailedResourceType = "project_demand_planning_failed"
 )
 
-func (s *ProjectStore) ensurePlanningFailedDecision(ctx context.Context, input MarkDemandPlanningFailedInput, diagnosis string) (uuid.UUID, error) {
+// humanizePlanningFailureReason maps a raw planner failure (usually an English
+// Temporal activity-error dump) to a clean user-facing Chinese reason (G8:
+// user-visible cards and events must not carry raw technical dumps). The raw
+// text is preserved separately as diagnosis_raw evidence; classification only
+// affects presentation, never routing.
+func humanizePlanningFailureReason(raw string) string {
+	lower := strings.ToLower(raw)
+	switch {
+	case raw == "":
+		return "规划器调用失败"
+	case strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "context deadline"):
+		return "规划器响应超时"
+	case strings.Contains(lower, "invalid route decision"):
+		return "规划器给出的执行路由无效"
+	case strings.Contains(lower, "decode") || strings.Contains(lower, "unmarshal") ||
+		strings.Contains(lower, "invalid uuid") || strings.Contains(lower, "unexpected eof") ||
+		strings.Contains(lower, "parse"):
+		return "规划器输出无法解析"
+	default:
+		return "规划器调用失败"
+	}
+}
+
+func (s *ProjectStore) ensurePlanningFailedDecision(ctx context.Context, input MarkDemandPlanningFailedInput, diagnosis, rawDiagnosis string) (uuid.UUID, error) {
 	existing, err := s.approvals.GetRequestByResource(ctx, input.TenantID, planningFailedResourceType, input.DemandID)
 	if err != nil && !errors.Is(err, approval.ErrApprovalNotFound) {
 		return uuid.Nil, err
@@ -4031,11 +4058,19 @@ func (s *ProjectStore) ensurePlanningFailedDecision(ctx context.Context, input M
 		return uuid.Nil, err
 	}
 	targetUserID := projectRecord.HumanOwnerUserID
+	// §4.3: a demand-layer card's identity is the demand title; the failure
+	// reason lives in summary/why, never in the title.
 	title := "规划失败：" + truncateRunes(diagnosis, 80)
+	if demand, demandErr := s.repository.GetProjectDemand(ctx, input.TenantID, input.DemandID); demandErr == nil && strings.TrimSpace(demand.Title) != "" {
+		title = "规划失败 · " + truncateRunes(strings.TrimSpace(demand.Title), 80)
+	}
 	contextPayload := map[string]any{
 		"demand_id": input.DemandID.String(),
 		"diagnosis": diagnosis,
 		"why":       diagnosis,
+	}
+	if rawDiagnosis != "" {
+		contextPayload["diagnosis_raw"] = rawDiagnosis
 	}
 	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
 		TenantID:       input.TenantID,

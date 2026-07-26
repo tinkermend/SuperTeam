@@ -8035,3 +8035,26 @@ func TestProjectStoreDispatchProjectTaskBlocksWhenTokenBudgetExhausted(t *testin
 	require.Contains(t, blockers, "budget.token_exhausted")
 	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskDispatched))
 }
+
+// TestHumanizePlanningFailureReason pins the G8 classification: raw planner
+// activity errors (English dumps) map to clean Chinese reasons for cards and
+// events; the raw text is preserved separately as diagnosis_raw.
+func TestHumanizePlanningFailureReason(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"", "规划器调用失败"},
+		{"activity error (type: PlanDemandRoute): context deadline exceeded", "规划器响应超时"},
+		{"activity StartToClose timeout", "规划器响应超时"},
+		{"invalid route decision: task \"x\": selected_employee_id 0000 is not in the active executor pool", "规划器给出的执行路由无效"},
+		{"planner response decode failed: invalid UUID length: 0", "规划器输出无法解析"},
+		{"unexpected EOF", "规划器输出无法解析"},
+		{"some brand new failure mode", "规划器调用失败"},
+	}
+	for _, tc := range cases {
+		if got := humanizePlanningFailureReason(tc.raw); got != tc.want {
+			t.Fatalf("raw %q: expected %q, got %q", tc.raw, tc.want, got)
+		}
+	}
+}

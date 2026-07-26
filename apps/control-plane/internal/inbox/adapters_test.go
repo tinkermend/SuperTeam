@@ -965,3 +965,35 @@ func (r *projectActionRepository) ResolveDecisionRequest(_ context.Context, req 
 	resolved.ResolvedAt = &now
 	return resolved, nil
 }
+
+// TestStatusFromDecisionSnapshotResolutionVerbs pins the inverted mapping: the
+// snapshot is dual-meaning (pending → resolution verb), so only pending maps to
+// open and cancelled to cancelled — every other non-empty verb is a resolution.
+// The old verb enumeration defaulted unknown verbs to open, which left §5.5's
+// retry_planning/close_demand cards open forever (zombie card + 500 on action).
+func TestStatusFromDecisionSnapshotResolutionVerbs(t *testing.T) {
+	open := []string{"pending", "", "  "}
+	for _, status := range open {
+		if got := statusFromDecisionSnapshot(status); got != StatusOpen {
+			t.Fatalf("status %q: expected open, got %s", status, got)
+		}
+	}
+	if got := statusFromDecisionSnapshot("cancelled"); got != StatusCancelled {
+		t.Fatalf("cancelled: expected cancelled, got %s", got)
+	}
+	resolved := []string{
+		"approved", "rejected", "needs_more_evidence",
+		project.PlanReviewDecisionRequestChanges,
+		project.PlanningGapDecisionRestaffed, project.PlanningGapDecisionExempted,
+		"retry", "cancel_downstream", "reassign",
+		// §5.5 planning_failed verbs — the ones the old enumeration missed.
+		"retry_planning", "close_demand",
+		// Any future verb must land resolved, not zombie-open.
+		"some_future_resolution_verb",
+	}
+	for _, status := range resolved {
+		if got := statusFromDecisionSnapshot(status); got != StatusResolved {
+			t.Fatalf("status %q: expected resolved, got %s", status, got)
+		}
+	}
+}
