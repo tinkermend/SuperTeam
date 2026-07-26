@@ -1,6 +1,29 @@
 import type { DigitalEmployeeActivity, DigitalEmployeeOverview } from "@/lib/api/employees";
+import type { InboxBadge } from "@/lib/api/inbox";
 import type { ProjectRunSummaryResponse, ProjectTaskGraph } from "@/lib/api/projects";
+import type { RuntimeOverview } from "@/lib/api/runtime";
 import type { TeamListItem } from "@/lib/api/teams";
+
+// 大屏 KPI 带数据源 fixture:收件箱徽标与 Runtime 健康。
+export const inboxBadgeFixture: InboxBadge = {
+  mine_open_count: 2,
+  team_open_count: 4,
+  high_risk_count: 1,
+};
+
+export const runtimeOverviewHealthFixture: RuntimeOverview = {
+  summary: {
+    online_nodes: 1,
+    total_nodes: 2,
+    pending_enrollments: 0,
+    active_provider_sessions: 1,
+    blocked_events: 0,
+  },
+  pending_enrollments: [],
+  nodes: [],
+  provider_capabilities: [],
+  recent_events: [],
+};
 
 // 项目运行带聚合响应:含一个"全待派发、无参与员工"项目——它在员工反向聚合降级源里不可见,
 // 用于锁定 run-summary 权威源修复了该盲区。

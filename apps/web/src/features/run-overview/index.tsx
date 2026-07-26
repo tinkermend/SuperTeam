@@ -6,15 +6,20 @@ import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { MasterDetailLayout, Button, ErrorState, LoadingState } from "@/components/superteam";
 import { getDigitalEmployeeActivity, getDigitalEmployeeOverview } from "@/lib/api/employees";
+import { getInboxBadge } from "@/lib/api/inbox";
 import { getProjectTaskGraph, listProjectDemands, listProjectRunSummaries } from "@/lib/api/projects";
+import { getRuntimeOverview } from "@/lib/api/runtime";
 import { listTeamSummaries } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { DisplayActivityTicker } from "./components/display-activity-ticker";
+import { DisplayKpiBand } from "./components/display-kpi-band";
 import { EmployeeDetailCard } from "./components/employee-detail-card";
 import { RuntimeMapStage } from "./components/runtime-map-stage";
 import { RuntimeOverviewSidePanel } from "./components/runtime-overview-side-panel";
+import { useDisplayCamera } from "./display-camera";
 import { buildRuntimeOverview } from "./runtime-overview-adapter";
 import type { RuntimeOverviewFloorId } from "./runtime-overview-model";
-import { buildProjectLens, lensParticipantFloorIds } from "./runtime-overview-project-lens";
+import { buildProjectLens, buildProjectRunBandOptions, lensParticipantFloorIds } from "./runtime-overview-project-lens";
 import { useRuntimeFocusCarousel } from "./use-runtime-focus-carousel";
 
 export function RunOverviewPage() {
@@ -29,8 +34,10 @@ type RunOverviewViewProps = {
 };
 
 export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: RunOverviewViewProps) {
-  const search = useSearch({ strict: false }) as { employee?: string; project?: string };
+  const search = useSearch({ strict: false }) as { employee?: string; project?: string; mode?: string };
   const navigate = useNavigate();
+  // 大屏投屏模式:去侧栏 + 顶部 KPI 带 + 底部动态流 + 三型镜头轮巡(员工/项目/异常插队)。
+  const isDisplay = search.mode === "display";
   const [activeFloorId, setActiveFloorId] = useState<RuntimeOverviewFloorId>("floor-1");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>();
   // 项目透镜：初始从 ?project= 深链进入；选中/退出会回写 URL 供分享与反向链入。
@@ -60,6 +67,21 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   const runSummary = useQuery({
     queryKey: ["run-overview", "project-run-summary"],
     queryFn: () => listProjectRunSummaries({ baseUrl: apiBaseUrl, fetcher }, { limit: 50 }),
+    refetchInterval: 10_000,
+    retry: false
+});
+  // 大屏 KPI 专属数据源(仅 display 模式拉取):人类等待队列与 Runtime 健康,取权威端点不做前端推导。
+  const inboxBadge = useQuery({
+    queryKey: ["run-overview", "inbox-badge"],
+    queryFn: () => getInboxBadge({ baseUrl: apiBaseUrl, fetcher }),
+    enabled: isDisplay,
+    refetchInterval: 10_000,
+    retry: false
+});
+  const runtimeHealth = useQuery({
+    queryKey: ["run-overview", "runtime-overview"],
+    queryFn: () => getRuntimeOverview({ baseUrl: apiBaseUrl, fetcher }),
+    enabled: isDisplay,
     refetchInterval: 10_000,
     retry: false
 });
@@ -159,8 +181,39 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     employees: overview?.employees ?? [],
     initialInteracted: Boolean(search.employee),
     // 透镜态强制暂停轮播：链路阅读期间焦点不被抢走，退出透镜即恢复。
-    forcePaused: Boolean(selectedProjectId)
+    // 大屏模式由镜头编排接管焦点,员工轮播全程停用。
+    forcePaused: Boolean(selectedProjectId) || isDisplay
 });
+  // 大屏镜头编排:员工焦点/项目链路循环 + 新失败活动插队;交互暂停超时自动恢复。
+  const bandOptions = useMemo(
+    () => (overview ? buildProjectRunBandOptions(overview, runSummary.data) : []),
+    [overview, runSummary.data],
+  );
+  const displayCamera = useDisplayCamera({
+    enabled: isDisplay,
+    employees: overview?.employees ?? [],
+    projects: bandOptions,
+    activity: recentActivity
+});
+  // 镜头落地:项目镜头进透镜(不回写 URL,避免投屏地址每 15s 漂移),员工镜头聚焦并跟层。
+  const displayShot = displayCamera.shot;
+  const displayShotKey = displayShot
+    ? displayShot.kind === "employee"
+      ? `employee:${displayShot.employeeId}`
+      : `project:${displayShot.projectId}`
+    : "";
+  useEffect(() => {
+    if (!isDisplay || !displayShot || displayCamera.isPaused) return;
+    if (displayShot.kind === "project") {
+      setSelectedProjectId(displayShot.projectId);
+      return;
+    }
+    setSelectedProjectId(undefined);
+    setSelectedEmployeeId(displayShot.employeeId);
+    const floorId = overview?.employees.find((employee) => employee.employeeId === displayShot.employeeId)?.floorId;
+    if (floorId) setActiveFloorId(floorId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDisplay, displayShotKey, displayCamera.isPaused]);
   const searchEmployeeId =
     search.employee && overview?.employees.some((employee) => employee.employeeId === search.employee)
       ? search.employee
@@ -187,13 +240,20 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   const handleSelectEmployee = (employeeId: string) => {
     setSelectedEmployeeId(employeeId);
     carousel.notifyInteraction();
+    if (isDisplay) displayCamera.notifyInteraction();
   };
   const handleSelectFloor = (floorId: RuntimeOverviewFloorId) => {
     setActiveFloorId(floorId);
     carousel.notifyInteraction();
+    if (isDisplay) displayCamera.notifyInteraction();
   };
   const handleSelectProject = (projectId?: string) => {
     setSelectedProjectId(projectId);
+    if (isDisplay) {
+      // 大屏下人工选择同样暂停轮巡,但不回写 URL(投屏地址保持稳定)。
+      displayCamera.notifyInteraction();
+      return;
+    }
     void navigate({
       to: "/run-overview",
       search: (previous: { employee?: string; project?: string }) => ({ ...previous, project: projectId || undefined }),
@@ -220,113 +280,140 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
       <Main width="wide" className="min-w-0">
       {employees.isPending || teams.isPending ? <LoadingState label="正在加载运行总览" /> : null}
       {error ? <ErrorState title="运行总览加载失败" description={error.message} /> : null}
-      {overview ? (
-        <MasterDetailLayout
-          aria-label="运行总览地图"
-          narrowDetail="stack"
-          rail="md"
-          role="region"
-          master={
-            <div className="min-w-0">
-              <div data-runtime-overview-toolbar className="mb-4 flex flex-wrap items-center gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex h-10 items-center rounded-inner border border-line bg-white/80 px-4 text-sm font-semibold text-ink-2 shadow-sm">
-                    全部重点
-                  </span>
-                  {overview.floors.map((floor) => {
-                    const lobbyCount =
-                      floor.floorId === "lobby"
-                        ? overview.employees.filter((employee) => employee.floorId === "lobby").length
-                        : 0;
-                    return (
-                      <Button
-                        key={floor.floorId}
-                        type="button"
-                        variant={activeFloorId === floor.floorId ? "primary" : "outline"}
-                        onClick={() => handleSelectFloor(floor.floorId)}
-                      >
-                        {floor.label}
-                        {lobbyCount > 0 ? (
-                          <span data-runtime-lobby-count className="ml-1 tabular-nums">
-                            · {lobbyCount}
-                          </span>
-                        ) : null}
-                        {lensFloorIds?.has(floor.floorId) ? (
-                          <span
-                            data-runtime-lens-floor-dot={floor.floorId}
-                            className="ml-1 size-2 rounded-full bg-brand"
-                            aria-label="该楼层有选中项目的参与员工"
-                          />
-                        ) : null}
-                      </Button>
-                    );
-                  })}
-                  <span className="inline-flex h-10 items-center rounded-inner border border-line bg-white/80 px-4 text-sm font-semibold text-ink-2 shadow-sm">
-                    异常优先
-                  </span>
-                </div>
+      {overview ? (() => {
+        const mapSection = (
+          <div className="min-w-0">
+            <div data-runtime-overview-toolbar className="mb-4 flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-10 items-center rounded-inner border border-line bg-white/80 px-4 text-sm font-semibold text-ink-2 shadow-sm">
+                  全部重点
+                </span>
+                {overview.floors.map((floor) => {
+                  const lobbyCount =
+                    floor.floorId === "lobby"
+                      ? overview.employees.filter((employee) => employee.floorId === "lobby").length
+                      : 0;
+                  return (
+                    <Button
+                      key={floor.floorId}
+                      type="button"
+                      variant={activeFloorId === floor.floorId ? "primary" : "outline"}
+                      onClick={() => handleSelectFloor(floor.floorId)}
+                    >
+                      {floor.label}
+                      {lobbyCount > 0 ? (
+                        <span data-runtime-lobby-count className="ml-1 tabular-nums">
+                          · {lobbyCount}
+                        </span>
+                      ) : null}
+                      {lensFloorIds?.has(floor.floorId) ? (
+                        <span
+                          data-runtime-lens-floor-dot={floor.floorId}
+                          className="ml-1 size-2 rounded-full bg-brand"
+                          aria-label="该楼层有选中项目的参与员工"
+                        />
+                      ) : null}
+                    </Button>
+                  );
+                })}
+                <span className="inline-flex h-10 items-center rounded-inner border border-line bg-white/80 px-4 text-sm font-semibold text-ink-2 shadow-sm">
+                  异常优先
+                </span>
+              </div>
+              {isDisplay ? null : (
                 <Button type="button" variant="outline" aria-label="刷新运行总览" onClick={handleRefresh}>
                   <RefreshCw className="size-4" />
                   刷新
                 </Button>
-                <StatusLegend className="mx-auto" />
-                {carousel.queue.length > 0 ? (
-                  <div data-runtime-carousel-indicator className="flex items-center gap-2 text-sm text-ink-2">
-                    {selectedProjectId ? (
-                      <span className="tabular-nums">项目透镜聚焦中 · 轮播已暂停</span>
-                    ) : (
-                      <>
-                        <span className="tabular-nums">
-                          {carousel.isPaused
-                            ? "轮播已暂停 · 稍后自动恢复"
-                            : `焦点轮播 ${carousel.queueIndex >= 0 ? carousel.queueIndex + 1 : 1} / ${carousel.queue.length}`}
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          aria-label={carousel.isPaused ? "恢复轮播" : "暂停轮播"}
-                          onClick={() => (carousel.isPaused ? carousel.resume() : carousel.notifyInteraction())}
-                        >
-                          {carousel.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-                          {carousel.isPaused ? "恢复" : "暂停"}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-              <RuntimeMapStage
-                activeFloorId={activeFloorId}
-                lens={lens}
-                overview={overview}
-                selectedEmployeeId={effectiveSelectedEmployeeId}
-                onSelectEmployee={handleSelectEmployee}
-                onSelectFloor={handleSelectFloor}
-              />
-              {selectedEmployee ? (
-                <div className="mt-5">
-                  <EmployeeDetailCard employee={selectedEmployee} team={selectedTeam} />
+              )}
+              <StatusLegend className="mx-auto" />
+              {isDisplay ? (
+                <div data-display-camera-indicator className="flex items-center gap-2 text-sm text-ink-2">
+                  <span className="tabular-nums">
+                    {displayCamera.isPaused
+                      ? "轮巡已暂停 · 稍后自动恢复"
+                      : `镜头轮巡中 · ${displayCamera.queueLength} 个镜头`}
+                  </span>
+                </div>
+              ) : carousel.queue.length > 0 ? (
+                <div data-runtime-carousel-indicator className="flex items-center gap-2 text-sm text-ink-2">
+                  {selectedProjectId ? (
+                    <span className="tabular-nums">项目透镜聚焦中 · 轮播已暂停</span>
+                  ) : (
+                    <>
+                      <span className="tabular-nums">
+                        {carousel.isPaused
+                          ? "轮播已暂停 · 稍后自动恢复"
+                          : `焦点轮播 ${carousel.queueIndex >= 0 ? carousel.queueIndex + 1 : 1} / ${carousel.queue.length}`}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        aria-label={carousel.isPaused ? "恢复轮播" : "暂停轮播"}
+                        onClick={() => (carousel.isPaused ? carousel.resume() : carousel.notifyInteraction())}
+                      >
+                        {carousel.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+                        {carousel.isPaused ? "恢复" : "暂停"}
+                      </Button>
+                    </>
+                  )}
                 </div>
               ) : null}
             </div>
-          }
-          detail={
-            <RuntimeOverviewSidePanel
-              overview={overview}
-              activity={recentActivity}
-              runSummary={runSummary.data}
-              selectedProjectId={selectedProjectId}
-              onSelectProject={handleSelectProject}
+            <RuntimeMapStage
+              activeFloorId={activeFloorId}
               lens={lens}
-              lensLoading={projectDemands.isLoading || taskGraph.isLoading}
-              demands={demandList}
-              selectedDemandId={selectedDemandId}
-              onSelectDemand={setSelectedDemandId}
+              overview={overview}
+              selectedEmployeeId={effectiveSelectedEmployeeId}
+              onSelectEmployee={handleSelectEmployee}
+              onSelectFloor={handleSelectFloor}
             />
-          }
-        />
-      ) : null}
+            {selectedEmployee ? (
+              <div className="mt-5">
+                <EmployeeDetailCard employee={selectedEmployee} team={selectedTeam} />
+              </div>
+            ) : null}
+          </div>
+        );
+        if (isDisplay) {
+          return (
+            <div data-display-mode className="min-w-0">
+              <DisplayKpiBand
+                badge={inboxBadge.data}
+                summary={overview.summary}
+                todayCompletedRunCount={runSummary.data?.today_completed_run_count}
+                runtime={runtimeHealth.data?.summary}
+              />
+              {mapSection}
+              <DisplayActivityTicker items={recentActivity} />
+            </div>
+          );
+        }
+        return (
+          <MasterDetailLayout
+            aria-label="运行总览地图"
+            narrowDetail="stack"
+            rail="md"
+            role="region"
+            master={mapSection}
+            detail={
+              <RuntimeOverviewSidePanel
+                overview={overview}
+                activity={recentActivity}
+                runSummary={runSummary.data}
+                selectedProjectId={selectedProjectId}
+                onSelectProject={handleSelectProject}
+                lens={lens}
+                lensLoading={projectDemands.isLoading || taskGraph.isLoading}
+                demands={demandList}
+                selectedDemandId={selectedDemandId}
+                onSelectDemand={setSelectedDemandId}
+              />
+            }
+          />
+        );
+      })() : null}
       </Main>
     </>
   );

@@ -60,8 +60,10 @@ import {
   digitalEmployeeActivityFixture,
   digitalEmployeeOverviewFixture,
   digitalEmployeeOverviewWithUnassignedFixture,
+  inboxBadgeFixture,
   projectRunSummaryFixture,
   projectTaskGraphFixture,
+  runtimeOverviewHealthFixture,
   teamListFixture
 } from "./runtime-overview-fixtures";
 
@@ -115,6 +117,12 @@ function createFetcher({
     }
     if (url.pathname === "/api/v1/projects/run-summary" && withRunSummary) {
       return jsonResponse(projectRunSummaryFixture);
+    }
+    if (url.pathname === "/api/v1/inbox/badge") {
+      return jsonResponse(inboxBadgeFixture);
+    }
+    if (url.pathname === "/api/v1/runtime/overview") {
+      return jsonResponse(runtimeOverviewHealthFixture);
     }
     if (/^\/api\/v1\/projects\/[^/]+\/demands$/.test(url.pathname)) {
       demandCalls += 1;
@@ -567,6 +575,41 @@ describe("RunOverviewView", () => {
     const opsRow = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
     expect(opsRow).not.toBeNull();
     expect(screen.container.querySelector("[data-runtime-lens-project='project-unstaffed']")).toBeNull();
+  });
+
+  it("renders display mode with KPI band, camera indicator and ticker, without the side panel", async () => {
+    const { fetcher, requests } = createFetcher();
+    const screen = await renderPage(fetcher, { mode: "display" });
+
+    // KPI 带:数字来自权威端点 fixture(待人工=team_open_count, 高危角标, Runtime 在线掉线红显)。
+    await expect.poll(() => screen.container.querySelector("[data-display-kpi-band]")).not.toBeNull();
+    const band = screen.container.querySelector<HTMLElement>("[data-display-kpi-band]");
+    await expect.poll(() => band?.querySelector("[data-display-kpi='待人工处理']")?.textContent).toContain("4");
+    expect(band?.querySelector("[data-display-kpi='待人工处理']")?.textContent).toContain("高危 1");
+    await expect.poll(() => band?.querySelector("[data-display-kpi='Runtime 在线']")?.textContent).toContain("1/2");
+    await expect.poll(() => band?.querySelector("[data-display-kpi='今日完成运行']")?.textContent).toContain("5");
+    expect(requests.some((request) => request.pathname === "/api/v1/inbox/badge")).toBe(true);
+    expect(requests.some((request) => request.pathname === "/api/v1/runtime/overview")).toBe(true);
+
+    // 去侧栏:运行概况卡不渲染;底部动态流与镜头轮巡指示在场;刷新按钮隐藏。
+    expect(screen.container.querySelector("[data-display-mode]")).not.toBeNull();
+    await expect.element(screen.getByText("运行概况")).not.toBeInTheDocument();
+    expect(screen.container.querySelector("[data-display-activity-ticker]")).not.toBeNull();
+    const indicator = screen.container.querySelector<HTMLElement>("[data-display-camera-indicator]");
+    expect(indicator?.textContent).toContain("镜头轮巡中");
+    expect(screen.container.querySelector("button[aria-label='刷新运行总览']")).toBeNull();
+  });
+
+  it("pauses the display camera on interaction and keeps the URL stable", async () => {
+    const { fetcher } = createFetcher();
+    const screen = await renderPage(fetcher, { mode: "display" });
+
+    await expect.poll(() => screen.container.querySelector("button[data-employee-id]")).not.toBeNull();
+    const employeeButton = screen.container.querySelector<HTMLElement>("button[data-employee-id]");
+    await userEvent.click(employeeButton as HTMLElement);
+
+    const indicator = screen.container.querySelector<HTMLElement>("[data-display-camera-indicator]");
+    await expect.poll(() => indicator?.textContent).toContain("轮巡已暂停");
   });
 
   it("labels the lens with its demand and switches chains via the demand selector", async () => {
