@@ -13,6 +13,7 @@ import { listTeamSummaries } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { DisplayActivityTicker } from "./components/display-activity-ticker";
 import { DisplayKpiBand } from "./components/display-kpi-band";
+import { DisplayProjectShotCard } from "./components/display-project-shot-card";
 import { EmployeeDetailCard } from "./components/employee-detail-card";
 import { RuntimeMapStage } from "./components/runtime-map-stage";
 import { RuntimeOverviewSidePanel } from "./components/runtime-overview-side-panel";
@@ -369,7 +370,16 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
               onSelectEmployee={handleSelectEmployee}
               onSelectFloor={handleSelectFloor}
             />
-            {selectedEmployee ? (
+            {isDisplay && displayShot?.kind === "project" ? (
+              // 项目镜头期间底部卡切换为项目摘要浮层:无侧栏形态下观众必须能看出镜头聚焦的项目。
+              <div className="mt-5">
+                <DisplayProjectShotCard
+                  option={bandOptions.find((option) => option.projectId === displayShot.projectId)}
+                  lens={lens}
+                  demand={demandList.find((demand) => demand.id === selectedDemandId) ?? demandList[0]}
+                />
+              </div>
+            ) : selectedEmployee ? (
               <div className="mt-5">
                 <EmployeeDetailCard employee={selectedEmployee} team={selectedTeam} />
               </div>
