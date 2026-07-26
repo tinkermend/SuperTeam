@@ -357,7 +357,7 @@ func TestUpdateTeamConstitutionPersistsHardRules(t *testing.T) {
 		t.Fatalf("create team: %v", err)
 	}
 
-	updated, err := svc.UpdateTeamConstitution(context.Background(), tenantID, team.Team.ID, map[string]any{
+	updated, err := svc.UpdateTeamConstitution(context.Background(), tenantID, team.Team.ID, uuid.New(), map[string]any{
 		"hard_rules": []string{"r1", "r2"},
 	})
 	if err != nil {
@@ -743,9 +743,15 @@ type memoryRepository struct {
 	lastAddTeamMemberParams     AddTeamMemberParams
 	createdTeamWithMembers      CreateTeamWithInitialMembersParams
 
-	bindTeamDigitalEmployeeParams []BindTeamDigitalEmployeeParams
-	bindTeamDigitalEmployeeErr    error
-	rejectTenantLevelMembership   bool
+	bindTeamDigitalEmployeeParams   []BindTeamDigitalEmployeeParams
+	bindTeamDigitalEmployeeErr      error
+	changeTeamMemberRoleParams      []ChangeTeamMemberRoleParams
+	changeTeamMemberRoleErr         error
+	unbindTeamDigitalEmployeeParams []BindTeamDigitalEmployeeParams
+	unbindTeamDigitalEmployeeErr    error
+	detachBlockers                  []DetachBlocker
+	detachBlockersErr               error
+	rejectTenantLevelMembership     bool
 }
 
 type memoryAuditEvent struct {
@@ -915,7 +921,7 @@ func (r *memoryRepository) UpdateTeam(_ context.Context, params UpdateTeamParams
 	return record, nil
 }
 
-func (r *memoryRepository) UpdateTeamConstitution(_ context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (TeamRecord, error) {
+func (r *memoryRepository) UpdateTeamConstitution(_ context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (TeamRecord, error) {
 	record, ok := r.teams[teamID]
 	if !ok || record.TenantID != tenantID {
 		return TeamRecord{}, ErrNotFound
@@ -986,6 +992,25 @@ func (r *memoryRepository) GetTeamMember(_ context.Context, tenantID, teamID, me
 func (r *memoryRepository) BindTeamDigitalEmployee(_ context.Context, params BindTeamDigitalEmployeeParams) error {
 	r.bindTeamDigitalEmployeeParams = append(r.bindTeamDigitalEmployeeParams, params)
 	return r.bindTeamDigitalEmployeeErr
+}
+
+func (r *memoryRepository) ChangeTeamMemberRole(_ context.Context, params ChangeTeamMemberRoleParams) (TeamMemberRecord, error) {
+	r.changeTeamMemberRoleParams = append(r.changeTeamMemberRoleParams, params)
+	if r.changeTeamMemberRoleErr != nil {
+		return TeamMemberRecord{}, r.changeTeamMemberRoleErr
+	}
+	record := r.teamMembers[params.MembershipID]
+	record.Role = params.Role
+	return record, nil
+}
+
+func (r *memoryRepository) UnbindTeamDigitalEmployee(_ context.Context, params BindTeamDigitalEmployeeParams) error {
+	r.unbindTeamDigitalEmployeeParams = append(r.unbindTeamDigitalEmployeeParams, params)
+	return r.unbindTeamDigitalEmployeeErr
+}
+
+func (r *memoryRepository) ListDigitalEmployeeDetachBlockers(_ context.Context, _, _ uuid.UUID) ([]DetachBlocker, error) {
+	return r.detachBlockers, r.detachBlockersErr
 }
 
 func (r *memoryRepository) RequireActiveTenantLevelMembership(_ context.Context, tenantID, userID uuid.UUID) error {

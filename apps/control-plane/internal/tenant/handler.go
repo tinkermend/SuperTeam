@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/apierror"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/authz"
 )
@@ -21,7 +22,7 @@ type HandlerService interface {
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (*Team, error)
 	GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error)
 	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team, error)
-	UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (*Team, error)
+	UpdateTeamConstitution(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (*Team, error)
 	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error)
 	RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (*Team, error)
@@ -29,7 +30,9 @@ type HandlerService interface {
 	ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamMember, error)
 	AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error)
 	BindTeamDigitalEmployee(ctx context.Context, req BindTeamDigitalEmployeeRequest) error
+	UnbindTeamDigitalEmployee(ctx context.Context, req BindTeamDigitalEmployeeRequest) error
 	RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error
+	ChangeTeamMemberRole(ctx context.Context, req ChangeTeamMemberRoleRequest) (*TeamMember, error)
 	ListTeamAuditEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*audit.Event, error)
 }
 
@@ -193,6 +196,7 @@ func (h *HTTPHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	team, err := service.UpdateTeam(r.Context(), UpdateTeamRequest{
+		ActorUserID:       middleware.GetUserID(r.Context()),
 		TenantID:          tenantID,
 		TeamID:            teamID,
 		Slug:              req.Slug,
@@ -226,7 +230,7 @@ func (h *HTTPHandler) UpdateTeamConstitution(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	team, err := service.UpdateTeamConstitution(r.Context(), tenantID, teamID, constitution)
+	team, err := service.UpdateTeamConstitution(r.Context(), tenantID, teamID, middleware.GetUserID(r.Context()), constitution)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -369,10 +373,11 @@ func (h *HTTPHandler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	member, err := service.AddTeamMember(r.Context(), AddTeamMemberRequest{
-		TenantID: tenantID,
-		TeamID:   teamID,
-		UserID:   req.UserID,
-		Role:     req.Role,
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		UserID:      req.UserID,
+		Role:        req.Role,
+		ActorUserID: middleware.GetUserID(r.Context()),
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -417,6 +422,78 @@ func (h *HTTPHandler) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// UnbindTeamDigitalEmployee 把数字员工移出团队回候岗大厅
+// （DELETE /teams/{teamId}/digital-employees/{employeeId}）。与收编同权限
+// （team.update），是收编的逆操作。
+func (h *HTTPHandler) UnbindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	employeeID, ok := digitalEmployeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamUpdate, "team digital employee unbind")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.UnbindTeamDigitalEmployee(r.Context(), BindTeamDigitalEmployeeRequest{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		EmployeeID:  employeeID,
+		ActorUserID: middleware.GetUserID(r.Context()),
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ChangeTeamMemberRole 直接角色变更（PATCH /teams/{teamId}/members/{memberId}）。
+// 只处理 member ⇄ viewer；特权角色走 POST /teams/{teamId}/privileged-role-requests。
+func (h *HTTPHandler) ChangeTeamMemberRole(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	membershipID, ok := memberIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamMemberChangeRole, "team member change role")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	member, err := service.ChangeTeamMemberRole(r.Context(), ChangeTeamMemberRoleRequest{
+		TenantID:     tenantID,
+		TeamID:       teamID,
+		MembershipID: membershipID,
+		Role:         req.Role,
+		ActorUserID:  middleware.GetUserID(r.Context()),
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamMemberResponseFromDomain(member))
+}
+
 func (h *HTTPHandler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 	teamID, ok := teamIDFromRequest(w, r)
 	if !ok {
@@ -438,6 +515,7 @@ func (h *HTTPHandler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 		TenantID:     tenantID,
 		TeamID:       teamID,
 		MembershipID: membershipID,
+		ActorUserID:  middleware.GetUserID(r.Context()),
 	}); err != nil {
 		writeHandlerError(w, err)
 		return
@@ -484,9 +562,11 @@ var overviewActions = []string{
 	authz.ActionTeamGovernanceApprove,
 	authz.ActionTeamCapabilityBind,
 	authz.ActionTeamCapabilityUnbind,
+	// MCP 绑定/解绑走的是 team.capability.manage（capability handler），与技能的
+	// bind/unbind 是不同动作；不下发它，控制台就只能猜，会出现"按钮可点但 403"。
+	authz.ActionTeamCapabilityManage,
 	authz.ActionTeamAuditRead,
 }
-
 
 func (h *HTTPHandler) allowedTeamActions(r *http.Request, tenantID, teamID uuid.UUID) []AllowedTeamAction {
 	if h == nil || h.authorizer == nil {
@@ -679,6 +759,15 @@ func teamIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool)
 	return teamID, true
 }
 
+func digitalEmployeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
+	if err != nil || employeeID == uuid.Nil {
+		http.Error(w, "invalid digital employee id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return employeeID, true
+}
+
 func memberIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	memberID, err := uuid.Parse(chi.URLParam(r, "memberId"))
 	if err != nil || memberID == uuid.Nil {
@@ -698,6 +787,10 @@ func roleRequestIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
+	// 结构化 coded error 优先（apierror 包约定）：命中即输出 {code, message} JSON。
+	if apierror.Write(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ErrInvalidInput):
 		http.Error(w, err.Error(), http.StatusBadRequest)

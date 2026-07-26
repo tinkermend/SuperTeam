@@ -25,6 +25,7 @@ export type AllowedTeamAction =
   | "team.governance.approve"
   | "team.capability.bind"
   | "team.capability.unbind"
+  | "team.capability.manage"
   | "team.audit.read";
 
 export type Team = {
@@ -332,6 +333,23 @@ export function bindTeamDigitalEmployee(
   );
 }
 
+/**
+ * 移出数字员工回候岗大厅（收编的逆操作）。员工有在役执行或仍被非归档项目引用时
+ * 服务端返回 409 team.digital_employee.detach_blocked，message 已点名阻断对象，
+ * 直接展示即可，不要在前端另拼文案。
+ */
+export function unbindTeamDigitalEmployee(
+  options: ApiClientOptions,
+  teamId: string,
+  digitalEmployeeId: string,
+): Promise<void> {
+  return deleteJson(
+    options,
+    teamPath(teamId, `/digital-employees/${encodeURIComponent(digitalEmployeeId)}`),
+    "unbind team digital employee",
+  );
+}
+
 export function removeTeamMember(
   options: ApiClientOptions,
   teamId: string,
@@ -341,6 +359,26 @@ export function removeTeamMember(
     options,
     teamPath(teamId, `/members/${encodeURIComponent(memberId)}`),
     "remove team member",
+  );
+}
+
+/**
+ * 直接角色变更（member ⇄ viewer）。特权角色（owner/admin/approver）不走这里，
+ * 走 requestTeamPrivilegedRole 经权限中心审批；从这里提交服务端返回 400。
+ * 注意：实现是「停用旧角色行 + upsert 新角色行」，membership_id 会变，调用方
+ * 必须以响应或重新拉取为准，不能沿用旧 id。
+ */
+export function changeTeamMemberRole(
+  options: ApiClientOptions,
+  teamId: string,
+  memberId: string,
+  role: Extract<TeamMemberRole, "member" | "viewer">,
+): Promise<TeamMember> {
+  return patchJson<TeamMember>(
+    options,
+    teamPath(teamId, `/members/${encodeURIComponent(memberId)}`),
+    { role },
+    "change team member role",
   );
 }
 

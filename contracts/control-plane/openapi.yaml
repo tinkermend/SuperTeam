@@ -2863,6 +2863,28 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/digital-employees/{employeeId}:
+    delete:
+      operationId: unbindTeamDigitalEmployee
+      summary: Remove a digital employee from the team (back to the lobby)
+      description: >-
+        把数字员工移出团队，回候岗大厅（team_id 置空）。收编的逆操作，同权限
+        （team.update）。守卫：员工有在役执行（task_runs queued/dispatching/
+        running/cancelling），或仍被非归档项目引用（project_members active）时
+        返回 409 team.digital_employee.detach_blocked，message 点名阻断对象。
+        副作用：移出后员工失去团队技能与 MCP 继承，且无团队归属不能参与项目。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "204":
+          description: Digital employee removed from the team
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/skills:
     get:
       operationId: listTeamSkills
@@ -3382,6 +3404,111 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/capability-conflicts:
+    get:
+      operationId: getTeamCapabilityConflicts
+      summary: Preview which member bindings a team capability bind would take over
+      description: >-
+        团队接管预览（spec §5.2.1）：团队绑定某 MCP 时会物理收敛本团队成员的同
+        server 个人绑定，团队胜出。此端点返回将被接管的成员清单，以及各自原先使用的
+        凭据变量名——与团队的不一致时，接管后这些成员会立刻缺变量，必须在绑定前点名。
+        预览与执行共用同一条查询，「看到的」就是「接管的」。门禁 team.capability.manage。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: mcp_server_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Takeover preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - mcp_server_id
+                  - takeovers
+                properties:
+                  mcp_server_id:
+                    type: string
+                    format: uuid
+                  takeovers:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - digital_employee_id
+                        - employee_name
+                      properties:
+                        digital_employee_id:
+                          type: string
+                          format: uuid
+                        employee_name:
+                          type: string
+                        prior_credential_env_var:
+                          type: string
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/capability-readiness:
+    get:
+      operationId: getTeamCapabilityReadiness
+      summary: Team capability readiness matrix (MCP x member)
+      description: >-
+        团队能力就绪矩阵：本团队每个 MCP 绑定 × 每名数字员工，给出该员工还缺哪些必需
+        环境变量。变量名由注册表/绑定定义、值只存在员工级，所以就绪天然是逐员工的；
+        这里一次性铺开，避免控制台逐员工 N+1 查询。门禁 team.capability.manage。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team capability readiness
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - mcp_readiness
+                properties:
+                  mcp_readiness:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - mcp_server_id
+                        - server_key
+                        - server_name
+                        - digital_employee_id
+                        - employee_name
+                        - required_env_vars
+                        - missing_env_vars
+                      properties:
+                        mcp_server_id:
+                          type: string
+                          format: uuid
+                        server_key:
+                          type: string
+                        server_name:
+                          type: string
+                        digital_employee_id:
+                          type: string
+                          format: uuid
+                        employee_name:
+                          type: string
+                        required_env_vars:
+                          type: array
+                          items:
+                            type: string
+                        missing_env_vars:
+                          type: array
+                          items:
+                            type: string
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/mcp-bindings/{bindingId}:
     delete:
       operationId: deleteTeamMCPBinding
@@ -3421,6 +3548,11 @@ paths:
     post:
       operationId: createEmployeeMCPBindingV2
       summary: Bind a registered MCP server to a digital employee
+      description: >-
+        团队接管收敛（spec §5.2.1）：所属团队已提供同一 MCP 时返回 409
+        `team.capability.provided_by_team`，不再写入后由读路径静默屏蔽——那会留下
+        「个人绑定列表看得见、生效配置看不见」的幽灵行。需要按员工差异化配置时，
+        先让团队解绑。
       parameters:
         - $ref: "#/components/parameters/EmployeeId"
       requestBody:
@@ -3439,6 +3571,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "403":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}:
     delete:
@@ -3582,6 +3716,45 @@ paths:
               schema:
                 $ref: "#/components/schemas/TeamMember"
   /api/v1/teams/{teamId}/members/{memberId}:
+    patch:
+      operationId: changeTeamMemberRole
+      summary: Change a team member's direct role
+      description: >-
+        直接角色变更，只接受直接生效角色（member / viewer），门禁
+        team.member.change_role。升到 owner / admin / approver 是特权授予，必须走
+        POST /teams/{teamId}/privileged-role-requests 经权限中心审批，从这里提交返回
+        400。降级最后一名 owner 同样返回 400。实现上是「停用旧角色行 + upsert 目标
+        角色行」，membership_id 会变，响应返回新的成员记录。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - role
+              properties:
+                role:
+                  type: string
+                  enum:
+                    - member
+                    - viewer
+      responses:
+        "200":
+          description: Team member role changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
     delete:
       operationId: removeTeamMember
       summary: Remove a team member role
@@ -4045,6 +4218,11 @@ paths:
         团队归属参与门禁的归队入口：目标团队必须存在且 active。副作用：员工的
         agent home dir 按 (team, employee) 键，换队后下次派发落新家目录（provider
         会话连续性重置）；团队级技能与 MCP 绑定继承随之切换。
+        权限：员工维度 employee.team.update，外加源团队与目标团队各自的
+        team.update（首次归队只查目标团队）。
+        守卫：目标团队受每团队数字员工数限额约束；已有归属的员工换队时套用与
+        「移出团队」相同的阻断（在役执行 / 仍被非归档项目引用），命中返回 409
+        team.digital_employee.detach_blocked。目标团队即当前团队时幂等返回 200。
       parameters:
         - $ref: "#/components/parameters/EmployeeId"
       requestBody:
@@ -4063,6 +4241,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/run-stats:
     get:
@@ -10289,6 +10469,7 @@ components:
         - team.governance.approve
         - team.capability.bind
         - team.capability.unbind
+        - team.capability.manage
         - team.audit.read
 
     TeamMemberRole:

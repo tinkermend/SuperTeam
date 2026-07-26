@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/apierror"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/systemconfig"
 )
@@ -246,9 +247,10 @@ func (h *HTTPHandler) BindTeamSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := service.BindSkillToTeam(r.Context(), BindTeamSkillRequest{
-		TenantID: tenantID,
-		TeamID:   teamID,
-		SkillID:  skillID,
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		SkillID:     skillID,
+		ActorUserID: middleware.GetUserID(r.Context()),
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -275,9 +277,10 @@ func (h *HTTPHandler) UnbindTeamSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := service.UnbindSkillFromTeam(r.Context(), BindTeamSkillRequest{
-		TenantID: tenantID,
-		TeamID:   teamID,
-		SkillID:  skillID,
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		SkillID:     skillID,
+		ActorUserID: middleware.GetUserID(r.Context()),
 	}); err != nil {
 		writeHandlerError(w, err)
 		return
@@ -703,6 +706,10 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
+	// 结构化 coded error 优先（apierror 约定）：命中即输出 {code, message} JSON。
+	if apierror.Write(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ErrInvalidInput):
 		http.Error(w, err.Error(), http.StatusBadRequest)

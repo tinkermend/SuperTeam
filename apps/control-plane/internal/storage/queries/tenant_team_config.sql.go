@@ -405,14 +405,43 @@ employee_counts AS (
     AND deleted_at IS NULL
     AND archived_at IS NULL
   GROUP BY tenant_id, team_id
+),
+skill_binding_counts AS (
+  SELECT tsb.tenant_id, tsb.team_id, COUNT(*)::integer AS skill_count
+  FROM team_skill_bindings tsb
+  JOIN skills s
+    ON s.tenant_id = tsb.tenant_id
+   AND s.id = tsb.skill_id
+   AND s.deleted_at IS NULL
+  GROUP BY tsb.tenant_id, tsb.team_id
+),
+mcp_binding_counts AS (
+  SELECT tmb.tenant_id, tmb.team_id, COUNT(*)::integer AS mcp_count
+  FROM team_mcp_bindings tmb
+  JOIN mcp_servers m
+    ON m.tenant_id = tmb.tenant_id
+   AND m.id = tmb.mcp_server_id
+   AND m.deleted_at IS NULL
+  WHERE tmb.deleted_at IS NULL
+  GROUP BY tmb.tenant_id, tmb.team_id
+),
+pending_approval_counts AS (
+  SELECT
+    ar.tenant_id,
+    (ar.context_payload->>'team_id')::uuid AS team_id,
+    COUNT(*)::integer AS pending_count
+  FROM approval_requests ar
+  WHERE ar.status = 'pending'
+    AND ar.context_payload->>'team_id' IS NOT NULL
+  GROUP BY ar.tenant_id, (ar.context_payload->>'team_id')::uuid
 )
 SELECT
   tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids, tt.constitution, tt.description, tt.delete_requested_by,
   COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
-  0::integer AS capability_count,
-  0::integer AS pending_draft_count,
+  (COALESCE(sbc.skill_count, 0) + COALESCE(mbc.mcp_count, 0))::integer AS capability_count,
+  COALESCE(pac.pending_count, 0)::integer AS pending_draft_count,
   CASE
     WHEN tt.constitution = '{}'::jsonb THEN 'not_configured'
     ELSE 'active'
@@ -421,6 +450,9 @@ SELECT
 FROM tenant_teams tt
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+LEFT JOIN skill_binding_counts sbc ON sbc.tenant_id = tt.tenant_id AND sbc.team_id = tt.id
+LEFT JOIN mcp_binding_counts mbc ON mbc.tenant_id = tt.tenant_id AND mbc.team_id = tt.id
+LEFT JOIN pending_approval_counts pac ON pac.tenant_id = tt.tenant_id AND pac.team_id = tt.id
 LEFT JOIN LATERAL (
   SELECT json_agg(json_build_object(
     'id', o.id,
@@ -472,6 +504,9 @@ type GetTenantTeamSummaryRow struct {
 	RiskSummary          string             `json:"risk_summary"`
 }
 
+// 口径与 ListTenantTeamSummaries 保持一致：技能绑定 + MCP 绑定，排掉指向已删注册项的行。
+// 本团队相关的待处理审批数（D6）：原先硬编码 0，头卡「待审批 N」pill 永不出现。
+// 团队维度审批（如特权角色申请）把 team_id 放在 context_payload 里，故按 jsonb 取。
 func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSummaryParams) (GetTenantTeamSummaryRow, error) {
 	row := q.db.QueryRow(ctx, GetTenantTeamSummary, arg.ID, arg.TenantID)
 	var i GetTenantTeamSummaryRow
@@ -623,14 +658,43 @@ employee_counts AS (
     AND deleted_at IS NULL
     AND archived_at IS NULL
   GROUP BY tenant_id, team_id
+),
+skill_binding_counts AS (
+  SELECT tsb.tenant_id, tsb.team_id, COUNT(*)::integer AS skill_count
+  FROM team_skill_bindings tsb
+  JOIN skills s
+    ON s.tenant_id = tsb.tenant_id
+   AND s.id = tsb.skill_id
+   AND s.deleted_at IS NULL
+  GROUP BY tsb.tenant_id, tsb.team_id
+),
+mcp_binding_counts AS (
+  SELECT tmb.tenant_id, tmb.team_id, COUNT(*)::integer AS mcp_count
+  FROM team_mcp_bindings tmb
+  JOIN mcp_servers m
+    ON m.tenant_id = tmb.tenant_id
+   AND m.id = tmb.mcp_server_id
+   AND m.deleted_at IS NULL
+  WHERE tmb.deleted_at IS NULL
+  GROUP BY tmb.tenant_id, tmb.team_id
+),
+pending_approval_counts AS (
+  SELECT
+    ar.tenant_id,
+    (ar.context_payload->>'team_id')::uuid AS team_id,
+    COUNT(*)::integer AS pending_count
+  FROM approval_requests ar
+  WHERE ar.status = 'pending'
+    AND ar.context_payload->>'team_id' IS NOT NULL
+  GROUP BY ar.tenant_id, (ar.context_payload->>'team_id')::uuid
 )
 SELECT
   tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids, tt.constitution, tt.description, tt.delete_requested_by,
   COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
-  0::integer AS capability_count,
-  0::integer AS pending_draft_count,
+  (COALESCE(sbc.skill_count, 0) + COALESCE(mbc.mcp_count, 0))::integer AS capability_count,
+  COALESCE(pac.pending_count, 0)::integer AS pending_draft_count,
   CASE
     WHEN tt.constitution = '{}'::jsonb THEN 'not_configured'
     ELSE 'active'
@@ -639,6 +703,9 @@ SELECT
 FROM tenant_teams tt
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+LEFT JOIN skill_binding_counts sbc ON sbc.tenant_id = tt.tenant_id AND sbc.team_id = tt.id
+LEFT JOIN mcp_binding_counts mbc ON mbc.tenant_id = tt.tenant_id AND mbc.team_id = tt.id
+LEFT JOIN pending_approval_counts pac ON pac.tenant_id = tt.tenant_id AND pac.team_id = tt.id
 LEFT JOIN LATERAL (
   SELECT json_agg(json_build_object(
     'id', o.id,
@@ -719,6 +786,10 @@ type ListTenantTeamSummariesRow struct {
 	RiskSummary          string             `json:"risk_summary"`
 }
 
+// 团队能力基线计数 = 技能绑定 + MCP 绑定。两者都要排掉指向已删注册项的绑定行，
+// 口径与生效列表(ListEffectiveMCPBindingsV2ForEmployee / ListEffectiveEmployeeSkills)一致。
+// 本团队相关的待处理审批数（D6）：原先硬编码 0，头卡「待审批 N」pill 永不出现。
+// 团队维度审批（如特权角色申请）把 team_id 放在 context_payload 里，故按 jsonb 取。
 func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error) {
 	rows, err := q.db.Query(ctx, ListTenantTeamSummaries,
 		arg.TenantID,

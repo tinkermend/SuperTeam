@@ -223,22 +223,196 @@ func (r *PgRepository) BindSkillToTeam(ctx context.Context, req BindTeamSkillReq
 	if err := r.ensureTeamExists(ctx, req.TenantID, req.TeamID); err != nil {
 		return nil, err
 	}
-	if _, err := r.db.Exec(ctx, `
+	tag, err := r.db.Exec(ctx, `
 INSERT INTO team_skill_bindings (tenant_id, skill_id, team_id)
 VALUES ($1, $2, $3)
-ON CONFLICT DO NOTHING`, req.TenantID, req.SkillID, req.TeamID); err != nil {
+ON CONFLICT DO NOTHING`, req.TenantID, req.SkillID, req.TeamID)
+	if err != nil {
 		return nil, err
 	}
-	return r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+	item, err := r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+	if err != nil {
+		return nil, err
+	}
+	// 只有真插入了才记审计与接管：重复绑定是幂等 no-op，不该在团队审计流里刷屏。
+	if tag.RowsAffected() > 0 {
+		if err := r.writeTeamCapabilityAudit(ctx, req, "team.skill.bind", item); err != nil {
+			return nil, err
+		}
+		// 团队接管：同一技能只留一份，成员各自的个人绑定就地物理收敛。
+		// 不做只留读时屏蔽——那会留下"个人技能列表看得见、生效列表看不见"的幽灵行。
+		takenOver, err := r.takeoverTeamSkill(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if len(takenOver) > 0 {
+			if err := r.writeTeamSkillTakeoverAudit(ctx, req, item, takenOver); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return item, nil
+}
+
+// ListTeamSkillTakeoverTargets 列出本团队成员里已自行安装该技能的个人绑定。
+// 预览与执行共用这一条，保证"看到的"和"接管的"是同一批。
+func (r *PgRepository) ListTeamSkillTakeoverTargets(ctx context.Context, req BindTeamSkillRequest) ([]TeamSkillTakeover, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.db.Query(ctx, `
+SELECT de.id, de.name
+FROM digital_employees de
+JOIN skill_agent_bindings sab
+  ON sab.tenant_id = de.tenant_id
+ AND sab.digital_employee_id = de.id
+ AND sab.status = 'enabled'
+WHERE de.tenant_id = $1
+  AND de.team_id = $2
+  AND de.deleted_at IS NULL
+  AND sab.skill_id = $3
+ORDER BY de.name ASC`, req.TenantID, req.TeamID, req.SkillID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	targets := make([]TeamSkillTakeover, 0)
+	for rows.Next() {
+		var item TeamSkillTakeover
+		if err := rows.Scan(&item.DigitalEmployeeID, &item.EmployeeName); err != nil {
+			return nil, err
+		}
+		targets = append(targets, item)
+	}
+	return targets, rows.Err()
+}
+
+func (r *PgRepository) takeoverTeamSkill(ctx context.Context, req BindTeamSkillRequest) ([]TeamSkillTakeover, error) {
+	targets, err := r.ListTeamSkillTakeoverTargets(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	if _, err := r.db.Exec(ctx, `
+DELETE FROM skill_agent_bindings sab
+USING digital_employees de
+WHERE de.id = sab.digital_employee_id
+  AND de.tenant_id = sab.tenant_id
+  AND de.team_id = $2
+  AND de.deleted_at IS NULL
+  AND sab.tenant_id = $1
+  AND sab.skill_id = $3`, req.TenantID, req.TeamID, req.SkillID); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
+// TeamProvidesSkill 员工侧安装前的冲突判据：该员工所属团队是否已提供同一技能。
+func (r *PgRepository) TeamProvidesSkill(ctx context.Context, tenantID, employeeID, skillID uuid.UUID) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	var provides bool
+	if err := r.db.QueryRow(ctx, `
+SELECT EXISTS(
+    SELECT 1
+    FROM digital_employees de
+    JOIN team_skill_bindings tsb
+      ON tsb.tenant_id = de.tenant_id
+     AND tsb.team_id = de.team_id
+    WHERE de.tenant_id = $1
+      AND de.id = $2
+      AND de.deleted_at IS NULL
+      AND tsb.skill_id = $3
+)`, tenantID, employeeID, skillID).Scan(&provides); err != nil {
+		return false, err
+	}
+	return provides, nil
+}
+
+func (r *PgRepository) writeTeamSkillTakeoverAudit(ctx context.Context, req BindTeamSkillRequest, item *Skill, targets []TeamSkillTakeover) error {
+	employees := make([]map[string]any, 0, len(targets))
+	for _, target := range targets {
+		employees = append(employees, map[string]any{
+			"digital_employee_id": target.DigitalEmployeeID.String(),
+			"employee_name":       target.EmployeeName,
+		})
+	}
+	details := map[string]any{
+		"team_id":             req.TeamID.String(),
+		"skill_id":            req.SkillID.String(),
+		"converged_count":     len(targets),
+		"converged_employees": employees,
+	}
+	if item != nil {
+		details["skill_slug"] = item.Slug
+		details["skill_name"] = item.Name
+	}
+	payload, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: req.TenantID, Valid: req.TenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      req.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: req.TeamID.String(), Valid: true},
+		Action:       "team.skill.takeover",
+		Details:      payload,
+	})
+	return err
 }
 
 func (r *PgRepository) UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
 	}
-	_, err := r.db.Exec(ctx, `
+	// 先取技能（用于审计详情里的 slug/name），取不到就退化为只记 id。
+	item, _ := r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+	tag, err := r.db.Exec(ctx, `
 DELETE FROM team_skill_bindings
 WHERE tenant_id = $1 AND skill_id = $2 AND team_id = $3`, req.TenantID, req.SkillID, req.TeamID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	return r.writeTeamCapabilityAudit(ctx, req, "team.skill.unbind", item)
+}
+
+// writeTeamCapabilityAudit 落一条 resource_type=team 的团队审计事件。资源维度必须是
+// team：团队审计流(GET /teams/{id}/audit)按 resource_type='team' 过滤，落在 skill 上
+// 等于在团队视角不可见。
+func (r *PgRepository) writeTeamCapabilityAudit(ctx context.Context, req BindTeamSkillRequest, action string, item *Skill) error {
+	details := map[string]any{
+		"team_id":  req.TeamID.String(),
+		"skill_id": req.SkillID.String(),
+	}
+	if item != nil {
+		details["skill_slug"] = item.Slug
+		details["skill_name"] = item.Name
+		details["skill_version"] = item.Version
+		details["risk_level"] = item.RiskLevel
+	}
+	payload, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: req.TenantID, Valid: req.TenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      req.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: req.TeamID.String(), Valid: true},
+		Action:       action,
+		Details:      payload,
+	})
 	return err
 }
 

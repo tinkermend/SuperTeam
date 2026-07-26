@@ -223,3 +223,97 @@ WHERE NOT EXISTS (
 )
 ORDER BY source_scope ASC, name ASC;
 
+
+-- name: ListTeamMCPTakeoverTargets :many
+-- 团队绑定某 MCP 前/时的接管清单：本团队成员里已自行绑定同一 MCP 的个人绑定。
+-- 预览与执行共用这一条，保证"看到的"和"接管的"是同一批。
+SELECT
+    de.id AS digital_employee_id,
+    de.name AS employee_name,
+    eb.id AS binding_id,
+    COALESCE(eb.credential_env_var, '')::text AS credential_env_var
+FROM digital_employees de
+JOIN digital_employee_mcp_bindings_v2 eb
+  ON eb.tenant_id = de.tenant_id
+ AND eb.digital_employee_id = de.id
+ AND eb.deleted_at IS NULL
+WHERE de.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND de.team_id = sqlc.arg('team_id')::uuid
+  AND de.deleted_at IS NULL
+  AND eb.mcp_server_id = sqlc.arg('mcp_server_id')::uuid
+ORDER BY de.name ASC;
+
+-- name: TakeoverTeamMCPBindings :exec
+-- 团队接管：软删本团队成员的同 MCP 个人绑定。团队基线胜出，同一能力只留一份。
+UPDATE digital_employee_mcp_bindings_v2 eb
+SET deleted_at = NOW(),
+    updated_at = NOW()
+FROM digital_employees de
+WHERE de.id = eb.digital_employee_id
+  AND de.tenant_id = eb.tenant_id
+  AND de.team_id = sqlc.arg('team_id')::uuid
+  AND de.deleted_at IS NULL
+  AND eb.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND eb.mcp_server_id = sqlc.arg('mcp_server_id')::uuid
+  AND eb.deleted_at IS NULL;
+
+-- name: TeamProvidesMCPServer :one
+-- 员工侧绑定前的冲突判据：该员工所属团队是否已经提供同一个 MCP。
+SELECT EXISTS(
+    SELECT 1
+    FROM digital_employees de
+    JOIN team_mcp_bindings tmb
+      ON tmb.tenant_id = de.tenant_id
+     AND tmb.team_id = de.team_id
+     AND tmb.deleted_at IS NULL
+    WHERE de.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND de.id = sqlc.arg('digital_employee_id')::uuid
+      AND de.deleted_at IS NULL
+      AND tmb.mcp_server_id = sqlc.arg('mcp_server_id')::uuid
+) AS team_provides;
+
+-- name: ListTeamMCPReadiness :many
+-- 团队 MCP 就绪矩阵：本团队每个 MCP 绑定 × 每名数字员工，算出该员工还缺哪些必需
+-- 环境变量。变量名由绑定/注册表定义，值只存在员工级，所以就绪与否天然是逐员工的。
+WITH team_employees AS (
+    SELECT id AS digital_employee_id, name
+    FROM digital_employees
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND team_id = sqlc.arg('team_id')::uuid
+      AND deleted_at IS NULL
+      AND archived_at IS NULL
+),
+team_mcps AS (
+    SELECT m.id AS mcp_server_id, m.server_key, m.name, m.required_env_vars
+    FROM team_mcp_bindings tmb
+    JOIN mcp_servers m
+      ON m.id = tmb.mcp_server_id
+     AND m.tenant_id = tmb.tenant_id
+     AND m.deleted_at IS NULL
+    WHERE tmb.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND tmb.team_id = sqlc.arg('team_id')::uuid
+      AND tmb.deleted_at IS NULL
+)
+SELECT
+    tm.mcp_server_id,
+    tm.server_key,
+    tm.name AS server_name,
+    tm.required_env_vars,
+    te.digital_employee_id,
+    te.name AS employee_name,
+    ARRAY(
+        SELECT required
+        FROM unnest(tm.required_env_vars) AS required
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM digital_employee_environment_variables ev
+            WHERE ev.tenant_id = sqlc.arg('tenant_id')::uuid
+              AND ev.digital_employee_id = te.digital_employee_id
+              AND ev.name = required
+              AND ev.status = 'active'
+              AND ev.deleted_at IS NULL
+        )
+    )::text[] AS missing_env_vars
+FROM team_mcps tm
+CROSS JOIN team_employees te
+ORDER BY tm.server_key ASC, te.name ASC;

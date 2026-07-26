@@ -133,6 +133,15 @@ type BindTeamSkillRequest struct {
 	TenantID uuid.UUID
 	TeamID   uuid.UUID
 	SkillID  uuid.UUID
+	// ActorUserID 用于团队审计事件的 actor；不参与业务判定，为空时审计记 uuid.Nil。
+	ActorUserID uuid.UUID
+}
+
+// TeamSkillTakeover 团队接管某技能时，被物理收敛掉的成员个人绑定。
+// 同一技能在团队与员工两个维度只留一份，团队胜出（spec §5.2.1）。
+type TeamSkillTakeover struct {
+	DigitalEmployeeID uuid.UUID
+	EmployeeName      string
 }
 
 type ListTeamSkillsRequest struct {

@@ -15,6 +15,7 @@ import (
 	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/systemconfig"
+	"github.com/superteam/control-plane/internal/teamguard"
 )
 
 type Service struct {
@@ -1187,11 +1188,19 @@ type ReassignDigitalEmployeeTeamRequest struct {
 // 已有归属的员工允许跨队转移。pg 仓储实现；不实现的 fake 视为不支持。
 type TeamReassignRepository interface {
 	ReassignDigitalEmployeeTeam(ctx context.Context, params ReassignDigitalEmployeeTeamRequest) (DigitalEmployeeRecord, error)
+	// ListDigitalEmployeeDetachBlockers 与 tenant 包移出团队走同一条 sqlc 查询，
+	// 两处判据必须一致，否则"移出"拦得住、"换队"绕得过。
+	ListDigitalEmployeeDetachBlockers(ctx context.Context, tenantID, employeeID uuid.UUID) ([]teamguard.DetachBlocker, error)
 }
 
 // ReassignTeam 换队/首次归队。副作用提示：员工的 agent home dir 按
 // (team, employee) 键，换队后下次派发落新家目录（provider 会话连续性重置）；
 // 团队级技能与 MCP 绑定继承随之切换。
+//
+// 两道守卫：
+//   - 目标团队员工数限额（与创建路径同一判据，此前换队绕过它）。
+//   - 已有归属的员工换队 = 先脱离原团队，套用与"移出团队"相同的在役/项目阻断；
+//     从候岗大厅首次归队不涉及脱离，不套。
 func (s *Service) ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
@@ -1205,6 +1214,26 @@ func (s *Service) ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeT
 	reassigner, ok := s.repository.(TeamReassignRepository)
 	if !ok {
 		return nil, fmt.Errorf("%w: team reassignment is not supported by this repository", ErrInvalidInput)
+	}
+	current, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	if current.TeamID != nil && *current.TeamID == req.TeamID {
+		// 目标就是当前团队：幂等返回，不做限额与阻断判定。
+		return employeeFromRecord(current), nil
+	}
+	if err := s.ensureTeamDigitalEmployeeCapacity(ctx, req.TenantID, req.TeamID); err != nil {
+		return nil, err
+	}
+	if current.TeamID != nil {
+		blockers, err := reassigner.ListDigitalEmployeeDetachBlockers(ctx, req.TenantID, req.DigitalEmployeeID)
+		if err != nil {
+			return nil, fmt.Errorf("list detach blockers: %w", err)
+		}
+		if err := teamguard.BlockedError(blockers, "换队"); err != nil {
+			return nil, err
+		}
 	}
 	record, err := reassigner.ReassignDigitalEmployeeTeam(ctx, req)
 	if err != nil {
@@ -1336,10 +1365,10 @@ func (s *Service) SubmitPermissionChange(ctx context.Context, req SubmitPermissi
 
 	// 目标值 + current/after diff 随 ContextPayload 承载,供权限中心弹窗渲染 + 批准时写回。
 	payload := map[string]any{
-		"employee_id":         req.DigitalEmployeeID.String(),
-		"employee_name":       employee.Name,
-		"current_role":        employee.Role,
-		"requested_by":        req.RequesterUserID.String(),
+		"employee_id":   req.DigitalEmployeeID.String(),
+		"employee_name": employee.Name,
+		"current_role":  employee.Role,
+		"requested_by":  req.RequesterUserID.String(),
 	}
 	if req.Role != nil {
 		payload["target_role"] = *req.Role

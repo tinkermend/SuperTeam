@@ -195,8 +195,8 @@ func createTeamMemberAuditEvent(ctx context.Context, q *queries.Queries, params 
 		EventType:    "team_management",
 		ActorType:    "user",
 		ActorID:      params.ActorUserID.String(),
-		ResourceType: pgtype.Text{String: "team_member", Valid: true},
-		ResourceID:   pgtype.Text{String: membershipID.String(), Valid: true},
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
 		Action:       "team.member.add",
 		Details:      details,
 	})
@@ -235,6 +235,60 @@ func (r *PgRepository) BindTeamDigitalEmployee(ctx context.Context, params BindT
 		Details:      details,
 	})
 	return err
+}
+
+// UnbindTeamDigitalEmployee 把数字员工移出团队，回候岗大厅（team_id = NULL）。
+// 与 BindTeamDigitalEmployee 对称：底层 SQL 带 team_id 守卫，员工已被换到别的团队
+// 时返回 ErrInvalidInput 而不是误解绑。
+func (r *PgRepository) UnbindTeamDigitalEmployee(ctx context.Context, params BindTeamDigitalEmployeeParams) error {
+	if _, err := r.q.UnbindTeamDigitalEmployee(ctx, queries.UnbindTeamDigitalEmployeeParams{
+		TeamID:     params.TeamID,
+		EmployeeID: params.EmployeeID,
+		TenantID:   params.TenantID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: 数字员工不存在或不属于该团队", ErrInvalidInput)
+		}
+		return err
+	}
+	details, err := json.Marshal(map[string]any{
+		"team_id":             params.TeamID.String(),
+		"digital_employee_id": params.EmployeeID.String(),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      params.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: params.TeamID.String(), Valid: true},
+		Action:       "team.digital_employee.unbind",
+		Details:      details,
+	})
+	return err
+}
+
+func (r *PgRepository) ListDigitalEmployeeDetachBlockers(ctx context.Context, tenantID, employeeID uuid.UUID) ([]DetachBlocker, error) {
+	rows, err := r.q.ListDigitalEmployeeDetachBlockers(ctx, queries.ListDigitalEmployeeDetachBlockersParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	blockers := make([]DetachBlocker, 0, len(rows))
+	for _, row := range rows {
+		blockers = append(blockers, DetachBlocker{
+			Type:   row.BlockerType,
+			RefID:  row.RefID,
+			Name:   row.RefName,
+			Status: row.RefStatus,
+		})
+	}
+	return blockers, nil
 }
 
 func (r *PgRepository) ListTeams(ctx context.Context, params ListTeamsParams) ([]TeamRecord, error) {
@@ -320,14 +374,32 @@ func (r *PgRepository) UpdateTeam(ctx context.Context, params UpdateTeamParams) 
 	if err != nil {
 		return TeamRecord{}, mapNoRows(err)
 	}
+	if err := r.writeTeamMemberAudit(ctx, r.q, params.TenantID, params.TeamID, params.ActorUserID, "team.update", map[string]any{
+		"team_id":              params.TeamID.String(),
+		"slug":                 params.Slug,
+		"name":                 params.Name,
+		"human_owner_user_ids": uuidStrings(params.HumanOwnerUserIDs),
+	}); err != nil {
+		return TeamRecord{}, err
+	}
 	return teamRecordFromQuery(team)
 }
 
-func (r *PgRepository) UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (TeamRecord, error) {
+func uuidStrings(ids []uuid.UUID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
+}
+
+func (r *PgRepository) UpdateTeamConstitution(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (TeamRecord, error) {
 	constitutionJSON, err := jsonbFromMap(constitution, "constitution")
 	if err != nil {
 		return TeamRecord{}, err
 	}
+	// 宪法是团队级行为约束，改动影响全队；此前完全不记审计。
+	previous, prevErr := r.q.GetTenantTeam(ctx, queries.GetTenantTeamParams{ID: teamID, TenantID: tenantID})
 	team, err := r.q.UpdateTenantTeamConstitution(ctx, queries.UpdateTenantTeamConstitutionParams{
 		ID:           teamID,
 		TenantID:     tenantID,
@@ -336,7 +408,33 @@ func (r *PgRepository) UpdateTeamConstitution(ctx context.Context, tenantID, tea
 	if err != nil {
 		return TeamRecord{}, mapNoRows(err)
 	}
+	details := map[string]any{
+		"team_id":         teamID.String(),
+		"hard_rule_count": len(stringListFromAny(constitution["hard_rules"])),
+	}
+	if prevErr == nil {
+		if prior, mapErr := mapFromJSONB(previous.Constitution, "constitution"); mapErr == nil {
+			details["prior_hard_rule_count"] = len(stringListFromAny(prior["hard_rules"]))
+		}
+	}
+	if err := r.writeTeamMemberAudit(ctx, r.q, tenantID, teamID, actorUserID, "team.constitution.update", details); err != nil {
+		return TeamRecord{}, err
+	}
 	return teamRecordFromQuery(team)
+}
+
+func stringListFromAny(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+			out = append(out, text)
+		}
+	}
+	return out
 }
 
 func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error {
@@ -627,6 +725,16 @@ func (r *PgRepository) AddTeamMember(ctx context.Context, params AddTeamMemberPa
 	if err != nil {
 		return TeamMemberRecord{}, mapConstraintError(err)
 	}
+	// 建团时的初始成员会记审计，但事后单独加人此前不记——团队审计流里"人是什么时候
+	// 进来的"因此缺一段。补齐后与移除/角色变更同口径。
+	if err := r.writeTeamMemberAudit(ctx, r.q, params.TenantID, params.TeamID, params.ActorUserID, "team.member.add", map[string]any{
+		"team_id":        params.TeamID.String(),
+		"membership_id":  member.ID.String(),
+		"target_user_id": params.UserID.String(),
+		"role":           params.Role,
+	}); err != nil {
+		return TeamMemberRecord{}, err
+	}
 	return teamMemberRecordFromTenantMember(member)
 }
 
@@ -659,8 +767,8 @@ func (r *PgRepository) GrantTeamMemberRole(ctx context.Context, in GrantTeamRole
 		EventType:    "team_management",
 		ActorType:    "user",
 		ActorID:      in.GrantedBy.String(),
-		ResourceType: pgtype.Text{String: "team_member", Valid: true},
-		ResourceID:   pgtype.Text{String: member.ID.String(), Valid: true},
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: in.TeamID.String(), Valid: true},
 		Action:       "team.member.grant_privileged_role",
 		Details:      details,
 	}); err != nil {
@@ -678,7 +786,102 @@ func (r *PgRepository) DisableTeamMemberRole(ctx context.Context, params Disable
 	if err != nil {
 		return TeamMemberRecord{}, mapNoRows(err)
 	}
+	if err := r.writeTeamMemberAudit(ctx, r.q, params.TenantID, params.TeamID, params.ActorUserID, "team.member.remove", map[string]any{
+		"team_id":        params.TeamID.String(),
+		"membership_id":  params.MembershipID.String(),
+		"target_user_id": member.PrincipalID.String(),
+		"role":           member.Role,
+	}); err != nil {
+		return TeamMemberRecord{}, err
+	}
 	return teamMemberRecordFromTenantMember(member)
+}
+
+// ChangeTeamMemberRole 直接角色变更（member ⇄ viewer）。tenant_members 的唯一键
+// 含 role，所以"改角色"落地为：停用旧角色行 + upsert 目标角色行（既有停用行会被
+// 复活）。两步同事务，避免中途失败留下没有任何生效角色的成员。
+func (r *PgRepository) ChangeTeamMemberRole(ctx context.Context, params ChangeTeamMemberRoleParams) (TeamMemberRecord, error) {
+	if r.db == nil {
+		return TeamMemberRecord{}, fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return TeamMemberRecord{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	qtx := r.q.WithTx(tx)
+
+	previous, err := qtx.GetTeamMember(ctx, queries.GetTeamMemberParams{
+		MembershipID: params.MembershipID,
+		TenantID:     params.TenantID,
+		TeamID:       params.TeamID,
+	})
+	if err != nil {
+		return TeamMemberRecord{}, mapNoRows(err)
+	}
+	if _, err := qtx.DisableTeamMemberRole(ctx, queries.DisableTeamMemberRoleParams{
+		MembershipID: params.MembershipID,
+		TenantID:     params.TenantID,
+		TeamID:       params.TeamID,
+	}); err != nil {
+		return TeamMemberRecord{}, mapNoRows(err)
+	}
+	member, err := qtx.AddTeamMember(ctx, queries.AddTeamMemberParams{
+		TenantID: params.TenantID,
+		TeamID:   params.TeamID,
+		UserID:   previous.UserID,
+		Role:     params.Role,
+	})
+	if err != nil {
+		return TeamMemberRecord{}, mapConstraintError(err)
+	}
+	if err := r.writeTeamMemberAudit(ctx, qtx, params.TenantID, params.TeamID, params.ActorUserID, "team.member.change_role", map[string]any{
+		"team_id":             params.TeamID.String(),
+		"membership_id":       member.ID.String(),
+		"prior_membership_id": params.MembershipID.String(),
+		"target_user_id":      previous.UserID.String(),
+		"from_role":           previous.Role,
+		"to_role":             params.Role,
+	}); err != nil {
+		return TeamMemberRecord{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamMemberRecord{}, err
+	}
+	committed = true
+	return teamMemberRecordFromTenantMember(member)
+}
+
+// writeTeamMemberAudit 落成员相关的团队审计事件。资源维度统一为 team，
+// membership_id / target_user_id 进 details——团队审计流按 resource_type='team'
+// 过滤，写在 team_member 上等于在团队视角不可见。
+func (r *PgRepository) writeTeamMemberAudit(
+	ctx context.Context,
+	q *queries.Queries,
+	tenantID, teamID, actorUserID uuid.UUID,
+	action string,
+	details map[string]any,
+) error {
+	payload, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	_, err = q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      actorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       action,
+		Details:      payload,
+	})
+	return err
 }
 
 func (r *PgRepository) CountTeamOwners(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error) {

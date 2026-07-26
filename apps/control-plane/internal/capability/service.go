@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/teamguard"
 )
 
 // envNamePattern matches a POSIX-style environment variable name.
@@ -27,6 +28,10 @@ type Repository interface {
 	ListTeamMCPBindings(ctx context.Context, req TeamScopedRequest) ([]MCPBinding, error)
 	DeleteTeamMCPBinding(ctx context.Context, req DeleteTeamMCPBindingRequest) error
 	CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error)
+	// 团队接管收敛（spec §5.2.1）：同一 MCP 在团队与员工两维度只留一份，团队胜出。
+	TeamProvidesMCPServer(ctx context.Context, tenantID, employeeID, mcpServerID uuid.UUID) (bool, error)
+	ListTeamMCPTakeoverTargets(ctx context.Context, tenantID, teamID, mcpServerID uuid.UUID) ([]MCPTakeover, error)
+	ListTeamMCPReadiness(ctx context.Context, tenantID, teamID uuid.UUID) ([]TeamMCPReadinessEntry, error)
 	ListEmployeeMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]MCPBinding, error)
 	DeleteEmployeeMCPBindingV2(ctx context.Context, req DeleteEmployeeMCPBindingV2Request) error
 	ListEffectiveMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error)
@@ -273,6 +278,15 @@ func (s *Service) CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmpl
 	definition, err := s.requireActiveMCPDefinition(ctx, req.TenantID, req.MCPServerID)
 	if err != nil {
 		return MCPBinding{}, err
+	}
+	// 团队已提供同一 MCP 时写时拒绝。此前是照写不误、再由读路径 NOT EXISTS 静默
+	// 屏蔽，结果员工页「个人 MCP 绑定」和「生效 MCP 配置」自相矛盾（spec §5.2.1）。
+	provided, err := s.repository.TeamProvidesMCPServer(ctx, req.TenantID, req.DigitalEmployeeID, req.MCPServerID)
+	if err != nil {
+		return MCPBinding{}, err
+	}
+	if provided {
+		return MCPBinding{}, teamguard.CapabilityProvidedByTeamError("MCP", definition.Name)
 	}
 	req.CredentialEnvVar = strings.TrimSpace(req.CredentialEnvVar)
 	binding, err := s.repository.CreateEmployeeMCPBindingV2(ctx, req)
@@ -570,4 +584,51 @@ func validateEmployeeScopedRequest(req EmployeeScopedRequest) error {
 		return fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
 	return nil
+}
+
+// TeamCapabilityConflict 团队绑定某能力前的接管预览：这次绑定会收敛掉哪些成员的
+// 个人绑定，其中哪些人原先用的是不同的凭据变量名（接管后会立刻缺变量）。
+// 预览与执行走同一条查询，"看到的"就是"接管的"。
+type TeamCapabilityConflict struct {
+	MCPServerID uuid.UUID
+	Takeovers   []MCPTakeover
+}
+
+// PreviewTeamMCPTakeover 返回团队绑定该 MCP 时将接管的成员个人绑定清单。
+func (s *Service) PreviewTeamMCPTakeover(ctx context.Context, tenantID, teamID, mcpServerID uuid.UUID) (TeamCapabilityConflict, error) {
+	if err := s.requireRepository(); err != nil {
+		return TeamCapabilityConflict{}, err
+	}
+	if tenantID == uuid.Nil || teamID == uuid.Nil || mcpServerID == uuid.Nil {
+		return TeamCapabilityConflict{}, fmt.Errorf("%w: tenant_id, team_id and mcp_server_id are required", ErrInvalidInput)
+	}
+	takeovers, err := s.repository.ListTeamMCPTakeoverTargets(ctx, tenantID, teamID, mcpServerID)
+	if err != nil {
+		return TeamCapabilityConflict{}, err
+	}
+	return TeamCapabilityConflict{MCPServerID: mcpServerID, Takeovers: takeovers}, nil
+}
+
+// TeamMCPReadinessEntry 团队某个 MCP 在某名成员上的就绪情况。
+type TeamMCPReadinessEntry struct {
+	MCPServerID       uuid.UUID
+	ServerKey         string
+	ServerName        string
+	RequiredEnvVars   []string
+	DigitalEmployeeID uuid.UUID
+	EmployeeName      string
+	MissingEnvVars    []string
+}
+
+// ListTeamMCPReadiness 团队 MCP 就绪矩阵。变量名由绑定/注册表定义、值只存在员工级，
+// 所以"就绪"天然是逐员工的：这里一次性把 MCP × 成员的缺失情况铺开，避免控制台
+// 逐员工 N+1 查询。
+func (s *Service) ListTeamMCPReadiness(ctx context.Context, tenantID, teamID uuid.UUID) ([]TeamMCPReadinessEntry, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if tenantID == uuid.Nil || teamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and team_id are required", ErrInvalidInput)
+	}
+	return s.repository.ListTeamMCPReadiness(ctx, tenantID, teamID)
 }

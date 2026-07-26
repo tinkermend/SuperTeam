@@ -498,6 +498,8 @@ func (s *Server) registerRoutes() {
 				r.Get("/teams/{teamId}/members", s.tenantHandler.ListTeamMembers)
 				r.Post("/teams/{teamId}/members", s.tenantHandler.AddTeamMember)
 				r.Post("/teams/{teamId}/digital-employees", s.tenantHandler.BindTeamDigitalEmployee)
+				r.Delete("/teams/{teamId}/digital-employees/{employeeId}", s.tenantHandler.UnbindTeamDigitalEmployee)
+				r.Patch("/teams/{teamId}/members/{memberId}", s.tenantHandler.ChangeTeamMemberRole)
 				r.Delete("/teams/{teamId}/members/{memberId}", s.tenantHandler.RemoveTeamMember)
 			})
 		}
@@ -538,6 +540,8 @@ func (s *Server) registerRoutes() {
 				r.Get("/mcp-servers/{serverId}/dependent-skills", s.capabilityHandler.ListDependentSkills)
 				r.Post("/teams/{teamId}/mcp-bindings", s.capabilityHandler.CreateTeamMCPBinding)
 				r.Get("/teams/{teamId}/mcp-bindings", s.capabilityHandler.ListTeamMCPBindings)
+				r.Get("/teams/{teamId}/capability-conflicts", s.capabilityHandler.GetTeamCapabilityConflicts)
+				r.Get("/teams/{teamId}/capability-readiness", s.capabilityHandler.GetTeamCapabilityReadiness)
 				r.Delete("/teams/{teamId}/mcp-bindings/{bindingId}", s.capabilityHandler.DeleteTeamMCPBinding)
 				r.Post("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.CreateEmployeeMCPBindingV2)
 				r.Get("/digital-employees/{employeeId}/mcp-bindings-v2", s.capabilityHandler.ListEmployeeMCPBindingsV2)

@@ -364,6 +364,9 @@ type Querier interface {
 	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
 	GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (GetTeamMemberRow, error)
 	GetTenantTeam(ctx context.Context, arg GetTenantTeamParams) (TenantTeam, error)
+	// 口径与 ListTenantTeamSummaries 保持一致：技能绑定 + MCP 绑定，排掉指向已删注册项的行。
+	// 本团队相关的待处理审批数（D6）：原先硬编码 0，头卡「待审批 N」pill 永不出现。
+	// 团队维度审批（如特权角色申请）把 team_id 放在 context_payload 里，故按 jsonb 取。
 	GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSummaryParams) (GetTenantTeamSummaryRow, error)
 	GetUser(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUser, error)
@@ -420,6 +423,11 @@ type Querier interface {
 	ListDigitalEmployeeActivity(ctx context.Context, arg ListDigitalEmployeeActivityParams) ([]ListDigitalEmployeeActivityRow, error)
 	ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error)
 	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
+	// 数字员工脱离当前团队（移出回候岗 / 换队）前的阻断项。两类：
+	//   active_run     —— 在役执行（会被家目录重算与继承切换直接打断）
+	//   active_project —— 仍被非归档项目引用（无团队归属的员工不能参与项目，静默移出会让项目挂起）
+	// 调用方按 blocker_type 分组组装 409 明细。
+	ListDigitalEmployeeDetachBlockers(ctx context.Context, arg ListDigitalEmployeeDetachBlockersParams) ([]ListDigitalEmployeeDetachBlockersRow, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	// 租户内当前具备在线可用 Runtime 能力的 provider 集合(判据说明见 GetDigitalEmployeeOverviewSummary)。
 	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
@@ -560,7 +568,17 @@ type Querier interface {
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
 	ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error)
+	// 团队 MCP 就绪矩阵：本团队每个 MCP 绑定 × 每名数字员工，算出该员工还缺哪些必需
+	// 环境变量。变量名由绑定/注册表定义，值只存在员工级，所以就绪与否天然是逐员工的。
+	ListTeamMCPReadiness(ctx context.Context, arg ListTeamMCPReadinessParams) ([]ListTeamMCPReadinessRow, error)
+	// 团队绑定某 MCP 前/时的接管清单：本团队成员里已自行绑定同一 MCP 的个人绑定。
+	// 预览与执行共用这一条，保证"看到的"和"接管的"是同一批。
+	ListTeamMCPTakeoverTargets(ctx context.Context, arg ListTeamMCPTakeoverTargetsParams) ([]ListTeamMCPTakeoverTargetsRow, error)
 	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
+	// 团队能力基线计数 = 技能绑定 + MCP 绑定。两者都要排掉指向已删注册项的绑定行，
+	// 口径与生效列表(ListEffectiveMCPBindingsV2ForEmployee / ListEffectiveEmployeeSkills)一致。
+	// 本团队相关的待处理审批数（D6）：原先硬编码 0，头卡「待审批 N」pill 永不出现。
+	// 团队维度审批（如特权角色申请）把 team_id 放在 context_payload 里，故按 jsonb 取。
 	ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error)
 	ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams) ([]TenantTeam, error)
 	// 跨租户列出"存在可恢复卡死 attempt"的租户,供看门狗逐租户调用 per-tenant 的
@@ -669,6 +687,10 @@ type Querier interface {
 	// cancelled(被人类决策取代,词表内唯一贴切的终态)。attempt 已被其他恢复路径
 	// 置为终态(如 lost)时命中 0 行,属合法情形,调用方不视为错误。
 	SupersedeWaitingHumanProjectTaskAttempt(ctx context.Context, arg SupersedeWaitingHumanProjectTaskAttemptParams) (int64, error)
+	// 团队接管：软删本团队成员的同 MCP 个人绑定。团队基线胜出，同一能力只留一份。
+	TakeoverTeamMCPBindings(ctx context.Context, arg TakeoverTeamMCPBindingsParams) error
+	// 员工侧绑定前的冲突判据：该员工所属团队是否已经提供同一个 MCP。
+	TeamProvidesMCPServer(ctx context.Context, arg TeamProvidesMCPServerParams) (bool, error)
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
 	TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error
 	// Forward-guarded project status transition: only applied when the current status
@@ -683,6 +705,9 @@ type Querier interface {
 	// node is full, offline, stale, or archived; callers must treat pgx.ErrNoRows
 	// as "slot unavailable" and try the next candidate.
 	TryAcquireRuntimeNodeSlot(ctx context.Context, arg TryAcquireRuntimeNodeSlotParams) (RuntimeNode, error)
+	// 把单个数字员工移出所属团队，回候岗大厅（team_id = NULL）。带 team_id 守卫，
+	// 避免并发下把已经换到别的团队的员工误解绑。
+	UnbindTeamDigitalEmployee(ctx context.Context, arg UnbindTeamDigitalEmployeeParams) (uuid.UUID, error)
 	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
 	UpdateAutomationFire(ctx context.Context, arg UpdateAutomationFireParams) (AutomationFire, error)
 	UpdateAutomationRule(ctx context.Context, arg UpdateAutomationRuleParams) (AutomationRule, error)

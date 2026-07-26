@@ -682,3 +682,206 @@ func (q *Queries) ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindin
 	}
 	return items, nil
 }
+
+const ListTeamMCPReadiness = `-- name: ListTeamMCPReadiness :many
+WITH team_employees AS (
+    SELECT id AS digital_employee_id, name
+    FROM digital_employees
+    WHERE tenant_id = $1::uuid
+      AND team_id = $2::uuid
+      AND deleted_at IS NULL
+      AND archived_at IS NULL
+),
+team_mcps AS (
+    SELECT m.id AS mcp_server_id, m.server_key, m.name, m.required_env_vars
+    FROM team_mcp_bindings tmb
+    JOIN mcp_servers m
+      ON m.id = tmb.mcp_server_id
+     AND m.tenant_id = tmb.tenant_id
+     AND m.deleted_at IS NULL
+    WHERE tmb.tenant_id = $1::uuid
+      AND tmb.team_id = $2::uuid
+      AND tmb.deleted_at IS NULL
+)
+SELECT
+    tm.mcp_server_id,
+    tm.server_key,
+    tm.name AS server_name,
+    tm.required_env_vars,
+    te.digital_employee_id,
+    te.name AS employee_name,
+    ARRAY(
+        SELECT required
+        FROM unnest(tm.required_env_vars) AS required
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM digital_employee_environment_variables ev
+            WHERE ev.tenant_id = $1::uuid
+              AND ev.digital_employee_id = te.digital_employee_id
+              AND ev.name = required
+              AND ev.status = 'active'
+              AND ev.deleted_at IS NULL
+        )
+    )::text[] AS missing_env_vars
+FROM team_mcps tm
+CROSS JOIN team_employees te
+ORDER BY tm.server_key ASC, te.name ASC
+`
+
+type ListTeamMCPReadinessParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+type ListTeamMCPReadinessRow struct {
+	McpServerID       uuid.UUID `json:"mcp_server_id"`
+	ServerKey         string    `json:"server_key"`
+	ServerName        string    `json:"server_name"`
+	RequiredEnvVars   []string  `json:"required_env_vars"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	EmployeeName      string    `json:"employee_name"`
+	MissingEnvVars    []string  `json:"missing_env_vars"`
+}
+
+// 团队 MCP 就绪矩阵：本团队每个 MCP 绑定 × 每名数字员工，算出该员工还缺哪些必需
+// 环境变量。变量名由绑定/注册表定义，值只存在员工级，所以就绪与否天然是逐员工的。
+func (q *Queries) ListTeamMCPReadiness(ctx context.Context, arg ListTeamMCPReadinessParams) ([]ListTeamMCPReadinessRow, error) {
+	rows, err := q.db.Query(ctx, ListTeamMCPReadiness, arg.TenantID, arg.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTeamMCPReadinessRow{}
+	for rows.Next() {
+		var i ListTeamMCPReadinessRow
+		if err := rows.Scan(
+			&i.McpServerID,
+			&i.ServerKey,
+			&i.ServerName,
+			&i.RequiredEnvVars,
+			&i.DigitalEmployeeID,
+			&i.EmployeeName,
+			&i.MissingEnvVars,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListTeamMCPTakeoverTargets = `-- name: ListTeamMCPTakeoverTargets :many
+SELECT
+    de.id AS digital_employee_id,
+    de.name AS employee_name,
+    eb.id AS binding_id,
+    COALESCE(eb.credential_env_var, '')::text AS credential_env_var
+FROM digital_employees de
+JOIN digital_employee_mcp_bindings_v2 eb
+  ON eb.tenant_id = de.tenant_id
+ AND eb.digital_employee_id = de.id
+ AND eb.deleted_at IS NULL
+WHERE de.tenant_id = $1::uuid
+  AND de.team_id = $2::uuid
+  AND de.deleted_at IS NULL
+  AND eb.mcp_server_id = $3::uuid
+ORDER BY de.name ASC
+`
+
+type ListTeamMCPTakeoverTargetsParams struct {
+	TenantID    uuid.UUID `json:"tenant_id"`
+	TeamID      uuid.UUID `json:"team_id"`
+	McpServerID uuid.UUID `json:"mcp_server_id"`
+}
+
+type ListTeamMCPTakeoverTargetsRow struct {
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	EmployeeName      string    `json:"employee_name"`
+	BindingID         uuid.UUID `json:"binding_id"`
+	CredentialEnvVar  string    `json:"credential_env_var"`
+}
+
+// 团队绑定某 MCP 前/时的接管清单：本团队成员里已自行绑定同一 MCP 的个人绑定。
+// 预览与执行共用这一条，保证"看到的"和"接管的"是同一批。
+func (q *Queries) ListTeamMCPTakeoverTargets(ctx context.Context, arg ListTeamMCPTakeoverTargetsParams) ([]ListTeamMCPTakeoverTargetsRow, error) {
+	rows, err := q.db.Query(ctx, ListTeamMCPTakeoverTargets, arg.TenantID, arg.TeamID, arg.McpServerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTeamMCPTakeoverTargetsRow{}
+	for rows.Next() {
+		var i ListTeamMCPTakeoverTargetsRow
+		if err := rows.Scan(
+			&i.DigitalEmployeeID,
+			&i.EmployeeName,
+			&i.BindingID,
+			&i.CredentialEnvVar,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const TakeoverTeamMCPBindings = `-- name: TakeoverTeamMCPBindings :exec
+UPDATE digital_employee_mcp_bindings_v2 eb
+SET deleted_at = NOW(),
+    updated_at = NOW()
+FROM digital_employees de
+WHERE de.id = eb.digital_employee_id
+  AND de.tenant_id = eb.tenant_id
+  AND de.team_id = $1::uuid
+  AND de.deleted_at IS NULL
+  AND eb.tenant_id = $2::uuid
+  AND eb.mcp_server_id = $3::uuid
+  AND eb.deleted_at IS NULL
+`
+
+type TakeoverTeamMCPBindingsParams struct {
+	TeamID      uuid.UUID `json:"team_id"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+	McpServerID uuid.UUID `json:"mcp_server_id"`
+}
+
+// 团队接管：软删本团队成员的同 MCP 个人绑定。团队基线胜出，同一能力只留一份。
+func (q *Queries) TakeoverTeamMCPBindings(ctx context.Context, arg TakeoverTeamMCPBindingsParams) error {
+	_, err := q.db.Exec(ctx, TakeoverTeamMCPBindings, arg.TeamID, arg.TenantID, arg.McpServerID)
+	return err
+}
+
+const TeamProvidesMCPServer = `-- name: TeamProvidesMCPServer :one
+SELECT EXISTS(
+    SELECT 1
+    FROM digital_employees de
+    JOIN team_mcp_bindings tmb
+      ON tmb.tenant_id = de.tenant_id
+     AND tmb.team_id = de.team_id
+     AND tmb.deleted_at IS NULL
+    WHERE de.tenant_id = $1::uuid
+      AND de.id = $2::uuid
+      AND de.deleted_at IS NULL
+      AND tmb.mcp_server_id = $3::uuid
+) AS team_provides
+`
+
+type TeamProvidesMCPServerParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	McpServerID       uuid.UUID `json:"mcp_server_id"`
+}
+
+// 员工侧绑定前的冲突判据：该员工所属团队是否已经提供同一个 MCP。
+func (q *Queries) TeamProvidesMCPServer(ctx context.Context, arg TeamProvidesMCPServerParams) (bool, error) {
+	row := q.db.QueryRow(ctx, TeamProvidesMCPServer, arg.TenantID, arg.DigitalEmployeeID, arg.McpServerID)
+	var team_provides bool
+	err := row.Scan(&team_provides)
+	return team_provides, err
+}

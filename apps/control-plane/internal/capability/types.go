@@ -187,6 +187,15 @@ type DeleteMCPServerDefinitionRequest struct {
 	ServerID uuid.UUID
 }
 
+// MCPTakeover 团队接管某 MCP 时，被物理收敛掉的成员个人绑定。
+// PriorCredentialEnvVar 是被收敛前该员工用的凭据变量名——与团队的不一致时，
+// 接管后这名成员会立刻缺变量，必须点名给人看到（spec §5.2.1）。
+type MCPTakeover struct {
+	DigitalEmployeeID     uuid.UUID
+	EmployeeName          string
+	PriorCredentialEnvVar string
+}
+
 type CreateTeamMCPBindingRequest struct {
 	TenantID         uuid.UUID
 	TeamID           uuid.UUID

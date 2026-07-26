@@ -837,7 +837,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	cookie := routeLogin(t, server, "admin", "admin")
 
 	teamID := uuid.New()
-	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","display_name":"Operator","password":"secret","avatar":{"provider":"dicebear","style":"adventurer","seed":"user:operator"},"selectable_team_ids":["`+teamID.String()+`"]}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","display_name":"Operator","password":"secret","tenant_role":"member","avatar":{"provider":"dicebear","style":"adventurer","seed":"user:operator"},"selectable_team_ids":["`+teamID.String()+`"]}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
 	createResp := httptest.NewRecorder()
@@ -1933,6 +1933,43 @@ func newRouteAuthRepo() *routeAuthRepo {
 		operationLogs:     []auth.CreateOperationLogParams{},
 		scopeTeamIDs:      map[uuid.UUID][]uuid.UUID{},
 	}
+}
+
+// 租户成员相关方法是 auth.Repository 后加的，该 fake 漏实现导致 internal/api
+// 测试包在 main 上就编不过（先于本次改动存在）。补最小实现使该包可编译：
+// 成员恒为 active member、owner 数恒为 1，不改变既有用例的语义。
+func (r *routeAuthRepo) CountActiveTenantOwners(ctx context.Context, tenantID uuid.UUID) (int32, error) {
+	return 1, nil
+}
+
+func (r *routeAuthRepo) GetActiveTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*auth.TenantLevelMembership, error) {
+	return &auth.TenantLevelMembership{
+		ID:       uuid.New(),
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     "member",
+		Status:   "active",
+	}, nil
+}
+
+func (r *routeAuthRepo) UpsertTenantMembership(ctx context.Context, tenantID, userID uuid.UUID, role string) (*auth.TenantLevelMembership, error) {
+	return &auth.TenantLevelMembership{
+		ID:       uuid.New(),
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     role,
+		Status:   "active",
+	}, nil
+}
+
+func (r *routeAuthRepo) DisableTenantMembership(ctx context.Context, tenantID, userID uuid.UUID) (*auth.TenantLevelMembership, error) {
+	return &auth.TenantLevelMembership{
+		ID:       uuid.New(),
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     "member",
+		Status:   "disabled",
+	}, nil
 }
 
 func (r *routeAuthRepo) WithTransaction(ctx context.Context, fn func(auth.Repository) error) error {

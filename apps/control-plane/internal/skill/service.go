@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -18,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/systemconfig"
+	"github.com/superteam/control-plane/internal/teamguard"
 	"gopkg.in/yaml.v3"
 )
 
@@ -128,10 +128,9 @@ func (s *Service) InstallSkill(ctx context.Context, req InstallSkillRequest) (In
 			}
 		}
 		if _, err := s.BindSkillToEmployee(ctx, BindEmployeeSkillRequest{TenantID: req.TenantID, DigitalEmployeeID: req.DigitalEmployeeID, SkillID: req.SkillID}); err != nil {
-			if errors.Is(err, ErrTeamAlreadyInherited) {
-				result.AlreadyBound = true
-				return result, nil
-			}
+			// 团队已提供该技能时不再吞成"已绑定"静默成功：让 409 冒出去，
+			// 界面才能说清"没装、也不需要装"。真正的重复安装在上面 effective
+			// 列表判重时已经短路返回，走不到这里。
 			return InstallSkillResult{}, err
 		}
 	default:
@@ -289,7 +288,6 @@ func (s *Service) DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 	return nil
 }
 
-
 // PresignArchiveDownload 为 runtime 即将物化的 skill 归档签发短时 GET URL。
 // key 必须落在调用方租户的 skills/ 前缀内——这是跨租户读取的唯一闸门;
 // runtime 侧随后按 archive_checksum_sha256 复核字节完整性。
@@ -394,7 +392,15 @@ func (s *Service) BindSkillToEmployee(ctx context.Context, req BindEmployeeSkill
 		return nil, err
 	}
 	if inherited {
-		return nil, ErrTeamAlreadyInherited
+		// 显式冲突：技能已由团队提供。此前调用方（InstallSkill）把它吞成
+		// AlreadyBound=true 静默"成功"，界面表现得像装上了、实际什么也没发生。
+		// 双 %w：既保留 ErrTeamAlreadyInherited 供既有判别，又让 apierror.Write
+		// 认出 coded error 输出 {code, message}。
+		name := ""
+		if item, getErr := s.repository.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID}); getErr == nil && item != nil {
+			name = item.Name
+		}
+		return nil, fmt.Errorf("%w: %w", ErrTeamAlreadyInherited, teamguard.CapabilityProvidedByTeamError("技能", name))
 	}
 	return s.repository.BindSkillToEmployee(ctx, req)
 }

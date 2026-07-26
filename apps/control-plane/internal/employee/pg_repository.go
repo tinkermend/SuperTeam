@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
+	"github.com/superteam/control-plane/internal/teamguard"
 )
 
 type PgRepository struct {
@@ -321,6 +322,24 @@ func (r *PgRepository) ReassignDigitalEmployeeTeam(ctx context.Context, params R
 	if err != nil {
 		return DigitalEmployeeRecord{}, err
 	}
+	// 团队维度审计：团队审计流按 resource_type='team' 过滤，只写 digital_employee
+	// 维度会让"谁被调走了/调进来了"在团队视角完全不可见。源团队与目标团队各记一条。
+	if previous.TeamID != nil {
+		if err := r.writeTeamTransferAudit(ctx, params, *previous.TeamID, "team.digital_employee.transfer_out", map[string]any{
+			"digital_employee_id": params.DigitalEmployeeID.String(),
+			"from_team_id":        fromTeamID,
+			"to_team_id":          params.TeamID.String(),
+		}); err != nil {
+			return DigitalEmployeeRecord{}, err
+		}
+	}
+	if err := r.writeTeamTransferAudit(ctx, params, params.TeamID, "team.digital_employee.transfer_in", map[string]any{
+		"digital_employee_id": params.DigitalEmployeeID.String(),
+		"from_team_id":        fromTeamID,
+		"to_team_id":          params.TeamID.String(),
+	}); err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
 	if _, err := r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "digital_employee_management",
@@ -334,6 +353,52 @@ func (r *PgRepository) ReassignDigitalEmployeeTeam(ctx context.Context, params R
 		return DigitalEmployeeRecord{}, err
 	}
 	return r.GetDigitalEmployee(ctx, params.TenantID, params.DigitalEmployeeID)
+}
+
+func (r *PgRepository) writeTeamTransferAudit(
+	ctx context.Context,
+	params ReassignDigitalEmployeeTeamRequest,
+	teamID uuid.UUID,
+	action string,
+	details map[string]any,
+) error {
+	payload, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      params.ActorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       action,
+		Details:      payload,
+	})
+	return err
+}
+
+// ListDigitalEmployeeDetachBlockers 与 tenant 包的移出团队走同一条 sqlc 查询，
+// 保证"换队"与"移出"用同一套阻断判据。
+func (r *PgRepository) ListDigitalEmployeeDetachBlockers(ctx context.Context, tenantID, employeeID uuid.UUID) ([]teamguard.DetachBlocker, error) {
+	rows, err := r.q.ListDigitalEmployeeDetachBlockers(ctx, queries.ListDigitalEmployeeDetachBlockersParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	blockers := make([]teamguard.DetachBlocker, 0, len(rows))
+	for _, row := range rows {
+		blockers = append(blockers, teamguard.DetachBlocker{
+			Type:   row.BlockerType,
+			RefID:  row.RefID,
+			Name:   row.RefName,
+			Status: row.RefStatus,
+		})
+	}
+	return blockers, nil
 }
 
 func (r *PgRepository) EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {

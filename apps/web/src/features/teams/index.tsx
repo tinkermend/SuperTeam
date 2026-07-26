@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   confirmTeamDelete,
-  deleteTeam,
   getTeamOverview,
   listPendingDeleteTeams,
   listTeamSummaries,
@@ -256,19 +255,11 @@ export function TeamDetailView({
   fetcher,
   teamId
 }: TeamDetailViewProps) {
-  const navigate = useNavigate();
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
   const overview = useQuery({
     queryKey: ["team-overview", teamId],
     queryFn: () => getTeamOverview(apiOptions, teamId)
 });
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteTeam(apiOptions, teamId),
-    onSuccess: () => {
-      void navigate({ to: "/teams" });
-    }
-});
-
   return (
     <>
       <ShellPageHeader
@@ -284,12 +275,7 @@ export function TeamDetailView({
           <ErrorState title="团队概览加载失败" />
         ) : null}
         {overview.data ? (
-          <TeamDetailLayout
-            apiOptions={apiOptions}
-            onDeleteTeam={() => deleteMutation.mutate()}
-            onTeamChanged={() => void overview.refetch()}
-            overview={overview.data}
-          />
+          <TeamDetailLayout apiOptions={apiOptions} overview={overview.data} />
         ) : null}
       </Main>
     </>

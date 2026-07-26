@@ -360,3 +360,33 @@ export function deleteBlockerTypeLabel(type: string | undefined): string {
   }
   return DELETE_BLOCKER_TYPE_LABELS[type] ?? type;
 }
+
+// 团队审计动作词表：团队审计流是面向人的变更流水，动作名不得裸露英文枚举。
+// 新增团队维度审计动作时同步补键（宪法「新增枚举的完成定义」）。
+const TEAM_AUDIT_ACTION_LABELS: Record<string, string> = {
+  "team.create": "创建团队",
+  "team.delete": "删除团队",
+  "team.delete.confirmed": "确认彻底删除",
+  "team.restore": "恢复团队",
+  "team.update": "修改团队身份",
+  "team.constitution.update": "修改团队宪法",
+  "team.member.add": "添加人类成员",
+  "team.member.remove": "移除人类成员",
+  "team.member.change_role": "变更成员角色",
+  "team.member.grant_privileged_role": "授予特权角色",
+  "team.skill.bind": "安装公共技能",
+  "team.skill.unbind": "移除公共技能",
+  "team.mcp.bind": "绑定公共 MCP",
+  "team.mcp.unbind": "解绑公共 MCP",
+  "team.digital_employee.bind": "收编数字员工",
+  "team.digital_employee.unbind": "移出数字员工",
+  "team.digital_employee.transfer_in": "数字员工转入",
+  "team.digital_employee.transfer_out": "数字员工转出",
+};
+
+export function teamAuditActionLabel(action: string | undefined): string {
+  if (!action) {
+    return "未知";
+  }
+  return TEAM_AUDIT_ACTION_LABELS[action.trim()] ?? action;
+}

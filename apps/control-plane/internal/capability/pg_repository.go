@@ -105,6 +105,38 @@ func (r *PgRepository) CreateTeamMCPBinding(ctx context.Context, req CreateTeamM
 	if err != nil {
 		return MCPBinding{}, err
 	}
+	if err := r.writeTeamCapabilityAudit(ctx, req.TenantID, req.TeamID, req.UserID, "team.mcp.bind", map[string]any{
+		"team_id":            req.TeamID.String(),
+		"mcp_server_id":      req.MCPServerID.String(),
+		"binding_id":         row.ID.String(),
+		"credential_env_var": req.CredentialEnvVar,
+	}); err != nil {
+		return MCPBinding{}, err
+	}
+	// 团队接管：同一 MCP 只留一份，成员各自的个人绑定就地物理收敛。
+	// 不靠读路径静默屏蔽——那会留下"个人绑定列表看得见、生效列表看不见"的幽灵行。
+	takenOver, err := r.TakeoverTeamMCPBindings(ctx, req.TenantID, req.TeamID, req.MCPServerID)
+	if err != nil {
+		return MCPBinding{}, err
+	}
+	if len(takenOver) > 0 {
+		converged := make([]map[string]any, 0, len(takenOver))
+		for _, item := range takenOver {
+			converged = append(converged, map[string]any{
+				"digital_employee_id":      item.DigitalEmployeeID.String(),
+				"employee_name":            item.EmployeeName,
+				"prior_credential_env_var": item.PriorCredentialEnvVar,
+			})
+		}
+		if err := r.writeTeamCapabilityAudit(ctx, req.TenantID, req.TeamID, req.UserID, "team.mcp.takeover", map[string]any{
+			"team_id":             req.TeamID.String(),
+			"mcp_server_id":       req.MCPServerID.String(),
+			"converged_count":     len(takenOver),
+			"converged_employees": converged,
+		}); err != nil {
+			return MCPBinding{}, err
+		}
+	}
 	teamID := row.TeamID
 	return MCPBinding{
 		ID:               row.ID,
@@ -116,6 +148,61 @@ func (r *PgRepository) CreateTeamMCPBinding(ctx context.Context, req CreateTeamM
 		CreatedAt:        timeFromTimestamptz(row.CreatedAt),
 		UpdatedAt:        timeFromTimestamptz(row.UpdatedAt),
 	}, nil
+}
+
+// ListTeamMCPTakeoverTargets 列出本团队成员里已自行绑定该 MCP 的个人绑定。
+// 预览与执行共用这一条，保证"看到的"和"接管的"是同一批。
+func (r *PgRepository) ListTeamMCPTakeoverTargets(ctx context.Context, tenantID, teamID, mcpServerID uuid.UUID) ([]MCPTakeover, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListTeamMCPTakeoverTargets(ctx, queries.ListTeamMCPTakeoverTargetsParams{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		McpServerID: mcpServerID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	targets := make([]MCPTakeover, 0, len(rows))
+	for _, row := range rows {
+		targets = append(targets, MCPTakeover{
+			DigitalEmployeeID:     row.DigitalEmployeeID,
+			EmployeeName:          row.EmployeeName,
+			PriorCredentialEnvVar: row.CredentialEnvVar,
+		})
+	}
+	return targets, nil
+}
+
+func (r *PgRepository) TakeoverTeamMCPBindings(ctx context.Context, tenantID, teamID, mcpServerID uuid.UUID) ([]MCPTakeover, error) {
+	targets, err := r.ListTeamMCPTakeoverTargets(ctx, tenantID, teamID, mcpServerID)
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	if err := r.q.TakeoverTeamMCPBindings(ctx, queries.TakeoverTeamMCPBindingsParams{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		McpServerID: mcpServerID,
+	}); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
+// TeamProvidesMCPServer 员工侧绑定前的冲突判据：所属团队是否已提供同一个 MCP。
+func (r *PgRepository) TeamProvidesMCPServer(ctx context.Context, tenantID, employeeID, mcpServerID uuid.UUID) (bool, error) {
+	if err := r.requireQueries(); err != nil {
+		return false, err
+	}
+	return r.q.TeamProvidesMCPServer(ctx, queries.TeamProvidesMCPServerParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		McpServerID:       mcpServerID,
+	})
 }
 
 func (r *PgRepository) ListTeamMCPBindings(ctx context.Context, req TeamScopedRequest) ([]MCPBinding, error) {
@@ -157,11 +244,62 @@ func (r *PgRepository) DeleteTeamMCPBinding(ctx context.Context, req DeleteTeamM
 	if err := r.requireQueries(); err != nil {
 		return err
 	}
-	return r.q.DeleteTeamMCPBinding(ctx, queries.DeleteTeamMCPBindingParams{
+	// 先解析出 server_key 再删：审计详情里裸 binding_id 对人没有意义，
+	// 而删除后就查不到它指向哪个 MCP 了。
+	serverKey, serverID := "", ""
+	existing, err := r.q.ListTeamMCPBindings(ctx, queries.ListTeamMCPBindingsParams{
+		TenantID: req.TenantID,
+		TeamID:   req.TeamID,
+	})
+	if err != nil {
+		return err
+	}
+	for _, row := range existing {
+		if row.ID == req.BindingID {
+			serverKey = row.ServerKey
+			serverID = row.McpServerID.String()
+			break
+		}
+	}
+	if err := r.q.DeleteTeamMCPBinding(ctx, queries.DeleteTeamMCPBindingParams{
 		TenantID: req.TenantID,
 		TeamID:   req.TeamID,
 		ID:       req.BindingID,
+	}); err != nil {
+		return err
+	}
+	return r.writeTeamCapabilityAudit(ctx, req.TenantID, req.TeamID, req.UserID, "team.mcp.unbind", map[string]any{
+		"team_id":       req.TeamID.String(),
+		"binding_id":    req.BindingID.String(),
+		"mcp_server_id": serverID,
+		"server_key":    serverKey,
 	})
+}
+
+// writeTeamCapabilityAudit 落一条 resource_type=team 的团队审计事件。资源维度必须是
+// team，团队审计流(GET /teams/{id}/audit)按 resource_type='team' 过滤，落在别的
+// 资源上等于不可见。
+func (r *PgRepository) writeTeamCapabilityAudit(
+	ctx context.Context,
+	tenantID, teamID, actorUserID uuid.UUID,
+	action string,
+	details map[string]any,
+) error {
+	payload, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+		EventType:    "team_management",
+		ActorType:    "user",
+		ActorID:      actorUserID.String(),
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       action,
+		Details:      payload,
+	})
+	return err
 }
 
 func (r *PgRepository) CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error) {
@@ -462,4 +600,30 @@ func mapNoRows(err error) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+func (r *PgRepository) ListTeamMCPReadiness(ctx context.Context, tenantID, teamID uuid.UUID) ([]TeamMCPReadinessEntry, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListTeamMCPReadiness(ctx, queries.ListTeamMCPReadinessParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]TeamMCPReadinessEntry, 0, len(rows))
+	for _, row := range rows {
+		entries = append(entries, TeamMCPReadinessEntry{
+			MCPServerID:       row.McpServerID,
+			ServerKey:         row.ServerKey,
+			ServerName:        row.ServerName,
+			RequiredEnvVars:   row.RequiredEnvVars,
+			DigitalEmployeeID: row.DigitalEmployeeID,
+			EmployeeName:      row.EmployeeName,
+			MissingEnvVars:    row.MissingEnvVars,
+		})
+	}
+	return entries, nil
 }

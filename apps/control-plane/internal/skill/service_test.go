@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/superteam/control-plane/internal/storage"
+	"github.com/superteam/control-plane/internal/teamguard"
 )
 
 type mockObjectStore struct {
@@ -497,24 +498,28 @@ func TestInstallSkillReportsAlreadyBoundForEffectiveSkill(t *testing.T) {
 	require.Equal(t, BindEmployeeSkillRequest{}, repo.employeeBindReq)
 }
 
-func TestInstallSkillReportsAlreadyBoundForTeamInheritance(t *testing.T) {
+// 团队接管收敛（spec §5.2.1）：团队已提供该技能时必须显式冲突，不能吞成
+// AlreadyBound=true 静默"成功"——界面会表现得像装上了，实际什么也没发生。
+func TestInstallSkillRejectsWhenTeamAlreadyProvidesSkill(t *testing.T) {
 	tenantID := uuid.New()
 	skillID := uuid.New()
 	repo := &serviceTestRepository{
-		getSkillResult:  &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose"},
+		getSkillResult:  &Skill{ID: skillID, TenantID: tenantID, Slug: "diagnose", Name: "诊断技能"},
 		inheritedToTeam: true,
 	}
 	svc := NewService(repo, nil)
 
-	result, err := svc.InstallSkill(context.Background(), InstallSkillRequest{
+	_, err := svc.InstallSkill(context.Background(), InstallSkillRequest{
 		TenantID:          tenantID,
 		SkillID:           skillID,
 		TargetScope:       SkillInstallTargetEmployee,
 		DigitalEmployeeID: uuid.New(),
 	})
 
-	require.NoError(t, err)
-	require.True(t, result.AlreadyBound)
+	require.ErrorIs(t, err, ErrTeamAlreadyInherited)
+	require.ErrorIs(t, err, teamguard.ErrCapabilityProvidedByTeam)
+	require.Contains(t, err.Error(), "诊断技能")
+	require.Equal(t, BindEmployeeSkillRequest{}, repo.employeeBindReq)
 }
 
 func TestInstallSkillTeamScopeBindsAndIsIdempotent(t *testing.T) {

@@ -57,6 +57,7 @@ import { Route as AuthenticatedLogsRuntimeIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedLogsOperationIndexRouteImport } from './routes/_authenticated/logs/operation/index'
 import { Route as AuthenticatedLogsLoginIndexRouteImport } from './routes/_authenticated/logs/login/index'
 import { Route as AuthenticatedEmployeesTemplatesIndexRouteImport } from './routes/_authenticated/employees/templates/index'
+import { Route as AuthenticatedTeamsTeamIdConfigRouteImport } from './routes/_authenticated/teams/$teamId/config'
 import { Route as AuthenticatedProjectsProjectIdConfigRouteImport } from './routes/_authenticated/projects/$projectId/config'
 import { Route as AuthenticatedEmployeesTemplatesTemplateTypeRouteImport } from './routes/_authenticated/employees/templates/$templateType'
 import { Route as AuthenticatedEmployeesEmployeeIdConfigRouteImport } from './routes/_authenticated/employees/$employeeId/config'
@@ -329,6 +330,12 @@ const AuthenticatedEmployeesTemplatesIndexRoute =
     path: '/employees/templates/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTeamsTeamIdConfigRoute =
+  AuthenticatedTeamsTeamIdConfigRouteImport.update({
+    id: '/config',
+    path: '/config',
+    getParentRoute: () => AuthenticatedTeamsTeamIdRoute,
+  } as any)
 const AuthenticatedProjectsProjectIdConfigRoute =
   AuthenticatedProjectsProjectIdConfigRouteImport.update({
     id: '/config',
@@ -367,7 +374,7 @@ export interface FileRoutesByFullPath {
   '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
   '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
-  '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRouteWithChildren
   '/teams/new': typeof AuthenticatedTeamsNewRoute
   '/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/approvals/': typeof AuthenticatedApprovalsIndexRoute
@@ -395,6 +402,7 @@ export interface FileRoutesByFullPath {
   '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
   '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
   '/logs/login/': typeof AuthenticatedLogsLoginIndexRoute
   '/logs/operation/': typeof AuthenticatedLogsOperationIndexRoute
@@ -418,7 +426,7 @@ export interface FileRoutesByTo {
   '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
   '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
-  '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRouteWithChildren
   '/teams/new': typeof AuthenticatedTeamsNewRoute
   '/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/approvals': typeof AuthenticatedApprovalsIndexRoute
@@ -446,6 +454,7 @@ export interface FileRoutesByTo {
   '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
   '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/employees/templates': typeof AuthenticatedEmployeesTemplatesIndexRoute
   '/logs/login': typeof AuthenticatedLogsLoginIndexRoute
   '/logs/operation': typeof AuthenticatedLogsOperationIndexRoute
@@ -472,7 +481,7 @@ export interface FileRoutesById {
   '/_authenticated/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/_authenticated/skills/upload': typeof AuthenticatedSkillsUploadRoute
   '/_authenticated/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
-  '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRouteWithChildren
   '/_authenticated/teams/new': typeof AuthenticatedTeamsNewRoute
   '/_authenticated/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/_authenticated/approvals/': typeof AuthenticatedApprovalsIndexRoute
@@ -500,6 +509,7 @@ export interface FileRoutesById {
   '/_authenticated/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
   '/_authenticated/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/_authenticated/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/_authenticated/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/_authenticated/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
   '/_authenticated/logs/login/': typeof AuthenticatedLogsLoginIndexRoute
   '/_authenticated/logs/operation/': typeof AuthenticatedLogsOperationIndexRoute
@@ -554,6 +564,7 @@ export interface FileRouteTypes {
     | '/employees/$employeeId/config'
     | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
+    | '/teams/$teamId/config'
     | '/employees/templates/'
     | '/logs/login/'
     | '/logs/operation/'
@@ -605,6 +616,7 @@ export interface FileRouteTypes {
     | '/employees/$employeeId/config'
     | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
+    | '/teams/$teamId/config'
     | '/employees/templates'
     | '/logs/login'
     | '/logs/operation'
@@ -658,6 +670,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/$employeeId/config'
     | '/_authenticated/employees/templates/$templateType'
     | '/_authenticated/projects/$projectId/config'
+    | '/_authenticated/teams/$teamId/config'
     | '/_authenticated/employees/templates/'
     | '/_authenticated/logs/login/'
     | '/_authenticated/logs/operation/'
@@ -1013,6 +1026,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeesTemplatesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/teams/$teamId/config': {
+      id: '/_authenticated/teams/$teamId/config'
+      path: '/config'
+      fullPath: '/teams/$teamId/config'
+      preLoaderRoute: typeof AuthenticatedTeamsTeamIdConfigRouteImport
+      parentRoute: typeof AuthenticatedTeamsTeamIdRoute
+    }
     '/_authenticated/projects/$projectId/config': {
       id: '/_authenticated/projects/$projectId/config'
       path: '/config'
@@ -1087,6 +1107,20 @@ const AuthenticatedProjectsProjectIdRouteWithChildren =
     AuthenticatedProjectsProjectIdRouteChildren,
   )
 
+interface AuthenticatedTeamsTeamIdRouteChildren {
+  AuthenticatedTeamsTeamIdConfigRoute: typeof AuthenticatedTeamsTeamIdConfigRoute
+}
+
+const AuthenticatedTeamsTeamIdRouteChildren: AuthenticatedTeamsTeamIdRouteChildren =
+  {
+    AuthenticatedTeamsTeamIdConfigRoute: AuthenticatedTeamsTeamIdConfigRoute,
+  }
+
+const AuthenticatedTeamsTeamIdRouteWithChildren =
+  AuthenticatedTeamsTeamIdRoute._addFileChildren(
+    AuthenticatedTeamsTeamIdRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedLogsRouteRoute: typeof AuthenticatedLogsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -1099,7 +1133,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSkillsSkillIdRoute: typeof AuthenticatedSkillsSkillIdRoute
   AuthenticatedSkillsUploadRoute: typeof AuthenticatedSkillsUploadRoute
   AuthenticatedTaskLaunchesDemandIdRoute: typeof AuthenticatedTaskLaunchesDemandIdRoute
-  AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
+  AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRouteWithChildren
   AuthenticatedTeamsNewRoute: typeof AuthenticatedTeamsNewRoute
   AuthenticatedWorkflowsDemandIdRoute: typeof AuthenticatedWorkflowsDemandIdRoute
   AuthenticatedApprovalsIndexRoute: typeof AuthenticatedApprovalsIndexRoute
@@ -1142,7 +1176,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSkillsUploadRoute: AuthenticatedSkillsUploadRoute,
   AuthenticatedTaskLaunchesDemandIdRoute:
     AuthenticatedTaskLaunchesDemandIdRoute,
-  AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRoute,
+  AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRouteWithChildren,
   AuthenticatedTeamsNewRoute: AuthenticatedTeamsNewRoute,
   AuthenticatedWorkflowsDemandIdRoute: AuthenticatedWorkflowsDemandIdRoute,
   AuthenticatedApprovalsIndexRoute: AuthenticatedApprovalsIndexRoute,

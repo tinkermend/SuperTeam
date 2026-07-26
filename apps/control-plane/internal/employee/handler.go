@@ -655,6 +655,24 @@ func (h *HTTPHandler) ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// 换队跨两个团队的编制，双边都要有 team.update：只查员工维度的话，对目标团队
+	// 没有任何管理权的人也能把员工塞进去。首次归队（当前无归属）只查目标团队。
+	current, err := service.GetDigitalEmployee(r.Context(), tenantID, employeeID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	if current.TeamID != nil && *current.TeamID != req.TeamID {
+		if !h.authorizeTeamScoped(w, r, tenantID, *current.TeamID, "digital employee transfer out") {
+			return
+		}
+	}
+	if req.TeamID != uuid.Nil && (current.TeamID == nil || *current.TeamID != req.TeamID) {
+		if !h.authorizeTeamScoped(w, r, tenantID, req.TeamID, "digital employee transfer in") {
+			return
+		}
+	}
+
 	employee, err := service.ReassignTeam(r.Context(), ReassignDigitalEmployeeTeamRequest{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
@@ -853,6 +871,37 @@ func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService,
 		return nil, false
 	}
 	return h.service, true
+}
+
+// authorizeTeamScoped 对指定团队做 team.update 检查。换队要同时满足源团队与目标
+// 团队的管理权限，员工维度的 employee.team.update 不能替代它。
+func (h *HTTPHandler) authorizeTeamScoped(w http.ResponseWriter, r *http.Request, tenantID, teamID uuid.UUID, auditReason string) bool {
+	if h == nil || h.authorizer == nil {
+		http.Error(w, "digital employee authorization is not configured", http.StatusForbidden)
+		return false
+	}
+	userID := middleware.GetUserID(r.Context())
+	if userID == uuid.Nil || teamID == uuid.Nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor:       authz.ActorRef{Type: authz.ActorUser, ID: userID.String()},
+		Action:      authz.ActionTeamUpdate,
+		Resource:    authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()},
+		TenantID:    tenantID,
+		TeamID:      &teamID,
+		AuditReason: auditReason,
+	})
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+	if !decision.Allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 func (h *HTTPHandler) authorizeDigitalEmployeeManagement(w http.ResponseWriter, r *http.Request, action string, employeeID *uuid.UUID, auditReason string) (uuid.UUID, bool) {

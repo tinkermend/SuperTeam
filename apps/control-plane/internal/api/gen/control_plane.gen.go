@@ -37,6 +37,7 @@ func (e AddTeamMemberRequestRole) Valid() bool {
 const (
 	TeamAuditRead                   AllowedTeamAction = "team.audit.read"
 	TeamCapabilityBind              AllowedTeamAction = "team.capability.bind"
+	TeamCapabilityManage            AllowedTeamAction = "team.capability.manage"
 	TeamCapabilityUnbind            AllowedTeamAction = "team.capability.unbind"
 	TeamDelete                      AllowedTeamAction = "team.delete"
 	TeamGovernanceApprove           AllowedTeamAction = "team.governance.approve"
@@ -53,6 +54,8 @@ func (e AllowedTeamAction) Valid() bool {
 	case TeamAuditRead:
 		return true
 	case TeamCapabilityBind:
+		return true
+	case TeamCapabilityManage:
 		return true
 	case TeamCapabilityUnbind:
 		return true
@@ -2424,6 +2427,24 @@ func (e ListTeamsParamsStatus) Valid() bool {
 	case ListTeamsParamsStatusArchived:
 		return true
 	case ListTeamsParamsStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChangeTeamMemberRoleJSONBodyRole.
+const (
+	Member ChangeTeamMemberRoleJSONBodyRole = "member"
+	Viewer ChangeTeamMemberRoleJSONBodyRole = "viewer"
+)
+
+// Valid indicates whether the value is a known member of the ChangeTeamMemberRoleJSONBodyRole enum.
+func (e ChangeTeamMemberRoleJSONBodyRole) Valid() bool {
+	switch e {
+	case Member:
+		return true
+	case Viewer:
 		return true
 	default:
 		return false
@@ -6835,11 +6856,24 @@ type ListTeamAuditEventsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetTeamCapabilityConflictsParams defines parameters for GetTeamCapabilityConflicts.
+type GetTeamCapabilityConflictsParams struct {
+	McpServerId openapi_types.UUID `form:"mcp_server_id" json:"mcp_server_id"`
+}
+
 // ListTeamMembersParams defines parameters for ListTeamMembers.
 type ListTeamMembersParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
+
+// ChangeTeamMemberRoleJSONBody defines parameters for ChangeTeamMemberRole.
+type ChangeTeamMemberRoleJSONBody struct {
+	Role ChangeTeamMemberRoleJSONBodyRole `json:"role"`
+}
+
+// ChangeTeamMemberRoleJSONBodyRole defines parameters for ChangeTeamMemberRole.
+type ChangeTeamMemberRoleJSONBodyRole string
 
 // BindTeamSkillJSONBody defines parameters for BindTeamSkill.
 type BindTeamSkillJSONBody struct {
@@ -7112,6 +7146,9 @@ type CreateTeamMCPBindingJSONRequestBody = CreateMCPBindingRequest
 
 // AddTeamMemberJSONRequestBody defines body for AddTeamMember for application/json ContentType.
 type AddTeamMemberJSONRequestBody = AddTeamMemberRequest
+
+// ChangeTeamMemberRoleJSONRequestBody defines body for ChangeTeamMemberRole for application/json ContentType.
+type ChangeTeamMemberRoleJSONRequestBody ChangeTeamMemberRoleJSONBody
 
 // RequestTeamPrivilegedRoleJSONRequestBody defines body for RequestTeamPrivilegedRole for application/json ContentType.
 type RequestTeamPrivilegedRoleJSONRequestBody = RequestPrivilegedRoleRequest
@@ -8350,6 +8387,12 @@ type ServerInterface interface {
 	// List team audit events
 	// (GET /api/v1/teams/{teamId}/audit)
 	ListTeamAuditEvents(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamAuditEventsParams)
+	// Preview which member bindings a team capability bind would take over
+	// (GET /api/v1/teams/{teamId}/capability-conflicts)
+	GetTeamCapabilityConflicts(w http.ResponseWriter, r *http.Request, teamId TeamId, params GetTeamCapabilityConflictsParams)
+	// Team capability readiness matrix (MCP x member)
+	// (GET /api/v1/teams/{teamId}/capability-readiness)
+	GetTeamCapabilityReadiness(w http.ResponseWriter, r *http.Request, teamId TeamId)
 	// Confirm and physically delete a pending-delete team
 	// (POST /api/v1/teams/{teamId}/confirm-delete)
 	ConfirmTeamDelete(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -8359,6 +8402,9 @@ type ServerInterface interface {
 	// Bind an unassigned (lobby) digital employee into the team
 	// (POST /api/v1/teams/{teamId}/digital-employees)
 	BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Remove a digital employee from the team (back to the lobby)
+	// (DELETE /api/v1/teams/{teamId}/digital-employees/{employeeId})
+	UnbindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId, employeeId EmployeeId)
 	// List team MCP bindings to registered MCP servers
 	// (GET /api/v1/teams/{teamId}/mcp-bindings)
 	ListTeamMCPBindings(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -8377,6 +8423,9 @@ type ServerInterface interface {
 	// Remove a team member role
 	// (DELETE /api/v1/teams/{teamId}/members/{memberId})
 	RemoveTeamMember(w http.ResponseWriter, r *http.Request, teamId TeamId, memberId MemberId)
+	// Change a team member's direct role
+	// (PATCH /api/v1/teams/{teamId}/members/{memberId})
+	ChangeTeamMemberRole(w http.ResponseWriter, r *http.Request, teamId TeamId, memberId MemberId)
 	// Get the team management overview
 	// (GET /api/v1/teams/{teamId}/overview)
 	GetTeamOverview(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -9622,6 +9671,18 @@ func (_ Unimplemented) ListTeamAuditEvents(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Preview which member bindings a team capability bind would take over
+// (GET /api/v1/teams/{teamId}/capability-conflicts)
+func (_ Unimplemented) GetTeamCapabilityConflicts(w http.ResponseWriter, r *http.Request, teamId TeamId, params GetTeamCapabilityConflictsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Team capability readiness matrix (MCP x member)
+// (GET /api/v1/teams/{teamId}/capability-readiness)
+func (_ Unimplemented) GetTeamCapabilityReadiness(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Confirm and physically delete a pending-delete team
 // (POST /api/v1/teams/{teamId}/confirm-delete)
 func (_ Unimplemented) ConfirmTeamDelete(w http.ResponseWriter, r *http.Request, teamId TeamId) {
@@ -9637,6 +9698,12 @@ func (_ Unimplemented) UpdateTeamConstitution(w http.ResponseWriter, r *http.Req
 // Bind an unassigned (lobby) digital employee into the team
 // (POST /api/v1/teams/{teamId}/digital-employees)
 func (_ Unimplemented) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Remove a digital employee from the team (back to the lobby)
+// (DELETE /api/v1/teams/{teamId}/digital-employees/{employeeId})
+func (_ Unimplemented) UnbindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9673,6 +9740,12 @@ func (_ Unimplemented) AddTeamMember(w http.ResponseWriter, r *http.Request, tea
 // Remove a team member role
 // (DELETE /api/v1/teams/{teamId}/members/{memberId})
 func (_ Unimplemented) RemoveTeamMember(w http.ResponseWriter, r *http.Request, teamId TeamId, memberId MemberId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Change a team member's direct role
+// (PATCH /api/v1/teams/{teamId}/members/{memberId})
+func (_ Unimplemented) ChangeTeamMemberRole(w http.ResponseWriter, r *http.Request, teamId TeamId, memberId MemberId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -16824,6 +16897,74 @@ func (siw *ServerInterfaceWrapper) ListTeamAuditEvents(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetTeamCapabilityConflicts operation middleware
+func (siw *ServerInterfaceWrapper) GetTeamCapabilityConflicts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetTeamCapabilityConflictsParams
+
+	// ------------- Required query parameter "mcp_server_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "mcp_server_id", r.URL.Query(), &params.McpServerId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mcp_server_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mcp_server_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTeamCapabilityConflicts(w, r, teamId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTeamCapabilityReadiness operation middleware
+func (siw *ServerInterfaceWrapper) GetTeamCapabilityReadiness(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTeamCapabilityReadiness(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ConfirmTeamDelete operation middleware
 func (siw *ServerInterfaceWrapper) ConfirmTeamDelete(w http.ResponseWriter, r *http.Request) {
 
@@ -16893,6 +17034,41 @@ func (siw *ServerInterfaceWrapper) BindTeamDigitalEmployee(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.BindTeamDigitalEmployee(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnbindTeamDigitalEmployee operation middleware
+func (siw *ServerInterfaceWrapper) UnbindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnbindTeamDigitalEmployee(w, r, teamId, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17096,6 +17272,41 @@ func (siw *ServerInterfaceWrapper) RemoveTeamMember(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RemoveTeamMember(w, r, teamId, memberId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangeTeamMemberRole operation middleware
+func (siw *ServerInterfaceWrapper) ChangeTeamMemberRole(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "memberId" -------------
+	var memberId MemberId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "memberId", chi.URLParam(r, "memberId"), &memberId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "memberId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangeTeamMemberRole(w, r, teamId, memberId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18153,6 +18364,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/audit", wrapper.ListTeamAuditEvents)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/capability-conflicts", wrapper.GetTeamCapabilityConflicts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/capability-readiness", wrapper.GetTeamCapabilityReadiness)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/confirm-delete", wrapper.ConfirmTeamDelete)
 	})
 	r.Group(func(r chi.Router) {
@@ -18160,6 +18377,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/digital-employees", wrapper.BindTeamDigitalEmployee)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/digital-employees/{employeeId}", wrapper.UnbindTeamDigitalEmployee)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/mcp-bindings", wrapper.ListTeamMCPBindings)
@@ -18178,6 +18398,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/members/{memberId}", wrapper.RemoveTeamMember)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/teams/{teamId}/members/{memberId}", wrapper.ChangeTeamMemberRole)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/overview", wrapper.GetTeamOverview)

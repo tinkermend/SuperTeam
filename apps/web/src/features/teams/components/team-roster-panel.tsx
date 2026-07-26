@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Plus, UserPlus } from "lucide-react";
 import {
@@ -15,6 +15,7 @@ import {
   WorkSurface
 } from "@/components/superteam";
 import { Label } from "@/components/ui/label";
+import type { ApiClientOptions } from "@/lib/api/client";
 import type { AllowedTeamAction } from "@/lib/api/teams";
 import { bindTeamDigitalEmployee } from "@/lib/api/teams";
 import type { DigitalEmployee } from "@/lib/api/employees";
@@ -29,17 +30,29 @@ import {
   writeTeamDigitalEmployeePageSize,
   type TeamDigitalEmployeePageSize
 } from "../lib/team-digital-employees-page-size";
+import { TeamDigitalEmployeeDetachActions } from "./team-digital-employee-detach";
 
-type TeamOverviewTabProps = {
+type TeamRosterPanelProps = {
   allowedActions: AllowedTeamAction[];
   apiBaseUrl: string;
   fetcher?: typeof fetch;
+  /** 只读模式（团队详情观察面）：不渲染收编面板与移出/换队动作，仅保留详情链接。 */
+  readOnly?: boolean;
   teamId: string;
 };
 
-export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, teamId }: TeamOverviewTabProps) {
+// 团队数字员工编制面板。写操作只在团队配置页出现；详情页以 readOnly 复用同一张表，
+// 避免两处各维护一套列与空状态。
+export function TeamRosterPanel({
+  allowedActions,
+  apiBaseUrl,
+  fetcher,
+  readOnly = false,
+  teamId
+}: TeamRosterPanelProps) {
   const apiOptions = useMemo(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
-  const canManageTeam = allowedActions.includes("team.update");
+  const queryClient = useQueryClient();
+  const canManageTeam = !readOnly && allowedActions.includes("team.update");
 
   const digitalEmployeesQuery = useQuery({
     queryKey: ["team-digital-employees", teamId],
@@ -53,18 +66,29 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, teamId }:
     queryFn: () => listDigitalEmployees(apiOptions, { assignment: "unassigned" })
 });
 
+  // 编制变动同时影响头卡计数（team-overview 的 digital_employee_count），只刷两个
+  // 员工列表会让表格与头卡对不上（表格 11 条、头卡还写 12 数字员工）。
+  // 收编与移出/换队共用这一个出口。
+  const refetchRoster = () => {
+    void digitalEmployeesQuery.refetch();
+    void unassignedEmployeesQuery.refetch();
+    void queryClient.invalidateQueries({ queryKey: ["team-overview", teamId] });
+    void queryClient.invalidateQueries({ queryKey: ["team-summaries"] });
+  };
+
   const bindEmployeeMutation = useMutation({
     mutationFn: (employeeId: string) => bindTeamDigitalEmployee(apiOptions, teamId, employeeId),
-    onSuccess: () => {
-      void digitalEmployeesQuery.refetch();
-      void unassignedEmployeesQuery.refetch();
-    }
+    onSuccess: refetchRoster
 });
 
   return (
     <DigitalEmployeesSection
+      apiOptions={apiOptions}
+      canManageTeam={canManageTeam}
       employees={digitalEmployeesQuery.data ?? []}
       isLoading={digitalEmployeesQuery.isLoading}
+      onRosterChanged={refetchRoster}
+      teamId={teamId}
       bindPanel={
         canManageTeam ? (
           <BindUnassignedEmployeePanel
@@ -80,13 +104,21 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, teamId }:
 }
 
 function DigitalEmployeesSection({
+  apiOptions,
   bindPanel,
+  canManageTeam,
   employees,
-  isLoading
+  isLoading,
+  onRosterChanged,
+  teamId
 }: {
+  apiOptions: ApiClientOptions;
   bindPanel?: ReactNode;
+  canManageTeam: boolean;
   employees: DigitalEmployee[];
   isLoading: boolean;
+  onRosterChanged: () => void;
+  teamId: string;
 }) {
   const empty = !isLoading && employees.length === 0;
   const [page, setPage] = useState(1);
@@ -177,11 +209,21 @@ function DigitalEmployeesSection({
                     </StatusPill>
                   </Td>
                   <Td className="text-right">
-                    <Button asChild size="sm" variant="ghost">
-                      <Link to="/employees/$employeeId" params={{ employeeId: employee.id }}>
-                        详情
-                      </Link>
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button asChild size="sm" variant="ghost">
+                        <Link to="/employees/$employeeId" params={{ employeeId: employee.id }}>
+                          详情
+                        </Link>
+                      </Button>
+                      {canManageTeam ? (
+                        <TeamDigitalEmployeeDetachActions
+                          apiOptions={apiOptions}
+                          employee={employee}
+                          onChanged={onRosterChanged}
+                          teamId={teamId}
+                        />
+                      ) : null}
+                    </div>
                   </Td>
                 </Tr>
               ))}

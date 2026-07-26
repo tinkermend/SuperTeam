@@ -58,6 +58,8 @@ type handlerService struct {
 	mcpDefinition    MCPDefinition
 	mcpBinding       MCPBinding
 	effectiveServers []EffectiveMCPServer
+	takeovers        []MCPTakeover
+	readiness        []TeamMCPReadinessEntry
 
 	createDefinitionReq        CreateMCPServerDefinitionRequest
 	listDefinitionsReq         ListMCPServerDefinitionsRequest
@@ -94,6 +96,14 @@ func (s *handlerService) DeleteMCPServerDefinition(_ context.Context, req Delete
 func (s *handlerService) CreateTeamMCPBinding(_ context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error) {
 	s.createTeamBindingReq = req
 	return s.mcpBinding, s.err
+}
+
+func (s *handlerService) PreviewTeamMCPTakeover(_ context.Context, _, _, mcpServerID uuid.UUID) (TeamCapabilityConflict, error) {
+	return TeamCapabilityConflict{MCPServerID: mcpServerID, Takeovers: s.takeovers}, s.err
+}
+
+func (s *handlerService) ListTeamMCPReadiness(_ context.Context, _, _ uuid.UUID) ([]TeamMCPReadinessEntry, error) {
+	return s.readiness, s.err
 }
 
 func (s *handlerService) ListTeamMCPBindings(_ context.Context, _ TeamScopedRequest) ([]MCPBinding, error) {
@@ -509,4 +519,3 @@ func TestHandlerDeleteMCPServerDefinitionConflictMapsTo409(t *testing.T) {
 		t.Fatalf("expected 409, got %d", resp.Code)
 	}
 }
-

@@ -10,6 +10,9 @@ import (
 )
 
 type serviceRepo struct {
+	teamProvidesMCP     bool
+	teamTakeovers       []MCPTakeover
+	teamReadiness       []TeamMCPReadinessEntry
 	mcpDefinition       MCPDefinition
 	createdDefinition   CreateMCPServerDefinitionRequest
 	configuredEnvVars   []string
@@ -67,6 +70,19 @@ func (r *serviceRepo) ListTeamMCPBindings(context.Context, TeamScopedRequest) ([
 
 func (r *serviceRepo) DeleteTeamMCPBinding(context.Context, DeleteTeamMCPBindingRequest) error {
 	return nil
+}
+
+// 团队接管收敛（spec §5.2.1）：默认团队未提供，既有用例行为不变。
+func (r *serviceRepo) TeamProvidesMCPServer(_ context.Context, _, _, _ uuid.UUID) (bool, error) {
+	return r.teamProvidesMCP, nil
+}
+
+func (r *serviceRepo) ListTeamMCPTakeoverTargets(_ context.Context, _, _, _ uuid.UUID) ([]MCPTakeover, error) {
+	return r.teamTakeovers, nil
+}
+
+func (r *serviceRepo) ListTeamMCPReadiness(_ context.Context, _, _ uuid.UUID) ([]TeamMCPReadinessEntry, error) {
+	return r.teamReadiness, nil
 }
 
 func (r *serviceRepo) CreateEmployeeMCPBindingV2(_ context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error) {

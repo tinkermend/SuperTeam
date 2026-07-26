@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/teamguard"
 )
 
 type Repository interface {
@@ -15,7 +16,7 @@ type Repository interface {
 	GetTeamSummary(ctx context.Context, tenantID, teamID uuid.UUID) (TeamListItemRecord, error)
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error)
 	UpdateTeam(ctx context.Context, params UpdateTeamParams) (TeamRecord, error)
-	UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (TeamRecord, error)
+	UpdateTeamConstitution(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (TeamRecord, error)
 	DeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error
 	// P2 审核确认制:待确认队列/恢复/确认物理删除(spec 2026-07-18-team-lifecycle-convergence §2)。
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error)
@@ -29,7 +30,10 @@ type Repository interface {
 	AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error)
 	GrantTeamMemberRole(ctx context.Context, in GrantTeamRoleInput) (TeamMemberRecord, error)
 	BindTeamDigitalEmployee(ctx context.Context, params BindTeamDigitalEmployeeParams) error
+	UnbindTeamDigitalEmployee(ctx context.Context, params BindTeamDigitalEmployeeParams) error
+	ListDigitalEmployeeDetachBlockers(ctx context.Context, tenantID, employeeID uuid.UUID) ([]DetachBlocker, error)
 	DisableTeamMemberRole(ctx context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error)
+	ChangeTeamMemberRole(ctx context.Context, params ChangeTeamMemberRoleParams) (TeamMemberRecord, error)
 	CountTeamOwners(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error)
 }
 
@@ -68,6 +72,7 @@ type ListTeamsParams struct {
 type ListTeamSummariesParams = ListTeamsParams
 
 type UpdateTeamParams struct {
+	ActorUserID       uuid.UUID
 	TenantID          uuid.UUID
 	TeamID            uuid.UUID
 	Slug              string
@@ -85,10 +90,11 @@ type ListTeamMembersParams struct {
 }
 
 type AddTeamMemberParams struct {
-	TenantID uuid.UUID
-	TeamID   uuid.UUID
-	UserID   uuid.UUID
-	Role     string
+	ActorUserID uuid.UUID
+	TenantID    uuid.UUID
+	TeamID      uuid.UUID
+	UserID      uuid.UUID
+	Role        string
 }
 
 type BindTeamDigitalEmployeeParams struct {
@@ -98,10 +104,25 @@ type BindTeamDigitalEmployeeParams struct {
 	ActorUserID uuid.UUID
 }
 
+// DetachBlocker 是数字员工脱离团队（移出回候岗 / 换队）的阻断项。判据与消息
+// 由 teamguard 包统一持有——employee 包的换队路径用同一套，不允许两处各写一份。
+type DetachBlocker = teamguard.DetachBlocker
+
 type DisableTeamMemberRoleParams struct {
 	TenantID     uuid.UUID
 	TeamID       uuid.UUID
 	MembershipID uuid.UUID
+	ActorUserID  uuid.UUID
+}
+
+// ChangeTeamMemberRoleParams 直接角色变更（member ⇄ viewer）。特权角色不走这里，
+// 走权限中心审批（requestTeamPrivilegedRole）。
+type ChangeTeamMemberRoleParams struct {
+	TenantID     uuid.UUID
+	TeamID       uuid.UUID
+	MembershipID uuid.UUID
+	Role         string
+	ActorUserID  uuid.UUID
 }
 
 type TeamRecord = Team

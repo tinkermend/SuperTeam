@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/systemconfig"
+	"github.com/superteam/control-plane/internal/teamguard"
 )
 
 type Service struct {
@@ -253,6 +254,7 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 		}
 	}
 	record, err := s.repository.UpdateTeam(ctx, UpdateTeamParams{
+		ActorUserID:       req.ActorUserID,
 		TenantID:          req.TenantID,
 		TeamID:            req.TeamID,
 		Slug:              slug,
@@ -267,14 +269,14 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 	return teamFromRecord(record), nil
 }
 
-func (s *Service) UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (*Team, error) {
+func (s *Service) UpdateTeamConstitution(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (*Team, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
 	if teamID == uuid.Nil {
 		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
 	}
-	record, err := s.repository.UpdateTeamConstitution(ctx, tenantID, teamID, cloneMap(constitution))
+	record, err := s.repository.UpdateTeamConstitution(ctx, tenantID, teamID, actorUserID, cloneMap(constitution))
 	if err != nil {
 		return nil, fmt.Errorf("update team constitution: %w", err)
 	}
@@ -446,10 +448,11 @@ func (s *Service) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (
 		return nil, err
 	}
 	record, err := s.repository.AddTeamMember(ctx, AddTeamMemberParams{
-		TenantID: req.TenantID,
-		TeamID:   req.TeamID,
-		UserID:   req.UserID,
-		Role:     role,
+		TenantID:    req.TenantID,
+		TeamID:      req.TeamID,
+		UserID:      req.UserID,
+		Role:        role,
+		ActorUserID: req.ActorUserID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("add team member: %w", err)
@@ -494,6 +497,42 @@ func (s *Service) BindTeamDigitalEmployee(ctx context.Context, req BindTeamDigit
 	return nil
 }
 
+// UnbindTeamDigitalEmployee 把数字员工移出团队，回候岗大厅。这是收编的逆操作，
+// 归属必须可逆——否则员工进了团队就再也出不来。
+//
+// 守卫（硬拒，不是提示）：有在役执行、或仍被非归档项目引用时拒绝。前者会被家目录
+// 重算与继承切换直接打断，后者会让项目挂在一个无团队归属、无法再派发的员工上。
+func (s *Service) UnbindTeamDigitalEmployee(ctx context.Context, req BindTeamDigitalEmployeeRequest) error {
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.EmployeeID == uuid.Nil {
+		return fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if _, err := s.repository.GetTeam(ctx, req.TenantID, req.TeamID); err != nil {
+		return err
+	}
+	blockers, err := s.repository.ListDigitalEmployeeDetachBlockers(ctx, req.TenantID, req.EmployeeID)
+	if err != nil {
+		return fmt.Errorf("list detach blockers: %w", err)
+	}
+	if err := teamguard.BlockedError(blockers, "移出团队"); err != nil {
+		return err
+	}
+	if err := s.repository.UnbindTeamDigitalEmployee(ctx, BindTeamDigitalEmployeeParams{
+		TenantID:    req.TenantID,
+		TeamID:      req.TeamID,
+		EmployeeID:  req.EmployeeID,
+		ActorUserID: req.ActorUserID,
+	}); err != nil {
+		return fmt.Errorf("unbind team digital employee: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error {
 	if req.TenantID == uuid.Nil {
 		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
@@ -521,10 +560,61 @@ func (s *Service) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequ
 		TenantID:     req.TenantID,
 		TeamID:       req.TeamID,
 		MembershipID: req.MembershipID,
+		ActorUserID:  req.ActorUserID,
 	}); err != nil {
 		return fmt.Errorf("disable team member role: %w", err)
 	}
 	return nil
+}
+
+// ChangeTeamMemberRole 直接角色变更，只接受直接生效角色（member / viewer）。
+// 升到 owner / admin / approver 是特权授予，必须走权限中心审批
+// （POST /teams/{teamId}/privileged-role-requests），不从这里放行。
+// 降级最后一名 owner 同样按"不能移除最后一名负责人"处理。
+func (s *Service) ChangeTeamMemberRole(ctx context.Context, req ChangeTeamMemberRoleRequest) (*TeamMember, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.MembershipID == uuid.Nil {
+		return nil, fmt.Errorf("%w: membership_id is required", ErrInvalidInput)
+	}
+	role, err := normalizeTeamRole(req.Role, "")
+	if err != nil {
+		return nil, err
+	}
+	if !isDirectTeamRole(role) {
+		return nil, fmt.Errorf("%w: privileged role requires approval", ErrInvalidInput)
+	}
+	member, err := s.repository.GetTeamMember(ctx, req.TenantID, req.TeamID, req.MembershipID)
+	if err != nil {
+		return nil, fmt.Errorf("get team member: %w", err)
+	}
+	if member.Role == role {
+		return teamMemberFromRecord(member), nil
+	}
+	if member.Role == TeamRoleOwner {
+		ownerCount, err := s.repository.CountTeamOwners(ctx, req.TenantID, req.TeamID)
+		if err != nil {
+			return nil, fmt.Errorf("count team owners: %w", err)
+		}
+		if ownerCount <= 1 {
+			return nil, fmt.Errorf("%w: cannot demote the final team owner", ErrInvalidInput)
+		}
+	}
+	updated, err := s.repository.ChangeTeamMemberRole(ctx, ChangeTeamMemberRoleParams{
+		TenantID:     req.TenantID,
+		TeamID:       req.TeamID,
+		MembershipID: req.MembershipID,
+		Role:         role,
+		ActorUserID:  req.ActorUserID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("change team member role: %w", err)
+	}
+	return teamMemberFromRecord(updated), nil
 }
 
 func (s *Service) ListTeamAuditEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*audit.Event, error) {

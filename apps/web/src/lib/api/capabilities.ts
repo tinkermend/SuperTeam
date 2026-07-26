@@ -133,6 +133,56 @@ export function bindTeamMcpServer(
   );
 }
 
+/** 团队接管预览：绑定该 MCP 会收敛掉哪些成员的个人绑定，各自原先用的凭据变量名。 */
+export type TeamCapabilityTakeover = {
+  digital_employee_id: string;
+  employee_name: string;
+  prior_credential_env_var?: string;
+};
+
+export type TeamCapabilityConflicts = {
+  mcp_server_id: string;
+  takeovers: TeamCapabilityTakeover[];
+};
+
+export function getTeamCapabilityConflicts(
+  options: ApiClientOptions,
+  teamId: string,
+  mcpServerId: string,
+): Promise<TeamCapabilityConflicts> {
+  const encodedTeamId = encodePathSegment(teamId);
+
+  return getJson<TeamCapabilityConflicts>(
+    options,
+    `/api/v1/teams/${encodedTeamId}/capability-conflicts?mcp_server_id=${encodeURIComponent(mcpServerId)}`,
+    "team capability conflicts",
+  );
+}
+
+/** 团队能力就绪矩阵：MCP × 成员，给出每名成员还缺哪些必需环境变量。 */
+export type TeamMcpReadinessEntry = {
+  mcp_server_id: string;
+  server_key: string;
+  server_name: string;
+  digital_employee_id: string;
+  employee_name: string;
+  required_env_vars: string[];
+  missing_env_vars: string[];
+};
+
+export function getTeamCapabilityReadiness(
+  options: ApiClientOptions,
+  teamId: string,
+): Promise<{ mcp_readiness: TeamMcpReadinessEntry[] }> {
+  const encodedTeamId = encodePathSegment(teamId);
+
+  return getJson<{ mcp_readiness: TeamMcpReadinessEntry[] }>(
+    options,
+    `/api/v1/teams/${encodedTeamId}/capability-readiness`,
+    "team capability readiness",
+  );
+}
+
 export function listTeamMcpBindings(
   options: ApiClientOptions,
   teamId: string,

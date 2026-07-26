@@ -176,6 +176,78 @@ func (q *Queries) HardDeleteTeamUserProjectTeamScopes(ctx context.Context, teamI
 	return err
 }
 
+const ListDigitalEmployeeDetachBlockers = `-- name: ListDigitalEmployeeDetachBlockers :many
+SELECT
+    'active_run'::text AS blocker_type,
+    tr.id::text AS ref_id,
+    COALESCE(t.title, '')::text AS ref_name,
+    tr.status::text AS ref_status
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+  AND t.deleted_at IS NULL
+UNION ALL
+SELECT
+    'active_project'::text AS blocker_type,
+    p.id::text AS ref_id,
+    p.name::text AS ref_name,
+    p.status::text AS ref_status
+FROM project_members pm
+JOIN projects p ON p.id = pm.project_id AND p.tenant_id = pm.tenant_id
+WHERE pm.tenant_id = $1::uuid
+  AND pm.principal_type = 'digital_employee'
+  AND pm.principal_id = $2::uuid
+  AND pm.status = 'active'
+  AND p.status <> 'archived'
+  AND p.deleted_at IS NULL
+ORDER BY blocker_type ASC, ref_name ASC
+`
+
+type ListDigitalEmployeeDetachBlockersParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type ListDigitalEmployeeDetachBlockersRow struct {
+	BlockerType string `json:"blocker_type"`
+	RefID       string `json:"ref_id"`
+	RefName     string `json:"ref_name"`
+	RefStatus   string `json:"ref_status"`
+}
+
+// 数字员工脱离当前团队（移出回候岗 / 换队）前的阻断项。两类：
+//
+//	active_run     —— 在役执行（会被家目录重算与继承切换直接打断）
+//	active_project —— 仍被非归档项目引用（无团队归属的员工不能参与项目，静默移出会让项目挂起）
+//
+// 调用方按 blocker_type 分组组装 409 明细。
+func (q *Queries) ListDigitalEmployeeDetachBlockers(ctx context.Context, arg ListDigitalEmployeeDetachBlockersParams) ([]ListDigitalEmployeeDetachBlockersRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeDetachBlockers, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeDetachBlockersRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeDetachBlockersRow
+		if err := rows.Scan(
+			&i.BlockerType,
+			&i.RefID,
+			&i.RefName,
+			&i.RefStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListPendingDeleteTeams = `-- name: ListPendingDeleteTeams :many
 SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids, constitution, description, delete_requested_by FROM tenant_teams
 WHERE tenant_id = $1::uuid
@@ -408,6 +480,32 @@ type SoftDeleteTeamMCPBindingsParams struct {
 func (q *Queries) SoftDeleteTeamMCPBindings(ctx context.Context, arg SoftDeleteTeamMCPBindingsParams) error {
 	_, err := q.db.Exec(ctx, SoftDeleteTeamMCPBindings, arg.TenantID, arg.TeamID)
 	return err
+}
+
+const UnbindTeamDigitalEmployee = `-- name: UnbindTeamDigitalEmployee :one
+UPDATE digital_employees
+SET team_id = NULL,
+    updated_at = NOW()
+WHERE id = $1::uuid
+  AND tenant_id = $2::uuid
+  AND team_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id
+`
+
+type UnbindTeamDigitalEmployeeParams struct {
+	EmployeeID uuid.UUID `json:"employee_id"`
+	TenantID   uuid.UUID `json:"tenant_id"`
+	TeamID     uuid.UUID `json:"team_id"`
+}
+
+// 把单个数字员工移出所属团队，回候岗大厅（team_id = NULL）。带 team_id 守卫，
+// 避免并发下把已经换到别的团队的员工误解绑。
+func (q *Queries) UnbindTeamDigitalEmployee(ctx context.Context, arg UnbindTeamDigitalEmployeeParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, UnbindTeamDigitalEmployee, arg.EmployeeID, arg.TenantID, arg.TeamID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const UnbindTeamDigitalEmployees = `-- name: UnbindTeamDigitalEmployees :exec

@@ -4,6 +4,7 @@ import { userEvent } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { TeamDetailView, TeamsView } from "@/features/teams";
+import { TeamConfigView } from "@/features/teams/components/team-config-page";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => (
@@ -172,6 +173,7 @@ function createTeamsFetcher(
     extraRoutes?: ExtraRoutes;
     overviewAllowedActions?: string[];
     secondPageMode?: "empty" | "error" | "normal";
+    unbindDigitalEmployeeBlocked?: boolean;
   } = {},
 ) {
   const fetcher = vi.fn(
@@ -230,6 +232,34 @@ function createTeamsFetcher(
               );
 
         return jsonResponse(page);
+      }
+
+      // 直接添加成员的候选池只保留有控制台访问的租户成员（2026-07-25 租户成员门禁）；
+      // 缺这条 fixture，UserSearchSelect 的 allowedUserIds 为空集，会把所有搜索结果滤掉。
+      if (url.pathname === "/api/authz/members" && method === "GET") {
+        return jsonResponse({
+          items: [
+            {
+              user_id: "owner-user",
+              username: "owner",
+              account_status: "active",
+              console_access: true
+},
+            {
+              user_id: "member-user",
+              username: "member",
+              account_status: "active",
+              console_access: true
+},
+            {
+              user_id: "viewer-user",
+              username: "viewer",
+              account_status: "active",
+              console_access: true
+}
+          ],
+          total: 3
+});
       }
 
       if (url.pathname === "/api/auth/users" && method === "GET") {
@@ -332,6 +362,10 @@ function createTeamsFetcher(
             "team.member.request_privileged_role",
             "team.governance.edit",
             "team.governance.approve",
+            "team.capability.bind",
+            "team.capability.unbind",
+            "team.capability.manage",
+            "team.audit.read",
           ],
           current_revision: governanceRevision
 });
@@ -460,8 +494,115 @@ function createTeamsFetcher(
         );
       }
 
+      if (
+        /^\/api\/v1\/teams\/team-1\/members\/[^/]+$/.test(url.pathname) &&
+        method === "PATCH"
+      ) {
+        return jsonResponse({
+          membership_id: "membership-rotated",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          user_id: "member-user",
+          username: "member",
+          display_name: "普通成员丁",
+          email: "member@example.com",
+          account_status: "active",
+          role: "viewer",
+          membership_status: "active"
+});
+      }
+
+      if (
+        url.pathname === "/api/v1/teams/team-1/privileged-role-requests" &&
+        method === "POST"
+      ) {
+        return jsonResponse({ request: { id: "approval-1", status: "pending" } }, 201);
+      }
+
+      if (url.pathname === "/api/v1/teams/team-1/capability-conflicts" && method === "GET") {
+        return jsonResponse({
+          mcp_server_id: url.searchParams.get("mcp_server_id"),
+          takeovers: [
+            {
+              digital_employee_id: "employee-active",
+              employee_name: "数据库运维员工",
+              prior_credential_env_var: "ALICE_TOKEN"
+},
+          ]
+});
+      }
+
+      if (url.pathname === "/api/v1/teams/team-1/capability-readiness" && method === "GET") {
+        return jsonResponse({
+          mcp_readiness: [
+            {
+              mcp_server_id: "mcp-github",
+              server_key: "github",
+              server_name: "GitHub MCP",
+              digital_employee_id: "employee-active",
+              employee_name: "数据库运维员工",
+              required_env_vars: ["GITHUB_TOKEN"],
+              missing_env_vars: ["GITHUB_TOKEN"]
+},
+            {
+              mcp_server_id: "mcp-github",
+              server_key: "github",
+              server_name: "GitHub MCP",
+              digital_employee_id: "employee-draft",
+              employee_name: "发布检查员工",
+              required_env_vars: ["GITHUB_TOKEN"],
+              missing_env_vars: []
+},
+          ]
+});
+      }
+
+      if (url.pathname === "/api/v1/teams/team-1/audit" && method === "GET") {
+        return jsonResponse([
+          {
+            id: "audit-1",
+            tenant_id: "tenant-1",
+            event_type: "team_management",
+            actor_type: "user",
+            actor_id: "owner-user",
+            resource_type: "team",
+            resource_id: "team-1",
+            action: "team.member.change_role",
+            details: { from_role: "member", to_role: "viewer" },
+            created_at: "2026-07-26T01:00:00Z"
+},
+        ]);
+      }
+
       if (url.pathname === "/api/v1/teams/team-1" && method === "DELETE") {
         return new Response(null, { status: 204 });
+      }
+
+      if (
+        url.pathname === "/api/v1/teams/team-1/digital-employees/employee-active" &&
+        method === "DELETE"
+      ) {
+        if (options.unbindDigitalEmployeeBlocked) {
+          return new Response(
+            JSON.stringify({
+              code: "team.digital_employee.detach_blocked",
+              message:
+                "该数字员工有 1 个在役执行（巡检任务），无法移出团队。请先等待或取消在役执行、并从相关项目中移除该成员后重试。"
+}),
+            {
+              status: 409,
+              headers: { "content-type": "application/json" }
+},
+          );
+        }
+        return new Response(null, { status: 204 });
+      }
+
+      if (
+        url.pathname === "/api/v1/digital-employees/employee-active/team" &&
+        method === "PUT"
+      ) {
+        return jsonResponse({ id: "employee-active", team_id: "team-2", name: "数据库运维员工" });
       }
 
       if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
@@ -947,8 +1088,9 @@ describe("TeamDetailView", () => {
     await expect.element(screen.getByRole("heading", { name: "公共技能" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "团队宪法" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "人类管理成员" })).not.toBeInTheDocument();
-    await expect.element(screen.getByRole("button", { name: "配置团队" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "删除团队" })).toBeVisible();
+    // 详情页是观察面：配置入口是通往 /teams/$id/config 的链接，写操作不在这里。
+    await expect.element(screen.getByRole("link", { name: "配置团队" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "删除团队" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "概览" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "能力" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "宪法" })).not.toBeInTheDocument();
@@ -970,10 +1112,10 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("button", { name: /人类成员/ }))
       .toBeVisible();
-    await expect.element(screen.getByText("负责人甲", { exact: true })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
-    await expect.element(screen.getByRole("heading", { name: "配置团队" })).toBeVisible();
+    // 头卡头像栈是只读的：展开能看到成员，但没有任何配置动作。
+    await userEvent.click(screen.getByRole("button", { name: /人类成员/ }));
     await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "配置" })).not.toBeInTheDocument();
     await expect
       .element(screen.getByText("团队成员与代理"))
       .not.toBeInTheDocument();
@@ -992,9 +1134,9 @@ describe("TeamDetailView", () => {
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
-    // 生命周期收敛：详情页只有删除一个生命周期动作，无归档/禁用/恢复；配置与删除直接露出。
-    await expect.element(screen.getByRole("button", { name: "配置团队" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "删除团队" })).toBeVisible();
+    // 观察面只留一个通往配置页的入口；生命周期动作（删除）搬进配置页的「身份与生命周期」。
+    await expect.element(screen.getByRole("link", { name: "配置团队" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "删除团队" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "禁用团队" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "归档团队" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "恢复团队" })).not.toBeInTheDocument();
@@ -1014,21 +1156,24 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
+    // 观察面展示只读规则列表（不是编辑器），锚点分区仍在。
+    await expect.element(screen.getByRole("heading", { name: "团队宪法" })).toBeVisible();
+    await expect.element(screen.getByLabelText("团队宪法")).not.toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
     expect(document.getElementById("team-section-constitution")).not.toBeNull();
   });
 
-  it("deletes the team through the confirm dialog from detail actions", async () => {
+  it("deletes the team through the confirm dialog in the config identity tab", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={fetcher}
         teamId="team-1"
       />,
     );
 
+    await userEvent.click(screen.getByRole("tab", { name: "身份与生命周期" }));
     await screen.getByRole("button", { name: "删除团队" }).click();
     await screen.getByRole("button", { name: "确认删除" }).click();
 
@@ -1145,12 +1290,14 @@ describe("TeamDetailView", () => {
 }
 });
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={fetcher}
         teamId="team-1"
       />,
     );
+
+    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
 
     await expect
       .element(screen.getByRole("heading", { name: "公共技能" }))
@@ -1232,12 +1379,14 @@ describe("TeamDetailView", () => {
 }
 });
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={fetcher}
         teamId="team-1"
       />,
     );
+
+    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
 
     await userEvent.click(screen.getByRole("button", { name: "绑定 MCP" }));
 
@@ -1254,12 +1403,14 @@ describe("TeamDetailView", () => {
   it("renders constitution editor and preserves existing keys while saving hard rules", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={fetcher}
         teamId="team-1"
       />,
     );
+
+    await userEvent.click(screen.getByRole("tab", { name: "约束" }));
 
     await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
     await expect.element(screen.getByText("1 条硬性规则")).toBeVisible();
@@ -1301,12 +1452,14 @@ describe("TeamDetailView", () => {
 
   it("does not render approval, principles, or diff fields in constitution section", async () => {
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={createTeamsFetcher()}
         teamId="team-1"
       />,
     );
+
+    await userEvent.click(screen.getByRole("tab", { name: "约束" }));
 
     await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
     await expect.element(screen.getByText("JSON 快照预览")).not.toBeInTheDocument();
@@ -1318,14 +1471,13 @@ describe("TeamDetailView", () => {
 
   it("renders overview roster and safe direct roles", async () => {
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={createTeamsFetcher()}
         teamId="team-1"
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
     await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
     for (const label of [
       "负责人",
@@ -1349,7 +1501,7 @@ describe("TeamDetailView", () => {
 
   it("hides member remove controls without team.member.remove", async () => {
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={createTeamsFetcher({
           overviewAllowedActions: [
@@ -1362,7 +1514,6 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
     await expect.element(screen.getByText("管理员乙")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "移除 管理员乙" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("combobox", { name: "直接生效角色" })).toBeVisible();
@@ -1379,7 +1530,7 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await expect.element(screen.getByRole("button", { name: "配置团队" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("link", { name: "配置团队" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /人类成员/ }));
     await expect.element(screen.getByText("人类成员 · 5")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "配置" })).not.toBeInTheDocument();
@@ -1388,14 +1539,13 @@ describe("TeamDetailView", () => {
   it("uses user search for direct member add", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
-      <TeamDetailView
+      <TeamConfigView
         apiBaseUrl="http://control-plane.local"
         fetcher={fetcher}
         teamId="team-1"
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "配置团队" }));
     await expect
       .element(screen.getByRole("searchbox", { name: "搜索直接添加用户" }))
       .toBeVisible();
@@ -1430,7 +1580,7 @@ describe("TeamDetailView", () => {
 });
   });
 
-  it("renders digital employees in the overview tab list", async () => {
+  it("renders digital employees read-only in the detail roster", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -1440,18 +1590,17 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await expect
-      .element(screen.getByRole("link", { name: "新建数字员工" }))
-      .toBeVisible();
-
     await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
-
+    // 观察面：只有详情链接，没有移出/换队/收编等写动作。
     await expect
-      .element(screen.getByRole("link", { name: "新建数字员工" }))
-      .toHaveAttribute("href", "/employees/new");
+      .element(screen.getByRole("button", { name: /移出/ }))
+      .not.toBeInTheDocument();
     await expect
-      .element(screen.getByRole("link", { name: "新建数字员工" }))
-      .toHaveAttribute("data-router-link", "true");
+      .element(screen.getByRole("button", { name: /换队/ }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByLabelText("收编候岗数字员工"))
+      .not.toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees?team_id=team-1",
       expect.objectContaining({
@@ -1459,6 +1608,280 @@ describe("TeamDetailView", () => {
         method: "GET"
 }),
     );
+  });
+
+  it("removes a digital employee back to the lobby from the team roster", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "移出 数据库运维员工" }));
+    await expect.element(screen.getByText("确认移出数字员工")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "确认移出" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(
+          ([url, init]) =>
+            String(url).endsWith(
+              "/api/v1/teams/team-1/digital-employees/employee-active",
+            ) && (init?.method ?? "GET") === "DELETE",
+        ),
+      )
+      .toBe(true);
+  });
+
+  it("keeps the remove dialog open and shows the server reason when detaching is blocked", async () => {
+    const fetcher = createTeamsFetcher({ unbindDigitalEmployeeBlocked: true });
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "移出 数据库运维员工" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认移出" }));
+
+    // 守卫命中：弹窗保持打开，直接展示服务端给出的中文原因（含阻断对象）。
+    await expect
+      .element(screen.getByText(/该数字员工有 1 个在役执行（巡检任务）/))
+      .toBeVisible();
+    await expect.element(screen.getByText("确认移出数字员工")).toBeVisible();
+  });
+
+  it("transfers a digital employee to another team", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "换队 数据库运维员工" }));
+    await expect.element(screen.getByText("把数字员工换到其他团队")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("combobox", { name: "目标团队" }));
+    await userEvent.click(screen.getByRole("option").first());
+    await userEvent.click(screen.getByRole("button", { name: "确认换队" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(
+          ([url, init]) =>
+            String(url).endsWith("/api/v1/digital-employees/employee-active/team") &&
+            (init?.method ?? "GET") === "PUT",
+        ),
+      )
+      .toBe(true);
+  });
+
+  it("changes a member's direct role from the config roster", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByText("普通成员丁")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "调整 普通成员丁 的角色" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "只读观察者" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(
+          ([url, init]) =>
+            /\/api\/v1\/teams\/team-1\/members\/[^/]+$/.test(String(url)) &&
+            init?.method === "PATCH",
+        ),
+      )
+      .toBe(true);
+    const call = fetchCalls(fetcher).find(
+      ([url, init]) =>
+        /\/api\/v1\/teams\/team-1\/members\/[^/]+$/.test(String(url)) &&
+        init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ role: "viewer" });
+  });
+
+  it("keeps privileged roles out of the direct role control and routes them to approval", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    // 特权角色不给直接调整控件，只能走审批。
+    await expect.element(screen.getByText("管理员乙")).toBeVisible();
+    await expect
+      .element(screen.getByRole("combobox", { name: "调整 管理员乙 的角色" }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "为 普通成员丁 申请特权角色" }),
+    );
+    await userEvent.fill(screen.getByLabelText("申请理由"), "需要审批权限处理线上变更");
+    await userEvent.click(screen.getByRole("button", { name: "提交申请" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(
+          ([url, init]) =>
+            String(url).endsWith("/api/v1/teams/team-1/privileged-role-requests") &&
+            init?.method === "POST",
+        ),
+      )
+      .toBe(true);
+  });
+
+  it("opens the config section named by the url hash", async () => {
+    // 详情页的「去配置 / 查看全部」带 hash 深链；硬加载时 hash 可能晚一帧到达，
+    // Tab 必须受控才不会永远停在第一个分区。
+    window.history.replaceState({}, "", "/teams/team-1/config#audit");
+
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await expect.element(screen.getByRole("tab", { name: "审计" })).toHaveAttribute("data-state", "active");
+    await expect.element(screen.getByRole("heading", { name: "团队变更流水" })).toBeVisible();
+  });
+
+  it("previews which member bindings a team mcp bind will take over", async () => {
+    const fetcher = createTeamsFetcher({
+      extraRoutes: {
+        "GET /api/v1/mcp-servers": [
+          {
+            id: "mcp-github",
+            tenant_id: "tenant-1",
+            name: "GitHub MCP",
+            server_key: "github",
+            description: "",
+            transport: "streamable_http",
+            url: "https://api.githubcopilot.com/mcp/",
+            auth_strategy: "bearer_env",
+            required_env_vars: ["GITHUB_TOKEN"],
+            optional_env_vars: [],
+            tool_allowlist: [],
+            risk_level: "medium",
+            status: "active"
+},
+        ],
+        "GET /api/v1/teams/team-1/mcp-bindings": [],
+        "GET /api/v1/skills": [],
+        "GET /api/v1/teams/team-1/skills": []
+}
+});
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
+    await userEvent.click(screen.getByRole("button", { name: "绑定 MCP" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
+    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP（github）" }));
+
+    // 接管是物理收敛，绑定前必须先让人看到会收掉谁、谁的凭据变量名会变。
+    await expect
+      .element(screen.getByText("绑定后将接管 1 名成员的同名个人绑定"))
+      .toBeVisible();
+    await expect.element(screen.getByText(/ALICE_TOKEN/)).toBeVisible();
+    await expect
+      .element(screen.getByText(/1 名成员原先用的是不同的凭据变量名/))
+      .toBeVisible();
+  });
+
+  it("shows the member readiness matrix and fills a missing env var in place", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "能力" }));
+    await expect.element(screen.getByRole("heading", { name: "成员就绪矩阵" })).toBeVisible();
+    await expect.element(screen.getByText("部分就绪 1/2")).toBeVisible();
+
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "为 数据库运维员工 设置 GITHUB_TOKEN" }),
+      "token-value",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(
+          ([url, init]) =>
+            String(url).endsWith(
+              "/api/v1/digital-employees/employee-active/environment-variables/GITHUB_TOKEN",
+            ) && init?.method === "PUT",
+        ),
+      )
+      .toBe(true);
+  });
+
+  it("renders the team audit trail with chinese action labels", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "审计" }));
+    await expect.element(screen.getByText("变更成员角色")).toBeVisible();
+    // 动作名必须经词表中文化，不得出现裸枚举。
+    await expect
+      .element(screen.getByText("team.member.change_role"))
+      .not.toBeInTheDocument();
+  });
+
+  it("blocks identity save when the owner set would become empty", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamConfigView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={createTeamsFetcher()}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "身份与生命周期" }));
+    await expect.element(screen.getByRole("heading", { name: "团队身份" })).toBeVisible();
+    // 只有一名负责人时不允许移除，负责人集合不得为空。
+    await expect
+      .element(screen.getByRole("button", { name: /移除负责人/ }))
+      .toBeDisabled();
   });
 
   it("paginates digital employees and keeps page size in localStorage", async () => {

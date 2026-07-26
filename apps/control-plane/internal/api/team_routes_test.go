@@ -828,6 +828,9 @@ func TestTeamRoutesDoNotSubstituteConsoleUserAsHumanOwner(t *testing.T) {
 }
 
 type routeTeamService struct {
+	changeMemberRoleReq        tenant.ChangeTeamMemberRoleRequest
+	unbindDigitalEmployeeReq   tenant.BindTeamDigitalEmployeeRequest
+	unbindDigitalEmployeeErr   error
 	createReq                  tenant.CreateTeamRequest
 	listReq                    tenant.ListTeamsRequest
 	updateReq                  tenant.UpdateTeamRequest
@@ -1003,7 +1006,7 @@ func (s *routeTeamService) UpdateTeam(ctx context.Context, req tenant.UpdateTeam
 	}, nil
 }
 
-func (s *routeTeamService) UpdateTeamConstitution(ctx context.Context, tenantID, teamID uuid.UUID, constitution map[string]any) (*tenant.Team, error) {
+func (s *routeTeamService) UpdateTeamConstitution(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (*tenant.Team, error) {
 	s.updateConstitutionCalled = true
 	s.updateConstitutionTenantID = tenantID
 	s.updateConstitutionTeamID = teamID
@@ -1071,6 +1074,21 @@ func (s *routeTeamService) ListTeamMembers(ctx context.Context, tenantID, teamID
 
 func (s *routeTeamService) BindTeamDigitalEmployee(ctx context.Context, req tenant.BindTeamDigitalEmployeeRequest) error {
 	return nil
+}
+
+func (s *routeTeamService) ChangeTeamMemberRole(ctx context.Context, req tenant.ChangeTeamMemberRoleRequest) (*tenant.TeamMember, error) {
+	s.changeMemberRoleReq = req
+	return &tenant.TeamMember{
+		MembershipID: req.MembershipID,
+		TenantID:     req.TenantID,
+		TeamID:       req.TeamID,
+		Role:         req.Role,
+	}, nil
+}
+
+func (s *routeTeamService) UnbindTeamDigitalEmployee(ctx context.Context, req tenant.BindTeamDigitalEmployeeRequest) error {
+	s.unbindDigitalEmployeeReq = req
+	return s.unbindDigitalEmployeeErr
 }
 
 func (s *routeTeamService) AddTeamMember(ctx context.Context, req tenant.AddTeamMemberRequest) (*tenant.TeamMember, error) {

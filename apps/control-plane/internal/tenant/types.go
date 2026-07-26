@@ -187,6 +187,7 @@ type ListTeamsRequest struct {
 }
 
 type UpdateTeamRequest struct {
+	ActorUserID       uuid.UUID
 	TenantID          uuid.UUID
 	TeamID            uuid.UUID
 	Name              string
@@ -203,14 +204,25 @@ type UpdateTeamConstitutionRequest struct {
 }
 
 type AddTeamMemberRequest struct {
-	TenantID uuid.UUID
-	TeamID   uuid.UUID
-	UserID   uuid.UUID
-	Role     string
+	TenantID    uuid.UUID
+	TeamID      uuid.UUID
+	UserID      uuid.UUID
+	Role        string
+	ActorUserID uuid.UUID
 }
 
 type RemoveTeamMemberRequest struct {
 	TenantID     uuid.UUID
 	TeamID       uuid.UUID
 	MembershipID uuid.UUID
+	ActorUserID  uuid.UUID
+}
+
+// ChangeTeamMemberRoleRequest 直接角色变更（member ⇄ viewer）。
+type ChangeTeamMemberRoleRequest struct {
+	TenantID     uuid.UUID
+	TeamID       uuid.UUID
+	MembershipID uuid.UUID
+	Role         string
+	ActorUserID  uuid.UUID
 }

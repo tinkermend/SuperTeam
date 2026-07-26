@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/apierror"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -19,6 +20,8 @@ type HandlerService interface {
 	ListMCPServerDefinitions(ctx context.Context, req ListMCPServerDefinitionsRequest) ([]MCPDefinition, error)
 	DeleteMCPServerDefinition(ctx context.Context, req DeleteMCPServerDefinitionRequest) error
 	CreateTeamMCPBinding(ctx context.Context, req CreateTeamMCPBindingRequest) (MCPBinding, error)
+	PreviewTeamMCPTakeover(ctx context.Context, tenantID, teamID, mcpServerID uuid.UUID) (TeamCapabilityConflict, error)
+	ListTeamMCPReadiness(ctx context.Context, tenantID, teamID uuid.UUID) ([]TeamMCPReadinessEntry, error)
 	ListTeamMCPBindings(ctx context.Context, req TeamScopedRequest) ([]MCPBinding, error)
 	DeleteTeamMCPBinding(ctx context.Context, req DeleteTeamMCPBindingRequest) error
 	CreateEmployeeMCPBindingV2(ctx context.Context, req CreateEmployeeMCPBindingV2Request) (MCPBinding, error)
@@ -118,6 +121,79 @@ func (h *HTTPHandler) DeleteMCPServerDefinition(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetTeamCapabilityConflicts 团队绑定某 MCP 前的接管预览：这次绑定会收敛掉哪些成员
+// 的个人绑定、其中谁原先用的是不同凭据变量名（GET /teams/{teamId}/capability-conflicts）。
+func (h *HTTPHandler) GetTeamCapabilityConflicts(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := uuidParam(w, r, "teamId", "invalid team id")
+	if !ok {
+		return
+	}
+	mcpServerID, err := uuid.Parse(r.URL.Query().Get("mcp_server_id"))
+	if err != nil || mcpServerID == uuid.Nil {
+		http.Error(w, "mcp_server_id is required", http.StatusBadRequest)
+		return
+	}
+	tenantID, _, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team capability conflicts read", &teamID)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	conflict, err := service.PreviewTeamMCPTakeover(r.Context(), tenantID, teamID, mcpServerID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	takeovers := make([]map[string]any, 0, len(conflict.Takeovers))
+	for _, item := range conflict.Takeovers {
+		takeovers = append(takeovers, map[string]any{
+			"digital_employee_id":      item.DigitalEmployeeID,
+			"employee_name":            item.EmployeeName,
+			"prior_credential_env_var": item.PriorCredentialEnvVar,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mcp_server_id": conflict.MCPServerID,
+		"takeovers":     takeovers,
+	})
+}
+
+// GetTeamCapabilityReadiness 团队能力就绪矩阵（GET /teams/{teamId}/capability-readiness）。
+func (h *HTTPHandler) GetTeamCapabilityReadiness(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := uuidParam(w, r, "teamId", "invalid team id")
+	if !ok {
+		return
+	}
+	tenantID, _, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team capability readiness read", &teamID)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	entries, err := service.ListTeamMCPReadiness(r.Context(), tenantID, teamID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	items := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, map[string]any{
+			"mcp_server_id":       entry.MCPServerID,
+			"server_key":          entry.ServerKey,
+			"server_name":         entry.ServerName,
+			"required_env_vars":   entry.RequiredEnvVars,
+			"digital_employee_id": entry.DigitalEmployeeID,
+			"employee_name":       entry.EmployeeName,
+			"missing_env_vars":    entry.MissingEnvVars,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mcp_readiness": items})
 }
 
 func (h *HTTPHandler) CreateTeamMCPBinding(w http.ResponseWriter, r *http.Request) {
@@ -727,6 +803,10 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
+	// 结构化 coded error 优先（apierror 约定）：命中即输出 {code, message} JSON。
+	if apierror.Write(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ErrInvalidInput), errors.Is(err, ErrCredentialKeyMissing):
 		http.Error(w, err.Error(), http.StatusBadRequest)

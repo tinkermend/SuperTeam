@@ -33,24 +33,33 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import type { ApiClientOptions } from "@/lib/api/client";
+import type { AllowedTeamAction } from "@/lib/api/teams";
 import {
   bindTeamMcpServer,
   deleteTeamMcpBinding,
+  getTeamCapabilityConflicts,
   listMcpServerDefinitions,
   listTeamMcpBindings
 } from "@/lib/api/capabilities";
-import type { McpBinding } from "@/lib/api/capabilities";
+import { listDigitalEmployees } from "@/lib/api/employees";
+import type { McpBinding, TeamCapabilityTakeover } from "@/lib/api/capabilities";
 import { statusLabel } from "@/lib/status-labels";
 import { bindTeamSkill, listSkills, listTeamSkills, unbindTeamSkill } from "@/lib/api/skills";
 import type { Skill } from "@/lib/api/skills";
 
 type TeamCapabilitiesTabProps = {
+  allowedActions: AllowedTeamAction[];
   apiOptions: ApiClientOptions;
-  canEdit: boolean;
   teamId: string;
 };
 
-export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabilitiesTabProps) {
+// 三个动作各管各的：技能安装/移除是 team.capability.bind / .unbind，MCP 绑定与解绑
+// 都走 team.capability.manage（capability handler 的门禁）。此前统一用
+// team.governance.edit，与服务端不一致——有权限的看到禁用按钮，没权限的点了拿 403。
+export function TeamCapabilitiesTab({ allowedActions, apiOptions, teamId }: TeamCapabilitiesTabProps) {
+  const canBindSkill = allowedActions.includes("team.capability.bind");
+  const canUnbindSkill = allowedActions.includes("team.capability.unbind");
+  const canManageMcp = allowedActions.includes("team.capability.manage");
   const queryClient = useQueryClient();
   const [skillDialogOpen, setSkillDialogOpen] = useState(false);
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
@@ -78,6 +87,19 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
     queryKey: ["team-mcp-bindings", teamId],
     queryFn: () => listTeamMcpBindings(apiOptions, teamId),
     placeholderData: keepPreviousData
+});
+  // 影响面：团队能力对全体成员生效，安装/移除前先让人看到会波及多少人。
+  const teamEmployees = useQuery({
+    queryKey: ["team-digital-employees", teamId],
+    queryFn: () => listDigitalEmployees(apiOptions, { team_id: teamId }),
+    placeholderData: keepPreviousData
+});
+  const memberCount = teamEmployees.data?.length ?? 0;
+  // 接管预览：选中 MCP 后即查会收敛掉哪些成员的个人绑定（spec §5.2.1）。
+  const takeoverPreview = useQuery({
+    enabled: mcpDialogOpen && selectedServerId.length > 0,
+    queryKey: ["team-capability-conflicts", teamId, selectedServerId],
+    queryFn: () => getTeamCapabilityConflicts(apiOptions, teamId, selectedServerId)
 });
 
   const selectedDefinition = useMemo(
@@ -133,18 +155,26 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
       setSelectedServerId("");
       setCredentialEnvVar("");
       setMcpDialogOpen(false);
-      await queryClient.invalidateQueries({ queryKey: ["team-mcp-bindings", teamId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["team-mcp-bindings", teamId] }),
+        queryClient.invalidateQueries({ queryKey: ["team-capability-readiness", teamId] }),
+        queryClient.invalidateQueries({ queryKey: ["team-overview", teamId] }),
+      ]);
     }
 });
   const deleteMcpMutation = useMutation({
     mutationFn: (bindingId: string) => deleteTeamMcpBinding(apiOptions, teamId, bindingId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["team-mcp-bindings", teamId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["team-mcp-bindings", teamId] }),
+        queryClient.invalidateQueries({ queryKey: ["team-capability-readiness", teamId] }),
+        queryClient.invalidateQueries({ queryKey: ["team-overview", teamId] }),
+      ]);
     }
 });
 
   const canCreateMcp =
-    canEdit && selectedServerId.length > 0 && !createMcpMutation.isPending;
+    canManageMcp && selectedServerId.length > 0 && !createMcpMutation.isPending;
   const installedCount = teamSkills.data?.length ?? 0;
   const bindingCount = mcpBindings.data?.length ?? 0;
 
@@ -154,7 +184,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
         <WorkSurface className="min-w-0">
           <PanelHeader
             action={
-              canEdit ? (
+              canBindSkill ? (
                 <Button
                   onClick={() => setSkillDialogOpen(true)}
                   size="sm"
@@ -167,7 +197,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
               ) : null
             }
             icon={<Boxes />}
-            meta={`${installedCount} 个已安装`}
+            meta={`${installedCount} 个已安装 · 对 ${memberCount} 名成员生效`}
             title="公共技能"
             tone="artifact"
           />
@@ -175,7 +205,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             {unbindSkillMutation.isError ? <ErrorState title="公共技能移除失败" /> : null}
             <SkillTable
               actionLabel={(skill) => `移除 ${skill.name}`}
-              canEdit={canEdit}
+              canAct={canUnbindSkill}
               emptyTitle="暂无已安装技能"
               isError={teamSkills.isError}
               isLoading={teamSkills.isLoading}
@@ -190,7 +220,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
         <WorkSurface className="min-w-0">
           <PanelHeader
             action={
-              canEdit ? (
+              canManageMcp ? (
                 <Button
                   onClick={() => setMcpDialogOpen(true)}
                   size="sm"
@@ -203,7 +233,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
               ) : null
             }
             icon={<Network />}
-            meta={`${bindingCount} 个绑定`}
+            meta={`${bindingCount} 个绑定 · 对 ${memberCount} 名成员生效`}
             title="公共 MCP"
             tone="info"
           />
@@ -261,7 +291,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
                       <Td className="text-right">
                         <Button
                           aria-label={`移除 MCP ${binding.server_name ?? binding.server_key}`}
-                          disabled={!canEdit || deleteMcpMutation.isPending}
+                          disabled={!canManageMcp || deleteMcpMutation.isPending}
                           onClick={() => deleteMcpMutation.mutate(binding.id)}
                           size="icon"
                           type="button"
@@ -289,7 +319,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             {bindSkillMutation.isError ? <ErrorState title="技能安装失败" /> : null}
             <SkillTable
               actionLabel={(skill) => `安装 ${skill.name}`}
-              canEdit={canEdit}
+              canAct={canBindSkill}
               emptyTitle="暂无可安装技能"
               isError={marketplace.isError}
               isLoading={marketplace.isLoading}
@@ -321,7 +351,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             <div className="min-w-0 space-y-2">
               <Label htmlFor="team-mcp-server">注册表 MCP</Label>
               <Select
-                disabled={!canEdit || createMcpMutation.isPending}
+                disabled={!canManageMcp || createMcpMutation.isPending}
                 onValueChange={setSelectedServerId}
                 value={selectedServerId}
               >
@@ -357,7 +387,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
               <div className="min-w-0 space-y-2">
                 <Label htmlFor="team-mcp-credential-env">凭据环境变量（可选）</Label>
                 <Input
-                  disabled={!canEdit || createMcpMutation.isPending}
+                  disabled={!canManageMcp || createMcpMutation.isPending}
                   id="team-mcp-credential-env"
                   onChange={(event) => setCredentialEnvVar(event.target.value)}
                   placeholder="例如 GITHUB_TOKEN"
@@ -368,8 +398,15 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             {selectedDefinition && selectedDefinition.required_env_vars.length > 0 ? (
               <p className="text-xs text-ink-2">
                 该 MCP 需要环境变量 {selectedDefinition.required_env_vars.join("、")}
-                ，请在各数字员工环境变量中配置；团队级绑定为建议性。
+                。变量名在这里声明，值按成员各自配置——绑定后到「成员就绪矩阵」补齐，缺值的成员用不了该能力。
               </p>
+            ) : null}
+            {selectedServerId ? (
+              <TakeoverPreview
+                isLoading={takeoverPreview.isLoading}
+                takeovers={takeoverPreview.data?.takeovers ?? []}
+                teamCredentialEnvVar={credentialEnvVar.trim()}
+              />
             ) : null}
             {createMcpMutation.isError ? <ErrorState title="公共 MCP 绑定失败" /> : null}
             <Button
@@ -384,6 +421,57 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// 接管预览：团队绑定该 MCP 会物理收敛哪些成员的个人绑定。凭据变量名与团队不一致的
+// 成员必须点名——接管后他们会立刻缺变量（spec §5.2.1）。
+function TakeoverPreview({
+  isLoading,
+  takeovers,
+  teamCredentialEnvVar
+}: {
+  isLoading: boolean;
+  takeovers: TeamCapabilityTakeover[];
+  teamCredentialEnvVar: string;
+}) {
+  if (isLoading) {
+    return <p className="text-xs text-ink-3">正在检查会接管哪些成员的个人绑定…</p>;
+  }
+  if (takeovers.length === 0) {
+    return null;
+  }
+  const mismatched = takeovers.filter(
+    (item) => (item.prior_credential_env_var ?? "") !== teamCredentialEnvVar,
+  );
+  return (
+    <div className="flex flex-col gap-1.5 rounded-[12px] border border-warn/40 bg-warn-soft px-3 py-2.5">
+      <p className="text-[13px] font-medium text-warn-text">
+        绑定后将接管 {takeovers.length} 名成员的同名个人绑定
+      </p>
+      <p className="text-xs text-ink-2">
+        同一 MCP 在团队与个人两处只保留一份，团队生效；成员原有的个人绑定会被移除。
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {takeovers.map((item) => (
+          <li key={item.digital_employee_id} className="text-xs text-ink-2">
+            {item.employee_name}
+            {item.prior_credential_env_var ? (
+              <span className="ml-1 font-mono text-[11px] text-ink-3">
+                {item.prior_credential_env_var}
+                {" → "}
+                {teamCredentialEnvVar || "（团队未填凭据变量）"}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {mismatched.length > 0 ? (
+        <p className="text-xs text-danger">
+          其中 {mismatched.length} 名成员原先用的是不同的凭据变量名，接管后会缺变量，请到「成员就绪矩阵」补齐。
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -416,7 +504,7 @@ function PanelHeader({
 
 function SkillTable({
   actionLabel,
-  canEdit,
+  canAct,
   emptyTitle,
   isError,
   isLoading,
@@ -426,7 +514,7 @@ function SkillTable({
   variant
 }: {
   actionLabel: (skill: Skill) => string;
-  canEdit: boolean;
+  canAct: boolean;
   emptyTitle: string;
   isError: boolean;
   isLoading: boolean;
@@ -464,7 +552,7 @@ function SkillTable({
         {skills.map((skill) => (
           <SkillRow
             actionLabel={actionLabel(skill)}
-            canEdit={canEdit}
+            canAct={canAct}
             key={skill.id}
             onAction={() => onAction(skill)}
             pending={pending}
@@ -479,14 +567,14 @@ function SkillTable({
 
 function SkillRow({
   actionLabel,
-  canEdit,
+  canAct,
   onAction,
   pending,
   skill,
   variant
 }: {
   actionLabel: string;
-  canEdit: boolean;
+  canAct: boolean;
   onAction: () => void;
   pending: boolean;
   skill: Skill;
@@ -515,7 +603,7 @@ function SkillRow({
         {variant === "installed" ? (
           <Button
             aria-label={actionLabel}
-            disabled={!canEdit || pending}
+            disabled={!canAct || pending}
             onClick={onAction}
             size="icon"
             type="button"
@@ -526,7 +614,7 @@ function SkillRow({
           </Button>
         ) : (
           <Button
-            disabled={!canEdit || pending}
+            disabled={!canAct || pending}
             onClick={onAction}
             size="sm"
             type="button"
