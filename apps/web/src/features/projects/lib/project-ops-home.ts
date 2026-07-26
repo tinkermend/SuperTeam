@@ -86,19 +86,29 @@ export function taskActivityAt(
   return node?.started_at || node?.finished_at || task.updated_at || task.created_at;
 }
 
-export function taskStatusTone(
-  status: string,
-): OpsPulseChip["statusTone"] {
+/**
+ * 注意力色语义（attention tone）：回答「哪里需要我盯」，running/pending 与
+ * waiting_human 同为 warn——在跑≠安稳，脉搏/工作台是人类负责人的扫视面。
+ * 与 flow-graph/inspector-primitives 的权威 `taskStatusTone`（状态色语义，
+ * running=info）是刻意分工的两套色系，不要互相收敛；状态呈现（流程图节点、
+ * 任务弹层、列表 pill）用权威版，扫视/盯守面（脉搏芯片、工作台行）用本函数。
+ * 除任务状态外也覆盖决策快照状态（resolved/approved/pending/rejected）。
+ */
+export function attentionTone(status: string): OpsPulseChip["statusTone"] {
   switch (status) {
     case "completed":
+    case "resolved":
+    case "approved":
       return "ok";
     case "running":
     case "waiting_human":
+    case "pending":
       return "warn";
     case "planned":
     case "queued":
       return "info";
     case "failed":
+    case "rejected":
       return "danger";
     default:
       return "mute";
@@ -163,7 +173,7 @@ export function buildWeekPulse(input: {
       dayKey: key,
       mode: resolveTaskMode(task, demandsById),
       status: task.status,
-      statusTone: taskStatusTone(task.status),
+      statusTone: attentionTone(task.status),
       taskId: task.id,
       timeLabel: formatClock(at),
       title: task.title,

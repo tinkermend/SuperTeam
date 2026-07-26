@@ -4,8 +4,7 @@ import { Bot, History, Inbox } from "lucide-react";
 import {
   SoftCard,
   StatusPill,
-  Button,
-  type Tone
+  Button
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import type {
@@ -25,6 +24,7 @@ import {
 } from "@/lib/status-labels";
 import { formatRelativeTime } from "@/lib/format-time";
 import {
+  attentionTone,
   buildWeekPulse,
   coordinationModeLabel,
   countWeekPulseActivity,
@@ -69,26 +69,6 @@ export function modeToneClass(mode: OpsLaunchMode) {
   return modePillClass[mode] ?? modePillClass.plan;
 }
 
-function statusTone(status: string): Tone {
-  switch (status) {
-    case "completed":
-    case "resolved":
-    case "approved":
-      return "ok";
-    case "running":
-    case "waiting_human":
-    case "pending":
-      return "warn";
-    case "failed":
-    case "rejected":
-      return "danger";
-    case "planned":
-    case "queued":
-      return "info";
-    default:
-      return "mute";
-  }
-}
 
 export function ProjectOpsHome({
   artifactsCount,
@@ -275,7 +255,7 @@ export function ProjectOpsHome({
                           ) : null}
                         </div>
                       </div>
-                      <StatusPill tone={statusTone(task.status)}>
+                      <StatusPill tone={attentionTone(task.status)}>
                         {taskStatusLabel(task.status)}
                       </StatusPill>
                     </button>
@@ -496,7 +476,7 @@ export function ProjectOpsHome({
                               {formatRelativeTime(decision.created_at)}
                             </time>
                           ) : null}
-                          <StatusPill tone={statusTone(decision.status_snapshot)}>
+                          <StatusPill tone={attentionTone(decision.status_snapshot)}>
                             {decisionStatusLabel(decision.status_snapshot)}
                           </StatusPill>
                         </div>
