@@ -791,6 +791,60 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerResolveDecisionRejectsNonContractDecision(t *testing.T) {
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/decisions/"+decisionID.String()+"/resolve", strings.NewReader(`{"decision":"totally_made_up"}`))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenantID))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, actorID))
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("projectId", projectID.String())
+	rctx.URLParams.Add("decisionId", decisionID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	resp := httptest.NewRecorder()
+
+	handler.ResolveDecision(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected non-contract decision to return 400, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.resolveDecisionReq.Decision != "" {
+		t.Fatalf("expected service not to be called for non-contract decision, got %#v", service.resolveDecisionReq)
+	}
+}
+
+func TestProjectHandlerResolveDecisionAcceptsExpandedEnumValues(t *testing.T) {
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	for _, decision := range []string{"retry", "cancel_downstream", "reassign", "retry_planning", "close_demand"} {
+		service := &handlerTestService{}
+		handler := newTestHandler(service)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/decisions/"+decisionID.String()+"/resolve", strings.NewReader(`{"decision":"`+decision+`"}`))
+		req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenantID))
+		req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, actorID))
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("projectId", projectID.String())
+		rctx.URLParams.Add("decisionId", decisionID.String())
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		resp := httptest.NewRecorder()
+
+		handler.ResolveDecision(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("decision %q: expected enum-layer pass-through 200, got %d: %s", decision, resp.Code, resp.Body.String())
+		}
+		if service.resolveDecisionReq.Decision != decision {
+			t.Fatalf("decision %q: expected service to receive it, got %#v", decision, service.resolveDecisionReq)
+		}
+	}
+}
+
 func TestProjectHandlerListsExecutionTrace(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()

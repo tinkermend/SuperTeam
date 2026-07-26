@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/api/gen"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/authz"
 )
@@ -1023,12 +1024,20 @@ func (h *HTTPHandler) ResolveDecision(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
+	// Contract-level enum gate: reject values outside the generated
+	// ResolveProjectDecisionRequest.decision enum before business validation
+	// (validHumanDecision stays as the per-decision_type business layer).
+	decisionValue := strings.TrimSpace(body.Decision)
+	if !gen.ResolveProjectDecisionRequestDecision(decisionValue).Valid() {
+		http.Error(w, "invalid decision", http.StatusBadRequest)
+		return
+	}
 	decision, err := service.ResolveDecision(r.Context(), ResolveDecisionRequest{
 		TenantID:              tenantID,
 		ProjectID:             projectID,
 		DecisionRequestID:     decisionID,
 		DecidedByUserID:       actorID,
-		Decision:              body.Decision,
+		Decision:              decisionValue,
 		Comment:               body.Comment,
 		Payload:               body.Payload,
 		TargetExitDeliverable: body.TargetExitDeliverable,
