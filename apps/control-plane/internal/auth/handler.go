@@ -458,6 +458,9 @@ func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, i
 		h.writeAuthError(w, err)
 		return
 	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeManage, "managed user status update") {
+		return
+	}
 
 	var body UpdateUserStatusJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -476,6 +479,9 @@ func (h *HTTPHandler) UpdateUserContact(w http.ResponseWriter, r *http.Request, 
 	_, actorUser, err := h.currentSessionUser(r)
 	if err != nil {
 		h.writeAuthError(w, err)
+		return
+	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeManage, "managed user contact update") {
 		return
 	}
 
@@ -503,6 +509,9 @@ func (h *HTTPHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request, 
 	_, actorUser, err := h.currentSessionUser(r)
 	if err != nil {
 		h.writeAuthError(w, err)
+		return
+	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeManage, "managed user password reset") {
 		return
 	}
 

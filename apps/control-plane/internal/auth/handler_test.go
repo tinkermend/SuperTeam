@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/platform"
 )
@@ -654,4 +655,53 @@ func (a *recordingAuthorizer) CheckBulkTeamActions(_ context.Context, req authz.
 		return nil, nil
 	}
 	return req.Actions, nil
+}
+
+// TestHTTPHandlerManagedUserMutationsRequireManageAction 钉住 07-27 修复的授权洞:
+// 启停/重置密码/联系方式三个用户治理变更端点必须过 ActionUserProjectTeamScopeManage
+// 判权——此前只验会话,任何能登录控制台的 member 都能禁用/篡改任何人(实测复现)。
+func TestHTTPHandlerManagedUserMutationsRequireManageAction(t *testing.T) {
+	repo, svc, _, token := newAuthenticatedHandler(t)
+	authorizer := &recordingAuthorizer{allowed: false}
+	handler := NewHandler(svc, authorizer)
+	victim, err := svc.CreateUser(context.Background(), "victim-user", "pw123456")
+	if err != nil {
+		t.Fatalf("create victim: %v", err)
+	}
+	victimID := openapi_types.UUID(victim.ID)
+
+	cases := []struct {
+		name string
+		call func(recorder *httptest.ResponseRecorder, request *http.Request)
+		body string
+	}{
+		{"status", func(rec *httptest.ResponseRecorder, req *http.Request) { handler.UpdateUserStatus(rec, req, victimID) }, `{"status":"disabled"}`},
+		{"reset-password", func(rec *httptest.ResponseRecorder, req *http.Request) { handler.ResetUserPassword(rec, req, victimID) }, `{"password":"newpass123"}`},
+		{"contact", func(rec *httptest.ResponseRecorder, req *http.Request) { handler.UpdateUserContact(rec, req, victimID) }, `{"mobile":"+8613800138000"}`},
+	}
+	for _, tc := range cases {
+		request := httptest.NewRequest(http.MethodPatch, "/api/auth/users/x", bytes.NewBufferString(tc.body))
+		request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+		recorder := httptest.NewRecorder()
+		tc.call(recorder, request)
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("%s: expected 403 when authorizer denies, got %d: %s", tc.name, recorder.Code, recorder.Body.String())
+		}
+	}
+	// 拒绝路径零副作用:victim 状态未变、密码未换、联系方式未写。
+	fresh := repo.usersByID[victim.ID]
+	if fresh.Status != UserStatusActive || fresh.Mobile != "" {
+		t.Fatalf("denied mutations must have no side effects, got %#v", fresh)
+	}
+
+	// 允许时照常放行(200)。
+	allowed := &recordingAuthorizer{allowed: true}
+	handlerOK := NewHandler(svc, allowed)
+	request := httptest.NewRequest(http.MethodPatch, "/api/auth/users/x", bytes.NewBufferString(`{"mobile":"+8613800138000"}`))
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+	handlerOK.UpdateUserContact(recorder, request, victimID)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 when allowed, got %d: %s", recorder.Code, recorder.Body.String())
+	}
 }
