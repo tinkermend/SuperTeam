@@ -26,12 +26,30 @@ func newFakeFeishu(t *testing.T) (*httptest.Server, *Client) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"code": 99991663, "msg": "invalid token"})
 			return
 		}
+		// 回带条目按请求键构造:命中的邮箱/手机号各一条,ghost 无 user_id(未命中形态)。
+		var body struct {
+			Emails  []string `json:"emails"`
+			Mobiles []string `json:"mobiles"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		userList := []map[string]string{}
+		for _, email := range body.Emails {
+			if email == "alice@corp.com" {
+				userList = append(userList, map[string]string{"user_id": "ou_alice", "email": email})
+			} else {
+				userList = append(userList, map[string]string{"email": email})
+			}
+		}
+		for _, mobile := range body.Mobiles {
+			if mobile == "+8613800138000" {
+				userList = append(userList, map[string]string{"user_id": "ou_mobile", "mobile": mobile})
+			} else {
+				userList = append(userList, map[string]string{"mobile": mobile})
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"code": 0,
-			"data": map[string]any{"user_list": []map[string]string{
-				{"user_id": "ou_alice", "email": "alice@corp.com"},
-				{"email": "ghost@corp.com"},
-			}},
+			"data": map[string]any{"user_list": userList},
 		})
 	})
 	mux.HandleFunc("/open-apis/authen/v2/oauth/token", func(w http.ResponseWriter, r *http.Request) {
@@ -69,21 +87,28 @@ func TestTenantAccessToken(t *testing.T) {
 	}
 }
 
-func TestBatchGetOpenIDsByEmail(t *testing.T) {
+func TestBatchGetOpenIDs(t *testing.T) {
 	_, client := newFakeFeishu(t)
-	matches, err := client.BatchGetOpenIDsByEmail(context.Background(), "t-token", []string{"alice@corp.com", "ghost@corp.com"})
+	emailMatches, mobileMatches, err := client.BatchGetOpenIDs(context.Background(), "t-token",
+		[]string{"alice@corp.com", "ghost@corp.com"}, []string{"+8613800138000", "+8600000000000"})
 	if err != nil {
 		t.Fatalf("batch: %v", err)
 	}
-	if matches["alice@corp.com"] != "ou_alice" {
-		t.Fatalf("expected alice matched, got %#v", matches)
+	if emailMatches["alice@corp.com"] != "ou_alice" {
+		t.Fatalf("expected alice matched, got %#v", emailMatches)
 	}
-	if _, ok := matches["ghost@corp.com"]; ok {
-		t.Fatalf("expected ghost unmatched (no user_id), got %#v", matches)
+	if _, ok := emailMatches["ghost@corp.com"]; ok {
+		t.Fatalf("expected ghost unmatched (no user_id), got %#v", emailMatches)
 	}
-	empty, err := client.BatchGetOpenIDsByEmail(context.Background(), "t-token", nil)
-	if err != nil || len(empty) != 0 {
-		t.Fatalf("expected empty result for no emails, got %#v err=%v", empty, err)
+	if mobileMatches["+8613800138000"] != "ou_mobile" {
+		t.Fatalf("expected mobile matched, got %#v", mobileMatches)
+	}
+	if _, ok := mobileMatches["+8600000000000"]; ok {
+		t.Fatalf("expected unknown mobile unmatched, got %#v", mobileMatches)
+	}
+	emptyEmails, emptyMobiles, err := client.BatchGetOpenIDs(context.Background(), "t-token", nil, nil)
+	if err != nil || len(emptyEmails) != 0 || len(emptyMobiles) != 0 {
+		t.Fatalf("expected empty result for no keys, got %#v/%#v err=%v", emptyEmails, emptyMobiles, err)
 	}
 }
 

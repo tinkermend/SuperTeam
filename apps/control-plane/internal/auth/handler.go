@@ -314,6 +314,8 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Username:          body.Username,
 		DisplayName:       body.DisplayName,
 		Password:          body.Password,
+		Email:             emailValueOrEmpty(body.Email),
+		Mobile:            derefOrEmpty(body.Mobile),
 		Avatar:            userAvatarFromGenerated(&body.Avatar),
 		TenantRole:        string(body.TenantRole),
 		SelectableTeamIDs: uuidSliceFromOpenAPI(selectableTeamIDs),
@@ -464,6 +466,33 @@ func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, i
 	}
 	user, err := h.service.UpdateManagedUserStatus(r.Context(), toActor(actorUser), uuid.UUID(id), string(body.Status))
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
+func (h *HTTPHandler) UpdateUserContact(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	var body UpdateUserContactJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := h.service.UpdateManagedUserContact(r.Context(), toActor(actorUser), uuid.UUID(id), UpdateUserContactInput{
+		Email:  body.Email,
+		Mobile: body.Mobile,
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalidManagedUserInput) {
+			writeError(w, http.StatusBadRequest, "invalid contact input")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -633,6 +662,7 @@ func toGeneratedUserSummary(user *User) UserSummary {
 		AvatarAssetId: optionalString(user.AvatarAssetID),
 		DisplayName:   optionalString(user.DisplayName),
 		Email:         optionalString(user.Email),
+		Mobile:        optionalString(user.Mobile),
 		Id:            openapiUUID(user.ID),
 		Status:        UserSummaryStatus(user.Status),
 		Username:      user.Username,
@@ -745,6 +775,20 @@ func uuidSliceFromOpenAPI(values []openapi_types.UUID) []uuid.UUID {
 		ids = append(ids, uuid.UUID(value))
 	}
 	return ids
+}
+
+func emailValueOrEmpty(value *openapi_types.Email) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
+func derefOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func optionalString(value string) *string {

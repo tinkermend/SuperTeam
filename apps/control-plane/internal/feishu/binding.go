@@ -18,20 +18,21 @@ var (
 	ErrNoAppConfig       = errors.New("no active feishu app config")
 )
 
-// UserLister 提供通讯录反查所需的平台用户(邮箱)来源,由 app 层用 auth 服务适配。
+// UserLister 提供通讯录反查所需的平台用户联系方式来源,由 app 层用 auth 服务适配。
 type UserLister interface {
-	ListActiveUsersWithEmail(ctx context.Context) ([]UserEmail, error)
+	ListActiveUsersWithContact(ctx context.Context) ([]UserContact, error)
 }
 
-type UserEmail struct {
+type UserContact struct {
 	UserID uuid.UUID
 	Email  string
+	Mobile string
 }
 
 // APIClient 是 Client 的接口视图(测试可替换)。
 type APIClient interface {
 	TenantAccessToken(ctx context.Context, appID, appSecret string) (string, error)
-	BatchGetOpenIDsByEmail(ctx context.Context, tenantToken string, emails []string) (map[string]string, error)
+	BatchGetOpenIDs(ctx context.Context, tenantToken string, emails, mobiles []string) (emailMatches, mobileMatches map[string]string, err error)
 	AuthorizeURL(appID, redirectURI, state string) string
 	OAuthUserIdentity(ctx context.Context, appID, appSecret, code, redirectURI string) (openID, unionID string, err error)
 }
@@ -53,10 +54,13 @@ type ContactSyncReport struct {
 	Bound        int    `json:"bound"`
 	AlreadyBound int    `json:"already_bound"`
 	Unmatched    int    `json:"unmatched"`
+	// Conflicts:同一用户的邮箱与手机号命中了不同 open_id(档案填串了或平台
+	// 联系方式填错人),不静默绑任何一边,计数报出留人工裁决。
+	Conflicts int `json:"conflicts"`
 }
 
-// ContactSync 按邮箱批量反查并绑定(零用户操作的初始化路径)。已绑定的跳过,
-// 失配的留给 OAuth 按钮补绑。
+// ContactSync 按邮箱+手机号批量反查并绑定(零用户操作的初始化路径)。已绑定的
+// 跳过;任一键命中即绑;双键命中不同人计 conflict;全失配留给 OAuth 补绑。
 func (s *Service) ContactSync(ctx context.Context, tenantID uuid.UUID) ([]ContactSyncReport, error) {
 	if s.client == nil {
 		return nil, ErrClientRequired
@@ -74,7 +78,7 @@ func (s *Service) ContactSync(ctx context.Context, tenantID uuid.UUID) ([]Contac
 	if len(configs) == 0 {
 		return nil, ErrNoAppConfig
 	}
-	users, err := s.userLister.ListActiveUsersWithEmail(ctx)
+	users, err := s.userLister.ListActiveUsersWithContact(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -91,11 +95,17 @@ func (s *Service) ContactSync(ctx context.Context, tenantID uuid.UUID) ([]Contac
 			return nil, err
 		}
 
-		var emails []string
-		emailToUser := make(map[string]uuid.UUID)
+		type candidate struct {
+			userID uuid.UUID
+			email  string
+			mobile string
+		}
+		var candidates []candidate
+		var emails, mobiles []string
 		for _, user := range users {
 			email := strings.TrimSpace(strings.ToLower(user.Email))
-			if email == "" {
+			mobile := strings.TrimSpace(user.Mobile)
+			if email == "" && mobile == "" {
 				continue
 			}
 			if _, err := s.repo.GetIdentityByUser(ctx, cfg.ID, user.UserID); err == nil {
@@ -104,30 +114,50 @@ func (s *Service) ContactSync(ctx context.Context, tenantID uuid.UUID) ([]Contac
 			} else if !errors.Is(err, ErrIdentityNotFound) {
 				return nil, err
 			}
-			emails = append(emails, email)
-			emailToUser[email] = user.UserID
+			candidates = append(candidates, candidate{userID: user.UserID, email: email, mobile: mobile})
+			if email != "" {
+				emails = append(emails, email)
+			}
+			if mobile != "" {
+				mobiles = append(mobiles, mobile)
+			}
 		}
 
-		matches, err := s.client.BatchGetOpenIDsByEmail(ctx, token, emails)
+		emailMatches, mobileMatches, err := s.client.BatchGetOpenIDs(ctx, token, emails, mobiles)
 		if err != nil {
 			return nil, err
 		}
-		report.Matched = len(matches)
-		report.Unmatched = len(emails) - len(matches)
-		for email, openID := range matches {
-			userID, ok := emailToUser[strings.ToLower(email)]
-			if !ok {
+		for _, cand := range candidates {
+			var emailOpenID, mobileOpenID string
+			if cand.email != "" {
+				emailOpenID = matchIgnoreCase(emailMatches, cand.email)
+			}
+			if cand.mobile != "" {
+				mobileOpenID = mobileMatches[cand.mobile]
+			}
+			if emailOpenID == "" && mobileOpenID == "" {
+				report.Unmatched++
 				continue
+			}
+			report.Matched++
+			if emailOpenID != "" && mobileOpenID != "" && emailOpenID != mobileOpenID {
+				report.Conflicts++
+				continue
+			}
+			openID := emailOpenID
+			if openID == "" {
+				openID = mobileOpenID
 			}
 			if _, err := s.BindIdentity(ctx, Identity{
 				TenantID:          tenantID,
-				AuthUserID:        userID,
+				AuthUserID:        cand.userID,
 				FeishuAppConfigID: cfg.ID,
 				OpenID:            openID,
 				BoundVia:          BoundViaContactSync,
 			}); err != nil {
 				// open_id 撞唯一约束(比如已被他人绑定)不阻断整批,计入 unmatched。
 				report.Unmatched++
+				report.Matched--
 				continue
 			}
 			report.Bound++
@@ -135,6 +165,20 @@ func (s *Service) ContactSync(ctx context.Context, tenantID uuid.UUID) ([]Contac
 		reports = append(reports, report)
 	}
 	return reports, nil
+}
+
+// matchIgnoreCase 邮箱命中查找:飞书回带的 email 大小写可能与请求不一致,
+// 先精确后小写比对。
+func matchIgnoreCase(matches map[string]string, key string) string {
+	if openID, ok := matches[key]; ok {
+		return openID
+	}
+	for candidate, openID := range matches {
+		if strings.EqualFold(candidate, key) {
+			return openID
+		}
+	}
+	return ""
 }
 
 type oauthState struct {

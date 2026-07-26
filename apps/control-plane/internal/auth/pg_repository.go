@@ -68,6 +68,10 @@ func (r *PgRepository) CreateUser(ctx context.Context, input CreateUserRecordInp
 			String: input.Email,
 			Valid:  input.Email != "",
 		},
+		Mobile: pgtype.Text{
+			String: input.Mobile,
+			Valid:  input.Mobile != "",
+		},
 		PasswordHash: input.PasswordHash,
 		Status:       UserStatusActive,
 		AvatarAssetID: pgtype.Text{
@@ -163,6 +167,21 @@ func (r *PgRepository) SetUserAvatarSVG(ctx context.Context, userID uuid.UUID, s
 	})
 }
 
+func (r *PgRepository) UpdateUserContact(ctx context.Context, userID uuid.UUID, input UpdateUserContactInput) (*User, error) {
+	params := queries.UpdateUserContactParams{ID: userID}
+	if input.Email != nil {
+		params.Email = pgtype.Text{String: *input.Email, Valid: true}
+	}
+	if input.Mobile != nil {
+		params.Mobile = pgtype.Text{String: *input.Mobile, Valid: true}
+	}
+	user, err := r.q.UpdateUserContact(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return toDomainUser(user), nil
+}
+
 func (r *PgRepository) UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error) {
 	user, err := r.q.UpdateUser(ctx, queries.UpdateUserParams{
 		ID: userID,
@@ -211,6 +230,7 @@ func toDomainUser(user queries.AuthUser) *User {
 		Username:      user.Username,
 		DisplayName:   user.DisplayName.String,
 		Email:         user.Email.String,
+		Mobile:        user.Mobile.String,
 		PasswordHash:  user.PasswordHash,
 		Status:        user.Status,
 		Avatar:        avatar,

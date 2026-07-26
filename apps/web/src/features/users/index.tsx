@@ -51,6 +51,7 @@ import { Label } from "@/components/ui/label";
 import {
   listAuthzMembers,
   createUser,
+  updateUserContact,
   deleteUserTenantMembership,
   feishuOAuthStartUrl,
   listFeishuIdentities,
@@ -115,6 +116,9 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
   );
   const [pendingCreatedUserId, setPendingCreatedUserId] = useState<string>();
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactMobile, setContactMobile] = useState("");
   const [resetPasswordValue, setResetPasswordValue] = useState("");
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [tableDensity, setTableDensity] = useState<UserTableDensity>("comfortable");
@@ -245,6 +249,12 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
         tenant_role: input.tenant_role,
         selectable_team_ids: input.selectable_team_ids
 };
+      if (input.email.trim()) {
+        payload.email = input.email.trim();
+      }
+      if (input.mobile.trim()) {
+        payload.mobile = input.mobile.trim();
+      }
       return createUser(apiOptions, payload);
     },
     onSuccess: async (response) => {
@@ -252,6 +262,14 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
       setFilters(defaultUserFilters);
       setPendingCreatedUserId(response.user.id);
       setSelectedUserId(response.user.id);
+      await invalidateUserWorkspace();
+    }
+});
+  const updateContactMutation = useMutation({
+    mutationFn: (input: { userId: string; email: string; mobile: string }) =>
+      updateUserContact(apiOptions, input.userId, { email: input.email, mobile: input.mobile }),
+    onSuccess: async () => {
+      setContactDialogOpen(false);
       await invalidateUserWorkspace();
     }
 });
@@ -430,6 +448,12 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
                 }
                 replaceScopesMutation.mutate({ teamIds, userId: selectedUser.id });
               }}
+              onEditContact={() => {
+                setContactEmail(selectedUser?.email ?? "");
+                setContactMobile(selectedUser?.mobile ?? "");
+                updateContactMutation.reset();
+                setContactDialogOpen(true);
+              }}
               onResetPassword={() => setResetPasswordOpen(true)}
               onToggleStatus={() => {
                 if (!selectedUser) {
@@ -458,6 +482,24 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
         />
 
         {selectedUser ? (
+          <>
+          <ContactDialog
+            email={contactEmail}
+            error={updateContactMutation.error}
+            isOpen={contactDialogOpen}
+            isPending={updateContactMutation.isPending}
+            mobile={contactMobile}
+            onOpenChange={setContactDialogOpen}
+            onSubmit={() => {
+              if (!selectedUser) {
+                return;
+              }
+              updateContactMutation.mutate({ email: contactEmail, mobile: contactMobile, userId: selectedUser.id });
+            }}
+            setEmail={setContactEmail}
+            setMobile={setContactMobile}
+            username={selectedUser?.username ?? ""}
+          />
           <ResetPasswordDialog
             error={resetPasswordMutation.error}
             isOpen={resetPasswordOpen}
@@ -473,6 +515,7 @@ export function UsersView({ fetcher, initialUserId }: UsersViewProps = {}) {
             setPassword={setResetPasswordValue}
             username={selectedUser.username}
           />
+          </>
         ) : null}
         <CreateUserDrawer
           apiBaseUrl={apiBaseUrl}
@@ -718,6 +761,7 @@ function UserGovernancePreview({
   member,
   membershipError,
   onDeleteTenantMembership,
+  onEditContact,
   onReplaceScopes,
   onResetPassword,
   onToggleStatus,
@@ -733,6 +777,7 @@ function UserGovernancePreview({
   member?: AuthzMemberRecord;
   membershipError?: string;
   onDeleteTenantMembership: () => void;
+  onEditContact: () => void;
   onReplaceScopes: (teamIds: string[]) => void;
   onResetPassword: () => void;
   onToggleStatus: () => void;
@@ -830,6 +875,9 @@ function UserGovernancePreview({
           <Button onClick={onResetPassword} size="sm" type="button" variant="outline">
             <LockKeyhole data-icon="inline-start" />
             重置密码
+          </Button>
+          <Button onClick={onEditContact} size="sm" type="button" variant="outline">
+            联系方式
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link to="/teams">
@@ -1007,6 +1055,79 @@ function ResetPasswordDialog({
             </Button>
             <Button disabled={isPending || password.length < 4} type="submit">
               确认重置
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ContactDialog({
+  email,
+  error,
+  isOpen,
+  isPending,
+  mobile,
+  onOpenChange,
+  onSubmit,
+  setEmail,
+  setMobile,
+  username
+}: {
+  email: string;
+  error: unknown;
+  isOpen: boolean;
+  isPending: boolean;
+  mobile: string;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: () => void;
+  setEmail: (value: string) => void;
+  setMobile: (value: string) => void;
+  username: string;
+}) {
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>联系方式</DialogTitle>
+          <DialogDescription>
+            为 {username} 维护邮箱与手机号——它们是「同步飞书绑定」按通讯录反查的撞库键,需与飞书档案一致。留空提交即清除。
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="contact-email">邮箱</Label>
+            <Input
+              id="contact-email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="与飞书档案一致"
+              type="email"
+              value={email}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="contact-mobile">手机号</Label>
+            <Input
+              id="contact-mobile"
+              onChange={(event) => setMobile(event.target.value)}
+              placeholder="含区号,如 +8613800138000"
+              value={mobile}
+            />
+          </div>
+          {error instanceof Error ? <p className="text-sm text-destructive">{error.message}</p> : null}
+          <DialogFooter>
+            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+              取消
+            </Button>
+            <Button disabled={isPending} type="submit">
+              保存
             </Button>
           </DialogFooter>
         </form>

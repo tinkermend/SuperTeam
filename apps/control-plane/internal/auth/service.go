@@ -18,6 +18,7 @@ type CreateUserRecordInput struct {
 	Username      string
 	DisplayName   string
 	Email         string
+	Mobile        string
 	PasswordHash  string
 	Avatar        UserAvatarConfig
 	AvatarAssetID string
@@ -32,6 +33,7 @@ type Repository interface {
 	UpdateUserStatus(ctx context.Context, userID uuid.UUID, status string) (*User, error)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) (*User, error)
 	UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error)
+	UpdateUserContact(ctx context.Context, userID uuid.UUID, input UpdateUserContactInput) (*User, error)
 	SetUserAvatarSVG(ctx context.Context, userID uuid.UUID, svg string) error
 	CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (*RuntimeToken, error)
@@ -233,6 +235,8 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 		created, err := repo.CreateUser(ctx, CreateUserRecordInput{
 			Username:     input.Username,
 			DisplayName:  input.DisplayName,
+			Email:        input.Email,
+			Mobile:       input.Mobile,
 			PasswordHash: string(hash),
 			Avatar:       input.Avatar,
 		})
@@ -263,6 +267,9 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserInput, error) {
 	input.Username = strings.TrimSpace(input.Username)
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.Email = strings.TrimSpace(input.Email)
+	rawMobile := strings.TrimSpace(input.Mobile)
+	input.Mobile = normalizeMobile(rawMobile)
 	input.AvatarAssetID = strings.ToLower(strings.TrimSpace(input.AvatarAssetID))
 	input.TenantRole = strings.TrimSpace(strings.ToLower(input.TenantRole))
 	if input.TenantID == uuid.Nil {
@@ -276,6 +283,12 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 		!isExplicitSupportedUserAvatar(input.Avatar) {
 		return input, ErrInvalidManagedUserInput
 	}
+	if input.Email != "" && !strings.Contains(input.Email, "@") {
+		return input, ErrInvalidManagedUserInput
+	}
+	if rawMobile != "" && !isValidMobile(input.Mobile) {
+		return input, ErrInvalidManagedUserInput
+	}
 	input.Avatar = normalizeUserAvatarConfig(input.Username, input.Avatar)
 	if len(input.SelectableTeamIDs) > 0 {
 		teamIDs, err := normalizeProjectTeamScopeIDs(input.SelectableTeamIDs)
@@ -285,6 +298,37 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 		input.SelectableTeamIDs = teamIDs
 	}
 	return input, nil
+}
+
+// normalizeMobile 去除空格/短横线等展示分隔;保留可选前导 + 与数字。
+func normalizeMobile(mobile string) string {
+	mobile = strings.TrimSpace(mobile)
+	var b strings.Builder
+	for i, r := range mobile {
+		if r == '+' && i == 0 {
+			b.WriteRune(r)
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isValidMobile 宽松校验:可选 + 前缀 + 5..20 位数字(具体格式以飞书档案为准,
+// 反查命不命中由 batch_get_id 决定,这里只拦明显非号码输入)。
+func isValidMobile(mobile string) bool {
+	digits := strings.TrimPrefix(mobile, "+")
+	if len(digits) < 5 || len(digits) > 20 {
+		return false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func isValidTenantRole(role string) bool {
@@ -363,6 +407,36 @@ func (s *Service) UpdateManagedUserStatus(ctx context.Context, actor Actor, user
 			log.Printf("user deactivated hook failed: user_id=%s err=%v", user.ID, hookErr)
 		}
 	}
+	return user, nil
+}
+
+// UpdateManagedUserContact 管理员维护既有用户的联系方式(email/mobile)——它们是
+// 飞书通讯录反查(ContactSync)的撞库键;没有这个入口,既有用户只能本人登录
+// 自服务补资料才能被反查命中。nil=不改,空串=清除。
+func (s *Service) UpdateManagedUserContact(ctx context.Context, actor Actor, userID uuid.UUID, input UpdateUserContactInput) (*User, error) {
+	if input.Email != nil {
+		email := strings.TrimSpace(*input.Email)
+		if email != "" && !strings.Contains(email, "@") {
+			return nil, ErrInvalidManagedUserInput
+		}
+		input.Email = &email
+	}
+	if input.Mobile != nil {
+		raw := strings.TrimSpace(*input.Mobile)
+		mobile := normalizeMobile(raw)
+		// 原始输入非空但规整后不合法(含规整成空,如纯字母)必须报错,
+		// 不得静默降级成"清除"。
+		if raw != "" && !isValidMobile(mobile) {
+			return nil, ErrInvalidManagedUserInput
+		}
+		input.Mobile = &mobile
+	}
+	user, err := s.repo.UpdateUserContact(ctx, userID, input)
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionUserUpdateContact, OperationResultFailed)
+		return nil, err
+	}
+	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserUpdateContact, OperationResultSucceeded)
 	return user, nil
 }
 

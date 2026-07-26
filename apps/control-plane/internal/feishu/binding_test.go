@@ -10,10 +10,11 @@ import (
 )
 
 type fakeAPIClient struct {
-	openIDsByEmail map[string]string
-	oauthOpenID    string
-	oauthUnionID   string
-	failCode       string
+	openIDsByEmail  map[string]string
+	openIDsByMobile map[string]string
+	oauthOpenID     string
+	oauthUnionID    string
+	failCode        string
 }
 
 func (f *fakeAPIClient) TenantAccessToken(_ context.Context, appID, appSecret string) (string, error) {
@@ -23,14 +24,20 @@ func (f *fakeAPIClient) TenantAccessToken(_ context.Context, appID, appSecret st
 	return "t-token", nil
 }
 
-func (f *fakeAPIClient) BatchGetOpenIDsByEmail(_ context.Context, tenantToken string, emails []string) (map[string]string, error) {
-	out := map[string]string{}
+func (f *fakeAPIClient) BatchGetOpenIDs(_ context.Context, tenantToken string, emails, mobiles []string) (map[string]string, map[string]string, error) {
+	emailOut := map[string]string{}
 	for _, email := range emails {
 		if openID, ok := f.openIDsByEmail[email]; ok {
-			out[email] = openID
+			emailOut[email] = openID
 		}
 	}
-	return out, nil
+	mobileOut := map[string]string{}
+	for _, mobile := range mobiles {
+		if openID, ok := f.openIDsByMobile[mobile]; ok {
+			mobileOut[mobile] = openID
+		}
+	}
+	return emailOut, mobileOut, nil
 }
 
 func (f *fakeAPIClient) AuthorizeURL(appID, redirectURI, state string) string {
@@ -45,10 +52,10 @@ func (f *fakeAPIClient) OAuthUserIdentity(_ context.Context, appID, appSecret, c
 }
 
 type staticUserLister struct {
-	users []UserEmail
+	users []UserContact
 }
 
-func (l staticUserLister) ListActiveUsersWithEmail(_ context.Context) ([]UserEmail, error) {
+func (l staticUserLister) ListActiveUsersWithContact(_ context.Context) ([]UserContact, error) {
 	return l.users, nil
 }
 
@@ -68,7 +75,7 @@ func setupBindingService(t *testing.T) (*Service, *memoryRepo, uuid.UUID, AppCon
 func TestContactSyncBindsMatchedUsers(t *testing.T) {
 	service, repo, tenantID, cfg := setupBindingService(t)
 	alice, bob, carol := uuid.New(), uuid.New(), uuid.New()
-	service.SetUserLister(staticUserLister{users: []UserEmail{
+	service.SetUserLister(staticUserLister{users: []UserContact{
 		{UserID: alice, Email: "Alice@corp.com"},
 		{UserID: bob, Email: "bob@corp.com"},
 		{UserID: carol, Email: ""},
@@ -99,6 +106,53 @@ func TestContactSyncBindsMatchedUsers(t *testing.T) {
 	}
 	if reports[0].AlreadyBound != 1 || reports[0].Bound != 0 {
 		t.Fatalf("expected idempotent second run, got %#v", reports[0])
+	}
+}
+
+// TestContactSyncMobileLegAndConflict 钉住手机号腿(spec 2026-07-27 §6 提前项):
+// 邮箱缺失手机号命中→绑定;邮箱与手机号命中不同 open_id→conflict 不静默绑任一边。
+func TestContactSyncMobileLegAndConflict(t *testing.T) {
+	service, _, tenantID, cfg := setupBindingService(t)
+	mobileOnly, conflicted, both := uuid.New(), uuid.New(), uuid.New()
+	service.SetUserLister(staticUserLister{users: []UserContact{
+		{UserID: mobileOnly, Mobile: "+8613800138000"},
+		{UserID: conflicted, Email: "mixed@corp.com", Mobile: "+8613900139000"},
+		{UserID: both, Email: "dana@corp.com", Mobile: "+8613700137000"},
+	}})
+	service.SetClient(&fakeAPIClient{
+		openIDsByEmail: map[string]string{
+			"mixed@corp.com": "ou_email_person",
+			"dana@corp.com":  "ou_dana",
+		},
+		openIDsByMobile: map[string]string{
+			"+8613800138000": "ou_mobile_only",
+			"+8613900139000": "ou_other_person",
+			"+8613700137000": "ou_dana",
+		},
+	})
+
+	reports, err := service.ContactSync(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("contact sync: %v", err)
+	}
+	r := reports[0]
+	if r.Bound != 2 || r.Conflicts != 1 || r.Unmatched != 0 {
+		t.Fatalf("unexpected report %#v", r)
+	}
+	identity, err := service.repo.GetIdentityByUser(context.Background(), cfg.ID, mobileOnly)
+	if err != nil || identity.OpenID != "ou_mobile_only" {
+		t.Fatalf("expected mobile-only user bound, got %#v err=%v", identity, err)
+	}
+	if identity.BoundVia != BoundViaContactSync {
+		t.Fatalf("expected contact_sync via, got %s", identity.BoundVia)
+	}
+	// 双键一致的用户正常绑定。
+	if identity, err := service.repo.GetIdentityByUser(context.Background(), cfg.ID, both); err != nil || identity.OpenID != "ou_dana" {
+		t.Fatalf("expected dual-key user bound, got %#v err=%v", identity, err)
+	}
+	// 冲突用户不绑任何一边。
+	if _, err := service.repo.GetIdentityByUser(context.Background(), cfg.ID, conflicted); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("conflicted user must stay unbound, got err=%v", err)
 	}
 }
 

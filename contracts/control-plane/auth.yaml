@@ -350,7 +350,7 @@ paths:
           schema:
             type: string
             minLength: 1
-          description: 按用户名、显示名称或邮箱搜索
+          description: 按用户名、显示名称、邮箱或手机号搜索
         - name: status
           in: query
           required: false
@@ -545,6 +545,41 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/users/{id}/contact:
+    patch:
+      summary: 更新平台用户联系方式(管理员;email/mobile 是飞书通讯录反查的撞库键)
+      operationId: updateUserContact
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserContactRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/auth/users/{id}/project-team-scopes:
     get:
       summary: 查询用户可选择的项目团队范围
@@ -731,12 +766,32 @@ components:
           $ref: '#/components/schemas/UserAvatar'
         tenant_role:
           $ref: '#/components/schemas/TenantRole'
+        email:
+          type: string
+          format: email
+          description: 可选。飞书通讯录反查(按邮箱)绑定的撞库键。
+        mobile:
+          type: string
+          maxLength: 32
+          description: 可选。手机号(建议含国际区号,如 +8613800138000);飞书通讯录反查(按手机号)绑定的撞库键。
         selectable_team_ids:
           type: array
           items:
             type: string
             format: uuid
           description: 可选。此用户创建项目时可选择的团队范围（非团队成员身份）。
+
+    UpdateUserContactRequest:
+      type: object
+      description: 两字段均可选;缺省=不改,空串=清除。
+      properties:
+        email:
+          type: string
+          nullable: true
+        mobile:
+          type: string
+          nullable: true
+          maxLength: 32
 
     UpsertTenantMembershipRequest:
       type: object
@@ -929,6 +984,9 @@ components:
           type: string
           nullable: true
         email:
+          type: string
+          nullable: true
+        mobile:
           type: string
           nullable: true
         status:

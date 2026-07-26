@@ -1010,22 +1010,22 @@ func (a serviceAuthMiddlewareAdapter) ValidateServiceToken(ctx context.Context, 
 	return middleware.ServiceIdentity{TokenID: validated.ID, TenantID: validated.TenantID}, nil
 }
 
-// feishuUserListerAdapter 把 auth 用户目录适配为通讯录反查所需的邮箱来源。
+// feishuUserListerAdapter 把 auth 用户目录适配为通讯录反查所需的联系方式来源。
 type feishuUserListerAdapter struct {
 	auth *auth.Service
 }
 
-func (a feishuUserListerAdapter) ListActiveUsersWithEmail(ctx context.Context) ([]feishu.UserEmail, error) {
+func (a feishuUserListerAdapter) ListActiveUsersWithContact(ctx context.Context) ([]feishu.UserContact, error) {
 	users, err := a.auth.ListUsers(ctx, auth.ListUsersFilter{Status: "active", Limit: 1000})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]feishu.UserEmail, 0, len(users))
+	out := make([]feishu.UserContact, 0, len(users))
 	for _, user := range users {
-		if user.Email == "" {
+		if user.Email == "" && user.Mobile == "" {
 			continue
 		}
-		out = append(out, feishu.UserEmail{UserID: user.ID, Email: user.Email})
+		out = append(out, feishu.UserContact{UserID: user.ID, Email: user.Email, Mobile: user.Mobile})
 	}
 	return out, nil
 }

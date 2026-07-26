@@ -196,6 +196,21 @@ func (m *mockRepo) UpdateUserProfile(ctx context.Context, userID uuid.UUID, inpu
 	return user, nil
 }
 
+func (m *mockRepo) UpdateUserContact(ctx context.Context, userID uuid.UUID, input UpdateUserContactInput) (*User, error) {
+	user, ok := m.usersByID[userID]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	if input.Email != nil {
+		user.Email = *input.Email
+	}
+	if input.Mobile != nil {
+		user.Mobile = *input.Mobile
+	}
+	user.UpdatedAt = time.Now()
+	return user, nil
+}
+
 func (m *mockRepo) GetUserByUsername(ctx context.Context, username string) (*User, error) {
 	user, ok := m.users[username]
 	if !ok {
@@ -1541,5 +1556,51 @@ func TestValidateRuntimeToken(t *testing.T) {
 
 	if err := svc.ValidateRuntimeToken(context.Background(), "node1", "invalid"); err != ErrInvalidToken {
 		t.Error("expected invalid token error")
+	}
+}
+
+// TestUpdateManagedUserContact 钉住联系方式维护语义(飞书反查撞库键):
+// nil=不改/空串=清除/手机号规整(去分隔)/非法值 400 族错误。
+func TestUpdateManagedUserContact(t *testing.T) {
+	repo := newMockRepo()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	user, err := svc.CreateUser(context.Background(), "contactuser", "pw123456")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	actor := Actor{UserID: uuid.New()}
+
+	mobile := "+86 138-0013-8000"
+	updated, err := svc.UpdateManagedUserContact(context.Background(), actor, user.ID, UpdateUserContactInput{Mobile: &mobile})
+	if err != nil {
+		t.Fatalf("update mobile: %v", err)
+	}
+	if updated.Mobile != "+8613800138000" {
+		t.Fatalf("expected normalized mobile, got %q", updated.Mobile)
+	}
+
+	email := "second@corp.com"
+	if _, err := svc.UpdateManagedUserContact(context.Background(), actor, user.ID, UpdateUserContactInput{Email: &email}); err != nil {
+		t.Fatalf("update email: %v", err)
+	}
+	if repo.usersByID[user.ID].Mobile != "+8613800138000" {
+		t.Fatalf("email-only update must not touch mobile")
+	}
+
+	empty := ""
+	if updated, err := svc.UpdateManagedUserContact(context.Background(), actor, user.ID, UpdateUserContactInput{Mobile: &empty}); err != nil || updated.Mobile != "" {
+		t.Fatalf("empty string should clear mobile, got %q err=%v", updated.Mobile, err)
+	}
+
+	bad := "not-a-phone"
+	if _, err := svc.UpdateManagedUserContact(context.Background(), actor, user.ID, UpdateUserContactInput{Mobile: &bad}); !errors.Is(err, ErrInvalidManagedUserInput) {
+		t.Fatalf("expected invalid input for bad mobile, got %v", err)
+	}
+	badEmail := "no-at-sign"
+	if _, err := svc.UpdateManagedUserContact(context.Background(), actor, user.ID, UpdateUserContactInput{Email: &badEmail}); !errors.Is(err, ErrInvalidManagedUserInput) {
+		t.Fatalf("expected invalid input for bad email, got %v", err)
 	}
 }

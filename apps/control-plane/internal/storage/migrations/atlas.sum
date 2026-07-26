@@ -1,4 +1,4 @@
-h1:QOjZz84heyt35+0BxUvc8QwD6mxShVASL+rfgP2vXag=
+h1:8x/9FFah/aIEwotzXIdD7GMgEvhwIxqK1sTFafHHGzg=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -111,3 +111,4 @@ h1:QOjZz84heyt35+0BxUvc8QwD6mxShVASL+rfgP2vXag=
 20260726021028_team_capability_takeover_convergence.sql h1:6yDIdjBAcsEw3MS/ZklcxF+KCmkkH6gbKaYnrgOJkhs=
 20260726025333_team_constitution_revisions.sql h1:PkDxs6jLRmXIXubYPRd31304anr05v4xOjIEvZ2T7R0=
 20260726170000_task_runs_project_affiliation.sql h1:mBY1NMtbR1S7jnMkE2in8fKWBSbUSGYbJE9+iilvBV8=
+20260726170001_auth_users_mobile.sql h1:wMVpOvQbNKG1KzNRJZ7/Bn4oJjScyaysFj3GmF2qaPk=

@@ -3,6 +3,7 @@ INSERT INTO auth_users (
     username,
     display_name,
     email,
+    mobile,
     password_hash,
     status,
     avatar_asset_id
@@ -10,10 +11,30 @@ INSERT INTO auth_users (
     sqlc.arg('username')::varchar,
     sqlc.narg('display_name')::varchar,
     sqlc.narg('email')::varchar,
+    sqlc.narg('mobile')::varchar,
     sqlc.arg('password_hash')::varchar,
     sqlc.arg('status')::varchar,
     sqlc.narg('avatar_asset_id')::varchar
 ) RETURNING *;
+
+-- name: UpdateUserContact :one
+-- 管理员为用户维护联系方式(飞书通讯录反查的撞库键)。narg 为 NULL 表示不改;
+-- 传空串表示清除(写 NULL)。
+UPDATE auth_users
+SET
+    email = CASE
+        WHEN sqlc.narg('email')::varchar IS NULL THEN email
+        WHEN sqlc.narg('email')::varchar = '' THEN NULL
+        ELSE sqlc.narg('email')::varchar
+    END,
+    mobile = CASE
+        WHEN sqlc.narg('mobile')::varchar IS NULL THEN mobile
+        WHEN sqlc.narg('mobile')::varchar = '' THEN NULL
+        ELSE sqlc.narg('mobile')::varchar
+    END,
+    updated_at = NOW()
+WHERE id = sqlc.arg('id')::uuid
+RETURNING *;
 
 -- name: UpdateUserAvatar :one
 UPDATE auth_users
@@ -62,6 +83,7 @@ WHERE deleted_at IS NULL
     OR username ILIKE '%' || sqlc.narg('q')::text || '%'
     OR COALESCE(display_name, '') ILIKE '%' || sqlc.narg('q')::text || '%'
     OR COALESCE(email, '') ILIKE '%' || sqlc.narg('q')::text || '%'
+    OR COALESCE(mobile, '') ILIKE '%' || sqlc.narg('q')::text || '%'
   )
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

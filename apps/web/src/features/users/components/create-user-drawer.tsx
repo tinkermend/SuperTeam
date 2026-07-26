@@ -20,6 +20,10 @@ import { SelectableTeamList } from "./selectable-team-list";
 export type CreateUserDraft = {
   avatar: UserAvatar;
   display_name: string;
+  /** 飞书通讯录反查(按邮箱)的撞库键,可选。 */
+  email: string;
+  /** 手机号(建议含国际区号);飞书通讯录反查(按手机号)的撞库键,可选。 */
+  mobile: string;
   password: string;
   selectable_team_ids: string[];
   tenant_role: TenantRole;
@@ -50,6 +54,8 @@ type CreateUserDraftState = Omit<CreateUserDraft, "avatar"> & {
 const emptyDraft: CreateUserDraftState = {
   avatar: null,
   display_name: "",
+  email: "",
+  mobile: "",
   password: "",
   selectable_team_ids: [],
   tenant_role: "member",
@@ -128,6 +134,8 @@ export function CreateUserDrawer({
               onSubmit({
                 avatar: selectedAvatar,
                 display_name: draft.display_name.trim(),
+                email: draft.email.trim(),
+                mobile: draft.mobile.trim(),
                 password: draft.password,
                 selectable_team_ids: draft.selectable_team_ids,
                 tenant_role: draft.tenant_role,
@@ -167,6 +175,30 @@ export function CreateUserDrawer({
                   type="password"
                   value={draft.password}
                 />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="create-user-email">邮箱(可选)</Label>
+                  <Input
+                    autoComplete="email"
+                    id="create-user-email"
+                    onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+                    placeholder="与飞书档案一致以便同步绑定"
+                    type="email"
+                    value={draft.email}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="create-user-mobile">手机号(可选)</Label>
+                  <Input
+                    autoComplete="tel"
+                    id="create-user-mobile"
+                    onChange={(event) => setDraft({ ...draft, mobile: event.target.value })}
+                    placeholder="含区号,如 +8613800138000"
+                    value={draft.mobile}
+                  />
+                </div>
               </div>
 
               <div className="flex flex-col gap-2">

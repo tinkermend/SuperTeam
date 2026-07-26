@@ -284,7 +284,13 @@ type ChangeCurrentUserPasswordRequest struct {
 type CreateUserRequest struct {
 	Avatar      UserAvatar `json:"avatar"`
 	DisplayName string     `json:"display_name"`
-	Password    string     `json:"password"`
+
+	// Email 可选。飞书通讯录反查(按邮箱)绑定的撞库键。
+	Email *openapi_types.Email `json:"email,omitempty"`
+
+	// Mobile 可选。手机号(建议含国际区号,如 +8613800138000);飞书通讯录反查(按手机号)绑定的撞库键。
+	Mobile   *string `json:"mobile,omitempty"`
+	Password string  `json:"password"`
 
 	// SelectableTeamIds 可选。此用户创建项目时可选择的团队范围（非团队成员身份）。
 	SelectableTeamIds *[]openapi_types.UUID `json:"selectable_team_ids,omitempty"`
@@ -400,6 +406,12 @@ type UpdateCurrentUserProfileRequest struct {
 	Email       *openapi_types.Email `json:"email,omitempty"`
 }
 
+// UpdateUserContactRequest 两字段均可选;缺省=不改,空串=清除。
+type UpdateUserContactRequest struct {
+	Email  *string `json:"email,omitempty"`
+	Mobile *string `json:"mobile,omitempty"`
+}
+
 // UpdateUserStatusRequest defines model for UpdateUserStatusRequest.
 type UpdateUserStatusRequest struct {
 	Status UpdateUserStatusRequestStatus `json:"status"`
@@ -492,6 +504,7 @@ type UserSummary struct {
 	DisplayName   *string            `json:"display_name,omitempty"`
 	Email         *string            `json:"email,omitempty"`
 	Id            openapi_types.UUID `json:"id"`
+	Mobile        *string            `json:"mobile,omitempty"`
 	Status        UserSummaryStatus  `json:"status"`
 	Username      string             `json:"username"`
 }
@@ -565,7 +578,7 @@ type ListOperationLogsParamsResult string
 
 // ListUsersParams defines parameters for ListUsers.
 type ListUsersParams struct {
-	// Q 按用户名、显示名称或邮箱搜索
+	// Q 按用户名、显示名称、邮箱或手机号搜索
 	Q      *string                `form:"q,omitempty" json:"q,omitempty"`
 	Status *ListUsersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 	Limit  *int32                 `form:"limit,omitempty" json:"limit,omitempty"`
@@ -589,6 +602,9 @@ type SetCurrentUserAvatarSVGJSONRequestBody SetCurrentUserAvatarSVGJSONBody
 
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = CreateUserRequest
+
+// UpdateUserContactJSONRequestBody defines body for UpdateUserContact for application/json ContentType.
+type UpdateUserContactJSONRequestBody = UpdateUserContactRequest
 
 // ReplaceUserProjectTeamScopesJSONRequestBody defines body for ReplaceUserProjectTeamScopes for application/json ContentType.
 type ReplaceUserProjectTeamScopesJSONRequestBody = ReplaceUserProjectTeamScopesRequest
@@ -640,6 +656,9 @@ type ServerInterface interface {
 	// 创建平台用户
 	// (POST /api/auth/users)
 	CreateUser(w http.ResponseWriter, r *http.Request)
+	// 更新平台用户联系方式(管理员;email/mobile 是飞书通讯录反查的撞库键)
+	// (PATCH /api/auth/users/{id}/contact)
+	UpdateUserContact(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// 查询用户可选择的项目团队范围
 	// (GET /api/auth/users/{id}/project-team-scopes)
 	ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
@@ -736,6 +755,12 @@ func (_ Unimplemented) ListUsers(w http.ResponseWriter, r *http.Request, params 
 // 创建平台用户
 // (POST /api/auth/users)
 func (_ Unimplemented) CreateUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 更新平台用户联系方式(管理员;email/mobile 是飞书通讯录反查的撞库键)
+// (PATCH /api/auth/users/{id}/contact)
+func (_ Unimplemented) UpdateUserContact(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1237,6 +1262,38 @@ func (siw *ServerInterfaceWrapper) CreateUser(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// UpdateUserContact operation middleware
+func (siw *ServerInterfaceWrapper) UpdateUserContact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateUserContact(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUserProjectTeamScopes operation middleware
 func (siw *ServerInterfaceWrapper) ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request) {
 
@@ -1609,6 +1666,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/auth/users", wrapper.CreateUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/auth/users/{id}/contact", wrapper.UpdateUserContact)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/auth/users/{id}/project-team-scopes", wrapper.ListUserProjectTeamScopes)

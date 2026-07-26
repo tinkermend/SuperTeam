@@ -8,6 +8,7 @@ export type UserSummary = {
   avatar_asset_id?: string | null;
   display_name?: string | null;
   email?: string | null;
+  mobile?: string | null;
   id: string;
   status: "active" | "disabled";
   username: string;
@@ -67,6 +68,10 @@ export type TenantRole = "owner" | "admin" | "member" | "viewer";
 export type CreateUserRequest = {
   avatar: UserAvatar;
   display_name: string;
+  /** 飞书通讯录反查(按邮箱)绑定的撞库键,可选。 */
+  email?: string;
+  /** 手机号(建议含国际区号);飞书通讯录反查(按手机号)绑定的撞库键,可选。 */
+  mobile?: string;
   password: string;
   selectable_team_ids: string[];
   tenant_role: TenantRole;
@@ -538,6 +543,25 @@ export async function updateUserStatus(
   });
 
   return parseJson<UserResponse>(response, "auth update user status");
+}
+
+export async function updateUserContact(
+  options: ApiClientOptions,
+  userID: string,
+  contact: { email?: string; mobile?: string },
+): Promise<UserResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/contact`), {
+    body: JSON.stringify(contact),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "PATCH",
+  });
+
+  return parseJson<UserResponse>(response, "auth update user contact");
 }
 
 export async function resetUserPassword(options: ApiClientOptions, userID: string, password: string): Promise<UserResponse> {

@@ -21,6 +21,7 @@ type User struct {
 	Username      string           `db:"username"`
 	DisplayName   string           `db:"display_name"`
 	Email         string           `db:"email"`
+	Mobile        string           `db:"mobile"`
 	PasswordHash  string           `db:"password_hash"`
 	Status        string           `db:"status"`
 	Avatar        UserAvatarConfig `db:"-"`
@@ -112,6 +113,7 @@ const (
 	OperationActionUserEnable            = "user.enable"
 	OperationActionUserDisable           = "user.disable"
 	OperationActionUserResetPassword     = "user.reset_password"
+	OperationActionUserUpdateContact     = "user.update_contact"
 	OperationActionUserUpdateOwnProfile  = "user.update_own_profile"
 	OperationActionUserChangeOwnPassword = "user.change_own_password"
 	OperationActionTenantMembershipUpsert = "user.tenant_membership.upsert"
@@ -146,10 +148,20 @@ type CreateManagedUserInput struct {
 	Username          string
 	DisplayName       string
 	Password          string
+	// Email/Mobile 是飞书通讯录反查的撞库键(管理员创建时可代填,免去
+	// 目标用户登录自服务补资料才能被 ContactSync 命中的绕路)。
+	Email             string
+	Mobile            string
 	Avatar            UserAvatarConfig
 	AvatarAssetID     string
 	TenantRole        string
 	SelectableTeamIDs []uuid.UUID
+}
+
+// UpdateUserContactInput 管理员维护既有用户联系方式(nil=不改,空串=清除)。
+type UpdateUserContactInput struct {
+	Email  *string
+	Mobile *string
 }
 
 // TenantLevelMembership 租户级成员（team_id IS NULL），是 console.access 的事实源。

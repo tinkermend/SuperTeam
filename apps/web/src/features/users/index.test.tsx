@@ -170,6 +170,22 @@ function createUsersFetcher({
 });
     }
 
+    if (url.pathname === `/api/auth/users/${USER_OPERATOR_ID}/contact` && method === "PATCH") {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      return jsonResponse({
+        user: {
+          avatar: { provider: "dicebear", style: "adventurer", seed: "operator-avatar" },
+          avatar_asset_id: "engineer-f-03",
+          display_name: "平台管理员",
+          email: body.email ?? "operator@example.com",
+          mobile: body.mobile ?? null,
+          id: USER_OPERATOR_ID,
+          status: "active",
+          username: "operator"
+        }
+      });
+    }
+
     if (url.pathname === `/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes` && method === "GET") {
       if (projectTeamScopesStatus === "loading" && projectTeamScopesDeferred) {
         return projectTeamScopesDeferred.promise;
@@ -558,7 +574,60 @@ describe("Users", () => {
     await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
   });
 
+  it("collects feishu contact keys at creation and edits them from the detail panel", async () => {
+    const fetcher = createUsersFetcher();
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+
+    // 详情面板(默认选中首个用户"平台管理员"):联系方式弹窗预填当前邮箱,保存走 PATCH contact。
+    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "联系方式" }));
+    const contactDialog = screen.getByRole("dialog", { name: "联系方式" });
+    await expect.element(contactDialog.getByLabelText("邮箱")).toHaveValue("operator@example.com");
+    await userEvent.fill(contactDialog.getByLabelText("手机号"), "+8613900139000");
+    await userEvent.click(contactDialog.getByRole("button", { name: "保存" }));
+
+    await vi.waitFor(() => {
+      const patchCall = fetcher.mock.calls.find(([input, init]) => {
+        const url = new URL(String(input));
+        return url.pathname.endsWith("/contact") && init?.method === "PATCH";
+      });
+      expect(patchCall).toBeTruthy();
+      const patchBody = JSON.parse(String(patchCall?.[1]?.body));
+      expect(patchBody).toEqual({ email: "operator@example.com", mobile: "+8613900139000" });
+    });
+
+    // 创建抽屉:邮箱/手机号可选字段进入 POST payload(飞书通讯录反查撞库键)。
+    await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
+    await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
+    await userEvent.fill(screen.getByLabelText("邮箱(可选)"), "second@corp.com");
+    await userEvent.fill(screen.getByLabelText("手机号(可选)"), "+8613800138000");
+    await userEvent.click(screen.getByRole("button", { name: "选择头像 人类头像 03" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建用户" }));
+
+    await vi.waitFor(() => {
+      const postCall = fetcher.mock.calls.find(([input, init]) => {
+        const url = new URL(String(input));
+        return url.pathname === "/api/auth/users" && init?.method === "POST";
+      });
+      expect(postCall).toBeTruthy();
+      const postBody = JSON.parse(String(postCall?.[1]?.body));
+      expect(postBody.email).toBe("second@corp.com");
+      expect(postBody.mobile).toBe("+8613800138000");
+    });
+  });
+
   it("resets filters and selects a newly created active user from a disabled-only view", async () => {
+
     const fetcher = createUsersFetcher();
     vi.stubGlobal("fetch", fetcher);
 

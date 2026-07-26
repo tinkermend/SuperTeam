@@ -766,6 +766,9 @@ type Querier interface {
 	// 自愈写回预渲染头像 data-URI(P1-D 2b)。仅由「当前用户写自己」的端点调用:后端跑不了
 	// dicebear、无法校验他人提交的 SVG,故不开放写他人头像。
 	UpdateUserAvatarSVG(ctx context.Context, arg UpdateUserAvatarSVGParams) error
+	// 管理员为用户维护联系方式(飞书通讯录反查的撞库键)。narg 为 NULL 表示不改;
+	// 传空串表示清除(写 NULL)。
+	UpdateUserContact(ctx context.Context, arg UpdateUserContactParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuAppConfigParams) (FeishuAppConfig, error)
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)

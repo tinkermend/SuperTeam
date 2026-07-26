@@ -59,30 +59,47 @@ type batchGetIDResponse struct {
 		UserList []struct {
 			UserID string `json:"user_id"`
 			Email  string `json:"email"`
+			Mobile string `json:"mobile"`
 		} `json:"user_list"`
 	} `json:"data"`
 }
 
-// BatchGetOpenIDsByEmail 按邮箱批量反查 open_id;只返回命中的映射(email→open_id)。
-func (c *Client) BatchGetOpenIDsByEmail(ctx context.Context, tenantToken string, emails []string) (map[string]string, error) {
-	if len(emails) == 0 {
-		return map[string]string{}, nil
+// BatchGetOpenIDs 按邮箱与手机号批量反查 open_id,一次请求两组键(batch_get_id
+// 原生同时接受 emails/mobiles 数组;单组每次上限 50,现状用户量内不分片,对齐
+// 既有实现)。返回两个命中映射:email→open_id 与 mobile→open_id。手机号键以
+// 请求发出的原值回带比对(飞书按档案手机号命中,格式需与档案一致,通常含区号)。
+func (c *Client) BatchGetOpenIDs(ctx context.Context, tenantToken string, emails, mobiles []string) (map[string]string, map[string]string, error) {
+	if len(emails) == 0 && len(mobiles) == 0 {
+		return map[string]string{}, map[string]string{}, nil
 	}
-	payload := map[string]any{"emails": emails}
+	payload := map[string]any{}
+	if len(emails) > 0 {
+		payload["emails"] = emails
+	}
+	if len(mobiles) > 0 {
+		payload["mobiles"] = mobiles
+	}
 	var out batchGetIDResponse
 	if err := c.postJSON(ctx, "/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id", tenantToken, payload, &out); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if out.Code != 0 {
-		return nil, fmt.Errorf("%w: batch_get_id code=%d msg=%s", ErrFeishuAPI, out.Code, out.Msg)
+		return nil, nil, fmt.Errorf("%w: batch_get_id code=%d msg=%s", ErrFeishuAPI, out.Code, out.Msg)
 	}
-	matches := make(map[string]string)
+	emailMatches := make(map[string]string)
+	mobileMatches := make(map[string]string)
 	for _, entry := range out.Data.UserList {
-		if entry.UserID != "" && entry.Email != "" {
-			matches[entry.Email] = entry.UserID
+		if entry.UserID == "" {
+			continue
+		}
+		if entry.Email != "" {
+			emailMatches[entry.Email] = entry.UserID
+		}
+		if entry.Mobile != "" {
+			mobileMatches[entry.Mobile] = entry.UserID
 		}
 	}
-	return matches, nil
+	return emailMatches, mobileMatches, nil
 }
 
 // AuthorizeURL 拼装 OAuth 授权页地址(浏览器重定向目标)。

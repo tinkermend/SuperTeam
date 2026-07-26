@@ -2054,6 +2054,20 @@ func (r *routeAuthRepo) UpdateUserPassword(ctx context.Context, userID uuid.UUID
 	return user, nil
 }
 
+func (r *routeAuthRepo) UpdateUserContact(ctx context.Context, userID uuid.UUID, input auth.UpdateUserContactInput) (*auth.User, error) {
+	user, ok := r.usersByID[userID]
+	if !ok {
+		return nil, auth.ErrUnauthorized
+	}
+	if input.Email != nil {
+		user.Email = *input.Email
+	}
+	if input.Mobile != nil {
+		user.Mobile = *input.Mobile
+	}
+	return user, nil
+}
+
 func (r *routeAuthRepo) UpdateUserProfile(ctx context.Context, userID uuid.UUID, input auth.UpdateUserProfileInput) (*auth.User, error) {
 	user, ok := r.usersByID[userID]
 	if !ok {

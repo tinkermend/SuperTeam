@@ -241,6 +241,8 @@ type AuthUser struct {
 	AvatarAssetID pgtype.Text `json:"avatar_asset_id"`
 	// 预渲染的头像 data-URI(dicebear 确定性产物);NULL 表示未生成,前端懒加载 dicebear 兜底并可自愈写回。
 	AvatarSvg pgtype.Text `json:"avatar_svg"`
+	// 手机号(含国际区号,如 +8613800138000);用于飞书通讯录反查绑定,非登录凭据
+	Mobile pgtype.Text `json:"mobile"`
 }
 
 // 自动化规则每次触发审计行；幂等键 rule_id+scheduled_fire_at
