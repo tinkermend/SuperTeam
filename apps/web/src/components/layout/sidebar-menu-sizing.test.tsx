@@ -1,6 +1,7 @@
 import { Activity } from 'lucide-react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { userEvent } from 'vitest/browser'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -12,10 +13,20 @@ import {
 import '@/styles/index.css'
 
 describe('sidebar menu sizing', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // 断言的是明亮主题的绝对色值；共享 document 可能残留其它测试文件切换的
     // dark class（浏览器模式串行跑时同页复用），先归位到默认明亮态。
     document.documentElement.classList.remove('light', 'dark')
+    // 共享页面的鼠标会停留在上一个测试文件最后一次点击的坐标；本文件把菜单按钮
+    // 渲染在页面左上角，若按钮恰好出现在陈旧指针位置下方，:hover 规则
+    // （index.css: color: var(--ink) !important）会盖掉静息态颜色，产生
+    // rgb(11,13,18) ≠ rgb(31,41,55) 的全量跑偶发失败。把指针停到右下角远离按钮。
+    const pointerParking = document.createElement('div')
+    pointerParking.style.cssText =
+      'position:fixed;right:0;bottom:0;width:4px;height:4px;z-index:9999;'
+    document.body.appendChild(pointerParking)
+    await userEvent.hover(pointerParking)
+    pointerParking.remove()
   })
 
   it('uses readable 15px labels and a 40px menu row for expanded navigation', async () => {

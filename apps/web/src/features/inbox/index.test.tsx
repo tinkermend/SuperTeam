@@ -763,10 +763,18 @@ describe("InboxView", () => {
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "打开事项：确认客户 Runtime 接入" }));
     await userEvent.click(screen.getByRole("button", { name: "同意" }));
-    await Promise.all([
-      userEvent.click(screen.getByRole("button", { name: "提交" })),
-      userEvent.click(screen.getByRole("button", { name: "提交" })),
-    ]);
+
+    // 第二次点击不能用 userEvent：首次点击后按钮会禁用并改名「提交中」，userEvent
+    // 的自动等待会一直等一个不复存在的 enabled「提交」按钮直到 15s 超时（此前全量跑
+    // 偶发失败的根因——两次点击与 React 重渲染抢时序）。改为拿到 DOM 节点后同步派发
+    // 两次原生 click：若守卫已禁用按钮则第二次天然 no-op，若尚未重渲染则由提交处理
+    // 器去重——两条路径都必须只产生一次 POST，这正是本用例要钉住的行为。
+    const submitButton = screen
+      .getByRole("button", { name: "提交" })
+      .element() as HTMLButtonElement;
+    submitButton.click();
+    submitButton.click();
+    await expect.element(screen.getByRole("button", { name: "提交中" })).toBeVisible();
 
     expect(fetcher.requests.filter((request) => request.method === "POST")).toHaveLength(1);
     expect(JSON.parse(fetcher.requests.find((request) => request.method === "POST")?.body ?? "{}")).toMatchObject({
