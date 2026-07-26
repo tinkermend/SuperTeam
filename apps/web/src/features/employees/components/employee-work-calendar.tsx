@@ -32,6 +32,10 @@ export type EmployeeWorkCalendarProps = {
   onWeekChange: (nextWeekStart: Date) => void;
   items: DigitalEmployeeRunCalendarItem[];
   totalCount: number;
+  // 空周引导:上一周窗口的运行数(仅当前周为空时由父级按需查询)。
+  // 有值且 >0 时空态提示"上周有 N 条"并给「查看上一周」入口——否则周一刚过、
+  // 新周天然空窗时,用户无从判断是没数据还是窗口不对。
+  previousWeekCount?: number;
   truncated?: boolean;
   isLoading?: boolean;
   isError?: boolean;
@@ -64,6 +68,7 @@ export function EmployeeWorkCalendar({
   onWeekChange,
   items,
   totalCount,
+  previousWeekCount,
   truncated = false,
   isLoading,
   isError,
@@ -119,16 +124,34 @@ export function EmployeeWorkCalendar({
       <div className="flex min-h-0 flex-1 flex-col">
         <StateSurface empty={false} error={error} isError={isError} isLoading={isLoading} onRetry={onRetry}>
           {showEmptyWeek ? (
-            <EmptyState
-              action={
-                <Button asChild size="sm" variant="outline">
-                  <Link to="/">去任务中枢</Link>
-                </Button>
-              }
-              className="min-h-[10rem] flex-1 justify-center py-10"
-              description="在任务中枢发起对话或任务后，会按日出现在工作节奏里。"
-              title="本周暂无运行记录"
-            />
+            previousWeekCount && previousWeekCount > 0 ? (
+              <EmptyState
+                action={
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button onClick={() => onWeekChange(addDays(weekStart, -7))} size="sm" type="button">
+                      查看上一周
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/">去任务中枢</Link>
+                    </Button>
+                  </div>
+                }
+                className="min-h-[10rem] flex-1 justify-center py-10"
+                description={`上周有 ${previousWeekCount} 条运行记录，本周还没有新的运行。`}
+                title="本周暂无运行记录"
+              />
+            ) : (
+              <EmptyState
+                action={
+                  <Button asChild size="sm" variant="outline">
+                    <Link to="/">去任务中枢</Link>
+                  </Button>
+                }
+                className="min-h-[10rem] flex-1 justify-center py-10"
+                description="在任务中枢发起对话或任务后，会按日出现在工作节奏里。"
+                title="本周暂无运行记录"
+              />
+            )
           ) : (
             <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
               <div className="grid h-full min-h-[16rem] min-w-[52rem] grid-cols-7 divide-x divide-line">

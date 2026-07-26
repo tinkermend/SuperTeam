@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { addDays } from "date-fns";
 import { AlertTriangle } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
@@ -129,6 +130,22 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       getDigitalEmployeeRunCalendar(apiOptions, employeeId, {
         from: weekWindow.from,
         to: weekWindow.to
+})
+});
+  // 空周引导:当前周为 0 条时按需查上一周计数(同族 queryKey,点「查看上一周」即命中缓存)。
+  const previousWeekWindow = employeeWeekQueryWindow(addDays(weekStart, -7));
+  const previousWeekCalendar = useQuery({
+    enabled: !employeeNotFound && historyView === "calendar" && calendar.data?.total_count === 0,
+    queryKey: [
+      "digital-employee-run-calendar",
+      employeeId,
+      previousWeekWindow.from,
+      previousWeekWindow.to,
+    ] as const,
+    queryFn: () =>
+      getDigitalEmployeeRunCalendar(apiOptions, employeeId, {
+        from: previousWeekWindow.from,
+        to: previousWeekWindow.to
 })
 });
   // Lifted from EffectiveContextPanel (Task 11) so detail.tsx can feed the panel
@@ -326,6 +343,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                       }}
                       onRetry={() => calendar.refetch()}
                       onWeekChange={setWeekStart}
+                      previousWeekCount={previousWeekCalendar.data?.total_count}
                       totalCount={calendar.data?.total_count ?? 0}
                       truncated={calendar.data?.truncated}
                       weekStart={weekStart}

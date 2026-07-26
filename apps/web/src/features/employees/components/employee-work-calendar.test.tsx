@@ -115,6 +115,31 @@ describe("EmployeeWorkCalendar", () => {
     await expect.element(screen.getByRole("link", { name: "去任务中枢" })).toHaveAttribute("href", "/");
   });
 
+  it("guides to the previous week when the empty week has prior runs", async () => {
+    const weekStart = employeeWeekStart(new Date(2026, 6, 27));
+    const onWeekChange = vi.fn();
+    const screen = await render(
+      <EmployeeWorkCalendar
+        items={[]}
+        onItemClick={() => undefined}
+        onRetry={() => undefined}
+        onWeekChange={onWeekChange}
+        previousWeekCount={14}
+        totalCount={0}
+        weekStart={weekStart}
+      />,
+    );
+
+    await expect.element(screen.getByText("本周暂无运行记录")).toBeVisible();
+    await expect.element(screen.getByText("上周有 14 条运行记录，本周还没有新的运行。")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "查看上一周" }));
+    expect(onWeekChange).toHaveBeenCalledTimes(1);
+    const next = onWeekChange.mock.calls[0][0] as Date;
+    expect(weekStart.getTime() - next.getTime()).toBe(7 * 24 * 60 * 60 * 1000);
+    // 任务中枢入口保留为次级动作。
+    await expect.element(screen.getByRole("link", { name: "去任务中枢" })).toHaveAttribute("href", "/");
+  });
+
   it("clamps long task titles to two lines with an ellipsis", async () => {
     const weekStart = employeeWeekStart(new Date(2026, 6, 20));
     const longTitle =
