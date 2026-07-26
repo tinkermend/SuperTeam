@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -41,8 +41,7 @@ import {
   SoftTabs,
   SoftTabsList,
   SoftTabsTrigger,
-  SoftTabsContent,
-  LoadingState
+  SoftTabsContent
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import type {
@@ -90,7 +89,6 @@ import {
 import { attentionTone } from "../lib/project-ops-home";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
 import type { ApiClientOptions } from "@/lib/api/client";
-import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectAssetsPanel } from "./project-assets-panel";
 import { ProjectDemandsSection } from "./project-demands-section";
@@ -104,15 +102,6 @@ import {
   type ProjectDetailSection
 } from "../lib/project-detail-section";
 import type { UserIdentityData } from "@/components/superteam/user-identity";
-
-// 流程图权威画布依赖 @xyflow/react（重）。懒加载让它离开入口包——仅在有任务节点的
-// 执行图区块渲染，首屏不需要（P1-D Step 1）。与流程编排详情共用同一画布组件，
-// 节点可点击直达任务详情弹层（spec 2026-07-26 §4.2）。
-const FlowGraphCanvas = lazy(() =>
-  import("@/features/flow-graph/flow-graph-canvas").then((m) => ({
-    default: m.FlowGraphCanvas
-})),
-);
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -531,7 +520,7 @@ export function ProjectOperationalDetail({
                     </span>
                     {!advancedOpen ? (
                       <span className="mt-0.5 block text-[11px] text-ink-3">
-                        计划图 · 需求 · 执行记录 · 治理
+                        需求 · 执行记录 · 治理
                       </span>
                     ) : null}
                   </span>
@@ -550,29 +539,23 @@ export function ProjectOperationalDetail({
                   rail="md"
                   master={
                     <section className="grid min-w-0 gap-4">
-                      {taskGraph && taskGraph.nodes.length > 0 ? (
-                        <section className="grid gap-2" data-testid="project-plan-graph-section">
-                          <div className="flex items-center gap-2 px-1">
-                            <ClipboardList className="size-4 text-ink-2" />
-                            <h3 className="text-sm font-semibold tracking-normal">当前执行图</h3>
-                          </div>
-                          <Suspense fallback={<LoadingState />}>
-                            <FlowGraphCanvas
-                              graph={taskGraph}
-                              onNodeOpen={(nodeId) => {
-                                const taskId = taskIdFromNodeId(nodeId);
-                                if (taskId) setDetailTaskId(taskId);
-                              }}
-                              onSelectedNodeChange={(nodeId) => {
-                                if (!nodeId) setDetailTaskId(undefined);
-                              }}
-                              selectedNodeId={
-                                detailTaskId ? taskNodeId(detailTaskId) : undefined
-                              }
-                            />
-                          </Suspense>
-                        </section>
-                      ) : null}
+                      {/* 执行图撤除（2026-07-27）：此处曾渲染仅覆盖最新需求的
+                          FlowGraphCanvas，已被需求流程区（可切需求+血缘+回放）
+                          完全取代，只留深链避免旧路径落空。 */}
+                      <div
+                        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[14px] border border-line bg-card-soft px-3.5 py-2.5"
+                        data-testid="execution-graph-deeplink"
+                      >
+                        <p className="text-xs text-ink-2">执行图已迁入需求流程区</p>
+                        <Link
+                          className="shrink-0 text-xs font-semibold text-brand-deep hover:text-brand"
+                          from="/projects/$projectId"
+                          search={{ tab: "demands" }}
+                          to="."
+                        >
+                          前往需求流程 →
+                        </Link>
+                      </div>
                       <DispatchGateSummary
                         gates={dispatchGates ?? []}
                         taskTitle={dispatchGateTaskTitle}
@@ -647,6 +630,7 @@ export function ProjectOperationalDetail({
         <SoftTabsContent className="m-0" value="tasks">
           <ProjectTasksPanel
             decisionRequests={decisionRequests}
+            demands={demands}
             dismissTaskPending={dismissTaskPending}
             onDismissTask={onDismissTask}
             onOpenTask={setDetailTaskId}
@@ -1628,6 +1612,7 @@ function ProjectTaskLink({
 
 function ProjectTasksPanel({
   decisionRequests,
+  demands,
   dismissTaskPending,
   onDismissTask,
   onOpenTask,
@@ -1635,6 +1620,8 @@ function ProjectTasksPanel({
   tasks
 }: {
   decisionRequests?: ProjectDecisionRequest[];
+  /** 所属需求列补名：task.demand_id → 需求标题（缺标题时回退短 id）。 */
+  demands?: ProjectDemand[];
   dismissTaskPending?: boolean;
   onDismissTask?: (taskId: string) => void;
   onOpenTask?: (taskId: string) => void;
@@ -1643,6 +1630,10 @@ function ProjectTasksPanel({
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [employeeFilter, setEmployeeFilter] = useState("all");
+  const demandTitlesById = useMemo(
+    () => new Map((demands ?? []).map((demand) => [demand.id, demand.title])),
+    [demands],
+  );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => !task.dismissed_at),
     [tasks],
@@ -1723,6 +1714,7 @@ function ProjectTasksPanel({
             <Th className="min-w-[220px]">任务</Th>
             <Th>状态</Th>
             <Th>员工</Th>
+            <Th>所属需求</Th>
             <Th>更新</Th>
             <Th>操作</Th>
           </tr>
@@ -1730,7 +1722,7 @@ function ProjectTasksPanel({
         <tbody>
           {filteredTasks.length === 0 ? (
             <Tr>
-              <Td colSpan={5}>
+              <Td colSpan={6}>
                 <EmptyLine label="当前筛选下没有项目任务" />
               </Td>
             </Tr>
@@ -1775,6 +1767,27 @@ function ProjectTasksPanel({
                     </Link>
                   ) : (
                     "未分派"
+                  )}
+                </Td>
+                <Td
+                  className="max-w-[200px] text-xs text-ink-2"
+                  data-testid={`task-demand-cell-${task.id}`}
+                >
+                  {task.demand_id ? (
+                    <Link
+                      className={cn(
+                        "block max-w-full truncate text-brand-deep hover:text-brand",
+                        !demandTitlesById.get(task.demand_id) && "font-mono",
+                      )}
+                      from="/projects/$projectId"
+                      search={{ demand: task.demand_id, tab: "demands" }}
+                      to="."
+                    >
+                      {demandTitlesById.get(task.demand_id) ??
+                        task.demand_id.slice(0, 8)}
+                    </Link>
+                  ) : (
+                    "—"
                   )}
                 </Td>
                 <Td className="whitespace-nowrap tabular-nums text-xs text-ink-2">

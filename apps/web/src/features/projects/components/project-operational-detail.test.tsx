@@ -653,6 +653,92 @@ describe("ProjectOperationalDetail", () => {
     );
   });
 
+  it("replaces the advanced-facts execution graph with a demands deep link", async () => {
+    // 即使预载图带节点也不再渲染画布：执行图唯一渲染点在需求流程区。
+    const graphWithNodes: ProjectTaskGraph = {
+      blocking_facts: [],
+      decision_requests: [],
+      edges: [],
+      employees: [],
+      execution_summaries: [],
+      nodes: [
+        {
+          ...(overview.active_tasks![0] as ProjectTask),
+          expected_outputs: [],
+          handoff_contract: {},
+          input_requirements: {},
+          planner_metadata: {}
+},
+      ],
+      recent_events: [],
+      runs: []
+};
+    const screen = await renderDetail({ taskGraph: graphWithNodes });
+
+    await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
+    expect(
+      screen.container.querySelector("[data-testid='project-plan-graph-section']"),
+    ).toBeNull();
+    await expect.element(screen.getByText("当前执行图")).not.toBeInTheDocument();
+    const deeplink = screen.getByTestId("execution-graph-deeplink");
+    await expect
+      .element(deeplink.getByText("执行图已迁入需求流程区"))
+      .toBeVisible();
+    await expect
+      .element(deeplink.getByRole("link", { name: "前往需求流程 →" }))
+      .toHaveAttribute("href", ".?tab=demands");
+  });
+
+  it("shows the owning demand column with deep link and fallbacks in the tasks tab", async () => {
+    const demandTask: ProjectTask = {
+      ...(overview.active_tasks![0] as ProjectTask),
+      demand_id: "demand-1"
+};
+    const unknownDemandTask: ProjectTask = {
+      id: "task-unknown-demand",
+      demand_id: "demand-gone-1234567890",
+      project_id: "project-1",
+      requires_human_approval: false,
+      status: "running",
+      tenant_id: "tenant-1",
+      title: "历史需求任务"
+};
+    const noDemandTask: ProjectTask = {
+      id: "task-no-demand",
+      project_id: "project-1",
+      requires_human_approval: false,
+      status: "running",
+      tenant_id: "tenant-1",
+      title: "无需求任务"
+};
+    const screen = await renderDetail({
+      tasks: [demandTask, unknownDemandTask, noDemandTask]
+});
+
+    await userEvent.click(screen.getByRole("tab", { name: "任务" }));
+    await expect.element(screen.getByText("所属需求")).toBeVisible();
+
+    // 有需求且能解析标题：显示需求名称并深链需求流程区
+    const demandCell = screen.getByTestId("task-demand-cell-task-1");
+    await expect
+      .element(demandCell.getByRole("link", { name: "补充上线验收说明" }))
+      .toHaveAttribute("href", ".?demand=demand-1&tab=demands");
+
+    // demand_id 解析不到标题：回退 8 位短 id（mono），不裸整段 UUID
+    const unknownCell = screen.getByTestId("task-demand-cell-task-unknown-demand");
+    const unknownLink = unknownCell.getByRole("link", { name: "demand-g" });
+    await expect
+      .element(unknownLink)
+      .toHaveAttribute("href", ".?demand=demand-gone-1234567890&tab=demands");
+    expect(unknownCell.query()?.textContent).not.toContain("demand-gone-1234567890");
+    expect(unknownLink.query()?.className).toContain("font-mono");
+
+    // 无 demand_id：显示占位 —
+    expect(
+      screen.getByTestId("task-demand-cell-task-no-demand").query()?.textContent,
+    ).toBe("—");
+  });
+
   it("does not show a diagnosis line for a non-failed demand", async () => {
     const screen = await renderDetail();
     await userEvent.click(screen.getByRole("button", { name: "展开高级项目事实" }));
