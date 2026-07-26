@@ -283,6 +283,106 @@ func (s *Service) UpdateTeamConstitution(ctx context.Context, tenantID, teamID, 
 	return teamFromRecord(record), nil
 }
 
+// maxConstitutionChars 宪法字符预算：宪法每次派发都注入 provider 提示词，
+// 过长会挤占上下文并推高 token 成本，所以在保存处设闸。
+func (s *Service) maxConstitutionChars(ctx context.Context, tenantID uuid.UUID) int {
+	if s.systemConfig == nil {
+		return int(systemconfig.DefaultFor(systemconfig.KeyTeamConstitutionMaxChars))
+	}
+	return int(s.systemConfig.Int64(ctx, tenantID, systemconfig.KeyTeamConstitutionMaxChars))
+}
+
+type SaveTeamConstitutionRequest struct {
+	TenantID    uuid.UUID
+	TeamID      uuid.UUID
+	Rules       []ConstitutionRule
+	ChangeNote  string
+	ActorUserID uuid.UUID
+}
+
+// SaveTeamConstitution 保存宪法 = 追加一个新版本 + 刷新当前生效快照（spec §5.3）。
+// change_note 必填：宪法一次改动对全队所有派发生效，事后要能回答"为什么改"。
+func (s *Service) SaveTeamConstitution(ctx context.Context, req SaveTeamConstitutionRequest) (*TeamConstitutionRevision, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	changeNote := strings.TrimSpace(req.ChangeNote)
+	if changeNote == "" {
+		return nil, fmt.Errorf("%w: change_note is required", ErrInvalidInput)
+	}
+	rules, totalChars, err := normalizeConstitutionRules(req.Rules)
+	if err != nil {
+		return nil, err
+	}
+	if budget := s.maxConstitutionChars(ctx, req.TenantID); totalChars > budget {
+		return nil, fmt.Errorf("%w: 宪法正文共 %d 字，超出 %d 字上限，请精简规则", ErrInvalidInput, totalChars, budget)
+	}
+	team, err := s.repository.GetTeam(ctx, req.TenantID, req.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	revision, err := s.repository.CreateTeamConstitutionRevision(ctx, CreateTeamConstitutionRevisionParams{
+		TenantID:    req.TenantID,
+		TeamID:      req.TeamID,
+		Rules:       rules,
+		ChangeNote:  changeNote,
+		ActorUserID: req.ActorUserID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create team constitution revision: %w", err)
+	}
+	// 当前生效快照与版本同源：快照供读路径与派发注入，版本供历史与回滚。
+	if _, err := s.repository.UpdateTeamConstitution(
+		ctx, req.TenantID, req.TeamID, req.ActorUserID,
+		constitutionSnapshot(team.Constitution, rules),
+	); err != nil {
+		return nil, fmt.Errorf("update team constitution: %w", err)
+	}
+	return &revision, nil
+}
+
+func (s *Service) ListTeamConstitutionRevisions(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]TeamConstitutionRevision, error) {
+	if tenantID == uuid.Nil || teamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and team_id are required", ErrInvalidInput)
+	}
+	limit, offset, err := normalizeLimitOffset(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return s.repository.ListTeamConstitutionRevisions(ctx, tenantID, teamID, limit, offset)
+}
+
+type RollbackTeamConstitutionRequest struct {
+	TenantID       uuid.UUID
+	TeamID         uuid.UUID
+	RevisionNumber int32
+	ActorUserID    uuid.UUID
+}
+
+// RollbackTeamConstitution 回滚 = 以旧版本内容创建新版本，历史只增不改。
+func (s *Service) RollbackTeamConstitution(ctx context.Context, req RollbackTeamConstitutionRequest) (*TeamConstitutionRevision, error) {
+	if req.TenantID == uuid.Nil || req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and team_id are required", ErrInvalidInput)
+	}
+	if req.RevisionNumber <= 0 {
+		return nil, fmt.Errorf("%w: revision_number must be positive", ErrInvalidInput)
+	}
+	source, err := s.repository.GetTeamConstitutionRevision(ctx, req.TenantID, req.TeamID, req.RevisionNumber)
+	if err != nil {
+		return nil, err
+	}
+	return s.SaveTeamConstitution(ctx, SaveTeamConstitutionRequest{
+		TenantID:    req.TenantID,
+		TeamID:      req.TeamID,
+		Rules:       source.Rules,
+		ChangeNote:  fmt.Sprintf("回滚到版本 v%d", source.RevisionNumber),
+		ActorUserID: req.ActorUserID,
+	})
+}
+
 type DeleteTeamRequest struct {
 	TenantID uuid.UUID
 	TeamID   uuid.UUID

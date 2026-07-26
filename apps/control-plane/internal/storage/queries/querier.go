@@ -169,6 +169,8 @@ type Querier interface {
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
 	CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
+	// 宪法保存 = 追加一个新版本（版本号在同团队内递增）。回滚也是新版本，不改写历史。
+	CreateTeamConstitutionRevision(ctx context.Context, arg CreateTeamConstitutionRevisionParams) (TeamConstitutionRevision, error)
 	CreateTeamMCPBinding(ctx context.Context, arg CreateTeamMCPBindingParams) (TeamMcpBinding, error)
 	CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
@@ -254,6 +256,8 @@ type Querier interface {
 	GetCaptchaChallengeForUpdate(ctx context.Context, id uuid.UUID) (AuthCaptchaChallenge, error)
 	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (GetCurrentDigitalEmployeeConfigRevisionRow, error)
 	GetCurrentProjectTaskAttempt(ctx context.Context, arg GetCurrentProjectTaskAttemptParams) (ProjectTaskAttempt, error)
+	// 派发注入时随执行留痕：这条任务当时受哪一版宪法约束。无版本时返回 0。
+	GetCurrentTeamConstitutionRevisionNumber(ctx context.Context, arg GetCurrentTeamConstitutionRevisionNumberParams) (int32, error)
 	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigitalEmployeeAuthzScopeParams) (GetDigitalEmployeeAuthzScopeRow, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (GetDigitalEmployeeConfigRevisionRow, error)
@@ -362,6 +366,10 @@ type Querier interface {
 	GetTask(ctx context.Context, arg GetTaskParams) (Task, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
 	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
+	// 派发注入用：一次取回团队当前生效宪法与其版本号。版本号随执行留痕，
+	// 使"这条任务当时受哪一版宪法约束"可回溯（spec §5.3，D9 仅文本注入）。
+	GetTeamConstitutionForDispatch(ctx context.Context, arg GetTeamConstitutionForDispatchParams) (GetTeamConstitutionForDispatchRow, error)
+	GetTeamConstitutionRevision(ctx context.Context, arg GetTeamConstitutionRevisionParams) (GetTeamConstitutionRevisionRow, error)
 	GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (GetTeamMemberRow, error)
 	GetTenantTeam(ctx context.Context, arg GetTenantTeamParams) (TenantTeam, error)
 	// 口径与 ListTenantTeamSummaries 保持一致：技能绑定 + MCP 绑定，排掉指向已删注册项的行。
@@ -567,6 +575,7 @@ type Querier interface {
 	ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsParams) ([]TaskRun, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
+	ListTeamConstitutionRevisions(ctx context.Context, arg ListTeamConstitutionRevisionsParams) ([]ListTeamConstitutionRevisionsRow, error)
 	ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error)
 	// 团队 MCP 就绪矩阵：本团队每个 MCP 绑定 × 每名数字员工，算出该员工还缺哪些必需
 	// 环境变量。变量名由绑定/注册表定义，值只存在员工级，所以就绪与否天然是逐员工的。

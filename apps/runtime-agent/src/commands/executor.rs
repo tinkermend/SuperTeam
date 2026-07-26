@@ -3361,6 +3361,7 @@ mod tests {
             provider_type: "claude-code".to_string(),
             agent_home_dir: Some("/tmp/runtime-agent-test".to_string()),
             persona_memory_markdown: None,
+            team_constitution: None,
             capability_bindings: serde_json::json!({}),
             skills: Vec::new(),
             mcp_servers: Vec::new(),

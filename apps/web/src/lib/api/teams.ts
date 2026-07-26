@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { buildApiUrl, deleteJson, getJson, parseJson, patchJson, postJson } from "./client";
+import { buildApiUrl, deleteJson, getJson, parseJson, patchJson, postJson, putJson } from "./client";
 
 // 团队生命周期收敛：存活团队唯一状态 active；删除进入 pending_delete 待确认态
 // （全站不可见），管理员恢复或确认后才物理删除。
@@ -379,6 +379,71 @@ export function changeTeamMemberRole(
     teamPath(teamId, `/members/${encodeURIComponent(memberId)}`),
     { role },
     "change team member role",
+  );
+}
+
+/** 团队宪法规则条目。category 由服务端注册校验；D9：分类不触发任何审批点。 */
+export type TeamConstitutionCategory = "forbid" | "must" | "require_approval";
+
+export type TeamConstitutionRule = {
+  id?: string;
+  text: string;
+  category: TeamConstitutionCategory;
+};
+
+export type TeamConstitutionRevision = {
+  id: string;
+  tenant_id: string;
+  team_id: string;
+  revision_number: number;
+  rules: TeamConstitutionRule[];
+  change_note: string;
+  created_by?: string | null;
+  created_by_name?: string;
+  created_at?: string;
+};
+
+/** 保存宪法 = 追加新版本；change_note 必填。超出字符预算服务端返回 400。 */
+export function saveTeamConstitution(
+  options: ApiClientOptions,
+  teamId: string,
+  input: { rules: TeamConstitutionRule[]; change_note: string },
+): Promise<TeamConstitutionRevision> {
+  return putJson<TeamConstitutionRevision>(
+    options,
+    teamPath(teamId, "/constitution/revisions"),
+    input,
+    "save team constitution",
+  );
+}
+
+export function listTeamConstitutionRevisions(
+  options: ApiClientOptions,
+  teamId: string,
+  filters: { limit?: number; offset?: number } = {},
+): Promise<TeamConstitutionRevision[]> {
+  const params = new URLSearchParams();
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters.offset !== undefined) params.set("offset", String(filters.offset));
+  const query = params.toString();
+  return getJson<TeamConstitutionRevision[]>(
+    options,
+    `${teamPath(teamId, "/constitution/revisions")}${query ? `?${query}` : ""}`,
+    "team constitution revisions",
+  );
+}
+
+/** 回滚以旧版本内容创建新版本，历史只增不改。 */
+export function rollbackTeamConstitution(
+  options: ApiClientOptions,
+  teamId: string,
+  revisionNumber: number,
+): Promise<TeamConstitutionRevision> {
+  return postJson<TeamConstitutionRevision>(
+    options,
+    teamPath(teamId, `/constitution/revisions/${revisionNumber}/rollback`),
+    {},
+    "rollback team constitution",
   );
 }
 

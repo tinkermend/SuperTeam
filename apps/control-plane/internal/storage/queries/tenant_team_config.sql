@@ -398,3 +398,59 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND role = 'owner'
   AND status = 'active'
   AND disabled_at IS NULL;
+
+-- name: CreateTeamConstitutionRevision :one
+-- 宪法保存 = 追加一个新版本（版本号在同团队内递增）。回滚也是新版本，不改写历史。
+INSERT INTO team_constitution_revisions (tenant_id, team_id, revision_number, rules, change_note, created_by)
+VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('team_id')::uuid,
+    COALESCE(
+        (SELECT MAX(revision_number) FROM team_constitution_revisions
+         WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND team_id = sqlc.arg('team_id')::uuid),
+        0
+    ) + 1,
+    sqlc.arg('rules')::jsonb,
+    sqlc.arg('change_note')::text,
+    sqlc.narg('created_by')::uuid
+)
+RETURNING *;
+
+-- name: ListTeamConstitutionRevisions :many
+SELECT r.*, COALESCE(au.display_name, au.username, '')::varchar AS created_by_name
+FROM team_constitution_revisions r
+LEFT JOIN auth_users au ON au.id = r.created_by
+WHERE r.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND r.team_id = sqlc.arg('team_id')::uuid
+ORDER BY r.revision_number DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: GetTeamConstitutionRevision :one
+SELECT r.*, COALESCE(au.display_name, au.username, '')::varchar AS created_by_name
+FROM team_constitution_revisions r
+LEFT JOIN auth_users au ON au.id = r.created_by
+WHERE r.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND r.team_id = sqlc.arg('team_id')::uuid
+  AND r.revision_number = sqlc.arg('revision_number')::integer;
+
+-- name: GetCurrentTeamConstitutionRevisionNumber :one
+-- 派发注入时随执行留痕：这条任务当时受哪一版宪法约束。无版本时返回 0。
+SELECT COALESCE(MAX(revision_number), 0)::integer
+FROM team_constitution_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid;
+
+-- name: GetTeamConstitutionForDispatch :one
+-- 派发注入用：一次取回团队当前生效宪法与其版本号。版本号随执行留痕，
+-- 使"这条任务当时受哪一版宪法约束"可回溯（spec §5.3，D9 仅文本注入）。
+SELECT
+    tt.constitution,
+    COALESCE(
+        (SELECT MAX(revision_number) FROM team_constitution_revisions r
+         WHERE r.tenant_id = tt.tenant_id AND r.team_id = tt.id),
+        0
+    )::integer AS revision_number
+FROM tenant_teams tt
+WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tt.id = sqlc.arg('team_id')::uuid
+  AND tt.deleted_at IS NULL;

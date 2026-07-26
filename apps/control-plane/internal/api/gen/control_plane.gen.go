@@ -2103,6 +2103,27 @@ func (e TaskStatus) Valid() bool {
 	}
 }
 
+// Defines values for TeamConstitutionRuleCategory.
+const (
+	Forbid          TeamConstitutionRuleCategory = "forbid"
+	Must            TeamConstitutionRuleCategory = "must"
+	RequireApproval TeamConstitutionRuleCategory = "require_approval"
+)
+
+// Valid indicates whether the value is a known member of the TeamConstitutionRuleCategory enum.
+func (e TeamConstitutionRuleCategory) Valid() bool {
+	switch e {
+	case Forbid:
+		return true
+	case Must:
+		return true
+	case RequireApproval:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TeamMemberRole.
 const (
 	TeamMemberRoleAdmin    TeamMemberRole = "admin"
@@ -6067,6 +6088,30 @@ type TeamAuditEvent struct {
 	TenantId     openapi_types.UUID     `json:"tenant_id"`
 }
 
+// TeamConstitutionRevision defines model for TeamConstitutionRevision.
+type TeamConstitutionRevision struct {
+	ChangeNote     string                 `json:"change_note"`
+	CreatedAt      *string                `json:"created_at,omitempty"`
+	CreatedBy      *openapi_types.UUID    `json:"created_by,omitempty"`
+	CreatedByName  *string                `json:"created_by_name,omitempty"`
+	Id             openapi_types.UUID     `json:"id"`
+	RevisionNumber int32                  `json:"revision_number"`
+	Rules          []TeamConstitutionRule `json:"rules"`
+	TeamId         openapi_types.UUID     `json:"team_id"`
+	TenantId       openapi_types.UUID     `json:"tenant_id"`
+}
+
+// TeamConstitutionRule defines model for TeamConstitutionRule.
+type TeamConstitutionRule struct {
+	// Category 规则分类，服务端注册校验：forbid 禁止 / must 必须 / require_approval 需审批。 D9：分类只用于分组表达与提示词组织，不触发任何强制审批点。
+	Category *TeamConstitutionRuleCategory `json:"category,omitempty"`
+	Id       *string                       `json:"id,omitempty"`
+	Text     string                        `json:"text"`
+}
+
+// TeamConstitutionRuleCategory 规则分类，服务端注册校验：forbid 禁止 / must 必须 / require_approval 需审批。 D9：分类只用于分组表达与提示词组织，不触发任何强制审批点。
+type TeamConstitutionRuleCategory string
+
 // TeamHumanOwner defines model for TeamHumanOwner.
 type TeamHumanOwner struct {
 	Avatar      *TeamUserAvatar    `json:"avatar,omitempty"`
@@ -6861,6 +6906,18 @@ type GetTeamCapabilityConflictsParams struct {
 	McpServerId openapi_types.UUID `form:"mcp_server_id" json:"mcp_server_id"`
 }
 
+// ListTeamConstitutionRevisionsParams defines parameters for ListTeamConstitutionRevisions.
+type ListTeamConstitutionRevisionsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// SaveTeamConstitutionJSONBody defines parameters for SaveTeamConstitution.
+type SaveTeamConstitutionJSONBody struct {
+	ChangeNote string                 `json:"change_note"`
+	Rules      []TeamConstitutionRule `json:"rules"`
+}
+
 // ListTeamMembersParams defines parameters for ListTeamMembers.
 type ListTeamMembersParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -7137,6 +7194,9 @@ type UpdateTeamJSONRequestBody = UpdateTeamRequest
 
 // UpdateTeamConstitutionJSONRequestBody defines body for UpdateTeamConstitution for application/json ContentType.
 type UpdateTeamConstitutionJSONRequestBody = UpdateTeamConstitutionRequest
+
+// SaveTeamConstitutionJSONRequestBody defines body for SaveTeamConstitution for application/json ContentType.
+type SaveTeamConstitutionJSONRequestBody SaveTeamConstitutionJSONBody
 
 // BindTeamDigitalEmployeeJSONRequestBody defines body for BindTeamDigitalEmployee for application/json ContentType.
 type BindTeamDigitalEmployeeJSONRequestBody = BindTeamDigitalEmployeeRequest
@@ -8399,6 +8459,15 @@ type ServerInterface interface {
 	// Update a tenant team's constitution
 	// (PATCH /api/v1/teams/{teamId}/constitution)
 	UpdateTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// List team constitution revisions
+	// (GET /api/v1/teams/{teamId}/constitution/revisions)
+	ListTeamConstitutionRevisions(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamConstitutionRevisionsParams)
+	// Save the team constitution as a new revision
+	// (PUT /api/v1/teams/{teamId}/constitution/revisions)
+	SaveTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Roll the team constitution back to an earlier revision
+	// (POST /api/v1/teams/{teamId}/constitution/revisions/{revisionNumber}/rollback)
+	RollbackTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId, revisionNumber int32)
 	// Bind an unassigned (lobby) digital employee into the team
 	// (POST /api/v1/teams/{teamId}/digital-employees)
 	BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -9692,6 +9761,24 @@ func (_ Unimplemented) ConfirmTeamDelete(w http.ResponseWriter, r *http.Request,
 // Update a tenant team's constitution
 // (PATCH /api/v1/teams/{teamId}/constitution)
 func (_ Unimplemented) UpdateTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List team constitution revisions
+// (GET /api/v1/teams/{teamId}/constitution/revisions)
+func (_ Unimplemented) ListTeamConstitutionRevisions(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamConstitutionRevisionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Save the team constitution as a new revision
+// (PUT /api/v1/teams/{teamId}/constitution/revisions)
+func (_ Unimplemented) SaveTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Roll the team constitution back to an earlier revision
+// (POST /api/v1/teams/{teamId}/constitution/revisions/{revisionNumber}/rollback)
+func (_ Unimplemented) RollbackTeamConstitution(w http.ResponseWriter, r *http.Request, teamId TeamId, revisionNumber int32) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -17017,6 +17104,122 @@ func (siw *ServerInterfaceWrapper) UpdateTeamConstitution(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// ListTeamConstitutionRevisions operation middleware
+func (siw *ServerInterfaceWrapper) ListTeamConstitutionRevisions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTeamConstitutionRevisionsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTeamConstitutionRevisions(w, r, teamId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveTeamConstitution operation middleware
+func (siw *ServerInterfaceWrapper) SaveTeamConstitution(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveTeamConstitution(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RollbackTeamConstitution operation middleware
+func (siw *ServerInterfaceWrapper) RollbackTeamConstitution(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "revisionNumber" -------------
+	var revisionNumber int32
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revisionNumber", chi.URLParam(r, "revisionNumber"), &revisionNumber, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int32"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "revisionNumber", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RollbackTeamConstitution(w, r, teamId, revisionNumber)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // BindTeamDigitalEmployee operation middleware
 func (siw *ServerInterfaceWrapper) BindTeamDigitalEmployee(w http.ResponseWriter, r *http.Request) {
 
@@ -18374,6 +18577,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/api/v1/teams/{teamId}/constitution", wrapper.UpdateTeamConstitution)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/constitution/revisions", wrapper.ListTeamConstitutionRevisions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/teams/{teamId}/constitution/revisions", wrapper.SaveTeamConstitution)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/constitution/revisions/{revisionNumber}/rollback", wrapper.RollbackTeamConstitution)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/digital-employees", wrapper.BindTeamDigitalEmployee)

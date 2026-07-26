@@ -578,6 +578,14 @@ type startSessionDependencies struct {
 	runtimeEnv    []RuntimeEnvironmentVariablePayload
 	runtimeMCP    []RuntimeMCPServerPayload
 	configInput   EmployeeConfigInput
+	// 团队宪法（spec §5.3，D9）：已渲染的约束文本 + 生效版本号，随 payload 下发。
+	teamConstitution TeamConstitutionForDispatch
+}
+
+// teamConstitutionReader 是可选仓储能力：取团队当前生效宪法供派发注入。
+// 未实现的仓库（测试 fake）视为无宪法，派发照常——宪法是约束，不是前置条件。
+type teamConstitutionReader interface {
+	GetTeamConstitutionForDispatch(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConstitutionForDispatch, error)
 }
 
 // standaloneDispatchCommandType picks the runtime command type for the
@@ -633,7 +641,7 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 	if s.skillLister != nil {
 		capabilityManifestVersion = computeCapabilityManifestFingerprint(deps.runtimeSkills, deps.runtimeMCP)
 	}
-	payload := buildStartSessionPayload(req, objective, prompt, preflightForPayload, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP, capabilityManifestVersion)
+	payload := buildStartSessionPayload(req, objective, prompt, preflightForPayload, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP, capabilityManifestVersion, deps.teamConstitution)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -748,6 +756,13 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		return deps, err
 	}
 	deps.configInput = configInput
+	if reader, ok := s.repository.(teamConstitutionReader); ok {
+		constitution, err := reader.GetTeamConstitutionForDispatch(ctx, tenantID, preflight.TeamID)
+		if err != nil {
+			return deps, fmt.Errorf("get team constitution: %w", err)
+		}
+		deps.teamConstitution = constitution
+	}
 	if s.skillLister != nil {
 		runtimeSkills, err := s.skillLister.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
 		if err != nil {
@@ -1604,7 +1619,7 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload, capabilityManifestVersion string) map[string]any {
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload, capabilityManifestVersion string, teamConstitution TeamConstitutionForDispatch) map[string]any {
 	metadata := cloneMap(req.Metadata)
 	if capabilityManifestVersion != "" {
 		metadata["capability_manifest_version"] = capabilityManifestVersion
@@ -1642,25 +1657,30 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"provider_type":           preflight.ProviderType,
 		"agent_home_dir":          preflight.AgentHomeDir,
 		"persona_memory_markdown": configInput.PersonaMemoryMarkdown,
-		"capability_bindings":     cloneMap(configInput.CapabilityBindings),
-		"objective":               objective,
-		"prompt":                  prompt,
-		"input":                   prompt,
-		"context_refs":            req.ContextRefs,
-		"artifact_refs":           req.ArtifactRefs,
-		"output_schema":           req.OutputSchema,
-		"allowed_actions":         req.AllowedActions,
-		"forbidden_actions":       req.ForbiddenActions,
-		"secret_refs":             req.SecretRefs,
-		"timeout_sec":             req.TimeoutSec,
-		"grace_sec":               req.GraceSec,
-		"workspace_policy":        cloneMap(preflight.WorkspacePolicy),
-		"session_policy":          runtimeSessionPolicyPayload(preflight.SessionPolicy),
-		"runtime_selector":        cloneMap(preflight.RuntimeSelector),
-		"skills":                  runtimeSkillsPayload(runtimeSkills),
-		"environment":             runtimeEnvironmentPayload(runtimeEnv),
-		"mcp_servers":             startSessionMCPServersPayload(runtimeMCPServers),
-		"metadata":                metadata,
+		// 团队宪法（spec §5.3，D1 接通 / D9 仅文本注入）：runtime 会把它拼进
+		// provider 实际收到的提示词。constitution_revision 随执行留痕，供回溯
+		// "这条任务当时受哪一版宪法约束"。
+		"team_constitution":          teamConstitution.Prompt,
+		"team_constitution_revision": teamConstitution.RevisionNumber,
+		"capability_bindings":        cloneMap(configInput.CapabilityBindings),
+		"objective":                  objective,
+		"prompt":                     prompt,
+		"input":                      prompt,
+		"context_refs":               req.ContextRefs,
+		"artifact_refs":              req.ArtifactRefs,
+		"output_schema":              req.OutputSchema,
+		"allowed_actions":            req.AllowedActions,
+		"forbidden_actions":          req.ForbiddenActions,
+		"secret_refs":                req.SecretRefs,
+		"timeout_sec":                req.TimeoutSec,
+		"grace_sec":                  req.GraceSec,
+		"workspace_policy":           cloneMap(preflight.WorkspacePolicy),
+		"session_policy":             runtimeSessionPolicyPayload(preflight.SessionPolicy),
+		"runtime_selector":           cloneMap(preflight.RuntimeSelector),
+		"skills":                     runtimeSkillsPayload(runtimeSkills),
+		"environment":                runtimeEnvironmentPayload(runtimeEnv),
+		"mcp_servers":                startSessionMCPServersPayload(runtimeMCPServers),
+		"metadata":                   metadata,
 	}
 }
 

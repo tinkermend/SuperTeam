@@ -1285,3 +1285,88 @@ func mapFromJSONB(raw []byte, field string) (map[string]any, error) {
 	}
 	return decoded, nil
 }
+
+func (r *PgRepository) CreateTeamConstitutionRevision(ctx context.Context, params CreateTeamConstitutionRevisionParams) (TeamConstitutionRevision, error) {
+	rules, err := json.Marshal(params.Rules)
+	if err != nil {
+		return TeamConstitutionRevision{}, err
+	}
+	row, err := r.q.CreateTeamConstitutionRevision(ctx, queries.CreateTeamConstitutionRevisionParams{
+		TenantID:   params.TenantID,
+		TeamID:     params.TeamID,
+		Rules:      rules,
+		ChangeNote: params.ChangeNote,
+		CreatedBy:  uuid.NullUUID{UUID: params.ActorUserID, Valid: params.ActorUserID != uuid.Nil},
+	})
+	if err != nil {
+		return TeamConstitutionRevision{}, err
+	}
+	return constitutionRevisionFromRow(row.ID, row.TenantID, row.TeamID, row.RevisionNumber, row.Rules, row.ChangeNote, row.CreatedBy, "", row.CreatedAt)
+}
+
+func (r *PgRepository) ListTeamConstitutionRevisions(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]TeamConstitutionRevision, error) {
+	rows, err := r.q.ListTeamConstitutionRevisions(ctx, queries.ListTeamConstitutionRevisionsParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	revisions := make([]TeamConstitutionRevision, 0, len(rows))
+	for _, row := range rows {
+		revision, err := constitutionRevisionFromRow(row.ID, row.TenantID, row.TeamID, row.RevisionNumber, row.Rules, row.ChangeNote, row.CreatedBy, row.CreatedByName, row.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		revisions = append(revisions, revision)
+	}
+	return revisions, nil
+}
+
+func (r *PgRepository) GetTeamConstitutionRevision(ctx context.Context, tenantID, teamID uuid.UUID, revisionNumber int32) (TeamConstitutionRevision, error) {
+	row, err := r.q.GetTeamConstitutionRevision(ctx, queries.GetTeamConstitutionRevisionParams{
+		TenantID:       tenantID,
+		TeamID:         teamID,
+		RevisionNumber: revisionNumber,
+	})
+	if err != nil {
+		return TeamConstitutionRevision{}, mapNoRows(err)
+	}
+	return constitutionRevisionFromRow(row.ID, row.TenantID, row.TeamID, row.RevisionNumber, row.Rules, row.ChangeNote, row.CreatedBy, row.CreatedByName, row.CreatedAt)
+}
+
+func constitutionRevisionFromRow(
+	id, tenantID, teamID uuid.UUID,
+	revisionNumber int32,
+	rawRules []byte,
+	changeNote string,
+	createdBy uuid.NullUUID,
+	createdByName string,
+	createdAt pgtype.Timestamptz,
+) (TeamConstitutionRevision, error) {
+	var rules []ConstitutionRule
+	if len(rawRules) > 0 {
+		if err := json.Unmarshal(rawRules, &rules); err != nil {
+			return TeamConstitutionRevision{}, fmt.Errorf("decode constitution rules: %w", err)
+		}
+	}
+	revision := TeamConstitutionRevision{
+		ID:             id,
+		TenantID:       tenantID,
+		TeamID:         teamID,
+		RevisionNumber: revisionNumber,
+		Rules:          rules,
+		ChangeNote:     changeNote,
+		CreatedByName:  createdByName,
+	}
+	if createdBy.Valid {
+		actor := createdBy.UUID
+		revision.CreatedBy = &actor
+	}
+	if createdAt.Valid {
+		revision.CreatedAt = createdAt.Time.UTC().Format(time.RFC3339)
+	}
+	return revision, nil
+}

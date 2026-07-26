@@ -1,6 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Button, StatusPill, WorkSurface } from "@/components/superteam";
+import { constitutionCategoryLabel } from "@/lib/status-labels";
 
 // 观察面：只列出当前生效的硬性规则，编辑在团队配置页的「约束」分区。
 export function TeamConstitutionSummary({
@@ -10,11 +11,23 @@ export function TeamConstitutionSummary({
   constitution?: Record<string, unknown>;
   teamId: string;
 }) {
-  const rules = Array.isArray(constitution?.hard_rules)
-    ? (constitution?.hard_rules as unknown[]).filter(
-        (rule): rule is string => typeof rule === "string" && rule.trim().length > 0,
-      )
-    : [];
+  // 优先读结构化 rules（带分类）；旧快照只有 hard_rules 时按纯文本回退。
+  const structured = Array.isArray(constitution?.rules)
+    ? (constitution?.rules as unknown[])
+        .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+        .map((item) => ({
+          text: typeof item.text === "string" ? item.text : "",
+          category: typeof item.category === "string" ? item.category : "must"
+        }))
+        .filter((rule) => rule.text.trim().length > 0)
+    : undefined;
+  const rules =
+    structured ??
+    (Array.isArray(constitution?.hard_rules)
+      ? (constitution?.hard_rules as unknown[])
+          .filter((rule): rule is string => typeof rule === "string" && rule.trim().length > 0)
+          .map((text) => ({ text, category: "must" }))
+      : []);
 
   return (
     <WorkSurface>
@@ -39,11 +52,12 @@ export function TeamConstitutionSummary({
           <ul className="flex flex-col gap-2">
             {rules.map((rule, index) => (
               <li
-                key={`${index}-${rule}`}
+                key={`${index}-${rule.text}`}
                 className="flex items-start gap-2 rounded-[12px] border border-line bg-card-soft/60 px-3 py-2.5"
               >
                 <ShieldCheck className="mt-0.5 size-4 shrink-0 text-ink-3" />
-                <span className="text-[13px] text-ink">{rule}</span>
+                <StatusPill tone="mute">{constitutionCategoryLabel(rule.category)}</StatusPill>
+                <span className="text-[13px] text-ink">{rule.text}</span>
               </li>
             ))}
           </ul>

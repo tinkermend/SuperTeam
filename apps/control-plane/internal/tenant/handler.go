@@ -23,6 +23,9 @@ type HandlerService interface {
 	GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error)
 	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team, error)
 	UpdateTeamConstitution(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (*Team, error)
+	SaveTeamConstitution(ctx context.Context, req SaveTeamConstitutionRequest) (*TeamConstitutionRevision, error)
+	ListTeamConstitutionRevisions(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]TeamConstitutionRevision, error)
+	RollbackTeamConstitution(ctx context.Context, req RollbackTeamConstitutionRequest) (*TeamConstitutionRevision, error)
 	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error)
 	RestorePendingDeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) (*Team, error)
@@ -456,6 +459,133 @@ func (h *HTTPHandler) UnbindTeamDigitalEmployee(w http.ResponseWriter, r *http.R
 
 // ChangeTeamMemberRole 直接角色变更（PATCH /teams/{teamId}/members/{memberId}）。
 // 只处理 member ⇄ viewer；特权角色走 POST /teams/{teamId}/privileged-role-requests。
+// SaveTeamConstitution 保存宪法为新版本（PUT /teams/{teamId}/constitution/revisions）。
+// 与旧的 PATCH /constitution 并存：后者是整块 jsonb 覆盖的历史入口，新编辑路径走这里。
+func (h *HTTPHandler) SaveTeamConstitution(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceEdit, "team constitution save")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Rules      []ConstitutionRule `json:"rules"`
+		ChangeNote string             `json:"change_note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	revision, err := service.SaveTeamConstitution(r.Context(), SaveTeamConstitutionRequest{
+		TenantID:    tenantID,
+		TeamID:      teamID,
+		Rules:       req.Rules,
+		ChangeNote:  req.ChangeNote,
+		ActorUserID: middleware.GetUserID(r.Context()),
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, constitutionRevisionResponse(revision))
+}
+
+func (h *HTTPHandler) ListTeamConstitutionRevisions(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceRead, "team constitution revisions read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	limit, ok := nonNegativeInt32QueryParam(w, r, "limit")
+	if !ok {
+		return
+	}
+	offset, ok := nonNegativeInt32QueryParam(w, r, "offset")
+	if !ok {
+		return
+	}
+	revisions, err := service.ListTeamConstitutionRevisions(r.Context(), tenantID, teamID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	items := make([]map[string]any, 0, len(revisions))
+	for index := range revisions {
+		items = append(items, constitutionRevisionResponse(&revisions[index]))
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// RollbackTeamConstitution 回滚到指定版本；实现是以旧内容创建新版本，历史只增不改。
+func (h *HTTPHandler) RollbackTeamConstitution(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	revisionNumber, err := strconv.ParseInt(chi.URLParam(r, "revisionNumber"), 10, 32)
+	if err != nil || revisionNumber <= 0 {
+		http.Error(w, "invalid revision number", http.StatusBadRequest)
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceEdit, "team constitution rollback")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	revision, err := service.RollbackTeamConstitution(r.Context(), RollbackTeamConstitutionRequest{
+		TenantID:       tenantID,
+		TeamID:         teamID,
+		RevisionNumber: int32(revisionNumber),
+		ActorUserID:    middleware.GetUserID(r.Context()),
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, constitutionRevisionResponse(revision))
+}
+
+func constitutionRevisionResponse(revision *TeamConstitutionRevision) map[string]any {
+	if revision == nil {
+		return map[string]any{}
+	}
+	rules := make([]map[string]any, 0, len(revision.Rules))
+	for _, rule := range revision.Rules {
+		rules = append(rules, map[string]any{
+			"id":       rule.ID,
+			"text":     rule.Text,
+			"category": rule.Category,
+		})
+	}
+	return map[string]any{
+		"id":              revision.ID,
+		"tenant_id":       revision.TenantID,
+		"team_id":         revision.TeamID,
+		"revision_number": revision.RevisionNumber,
+		"rules":           rules,
+		"change_note":     revision.ChangeNote,
+		"created_by":      revision.CreatedBy,
+		"created_by_name": revision.CreatedByName,
+		"created_at":      revision.CreatedAt,
+	}
+}
+
 func (h *HTTPHandler) ChangeTeamMemberRole(w http.ResponseWriter, r *http.Request) {
 	teamID, ok := teamIDFromRequest(w, r)
 	if !ok {

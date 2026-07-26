@@ -345,3 +345,10 @@ type RuntimeCommandTerminalWriteback struct {
 	Signal                    *string                  `json:"signal,omitempty"`
 	TimedOut                  bool                     `json:"timed_out,omitempty"`
 }
+
+// TeamConstitutionForDispatch 派发时注入的团队宪法：已渲染好的约束文本与其版本号。
+// 版本号随执行留痕，供"这条任务当时受哪一版宪法约束"回溯。
+type TeamConstitutionForDispatch struct {
+	Prompt         string
+	RevisionNumber int32
+}

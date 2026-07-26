@@ -2270,6 +2270,7 @@ func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
 			SourceScope:      "employee",
 		}},
 		"cmv1:sha256:test-fingerprint",
+		TeamConstitutionForDispatch{},
 	)
 
 	metadata, ok := payload["metadata"].(map[string]any)

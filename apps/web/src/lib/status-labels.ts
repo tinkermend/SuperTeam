@@ -390,3 +390,17 @@ export function teamAuditActionLabel(action: string | undefined): string {
   }
   return TEAM_AUDIT_ACTION_LABELS[action.trim()] ?? action;
 }
+
+// 团队宪法规则分类词表。D9：分类只用于分组表达与提示词组织，不触发任何审批点。
+const CONSTITUTION_CATEGORY_LABELS: Record<string, string> = {
+  forbid: "禁止",
+  must: "必须",
+  require_approval: "需审批",
+};
+
+export function constitutionCategoryLabel(category: string | undefined): string {
+  if (!category) {
+    return "未知";
+  }
+  return CONSTITUTION_CATEGORY_LABELS[category] ?? category;
+}

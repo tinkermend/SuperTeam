@@ -745,6 +745,8 @@ type memoryRepository struct {
 
 	bindTeamDigitalEmployeeParams   []BindTeamDigitalEmployeeParams
 	bindTeamDigitalEmployeeErr      error
+	constitutionRevisions           []TeamConstitutionRevision
+	constitutionRevisionNumber      int32
 	changeTeamMemberRoleParams      []ChangeTeamMemberRoleParams
 	changeTeamMemberRoleErr         error
 	unbindTeamDigitalEmployeeParams []BindTeamDigitalEmployeeParams
@@ -992,6 +994,33 @@ func (r *memoryRepository) GetTeamMember(_ context.Context, tenantID, teamID, me
 func (r *memoryRepository) BindTeamDigitalEmployee(_ context.Context, params BindTeamDigitalEmployeeParams) error {
 	r.bindTeamDigitalEmployeeParams = append(r.bindTeamDigitalEmployeeParams, params)
 	return r.bindTeamDigitalEmployeeErr
+}
+
+func (r *memoryRepository) CreateTeamConstitutionRevision(_ context.Context, params CreateTeamConstitutionRevisionParams) (TeamConstitutionRevision, error) {
+	r.constitutionRevisionNumber++
+	revision := TeamConstitutionRevision{
+		ID:             uuid.New(),
+		TenantID:       params.TenantID,
+		TeamID:         params.TeamID,
+		RevisionNumber: r.constitutionRevisionNumber,
+		Rules:          params.Rules,
+		ChangeNote:     params.ChangeNote,
+	}
+	r.constitutionRevisions = append(r.constitutionRevisions, revision)
+	return revision, nil
+}
+
+func (r *memoryRepository) ListTeamConstitutionRevisions(_ context.Context, _, _ uuid.UUID, _, _ int32) ([]TeamConstitutionRevision, error) {
+	return r.constitutionRevisions, nil
+}
+
+func (r *memoryRepository) GetTeamConstitutionRevision(_ context.Context, _, _ uuid.UUID, revisionNumber int32) (TeamConstitutionRevision, error) {
+	for _, revision := range r.constitutionRevisions {
+		if revision.RevisionNumber == revisionNumber {
+			return revision, nil
+		}
+	}
+	return TeamConstitutionRevision{}, ErrNotFound
 }
 
 func (r *memoryRepository) ChangeTeamMemberRole(_ context.Context, params ChangeTeamMemberRoleParams) (TeamMemberRecord, error) {

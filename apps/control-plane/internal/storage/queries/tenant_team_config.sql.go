@@ -138,6 +138,54 @@ func (q *Queries) CountTeamOwners(ctx context.Context, arg CountTeamOwnersParams
 	return column_1, err
 }
 
+const CreateTeamConstitutionRevision = `-- name: CreateTeamConstitutionRevision :one
+INSERT INTO team_constitution_revisions (tenant_id, team_id, revision_number, rules, change_note, created_by)
+VALUES (
+    $1::uuid,
+    $2::uuid,
+    COALESCE(
+        (SELECT MAX(revision_number) FROM team_constitution_revisions
+         WHERE tenant_id = $1::uuid AND team_id = $2::uuid),
+        0
+    ) + 1,
+    $3::jsonb,
+    $4::text,
+    $5::uuid
+)
+RETURNING id, tenant_id, team_id, revision_number, rules, change_note, created_by, created_at
+`
+
+type CreateTeamConstitutionRevisionParams struct {
+	TenantID   uuid.UUID     `json:"tenant_id"`
+	TeamID     uuid.UUID     `json:"team_id"`
+	Rules      []byte        `json:"rules"`
+	ChangeNote string        `json:"change_note"`
+	CreatedBy  uuid.NullUUID `json:"created_by"`
+}
+
+// 宪法保存 = 追加一个新版本（版本号在同团队内递增）。回滚也是新版本，不改写历史。
+func (q *Queries) CreateTeamConstitutionRevision(ctx context.Context, arg CreateTeamConstitutionRevisionParams) (TeamConstitutionRevision, error) {
+	row := q.db.QueryRow(ctx, CreateTeamConstitutionRevision,
+		arg.TenantID,
+		arg.TeamID,
+		arg.Rules,
+		arg.ChangeNote,
+		arg.CreatedBy,
+	)
+	var i TeamConstitutionRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.RevisionNumber,
+		&i.Rules,
+		&i.ChangeNote,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const CreateTenantTeam = `-- name: CreateTenantTeam :one
 INSERT INTO tenant_teams (tenant_id, slug, name, description, status, human_owner_user_ids, metadata)
 VALUES (
@@ -267,6 +315,103 @@ func (q *Queries) GetActiveTenantUserForTeamCreate(ctx context.Context, arg GetA
 		&i.DisplayName,
 		&i.Email,
 		&i.Status,
+	)
+	return i, err
+}
+
+const GetCurrentTeamConstitutionRevisionNumber = `-- name: GetCurrentTeamConstitutionRevisionNumber :one
+SELECT COALESCE(MAX(revision_number), 0)::integer
+FROM team_constitution_revisions
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+`
+
+type GetCurrentTeamConstitutionRevisionNumberParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+// 派发注入时随执行留痕：这条任务当时受哪一版宪法约束。无版本时返回 0。
+func (q *Queries) GetCurrentTeamConstitutionRevisionNumber(ctx context.Context, arg GetCurrentTeamConstitutionRevisionNumberParams) (int32, error) {
+	row := q.db.QueryRow(ctx, GetCurrentTeamConstitutionRevisionNumber, arg.TenantID, arg.TeamID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const GetTeamConstitutionForDispatch = `-- name: GetTeamConstitutionForDispatch :one
+SELECT
+    tt.constitution,
+    COALESCE(
+        (SELECT MAX(revision_number) FROM team_constitution_revisions r
+         WHERE r.tenant_id = tt.tenant_id AND r.team_id = tt.id),
+        0
+    )::integer AS revision_number
+FROM tenant_teams tt
+WHERE tt.tenant_id = $1::uuid
+  AND tt.id = $2::uuid
+  AND tt.deleted_at IS NULL
+`
+
+type GetTeamConstitutionForDispatchParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+type GetTeamConstitutionForDispatchRow struct {
+	Constitution   []byte `json:"constitution"`
+	RevisionNumber int32  `json:"revision_number"`
+}
+
+// 派发注入用：一次取回团队当前生效宪法与其版本号。版本号随执行留痕，
+// 使"这条任务当时受哪一版宪法约束"可回溯（spec §5.3，D9 仅文本注入）。
+func (q *Queries) GetTeamConstitutionForDispatch(ctx context.Context, arg GetTeamConstitutionForDispatchParams) (GetTeamConstitutionForDispatchRow, error) {
+	row := q.db.QueryRow(ctx, GetTeamConstitutionForDispatch, arg.TenantID, arg.TeamID)
+	var i GetTeamConstitutionForDispatchRow
+	err := row.Scan(&i.Constitution, &i.RevisionNumber)
+	return i, err
+}
+
+const GetTeamConstitutionRevision = `-- name: GetTeamConstitutionRevision :one
+SELECT r.id, r.tenant_id, r.team_id, r.revision_number, r.rules, r.change_note, r.created_by, r.created_at, COALESCE(au.display_name, au.username, '')::varchar AS created_by_name
+FROM team_constitution_revisions r
+LEFT JOIN auth_users au ON au.id = r.created_by
+WHERE r.tenant_id = $1::uuid
+  AND r.team_id = $2::uuid
+  AND r.revision_number = $3::integer
+`
+
+type GetTeamConstitutionRevisionParams struct {
+	TenantID       uuid.UUID `json:"tenant_id"`
+	TeamID         uuid.UUID `json:"team_id"`
+	RevisionNumber int32     `json:"revision_number"`
+}
+
+type GetTeamConstitutionRevisionRow struct {
+	ID             uuid.UUID          `json:"id"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
+	TeamID         uuid.UUID          `json:"team_id"`
+	RevisionNumber int32              `json:"revision_number"`
+	Rules          []byte             `json:"rules"`
+	ChangeNote     string             `json:"change_note"`
+	CreatedBy      uuid.NullUUID      `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CreatedByName  string             `json:"created_by_name"`
+}
+
+func (q *Queries) GetTeamConstitutionRevision(ctx context.Context, arg GetTeamConstitutionRevisionParams) (GetTeamConstitutionRevisionRow, error) {
+	row := q.db.QueryRow(ctx, GetTeamConstitutionRevision, arg.TenantID, arg.TeamID, arg.RevisionNumber)
+	var i GetTeamConstitutionRevisionRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.RevisionNumber,
+		&i.Rules,
+		&i.ChangeNote,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.CreatedByName,
 	)
 	return i, err
 }
@@ -535,6 +680,70 @@ func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSum
 		&i.RiskSummary,
 	)
 	return i, err
+}
+
+const ListTeamConstitutionRevisions = `-- name: ListTeamConstitutionRevisions :many
+SELECT r.id, r.tenant_id, r.team_id, r.revision_number, r.rules, r.change_note, r.created_by, r.created_at, COALESCE(au.display_name, au.username, '')::varchar AS created_by_name
+FROM team_constitution_revisions r
+LEFT JOIN auth_users au ON au.id = r.created_by
+WHERE r.tenant_id = $1::uuid
+  AND r.team_id = $2::uuid
+ORDER BY r.revision_number DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListTeamConstitutionRevisionsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+	Offset   int32     `json:"offset"`
+	Limit    int32     `json:"limit"`
+}
+
+type ListTeamConstitutionRevisionsRow struct {
+	ID             uuid.UUID          `json:"id"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
+	TeamID         uuid.UUID          `json:"team_id"`
+	RevisionNumber int32              `json:"revision_number"`
+	Rules          []byte             `json:"rules"`
+	ChangeNote     string             `json:"change_note"`
+	CreatedBy      uuid.NullUUID      `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CreatedByName  string             `json:"created_by_name"`
+}
+
+func (q *Queries) ListTeamConstitutionRevisions(ctx context.Context, arg ListTeamConstitutionRevisionsParams) ([]ListTeamConstitutionRevisionsRow, error) {
+	rows, err := q.db.Query(ctx, ListTeamConstitutionRevisions,
+		arg.TenantID,
+		arg.TeamID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTeamConstitutionRevisionsRow{}
+	for rows.Next() {
+		var i ListTeamConstitutionRevisionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.RevisionNumber,
+			&i.Rules,
+			&i.ChangeNote,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.CreatedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListTeamMembers = `-- name: ListTeamMembers :many

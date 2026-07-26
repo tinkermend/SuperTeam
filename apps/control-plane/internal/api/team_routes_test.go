@@ -828,6 +828,7 @@ func TestTeamRoutesDoNotSubstituteConsoleUserAsHumanOwner(t *testing.T) {
 }
 
 type routeTeamService struct {
+	saveConstitutionReq        tenant.SaveTeamConstitutionRequest
 	changeMemberRoleReq        tenant.ChangeTeamMemberRoleRequest
 	unbindDigitalEmployeeReq   tenant.BindTeamDigitalEmployeeRequest
 	unbindDigitalEmployeeErr   error
@@ -1074,6 +1075,19 @@ func (s *routeTeamService) ListTeamMembers(ctx context.Context, tenantID, teamID
 
 func (s *routeTeamService) BindTeamDigitalEmployee(ctx context.Context, req tenant.BindTeamDigitalEmployeeRequest) error {
 	return nil
+}
+
+func (s *routeTeamService) SaveTeamConstitution(ctx context.Context, req tenant.SaveTeamConstitutionRequest) (*tenant.TeamConstitutionRevision, error) {
+	s.saveConstitutionReq = req
+	return &tenant.TeamConstitutionRevision{TeamID: req.TeamID, RevisionNumber: 1, Rules: req.Rules, ChangeNote: req.ChangeNote}, nil
+}
+
+func (s *routeTeamService) ListTeamConstitutionRevisions(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]tenant.TeamConstitutionRevision, error) {
+	return nil, nil
+}
+
+func (s *routeTeamService) RollbackTeamConstitution(ctx context.Context, req tenant.RollbackTeamConstitutionRequest) (*tenant.TeamConstitutionRevision, error) {
+	return &tenant.TeamConstitutionRevision{TeamID: req.TeamID, RevisionNumber: req.RevisionNumber + 1}, nil
 }
 
 func (s *routeTeamService) ChangeTeamMemberRole(ctx context.Context, req tenant.ChangeTeamMemberRoleRequest) (*tenant.TeamMember, error) {

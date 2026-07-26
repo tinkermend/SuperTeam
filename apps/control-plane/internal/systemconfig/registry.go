@@ -32,6 +32,7 @@ const (
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
 	KeyEmployeeMaxPerTeam                 = "employee.max_per_team"
+	KeyTeamConstitutionMaxChars           = "team.constitution_max_chars"
 	KeyRetentionRuntimeEventsDays         = "retention.runtime_events_days"
 	KeyRetentionProviderSessionEventsDays = "retention.provider_session_events_days"
 	KeyRetentionCommandReceiptsDays       = "retention.runtime_command_receipts_days"
@@ -212,6 +213,17 @@ var registry = []Definition{
 		DefaultValue: 10,
 		MinValue:     1,
 		MaxValue:     500,
+	},
+	{
+		Key:    KeyTeamConstitutionMaxChars,
+		Domain: DomainOrganization,
+		Label:  "团队宪法字符预算",
+		Description: "团队宪法所有规则条目的正文字符总数上限。宪法在每次派发时注入 provider 提示词," +
+			"过长会挤占上下文并推高 token 成本;超限时保存被拒绝,需先精简规则。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 4000,
+		MinValue:     200,
+		MaxValue:     40000,
 	},
 	{
 		Key:    KeyRetentionRuntimeEventsDays,

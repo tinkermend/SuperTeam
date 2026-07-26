@@ -3680,6 +3680,92 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Team"
+  /api/v1/teams/{teamId}/constitution/revisions:
+    get:
+      operationId: listTeamConstitutionRevisions
+      summary: List team constitution revisions
+      description: >-
+        团队宪法版本历史（spec §5.3）。当前生效内容仍在 tenant_teams.constitution，
+        本表只承载历史；回滚以旧内容创建新版本，历史只增不改。门禁 team.governance.read。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Constitution revision list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamConstitutionRevision"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: saveTeamConstitution
+      summary: Save the team constitution as a new revision
+      description: >-
+        保存宪法 = 追加新版本 + 刷新当前生效快照。change_note 必填：宪法一次改动对全队
+        所有派发生效，事后要能回答「为什么改」。规则正文总字符数受系统配置
+        team.constitution_max_chars 约束（宪法每次派发都注入 provider 提示词），
+        超限返回 400。门禁 team.governance.edit。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rules
+                - change_note
+              properties:
+                rules:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/TeamConstitutionRule"
+                change_note:
+                  type: string
+      responses:
+        "201":
+          description: Constitution revision created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConstitutionRevision"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/constitution/revisions/{revisionNumber}/rollback:
+    post:
+      operationId: rollbackTeamConstitution
+      summary: Roll the team constitution back to an earlier revision
+      description: >-
+        回滚以旧版本内容创建一个新版本，不改写历史。门禁 team.governance.edit。
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - name: revisionNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "201":
+          description: Constitution rolled back as a new revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConstitutionRevision"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/members:
     get:
       operationId: listTeamMembers
@@ -10472,6 +10558,60 @@ components:
         - team.capability.manage
         - team.audit.read
 
+    TeamConstitutionRule:
+      type: object
+      required:
+        - text
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        category:
+          type: string
+          description: >-
+            规则分类，服务端注册校验：forbid 禁止 / must 必须 / require_approval 需审批。
+            D9：分类只用于分组表达与提示词组织，不触发任何强制审批点。
+          enum:
+            - forbid
+            - must
+            - require_approval
+    TeamConstitutionRevision:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_id
+        - revision_number
+        - rules
+        - change_note
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          format: int32
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamConstitutionRule"
+        change_note:
+          type: string
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        created_by_name:
+          type: string
+        created_at:
+          type: string
     TeamMemberRole:
       type: string
       enum:

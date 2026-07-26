@@ -305,6 +305,9 @@
   **状态：已实现（2026-07-26，分支 `feat/team-config-p0`，未合并）**，真实链路验证见 CHANGELOG 同日条目。落成：写时物理收敛 + 员工侧 409 + 接管预览端点 + 就绪矩阵端点与 UI + 一次性收敛迁移 `20260726021028`。
   **未做**：技能维度的就绪聚合（当前矩阵只覆盖 MCP 的 env 缺失；技能的 runtime 依赖状态仍只在员工页可见）与技能侧的接管预览端点（技能接管已在写时执行并落审计，但绑定前没有预览弹窗）——两项都属于 §5.2 的"依赖预检"细化，留待触达时补。
 - **P3 · 宪法接通**：结构化规则 + 版本化 + 派发注入 + token 预算，并把 `governance_status` 判据改成"有无生效规则"。
+  **状态：已实现（2026-07-26，分支 `feat/team-config-p0`，未合并）**，真实链路验证见 CHANGELOG 同日条目——真实 Claude Code 跑出宪法里约定的标记 `CONSTITUTION-OK-7731`，证明宪法确实进了 provider 提示词而非只落 payload。
+  **实现中发现并修正的前提错误**：员工 `persona_memory_markdown` 在 runtime 侧同样是死字段（`payload.rs` 有字段、全仓无读者，provider 只拿 `prompt`）。本设计 §1.4 原先只指出团队宪法空转，实际是"团队宪法与员工人格都没接到 provider"；P3 的注入在 runtime `provider_prompt()` 一并接通两者。
+  **未做**：`governance_status` 判据仍是 `constitution = '{}'`（未改成"有无生效规则"）；D4（删除既有规则需审批）未实现——它需要接权限中心，是独立一层治理，本期只落"接通 + 版本化 + 预算"。
 
 每期的完成条件遵循 CLAUDE.md：真实 Web + Control Plane + DB + Runtime 端到端验证，不以单测/构建通过替代。
 

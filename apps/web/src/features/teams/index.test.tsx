@@ -519,6 +519,42 @@ function createTeamsFetcher(
         return jsonResponse({ request: { id: "approval-1", status: "pending" } }, 201);
       }
 
+      if (
+        url.pathname === "/api/v1/teams/team-1/constitution/revisions" &&
+        method === "GET"
+      ) {
+        return jsonResponse([
+          {
+            id: "rev-1",
+            tenant_id: "tenant-1",
+            team_id: "team-1",
+            revision_number: 1,
+            rules: [{ id: "r1", text: "所有生产写操作必须审批", category: "must" }],
+            change_note: "初始版本",
+            created_by_name: "负责人甲",
+            created_at: "2026-07-26T01:00:00Z"
+},
+        ]);
+      }
+
+      if (
+        url.pathname === "/api/v1/teams/team-1/constitution/revisions" &&
+        method === "PUT"
+      ) {
+        return jsonResponse(
+          {
+            id: "rev-2",
+            tenant_id: "tenant-1",
+            team_id: "team-1",
+            revision_number: 2,
+            rules: [],
+            change_note: "E2E",
+            created_at: "2026-07-26T02:00:00Z"
+},
+          201,
+        );
+      }
+
       if (url.pathname === "/api/v1/teams/team-1/capability-conflicts" && method === "GET") {
         return jsonResponse({
           mcp_server_id: url.searchParams.get("mcp_server_id"),
@@ -1400,7 +1436,7 @@ describe("TeamDetailView", () => {
       .toBeVisible();
   });
 
-  it("renders constitution editor and preserves existing keys while saving hard rules", async () => {
+  it("edits constitution rules and saves them as a new revision with a change note", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamConfigView
@@ -1411,46 +1447,28 @@ describe("TeamDetailView", () => {
     );
 
     await userEvent.click(screen.getByRole("tab", { name: "约束" }));
+    // 旧快照只有 hard_rules 时按「必须」回退，老团队也能直接编辑。
+    await expect.element(screen.getByText("1 条规则")).toBeVisible();
+    await userEvent.fill(screen.getByRole("textbox", { name: "第 1 条规则" }), "不得直连生产库");
+    await userEvent.click(screen.getByRole("button", { name: "预览并保存" }));
 
-    await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
-    await expect.element(screen.getByText("1 条硬性规则")).toBeVisible();
-    await expect.element(screen.getByText("审批策略")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("JSON 快照预览")).not.toBeInTheDocument();
-    await userEvent.fill(
-      screen.getByLabelText("团队宪法"),
-      "所有生产写操作必须审批\n变更窗口必须登记",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "保存宪法" }));
+    // 变更说明必填：宪法一次改动对全队所有派发生效。
+    await expect.element(screen.getByRole("button", { name: "保存为新版本" })).toBeDisabled();
+    await userEvent.fill(screen.getByLabelText("变更说明"), "收紧生产访问");
+    await userEvent.click(screen.getByRole("button", { name: "保存为新版本" }));
+
     await expect
-      .poll(() =>
-        hasRequest(
-          fetcher,
-          "/api/v1/teams/team-1/constitution",
-          "PATCH",
-        ),
-      )
+      .poll(() => hasRequest(fetcher, "/api/v1/teams/team-1/constitution/revisions", "PUT"))
       .toBe(true);
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/constitution",
-      expect.objectContaining({
-        credentials: "include",
-        method: "PATCH"
-}),
-    );
     expect(
-      requestBody(
-        fetcher,
-        "/api/v1/teams/team-1/constitution",
-        "PATCH",
-      ),
+      requestBody(fetcher, "/api/v1/teams/team-1/constitution/revisions", "PUT"),
     ).toEqual({
-      approval_policy: { high_risk: "required" },
-      hard_rules: ["所有生产写操作必须审批", "变更窗口必须登记"],
-      principles: ["安全优先，稳定可靠"]
+      rules: [{ id: undefined, text: "不得直连生产库", category: "must" }],
+      change_note: "收紧生产访问"
 });
   });
 
-  it("does not render approval, principles, or diff fields in constitution section", async () => {
+  it("shows the constitution revision history and offers rollback for older versions", async () => {
     const screen = await renderWithQueryClient(
       <TeamConfigView
         apiBaseUrl="http://control-plane.local"
@@ -1460,13 +1478,15 @@ describe("TeamDetailView", () => {
     );
 
     await userEvent.click(screen.getByRole("tab", { name: "约束" }));
-
-    await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "版本历史" })).toBeVisible();
+    await expect.element(screen.getByText("初始版本")).toBeVisible();
+    // 最新一版是当前生效，不给回滚入口（回滚到自己没有意义）。
+    await expect.element(screen.getByText("当前生效")).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "回滚到此版本" }))
+      .not.toBeInTheDocument();
+    // 旧的整块 jsonb 编辑器已退役。
     await expect.element(screen.getByText("JSON 快照预览")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("相对当前版本的变更")).not.toBeInTheDocument();
-    await expect.element(screen.getByLabelText("审批策略")).not.toBeInTheDocument();
-    await expect.element(screen.getByLabelText("原则")).not.toBeInTheDocument();
-    await expect.element(screen.getByLabelText("Runtime 范围")).not.toBeInTheDocument();
   });
 
   it("renders overview roster and safe direct roles", async () => {

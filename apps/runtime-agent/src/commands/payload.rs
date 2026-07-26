@@ -120,6 +120,10 @@ pub struct RuntimeSessionCommandPayload {
     pub agent_home_dir: Option<String>,
     #[serde(default)]
     pub persona_memory_markdown: Option<String>,
+    /// 团队宪法（control-plane spec §5.3，D9 仅约束文本注入，不参与门禁判定）。
+    /// 已由 CP 渲染成 markdown 文本块，这里只负责拼进 provider 实际收到的提示词。
+    #[serde(default)]
+    pub team_constitution: Option<String>,
     #[serde(default = "default_json_object")]
     pub capability_bindings: serde_json::Value,
     #[serde(default)]
@@ -226,8 +230,25 @@ impl RuntimeSessionCommandPayload {
         catalog::provider_kind(&self.provider_type)
     }
 
+    /// provider 实际收到的提示词。
+    ///
+    /// 团队宪法与员工人格在这里拼进任务提示词之前。此前这两个字段虽然进了 payload，
+    /// 但没有任何地方读它们——provider 只拿到 prompt/input，等于"存了不用"。顺序：
+    /// 团队宪法（团队级约束，优先级最高）→ 员工人格 → 任务本身。
     pub fn provider_prompt(&self) -> Option<String> {
-        trimmed_text(&self.prompt).or_else(|| trimmed_text(&self.input))
+        let task = trimmed_text(&self.prompt).or_else(|| trimmed_text(&self.input))?;
+        let mut sections = Vec::new();
+        if let Some(constitution) = trimmed_text(&self.team_constitution) {
+            sections.push(constitution);
+        }
+        if let Some(persona) = trimmed_text(&self.persona_memory_markdown) {
+            sections.push(format!("# 数字员工人格与记忆\n{persona}"));
+        }
+        if sections.is_empty() {
+            return Some(task);
+        }
+        sections.push(format!("# 本次任务\n{task}"));
+        Some(sections.join("\n\n"))
     }
 
     pub fn project_workspace(&self) -> RuntimeProjectWorkspacePayload {
@@ -536,6 +557,76 @@ mod tests {
         assert_eq!(git.scope, vec!["apps/web".to_string()]);
     }
 
+    fn prompt_payload(
+        constitution: Option<&str>,
+        persona: Option<&str>,
+        task: &str,
+    ) -> RuntimeSessionCommandPayload {
+        RuntimeSessionCommandPayload {
+            command_id: "cmd-test".to_string(),
+            tenant_id: Some("00000000-0000-4000-8000-000000000001".to_string()),
+            team_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            digital_employee_id: "35a3799b-7665-4913-9097-35ee53d30e74".to_string(),
+            execution_instance_id: "8e64dd8c-d70d-417d-b8bf-fe57a61f4205".to_string(),
+            runtime_node_id: None,
+            provider_type: "codex".to_string(),
+            agent_home_dir: None,
+            persona_memory_markdown: persona.map(ToString::to_string),
+            team_constitution: constitution.map(ToString::to_string),
+            capability_bindings: serde_json::json!({}),
+            skills: Vec::new(),
+            mcp_servers: Vec::new(),
+            environment: Vec::new(),
+            session_policy: RuntimeSessionPolicy {
+                mode: SessionPolicyMode::New,
+                provider_session_id: None,
+                recoverable: true,
+            },
+            prompt: Some(task.to_string()),
+            input: None,
+            context_refs: Vec::new(),
+            artifact_refs: Vec::new(),
+            model: None,
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    /// 团队宪法必须真的出现在 provider 收到的提示词里。此前 team_constitution 与
+    /// persona_memory_markdown 都只进了 payload、没有任何读者，等于存了不用。
+    #[test]
+    fn provider_prompt_prepends_constitution_and_persona_before_task() {
+        let payload = prompt_payload(
+            Some("# 团队宪法（必须遵守）\n\n## 禁止\n- 不得直连生产库"),
+            Some("我是数据库运维员工。"),
+            "巡检慢查询",
+        );
+
+        let prompt = payload.provider_prompt().expect("prompt");
+
+        assert!(prompt.contains("不得直连生产库"), "constitution missing: {prompt}");
+        assert!(prompt.contains("我是数据库运维员工。"), "persona missing: {prompt}");
+        assert!(prompt.contains("巡检慢查询"), "task missing: {prompt}");
+        // 顺序：团队约束 → 员工人格 → 任务本身。
+        let constitution_at = prompt.find("不得直连生产库").unwrap();
+        let persona_at = prompt.find("我是数据库运维员工。").unwrap();
+        let task_at = prompt.find("巡检慢查询").unwrap();
+        assert!(constitution_at < persona_at && persona_at < task_at, "unexpected order: {prompt}");
+    }
+
+    /// 没有宪法与人格时提示词保持原样，不加任何包裹——避免给裸任务凭空套标题。
+    #[test]
+    fn provider_prompt_is_unchanged_without_constitution_or_persona() {
+        let payload = prompt_payload(None, None, "巡检慢查询");
+        assert_eq!(payload.provider_prompt().as_deref(), Some("巡检慢查询"));
+    }
+
+    /// 空白宪法等同于没有，不产生空的宪法段落。
+    #[test]
+    fn provider_prompt_ignores_blank_constitution() {
+        let payload = prompt_payload(Some("   \n  "), None, "巡检慢查询");
+        assert_eq!(payload.provider_prompt().as_deref(), Some("巡检慢查询"));
+    }
+
     #[test]
     fn test_project_workspace_project_git_metadata_normalizes_strings() {
         let payload = RuntimeSessionCommandPayload {
@@ -548,6 +639,7 @@ mod tests {
             provider_type: "codex".to_string(),
             agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
             persona_memory_markdown: None,
+            team_constitution: None,
             capability_bindings: serde_json::json!({}),
             skills: Vec::new(),
             mcp_servers: Vec::new(),
@@ -604,6 +696,7 @@ mod tests {
                 provider_type: "codex".to_string(),
                 agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
                 persona_memory_markdown: None,
+                team_constitution: None,
                 capability_bindings: serde_json::json!({}),
                 skills: Vec::new(),
                 mcp_servers: Vec::new(),
@@ -636,6 +729,7 @@ mod tests {
             provider_type: "codex".to_string(),
             agent_home_dir: Some("/tmp/workspaces/employees/35a3799b".to_string()),
             persona_memory_markdown: None,
+            team_constitution: None,
             capability_bindings: serde_json::json!({}),
             skills: Vec::new(),
             mcp_servers: Vec::new(),

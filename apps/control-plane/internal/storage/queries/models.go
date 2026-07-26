@@ -2427,6 +2427,20 @@ type TaskRun struct {
 	FailureAcknowledgedBy uuid.NullUUID `json:"failure_acknowledged_by"`
 }
 
+// 团队宪法版本历史；当前生效内容仍在 tenant_teams.constitution
+type TeamConstitutionRevision struct {
+	ID             uuid.UUID `json:"id"`
+	TenantID       uuid.UUID `json:"tenant_id"`
+	TeamID         uuid.UUID `json:"team_id"`
+	RevisionNumber int32     `json:"revision_number"`
+	// 规则条目数组 [{id,text,category}]
+	Rules []byte `json:"rules"`
+	// 变更说明，保存时必填
+	ChangeNote string             `json:"change_note"`
+	CreatedBy  uuid.NullUUID      `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 // 团队对注册表 MCP 的绑定，团队下数字员工继承
 type TeamMcpBinding struct {
 	// 团队 MCP 绑定主键 UUID

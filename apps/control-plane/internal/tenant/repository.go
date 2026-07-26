@@ -17,6 +17,10 @@ type Repository interface {
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error)
 	UpdateTeam(ctx context.Context, params UpdateTeamParams) (TeamRecord, error)
 	UpdateTeamConstitution(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID, constitution map[string]any) (TeamRecord, error)
+	// 宪法版本化（spec §5.3）：保存与回滚都是追加新版本，历史不改写。
+	CreateTeamConstitutionRevision(ctx context.Context, params CreateTeamConstitutionRevisionParams) (TeamConstitutionRevision, error)
+	ListTeamConstitutionRevisions(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]TeamConstitutionRevision, error)
+	GetTeamConstitutionRevision(ctx context.Context, tenantID, teamID uuid.UUID, revisionNumber int32) (TeamConstitutionRevision, error)
 	DeleteTeam(ctx context.Context, tenantID, teamID, actorUserID uuid.UUID) error
 	// P2 审核确认制:待确认队列/恢复/确认物理删除(spec 2026-07-18-team-lifecycle-convergence §2)。
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]PendingDeleteTeamRecord, error)
@@ -117,6 +121,14 @@ type DisableTeamMemberRoleParams struct {
 
 // ChangeTeamMemberRoleParams 直接角色变更（member ⇄ viewer）。特权角色不走这里，
 // 走权限中心审批（requestTeamPrivilegedRole）。
+type CreateTeamConstitutionRevisionParams struct {
+	TenantID    uuid.UUID
+	TeamID      uuid.UUID
+	Rules       []ConstitutionRule
+	ChangeNote  string
+	ActorUserID uuid.UUID
+}
+
 type ChangeTeamMemberRoleParams struct {
 	TenantID     uuid.UUID
 	TeamID       uuid.UUID

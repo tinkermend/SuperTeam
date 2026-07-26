@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
+	"github.com/superteam/control-plane/internal/tenant"
 )
 
 type PgRunRepository struct {
@@ -1276,4 +1277,33 @@ func stringFromMap(value map[string]any, key string) string {
 	}
 	text, _ := item.(string)
 	return text
+}
+
+// GetTeamConstitutionForDispatch 取团队当前生效宪法与版本号，供派发时注入
+// provider 提示词（spec §5.3，D9 只作约束文本，不参与门禁判定）。
+// 团队不存在或无宪法时返回空规则与版本 0，派发照常进行——宪法是约束，不是前置条件。
+func (r *PgRunRepository) GetTeamConstitutionForDispatch(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConstitutionForDispatch, error) {
+	if teamID == uuid.Nil {
+		return TeamConstitutionForDispatch{}, nil
+	}
+	row, err := r.q.GetTeamConstitutionForDispatch(ctx, queries.GetTeamConstitutionForDispatchParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TeamConstitutionForDispatch{}, nil
+		}
+		return TeamConstitutionForDispatch{}, err
+	}
+	snapshot := map[string]any{}
+	if len(row.Constitution) > 0 {
+		if err := json.Unmarshal(row.Constitution, &snapshot); err != nil {
+			return TeamConstitutionForDispatch{}, fmt.Errorf("decode team constitution: %w", err)
+		}
+	}
+	return TeamConstitutionForDispatch{
+		Prompt:         tenant.RenderConstitutionPrompt(tenant.ConstitutionRulesFromSnapshot(snapshot)),
+		RevisionNumber: row.RevisionNumber,
+	}, nil
 }
