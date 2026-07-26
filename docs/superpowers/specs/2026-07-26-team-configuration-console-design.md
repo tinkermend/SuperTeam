@@ -300,7 +300,7 @@
   **状态：已实现（2026-07-26，分支 `feat/team-config-p0`，未合并）**，真实链路验证见 CHANGELOG 同日条目。实现中把守卫收进新包 `internal/teamguard`，移出与换队共用同一条 sqlc 查询与同一条错误消息。P0 未做：`pending_draft_count`（D6）留到 P1 与配置页一起（当前唯一产出方是特权角色申请，本身还没有 UI，接了也恒为 0）。
 - **P1 · 配置页落地**：新建 `/teams/$teamId/config`，把编制/能力/身份/审计四个 Tab 迁入，详情页转为观察面。成员改角色 + 高权限申请接线并入此期。
   **状态：已实现（2026-07-26，分支 `feat/team-config-p0`，未合并）**，真实链路验证见 CHANGELOG 同日条目。实际落成五分区（另拆出「约束」）。一并做掉 D5（成员审计改 `resource_type=team`）与 D6（`pending_draft_count` 接真实待审批数），并补齐 `team.update` / `team.constitution.update` / `team.member.add|remove|change_role` 审计。
-  **踩坑留证**：路由文件里额外 `export` 一个组件会关掉 TanStack Router 的自动代码分割，把整个 teams feature 拽进首屏 chunk（入口 86 KB → 229 KB，触发 bundle-size 门禁）；把逻辑内联进 `component` 即恢复。`employees/$employeeId.tsx` 目前是同一写法（为让测试 import），其详情代码很可能也在首屏包里——**待查独立项**。
+  **踩坑留证**：路由文件里额外 `export` 一个组件会关掉 TanStack Router 的自动代码分割，把整个 teams feature 拽进首屏 chunk（入口 86 KB → 229 KB，触发 bundle-size 门禁）；把逻辑内联进 `component` 即恢复。`employees/$employeeId.tsx` 目前是同一写法（为让测试 import）。**已查证：不受影响**——员工详情与配置页代码实际落在 `employees-*.js` / `config-*.js`，未进首屏包（按特征串 `生效 MCP 配置（注册表）`、`暂无生效技能`、`返回数字员工详情` 逐一定位）。差异在于 teams 的路由文件从 barrel `@/features/teams` 取组件，分割一旦失效就把整个 feature（含配置页）拽进来；employees 走直接路径 `@/features/employees/detail`。**结论：额外 export 是诱因，从 barrel 取组件才是放大器**——两者叠加才会炸首屏包。
 - **P2 · 能力面板升格**：接管收敛（§5.2.1，含历史数据 dry-run 与迁移）、依赖预检、影响面预览、成员就绪矩阵。
   **状态：已实现（2026-07-26，分支 `feat/team-config-p0`，未合并）**，真实链路验证见 CHANGELOG 同日条目。落成：写时物理收敛 + 员工侧 409 + 接管预览端点 + 就绪矩阵端点与 UI + 一次性收敛迁移 `20260726021028`。
   **未做**：技能维度的就绪聚合（当前矩阵只覆盖 MCP 的 env 缺失；技能的 runtime 依赖状态仍只在员工页可见）与技能侧的接管预览端点（技能接管已在写时执行并落审计，但绑定前没有预览弹窗）——两项都属于 §5.2 的"依赖预检"细化，留待触达时补。
