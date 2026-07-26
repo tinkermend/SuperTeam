@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/superteam/control-plane/internal/api/gen"
 	"github.com/superteam/control-plane/internal/api/middleware"
 )
 
@@ -170,11 +171,18 @@ func (h *ConnectorHTTPHandler) ResolveDecision(w http.ResponseWriter, r *http.Re
 		return
 	}
 	projectID, err := uuid.Parse(strings.TrimSpace(req.ProjectID))
-	if err != nil || projectID == uuid.Nil || strings.TrimSpace(req.Decision) == "" {
+	decisionValue := strings.TrimSpace(req.Decision)
+	if err != nil || projectID == uuid.Nil || decisionValue == "" {
 		http.Error(w, "project_id and decision are required", http.StatusBadRequest)
 		return
 	}
-	conflict, err := h.projects.ResolveDecision(r.Context(), tenantID, projectID, decisionID, userID, req.Decision, req.Comment)
+	// 与 Web resolve 腿同一道契约枚举门（ResolveDecisionValue，两条腿共用值域）；
+	// 契约外值在进入业务校验前拒绝，业务层 validHumanDecision 仍按 decision_type 把关。
+	if !gen.ResolveDecisionValue(decisionValue).Valid() {
+		http.Error(w, "invalid decision", http.StatusBadRequest)
+		return
+	}
+	conflict, err := h.projects.ResolveDecision(r.Context(), tenantID, projectID, decisionID, userID, decisionValue, req.Comment)
 	if err != nil {
 		writeConnectorBusinessError(w, err)
 		return

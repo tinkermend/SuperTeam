@@ -1028,7 +1028,7 @@ func (h *HTTPHandler) ResolveDecision(w http.ResponseWriter, r *http.Request) {
 	// ResolveProjectDecisionRequest.decision enum before business validation
 	// (validHumanDecision stays as the per-decision_type business layer).
 	decisionValue := strings.TrimSpace(body.Decision)
-	if !gen.ResolveProjectDecisionRequestDecision(decisionValue).Valid() {
+	if !gen.ResolveDecisionValue(decisionValue).Valid() {
 		http.Error(w, "invalid decision", http.StatusBadRequest)
 		return
 	}

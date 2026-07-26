@@ -5245,7 +5245,7 @@ components:
           type: string
           format: uuid
         decision:
-          type: string
+          $ref: "#/components/schemas/ResolveDecisionValue"
         comment:
           type: string
     ConnectorSignDemandCriterionRequest:
@@ -9536,32 +9536,35 @@ components:
           type: string
         object_ref:
           type: string
+    ResolveDecisionValue:
+      type: string
+      description: >-
+        人类决策动词，与后端 validHumanDecision 一致；具体可用值按决策请求的 decision_type 分片，跨类型误用由服务端业务校验拒绝：
+        approved/rejected/needs_more_evidence 为通用审批动词；
+        retry（重试）/cancel_downstream（取消下游）/reassign（改派）用于 task_failure_recovery，reassign 亦适用于 planning_failed；
+        request_changes（打回重规划，可配 target_exit_deliverable）仅限 plan_review；
+        restaffed（已补员重开规划）/exempted（豁免约束）仅限 planning_gap，与 rejected 构成该类型的封闭值域；
+        retry_planning（重新规划）/close_demand（关闭需求）仅限 planning_failed。
+        Web resolve 与飞书 connector resolve 两条腿共用本值域。
+      enum:
+        - approved
+        - rejected
+        - needs_more_evidence
+        - retry
+        - cancel_downstream
+        - reassign
+        - request_changes
+        - restaffed
+        - exempted
+        - retry_planning
+        - close_demand
     ResolveProjectDecisionRequest:
       type: object
       required:
         - decision
       properties:
         decision:
-          type: string
-          description: >-
-            人类决策动词，与后端 validHumanDecision 一致；具体可用值按决策请求的 decision_type 分片，跨类型误用由服务端业务校验拒绝：
-            approved/rejected/needs_more_evidence 为通用审批动词；
-            retry（重试）/cancel_downstream（取消下游）/reassign（改派）用于 task_failure_recovery，reassign 亦适用于 planning_failed；
-            request_changes（打回重规划，可配 target_exit_deliverable）仅限 plan_review；
-            restaffed（已补员重开规划）/exempted（豁免约束）仅限 planning_gap，与 rejected 构成该类型的封闭值域；
-            retry_planning（重新规划）/close_demand（关闭需求）仅限 planning_failed
-          enum:
-            - approved
-            - rejected
-            - needs_more_evidence
-            - retry
-            - cancel_downstream
-            - reassign
-            - request_changes
-            - restaffed
-            - exempted
-            - retry_planning
-            - close_demand
+          $ref: "#/components/schemas/ResolveDecisionValue"
         comment:
           type: string
         payload:

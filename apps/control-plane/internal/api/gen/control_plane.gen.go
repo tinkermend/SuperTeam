@@ -1683,45 +1683,45 @@ func (e RequestPrivilegedRoleRequestRequestedRole) Valid() bool {
 	}
 }
 
-// Defines values for ResolveProjectDecisionRequestDecision.
+// Defines values for ResolveDecisionValue.
 const (
-	ResolveProjectDecisionRequestDecisionApproved          ResolveProjectDecisionRequestDecision = "approved"
-	ResolveProjectDecisionRequestDecisionCancelDownstream  ResolveProjectDecisionRequestDecision = "cancel_downstream"
-	ResolveProjectDecisionRequestDecisionCloseDemand       ResolveProjectDecisionRequestDecision = "close_demand"
-	ResolveProjectDecisionRequestDecisionExempted          ResolveProjectDecisionRequestDecision = "exempted"
-	ResolveProjectDecisionRequestDecisionNeedsMoreEvidence ResolveProjectDecisionRequestDecision = "needs_more_evidence"
-	ResolveProjectDecisionRequestDecisionReassign          ResolveProjectDecisionRequestDecision = "reassign"
-	ResolveProjectDecisionRequestDecisionRejected          ResolveProjectDecisionRequestDecision = "rejected"
-	ResolveProjectDecisionRequestDecisionRequestChanges    ResolveProjectDecisionRequestDecision = "request_changes"
-	ResolveProjectDecisionRequestDecisionRestaffed         ResolveProjectDecisionRequestDecision = "restaffed"
-	ResolveProjectDecisionRequestDecisionRetry             ResolveProjectDecisionRequestDecision = "retry"
-	ResolveProjectDecisionRequestDecisionRetryPlanning     ResolveProjectDecisionRequestDecision = "retry_planning"
+	ResolveDecisionValueApproved          ResolveDecisionValue = "approved"
+	ResolveDecisionValueCancelDownstream  ResolveDecisionValue = "cancel_downstream"
+	ResolveDecisionValueCloseDemand       ResolveDecisionValue = "close_demand"
+	ResolveDecisionValueExempted          ResolveDecisionValue = "exempted"
+	ResolveDecisionValueNeedsMoreEvidence ResolveDecisionValue = "needs_more_evidence"
+	ResolveDecisionValueReassign          ResolveDecisionValue = "reassign"
+	ResolveDecisionValueRejected          ResolveDecisionValue = "rejected"
+	ResolveDecisionValueRequestChanges    ResolveDecisionValue = "request_changes"
+	ResolveDecisionValueRestaffed         ResolveDecisionValue = "restaffed"
+	ResolveDecisionValueRetry             ResolveDecisionValue = "retry"
+	ResolveDecisionValueRetryPlanning     ResolveDecisionValue = "retry_planning"
 )
 
-// Valid indicates whether the value is a known member of the ResolveProjectDecisionRequestDecision enum.
-func (e ResolveProjectDecisionRequestDecision) Valid() bool {
+// Valid indicates whether the value is a known member of the ResolveDecisionValue enum.
+func (e ResolveDecisionValue) Valid() bool {
 	switch e {
-	case ResolveProjectDecisionRequestDecisionApproved:
+	case ResolveDecisionValueApproved:
 		return true
-	case ResolveProjectDecisionRequestDecisionCancelDownstream:
+	case ResolveDecisionValueCancelDownstream:
 		return true
-	case ResolveProjectDecisionRequestDecisionCloseDemand:
+	case ResolveDecisionValueCloseDemand:
 		return true
-	case ResolveProjectDecisionRequestDecisionExempted:
+	case ResolveDecisionValueExempted:
 		return true
-	case ResolveProjectDecisionRequestDecisionNeedsMoreEvidence:
+	case ResolveDecisionValueNeedsMoreEvidence:
 		return true
-	case ResolveProjectDecisionRequestDecisionReassign:
+	case ResolveDecisionValueReassign:
 		return true
-	case ResolveProjectDecisionRequestDecisionRejected:
+	case ResolveDecisionValueRejected:
 		return true
-	case ResolveProjectDecisionRequestDecisionRequestChanges:
+	case ResolveDecisionValueRequestChanges:
 		return true
-	case ResolveProjectDecisionRequestDecisionRestaffed:
+	case ResolveDecisionValueRestaffed:
 		return true
-	case ResolveProjectDecisionRequestDecisionRetry:
+	case ResolveDecisionValueRetry:
 		return true
-	case ResolveProjectDecisionRequestDecisionRetryPlanning:
+	case ResolveDecisionValueRetryPlanning:
 		return true
 	default:
 		return false
@@ -2696,9 +2696,11 @@ type ConnectorProjectListResponse struct {
 
 // ConnectorResolveDecisionRequest defines model for ConnectorResolveDecisionRequest.
 type ConnectorResolveDecisionRequest struct {
-	Comment   *string            `json:"comment,omitempty"`
-	Decision  string             `json:"decision"`
-	ProjectId openapi_types.UUID `json:"project_id"`
+	Comment *string `json:"comment,omitempty"`
+
+	// Decision 人类决策动词，与后端 validHumanDecision 一致；具体可用值按决策请求的 decision_type 分片，跨类型误用由服务端业务校验拒绝： approved/rejected/needs_more_evidence 为通用审批动词； retry（重试）/cancel_downstream（取消下游）/reassign（改派）用于 task_failure_recovery，reassign 亦适用于 planning_failed； request_changes（打回重规划，可配 target_exit_deliverable）仅限 plan_review； restaffed（已补员重开规划）/exempted（豁免约束）仅限 planning_gap，与 rejected 构成该类型的封闭值域； retry_planning（重新规划）/close_demand（关闭需求）仅限 planning_failed。 Web resolve 与飞书 connector resolve 两条腿共用本值域。
+	Decision  ResolveDecisionValue `json:"decision"`
+	ProjectId openapi_types.UUID   `json:"project_id"`
 }
 
 // ConnectorSignDemandCriterionRequest defines model for ConnectorSignDemandCriterionRequest.
@@ -5400,20 +5402,20 @@ type RequestProjectTaskTransferRequest struct {
 	SuggestedEmployeeType       *string               `json:"suggested_employee_type,omitempty"`
 }
 
+// ResolveDecisionValue 人类决策动词，与后端 validHumanDecision 一致；具体可用值按决策请求的 decision_type 分片，跨类型误用由服务端业务校验拒绝： approved/rejected/needs_more_evidence 为通用审批动词； retry（重试）/cancel_downstream（取消下游）/reassign（改派）用于 task_failure_recovery，reassign 亦适用于 planning_failed； request_changes（打回重规划，可配 target_exit_deliverable）仅限 plan_review； restaffed（已补员重开规划）/exempted（豁免约束）仅限 planning_gap，与 rejected 构成该类型的封闭值域； retry_planning（重新规划）/close_demand（关闭需求）仅限 planning_failed。 Web resolve 与飞书 connector resolve 两条腿共用本值域。
+type ResolveDecisionValue string
+
 // ResolveProjectDecisionRequest defines model for ResolveProjectDecisionRequest.
 type ResolveProjectDecisionRequest struct {
 	Comment *string `json:"comment,omitempty"`
 
-	// Decision 人类决策动词，与后端 validHumanDecision 一致；具体可用值按决策请求的 decision_type 分片，跨类型误用由服务端业务校验拒绝： approved/rejected/needs_more_evidence 为通用审批动词； retry（重试）/cancel_downstream（取消下游）/reassign（改派）用于 task_failure_recovery，reassign 亦适用于 planning_failed； request_changes（打回重规划，可配 target_exit_deliverable）仅限 plan_review； restaffed（已补员重开规划）/exempted（豁免约束）仅限 planning_gap，与 rejected 构成该类型的封闭值域； retry_planning（重新规划）/close_demand（关闭需求）仅限 planning_failed
-	Decision ResolveProjectDecisionRequestDecision `json:"decision"`
-	Payload  *map[string]interface{}               `json:"payload,omitempty"`
+	// Decision 人类决策动词，与后端 validHumanDecision 一致；具体可用值按决策请求的 decision_type 分片，跨类型误用由服务端业务校验拒绝： approved/rejected/needs_more_evidence 为通用审批动词； retry（重试）/cancel_downstream（取消下游）/reassign（改派）用于 task_failure_recovery，reassign 亦适用于 planning_failed； request_changes（打回重规划，可配 target_exit_deliverable）仅限 plan_review； restaffed（已补员重开规划）/exempted（豁免约束）仅限 planning_gap，与 rejected 构成该类型的封闭值域； retry_planning（重新规划）/close_demand（关闭需求）仅限 planning_failed。 Web resolve 与飞书 connector resolve 两条腿共用本值域。
+	Decision ResolveDecisionValue    `json:"decision"`
+	Payload  *map[string]interface{} `json:"payload,omitempty"`
 
 	// TargetExitDeliverable 人类改选的交付出口；仅 request_changes 时有意义，重规划将钉住该出口
 	TargetExitDeliverable *string `json:"target_exit_deliverable,omitempty"`
 }
-
-// ResolveProjectDecisionRequestDecision 人类决策动词，与后端 validHumanDecision 一致；具体可用值按决策请求的 decision_type 分片，跨类型误用由服务端业务校验拒绝： approved/rejected/needs_more_evidence 为通用审批动词； retry（重试）/cancel_downstream（取消下游）/reassign（改派）用于 task_failure_recovery，reassign 亦适用于 planning_failed； request_changes（打回重规划，可配 target_exit_deliverable）仅限 plan_review； restaffed（已补员重开规划）/exempted（豁免约束）仅限 planning_gap，与 rejected 构成该类型的封闭值域； retry_planning（重新规划）/close_demand（关闭需求）仅限 planning_failed
-type ResolveProjectDecisionRequestDecision string
 
 // ReviewerPreference defines model for ReviewerPreference.
 type ReviewerPreference struct {
