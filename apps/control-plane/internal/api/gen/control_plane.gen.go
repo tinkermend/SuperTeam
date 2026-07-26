@@ -243,15 +243,12 @@ func (e CreateDigitalEmployeeConfigRevisionRequestStatus) Valid() bool {
 // Defines values for CreateDigitalEmployeeRunRequestRunKind.
 const (
 	CreateDigitalEmployeeRunRequestRunKindChat CreateDigitalEmployeeRunRequestRunKind = "chat"
-	CreateDigitalEmployeeRunRequestRunKindTask CreateDigitalEmployeeRunRequestRunKind = "task"
 )
 
 // Valid indicates whether the value is a known member of the CreateDigitalEmployeeRunRequestRunKind enum.
 func (e CreateDigitalEmployeeRunRequestRunKind) Valid() bool {
 	switch e {
 	case CreateDigitalEmployeeRunRequestRunKindChat:
-		return true
-	case CreateDigitalEmployeeRunRequestRunKindTask:
 		return true
 	default:
 		return false
@@ -902,18 +899,15 @@ func (e HumanTaskLayer) Valid() bool {
 
 // Defines values for InboxItemItemType.
 const (
-	InboxItemItemTypeApproval                   InboxItemItemType = "approval"
-	InboxItemItemTypeDigitalEmployeeRunRecovery InboxItemItemType = "digital_employee_run_recovery"
-	InboxItemItemTypeProjectDecision            InboxItemItemType = "project_decision"
-	InboxItemItemTypeTeamPendingDelete          InboxItemItemType = "team_pending_delete"
+	InboxItemItemTypeApproval          InboxItemItemType = "approval"
+	InboxItemItemTypeProjectDecision   InboxItemItemType = "project_decision"
+	InboxItemItemTypeTeamPendingDelete InboxItemItemType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the InboxItemItemType enum.
 func (e InboxItemItemType) Valid() bool {
 	switch e {
 	case InboxItemItemTypeApproval:
-		return true
-	case InboxItemItemTypeDigitalEmployeeRunRecovery:
 		return true
 	case InboxItemItemTypeProjectDecision:
 		return true
@@ -948,7 +942,6 @@ func (e InboxItemLayer) Valid() bool {
 // Defines values for InboxItemSourceType.
 const (
 	InboxItemSourceTypeApprovalRequest        InboxItemSourceType = "approval_request"
-	InboxItemSourceTypeDigitalEmployeeRun     InboxItemSourceType = "digital_employee_run"
 	InboxItemSourceTypeProjectDecisionRequest InboxItemSourceType = "project_decision_request"
 	InboxItemSourceTypeTeamPendingDelete      InboxItemSourceType = "team_pending_delete"
 )
@@ -957,8 +950,6 @@ const (
 func (e InboxItemSourceType) Valid() bool {
 	switch e {
 	case InboxItemSourceTypeApprovalRequest:
-		return true
-	case InboxItemSourceTypeDigitalEmployeeRun:
 		return true
 	case InboxItemSourceTypeProjectDecisionRequest:
 		return true
@@ -2366,18 +2357,15 @@ func (e ListInboxItemsParamsStatus) Valid() bool {
 
 // Defines values for ListInboxItemsParamsItemType.
 const (
-	Approval                   ListInboxItemsParamsItemType = "approval"
-	DigitalEmployeeRunRecovery ListInboxItemsParamsItemType = "digital_employee_run_recovery"
-	ProjectDecision            ListInboxItemsParamsItemType = "project_decision"
-	TeamPendingDelete          ListInboxItemsParamsItemType = "team_pending_delete"
+	Approval          ListInboxItemsParamsItemType = "approval"
+	ProjectDecision   ListInboxItemsParamsItemType = "project_decision"
+	TeamPendingDelete ListInboxItemsParamsItemType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsItemType enum.
 func (e ListInboxItemsParamsItemType) Valid() bool {
 	switch e {
 	case Approval:
-		return true
-	case DigitalEmployeeRunRecovery:
 		return true
 	case ProjectDecision:
 		return true
@@ -2802,16 +2790,18 @@ type CreateDigitalEmployeeRunRequest struct {
 	Objective        string                    `json:"objective"`
 	OutputSchema     *map[string]interface{}   `json:"output_schema,omitempty"`
 
-	// ProjectId Runtime anchor for a chat run (run_kind=chat): resolves the dispatch node, budget, and policy boundary the way project task dispatch does. Required when run_kind is chat; ignored when run_kind is task. The anchor project receives no business effect from the chat run — no signal, ProjectTask, or RouteDecision.
-	ProjectId     *openapi_types.UUID                     `json:"project_id,omitempty"`
-	Prompt        *string                                 `json:"prompt,omitempty"`
-	ResumeOfRunId *openapi_types.UUID                     `json:"resume_of_run_id,omitempty"`
-	RunKind       *CreateDigitalEmployeeRunRequestRunKind `json:"run_kind,omitempty"`
-	SecretRefs    *[]string                               `json:"secret_refs,omitempty"`
-	TimeoutSec    *int32                                  `json:"timeout_sec,omitempty"`
+	// ProjectId Runtime anchor for the chat run: resolves the dispatch node, budget, and policy boundary the way project task dispatch does. Always required. The anchor project receives no business effect from the chat run — no signal, ProjectTask, or RouteDecision.
+	ProjectId     openapi_types.UUID  `json:"project_id"`
+	Prompt        *string             `json:"prompt,omitempty"`
+	ResumeOfRunId *openapi_types.UUID `json:"resume_of_run_id,omitempty"`
+
+	// RunKind Chat is the only creatable kind. Task-kind runs are produced exclusively by project task dispatch (run-project affiliation spec, 2026-07-26 A3); requesting run_kind=task returns 400.
+	RunKind    *CreateDigitalEmployeeRunRequestRunKind `json:"run_kind,omitempty"`
+	SecretRefs *[]string                               `json:"secret_refs,omitempty"`
+	TimeoutSec *int32                                  `json:"timeout_sec,omitempty"`
 }
 
-// CreateDigitalEmployeeRunRequestRunKind defines model for CreateDigitalEmployeeRunRequest.RunKind.
+// CreateDigitalEmployeeRunRequestRunKind Chat is the only creatable kind. Task-kind runs are produced exclusively by project task dispatch (run-project affiliation spec, 2026-07-26 A3); requesting run_kind=task returns 400.
 type CreateDigitalEmployeeRunRequestRunKind string
 
 // CreateEmployeeTemplateRequest defines model for CreateEmployeeTemplateRequest.
@@ -8015,21 +8005,15 @@ type ServerInterface interface {
 	// List digital employee runs
 	// (GET /api/v1/digital-employees/{employeeId}/runs)
 	ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListDigitalEmployeeRunsParams)
-	// Start a digital employee run
+	// Start a digital employee chat run (project-anchored)
 	// (POST /api/v1/digital-employees/{employeeId}/runs)
 	CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Get a digital employee run
 	// (GET /api/v1/digital-employees/{employeeId}/runs/{runId})
 	GetDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
-	// Acknowledge a failed standalone digital employee run
-	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure)
-	AcknowledgeDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
 	// List digital employee run events
 	// (GET /api/v1/digital-employees/{employeeId}/runs/{runId}/events)
 	ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId, params ListDigitalEmployeeRunEventsParams)
-	// Retry a failed standalone digital employee run
-	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/retry)
-	RetryDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
 	// Stop an active digital employee run
 	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/stop)
 	StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
@@ -8876,7 +8860,7 @@ func (_ Unimplemented) ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Start a digital employee run
+// Start a digital employee chat run (project-anchored)
 // (POST /api/v1/digital-employees/{employeeId}/runs)
 func (_ Unimplemented) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -8888,21 +8872,9 @@ func (_ Unimplemented) GetDigitalEmployeeRun(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Acknowledge a failed standalone digital employee run
-// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure)
-func (_ Unimplemented) AcknowledgeDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // List digital employee run events
 // (GET /api/v1/digital-employees/{employeeId}/runs/{runId}/events)
 func (_ Unimplemented) ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId, params ListDigitalEmployeeRunEventsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Retry a failed standalone digital employee run
-// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/retry)
-func (_ Unimplemented) RetryDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -11898,41 +11870,6 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployeeRun(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
-// AcknowledgeDigitalEmployeeRunFailure operation middleware
-func (siw *ServerInterfaceWrapper) AcknowledgeDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "runId" -------------
-	var runId RunId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "runId", chi.URLParam(r, "runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AcknowledgeDigitalEmployeeRunFailure(w, r, employeeId, runId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListDigitalEmployeeRunEvents operation middleware
 func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *http.Request) {
 
@@ -11988,41 +11925,6 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployeeRunEvents(w http.ResponseW
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListDigitalEmployeeRunEvents(w, r, employeeId, runId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RetryDigitalEmployeeRunFailure operation middleware
-func (siw *ServerInterfaceWrapper) RetryDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "employeeId" -------------
-	var employeeId EmployeeId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "runId" -------------
-	var runId RunId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "runId", chi.URLParam(r, "runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RetryDigitalEmployeeRunFailure(w, r, employeeId, runId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18141,13 +18043,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}", wrapper.GetDigitalEmployeeRun)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure", wrapper.AcknowledgeDigitalEmployeeRunFailure)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/events", wrapper.ListDigitalEmployeeRunEvents)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/retry", wrapper.RetryDigitalEmployeeRunFailure)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/stop", wrapper.StopDigitalEmployeeRun)

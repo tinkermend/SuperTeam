@@ -13,7 +13,6 @@ import (
 
 type Querier interface {
 	AcceptProjectPlanRevision(ctx context.Context, arg AcceptProjectPlanRevisionParams) (ProjectPlanRevision, error)
-	AcknowledgeDigitalEmployeeRunFailure(ctx context.Context, arg AcknowledgeDigitalEmployeeRunFailureParams) (TaskRun, error)
 	// Soft-delete cascade: auto-ack failed/timed_out runs anchored to this project so
 	// employee overview no longer stays in 异常 waiting for unreachable recovery.
 	AcknowledgeTaskRunsForProjectDelete(ctx context.Context, arg AcknowledgeTaskRunsForProjectDeleteParams) ([]uuid.UUID, error)
@@ -33,8 +32,9 @@ type Querier interface {
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
 	BindQueuedProjectTaskRun(ctx context.Context, arg BindQueuedProjectTaskRunParams) (ProjectTask, error)
 	CancelApprovalRequestsForProjectDelete(ctx context.Context, arg CancelApprovalRequestsForProjectDeleteParams) ([]uuid.UUID, error)
-	// 取消项目挂接的 open 收件箱:显式 source_project_id,以及 chat/standalone
-	// run 失败恢复卡(锚在 tasks.params.metadata.anchor_project_id|project_id)。
+	// 取消项目挂接的 open 收件箱（source_project_id 显式关联）。
+	// run 失败恢复卡分支已随「运行必须归属项目」spec（2026-07-26 A4）退役：
+	// 该 item_type 不再产生，存量 open 态已由迁移 20260726170000 取消。
 	CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error)
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
 	// Soft-delete cascade: cancel any task that could still light employee overview
@@ -267,7 +267,8 @@ type Querier interface {
 	// 租户内当前具备在线可用 Runtime 能力的 provider 集合。员工不再绑定 Runtime
 	// (运行落点由项目派发时动态解析),就绪判据只看"租户内是否有任一在线节点提供该 provider"。
 	GetDigitalEmployeeOverviewSummary(ctx context.Context, arg GetDigitalEmployeeOverviewSummaryParams) (GetDigitalEmployeeOverviewSummaryRow, error)
-	// Prefer project_tasks; chat/task-hub runs fall back to metadata anchors.
+	// 运行必须归属项目 spec（2026-07-26）：归属读一等列 task_runs.project_id（NOT NULL），
+	// 不再经 project_tasks 指针 + metadata 锚点两级 join 兜底。
 	// Soft-deleted projects still resolve so run history keeps the name + deleted flag.
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (GetDigitalEmployeeRunRow, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
@@ -457,6 +458,7 @@ type Querier interface {
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
 	// 日历看板轻量投影:不含 result/diagnostic/session_state/work_products。
 	ListDigitalEmployeeRunCalendarItems(ctx context.Context, arg ListDigitalEmployeeRunCalendarItemsParams) ([]ListDigitalEmployeeRunCalendarItemsRow, error)
+	// 运行必须归属项目 spec（2026-07-26）：归属读一等列，原「指针 UNION metadata 锚点」双路收敛。
 	ListDigitalEmployeeRunProjectOptions(ctx context.Context, arg ListDigitalEmployeeRunProjectOptionsParams) ([]ListDigitalEmployeeRunProjectOptionsRow, error)
 	ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEmployeeRunsParams) ([]ListDigitalEmployeeRunsRow, error)
 	ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListDigitalEmployeeRunsDetailedParams) ([]ListDigitalEmployeeRunsDetailedRow, error)

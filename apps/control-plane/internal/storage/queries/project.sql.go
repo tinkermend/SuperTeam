@@ -80,29 +80,10 @@ UPDATE task_runs tr
 SET failure_acknowledged_at = COALESCE(tr.failure_acknowledged_at, NOW()),
     failure_acknowledged_by = COALESCE(tr.failure_acknowledged_by, $1::uuid),
     updated_at = NOW()
-FROM tasks t
 WHERE tr.tenant_id = $2::uuid
-  AND t.id = tr.task_id
-  AND t.tenant_id = tr.tenant_id
   AND tr.status IN ('failed', 'timed_out')
   AND tr.failure_acknowledged_at IS NULL
-  AND (
-    EXISTS (
-      SELECT 1
-      FROM project_tasks pt
-      WHERE pt.tenant_id = tr.tenant_id
-        AND pt.digital_employee_run_id = tr.id
-        AND pt.project_id = $3::uuid
-    )
-    OR (
-      (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      AND (t.params #>> '{metadata,anchor_project_id}')::uuid = $3::uuid
-    )
-    OR (
-      (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      AND (t.params #>> '{metadata,project_id}')::uuid = $3::uuid
-    )
-  )
+  AND tr.project_id = $3::uuid
 RETURNING tr.id
 `
 
@@ -3173,29 +3154,7 @@ SELECT
   (SELECT COUNT(*)::int FROM inbox_items ii
     WHERE ii.tenant_id = $1::uuid
       AND ii.status = 'open'
-      AND (
-        ii.source_project_id = $2::uuid
-        OR (
-          ii.item_type = 'digital_employee_run_recovery'
-          AND EXISTS (
-            SELECT 1
-            FROM task_runs tr
-            JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
-            WHERE tr.id = ii.source_id
-              AND tr.tenant_id = $1::uuid
-              AND (
-                (
-                  (t.params #>> '{metadata,anchor_project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-                  AND (t.params #>> '{metadata,anchor_project_id}')::uuid = $2::uuid
-                )
-                OR (
-                  (t.params #>> '{metadata,project_id}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-                  AND (t.params #>> '{metadata,project_id}')::uuid = $2::uuid
-                )
-              )
-          )
-        )
-      )) AS open_inbox_count,
+      AND ii.source_project_id = $2::uuid) AS open_inbox_count,
   (SELECT COUNT(*)::int FROM project_members
     WHERE tenant_id = $1::uuid AND project_id = $2::uuid
       AND status = 'active') AS active_member_count,

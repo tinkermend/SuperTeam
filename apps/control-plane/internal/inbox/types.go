@@ -66,7 +66,6 @@ const (
 	// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒管理员处理)。
 	ItemTypeTeamPendingDelete ItemType = "team_pending_delete"
 	// Standalone 数字员工 run 失败后的人类介入(重试 / 确认关闭)。
-	ItemTypeDigitalEmployeeRunRecovery ItemType = "digital_employee_run_recovery"
 )
 
 type SourceType string
@@ -75,7 +74,6 @@ const (
 	SourceTypeApprovalRequest        SourceType = "approval_request"
 	SourceTypeProjectDecisionRequest SourceType = "project_decision_request"
 	SourceTypeTeamPendingDelete      SourceType = "team_pending_delete"
-	SourceTypeDigitalEmployeeRun     SourceType = "digital_employee_run"
 )
 
 type Action struct {

@@ -1079,7 +1079,6 @@ const itemTypeOptions = [
   { label: "全部类型", value: "all" },
   { label: "审批", value: "approval" },
   { label: "项目决策", value: "project_decision" },
-  { label: "运行恢复", value: "digital_employee_run_recovery" },
   { label: "团队待删", value: "team_pending_delete" },
 ] satisfies Array<SelectOption<InboxItemType | "all">>;
 

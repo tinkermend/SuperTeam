@@ -350,7 +350,8 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 	mapped.RunKind = run.RunKind
 	mapped.ResumeOfRunID = uuidPtrFromNull(run.ResumeOfRunID)
 	mapped.ChatThreadID = effectiveChatThreadID(run.RunKind, run.ChatThreadID, run.ID)
-	mapped.ProjectID = uuidPtrFromNull(run.ProjectID)
+	projectID := run.ProjectID
+	mapped.ProjectID = &projectID
 	if run.ProjectName.Valid {
 		name := run.ProjectName.String
 		mapped.ProjectName = &name
@@ -503,10 +504,8 @@ func (r *PgRunRepository) ListRunCalendar(ctx context.Context, tenantID, employe
 			RunKind:   row.RunKind,
 			CreatedAt: timeFromTimestamptz(row.CreatedAt),
 		}
-		if row.ProjectID.Valid {
-			id := row.ProjectID.UUID
-			item.ProjectID = &id
-		}
+		pid := row.ProjectID
+		item.ProjectID = &pid
 		if row.ProjectName.Valid {
 			name := row.ProjectName.String
 			item.ProjectName = &name
@@ -579,6 +578,7 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		RunKind:                req.RunKind,
 		ResumeOfRunID:          nullUUIDFromPtr(req.ResumeOfRunID),
 		ChatThreadID:           nullUUIDFromPtr(req.ChatThreadID),
+		ProjectID:              req.ProjectID,
 	})
 	if err != nil {
 		return nil, mapCreateRunError(err, req)
@@ -1139,10 +1139,8 @@ func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRu
 		WorkProductCount: row.WorkProductCount,
 		DurationSec:      durationSecondsFromBounds(row.StartedAt, row.FinishedAt),
 	}
-	if row.ProjectID.Valid {
-		id := row.ProjectID.UUID
-		item.ProjectID = &id
-	}
+	pid := row.ProjectID
+	item.ProjectID = &pid
 	if row.ProjectName.Valid {
 		name := row.ProjectName.String
 		item.ProjectName = &name

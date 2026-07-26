@@ -81,7 +81,6 @@ type DigitalEmployeeRunService struct {
 	nodeResolver             ProjectTaskNodeResolver
 	chatAnchorValidator      ChatAnchorProjectValidator
 	dispatchFacts            ProjectDispatchFactsReader
-	failureInbox             RunFailureInboxProjector
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {
@@ -157,30 +156,23 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		prompt = objective
 	}
 	if req.RunKind == "" {
-		req.RunKind = RunKindTask
+		req.RunKind = RunKindChat
 	}
-	if req.RunKind != RunKindTask && req.RunKind != RunKindChat {
+	// 运行必须归属项目 spec（2026-07-26）A3：CreateRun 收敛为 chat 专用。
+	// run_kind=task 的裸创建是唯一能绕过任务中枢造出无项目运行的后门，已封；
+	// 项目任务派发走完全独立的 StartProjectTaskRun。
+	if req.RunKind != RunKindChat {
 		return nil, ErrInvalidRunKind
 	}
 	// chatThreadID is resolved exclusively by the resume branch below; discard
 	// anything a caller in this package may have pre-set.
 	req.chatThreadID = nil
 
-	if req.RunKind == RunKindChat {
-		if req.ProjectID == nil || *req.ProjectID == uuid.Nil {
-			return nil, fmt.Errorf("%w: project_id is required for chat runs", ErrInvalidInput)
-		}
-	} else {
-		// §13 design revision: task runs ignore any anchor project_id the
-		// caller may have sent — it is a chat-only concept, not validated or
-		// persisted for task-kind runs.
-		req.ProjectID = nil
+	if req.ProjectID == nil || *req.ProjectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: project_id is required", ErrInvalidInput)
 	}
 
 	if req.ResumeOfRunID != nil {
-		if req.RunKind != RunKindChat {
-			return nil, ErrInvalidResumeRun
-		}
 		prior, err := s.repository.GetRun(ctx, req.TenantID, req.DigitalEmployeeID, *req.ResumeOfRunID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidResumeRun, err)
@@ -231,25 +223,7 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		}
 	}
 
-	if req.RunKind == RunKindChat {
-		return s.createChatRun(ctx, req, objective, prompt)
-	}
-
-	preflight, err := s.repository.GetRunPreflight(ctx, req.TenantID, req.DigitalEmployeeID)
-	if err != nil {
-		return nil, fmt.Errorf("get run preflight: %w", err)
-	}
-	if err := validateRunPreflight(preflight); err != nil {
-		return nil, err
-	}
-	if err := validateDailyTokenBudget(preflight); err != nil {
-		return nil, err
-	}
-	if !s.dispatcher.IsConnected(preflight.NodeID) {
-		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
-	}
-
-	return s.createAndDispatchRun(ctx, req, objective, prompt, preflight)
+	return s.createChatRun(ctx, req, objective, prompt)
 }
 
 // createChatRun dispatches a chat run using its project anchor (§13 design
@@ -540,6 +514,14 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		runKind = RunKindTask
 	}
 	commandID := newRuntimeCommandID()
+	// 运行必须归属项目 spec（2026-07-26）：每条派发路径都把锚点项目落进一等列。
+	// chat 经 CreateRun 校验非空；项目任务派发经 StartProjectTaskRun 设值；
+	// 二者在此统一持久化。test shim（createLegacyStandaloneRun）走 fake repo，
+	// 不触真实 NOT NULL 约束。
+	projectID := uuid.Nil
+	if req.ProjectID != nil {
+		projectID = *req.ProjectID
+	}
 	createReq := CreateRunRecordRequest{
 		IdempotencyKey:         idempotencyKey,
 		IdempotencyFingerprint: &fingerprint,
@@ -563,6 +545,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		RunKind:                runKind,
 		ResumeOfRunID:          req.ResumeOfRunID,
 		ChatThreadID:           req.chatThreadID,
+		ProjectID:              projectID,
 	}
 
 	run, err := s.repository.CreateRun(ctx, createReq)
@@ -1306,41 +1289,6 @@ func terminalReceiptErrorFamily(receipt *RuntimeCommandReceipt) *string {
 	default:
 		return nil
 	}
-}
-
-func validateRunPreflight(preflight RunPreflight) error {
-	if preflight.TenantID == uuid.Nil {
-		return fmt.Errorf("%w: preflight tenant_id is required", ErrInvalidInput)
-	}
-	if preflight.DigitalEmployeeID == uuid.Nil {
-		return fmt.Errorf("%w: preflight digital_employee_id is required", ErrInvalidInput)
-	}
-	if preflight.DigitalEmployeeStatus != DigitalEmployeeStatusReady && preflight.DigitalEmployeeStatus != DigitalEmployeeStatusActive {
-		return fmt.Errorf("%w: digital employee must be ready or active", ErrInvalidInput)
-	}
-	// Legacy workbench runs still require a concrete execution instance. ProjectTask dispatch uses project placement preflight instead.
-	if preflight.ExecutionInstanceID == uuid.Nil {
-		return fmt.Errorf("%w: execution_instance_id is required", ErrInvalidInput)
-	}
-	if preflight.ExecutionStatus != ExecutionInstanceStatusReady && preflight.ExecutionStatus != ExecutionInstanceStatusActive {
-		return fmt.Errorf("%w: execution instance must be ready or active", ErrInvalidInput)
-	}
-	if preflight.RuntimeNodeID == uuid.Nil {
-		return fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
-	}
-	if strings.TrimSpace(preflight.NodeID) == "" {
-		return fmt.Errorf("%w: node_id is required", ErrInvalidInput)
-	}
-	if strings.TrimSpace(preflight.ProviderType) == "" {
-		return fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
-	}
-	if strings.TrimSpace(preflight.AgentHomeDir) == "" {
-		return fmt.Errorf("%w: agent_home_dir is required", ErrInvalidInput)
-	}
-	if !preflight.ProviderHealthy {
-		return fmt.Errorf("%w: provider capability must be healthy", ErrProviderUnavailable)
-	}
-	return nil
 }
 
 func validateProjectTaskRunPreflight(preflight StartProjectTaskRunPreflight) error {

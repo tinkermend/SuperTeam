@@ -2115,18 +2115,6 @@ func (s *routeEmployeeRunService) StopRun(ctx context.Context, req employee.Stop
 	return run, nil
 }
 
-func (s *routeEmployeeRunService) AcknowledgeFailedRun(_ context.Context, tenantID, employeeID, runID, _ uuid.UUID) (*employee.DigitalEmployeeRun, error) {
-	run := routeEmployeeRun(tenantID, employeeID, employee.DigitalEmployeeRunStatusFailed)
-	run.ID = runID
-	now := time.Now().UTC()
-	run.FailureAcknowledgedAt = &now
-	return run, nil
-}
-
-func (s *routeEmployeeRunService) RetryFailedRun(_ context.Context, tenantID, employeeID, _, _ uuid.UUID) (*employee.DigitalEmployeeRun, error) {
-	return routeEmployeeRun(tenantID, employeeID, employee.DigitalEmployeeRunStatusQueued), nil
-}
-
 func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *employee.DigitalEmployeeOverview {
 	employeeID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
 	teamID := uuid.MustParse("22222222-2222-4222-8222-222222222222")

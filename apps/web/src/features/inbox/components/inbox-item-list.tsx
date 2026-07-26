@@ -37,6 +37,7 @@ const itemTypeLabel: Record<string, string> = {
   approval: "审批",
   project_decision: "项目决策",
   team_pending_delete: "团队待删",
+  // 运行恢复链已随「运行必须归属项目」spec 退役；键保留给历史 resolved 事项渲染。
   digital_employee_run_recovery: "运行恢复"
 };
 

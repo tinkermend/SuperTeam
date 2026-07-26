@@ -21,8 +21,6 @@ type RunHandlerService interface {
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
 	StopRun(ctx context.Context, req StopDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
-	AcknowledgeFailedRun(ctx context.Context, tenantID, employeeID, runID, actorUserID uuid.UUID) (*DigitalEmployeeRun, error)
-	RetryFailedRun(ctx context.Context, tenantID, employeeID, runID, actorUserID uuid.UUID) (*DigitalEmployeeRun, error)
 	GetRunStats(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeRunStats, error)
 }
 
@@ -390,48 +388,6 @@ func (h *HTTPHandler) StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, runResponseFromDomain(run))
-}
-
-func (h *HTTPHandler) AcknowledgeDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request) {
-	employeeID, runID, ok := employeeAndRunIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRunStop, &employeeID, "digital employee run acknowledge failure")
-	if !ok {
-		return
-	}
-	service, ok := h.runServiceFromRequest(w)
-	if !ok {
-		return
-	}
-	run, err := service.AcknowledgeFailedRun(r.Context(), tenantID, employeeID, runID, middleware.GetUserID(r.Context()))
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, runResponseFromDomain(run))
-}
-
-func (h *HTTPHandler) RetryDigitalEmployeeRunFailure(w http.ResponseWriter, r *http.Request) {
-	employeeID, runID, ok := employeeAndRunIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRunCreate, &employeeID, "digital employee run retry failure")
-	if !ok {
-		return
-	}
-	service, ok := h.runServiceFromRequest(w)
-	if !ok {
-		return
-	}
-	run, err := service.RetryFailedRun(r.Context(), tenantID, employeeID, runID, middleware.GetUserID(r.Context()))
-	if err != nil {
-		writeHandlerError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, runResponseFromDomain(run))
 }
 
 func (h *HTTPHandler) runServiceFromRequest(w http.ResponseWriter) (RunHandlerService, bool) {

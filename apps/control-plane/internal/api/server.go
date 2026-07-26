@@ -366,8 +366,6 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/runs/{runId}", s.employeeHandler.GetDigitalEmployeeRun)
 				r.Get("/digital-employees/{employeeId}/runs/{runId}/events", s.employeeHandler.ListDigitalEmployeeRunEvents)
 				r.Post("/digital-employees/{employeeId}/runs/{runId}/stop", s.employeeHandler.StopDigitalEmployeeRun)
-				r.Post("/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure", s.employeeHandler.AcknowledgeDigitalEmployeeRunFailure)
-				r.Post("/digital-employees/{employeeId}/runs/{runId}/retry", s.employeeHandler.RetryDigitalEmployeeRunFailure)
 				r.Get("/digital-employee-templates", s.employeeHandler.ListEmployeeTemplates)
 				r.Post("/digital-employee-templates", s.employeeHandler.CreateEmployeeTemplate)
 				r.Get("/digital-employee-templates/{templateId}", s.employeeHandler.GetEmployeeTemplate)

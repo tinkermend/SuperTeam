@@ -22,8 +22,6 @@ type DigitalEmployeeRunWritebackService struct {
 	audit                 AuditLogger
 	runtimeEventRecorders []RuntimeEventRecorder
 	executionLedger       ExecutionLedgerRecorder
-	failureInbox          RunFailureInboxProjector
-	employeeOwnerLookup   func(ctx context.Context, tenantID, employeeID uuid.UUID) (ownerUserID uuid.UUID, name string, err error)
 	projectWorkspaceHook  ProjectWorkspaceCommandHook
 }
 
@@ -61,11 +59,6 @@ func NewDigitalEmployeeRunWritebackService(repository DigitalEmployeeRunReposito
 
 func (s *DigitalEmployeeRunWritebackService) WithExecutionLedgerRecorder(recorder ExecutionLedgerRecorder) *DigitalEmployeeRunWritebackService {
 	s.executionLedger = recorder
-	return s
-}
-
-func (s *DigitalEmployeeRunWritebackService) WithEmployeeOwnerLookup(lookup func(ctx context.Context, tenantID, employeeID uuid.UUID) (uuid.UUID, string, error)) *DigitalEmployeeRunWritebackService {
-	s.employeeOwnerLookup = lookup
 	return s
 }
 
@@ -243,9 +236,6 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 	}
 	if shouldRecordRuntimeEvent {
 		s.recordRuntimeTerminalEventBestEffort(ctx, identity, commandID, terminal.Status)
-		if spec.status == DigitalEmployeeRunStatusFailed || spec.status == DigitalEmployeeRunStatusTimedOut {
-			s.projectStandaloneFailureBestEffort(ctx, identity.TenantID, commandID)
-		}
 	}
 	return nil
 }
@@ -436,46 +426,6 @@ func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context,
 		return nil, nil, fmt.Errorf("%w: command receipt resource does not match run", ErrInvalidInput)
 	}
 	return receipt, run, nil
-}
-
-func (s *DigitalEmployeeRunWritebackService) projectStandaloneFailureBestEffort(ctx context.Context, tenantID uuid.UUID, commandID string) {
-	if s.failureInbox == nil || s.employeeOwnerLookup == nil {
-		return
-	}
-	run, err := s.repository.GetRunByCommandID(ctx, tenantID, commandID)
-	if err != nil || run == nil {
-		return
-	}
-	meta, err := s.repository.GetRunTaskMetadata(ctx, run.TenantID, run.TaskID)
-	if err != nil {
-		return
-	}
-	if projectTaskID, _ := meta["project_task_id"].(string); strings.TrimSpace(projectTaskID) != "" {
-		return
-	}
-	ownerID, employeeName, err := s.employeeOwnerLookup(ctx, run.TenantID, run.DigitalEmployeeID)
-	if err != nil || ownerID == uuid.Nil {
-		return
-	}
-	title := objectiveFromRunMetadata(meta)
-	if title == "" {
-		title = "数字员工运行失败"
-	}
-	summary := "运行已失败，请选择重试或确认关闭。"
-	if run.ErrorMessage != nil && strings.TrimSpace(*run.ErrorMessage) != "" {
-		summary = strings.TrimSpace(*run.ErrorMessage)
-	}
-	_ = s.failureInbox.UpsertStandaloneRunFailure(ctx, StandaloneRunFailureInboxInput{
-		TenantID:          run.TenantID,
-		TargetUserID:      ownerID,
-		RunID:             run.ID,
-		DigitalEmployeeID: run.DigitalEmployeeID,
-		EmployeeName:      employeeName,
-		Title:             fmt.Sprintf("处理「%s」的运行失败", employeeName),
-		Summary:           summary,
-		RunKind:           run.RunKind,
-		ProjectID:         projectIDFromRunMetadata(meta),
-	})
 }
 
 func (s *DigitalEmployeeRunWritebackService) upsertProviderSession(ctx context.Context, run *DigitalEmployeeRun, providerSessionExternalID, status string, recoverable bool, sequenceNumber int32, commandID *string, errorFamily *string, sessionState map[string]any, metadata map[string]any) (uuid.UUID, error) {

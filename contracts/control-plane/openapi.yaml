@@ -2140,7 +2140,6 @@ paths:
               - approval
               - project_decision
               - team_pending_delete
-              - digital_employee_run_recovery
         - name: risk_level
           in: query
           required: false
@@ -4433,7 +4432,7 @@ paths:
                 $ref: "#/components/schemas/DigitalEmployeeRunList"
     post:
       operationId: createDigitalEmployeeRun
-      summary: Start a digital employee run
+      summary: Start a digital employee chat run (project-anchored)
       parameters:
         - $ref: "#/components/parameters/EmployeeId"
       requestBody:
@@ -4499,34 +4498,6 @@ paths:
       responses:
         "200":
           description: Digital employee run is cancelling
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DigitalEmployeeRun"
-  /api/v1/digital-employees/{employeeId}/runs/{runId}/acknowledge-failure:
-    post:
-      operationId: acknowledgeDigitalEmployeeRunFailure
-      summary: Acknowledge a failed standalone digital employee run
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-        - $ref: "#/components/parameters/RunId"
-      responses:
-        "200":
-          description: Failure acknowledged; operational stain cleared for this run
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DigitalEmployeeRun"
-  /api/v1/digital-employees/{employeeId}/runs/{runId}/retry:
-    post:
-      operationId: retryDigitalEmployeeRunFailure
-      summary: Retry a failed standalone digital employee run
-      parameters:
-        - $ref: "#/components/parameters/EmployeeId"
-        - $ref: "#/components/parameters/RunId"
-      responses:
-        "201":
-          description: Replacement run created
           content:
             application/json:
               schema:
@@ -5738,14 +5709,12 @@ components:
                 - approval
                 - project_decision
                 - team_pending_delete
-                - digital_employee_run_recovery
             source_type:
               type: string
               enum:
                 - approval_request
                 - project_decision_request
                 - team_pending_delete
-                - digital_employee_run
             source_id:
               type: string
               format: uuid
@@ -13241,6 +13210,7 @@ components:
       type: object
       required:
         - objective
+        - project_id
       properties:
         objective:
           type: string
@@ -13286,9 +13256,12 @@ components:
         run_kind:
           type: string
           enum:
-            - task
             - chat
-          default: task
+          default: chat
+          description: >-
+            Chat is the only creatable kind. Task-kind runs are produced
+            exclusively by project task dispatch (run-project affiliation
+            spec, 2026-07-26 A3); requesting run_kind=task returns 400.
         resume_of_run_id:
           type: string
           format: uuid
@@ -13296,10 +13269,9 @@ components:
           type: string
           format: uuid
           description: >-
-            Runtime anchor for a chat run (run_kind=chat): resolves the
-            dispatch node, budget, and policy boundary the way project task
-            dispatch does. Required when run_kind is chat; ignored when
-            run_kind is task. The anchor project receives no business effect
+            Runtime anchor for the chat run: resolves the dispatch node,
+            budget, and policy boundary the way project task dispatch does.
+            Always required. The anchor project receives no business effect
             from the chat run — no signal, ProjectTask, or RouteDecision.
     DigitalEmployeeRunEvent:
       type: object

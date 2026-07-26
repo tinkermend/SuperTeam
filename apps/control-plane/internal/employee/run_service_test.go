@@ -28,7 +28,7 @@ func TestRunServiceCreateRunRejectsActiveRun(t *testing.T) {
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected ErrConflict, got %v", err)
@@ -54,7 +54,7 @@ func TestRunServiceCreateRunReapsStaleDispatchingRun(t *testing.T) {
 	audit := &fakeRunServiceAuditLogger{}
 	service := mustNewRunService(t, repo, dispatcher, audit)
 
-	run, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	run, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err != nil {
 		t.Fatalf("expected stale run reaped and new run created, got error: %v", err)
@@ -92,7 +92,7 @@ func TestRunServiceCreateRunDoesNotReapRecentDispatchingRun(t *testing.T) {
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected ErrConflict for a recent dispatching run, got %v", err)
@@ -119,7 +119,7 @@ func TestRunServiceCreateRunDoesNotReapStaleRunningRun(t *testing.T) {
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected ErrConflict for a stale running run, got %v", err)
@@ -140,7 +140,7 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	service := mustNewRunService(t, repo, dispatcher, audit)
 	req := validCreateRunServiceRequest()
 
-	run, err := service.CreateRun(context.Background(), req)
+	run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 	if err != nil {
 		t.Fatalf("create run: %v", err)
@@ -629,7 +629,7 @@ func TestRunServiceCreateRunRejectsSkillWithMissingToolDependency(t *testing.T) 
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := newRunServiceWithListers(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err == nil || !strings.Contains(err.Error(), "gh") {
 		t.Fatalf("expected missing gh dependency, got %v", err)
@@ -661,7 +661,7 @@ func TestRunServiceStartSessionPayloadIncludesLoadableSkillsAndEnvironment(t *te
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := newRunServiceWithListers(t, repo, dispatcher)
 
-	run, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	run, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 	if err != nil {
 		t.Fatalf("create run: %v", err)
 	}
@@ -697,7 +697,7 @@ func TestRunServiceCreateRunReportsPendingRuntimeWhenNodeHasNotReported(t *testi
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := newRunServiceWithListers(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err == nil || !strings.Contains(err.Error(), "pending_runtime") {
 		t.Fatalf("expected pending_runtime failure, got %v", err)
@@ -764,7 +764,7 @@ func TestRunServiceCreateRunEnrichesProjectTaskAttemptMetadata(t *testing.T) {
 		"handoff_contract":         map[string]any{"completion_path": "project_task_attempt_writeback"},
 	}
 
-	_, err := service.CreateRun(context.Background(), req)
+	_, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 	if err != nil {
 		t.Fatalf("create run: %v", err)
@@ -807,7 +807,7 @@ func TestRunServiceStartSessionPayloadAndIdempotencyFingerprintIncludeWorkspaceM
 		},
 	}
 
-	_, err := service.CreateRun(context.Background(), req)
+	_, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 	if err != nil {
 		t.Fatalf("create run: %v", err)
@@ -863,7 +863,7 @@ func TestRunServiceCreateRunDispatchesStartSessionWithoutEmployeeWorkspaceFiles(
 		"project_task_id": "44444444-4444-4444-8444-444444444444",
 	}
 
-	run, err := service.CreateRun(context.Background(), req)
+	run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 	if err != nil {
 		t.Fatalf("create run: %v", err)
 	}
@@ -896,7 +896,7 @@ func TestCreateRunRejectsWhenDailyTokenBudgetExceeded(t *testing.T) {
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "employee daily token budget exceeded") {
 		t.Fatalf("expected budget exceeded error, got %v", err)
@@ -918,7 +918,7 @@ func TestCreateRunAllowsWhenDailyTokenBudgetUnset(t *testing.T) {
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err != nil {
 		t.Fatalf("expected run allowed without budget limit, got %v", err)
@@ -937,9 +937,11 @@ func TestCreateRunChatResumeValidation(t *testing.T) {
 		{"run_kind 非法", func(req *CreateDigitalEmployeeRunRequest, _ *DigitalEmployeeRun) {
 			req.RunKind = "banana"
 		}, ErrInvalidRunKind},
+		// A3（运行必须归属项目 spec）后 task kind 在 resume 校验之前就被
+		// ErrInvalidRunKind 拒绝——CreateRun 已收敛为 chat 专用。
 		{"resume 但 run_kind 是 task", func(req *CreateDigitalEmployeeRunRequest, _ *DigitalEmployeeRun) {
 			req.RunKind = RunKindTask
-		}, ErrInvalidResumeRun},
+		}, ErrInvalidRunKind},
 		{"上个 run 属于别的员工", func(_ *CreateDigitalEmployeeRunRequest, prior *DigitalEmployeeRun) {
 			prior.DigitalEmployeeID = uuid.New()
 		}, ErrInvalidResumeRun},
@@ -1384,38 +1386,33 @@ func TestCreateRunChatResumeRejectsMismatchedAnchorProject(t *testing.T) {
 // not touch project-anchor dispatch at all — no node resolver call, no chat
 // anchor validation, and it still dispatches through the legacy standalone
 // GetRunPreflight path task runs have always used.
-func TestCreateRunTaskKindIgnoresProjectIDAndUsesLegacyPreflight(t *testing.T) {
+// A3（运行必须归属项目 spec，2026-07-26）：run_kind=task 的裸创建是唯一能绕过
+// 任务中枢造出无项目运行的后门，CreateRun 已收敛为 chat 专用，task 一律拒绝。
+func TestCreateRunRejectsTaskKind(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
 	dispatcher := newFakeRunServiceDispatcher()
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
-	resolver := &fakeProjectTaskNodeResolver{nodeID: uuid.New()}
-	service.SetProjectTaskNodeResolver(resolver)
-	validator := &fakeChatAnchorProjectValidator{}
-	service.SetChatAnchorProjectValidator(validator)
 
 	req := validCreateRunServiceRequest()
 	req.RunKind = RunKindTask
 	projectID := uuid.New()
 	req.ProjectID = &projectID
 
-	run, err := service.CreateRun(context.Background(), req)
-	if err != nil {
-		t.Fatalf("create task run: %v", err)
+	_, err := service.CreateRun(context.Background(), req)
+	if !errors.Is(err, ErrInvalidRunKind) {
+		t.Fatalf("expected ErrInvalidRunKind for task-kind run, got %v", err)
 	}
-	if run.NodeID != repo.preflight.NodeID || run.ExecutionInstanceID != repo.preflight.ExecutionInstanceID {
-		t.Fatalf("expected legacy standalone preflight used, got %#v", run)
-	}
-	if resolver.calls != 0 {
-		t.Fatalf("expected node resolver not called for task-kind run, got %d calls", resolver.calls)
-	}
-	if validator.calls != 0 {
-		t.Fatalf("expected chat anchor validator not called for task-kind run, got %d calls", validator.calls)
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected no run created for rejected task kind, got %d", repo.createdRunCount)
 	}
 }
 
-func TestCreateRunDefaultsRunKindTask(t *testing.T) {
+// A3 后缺省 run_kind 默认 chat：不带 kind 的请求进 chat 分支（此处以缺
+// project_id 被 ErrInvalidInput 拒绝为证——task 分支已不存在，若默认仍是
+// task 会落到 ErrInvalidRunKind）。
+func TestCreateRunDefaultsRunKindChat(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
 	dispatcher := newFakeRunServiceDispatcher()
@@ -1423,21 +1420,17 @@ func TestCreateRunDefaultsRunKindTask(t *testing.T) {
 	service := mustNewRunService(t, repo, dispatcher)
 
 	req := validCreateRunServiceRequest()
+	req.ProjectID = nil
 
 	_, err := service.CreateRun(context.Background(), req)
-	if err != nil {
-		t.Fatalf("expected default task run kind to succeed, got %v", err)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput (missing project_id on defaulted chat kind), got %v", err)
 	}
-	if len(repo.createRunRequests) != 1 {
-		t.Fatalf("expected one create run request, got %d", len(repo.createRunRequests))
+	if errors.Is(err, ErrInvalidRunKind) {
+		t.Fatalf("expected defaulted kind to be accepted as chat, got run-kind rejection: %v", err)
 	}
-	created := repo.createRunRequests[0]
-	if created.RunKind != RunKindTask {
-		t.Fatalf("expected default RunKind task, got %q", created.RunKind)
-	}
-	metadata, _ := created.Params["metadata"].(map[string]any)
-	if _, exists := metadata["provider_session_id"]; exists {
-		t.Fatalf("expected no injected provider_session_id, got %#v", metadata)
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected no run created without project_id, got %d", repo.createdRunCount)
 	}
 }
 
@@ -1451,7 +1444,7 @@ func TestCreateRunTaskDefaultsPromptToObjective(t *testing.T) {
 	req := validCreateRunServiceRequest()
 	req.Prompt = "" // empty prompt
 
-	run, err := service.CreateRun(context.Background(), req)
+	run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 	if err != nil {
 		t.Fatalf("create task run with empty prompt: %v", err)
 	}
@@ -1517,7 +1510,7 @@ func TestCreateRunPreservesExplicitPrompt(t *testing.T) {
 	explicitPrompt := "explicit prompt"
 	req.Prompt = explicitPrompt
 
-	_, err := service.CreateRun(context.Background(), req)
+	_, err := createLegacyStandaloneRun(service, repo.preflight, req)
 	if err != nil {
 		t.Fatalf("create run with explicit prompt: %v", err)
 	}
@@ -1650,26 +1643,6 @@ func TestCreateRunChatThreadIDResolution(t *testing.T) {
 		}
 	})
 
-	t.Run("task run never carries a thread id", func(t *testing.T) {
-		repo := newFakeRunServiceRepository()
-		repo.preflight = validRunServicePreflight()
-		dispatcher := newFakeRunServiceDispatcher()
-		dispatcher.connected[repo.preflight.NodeID] = true
-		service := mustNewRunService(t, repo, dispatcher)
-
-		req := validCreateRunServiceRequest()
-		stray := uuid.New()
-		req.chatThreadID = &stray
-
-		_, err := service.CreateRun(context.Background(), req)
-
-		if err != nil {
-			t.Fatalf("task run: %v", err)
-		}
-		if created := repo.createRunRequests[0]; created.ChatThreadID != nil {
-			t.Fatalf("expected nil thread id on a task run, got %#v", created.ChatThreadID)
-		}
-	})
 }
 
 func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
@@ -1745,7 +1718,7 @@ func TestRunServiceCreateRunReconcilesIdempotentQueuedRunWithoutReceipt(t *testi
 	repo.activeRun.IdempotencyKey = &idempotencyKey
 	repo.activeRun.IdempotencyFingerprint = &fingerprint
 
-	run, err := service.CreateRun(context.Background(), req)
+	run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 	if err != nil {
 		t.Fatalf("create run retry: %v", err)
@@ -1793,7 +1766,7 @@ func TestRunServiceCreateRunReconcilesDispatchedReceiptForQueuedRun(t *testing.T
 		Status:    "dispatched",
 	}
 
-	run, err := service.CreateRun(context.Background(), req)
+	run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 	if err != nil {
 		t.Fatalf("create run retry: %v", err)
@@ -1836,7 +1809,7 @@ func TestRunServiceCreateRunMarksFailedWhenReceiptFailed(t *testing.T) {
 		ErrorMessage: &errorMessage,
 	}
 
-	run, err := service.CreateRun(context.Background(), req)
+	run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 	if err != nil {
 		t.Fatalf("create run retry: %v", err)
@@ -1883,7 +1856,7 @@ func TestRunServiceCreateRunDoesNotRestartTerminalReceipt(t *testing.T) {
 				Status:    tc.receiptStatus,
 			}
 
-			run, err := service.CreateRun(context.Background(), req)
+			run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 			if err != nil {
 				t.Fatalf("create run retry: %v", err)
@@ -1922,7 +1895,7 @@ func TestRunServiceCreateRunReconcilesTerminalReceiptBeforeActiveConflict(t *tes
 				Status:    tc.receiptStatus,
 			}
 
-			run, err := service.CreateRun(context.Background(), req)
+			run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 			if err != nil {
 				t.Fatalf("create run after stale active reconciliation: %v", err)
@@ -1962,7 +1935,7 @@ func TestRunServiceCreateRunDoesNotRestartRunningOrTerminalIdempotentRun(t *test
 			repo.activeRun.IdempotencyKey = &idempotencyKey
 			repo.activeRun.IdempotencyFingerprint = &fingerprint
 
-			run, err := service.CreateRun(context.Background(), req)
+			run, err := createLegacyStandaloneRun(service, repo.preflight, req)
 
 			if err != nil {
 				t.Fatalf("create run retry: %v", err)
@@ -2119,7 +2092,7 @@ func TestRunServiceCreateRunAllowsPreflightWithoutApprovedEffectiveConfig(t *tes
 	dispatcher.connected[repo.preflight.NodeID] = true
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err != nil {
 		t.Fatalf("expected run creation to allow missing approved effective config, got %v", err)
@@ -2135,7 +2108,7 @@ func TestRunServiceCreateRunRejectsDisconnectedRuntime(t *testing.T) {
 	dispatcher := newFakeRunServiceDispatcher()
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if !errors.Is(err, ErrRuntimeUnavailable) {
 		t.Fatalf("expected ErrRuntimeUnavailable, got %v", err)
@@ -2154,7 +2127,7 @@ func TestRunServiceCreateRunDispatchFailureMarksRunFailed(t *testing.T) {
 	audit := &fakeRunServiceAuditLogger{}
 	service := mustNewRunService(t, repo, dispatcher, audit)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err == nil {
 		t.Fatalf("expected dispatch error")
@@ -2187,7 +2160,7 @@ func TestRunServiceCreateRunDispatchRuntimeNotConnectedMapsRuntimeUnavailable(t 
 	dispatcher.dispatchErr = cpruntime.ErrRuntimeNotConnected
 	service := mustNewRunService(t, repo, dispatcher)
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if !errors.Is(err, ErrRuntimeUnavailable) {
 		t.Fatalf("expected ErrRuntimeUnavailable, got %v", err)
@@ -2208,6 +2181,31 @@ func mustNewRunService(t *testing.T, repo DigitalEmployeeRunRepository, dispatch
 		t.Fatalf("new run service: %v", err)
 	}
 	return service
+}
+
+// createLegacyStandaloneRun replays the retired standalone-task CreateRun
+// entry's skeleton (default task kind, daily budget gate, connectivity gate)
+// and drives the shared dispatch pipeline directly. The entry itself was
+// removed by the run-project affiliation spec (2026-07-26, A3) — CreateRun is
+// chat-only now — but the pipeline under test (idempotency, reap, receipts,
+// payload build, skill gates) is still live, shared by chat dispatch and
+// StartProjectTaskRun, so its behavioral tests survive through this shim.
+func createLegacyStandaloneRun(service *DigitalEmployeeRunService, preflight RunPreflight, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error) {
+	objective := strings.TrimSpace(req.Objective)
+	prompt := strings.TrimSpace(req.Prompt)
+	if prompt == "" {
+		prompt = objective
+	}
+	if req.RunKind == "" {
+		req.RunKind = RunKindTask
+	}
+	if err := validateDailyTokenBudget(preflight); err != nil {
+		return nil, err
+	}
+	if !service.dispatcher.IsConnected(preflight.NodeID) {
+		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
+	}
+	return service.createAndDispatchRun(context.Background(), req, objective, prompt, preflight)
 }
 
 func newRunServiceWithListers(t *testing.T, repo *fakeRunServiceRepository, dispatcher RuntimeCommandDispatcher) *DigitalEmployeeRunService {
@@ -2868,7 +2866,7 @@ func TestRunServiceBlocksDispatchWhenSkillMCPDependencyMissing(t *testing.T) {
 		{SkillID: skillID, MCPServerID: "srv-1", ServerKey: "github-mcp"},
 	}})
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err == nil {
 		t.Fatalf("expected error for missing skill mcp dependency, got nil")
@@ -2904,7 +2902,7 @@ func TestRunServiceDispatchesWhenSkillMCPDependencySatisfied(t *testing.T) {
 		{SkillID: skillID, MCPServerID: "srv-1", ServerKey: "github-mcp"},
 	}})
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err != nil {
 		t.Fatalf("expected dispatch to succeed when skill mcp dependency satisfied, got error: %v", err)
@@ -2941,7 +2939,7 @@ func TestRunServiceBlocksDispatchForFanOutWhenOnlyOneOfTwoSkillsSatisfied(t *tes
 		{SkillID: missingSkillID, MCPServerID: "srv-missing", ServerKey: "server-b-missing"},
 	}})
 
-	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	_, err := createLegacyStandaloneRun(service, repo.preflight, validCreateRunServiceRequest())
 
 	if err == nil {
 		t.Fatalf("expected error when one of two skills has an unsatisfied mcp dependency, got nil")
@@ -3018,31 +3016,9 @@ func TestRunServiceMCPListerReceivesProjectDimensionPerDispatchPath(t *testing.T
 		}
 	})
 
-	t.Run("legacy standalone task dispatch passes nil", func(t *testing.T) {
-		repo := newFakeRunServiceRepository()
-		repo.preflight = validRunServicePreflight()
-		dispatcher := newFakeRunServiceDispatcher()
-		dispatcher.connected[repo.preflight.NodeID] = true
-		service := mustNewRunService(t, repo, dispatcher)
-		lister := &fakeRuntimeMCPLister{}
-		service.SetMCPLister(lister)
-
-		req := validCreateRunServiceRequest()
-		// task-kind 请求即使误带 ProjectID 也不得进入 MCP 投影维度：chat 锚点
-		// 语义之外，CreateRun 对 RunKindTask 一律清空该字段。
-		strayProjectID := uuid.New()
-		req.ProjectID = &strayProjectID
-
-		if _, err := service.CreateRun(context.Background(), req); err != nil {
-			t.Fatalf("create standalone task run: %v", err)
-		}
-		if !lister.called {
-			t.Fatalf("expected mcp lister to be called for standalone dispatch")
-		}
-		if lister.lastProjectID != nil {
-			t.Fatalf("expected standalone dispatch to pass nil project id, got %s", lister.lastProjectID)
-		}
-	})
+	// A3（运行必须归属项目 spec）删除了 standalone task 派发入口；MCP 投影的
+	// 项目维度如今在所有活入口（chat / 项目任务派发）都必然携带 project id，
+	// 原「legacy standalone task dispatch passes nil」子用例随入口一并退役。
 }
 
 // watchdogRepository 组合既有 fake 并实现 StalePreConfirmationRunLister,

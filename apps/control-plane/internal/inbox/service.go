@@ -22,10 +22,6 @@ type ProjectDecisionActionResolver interface {
 	ResolveProjectDecisionAction(ctx context.Context, req SourceActionRequest) (SourceActionResult, error)
 }
 
-type RunRecoveryActionResolver interface {
-	ResolveRunRecoveryAction(ctx context.Context, req SourceActionRequest) (SourceActionResult, error)
-}
-
 type SourceActionRequest struct {
 	TenantID        uuid.UUID
 	ActorUserID     uuid.UUID
@@ -40,7 +36,6 @@ type Service struct {
 	repository   Repository
 	approvals    ApprovalActionResolver
 	decisions    ProjectDecisionActionResolver
-	runRecovery  RunRecoveryActionResolver
 }
 
 func NewService(repository Repository) (*Service, error) {
@@ -56,10 +51,6 @@ func (s *Service) SetApprovalActionResolver(resolver ApprovalActionResolver) {
 
 func (s *Service) SetProjectDecisionActionResolver(resolver ProjectDecisionActionResolver) {
 	s.decisions = resolver
-}
-
-func (s *Service) SetRunRecoveryActionResolver(resolver RunRecoveryActionResolver) {
-	s.runRecovery = resolver
 }
 
 func (s *Service) UpsertItem(ctx context.Context, req UpsertItemRequest) (Item, error) {
@@ -307,11 +298,6 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 			return item, SourceActionResult{}, ErrSourceUnavailable
 		}
 		result, err = s.decisions.ResolveProjectDecisionAction(ctx, sourceReq)
-	case SourceTypeDigitalEmployeeRun:
-		if s.runRecovery == nil {
-			return item, SourceActionResult{}, ErrSourceUnavailable
-		}
-		result, err = s.runRecovery.ResolveRunRecoveryAction(ctx, sourceReq)
 	default:
 		return item, SourceActionResult{}, ErrSourceUnavailable
 	}
@@ -375,10 +361,6 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 		}
 	case ItemTypeTeamPendingDelete:
 		if req.SourceType != SourceTypeTeamPendingDelete {
-			return UpsertItemRequest{}, ErrInvalidItem
-		}
-	case ItemTypeDigitalEmployeeRunRecovery:
-		if req.SourceType != SourceTypeDigitalEmployeeRun {
 			return UpsertItemRequest{}, ErrInvalidItem
 		}
 	}
@@ -454,12 +436,6 @@ func normalizeActions(actions []Action) ([]Action, error) {
 }
 
 func DefaultActions(itemType ItemType) []Action {
-	if itemType == ItemTypeDigitalEmployeeRunRecovery {
-		return []Action{
-			{Key: "retry", Label: "重试", Tone: "positive"},
-			{Key: "acknowledge", Label: "确认关闭", Tone: "warning"},
-		}
-	}
 	actions := []Action{
 		{Key: "approved", Label: "同意", Tone: "positive"},
 		{Key: "rejected", Label: "驳回", Tone: "destructive", RequiresComment: true},
@@ -521,7 +497,7 @@ func validScope(scope string) bool {
 
 func validItemType(itemType ItemType) bool {
 	switch itemType {
-	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete, ItemTypeDigitalEmployeeRunRecovery:
+	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete:
 		return true
 	default:
 		return false
@@ -530,7 +506,7 @@ func validItemType(itemType ItemType) bool {
 
 func validSourceType(sourceType SourceType) bool {
 	switch sourceType {
-	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete, SourceTypeDigitalEmployeeRun:
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete:
 		return true
 	default:
 		return false

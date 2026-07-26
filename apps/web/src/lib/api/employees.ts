@@ -221,8 +221,10 @@ export type DigitalEmployeeRunInput = {
   metadata?: Record<string, unknown>;
   run_kind?: DigitalEmployeeRunKind;
   resume_of_run_id?: string;
-  /** Required when run_kind is "chat": anchors the chat run to a project for
-   * node resolution, budget and policy boundaries. Ignored for task runs. */
+  /** Project anchor for the chat run: resolves dispatch node, budget and policy
+   * boundary. Always required (run-project affiliation spec, 2026-07-26 A3).
+   * run_kind=task is rejected — task runs are produced only by project task
+   * dispatch, not by this endpoint. */
   project_id?: string;
 };
 
@@ -1048,37 +1050,5 @@ export function stopDigitalEmployeeRun(
     `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/stop`,
     input,
     "stop digital employee run",
-  );
-}
-
-export function acknowledgeDigitalEmployeeRunFailure(
-  options: ApiClientOptions,
-  employeeId: string,
-  runId: string,
-): Promise<DigitalEmployeeRun> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-  const encodedRunId = encodePathSegment(runId);
-
-  return postJson<DigitalEmployeeRun>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/acknowledge-failure`,
-    {},
-    "acknowledge digital employee run failure",
-  );
-}
-
-export function retryDigitalEmployeeRunFailure(
-  options: ApiClientOptions,
-  employeeId: string,
-  runId: string,
-): Promise<DigitalEmployeeRun> {
-  const encodedEmployeeId = encodePathSegment(employeeId);
-  const encodedRunId = encodePathSegment(runId);
-
-  return postJson<DigitalEmployeeRun>(
-    options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/retry`,
-    {},
-    "retry digital employee run failure",
   );
 }

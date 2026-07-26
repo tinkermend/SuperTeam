@@ -1,14 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { RotateCcw, Square } from "lucide-react";
+import { Square } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { MarkdownProse, StatusPill, Button, type Tone } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
-  acknowledgeDigitalEmployeeRunFailure,
   listDigitalEmployeeRunEvents,
-  retryDigitalEmployeeRunFailure,
   stopDigitalEmployeeRun,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunListItem,
@@ -67,7 +65,6 @@ type RunDetailDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onStopped: (run: DigitalEmployeeRun) => void;
-  onRecovered?: (run: DigitalEmployeeRun) => void;
 };
 
 const EVENT_DISPLAY_LIMIT = 50;
@@ -78,8 +75,7 @@ export function RunDetailDrawer({
   run,
   open,
   onOpenChange,
-  onStopped,
-  onRecovered
+  onStopped
 }: RunDetailDrawerProps) {
   const queryClient = useQueryClient();
   // 多取一条(51)只用于判断是否真的被截断:恰好 50 条时不该显示「仅显示前 50 条」提示。
@@ -98,29 +94,6 @@ export function RunDetailDrawer({
       await queryClient.invalidateQueries({ queryKey: ["digital-employee-run-events", employeeId, updatedRun.id] });
     }
 });
-  const acknowledgeFailure = useMutation({
-    mutationFn: (target: DigitalEmployeeRunListItem) =>
-      acknowledgeDigitalEmployeeRunFailure(apiOptions, employeeId, target.id),
-    onSuccess: async (updatedRun) => {
-      onRecovered?.(updatedRun);
-      onStopped(updatedRun);
-      await queryClient.invalidateQueries({ queryKey: ["digital-employee-runs", employeeId] });
-      await queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
-      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
-    }
-});
-  const retryFailure = useMutation({
-    mutationFn: (target: DigitalEmployeeRunListItem) =>
-      retryDigitalEmployeeRunFailure(apiOptions, employeeId, target.id),
-    onSuccess: async (createdRun) => {
-      onRecovered?.(createdRun);
-      await queryClient.invalidateQueries({ queryKey: ["digital-employee-runs", employeeId] });
-      await queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
-      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
-      onOpenChange(false);
-    }
-});
-
   // After a successful stop, prefer the mutation result so the pill and Stop button reflect the
   // new status immediately — BUT only while the `run` prop hasn't caught up. Once the parent's
   // list refetch returns and passes a terminal-status prop (e.g. "cancelled"), trust the prop
@@ -133,21 +106,11 @@ export function RunDetailDrawer({
   }
 
   const displayedRun: DigitalEmployeeRunListItem =
-    acknowledgeFailure.data && acknowledgeFailure.data.id === run.id
-      ? { ...run, ...acknowledgeFailure.data }
-      : stopRun.data && isActiveRun(run.status) && stopRun.data.id === run.id
-        ? { ...run, ...stopRun.data }
-        : run;
+    stopRun.data && isActiveRun(run.status) && stopRun.data.id === run.id
+      ? { ...run, ...stopRun.data }
+      : run;
   const displayedEvents = events.data?.slice(0, EVENT_DISPLAY_LIMIT);
   const eventsTruncated = (events.data?.length ?? 0) > EVENT_DISPLAY_LIMIT;
-  // 项目任务执行由协调线程的 failure recovery 处置;抽屉只处理 standalone run。
-  // list 的 project_id 来自 project_tasks.digital_employee_run_id 关联。
-  const isProjectLinkedRun = Boolean(displayedRun.project_id);
-  const canRecoverFailure =
-    isRecoverableRun(displayedRun.status) &&
-    !displayedRun.failure_acknowledged_at &&
-    !isProjectLinkedRun;
-  const recoveryPending = acknowledgeFailure.isPending || retryFailure.isPending;
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
@@ -193,28 +156,10 @@ export function RunDetailDrawer({
               停止
             </Button>
           ) : null}
-          {canRecoverFailure ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={recoveryPending}
-                onClick={() => retryFailure.mutate(displayedRun)}
-                type="button"
-                variant="primary"
-              >
-                <RotateCcw className="size-4" />
-                重试
-              </Button>
-              <Button
-                disabled={recoveryPending}
-                onClick={() => acknowledgeFailure.mutate(displayedRun)}
-                type="button"
-                variant="outline"
-              >
-                确认关闭
-              </Button>
-            </div>
-          ) : null}
-          {isProjectLinkedRun && isRecoverableRun(displayedRun.status) ? (
+          {/* 运行必须归属项目 spec（2026-07-26 A4）：standalone「重试/确认关闭」
+              已随无项目运行一并退役；失败恢复统一走项目详情/收件箱的
+              task_failure_recovery 链。 */}
+          {isRecoverableRun(displayedRun.status) ? (
             <p className="text-sm text-ink-2">
               {displayedRun.project_deleted ? (
                 <>
@@ -248,12 +193,6 @@ export function RunDetailDrawer({
             <p className="text-sm text-ink-2">失败已确认关闭</p>
           ) : null}
           {stopRun.isError ? <p className="text-sm text-destructive">停止失败</p> : null}
-          {acknowledgeFailure.isError ? (
-            <p className="text-sm text-destructive">{formatRecoveryError(acknowledgeFailure.error, "确认关闭失败")}</p>
-          ) : null}
-          {retryFailure.isError ? (
-            <p className="text-sm text-destructive">{formatRecoveryError(retryFailure.error, "重试失败")}</p>
-          ) : null}
           <div>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold">事件流</p>
@@ -356,14 +295,6 @@ function isFailedRun(status: DigitalEmployeeRunStatus) {
 
 function isRecoverableRun(status: DigitalEmployeeRunStatus) {
   return recoverableRunStatuses.has(status);
-}
-
-function formatRecoveryError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : String(error ?? "");
-  if (message.includes("project-linked runs use project recovery decisions") || message.includes("项目任务失败请在项目详情")) {
-    return "此运行属于项目任务，请在项目详情或收件箱处理失败恢复";
-  }
-  return fallback;
 }
 
 function failureReason(run: DigitalEmployeeRunListItem) {

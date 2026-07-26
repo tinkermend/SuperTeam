@@ -123,12 +123,14 @@ INSERT INTO task_runs (
     tenant_id,
     task_id,
     node_id,
-    status
+    status,
+    project_id
 ) VALUES (
     COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
     sqlc.arg('task_id')::uuid,
     sqlc.arg('node_id')::varchar,
-    sqlc.arg('status')::varchar
+    sqlc.arg('status')::varchar,
+    sqlc.arg('project_id')::uuid
 ) RETURNING *;
 
 -- name: ListPendingTasks :many
@@ -332,7 +334,8 @@ created_run AS (
         idempotency_fingerprint,
         timeout_sec,
         grace_sec,
-        provider_type
+        provider_type,
+        project_id
     )
     SELECT
         created_task.tenant_id,
@@ -348,7 +351,8 @@ created_run AS (
         idempotency_input.idempotency_fingerprint,
         sqlc.narg('timeout_sec')::integer,
         sqlc.narg('grace_sec')::integer,
-        sqlc.arg('provider_type')::varchar
+        sqlc.arg('provider_type')::varchar,
+        sqlc.arg('project_id')::uuid
     FROM created_task
     CROSS JOIN idempotency_input
     WHERE NOT EXISTS (SELECT 1 FROM existing_run)
@@ -418,30 +422,16 @@ SELECT
     t.run_kind,
     t.resume_of_run_id,
     t.chat_thread_id,
-    p.id AS project_id,
     p.name AS project_name,
     (p.deleted_at IS NOT NULL)::boolean AS project_deleted
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
-LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
--- Prefer project_tasks; chat/task-hub runs fall back to metadata anchors.
+-- 运行必须归属项目 spec（2026-07-26）：归属读一等列 task_runs.project_id（NOT NULL），
+-- 不再经 project_tasks 指针 + metadata 锚点两级 join 兜底。
 -- Soft-deleted projects still resolve so run history keeps the name + deleted flag.
 LEFT JOIN projects p
   ON p.tenant_id = tr.tenant_id
- AND p.id = COALESCE(
-       pt.project_id,
-       CASE
-           WHEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-           THEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                )::uuid
-           ELSE NULL
-       END
-     )
+ AND p.id = tr.project_id
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND tr.id = sqlc.arg('run_id')::uuid
@@ -506,30 +496,16 @@ SELECT
     tr.id,
     tr.status,
     tr.created_at,
+    tr.project_id,
     t.title AS task_title,
     t.run_kind,
-    p.id AS project_id,
     p.name AS project_name,
     (p.deleted_at IS NOT NULL)::boolean AS project_deleted
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
-LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
 LEFT JOIN projects p
   ON p.tenant_id = tr.tenant_id
- AND p.id = COALESCE(
-       pt.project_id,
-       CASE
-           WHEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-           THEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                )::uuid
-           ELSE NULL
-       END
-     )
+ AND p.id = tr.project_id
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND t.deleted_at IS NULL
@@ -557,41 +533,25 @@ SELECT
     tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.idempotency_key,
     tr.timeout_sec, tr.grace_sec, tr.started_at, tr.completed_at, tr.finished_at,
     tr.created_at, tr.updated_at, tr.failure_acknowledged_at, tr.failure_acknowledged_by,
+    tr.project_id,
     t.title AS task_title,
     t.run_kind,
     t.resume_of_run_id,
     t.chat_thread_id,
-    p.id AS project_id,
     p.name AS project_name,
     (p.deleted_at IS NOT NULL)::boolean AS project_deleted,
     jsonb_array_length(tr.work_products) AS work_product_count
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
-LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
 LEFT JOIN projects p
   ON p.tenant_id = tr.tenant_id
- AND p.id = COALESCE(
-       pt.project_id,
-       CASE
-           WHEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-           THEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                )::uuid
-           ELSE NULL
-       END
-     )
+ AND p.id = tr.project_id
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND t.deleted_at IS NULL
   AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
-  -- chat run 无 project_tasks 关联,project 过滤对其按 §13 审计锚点 / metadata 匹配。
   AND (sqlc.narg('project_id')::uuid IS NULL
-       OR p.id = sqlc.narg('project_id')::uuid
-       OR (t.run_kind = 'chat' AND t.params -> 'metadata' ->> 'anchor_project_id' = sqlc.narg('project_id')::uuid::text))
+       OR tr.project_id = sqlc.narg('project_id')::uuid)
   AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
   AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
   AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar)
@@ -604,31 +564,16 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 SELECT COUNT(*)::bigint AS total_count
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
-LEFT JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
 LEFT JOIN projects p
   ON p.tenant_id = tr.tenant_id
- AND p.id = COALESCE(
-       pt.project_id,
-       CASE
-           WHEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-           THEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                )::uuid
-           ELSE NULL
-       END
-     )
+ AND p.id = tr.project_id
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND t.deleted_at IS NULL
   AND (cardinality(sqlc.arg('statuses')::text[]) = 0 OR tr.status = ANY(sqlc.arg('statuses')::text[]))
-  -- 与 ListDigitalEmployeeRunsDetailed 的过滤语义保持一致(chat 锚点 + thread)。
+  -- 与 ListDigitalEmployeeRunsDetailed 的过滤语义保持一致。
   AND (sqlc.narg('project_id')::uuid IS NULL
-       OR p.id = sqlc.narg('project_id')::uuid
-       OR (t.run_kind = 'chat' AND t.params -> 'metadata' ->> 'anchor_project_id' = sqlc.narg('project_id')::uuid::text))
+       OR tr.project_id = sqlc.narg('project_id')::uuid)
   AND (sqlc.narg('from_time')::timestamptz IS NULL OR tr.created_at >= sqlc.narg('from_time')::timestamptz)
   AND (sqlc.narg('to_time')::timestamptz IS NULL OR tr.created_at < sqlc.narg('to_time')::timestamptz)
   AND (sqlc.narg('run_kind')::varchar IS NULL OR t.run_kind = sqlc.narg('run_kind')::varchar)
@@ -636,41 +581,12 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
        OR (t.run_kind = 'chat' AND (t.chat_thread_id = sqlc.narg('chat_thread_id')::uuid OR tr.id = sqlc.narg('chat_thread_id')::uuid)));
 
 -- name: ListDigitalEmployeeRunProjectOptions :many
-SELECT DISTINCT project_id AS id, project_name AS name, project_deleted
-FROM (
-    SELECT
-        p.id AS project_id,
-        p.name AS project_name,
-        (p.deleted_at IS NOT NULL)::boolean AS project_deleted
-    FROM task_runs tr
-    JOIN project_tasks pt ON pt.digital_employee_run_id = tr.id AND pt.tenant_id = tr.tenant_id
-    JOIN projects p ON p.id = pt.project_id AND p.tenant_id = tr.tenant_id
-    WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
-      AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-    UNION
-    SELECT
-        meta_p.id AS project_id,
-        meta_p.name AS project_name,
-        (meta_p.deleted_at IS NOT NULL)::boolean AS project_deleted
-    FROM task_runs tr
-    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
-    JOIN projects meta_p
-      ON meta_p.tenant_id = tr.tenant_id
-     AND meta_p.id = CASE
-           WHEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                ) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-           THEN COALESCE(
-                  NULLIF(t.params #>> '{metadata,anchor_project_id}', ''),
-                  NULLIF(t.params #>> '{metadata,project_id}', '')
-                )::uuid
-           ELSE NULL
-         END
-    WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
-      AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-      AND t.deleted_at IS NULL
-) linked
+-- 运行必须归属项目 spec（2026-07-26）：归属读一等列，原「指针 UNION metadata 锚点」双路收敛。
+SELECT DISTINCT p.id, p.name, (p.deleted_at IS NOT NULL)::boolean AS project_deleted
+FROM task_runs tr
+JOIN projects p ON p.tenant_id = tr.tenant_id AND p.id = tr.project_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
 ORDER BY name;
 
 -- name: UpdateDigitalEmployeeRunStatus :one
@@ -733,14 +649,3 @@ WITH inserted AS (
     RETURNING *, (xmax = 0) AS inserted
 )
 SELECT * FROM inserted;
-
--- name: AcknowledgeDigitalEmployeeRunFailure :one
-UPDATE task_runs
-SET failure_acknowledged_at = NOW(),
-    failure_acknowledged_by = sqlc.arg('acknowledged_by')::uuid,
-    updated_at = NOW()
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND id = sqlc.arg('run_id')::uuid
-  AND status IN ('failed', 'timed_out')
-  AND failure_acknowledged_at IS NULL
-RETURNING *;

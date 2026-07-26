@@ -2425,6 +2425,8 @@ type TaskRun struct {
 	FailureAcknowledgedAt pgtype.Timestamptz `json:"failure_acknowledged_at"`
 	// 确认关闭该失败 run 的用户 ID
 	FailureAcknowledgedBy uuid.NullUUID `json:"failure_acknowledged_by"`
+	// 归属项目 ID（不变量：任何运行必须归属项目；项目任务派发取 project_tasks.project_id，chat 取锚点项目）
+	ProjectID uuid.UUID `json:"project_id"`
 }
 
 // 团队宪法版本历史；当前生效内容仍在 tenant_teams.constitution

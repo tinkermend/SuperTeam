@@ -389,7 +389,9 @@ describe("RunDetailDrawer", () => {
     await expect.element(screen.getByText("无关联项目")).toBeVisible();
   });
 
-  it("shows retry and acknowledge actions for a failed standalone run", async () => {
+  // 运行必须归属项目 spec（2026-07-26 A4）：standalone「重试/确认关闭」已退役，
+  // 失败恢复统一走项目详情/收件箱；抽屉对任何失败 run 只显示引导文案。
+  it("shows recovery guidance instead of retry/acknowledge for a failed run", async () => {
     const failedRun: DigitalEmployeeRunListItem = {
       ...runningRun,
       status: "failed",
@@ -400,12 +402,6 @@ describe("RunDetailDrawer", () => {
       const method = init?.method ?? "GET";
       if (url.pathname.endsWith("/events") && method === "GET") {
         return jsonResponse([]);
-      }
-      if (url.pathname.endsWith("/acknowledge-failure") && method === "POST") {
-        return jsonResponse({
-          ...failedRun,
-          failure_acknowledged_at: "2026-07-20T12:00:00Z"
-});
       }
       return jsonResponse({ error: "unhandled" }, 404);
     }) as unknown as typeof fetch;
@@ -423,9 +419,8 @@ describe("RunDetailDrawer", () => {
       </QueryClientProvider>,
     );
 
-    await expect.element(screen.getByRole("button", { name: "重试" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "确认关闭" })).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "确认关闭" }));
-    await expect.element(screen.getByText("失败已确认关闭")).toBeVisible();
+    expect(screen.getByRole("button", { name: "重试" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "确认关闭" }).query()).toBeNull();
+    await expect.element(screen.getByText(/此运行属于项目任务/)).toBeVisible();
   });
 });
