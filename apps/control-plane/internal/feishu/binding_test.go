@@ -15,9 +15,13 @@ type fakeAPIClient struct {
 	oauthOpenID     string
 	oauthUnionID    string
 	failCode        string
+	failToken       bool
 }
 
 func (f *fakeAPIClient) TenantAccessToken(_ context.Context, appID, appSecret string) (string, error) {
+	if f.failToken {
+		return "", errors.New("app secret invalid")
+	}
 	if appSecret == "" {
 		return "", errors.New("no secret")
 	}
@@ -38,6 +42,14 @@ func (f *fakeAPIClient) BatchGetOpenIDs(_ context.Context, tenantToken string, e
 		}
 	}
 	return emailOut, mobileOut, nil
+}
+
+func (f *fakeAPIClient) ProbeContactDirectory(_ context.Context, tenantToken string) (bool, int, string, error) {
+	return true, 0, "ok", nil
+}
+
+func (f *fakeAPIClient) ProbeBotInfo(_ context.Context, tenantToken string) (bool, int, string, error) {
+	return true, 0, "ok", nil
 }
 
 func (f *fakeAPIClient) AuthorizeURL(appID, redirectURI, state string) string {
@@ -63,8 +75,9 @@ func setupBindingService(t *testing.T) (*Service, *memoryRepo, uuid.UUID, AppCon
 	t.Helper()
 	repo := newMemoryRepo()
 	service := NewService(repo, fakeSealer{})
+	service.SetClient(&fakeAPIClient{})
 	tenantID := uuid.New()
-	cfg, err := service.UpsertAppConfig(context.Background(), tenantID, "cli_app", "secret")
+	cfg, _, err := service.UpsertAppConfig(context.Background(), tenantID, "cli_app", "secret")
 	if err != nil {
 		t.Fatalf("seed app config: %v", err)
 	}

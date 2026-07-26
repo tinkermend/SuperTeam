@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -62,6 +63,48 @@ type issueTokenResponse struct {
 	ID          string `json:"id"`
 	ServiceName string `json:"service_name"`
 	Token       string `json:"token"`
+}
+
+type serviceTokenListItem struct {
+	ID          string  `json:"id"`
+	ServiceName string  `json:"service_name"`
+	Status      string  `json:"status"`
+	CreatedAt   string  `json:"created_at"`
+	LastUsedAt  *string `json:"last_used_at,omitempty"`
+	RevokedAt   *string `json:"revoked_at,omitempty"`
+}
+
+// ListTokens 列出租户全部服务凭据(不含明文/哈希)。
+func (h *HTTPHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorize(w, r, authz.ActionCredentialRead)
+	if !ok {
+		return
+	}
+	tokens, err := h.service.ListTokens(r.Context(), tenantID)
+	if err != nil {
+		writeServiceAuthError(w, err)
+		return
+	}
+	out := make([]serviceTokenListItem, 0, len(tokens))
+	for _, token := range tokens {
+		item := serviceTokenListItem{
+			ID:          token.ID.String(),
+			ServiceName: token.ServiceName,
+			Status:      token.Status,
+			CreatedAt:   token.CreatedAt.UTC().Format(time.RFC3339),
+		}
+		if token.LastUsedAt != nil {
+			v := token.LastUsedAt.UTC().Format(time.RFC3339)
+			item.LastUsedAt = &v
+		}
+		if token.RevokedAt != nil {
+			v := token.RevokedAt.UTC().Format(time.RFC3339)
+			item.RevokedAt = &v
+		}
+		out = append(out, item)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"tokens": out})
 }
 
 // IssueToken 签发服务凭据;明文只在响应中出现一次。

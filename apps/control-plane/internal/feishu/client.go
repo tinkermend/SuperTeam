@@ -163,6 +163,56 @@ func (c *Client) OAuthUserIdentity(ctx context.Context, appID, appSecret, code, 
 	return infoOut.Data.OpenID, infoOut.Data.UnionID, nil
 }
 
+// ProbeContactDirectory 探测通讯录读权限:用一个必不存在的手机号调 batch_get_id。
+// code=0 表示权限与授权范围 API 可用(人是否命中另论);权限类错误码视为 scope 缺失。
+func (c *Client) ProbeContactDirectory(ctx context.Context, tenantToken string) (ok bool, code int, msg string, err error) {
+	var out batchGetIDResponse
+	if err := c.postJSON(ctx, "/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id", tenantToken, map[string]any{
+		"mobiles": []string{"+8600000000000"},
+	}, &out); err != nil {
+		return false, 0, "", err
+	}
+	return out.Code == 0, out.Code, out.Msg, nil
+}
+
+type botInfoResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Bot  struct {
+		ActivateStatus int    `json:"activate_status"`
+		AppName        string `json:"app_name"`
+	} `json:"bot"`
+}
+
+// ProbeBotInfo 探测 bot/发消息相关能力是否对应用开放(im 权限与 bot 启用态)。
+func (c *Client) ProbeBotInfo(ctx context.Context, tenantToken string) (ok bool, code int, msg string, err error) {
+	var out botInfoResponse
+	if err := c.getJSON(ctx, "/open-apis/bot/v3/info", tenantToken, &out); err != nil {
+		return false, 0, "", err
+	}
+	// bot 接口成功且应用已启用即可;具体"可用范围是否覆盖某人"只能在真实发卡时暴露。
+	return out.Code == 0, out.Code, out.Msg, nil
+}
+
+func (c *Client) getJSON(ctx context.Context, path, bearer string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("%w: status %d", ErrFeishuAPI, resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
 func (c *Client) postJSON(ctx context.Context, path, bearer string, payload, out any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {

@@ -44,6 +44,18 @@ func (r *PgRepository) ListActiveServiceTokensByName(ctx context.Context, servic
 	return tokens, nil
 }
 
+func (r *PgRepository) ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]ServiceToken, error) {
+	rows, err := r.q.ListServiceTokensByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	tokens := make([]ServiceToken, 0, len(rows))
+	for _, row := range rows {
+		tokens = append(tokens, serviceTokenFromRow(row))
+	}
+	return tokens, nil
+}
+
 func (r *PgRepository) TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error {
 	return r.q.TouchServiceTokenLastUsed(ctx, id)
 }

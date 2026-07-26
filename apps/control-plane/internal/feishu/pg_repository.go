@@ -44,6 +44,33 @@ func (r *PgRepository) ListActiveAppConfigs(ctx context.Context, tenantID uuid.U
 	return configs, nil
 }
 
+func (r *PgRepository) ListAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]AppConfig, error) {
+	rows, err := r.q.ListFeishuAppConfigs(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	configs := make([]AppConfig, 0, len(rows))
+	for _, row := range rows {
+		configs = append(configs, appConfigFromRow(row))
+	}
+	return configs, nil
+}
+
+func (r *PgRepository) UpdateAppConfigStatus(ctx context.Context, tenantID, id uuid.UUID, status string) (AppConfig, error) {
+	row, err := r.q.UpdateFeishuAppConfigStatus(ctx, queries.UpdateFeishuAppConfigStatusParams{
+		Status:   status,
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AppConfig{}, ErrAppConfigNotFound
+		}
+		return AppConfig{}, err
+	}
+	return appConfigFromRow(row), nil
+}
+
 func (r *PgRepository) GetAppConfig(ctx context.Context, tenantID, id uuid.UUID) (AppConfig, error) {
 	row, err := r.q.GetFeishuAppConfig(ctx, queries.GetFeishuAppConfigParams{TenantID: tenantID, ID: id})
 	if err != nil {

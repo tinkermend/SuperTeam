@@ -336,6 +336,41 @@ func (q *Queries) ListActiveServiceTokensByName(ctx context.Context, serviceName
 	return items, nil
 }
 
+const ListFeishuAppConfigs = `-- name: ListFeishuAppConfigs :many
+SELECT id, tenant_id, app_id, app_secret_sealed, status, created_at, updated_at FROM feishu_app_configs
+WHERE tenant_id = $1::uuid
+ORDER BY created_at ASC
+`
+
+// 管理面列表:含 active/unverified/disabled。
+func (q *Queries) ListFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error) {
+	rows, err := q.db.Query(ctx, ListFeishuAppConfigs, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeishuAppConfig{}
+	for rows.Next() {
+		var i FeishuAppConfig
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AppID,
+			&i.AppSecretSealed,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListFeishuIdentitiesByTenant = `-- name: ListFeishuIdentitiesByTenant :many
 SELECT id, tenant_id, auth_user_id, feishu_app_config_id, open_id, union_id, bound_via, created_at FROM user_feishu_identities
 WHERE tenant_id = $1::uuid
@@ -562,6 +597,42 @@ func (q *Queries) ListSentFeishuOutboxByResource(ctx context.Context, arg ListSe
 	return items, nil
 }
 
+const ListServiceTokensByTenant = `-- name: ListServiceTokensByTenant :many
+SELECT id, tenant_id, service_name, token_hash, status, last_used_at, created_at, revoked_at FROM auth_service_tokens
+WHERE tenant_id = $1::uuid
+ORDER BY created_at DESC
+`
+
+// 管理面列表:含 active/revoked,不回显 token_hash。
+func (q *Queries) ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]AuthServiceToken, error) {
+	rows, err := q.db.Query(ctx, ListServiceTokensByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuthServiceToken{}
+	for rows.Next() {
+		var i AuthServiceToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ServiceName,
+			&i.TokenHash,
+			&i.Status,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const MarkFeishuOutboxFailed = `-- name: MarkFeishuOutboxFailed :one
 UPDATE feishu_outbox
 SET attempts = attempts + 1,
@@ -710,6 +781,36 @@ WHERE id = $1::uuid
 func (q *Queries) TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, TouchServiceTokenLastUsed, id)
 	return err
+}
+
+const UpdateFeishuAppConfigStatus = `-- name: UpdateFeishuAppConfigStatus :one
+UPDATE feishu_app_configs
+SET status = $1::varchar,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+RETURNING id, tenant_id, app_id, app_secret_sealed, status, created_at, updated_at
+`
+
+type UpdateFeishuAppConfigStatusParams struct {
+	Status   string    `json:"status"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateFeishuAppConfigStatus(ctx context.Context, arg UpdateFeishuAppConfigStatusParams) (FeishuAppConfig, error) {
+	row := q.db.QueryRow(ctx, UpdateFeishuAppConfigStatus, arg.Status, arg.TenantID, arg.ID)
+	var i FeishuAppConfig
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AppID,
+		&i.AppSecretSealed,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const UpsertFeishuAppConfig = `-- name: UpsertFeishuAppConfig :one

@@ -71,6 +71,15 @@ func (r *connectorRouteRepo) ListActiveAppConfigs(_ context.Context, tenantID uu
 	return []feishu.AppConfig{r.config}, nil
 }
 
+func (r *connectorRouteRepo) ListAppConfigs(_ context.Context, tenantID uuid.UUID) ([]feishu.AppConfig, error) {
+	return r.ListActiveAppConfigs(context.Background(), tenantID)
+}
+
+func (r *connectorRouteRepo) UpdateAppConfigStatus(_ context.Context, tenantID, id uuid.UUID, status string) (feishu.AppConfig, error) {
+	r.config.Status = status
+	return r.config, nil
+}
+
 func (r *connectorRouteRepo) GetAppConfig(_ context.Context, tenantID, id uuid.UUID) (feishu.AppConfig, error) {
 	return r.config, nil
 }

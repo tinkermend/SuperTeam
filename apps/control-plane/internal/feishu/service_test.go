@@ -52,6 +52,26 @@ func (r *memoryRepo) ListActiveAppConfigs(_ context.Context, tenantID uuid.UUID)
 	return out, nil
 }
 
+func (r *memoryRepo) ListAppConfigs(_ context.Context, tenantID uuid.UUID) ([]AppConfig, error) {
+	var out []AppConfig
+	for _, cfg := range r.configs {
+		if cfg.TenantID == tenantID {
+			out = append(out, cfg)
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepo) UpdateAppConfigStatus(_ context.Context, tenantID, id uuid.UUID, status string) (AppConfig, error) {
+	cfg, ok := r.configs[id]
+	if !ok || cfg.TenantID != tenantID {
+		return AppConfig{}, ErrAppConfigNotFound
+	}
+	cfg.Status = status
+	r.configs[id] = cfg
+	return cfg, nil
+}
+
 func (r *memoryRepo) GetAppConfig(_ context.Context, tenantID, id uuid.UUID) (AppConfig, error) {
 	cfg, ok := r.configs[id]
 	if !ok || cfg.TenantID != tenantID {
@@ -130,14 +150,18 @@ func (r *memoryRepo) DeleteIdentityByUser(_ context.Context, tenantID, appConfig
 func TestUpsertAppConfigSealsSecret(t *testing.T) {
 	repo := newMemoryRepo()
 	service := NewService(repo, fakeSealer{})
+	service.SetClient(&fakeAPIClient{})
 	tenantID := uuid.New()
 
-	cfg, err := service.UpsertAppConfig(context.Background(), tenantID, "cli_app", "raw-secret")
+	cfg, report, err := service.UpsertAppConfig(context.Background(), tenantID, "cli_app", "raw-secret")
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if cfg.AppSecretSealed != "sealed:raw-secret" {
 		t.Fatalf("expected sealed secret stored, got %q", cfg.AppSecretSealed)
+	}
+	if !report.OK || cfg.Status != AppConfigStatusActive {
+		t.Fatalf("expected active after successful probe, status=%s report=%#v", cfg.Status, report)
 	}
 
 	boots, err := service.BootstrapConfigs(context.Background(), tenantID)
@@ -151,7 +175,7 @@ func TestUpsertAppConfigSealsSecret(t *testing.T) {
 
 func TestUpsertAppConfigRequiresSealer(t *testing.T) {
 	service := NewService(newMemoryRepo(), nil)
-	if _, err := service.UpsertAppConfig(context.Background(), uuid.New(), "cli_app", "s"); !errors.Is(err, ErrSealerRequired) {
+	if _, _, err := service.UpsertAppConfig(context.Background(), uuid.New(), "cli_app", "s"); !errors.Is(err, ErrSealerRequired) {
 		t.Fatalf("expected sealer required, got %v", err)
 	}
 }
@@ -215,5 +239,33 @@ func TestBindAndRebindIdentity(t *testing.T) {
 	}
 	if _, err := service.ResolveIdentityByOpenID(context.Background(), appConfigID, "ou_1"); !errors.Is(err, ErrIdentityNotFound) {
 		t.Fatalf("expected old binding removed, got %v", err)
+	}
+}
+
+func TestVerifyAppCredentialsReportsTokenFailure(t *testing.T) {
+	service := NewService(newMemoryRepo(), fakeSealer{})
+	service.SetClient(&fakeAPIClient{failToken: true})
+	report := service.VerifyAppCredentials(context.Background(), "cli_app", "bad")
+	if report.OK || report.TokenOK {
+		t.Fatalf("expected token failure, got %#v", report)
+	}
+	if len(report.Probes) == 0 || report.Probes[0].OK {
+		t.Fatalf("expected first probe failed, got %#v", report.Probes)
+	}
+	if report.Summary == "" || report.Probes[0].Hint == "" {
+		t.Fatalf("expected chinese summary/hint")
+	}
+}
+
+func TestUpsertAppConfigMarksUnverifiedWhenProbeFails(t *testing.T) {
+	repo := newMemoryRepo()
+	service := NewService(repo, fakeSealer{})
+	service.SetClient(&fakeAPIClient{failToken: true})
+	cfg, report, err := service.UpsertAppConfig(context.Background(), uuid.New(), "cli_app", "bad")
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if report.OK || cfg.Status != AppConfigStatusUnverified {
+		t.Fatalf("expected unverified save, status=%s report=%#v", cfg.Status, report)
 	}
 }

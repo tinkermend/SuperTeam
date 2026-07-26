@@ -34,6 +34,7 @@ type ServiceToken struct {
 type Repository interface {
 	CreateServiceToken(ctx context.Context, tenantID uuid.UUID, serviceName, tokenHash string) (ServiceToken, error)
 	ListActiveServiceTokensByName(ctx context.Context, serviceName string) ([]ServiceToken, error)
+	ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]ServiceToken, error)
 	TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error
 	RevokeServiceToken(ctx context.Context, tenantID, id uuid.UUID) (ServiceToken, error)
 }
@@ -92,4 +93,12 @@ func (s *Service) ValidateServiceToken(ctx context.Context, serviceName, token s
 
 func (s *Service) RevokeToken(ctx context.Context, tenantID, id uuid.UUID) (ServiceToken, error) {
 	return s.repo.RevokeServiceToken(ctx, tenantID, id)
+}
+
+// ListTokens 管理面列表(含 revoked;不回显 hash/明文)。
+func (s *Service) ListTokens(ctx context.Context, tenantID uuid.UUID) ([]ServiceToken, error) {
+	if tenantID == uuid.Nil {
+		return nil, ErrInvalidServiceToken
+	}
+	return s.repo.ListServiceTokensByTenant(ctx, tenantID)
 }

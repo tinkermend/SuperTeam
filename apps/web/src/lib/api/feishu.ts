@@ -12,6 +12,7 @@ export type FeishuContactSyncReport = {
   bound: number;
   already_bound: number;
   unmatched: number;
+  conflicts?: number;
 };
 
 export async function listFeishuIdentities(options: ApiClientOptions): Promise<FeishuIdentity[]> {

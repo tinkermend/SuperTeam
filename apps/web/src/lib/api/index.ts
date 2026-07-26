@@ -1,6 +1,7 @@
 export * from "./auth";
 export * from "./costs";
 export * from "./authz";
+export * from "./channel-admin";
 export * from "./client";
 export * from "./employees";
 export * from "./feishu";

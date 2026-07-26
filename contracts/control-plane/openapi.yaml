@@ -2599,6 +2599,16 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
   /api/v1/admin/service-tokens:
+    get:
+      operationId: listServiceTokens
+      summary: List tenant service tokens (no plaintext or hash)
+      responses:
+        "200":
+          description: Token list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceTokenListResponse"
     post:
       operationId: issueServiceToken
       summary: Issue an external service token (plaintext returned once)
@@ -2636,7 +2646,7 @@ paths:
   /api/v1/admin/feishu/app-configs:
     get:
       operationId: listFeishuAppConfigs
-      summary: List active Feishu app configs (secrets never echoed)
+      summary: List Feishu app configs including unverified/disabled (secrets never echoed)
       responses:
         "200":
           description: App config list
@@ -2646,7 +2656,7 @@ paths:
                 $ref: "#/components/schemas/FeishuAppConfigListResponse"
     post:
       operationId: upsertFeishuAppConfig
-      summary: Create or rotate a tenant Feishu app config (secret sealed at rest)
+      summary: Create or rotate a tenant Feishu app config with connectivity verify
       requestBody:
         required: true
         content:
@@ -2655,12 +2665,59 @@ paths:
               $ref: "#/components/schemas/UpsertFeishuAppConfigRequest"
       responses:
         "201":
-          description: App config stored
+          description: App config stored with verify report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpsertFeishuAppConfigResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/app-configs/verify:
+    post:
+      operationId: verifyFeishuAppConfig
+      summary: Connectivity probe with plaintext credentials (does not persist)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertFeishuAppConfigRequest"
+      responses:
+        "200":
+          description: Connectivity report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuConnectivityReport"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/feishu/app-configs/{configId}/status:
+    patch:
+      operationId: setFeishuAppConfigStatus
+      summary: Enable/disable a Feishu app config channel
+      parameters:
+        - name: configId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetFeishuAppConfigStatusRequest"
+      responses:
+        "200":
+          description: Updated config
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeishuAppConfig"
         "400":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
   /api/v1/admin/feishu/contact-sync:
     post:
@@ -5446,6 +5503,42 @@ components:
         token:
           type: string
           description: Plaintext token, returned exactly once at issuance.
+    ServiceToken:
+      type: object
+      required:
+        - id
+        - service_name
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        service_name:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+    ServiceTokenListResponse:
+      type: object
+      required:
+        - tokens
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceToken"
     UpsertFeishuAppConfigRequest:
       type: object
       required:
@@ -5457,6 +5550,54 @@ components:
         app_secret:
           type: string
           description: Sealed with AES-GCM at rest; never echoed back.
+    SetFeishuAppConfigStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [active, unverified, disabled]
+          description: active 再启用时服务端最多回到 unverified,需重跑自检才升 active。
+    FeishuConnectivityProbe:
+      type: object
+      required:
+        - key
+        - label
+        - ok
+        - hint
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        ok:
+          type: boolean
+        hint:
+          type: string
+          description: Chinese operator-facing guidance.
+        code:
+          type: integer
+        raw_msg:
+          type: string
+    FeishuConnectivityReport:
+      type: object
+      required:
+        - token_ok
+        - ok
+        - probes
+        - summary
+      properties:
+        token_ok:
+          type: boolean
+        ok:
+          type: boolean
+        probes:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeishuConnectivityProbe"
+        summary:
+          type: string
     FeishuAppConfig:
       type: object
       required:
@@ -5471,6 +5612,17 @@ components:
           type: string
         status:
           type: string
+          enum: [active, unverified, disabled]
+    UpsertFeishuAppConfigResponse:
+      type: object
+      required:
+        - config
+        - verify
+      properties:
+        config:
+          $ref: "#/components/schemas/FeishuAppConfig"
+        verify:
+          $ref: "#/components/schemas/FeishuConnectivityReport"
     FeishuAppConfigListResponse:
       type: object
       required:

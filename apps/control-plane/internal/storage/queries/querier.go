@@ -479,6 +479,8 @@ type Querier interface {
 	ListEnabledAutomationRulesByActor(ctx context.Context, arg ListEnabledAutomationRulesByActorParams) ([]AutomationRule, error)
 	ListEnabledAutomationRulesByActorOnProject(ctx context.Context, arg ListEnabledAutomationRulesByActorOnProjectParams) ([]AutomationRule, error)
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
+	// 管理面列表:含 active/unverified/disabled。
+	ListFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error)
 	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
 	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
@@ -564,6 +566,8 @@ type Querier interface {
 	ListScenarioTemplateVersions(ctx context.Context, arg ListScenarioTemplateVersionsParams) ([]ScenarioTemplateVersion, error)
 	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
 	ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error)
+	// 管理面列表:含 active/revoked,不回显 token_hash。
+	ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]AuthServiceToken, error)
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
 	// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
@@ -738,6 +742,7 @@ type Querier interface {
 	UpdateDigitalEmployeeRunStatus(ctx context.Context, arg UpdateDigitalEmployeeRunStatusParams) (TaskRun, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDigitalEmployeeStatusParams) (DigitalEmployee, error)
 	UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployeeTemplateParams) (DigitalEmployeeTemplate, error)
+	UpdateFeishuAppConfigStatus(ctx context.Context, arg UpdateFeishuAppConfigStatusParams) (FeishuAppConfig, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpdateProjectArtifactRetention(ctx context.Context, arg UpdateProjectArtifactRetentionParams) (ProjectArtifactRef, error)
 	UpdateProjectDemandStatus(ctx context.Context, arg UpdateProjectDemandStatusParams) (ProjectDemand, error)

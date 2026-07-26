@@ -36,6 +36,16 @@ func (r *memoryRepo) ListActiveServiceTokensByName(_ context.Context, serviceNam
 	return out, nil
 }
 
+func (r *memoryRepo) ListServiceTokensByTenant(_ context.Context, tenantID uuid.UUID) ([]ServiceToken, error) {
+	var out []ServiceToken
+	for _, t := range r.tokens {
+		if t.TenantID == tenantID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (r *memoryRepo) TouchServiceTokenLastUsed(_ context.Context, id uuid.UUID) error { return nil }
 
 func (r *memoryRepo) RevokeServiceToken(_ context.Context, tenantID, id uuid.UUID) (ServiceToken, error) {

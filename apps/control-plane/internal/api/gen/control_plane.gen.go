@@ -765,6 +765,27 @@ func (e EmployeeTemplateStatus) Valid() bool {
 	}
 }
 
+// Defines values for FeishuAppConfigStatus.
+const (
+	FeishuAppConfigStatusActive     FeishuAppConfigStatus = "active"
+	FeishuAppConfigStatusDisabled   FeishuAppConfigStatus = "disabled"
+	FeishuAppConfigStatusUnverified FeishuAppConfigStatus = "unverified"
+)
+
+// Valid indicates whether the value is a known member of the FeishuAppConfigStatus enum.
+func (e FeishuAppConfigStatus) Valid() bool {
+	switch e {
+	case FeishuAppConfigStatusActive:
+		return true
+	case FeishuAppConfigStatusDisabled:
+		return true
+	case FeishuAppConfigStatusUnverified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FeishuIdentityBoundVia.
 const (
 	ContactSync FeishuIdentityBoundVia = "contact_sync"
@@ -1992,6 +2013,24 @@ func (e SchedulingReadinessCheckStatus) Valid() bool {
 	}
 }
 
+// Defines values for ServiceTokenStatus.
+const (
+	ServiceTokenStatusActive  ServiceTokenStatus = "active"
+	ServiceTokenStatusRevoked ServiceTokenStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ServiceTokenStatus enum.
+func (e ServiceTokenStatus) Valid() bool {
+	switch e {
+	case ServiceTokenStatusActive:
+		return true
+	case ServiceTokenStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SetEmployeeTemplateStatusRequestStatus.
 const (
 	SetEmployeeTemplateStatusRequestStatusActive   SetEmployeeTemplateStatusRequestStatus = "active"
@@ -2004,6 +2043,27 @@ func (e SetEmployeeTemplateStatusRequestStatus) Valid() bool {
 	case SetEmployeeTemplateStatusRequestStatusActive:
 		return true
 	case SetEmployeeTemplateStatusRequestStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetFeishuAppConfigStatusRequestStatus.
+const (
+	SetFeishuAppConfigStatusRequestStatusActive     SetFeishuAppConfigStatusRequestStatus = "active"
+	SetFeishuAppConfigStatusRequestStatusDisabled   SetFeishuAppConfigStatusRequestStatus = "disabled"
+	SetFeishuAppConfigStatusRequestStatusUnverified SetFeishuAppConfigStatusRequestStatus = "unverified"
+)
+
+// Valid indicates whether the value is a known member of the SetFeishuAppConfigStatusRequestStatus enum.
+func (e SetFeishuAppConfigStatusRequestStatus) Valid() bool {
+	switch e {
+	case SetFeishuAppConfigStatusRequestStatusActive:
+		return true
+	case SetFeishuAppConfigStatusRequestStatusDisabled:
+		return true
+	case SetFeishuAppConfigStatusRequestStatusUnverified:
 		return true
 	default:
 		return false
@@ -2519,19 +2579,19 @@ func (e ChangeTeamMemberRoleJSONBodyRole) Valid() bool {
 
 // Defines values for ListWorkflowInstancesParamsScope.
 const (
-	Active   ListWorkflowInstancesParamsScope = "active"
-	All      ListWorkflowInstancesParamsScope = "all"
-	Archived ListWorkflowInstancesParamsScope = "archived"
+	ListWorkflowInstancesParamsScopeActive   ListWorkflowInstancesParamsScope = "active"
+	ListWorkflowInstancesParamsScopeAll      ListWorkflowInstancesParamsScope = "all"
+	ListWorkflowInstancesParamsScopeArchived ListWorkflowInstancesParamsScope = "archived"
 )
 
 // Valid indicates whether the value is a known member of the ListWorkflowInstancesParamsScope enum.
 func (e ListWorkflowInstancesParamsScope) Valid() bool {
 	switch e {
-	case Active:
+	case ListWorkflowInstancesParamsScopeActive:
 		return true
-	case All:
+	case ListWorkflowInstancesParamsScopeAll:
 		return true
-	case Archived:
+	case ListWorkflowInstancesParamsScopeArchived:
 		return true
 	default:
 		return false
@@ -3917,14 +3977,37 @@ type FailTaskRequest struct {
 
 // FeishuAppConfig defines model for FeishuAppConfig.
 type FeishuAppConfig struct {
-	AppId  string             `json:"app_id"`
-	Id     openapi_types.UUID `json:"id"`
-	Status string             `json:"status"`
+	AppId  string                `json:"app_id"`
+	Id     openapi_types.UUID    `json:"id"`
+	Status FeishuAppConfigStatus `json:"status"`
 }
+
+// FeishuAppConfigStatus defines model for FeishuAppConfig.Status.
+type FeishuAppConfigStatus string
 
 // FeishuAppConfigListResponse defines model for FeishuAppConfigListResponse.
 type FeishuAppConfigListResponse struct {
 	Configs []FeishuAppConfig `json:"configs"`
+}
+
+// FeishuConnectivityProbe defines model for FeishuConnectivityProbe.
+type FeishuConnectivityProbe struct {
+	Code *int `json:"code,omitempty"`
+
+	// Hint Chinese operator-facing guidance.
+	Hint   string  `json:"hint"`
+	Key    string  `json:"key"`
+	Label  string  `json:"label"`
+	Ok     bool    `json:"ok"`
+	RawMsg *string `json:"raw_msg,omitempty"`
+}
+
+// FeishuConnectivityReport defines model for FeishuConnectivityReport.
+type FeishuConnectivityReport struct {
+	Ok      bool                      `json:"ok"`
+	Probes  []FeishuConnectivityProbe `json:"probes"`
+	Summary string                    `json:"summary"`
+	TokenOk bool                      `json:"token_ok"`
 }
 
 // FeishuContactSyncResponse defines model for FeishuContactSyncResponse.
@@ -5846,6 +5929,24 @@ type SchedulingReadinessSkillSummary struct {
 	PersonalCount   int32    `json:"personal_count"`
 }
 
+// ServiceToken defines model for ServiceToken.
+type ServiceToken struct {
+	CreatedAt   time.Time          `json:"created_at"`
+	Id          openapi_types.UUID `json:"id"`
+	LastUsedAt  *time.Time         `json:"last_used_at,omitempty"`
+	RevokedAt   *time.Time         `json:"revoked_at,omitempty"`
+	ServiceName string             `json:"service_name"`
+	Status      ServiceTokenStatus `json:"status"`
+}
+
+// ServiceTokenStatus defines model for ServiceToken.Status.
+type ServiceTokenStatus string
+
+// ServiceTokenListResponse defines model for ServiceTokenListResponse.
+type ServiceTokenListResponse struct {
+	Tokens []ServiceToken `json:"tokens"`
+}
+
 // SetEmployeeTemplateStatusRequest defines model for SetEmployeeTemplateStatusRequest.
 type SetEmployeeTemplateStatusRequest struct {
 	Status SetEmployeeTemplateStatusRequestStatus `json:"status"`
@@ -5853,6 +5954,15 @@ type SetEmployeeTemplateStatusRequest struct {
 
 // SetEmployeeTemplateStatusRequestStatus defines model for SetEmployeeTemplateStatusRequest.Status.
 type SetEmployeeTemplateStatusRequestStatus string
+
+// SetFeishuAppConfigStatusRequest defines model for SetFeishuAppConfigStatusRequest.
+type SetFeishuAppConfigStatusRequest struct {
+	// Status active 再启用时服务端最多回到 unverified,需重跑自检才升 active。
+	Status SetFeishuAppConfigStatusRequestStatus `json:"status"`
+}
+
+// SetFeishuAppConfigStatusRequestStatus active 再启用时服务端最多回到 unverified,需重跑自检才升 active。
+type SetFeishuAppConfigStatusRequestStatus string
 
 // SetProjectBudgetRequest defines model for SetProjectBudgetRequest.
 type SetProjectBudgetRequest struct {
@@ -6396,6 +6506,12 @@ type UpsertFeishuAppConfigRequest struct {
 
 	// AppSecret Sealed with AES-GCM at rest; never echoed back.
 	AppSecret string `json:"app_secret"`
+}
+
+// UpsertFeishuAppConfigResponse defines model for UpsertFeishuAppConfigResponse.
+type UpsertFeishuAppConfigResponse struct {
+	Config FeishuAppConfig          `json:"config"`
+	Verify FeishuConnectivityReport `json:"verify"`
 }
 
 // WaitHumanProjectTaskAttemptRequest defines model for WaitHumanProjectTaskAttemptRequest.
@@ -7063,6 +7179,12 @@ type ListWorkflowInstancesParamsScope string
 
 // UpsertFeishuAppConfigJSONRequestBody defines body for UpsertFeishuAppConfig for application/json ContentType.
 type UpsertFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
+
+// VerifyFeishuAppConfigJSONRequestBody defines body for VerifyFeishuAppConfig for application/json ContentType.
+type VerifyFeishuAppConfigJSONRequestBody = UpsertFeishuAppConfigRequest
+
+// SetFeishuAppConfigStatusJSONRequestBody defines body for SetFeishuAppConfigStatus for application/json ContentType.
+type SetFeishuAppConfigStatusJSONRequestBody = SetFeishuAppConfigStatusRequest
 
 // IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
 type IssueServiceTokenJSONRequestBody = IssueServiceTokenRequest
@@ -7953,18 +8075,27 @@ func (t *ProviderSessionEvent) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// List active Feishu app configs (secrets never echoed)
+	// List Feishu app configs including unverified/disabled (secrets never echoed)
 	// (GET /api/v1/admin/feishu/app-configs)
 	ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request)
-	// Create or rotate a tenant Feishu app config (secret sealed at rest)
+	// Create or rotate a tenant Feishu app config with connectivity verify
 	// (POST /api/v1/admin/feishu/app-configs)
 	UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request)
+	// Connectivity probe with plaintext credentials (does not persist)
+	// (POST /api/v1/admin/feishu/app-configs/verify)
+	VerifyFeishuAppConfig(w http.ResponseWriter, r *http.Request)
+	// Enable/disable a Feishu app config channel
+	// (PATCH /api/v1/admin/feishu/app-configs/{configId}/status)
+	SetFeishuAppConfigStatus(w http.ResponseWriter, r *http.Request, configId openapi_types.UUID)
 	// Batch-bind Feishu identities by looking up user emails in the Feishu directory
 	// (POST /api/v1/admin/feishu/contact-sync)
 	FeishuContactSync(w http.ResponseWriter, r *http.Request)
 	// List all Feishu identity bindings for the tenant
 	// (GET /api/v1/admin/feishu/identities)
 	ListFeishuIdentities(w http.ResponseWriter, r *http.Request)
+	// List tenant service tokens (no plaintext or hash)
+	// (GET /api/v1/admin/service-tokens)
+	ListServiceTokens(w http.ResponseWriter, r *http.Request)
 	// Issue an external service token (plaintext returned once)
 	// (POST /api/v1/admin/service-tokens)
 	IssueServiceToken(w http.ResponseWriter, r *http.Request)
@@ -8640,15 +8771,27 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
-// List active Feishu app configs (secrets never echoed)
+// List Feishu app configs including unverified/disabled (secrets never echoed)
 // (GET /api/v1/admin/feishu/app-configs)
 func (_ Unimplemented) ListFeishuAppConfigs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Create or rotate a tenant Feishu app config (secret sealed at rest)
+// Create or rotate a tenant Feishu app config with connectivity verify
 // (POST /api/v1/admin/feishu/app-configs)
 func (_ Unimplemented) UpsertFeishuAppConfig(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Connectivity probe with plaintext credentials (does not persist)
+// (POST /api/v1/admin/feishu/app-configs/verify)
+func (_ Unimplemented) VerifyFeishuAppConfig(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Enable/disable a Feishu app config channel
+// (PATCH /api/v1/admin/feishu/app-configs/{configId}/status)
+func (_ Unimplemented) SetFeishuAppConfigStatus(w http.ResponseWriter, r *http.Request, configId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8661,6 +8804,12 @@ func (_ Unimplemented) FeishuContactSync(w http.ResponseWriter, r *http.Request)
 // List all Feishu identity bindings for the tenant
 // (GET /api/v1/admin/feishu/identities)
 func (_ Unimplemented) ListFeishuIdentities(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List tenant service tokens (no plaintext or hash)
+// (GET /api/v1/admin/service-tokens)
+func (_ Unimplemented) ListServiceTokens(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10039,6 +10188,46 @@ func (siw *ServerInterfaceWrapper) UpsertFeishuAppConfig(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// VerifyFeishuAppConfig operation middleware
+func (siw *ServerInterfaceWrapper) VerifyFeishuAppConfig(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyFeishuAppConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetFeishuAppConfigStatus operation middleware
+func (siw *ServerInterfaceWrapper) SetFeishuAppConfigStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "configId" -------------
+	var configId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "configId", chi.URLParam(r, "configId"), &configId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "configId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetFeishuAppConfigStatus(w, r, configId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // FeishuContactSync operation middleware
 func (siw *ServerInterfaceWrapper) FeishuContactSync(w http.ResponseWriter, r *http.Request) {
 
@@ -10058,6 +10247,20 @@ func (siw *ServerInterfaceWrapper) ListFeishuIdentities(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListFeishuIdentities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListServiceTokens operation middleware
+func (siw *ServerInterfaceWrapper) ListServiceTokens(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListServiceTokens(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18033,10 +18236,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/feishu/app-configs", wrapper.UpsertFeishuAppConfig)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/feishu/app-configs/verify", wrapper.VerifyFeishuAppConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/admin/feishu/app-configs/{configId}/status", wrapper.SetFeishuAppConfigStatus)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/feishu/contact-sync", wrapper.FeishuContactSync)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/admin/feishu/identities", wrapper.ListFeishuIdentities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/service-tokens", wrapper.ListServiceTokens)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/service-tokens", wrapper.IssueServiceToken)

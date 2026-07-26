@@ -17,6 +17,12 @@ WHERE service_name = sqlc.arg('service_name')::varchar
   AND status = 'active'
 ORDER BY created_at DESC;
 
+-- name: ListServiceTokensByTenant :many
+-- 管理面列表:含 active/revoked,不回显 token_hash。
+SELECT * FROM auth_service_tokens
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+ORDER BY created_at DESC;
+
 -- name: TouchServiceTokenLastUsed :exec
 UPDATE auth_service_tokens
 SET last_used_at = NOW()
@@ -53,6 +59,20 @@ SELECT * FROM feishu_app_configs
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status = 'active'
 ORDER BY created_at ASC;
+
+-- name: ListFeishuAppConfigs :many
+-- 管理面列表:含 active/unverified/disabled。
+SELECT * FROM feishu_app_configs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+ORDER BY created_at ASC;
+
+-- name: UpdateFeishuAppConfigStatus :one
+UPDATE feishu_app_configs
+SET status = sqlc.arg('status')::varchar,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
 
 -- name: GetFeishuAppConfig :one
 SELECT * FROM feishu_app_configs

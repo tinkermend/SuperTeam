@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/superteam/control-plane/internal/api/middleware"
@@ -63,7 +64,21 @@ type appConfigResponse struct {
 	Status string `json:"status"`
 }
 
-// UpsertAppConfig 写入或轮换租户飞书应用配置(secret 加密落库,响应不回显)。
+type upsertAppConfigResponse struct {
+	Config appConfigResponse  `json:"config"`
+	Verify ConnectivityReport `json:"verify"`
+}
+
+type setAppConfigStatusRequest struct {
+	Status string `json:"status"`
+}
+
+type verifyAppConfigRequest struct {
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
+}
+
+// UpsertAppConfig 写入或轮换租户飞书应用配置(secret 加密落库,响应不回显),并返回连通自检。
 func (h *AdminHTTPHandler) UpsertAppConfig(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.authorize(w, r, authz.ActionCredentialCreate)
 	if !ok {
@@ -78,25 +93,24 @@ func (h *AdminHTTPHandler) UpsertAppConfig(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "app_id and app_secret are required", http.StatusBadRequest)
 		return
 	}
-	cfg, err := h.service.UpsertAppConfig(r.Context(), tenantID, req.AppID, req.AppSecret)
+	cfg, report, err := h.service.UpsertAppConfig(r.Context(), tenantID, req.AppID, req.AppSecret)
 	if err != nil {
 		writeFeishuError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, appConfigResponse{
-		ID:     cfg.ID.String(),
-		AppID:  cfg.AppID,
-		Status: cfg.Status,
+	writeJSON(w, http.StatusCreated, upsertAppConfigResponse{
+		Config: appConfigResponse{ID: cfg.ID.String(), AppID: cfg.AppID, Status: cfg.Status},
+		Verify: report,
 	})
 }
 
-// ListAppConfigs 列出租户 active 应用配置(不含 secret)。
+// ListAppConfigs 列出租户全部应用配置(含 unverified/disabled;不含 secret)。
 func (h *AdminHTTPHandler) ListAppConfigs(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.authorize(w, r, authz.ActionCredentialRead)
 	if !ok {
 		return
 	}
-	configs, err := h.service.repo.ListActiveAppConfigs(r.Context(), tenantID)
+	configs, err := h.service.ListAppConfigs(r.Context(), tenantID)
 	if err != nil {
 		writeFeishuError(w, err)
 		return
@@ -106,6 +120,48 @@ func (h *AdminHTTPHandler) ListAppConfigs(w http.ResponseWriter, r *http.Request
 		out = append(out, appConfigResponse{ID: cfg.ID.String(), AppID: cfg.AppID, Status: cfg.Status})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"configs": out})
+}
+
+// SetAppConfigStatus 启停通道(disabled 不再下发给 connector)。
+func (h *AdminHTTPHandler) SetAppConfigStatus(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorize(w, r, authz.ActionCredentialCreate)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "configId")))
+	if err != nil || id == uuid.Nil {
+		http.Error(w, "invalid config id", http.StatusBadRequest)
+		return
+	}
+	var req setAppConfigStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	cfg, err := h.service.SetAppConfigStatus(r.Context(), tenantID, id, req.Status)
+	if err != nil {
+		writeFeishuError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, appConfigResponse{ID: cfg.ID.String(), AppID: cfg.AppID, Status: cfg.Status})
+}
+
+// VerifyAppConfig 用请求体中的明文凭据做连通自检,不落库(编辑表单"先测再存"用)。
+func (h *AdminHTTPHandler) VerifyAppConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.authorize(w, r, authz.ActionCredentialRead); !ok {
+		return
+	}
+	var req verifyAppConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.AppID) == "" || strings.TrimSpace(req.AppSecret) == "" {
+		http.Error(w, "app_id and app_secret are required", http.StatusBadRequest)
+		return
+	}
+	report := h.service.VerifyAppCredentials(r.Context(), req.AppID, req.AppSecret)
+	writeJSON(w, http.StatusOK, report)
 }
 
 // ContactSync 通讯录批量反查绑定(管理员触发,零用户操作初始化)。

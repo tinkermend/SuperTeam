@@ -312,6 +312,7 @@ func (s *Server) registerRoutes() {
 		if s.serviceTokenHandler != nil && s.authService != nil {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/admin/service-tokens", s.serviceTokenHandler.ListTokens)
 				r.Post("/admin/service-tokens", s.serviceTokenHandler.IssueToken)
 				r.Delete("/admin/service-tokens/{tokenId}", s.serviceTokenHandler.RevokeToken)
 			})
@@ -322,6 +323,8 @@ func (s *Server) registerRoutes() {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
 				r.Post("/admin/feishu/app-configs", s.feishuAdminHandler.UpsertAppConfig)
 				r.Get("/admin/feishu/app-configs", s.feishuAdminHandler.ListAppConfigs)
+				r.Post("/admin/feishu/app-configs/verify", s.feishuAdminHandler.VerifyAppConfig)
+				r.Patch("/admin/feishu/app-configs/{configId}/status", s.feishuAdminHandler.SetAppConfigStatus)
 				r.Post("/admin/feishu/contact-sync", s.feishuAdminHandler.ContactSync)
 				r.Get("/admin/feishu/identities", s.feishuAdminHandler.ListIdentities)
 			})

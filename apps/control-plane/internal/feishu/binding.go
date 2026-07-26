@@ -33,6 +33,8 @@ type UserContact struct {
 type APIClient interface {
 	TenantAccessToken(ctx context.Context, appID, appSecret string) (string, error)
 	BatchGetOpenIDs(ctx context.Context, tenantToken string, emails, mobiles []string) (emailMatches, mobileMatches map[string]string, err error)
+	ProbeContactDirectory(ctx context.Context, tenantToken string) (ok bool, code int, msg string, err error)
+	ProbeBotInfo(ctx context.Context, tenantToken string) (ok bool, code int, msg string, err error)
 	AuthorizeURL(appID, redirectURI, state string) string
 	OAuthUserIdentity(ctx context.Context, appID, appSecret, code, redirectURI string) (openID, unionID string, err error)
 }
