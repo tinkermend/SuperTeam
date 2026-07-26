@@ -11,7 +11,7 @@
     "verify:contracts": "node scripts/verify-foundation-contracts.mjs",
     "verify:foundation": "corepack pnpm verify:contracts && corepack pnpm test:ts && corepack pnpm typecheck && corepack pnpm test:go && corepack pnpm test:rust",
     "verify:design-system": "node docs/design-system/verify-design-system.mjs",
-    "verify:design-prototypes": "node docs/prototypes/design-system/verify-prototypes.mjs",
+    "verify:design-prototypes": "node docs/prototypes/verify-prototypes.mjs",
     "verify:web": "corepack pnpm --filter @superteam/web test && corepack pnpm --filter @superteam/web typecheck && corepack pnpm --filter @superteam/web build",
     "verify:control-plane": "corepack pnpm verify:contracts && corepack pnpm test:go",
     "verify:runtime-agent": "corepack pnpm verify:contracts && corepack pnpm test:rust",

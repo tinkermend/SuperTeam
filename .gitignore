@@ -55,6 +55,7 @@ playwright-report/
 test-results/
 apps/web/.vitest-attachments/
 apps/web/src/**/__screenshots__/
+docs/prototypes/__screenshots__/
 
 # Playwright
 playwright/.cache/
