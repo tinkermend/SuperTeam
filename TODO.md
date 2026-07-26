@@ -5,7 +5,7 @@
 
 - [ ] 2026-07-26 租户角色与控制台业务模块能力矩阵——当前仅打通「账号→租户成员→console.access」；`member` 对团队/数字员工/技能等租户级列表仍 403（需 admin），侧栏未按权限裁剪。待其他功能完善后补齐：角色可读/可写范围、导航裁剪、无权限空态。参考 `docs/superpowers/specs/2026-07-25-tenant-membership-and-console-access.md` 与 authz `ActionTeamRead`/`ActionSkillRead`/`ActionEmployeeRead`
 - [ ] 2026-07-24 P2 planner 判据中文 E2E 验证——提示词已约束 `statement` 必须中文;真实产出依赖 planner(F6 deepseek 不稳),需独占环境稳定规划后抽查新卡判据无英文原文。参考 §6.2 / §12
-- [ ] 2026-07-19 飞书剩余联调 7 项(结果结论卡/卡内签署/any-of-N 双人/投影不阻塞/通讯录反查/换绑/重推幂等)——照 `docs/superpowers/manual-test-plans/2026-07-19-feishu-remaining-verification.md` 逐项执行,双人项需先备第二个真人飞书账号
+- [ ] 2026-07-27 飞书联调残余 3 项(原 7 项中 5 项已于 07-27 真实双人 E2E 验证完成:结果结论卡/卡内签署/any-of-N 双人/投影不阻塞/通讯录反查含手机号正向命中)——剩:①换绑 UI(spec 2026-07-27-feishu-channel-access-management §6);②outbox 重推按钮(同 spec §5.3,本次以 DB 重置手工预演过语义);③越权对照(需第三个不在合格集合的绑定账号)。参考 manual-test-plans/2026-07-19-feishu-remaining-verification.md
 - [ ] 2026-07-19 生产桶 CORS 引导命令(不急,后续推进)——`apps/control-plane/cmd/bucket-cors/` 幂等 bootstrap(复用 CP S3 配置,origins 走 env,--check 模式),淘汰 dev 一次性脚本;规则模板与背景见 `docs/superpowers/specs/2026-07-19-execution-output-attachments-followups.md` §2
 - [ ] 2026-07-20 项目成员名服务端批量补名——config 读路径按成员 id 批量 join users+employees 补 `display_name`,替换前端客户端 join(`listUsers` limit 200 / `listDigitalEmployees` 无分页,规模上量后超出部分成员名静默丢失);project `HTTPHandler`/service 需接 user+employee 读依赖;对齐宪法"名称由服务端读路径批量补名",落点 `internal/project/handler.go` `projectConfigResponseFromDomain`
 - [ ] 2026-07-26 团队宪法收尾两项：①`governance_status` 判据仍是 `constitution = '{}'`，应改成「有无生效规则」（`queries/tenant_team_config.sql` 两处 CASE）；②D4 删除既有规则需审批（接权限中心，独立治理层）。参考 `docs/superpowers/specs/2026-07-26-team-configuration-console-design.md` §5.3/§9.2
