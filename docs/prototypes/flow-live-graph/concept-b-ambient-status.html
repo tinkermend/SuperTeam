@@ -1,0 +1,576 @@
+<!doctype html>
+<!--
+  概念 B · 呼吸边 + 节点内嵌事件流（ambient status）
+  ─────────────────────────────────────────────────────────────────────────
+  意图：与概念 A（流动数据包粒子）对比的低成本替代方案——不做粒子动画，用两个
+  更便宜的手段表达"数据在流动"：
+  1) 边的呼吸/脉冲：活跃边用 stroke-dashoffset 缓慢推移 + 透明度呼吸表达方向与
+     活性（纯 CSS 动画，无每帧 JS，长时间挂大屏也稳定）；已交付边定色收敛，失败
+     边变红并停止呼吸。
+  2) 节点卡内嵌迷你事件流：每个活跃节点滚动展示最近 3 条结构化事件（时间 + 动词
+     + 对象），信息密度高于粒子，更贴"可审计"的后台工作面。
+  点击边仍弹出与概念 A 相同的"交接对照"浮层（契约 vs 实际交付物，差异高亮）——
+  该浮层是两个概念共享的核心交互，不随动画方案变化。
+
+  技术可行性锚点（非虚构）：
+  - 底座同概念 A：apps/web/src/features/flow-graph/（ReactFlow 静态权威图）。
+    呼吸边只需给 edge path 加 CSS class（ReactFlow 支持自定义 edge style/class），
+    实现成本远低于粒子 overlay；事件流复用运行总览既有 SSE 活动事件通道。
+  - 本文件为纯自包含 HTML 原型（内联 CSS/JS，无外部依赖），示例数据为贴近真实
+    的中文占位内容，不含真实 UUID；边路径按节点实际布局动态测量。
+  - 视觉贴 Soft-Flat 基线：蓝主色 #2F5FFF、近白冷灰底、大圆角白卡、极淡弥散阴影、
+    状态词表中文。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>项目活图 · 概念 B 呼吸边与事件流</title>
+    <style>
+      :root {
+        --bg: #f4f6f9;
+        --card: #ffffff;
+        --card-inner: #fafbfc;
+        --ink: #0b0d12;
+        --ink-2: #4d586b;
+        --ink-3: #6d7580;
+        --line: #eef1f4;
+        --line-strong: #dfe4ea;
+        --brand: #2f5fff;
+        --brand-deep: #2348e0;
+        --brand-soft: #e9efff;
+        --ok: #009a60;
+        --ok-text: #006639;
+        --ok-soft: #e3f9ec;
+        --warn: #cc572a;
+        --warn-text: #893411;
+        --warn-soft: #ffede5;
+        --danger: #d14647;
+        --danger-text: #8a2f2d;
+        --danger-soft: #ffece9;
+        --radius-card: 22px;
+        --radius-inner: 14px;
+        --radius-pill: 8px;
+        --shadow-card: 0 8px 28px rgba(13, 26, 68, 0.07);
+        --shadow-float: 0 24px 70px rgba(13, 26, 68, 0.18);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        min-height: 100vh;
+        background:
+          radial-gradient(1100px 480px at 78% -10%, rgba(47, 95, 255, 0.06), transparent 62%),
+          var(--bg);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        font-size: 14px;
+      }
+      button { font: inherit; color: inherit; cursor: pointer; }
+
+      .page { max-width: 1240px; margin: 0 auto; padding: 26px 28px 48px; }
+      .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+      .title { font-size: 21px; font-weight: 800; letter-spacing: -0.01em; }
+      .subtitle { margin-top: 4px; color: var(--ink-3); font-size: 12.5px; max-width: 640px; line-height: 1.6; }
+      .concept-tag {
+        display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; vertical-align: 2px;
+        padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 720;
+        background: var(--brand-soft); color: var(--brand-deep); border: 1px solid rgba(47, 95, 255, 0.22);
+      }
+
+      .legend {
+        display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+        padding: 10px 16px; margin-bottom: 16px;
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-inner);
+        color: var(--ink-2); font-size: 12px;
+      }
+      .legend b { color: var(--ink); font-weight: 700; }
+      .lg { display: inline-flex; align-items: center; gap: 6px; }
+      .lg-swatch { width: 22px; height: 4px; border-radius: 2px; }
+      .lg-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+      .canvas-card {
+        position: relative;
+        background: var(--card); border: 1px solid var(--line);
+        border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+        padding: 22px; overflow-x: auto;
+      }
+      .canvas {
+        position: relative;
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 72px;
+        min-width: 1080px;
+        background-image: radial-gradient(rgba(77, 88, 107, 0.09) 1px, transparent 1px);
+        background-size: 22px 22px;
+        border-radius: var(--radius-inner);
+        padding: 16px 8px 20px;
+      }
+      svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+      svg.edges path.edge-hit { pointer-events: stroke; cursor: pointer; }
+
+      /* 呼吸边：dashoffset 推移表达方向，opacity 呼吸表达活性（纯 CSS） */
+      @keyframes edgeFlowDash { to { stroke-dashoffset: -28; } }
+      @keyframes edgeBreath { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+      path.edge-flow {
+        stroke: var(--brand); stroke-width: 2.5; stroke-dasharray: 10 18; stroke-linecap: round;
+        animation: edgeFlowDash 1.6s linear infinite, edgeBreath 2.8s ease-in-out infinite;
+      }
+      path.edge-flow.slow { animation-duration: 3.2s, 4.5s; stroke-width: 2; }
+      path.edge-done { stroke: var(--ok); stroke-width: 2; }
+      path.edge-idle { stroke: var(--line-strong); stroke-width: 1.5; stroke-dasharray: 4 6; }
+      path.edge-failed { stroke: var(--danger); stroke-width: 2.5; }
+
+      .stage { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 22px; }
+      .stage-label {
+        align-self: flex-start;
+        font-size: 11.5px; font-weight: 760; letter-spacing: 0.08em; color: var(--ink-3);
+        padding: 4px 12px; border-radius: 999px;
+        background: var(--card-inner); border: 1px solid var(--line);
+      }
+      .stage-spacer { flex: 1; }
+
+      .node {
+        position: relative;
+        background: var(--card); border: 1px solid var(--line-strong);
+        border-radius: var(--radius-inner);
+        box-shadow: 0 4px 16px rgba(13, 26, 68, 0.06);
+        padding: 13px 14px 12px;
+        transition: border-color 0.25s, box-shadow 0.25s, opacity 0.25s;
+      }
+      .node.is-running { border-color: rgba(47, 95, 255, 0.55); }
+      .node.is-running::before {
+        content: ""; position: absolute; inset: -1px; border-radius: var(--radius-inner);
+        border: 1px solid rgba(47, 95, 255, 0.4); pointer-events: none;
+        animation: nodeBreath 2.8s ease-in-out infinite;
+      }
+      @keyframes nodeBreath {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(47, 95, 255, 0.16); }
+        50% { box-shadow: 0 0 0 5px rgba(47, 95, 255, 0.10); }
+      }
+      .node.is-failed { border-color: rgba(209, 70, 71, 0.6); box-shadow: 0 0 0 3px rgba(209, 70, 71, 0.12); }
+      .node.is-blocked { border-color: rgba(204, 87, 42, 0.5); }
+      .node.is-idle { opacity: 0.72; }
+
+      .node-top { display: flex; align-items: center; gap: 10px; }
+      .avatar {
+        width: 34px; height: 34px; border-radius: 50%; flex: none;
+        display: grid; place-items: center; color: #fff; font-weight: 760; font-size: 14px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      }
+      .av-plan { background: linear-gradient(135deg, #5b8bff, var(--brand-deep)); }
+      .av-dev1 { background: linear-gradient(135deg, #34d399, #047857); }
+      .av-dev2 { background: linear-gradient(135deg, #22d3ee, #0e7490); }
+      .av-qa   { background: linear-gradient(135deg, #c4b1ff, #7c3aed); }
+      .av-doc  { background: linear-gradient(135deg, #fdba74, #d97706); }
+      .who { min-width: 0; flex: 1; }
+      .who-name { font-weight: 720; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .who-role { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+      .node-title { margin-top: 9px; font-weight: 680; font-size: 13.5px; line-height: 1.45;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+      .pill {
+        display: inline-flex; align-items: center; gap: 5px; flex: none;
+        padding: 2px 9px; border-radius: var(--radius-pill);
+        font-size: 11px; font-weight: 700;
+        border: 1px solid transparent;
+      }
+      .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+      .pill-running  { background: var(--brand-soft); color: var(--brand-deep); border-color: rgba(47, 95, 255, 0.22); }
+      .pill-completed{ background: var(--ok-soft); color: var(--ok-text); border-color: rgba(0, 154, 96, 0.22); }
+      .pill-failed   { background: var(--danger-soft); color: var(--danger-text); border-color: rgba(209, 70, 71, 0.24); }
+      .pill-queued   { background: var(--card-inner); color: var(--ink-2); border-color: var(--line-strong); }
+      .pill-pending  { background: var(--card-inner); color: var(--ink-3); border-color: var(--line); }
+      .pill-blocked  { background: var(--warn-soft); color: var(--warn-text); border-color: rgba(204, 87, 42, 0.24); }
+      .pill-running::before { animation: dotPulse 1.4s ease-in-out infinite; }
+      @keyframes dotPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+      /* 迷你事件流：最近 3 条结构化事件（实底、可扫读、贴审计感） */
+      .events {
+        margin-top: 10px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--card-inner); padding: 7px 10px; min-height: 66px;
+      }
+      .events-cap { font-size: 10.5px; font-weight: 720; letter-spacing: 0.06em; color: var(--ink-3); margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+      .events-cap .lg-dot { background: var(--brand); animation: dotPulse 1.4s ease-in-out infinite; }
+      .node.is-idle .events-cap .lg-dot, .node.is-failed .events-cap .lg-dot { animation: none; background: var(--line-strong); }
+      .ev-list { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+      .ev-row {
+        display: flex; align-items: baseline; gap: 7px; font-size: 11px; color: var(--ink-2);
+        white-space: nowrap; overflow: hidden; animation: evIn 0.4s ease both;
+      }
+      .ev-row time { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; color: var(--ink-3); flex: none; }
+      .ev-row .verb { color: var(--ink-3); flex: none; }
+      .ev-row .obj { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; color: var(--brand-deep); font-weight: 640; overflow: hidden; text-overflow: ellipsis; }
+      .ev-row.is-danger .obj, .ev-row.is-danger .verb { color: var(--danger-text); }
+      .ev-empty { font-size: 11px; color: var(--ink-3); padding: 2px 0; }
+      @keyframes evIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+      /* 交接对照浮层（与概念 A 共享的核心交互） */
+      .scrim {
+        position: fixed; inset: 0; z-index: 40;
+        background: rgba(11, 13, 18, 0.32); backdrop-filter: blur(2px);
+        display: none; align-items: center; justify-content: center; padding: 24px;
+      }
+      .scrim.open { display: flex; }
+      .dialog {
+        width: 880px; max-width: 100%; max-height: 88vh; overflow: auto;
+        background: var(--card); border-radius: var(--radius-card);
+        border: 1px solid var(--line); box-shadow: var(--shadow-float);
+      }
+      .dlg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 14px; border-bottom: 1px solid var(--line); }
+      .dlg-title { font-size: 16px; font-weight: 780; }
+      .dlg-sub { margin-top: 4px; font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .dlg-sub .arrow { color: var(--brand); font-weight: 800; }
+      .dlg-close { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--card); display: grid; place-items: center; flex: none; }
+      .dlg-body { display: grid; grid-template-columns: 1fr 1fr; }
+      .dlg-col { padding: 18px 24px 22px; }
+      .dlg-col + .dlg-col { border-left: 1px solid var(--line); }
+      .col-cap { font-size: 11.5px; font-weight: 760; letter-spacing: 0.07em; color: var(--ink-3); margin-bottom: 12px; }
+      .contract-item { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px; background: var(--card-inner); }
+      .contract-item .art { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 660; }
+      .contract-item .desc { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+      .criteria { margin: 0; padding: 0; list-style: none; }
+      .criteria-cap { font-size: 11.5px; font-weight: 760; letter-spacing: 0.07em; color: var(--ink-3); margin: 16px 0 8px; }
+      .criteria li { position: relative; padding: 4px 0 4px 18px; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+      .criteria li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 7px; height: 7px; border-radius: 2px; background: var(--brand-soft); border: 1px solid rgba(47, 95, 255, 0.4); }
+      .deliver-item {
+        display: flex; align-items: flex-start; gap: 10px;
+        border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px;
+        background: var(--card);
+      }
+      .deliver-item.is-mismatch { background: var(--danger-soft); border-color: rgba(209, 70, 71, 0.35); }
+      .deliver-item.is-pending { background: var(--card-inner); border-style: dashed; }
+      .deliver-main { min-width: 0; flex: 1; }
+      .deliver-main .art { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 660; }
+      .deliver-main .note { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.5; }
+      .deliver-item.is-mismatch .note { color: var(--danger-text); }
+      .diff-flag { font-size: 11px; font-weight: 720; color: var(--danger-text); margin-top: 4px; }
+      .dlg-foot { padding: 12px 24px 18px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--ink-3); }
+
+      .foot-hint { margin-top: 14px; color: var(--ink-3); font-size: 11.5px; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="head">
+        <div>
+          <div class="title">项目活图 · 代码仓库健康度审计<span class="concept-tag">概念 B · 低成本替代</span></div>
+          <div class="subtitle">
+            不做粒子流：活跃边用呼吸/脉冲（纯 CSS）表达方向与活性，节点卡内嵌最近 3 条结构化事件。
+            信息密度更高、更贴审计感，长时间挂大屏渲染成本更低。点击边仍可查看交接对照。
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="lg"><b>边</b></span>
+        <span class="lg"><span class="lg-swatch" style="background: repeating-linear-gradient(90deg, #2f5fff 0 8px, transparent 8px 14px)"></span>脉冲流动（虚线推移+呼吸）</span>
+        <span class="lg"><span class="lg-swatch" style="background: #009a60"></span>已交付</span>
+        <span class="lg"><span class="lg-swatch" style="background: #dfe4ea"></span>未激活</span>
+        <span class="lg"><span class="lg-swatch" style="background: #d14647"></span>交接失败</span>
+        <span class="lg" style="margin-left: 8px"><b>节点</b></span>
+        <span class="lg"><span class="lg-dot" style="background: #2f5fff"></span>运行中（外圈呼吸）</span>
+        <span class="lg"><span class="lg-dot" style="background: #009a60"></span>已完成</span>
+        <span class="lg"><span class="lg-dot" style="background: #cc572a"></span>已阻塞</span>
+      </div>
+
+      <div class="canvas-card">
+        <div class="canvas" id="canvas">
+          <svg class="edges" id="edgeSvg"></svg>
+
+          <div class="stage">
+            <div class="stage-label">阶段 1 · 规划</div>
+            <div class="stage-spacer"></div>
+            <div class="node" id="n1" data-status="completed">
+              <div class="node-top">
+                <div class="avatar av-plan">李</div>
+                <div class="who">
+                  <div class="who-name">规划-小李</div>
+                  <div class="who-role">规划师 · 数字员工</div>
+                </div>
+                <span class="pill pill-completed" data-pill>已完成</span>
+              </div>
+              <div class="node-title">拆解审计范围并生成任务计划</div>
+              <div class="events">
+                <div class="events-cap"><span class="lg-dot"></span>最近事件</div>
+                <div class="ev-list" data-ev></div>
+              </div>
+            </div>
+            <div class="stage-spacer"></div>
+          </div>
+
+          <div class="stage">
+            <div class="stage-label">阶段 2 · 执行</div>
+            <div class="node" id="n2" data-status="running">
+              <div class="node-top">
+                <div class="avatar av-dev1">王</div>
+                <div class="who">
+                  <div class="who-name">开发-小王</div>
+                  <div class="who-role">研发工程师 · 数字员工</div>
+                </div>
+                <span class="pill pill-running" data-pill>运行中</span>
+              </div>
+              <div class="node-title">扫描项目目录并统计文件</div>
+              <div class="events">
+                <div class="events-cap"><span class="lg-dot"></span>最近事件</div>
+                <div class="ev-list" data-ev></div>
+              </div>
+            </div>
+            <div class="node" id="n3" data-status="running">
+              <div class="node-top">
+                <div class="avatar av-dev2">陈</div>
+                <div class="who">
+                  <div class="who-name">开发-小陈</div>
+                  <div class="who-role">研发工程师 · 数字员工</div>
+                </div>
+                <span class="pill pill-running" data-pill>运行中</span>
+              </div>
+              <div class="node-title">分析依赖漏洞并输出清单</div>
+              <div class="events">
+                <div class="events-cap"><span class="lg-dot"></span>最近事件</div>
+                <div class="ev-list" data-ev></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stage">
+            <div class="stage-label">阶段 3 · 校验与汇总</div>
+            <div class="node is-idle" id="n4" data-status="queued">
+              <div class="node-top">
+                <div class="avatar av-qa">赵</div>
+                <div class="who">
+                  <div class="who-name">测试-小赵</div>
+                  <div class="who-role">测试工程师 · 数字员工</div>
+                </div>
+                <span class="pill pill-queued" data-pill>排队中</span>
+              </div>
+              <div class="node-title">校验统计结果并抽样复核</div>
+              <div class="events">
+                <div class="events-cap"><span class="lg-dot"></span>最近事件</div>
+                <div class="ev-list" data-ev><div class="ev-empty">等待上游交付物到位</div></div>
+              </div>
+            </div>
+            <div class="node is-idle" id="n5" data-status="pending">
+              <div class="node-top">
+                <div class="avatar av-doc">周</div>
+                <div class="who">
+                  <div class="who-name">文档-小周</div>
+                  <div class="who-role">技术写作 · 数字员工</div>
+                </div>
+                <span class="pill pill-pending" data-pill>待处理</span>
+              </div>
+              <div class="node-title">汇总审计报告并提交人类验收</div>
+              <div class="events">
+                <div class="events-cap"><span class="lg-dot"></span>最近事件</div>
+                <div class="ev-list" data-ev><div class="ev-empty">尚未开始</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot-hint">
+        原型说明：呼吸边为纯 CSS 动画（ReactFlow edge class 即可落地）；事件流复用运行总览既有 SSE 通道，此处用定时器模拟。点击任一条边查看交接对照。
+      </div>
+    </div>
+
+    <div class="scrim" id="scrim">
+      <div class="dialog" role="dialog" aria-modal="true" aria-label="交接对照">
+        <div class="dlg-head">
+          <div>
+            <div class="dlg-title">交接对照</div>
+            <div class="dlg-sub" id="dlgSub"></div>
+          </div>
+          <button class="dlg-close" id="dlgClose" aria-label="关闭">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6d7580" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="dlg-body">
+          <div class="dlg-col">
+            <div class="col-cap">交接契约 · HANDOFF CONTRACT</div>
+            <div id="dlgContract"></div>
+            <div class="criteria-cap">验收判据 · ACCEPTANCE CRITERIA</div>
+            <ul class="criteria" id="dlgCriteria"></ul>
+          </div>
+          <div class="dlg-col">
+            <div class="col-cap">实际交付物 · DELIVERED</div>
+            <div id="dlgActual"></div>
+          </div>
+        </div>
+        <div class="dlg-foot">契约来自任务图边 handoff_contract（上游 expected_outputs → 下游 required_inputs）；实际交付物来自执行结论与证据链，差异行已高亮。</div>
+      </div>
+    </div>
+
+    <script>
+      "use strict";
+      /* 数据同概念 A（贴近真实的中文占位，无真实 UUID） */
+      const EDGES = [
+        {
+          id: "e1", from: "n1", to: "n2", cls: "edge-flow slow",
+          label: "规划-小李 → 开发-小王",
+          contract: [
+            { art: "audit-plan.md", desc: "审计范围拆解与任务计划" },
+            { art: "scan-scope.json", desc: "扫描目录白名单与排除规则" },
+          ],
+          criteria: ["计划覆盖仓库全部一级目录", "排除规则含构建产物与依赖目录", "每个子任务标注预计产出物"],
+          actual: [
+            { art: "audit-plan.md", status: "delivered", note: "已固化为计划修订 rev-3" },
+            { art: "scan-scope.json", status: "delivered", note: "含 12 条排除规则" },
+          ],
+        },
+        {
+          id: "e2", from: "n1", to: "n3", cls: "edge-flow slow",
+          label: "规划-小李 → 开发-小陈",
+          contract: [
+            { art: "audit-plan.md", desc: "审计范围拆解与任务计划" },
+            { art: "dep-manifest.txt", desc: "待分析依赖清单（锁定版本）" },
+          ],
+          criteria: ["依赖清单来自锁文件而非声明文件", "覆盖直接与传递依赖"],
+          actual: [
+            { art: "audit-plan.md", status: "delivered", note: "已固化为计划修订 rev-3" },
+            { art: "dep-manifest.txt", status: "delivered", note: "共 486 项依赖" },
+          ],
+        },
+        {
+          id: "e3", from: "n2", to: "n4", cls: "edge-flow",
+          label: "开发-小王 → 测试-小赵",
+          contract: [
+            { art: "file-stats.json", desc: "目录级文件数与体积统计表" },
+            { art: "scan-log.txt", desc: "扫描过程日志（含跳过项）" },
+          ],
+          criteria: ["统计覆盖 ≥ 99% 的仓库文件", "输出含每目录文件数与总大小", "扫描日志无未处理错误"],
+          actual: [
+            { art: "file-stats.json", status: "delivered", note: "覆盖率 99.4%，1,203 个目录" },
+            { art: "scan-log.txt", status: "pending", note: "扫描仍在进行，日志未固化" },
+          ],
+        },
+        {
+          id: "e4", from: "n3", to: "n4", cls: "edge-failed",
+          label: "开发-小陈 → 测试-小赵",
+          contract: [
+            { art: "vuln-list.csv", desc: "漏洞清单（含 CVSS 评分与修复建议）" },
+          ],
+          criteria: ["每条漏洞标注 CVSS 评分", "高危项附最小修复版本"],
+          actual: [
+            { art: "vuln-list.csv", status: "mismatch", note: "缺少 CVSS 评分列，不满足契约字段要求", diff: "契约要求「含 CVSS 评分」，实际交付缺该列" },
+          ],
+        },
+        {
+          id: "e5", from: "n4", to: "n5", cls: "edge-idle",
+          label: "测试-小赵 → 文档-小周",
+          contract: [
+            { art: "verify-report.md", desc: "校验结论与抽样复核记录" },
+          ],
+          criteria: ["抽样比例 ≥ 5%", "不一致项逐条列出并定位"],
+          actual: [
+            { art: "verify-report.md", status: "pending", note: "上游任务尚未完成" },
+          ],
+        },
+      ];
+
+      /* 结构化事件池（时间 + 动词 + 对象），模拟 SSE 到达 */
+      const EV_POOL = {
+        n1: [
+          { verb: "计划固化", obj: "audit-plan.md · rev-3" },
+          { verb: "交接派发", obj: "→ 开发-小王" },
+          { verb: "交接派发", obj: "→ 开发-小陈" },
+        ],
+        n2: [
+          { verb: "产出写入", obj: "file-stats.json · 分片 12/40" },
+          { verb: "日志追加", obj: "scan-log.txt" },
+          { verb: "目录跳过", obj: "node_modules/" },
+          { verb: "产出写入", obj: "file-stats.json · 分片 27/40" },
+          { verb: "证据登记", obj: "scan-snapshot.zip" },
+        ],
+        n3: [
+          { verb: "产出写入", obj: "vuln-list.csv · 第 38 行" },
+          { verb: "通报比对", obj: "advisory-2026-0142" },
+          { verb: "校验失败", obj: "缺少 CVSS 评分列", danger: true },
+          { verb: "通报比对", obj: "advisory-2026-0197" },
+        ],
+      };
+
+      /* 边渲染：按节点实际布局测量 */
+      const canvas = document.getElementById("canvas");
+      const svg = document.getElementById("edgeSvg");
+      const SVG_NS = "http://www.w3.org/2000/svg";
+
+      function buildEdges() {
+        svg.innerHTML = "";
+        const cRect = canvas.getBoundingClientRect();
+        EDGES.forEach((e) => {
+          const fr = document.getElementById(e.from).getBoundingClientRect();
+          const tr = document.getElementById(e.to).getBoundingClientRect();
+          const x1 = fr.right - cRect.left;
+          const y1 = fr.top + fr.height / 2 - cRect.top;
+          const x2 = tr.left - cRect.left;
+          const y2 = tr.top + tr.height / 2 - cRect.top;
+          const dx = Math.max(40, (x2 - x1) * 0.45);
+          const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+          const path = document.createElementNS(SVG_NS, "path");
+          path.setAttribute("d", d);
+          path.setAttribute("fill", "none");
+          path.setAttribute("class", e.cls);
+          svg.appendChild(path);
+
+          const hit = document.createElementNS(SVG_NS, "path");
+          hit.setAttribute("d", d);
+          hit.setAttribute("fill", "none");
+          hit.setAttribute("stroke", "rgba(0,0,0,0)");
+          hit.setAttribute("stroke-width", "16");
+          hit.setAttribute("class", "edge-hit");
+          hit.addEventListener("click", () => openDialog(e));
+          svg.appendChild(hit);
+        });
+      }
+
+      /* 迷你事件流：最近 3 条，新事件顶入 */
+      function fmtTime(d) {
+        const p = (n) => String(n).padStart(2, "0");
+        return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+      }
+      const evIdx = {};
+      function pushEvent(nodeId) {
+        const pool = EV_POOL[nodeId];
+        if (!pool) return;
+        evIdx[nodeId] = ((evIdx[nodeId] ?? -1) + 1) % pool.length;
+        const ev = pool[evIdx[nodeId]];
+        const list = document.getElementById(nodeId).querySelector("[data-ev]");
+        const empty = list.querySelector(".ev-empty");
+        if (empty) empty.remove();
+        const row = document.createElement("div");
+        row.className = "ev-row" + (ev.danger ? " is-danger" : "");
+        row.innerHTML = `<time>${fmtTime(new Date())}</time><span class="verb">${ev.verb}</span><span class="obj">${ev.obj}</span>`;
+        list.prepend(row);
+        while (list.children.length > 3) list.lastElementChild.remove();
+      }
+
+      /* 交接对照浮层 */
+      const scrim = document.getElementById("scrim");
+      function openDialog(e) {
+        document.getElementById("dlgSub").innerHTML =
+          `<span>${e.label}</span><span class="arrow">⟶</span><span>边 ${e.id} · 上游 expected_outputs 对齐下游 required_inputs</span>`;
+        document.getElementById("dlgContract").innerHTML = e.contract.map((c) =>
+          `<div class="contract-item"><div class="art">${c.art}</div><div class="desc">${c.desc}</div></div>`).join("");
+        document.getElementById("dlgCriteria").innerHTML = e.criteria.map((c) => `<li>${c}</li>`).join("");
+        const S = { delivered: ["pill-completed", "已交付"], pending: ["pill-queued", "待交付"], mismatch: ["pill-failed", "不符"] };
+        document.getElementById("dlgActual").innerHTML = e.actual.map((a) => {
+          const cls = a.status === "mismatch" ? " is-mismatch" : a.status === "pending" ? " is-pending" : "";
+          const diff = a.diff ? `<div class="diff-flag">差异：${a.diff}</div>` : "";
+          return `<div class="deliver-item${cls}"><div class="deliver-main"><div class="art">${a.art}</div><div class="note">${a.note}</div>${diff}</div><span class="pill ${S[a.status][0]}">${S[a.status][1]}</span></div>`;
+        }).join("");
+        scrim.classList.add("open");
+      }
+      document.getElementById("dlgClose").addEventListener("click", () => scrim.classList.remove("open"));
+      scrim.addEventListener("click", (ev) => { if (ev.target === scrim) scrim.classList.remove("open"); });
+      document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") scrim.classList.remove("open"); });
+
+      /* 启动 */
+      window.addEventListener("resize", buildEdges);
+      buildEdges();
+      pushEvent("n1"); pushEvent("n1"); pushEvent("n1");
+      pushEvent("n2"); pushEvent("n3");
+      setInterval(() => pushEvent("n2"), 2400);
+      setInterval(() => pushEvent("n3"), 3300);
+    </script>
+  </body>
+</html>
