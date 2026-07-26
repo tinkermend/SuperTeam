@@ -99,8 +99,10 @@ type TeamConstitutionTabProps = {
 /**
  * 团队宪法编辑（spec §5.3，D1 接通 / D9 仅文本注入）。
  *
- * 规则条目取代此前的裸 textarea：分类让人一眼看出是禁止还是要求，也决定注入 provider
- * 提示词时的分组。保存必须写变更说明并追加为新版本——宪法一次改动对全队所有派发生效。
+ * 规则条目取代此前的裸 textarea：分类让人一眼看出这条提醒的轻重，也决定注入 provider
+ * 提示词时的分组。分类标签故意不用"禁止/必须/需审批"——宪法不触发任何门禁或审批，
+ * 那样的措辞会让人误以为它有实际强制力。保存必须写变更说明并追加为新版本——宪法一次
+ * 改动对全队所有派发生效。
  */
 export function TeamConstitutionTab({
   apiOptions,
@@ -210,7 +212,7 @@ export function TeamConstitutionTab({
               <StatusPill tone="mute">{totalChars} 字</StatusPill>
             </div>
             <p className="mt-1 text-[13px] text-ink-2">
-              规则会在每次派发时注入数字员工的提示词，团队约束在员工人格之前。改动保存为新版本，需填写变更说明。
+              规则会在每次派发时注入数字员工的提示词，团队约束在员工人格之前。这是提示词层面的提醒，不是强制门禁——数字员工仍可能不遵守。改动保存为新版本，需填写变更说明。
             </p>
           </div>
           <Button

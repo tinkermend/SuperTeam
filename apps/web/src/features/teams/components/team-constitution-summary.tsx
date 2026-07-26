@@ -3,7 +3,9 @@ import { Link } from "@tanstack/react-router";
 import { Button, StatusPill, WorkSurface } from "@/components/superteam";
 import { constitutionCategoryLabel } from "@/lib/status-labels";
 
-// 观察面：只列出当前生效的硬性规则，编辑在团队配置页的「约束」分区。
+// 观察面：只列出当前生效的规则，编辑在团队配置页的「约束」分区。
+// 措辞刻意用「规则/提醒」而非「硬性规则」——宪法是注入 provider 提示词的软提醒，
+// 不是强制门禁（D9），"硬性"两字会让人误以为写了就一定会被遵守。
 export function TeamConstitutionSummary({
   constitution,
   teamId
@@ -35,9 +37,9 @@ export function TeamConstitutionSummary({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-bold text-ink">团队宪法</h2>
-            <StatusPill tone="mute">{rules.length} 条硬性规则</StatusPill>
+            <StatusPill tone="mute">{rules.length} 条规则</StatusPill>
           </div>
-          <p className="mt-1 text-[13px] text-ink-2">约束执行边界的硬性规则。</p>
+          <p className="mt-1 text-[13px] text-ink-2">注入执行提示词的团队级提醒，非强制门禁。</p>
         </div>
         <Button asChild size="sm" variant="ghost">
           <Link hash="constitution" params={{ teamId }} to="/teams/$teamId/config">
@@ -47,7 +49,7 @@ export function TeamConstitutionSummary({
       </div>
       <div className="p-5">
         {rules.length === 0 ? (
-          <p className="text-[13px] text-ink-2">尚未配置硬性规则。</p>
+          <p className="text-[13px] text-ink-2">尚未配置规则。</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {rules.map((rule, index) => (

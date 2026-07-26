@@ -391,11 +391,13 @@ export function teamAuditActionLabel(action: string | undefined): string {
   return TEAM_AUDIT_ACTION_LABELS[action.trim()] ?? action;
 }
 
-// 团队宪法规则分类词表。D9：分类只用于分组表达与提示词组织，不触发任何审批点。
+// 团队宪法规则分类词表。D9：宪法只是注入 provider 提示词的软提醒，不触发任何门禁
+// 或审批。标签刻意不用"禁止/必须/需审批"这类暗示强制力的词——尤其"需审批"，
+// 平台里真有审批流程（权限中心）时那个词才该出现；这里没有，用了就是过度承诺。
 const CONSTITUTION_CATEGORY_LABELS: Record<string, string> = {
-  forbid: "禁止",
-  must: "必须",
-  require_approval: "需审批",
+  forbid: "尽量避免",
+  must: "尽量遵循",
+  require_approval: "重点提醒",
 };
 
 export function constitutionCategoryLabel(category: string | undefined): string {

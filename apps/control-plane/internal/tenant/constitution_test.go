@@ -75,13 +75,34 @@ func TestRenderConstitutionPromptGroupsByCategory(t *testing.T) {
 		{Text: "变更必须登记", Category: ConstitutionCategoryMust},
 		{Text: "上线需审批", Category: ConstitutionCategoryRequireApprove},
 	})
-	for _, want := range []string{"# 团队宪法（必须遵守）", "## 禁止", "## 必须", "## 需审批", "- 不得直连生产库"} {
+	// 提示词标题走 constitutionPromptHeaders，故意比人类看到的 ConstitutionCategoryLabel
+	// 更强硬（forbid/must 保留"禁止/必须"）；唯独 require_approval 连对模型也不写"需审批"
+	// ——那会让模型误以为存在真实的审批流程，改用"重点关注"。
+	for _, want := range []string{"# 团队宪法（必须遵守）", "## 禁止", "## 必须", "## 重点关注", "- 不得直连生产库"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt %q missing %q", prompt, want)
 		}
 	}
+	// 只检查标题不写"需审批"；规则正文是自由文本，用户完全可以自己写这几个字
+	// （比如这条规则的原文就是"上线需审批"），那不是本测试要拦的东西。
+	if strings.Contains(prompt, "## 需审批") {
+		t.Fatalf("prompt header must not claim an approval workflow exists: %q", prompt)
+	}
 	if strings.Index(prompt, "## 禁止") > strings.Index(prompt, "## 必须") {
 		t.Fatalf("expected forbid section first: %q", prompt)
+	}
+}
+
+// ConstitutionCategoryLabel 是给人看的（控制台 UI），必须诚实：不能暗示存在门禁或
+// 审批流程（D9）。
+func TestConstitutionCategoryLabelDoesNotOverclaimEnforcement(t *testing.T) {
+	for _, category := range []string{ConstitutionCategoryForbid, ConstitutionCategoryMust, ConstitutionCategoryRequireApprove} {
+		label := ConstitutionCategoryLabel(category)
+		for _, forbidden := range []string{"禁止", "必须", "需审批"} {
+			if label == forbidden {
+				t.Fatalf("category %q label %q overclaims enforcement strength", category, label)
+			}
+		}
 	}
 }
 

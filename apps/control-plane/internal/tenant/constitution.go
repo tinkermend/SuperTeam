@@ -9,7 +9,13 @@ import (
 
 // 团队宪法（spec §5.3，D1 接通 / D9 仅文本注入）。
 //
-// 规则条目取代此前的裸字符串数组：分类让人一眼看出这条是禁止还是要求，也让注入到
+// 分类标签刻意不用"禁止/必须/需审批"这类暗示强制力的词：宪法目前只是注入
+// provider 提示词的软提醒，没有任何门禁或审批流程会因为某条规则的分类而触发
+// （D9），"需审批"尤其容易让人误以为存在一个真实的审批动作。分类名换成诚实的
+// 提醒强度描述，枚举 key（forbid/must/require_approval）保持不变，避免动
+// 已落库数据与契约。
+//
+// 规则条目取代此前的裸字符串数组：分类让人一眼看出这条提醒的轻重，也让注入到
 // provider 的文本能按类分组。分类在服务端校验，不做前端封闭枚举（宪法「不依赖封闭
 // 枚举」）。
 const (
@@ -20,17 +26,40 @@ const (
 
 // constitutionCategories 是服务端注册的合法分类集合。新增分类在这里加。
 var constitutionCategories = map[string]string{
-	ConstitutionCategoryForbid:         "禁止",
-	ConstitutionCategoryMust:           "必须",
-	ConstitutionCategoryRequireApprove: "需审批",
+	ConstitutionCategoryForbid:         "尽量避免",
+	ConstitutionCategoryMust:           "尽量遵循",
+	ConstitutionCategoryRequireApprove: "重点提醒",
 }
 
-// ConstitutionCategoryLabel 返回分类的中文名，未知值回退原文。
+// ConstitutionCategoryLabel 返回分类的中文名（面向人类：控制台 UI、审计详情），
+// 未知值回退原文。
 func ConstitutionCategoryLabel(category string) string {
 	if label, ok := constitutionCategories[category]; ok {
 		return label
 	}
 	return category
+}
+
+// constitutionPromptHeaders 是注入 provider 提示词的分组标题，故意比人类看到的
+// ConstitutionCategoryLabel 更强硬：这段文本是说给模型听的，用词软化只会削弱它
+// 唯一的作用机制（说服），对谁都没有好处。两套措辞的差异本身就是"对人诚实、对
+// 模型有效"这条原则的体现，不是疏漏。
+//
+// require_approval 例外：不写"需审批"。forbid/must 说得强硬只是加大说服力度，
+// 模型信不信都没有副作用；但"需审批"会让模型误以为存在一个真实的审批流程，
+// 可能诱发它去等待一个永远不会来的批准、或编造一个审批已完成的说法。这是唯一
+// 一处连对模型也不能夸大的分类。
+var constitutionPromptHeaders = map[string]string{
+	ConstitutionCategoryForbid:         "禁止",
+	ConstitutionCategoryMust:           "必须",
+	ConstitutionCategoryRequireApprove: "重点关注",
+}
+
+func constitutionPromptHeader(category string) string {
+	if label, ok := constitutionPromptHeaders[category]; ok {
+		return label
+	}
+	return ConstitutionCategoryLabel(category)
 }
 
 // ConstitutionRule 一条团队规则。
@@ -167,7 +196,7 @@ func RenderConstitutionPrompt(rules []ConstitutionRule) string {
 		if len(items) == 0 {
 			continue
 		}
-		builder.WriteString(fmt.Sprintf("\n## %s\n", ConstitutionCategoryLabel(category)))
+		builder.WriteString(fmt.Sprintf("\n## %s\n", constitutionPromptHeader(category)))
 		for _, text := range items {
 			builder.WriteString(fmt.Sprintf("- %s\n", text))
 		}
@@ -177,7 +206,7 @@ func RenderConstitutionPrompt(rules []ConstitutionRule) string {
 		if category == ConstitutionCategoryForbid || category == ConstitutionCategoryMust || category == ConstitutionCategoryRequireApprove {
 			continue
 		}
-		builder.WriteString(fmt.Sprintf("\n## %s\n", ConstitutionCategoryLabel(category)))
+		builder.WriteString(fmt.Sprintf("\n## %s\n", constitutionPromptHeader(category)))
 		for _, text := range items {
 			builder.WriteString(fmt.Sprintf("- %s\n", text))
 		}

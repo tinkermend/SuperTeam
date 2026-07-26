@@ -6103,13 +6103,13 @@ type TeamConstitutionRevision struct {
 
 // TeamConstitutionRule defines model for TeamConstitutionRule.
 type TeamConstitutionRule struct {
-	// Category 规则分类，服务端注册校验：forbid 禁止 / must 必须 / require_approval 需审批。 D9：分类只用于分组表达与提示词组织，不触发任何强制审批点。
+	// Category 规则分类，服务端注册校验。枚举 key 保持稳定（forbid/must/require_approval）， 但这只是注入 provider 提示词时的分组强度，不是门禁或审批：D9 明确宪法不参与 任何强制判定，控制台展示的中文名刻意用"尽量避免/尽量遵循/重点提醒"而非 "禁止/必须/需审批"，避免让人误以为存在真实的强制力或审批流程。
 	Category *TeamConstitutionRuleCategory `json:"category,omitempty"`
 	Id       *string                       `json:"id,omitempty"`
 	Text     string                        `json:"text"`
 }
 
-// TeamConstitutionRuleCategory 规则分类，服务端注册校验：forbid 禁止 / must 必须 / require_approval 需审批。 D9：分类只用于分组表达与提示词组织，不触发任何强制审批点。
+// TeamConstitutionRuleCategory 规则分类，服务端注册校验。枚举 key 保持稳定（forbid/must/require_approval）， 但这只是注入 provider 提示词时的分组强度，不是门禁或审批：D9 明确宪法不参与 任何强制判定，控制台展示的中文名刻意用"尽量避免/尽量遵循/重点提醒"而非 "禁止/必须/需审批"，避免让人误以为存在真实的强制力或审批流程。
 type TeamConstitutionRuleCategory string
 
 // TeamHumanOwner defines model for TeamHumanOwner.
