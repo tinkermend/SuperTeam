@@ -2923,6 +2923,9 @@ func normalizeProjectTaskGraph(graph *ProjectTaskGraph) {
 	if graph.BlockingFacts == nil {
 		graph.BlockingFacts = []ProjectTaskGraphBlockingFact{}
 	}
+	if graph.HandoffAssessments == nil {
+		graph.HandoffAssessments = []ProjectTaskGraphHandoffAssessment{}
+	}
 }
 
 func buildProjectTaskGraphStageSummaries(nodes []ProjectTaskGraphNode) []ProjectTaskGraphStageSummary {

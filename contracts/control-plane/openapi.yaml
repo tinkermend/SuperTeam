@@ -7669,6 +7669,58 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectTaskGraphBlockingFact"
+        handoff_assessments:
+          type: array
+          description: >-
+            结构化交接 verdict（纯读投影，spec 2026-07-27 §5 P2-V）：按
+            project_task_id 对每个声明交付物核对 delivered/missing。无声明
+            数据时 status 必须为 unknown，消费方不得据此编造符合性判定。
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphHandoffAssessment"
+    ProjectTaskGraphHandoffAssessment:
+      type: object
+      required:
+        - project_task_id
+        - status
+        - deliverables
+      properties:
+        project_task_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - fulfilled
+            - partial
+            - unfulfilled
+            - unknown
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphHandoffDeliverable"
+    ProjectTaskGraphHandoffDeliverable:
+      type: object
+      description: >-
+        一条声明交付物的核对结果。声明来源为任务最新结果契约的 deliverables
+        （v2 声明管道，ref 已回填=已物化工件）与 planner 声明的 produces 名单；
+        delivered 判据与平台 produces 核对一致（ref 或 value 非空）。
+      required:
+        - name
+        - verdict
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        verdict:
+          type: string
+          enum:
+            - delivered
+            - missing
+        ref:
+          type: string
+        summary:
+          type: string
     ProjectTaskLiveness:
       type: object
       required:

@@ -1662,6 +1662,48 @@ func (e ProjectTaskAttestationStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectTaskGraphHandoffAssessmentStatus.
+const (
+	ProjectTaskGraphHandoffAssessmentStatusFulfilled   ProjectTaskGraphHandoffAssessmentStatus = "fulfilled"
+	ProjectTaskGraphHandoffAssessmentStatusPartial     ProjectTaskGraphHandoffAssessmentStatus = "partial"
+	ProjectTaskGraphHandoffAssessmentStatusUnfulfilled ProjectTaskGraphHandoffAssessmentStatus = "unfulfilled"
+	ProjectTaskGraphHandoffAssessmentStatusUnknown     ProjectTaskGraphHandoffAssessmentStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProjectTaskGraphHandoffAssessmentStatus enum.
+func (e ProjectTaskGraphHandoffAssessmentStatus) Valid() bool {
+	switch e {
+	case ProjectTaskGraphHandoffAssessmentStatusFulfilled:
+		return true
+	case ProjectTaskGraphHandoffAssessmentStatusPartial:
+		return true
+	case ProjectTaskGraphHandoffAssessmentStatusUnfulfilled:
+		return true
+	case ProjectTaskGraphHandoffAssessmentStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectTaskGraphHandoffDeliverableVerdict.
+const (
+	Delivered ProjectTaskGraphHandoffDeliverableVerdict = "delivered"
+	Missing   ProjectTaskGraphHandoffDeliverableVerdict = "missing"
+)
+
+// Valid indicates whether the value is a known member of the ProjectTaskGraphHandoffDeliverableVerdict enum.
+func (e ProjectTaskGraphHandoffDeliverableVerdict) Valid() bool {
+	switch e {
+	case Delivered:
+		return true
+	case Missing:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RequestPrivilegedRoleRequestRequestedRole.
 const (
 	RequestPrivilegedRoleRequestRequestedRoleAdmin    RequestPrivilegedRoleRequestRequestedRole = "admin"
@@ -2411,25 +2453,25 @@ func (e ListPermissionApprovalsParamsView) Valid() bool {
 
 // Defines values for ListPermissionApprovalsParamsStatus.
 const (
-	Approved          ListPermissionApprovalsParamsStatus = "approved"
-	Cancelled         ListPermissionApprovalsParamsStatus = "cancelled"
-	NeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
-	Pending           ListPermissionApprovalsParamsStatus = "pending"
-	Rejected          ListPermissionApprovalsParamsStatus = "rejected"
+	ListPermissionApprovalsParamsStatusApproved          ListPermissionApprovalsParamsStatus = "approved"
+	ListPermissionApprovalsParamsStatusCancelled         ListPermissionApprovalsParamsStatus = "cancelled"
+	ListPermissionApprovalsParamsStatusNeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
+	ListPermissionApprovalsParamsStatusPending           ListPermissionApprovalsParamsStatus = "pending"
+	ListPermissionApprovalsParamsStatusRejected          ListPermissionApprovalsParamsStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the ListPermissionApprovalsParamsStatus enum.
 func (e ListPermissionApprovalsParamsStatus) Valid() bool {
 	switch e {
-	case Approved:
+	case ListPermissionApprovalsParamsStatusApproved:
 		return true
-	case Cancelled:
+	case ListPermissionApprovalsParamsStatusCancelled:
 		return true
-	case NeedsMoreEvidence:
+	case ListPermissionApprovalsParamsStatusNeedsMoreEvidence:
 		return true
-	case Pending:
+	case ListPermissionApprovalsParamsStatusPending:
 		return true
-	case Rejected:
+	case ListPermissionApprovalsParamsStatusRejected:
 		return true
 	default:
 		return false
@@ -5106,15 +5148,18 @@ type ProjectTaskAttestationStatus string
 
 // ProjectTaskGraph defines model for ProjectTaskGraph.
 type ProjectTaskGraph struct {
-	BlockingFacts      []ProjectTaskGraphBlockingFact  `json:"blocking_facts"`
-	DecisionRequests   []ProjectDecisionRequest        `json:"decision_requests"`
-	Edges              []ProjectTaskGraphEdge          `json:"edges"`
-	Employees          []ProjectTaskGraphEmployee      `json:"employees"`
-	ExecutionSummaries []ProjectExecutionSummary       `json:"execution_summaries"`
-	Nodes              []ProjectTaskGraphNode          `json:"nodes"`
-	RecentEvents       []ProjectEvent                  `json:"recent_events"`
-	Runs               []ProjectTaskGraphRun           `json:"runs"`
-	StageSummaries     *[]ProjectTaskGraphStageSummary `json:"stage_summaries,omitempty"`
+	BlockingFacts      []ProjectTaskGraphBlockingFact `json:"blocking_facts"`
+	DecisionRequests   []ProjectDecisionRequest       `json:"decision_requests"`
+	Edges              []ProjectTaskGraphEdge         `json:"edges"`
+	Employees          []ProjectTaskGraphEmployee     `json:"employees"`
+	ExecutionSummaries []ProjectExecutionSummary      `json:"execution_summaries"`
+
+	// HandoffAssessments 结构化交接 verdict（纯读投影，spec 2026-07-27 §5 P2-V）：按 project_task_id 对每个声明交付物核对 delivered/missing。无声明 数据时 status 必须为 unknown，消费方不得据此编造符合性判定。
+	HandoffAssessments *[]ProjectTaskGraphHandoffAssessment `json:"handoff_assessments,omitempty"`
+	Nodes              []ProjectTaskGraphNode               `json:"nodes"`
+	RecentEvents       []ProjectEvent                       `json:"recent_events"`
+	Runs               []ProjectTaskGraphRun                `json:"runs"`
+	StageSummaries     *[]ProjectTaskGraphStageSummary      `json:"stage_summaries,omitempty"`
 }
 
 // ProjectTaskGraphBlockingFact defines model for ProjectTaskGraphBlockingFact.
@@ -5165,6 +5210,28 @@ type ProjectTaskGraphEmployeeAvatarAsset struct {
 	Label        string `json:"label"`
 	ThumbnailUrl string `json:"thumbnail_url"`
 }
+
+// ProjectTaskGraphHandoffAssessment defines model for ProjectTaskGraphHandoffAssessment.
+type ProjectTaskGraphHandoffAssessment struct {
+	Deliverables  []ProjectTaskGraphHandoffDeliverable    `json:"deliverables"`
+	ProjectTaskId openapi_types.UUID                      `json:"project_task_id"`
+	Status        ProjectTaskGraphHandoffAssessmentStatus `json:"status"`
+}
+
+// ProjectTaskGraphHandoffAssessmentStatus defines model for ProjectTaskGraphHandoffAssessment.Status.
+type ProjectTaskGraphHandoffAssessmentStatus string
+
+// ProjectTaskGraphHandoffDeliverable 一条声明交付物的核对结果。声明来源为任务最新结果契约的 deliverables （v2 声明管道，ref 已回填=已物化工件）与 planner 声明的 produces 名单； delivered 判据与平台 produces 核对一致（ref 或 value 非空）。
+type ProjectTaskGraphHandoffDeliverable struct {
+	Kind    *string                                   `json:"kind,omitempty"`
+	Name    string                                    `json:"name"`
+	Ref     *string                                   `json:"ref,omitempty"`
+	Summary *string                                   `json:"summary,omitempty"`
+	Verdict ProjectTaskGraphHandoffDeliverableVerdict `json:"verdict"`
+}
+
+// ProjectTaskGraphHandoffDeliverableVerdict defines model for ProjectTaskGraphHandoffDeliverable.Verdict.
+type ProjectTaskGraphHandoffDeliverableVerdict string
 
 // ProjectTaskGraphNode defines model for ProjectTaskGraphNode.
 type ProjectTaskGraphNode struct {

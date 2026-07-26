@@ -6,10 +6,13 @@ import {
   SoftDialogDescription,
   SoftDialogHeader,
   SoftDialogTitle,
+  StatusPill,
 } from "@/components/superteam";
+import type { Tone } from "@/components/superteam";
 import type {
   ProjectExecutionSummary,
   ProjectTaskGraph,
+  ProjectTaskGraphHandoffAssessment,
   ProjectTaskGraphNode,
 } from "@/lib/api/projects";
 import { formatDateTime } from "@/lib/format-time";
@@ -24,10 +27,12 @@ type FlowHandoffOverlayProps = {
 };
 
 /**
- * 交接对照浮层（spec 2026-07-27 §1.3）：左=交接契约（blocker 节点
+ * 交接对照浮层（spec 2026-07-27 §1.3 + §5 P2-V）：左=交接契约（blocker 节点
  * expected_outputs / handoff_contract.acceptance_criteria），右=实际执行结论与
- * 已加载的产出引用（execution_summaries）。verdict 拍板默认：只做"有/无"层面的
- * 浅呈现，数据不支持时呈现"暂无"，不编造"不符"判定；不新增请求。
+ * 已加载的产出引用（execution_summaries），叠加控制平面按声明交付物核对出的
+ * 结构化交接 verdict（handoff_assessments，逐条 delivered/missing 徽章）。
+ * 诚实边界：verdict 为 unknown（无声明数据）时维持"暂无"呈现与"不构成符合性
+ * 判定"底注，不编造"不符"；不新增请求。
  */
 export function FlowHandoffOverlay({ edge, graph, onClose }: FlowHandoffOverlayProps) {
   const blockerTask = edge
@@ -37,6 +42,13 @@ export function FlowHandoffOverlay({ edge, graph, onClose }: FlowHandoffOverlayP
     ? graph.nodes.find((node) => node.id === edge.dependentTaskId)
     : undefined;
   const open = Boolean(edge && blockerTask && dependentTask);
+  const assessment =
+    blockerTask ?
+      graph.handoff_assessments?.find(
+        (item) => item.project_task_id === blockerTask.id,
+      )
+    : undefined;
+  const hasVerdict = Boolean(assessment && assessment.status !== "unknown");
 
   return (
     <SoftDialog onOpenChange={(nextOpen) => !nextOpen && onClose()} open={open}>
@@ -59,13 +71,16 @@ export function FlowHandoffOverlay({ edge, graph, onClose }: FlowHandoffOverlayP
               <div className="grid gap-6 sm:grid-cols-2 sm:gap-8">
                 <HandoffContractColumn task={blockerTask} />
                 <HandoffActualColumn
+                  assessment={hasVerdict ? assessment : undefined}
                   summaries={graph.execution_summaries.filter(
                     (summary) => summary.project_task_id === blockerTask.id,
                   )}
                 />
               </div>
               <p className="mt-5 border-t border-line pt-3 text-[11.5px] leading-4 text-ink-3">
-                对照仅呈现交接契约与已回写的执行结论，不构成符合性判定。
+                {hasVerdict ?
+                  "符合性由控制平面按声明交付物核对。"
+                : "对照仅呈现交接契约与已回写的执行结论，不构成符合性判定。"}
               </p>
             </SoftDialogBody>
           </>
@@ -131,10 +146,64 @@ function HandoffContractColumn({ task }: { task: ProjectTaskGraphNode }) {
   );
 }
 
-function HandoffActualColumn({ summaries }: { summaries: ProjectExecutionSummary[] }) {
+/** 交付物 verdict 的中文词表与色调（组件内映射：新枚举仅此浮层消费）。 */
+const DELIVERABLE_VERDICT_PRESENTATION: Record<string, { label: string; tone: Tone }> = {
+  delivered: { label: "已交付", tone: "ok" },
+  missing: { label: "缺失", tone: "danger" },
+};
+
+function HandoffDeliverableVerdicts({
+  assessment,
+}: {
+  assessment: ProjectTaskGraphHandoffAssessment;
+}) {
+  return (
+    <div className="grid gap-1.5" data-testid="handoff-deliverable-verdicts">
+      <p className="text-[11.5px] font-bold uppercase leading-4 tracking-wider text-ink-3">
+        声明交付物核对
+      </p>
+      <ul className="grid gap-1.5">
+        {assessment.deliverables.map((deliverable, index) => {
+          const presentation =
+            DELIVERABLE_VERDICT_PRESENTATION[deliverable.verdict] ??
+            DELIVERABLE_VERDICT_PRESENTATION.missing;
+          return (
+            <li
+              className="flex min-w-0 items-center justify-between gap-2 rounded-[10px] border border-line bg-card-soft px-3 py-2"
+              key={`${deliverable.name}-${index}`}
+            >
+              <span className="min-w-0 text-[12.5px] leading-5 text-ink">
+                <span className="break-words font-medium">
+                  {deliverable.name || "未命名交付物"}
+                </span>
+                {deliverable.summary ? (
+                  <span className="ml-1.5 break-all text-[11.5px] text-ink-3">
+                    {deliverable.summary}
+                  </span>
+                ) : null}
+              </span>
+              <StatusPill className="shrink-0" tone={presentation.tone}>
+                {presentation.label}
+              </StatusPill>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function HandoffActualColumn({
+  assessment,
+  summaries,
+}: {
+  assessment: ProjectTaskGraphHandoffAssessment | undefined;
+  summaries: ProjectExecutionSummary[];
+}) {
   return (
     <section className="grid content-start gap-2" data-testid="handoff-actual-column">
       <ColumnCaption label="实际执行" />
+      {assessment ? <HandoffDeliverableVerdicts assessment={assessment} /> : null}
       {summaries.length === 0 ? (
         <p className="text-[12.5px] text-ink-3">暂无产出（上游任务尚未回写执行结论）</p>
       ) : (

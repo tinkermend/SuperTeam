@@ -2447,15 +2447,30 @@ type projectTaskResponse struct {
 }
 
 type projectTaskGraphResponse struct {
-	Nodes              []projectTaskGraphNodeResponse         `json:"nodes"`
-	Edges              []projectTaskGraphEdgeResponse         `json:"edges"`
-	Employees          []projectTaskGraphEmployeeResponse     `json:"employees"`
-	Runs               []projectTaskGraphRunResponse          `json:"runs"`
-	ExecutionSummaries []executionSummaryResponse             `json:"execution_summaries"`
-	RecentEvents       []projectEventResponse                 `json:"recent_events"`
-	DecisionRequests   []decisionRequestResponse              `json:"decision_requests"`
-	StageSummaries     []projectTaskGraphStageSummaryResponse `json:"stage_summaries,omitempty"`
-	BlockingFacts      []projectTaskGraphBlockingFactResponse `json:"blocking_facts"`
+	Nodes              []projectTaskGraphNodeResponse              `json:"nodes"`
+	Edges              []projectTaskGraphEdgeResponse              `json:"edges"`
+	Employees          []projectTaskGraphEmployeeResponse          `json:"employees"`
+	Runs               []projectTaskGraphRunResponse               `json:"runs"`
+	ExecutionSummaries []executionSummaryResponse                  `json:"execution_summaries"`
+	RecentEvents       []projectEventResponse                      `json:"recent_events"`
+	DecisionRequests   []decisionRequestResponse                   `json:"decision_requests"`
+	StageSummaries     []projectTaskGraphStageSummaryResponse      `json:"stage_summaries,omitempty"`
+	BlockingFacts      []projectTaskGraphBlockingFactResponse      `json:"blocking_facts"`
+	HandoffAssessments []projectTaskGraphHandoffAssessmentResponse `json:"handoff_assessments,omitempty"`
+}
+
+type projectTaskGraphHandoffAssessmentResponse struct {
+	ProjectTaskID string                                       `json:"project_task_id"`
+	Status        string                                       `json:"status"`
+	Deliverables  []projectTaskGraphHandoffDeliverableResponse `json:"deliverables"`
+}
+
+type projectTaskGraphHandoffDeliverableResponse struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind,omitempty"`
+	Verdict string `json:"verdict"`
+	Ref     string `json:"ref,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 type projectTaskLivenessResponse struct {
@@ -3280,7 +3295,30 @@ func taskGraphResponseFromDomain(graph ProjectTaskGraph) projectTaskGraphRespons
 		DecisionRequests:   decisionRequestResponses(graph.DecisionRequests),
 		StageSummaries:     taskGraphStageSummaryResponses(graph.StageSummaries),
 		BlockingFacts:      taskGraphBlockingFactResponses(graph.BlockingFacts),
+		HandoffAssessments: taskGraphHandoffAssessmentResponses(graph.HandoffAssessments),
 	}
+}
+
+func taskGraphHandoffAssessmentResponses(items []ProjectTaskGraphHandoffAssessment) []projectTaskGraphHandoffAssessmentResponse {
+	responses := make([]projectTaskGraphHandoffAssessmentResponse, 0, len(items))
+	for _, item := range items {
+		deliverables := make([]projectTaskGraphHandoffDeliverableResponse, 0, len(item.Deliverables))
+		for _, deliverable := range item.Deliverables {
+			deliverables = append(deliverables, projectTaskGraphHandoffDeliverableResponse{
+				Name:    deliverable.Name,
+				Kind:    deliverable.Kind,
+				Verdict: deliverable.Verdict,
+				Ref:     deliverable.Ref,
+				Summary: deliverable.Summary,
+			})
+		}
+		responses = append(responses, projectTaskGraphHandoffAssessmentResponse{
+			ProjectTaskID: item.ProjectTaskID.String(),
+			Status:        item.Status,
+			Deliverables:  deliverables,
+		})
+	}
+	return responses
 }
 
 func taskLivenessResponseFromDomain(item ProjectTaskLiveness) projectTaskLivenessResponse {

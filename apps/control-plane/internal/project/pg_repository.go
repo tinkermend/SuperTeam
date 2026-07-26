@@ -2904,6 +2904,11 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 	}
 	graph.Nodes = enrichProjectTaskGraphNodes(graph.Nodes, graph.DecisionRequests)
 	graph.Nodes = r.attachProjectTaskGraphNodeTimings(ctx, graph.Nodes, req.TenantID)
+	latestContracts, err := r.projectTaskGraphLatestResultContracts(ctx, req, tasks)
+	if err != nil {
+		return graph, err
+	}
+	graph.HandoffAssessments = buildProjectTaskGraphHandoffAssessments(tasks, latestContracts)
 	graph.StageSummaries = buildProjectTaskGraphStageSummaries(graph.Nodes)
 	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, jobIDs, taskIDs, decisionRequestIDs(graph.DecisionRequests))
 	if err != nil {
@@ -3019,6 +3024,35 @@ func (r *PgRepository) projectTaskGraphRuns(ctx context.Context, tenantID uuid.U
 	return projectTaskGraphRunsFromRows(tasks, rows)
 }
 
+// projectTaskGraphLatestResultContracts 取每个任务最新一条已记录任务结果的
+// 契约(交接 verdict 的声明交付物数据源,spec 2026-07-27 §5 P2-V)。只对
+// LatestTaskResultID 非空的任务发已有的 ListProjectTaskResults 查询(created_at
+// 降序取 1 条,即 LinkProjectTaskLatestResult 指向的最新结果);从未记录结果的
+// 任务不发查询,verdict 侧落 unknown。
+func (r *PgRepository) projectTaskGraphLatestResultContracts(ctx context.Context, req GetProjectTaskGraphRequest, tasks []ProjectTask) (map[uuid.UUID]*TaskResultContract, error) {
+	contracts := map[uuid.UUID]*TaskResultContract{}
+	for _, task := range tasks {
+		if task.LatestTaskResultID == nil {
+			continue
+		}
+		results, err := r.ListProjectTaskResults(ctx, ListProjectTaskResultsRequest{
+			TenantID:      req.TenantID,
+			ProjectID:     req.ProjectID,
+			ProjectTaskID: task.ID,
+			Limit:         1,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(results) == 0 {
+			continue
+		}
+		contract := results[0].Contract
+		contracts[task.ID] = &contract
+	}
+	return contracts, nil
+}
+
 func (r *PgRepository) projectTaskGraphEvents(ctx context.Context, req GetProjectTaskGraphRequest, jobIDs, taskIDs, decisionIDs []uuid.UUID) ([]ProjectEvent, error) {
 	if len(jobIDs) == 0 && len(taskIDs) == 0 && len(decisionIDs) == 0 {
 		return []ProjectEvent{}, nil
@@ -3047,6 +3081,7 @@ func emptyProjectTaskGraph() ProjectTaskGraph {
 		RecentEvents:       []ProjectEvent{},
 		DecisionRequests:   []DecisionRequest{},
 		BlockingFacts:      []ProjectTaskGraphBlockingFact{},
+		HandoffAssessments: []ProjectTaskGraphHandoffAssessment{},
 	}
 }
 

@@ -85,6 +85,30 @@ describe("FlowLiveEdge", () => {
     expect(path?.classList.contains("animate-pulse")).toBe(true);
   });
 
+  it("degrades to the same breathing edge when the graph exceeds the live scale threshold", async () => {
+    // 大图降级（spec §5 P2-S）：动效偏好允许动画，也必须无粒子、走呼吸分支。
+    restoreMatchMedia = stubReducedMotion(false);
+    const screen = await renderEdge({ ...edgeData("flowing"), scaleDegraded: true });
+
+    expect(screen.container.querySelector("animateMotion")).toBeNull();
+    expect(
+      screen.container.querySelector(
+        '[data-testid="flow-live-particles-edge:task-a:task-b"]',
+      ),
+    ).toBeNull();
+    const path = screen.container.querySelector('[data-activity="flowing"]');
+    expect(path?.classList.contains("animate-pulse")).toBe(true);
+  });
+
+  it("keeps a single breathing degradation when scale and reduced-motion coexist", async () => {
+    restoreMatchMedia = stubReducedMotion(true);
+    const screen = await renderEdge({ ...edgeData("flowing"), scaleDegraded: true });
+
+    expect(screen.container.querySelector("animateMotion")).toBeNull();
+    const path = screen.container.querySelector('[data-activity="flowing"]');
+    expect(path?.classList.contains("animate-pulse")).toBe(true);
+  });
+
   it("stops the flow and shows a danger stroke for failed handoffs", async () => {
     restoreMatchMedia = stubReducedMotion(false);
     const screen = await renderEdge(edgeData("failed"), "已阻塞");

@@ -25,6 +25,40 @@ type ProjectTaskGraph struct {
 	DecisionRequests   []DecisionRequest
 	StageSummaries     []ProjectTaskGraphStageSummary
 	BlockingFacts      []ProjectTaskGraphBlockingFact
+	HandoffAssessments []ProjectTaskGraphHandoffAssessment
+}
+
+// ProjectTaskGraphHandoffAssessmentStatus 是交接 verdict 的汇总口径
+// (spec 2026-07-27 §5 P2-V)。unknown 是诚实边界：没有声明交付物数据
+// (无已记录结果契约、或契约与 planner produces 均无声明)时不做启发式猜测。
+const (
+	ProjectTaskGraphHandoffStatusFulfilled   = "fulfilled"
+	ProjectTaskGraphHandoffStatusPartial     = "partial"
+	ProjectTaskGraphHandoffStatusUnfulfilled = "unfulfilled"
+	ProjectTaskGraphHandoffStatusUnknown     = "unknown"
+
+	ProjectTaskGraphHandoffDeliverableDelivered = "delivered"
+	ProjectTaskGraphHandoffDeliverableMissing   = "missing"
+)
+
+// ProjectTaskGraphHandoffAssessment 是单个任务(交接边的 blocker 侧)的结构化
+// 交接 verdict:按声明交付物逐条核对 delivered/missing,纯读投影不持久化。
+type ProjectTaskGraphHandoffAssessment struct {
+	ProjectTaskID uuid.UUID
+	Status        string
+	Deliverables  []ProjectTaskGraphHandoffDeliverable
+}
+
+// ProjectTaskGraphHandoffDeliverable 是一条声明交付物的核对结果。声明来源:
+// 最新任务结果契约的 deliverables(v2 声明管道,Ref 已回填=已物化工件)与
+// planner 声明的 produces 名单;delivered 判据与平台 produces 核对一致
+// (Ref 或 Value 非空),不引入额外启发式。
+type ProjectTaskGraphHandoffDeliverable struct {
+	Name    string
+	Kind    string
+	Verdict string
+	Ref     string
+	Summary string
 }
 
 type ProjectTaskGraphNode struct {

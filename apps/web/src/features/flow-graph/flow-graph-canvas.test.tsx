@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
 import { FlowGraphCanvas } from "./flow-graph-canvas";
@@ -69,6 +69,7 @@ vi.mock("@xyflow/react", () => {
         {edges.map((edge) => (
           <button
             data-edge-activity={String(edge.data?.activity ?? "")}
+            data-edge-degraded={String(edge.data?.scaleDegraded ?? "")}
             data-edge-type={edge.type ?? ""}
             data-testid={`flow-graph-edge-${edge.id}`}
             key={edge.id}
@@ -162,6 +163,55 @@ function makeGraph(): ProjectTaskGraph {
 };
 }
 
+/**
+ * 链式大图：taskCount 个 running 任务 + (taskCount-1) 条边；stageCount 控制阶段
+ * 标签数，用于精确凑渲染元素总数（任务+阶段标签+边）踩 P2-S 阈值边界。
+ */
+function makeScaleGraph(taskCount: number, stageCount: 1 | 2): ProjectTaskGraph {
+  const graph = makeGraph();
+  graph.nodes = Array.from({ length: taskCount }, (_, index) => ({
+    ...graph.nodes[0],
+    id: `task-${index + 1}`,
+    title: `扩容任务 ${index + 1}`,
+    status: "running",
+    assigned_digital_employee_id: undefined,
+    stage_index: stageCount === 1 ? 0 : index < taskCount / 2 ? 0 : 1
+}));
+  graph.edges = graph.nodes.slice(1).map((task, index) => ({
+    blocker_task_id: graph.nodes[index].id,
+    dependent_task_id: task.id,
+    edge_status: "unblocked"
+}));
+  graph.employees = [];
+  return graph;
+}
+
+/** 覆写 matchMedia 控制 prefers-reduced-motion；返回还原函数。 */
+function stubReducedMotion(matches: boolean): () => void {
+  const original = window.matchMedia;
+  window.matchMedia = ((query: string) =>
+    ({
+      addEventListener: () => undefined,
+      addListener: () => undefined,
+      dispatchEvent: () => false,
+      matches: query.includes("prefers-reduced-motion") ? matches : false,
+      media: query,
+      onchange: null,
+      removeEventListener: () => undefined,
+      removeListener: () => undefined
+}) as MediaQueryList) as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = original;
+  };
+}
+
+let restoreMatchMedia: (() => void) | undefined;
+
+afterEach(() => {
+  restoreMatchMedia?.();
+  restoreMatchMedia = undefined;
+});
+
 function renderCanvas(
   graph: ProjectTaskGraph,
   onNodeOpen = vi.fn(),
@@ -236,6 +286,60 @@ describe("FlowGraphCanvas", () => {
     await expect
       .element(screen.getByText("PR 上下文盘点（高乐驹）"))
       .toBeInTheDocument();
+  });
+
+  it("marks the live canvas scale-degraded above the animation element threshold", async () => {
+    // 20 任务 + 2 阶段标签 + 19 条边 = 41 元素 > 40（LIVE_ANIMATION_MAX_ELEMENTS）。
+    const screen = await renderCanvas(makeScaleGraph(20, 2), vi.fn(), true);
+
+    await expect
+      .element(screen.getByTestId("flow-graph-canvas"))
+      .toHaveAttribute("data-live-degraded", "scale");
+    await expect
+      .element(screen.getByTestId("flow-graph-edge-edge:task-1:task-2"))
+      .toHaveAttribute("data-edge-degraded", "true");
+  });
+
+  it("keeps the live canvas unmarked and edges undegraded at exactly the threshold", async () => {
+    // 20 任务 + 1 阶段标签 + 19 条边 = 40 元素，阈值内零变化。
+    const screen = await renderCanvas(makeScaleGraph(20, 1), vi.fn(), true);
+
+    const canvas = screen.getByTestId("flow-graph-canvas");
+    await expect.element(canvas).toHaveAttribute("data-live", "true");
+    expect(canvas.element().hasAttribute("data-live-degraded")).toBe(false);
+    await expect
+      .element(screen.getByTestId("flow-graph-edge-edge:task-1:task-2"))
+      .toHaveAttribute("data-edge-degraded", "");
+  });
+
+  it("marks motion degradation under reduced motion within the threshold", async () => {
+    restoreMatchMedia = stubReducedMotion(true);
+    const screen = await renderCanvas(makeGraph(), vi.fn(), true);
+
+    await expect
+      .element(screen.getByTestId("flow-graph-canvas"))
+      .toHaveAttribute("data-live-degraded", "motion");
+  });
+
+  it("lets the scale marker win when reduced motion and a large graph coexist", async () => {
+    restoreMatchMedia = stubReducedMotion(true);
+    const screen = await renderCanvas(makeScaleGraph(20, 2), vi.fn(), true);
+
+    await expect
+      .element(screen.getByTestId("flow-graph-canvas"))
+      .toHaveAttribute("data-live-degraded", "scale");
+  });
+
+  it("adds no degradation marker outside live mode even for large graphs", async () => {
+    restoreMatchMedia = stubReducedMotion(true);
+    const screen = await renderCanvas(makeScaleGraph(20, 2));
+
+    await expect
+      .element(screen.getByTestId("flow-graph-canvas"))
+      .toHaveAttribute("data-live", "false");
+    expect(
+      screen.getByTestId("flow-graph-canvas").element().hasAttribute("data-live-degraded"),
+    ).toBe(false);
   });
 
   it("reports node opens for task nodes when clicked", async () => {

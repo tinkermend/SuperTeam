@@ -29,8 +29,9 @@ const ACTIVITY_EDGE_STYLE: Record<FlowLiveEdgeActivity, CSSProperties> = {
 /**
  * 活性边（概念 A 粒子流，spec 2026-07-27 §1.1）：跟随 xyflow 自定义 edge 惯例
  * （EdgeProps + getSmoothStepPath + BaseEdge），粒子用 SVG SMIL animateMotion
- * 沿同一 path 几何流动，不另建 overlay 层。`prefers-reduced-motion` 下不渲染
- * 粒子，flowing 边降级为呼吸边（透明度脉动）。
+ * 沿同一 path 几何流动，不另建 overlay 层。`prefers-reduced-motion` 或大图性能
+ * 降级（data.scaleDegraded，spec §5 P2-S）下不渲染粒子，flowing 边走同一降级
+ * 分支：呼吸边（透明度脉动）。
  */
 export function FlowLiveEdge({
   id,
@@ -55,13 +56,15 @@ export function FlowLiveEdge({
   });
   const activity = data?.activity ?? "idle";
   const isFlowing = activity === "flowing";
-  const showParticles = isFlowing && !prefersReducedMotion;
+  // 呼吸边降级两来源取或（spec §5 P2-S）：用户减弱动效偏好 / 大图元素超阈值。
+  const degradedToBreathing = prefersReducedMotion || data?.scaleDegraded === true;
+  const showParticles = isFlowing && !degradedToBreathing;
   const particlePathId = `flow-live-particle-path-${id}`;
 
   return (
     <>
       <BaseEdge
-        className={isFlowing && prefersReducedMotion ? "animate-pulse" : undefined}
+        className={isFlowing && degradedToBreathing ? "animate-pulse" : undefined}
         data-activity={activity}
         data-testid={`flow-live-edge-${id}`}
         id={id}

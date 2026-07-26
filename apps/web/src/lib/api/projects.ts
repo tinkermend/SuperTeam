@@ -324,6 +324,33 @@ export type ProjectTaskGraphBlockingFact = {
   decision_request_id?: string;
 };
 
+export type ProjectTaskGraphHandoffAssessmentStatus =
+  | "fulfilled"
+  | "partial"
+  | "unfulfilled"
+  | "unknown";
+
+export type ProjectTaskGraphHandoffDeliverableVerdict = "delivered" | "missing";
+
+export type ProjectTaskGraphHandoffDeliverable = {
+  name: string;
+  kind?: string;
+  verdict: ProjectTaskGraphHandoffDeliverableVerdict;
+  ref?: string;
+  summary?: string;
+};
+
+/**
+ * 结构化交接 verdict（纯读投影，spec 2026-07-27 §5 P2-V）：按声明交付物逐条
+ * 核对 delivered/missing；status=unknown 表示无声明数据，前端维持"暂无"呈现，
+ * 不得据此编造符合性判定。
+ */
+export type ProjectTaskGraphHandoffAssessment = {
+  project_task_id: string;
+  status: ProjectTaskGraphHandoffAssessmentStatus;
+  deliverables: ProjectTaskGraphHandoffDeliverable[];
+};
+
 export type ProjectTaskGraph = {
   nodes: ProjectTaskGraphNode[];
   edges: ProjectTaskGraphEdge[];
@@ -334,6 +361,7 @@ export type ProjectTaskGraph = {
   decision_requests: ProjectDecisionRequest[];
   stage_summaries?: ProjectTaskGraphStageSummary[];
   blocking_facts: ProjectTaskGraphBlockingFact[];
+  handoff_assessments?: ProjectTaskGraphHandoffAssessment[];
 };
 
 export type ProjectRuntimePlacementStatus =

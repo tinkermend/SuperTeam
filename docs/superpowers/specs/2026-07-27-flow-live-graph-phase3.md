@@ -28,6 +28,28 @@ P1 做四件事，全部落在现有 ReactFlow 权威组件上：
 - 交接 verdict 升级：CP 读路径给结构化"符合/不符"（可复用到验收链路，需新端点）。
 - SSE 驱动替代轮询；回放执行时序；大屏模式（可与概念 B 分层："默认 A、超大图降 B"）。
 
+## 5. P2 分期（2026-07-27 人类指示"进行 §3 后续项"后立项）
+
+两批推进，批内文件面互斥：
+
+### 批 1
+
+**P2-V 结构化交接 verdict（CP 读路径 + 契约 + 浮层消费）**
+- 计算落点：task-graph 读路径（`GetProjectTaskGraph` 组装层），**不新增端点、不持久化**（v1 纯读投影；持久化与验收链路复用属后续）。响应新增 `handoff_assessments[]`（按 `project_task_id`）：对每个已声明交付物（`TaskResultContract.Deliverables`，v2 声明管道含 Ref 回填）给出 `delivered | missing`（Ref 已回填=delivered），汇总 `status: fulfilled | partial | unfulfilled | unknown`——**无声明数据时必须 unknown，禁止启发式猜测**（诚实边界与 P1 浮层一致）。
+- **本轮硬约束**：并发会话在 `storage/queries/`（含共享生成物 models.go/querier.go）有未提交改动，**禁止新增 sqlc 查询/重新生成 sqlc**；verdict 必须从读路径已加载数据（execution summaries / result contract / attempt payload）计算，取不到的维度如实降级 unknown 并在报告注明数据缺口。
+- 契约：`ProjectTaskGraph` schema 增补 + `generate:control-plane`（openapi 生成物与 sqlc 无关，允许）。
+- 前端：`flow-handoff-overlay.tsx` 右列按交付物逐条显示 verdict 徽章（已交付/缺失，unknown 维持"暂无"文案）；底注在有结构化 verdict 时改为"符合性由控制平面按声明交付物核对"。
+
+**P2-S 大图性能分层（A/B 自动降级，纯 Web）**
+- adapter/canvas 阈值：节点+边总数超阈值（默认 40，常量可调）时活性边自动降级为概念 B 呼吸边（复用 reduced-motion 降级路径，`data-live-degraded="scale"` 可测）；阈值内维持粒子。与 reduced-motion 取或。
+
+### 批 2（批 1 落地后）
+
+**P2-E SSE 替代轮询**：勘察既有 SSE 面（inbox / run-overview activity）能否复用项目维度事件；能则 demands 区图查询改事件驱动 invalidate（保底轮询降频为 30s），不能则记录缺口另立 CP 项，不自造通道。
+**P2-R 回放执行时序**：基于 task graph 节点 started_at/finished_at + recent_events 的确定性时间轴（P1 原型的回放按钮语义），纯前端时间缩放播放；事件数据不足以支撑完整时序时先出降级版（按起止时间插值点亮），报告数据缺口。
+
+验收（真实端到端）：V1=真实带声明交付物的任务浮层显示逐条 verdict 与汇总；V2=无声明数据任务维持"暂无"；S1=直插造 41+ 节点图（或组件测试）验证自动降级；E/R 判据批 2 立项时补。
+
 ## 4. 验收（真实端到端）
 
 - L1：真实项目需求流程区，存在 running 任务时对应边粒子流动、failed 边红停流；`prefers-reduced-motion` 下无粒子。

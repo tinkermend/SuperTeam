@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LIVE_ANIMATION_MAX_ELEMENTS,
   PLAN_TASK_GRAPH_LAYOUT,
   buildFlowGraphElements,
   deriveEdgeActivity,
@@ -567,6 +568,73 @@ describe("flow live edge activity", () => {
       runStartedAt: "2026-07-27T01:00:00Z",
       runFinishedAt: "2026-07-27T01:30:00Z",
     });
+  });
+});
+
+describe("live scale degradation", () => {
+  /**
+   * 链式图：taskCount 个 running 任务 + (taskCount-1) 条边；
+   * stageCount 控制阶段标签数，用于精确凑元素总数（任务+标签+边）。
+   */
+  function makeChainGraph(taskCount: number, stageCount: 1 | 2): ProjectTaskGraph {
+    const graph = makeGraph();
+    graph.nodes = Array.from({ length: taskCount }, (_, index) =>
+      makeTask(`scale-task-${index + 1}`, "running", {
+        planned_task_key: `task-${String(index + 1).padStart(2, "0")}`,
+        stage_index: stageCount === 1 ? 0 : index < taskCount / 2 ? 0 : 1,
+      }),
+    );
+    graph.edges = graph.nodes.slice(1).map((task, index) => ({
+      blocker_task_id: graph.nodes[index].id,
+      dependent_task_id: task.id,
+      edge_status: "unblocked",
+    }));
+    graph.employees = [];
+    graph.runs = [];
+    graph.decision_requests = [];
+    return graph;
+  }
+
+  it("publishes an adjustable live animation element threshold", () => {
+    expect(LIVE_ANIMATION_MAX_ELEMENTS).toBe(40);
+  });
+
+  it("marks every edge scale-degraded when live elements exceed the threshold", () => {
+    // 20 任务 + 2 阶段标签 + 19 条边 = 41 元素 > 40。
+    const result = buildFlowGraphElements(makeChainGraph(20, 2), { live: true });
+
+    expect(result.nodes.length + result.edges.length).toBe(
+      LIVE_ANIMATION_MAX_ELEMENTS + 1,
+    );
+    expect(result.scaleDegraded).toBe(true);
+    expect(result.edges).toHaveLength(19);
+    for (const edge of result.edges) {
+      expect(edge.data?.scaleDegraded).toBe(true);
+      // 降级只改渲染分支，活性推导不变：running 上游仍是 flowing。
+      expect(edge.data?.activity).toBe("flowing");
+    }
+  });
+
+  it("keeps edges untouched at exactly the threshold", () => {
+    // 20 任务 + 1 阶段标签 + 19 条边 = 40 元素，不超阈值不降级。
+    const result = buildFlowGraphElements(makeChainGraph(20, 1), { live: true });
+
+    expect(result.nodes.length + result.edges.length).toBe(
+      LIVE_ANIMATION_MAX_ELEMENTS,
+    );
+    expect(result.scaleDegraded).toBe(false);
+    for (const edge of result.edges) {
+      expect(edge.data?.scaleDegraded).toBeUndefined();
+    }
+  });
+
+  it("never marks scale degradation outside live mode", () => {
+    const result = buildFlowGraphElements(makeChainGraph(20, 2));
+
+    expect(result.scaleDegraded).toBe(false);
+    expect(
+      result.edges.every((edge) => edge.data?.scaleDegraded === undefined),
+    ).toBe(true);
   });
 });
 

@@ -42,10 +42,19 @@ const DEPENDENT_ACTIVE_STATUSES = new Set([
 /** 活性边的四态：flowing 粒子流动 / failed 红停流 / done 静态通电 / idle 灰待命。 */
 export type FlowLiveEdgeActivity = "flowing" | "failed" | "done" | "idle";
 
+/**
+ * 活图动画规模阈值（spec 2026-07-27 §5 P2-S）：live 模式下渲染元素（节点+边）
+ * 总数**超过**该值时，flowing 边自动从粒子流降级为呼吸边（与 prefers-reduced-motion
+ * 走同一降级渲染分支，两条件取或）。导出可调；阈值内行为零变化。
+ */
+export const LIVE_ANIMATION_MAX_ELEMENTS = 40;
+
 export type FlowLiveEdgeData = {
   activity: FlowLiveEdgeActivity;
   blockerTaskId: string;
   dependentTaskId: string;
+  /** 大图性能降级（spec §5 P2-S）：仅在 live 且元素总数超阈值时置 true。 */
+  scaleDegraded?: boolean;
 };
 
 export type WorkflowTaskNodeData = {
@@ -100,6 +109,8 @@ type FlowGraphNode =
 export type FlowGraphElements = {
   nodes: FlowGraphNode[];
   edges: Edge<FlowLiveEdgeData>[];
+  /** 大图性能降级判定（spec §5 P2-S）：live 且节点+边总数超阈值；非 live 恒 false。 */
+  scaleDegraded: boolean;
 };
 
 export type WorkflowStageLabelNodeData = {
@@ -173,7 +184,7 @@ export function buildFlowGraphElements(
 ): FlowGraphElements {
   if (graph.nodes.length === 0 && graph.blocking_facts.length > 0) {
     if (!includeBlockingFallback) {
-      return { nodes: [], edges: [] };
+      return { nodes: [], edges: [], scaleDegraded: false };
     }
     const fact = graph.blocking_facts[0];
     return {
@@ -190,6 +201,7 @@ export function buildFlowGraphElements(
         },
       ],
       edges: [],
+      scaleDegraded: false,
     };
   }
 
@@ -233,9 +245,23 @@ export function buildFlowGraphElements(
       })
     : [];
 
+  const nodes = [...layoutNodes, ...attachmentNodes];
+  const edges = buildTaskDependencyEdges(graph, taskIds, { live, runsByTaskId });
+  // 大图性能分层（spec §5 P2-S）：live 模式渲染元素总数超阈值时，全部边打降级位，
+  // flowing 边在 FlowLiveEdge 内走与 reduced-motion 相同的呼吸边分支。
+  const scaleDegraded =
+    live && nodes.length + edges.length > LIVE_ANIMATION_MAX_ELEMENTS;
+
   return {
-    nodes: [...layoutNodes, ...attachmentNodes],
-    edges: buildTaskDependencyEdges(graph, taskIds, { live, runsByTaskId }),
+    nodes,
+    edges: scaleDegraded
+      ? edges.map((edge) =>
+          edge.data
+            ? { ...edge, data: { ...edge.data, scaleDegraded: true } }
+            : edge,
+        )
+      : edges,
+    scaleDegraded,
   };
 }
 

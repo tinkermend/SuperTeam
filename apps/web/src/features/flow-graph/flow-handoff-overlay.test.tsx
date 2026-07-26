@@ -141,6 +141,87 @@ describe("FlowHandoffOverlay", () => {
     expect(screen.container.ownerDocument.body.textContent).not.toContain("不符");
   });
 
+  // spec §5 P2-V：控制平面结构化 verdict → 右列逐条徽章 + 底注切换。
+  it("renders per-deliverable verdict badges from the structured assessment", async () => {
+    const graph = makeGraph();
+    graph.handoff_assessments = [
+      {
+        deliverables: [
+          {
+            name: "file-stats.json",
+            ref: "8b7f7a52-0000-0000-0000-000000000001",
+            summary: "deliverables/file-stats.json",
+            verdict: "delivered"
+},
+          { name: "scan-log", verdict: "missing" },
+        ],
+        project_task_id: "task-scan",
+        status: "partial"
+},
+    ];
+
+    const screen = await render(
+      <FlowHandoffOverlay edge={edge} graph={graph} onClose={vi.fn()} />,
+    );
+
+    const verdicts = screen.getByTestId("handoff-deliverable-verdicts");
+    await expect.element(verdicts.getByText("声明交付物核对")).toBeInTheDocument();
+    await expect
+      .element(verdicts.getByText("file-stats.json", { exact: true }))
+      .toBeInTheDocument();
+    await expect.element(verdicts.getByText("已交付")).toBeInTheDocument();
+    await expect
+      .element(verdicts.getByText("scan-log", { exact: true }))
+      .toBeInTheDocument();
+    await expect.element(verdicts.getByText("缺失")).toBeInTheDocument();
+    // 原始路径经 summary 保留（CP Ref 回填时挪入），不裸渲 ref UUID。
+    expect(verdicts.element().textContent).toContain("deliverables/file-stats.json");
+    expect(verdicts.element().textContent).not.toContain(
+      "8b7f7a52-0000-0000-0000-000000000001",
+    );
+    // 徽章走 StatusPill tone 惯例：已交付=ok / 缺失=danger。
+    expect(
+      verdicts.element().querySelectorAll('[data-tone="ok"]').length,
+    ).toBe(1);
+    expect(
+      verdicts.element().querySelectorAll('[data-tone="danger"]').length,
+    ).toBe(1);
+    // 有结构化 verdict 时底注改为控制平面核对口径。
+    expect(screen.container.ownerDocument.body.textContent).toContain(
+      "符合性由控制平面按声明交付物核对",
+    );
+    expect(screen.container.ownerDocument.body.textContent).not.toContain(
+      "不构成符合性判定",
+    );
+  });
+
+  it("keeps 暂无 wording and the honest footnote when the assessment is unknown", async () => {
+    const graph = makeGraph();
+    graph.execution_summaries = [];
+    graph.handoff_assessments = [
+      { deliverables: [], project_task_id: "task-scan", status: "unknown" },
+    ];
+
+    const screen = await render(
+      <FlowHandoffOverlay edge={edge} graph={graph} onClose={vi.fn()} />,
+    );
+
+    expect(
+      screen.container.ownerDocument.querySelector(
+        '[data-testid="handoff-deliverable-verdicts"]',
+      ),
+    ).toBeNull();
+    await expect
+      .element(screen.getByText("暂无产出（上游任务尚未回写执行结论）"))
+      .toBeInTheDocument();
+    expect(screen.container.ownerDocument.body.textContent).toContain(
+      "不构成符合性判定",
+    );
+    expect(screen.container.ownerDocument.body.textContent).not.toContain(
+      "符合性由控制平面按声明交付物核对",
+    );
+  });
+
   it("stays closed without an edge and closes through the dialog close button", async () => {
     const onClose = vi.fn();
     const closedScreen = await render(

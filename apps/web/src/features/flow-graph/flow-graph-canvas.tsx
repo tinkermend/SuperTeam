@@ -17,6 +17,7 @@ import {
 } from "./flow-graph-adapter";
 import { FlowHandoffOverlay } from "./flow-handoff-overlay";
 import { FlowLiveEdge } from "./flow-live-edge";
+import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import { WorkflowBlockingNode } from "./workflow-blocking-node";
 import {
   WorkflowAttachmentNode,
@@ -62,10 +63,20 @@ export function FlowGraphCanvas({
   const [handoffEdge, setHandoffEdge] = useState<FlowLiveEdgeData | undefined>(
     undefined,
   );
+  const prefersReducedMotion = usePrefersReducedMotion();
   const elements = useMemo<FlowGraphElements>(
     () => buildFlowGraphElements(graph, { live }),
     [graph, live],
   );
+  // 降级标记（spec §5 P2-S，可测）：大图降级标 "scale"，reduced-motion 标 "motion"，
+  // 两者并存时 scale 优先；非 live 或未降级不打标记。
+  const liveDegraded = !live
+    ? undefined
+    : elements.scaleDegraded
+      ? "scale"
+      : prefersReducedMotion
+        ? "motion"
+        : undefined;
   const nodes = useMemo(
     () =>
       elements.nodes.map((node) => ({
@@ -94,6 +105,7 @@ export function FlowGraphCanvas({
     <div
       className="min-h-[620px] w-full min-w-0 overflow-hidden rounded-xl border bg-[linear-gradient(180deg,rgba(248,251,255,0.95),rgba(255,255,255,0.9))]"
       data-live={live ? "true" : "false"}
+      data-live-degraded={liveDegraded}
       data-stage-count={stageCount}
       data-task-count={graph.nodes.length}
       data-testid="flow-graph-canvas"
