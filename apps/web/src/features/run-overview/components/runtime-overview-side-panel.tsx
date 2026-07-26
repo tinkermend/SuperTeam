@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { GlassCard, Button } from "@/components/superteam";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { ProjectDemand } from "@/lib/api/projects";
+import type { ProjectDemand, ProjectRunSummaryResponse } from "@/lib/api/projects";
 import type { RuntimeOverviewActivityItem, RuntimeOverviewDTO, RuntimeOverviewEmployee } from "../runtime-overview-model";
-import { aggregateLensProjectOptions, type ProjectLens } from "../runtime-overview-project-lens";
+import { buildProjectRunBandOptions, type ProjectLens, type ProjectRunBandOption } from "../runtime-overview-project-lens";
 import { formatCompactTokens, formatTime } from "../formatters";
 import { employeeStatusDotClass as statusDotClass } from "../status-maps";
 
@@ -18,6 +18,7 @@ const activityDotClass: Record<string, string> = {
 export function RuntimeOverviewSidePanel({
   overview,
   activity,
+  runSummary,
   selectedProjectId,
   onSelectProject,
   lens,
@@ -29,6 +30,8 @@ export function RuntimeOverviewSidePanel({
   overview: RuntimeOverviewDTO;
   // 优先使用 activity 端点数据；未加载/失败时回退 overview 内聚合的近似动态。
   activity?: RuntimeOverviewActivityItem[];
+  // 项目运行带的权威计数源；缺省(加载中/端点不可用)降级为员工反向聚合。
+  runSummary?: ProjectRunSummaryResponse;
   // 项目透镜：选中项目后地图高亮参与者并绘制任务交接链路。
   selectedProjectId?: string;
   onSelectProject?: (projectId?: string) => void;
@@ -88,8 +91,9 @@ export function RuntimeOverviewSidePanel({
           ))}
       </div>
       {onSelectProject ? (
-        <ProjectLensBlock
+        <ProjectRunBand
           overview={overview}
+          runSummary={runSummary}
           selectedProjectId={selectedProjectId}
           onSelectProject={onSelectProject}
           lens={lens}
@@ -126,10 +130,12 @@ export function RuntimeOverviewSidePanel({
   );
 }
 
-// 项目透镜区块：默认只列有活跃任务的项目控制长度，可展开全部；选中后展示链路摘要，
+// 项目运行带：常驻显示每个项目的运行/失败/待人工/待派发计数（不选中也可见），
+// 默认只列有活跃任务的项目控制长度，可展开全部；选中后进透镜展示链路摘要，
 // 任务级操作一律跳项目详情，总览不承载。
-function ProjectLensBlock({
+function ProjectRunBand({
   overview,
+  runSummary,
   selectedProjectId,
   onSelectProject,
   lens,
@@ -139,6 +145,7 @@ function ProjectLensBlock({
   onSelectDemand
 }: {
   overview: RuntimeOverviewDTO;
+  runSummary?: ProjectRunSummaryResponse;
   selectedProjectId?: string;
   onSelectProject: (projectId?: string) => void;
   lens?: ProjectLens;
@@ -148,14 +155,14 @@ function ProjectLensBlock({
   onSelectDemand?: (demandId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const options = useMemo(() => aggregateLensProjectOptions(overview), [overview]);
-  const activeOptions = options.filter((option) => option.activeTaskCount > 0);
+  const options = useMemo(() => buildProjectRunBandOptions(overview, runSummary), [overview, runSummary]);
+  const activeOptions = options.filter((option) => option.hasActive);
   const visibleOptions = showAll ? options : activeOptions;
   if (options.length === 0) return null;
   return (
     <div className="mt-5" data-runtime-project-lens>
       <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold text-ink-2">项目透镜</div>
+        <div className="text-xs font-semibold text-ink-2">项目运行</div>
         {selectedProjectId ? (
           <button
             type="button"
@@ -181,9 +188,7 @@ function ProjectLensBlock({
                 onClick={() => onSelectProject(selected ? undefined : option.projectId)}
               >
                 <span className="min-w-0 truncate font-medium text-ink">{option.name}</span>
-                <span className="shrink-0 text-xs text-ink-3 tabular-nums">
-                  {option.participantCount} 人{option.activeTaskCount > 0 ? ` · 活跃 ${option.activeTaskCount}` : ""}
-                </span>
+                <RunBandCounts option={option} />
               </button>
             </li>
           );
@@ -263,6 +268,29 @@ function DemandRow({
         </span>
       )}
     </div>
+  );
+}
+
+// 运行带计数徽标：零值不显；降级源(员工反向聚合)细粒度计数缺失,只渲染运行数与参与人数。
+function RunBandCounts({ option }: { option: ProjectRunBandOption }) {
+  const badges: Array<{ key: string; label: string; className: string }> = [];
+  if (option.runningCount > 0)
+    badges.push({ key: "running", label: `运行 ${option.runningCount}`, className: "text-info-text" });
+  if (option.failedCount > 0)
+    badges.push({ key: "failed", label: `失败 ${option.failedCount}`, className: "font-semibold text-danger" });
+  if (option.waitingHumanCount > 0)
+    badges.push({ key: "waiting", label: `待人工 ${option.waitingHumanCount}`, className: "font-semibold text-warn-text" });
+  if (option.unassignedCount > 0)
+    badges.push({ key: "unassigned", label: `待派发 ${option.unassignedCount}`, className: "text-ink-3" });
+  return (
+    <span className="flex shrink-0 items-center gap-2 text-xs tabular-nums" data-runtime-run-band-counts>
+      {badges.map((badge) => (
+        <span key={badge.key} className={badge.className}>
+          {badge.label}
+        </span>
+      ))}
+      <span className="text-ink-3">{option.participantCount} 人</span>
+    </span>
   );
 }
 

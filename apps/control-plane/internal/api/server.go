@@ -381,6 +381,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/workflow-instances", s.projectHandler.ListWorkflowInstances)
 				r.Get("/projects", s.projectHandler.ListProjects)
 				r.Post("/projects", s.projectHandler.CreateProject)
+				r.Get("/projects/run-summary", s.projectHandler.ListProjectRunSummaries)
 				r.Get("/projects/{projectId}", s.projectHandler.GetProject)
 				r.Patch("/projects/{projectId}", s.projectHandler.UpdateProject)
 				r.Post("/projects/{projectId}/archive", s.projectHandler.ArchiveProject)

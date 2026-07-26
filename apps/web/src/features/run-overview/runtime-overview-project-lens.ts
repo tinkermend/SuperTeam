@@ -1,4 +1,4 @@
-import type { ProjectTaskGraph, ProjectTaskGraphNode } from "@/lib/api/projects";
+import type { ProjectRunSummaryResponse, ProjectTaskGraph, ProjectTaskGraphNode } from "@/lib/api/projects";
 import type { RuntimeOverviewDTO, RuntimeOverviewFloorId } from "./runtime-overview-model";
 import { runtimeOverviewLobbyPositions } from "./runtime-overview-layout";
 
@@ -234,6 +234,58 @@ export function aggregateLensProjectOptions(overview: RuntimeOverviewDTO): LensP
       (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? "") ||
       a.name.localeCompare(b.name),
   );
+}
+
+// 项目运行带单行:计数来自服务端 run-summary(权威),端点不可用时降级为员工反向聚合
+// (降级源有 limit 100 与"无参与员工项目不可见"盲区,细粒度计数缺失置零并以 source 标记)。
+export type ProjectRunBandOption = {
+  projectId: string;
+  name: string;
+  participantCount: number;
+  runningCount: number;
+  queuedCount: number;
+  waitingHumanCount: number;
+  failedCount: number;
+  unassignedCount: number;
+  completedTodayCount: number;
+  hasActive: boolean;
+  source: "summary" | "fallback";
+};
+
+export function buildProjectRunBandOptions(
+  overview: RuntimeOverviewDTO,
+  runSummary?: ProjectRunSummaryResponse,
+): ProjectRunBandOption[] {
+  if (runSummary) {
+    return runSummary.items.map((item) => ({
+      projectId: item.project_id,
+      name: item.name,
+      participantCount: item.participant_employee_count,
+      runningCount: item.running_count,
+      queuedCount: item.queued_count,
+      waitingHumanCount: item.waiting_human_count,
+      failedCount: item.failed_count,
+      unassignedCount: item.unassigned_count,
+      completedTodayCount: item.completed_today_count,
+      hasActive:
+        item.running_count + item.queued_count + item.waiting_human_count + item.failed_count + item.unassigned_count >
+        0,
+      source: "summary",
+    }));
+  }
+  return aggregateLensProjectOptions(overview).map((option) => ({
+    projectId: option.projectId,
+    name: option.name,
+    participantCount: option.participantCount,
+    runningCount: option.workingTaskCount,
+    queuedCount: 0,
+    waitingHumanCount: 0,
+    failedCount: 0,
+    unassignedCount: 0,
+    completedTodayCount: 0,
+    hasActive: option.activeTaskCount > 0,
+    source: "fallback",
+  }));
 }
 
 export function lensParticipantFloorIds(lens: ProjectLens, overview: RuntimeOverviewDTO): RuntimeOverviewFloorId[] {

@@ -1907,6 +1907,34 @@ type ListProjectsRequest struct {
 	Offset   int32
 }
 
+// ProjectRunSummary 是运行总览项目运行带的单项目聚合:任务状态计数 + 今日完成运行数。
+// 今日完成按 task_runs 执行完成口径计(非验收口径)。
+type ProjectRunSummary struct {
+	ProjectID                uuid.UUID
+	Name                     string
+	Status                   ProjectStatus
+	RunningCount             int32
+	QueuedCount              int32
+	WaitingHumanCount        int32
+	FailedCount              int32
+	UnassignedCount          int32
+	ParticipantEmployeeCount int32
+	CompletedTodayCount      int32
+	LastActivityAt           *time.Time
+}
+
+// ProjectRunSummaryList 携带租户级今日完成总数:与逐项目求和的口径差异是显式的
+// (总数含归档项目当日完成,运行带仅列非归档项目)。
+type ProjectRunSummaryList struct {
+	Items                  []ProjectRunSummary
+	TodayCompletedRunCount int32
+}
+
+type ListProjectRunSummariesRequest struct {
+	TenantID uuid.UUID
+	Limit    int32
+}
+
 type ProjectStatusSummary struct {
 	CurrentPhase string
 	IsArchived   bool

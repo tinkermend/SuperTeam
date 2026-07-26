@@ -1,6 +1,52 @@
 import type { DigitalEmployeeActivity, DigitalEmployeeOverview } from "@/lib/api/employees";
-import type { ProjectTaskGraph } from "@/lib/api/projects";
+import type { ProjectRunSummaryResponse, ProjectTaskGraph } from "@/lib/api/projects";
 import type { TeamListItem } from "@/lib/api/teams";
+
+// 项目运行带聚合响应:含一个"全待派发、无参与员工"项目——它在员工反向聚合降级源里不可见,
+// 用于锁定 run-summary 权威源修复了该盲区。
+export const projectRunSummaryFixture: ProjectRunSummaryResponse = {
+  items: [
+    {
+      project_id: "emp-ops-1-project",
+      name: "运维团队交付项目",
+      status: "running",
+      running_count: 1,
+      queued_count: 0,
+      waiting_human_count: 1,
+      failed_count: 1,
+      unassigned_count: 0,
+      participant_employee_count: 2,
+      completed_today_count: 2,
+      last_activity_at: "2026-07-26T09:00:00Z",
+    },
+    {
+      project_id: "emp-dev-1-project",
+      name: "开发团队交付项目",
+      status: "running",
+      running_count: 1,
+      queued_count: 1,
+      waiting_human_count: 0,
+      failed_count: 0,
+      unassigned_count: 0,
+      participant_employee_count: 1,
+      completed_today_count: 0,
+      last_activity_at: "2026-07-26T08:00:00Z",
+    },
+    {
+      project_id: "project-unstaffed",
+      name: "全待派发项目",
+      status: "running",
+      running_count: 0,
+      queued_count: 0,
+      waiting_human_count: 0,
+      failed_count: 0,
+      unassigned_count: 2,
+      participant_employee_count: 0,
+      completed_today_count: 0,
+    },
+  ],
+  today_completed_run_count: 5,
+};
 
 export const digitalEmployeeActivityFixture: DigitalEmployeeActivity = {
   items: [

@@ -927,6 +927,21 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/run-summary:
+    get:
+      operationId: listProjectRunSummaries
+      summary: List cross-project run summaries (run overview project band)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Project run summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRunSummaryResponse"
+        "400":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}:
     get:
       operationId: getProject
@@ -9224,6 +9239,64 @@ components:
           type: integer
           format: int32
         failed_tasks:
+          type: integer
+          format: int32
+    ProjectRunSummaryItem:
+      type: object
+      required:
+        - project_id
+        - name
+        - status
+        - running_count
+        - queued_count
+        - waiting_human_count
+        - failed_count
+        - unassigned_count
+        - participant_employee_count
+        - completed_today_count
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ProjectStatus"
+        running_count:
+          type: integer
+          format: int32
+        queued_count:
+          type: integer
+          format: int32
+        waiting_human_count:
+          type: integer
+          format: int32
+        failed_count:
+          type: integer
+          format: int32
+        unassigned_count:
+          type: integer
+          format: int32
+        participant_employee_count:
+          type: integer
+          format: int32
+        completed_today_count:
+          type: integer
+          format: int32
+        last_activity_at:
+          type: string
+          format: date-time
+    ProjectRunSummaryResponse:
+      type: object
+      required:
+        - items
+        - today_completed_run_count
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectRunSummaryItem"
+        today_completed_run_count:
           type: integer
           format: int32
     ProjectCoordinationWorkflow:

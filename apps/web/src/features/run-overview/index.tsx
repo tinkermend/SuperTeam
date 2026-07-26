@@ -6,7 +6,7 @@ import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { MasterDetailLayout, Button, ErrorState, LoadingState } from "@/components/superteam";
 import { getDigitalEmployeeActivity, getDigitalEmployeeOverview } from "@/lib/api/employees";
-import { getProjectTaskGraph, listProjectDemands } from "@/lib/api/projects";
+import { getProjectTaskGraph, listProjectDemands, listProjectRunSummaries } from "@/lib/api/projects";
 import { listTeamSummaries } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { EmployeeDetailCard } from "./components/employee-detail-card";
@@ -52,6 +52,14 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   const activity = useQuery({
     queryKey: ["run-overview", "activity"],
     queryFn: () => getDigitalEmployeeActivity({ baseUrl: apiBaseUrl, fetcher }, { limit: 8 }),
+    refetchInterval: 10_000,
+    retry: false
+});
+  // 项目运行带：跨项目任务状态聚合常驻显示（服务端权威计数，不受员工 limit 100 影响）；
+  // 失败时侧栏降级为员工反向聚合，页面不因此报错。
+  const runSummary = useQuery({
+    queryKey: ["run-overview", "project-run-summary"],
+    queryFn: () => listProjectRunSummaries({ baseUrl: apiBaseUrl, fetcher }, { limit: 50 }),
     refetchInterval: 10_000,
     retry: false
 });
@@ -109,6 +117,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
       lastStreamInvalidateRef.current = now;
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "activity"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "digital-employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-overview", "project-run-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "project-demands"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "task-graph"] });
     };
@@ -194,6 +203,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   const handleRefresh = () => {
     void employees.refetch();
     void teams.refetch();
+    void runSummary.refetch();
     if (selectedProjectId) {
       void projectDemands.refetch();
       void taskGraph.refetch();
@@ -305,6 +315,7 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
             <RuntimeOverviewSidePanel
               overview={overview}
               activity={recentActivity}
+              runSummary={runSummary.data}
               selectedProjectId={selectedProjectId}
               onSelectProject={handleSelectProject}
               lens={lens}

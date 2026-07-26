@@ -4,10 +4,11 @@ import type { RuntimeOverviewDTO, RuntimeOverviewEmployee, RuntimeOverviewFloor 
 import {
   aggregateLensProjectOptions,
   buildProjectLens,
+  buildProjectRunBandOptions,
   lensParticipantFloorIds,
   projectLensForFloor,
 } from "./runtime-overview-project-lens";
-import { projectTaskGraphFixture } from "./runtime-overview-fixtures";
+import { projectRunSummaryFixture, projectTaskGraphFixture } from "./runtime-overview-fixtures";
 import { runtimeOverviewLobbyPositions } from "./runtime-overview-layout";
 
 function graph(partial: Partial<ProjectTaskGraph>): ProjectTaskGraph {
@@ -331,6 +332,62 @@ describe("aggregateLensProjectOptions", () => {
       activeTaskCount: 3,
       workingTaskCount: 1,
       lastActivityAt: "2026-07-18T02:00:00Z",
+    });
+  });
+});
+
+describe("buildProjectRunBandOptions", () => {
+  it("projects run-summary items with hasActive derived from all non-terminal buckets", () => {
+    const options = buildProjectRunBandOptions(overviewWith([], []), projectRunSummaryFixture);
+
+    expect(options.map((option) => option.projectId)).toEqual([
+      "emp-ops-1-project",
+      "emp-dev-1-project",
+      "project-unstaffed",
+    ]);
+    expect(options[0]).toMatchObject({
+      source: "summary",
+      runningCount: 1,
+      waitingHumanCount: 1,
+      failedCount: 1,
+      participantCount: 2,
+      completedTodayCount: 2,
+      hasActive: true,
+    });
+    // 全待派发项目没有参与员工,也必须 hasActive(否则默认过滤会再次把它藏起来)。
+    expect(options[2]).toMatchObject({ unassignedCount: 2, participantCount: 0, hasActive: true });
+  });
+
+  it("falls back to employee aggregation with zeroed fine-grained counts when summary is absent", () => {
+    const employees = [
+      {
+        ...overviewEmployee("emp-a", "floor-1", "s1"),
+        projects: [
+          {
+            projectId: "p-1",
+            name: "项目一",
+            status: "active",
+            isMember: true,
+            activeTaskCount: 2,
+            workingTaskCount: 1,
+            totalTaskCount: 3,
+            lastActivityAt: "2026-07-18T01:00:00Z",
+          },
+        ],
+      },
+    ];
+    const options = buildProjectRunBandOptions(overviewWith([], employees));
+
+    expect(options).toHaveLength(1);
+    expect(options[0]).toMatchObject({
+      projectId: "p-1",
+      source: "fallback",
+      runningCount: 1,
+      queuedCount: 0,
+      waitingHumanCount: 0,
+      failedCount: 0,
+      unassignedCount: 0,
+      hasActive: true,
     });
   });
 });

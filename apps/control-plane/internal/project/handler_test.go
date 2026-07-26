@@ -2417,6 +2417,10 @@ func (s *handlerTestService) ListProjects(ctx context.Context, req ListProjectsR
 	return []Project{testProject(req.TenantID, uuid.New(), uuid.New())}, nil
 }
 
+func (s *handlerTestService) ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) (ProjectRunSummaryList, error) {
+	return ProjectRunSummaryList{}, nil
+}
+
 func (s *handlerTestService) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
 	s.workflowInstancesReq = req
 	return s.workflowInstances, nil

@@ -17,6 +17,10 @@ type Repository interface {
 	// SetProjectBudgetTokenLimit 提额/设限/清限;limit 为 nil 表示不限。
 	SetProjectBudgetTokenLimit(ctx context.Context, tenantID, projectID uuid.UUID, limit *int64) (Project, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
+	// ListProjectRunSummaries 运行总览项目运行带:跨项目一次聚合,避免逐项目 N+1。
+	ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) ([]ProjectRunSummary, error)
+	// CountTaskRunsCompletedToday 租户级今日完成运行总数(执行口径,Asia/Shanghai 日窗)。
+	CountTaskRunsCompletedToday(ctx context.Context, tenantID uuid.UUID) (int32, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)

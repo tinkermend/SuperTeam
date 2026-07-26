@@ -4950,6 +4950,27 @@ type ProjectRouteDecision struct {
 	TenantId                    openapi_types.UUID     `json:"tenant_id"`
 }
 
+// ProjectRunSummaryItem defines model for ProjectRunSummaryItem.
+type ProjectRunSummaryItem struct {
+	CompletedTodayCount      int32              `json:"completed_today_count"`
+	FailedCount              int32              `json:"failed_count"`
+	LastActivityAt           *time.Time         `json:"last_activity_at,omitempty"`
+	Name                     string             `json:"name"`
+	ParticipantEmployeeCount int32              `json:"participant_employee_count"`
+	ProjectId                openapi_types.UUID `json:"project_id"`
+	QueuedCount              int32              `json:"queued_count"`
+	RunningCount             int32              `json:"running_count"`
+	Status                   ProjectStatus      `json:"status"`
+	UnassignedCount          int32              `json:"unassigned_count"`
+	WaitingHumanCount        int32              `json:"waiting_human_count"`
+}
+
+// ProjectRunSummaryResponse defines model for ProjectRunSummaryResponse.
+type ProjectRunSummaryResponse struct {
+	Items                  []ProjectRunSummaryItem `json:"items"`
+	TodayCompletedRunCount int32                   `json:"today_completed_run_count"`
+}
+
 // ProjectRuntimeNode defines model for ProjectRuntimeNode.
 type ProjectRuntimeNode struct {
 	RuntimeNodeId openapi_types.UUID `json:"runtime_node_id"`
@@ -6668,6 +6689,11 @@ type ListProjectsParams struct {
 	Q      *string        `form:"q,omitempty" json:"q,omitempty"`
 }
 
+// ListProjectRunSummariesParams defines parameters for ListProjectRunSummaries.
+type ListProjectRunSummariesParams struct {
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListProjectArchiveSnapshotsParams defines parameters for ListProjectArchiveSnapshots.
 type ListProjectArchiveSnapshotsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -8110,6 +8136,9 @@ type ServerInterface interface {
 	// Create a project
 	// (POST /api/v1/projects)
 	CreateProject(w http.ResponseWriter, r *http.Request)
+	// List cross-project run summaries (run overview project band)
+	// (GET /api/v1/projects/run-summary)
+	ListProjectRunSummaries(w http.ResponseWriter, r *http.Request, params ListProjectRunSummariesParams)
 	// Delete a project
 	// (DELETE /api/v1/projects/{projectId})
 	DeleteProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -9043,6 +9072,12 @@ func (_ Unimplemented) ListProjects(w http.ResponseWriter, r *http.Request, para
 // Create a project
 // (POST /api/v1/projects)
 func (_ Unimplemented) CreateProject(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List cross-project run summaries (run overview project band)
+// (GET /api/v1/projects/run-summary)
+func (_ Unimplemented) ListProjectRunSummaries(w http.ResponseWriter, r *http.Request, params ListProjectRunSummariesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -12747,6 +12782,39 @@ func (siw *ServerInterfaceWrapper) CreateProject(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateProject(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectRunSummaries operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectRunSummaries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectRunSummariesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectRunSummaries(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18140,6 +18208,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/run-summary", wrapper.ListProjectRunSummaries)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/projects/{projectId}", wrapper.DeleteProject)

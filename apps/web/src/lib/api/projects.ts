@@ -1101,6 +1101,41 @@ export function listProjects(
   return getJson<Project[]>(options, projectListPath(filters), "projects");
 }
 
+/** 运行总览项目运行带单项聚合(契约 ProjectRunSummaryItem)。 */
+export type ProjectRunSummaryItem = {
+  project_id: string;
+  name: string;
+  status: ProjectStatus;
+  running_count: number;
+  queued_count: number;
+  waiting_human_count: number;
+  failed_count: number;
+  unassigned_count: number;
+  participant_employee_count: number;
+  completed_today_count: number;
+  last_activity_at?: string;
+};
+
+/** 契约 ProjectRunSummaryResponse:today_completed_run_count 为租户级(含归档项目当日完成)。 */
+export type ProjectRunSummaryResponse = {
+  items: ProjectRunSummaryItem[];
+  today_completed_run_count: number;
+};
+
+export function listProjectRunSummaries(
+  options: ApiClientOptions,
+  params: { limit?: number } = {},
+): Promise<ProjectRunSummaryResponse> {
+  const search = new URLSearchParams();
+  if (params.limit) search.set("limit", String(params.limit));
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return getJson<ProjectRunSummaryResponse>(
+    options,
+    `/api/v1/projects/run-summary${suffix}`,
+    "project run summaries",
+  );
+}
+
 export function listWorkflowInstances(
   options: ApiClientOptions,
   filters: ListWorkflowInstancesFilters = {},

@@ -734,6 +734,24 @@ func (q *Queries) CountProjectTaskStatusesByDemand(ctx context.Context, arg Coun
 	return i, err
 }
 
+const CountTaskRunsCompletedToday = `-- name: CountTaskRunsCompletedToday :one
+SELECT COUNT(*)::integer AS completed_today_count
+FROM task_runs
+WHERE tenant_id = $1::uuid
+  AND status = 'completed'
+  AND COALESCE(finished_at, updated_at, created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+  AND COALESCE(finished_at, updated_at, created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
+`
+
+// 大屏 KPI「今日完成运行」的租户级总数:独立于项目状态过滤(归档项目当日完成也计入),
+// 保证 KPI 与运行带逐项目求和的口径差异是显式的(前者全租户,后者仅活跃项目)。
+func (q *Queries) CountTaskRunsCompletedToday(ctx context.Context, tenantID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, CountTaskRunsCompletedToday, tenantID)
+	var completed_today_count int32
+	err := row.Scan(&completed_today_count)
+	return completed_today_count, err
+}
+
 const CreateProject = `-- name: CreateProject :one
 INSERT INTO projects (
     id,
@@ -5453,6 +5471,112 @@ func (q *Queries) ListProjectRouteDecisions(ctx context.Context, arg ListProject
 			&i.RequiresHumanReview,
 			&i.CreatedEventID,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectRunSummaries = `-- name: ListProjectRunSummaries :many
+SELECT
+    p.id AS project_id,
+    p.name,
+    p.status,
+    COALESCE(t.running_count, 0)::integer AS running_count,
+    COALESCE(t.queued_count, 0)::integer AS queued_count,
+    COALESCE(t.waiting_human_count, 0)::integer AS waiting_human_count,
+    COALESCE(t.failed_count, 0)::integer AS failed_count,
+    COALESCE(t.unassigned_count, 0)::integer AS unassigned_count,
+    COALESCE(t.participant_employee_count, 0)::integer AS participant_employee_count,
+    COALESCE(r.completed_today_count, 0)::integer AS completed_today_count,
+    t.last_activity_at::timestamptz AS last_activity_at
+FROM projects p
+LEFT JOIN (
+    SELECT
+        project_id,
+        COUNT(*) FILTER (WHERE status = 'running')::integer AS running_count,
+        COUNT(*) FILTER (WHERE status = 'queued')::integer AS queued_count,
+        COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS waiting_human_count,
+        COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_count,
+        COUNT(*) FILTER (
+            WHERE status NOT IN ('completed', 'failed', 'cancelled')
+              AND assigned_digital_employee_id IS NULL
+        )::integer AS unassigned_count,
+        COUNT(DISTINCT assigned_digital_employee_id) FILTER (
+            WHERE status NOT IN ('completed', 'failed', 'cancelled')
+        )::integer AS participant_employee_count,
+        MAX(updated_at) AS last_activity_at
+    FROM project_tasks
+    WHERE tenant_id = $1::uuid
+    GROUP BY project_id
+) t ON t.project_id = p.id
+LEFT JOIN (
+    SELECT project_id, COUNT(*)::integer AS completed_today_count
+    FROM task_runs
+    WHERE tenant_id = $1::uuid
+      AND status = 'completed'
+      AND COALESCE(finished_at, updated_at, created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+      AND COALESCE(finished_at, updated_at, created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
+    GROUP BY project_id
+) r ON r.project_id = p.id
+WHERE p.tenant_id = $1::uuid
+  AND p.deleted_at IS NULL
+  AND p.status != 'archived'
+ORDER BY
+    ((COALESCE(t.failed_count, 0) + COALESCE(t.waiting_human_count, 0)) > 0) DESC,
+    COALESCE(t.last_activity_at, p.updated_at) DESC
+LIMIT $2
+`
+
+type ListProjectRunSummariesParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	Limit    int32     `json:"limit"`
+}
+
+type ListProjectRunSummariesRow struct {
+	ProjectID                uuid.UUID          `json:"project_id"`
+	Name                     string             `json:"name"`
+	Status                   string             `json:"status"`
+	RunningCount             int32              `json:"running_count"`
+	QueuedCount              int32              `json:"queued_count"`
+	WaitingHumanCount        int32              `json:"waiting_human_count"`
+	FailedCount              int32              `json:"failed_count"`
+	UnassignedCount          int32              `json:"unassigned_count"`
+	ParticipantEmployeeCount int32              `json:"participant_employee_count"`
+	CompletedTodayCount      int32              `json:"completed_today_count"`
+	LastActivityAt           pgtype.Timestamptz `json:"last_activity_at"`
+}
+
+// 运行总览项目运行带:跨项目一次聚合任务状态计数与今日完成运行数,避免逐项目 N+1。
+// 「今日」口径与员工 today token 一致(Asia/Shanghai 日窗);今日完成按 task_runs 执行完成计
+// (执行口径,用户拍板,见 spec 2026-07-26-run-overview-display-mode §8-3)。
+// 排序:有失败/待人工的项目优先,其次按最新任务活动时间。
+func (q *Queries) ListProjectRunSummaries(ctx context.Context, arg ListProjectRunSummariesParams) ([]ListProjectRunSummariesRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectRunSummaries, arg.TenantID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectRunSummariesRow{}
+	for rows.Next() {
+		var i ListProjectRunSummariesRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Name,
+			&i.Status,
+			&i.RunningCount,
+			&i.QueuedCount,
+			&i.WaitingHumanCount,
+			&i.FailedCount,
+			&i.UnassignedCount,
+			&i.ParticipantEmployeeCount,
+			&i.CompletedTodayCount,
+			&i.LastActivityAt,
 		); err != nil {
 			return nil, err
 		}

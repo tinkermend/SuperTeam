@@ -27,6 +27,7 @@ type HandlerService interface {
 	MarkProjectWorkspaceReadyManually(ctx context.Context, req WorkspaceManualActionRequest) (*Project, error)
 	GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
+	ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) (ProjectRunSummaryList, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
@@ -206,6 +207,30 @@ func (h *HTTPHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, projectResponses(projects))
+}
+
+func (h *HTTPHandler) ListProjectRunSummaries(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeProjectAction(w, r, authz.ActionProjectRead)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	limit, _, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := service.ListProjectRunSummaries(r.Context(), ListProjectRunSummariesRequest{
+		TenantID: tenantID,
+		Limit:    limit,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectRunSummaryResponseFromDomain(result))
 }
 
 func (h *HTTPHandler) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
@@ -4080,6 +4105,45 @@ func nonEmptyStringPtr(value string) *string {
 	}
 	text := value
 	return &text
+}
+
+type projectRunSummaryItemResponse struct {
+	ProjectID                string        `json:"project_id"`
+	Name                     string        `json:"name"`
+	Status                   ProjectStatus `json:"status"`
+	RunningCount             int32         `json:"running_count"`
+	QueuedCount              int32         `json:"queued_count"`
+	WaitingHumanCount        int32         `json:"waiting_human_count"`
+	FailedCount              int32         `json:"failed_count"`
+	UnassignedCount          int32         `json:"unassigned_count"`
+	ParticipantEmployeeCount int32         `json:"participant_employee_count"`
+	CompletedTodayCount      int32         `json:"completed_today_count"`
+	LastActivityAt           *string       `json:"last_activity_at,omitempty"`
+}
+
+type projectRunSummaryResponse struct {
+	Items                  []projectRunSummaryItemResponse `json:"items"`
+	TodayCompletedRunCount int32                           `json:"today_completed_run_count"`
+}
+
+func projectRunSummaryResponseFromDomain(list ProjectRunSummaryList) projectRunSummaryResponse {
+	items := make([]projectRunSummaryItemResponse, 0, len(list.Items))
+	for _, item := range list.Items {
+		items = append(items, projectRunSummaryItemResponse{
+			ProjectID:                item.ProjectID.String(),
+			Name:                     item.Name,
+			Status:                   item.Status,
+			RunningCount:             item.RunningCount,
+			QueuedCount:              item.QueuedCount,
+			WaitingHumanCount:        item.WaitingHumanCount,
+			FailedCount:              item.FailedCount,
+			UnassignedCount:          item.UnassignedCount,
+			ParticipantEmployeeCount: item.ParticipantEmployeeCount,
+			CompletedTodayCount:      item.CompletedTodayCount,
+			LastActivityAt:           timePtr(item.LastActivityAt),
+		})
+	}
+	return projectRunSummaryResponse{Items: items, TodayCompletedRunCount: list.TodayCompletedRunCount}
 }
 
 func timePtr(value *time.Time) *string {

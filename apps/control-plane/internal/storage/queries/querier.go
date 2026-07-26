@@ -80,6 +80,9 @@ type Querier interface {
 	CountRetentionCandidates(ctx context.Context, runtimeDays int32) (CountRetentionCandidatesRow, error)
 	CountRuntimeEnrollmentsForTenant(ctx context.Context, arg CountRuntimeEnrollmentsForTenantParams) (int64, error)
 	CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	// 大屏 KPI「今日完成运行」的租户级总数:独立于项目状态过滤(归档项目当日完成也计入),
+	// 保证 KPI 与运行带逐项目求和的口径差异是显式的(前者全租户,后者仅活跃项目)。
+	CountTaskRunsCompletedToday(ctx context.Context, tenantID uuid.UUID) (int32, error)
 	CountTeamOwners(ctx context.Context, arg CountTeamOwnersParams) (int32, error)
 	// 单个判官明细行：一 lens 一行，ON CONFLICT 命中 uq_adversarial_judgement
 	// (tenant_id, demand_id, plan_revision_id, criterion_id, lens)，重跑覆盖同 lens 判定。
@@ -517,6 +520,11 @@ type Querier interface {
 	ListProjectPlanRevisionsForDemand(ctx context.Context, arg ListProjectPlanRevisionsForDemandParams) ([]ProjectPlanRevision, error)
 	ListProjectReportRefs(ctx context.Context, arg ListProjectReportRefsParams) ([]ProjectReportRef, error)
 	ListProjectRouteDecisions(ctx context.Context, arg ListProjectRouteDecisionsParams) ([]ProjectRouteDecision, error)
+	// 运行总览项目运行带:跨项目一次聚合任务状态计数与今日完成运行数,避免逐项目 N+1。
+	// 「今日」口径与员工 today token 一致(Asia/Shanghai 日窗);今日完成按 task_runs 执行完成计
+	// (执行口径,用户拍板,见 spec 2026-07-26-run-overview-display-mode §8-3)。
+	// 排序:有失败/待人工的项目优先,其次按最新任务活动时间。
+	ListProjectRunSummaries(ctx context.Context, arg ListProjectRunSummariesParams) ([]ListProjectRunSummariesRow, error)
 	ListProjectRuntimeNodes(ctx context.Context, arg ListProjectRuntimeNodesParams) ([]ProjectRuntimeNode, error)
 	ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, arg ListProjectTaskAttemptsForExecutionTraceParams) ([]ProjectTaskAttempt, error)
 	ListProjectTaskAttestations(ctx context.Context, arg ListProjectTaskAttestationsParams) ([]ProjectTaskAttestation, error)

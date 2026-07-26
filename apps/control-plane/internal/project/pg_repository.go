@@ -185,6 +185,37 @@ func (r *PgRepository) ListProjects(ctx context.Context, req ListProjectsRequest
 	return projectsFromRecords(rows)
 }
 
+func (r *PgRepository) ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) ([]ProjectRunSummary, error) {
+	rows, err := r.q.ListProjectRunSummaries(ctx, queries.ListProjectRunSummariesParams{
+		TenantID: req.TenantID,
+		Limit:    req.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]ProjectRunSummary, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, ProjectRunSummary{
+			ProjectID:                row.ProjectID,
+			Name:                     row.Name,
+			Status:                   ProjectStatus(row.Status),
+			RunningCount:             row.RunningCount,
+			QueuedCount:              row.QueuedCount,
+			WaitingHumanCount:        row.WaitingHumanCount,
+			FailedCount:              row.FailedCount,
+			UnassignedCount:          row.UnassignedCount,
+			ParticipantEmployeeCount: row.ParticipantEmployeeCount,
+			CompletedTodayCount:      row.CompletedTodayCount,
+			LastActivityAt:           ptrTime(row.LastActivityAt),
+		})
+	}
+	return items, nil
+}
+
+func (r *PgRepository) CountTaskRunsCompletedToday(ctx context.Context, tenantID uuid.UUID) (int32, error) {
+	return r.q.CountTaskRunsCompletedToday(ctx, tenantID)
+}
+
 func (r *PgRepository) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
 	rows, err := r.q.ListWorkflowInstances(ctx, queries.ListWorkflowInstancesParams{
 		TenantID:    req.TenantID,

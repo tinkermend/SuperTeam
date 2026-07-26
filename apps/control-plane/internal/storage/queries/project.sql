@@ -2412,3 +2412,67 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
   AND deleted_at IS NULL
 RETURNING *;
+
+-- name: ListProjectRunSummaries :many
+-- 运行总览项目运行带:跨项目一次聚合任务状态计数与今日完成运行数,避免逐项目 N+1。
+-- 「今日」口径与员工 today token 一致(Asia/Shanghai 日窗);今日完成按 task_runs 执行完成计
+-- (执行口径,用户拍板,见 spec 2026-07-26-run-overview-display-mode §8-3)。
+-- 排序:有失败/待人工的项目优先,其次按最新任务活动时间。
+SELECT
+    p.id AS project_id,
+    p.name,
+    p.status,
+    COALESCE(t.running_count, 0)::integer AS running_count,
+    COALESCE(t.queued_count, 0)::integer AS queued_count,
+    COALESCE(t.waiting_human_count, 0)::integer AS waiting_human_count,
+    COALESCE(t.failed_count, 0)::integer AS failed_count,
+    COALESCE(t.unassigned_count, 0)::integer AS unassigned_count,
+    COALESCE(t.participant_employee_count, 0)::integer AS participant_employee_count,
+    COALESCE(r.completed_today_count, 0)::integer AS completed_today_count,
+    t.last_activity_at::timestamptz AS last_activity_at
+FROM projects p
+LEFT JOIN (
+    SELECT
+        project_id,
+        COUNT(*) FILTER (WHERE status = 'running')::integer AS running_count,
+        COUNT(*) FILTER (WHERE status = 'queued')::integer AS queued_count,
+        COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS waiting_human_count,
+        COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_count,
+        COUNT(*) FILTER (
+            WHERE status NOT IN ('completed', 'failed', 'cancelled')
+              AND assigned_digital_employee_id IS NULL
+        )::integer AS unassigned_count,
+        COUNT(DISTINCT assigned_digital_employee_id) FILTER (
+            WHERE status NOT IN ('completed', 'failed', 'cancelled')
+        )::integer AS participant_employee_count,
+        MAX(updated_at) AS last_activity_at
+    FROM project_tasks
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+    GROUP BY project_id
+) t ON t.project_id = p.id
+LEFT JOIN (
+    SELECT project_id, COUNT(*)::integer AS completed_today_count
+    FROM task_runs
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND status = 'completed'
+      AND COALESCE(finished_at, updated_at, created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+      AND COALESCE(finished_at, updated_at, created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
+    GROUP BY project_id
+) r ON r.project_id = p.id
+WHERE p.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND p.deleted_at IS NULL
+  AND p.status != 'archived'
+ORDER BY
+    ((COALESCE(t.failed_count, 0) + COALESCE(t.waiting_human_count, 0)) > 0) DESC,
+    COALESCE(t.last_activity_at, p.updated_at) DESC
+LIMIT sqlc.arg('limit');
+
+-- name: CountTaskRunsCompletedToday :one
+-- 大屏 KPI「今日完成运行」的租户级总数:独立于项目状态过滤(归档项目当日完成也计入),
+-- 保证 KPI 与运行带逐项目求和的口径差异是显式的(前者全租户,后者仅活跃项目)。
+SELECT COUNT(*)::integer AS completed_today_count
+FROM task_runs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = 'completed'
+  AND COALESCE(finished_at, updated_at, created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+  AND COALESCE(finished_at, updated_at, created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai');

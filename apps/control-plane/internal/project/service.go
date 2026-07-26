@@ -813,6 +813,22 @@ func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) ([]
 	return s.repository.ListProjects(ctx, req)
 }
 
+func (s *Service) ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) (ProjectRunSummaryList, error) {
+	if req.TenantID == uuid.Nil {
+		return ProjectRunSummaryList{}, ErrInvalidProject
+	}
+	req.Limit, _ = normalizePagination(req.Limit, 0)
+	items, err := s.repository.ListProjectRunSummaries(ctx, req)
+	if err != nil {
+		return ProjectRunSummaryList{}, err
+	}
+	todayCompleted, err := s.repository.CountTaskRunsCompletedToday(ctx, req.TenantID)
+	if err != nil {
+		return ProjectRunSummaryList{}, err
+	}
+	return ProjectRunSummaryList{Items: items, TodayCompletedRunCount: todayCompleted}, nil
+}
+
 func (s *Service) QueueProjectTask(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error) {
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
 		return QueueProjectTaskResult{}, ErrInvalidProject

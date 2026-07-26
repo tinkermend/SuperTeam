@@ -10975,6 +10975,44 @@ func TestReplaceProjectMembersRequiresActorAndRecordsEvent(t *testing.T) {
 	}
 }
 
+func TestListProjectRunSummariesService(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	lastActivity := time.Now().Add(-time.Hour)
+	repo.runSummaries = []ProjectRunSummary{{
+		ProjectID:         projectID,
+		Name:              "运行带项目",
+		Status:            ProjectStatusRunning,
+		RunningCount:      2,
+		WaitingHumanCount: 1,
+		LastActivityAt:    &lastActivity,
+	}}
+	repo.completedTodayCount = 7
+
+	if _, err := service.ListProjectRunSummaries(context.Background(), ListProjectRunSummariesRequest{}); err == nil {
+		t.Fatalf("expected nil tenant to be rejected")
+	}
+
+	result, err := service.ListProjectRunSummaries(context.Background(), ListProjectRunSummariesRequest{TenantID: tenantID, Limit: 500})
+	if err != nil {
+		t.Fatalf("list project run summaries: %v", err)
+	}
+	if repo.lastListRunSummariesReq.TenantID != tenantID || repo.lastListRunSummariesReq.Limit != 100 {
+		t.Fatalf("expected limit clamped to 100 with tenant passthrough, got %#v", repo.lastListRunSummariesReq)
+	}
+	if len(result.Items) != 1 || result.Items[0].ProjectID != projectID || result.Items[0].RunningCount != 2 {
+		t.Fatalf("expected repository summaries passthrough, got %#v", result.Items)
+	}
+	if result.TodayCompletedRunCount != 7 {
+		t.Fatalf("expected tenant-wide today completed count 7, got %d", result.TodayCompletedRunCount)
+	}
+}
+
 func TestListPaginationIsNormalized(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -11233,6 +11271,9 @@ type memoryRepository struct {
 	createDemandCriterionVerdictErr  error
 	projectTeamScopes                map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
 	lastListProjects                 ListProjectsRequest
+	lastListRunSummariesReq          ListProjectRunSummariesRequest
+	runSummaries                     []ProjectRunSummary
+	completedTodayCount              int32
 	lastTasksLimit                   int32
 	lastTasksOffset                  int32
 	lastEventsLimit                  int32
@@ -11894,6 +11935,15 @@ func (r *memoryRepository) ListProjects(ctx context.Context, req ListProjectsReq
 		projects = append(projects, project)
 	}
 	return projects, nil
+}
+
+func (r *memoryRepository) ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) ([]ProjectRunSummary, error) {
+	r.lastListRunSummariesReq = req
+	return r.runSummaries, nil
+}
+
+func (r *memoryRepository) CountTaskRunsCompletedToday(ctx context.Context, tenantID uuid.UUID) (int32, error) {
+	return r.completedTodayCount, nil
 }
 
 func (r *memoryRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error) {

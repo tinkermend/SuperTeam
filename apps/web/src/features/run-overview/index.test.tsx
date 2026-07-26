@@ -60,6 +60,7 @@ import {
   digitalEmployeeActivityFixture,
   digitalEmployeeOverviewFixture,
   digitalEmployeeOverviewWithUnassignedFixture,
+  projectRunSummaryFixture,
   projectTaskGraphFixture,
   teamListFixture
 } from "./runtime-overview-fixtures";
@@ -86,7 +87,8 @@ function createFetcher({
   withActivity = true,
   withUnassigned = false,
   withSecondDemand = false,
-  withGrowingDemands = false
+  withGrowingDemands = false,
+  withRunSummary = true
 }: {
   withActivity?: boolean;
   withUnassigned?: boolean;
@@ -94,6 +96,8 @@ function createFetcher({
   withSecondDemand?: boolean;
   // 首次返回单 demand，后续请求头部插入新 demand（模拟并行需求抢"最新"位）。
   withGrowingDemands?: boolean;
+  // 关闭时 run-summary 返回 404，运行带走员工反向聚合降级路径。
+  withRunSummary?: boolean;
 } = {}) {
   const requests: Array<{ pathname: string; search: string }> = [];
   let demandCalls = 0;
@@ -108,6 +112,9 @@ function createFetcher({
     }
     if (url.pathname === "/api/v1/teams") {
       return jsonResponse(teamListFixture);
+    }
+    if (url.pathname === "/api/v1/projects/run-summary" && withRunSummary) {
+      return jsonResponse(projectRunSummaryFixture);
     }
     if (/^\/api\/v1\/projects\/[^/]+\/demands$/.test(url.pathname)) {
       demandCalls += 1;
@@ -498,7 +505,7 @@ describe("RunOverviewView", () => {
     const { fetcher, requests } = createFetcher();
     const screen = await renderPage(fetcher);
 
-    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    await expect.element(screen.getByText("项目运行", { exact: true })).toBeVisible();
     const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
     expect(option).not.toBeNull();
     await userEvent.click(option as HTMLElement);
@@ -531,11 +538,42 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByRole("link", { name: "查看项目详情" })).toBeVisible();
   });
 
+  it("renders resident run-band counts from the run-summary endpoint", async () => {
+    const { fetcher, requests } = createFetcher();
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("项目运行", { exact: true })).toBeVisible();
+    await expect.poll(() => requests.some((request) => request.pathname === "/api/v1/projects/run-summary")).toBe(true);
+
+    // 不选中任何项目,计数徽标常驻可见(权威源 run-summary)。
+    const opsRow = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
+    expect(opsRow?.textContent).toContain("运行 1");
+    expect(opsRow?.textContent).toContain("失败 1");
+    expect(opsRow?.textContent).toContain("待人工 1");
+    expect(opsRow?.textContent).toContain("2 人");
+
+    // 全待派发、无参与员工的项目在反向聚合里不可见,权威源下必须出现(盲区回归防线)。
+    const unstaffedRow = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='project-unstaffed']");
+    expect(unstaffedRow).not.toBeNull();
+    expect(unstaffedRow?.textContent).toContain("待派发 2");
+  });
+
+  it("falls back to employee-side aggregation when run-summary is unavailable", async () => {
+    const { fetcher } = createFetcher({ withRunSummary: false });
+    const screen = await renderPage(fetcher);
+
+    await expect.element(screen.getByText("项目运行", { exact: true })).toBeVisible();
+    // 降级源仍能列出有参与员工的项目并进入透镜,但看不到无参与员工的项目。
+    const opsRow = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
+    expect(opsRow).not.toBeNull();
+    expect(screen.container.querySelector("[data-runtime-lens-project='project-unstaffed']")).toBeNull();
+  });
+
   it("labels the lens with its demand and switches chains via the demand selector", async () => {
     const { fetcher, requests } = createFetcher({ withSecondDemand: true });
     const screen = await renderPage(fetcher);
 
-    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    await expect.element(screen.getByText("项目运行", { exact: true })).toBeVisible();
     const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
     await userEvent.click(option as HTMLElement);
 
@@ -563,7 +601,7 @@ describe("RunOverviewView", () => {
     const { fetcher } = createFetcher({ withGrowingDemands: true });
     const screen = await renderPage(fetcher);
 
-    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    await expect.element(screen.getByText("项目运行", { exact: true })).toBeVisible();
     const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
     await userEvent.click(option as HTMLElement);
     await expect.poll(() => screen.container.querySelectorAll("[data-runtime-lens-edge]").length).toBe(2);
@@ -583,7 +621,7 @@ describe("RunOverviewView", () => {
     const { fetcher } = createFetcher();
     const screen = await renderPage(fetcher);
 
-    await expect.element(screen.getByText("项目透镜")).toBeVisible();
+    await expect.element(screen.getByText("项目运行", { exact: true })).toBeVisible();
     const option = screen.container.querySelector<HTMLElement>("[data-runtime-lens-project='emp-ops-1-project']");
     expect(option).not.toBeNull();
     await userEvent.click(option as HTMLElement);

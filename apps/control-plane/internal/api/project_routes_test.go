@@ -186,6 +186,20 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected list request to use console tenant and query filters, got %#v", service.listReq)
 	}
 
+	runSummaryReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/run-summary?limit=10", nil)
+	runSummaryReq.AddCookie(cookie)
+	runSummaryResp := httptest.NewRecorder()
+	server.ServeHTTP(runSummaryResp, runSummaryReq)
+	if runSummaryResp.Code != http.StatusOK {
+		t.Fatalf("expected run-summary to succeed, got %d: %s", runSummaryResp.Code, runSummaryResp.Body.String())
+	}
+	if service.listRunSummariesReq.TenantID != expectedTenantID || service.listRunSummariesReq.Limit != 10 {
+		t.Fatalf("expected run-summary request to use console tenant and limit, got %#v", service.listRunSummariesReq)
+	}
+	if !strings.Contains(runSummaryResp.Body.String(), "today_completed_run_count") || !strings.Contains(runSummaryResp.Body.String(), "运行带项目") {
+		t.Fatalf("expected run-summary response body to carry summary payload, got %s", runSummaryResp.Body.String())
+	}
+
 	workflowReq := httptest.NewRequest(http.MethodGet, "/api/v1/workflow-instances?status=running&limit=9&q=支付", nil)
 	workflowReq.AddCookie(cookie)
 	workflowResp := httptest.NewRecorder()
@@ -1289,6 +1303,7 @@ type routeProjectService struct {
 	projectID                         uuid.UUID
 	createReq                         project.CreateProjectRequest
 	listReq                           project.ListProjectsRequest
+	listRunSummariesReq               project.ListProjectRunSummariesRequest
 	workflowInstancesReq              project.ListWorkflowInstancesRequest
 	overviewTenantID                  uuid.UUID
 	overviewProjectID                 uuid.UUID
@@ -1397,6 +1412,19 @@ func (s *routeProjectService) GetProjectRuntimeReadiness(ctx context.Context, te
 func (s *routeProjectService) ListProjects(ctx context.Context, req project.ListProjectsRequest) ([]project.Project, error) {
 	s.listReq = req
 	return []project.Project{routeProject(req.TenantID, s.ensureProjectID(), uuid.New())}, nil
+}
+
+func (s *routeProjectService) ListProjectRunSummaries(ctx context.Context, req project.ListProjectRunSummariesRequest) (project.ProjectRunSummaryList, error) {
+	s.listRunSummariesReq = req
+	return project.ProjectRunSummaryList{
+		Items: []project.ProjectRunSummary{{
+			ProjectID:    s.ensureProjectID(),
+			Name:         "运行带项目",
+			Status:       project.ProjectStatusRunning,
+			RunningCount: 2,
+		}},
+		TodayCompletedRunCount: 3,
+	}, nil
 }
 
 func (s *routeProjectService) ListWorkflowInstances(ctx context.Context, req project.ListWorkflowInstancesRequest) ([]project.WorkflowInstanceSummary, error) {
