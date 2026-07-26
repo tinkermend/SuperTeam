@@ -160,6 +160,15 @@ export function ProjectDemandsSection({
                   <StatusPill tone={demandStatusTone(demand.status)}>
                     {demandStatusLabel(demand.status)}
                   </StatusPill>
+                  {demand.created_at ? (
+                    <time
+                      className="text-[11px] tabular-nums text-ink-3"
+                      dateTime={demand.created_at}
+                      title={demand.created_at}
+                    >
+                      {formatRelativeTime(demand.created_at)}
+                    </time>
+                  ) : null}
                 </div>
               </Link>
             );

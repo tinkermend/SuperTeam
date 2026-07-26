@@ -200,6 +200,9 @@ func TestProjectRelatedMappersHandleJSONAndOptionalFields(t *testing.T) {
 	if demand.CreatedEventID == nil || *demand.CreatedEventID != createdEventID {
 		t.Fatalf("expected created event id, got %#v", demand.CreatedEventID)
 	}
+	if !demand.CreatedAt.Equal(now) || !demand.UpdatedAt.Equal(now) {
+		t.Fatalf("expected demand timestamps to be mapped, got created=%v updated=%v", demand.CreatedAt, demand.UpdatedAt)
+	}
 
 	revision, err := configRevisionFromRecord(queries.ProjectConfigRevision{
 		ID:              uuid.New(),

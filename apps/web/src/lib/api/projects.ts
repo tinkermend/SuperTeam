@@ -456,6 +456,8 @@ export type ProjectDemand = {
   /** 服务端已回写；OpenAPI ProjectDemand 尚未列入，读路径以 handler JSON 为准。 */
   coordination_mode?: ProjectCoordinationMode;
   scenario_template_key?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type ProjectStatusSummary = {

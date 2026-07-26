@@ -4662,6 +4662,7 @@ type ProjectDeleteWarnings struct {
 type ProjectDemand struct {
 	Attachments    []interface{}       `json:"attachments"`
 	Content        *string             `json:"content,omitempty"`
+	CreatedAt      time.Time           `json:"created_at"`
 	CreatedEventId *openapi_types.UUID `json:"created_event_id,omitempty"`
 	Id             openapi_types.UUID  `json:"id"`
 	ProjectId      openapi_types.UUID  `json:"project_id"`
@@ -4675,6 +4676,7 @@ type ProjectDemand struct {
 	SubmittedByUserId   openapi_types.UUID      `json:"submitted_by_user_id"`
 	TenantId            openapi_types.UUID      `json:"tenant_id"`
 	Title               string                  `json:"title"`
+	UpdatedAt           time.Time               `json:"updated_at"`
 }
 
 // ProjectDemandLaunchDetail defines model for ProjectDemandLaunchDetail.

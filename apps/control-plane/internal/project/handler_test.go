@@ -316,6 +316,12 @@ func TestProjectHandlerSubmitsDemandReviewerPreference(t *testing.T) {
 	if reviewer["reviewer_user_id"] != reviewerID.String() || reviewer["selection_reason"] != string(ReviewerSelectionUserSelected) {
 		t.Fatalf("unexpected reviewer response: %#v", reviewer)
 	}
+	if body["created_at"] != "2026-07-26T10:00:00Z" {
+		t.Fatalf("expected created_at to be projected, got %#v", body["created_at"])
+	}
+	if body["updated_at"] != "2026-07-26T10:00:00Z" {
+		t.Fatalf("expected updated_at to be projected, got %#v", body["updated_at"])
+	}
 }
 
 func TestProjectHandlerListsPlanRevisions(t *testing.T) {
@@ -2476,7 +2482,7 @@ func (s *handlerTestService) SubmitDemand(ctx context.Context, req SubmitProject
 	if s.submitDemandErr != nil {
 		return nil, s.submitDemandErr
 	}
-	demand := ProjectDemand{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, SubmittedByUserID: req.SubmittedByUserID, Title: req.Title, SourceType: req.SourceType, SourceRefs: req.SourceRefs, Attachments: req.Attachments, Status: ProjectDemandStatusRecorded}
+	demand := ProjectDemand{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, SubmittedByUserID: req.SubmittedByUserID, Title: req.Title, SourceType: req.SourceType, SourceRefs: req.SourceRefs, Attachments: req.Attachments, Status: ProjectDemandStatusRecorded, CreatedAt: time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC)}
 	if req.ReviewerUserID != nil {
 		demand.ReviewerPreference = &ReviewerPreference{
 			ReviewerUserID:   *req.ReviewerUserID,

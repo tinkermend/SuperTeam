@@ -2822,6 +2822,8 @@ type projectDemandResponse struct {
 	Reviewer            *reviewerPreferenceResponse `json:"reviewer"`
 	CoordinationMode    string                      `json:"coordination_mode"`
 	ScenarioTemplateKey *string                     `json:"scenario_template_key,omitempty"`
+	CreatedAt           string                      `json:"created_at"`
+	UpdatedAt           string                      `json:"updated_at"`
 }
 
 type demandLaunchDetailResponse struct {
@@ -3828,6 +3830,8 @@ func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 		Reviewer:            reviewerPreferenceResponseFromDomain(demand.ReviewerPreference),
 		CoordinationMode:    demand.CoordinationMode,
 		ScenarioTemplateKey: demand.ScenarioTemplateKey,
+		CreatedAt:           timeValue(demand.CreatedAt),
+		UpdatedAt:           timeValue(demand.UpdatedAt),
 	}
 }
 

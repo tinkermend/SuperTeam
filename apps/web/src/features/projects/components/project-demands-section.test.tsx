@@ -48,13 +48,20 @@ function demand(overrides: Partial<ProjectDemand>): ProjectDemand {
 };
 }
 
+/** 固定 3 小时 5 分钟前，保证 formatRelativeTime 稳定输出 "3 小时前"。 */
+const latestDemandCreatedAt = new Date(
+  Date.now() - (3 * 60 + 5) * 60 * 1000,
+).toISOString();
+
 const demands: ProjectDemand[] = [
   demand({
     content: "为验收整理接入材料",
+    created_at: latestDemandCreatedAt,
     id: "demand-latest",
     status: "acceptance_pending",
     title: "整理验收材料"
 }),
+  // demand-old 不带 created_at：覆盖缺值不渲染时间的分支。
   demand({
     content: "历史需求内容",
     id: "demand-old",
@@ -186,6 +193,14 @@ describe("ProjectDemandsSection", () => {
       .element(screen.getByTestId("demand-list-item-demand-latest"))
       .toHaveAttribute("aria-current", "true");
     await expect.element(screen.getByText("已完成")).toBeVisible();
+
+    // 状态 pill 旁的相对创建时间：有 created_at 渲染，缺值不渲染。
+    const latestItem = screen.getByTestId("demand-list-item-demand-latest");
+    await expect.element(latestItem.getByText("3 小时前")).toBeVisible();
+    const oldItemElement = screen
+      .getByTestId("demand-list-item-demand-old")
+      .element();
+    expect(oldItemElement.querySelector("time")).toBeNull();
 
     // 右侧状态头默认最新需求，权威图按该需求拉取。
     const header = screen.getByTestId("demand-status-header");

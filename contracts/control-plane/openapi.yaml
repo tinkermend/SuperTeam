@@ -8067,6 +8067,8 @@ components:
         - attachments
         - status
         - reviewer
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
@@ -8104,6 +8106,12 @@ components:
         scenario_template_key:
           type: string
           description: 需求级场景模板 key；缺省回落项目默认
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     ProjectDemandLaunchDetail:
       type: object
       required:
