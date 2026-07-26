@@ -1,9 +1,15 @@
+import { useEffect, useState } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { Handle, Position } from "@xyflow/react";
-import { Bot, GitBranch, ShieldCheck } from "lucide-react";
+import { Bot, GitBranch, ShieldCheck, Timer } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SoftCard, StatusPill } from "@/components/superteam";
 import { riskLevelLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
+import {
+  formatDateTime,
+  formatElapsedSince,
+  formatRunDuration,
+} from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 import type {
   WorkflowAttachmentNodeData,
@@ -101,6 +107,7 @@ export function WorkflowTaskNode({
           </StatusPill>
         ) : null}
       </div>
+      {data.showTiming ? <TaskNodeTiming data={data} /> : null}
       <Handle
         className="!size-2 !border-brand/40 !bg-brand"
         isConnectable={false}
@@ -108,6 +115,64 @@ export function WorkflowTaskNode({
         type="source"
       />
     </SoftCard>
+  );
+}
+
+const RUNNING_NODE_STATUSES = new Set(["running", "in_progress"]);
+/** 运行中滚动时长的局部刷新粒度（分钟级显示，30s tick 足够，不整图重渲）。 */
+const RUNNING_ELAPSED_TICK_MS = 30_000;
+
+/**
+ * live 模式节点卡时间区（spec 2026-07-27 §1.2）：已结束显示起止+耗时；
+ * 运行中显示"已运行 X 分"，由 5s 轮询数据刷新驱动，另加单节点局部 tick
+ * 保证轮询数据未变时时长仍推进。无时间数据不渲染。
+ */
+function TaskNodeTiming({ data }: { data: WorkflowTaskNodeData }) {
+  const startedAt = data.runStartedAt;
+  const finishedAt = data.runFinishedAt;
+  const isRunning =
+    !finishedAt &&
+    (RUNNING_NODE_STATUSES.has(data.status.toLowerCase()) ||
+      RUNNING_NODE_STATUSES.has((data.runStatus ?? "").toLowerCase()));
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isRunning || !startedAt) return;
+    const timer = window.setInterval(
+      () => setNowMs(Date.now()),
+      RUNNING_ELAPSED_TICK_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [isRunning, startedAt]);
+
+  if (!startedAt) return null;
+
+  const elapsed = isRunning ? formatElapsedSince(startedAt, nowMs) : undefined;
+  const duration = formatRunDuration(startedAt, finishedAt);
+
+  return (
+    <p
+      className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-line pt-2.5 text-[11.5px] tabular-nums leading-4 text-ink-2"
+      data-testid="task-node-timing"
+    >
+      <Timer aria-hidden className="size-3.5 shrink-0 text-ink-3" />
+      <span>
+        <span className="text-ink-3">起</span>{" "}
+        <time dateTime={startedAt}>{formatDateTime(startedAt)}</time>
+      </span>
+      {finishedAt ? (
+        <span>
+          <span className="text-ink-3">止</span>{" "}
+          <time dateTime={finishedAt}>{formatDateTime(finishedAt)}</time>
+        </span>
+      ) : null}
+      {duration ? (
+        <span>
+          <span className="text-ink-3">耗时</span> {duration}
+        </span>
+      ) : null}
+      {elapsed ? <span className="font-semibold text-brand-deep">{elapsed}</span> : null}
+    </p>
   );
 }
 

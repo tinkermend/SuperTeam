@@ -246,4 +246,28 @@ describe("ProjectDemandsSection", () => {
 
     await expect.element(screen.getByText("暂无需求")).toBeVisible();
   });
+
+  it("renders the authoritative graph in live mode with a 5s polling loop", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const fetchTaskGraph = vi
+        .fn()
+        .mockImplementation((demandId: string) =>
+          Promise.resolve(graphFor(demandId, "整理材料任务")),
+        );
+      const screen = await renderSection({ fetchTaskGraph });
+
+      // 活图模式只在需求流程区开启（spec 2026-07-27 §2）。
+      await expect
+        .element(screen.getByTestId("flow-graph-canvas"))
+        .toHaveAttribute("data-live", "true");
+
+      // 数据活性：5s 轮询驱动 graph 重取（动画状态纯由数据推导）。
+      const callsBeforePoll = fetchTaskGraph.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5_500);
+      expect(fetchTaskGraph.mock.calls.length).toBeGreaterThan(callsBeforePoll);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

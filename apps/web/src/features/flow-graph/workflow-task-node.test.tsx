@@ -18,12 +18,36 @@ function makeTaskData(overrides: Partial<WorkflowTaskNodeData> = {}): WorkflowTa
     requiresHumanApproval: false,
     riskLevel: undefined,
     runStatus: undefined,
+    runStartedAt: undefined,
+    runFinishedAt: undefined,
+    showTiming: false,
     status: "planned",
     summary: "任务摘要",
     task: {} as ProjectTaskGraphNode,
     title: "任务标题",
     ...overrides
 };
+}
+
+function renderTaskNode(data: WorkflowTaskNodeData) {
+  return render(
+    <ReactFlowProvider>
+      <WorkflowTaskNode
+        data={data}
+        deletable={false}
+        dragging={false}
+        draggable={false}
+        id="task:1"
+        isConnectable={false}
+        positionAbsoluteX={0}
+        positionAbsoluteY={0}
+        selectable={false}
+        selected={false}
+        type="workflowTask"
+        zIndex={0}
+      />
+    </ReactFlowProvider>,
+  );
 }
 
 describe("WorkflowTaskNode", () => {
@@ -152,6 +176,65 @@ describe("WorkflowTaskNode", () => {
     await expect.element(screen.getByText("运行 排队中")).toBeInTheDocument();
     expect(screen.container.textContent).not.toContain("waiting_human");
     expect(screen.container.textContent).not.toContain("Run queued");
+  });
+
+  it("hides the timing section by default so existing consumers stay unchanged", async () => {
+    const screen = await renderTaskNode(
+      makeTaskData({
+        runStartedAt: "2026-07-27T02:00:00Z",
+        runFinishedAt: "2026-07-27T02:12:00Z",
+        status: "completed"
+}),
+    );
+
+    expect(
+      screen.container.querySelector('[data-testid="task-node-timing"]'),
+    ).toBeNull();
+  });
+
+  it("shows start/end and duration for a finished run in live mode", async () => {
+    const screen = await renderTaskNode(
+      makeTaskData({
+        runStartedAt: "2026-07-27T02:00:00Z",
+        runFinishedAt: "2026-07-27T02:12:00Z",
+        showTiming: true,
+        status: "completed"
+}),
+    );
+
+    const timing = screen.getByTestId("task-node-timing");
+    await expect.element(timing).toBeInTheDocument();
+    await expect.element(timing.getByText("起")).toBeInTheDocument();
+    await expect.element(timing.getByText("止")).toBeInTheDocument();
+    await expect.element(timing.getByText("耗时")).toBeInTheDocument();
+    expect(timing.element().textContent).toContain("12 分钟");
+    expect(timing.element().textContent).not.toContain("已运行");
+  });
+
+  it("shows a rolling elapsed label for a running node in live mode", async () => {
+    const startedAt = new Date(Date.now() - 5 * 60 * 1000 - 10_000).toISOString();
+    const screen = await renderTaskNode(
+      makeTaskData({
+        runStartedAt: startedAt,
+        showTiming: true,
+        status: "running"
+}),
+    );
+
+    const timing = screen.getByTestId("task-node-timing");
+    await expect.element(timing).toBeInTheDocument();
+    expect(timing.element().textContent).toContain("已运行 5 分钟");
+    expect(timing.element().textContent).not.toContain("耗时");
+  });
+
+  it("renders no timing section in live mode when the task never started", async () => {
+    const screen = await renderTaskNode(
+      makeTaskData({ showTiming: true, status: "planned" }),
+    );
+
+    expect(
+      screen.container.querySelector('[data-testid="task-node-timing"]'),
+    ).toBeNull();
   });
 
   it("renders stage labels as compact centered pills for connector clearance", async () => {

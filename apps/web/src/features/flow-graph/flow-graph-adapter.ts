@@ -5,6 +5,7 @@ import type {
   ProjectTaskGraph,
   ProjectTaskGraphEmployee,
   ProjectTaskGraphNode,
+  ProjectTaskGraphRun,
 } from "@/lib/api/projects";
 import { taskStatusLabel } from "@/lib/status-labels";
 
@@ -24,6 +25,29 @@ const INITIAL_STATUS_PRIORITY = [
 const PENDING_DECISION_STATUSES = new Set(["pending", "open", "requested"]);
 const ANIMATED_EDGE_STATUSES = new Set(["unblocked", "ready", "completed"]);
 
+// —— 活性边推导用状态集（spec 2026-07-27 §1.1：视觉状态严格从权威任务/运行状态推导）。
+const FAILED_TASK_STATUSES = new Set(["failed"]);
+const CANCELLED_TASK_STATUSES = new Set(["cancelled"]);
+const RUNNING_TASK_STATUSES = new Set(["running", "in_progress"]);
+const RUNNING_RUN_STATUSES = new Set(["running", "in_progress", "started"]);
+const COMPLETED_TASK_STATUSES = new Set(["completed", "done", "accepted"]);
+/** 下游"正在消费交接物"的活跃态：已在跑或已被派上执行位。 */
+const DEPENDENT_ACTIVE_STATUSES = new Set([
+  "running",
+  "in_progress",
+  "assigned",
+  "dispatchable",
+]);
+
+/** 活性边的四态：flowing 粒子流动 / failed 红停流 / done 静态通电 / idle 灰待命。 */
+export type FlowLiveEdgeActivity = "flowing" | "failed" | "done" | "idle";
+
+export type FlowLiveEdgeData = {
+  activity: FlowLiveEdgeActivity;
+  blockerTaskId: string;
+  dependentTaskId: string;
+};
+
 export type WorkflowTaskNodeData = {
   avatarAsset: WorkflowTaskNodeAvatarAsset | undefined;
   employeeName: string | undefined;
@@ -33,6 +57,11 @@ export type WorkflowTaskNodeData = {
   requiresHumanApproval: boolean;
   riskLevel: string | undefined;
   runStatus: string | undefined;
+  /** 运行起止（优先 runs[] 投影，回退任务节点自身投影）；live 模式节点卡时间区数据源。 */
+  runStartedAt: string | undefined;
+  runFinishedAt: string | undefined;
+  /** live 模式（spec 2026-07-27 §1.2）才渲染时间区，既有消费方零行为变化。 */
+  showTiming: boolean;
   status: string;
   summary: string | undefined;
   task: ProjectTaskGraphNode;
@@ -70,7 +99,7 @@ type FlowGraphNode =
 
 export type FlowGraphElements = {
   nodes: FlowGraphNode[];
-  edges: Edge[];
+  edges: Edge<FlowLiveEdgeData>[];
 };
 
 export type WorkflowStageLabelNodeData = {
@@ -85,6 +114,11 @@ export type FlowGraphBuildOptions = {
   includeBlockingFallback?: boolean;
   /** pending 人工决策渲染为任务挂饰节点（默认开）。 */
   includeDecisionAttachments?: boolean;
+  /**
+   * 活图模式（spec 2026-07-27）：边切换为 flowLive 自定义 edge（粒子流动），
+   * 节点卡开启时间区。默认关——既有消费方零行为变化。
+   */
+  live?: boolean;
 };
 
 export const PLAN_TASK_GRAPH_LAYOUT = {
@@ -134,6 +168,7 @@ export function buildFlowGraphElements(
   {
     includeBlockingFallback = true,
     includeDecisionAttachments = true,
+    live = false,
   }: FlowGraphBuildOptions = {},
 ): FlowGraphElements {
   if (graph.nodes.length === 0 && graph.blocking_facts.length > 0) {
@@ -162,15 +197,16 @@ export function buildFlowGraphElements(
   const employeesById = new Map(
     graph.employees.map((employee) => [employee.digital_employee_id, employee]),
   );
-  const runStatusByTaskId = new Map(graph.runs.map((run) => [run.project_task_id, run.status]));
+  const runsByTaskId = new Map(graph.runs.map((run) => [run.project_task_id, run]));
   const pendingDecisions = graph.decision_requests.filter(
     (decision) => isPendingTaskDecision(decision) && taskIds.has(decision.project_task_id ?? ""),
   );
   const pendingDecisionsByTaskId = groupDecisionsByTaskId(pendingDecisions);
   const layoutNodes = buildDynamicTaskLayoutNodes(graph, {
     employeesById,
+    live,
     pendingDecisionsByTaskId,
-    runStatusByTaskId,
+    runsByTaskId,
   });
 
   const attachmentCountsByTaskId = new Map<string, number>();
@@ -199,33 +235,91 @@ export function buildFlowGraphElements(
 
   return {
     nodes: [...layoutNodes, ...attachmentNodes],
-    edges: buildTaskDependencyEdges(graph, taskIds),
+    edges: buildTaskDependencyEdges(graph, taskIds, { live, runsByTaskId }),
   };
 }
 
-function buildTaskDependencyEdges(graph: ProjectTaskGraph, taskIds: Set<string>): Edge[] {
+function buildTaskDependencyEdges(
+  graph: ProjectTaskGraph,
+  taskIds: Set<string>,
+  {
+    live,
+    runsByTaskId,
+  }: { live: boolean; runsByTaskId: Map<string, ProjectTaskGraphRun> },
+): Edge<FlowLiveEdgeData>[] {
+  const statusByTaskId = new Map(graph.nodes.map((task) => [task.id, task.status]));
   return graph.edges
     .filter((edge) => taskIds.has(edge.blocker_task_id) && taskIds.has(edge.dependent_task_id))
     .map((edge) => ({
       id: `edge:${edge.blocker_task_id}:${edge.dependent_task_id}`,
       source: taskNodeId(edge.blocker_task_id),
       target: taskNodeId(edge.dependent_task_id),
-      type: "smoothstep",
+      type: live ? "flowLive" : "smoothstep",
       label: taskStatusLabel(edge.edge_status),
-      animated: ANIMATED_EDGE_STATUSES.has(normalizeStatus(edge.edge_status)),
+      animated: !live && ANIMATED_EDGE_STATUSES.has(normalizeStatus(edge.edge_status)),
+      data: {
+        activity: deriveEdgeActivity({
+          blockerRunStatus: runsByTaskId.get(edge.blocker_task_id)?.status,
+          blockerStatus: statusByTaskId.get(edge.blocker_task_id),
+          dependentStatus: statusByTaskId.get(edge.dependent_task_id),
+        }),
+        blockerTaskId: edge.blocker_task_id,
+        dependentTaskId: edge.dependent_task_id,
+      },
     }));
+}
+
+/**
+ * 活性边四态推导（spec 2026-07-27 §1.1 拍板默认）：纯从权威任务/运行状态推导，
+ * 不引入"交接不符"等新边语义。规则按优先级：
+ * 1. 任一端 failed → failed（红停流）；
+ * 2. 任一端 cancelled → idle（灰）；
+ * 3. 上游任务 running/in_progress（或其 run 在跑）→ flowing（出边粒子流动）；
+ * 4. 上游已完成且下游活跃（running/in_progress/assigned/dispatchable）→ flowing；
+ * 5. 两端均完成 → done（静态已通电）；
+ * 6. 其余 → idle。
+ */
+export function deriveEdgeActivity({
+  blockerRunStatus,
+  blockerStatus,
+  dependentStatus,
+}: {
+  blockerRunStatus: string | undefined;
+  blockerStatus: string | undefined;
+  dependentStatus: string | undefined;
+}): FlowLiveEdgeActivity {
+  const blocker = normalizeStatus(blockerStatus ?? "");
+  const dependent = normalizeStatus(dependentStatus ?? "");
+  const blockerRun = normalizeStatus(blockerRunStatus ?? "");
+
+  if (FAILED_TASK_STATUSES.has(blocker) || FAILED_TASK_STATUSES.has(dependent)) {
+    return "failed";
+  }
+  if (CANCELLED_TASK_STATUSES.has(blocker) || CANCELLED_TASK_STATUSES.has(dependent)) {
+    return "idle";
+  }
+  if (RUNNING_TASK_STATUSES.has(blocker) || RUNNING_RUN_STATUSES.has(blockerRun)) {
+    return "flowing";
+  }
+  if (COMPLETED_TASK_STATUSES.has(blocker)) {
+    if (DEPENDENT_ACTIVE_STATUSES.has(dependent)) return "flowing";
+    if (COMPLETED_TASK_STATUSES.has(dependent)) return "done";
+  }
+  return "idle";
 }
 
 function buildDynamicTaskLayoutNodes(
   graph: ProjectTaskGraph,
   {
     employeesById,
+    live,
     pendingDecisionsByTaskId,
-    runStatusByTaskId,
+    runsByTaskId,
   }: {
     employeesById: Map<string, ProjectTaskGraphEmployee>;
+    live: boolean;
     pendingDecisionsByTaskId: Map<string, ProjectDecisionRequest[]>;
-    runStatusByTaskId: Map<string, string>;
+    runsByTaskId: Map<string, ProjectTaskGraphRun>;
   },
 ): (WorkflowTaskNode | WorkflowStageLabelNode)[] {
   const stageTitleByIndex = new Map(
@@ -296,7 +390,10 @@ function buildDynamicTaskLayoutNodes(
             hasPendingDecision: pendingDecisionsByTaskId.has(task.id),
             requiresHumanApproval: task.requires_human_approval,
             riskLevel: task.risk_level,
-            runStatus: runStatusByTaskId.get(task.id),
+            runStatus: runsByTaskId.get(task.id)?.status,
+            runStartedAt: runsByTaskId.get(task.id)?.started_at ?? task.started_at,
+            runFinishedAt: runsByTaskId.get(task.id)?.finished_at ?? task.finished_at,
+            showTiming: live,
             status: task.status,
             summary: task.summary,
             task,

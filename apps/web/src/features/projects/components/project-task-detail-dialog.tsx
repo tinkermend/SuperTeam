@@ -19,7 +19,7 @@ import type {
   ProjectTaskGraph
 } from "@/lib/api/projects";
 import { riskLevelLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
-import { formatDateTime, formatRelativeTime } from "@/lib/format-time";
+import { formatDateTime, formatRelativeTime, formatRunDuration } from "@/lib/format-time";
 import {
   formatBlocker,
   taskFieldKeyLabel,
@@ -404,29 +404,6 @@ export function ProjectTaskDetailDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-/** run 起止 → 人读耗时；缺失/非法时间返回 undefined（未结束不显示耗时）。 */
-function formatRunDuration(
-  startedAt: string,
-  finishedAt: string | undefined,
-): string | undefined {
-  if (!finishedAt) return undefined;
-  const startMs = Date.parse(startedAt);
-  const endMs = Date.parse(finishedAt);
-  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) {
-    return undefined;
-  }
-  const totalSeconds = Math.round((endMs - startMs) / 1000);
-  if (totalSeconds < 60) return `${totalSeconds} 秒`;
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (totalMinutes < 60) {
-    return seconds > 0 ? `${totalMinutes} 分 ${seconds} 秒` : `${totalMinutes} 分钟`;
-  }
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return minutes > 0 ? `${hours} 小时 ${minutes} 分` : `${hours} 小时`;
 }
 
 /** 失败 run 的错误摘要（服务端已脱敏）：默认三行 clamp，长文本可展开。 */

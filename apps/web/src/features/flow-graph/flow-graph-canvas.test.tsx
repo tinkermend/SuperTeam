@@ -18,8 +18,10 @@ vi.mock("@xyflow/react", () => {
   };
 
   type MockEdge = {
+    data?: Record<string, unknown>;
     id: string;
     label?: ReactNode;
+    type?: string;
   };
 
   type MockReactFlowProps = {
@@ -32,6 +34,7 @@ vi.mock("@xyflow/react", () => {
     };
     minZoom?: number;
     nodes?: MockNode[];
+    onEdgeClick?: (event: unknown, edge: MockEdge) => void;
     onNodeClick?: (event: unknown, node: MockNode) => void;
     proOptions?: {
       hideAttribution?: boolean;
@@ -40,16 +43,19 @@ vi.mock("@xyflow/react", () => {
 
   return {
     Background: () => null,
+    BaseEdge: () => null,
     Controls: () => null,
     Handle: () => null,
     MiniMap: () => null,
     Position: { Bottom: "bottom", Top: "top" },
+    getSmoothStepPath: () => ["M 0 0 L 10 10", 5, 5],
     ReactFlow: ({
       children,
       defaultViewport,
       edges = [],
       minZoom,
       nodes = [],
+      onEdgeClick,
       onNodeClick,
       proOptions
 }: MockReactFlowProps) => (
@@ -61,9 +67,16 @@ vi.mock("@xyflow/react", () => {
         data-viewport-zoom={String(defaultViewport?.zoom ?? "")}
       >
         {edges.map((edge) => (
-          <span data-testid={`flow-graph-edge-${edge.id}`} key={edge.id}>
+          <button
+            data-edge-activity={String(edge.data?.activity ?? "")}
+            data-edge-type={edge.type ?? ""}
+            data-testid={`flow-graph-edge-${edge.id}`}
+            key={edge.id}
+            onClick={(event) => onEdgeClick?.(event, edge)}
+            type="button"
+          >
             {edge.label}
-          </span>
+          </button>
         ))}
         {nodes.map((node) => (
           <button
@@ -149,10 +162,15 @@ function makeGraph(): ProjectTaskGraph {
 };
 }
 
-function renderCanvas(graph: ProjectTaskGraph, onNodeOpen = vi.fn()) {
+function renderCanvas(
+  graph: ProjectTaskGraph,
+  onNodeOpen = vi.fn(),
+  live?: boolean,
+) {
   return render(
     <FlowGraphCanvas
       graph={graph}
+      live={live}
       onNodeOpen={onNodeOpen}
       onSelectedNodeChange={vi.fn()}
       selectedNodeId={undefined}
@@ -183,6 +201,41 @@ describe("FlowGraphCanvas", () => {
     await expect
       .element(screen.getByTestId("flow-graph-edge-edge:task-a:task-b"))
       .toHaveTextContent("已计划");
+  });
+
+  it("keeps smoothstep edges and no live surface for existing consumers by default", async () => {
+    const screen = await renderCanvas(makeGraph());
+
+    await expect
+      .element(screen.getByTestId("flow-graph-canvas"))
+      .toHaveAttribute("data-live", "false");
+    await expect
+      .element(screen.getByTestId("flow-graph-edge-edge:task-a:task-b"))
+      .toHaveAttribute("data-edge-type", "smoothstep");
+    // 非 live 点边不弹交接对照。
+    await screen.getByTestId("flow-graph-edge-edge:task-a:task-b").click();
+    expect(
+      screen.container.ownerDocument.querySelector(
+        '[data-testid="flow-handoff-overlay"]',
+      ),
+    ).toBeNull();
+  });
+
+  it("switches edges to flowLive and opens the handoff overlay on edge click in live mode", async () => {
+    const screen = await renderCanvas(makeGraph(), vi.fn(), true);
+
+    await expect
+      .element(screen.getByTestId("flow-graph-canvas"))
+      .toHaveAttribute("data-live", "true");
+    const edge = screen.getByTestId("flow-graph-edge-edge:task-a:task-b");
+    await expect.element(edge).toHaveAttribute("data-edge-type", "flowLive");
+    await expect.element(edge).toHaveAttribute("data-edge-activity", "idle");
+
+    await edge.click();
+    await expect.element(screen.getByText("交接对照")).toBeInTheDocument();
+    await expect
+      .element(screen.getByText("PR 上下文盘点（高乐驹）"))
+      .toBeInTheDocument();
   });
 
   it("reports node opens for task nodes when clicked", async () => {

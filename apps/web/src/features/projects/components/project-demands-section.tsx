@@ -85,7 +85,10 @@ export function ProjectDemandsSection({
     placeholderData: keepPreviousData,
     queryFn: () => fetchTaskGraph!(selectedDemand!.id),
     // 与页面预载/任务弹层同 key 族：最新需求直接命中缓存。
-    queryKey: ["project-task-graph", projectId, selectedDemand?.id]
+    queryKey: ["project-task-graph", projectId, selectedDemand?.id],
+    // 数据活性（spec 2026-07-27 §1.4）：活图动画状态纯由 graph 数据推导，
+    // 5s 轮询与平台既有口径一致；SSE 升级属后续。
+    refetchInterval: 5000
 });
   const graph = graphQuery.data;
 
@@ -224,6 +227,7 @@ export function ProjectDemandsSection({
               <Suspense fallback={<LoadingState />}>
                 <FlowGraphCanvas
                   graph={graph}
+                  live
                   onNodeOpen={(nodeId) => {
                     const taskId = taskIdFromNodeId(nodeId);
                     if (taskId) onOpenTask(taskId);

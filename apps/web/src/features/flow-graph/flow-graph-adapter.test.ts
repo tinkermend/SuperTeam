@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PLAN_TASK_GRAPH_LAYOUT,
   buildFlowGraphElements,
+  deriveEdgeActivity,
   selectInitialWorkflowNodeId,
   stageLabelNodeId,
   taskIdFromNodeId,
@@ -458,6 +459,114 @@ describe("flow graph adapter", () => {
     expect(taskIdFromNodeId(taskNodeId("task-1"))).toBe("task-1");
     expect(taskIdFromNodeId(stageLabelNodeId(2))).toBeUndefined();
     expect(taskIdFromNodeId("blocking-runtime_placement_missing")).toBeUndefined();
+  });
+});
+
+describe("flow live edge activity", () => {
+  const derive = (
+    blockerStatus: string | undefined,
+    dependentStatus: string | undefined,
+    blockerRunStatus?: string,
+  ) => deriveEdgeActivity({ blockerRunStatus, blockerStatus, dependentStatus });
+
+  it("marks edges failed when either endpoint task failed", () => {
+    expect(derive("failed", "pending")).toBe("failed");
+    expect(derive("completed", "failed")).toBe("failed");
+    // failed 优先于 running：失败即红停流。
+    expect(derive("failed", "running", "running")).toBe("failed");
+  });
+
+  it("greys out edges touching a cancelled task without inventing new semantics", () => {
+    expect(derive("completed", "cancelled")).toBe("idle");
+    expect(derive("cancelled", "pending")).toBe("idle");
+  });
+
+  it("flows while the blocker task or its run is executing", () => {
+    expect(derive("running", "pending")).toBe("flowing");
+    expect(derive("in_progress", "planned")).toBe("flowing");
+    expect(derive("assigned", "pending", "running")).toBe("flowing");
+  });
+
+  it("flows from a completed blocker into an actively consuming dependent", () => {
+    expect(derive("completed", "running")).toBe("flowing");
+    expect(derive("completed", "assigned")).toBe("flowing");
+    expect(derive("completed", "dispatchable")).toBe("flowing");
+  });
+
+  it("settles completed handoffs as done and everything else as idle", () => {
+    expect(derive("completed", "completed")).toBe("done");
+    expect(derive("completed", "pending")).toBe("idle");
+    expect(derive("completed", "waiting_human")).toBe("idle");
+    expect(derive("planned", "planned")).toBe("idle");
+    expect(derive(undefined, undefined)).toBe("idle");
+  });
+
+  it("attaches activity and endpoint ids to every dependency edge", () => {
+    const graph = makeGraph();
+    graph.nodes = [makeTask("task-root", "running"), makeTask("task-run", "pending")];
+
+    const result = buildFlowGraphElements(graph);
+
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0].data).toEqual({
+      activity: "flowing",
+      blockerTaskId: "task-root",
+      dependentTaskId: "task-run",
+    });
+    // 非 live：既有 smoothstep 类型不变（回归护栏）。
+    expect(result.edges[0].type).toBe("smoothstep");
+  });
+
+  it("switches edges to the flowLive type and disables built-in animation in live mode", () => {
+    const graph = makeGraph();
+
+    const result = buildFlowGraphElements(graph, { live: true });
+
+    expect(result.edges[0].type).toBe("flowLive");
+    expect(result.edges[0].animated).toBe(false);
+    // live 模式下节点卡开启时间区，时间取 runs[] 投影。
+    graph.runs = [
+      {
+        project_task_id: "task-run",
+        runtime_node_summary: "runtime-east-1",
+        status: "running",
+        provider_type: "codex",
+        started_at: "2026-07-27T02:00:00Z",
+      },
+    ];
+    const liveResult = buildFlowGraphElements(graph, { live: true });
+    const liveTask = liveResult.nodes.find(
+      (node) => node.id === taskNodeId("task-run"),
+    );
+    expect(liveTask?.data).toMatchObject({
+      runStartedAt: "2026-07-27T02:00:00Z",
+      runFinishedAt: undefined,
+      showTiming: true,
+    });
+    const staticTask = buildFlowGraphElements(graph).nodes.find(
+      (node) => node.id === taskNodeId("task-run"),
+    );
+    expect(staticTask?.data).toMatchObject({ showTiming: false });
+  });
+
+  it("falls back to the task node projection when the run carries no timestamps", () => {
+    const graph = makeGraph();
+    graph.nodes = [
+      makeTask("task-root", "completed", {
+        started_at: "2026-07-27T01:00:00Z",
+        finished_at: "2026-07-27T01:30:00Z",
+      }),
+      makeTask("task-run", "running"),
+    ];
+    graph.runs = [];
+
+    const result = buildFlowGraphElements(graph, { live: true });
+    const rootTask = result.nodes.find((node) => node.id === taskNodeId("task-root"));
+
+    expect(rootTask?.data).toMatchObject({
+      runStartedAt: "2026-07-27T01:00:00Z",
+      runFinishedAt: "2026-07-27T01:30:00Z",
+    });
   });
 });
 
