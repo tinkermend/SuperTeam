@@ -1,4 +1,5 @@
 import type { AnchorHTMLAttributes, ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
@@ -10,7 +11,8 @@ import type {
   ProjectMember,
   ProjectOverview,
   ProjectPlanRevision,
-  ProjectTask
+  ProjectTask,
+  ProjectTaskGraph
 } from "@/lib/api/projects";
 
 vi.mock("@tanstack/react-router", () => {
@@ -232,7 +234,15 @@ function detailElement(
 function renderDetail(
   props: Partial<React.ComponentProps<typeof ProjectOperationalDetail>> = {},
 ) {
-  return render(detailElement(props));
+  // 任务详情弹层内含懒查执行图的 useQuery，渲染需要 QueryClientProvider。
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } }
+});
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {detailElement(props)}
+    </QueryClientProvider>,
+  );
 }
 
 describe("ProjectOperationalDetail", () => {
@@ -364,6 +374,81 @@ describe("ProjectOperationalDetail", () => {
     await expect
       .element(dialog.getByRole("link", { name: "查看该任务所在流程编排" }))
       .toHaveAttribute("href", "/workflows/demand-1");
+  });
+
+  it("lazily fetches the task's demand graph when it is missing from the preloaded graph", async () => {
+    const nowIso = new Date().toISOString();
+    const historicalTask: ProjectTask = {
+      assigned_digital_employee_id: "employee-1",
+      created_at: nowIso,
+      demand_id: "demand-old",
+      id: "task-old",
+      project_id: "project-1",
+      requires_human_approval: false,
+      status: "completed",
+      summary: "历史需求下的任务",
+      tenant_id: "tenant-1",
+      title: "历史任务",
+      updated_at: nowIso
+};
+    const lazyGraph: ProjectTaskGraph = {
+      blocking_facts: [],
+      decision_requests: [],
+      edges: [],
+      employees: [
+        {
+          digital_employee_id: "employee-1",
+          display_name: "验收执行员工",
+          project_role: "executor",
+          status: "active"
+},
+      ],
+      execution_summaries: [
+        {
+          artifact_refs: [],
+          conclusion: "历史任务已完成并产出简报",
+          confidence_factors: {},
+          created_at: nowIso,
+          digital_employee_id: "employee-1",
+          evidence_refs: [],
+          id: "summary-1",
+          missing_information: [],
+          project_id: "project-1",
+          project_task_id: "task-old",
+          requires_human_review: false,
+          tenant_id: "tenant-1"
+},
+      ],
+      nodes: [
+        {
+          ...historicalTask,
+          expected_outputs: ["中文简报"],
+          handoff_contract: {},
+          input_requirements: {},
+          planner_metadata: {}
+},
+      ],
+      recent_events: [],
+      runs: []
+};
+    const fetchTaskGraph = vi.fn().mockResolvedValue(lazyGraph);
+    const screen = await renderDetail({
+      fetchTaskGraph,
+      overview: { ...overview, active_tasks: [historicalTask] },
+      tasks: [historicalTask]
+});
+
+    await userEvent.click(screen.getByTitle("历史任务"));
+    const dialog = screen.getByTestId("project-task-detail-dialog");
+    await expect.element(dialog).toBeVisible();
+
+    // 懒查询按任务的 demand_id 补图,编排切片与执行结论渲染出来
+    await expect.element(dialog.getByText("中文简报")).toBeVisible();
+    await expect.element(dialog.getByText("历史任务已完成并产出简报")).toBeVisible();
+    await expect
+      .element(dialog.getByText(/当前执行图未包含该任务/))
+      .not.toBeInTheDocument();
+    expect(fetchTaskGraph).toHaveBeenCalledWith("demand-old");
   });
 
   it("opens the same task detail dialog from the tasks tab title", async () => {
@@ -782,13 +867,18 @@ describe("ProjectOperationalDetail", () => {
       tenant_id: "tenant-1",
       title_snapshot: "确认计划版本"
 };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } }
+});
     const screen = await render(
-      detailElement({
-        decisionRequests: [planReviewDecision],
-        initialTab: "approval",
-        onResolveDecision,
-        planRevisions: [revisionA]
-}),
+      <QueryClientProvider client={queryClient}>
+        {detailElement({
+          decisionRequests: [planReviewDecision],
+          initialTab: "approval",
+          onResolveDecision,
+          planRevisions: [revisionA]
+})}
+      </QueryClientProvider>,
     );
 
     await expect
@@ -796,12 +886,14 @@ describe("ProjectOperationalDetail", () => {
       .toBeVisible();
 
     await screen.rerender(
-      detailElement({
-        decisionRequests: [planReviewDecision],
-        initialTab: "approval",
-        onResolveDecision,
-        planRevisions: [revisionB]
-}),
+      <QueryClientProvider client={queryClient}>
+        {detailElement({
+          decisionRequests: [planReviewDecision],
+          initialTab: "approval",
+          onResolveDecision,
+          planRevisions: [revisionB]
+})}
+      </QueryClientProvider>,
     );
 
     await expect

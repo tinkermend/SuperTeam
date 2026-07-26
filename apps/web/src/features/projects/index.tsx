@@ -1127,6 +1127,11 @@ export function ProjectsView({
                     executionTraceIsError={projectExecutionTraceIsError}
                     executionTraceIsLoading={projectExecutionTraceIsLoading}
                     executionSummaries={projectExecutionSummaries}
+                    fetchTaskGraph={(demandId) =>
+                      getProjectTaskGraph(apiOptions, effectiveProjectId as string, {
+                        demandId
+})
+                    }
                     focusDecisionId={search.focus}
                     initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
                     isArchived={isArchived}

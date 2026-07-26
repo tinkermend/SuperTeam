@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Activity, ArrowUpRight, ClipboardList, GitBranch, Inbox } from "lucide-react";
 import {
   Dialog,
@@ -33,6 +34,7 @@ import { BlockerActions, modeToneClass } from "./project-ops-home";
 type ProjectTaskDetailDialogProps = {
   taskId?: string;
   onOpenChange: (open: boolean) => void;
+  projectId: string;
   tasks: ProjectTask[];
   demands: ProjectDemand[];
   decisionRequests: ProjectDecisionRequest[];
@@ -40,6 +42,11 @@ type ProjectTaskDetailDialogProps = {
   overview?: ProjectOverview;
   principalNamesById?: ReadonlyMap<string, string>;
   onResolveDecision: (decisionId: string, decision: string) => void;
+  /**
+   * 按 demand 懒查执行图：页面只预载最新 demand 的图，历史需求的任务打开弹层时
+   * 用任务自己的 demand_id 补一次查询（queryKey 与页面同族，最新 demand 直接命中缓存）。
+   */
+  fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
 };
 
 /**
@@ -50,26 +57,45 @@ type ProjectTaskDetailDialogProps = {
 export function ProjectTaskDetailDialog({
   taskId,
   onOpenChange,
+  projectId,
   tasks,
   demands,
   decisionRequests,
   taskGraph,
   overview,
   principalNamesById,
-  onResolveDecision
+  onResolveDecision,
+  fetchTaskGraph
 }: ProjectTaskDetailDialogProps) {
-  const graphNode = taskGraph?.nodes.find((node) => node.id === taskId);
+  const preloadedNode = taskGraph?.nodes.find((node) => node.id === taskId);
   const task =
-    graphNode ??
+    preloadedNode ??
     tasks.find((item) => item.id === taskId) ??
     overview?.active_tasks?.find((item) => item.id === taskId);
   const open = Boolean(taskId && task);
+  const lazyDemandId = !preloadedNode ? task?.demand_id : undefined;
+  const lazyGraphQuery = useQuery({
+    enabled: Boolean(open && lazyDemandId && fetchTaskGraph),
+    // 与页面预载查询同 key 族：任务属最新 demand 时直接命中缓存，不发请求。
+    queryKey: ["project-task-graph", projectId, lazyDemandId],
+    queryFn: () => fetchTaskGraph!(lazyDemandId as string),
+    staleTime: 30_000
+});
   if (!task) return null;
+
+  const activeGraph = preloadedNode
+    ? taskGraph
+    : lazyGraphQuery.data?.nodes.some((node) => node.id === task.id)
+      ? lazyGraphQuery.data
+      : undefined;
+  const graphNode =
+    preloadedNode ?? activeGraph?.nodes.find((node) => node.id === task.id);
+  const isGraphLoading = !graphNode && lazyGraphQuery.isFetching;
 
   const demandsById = new Map(demands.map((demand) => [demand.id, demand]));
   const mode = resolveTaskMode(task, demandsById);
-  const run = taskGraph?.runs.find((item) => item.project_task_id === task.id);
-  const result = taskGraph?.execution_summaries.find(
+  const run = activeGraph?.runs.find((item) => item.project_task_id === task.id);
+  const result = activeGraph?.execution_summaries.find(
     (item) => item.project_task_id === task.id,
   );
   const pendingDecisions = decisionRequests.filter(
@@ -77,7 +103,7 @@ export function ProjectTaskDetailDialog({
       item.project_task_id === task.id && item.status_snapshot === "pending",
   );
   const employeeName = task.assigned_digital_employee_id
-    ? (taskGraph?.employees.find(
+    ? (activeGraph?.employees.find(
         (item) => item.digital_employee_id === task.assigned_digital_employee_id,
       )?.display_name ??
       principalNamesById?.get(task.assigned_digital_employee_id) ??
@@ -236,9 +262,13 @@ export function ProjectTaskDetailDialog({
                   </div>
                 ) : null}
               </div>
+            ) : isGraphLoading ? (
+              <p className="text-[12.5px] leading-5 text-ink-3">正在加载编排数据…</p>
             ) : (
               <p className="text-[12.5px] leading-5 text-ink-3">
-                当前执行图未包含该任务（可能来自历史需求或已重新规划）
+                {lazyGraphQuery.isError
+                  ? "编排数据加载失败，可稍后重开本弹层重试"
+                  : "当前执行图未包含该任务（可能来自历史需求或已重新规划）"}
               </p>
             )}
           </section>

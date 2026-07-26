@@ -99,10 +99,13 @@ import {
 } from "../lib/project-detail-section";
 import type { UserIdentityData } from "@/components/superteam/user-identity";
 
-// 计划图画布依赖 @xyflow/react（重）。懒加载让它离开入口包——仅在有任务节点的执行图
-// 区块渲染，首屏不需要（P1-D Step 1）。
-const PlanGraphCanvas = lazy(() =>
-  import("./plan-graph-canvas").then((m) => ({ default: m.PlanGraphCanvas })),
+// 流程图权威画布依赖 @xyflow/react（重）。懒加载让它离开入口包——仅在有任务节点的
+// 执行图区块渲染，首屏不需要（P1-D Step 1）。与流程编排详情共用同一画布组件，
+// 节点可点击直达任务详情弹层（spec 2026-07-26 §4.2）。
+const FlowGraphCanvas = lazy(() =>
+  import("@/features/flow-graph/flow-graph-canvas").then((m) => ({
+    default: m.FlowGraphCanvas
+})),
 );
 
 type ProjectOperationalDetailProps = {
@@ -124,6 +127,8 @@ type ProjectOperationalDetailProps = {
   executionTraceIsError?: boolean;
   executionTraceIsLoading?: boolean;
   executionSummaries: ProjectExecutionSummary[];
+  /** 任务详情弹层按 demand 懒查执行图（页面只预载最新 demand 的图）。 */
+  fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
   focusDecisionId?: string;
   initialTab?: ProjectDetailSection | string;
   isArchived?: boolean;
@@ -184,6 +189,7 @@ export function ProjectOperationalDetail({
   executionTraceIsError,
   executionTraceIsLoading,
   executionSummaries,
+  fetchTaskGraph,
   focusDecisionId,
   initialTab = "workbench",
   isArchived,
@@ -502,7 +508,19 @@ export function ProjectOperationalDetail({
                             <h3 className="text-sm font-semibold tracking-normal">当前执行图</h3>
                           </div>
                           <Suspense fallback={<LoadingState />}>
-                            <PlanGraphCanvas graph={taskGraph} />
+                            <FlowGraphCanvas
+                              graph={taskGraph}
+                              onNodeOpen={(nodeId) => {
+                                const taskId = taskIdFromNodeId(nodeId);
+                                if (taskId) setDetailTaskId(taskId);
+                              }}
+                              onSelectedNodeChange={(nodeId) => {
+                                if (!nodeId) setDetailTaskId(undefined);
+                              }}
+                              selectedNodeId={
+                                detailTaskId ? taskNodeId(detailTaskId) : undefined
+                              }
+                            />
                           </Suspense>
                         </section>
                       ) : null}
@@ -812,12 +830,14 @@ export function ProjectOperationalDetail({
       <ProjectTaskDetailDialog
         decisionRequests={decisionRequests}
         demands={demands}
+        fetchTaskGraph={fetchTaskGraph}
         onOpenChange={(open) => {
           if (!open) setDetailTaskId(undefined);
         }}
         onResolveDecision={onResolveDecision}
         overview={overview}
         principalNamesById={principalNamesById}
+        projectId={project.id}
         taskGraph={taskGraph}
         taskId={detailTaskId}
         tasks={tasks}
