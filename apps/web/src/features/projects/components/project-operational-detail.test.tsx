@@ -250,6 +250,7 @@ describe("ProjectOperationalDetail", () => {
     const screen = await renderDetail();
 
     await expect.element(screen.getByRole("tab", { name: "工作台" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "需求流程" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "任务" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "决策历史" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "资产" })).toBeVisible();
@@ -298,6 +299,46 @@ describe("ProjectOperationalDetail", () => {
       .element(overviewScreen.getByRole("tab", { name: "工作台", selected: true }))
       .toBeVisible();
     await expect.element(overviewScreen.getByTestId("project-ops-home")).toBeVisible();
+  });
+
+  it("opens the demands section from ?tab=demands with the demand switcher", async () => {
+    // 需求流程区直连血缘/待决 API：给最小 stub 响应即可。
+    const fetcher: typeof fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const payload = url.includes("/launch-detail")
+        ? {
+            coordination_jobs: [],
+            decision_requests: [],
+            demand: { id: "demand-1" },
+            execution_summaries: [],
+            project: { id: "project-1" },
+            project_tasks: [],
+            recent_events: [],
+            reviewer: null,
+            route_decisions: []
+}
+        : { criteria: [], demand_status: "submitted" };
+      return new Response(JSON.stringify(payload), {
+        headers: { "Content-Type": "application/json" },
+        status: 200
+});
+    };
+    const screen = await renderDetail({
+      apiBaseUrl: "http://cp.test",
+      apiOptions: { baseUrl: "http://cp.test", fetcher },
+      initialTab: "demands"
+});
+
+    await expect
+      .element(screen.getByRole("tab", { name: "需求流程", selected: true }))
+      .toBeVisible();
+    await expect.element(screen.getByTestId("project-demands-section")).toBeVisible();
+    const header = screen.getByTestId("demand-status-header");
+    await expect.element(header.getByText("补充上线验收说明")).toBeVisible();
+    await expect.element(header.getByText("待计划")).toBeVisible();
+    await expect
+      .element(screen.getByTestId("demand-list-item-demand-1"))
+      .toHaveAttribute("href", "/projects/project-1?demand=demand-1&tab=demands");
   });
 
   it("shows week pulse calendar with centered empty copy when project has no activity", async () => {
@@ -370,10 +411,10 @@ describe("ProjectOperationalDetail", () => {
     await userEvent.click(dialog.getByRole("button", { name: "批准" }));
     expect(onResolveDecision).toHaveBeenCalledWith("decision-1", "approved");
 
-    // 编排深链
+    // 编排深链（流程编排页已退役，指向本项目需求流程区）
     await expect
-      .element(dialog.getByRole("link", { name: "查看该任务所在流程编排" }))
-      .toHaveAttribute("href", "/workflows/demand-1");
+      .element(dialog.getByRole("link", { name: "查看该任务所在需求流程" }))
+      .toHaveAttribute("href", "/projects/project-1?demand=demand-1&tab=demands");
   });
 
   it("lazily fetches the task's demand graph when it is missing from the preloaded graph", async () => {
@@ -429,7 +470,16 @@ describe("ProjectOperationalDetail", () => {
 },
       ],
       recent_events: [],
-      runs: []
+      runs: [
+        {
+          finished_at: nowIso,
+          project_task_id: "task-old",
+          provider_type: "claude_code",
+          runtime_node_summary: "macbook-dev",
+          started_at: nowIso,
+          status: "completed"
+},
+      ]
 };
     const fetchTaskGraph = vi.fn().mockResolvedValue(lazyGraph);
     const screen = await renderDetail({
@@ -449,6 +499,11 @@ describe("ProjectOperationalDetail", () => {
       .element(dialog.getByText(/当前执行图未包含该任务/))
       .not.toBeInTheDocument();
     expect(fetchTaskGraph).toHaveBeenCalledWith("demand-old");
+
+    // 「查看执行轨迹」深链带 &task=：轨迹面板按该任务过滤定位。
+    await expect
+      .element(dialog.getByRole("link", { name: "查看历史任务执行轨迹" }))
+      .toHaveAttribute("href", "/projects/project-1?tab=trace&task=task-old");
   });
 
   it("opens the same task detail dialog from the tasks tab title", async () => {
@@ -537,7 +592,7 @@ describe("ProjectOperationalDetail", () => {
       .toBeVisible();
     await expect.element(screen.getByRole("link", { name: "查看缺口处理 →" })).toHaveAttribute(
       "href",
-      "/workflows/demand-1",
+      ".?demand=demand-1&tab=demands",
     );
   });
 

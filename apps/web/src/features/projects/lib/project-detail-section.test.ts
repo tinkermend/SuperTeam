@@ -5,11 +5,13 @@ import {
 } from "./project-detail-section";
 
 describe("project-detail-section", () => {
-  it("normalizes legacy tabs onto workbench / tasks / approval / assets", () => {
+  it("normalizes legacy tabs onto workbench / demands / tasks / approval / assets", () => {
     expect(normalizeProjectDetailSection(undefined)).toBe("workbench");
     expect(normalizeProjectDetailSection("overview")).toBe("workbench");
     expect(normalizeProjectDetailSection("config")).toBe("workbench");
     expect(normalizeProjectDetailSection("workbench")).toBe("workbench");
+    expect(normalizeProjectDetailSection("trace")).toBe("workbench");
+    expect(normalizeProjectDetailSection("demands")).toBe("demands");
     expect(normalizeProjectDetailSection("tasks")).toBe("tasks");
     expect(normalizeProjectDetailSection("approval")).toBe("approval");
     expect(normalizeProjectDetailSection("assets")).toBe("assets");

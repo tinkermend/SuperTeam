@@ -466,8 +466,9 @@ describe("TaskLaunchView", () => {
     expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-1/members");
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
-        params: { demandId: "demand-1" },
-        to: "/workflows/$demandId"
+        params: { projectId: "project-1" },
+        search: { demand: "demand-1", tab: "demands" },
+        to: "/projects/$projectId"
 });
     });
   });
@@ -496,8 +497,9 @@ describe("TaskLaunchView", () => {
     expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-2/members");
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
-        params: { demandId: "demand-2" },
-        to: "/workflows/$demandId"
+        params: { projectId: "project-2" },
+        search: { demand: "demand-2", tab: "demands" },
+        to: "/projects/$projectId"
 });
     });
   });
@@ -623,8 +625,9 @@ describe("TaskLaunchView", () => {
     });
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
-        params: { demandId: "demand-1" },
-        to: "/workflows/$demandId"
+        params: { projectId: "project-1" },
+        search: { demand: "demand-1", tab: "demands" },
+        to: "/projects/$projectId"
 });
     });
   });
@@ -680,8 +683,9 @@ describe("TaskLaunchView", () => {
     });
     await waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
-        params: { demandId: "demand-2" },
-        to: "/workflows/$demandId"
+        params: { projectId: "project-2" },
+        search: { demand: "demand-2", tab: "demands" },
+        to: "/projects/$projectId"
 });
     });
   });

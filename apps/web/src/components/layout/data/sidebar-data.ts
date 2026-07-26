@@ -5,7 +5,6 @@ import {
   CircleDollarSign,
   FileClock,
   FolderKanban,
-  GitBranch,
   Gauge,
   Inbox,
   KeyRound,
@@ -87,12 +86,6 @@ export function buildSidebarData({
       {
         title: "流程能力",
         items: [
-          {
-            title: "流程编排",
-            url: "/workflows",
-            icon: GitBranch,
-            iconTone: "neutral",
-          },
           {
             title: "自动化任务",
             url: "/automations",

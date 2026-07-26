@@ -262,7 +262,14 @@ export function ProjectsView({
 }: ProjectsViewProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { focus?: string; tab?: string };
+  const search = useSearch({ strict: false }) as {
+    /** 需求流程区选中需求（?tab=demands&demand=<id>）。 */
+    demand?: string;
+    focus?: string;
+    tab?: string;
+    /** 执行轨迹面板按任务过滤（?tab=trace&task=<id>）。 */
+    task?: string;
+  };
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
@@ -1110,6 +1117,8 @@ export function ProjectsView({
                 >
                   <ProjectOperationalDetail
                     acceptance={projectAcceptance}
+                    apiBaseUrl={apiBaseUrl}
+                    apiOptions={apiOptions}
                     archivePreview={projectArchivePreview}
                     archiveSnapshots={projectArchiveSnapshots}
                     artifacts={projectArtifacts}
@@ -1133,7 +1142,9 @@ export function ProjectsView({
 })
                     }
                     focusDecisionId={search.focus}
+                    initialDemandId={search.demand}
                     initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
+                    traceTaskId={search.task}
                     isArchived={isArchived}
                     onArchiveProject={() => {
                       archiveMutation.reset();
@@ -1377,7 +1388,8 @@ function isProjectOperationalTab(value: string | undefined): boolean {
     value === "closure" ||
     value === "config" ||
     value === "assets" ||
-    value === "trace"
+    value === "trace" ||
+    value === "demands"
   );
 }
 

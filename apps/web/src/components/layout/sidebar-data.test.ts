@@ -54,25 +54,25 @@ describe('sidebarData', () => {
     })
   })
 
-  it('places automation tasks between workflows and external capabilities in the workflow capability group', () => {
+  it('keeps the workflow capability group order after workflows menu retirement', () => {
+    // 流程编排菜单已退役（IA Phase 2 P2c）：河道迁任务中枢、需求详情迁项目详情。
     const coreItems = sidebarData.navGroups.find(
       (group) => group.title === '流程能力'
     )?.items
 
     expect(coreItems?.map((item) => item.title)).toEqual([
-      '流程编排',
       '自动化任务',
       '外部能力',
       'MCP 管理',
       '场景模板',
       '协作集成',
     ])
-    expect(coreItems?.[1]).toMatchObject({
+    expect(coreItems?.[0]).toMatchObject({
       title: '自动化任务',
       url: '/automations',
       iconTone: 'neutral',
     })
-    expect(coreItems?.[2]).toMatchObject({
+    expect(coreItems?.[1]).toMatchObject({
       title: '外部能力',
       url: '/capabilities',
       iconTone: 'neutral',

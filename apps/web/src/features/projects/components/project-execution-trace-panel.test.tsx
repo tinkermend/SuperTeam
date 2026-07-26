@@ -232,6 +232,76 @@ describe("ProjectExecutionTracePanel", () => {
     await expect.element(screen.getByText("失败", { exact: true })).toBeInTheDocument();
   });
 
+  it("filters attempts by task through the dropdown with task titles", async () => {
+    const twoTaskTrace: ProjectExecutionTrace = {
+      ...trace,
+      attempts: [
+        trace.attempts[0],
+        {
+          ...trace.attempts[0],
+          attempt_id: "attempt-2",
+          attempt_no: 2,
+          events: [],
+          project_task_id: "task-2",
+          status: "completed",
+          summary: undefined
+},
+      ],
+      summary: { ...trace.summary!, attempt_count: 2 }
+};
+
+    const screen = await render(
+      <ProjectExecutionTracePanel
+        taskTitlesById={
+          new Map([
+            ["task-1", "整理接入证据"],
+            ["task-2", "复核接入证据"],
+          ])
+        }
+        trace={twoTaskTrace}
+      />,
+    );
+
+    await expect.element(screen.getByLabelText("执行尝试 1")).toBeInTheDocument();
+    await expect.element(screen.getByLabelText("执行尝试 2")).toBeInTheDocument();
+
+    // 选项用任务标题显示名（id → 标题）。
+    await expect
+      .element(screen.getByRole("option", { name: "整理接入证据" }))
+      .toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByTestId("trace-task-filter"), "task-2");
+
+    await expect.element(screen.getByLabelText("执行尝试 2")).toBeInTheDocument();
+    await expect.element(screen.getByLabelText("执行尝试 1")).not.toBeInTheDocument();
+  });
+
+  it("preselects the deep-linked task and resets when it has no attempts", async () => {
+    const screen = await render(
+      <ProjectExecutionTracePanel focusTaskId="task-missing" trace={trace} />,
+    );
+
+    // 深链任务不在证据链里：可解释空态 + 一键回到全部任务。
+    await expect
+      .element(screen.getByTestId("trace-task-filter-empty"))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByText("该任务暂无执行尝试记录"))
+      .toBeInTheDocument();
+    await expect.element(screen.getByLabelText("执行尝试 1")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "显示全部任务" }));
+    await expect.element(screen.getByLabelText("执行尝试 1")).toBeInTheDocument();
+  });
+
+  it("preselects the deep-linked task that has attempts", async () => {
+    const screen = await render(
+      <ProjectExecutionTracePanel focusTaskId="task-1" trace={trace} />,
+    );
+
+    await expect.element(screen.getByTestId("trace-task-filter")).toHaveValue("task-1");
+    await expect.element(screen.getByLabelText("执行尝试 1")).toBeInTheDocument();
+  });
+
   it("renders a tool call with its name and truncation notice", async () => {
     const toolTrace: ProjectExecutionTrace = {
       ...trace,

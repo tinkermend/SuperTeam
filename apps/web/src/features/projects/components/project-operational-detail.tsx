@@ -86,9 +86,11 @@ import {
   workspaceReadyStatusLabel
 } from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
+import type { ApiClientOptions } from "@/lib/api/client";
 import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectAssetsPanel } from "./project-assets-panel";
+import { ProjectDemandsSection } from "./project-demands-section";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { ProjectOpsHome } from "./project-ops-home";
 import { ProjectTaskDetailDialog } from "./project-task-detail-dialog";
@@ -111,6 +113,9 @@ const FlowGraphCanvas = lazy(() =>
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
+  /** 需求流程区（验收血缘/待决面板）直连 API 所需；未提供时该区隐藏血缘与待决面板。 */
+  apiBaseUrl?: string;
+  apiOptions?: ApiClientOptions;
   archivePreview?: ProjectArchivePreview;
   archiveSnapshots?: ProjectArchiveSnapshot[];
   artifacts?: ProjectArtifactRef[];
@@ -131,6 +136,8 @@ type ProjectOperationalDetailProps = {
   /** 任务详情弹层按 demand 懒查执行图（页面只预载最新 demand 的图）。 */
   fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
   focusDecisionId?: string;
+  /** ?demand= 深链：需求流程区选中的需求 id；缺省默认最新需求。 */
+  initialDemandId?: string;
   initialTab?: ProjectDetailSection | string;
   isArchived?: boolean;
   onArchiveProject: () => void;
@@ -165,6 +172,8 @@ type ProjectOperationalDetailProps = {
   runtimePlacementPanel?: ReactNode;
   taskGraph?: ProjectTaskGraph;
   tasks: ProjectTask[];
+  /** ?task= 深链：执行轨迹面板按该任务过滤定位（配合 ?tab=trace）。 */
+  traceTaskId?: string;
   transferRequests: ProjectTransferRequest[];
 };
 
@@ -173,6 +182,8 @@ const sectionTriggerClass =
 
 export function ProjectOperationalDetail({
   acceptance,
+  apiBaseUrl,
+  apiOptions,
   archivePreview,
   archiveSnapshots,
   artifacts,
@@ -192,6 +203,7 @@ export function ProjectOperationalDetail({
   executionSummaries,
   fetchTaskGraph,
   focusDecisionId,
+  initialDemandId,
   initialTab = "workbench",
   isArchived,
   onArchiveProject,
@@ -217,6 +229,7 @@ export function ProjectOperationalDetail({
   runtimePlacementPanel,
   taskGraph,
   tasks,
+  traceTaskId,
   transferRequests
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -252,6 +265,11 @@ export function ProjectOperationalDetail({
   }, [initialTab]);
 
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
+  // 执行轨迹面板任务过滤下拉的显示名：任务 id → 标题（技术区兜底 mono id）。
+  const taskTitlesById = useMemo(
+    () => new Map(tasks.map((task) => [task.id, task.title])),
+    [tasks],
+  );
 
   if (!project) {
     return (
@@ -442,6 +460,9 @@ export function ProjectOperationalDetail({
             <SoftTabsTrigger className={sectionTriggerClass} value="workbench">
               工作台
             </SoftTabsTrigger>
+            <SoftTabsTrigger className={sectionTriggerClass} value="demands">
+              需求流程
+            </SoftTabsTrigger>
             <SoftTabsTrigger className={sectionTriggerClass} value="tasks">
               任务
             </SoftTabsTrigger>
@@ -546,9 +567,11 @@ export function ProjectOperationalDetail({
                       <div className="scroll-mt-20" id="project-execution-trace">
                         <ProjectExecutionTracePanel
                           errorMessage={executionTraceErrorMessage}
+                          focusTaskId={traceTaskId}
                           isError={executionTraceIsError}
                           isLoading={executionTraceIsLoading}
                           onRetry={onRetryExecutionTrace}
+                          taskTitlesById={taskTitlesById}
                           trace={executionTrace}
                         />
                       </div>
@@ -588,6 +611,23 @@ export function ProjectOperationalDetail({
               </CollapsibleContent>
             </div>
           </Collapsible>
+        </SoftTabsContent>
+
+        <SoftTabsContent className="m-0 min-w-0" value="demands">
+          {apiBaseUrl && apiOptions ? (
+            <ProjectDemandsSection
+              apiBaseUrl={apiBaseUrl}
+              apiOptions={apiOptions}
+              demands={demands}
+              detailTaskId={detailTaskId}
+              events={events}
+              fetchTaskGraph={fetchTaskGraph}
+              onClearTask={() => setDetailTaskId(undefined)}
+              onOpenTask={setDetailTaskId}
+              projectId={project.id}
+              selectedDemandId={initialDemandId}
+            />
+          ) : null}
         </SoftTabsContent>
 
         <SoftTabsContent className="m-0" value="tasks">
@@ -1289,26 +1329,11 @@ function MemberRow({
   );
 }
 
-export function DemandTitle({ demand }: { demand: ProjectDemand }) {
-  if (!demand.id) {
-    return <p className="text-sm font-semibold text-ink">{demand.title}</p>;
-  }
-
-  return (
-    <Link
-      className="text-sm font-semibold text-brand-deep hover:text-brand"
-      params={{ demandId: demand.id }}
-      to="/workflows/$demandId"
-    >
-      {demand.title}
-    </Link>
-  );
-}
 
 /**
  * 失败需求的诊断摘要行：读取该需求 taskGraph 的第一条 blocking fact（已按 latestDemand.id
- * 取数，见调用方），给出诊断原因/下一步建议，并深链到 /workflows/{demandId} 的缺口处理面板
- * （规划缺口面板——补员/豁免/借调三个动作都在那）。没有 blocking fact 时仍给出深链，不留死胡同。
+ * 取数，见调用方），给出诊断原因/下一步建议，并深链到本页需求流程区的缺口处理面板
+ * （规划缺口面板——补员/豁免动作在那）。没有 blocking fact 时仍给出深链，不留死胡同。
  */
 function DemandFailureDiagnosis({
   demandId,
@@ -1327,8 +1352,9 @@ function DemandFailureDiagnosis({
       ) : null}
       <Link
         className="text-xs font-semibold text-brand-deep hover:text-brand"
-        params={{ demandId }}
-        to="/workflows/$demandId"
+        from="/projects/$projectId"
+        search={{ demand: demandId, tab: "demands" }}
+        to="."
       >
         查看缺口处理 →
       </Link>

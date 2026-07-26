@@ -1,6 +1,7 @@
 /** 项目详情顶栏区段（工作台默认，无「概览」对等 Tab）。 */
 export type ProjectDetailSection =
   | "workbench"
+  | "demands"
   | "tasks"
   | "approval"
   | "assets";
@@ -10,6 +11,9 @@ export function normalizeProjectDetailSection(
   tab: string | undefined,
 ): ProjectDetailSection {
   switch (tab) {
+    // 需求流程区（IA Phase 2 P2a-1）：?tab=demands&demand=<id> 按需求查看权威图/血缘。
+    case "demands":
+      return "demands";
     case "tasks":
       return "tasks";
     case "approval":
@@ -50,6 +54,7 @@ export function isProjectDetailSectionQuery(value: string | undefined): boolean 
     value === "closure" ||
     value === "config" ||
     value === "assets" ||
-    value === "trace"
+    value === "trace" ||
+    value === "demands"
   );
 }

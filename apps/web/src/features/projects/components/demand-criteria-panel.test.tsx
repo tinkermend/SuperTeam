@@ -1,7 +1,7 @@
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { CriteriaPanelView } from "./criteria-panel";
+import { DemandCriteriaPanelView } from "./demand-criteria-panel";
 import type { DemandAcceptanceCriterionDetail } from "@/lib/api/projects";
 
 function criterion(
@@ -21,10 +21,10 @@ function criterion(
 };
 }
 
-describe("CriteriaPanelView", () => {
+describe("DemandCriteriaPanelView", () => {
   it("renders each criterion with method, severity, verdict and judge badges", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({
             criterion_id: "c1",
@@ -65,7 +65,7 @@ describe("CriteriaPanelView", () => {
 
   it("renders an executor not_applicable verdict as a distinct 不适用 state without sign controls", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({
             criterion_id: "c-na",
@@ -91,7 +91,7 @@ describe("CriteriaPanelView", () => {
 
   it("renders evidence refs as labeled monospace chips without navigation", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({
             criterion_id: "c1",
@@ -113,7 +113,7 @@ describe("CriteriaPanelView", () => {
 
   it("shows a single final-acceptance gate for unsigned blocking human criteria", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({ criterion_id: "c1", statement: "人类确认交付意图", verdict: null, judge_type: null }),
           // already human-signed → not listed in gate
@@ -141,7 +141,7 @@ describe("CriteriaPanelView", () => {
 
   it("lists all unsigned blocking human criteria in the final gate for legacy snapshots", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({ criterion_id: "c1", statement: "结论可接受", verdict: null }),
           criterion({ criterion_id: "c2", statement: "范围充分", verdict: null }),
@@ -157,7 +157,7 @@ describe("CriteriaPanelView", () => {
 
   it("does not render the final gate when demand is not acceptance_pending", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[criterion({ criterion_id: "c1", verdict: null, judge_type: null })]}
         demandStatus="completed"
         onFinalAccept={vi.fn()}
@@ -170,7 +170,7 @@ describe("CriteriaPanelView", () => {
   it("submits final pass with all unsigned criterion ids", async () => {
     const onFinalAccept = vi.fn();
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({ criterion_id: "c1", statement: "结论可接受", verdict: null }),
           criterion({ criterion_id: "c2", statement: "范围充分", verdict: null }),
@@ -191,7 +191,7 @@ describe("CriteriaPanelView", () => {
   it("requires a reason before reject and submits unsatisfied for the gate", async () => {
     const onFinalAccept = vi.fn();
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[criterion({ criterion_id: "c1", verdict: null })]}
         demandStatus="acceptance_pending"
         onFinalAccept={onFinalAccept}
@@ -209,7 +209,7 @@ describe("CriteriaPanelView", () => {
 
   it("renders task summaries so the human sees produced work before signing", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({
             criterion_id: "c1",
@@ -230,7 +230,7 @@ describe("CriteriaPanelView", () => {
   it("refers to satisfying tasks as 「任务名 (短id)」 when the task graph knows the name", async () => {
     const taskId = "3f2679cb-1111-4222-8333-944444444444";
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({
             criterion_id: "c1",
@@ -256,7 +256,7 @@ describe("CriteriaPanelView", () => {
 
   it("falls back to the raw task id when the graph has no matching node", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({
             criterion_id: "c1",
@@ -277,7 +277,7 @@ describe("CriteriaPanelView", () => {
 
   it("surfaces declared deliverables as preview/download chips beside the task summary", async () => {
     const screen = await render(
-      <CriteriaPanelView
+      <DemandCriteriaPanelView
         criteria={[
           criterion({
             criterion_id: "c1",

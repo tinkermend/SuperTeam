@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient
+} from "@tanstack/react-query";
 import { Download, Eye, FileCheck2 } from "lucide-react";
 import { useState } from "react";
 import {
@@ -26,7 +31,7 @@ import {
   artifactContentHref,
   artifactPreviewKind,
   type PreviewableArtifact
-} from "@/features/projects/components/artifact-preview-sheet";
+} from "./artifact-preview-sheet";
 
 const ACCEPTANCE_PENDING = "acceptance_pending";
 
@@ -331,7 +336,7 @@ function FinalAcceptanceGate({
   );
 }
 
-export type CriteriaPanelViewProps = {
+export type DemandCriteriaPanelViewProps = {
   criteria: DemandAcceptanceCriterionDetail[];
   demandStatus: string;
   isLoading?: boolean;
@@ -343,7 +348,7 @@ export type CriteriaPanelViewProps = {
   taskNamesById?: ReadonlyMap<string, string>;
 };
 
-export function CriteriaPanelView({
+export function DemandCriteriaPanelView({
   criteria,
   demandStatus,
   isLoading,
@@ -352,7 +357,7 @@ export function CriteriaPanelView({
   onFinalAccept,
   isSigning,
   taskNamesById
-}: CriteriaPanelViewProps) {
+}: DemandCriteriaPanelViewProps) {
   const [previewArtifact, setPreviewArtifact] =
     useState<PreviewableArtifact | null>(null);
   const pendingHuman = unsignedBlockingHumanCriteria(demandStatus, criteria);
@@ -401,22 +406,24 @@ export function CriteriaPanelView({
   );
 }
 
-export type CriteriaPanelProps = {
+export type DemandCriteriaPanelProps = {
   apiOptions: ApiClientOptions;
   apiBaseUrl: string;
   demandId: string;
   taskNamesById?: ReadonlyMap<string, string>;
 };
 
-export function CriteriaPanel({
+export function DemandCriteriaPanel({
   apiOptions,
   apiBaseUrl,
   demandId,
   taskNamesById
-}: CriteriaPanelProps) {
+}: DemandCriteriaPanelProps) {
   const queryClient = useQueryClient();
   const criteriaQuery = useQuery({
     enabled: Boolean(demandId),
+    // 需求切换时保留上一份数据（keepPreviousData），面板不闪空。
+    placeholderData: keepPreviousData,
     queryFn: () => getDemandAcceptanceCriteria(apiOptions, demandId),
     queryKey: ["demand-acceptance-criteria", apiBaseUrl, demandId],
     refetchInterval: 5000
@@ -471,13 +478,15 @@ export function CriteriaPanel({
       void queryClient.invalidateQueries({ queryKey: ["workflow-instances", apiBaseUrl] });
       void queryClient.invalidateQueries({ queryKey: ["inbox"] });
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      // 项目详情需求区消费 project-demands 列表，签署收敛后同步刷新状态 pill。
+      void queryClient.invalidateQueries({ queryKey: ["project-demands"] });
     }
 });
 
   const data = criteriaQuery.data;
 
   return (
-    <CriteriaPanelView
+    <DemandCriteriaPanelView
       criteria={data?.criteria ?? []}
       demandStatus={data?.demand_status ?? ""}
       isError={criteriaQuery.isError}

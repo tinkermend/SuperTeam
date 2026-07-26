@@ -10,12 +10,23 @@ import {
   LoadingState,
   MetricCard,
   Segmented,
+  ToolbarSearch,
   WorkSurface
 } from "@/components/superteam";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { compareIsoDesc, formatDateTime, formatRelativeTime as formatSharedRelativeTime } from "@/lib/format-time";
-import type { WorkflowInstanceScope, WorkflowInstanceSummary } from "@/lib/api/projects";
-import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
+import type { Project, WorkflowInstanceScope, WorkflowInstanceSummary } from "@/lib/api/projects";
+import { workflowStatusLabel, workflowStatusTone } from "./workflow-status";
+
+/** 全部项目（不过滤）的 Select 哨兵值：Radix Select 不接受空字符串 item。 */
+const ALL_PROJECTS = "__all__";
 
 type WorkflowRiverViewProps = {
   instances: WorkflowInstanceSummary[];
@@ -23,11 +34,18 @@ type WorkflowRiverViewProps = {
   isLoading: boolean;
   scope: WorkflowInstanceScope;
   onScopeChange: (scope: WorkflowInstanceScope) => void;
+  /** 服务端关键词搜索：受控输入值（原始输入，防抖由容器负责）。提供回调时渲染搜索框。 */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  /** 服务端项目过滤：项目候选列表 + 受控选中项目 id。提供回调时渲染下拉。 */
+  projects?: Project[];
+  projectFilter?: string;
+  onProjectFilterChange?: (projectId: string | undefined) => void;
 };
 
 const scopeTabs: Array<{ label: string; value: WorkflowInstanceScope }> = [
   { label: "运行中", value: "active" },
-  { label: "已归档", value: "archived" },
+  { label: "已结束", value: "archived" },
 ];
 
 type RiverCategory = "attention" | "active" | "done";
@@ -71,7 +89,12 @@ export function WorkflowRiverView({
   isError,
   isLoading,
   scope,
-  onScopeChange
+  onScopeChange,
+  searchValue,
+  onSearchChange,
+  projects,
+  projectFilter,
+  onProjectFilterChange
 }: WorkflowRiverViewProps) {
   const [filter, setFilter] = useState<RiverFilter>("all");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -79,9 +102,43 @@ export function WorkflowRiverView({
   const toggleGroup = (key: string) =>
     setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // 口径页签始终渲染（含空/加载/错误态），否则"已归档"为空时用户无法切回"运行中"。
+  const serverFilterActive = Boolean(searchValue?.trim() || projectFilter);
+  // 口径页签与服务端过滤条始终渲染（含空/加载/错误态），
+  // 否则"已结束"为空或搜索无命中时用户无法切回/清除条件。
   const scopeTabBar = (
-    <Segmented options={scopeTabs} onChange={onScopeChange} value={scope} />
+    <div className="flex flex-wrap items-center gap-3">
+      <Segmented options={scopeTabs} onChange={onScopeChange} value={scope} />
+      {onSearchChange ? (
+        <ToolbarSearch
+          aria-label="搜索流程实例"
+          className="max-w-[320px]"
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="搜索需求标题或内容"
+          type="search"
+          value={searchValue ?? ""}
+        />
+      ) : null}
+      {onProjectFilterChange ? (
+        <Select
+          onValueChange={(value) =>
+            onProjectFilterChange(value === ALL_PROJECTS ? undefined : value)
+          }
+          value={projectFilter ?? ALL_PROJECTS}
+        >
+          <SelectTrigger aria-label="按项目过滤" className="w-[220px]">
+            <SelectValue placeholder="全部项目" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_PROJECTS}>全部项目</SelectItem>
+            {(projects ?? []).map((project) => (
+              <SelectItem key={project.id} value={project.id}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+    </div>
   );
   const wrap = (children: ReactNode) => (
     <div className="flex min-w-0 flex-col gap-5">
@@ -114,12 +171,20 @@ export function WorkflowRiverView({
       <SoftCard>
         <EmptyState
           description={
-            scope === "archived"
-              ? "还没有已归档或已完成（含已取消）的流程实例。"
-              : "当前没有运行中的流程实例。有需求进入协调线程后，会在这里显示全局流程状态。"
+            serverFilterActive
+              ? "调整搜索关键词或项目过滤条件后重试。"
+              : scope === "archived"
+                ? "还没有已归档或已完成（含已取消）的流程实例。"
+                : "当前没有运行中的流程实例。有需求进入协调线程后，会在这里显示全局流程状态。"
           }
           icon={<GitBranch />}
-          title={scope === "archived" ? "暂无归档流程实例" : "暂无运行中流程实例"}
+          title={
+            serverFilterActive
+              ? "没有匹配的流程实例"
+              : scope === "archived"
+                ? "暂无已结束流程实例"
+                : "暂无运行中流程实例"
+          }
         />
       </SoftCard>,
     );
@@ -163,8 +228,13 @@ export function WorkflowRiverView({
   return (
     <div className="flex min-w-0 flex-col gap-5">
       {scopeTabBar}
-      {/* 指标带 */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {/* 指标带：运行中 scope 服务端已排除终态，「已完成」恒零故隐藏；已结束 scope 保留。 */}
+      <section
+        className={cn(
+          "grid gap-4 sm:grid-cols-2 lg:grid-cols-3",
+          scope === "active" ? "xl:grid-cols-5" : "xl:grid-cols-6",
+        )}
+      >
         <MetricCard
           icon={<Activity />}
           iconTone="brand"
@@ -187,13 +257,15 @@ export function WorkflowRiverView({
           meta={metrics.blocked > 0 ? `P0 ${metrics.p0}` : "暂无"}
           value={metrics.blocked}
         />
-        <MetricCard
-          icon={<CheckCircle2 />}
-          iconTone="ok"
-          label="已完成"
-          meta="本视图范围"
-          value={metrics.done}
-        />
+        {scope === "active" ? null : (
+          <MetricCard
+            icon={<CheckCircle2 />}
+            iconTone="ok"
+            label="已完成"
+            meta="本视图范围"
+            value={metrics.done}
+          />
+        )}
         <MetricCard
           icon={<Gauge />}
           iconTone="danger"
@@ -206,7 +278,7 @@ export function WorkflowRiverView({
           icon={<Clock3 />}
           iconTone="mute"
           label="最久已持续"
-          meta="最长未完成实例"
+          meta={scope === "archived" ? "最长历时实例" : "最长未完成实例"}
           value={formatDuration(maxMs)}
         />
       </section>
@@ -388,8 +460,9 @@ function RiverLane({
       )}
       onClick={() =>
         void navigate({
-          params: { demandId: instance.demand_id },
-          to: "/workflows/$demandId"
+          params: { projectId: instance.project_id },
+          search: { demand: instance.demand_id, tab: "demands" },
+          to: "/projects/$projectId"
 })
       }
       role="listitem"
@@ -408,8 +481,9 @@ function RiverLane({
         <Link
           className="block min-w-0 truncate text-[13px] font-bold text-ink outline-none hover:text-brand-deep focus-visible:ring-2 focus-visible:ring-brand/60"
           onClick={(event) => event.stopPropagation()}
-          params={{ demandId: instance.demand_id }}
-          to="/workflows/$demandId"
+          params={{ projectId: instance.project_id }}
+          search={{ demand: instance.demand_id, tab: "demands" }}
+          to="/projects/$projectId"
         >
           {instance.title}
         </Link>

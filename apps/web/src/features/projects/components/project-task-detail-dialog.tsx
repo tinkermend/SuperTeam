@@ -48,11 +48,6 @@ type ProjectTaskDetailDialogProps = {
    * 用任务自己的 demand_id 补一次查询（queryKey 与页面同族，最新 demand 直接命中缓存）。
    */
   fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
-  /**
-   * 编排区右上角深链目标：项目详情等外部页保持默认「查看流程编排」；
-   * 流程编排详情页自身装配本弹层时传 "project"，改为「打开项目」避免自指跳转。
-   */
-  demandLink?: "workflow" | "project";
 };
 
 /**
@@ -71,8 +66,7 @@ export function ProjectTaskDetailDialog({
   overview,
   principalNamesById,
   onResolveDecision,
-  fetchTaskGraph,
-  demandLink = "workflow"
+  fetchTaskGraph
 }: ProjectTaskDetailDialogProps) {
   const preloadedNode = taskGraph?.nodes.find((node) => node.id === taskId);
   const task =
@@ -223,24 +217,15 @@ export function ProjectTaskDetailDialog({
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <SectionEyebrow icon={<GitBranch />} label="编排" />
-              {demandLink === "project" ? (
+              {task.demand_id ? (
                 <Link
-                  aria-label="打开该任务所属项目"
+                  aria-label="查看该任务所在需求流程"
                   className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
                   params={{ projectId }}
+                  search={{ demand: task.demand_id, tab: "demands" }}
                   to="/projects/$projectId"
                 >
-                  打开项目
-                  <ArrowUpRight className="size-3.5" />
-                </Link>
-              ) : task.demand_id ? (
-                <Link
-                  aria-label="查看该任务所在流程编排"
-                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
-                  params={{ demandId: task.demand_id }}
-                  to="/workflows/$demandId"
-                >
-                  查看流程编排
+                  查看需求流程
                   <ArrowUpRight className="size-3.5" />
                 </Link>
               ) : null}
@@ -313,7 +298,7 @@ export function ProjectTaskDetailDialog({
                     aria-label={`查看${task.title}执行轨迹`}
                     className="inline-flex items-center gap-0.5 text-[12px] font-semibold text-brand hover:opacity-80"
                     params={{ projectId }}
-                    search={{ tab: "trace" }}
+                    search={{ tab: "trace", task: task.id }}
                     to="/projects/$projectId"
                   >
                     查看执行轨迹

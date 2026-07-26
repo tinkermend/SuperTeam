@@ -7,12 +7,15 @@ import "./task-launch-aurora.css";
 type TaskLaunchShellProps = {
   children: ReactNode;
   description?: string;
+  /** 页签条（任务中枢「提出任务 / 流程实例」）：渲染在画布顶部、hero 之上。 */
+  tabs?: ReactNode;
   title: string;
 };
 
 export function TaskLaunchShell({
   children,
   description,
+  tabs,
   title
 }: TaskLaunchShellProps) {
   return (
@@ -24,6 +27,9 @@ export function TaskLaunchShell({
         title={title}
       />
       <Main width="canvas" className="tl-aurora p-0">
+        {tabs ? (
+          <div className="relative z-[1] mx-auto mb-6 w-full max-w-[940px]">{tabs}</div>
+        ) : null}
         <div className="tl-stage">{children}</div>
       </Main>
     </>

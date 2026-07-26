@@ -1,8 +1,10 @@
+import { useEffect, useMemo, useState } from "react";
 import { ActivitySquare, AlertTriangle, Boxes, Clock3, FileCheck2 } from "lucide-react";
 import {
   IconTile,
   SoftCard,
   StatusPill,
+  Button,
   EmptyState,
   ErrorState,
   LoadingState,
@@ -18,26 +20,51 @@ import { statusLabel } from "@/lib/status-labels";
 
 type ProjectExecutionTracePanelProps = {
   errorMessage?: string;
+  /** ?task= 深链：预选任务过滤，直接定位到该任务的执行尝试。 */
+  focusTaskId?: string;
   isError?: boolean;
   isLoading?: boolean;
   onRetry?: () => void;
+  /** 任务过滤下拉的显示名（id → 标题）；缺名回退 mono id（技术详情区例外）。 */
+  taskTitlesById?: ReadonlyMap<string, string>;
   trace?: ProjectExecutionTrace;
 };
 
+const ALL_TASKS_FILTER = "all";
+
 export function ProjectExecutionTracePanel({
   errorMessage,
+  focusTaskId,
   isError,
   isLoading,
   onRetry,
+  taskTitlesById,
   trace
 }: ProjectExecutionTracePanelProps) {
   const attempts = trace?.attempts ?? [];
   const summary = trace?.summary;
   const attemptCount = summary?.attempt_count ?? attempts.length;
+  const [taskFilter, setTaskFilter] = useState(focusTaskId ?? ALL_TASKS_FILTER);
+  // 深链任务变化（弹层「查看执行轨迹」重新进入）时同步重置过滤。
+  useEffect(() => {
+    setTaskFilter(focusTaskId ?? ALL_TASKS_FILTER);
+  }, [focusTaskId]);
+  const attemptTaskIds = useMemo(
+    () => Array.from(new Set(attempts.map((attempt) => attempt.project_task_id))),
+    [attempts],
+  );
+  const visibleAttempts =
+    taskFilter === ALL_TASKS_FILTER
+      ? attempts
+      : attempts.filter((attempt) => attempt.project_task_id === taskFilter);
+  // 单任务且未带深链过滤时下拉没有意义，不渲染（也避免与技术区 mono id 重复展示）。
+  const showTaskFilter =
+    attempts.length > 0 &&
+    (attemptTaskIds.length > 1 || taskFilter !== ALL_TASKS_FILTER);
 
   return (
     <SoftCard className="overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-line p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
         <div className="flex min-w-0 items-center gap-3">
           <IconTile tone="info" size="sm">
             <ActivitySquare />
@@ -49,7 +76,32 @@ export function ProjectExecutionTracePanel({
             </p>
           </div>
         </div>
-        <StatusPill tone="info">{attemptCount} 次</StatusPill>
+        <div className="flex flex-wrap items-center gap-2">
+          {showTaskFilter ? (
+            <select
+              aria-label="按任务过滤执行尝试"
+              className="h-8 max-w-56 truncate rounded-inner border border-line bg-card px-2 text-xs font-semibold text-ink"
+              data-testid="trace-task-filter"
+              value={taskFilter}
+              onChange={(event) => setTaskFilter(event.target.value)}
+            >
+              <option value={ALL_TASKS_FILTER}>全部任务</option>
+              {/* 深链任务不在当前证据链里：仍列出选中项，让空态可解释。 */}
+              {taskFilter !== ALL_TASKS_FILTER &&
+              !attemptTaskIds.includes(taskFilter) ? (
+                <option value={taskFilter}>
+                  {taskTitlesById?.get(taskFilter) ?? taskFilter}
+                </option>
+              ) : null}
+              {attemptTaskIds.map((taskId) => (
+                <option key={taskId} value={taskId}>
+                  {taskTitlesById?.get(taskId) ?? taskId}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <StatusPill tone="info">{attemptCount} 次</StatusPill>
+        </div>
       </div>
 
       {isLoading ? (
@@ -107,11 +159,29 @@ export function ProjectExecutionTracePanel({
             </div>
           ) : null}
 
-          <div className="grid gap-3">
-            {attempts.map((attempt) => (
-              <AttemptRow attempt={attempt} key={attempt.attempt_id} />
-            ))}
-          </div>
+          {visibleAttempts.length === 0 ? (
+            <EmptyState
+              action={
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  onClick={() => setTaskFilter(ALL_TASKS_FILTER)}
+                >
+                  显示全部任务
+                </Button>
+              }
+              className="min-h-32 py-8"
+              data-testid="trace-task-filter-empty"
+              title="该任务暂无执行尝试记录"
+            />
+          ) : (
+            <div className="grid gap-3">
+              {visibleAttempts.map((attempt) => (
+                <AttemptRow attempt={attempt} key={attempt.attempt_id} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </SoftCard>

@@ -4,6 +4,9 @@ import { TaskLaunchPage } from "@/features/task-launches";
 export type TaskLaunchSearch = {
   mode?: "plan" | "loop" | "chat";
   project?: string;
+  view?: "instances";
+  q?: string;
+  scope?: "archived";
 };
 
 export const Route = createFileRoute("/_authenticated/task-launches/")({
@@ -19,6 +22,15 @@ export const Route = createFileRoute("/_authenticated/task-launches/")({
       search.mode === "chat"
     ) {
       result.mode = search.mode;
+    }
+    if (search.view === "instances") {
+      result.view = search.view;
+    }
+    if (typeof search.q === "string" && search.q) {
+      result.q = search.q;
+    }
+    if (search.scope === "archived") {
+      result.scope = search.scope;
     }
     return result;
   }
