@@ -2,13 +2,6 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FolderKanban, ListChecks } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle
-} from "@/components/ui/dialog";
-import {
   IconTile,
   SoftCard,
   StatusPill,
@@ -23,14 +16,16 @@ import type {
   WorkflowInstanceSummary
 } from "@/lib/api/projects";
 import { decisionTypeLabel, riskLevelLabel } from "@/lib/status-labels";
-import { taskNodeId } from "../workflow-graph-adapter";
+import { taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
+import { ProjectTaskDetailDialog } from "@/features/projects/components/project-task-detail-dialog";
 import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
-import { WorkflowNodeInspector } from "./workflow-node-inspector";
 
 // 流程图画布依赖 @xyflow/react（重）。懒加载让它离开入口包——图只在有节点内容的
 // 流程详情才渲染，首屏不需要（P1-D Step 1）。
-const WorkflowGraphCanvas = lazy(() =>
-  import("./workflow-graph-canvas").then((m) => ({ default: m.WorkflowGraphCanvas })),
+const FlowGraphCanvas = lazy(() =>
+  import("@/features/flow-graph/flow-graph-canvas").then((m) => ({
+    default: m.FlowGraphCanvas
+})),
 );
 
 type WorkflowDetailProps = {
@@ -38,13 +33,16 @@ type WorkflowDetailProps = {
   graph?: ProjectTaskGraph;
   instance?: WorkflowInstanceSummary;
   isError?: boolean;
+  /** 节点弹层内 pending 决策的处理出口（与 gap 面板共用同一 mutation）。 */
+  onResolveDecision: (decisionId: string, decision: string) => void;
 };
 
 export function WorkflowDetail({
   detail,
   graph,
   instance,
-  isError
+  isError,
+  onResolveDecision
 }: WorkflowDetailProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
 
@@ -64,7 +62,18 @@ export function WorkflowDetail({
     [graph, selectedNodeId],
   );
 
-  const isInspectorOpen = Boolean(selectedNodeId && selectedTask);
+  // 弹层的待决事项与图上的决策挂饰节点同源：launch-detail 与 task-graph 两路
+  // decision_requests 求并集（按 id 去重），避免点开挂饰节点却看不到对应决策。
+  const dialogDecisionRequests = useMemo(() => {
+    const byId = new Map<string, ProjectDecisionRequest>();
+    for (const decision of [
+      ...(detail?.decision_requests ?? []),
+      ...(graph?.decision_requests ?? []),
+    ]) {
+      byId.set(decision.id, decision);
+    }
+    return [...byId.values()];
+  }, [detail, graph]);
 
   if (isError) {
     return (
@@ -134,7 +143,7 @@ export function WorkflowDetail({
         {hasGraphContent && graph ? (
           <div className="min-w-0 p-4">
             <Suspense fallback={<LoadingState />}>
-              <WorkflowGraphCanvas
+              <FlowGraphCanvas
                 graph={graph}
                 onNodeOpen={setSelectedNodeId}
                 onSelectedNodeChange={setSelectedNodeId}
@@ -152,30 +161,21 @@ export function WorkflowDetail({
       </SoftCard>
 
       {nodes.length > 0 && graph ? (
-        <Dialog
+        // 任务详情面统一（spec 2026-07-26 §4.3）：与项目详情共用同一弹层组件，
+        // 两个入口点开同一节点看到完全一致的内容。
+        <ProjectTaskDetailDialog
+          decisionRequests={dialogDecisionRequests}
+          demandLink="project"
+          demands={[detail.demand]}
           onOpenChange={(open) => {
             if (!open) setSelectedNodeId(undefined);
           }}
-          open={isInspectorOpen}
-        >
-          <DialogContent className="flex max-h-[85vh] w-full flex-col gap-0 p-0 sm:max-w-xl">
-            <DialogHeader className="shrink-0 border-b border-line px-5 py-4">
-              <DialogTitle className="text-base font-bold tracking-normal text-ink">
-                节点详情
-              </DialogTitle>
-              <DialogDescription className="text-xs text-ink-2">
-                查看任务节点的负责人、阻塞、输入输出与执行结果
-              </DialogDescription>
-            </DialogHeader>
-            <div className="min-h-0 overflow-y-auto px-5 py-4">
-              <WorkflowNodeInspector
-                graph={graph}
-                selectedTask={selectedTask}
-                variant="dialog"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+          onResolveDecision={onResolveDecision}
+          projectId={detail.project.id}
+          taskGraph={graph}
+          taskId={selectedTask?.id}
+          tasks={detail.project_tasks}
+        />
       ) : null}
     </div>
   );

@@ -3200,6 +3200,10 @@ func projectTaskGraphRunsFromRows(tasks []ProjectTask, rows []queries.TaskRun) (
 			id := row.TaskID
 			runtimeTaskID = &id
 		}
+		finishedAt := ptrTime(row.FinishedAt)
+		if finishedAt == nil {
+			finishedAt = ptrTime(row.CompletedAt)
+		}
 		runs = append(runs, ProjectTaskGraphRun{
 			ProjectTaskID:        task.ID,
 			DigitalEmployeeRunID: task.DigitalEmployeeRunID,
@@ -3208,6 +3212,9 @@ func projectTaskGraphRunsFromRows(tasks []ProjectTask, rows []queries.TaskRun) (
 			RuntimeNodeSummary:   row.NodeID,
 			Status:               row.Status,
 			ProviderType:         textValue(row.ProviderType),
+			StartedAt:            ptrTime(row.StartedAt),
+			FinishedAt:           finishedAt,
+			ErrorMessage:         redactProse(textValue(row.ErrorMessage)),
 		})
 	}
 	return runs, nil

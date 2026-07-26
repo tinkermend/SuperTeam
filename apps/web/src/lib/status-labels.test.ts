@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  blockerResourceTypeLabel,
+  decisionStatusLabel,
   decisionTypeLabel,
   deleteBlockerTypeLabel,
   demandStatusLabel,
@@ -54,6 +56,32 @@ describe("riskLevelLabel", () => {
     expect(riskLevelLabel("blocked")).toBe("阻断");
     expect(riskLevelLabel(undefined)).toBe("未知");
     expect(riskLevelLabel("custom")).toBe("custom");
+  });
+});
+
+describe("decisionStatusLabel", () => {
+  it("maps resolution verbs written back into status_snapshot (decision domain only)", () => {
+    // status_snapshot 决议后回填人类决策动词（写入侧既定设计）；域内补词，不进全局表。
+    expect(decisionStatusLabel("cancel_downstream")).toBe("取消下游");
+    expect(decisionStatusLabel("retry")).toBe("重试");
+    expect(decisionStatusLabel("reassign")).toBe("改派");
+    expect(decisionStatusLabel("retry_planning")).toBe("重新规划");
+    expect(decisionStatusLabel("close_demand")).toBe("关闭需求");
+    // 通用键仍走全局词表
+    expect(decisionStatusLabel("pending")).toBe("待处理");
+    expect(decisionStatusLabel("approved")).toBe("已批准");
+    // 全局 statusLabel 不受决策域覆盖污染
+    expect(statusLabel("cancel_downstream")).toBe("cancel_downstream");
+  });
+});
+
+describe("blockerResourceTypeLabel", () => {
+  it("maps task graph current_blocker types to Chinese", () => {
+    expect(blockerResourceTypeLabel("project_task")).toBe("项目任务");
+    expect(blockerResourceTypeLabel("decision_request")).toBe("人工决策");
+    expect(blockerResourceTypeLabel("run")).toBe("执行运行");
+    expect(blockerResourceTypeLabel(undefined)).toBe("");
+    expect(blockerResourceTypeLabel("custom_type")).toBe("custom_type");
   });
 });
 

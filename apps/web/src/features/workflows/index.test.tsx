@@ -529,7 +529,9 @@ describe("WorkflowView", () => {
     expect(document.body.querySelector('[data-slot="status-pill"]')).not.toBeNull();
 
     // 节点详情仅在点击节点后以弹窗形式出现，进入页面时不预选、不渲染固定卡片
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByTestId("project-task-detail-dialog"))
+      .not.toBeInTheDocument();
 
     // 流程实例侧栏已废弃，"PR 审查" 不再作为详情页条目出现
     await expect.element(screen.getByText("PR 审查")).not.toBeInTheDocument();
@@ -1005,24 +1007,37 @@ describe("WorkflowView", () => {
       fetcher: createWorkflowFetcher({ graph })
 });
 
-    // 进入页面时不预选节点，节点详情弹窗不出现，也不会泄露其他节点内容
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+    // 进入页面时不预选节点，任务详情弹窗不出现，也不会泄露其他节点内容
+    await expect
+      .element(screen.getByTestId("project-task-detail-dialog"))
+      .not.toBeInTheDocument();
     await expect.element(screen.getByText("失败报告")).not.toBeInTheDocument();
     await expect.element(screen.getByText("巡检报告")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "巡检任务" }));
 
-    // 点击节点后弹出居中弹窗，展示该节点详情
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
+    // 点击节点后弹出与项目详情同源的任务详情弹层（spec 2026-07-26 §4.3）
+    await expect.element(screen.getByTestId("project-task-detail-dialog")).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "巡检任务" })).toBeVisible();
     await expect.element(screen.getByText("巡检报告")).toBeVisible();
-    await expect.element(screen.getByText("排队中 · codex · runtime-b")).toBeVisible();
-    await expect.element(screen.getByRole("link", { name: "查看巡检任务 Runtime" })).toBeVisible();
+    // 运行状态与 provider/节点摘要经中文词表与 provider 显示名渲染
+    await expect.element(screen.getByText("排队中")).toBeVisible();
+    await expect.element(screen.getByText("Codex · runtime-b")).toBeVisible();
+    // 泛化 /runtime 链接已删除，改为项目详情执行轨迹深链
+    await expect
+      .element(screen.getByRole("link", { name: "查看巡检任务执行轨迹" }))
+      .toHaveAttribute("href", "/projects/project-1");
+    // 流程编排页内不再渲染「查看流程编排」自指深链，改为「打开项目」
+    await expect
+      .element(screen.getByRole("link", { name: "打开该任务所属项目" }))
+      .toHaveAttribute("href", "/projects/project-1");
 
     // 通过弹窗关闭按钮收起弹窗
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
 
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByTestId("project-task-detail-dialog"))
+      .not.toBeInTheDocument();
   });
 
   it("updates the inspector to the parent task when a decision attachment node is clicked", async () => {
@@ -1055,17 +1070,21 @@ describe("WorkflowView", () => {
       fetcher: createWorkflowFetcher({ graph })
 });
 
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByTestId("project-task-detail-dialog"))
+      .not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "确认上线风险" }));
 
-    // 点击决策附件节点后弹出居中弹窗，并解析到其父任务「待审批任务」
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
+    // 点击决策附件节点后弹出统一任务详情弹层，并解析到其父任务「待审批任务」
+    await expect.element(screen.getByTestId("project-task-detail-dialog")).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
     await expect.element(screen.getByText("审批结果")).toBeVisible();
+    // 弹层内直接展示该任务的 pending 决策（与图上挂饰节点同源）
+    await expect.element(screen.getByText("待决事项 · 1")).toBeVisible();
     // 项目任务决策在收件箱处理（/approvals 已退役重定向权限中心）
     await expect
-      .element(screen.getByRole("link", { name: "处理待审批任务决策" }))
+      .element(screen.getByRole("link", { name: "前往收件箱处理" }))
       .toHaveAttribute("href", "/inbox");
   });
 

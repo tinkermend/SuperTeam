@@ -23,6 +23,8 @@ export function normalizeProjectDetailSection(
     case "overview":
     case "config":
     case "workbench":
+    // 执行轨迹深链：落在工作台，由 ProjectOperationalDetail 展开高级事实区定位。
+    case "trace":
     default:
       return "workbench";
   }
@@ -47,6 +49,7 @@ export function isProjectDetailSectionQuery(value: string | undefined): boolean 
     value === "acceptance" ||
     value === "closure" ||
     value === "config" ||
-    value === "assets"
+    value === "assets" ||
+    value === "trace"
   );
 }

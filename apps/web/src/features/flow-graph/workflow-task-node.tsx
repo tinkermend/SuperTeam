@@ -9,8 +9,8 @@ import type {
   WorkflowAttachmentNodeData,
   WorkflowStageLabelNodeData,
   WorkflowTaskNodeData
-} from "../workflow-graph-adapter";
-import { taskStatusTone } from "./workflow-node-inspector";
+} from "./flow-graph-adapter";
+import { taskStatusTone } from "./inspector-primitives";
 
 const EMPLOYEE_ROLE_LABELS: Record<string, string> = {
   backend_engineer: "后端开发",

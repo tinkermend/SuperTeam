@@ -10,9 +10,9 @@ import "@xyflow/react/dist/style.css";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
 import {
   PLAN_TASK_GRAPH_LAYOUT,
-  buildWorkflowGraphElements,
-  type WorkflowGraphElements
-} from "../workflow-graph-adapter";
+  buildFlowGraphElements,
+  type FlowGraphElements
+} from "./flow-graph-adapter";
 import { WorkflowBlockingNode } from "./workflow-blocking-node";
 import {
   WorkflowAttachmentNode,
@@ -31,21 +31,22 @@ const nodeTypes = {
   workflowTask: WorkflowTaskNode
 } satisfies NodeTypes;
 
-type WorkflowGraphCanvasProps = {
+type FlowGraphCanvasProps = {
   graph: ProjectTaskGraph;
   onNodeOpen: (nodeId: string) => void;
   onSelectedNodeChange: (nodeId: string | undefined) => void;
   selectedNodeId: string | undefined;
 };
 
-export function WorkflowGraphCanvas({
+/** 流程图单一权威画布：项目详情与流程编排详情共用（spec 2026-07-26 §4.2）。 */
+export function FlowGraphCanvas({
   graph,
   onNodeOpen,
   onSelectedNodeChange,
   selectedNodeId
-}: WorkflowGraphCanvasProps) {
-  const elements = useMemo<WorkflowGraphElements>(
-    () => buildWorkflowGraphElements(graph),
+}: FlowGraphCanvasProps) {
+  const elements = useMemo<FlowGraphElements>(
+    () => buildFlowGraphElements(graph),
     [graph],
   );
   const nodes = useMemo(
@@ -55,6 +56,15 @@ export function WorkflowGraphCanvas({
         selected: node.id === selectedNodeId
 })),
     [elements.nodes, selectedNodeId],
+  );
+  const stageCount = useMemo(
+    () =>
+      new Set(
+        graph.nodes.map((node) =>
+          Number.isFinite(node.stage_index) ? Number(node.stage_index) : 0,
+        ),
+      ).size,
+    [graph.nodes],
   );
   const canvasHeight = Math.max(
     MIN_CANVAS_HEIGHT,
@@ -66,6 +76,9 @@ export function WorkflowGraphCanvas({
   return (
     <div
       className="min-h-[620px] w-full min-w-0 overflow-hidden rounded-xl border bg-[linear-gradient(180deg,rgba(248,251,255,0.95),rgba(255,255,255,0.9))]"
+      data-stage-count={stageCount}
+      data-task-count={graph.nodes.length}
+      data-testid="flow-graph-canvas"
       style={{ height: canvasHeight }}
     >
       <ReactFlow
@@ -93,7 +106,7 @@ export function WorkflowGraphCanvas({
   );
 }
 
-function measureGraphContentHeight(elements: WorkflowGraphElements): number {
+function measureGraphContentHeight(elements: FlowGraphElements): number {
   return elements.nodes.reduce((maxBottom, node) => {
     const estimatedHeight =
       node.type === "workflowStageLabel"

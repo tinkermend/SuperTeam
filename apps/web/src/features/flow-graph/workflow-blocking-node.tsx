@@ -3,7 +3,7 @@ import { Handle, Position } from "@xyflow/react";
 import { AlertTriangle, ArrowRightCircle } from "lucide-react";
 import { SoftCard, StatusPill } from "@/components/superteam";
 import { cn } from "@/lib/utils";
-import type { WorkflowBlockingNodeData } from "../workflow-graph-adapter";
+import type { WorkflowBlockingNodeData } from "./flow-graph-adapter";
 
 export function WorkflowBlockingNode({
   data,

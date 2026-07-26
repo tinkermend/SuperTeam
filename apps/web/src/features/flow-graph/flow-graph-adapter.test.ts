@@ -2,16 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   PLAN_TASK_GRAPH_LAYOUT,
-  buildPlanTaskGraphElements,
-  buildWorkflowGraphElements,
+  buildFlowGraphElements,
   selectInitialWorkflowNodeId,
   stageLabelNodeId,
-} from "./workflow-graph-adapter";
+  taskIdFromNodeId,
+  taskNodeId,
+} from "./flow-graph-adapter";
 import type {
   WorkflowBlockingNodeData,
   WorkflowStageLabelNodeData,
   WorkflowTaskNodeData,
-} from "./workflow-graph-adapter";
+} from "./flow-graph-adapter";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
 
 function makeGraph(): ProjectTaskGraph {
@@ -105,7 +106,7 @@ function makeGraph(): ProjectTaskGraph {
   };
 }
 
-describe("workflow graph adapter", () => {
+describe("flow graph adapter", () => {
   it("shows a workflow blocking node when coordination is blocked before tasks are planned", () => {
     const graph = makeGraph();
     graph.nodes = [];
@@ -118,7 +119,7 @@ describe("workflow graph adapter", () => {
       },
     ];
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const blocker = result.nodes[0];
 
     expect(result.edges).toEqual([]);
@@ -137,7 +138,7 @@ describe("workflow graph adapter", () => {
   });
 
   it("maps project task graph nodes and edges into xyflow elements", () => {
-    const result = buildWorkflowGraphElements(makeGraph());
+    const result = buildFlowGraphElements(makeGraph());
     const runTaskData = taskData(result, "task:task-run");
 
     expect(result.nodes.map((node) => node.id)).toEqual([
@@ -179,7 +180,7 @@ describe("workflow graph adapter", () => {
       stage_index: undefined,
     });
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const stageThreeNode = result.nodes.find((node) => node.id === "task:task-root");
     const stageOneNode = result.nodes.find((node) => node.id === "task:task-run");
     const unstagedNode = result.nodes.find((node) => node.id === "task:task-unstaged");
@@ -200,7 +201,7 @@ describe("workflow graph adapter", () => {
       stage_index: undefined,
     });
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const stageZeroNode = result.nodes.find((node) => node.id === "task:task-root");
     const stageOneNode = result.nodes.find((node) => node.id === "task:task-run");
     const unstagedNode = result.nodes.find((node) => node.id === "task:task-unstaged");
@@ -220,7 +221,7 @@ describe("workflow graph adapter", () => {
       makeTask("task-stage-1-b", "planned", { stage_index: 1 }),
     ];
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const stageTwoNode = result.nodes.find((node) => node.id === "task:task-stage-2");
     const stageOneFirstNode = result.nodes.find(
       (node) => node.id === "task:task-stage-1-a",
@@ -260,7 +261,7 @@ describe("workflow graph adapter", () => {
       status: "active",
     }));
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const taskNodes = result.nodes.filter((node) => node.type === "workflowTask");
     const rowsByY = new Map<number, typeof taskNodes>();
     for (const node of taskNodes) {
@@ -288,7 +289,7 @@ describe("workflow graph adapter", () => {
       status_snapshot: "pending",
     });
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
 
     expect(result.nodes.map((node) => node.id)).toContain("attachment:decision:decision-1");
     expect(result.nodes.map((node) => node.id)).not.toContain(
@@ -304,7 +305,7 @@ describe("workflow graph adapter", () => {
       edge_status: "unblocked",
     });
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
 
     expect(result.edges.map((edge) => edge.id)).toEqual(["edge:task-root:task-run"]);
   });
@@ -330,7 +331,7 @@ describe("workflow graph adapter", () => {
       },
     ];
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
 
     expect(result.edges.map((edge) => [edge.id, edge.animated])).toEqual([
       ["edge:task-root:task-run", true],
@@ -355,7 +356,7 @@ describe("workflow graph adapter", () => {
       },
     ];
 
-    const result = buildWorkflowGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
 
     expect(result.edges.map((edge) => [edge.id, edge.animated])).toEqual([
       ["edge:task-root:task-run", false],
@@ -422,9 +423,45 @@ describe("workflow graph adapter", () => {
 
     expect(selectInitialWorkflowNodeId(graph)).toBe("task:task-run");
   });
+
+  it("can switch off decision attachments while keeping task nodes", () => {
+    const result = buildFlowGraphElements(makeGraph(), {
+      includeDecisionAttachments: false,
+    });
+
+    expect(result.nodes.map((node) => node.id)).toEqual([
+      "stage-label:1",
+      "task:task-root",
+      "stage-label:2",
+      "task:task-run",
+    ]);
+  });
+
+  it("can switch off the blocking fallback node for an empty blocked graph", () => {
+    const graph = makeGraph();
+    graph.nodes = [];
+    graph.edges = [];
+    graph.blocking_facts = [
+      {
+        reason_code: "runtime_placement_missing",
+        message: "项目还没有可用执行位置",
+      },
+    ];
+
+    const result = buildFlowGraphElements(graph, { includeBlockingFallback: false });
+
+    expect(result.nodes).toEqual([]);
+    expect(result.edges).toEqual([]);
+  });
+
+  it("round-trips task ids through node ids and rejects non-task node ids", () => {
+    expect(taskIdFromNodeId(taskNodeId("task-1"))).toBe("task-1");
+    expect(taskIdFromNodeId(stageLabelNodeId(2))).toBeUndefined();
+    expect(taskIdFromNodeId("blocking-runtime_placement_missing")).toBeUndefined();
+  });
 });
 
-describe("plan task graph adapter", () => {
+describe("flow graph stage layout", () => {
   it("publishes one desktop layout spec shared by dynamic plan graph renderers", () => {
     expect(PLAN_TASK_GRAPH_LAYOUT.maxTasks).toBe(10);
     expect(PLAN_TASK_GRAPH_LAYOUT.tasksPerRow).toBe(2);
@@ -459,7 +496,7 @@ describe("plan task graph adapter", () => {
       },
     ];
 
-    const result = buildPlanTaskGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
 
     const stageZeroLabel = result.nodes.find((node) => node.id === stageLabelNodeId(0));
     const stageOneLabel = result.nodes.find((node) => node.id === stageLabelNodeId(1));
@@ -498,7 +535,7 @@ describe("plan task graph adapter", () => {
     graph.employees = [];
     graph.stage_summaries = [];
 
-    const result = buildPlanTaskGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const label = result.nodes.find((node) => node.id === stageLabelNodeId(4));
 
     expect((label?.data as WorkflowStageLabelNodeData).title).toBe("第 5 阶段");
@@ -521,13 +558,14 @@ describe("plan task graph adapter", () => {
       },
     ];
 
-    const result = buildPlanTaskGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const label = result.nodes.find((node) => node.id === stageLabelNodeId(0));
 
     expect((label?.data as WorkflowStageLabelNodeData).title).toBe("并行审查");
   });
 
-  it("passes styled unlabeled dependency edges to the plan view", () => {
+  it("labels dependency edges with the Chinese status for every consumer", () => {
+    // 合并后单一 build 函数：项目详情与流程编排详情共享同一带状态标签的边投影。
     const graph = makeGraph();
     graph.nodes = [
       makeTask("task-a", "planned", { stage_index: 0 }),
@@ -538,15 +576,13 @@ describe("plan task graph adapter", () => {
     ];
     graph.employees = [];
 
-    const result = buildPlanTaskGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
 
     expect(result.edges[0]).toEqual(
       expect.objectContaining({
         id: "edge:task-a:task-b",
-        label: undefined,
-        markerEnd: expect.objectContaining({ type: "arrowclosed" }),
+        label: "已计划",
         source: "task:task-a",
-        style: expect.objectContaining({ strokeWidth: 1.6 }),
         target: "task:task-b",
         type: "smoothstep",
       }),
@@ -570,7 +606,7 @@ describe("plan task graph adapter", () => {
       status: "active",
     }));
 
-    const result = buildPlanTaskGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const taskNodes = result.nodes.filter((node) => node.type === "workflowTask");
     const rowsByY = new Map<number, typeof taskNodes>();
     for (const node of taskNodes) {
@@ -625,7 +661,7 @@ describe("plan task graph adapter", () => {
         status: "active",
       }));
 
-      const result = buildPlanTaskGraphElements(graph);
+      const result = buildFlowGraphElements(graph);
 
       expect(taskOverlapPairs(result)).toEqual([]);
       expect(result.edges).toHaveLength(Math.max(0, taskCount - 1));
@@ -651,7 +687,7 @@ describe("plan task graph adapter", () => {
       status: "active",
     }));
 
-    const multiStageResult = buildPlanTaskGraphElements(multiStageGraph);
+    const multiStageResult = buildFlowGraphElements(multiStageGraph);
 
     expect(taskOverlapPairs(multiStageResult)).toEqual([]);
     expect(multiStageResult.edges).toHaveLength(PLAN_TASK_GRAPH_LAYOUT.maxTasks - 1);
@@ -669,7 +705,7 @@ describe("plan task graph adapter", () => {
     graph.edges = [];
     graph.employees = [];
 
-    const result = buildPlanTaskGraphElements(graph);
+    const result = buildFlowGraphElements(graph);
     const taskPositions = result.nodes
       .filter((node) => node.type === "workflowTask")
       .map((node) => ({ id: node.id, x: node.position.x, y: node.position.y }))
@@ -708,7 +744,7 @@ function makeTask(
 }
 
 function taskData(
-  result: ReturnType<typeof buildWorkflowGraphElements>,
+  result: ReturnType<typeof buildFlowGraphElements>,
   nodeId: string,
 ): WorkflowTaskNodeData {
   const node = result.nodes.find((candidate) => candidate.id === nodeId);
@@ -716,7 +752,7 @@ function taskData(
   return node?.data as WorkflowTaskNodeData;
 }
 
-function taskOverlapPairs(result: ReturnType<typeof buildPlanTaskGraphElements>): string[] {
+function taskOverlapPairs(result: ReturnType<typeof buildFlowGraphElements>): string[] {
   const taskRects = result.nodes
     .filter((node) => node.type === "workflowTask")
     .map((node) => ({
@@ -747,7 +783,7 @@ function taskOverlapPairs(result: ReturnType<typeof buildPlanTaskGraphElements>)
 }
 
 function workflowTaskOverlapPairs(
-  result: ReturnType<typeof buildWorkflowGraphElements>,
+  result: ReturnType<typeof buildFlowGraphElements>,
 ): string[] {
   const taskRects = result.nodes
     .filter((node) => node.type === "workflowTask")

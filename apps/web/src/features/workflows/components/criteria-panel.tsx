@@ -149,12 +149,23 @@ function DeliverableChips({
   );
 }
 
+/** 「任务名 (短id)」指称：名称就地取自同页 task graph 节点，无命中回退裸 id。 */
+function taskRefText(
+  taskId: string,
+  taskNamesById: ReadonlyMap<string, string> | undefined,
+): { name?: string; shortId: string } {
+  const name = taskNamesById?.get(taskId)?.trim();
+  return { name: name || undefined, shortId: taskId.slice(0, 8) };
+}
+
 function CriterionRow({
   criterion,
-  onPreview
+  onPreview,
+  taskNamesById
 }: {
   criterion: DemandAcceptanceCriterionDetail;
   onPreview: (artifact: PreviewableArtifact) => void;
+  taskNamesById?: ReadonlyMap<string, string>;
 }) {
   const { tone, label } = verdictPill(criterion.verdict);
   const judge = judgeLabel(criterion.judge_type);
@@ -206,9 +217,18 @@ function CriterionRow({
             查看满足任务产出（{criterion.task_summaries.length}）
           </summary>
           <div className="divide-y divide-line border-t border-line">
-            {criterion.task_summaries.map((summary, index) => (
+            {criterion.task_summaries.map((summary, index) => {
+              const taskRef = taskRefText(summary.task_id, taskNamesById);
+              return (
               <div className="grid gap-1.5 px-3 py-2" key={`${summary.task_id}-${index}`}>
-                <span className="font-mono text-[11px] text-ink-3">{summary.task_id}</span>
+                {taskRef.name ? (
+                  <span className="text-[11px] text-ink-3">
+                    <span className="font-medium text-ink-2">{taskRef.name}</span>{" "}
+                    <span className="font-mono">({taskRef.shortId})</span>
+                  </span>
+                ) : (
+                  <span className="font-mono text-[11px] text-ink-3">{summary.task_id}</span>
+                )}
                 <p className="text-xs leading-relaxed text-ink-2">
                   {summary.summary.trim() ? summary.summary : "该任务尚无执行结论"}
                 </p>
@@ -217,7 +237,8 @@ function CriterionRow({
                   onPreview={onPreview}
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
         </details>
       ) : null}
@@ -318,6 +339,8 @@ export type CriteriaPanelViewProps = {
   onRetry?: () => void;
   onFinalAccept?: FinalAcceptanceHandler;
   isSigning?: boolean;
+  /** 任务 id → 标题（来自同页 task graph），用于血缘展开区的任务指称。 */
+  taskNamesById?: ReadonlyMap<string, string>;
 };
 
 export function CriteriaPanelView({
@@ -327,7 +350,8 @@ export function CriteriaPanelView({
   isError,
   onRetry,
   onFinalAccept,
-  isSigning
+  isSigning,
+  taskNamesById
 }: CriteriaPanelViewProps) {
   const [previewArtifact, setPreviewArtifact] =
     useState<PreviewableArtifact | null>(null);
@@ -362,6 +386,7 @@ export function CriteriaPanelView({
                 criterion={criterion}
                 key={criterion.criterion_id}
                 onPreview={setPreviewArtifact}
+                taskNamesById={taskNamesById}
               />
             ))}
           </div>
@@ -380,9 +405,15 @@ export type CriteriaPanelProps = {
   apiOptions: ApiClientOptions;
   apiBaseUrl: string;
   demandId: string;
+  taskNamesById?: ReadonlyMap<string, string>;
 };
 
-export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPanelProps) {
+export function CriteriaPanel({
+  apiOptions,
+  apiBaseUrl,
+  demandId,
+  taskNamesById
+}: CriteriaPanelProps) {
   const queryClient = useQueryClient();
   const criteriaQuery = useQuery({
     enabled: Boolean(demandId),
@@ -453,6 +484,7 @@ export function CriteriaPanel({ apiOptions, apiBaseUrl, demandId }: CriteriaPane
       isLoading={criteriaQuery.isLoading}
       isSigning={signMutation.isPending}
       onRetry={() => void criteriaQuery.refetch()}
+      taskNamesById={taskNamesById}
       onFinalAccept={(verdict, reason, criterionIds, options) =>
         signMutation.mutate({
           alsoCloseProject: options?.alsoCloseProject,

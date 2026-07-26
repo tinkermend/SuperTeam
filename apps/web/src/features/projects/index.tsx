@@ -1376,7 +1376,8 @@ function isProjectOperationalTab(value: string | undefined): boolean {
     value === "acceptance" ||
     value === "closure" ||
     value === "config" ||
-    value === "assets"
+    value === "assets" ||
+    value === "trace"
   );
 }
 

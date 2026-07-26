@@ -12,6 +12,7 @@ import type {
   ProjectTaskGraphStageSummary
 } from "@/lib/api/projects";
 import { riskLevelLabel, taskStatusLabel } from "@/lib/status-labels";
+import { taskStatusTone } from "@/features/flow-graph/inspector-primitives";
 
 /**
  * PlanTaskGraph renders a coordination plan as a stage-grouped task list with
@@ -143,22 +144,6 @@ export function PlanTaskGraph({
       })}
     </div>
   );
-}
-
-function taskStatusTone(status: string): Tone {
-  if (["completed", "accepted", "approved", "done", "success"].includes(status)) {
-    return "ok";
-  }
-  if (["failed", "rejected", "cancelled", "blocked"].includes(status)) {
-    return "danger";
-  }
-  if (["pending", "waiting", "review_required", "planning_pending"].includes(status)) {
-    return "warn";
-  }
-  if (["dispatchable", "running", "in_progress"].includes(status)) {
-    return "info";
-  }
-  return "mute";
 }
 
 function riskTone(risk: string): Tone {

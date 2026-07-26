@@ -34,6 +34,31 @@ type WorkflowViewProps = {
   fetcher?: typeof fetch;
 };
 
+/**
+ * 项目决策的统一提交出口（本页内共用）：gap 面板与节点详情弹层走同一条
+ * resolveProjectDecision + 同一组 queryKey 失效；成功文案由调用点按语境给。
+ */
+function useResolveWorkflowDecision(
+  apiOptions: ApiClientOptions,
+  projectId: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ decisionId, decision }: { decisionId: string; decision: string }) => {
+      if (!projectId) {
+        throw new Error("缺少项目 ID，无法提交决策");
+      }
+      return resolveProjectDecision(apiOptions, projectId, decisionId, { decision });
+    },
+    onError: (error: unknown) => {
+      notifyError(error instanceof Error ? error.message : "决策提交失败");
+    },
+    onSuccess: async () => {
+      await invalidateWorkflowGapQueries(queryClient);
+    }
+});
+}
+
 export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProps) {
   const navigate = useNavigate();
   const apiOptions = useMemo<ApiClientOptions>(
@@ -120,6 +145,15 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     currentGraph,
     selectedDemandId,
   );
+  const resolveDecisionMutation = useResolveWorkflowDecision(
+    apiOptions,
+    currentDetail?.project.id,
+  );
+  // 验收血缘的任务指称就地取自当前 task graph 节点名（「任务名 (短id)」）。
+  const taskNamesById = useMemo(
+    () => new Map((currentGraph?.nodes ?? []).map((node) => [node.id, node.title])),
+    [currentGraph],
+  );
 
   if (!demandId) {
     return (
@@ -157,6 +191,7 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
           apiBaseUrl={apiBaseUrl}
           apiOptions={apiOptions}
           demandId={selectedDemandId}
+          taskNamesById={taskNamesById}
         />
       ) : null}
       <WorkflowDetail
@@ -164,6 +199,12 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
         graph={currentGraph}
         instance={listMatchedInstance}
         isError={listQuery.isError || (detailQuery.isError && !detailNotFound) || graphQuery.isError}
+        onResolveDecision={(decisionId, decision) =>
+          resolveDecisionMutation.mutate(
+            { decision, decisionId },
+            { onSuccess: () => notifySuccess("决策已提交") },
+          )
+        }
       />
     </WorkflowShell>
   );
@@ -212,24 +253,22 @@ function WorkflowGapPanel({
   const gap = fact?.gap;
   const decisionRequestId = fact?.decision_request_id;
 
-  const exemptMutation = useMutation({
-    mutationFn: () => {
-      if (!decisionRequestId) {
-        throw new Error("缺少决策 ID，无法豁免");
-      }
-      return resolveProjectDecision(apiOptions, projectId, decisionRequestId, {
-        decision: "exempted"
-});
-    },
-    onError: (error: unknown) => {
-      notifyError(error instanceof Error ? error.message : "豁免失败");
-    },
-    onSuccess: async () => {
-      notifySuccess("已豁免约束，重新规划已触发");
-      setExemptDialogOpen(false);
-      await invalidateWorkflowGapQueries(queryClient);
+  const exemptMutation = useResolveWorkflowDecision(apiOptions, projectId);
+  const submitExempt = () => {
+    if (!decisionRequestId) {
+      notifyError("缺少决策 ID，无法豁免");
+      return;
     }
-});
+    exemptMutation.mutate(
+      { decision: "exempted", decisionId: decisionRequestId },
+      {
+        onSuccess: () => {
+          notifySuccess("已豁免约束，重新规划已触发");
+          setExemptDialogOpen(false);
+        }
+}
+    );
+  };
 
   if (!gap) return null;
 
@@ -292,7 +331,7 @@ function WorkflowGapPanel({
         confirmText="确认豁免"
         desc="豁免后，审查独立性等约束将对该需求不再生效，同一数字员工可能身兼多个角色（如既实现又审查）。该操作会记录为人类负责人的一等决策，并立即触发重新规划。"
         destructive
-        handleConfirm={() => exemptMutation.mutate()}
+        handleConfirm={submitExempt}
         isLoading={exemptMutation.isPending}
         onOpenChange={setExemptDialogOpen}
         open={exemptDialogOpen}

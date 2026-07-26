@@ -62,14 +62,14 @@ type WorkflowTaskNode = Node<WorkflowTaskNodeData, "workflowTask">;
 type WorkflowAttachmentNode = Node<WorkflowAttachmentNodeData, "workflowAttachment">;
 type WorkflowStageLabelNode = Node<WorkflowStageLabelNodeData, "workflowStageLabel">;
 type WorkflowBlockingNode = Node<WorkflowBlockingNodeData, "workflowBlocking">;
-type WorkflowGraphNode =
+type FlowGraphNode =
   | WorkflowTaskNode
   | WorkflowAttachmentNode
   | WorkflowStageLabelNode
   | WorkflowBlockingNode;
 
-export type WorkflowGraphElements = {
-  nodes: WorkflowGraphNode[];
+export type FlowGraphElements = {
+  nodes: FlowGraphNode[];
   edges: Edge[];
 };
 
@@ -80,9 +80,11 @@ export type WorkflowStageLabelNodeData = {
   title: string;
 };
 
-export type PlanWorkflowGraphElements = {
-  edges: Edge[];
-  nodes: (WorkflowTaskNode | WorkflowStageLabelNode)[];
+export type FlowGraphBuildOptions = {
+  /** 空图但存在 blocking_facts 时渲染协调阻塞兜底节点（默认开）。 */
+  includeBlockingFallback?: boolean;
+  /** pending 人工决策渲染为任务挂饰节点（默认开）。 */
+  includeDecisionAttachments?: boolean;
 };
 
 export const PLAN_TASK_GRAPH_LAYOUT = {
@@ -101,6 +103,11 @@ export function taskNodeId(taskId: string): string {
   return `task:${taskId}`;
 }
 
+/** 画布节点 id 还原任务 id；非任务节点（阶段标签/阻塞兜底/挂饰）返回 undefined。 */
+export function taskIdFromNodeId(nodeId: string): string | undefined {
+  return nodeId.startsWith("task:") ? nodeId.slice("task:".length) : undefined;
+}
+
 export function stageLabelNodeId(stageIndex: number): string {
   return `stage-label:${stageIndex}`;
 }
@@ -117,8 +124,22 @@ function toWorkflowTaskNodeAvatarAsset(
   };
 }
 
-export function buildWorkflowGraphElements(graph: ProjectTaskGraph): WorkflowGraphElements {
+/**
+ * task graph → xyflow 元素的唯一权威 build 函数（spec 2026-07-26 §4.2）。
+ * 项目详情与流程编排详情消费同一投影：同一布局、同一状态词/色、同一挂饰语义；
+ * blocking/attachment 渲染由参数开关（默认全开）。
+ */
+export function buildFlowGraphElements(
+  graph: ProjectTaskGraph,
+  {
+    includeBlockingFallback = true,
+    includeDecisionAttachments = true,
+  }: FlowGraphBuildOptions = {},
+): FlowGraphElements {
   if (graph.nodes.length === 0 && graph.blocking_facts.length > 0) {
+    if (!includeBlockingFallback) {
+      return { nodes: [], edges: [] };
+    }
     const fact = graph.blocking_facts[0];
     return {
       nodes: [
@@ -153,38 +174,36 @@ export function buildWorkflowGraphElements(graph: ProjectTaskGraph): WorkflowGra
   });
 
   const attachmentCountsByTaskId = new Map<string, number>();
-  const attachmentNodes: WorkflowAttachmentNode[] = pendingDecisions.map((decision) => {
-    const taskId = decision.project_task_id ?? "";
-    const attachmentIndex = attachmentCountsByTaskId.get(taskId) ?? 0;
-    attachmentCountsByTaskId.set(taskId, attachmentIndex + 1);
+  const attachmentNodes: WorkflowAttachmentNode[] = includeDecisionAttachments
+    ? pendingDecisions.map((decision) => {
+        const taskId = decision.project_task_id ?? "";
+        const attachmentIndex = attachmentCountsByTaskId.get(taskId) ?? 0;
+        attachmentCountsByTaskId.set(taskId, attachmentIndex + 1);
 
-    return {
-      id: `attachment:decision:${decision.id}`,
-      type: "workflowAttachment",
-      parentId: taskNodeId(taskId),
-      position: {
-        x: 0,
-        y: ATTACHMENT_OFFSET_Y * (attachmentIndex + 1),
-      },
-      data: {
-        status: decision.status_snapshot,
-        title: decision.title_snapshot,
-        type: "decision",
-      },
-    };
-  });
+        return {
+          id: `attachment:decision:${decision.id}`,
+          type: "workflowAttachment",
+          parentId: taskNodeId(taskId),
+          position: {
+            x: 0,
+            y: ATTACHMENT_OFFSET_Y * (attachmentIndex + 1),
+          },
+          data: {
+            status: decision.status_snapshot,
+            title: decision.title_snapshot,
+            type: "decision",
+          },
+        } satisfies WorkflowAttachmentNode;
+      })
+    : [];
 
   return {
     nodes: [...layoutNodes, ...attachmentNodes],
-    edges: buildTaskDependencyEdges(graph, taskIds, { includeLabel: true }),
+    edges: buildTaskDependencyEdges(graph, taskIds),
   };
 }
 
-function buildTaskDependencyEdges(
-  graph: ProjectTaskGraph,
-  taskIds: Set<string>,
-  options: Partial<Pick<Edge, "markerEnd" | "style">> & { includeLabel: boolean },
-): Edge[] {
+function buildTaskDependencyEdges(graph: ProjectTaskGraph, taskIds: Set<string>): Edge[] {
   return graph.edges
     .filter((edge) => taskIds.has(edge.blocker_task_id) && taskIds.has(edge.dependent_task_id))
     .map((edge) => ({
@@ -192,45 +211,9 @@ function buildTaskDependencyEdges(
       source: taskNodeId(edge.blocker_task_id),
       target: taskNodeId(edge.dependent_task_id),
       type: "smoothstep",
-      label: options.includeLabel ? taskStatusLabel(edge.edge_status) : undefined,
+      label: taskStatusLabel(edge.edge_status),
       animated: ANIMATED_EDGE_STATUSES.has(normalizeStatus(edge.edge_status)),
-      markerEnd: options.markerEnd,
-      style: options.style,
     }));
-}
-
-export function buildPlanTaskGraphElements(graph: ProjectTaskGraph): PlanWorkflowGraphElements {
-  const taskIds = new Set(graph.nodes.map((task) => task.id));
-  const employeesById = new Map(
-    graph.employees.map((employee) => [employee.digital_employee_id, employee]),
-  );
-  const runStatusByTaskId = new Map(graph.runs.map((run) => [run.project_task_id, run.status]));
-  const pendingDecisions = graph.decision_requests.filter(
-    (decision) => isPendingTaskDecision(decision) && taskIds.has(decision.project_task_id ?? ""),
-  );
-  const pendingDecisionsByTaskId = groupDecisionsByTaskId(pendingDecisions);
-  const nodes = buildDynamicTaskLayoutNodes(graph, {
-    employeesById,
-    pendingDecisionsByTaskId,
-    runStatusByTaskId,
-  });
-
-  return {
-    edges: buildTaskDependencyEdges(graph, taskIds, {
-      includeLabel: false,
-      markerEnd: {
-        color: "rgb(47 95 255 / 0.45)",
-        height: 18,
-        type: "arrowclosed",
-        width: 18,
-      },
-      style: {
-        stroke: "rgb(47 95 255 / 0.32)",
-        strokeWidth: 1.6,
-      },
-    }),
-    nodes,
-  };
 }
 
 function buildDynamicTaskLayoutNodes(

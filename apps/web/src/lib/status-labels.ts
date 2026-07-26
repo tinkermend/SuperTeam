@@ -98,8 +98,20 @@ export function runStatusLabel(status: string | undefined): string {
   return statusLabel(status);
 }
 
+/**
+ * 决策请求 status_snapshot 是「pending → 人类决策动词」双语义字段：决议后写入侧
+ * 回填 resolution 动词（既定设计，不改写入侧）。这些动词只在决策域出现，
+ * 用域内覆盖补词，不进全局 STATUS_LABELS（避免污染 retry 等通用键）。
+ * 措辞与收件箱动作文案对齐（inbox/components/action-format.ts、project-ops-home BlockerActions）。
+ */
 export function decisionStatusLabel(status: string | undefined): string {
-  return statusLabel(status);
+  return labelWithOverrides(status, {
+    cancel_downstream: "取消下游",
+    close_demand: "关闭需求",
+    reassign: "改派",
+    retry: "重试",
+    retry_planning: "重新规划",
+  });
 }
 
 export function dispatchGateStatusLabel(status: DispatchGateStatus): string {
@@ -347,6 +359,22 @@ export function tenantRoleLabel(role: string | undefined): string {
   }
   const normalized = role.trim().toLowerCase();
   return TENANT_ROLE_LABELS[normalized] ?? role;
+}
+
+// 任务图 current_blocker.type（CP 写入 project_task / decision_request）；
+// run 预留给执行运行类阻塞。面向用户不得英文直出。
+const BLOCKER_RESOURCE_TYPE_LABELS: Record<string, string> = {
+  decision_request: "人工决策",
+  project_task: "项目任务",
+  run: "执行运行",
+};
+
+export function blockerResourceTypeLabel(type: string | undefined): string {
+  if (!type) {
+    return "";
+  }
+  const normalized = type.trim().toLowerCase();
+  return BLOCKER_RESOURCE_TYPE_LABELS[normalized] ?? type;
 }
 
 const DELETE_BLOCKER_TYPE_LABELS: Record<string, string> = {

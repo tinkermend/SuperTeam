@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, ArrowUpRight, ClipboardList, GitBranch, Inbox } from "lucide-react";
@@ -22,8 +22,9 @@ import { riskLevelLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-la
 import { formatDateTime, formatRelativeTime } from "@/lib/format-time";
 import {
   formatBlocker,
+  taskFieldKeyLabel,
   taskStatusTone
-} from "@/features/workflows/components/workflow-node-inspector";
+} from "@/features/flow-graph/inspector-primitives";
 import { providerDisplayName } from "@/features/employees/provider-label";
 import {
   coordinationModeLabel,
@@ -47,6 +48,11 @@ type ProjectTaskDetailDialogProps = {
    * 用任务自己的 demand_id 补一次查询（queryKey 与页面同族，最新 demand 直接命中缓存）。
    */
   fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
+  /**
+   * 编排区右上角深链目标：项目详情等外部页保持默认「查看流程编排」；
+   * 流程编排详情页自身装配本弹层时传 "project"，改为「打开项目」避免自指跳转。
+   */
+  demandLink?: "workflow" | "project";
 };
 
 /**
@@ -65,7 +71,8 @@ export function ProjectTaskDetailDialog({
   overview,
   principalNamesById,
   onResolveDecision,
-  fetchTaskGraph
+  fetchTaskGraph,
+  demandLink = "workflow"
 }: ProjectTaskDetailDialogProps) {
   const preloadedNode = taskGraph?.nodes.find((node) => node.id === taskId);
   const task =
@@ -216,7 +223,17 @@ export function ProjectTaskDetailDialog({
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <SectionEyebrow icon={<GitBranch />} label="编排" />
-              {task.demand_id ? (
+              {demandLink === "project" ? (
+                <Link
+                  aria-label="打开该任务所属项目"
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
+                  params={{ projectId }}
+                  to="/projects/$projectId"
+                >
+                  打开项目
+                  <ArrowUpRight className="size-3.5" />
+                </Link>
+              ) : task.demand_id ? (
                 <Link
                   aria-label="查看该任务所在流程编排"
                   className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
@@ -292,21 +309,46 @@ export function ProjectTaskDetailDialog({
                       .filter(Boolean)
                       .join(" · ")}
                   </span>
-                  {run.runtime_task_id ? (
-                    <Link
-                      aria-label={`查看${task.title} Runtime`}
-                      className="inline-flex items-center gap-0.5 text-[12px] font-semibold text-brand hover:opacity-80"
-                      to="/runtime"
-                    >
-                      Runtime
-                      <ArrowUpRight className="size-3" />
-                    </Link>
-                  ) : null}
+                  <Link
+                    aria-label={`查看${task.title}执行轨迹`}
+                    className="inline-flex items-center gap-0.5 text-[12px] font-semibold text-brand hover:opacity-80"
+                    params={{ projectId }}
+                    search={{ tab: "trace" }}
+                    to="/projects/$projectId"
+                  >
+                    查看执行轨迹
+                    <ArrowUpRight className="size-3" />
+                  </Link>
                 </>
               ) : (
                 <span className="text-ink-3">暂无运行记录</span>
               )}
             </div>
+            {run?.started_at ? (
+              <p className="text-[12px] tabular-nums text-ink-2">
+                <span className="text-ink-3">起</span>{" "}
+                <time dateTime={run.started_at}>{formatDateTime(run.started_at)}</time>
+                {run.finished_at ? (
+                  <>
+                    {" "}
+                    <span className="text-ink-3">止</span>{" "}
+                    <time dateTime={run.finished_at}>
+                      {formatDateTime(run.finished_at)}
+                    </time>
+                  </>
+                ) : null}
+                {formatRunDuration(run.started_at, run.finished_at) ? (
+                  <>
+                    {" "}
+                    <span className="text-ink-3">耗时</span>{" "}
+                    {formatRunDuration(run.started_at, run.finished_at)}
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+            {run?.error_message ? (
+              <RunErrorMessage message={run.error_message} />
+            ) : null}
             {result ? (
               <blockquote className="border-l-2 border-brand/40 pl-3 text-[13px] leading-6 text-ink">
                 {result.conclusion}
@@ -379,6 +421,61 @@ export function ProjectTaskDetailDialog({
   );
 }
 
+/** run 起止 → 人读耗时；缺失/非法时间返回 undefined（未结束不显示耗时）。 */
+function formatRunDuration(
+  startedAt: string,
+  finishedAt: string | undefined,
+): string | undefined {
+  if (!finishedAt) return undefined;
+  const startMs = Date.parse(startedAt);
+  const endMs = Date.parse(finishedAt);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) {
+    return undefined;
+  }
+  const totalSeconds = Math.round((endMs - startMs) / 1000);
+  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) {
+    return seconds > 0 ? `${totalMinutes} 分 ${seconds} 秒` : `${totalMinutes} 分钟`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours} 小时 ${minutes} 分` : `${hours} 小时`;
+}
+
+/** 失败 run 的错误摘要（服务端已脱敏）：默认三行 clamp，长文本可展开。 */
+function RunErrorMessage({ message }: { message: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = message.length > 160 || message.split("\n").length > 3;
+
+  return (
+    <div
+      className="rounded-[10px] bg-danger/5 px-3 py-2.5 shadow-[inset_2px_0_0_var(--danger)]"
+      data-testid="task-run-error"
+    >
+      <div className="text-[10.5px] font-bold text-ink-3">错误摘要</div>
+      <p
+        className={cn(
+          "mt-1 whitespace-pre-wrap break-words text-[12px] leading-5 text-ink",
+          !expanded && "line-clamp-3",
+        )}
+      >
+        {message}
+      </p>
+      {isLong ? (
+        <button
+          className="mt-1 text-[11.5px] font-semibold text-brand hover:opacity-80"
+          onClick={() => setExpanded((current) => !current)}
+          type="button"
+        >
+          {expanded ? "收起" : "展开全文"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function SectionEyebrow({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <h4 className="flex items-center gap-1.5 text-[11px] font-extrabold text-ink-3 [&>svg]:size-3.5">
@@ -438,9 +535,18 @@ function valueChips(value: unknown): string[] {
   if (value && typeof value === "object") {
     return Object.entries(value)
       .filter(([, item]) => !isEmptyValue(item))
-      .map(([key, item]) => `${key}: ${leafText(item)}`);
+      .map(([key, item]) => `${taskFieldKeyLabel(key)}：${listText(item)}`);
   }
   return [leafText(value)];
+}
+
+/** 数组值渲染为条目列表（顿号衔接），标量沿用 leafText；避免 JSON 数组直出。 */
+function listText(value: unknown): string {
+  if (Array.isArray(value)) {
+    const items = value.filter((item) => !isEmptyValue(item)).map(leafText);
+    return items.length > 0 ? items.join("、") : "暂无";
+  }
+  return leafText(value);
 }
 
 /** 交接契约按顶层键逐行展示，避免多键拼在一行难读。 */
@@ -454,7 +560,7 @@ function contractEntries(value: unknown): Array<{ label?: string; text: string }
   if (value && typeof value === "object") {
     return Object.entries(value)
       .filter(([, item]) => !isEmptyValue(item))
-      .map(([key, item]) => ({ label: key, text: leafText(item) }));
+      .map(([key, item]) => ({ label: taskFieldKeyLabel(key), text: listText(item) }));
   }
   return [{ text: leafText(value) }];
 }

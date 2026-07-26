@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
-import { PlanGraphCanvas } from "./plan-graph-canvas";
+import { FlowGraphCanvas } from "./flow-graph-canvas";
 
 vi.mock("@xyflow/react", () => {
   type MockNode = {
@@ -14,12 +14,12 @@ vi.mock("@xyflow/react", () => {
       title?: string;
     };
     id: string;
+    parentId?: string;
   };
 
   type MockEdge = {
     id: string;
-    markerEnd?: unknown;
-    style?: unknown;
+    label?: ReactNode;
   };
 
   type MockReactFlowProps = {
@@ -30,9 +30,9 @@ vi.mock("@xyflow/react", () => {
       y: number;
       zoom: number;
     };
-    fitView?: boolean;
     minZoom?: number;
     nodes?: MockNode[];
+    onNodeClick?: (event: unknown, node: MockNode) => void;
     proOptions?: {
       hideAttribution?: boolean;
     };
@@ -40,46 +40,41 @@ vi.mock("@xyflow/react", () => {
 
   return {
     Background: () => null,
+    Controls: () => null,
     Handle: () => null,
-    MarkerType: { ArrowClosed: "arrowclosed" },
+    MiniMap: () => null,
     Position: { Bottom: "bottom", Top: "top" },
     ReactFlow: ({
       children,
       defaultViewport,
       edges = [],
-      fitView,
       minZoom,
       nodes = [],
+      onNodeClick,
       proOptions
 }: MockReactFlowProps) => (
       <div
         data-edge-count={String(edges.length)}
-        data-fit-view={String(Boolean(fitView))}
         data-hide-attribution={String(Boolean(proOptions?.hideAttribution))}
         data-min-zoom={String(minZoom ?? "")}
         data-testid="mock-react-flow"
         data-viewport-zoom={String(defaultViewport?.zoom ?? "")}
       >
         {edges.map((edge) => (
-          <p
-            data-has-marker={String(Boolean(edge.markerEnd))}
-            data-has-style={String(Boolean(edge.style))}
-            data-testid={`plan-graph-edge-${edge.id}`}
-            key={edge.id}
-          >
-            {edge.id}
-          </p>
+          <span data-testid={`flow-graph-edge-${edge.id}`} key={edge.id}>
+            {edge.label}
+          </span>
         ))}
         {nodes.map((node) => (
-          <div key={node.id}>
-            {node.data?.title ? <p>{node.data.title}</p> : null}
-            {node.data?.employeeName ? <p>{node.data.employeeName}</p> : null}
-            {node.data?.employeeRole ? <p>{node.data.employeeRole}</p> : null}
-            {typeof node.data?.taskCount === "number" &&
-            typeof node.data?.employeeCount === "number" ? (
-              <p>{`${node.data.taskCount} 个任务 · ${node.data.employeeCount} 位同事`}</p>
-            ) : null}
-          </div>
+          <button
+            key={node.id}
+            onClick={(event) => onNodeClick?.(event, node)}
+            type="button"
+          >
+            {node.data?.title ? <span>{node.data.title}</span> : null}
+            {node.data?.employeeName ? <span>{node.data.employeeName}</span> : null}
+            {node.data?.employeeRole ? <span>{node.data.employeeRole}</span> : null}
+          </button>
         ))}
         {children}
       </div>
@@ -150,41 +145,32 @@ function makeGraph(): ProjectTaskGraph {
     execution_summaries: [],
     recent_events: [],
     decision_requests: [],
-    blocking_facts: [],
-    stage_summaries: [
-      {
-        stage_index: 0,
-        title: "第 1 阶段",
-        total_nodes: 1,
-        completed_nodes: 0,
-        running_nodes: 0,
-        waiting_human_nodes: 0,
-        blocked_nodes: 0
-},
-      {
-        stage_index: 1,
-        title: "第 2 阶段",
-        total_nodes: 1,
-        completed_nodes: 0,
-        running_nodes: 0,
-        waiting_human_nodes: 1,
-        blocked_nodes: 0
-},
-    ]
+    blocking_facts: []
 };
 }
 
-describe("PlanGraphCanvas", () => {
-  it("renders a task card and its stage label from the graph", async () => {
-    const screen = await render(<PlanGraphCanvas graph={makeGraph()} />);
+function renderCanvas(graph: ProjectTaskGraph, onNodeOpen = vi.fn()) {
+  return render(
+    <FlowGraphCanvas
+      graph={graph}
+      onNodeOpen={onNodeOpen}
+      onSelectedNodeChange={vi.fn()}
+      selectedNodeId={undefined}
+    />,
+  );
+}
+
+describe("FlowGraphCanvas", () => {
+  it("renders task cards, Chinese edge labels and canvas config from the graph", async () => {
+    const screen = await renderCanvas(makeGraph());
 
     await expect.element(screen.getByText("PR 上下文盘点")).toBeInTheDocument();
+    await expect.element(screen.getByText("安全风险审查")).toBeInTheDocument();
+    await expect.element(screen.getByText("高乐驹")).toBeInTheDocument();
+    await expect.element(screen.getByText("安特妍")).toBeInTheDocument();
     await expect
       .element(screen.getByTestId("mock-react-flow"))
       .toHaveAttribute("data-hide-attribution", "true");
-    await expect
-      .element(screen.getByTestId("mock-react-flow"))
-      .toHaveAttribute("data-fit-view", "false");
     await expect
       .element(screen.getByTestId("mock-react-flow"))
       .toHaveAttribute("data-viewport-zoom", "1");
@@ -195,19 +181,18 @@ describe("PlanGraphCanvas", () => {
       .element(screen.getByTestId("mock-react-flow"))
       .toHaveAttribute("data-edge-count", "1");
     await expect
-      .element(screen.getByTestId("plan-graph-edge-edge:task-a:task-b"))
-      .toHaveAttribute("data-has-marker", "true");
-    await expect
-      .element(screen.getByTestId("plan-graph-edge-edge:task-a:task-b"))
-      .toHaveAttribute("data-has-style", "true");
-    await expect.element(screen.getByText("高乐驹")).toBeInTheDocument();
-    await expect.element(screen.getByText("代码库入职导师·工程部")).toBeInTheDocument();
-    await expect.element(screen.getByText("安全风险审查")).toBeInTheDocument();
-    await expect.element(screen.getByText("安特妍")).toBeInTheDocument();
-    await expect.element(screen.getByText("安全工程师·工程部")).toBeInTheDocument();
-    await expect.element(screen.getByText("第 1 阶段")).toBeInTheDocument();
-    await expect.element(screen.getByText("第 2 阶段")).toBeInTheDocument();
-    expect(screen.container.textContent).toContain("1 个任务 · 1 位同事");
+      .element(screen.getByTestId("flow-graph-edge-edge:task-a:task-b"))
+      .toHaveTextContent("已计划");
+  });
+
+  it("reports node opens for task nodes when clicked", async () => {
+    const onNodeOpen = vi.fn();
+    const screen = await renderCanvas(makeGraph(), onNodeOpen);
+
+    const button = screen.getByText("PR 上下文盘点");
+    await button.click();
+
+    expect(onNodeOpen).toHaveBeenCalledWith("task:task-a");
   });
 
   it("sizes the desktop canvas to avoid clipping the final stage", async () => {
@@ -225,18 +210,20 @@ describe("PlanGraphCanvas", () => {
       { blocker_task_id: "task-c", dependent_task_id: "task-d", edge_status: "planned" },
     ];
 
-    const screen = await render(<PlanGraphCanvas graph={graph} />);
+    const screen = await renderCanvas(graph);
 
     await expect
-      .element(screen.getByTestId("plan-graph-canvas"))
+      .element(screen.getByTestId("flow-graph-canvas"))
       .toHaveAttribute("data-stage-count", "3");
     await expect
-      .element(screen.getByTestId("plan-graph-canvas"))
+      .element(screen.getByTestId("flow-graph-canvas"))
       .toHaveAttribute("data-task-count", "4");
-    expect(screen.getByTestId("plan-graph-canvas").element().clientHeight).toBeGreaterThan(1300);
+    expect(
+      screen.getByTestId("flow-graph-canvas").element().clientHeight,
+    ).toBeGreaterThan(1300);
   });
 
-  it("grows the desktop canvas for a ten-task wrapped plan stage", async () => {
+  it("grows the desktop canvas for a ten-task wrapped stage", async () => {
     const graph = makeGraph();
     graph.nodes = Array.from({ length: 10 }, (_, index) => ({
       ...graph.nodes[0],
@@ -253,27 +240,18 @@ describe("PlanGraphCanvas", () => {
       status: "active",
       employee_role: "通用工程执行"
 }));
-    graph.stage_summaries = [
-      {
-        stage_index: 0,
-        title: "并行规划执行",
-        total_nodes: 10,
-        completed_nodes: 0,
-        running_nodes: 0,
-        waiting_human_nodes: 0,
-        blocked_nodes: 0
-},
-    ];
 
-    const screen = await render(<PlanGraphCanvas graph={graph} />);
+    const screen = await renderCanvas(graph);
 
     await expect.element(screen.getByText("计划任务 10")).toBeInTheDocument();
     await expect
-      .element(screen.getByTestId("plan-graph-canvas"))
+      .element(screen.getByTestId("flow-graph-canvas"))
       .toHaveAttribute("data-stage-count", "1");
     await expect
-      .element(screen.getByTestId("plan-graph-canvas"))
+      .element(screen.getByTestId("flow-graph-canvas"))
       .toHaveAttribute("data-task-count", "10");
-    expect(screen.getByTestId("plan-graph-canvas").element().clientHeight).toBeGreaterThan(2100);
+    expect(
+      screen.getByTestId("flow-graph-canvas").element().clientHeight,
+    ).toBeGreaterThan(2100);
   });
 });

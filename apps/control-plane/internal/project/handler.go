@@ -2535,6 +2535,9 @@ type projectTaskGraphRunResponse struct {
 	RuntimeNodeSummary   string  `json:"runtime_node_summary"`
 	Status               string  `json:"status"`
 	ProviderType         string  `json:"provider_type"`
+	StartedAt            *string `json:"started_at,omitempty"`
+	FinishedAt           *string `json:"finished_at,omitempty"`
+	ErrorMessage         string  `json:"error_message,omitempty"`
 }
 
 type coordinationJobResponse struct {
@@ -3413,6 +3416,9 @@ func taskGraphRunResponses(runs []ProjectTaskGraphRun) []projectTaskGraphRunResp
 			RuntimeNodeSummary:   run.RuntimeNodeSummary,
 			Status:               run.Status,
 			ProviderType:         run.ProviderType,
+			StartedAt:            timePtr(run.StartedAt),
+			FinishedAt:           timePtr(run.FinishedAt),
+			ErrorMessage:         run.ErrorMessage,
 		})
 	}
 	return responses

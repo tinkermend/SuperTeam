@@ -290,6 +290,9 @@ export type ProjectTaskGraphRun = {
   runtime_node_summary: string;
   status: string;
   provider_type: string;
+  started_at?: string;
+  finished_at?: string;
+  error_message?: string;
 };
 
 export type ProjectTaskGraphStageSummary = {

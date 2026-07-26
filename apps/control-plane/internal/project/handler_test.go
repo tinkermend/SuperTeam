@@ -1171,6 +1171,8 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	decisionID := uuid.New()
 	eventID := uuid.New()
 	stageIndex := int32(1)
+	runStartedAt := time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC)
+	runFinishedAt := runStartedAt.Add(4 * time.Minute)
 	service := &handlerTestService{
 		taskGraph: ProjectTaskGraph{
 			Nodes: []ProjectTaskGraphNode{{
@@ -1234,8 +1236,11 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 				ProjectTaskID:        taskID,
 				DigitalEmployeeRunID: &runID,
 				RuntimeTaskID:        &runtimeTaskID,
-				Status:               "assigned",
+				Status:               "failed",
 				ProviderType:         "codex",
+				StartedAt:            &runStartedAt,
+				FinishedAt:           &runFinishedAt,
+				ErrorMessage:         "provider exited with code 1",
 			}},
 			ExecutionSummaries: []ExecutionSummary{{
 				ID:                uuid.New(),
@@ -1321,6 +1326,13 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	}
 	if len(body["employees"].([]any)) != 1 || len(body["runs"].([]any)) != 1 || len(body["execution_summaries"].([]any)) != 1 || len(body["recent_events"].([]any)) != 1 {
 		t.Fatalf("expected graph sidecars in response, got %#v", body)
+	}
+	runBody := body["runs"].([]any)[0].(map[string]any)
+	if runBody["started_at"] != runStartedAt.Format(time.RFC3339) || runBody["finished_at"] != runFinishedAt.Format(time.RFC3339) {
+		t.Fatalf("expected run timestamps in response, got %#v", runBody)
+	}
+	if runBody["error_message"] != "provider exited with code 1" {
+		t.Fatalf("expected run error message in response, got %#v", runBody)
 	}
 	employeeBody := body["employees"].([]any)[0].(map[string]any)
 	if employeeBody["employee_role"] != "代码审查员" {

@@ -4326,6 +4326,9 @@ func TestProjectTaskGraphRunsFromRowsMapsBoundRuns(t *testing.T) {
 		{ID: projectTaskID, TenantID: tenantID, DigitalEmployeeRunID: &runID},
 		{ID: projectTaskWithRuntimeID, TenantID: tenantID, DigitalEmployeeRunID: &runWithRuntimeID, RuntimeTaskID: &runtimeTaskID},
 	}
+	startedAt := time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC)
+	finishedAt := startedAt.Add(5 * time.Minute)
+	completedAt := startedAt.Add(3 * time.Minute)
 	rows := []queries.TaskRun{
 		{
 			ID:            runWithRuntimeID,
@@ -4333,8 +4336,11 @@ func TestProjectTaskGraphRunsFromRowsMapsBoundRuns(t *testing.T) {
 			TaskID:        uuid.New(),
 			NodeID:        "explicit-runtime-task",
 			RuntimeNodeID: uuid.NullUUID{UUID: runtimeNodeID, Valid: true},
-			Status:        "running",
+			Status:        "failed",
 			ProviderType:  pgtype.Text{String: "codex", Valid: true},
+			StartedAt:     pgtype.Timestamptz{Time: startedAt, Valid: true},
+			FinishedAt:    pgtype.Timestamptz{Time: finishedAt, Valid: true},
+			ErrorMessage:  pgtype.Text{String: "provider auth failed: sk-abcdefghijklmnopqrstuv 请检查凭据", Valid: true},
 		},
 		{
 			ID:           runID,
@@ -4343,6 +4349,9 @@ func TestProjectTaskGraphRunsFromRowsMapsBoundRuns(t *testing.T) {
 			NodeID:       "runtime-task-from-run",
 			Status:       "completed",
 			ProviderType: pgtype.Text{String: "claude-code", Valid: true},
+			StartedAt:    pgtype.Timestamptz{Time: startedAt, Valid: true},
+			// 只有 completed_at 没有 finished_at 的旧成功路径: FinishedAt 应回退取 completed_at。
+			CompletedAt: pgtype.Timestamptz{Time: completedAt, Valid: true},
 		},
 	}
 
@@ -4356,11 +4365,58 @@ func TestProjectTaskGraphRunsFromRowsMapsBoundRuns(t *testing.T) {
 	require.Equal(t, "runtime-task-from-run", runs[0].RuntimeNodeSummary)
 	require.Equal(t, "completed", runs[0].Status)
 	require.Equal(t, "claude-code", runs[0].ProviderType)
+	require.Equal(t, startedAt, *runs[0].StartedAt)
+	require.Equal(t, completedAt, *runs[0].FinishedAt)
+	require.Empty(t, runs[0].ErrorMessage)
 	require.Equal(t, projectTaskWithRuntimeID, runs[1].ProjectTaskID)
 	require.Equal(t, runWithRuntimeID, *runs[1].DigitalEmployeeRunID)
 	require.Equal(t, runtimeTaskID, *runs[1].RuntimeTaskID)
 	require.Equal(t, runtimeNodeID, *runs[1].RuntimeNodeID)
 	require.Equal(t, "codex", runs[1].ProviderType)
+	require.Equal(t, startedAt, *runs[1].StartedAt)
+	require.Equal(t, finishedAt, *runs[1].FinishedAt)
+	require.Equal(t, "provider auth failed: [REDACTED:anthropic_key] 请检查凭据", runs[1].ErrorMessage)
+}
+
+func TestRedactProseScrubsCredentialShapes(t *testing.T) {
+	cases := map[string]struct {
+		input string
+		want  string
+	}{
+		"anthropic key": {
+			input: "auth failed with sk-abcdefghijklmnopqrstuv",
+			want:  "auth failed with [REDACTED:anthropic_key]",
+		},
+		"bearer token": {
+			input: "header Authorization: Bearer abcdefghijklmnop123456",
+			want:  "header Authorization: [REDACTED:bearer]",
+		},
+		"github token": {
+			input: "push rejected ghp_abcdefghijklmnopqrst12345",
+			want:  "push rejected [REDACTED:github_token]",
+		},
+		"aws access key": {
+			input: "denied for AKIAABCDEFGHIJKLMNOP",
+			want:  "denied for [REDACTED:aws_access_key]",
+		},
+		"jwt": {
+			input: "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abcdefgh1234 expired",
+			want:  "token [REDACTED:jwt] expired",
+		},
+		"ordinary text untouched": {
+			input: "执行超时：exit code 1，日志见工件",
+			want:  "执行超时：exit code 1，日志见工件",
+		},
+		"empty": {
+			input: "",
+			want:  "",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.want, redactProse(tc.input))
+		})
+	}
 }
 
 func TestProjectConfigSnapshotIncludesHumanOwner(t *testing.T) {

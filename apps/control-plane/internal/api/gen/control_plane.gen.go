@@ -5160,11 +5160,14 @@ type ProjectTaskGraphNode struct {
 // ProjectTaskGraphRun defines model for ProjectTaskGraphRun.
 type ProjectTaskGraphRun struct {
 	DigitalEmployeeRunId *openapi_types.UUID `json:"digital_employee_run_id,omitempty"`
+	ErrorMessage         *string             `json:"error_message,omitempty"`
+	FinishedAt           *time.Time          `json:"finished_at,omitempty"`
 	ProjectTaskId        openapi_types.UUID  `json:"project_task_id"`
 	ProviderType         string              `json:"provider_type"`
 	RuntimeNodeId        *openapi_types.UUID `json:"runtime_node_id,omitempty"`
 	RuntimeNodeSummary   string              `json:"runtime_node_summary"`
 	RuntimeTaskId        *openapi_types.UUID `json:"runtime_task_id,omitempty"`
+	StartedAt            *time.Time          `json:"started_at,omitempty"`
 	Status               string              `json:"status"`
 }
 

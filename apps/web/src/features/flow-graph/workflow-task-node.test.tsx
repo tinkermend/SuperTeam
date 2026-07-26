@@ -2,7 +2,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import type { ProjectTaskGraphNode } from "@/lib/api/projects";
-import type { WorkflowTaskNodeData } from "../workflow-graph-adapter";
+import type { WorkflowTaskNodeData } from "./flow-graph-adapter";
 import { WorkflowStageLabelNode, WorkflowTaskNode } from "./workflow-task-node";
 
 const TEST_AVATAR_SRC =

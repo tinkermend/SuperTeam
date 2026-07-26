@@ -86,6 +86,7 @@ import {
   workspaceReadyStatusLabel
 } from "@/lib/status-labels";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
+import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectAssetsPanel } from "./project-assets-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
@@ -236,6 +237,19 @@ export function ProjectOperationalDetail({
       ),
     );
   }, [initialTab, focusDecisionId]);
+
+  // ?tab=trace 深链（任务详情弹层「查看执行轨迹」）：落在工作台并展开高级项目
+  // 事实区，再定位到执行轨迹面板。等 Collapsible 展开渲染后再滚动。
+  useEffect(() => {
+    if (initialTab !== "trace") return;
+    setAdvancedOpen(true);
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById("project-execution-trace")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [initialTab]);
 
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
 
@@ -529,13 +543,15 @@ export function ProjectOperationalDetail({
                         taskTitle={dispatchGateTaskTitle}
                       />
                       <AdvancedRouteDecisions routeDecisions={routeDecisions} />
-                      <ProjectExecutionTracePanel
-                        errorMessage={executionTraceErrorMessage}
-                        isError={executionTraceIsError}
-                        isLoading={executionTraceIsLoading}
-                        onRetry={onRetryExecutionTrace}
-                        trace={executionTrace}
-                      />
+                      <div className="scroll-mt-20" id="project-execution-trace">
+                        <ProjectExecutionTracePanel
+                          errorMessage={executionTraceErrorMessage}
+                          isError={executionTraceIsError}
+                          isLoading={executionTraceIsLoading}
+                          onRetry={onRetryExecutionTrace}
+                          trace={executionTrace}
+                        />
+                      </div>
                       <ProjectGovernanceTabs
                         acceptance={acceptance}
                         archivePreview={archivePreview}

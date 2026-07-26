@@ -67,6 +67,14 @@ type ProjectTaskGraphRun struct {
 	RuntimeNodeSummary   string
 	Status               string
 	ProviderType         string
+	StartedAt            *time.Time
+	// FinishedAt is COALESCE(finished_at, completed_at): finished_at covers
+	// failed/cancelled/timed-out terminals, completed_at the legacy success path.
+	FinishedAt *time.Time
+	// ErrorMessage is the run's terminal error, redacted through the shared
+	// prose redaction rules (see redactProse) before leaving the read model —
+	// raw stderr may embed credentials.
+	ErrorMessage string
 }
 
 type ProjectTaskGraphStageSummary struct {

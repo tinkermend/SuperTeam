@@ -227,6 +227,54 @@ describe("CriteriaPanelView", () => {
     await expect.element(screen.getByText("已交付并通过回归")).toBeInTheDocument();
   });
 
+  it("refers to satisfying tasks as 「任务名 (短id)」 when the task graph knows the name", async () => {
+    const taskId = "3f2679cb-1111-4222-8333-944444444444";
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({
+            criterion_id: "c1",
+            satisfied_by: [taskId],
+            task_summaries: [
+              { task_id: taskId, summary: "扫描完成", deliverables: [] },
+            ]
+}),
+        ]}
+        demandStatus="acceptance_pending"
+        onFinalAccept={vi.fn()}
+        taskNamesById={new Map([[taskId, "扫描项目目录并统计文件"]])}
+      />,
+    );
+
+    await expect
+      .element(screen.getByText("扫描项目目录并统计文件"))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("(3f2679cb)")).toBeInTheDocument();
+    // 命中名称时不再裸显整段 UUID
+    expect(screen.container.textContent).not.toContain(taskId);
+  });
+
+  it("falls back to the raw task id when the graph has no matching node", async () => {
+    const screen = await render(
+      <CriteriaPanelView
+        criteria={[
+          criterion({
+            criterion_id: "c1",
+            satisfied_by: ["task-unknown"],
+            task_summaries: [
+              { task_id: "task-unknown", summary: "历史任务", deliverables: [] },
+            ]
+}),
+        ]}
+        demandStatus="acceptance_pending"
+        onFinalAccept={vi.fn()}
+        taskNamesById={new Map()}
+      />,
+    );
+
+    await expect.element(screen.getByText("task-unknown")).toBeInTheDocument();
+  });
+
   it("surfaces declared deliverables as preview/download chips beside the task summary", async () => {
     const screen = await render(
       <CriteriaPanelView

@@ -6840,7 +6840,15 @@ SELECT
     vd.project_name,
     vd.title,
     vd.submitted_by_user_id,
-    COALESCE(NULLIF(vd.source_refs->>'submitted_by_display_name', ''), vd.submitted_by_user_id::text)::text AS submitted_by_display_name,
+    -- 提交人补名三级优先: source_refs 里的名(飞书等外部通道写入)最高, 其次 auth_users
+    -- 的 display_name/username(Web 提交的需求不带 source_refs 名), UUID 仅作最终兜底
+    -- (CLAUDE.md: 不得裸 UUID, 名称由服务端读路径补名)。
+    COALESCE(
+      NULLIF(vd.source_refs->>'submitted_by_display_name', ''),
+      NULLIF(submitter.display_name, ''),
+      NULLIF(submitter.username, ''),
+      vd.submitted_by_user_id::text
+    )::text AS submitted_by_display_name,
     CASE
       -- F5(§5.6): demand_status 优先。收敛闸挂起的需求(acceptance_pending)即便所有任务已
       -- completed 也必须显示为 waiting_human/待验收,不能被任务计数判成 completed 而从运行视图消失;
@@ -6927,6 +6935,9 @@ SELECT
     COALESCE(db.blocker_resource_id, tb.blocker_resource_id, '00000000-0000-0000-0000-000000000000'::uuid) AS current_blocker_resource_id,
     vd.project_archived_at
 FROM demand_read_model vd
+LEFT JOIN auth_users submitter
+  ON submitter.id = vd.submitted_by_user_id
+ AND submitter.deleted_at IS NULL
 LEFT JOIN task_counts tc
   ON tc.project_id = vd.project_id
  AND tc.demand_id = vd.demand_id
