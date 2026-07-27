@@ -44,6 +44,41 @@ export type IssuedServiceToken = {
   token: string;
 };
 
+export type FeishuChannelHealthStatus = "healthy" | "stale" | "missing";
+
+export type FeishuChannelAppStatus = {
+  app_id: string;
+  config_id?: string;
+  ws_status: "connected" | "reconnecting" | "stopped" | "unknown" | string;
+  last_ws_event_at?: string | null;
+};
+
+export type FeishuChannelHealth = {
+  service_name: string;
+  version?: string;
+  status: FeishuChannelHealthStatus;
+  last_heartbeat_at?: string | null;
+  last_outbox_poll_at?: string | null;
+  age_seconds?: number | null;
+  apps: FeishuChannelAppStatus[];
+  timeout_seconds: number;
+};
+
+export type FeishuOperationalOutboxItem = {
+  id: string;
+  kind: string;
+  status: string;
+  resource_type: string;
+  resource_id: string;
+  project_id?: string;
+  recipient_user_id: string;
+  recipient_open_id: string;
+  attempts: number;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export async function listFeishuAppConfigs(options: ApiClientOptions): Promise<FeishuAppConfig[]> {
   const payload = await getJson<{ configs: FeishuAppConfig[] }>(
     options,
@@ -132,4 +167,40 @@ export async function revokeServiceToken(options: ApiClientOptions, tokenId: str
   if (!response.ok) {
     await parseJson(response, "revoke service token");
   }
+}
+
+export async function getFeishuChannelHealth(options: ApiClientOptions): Promise<FeishuChannelHealth> {
+  return getJson<FeishuChannelHealth>(
+    options,
+    "/api/v1/admin/feishu/channel-health",
+    "feishu channel health",
+  );
+}
+
+export async function listFeishuOperationalOutbox(
+  options: ApiClientOptions,
+  params?: { status?: string; limit?: number; offset?: number },
+): Promise<{ items: FeishuOperationalOutboxItem[]; total: number }> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  if (params?.offset != null) query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return getJson<{ items: FeishuOperationalOutboxItem[]; total: number }>(
+    options,
+    `/api/v1/admin/feishu/outbox${suffix}`,
+    "feishu operational outbox",
+  );
+}
+
+export async function requeueFeishuOutbox(
+  options: ApiClientOptions,
+  outboxId: string,
+): Promise<FeishuOperationalOutboxItem> {
+  return postJson<FeishuOperationalOutboxItem>(
+    options,
+    `/api/v1/admin/feishu/outbox/${outboxId}/requeue`,
+    {},
+    "requeue feishu outbox",
+  );
 }

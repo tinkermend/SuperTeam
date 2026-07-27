@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -60,11 +62,15 @@ type Handler interface {
 // Gateway 维护一个飞书 app 的长连接与出站消息能力。
 type Gateway struct {
 	appConfigID string
+	appID       string
 	wsClient    *larkws.Client
 	apiClient   *lark.Client
 	dedupSet    *dedup.Set
 	handler     Handler
 	queue       chan func()
+	mu          sync.Mutex
+	wsStatus    string // connected | reconnecting | stopped | unknown
+	lastEventAt time.Time
 }
 
 const inboundQueueSize = 256
@@ -72,21 +78,26 @@ const inboundQueueSize = 256
 func New(appConfigID, appID, appSecret string, handler Handler) *Gateway {
 	g := &Gateway{
 		appConfigID: appConfigID,
+		appID:       appID,
 		apiClient:   lark.NewClient(appID, appSecret),
 		dedupSet:    dedup.New(8192),
 		handler:     handler,
 		queue:       make(chan func(), inboundQueueSize),
+		wsStatus:    "unknown",
 	}
 	eventHandler := dispatcher.NewEventDispatcher("", "").
 		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+			g.markEvent()
 			g.enqueueMessage(event)
 			return nil
 		}).
 		OnP2CardActionTrigger(func(ctx context.Context, event *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
+			g.markEvent()
 			return g.handleCardAction(ctx, event), nil
 		}).
 		// 用户打开 bot 私聊会推此事件;业务无需响应,注册空 handler 消掉 SDK 的 not-found-handler 错误日志。
 		OnP2ChatAccessEventBotP2pChatEnteredV1(func(ctx context.Context, event *larkim.P2ChatAccessEventBotP2pChatEnteredV1) error {
+			g.markEvent()
 			return nil
 		})
 	g.wsClient = larkws.NewClient(appID, appSecret,
@@ -108,7 +119,36 @@ func (g *Gateway) Start(ctx context.Context, workers int) error {
 			}
 		}()
 	}
-	return g.wsClient.Start(ctx)
+	g.setWSStatus("connected")
+	err := g.wsClient.Start(ctx)
+	if ctx.Err() != nil {
+		g.setWSStatus("stopped")
+	} else if err != nil {
+		g.setWSStatus("reconnecting")
+	}
+	return err
+}
+
+// StatusSnapshot 供心跳上报。
+func (g *Gateway) StatusSnapshot() (appID, configID, wsStatus string, lastEventAt time.Time) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.appID, g.appConfigID, g.wsStatus, g.lastEventAt
+}
+
+func (g *Gateway) setWSStatus(status string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.wsStatus = status
+}
+
+func (g *Gateway) markEvent() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.lastEventAt = time.Now().UTC()
+	if g.wsStatus == "unknown" || g.wsStatus == "reconnecting" {
+		g.wsStatus = "connected"
+	}
 }
 
 func (g *Gateway) enqueueMessage(event *larkim.P2MessageReceiveV1) {

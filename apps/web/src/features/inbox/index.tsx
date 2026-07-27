@@ -66,6 +66,7 @@ const INBOX_ITEM_TYPES = [
   "approval",
   "project_decision",
   "team_pending_delete",
+  "channel_alert",
 ] satisfies Array<NonNullable<InboxListFilters["item_type"]>>;
 
 export function InboxPage({ fetcher }: InboxPageProps = {}) {

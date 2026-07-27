@@ -299,6 +299,7 @@ func (s *Server) registerRoutes() {
 			r.Route("/connector", func(r chi.Router) {
 				r.Use(middleware.ServiceAuth(s.serviceAuthService, s.onBehalfOfResolver))
 				r.Get("/bootstrap", s.feishuConnectorHandler.Bootstrap)
+				r.Post("/heartbeat", s.feishuConnectorHandler.Heartbeat)
 				r.Get("/identity", s.feishuConnectorHandler.Identity)
 				r.Get("/outbox", s.feishuConnectorHandler.ListOutbox)
 				r.Post("/outbox/{outboxId}/ack", s.feishuConnectorHandler.AckOutbox)
@@ -325,6 +326,9 @@ func (s *Server) registerRoutes() {
 				r.Get("/admin/feishu/app-configs", s.feishuAdminHandler.ListAppConfigs)
 				r.Post("/admin/feishu/app-configs/verify", s.feishuAdminHandler.VerifyAppConfig)
 				r.Patch("/admin/feishu/app-configs/{configId}/status", s.feishuAdminHandler.SetAppConfigStatus)
+				r.Get("/admin/feishu/channel-health", s.feishuAdminHandler.ChannelHealth)
+				r.Get("/admin/feishu/outbox", s.feishuAdminHandler.ListOperationalOutbox)
+				r.Post("/admin/feishu/outbox/{outboxId}/requeue", s.feishuAdminHandler.RequeueOutbox)
 				r.Post("/admin/feishu/contact-sync", s.feishuAdminHandler.ContactSync)
 				r.Get("/admin/feishu/identities", s.feishuAdminHandler.ListIdentities)
 			})

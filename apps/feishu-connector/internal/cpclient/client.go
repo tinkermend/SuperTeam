@@ -157,6 +157,23 @@ func (c *Client) AckOutbox(ctx context.Context, id, result, feishuMessageID, err
 	return c.do(ctx, http.MethodPost, "/api/v1/connector/outbox/"+id+"/ack", nil, payload, nil)
 }
 
+type HeartbeatApp struct {
+	AppID         string     `json:"app_id"`
+	ConfigID      string     `json:"config_id,omitempty"`
+	WSStatus      string     `json:"ws_status"`
+	LastWSEventAt *time.Time `json:"last_ws_event_at,omitempty"`
+}
+
+type HeartbeatRequest struct {
+	Version          string         `json:"version"`
+	LastOutboxPollAt *time.Time     `json:"last_outbox_poll_at,omitempty"`
+	Apps             []HeartbeatApp `json:"apps"`
+}
+
+func (c *Client) Heartbeat(ctx context.Context, req HeartbeatRequest) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/connector/heartbeat", nil, req, nil)
+}
+
 type MyProject struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

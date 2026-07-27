@@ -1924,7 +1924,7 @@ SET status_snapshot = sqlc.arg('status_snapshot')::varchar,
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid
-  AND status_snapshot = 'pending'
+  AND status_snapshot IN ('pending', 'requested')
 RETURNING *;
 
 -- name: ListProjectDecisionRequests :many

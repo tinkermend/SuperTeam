@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cable, Copy, KeyRound, Plus, Power, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, Cable, Copy, KeyRound, Plus, Power, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
 import {
   Button,
   Callout,
@@ -29,15 +29,21 @@ import {
 } from "@/components/ui/dialog";
 import { ApiRequestError } from "@/lib/api/client";
 import {
+  getFeishuChannelHealth,
   issueServiceToken,
   listFeishuAppConfigs,
+  listFeishuOperationalOutbox,
   listServiceTokens,
+  requeueFeishuOutbox,
   revokeServiceToken,
   setFeishuAppConfigStatus,
   upsertFeishuAppConfig,
   type FeishuAppConfig,
   type FeishuAppConfigStatus,
+  type FeishuChannelHealth,
+  type FeishuChannelHealthStatus,
   type FeishuConnectivityReport,
+  type FeishuOperationalOutboxItem,
   type IssuedServiceToken,
   type ServiceToken,
 } from "@/lib/api/channel-admin";
@@ -82,6 +88,79 @@ function formatTime(value?: string | null): string {
   return date.toLocaleString("zh-CN", { hour12: false });
 }
 
+function healthTone(status: FeishuChannelHealthStatus): Tone {
+  switch (status) {
+    case "healthy":
+      return "ok";
+    case "stale":
+      return "warn";
+    case "missing":
+      return "danger";
+    default:
+      return "mute";
+  }
+}
+
+function healthLabel(status: FeishuChannelHealthStatus): string {
+  switch (status) {
+    case "healthy":
+      return "健康";
+    case "stale":
+      return "心跳超时";
+    case "missing":
+      return "未上报";
+    default:
+      return status;
+  }
+}
+
+function healthSummary(health?: FeishuChannelHealth): string {
+  if (!health) return "加载中…";
+  if (health.status === "missing") {
+    return "尚未收到 connector 心跳。确认进程已启动并完成 bootstrap。";
+  }
+  const age =
+    health.age_seconds != null ? `${health.age_seconds}s 前` : formatTime(health.last_heartbeat_at);
+  const ws = health.apps
+    .map((app) => `${app.app_id || "app"}:${app.ws_status}`)
+    .join(" · ");
+  const poll = health.last_outbox_poll_at
+    ? `轮询 ${formatTime(health.last_outbox_poll_at)}`
+    : "轮询尚未上报";
+  const version = health.version ? `v${health.version}` : "版本未知";
+  return [version, `心跳 ${age}`, poll, ws || "无 app 快照"].filter(Boolean).join(" · ");
+}
+
+function outboxStatusLabel(status: string): string {
+  switch (status) {
+    case "failed":
+      return "失败";
+    case "skipped_unbound":
+      return "未绑定跳过";
+    case "pending":
+      return "待投递";
+    default:
+      return status;
+  }
+}
+
+function outboxStatusTone(status: string): Tone {
+  switch (status) {
+    case "failed":
+      return "danger";
+    case "skipped_unbound":
+      return "warn";
+    case "pending":
+      return "info";
+    default:
+      return "mute";
+  }
+}
+
+function shortenId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError && error.detail) return error.detail;
   if (error instanceof Error && error.message) return error.message;
@@ -110,11 +189,23 @@ export function MessageChannelsPanel() {
     queryKey: ["channel-admin", "service-tokens"],
     queryFn: () => listServiceTokens(apiOptions),
   });
+  const healthQuery = useQuery({
+    queryKey: ["channel-admin", "feishu-channel-health"],
+    queryFn: () => getFeishuChannelHealth(apiOptions),
+    refetchInterval: 15_000,
+  });
+  const outboxQuery = useQuery({
+    queryKey: ["channel-admin", "feishu-outbox-ops"],
+    queryFn: () => listFeishuOperationalOutbox(apiOptions, { limit: 50 }),
+    refetchInterval: 20_000,
+  });
 
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["channel-admin", "feishu-configs"] }),
       queryClient.invalidateQueries({ queryKey: ["channel-admin", "service-tokens"] }),
+      queryClient.invalidateQueries({ queryKey: ["channel-admin", "feishu-channel-health"] }),
+      queryClient.invalidateQueries({ queryKey: ["channel-admin", "feishu-outbox-ops"] }),
     ]);
   };
 
@@ -167,14 +258,53 @@ export function MessageChannelsPanel() {
     onError: (error) => setActionError(errorMessage(error, "吊销服务凭据失败")),
   });
 
+  const requeueMutation = useMutation({
+    mutationFn: (outboxId: string) => requeueFeishuOutbox(apiOptions, outboxId),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ["channel-admin", "feishu-outbox-ops"] });
+    },
+    onError: (error) => setActionError(errorMessage(error, "重推 outbox 失败")),
+  });
+
   const configs = configsQuery.data ?? [];
   const tokens = tokensQuery.data ?? [];
+  const health = healthQuery.data;
+  const outboxItems = outboxQuery.data?.items ?? [];
+  const outboxTotal = outboxQuery.data?.total ?? 0;
   const connectorTokens = tokens.filter((token) => token.service_name === FEISHU_CONNECTOR_SERVICE);
   const isInitialLoading =
     (configsQuery.isPending && configs.length === 0) ||
     (tokensQuery.isPending && tokens.length === 0);
   const isBlockingError =
     (configsQuery.isError && configs.length === 0) || (tokensQuery.isError && tokens.length === 0);
+
+  const healthForConfig = (config: FeishuAppConfig): { tone: Tone; label: string; detail: string } => {
+    if (config.status === "disabled") {
+      return { tone: "mute", label: "已停用", detail: "不再下发" };
+    }
+    if (config.status === "unverified") {
+      return { tone: "warn", label: "未验证", detail: "待补权限/范围后重存" };
+    }
+    if (!health) {
+      return { tone: "mute", label: "检测中", detail: "读取 connector 心跳…" };
+    }
+    const app = health.apps.find((item) => item.app_id === config.app_id || item.config_id === config.id);
+    if (health.status === "healthy") {
+      const ws = app?.ws_status ?? "unknown";
+      const wsLabel =
+        ws === "connected" ? "长连接正常" : ws === "reconnecting" ? "长连接重连中" : `长连接 ${ws}`;
+      return { tone: "ok", label: "健康", detail: wsLabel };
+    }
+    if (health.status === "stale") {
+      return {
+        tone: "warn",
+        label: "心跳超时",
+        detail: health.age_seconds != null ? `已 ${health.age_seconds}s 未上报` : "connector 可能宕机",
+      };
+    }
+    return { tone: "danger", label: "未上报", detail: "尚未收到 connector 心跳" };
+  };
 
   const openCreate = () => {
     setAppId(configs[0]?.app_id ?? "");
@@ -206,6 +336,38 @@ export function MessageChannelsPanel() {
   return (
     <div className="flex min-w-0 flex-col gap-6">
       {actionError ? <Callout tone="danger" title="操作失败" description={actionError} /> : null}
+
+      <SoftCard className="min-w-0 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <Activity className="size-4 text-ink-2" />
+              <h2 className="text-base font-bold text-ink">Connector 健康</h2>
+              {health ? (
+                <StatusPill tone={healthTone(health.status)}>{healthLabel(health.status)}</StatusPill>
+              ) : healthQuery.isError ? (
+                <StatusPill tone="danger">读取失败</StatusPill>
+              ) : (
+                <StatusPill tone="mute">检测中</StatusPill>
+              )}
+            </div>
+            <p className="text-sm text-ink-2">{healthSummary(health)}</p>
+            {healthQuery.isError ? (
+              <p className="mt-1 text-sm text-danger">无法读取通道健康，请确认管理员权限与控制平面状态。</p>
+            ) : null}
+          </div>
+          <Button
+            disabled={healthQuery.isFetching}
+            onClick={() => void healthQuery.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw data-icon="inline-start" />
+            刷新
+          </Button>
+        </div>
+      </SoftCard>
 
       <WorkSurface className="min-w-0">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -258,12 +420,16 @@ export function MessageChannelsPanel() {
                   <Td>
                     <StatusPill tone={statusTone(config.status)}>{statusLabel(config.status)}</StatusPill>
                   </Td>
-                  <Td className="text-sm text-ink-2">
-                    {config.status === "active"
-                      ? "连通自检已通过"
-                      : config.status === "unverified"
-                        ? "待补权限/范围后重存"
-                        : "已停用，不再下发"}
+                  <Td>
+                    {(() => {
+                      const row = healthForConfig(config);
+                      return (
+                        <div className="min-w-0">
+                          <StatusPill tone={row.tone}>{row.label}</StatusPill>
+                          <div className="mt-1 text-xs text-ink-2">{row.detail}</div>
+                        </div>
+                      );
+                    })()}
                   </Td>
                   <Td>
                     <div className="flex flex-wrap gap-2">
@@ -295,6 +461,96 @@ export function MessageChannelsPanel() {
                         </Button>
                       )}
                     </div>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+      </WorkSurface>
+
+      <WorkSurface className="min-w-0">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-ink">投递失败 / 未绑定</h2>
+            <p className="text-sm text-ink-2">
+              outbox 终态运营面。失败行可重推（重置为 pending，由 connector 再消费）；未绑定需先完成用户飞书绑定。
+              {outboxTotal > 0 ? ` 当前 ${outboxTotal} 条。` : ""}
+            </p>
+          </div>
+          <Button
+            disabled={outboxQuery.isFetching}
+            onClick={() => void outboxQuery.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw data-icon="inline-start" />
+            刷新
+          </Button>
+        </div>
+
+        {outboxQuery.isPending && outboxItems.length === 0 ? (
+          <LoadingState label="加载 outbox…" />
+        ) : outboxQuery.isError && outboxItems.length === 0 ? (
+          <ErrorState title="加载失败" description="无法加载 outbox 运营列表" />
+        ) : outboxItems.length === 0 ? (
+          <EmptyState
+            icon={<RotateCcw />}
+            title="没有待处理投递"
+            description="失败与未绑定行会显示在这里，可在修复凭据或绑定后重推。"
+          />
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <Th className="w-28">状态</Th>
+                <Th className="w-32">类型</Th>
+                <Th>资源</Th>
+                <Th className="w-20">次数</Th>
+                <Th>最近错误</Th>
+                <Th className="w-40">更新时间</Th>
+                <Th className="w-28" aria-label="操作" />
+              </tr>
+            </thead>
+            <tbody>
+              {outboxItems.map((item: FeishuOperationalOutboxItem) => (
+                <Tr key={item.id}>
+                  <Td>
+                    <StatusPill tone={outboxStatusTone(item.status)}>
+                      {outboxStatusLabel(item.status)}
+                    </StatusPill>
+                  </Td>
+                  <Td className="font-mono text-xs">{item.kind}</Td>
+                  <Td className="min-w-0">
+                    <div className="truncate font-mono text-xs text-ink">
+                      {item.resource_type}/{shortenId(item.resource_id)}
+                    </div>
+                    <div className="truncate text-xs text-ink-2">
+                      收件人 {shortenId(item.recipient_user_id)}
+                      {item.project_id ? ` · 项目 ${shortenId(item.project_id)}` : ""}
+                    </div>
+                  </Td>
+                  <Td className="tabular-nums text-sm">{item.attempts}</Td>
+                  <Td className="max-w-[18rem] truncate text-xs text-ink-2" title={item.last_error ?? undefined}>
+                    {item.last_error || "—"}
+                  </Td>
+                  <Td className="tabular-nums text-sm text-ink-2">{formatTime(item.updated_at)}</Td>
+                  <Td>
+                    {item.status === "failed" ? (
+                      <Button
+                        disabled={requeueMutation.isPending}
+                        onClick={() => requeueMutation.mutate(item.id)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <RotateCcw data-icon="inline-start" />
+                        重推
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-ink-2">需先绑定</span>
+                    )}
                   </Td>
                 </Tr>
               ))}

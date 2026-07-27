@@ -37,6 +37,7 @@ const itemTypeLabel: Record<string, string> = {
   approval: "审批",
   project_decision: "项目决策",
   team_pending_delete: "团队待删",
+  channel_alert: "通道告警",
   // 运行恢复链已随「运行必须归属项目」spec 退役；键保留给历史 resolved 事项渲染。
   digital_employee_run_recovery: "运行恢复"
 };
@@ -45,6 +46,7 @@ const sourceTypeLabel: Record<string, string> = {
   approval_request: "审批请求",
   project_decision_request: "项目决策请求",
   team_pending_delete: "团队待删",
+  feishu_channel: "飞书通道",
   digital_employee_run: "数字员工运行"
 };
 

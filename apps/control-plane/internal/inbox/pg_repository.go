@@ -174,6 +174,14 @@ func (r *PgRepository) UserDisplayName(ctx context.Context, userID uuid.UUID) (s
 	return user.Username, nil
 }
 
+func (r *PgRepository) ResolveOpenItemsBySource(ctx context.Context, tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) error {
+	return r.q.ResolveOpenInboxItemsBySource(ctx, queries.ResolveOpenInboxItemsBySourceParams{
+		TenantID:   tenantID,
+		SourceType: string(sourceType),
+		SourceID:   sourceID,
+	})
+}
+
 func upsertParams(req UpsertItemRequest) (queries.UpsertInboxItemParams, error) {
 	actionSchema, contextPayload, deepLink, err := marshalItemJSON(req)
 	if err != nil {

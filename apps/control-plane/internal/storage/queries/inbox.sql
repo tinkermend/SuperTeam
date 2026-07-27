@@ -295,6 +295,17 @@ WHERE ii.tenant_id = sqlc.arg('tenant_id')::uuid
   AND ii.source_project_id = sqlc.arg('project_id')::uuid
 RETURNING ii.id;
 
+-- name: ResolveOpenInboxItemsBySource :exec
+-- 按来源关闭 open 收件箱(通道恢复告警、同类幂等告警回收)。
+UPDATE inbox_items
+SET status = 'resolved',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND source_type = sqlc.arg('source_type')::varchar
+  AND source_id = sqlc.arg('source_id')::uuid
+  AND status = 'open';
+
 -- name: ListInboxProjectNames :many
 -- 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。
 SELECT id, name FROM projects

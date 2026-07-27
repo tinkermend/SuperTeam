@@ -1251,6 +1251,23 @@ func (r *memoryRepository) CountHighRiskOpenItems(_ context.Context, tenantID uu
 	return count, nil
 }
 
+func (r *memoryRepository) ResolveOpenItemsBySource(_ context.Context, tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now().UTC()
+	for id, item := range r.itemsByID {
+		if item.TenantID != tenantID || item.SourceType != sourceType || item.SourceID != sourceID || item.Status != StatusOpen {
+			continue
+		}
+		item.Status = StatusResolved
+		item.ResolvedAt = &now
+		item.UpdatedAt = now
+		r.itemsByID[id] = item
+	}
+	return nil
+}
+
+
 func (r *memoryRepository) resolveItem(t *testing.T, tenantID, itemID uuid.UUID, action string) {
 	t.Helper()
 

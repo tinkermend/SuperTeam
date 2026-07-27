@@ -200,6 +200,13 @@ func (s *Service) enrichSourceNames(ctx context.Context, tenantID uuid.UUID, ite
 	return nil
 }
 
+func (s *Service) ResolveOpenItemsBySource(ctx context.Context, tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) error {
+	if tenantID == uuid.Nil || sourceID == uuid.Nil || !validSourceType(sourceType) {
+		return ErrInvalidItem
+	}
+	return s.repository.ResolveOpenItemsBySource(ctx, tenantID, sourceType, sourceID)
+}
+
 func (s *Service) GetBadge(ctx context.Context, tenantID, actorUserID uuid.UUID, includeTeam bool) (Badge, error) {
 	if tenantID == uuid.Nil || actorUserID == uuid.Nil {
 		return Badge{}, ErrInvalidItem
@@ -363,6 +370,10 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 		if req.SourceType != SourceTypeTeamPendingDelete {
 			return UpsertItemRequest{}, ErrInvalidItem
 		}
+	case ItemTypeChannelAlert:
+		if req.SourceType != SourceTypeChannelAlert {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
 	}
 	if req.SourceApprovalRequestID != nil && *req.SourceApprovalRequestID == uuid.Nil {
 		return UpsertItemRequest{}, ErrInvalidItem
@@ -403,7 +414,7 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	// handler for kinds like demand_acceptance and silently overrode the
 	// deliberate action contract — the F1 dead-button deadlock. Action legality
 	// for project decisions is owned by (kind → handler), not by itemType.
-	if len(req.Actions) == 0 && req.ItemType != ItemTypeProjectDecision {
+	if len(req.Actions) == 0 && req.ItemType != ItemTypeProjectDecision && req.ItemType != ItemTypeChannelAlert {
 		req.Actions = DefaultActions(req.ItemType)
 	}
 	actions, err := normalizeActions(req.Actions)
@@ -436,6 +447,10 @@ func normalizeActions(actions []Action) ([]Action, error) {
 }
 
 func DefaultActions(itemType ItemType) []Action {
+	if itemType == ItemTypeChannelAlert {
+		// 通道告警由看门狗自动 resolve,无人类裁决动词。
+		return nil
+	}
 	actions := []Action{
 		{Key: "approved", Label: "同意", Tone: "positive"},
 		{Key: "rejected", Label: "驳回", Tone: "destructive", RequiresComment: true},
@@ -497,7 +512,7 @@ func validScope(scope string) bool {
 
 func validItemType(itemType ItemType) bool {
 	switch itemType {
-	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete:
+	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete, ItemTypeChannelAlert:
 		return true
 	default:
 		return false
@@ -506,7 +521,7 @@ func validItemType(itemType ItemType) bool {
 
 func validSourceType(sourceType SourceType) bool {
 	switch sourceType {
-	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete:
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete, SourceTypeChannelAlert:
 		return true
 	default:
 		return false

@@ -2155,6 +2155,7 @@ paths:
               - approval
               - project_decision
               - team_pending_delete
+              - channel_alert
         - name: risk_level
           in: query
           required: false
@@ -2743,6 +2744,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeishuIdentityListResponse"
+  /api/v1/admin/feishu/channel-health:
+    get:
+      operationId: getFeishuChannelHealth
+      summary: Connector heartbeat health summary for the message-channel console
+      responses:
+        "200":
+          description: Channel health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuChannelHealth"
+  /api/v1/admin/feishu/outbox:
+    get:
+      operationId: listFeishuOperationalOutbox
+      summary: List failed/skipped_unbound outbox rows for operators
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Comma-separated statuses; default failed,skipped_unbound
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Operational outbox page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuOperationalOutboxListResponse"
+  /api/v1/admin/feishu/outbox/{outboxId}/requeue:
+    post:
+      operationId: requeueFeishuOutbox
+      summary: Reset a failed outbox row to pending for connector redelivery
+      parameters:
+        - name: outboxId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Requeued item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeishuOperationalOutboxItem"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/connector/heartbeat:
+    post:
+      operationId: connectorHeartbeat
+      summary: Feishu connector process heartbeat (ServiceAuth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorHeartbeatRequest"
+      responses:
+        "200":
+          description: Heartbeat accepted
+        "401":
+          $ref: "#/components/responses/Error"
   /api/v1/auth/feishu/oauth-start:
     get:
       operationId: feishuOAuthStart
@@ -5632,6 +5712,144 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeishuAppConfig"
+    FeishuChannelAppStatus:
+      type: object
+      required:
+        - app_id
+        - ws_status
+      properties:
+        app_id:
+          type: string
+        config_id:
+          type: string
+        ws_status:
+          type: string
+          enum: [connected, reconnecting, stopped, unknown]
+        last_ws_event_at:
+          type: string
+          format: date-time
+          nullable: true
+    FeishuChannelHealth:
+      type: object
+      required:
+        - service_name
+        - status
+        - apps
+        - timeout_seconds
+      properties:
+        service_name:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+          enum: [healthy, stale, missing]
+        last_heartbeat_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_outbox_poll_at:
+          type: string
+          format: date-time
+          nullable: true
+        age_seconds:
+          type: integer
+          format: int64
+          nullable: true
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeishuChannelAppStatus"
+        timeout_seconds:
+          type: integer
+          format: int64
+    FeishuOperationalOutboxItem:
+      type: object
+      required:
+        - id
+        - kind
+        - status
+        - resource_type
+        - resource_id
+        - recipient_user_id
+        - recipient_open_id
+        - attempts
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        status:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        recipient_user_id:
+          type: string
+          format: uuid
+        recipient_open_id:
+          type: string
+        attempts:
+          type: integer
+        last_error:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    FeishuOperationalOutboxListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeishuOperationalOutboxItem"
+        total:
+          type: integer
+          format: int64
+    ConnectorHeartbeatApp:
+      type: object
+      required:
+        - app_id
+        - ws_status
+      properties:
+        app_id:
+          type: string
+        config_id:
+          type: string
+        ws_status:
+          type: string
+        last_ws_event_at:
+          type: string
+          format: date-time
+          nullable: true
+    ConnectorHeartbeatRequest:
+      type: object
+      properties:
+        version:
+          type: string
+        last_outbox_poll_at:
+          type: string
+          format: date-time
+          nullable: true
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorHeartbeatApp"
     PromptTemplateVariable:
       type: object
       required:
@@ -5876,12 +6094,14 @@ components:
                 - approval
                 - project_decision
                 - team_pending_delete
+                - channel_alert
             source_type:
               type: string
               enum:
                 - approval_request
                 - project_decision_request
                 - team_pending_delete
+                - feishu_channel
             source_id:
               type: string
               format: uuid

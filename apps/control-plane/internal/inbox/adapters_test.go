@@ -972,7 +972,7 @@ func (r *projectActionRepository) ResolveDecisionRequest(_ context.Context, req 
 // The old verb enumeration defaulted unknown verbs to open, which left §5.5's
 // retry_planning/close_demand cards open forever (zombie card + 500 on action).
 func TestStatusFromDecisionSnapshotResolutionVerbs(t *testing.T) {
-	open := []string{"pending", "", "  "}
+	open := []string{"pending", "requested", "REQUESTED", "", "  "}
 	for _, status := range open {
 		if got := statusFromDecisionSnapshot(status); got != StatusOpen {
 			t.Fatalf("status %q: expected open, got %s", status, got)

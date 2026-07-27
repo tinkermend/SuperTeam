@@ -191,6 +191,82 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status = 'sent'
   AND kind = 'decision_card';
 
+-- name: ListFeishuOutboxByStatuses :many
+SELECT * FROM feishu_outbox
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = ANY(sqlc.arg('statuses')::varchar[])
+ORDER BY updated_at DESC
+LIMIT sqlc.arg('limit')
+OFFSET sqlc.arg('offset');
+
+-- name: CountFeishuOutboxByStatuses :one
+SELECT count(*)::bigint
+FROM feishu_outbox
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = ANY(sqlc.arg('statuses')::varchar[]);
+
+-- name: RequeueFeishuOutbox :one
+-- 运营重推:failed 终态回到 pending 并清 attempts/last_error。
+UPDATE feishu_outbox
+SET status = 'pending',
+    attempts = 0,
+    last_error = NULL,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'failed'
+RETURNING *;
+
+-- name: UpsertFeishuConnectorHeartbeat :one
+INSERT INTO feishu_connector_heartbeats (
+    tenant_id,
+    service_name,
+    version,
+    last_heartbeat_at,
+    last_outbox_poll_at,
+    apps_snapshot
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('service_name')::varchar,
+    sqlc.arg('version')::varchar,
+    sqlc.arg('last_heartbeat_at')::timestamptz,
+    sqlc.narg('last_outbox_poll_at')::timestamptz,
+    COALESCE(sqlc.narg('apps_snapshot')::jsonb, '[]'::jsonb)
+)
+ON CONFLICT (tenant_id, service_name) DO UPDATE SET
+    version = EXCLUDED.version,
+    last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+    last_outbox_poll_at = EXCLUDED.last_outbox_poll_at,
+    apps_snapshot = EXCLUDED.apps_snapshot,
+    updated_at = NOW()
+RETURNING *;
+
+-- name: GetFeishuConnectorHeartbeat :one
+SELECT * FROM feishu_connector_heartbeats
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND service_name = sqlc.arg('service_name')::varchar;
+
+-- name: ListFeishuConnectorHeartbeats :many
+SELECT * FROM feishu_connector_heartbeats
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+ORDER BY service_name ASC;
+
+-- name: ListStaleFeishuConnectorHeartbeats :many
+SELECT * FROM feishu_connector_heartbeats
+WHERE last_heartbeat_at < sqlc.arg('stale_before')::timestamptz
+ORDER BY last_heartbeat_at ASC;
+
+-- name: ListActiveTenantOwnersAndAdmins :many
+-- 断连告警收件人:租户级 owner/admin(team_id IS NULL)。
+SELECT principal_id AS user_id
+FROM tenant_members
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id IS NULL
+  AND principal_type = 'user'
+  AND status = 'active'
+  AND disabled_at IS NULL
+  AND role IN ('owner', 'admin');
+
 -- name: ListProjectsForHumanMember :many
 SELECT p.id, p.name
 FROM projects p

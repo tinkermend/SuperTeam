@@ -375,10 +375,14 @@ func statusFromDecisionSnapshot(status string) Status {
 	// actions then 500 ("inbox projection not applied"). Invert the mapping:
 	// only pending means open, cancelled stays cancelled, and any other
 	// non-empty snapshot is by construction a resolution.
-	switch approval.ApprovalStatus(strings.TrimSpace(status)) {
-	case "", approval.ApprovalStatusPending:
+	// Open synonyms must stay aligned with project isPendingDecisionStatus and
+	// SQL pending filters (pending + requested). OpenAPI documents requested as
+	// a read-side pending synonym; treating it as resolved would hide still-open
+	// cards after the inverted-mapping fix for resolution verbs.
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", string(approval.ApprovalStatusPending), "requested":
 		return StatusOpen
-	case approval.ApprovalStatusCancelled:
+	case string(approval.ApprovalStatusCancelled):
 		return StatusCancelled
 	default:
 		return StatusResolved

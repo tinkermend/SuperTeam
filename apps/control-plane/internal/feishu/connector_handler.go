@@ -61,6 +61,53 @@ func (h *ConnectorHTTPHandler) Bootstrap(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"configs": out})
 }
 
+type connectorHeartbeatRequest struct {
+	Version          string               `json:"version"`
+	LastOutboxPollAt *time.Time           `json:"last_outbox_poll_at,omitempty"`
+	Apps             []ConnectorAppStatus `json:"apps"`
+}
+
+// Heartbeat connector 周期上报连接/轮询健康(ServiceAuth)。
+func (h *ConnectorHTTPHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == uuid.Nil {
+		http.Error(w, "service tenant not found in context", http.StatusUnauthorized)
+		return
+	}
+	var req connectorHeartbeatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	serviceName := strings.TrimSpace(r.Header.Get("X-Service-Name"))
+	if serviceName == "" {
+		serviceName = DefaultConnectorServiceName
+	}
+	hb, err := h.service.RecordConnectorHeartbeat(r.Context(), UpsertConnectorHeartbeatInput{
+		TenantID:         tenantID,
+		ServiceName:      serviceName,
+		Version:          strings.TrimSpace(req.Version),
+		LastOutboxPollAt: req.LastOutboxPollAt,
+		Apps:             req.Apps,
+	})
+	if err != nil {
+		writeFeishuError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"service_name":       hb.ServiceName,
+		"last_heartbeat_at":  hb.LastHeartbeatAt.UTC().Format(time.RFC3339),
+		"last_outbox_poll_at": formatTimePtr(hb.LastOutboxPollAt),
+	})
+}
+
+func formatTimePtr(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 type identityResponse struct {
 	AuthUserID string `json:"auth_user_id"`
 	OpenID     string `json:"open_id"`

@@ -21,4 +21,6 @@ type Repository interface {
 	ProjectTaskTitles(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
 	// 指定处理人补名:仅用于 403 提示文案;用户不存在时返回空串(不报错)。
 	UserDisplayName(ctx context.Context, userID uuid.UUID) (string, error)
+	// ResolveOpenItemsBySource 按来源关闭 open 条目(通道恢复告警回收)。
+	ResolveOpenItemsBySource(ctx context.Context, tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) error
 }

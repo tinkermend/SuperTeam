@@ -1080,6 +1080,7 @@ const itemTypeOptions = [
   { label: "审批", value: "approval" },
   { label: "项目决策", value: "project_decision" },
   { label: "团队待删", value: "team_pending_delete" },
+  { label: "通道告警", value: "channel_alert" },
 ] satisfies Array<SelectOption<InboxItemType | "all">>;
 
 const riskOptions = [

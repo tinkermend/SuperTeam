@@ -8205,7 +8205,7 @@ SET status_snapshot = $1::varchar,
 WHERE tenant_id = $3::uuid
   AND project_id = $4::uuid
   AND id = $5::uuid
-  AND status_snapshot = 'pending'
+  AND status_snapshot IN ('pending', 'requested')
 RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id
 `
 

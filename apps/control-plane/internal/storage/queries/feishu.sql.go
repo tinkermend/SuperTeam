@@ -12,6 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CountFeishuOutboxByStatuses = `-- name: CountFeishuOutboxByStatuses :one
+SELECT count(*)::bigint
+FROM feishu_outbox
+WHERE tenant_id = $1::uuid
+  AND status = ANY($2::varchar[])
+`
+
+type CountFeishuOutboxByStatusesParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	Statuses []string  `json:"statuses"`
+}
+
+func (q *Queries) CountFeishuOutboxByStatuses(ctx context.Context, arg CountFeishuOutboxByStatusesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountFeishuOutboxByStatuses, arg.TenantID, arg.Statuses)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const CreateFeishuIdentity = `-- name: CreateFeishuIdentity :one
 INSERT INTO user_feishu_identities (
     tenant_id,
@@ -211,6 +230,33 @@ func (q *Queries) GetFeishuAppConfig(ctx context.Context, arg GetFeishuAppConfig
 	return i, err
 }
 
+const GetFeishuConnectorHeartbeat = `-- name: GetFeishuConnectorHeartbeat :one
+SELECT tenant_id, service_name, version, last_heartbeat_at, last_outbox_poll_at, apps_snapshot, created_at, updated_at FROM feishu_connector_heartbeats
+WHERE tenant_id = $1::uuid
+  AND service_name = $2::varchar
+`
+
+type GetFeishuConnectorHeartbeatParams struct {
+	TenantID    uuid.UUID `json:"tenant_id"`
+	ServiceName string    `json:"service_name"`
+}
+
+func (q *Queries) GetFeishuConnectorHeartbeat(ctx context.Context, arg GetFeishuConnectorHeartbeatParams) (FeishuConnectorHeartbeat, error) {
+	row := q.db.QueryRow(ctx, GetFeishuConnectorHeartbeat, arg.TenantID, arg.ServiceName)
+	var i FeishuConnectorHeartbeat
+	err := row.Scan(
+		&i.TenantID,
+		&i.ServiceName,
+		&i.Version,
+		&i.LastHeartbeatAt,
+		&i.LastOutboxPollAt,
+		&i.AppsSnapshot,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const GetFeishuIdentityByOpenID = `-- name: GetFeishuIdentityByOpenID :one
 SELECT id, tenant_id, auth_user_id, feishu_app_config_id, open_id, union_id, bound_via, created_at FROM user_feishu_identities
 WHERE feishu_app_config_id = $1::uuid
@@ -336,6 +382,38 @@ func (q *Queries) ListActiveServiceTokensByName(ctx context.Context, serviceName
 	return items, nil
 }
 
+const ListActiveTenantOwnersAndAdmins = `-- name: ListActiveTenantOwnersAndAdmins :many
+SELECT principal_id AS user_id
+FROM tenant_members
+WHERE tenant_id = $1::uuid
+  AND team_id IS NULL
+  AND principal_type = 'user'
+  AND status = 'active'
+  AND disabled_at IS NULL
+  AND role IN ('owner', 'admin')
+`
+
+// 断连告警收件人:租户级 owner/admin(team_id IS NULL)。
+func (q *Queries) ListActiveTenantOwnersAndAdmins(ctx context.Context, tenantID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, ListActiveTenantOwnersAndAdmins, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListFeishuAppConfigs = `-- name: ListFeishuAppConfigs :many
 SELECT id, tenant_id, app_id, app_secret_sealed, status, created_at, updated_at FROM feishu_app_configs
 WHERE tenant_id = $1::uuid
@@ -358,6 +436,41 @@ func (q *Queries) ListFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) 
 			&i.AppID,
 			&i.AppSecretSealed,
 			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListFeishuConnectorHeartbeats = `-- name: ListFeishuConnectorHeartbeats :many
+SELECT tenant_id, service_name, version, last_heartbeat_at, last_outbox_poll_at, apps_snapshot, created_at, updated_at FROM feishu_connector_heartbeats
+WHERE tenant_id = $1::uuid
+ORDER BY service_name ASC
+`
+
+func (q *Queries) ListFeishuConnectorHeartbeats(ctx context.Context, tenantID uuid.UUID) ([]FeishuConnectorHeartbeat, error) {
+	rows, err := q.db.Query(ctx, ListFeishuConnectorHeartbeats, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeishuConnectorHeartbeat{}
+	for rows.Next() {
+		var i FeishuConnectorHeartbeat
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ServiceName,
+			&i.Version,
+			&i.LastHeartbeatAt,
+			&i.LastOutboxPollAt,
+			&i.AppsSnapshot,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -435,6 +548,63 @@ func (q *Queries) ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeish
 			&i.UnionID,
 			&i.BoundVia,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListFeishuOutboxByStatuses = `-- name: ListFeishuOutboxByStatuses :many
+SELECT id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at FROM feishu_outbox
+WHERE tenant_id = $1::uuid
+  AND status = ANY($2::varchar[])
+ORDER BY updated_at DESC
+LIMIT $4
+OFFSET $3
+`
+
+type ListFeishuOutboxByStatusesParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	Statuses []string  `json:"statuses"`
+	Offset   int32     `json:"offset"`
+	Limit    int32     `json:"limit"`
+}
+
+func (q *Queries) ListFeishuOutboxByStatuses(ctx context.Context, arg ListFeishuOutboxByStatusesParams) ([]FeishuOutbox, error) {
+	rows, err := q.db.Query(ctx, ListFeishuOutboxByStatuses,
+		arg.TenantID,
+		arg.Statuses,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeishuOutbox{}
+	for rows.Next() {
+		var i FeishuOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.Kind,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.RecipientUserID,
+			&i.RecipientOpenID,
+			&i.Payload,
+			&i.Status,
+			&i.Attempts,
+			&i.LastError,
+			&i.FeishuMessageID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -633,6 +803,41 @@ func (q *Queries) ListServiceTokensByTenant(ctx context.Context, tenantID uuid.U
 	return items, nil
 }
 
+const ListStaleFeishuConnectorHeartbeats = `-- name: ListStaleFeishuConnectorHeartbeats :many
+SELECT tenant_id, service_name, version, last_heartbeat_at, last_outbox_poll_at, apps_snapshot, created_at, updated_at FROM feishu_connector_heartbeats
+WHERE last_heartbeat_at < $1::timestamptz
+ORDER BY last_heartbeat_at ASC
+`
+
+func (q *Queries) ListStaleFeishuConnectorHeartbeats(ctx context.Context, staleBefore pgtype.Timestamptz) ([]FeishuConnectorHeartbeat, error) {
+	rows, err := q.db.Query(ctx, ListStaleFeishuConnectorHeartbeats, staleBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeishuConnectorHeartbeat{}
+	for rows.Next() {
+		var i FeishuConnectorHeartbeat
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ServiceName,
+			&i.Version,
+			&i.LastHeartbeatAt,
+			&i.LastOutboxPollAt,
+			&i.AppsSnapshot,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const MarkFeishuOutboxFailed = `-- name: MarkFeishuOutboxFailed :one
 UPDATE feishu_outbox
 SET attempts = attempts + 1,
@@ -701,6 +906,47 @@ type MarkFeishuOutboxSentParams struct {
 
 func (q *Queries) MarkFeishuOutboxSent(ctx context.Context, arg MarkFeishuOutboxSentParams) (FeishuOutbox, error) {
 	row := q.db.QueryRow(ctx, MarkFeishuOutboxSent, arg.FeishuMessageID, arg.TenantID, arg.ID)
+	var i FeishuOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.Kind,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.RecipientUserID,
+		&i.RecipientOpenID,
+		&i.Payload,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.FeishuMessageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const RequeueFeishuOutbox = `-- name: RequeueFeishuOutbox :one
+UPDATE feishu_outbox
+SET status = 'pending',
+    attempts = 0,
+    last_error = NULL,
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+  AND status = 'failed'
+RETURNING id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at
+`
+
+type RequeueFeishuOutboxParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+// 运营重推:failed 终态回到 pending 并清 attempts/last_error。
+func (q *Queries) RequeueFeishuOutbox(ctx context.Context, arg RequeueFeishuOutboxParams) (FeishuOutbox, error) {
+	row := q.db.QueryRow(ctx, RequeueFeishuOutbox, arg.TenantID, arg.ID)
 	var i FeishuOutbox
 	err := row.Scan(
 		&i.ID,
@@ -853,6 +1099,63 @@ func (q *Queries) UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuApp
 		&i.AppID,
 		&i.AppSecretSealed,
 		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpsertFeishuConnectorHeartbeat = `-- name: UpsertFeishuConnectorHeartbeat :one
+INSERT INTO feishu_connector_heartbeats (
+    tenant_id,
+    service_name,
+    version,
+    last_heartbeat_at,
+    last_outbox_poll_at,
+    apps_snapshot
+) VALUES (
+    $1::uuid,
+    $2::varchar,
+    $3::varchar,
+    $4::timestamptz,
+    $5::timestamptz,
+    COALESCE($6::jsonb, '[]'::jsonb)
+)
+ON CONFLICT (tenant_id, service_name) DO UPDATE SET
+    version = EXCLUDED.version,
+    last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+    last_outbox_poll_at = EXCLUDED.last_outbox_poll_at,
+    apps_snapshot = EXCLUDED.apps_snapshot,
+    updated_at = NOW()
+RETURNING tenant_id, service_name, version, last_heartbeat_at, last_outbox_poll_at, apps_snapshot, created_at, updated_at
+`
+
+type UpsertFeishuConnectorHeartbeatParams struct {
+	TenantID         uuid.UUID          `json:"tenant_id"`
+	ServiceName      string             `json:"service_name"`
+	Version          string             `json:"version"`
+	LastHeartbeatAt  pgtype.Timestamptz `json:"last_heartbeat_at"`
+	LastOutboxPollAt pgtype.Timestamptz `json:"last_outbox_poll_at"`
+	AppsSnapshot     []byte             `json:"apps_snapshot"`
+}
+
+func (q *Queries) UpsertFeishuConnectorHeartbeat(ctx context.Context, arg UpsertFeishuConnectorHeartbeatParams) (FeishuConnectorHeartbeat, error) {
+	row := q.db.QueryRow(ctx, UpsertFeishuConnectorHeartbeat,
+		arg.TenantID,
+		arg.ServiceName,
+		arg.Version,
+		arg.LastHeartbeatAt,
+		arg.LastOutboxPollAt,
+		arg.AppsSnapshot,
+	)
+	var i FeishuConnectorHeartbeat
+	err := row.Scan(
+		&i.TenantID,
+		&i.ServiceName,
+		&i.Version,
+		&i.LastHeartbeatAt,
+		&i.LastOutboxPollAt,
+		&i.AppsSnapshot,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

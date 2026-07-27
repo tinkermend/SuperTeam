@@ -8,12 +8,14 @@ export type InboxStatus = "open" | "resolved" | "cancelled";
 export type InboxItemType =
   | "approval"
   | "project_decision"
-  | "team_pending_delete";
+  | "team_pending_delete"
+  | "channel_alert";
 
 export type InboxSourceType =
   | "approval_request"
   | "project_decision_request"
-  | "team_pending_delete";
+  | "team_pending_delete"
+  | "feishu_channel";
 
 export type InboxItemAction = {
   key: string;

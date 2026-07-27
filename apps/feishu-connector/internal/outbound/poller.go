@@ -6,6 +6,7 @@ package outbound
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/superteam/feishu-connector/internal/cards"
@@ -25,10 +26,13 @@ type Messenger interface {
 }
 
 type Poller struct {
-	cp        ControlPlane
-	messenger Messenger
-	webOrigin string
-	interval  time.Duration
+	cp           ControlPlane
+	messenger    Messenger
+	webOrigin    string
+	interval     time.Duration
+	mu           sync.Mutex
+	lastPollAt   time.Time
+	lastPollErr  error
 }
 
 func NewPoller(cp ControlPlane, messenger Messenger, webOrigin string) *Poller {
@@ -37,6 +41,17 @@ func NewPoller(cp ControlPlane, messenger Messenger, webOrigin string) *Poller {
 
 // SetInterval 测试用。
 func (p *Poller) SetInterval(interval time.Duration) { p.interval = interval }
+
+// LastPollAt 供心跳上报最近一次 outbox 轮询时刻。
+func (p *Poller) LastPollAt() *time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.lastPollAt.IsZero() {
+		return nil
+	}
+	t := p.lastPollAt
+	return &t
+}
 
 func (p *Poller) Run(ctx context.Context) {
 	ticker := time.NewTicker(p.interval)
@@ -53,6 +68,10 @@ func (p *Poller) Run(ctx context.Context) {
 
 func (p *Poller) drainOnce(ctx context.Context) {
 	items, err := p.cp.ListOutbox(ctx, 20)
+	p.mu.Lock()
+	p.lastPollAt = time.Now().UTC()
+	p.lastPollErr = err
+	p.mu.Unlock()
 	if err != nil {
 		log.Printf("[outbound] list outbox: %v", err)
 		return

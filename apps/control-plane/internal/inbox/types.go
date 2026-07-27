@@ -65,7 +65,8 @@ const (
 	ItemTypeProjectDecision ItemType = "project_decision"
 	// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒管理员处理)。
 	ItemTypeTeamPendingDelete ItemType = "team_pending_delete"
-	// Standalone 数字员工 run 失败后的人类介入(重试 / 确认关闭)。
+	// 飞书通道失联告警(接入管理 P1:只进 Console 收件箱,不推飞书,防自指)。
+	ItemTypeChannelAlert ItemType = "channel_alert"
 )
 
 type SourceType string
@@ -74,6 +75,7 @@ const (
 	SourceTypeApprovalRequest        SourceType = "approval_request"
 	SourceTypeProjectDecisionRequest SourceType = "project_decision_request"
 	SourceTypeTeamPendingDelete      SourceType = "team_pending_delete"
+	SourceTypeChannelAlert           SourceType = "feishu_channel"
 )
 
 type Action struct {

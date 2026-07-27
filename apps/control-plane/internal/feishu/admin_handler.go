@@ -2,8 +2,11 @@ package feishu
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -204,4 +207,118 @@ func (h *AdminHTTPHandler) ListIdentities(w http.ResponseWriter, r *http.Request
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"identities": out})
+}
+
+// ChannelHealth 返回 connector 心跳健康摘要(消息通道分区顶部状态卡)。
+func (h *AdminHTTPHandler) ChannelHealth(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorize(w, r, authz.ActionCredentialRead)
+	if !ok {
+		return
+	}
+	health, err := h.service.GetChannelHealth(r.Context(), tenantID)
+	if err != nil {
+		writeFeishuError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
+}
+
+type outboxOpsItem struct {
+	ID              string  `json:"id"`
+	Kind            string  `json:"kind"`
+	Status          string  `json:"status"`
+	ResourceType    string  `json:"resource_type"`
+	ResourceID      string  `json:"resource_id"`
+	ProjectID       string  `json:"project_id,omitempty"`
+	RecipientUserID string  `json:"recipient_user_id"`
+	RecipientOpenID string  `json:"recipient_open_id"`
+	Attempts        int32   `json:"attempts"`
+	LastError       *string `json:"last_error,omitempty"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
+}
+
+// ListOperationalOutbox 失败/未绑定投递列表(运营面)。
+func (h *AdminHTTPHandler) ListOperationalOutbox(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorize(w, r, authz.ActionCredentialRead)
+	if !ok {
+		return
+	}
+	statuses := []string{"failed", "skipped_unbound"}
+	if raw := strings.TrimSpace(r.URL.Query().Get("status")); raw != "" {
+		statuses = strings.Split(raw, ",")
+	}
+	limit := int32(50)
+	offset := int32(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 200 {
+			limit = int32(n)
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+			offset = int32(n)
+		}
+	}
+	items, total, err := h.service.ListOperationalOutbox(r.Context(), tenantID, statuses, limit, offset)
+	if err != nil {
+		writeFeishuError(w, err)
+		return
+	}
+	out := make([]outboxOpsItem, 0, len(items))
+	for _, item := range items {
+		row := outboxOpsItem{
+			ID:              item.ID.String(),
+			Kind:            item.Kind,
+			Status:          item.Status,
+			ResourceType:    item.ResourceType,
+			ResourceID:      item.ResourceID.String(),
+			RecipientUserID: item.RecipientUserID.String(),
+			RecipientOpenID: item.RecipientOpenID,
+			Attempts:        item.Attempts,
+			LastError:       item.LastError,
+			CreatedAt:       item.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt:       item.UpdatedAt.UTC().Format(time.RFC3339),
+		}
+		if item.ProjectID != nil {
+			row.ProjectID = item.ProjectID.String()
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": total})
+}
+
+// RequeueOutbox 将 failed 行重置为 pending 供 connector 重投。
+func (h *AdminHTTPHandler) RequeueOutbox(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorize(w, r, authz.ActionCredentialCreate)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "outboxId")))
+	if err != nil || id == uuid.Nil {
+		http.Error(w, "invalid outbox id", http.StatusBadRequest)
+		return
+	}
+	item, err := h.service.RequeueFailedOutbox(r.Context(), tenantID, id)
+	if err != nil {
+		if errors.Is(err, ErrOutboxNotFound) {
+			http.Error(w, "outbox item not found or not failed", http.StatusNotFound)
+			return
+		}
+		writeFeishuError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, outboxOpsItem{
+		ID:              item.ID.String(),
+		Kind:            item.Kind,
+		Status:          item.Status,
+		ResourceType:    item.ResourceType,
+		ResourceID:      item.ResourceID.String(),
+		RecipientUserID: item.RecipientUserID.String(),
+		RecipientOpenID: item.RecipientOpenID,
+		Attempts:        item.Attempts,
+		LastError:       item.LastError,
+		CreatedAt:       item.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:       item.UpdatedAt.UTC().Format(time.RFC3339),
+	})
 }

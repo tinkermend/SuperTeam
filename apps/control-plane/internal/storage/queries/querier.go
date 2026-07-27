@@ -64,6 +64,7 @@ type Querier interface {
 	CountDigitalEmployeeOperationalSignals(ctx context.Context, arg CountDigitalEmployeeOperationalSignalsParams) ([]CountDigitalEmployeeOperationalSignalsRow, error)
 	CountDigitalEmployeeRunCalendarItems(ctx context.Context, arg CountDigitalEmployeeRunCalendarItemsParams) (int64, error)
 	CountDigitalEmployeeRunsDetailed(ctx context.Context, arg CountDigitalEmployeeRunsDetailedParams) (int64, error)
+	CountFeishuOutboxByStatuses(ctx context.Context, arg CountFeishuOutboxByStatusesParams) (int64, error)
 	CountHighRiskInboxItems(ctx context.Context, arg CountHighRiskInboxItemsParams) (int64, error)
 	CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error)
 	// CountOnlineLegacyLimitRuntimeNodesForTenant counts online nodes that have
@@ -282,6 +283,7 @@ type Querier interface {
 	GetEmployeeTemplateByID(ctx context.Context, arg GetEmployeeTemplateByIDParams) (DigitalEmployeeTemplate, error)
 	GetEmployeeTemplateByType(ctx context.Context, arg GetEmployeeTemplateByTypeParams) (DigitalEmployeeTemplate, error)
 	GetFeishuAppConfig(ctx context.Context, arg GetFeishuAppConfigParams) (FeishuAppConfig, error)
+	GetFeishuConnectorHeartbeat(ctx context.Context, arg GetFeishuConnectorHeartbeatParams) (FeishuConnectorHeartbeat, error)
 	GetFeishuIdentityByOpenID(ctx context.Context, arg GetFeishuIdentityByOpenIDParams) (UserFeishuIdentity, error)
 	GetFeishuIdentityByUser(ctx context.Context, arg GetFeishuIdentityByUserParams) (UserFeishuIdentity, error)
 	GetInboxItem(ctx context.Context, arg GetInboxItemParams) (InboxItem, error)
@@ -404,6 +406,8 @@ type Querier interface {
 	ListActiveFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error)
 	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKey, error)
 	ListActiveServiceTokensByName(ctx context.Context, serviceName string) ([]AuthServiceToken, error)
+	// 断连告警收件人:租户级 owner/admin(team_id IS NULL)。
+	ListActiveTenantOwnersAndAdmins(ctx context.Context, tenantID uuid.UUID) ([]uuid.UUID, error)
 	// 逐判官明细回读：血缘/审计面板按租户+需求+计划修订版本列出全部 lens 判定。
 	ListAdversarialJudgements(ctx context.Context, arg ListAdversarialJudgementsParams) ([]DemandAdversarialJudgement, error)
 	ListApprovalDecisionsForRequest(ctx context.Context, arg ListApprovalDecisionsForRequestParams) ([]ApprovalDecision, error)
@@ -481,8 +485,10 @@ type Querier interface {
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	// 管理面列表:含 active/unverified/disabled。
 	ListFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error)
+	ListFeishuConnectorHeartbeats(ctx context.Context, tenantID uuid.UUID) ([]FeishuConnectorHeartbeat, error)
 	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
 	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
+	ListFeishuOutboxByStatuses(ctx context.Context, arg ListFeishuOutboxByStatusesParams) ([]FeishuOutbox, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
 	// 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。
 	ListInboxProjectNames(ctx context.Context, arg ListInboxProjectNamesParams) ([]ListInboxProjectNamesRow, error)
@@ -570,6 +576,7 @@ type Querier interface {
 	ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]AuthServiceToken, error)
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
+	ListStaleFeishuConnectorHeartbeats(ctx context.Context, staleBefore pgtype.Timestamptz) ([]FeishuConnectorHeartbeat, error)
 	// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
 	ListStalePendingDeleteTeams(ctx context.Context, staleBefore pgtype.Timestamptz) ([]TenantTeam, error)
 	// 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
@@ -658,8 +665,12 @@ type Querier interface {
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
+	// 运营重推:failed 终态回到 pending 并清 attempts/last_error。
+	RequeueFeishuOutbox(ctx context.Context, arg RequeueFeishuOutboxParams) (FeishuOutbox, error)
 	ResetAutomationRuleFailureCount(ctx context.Context, arg ResetAutomationRuleFailureCountParams) (AutomationRule, error)
 	ResolveApprovalRequest(ctx context.Context, arg ResolveApprovalRequestParams) (ApprovalRequest, error)
+	// 按来源关闭 open 收件箱(通道恢复告警、同类幂等告警回收)。
+	ResolveOpenInboxItemsBySource(ctx context.Context, arg ResolveOpenInboxItemsBySourceParams) error
 	// 孤儿催办回收:团队已被恢复或确认删除后,其滞留催办条目自动关闭(清扫任务每轮执行)。
 	ResolveOrphanTeamPendingDeleteReminders(ctx context.Context) error
 	ResolveProjectDecisionRequest(ctx context.Context, arg ResolveProjectDecisionRequestParams) (ProjectDecisionRequest, error)
@@ -776,6 +787,7 @@ type Querier interface {
 	UpdateUserContact(ctx context.Context, arg UpdateUserContactParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuAppConfigParams) (FeishuAppConfig, error)
+	UpsertFeishuConnectorHeartbeat(ctx context.Context, arg UpsertFeishuConnectorHeartbeatParams) (FeishuConnectorHeartbeat, error)
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, arg UpsertProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)

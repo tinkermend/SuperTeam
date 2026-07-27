@@ -6331,7 +6331,7 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 			return nil, err
 		}
 	}
-	if decision.StatusSnapshot != "pending" {
+	if !isPendingDecisionStatus(decision.StatusSnapshot) {
 		if decision.StatusSnapshot == req.Decision {
 			if err := s.resolveProjectTaskWaitDecision(ctx, decision, req); err != nil {
 				return nil, err
@@ -6758,7 +6758,7 @@ func (s *Service) closeDemandFromPlanningFailedDecision(ctx context.Context, req
 // writes real business facts instead of resolving into the dead-end gate.
 func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req ResolveDecisionRequest, decision DecisionRequest) (*DecisionRequest, error) {
 	// Already resolved: idempotent success (a concurrent sign / double-submit).
-	if decision.StatusSnapshot != "pending" {
+	if !isPendingDecisionStatus(decision.StatusSnapshot) {
 		return &decision, nil
 	}
 	if decision.PlanRevisionID == nil {

@@ -60,6 +60,7 @@ type Container struct {
 	ApprovalService      *approval.Service
 	InboxService         *inbox.Service
 	ArtifactService      *artifact.Service
+	FeishuService        *feishu.Service
 	EmployeeRun          *employee.DigitalEmployeeRunService
 	EmployeeRunWriteback *employee.DigitalEmployeeRunWritebackService
 	SkillService         *skill.Service
@@ -846,6 +847,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		ApprovalService:                approvalService,
 		InboxService:                   inboxService,
 		ArtifactService:                artifactService,
+		FeishuService:                  feishuService,
 		EmployeeRun:                    runService,
 		EmployeeRunWriteback:           runWritebackService,
 		SkillService:                   skillService,
@@ -927,6 +929,13 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 	if container.TenantService != nil && container.InboxService != nil {
 		// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒)。
 		go startTeamPendingDeleteReminder(ctx, container.TenantService, container.InboxService)
+	}
+	if container.InboxService != nil {
+		// 飞书通道失联看门狗(接入管理 P1:心跳超时→收件箱告警,恢复自动 resolve)。
+		// feishuService 经 container 间接持有;这里用 server 侧已装配的 admin 同源 service。
+		if fs := container.FeishuService; fs != nil {
+			go startFeishuChannelWatchdog(ctx, fs, container.InboxService)
+		}
 	}
 	if container.ProjectService != nil && container.SystemConfig != nil {
 		// 僵尸任务收敛看门狗(卡死任务收敛 spec P1):孤儿 running 任务兜底 + 既有 attempt 恢复接线。

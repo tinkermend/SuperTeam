@@ -465,6 +465,29 @@ func (q *Queries) PeekInboxChange(ctx context.Context, arg PeekInboxChangeParams
 	return i, err
 }
 
+const ResolveOpenInboxItemsBySource = `-- name: ResolveOpenInboxItemsBySource :exec
+UPDATE inbox_items
+SET status = 'resolved',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND source_type = $2::varchar
+  AND source_id = $3::uuid
+  AND status = 'open'
+`
+
+type ResolveOpenInboxItemsBySourceParams struct {
+	TenantID   uuid.UUID `json:"tenant_id"`
+	SourceType string    `json:"source_type"`
+	SourceID   uuid.UUID `json:"source_id"`
+}
+
+// 按来源关闭 open 收件箱(通道恢复告警、同类幂等告警回收)。
+func (q *Queries) ResolveOpenInboxItemsBySource(ctx context.Context, arg ResolveOpenInboxItemsBySourceParams) error {
+	_, err := q.db.Exec(ctx, ResolveOpenInboxItemsBySource, arg.TenantID, arg.SourceType, arg.SourceID)
+	return err
+}
+
 const UpsertInboxItem = `-- name: UpsertInboxItem :one
 INSERT INTO inbox_items (
     tenant_id,
