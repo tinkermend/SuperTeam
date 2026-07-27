@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Pencil, RotateCcw, Settings2 } from "lucide-react";
 import {
   StatusPill,
@@ -7,15 +8,16 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
-  PageTab,
-  PageTabList,
   DataTable,
-  PageTabs,
   Td,
   Th,
   Tr,
   WorkSurface,
-  Callout
+  Callout,
+  SoftTabs,
+  SoftTabsContent,
+  SoftTabsList,
+  SoftTabsTrigger,
 } from "@/components/superteam";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
@@ -25,39 +27,108 @@ import {
   listSystemConfigs,
   resetSystemConfig,
   isHighDangerConfig,
-  type SystemConfigItem
+  type SystemConfigItem,
 } from "@/lib/api/system-config";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { EditSystemConfigDialog } from "./edit-dialog";
-import { MessageChannelsPanel } from "./message-channels-panel";
+import { MessageChannelsPanel, type ChannelSection } from "./message-channels-panel";
 import { displayDefaultValue, displayEffectiveValue } from "./units";
+
+type PrimaryTab = "channels" | "params";
 
 /** domain → tab 标题。未知 domain 落"其他"，后端加配置项前端零改动。 */
 const DOMAIN_LABELS: Record<string, string> = {
   artifact: "文件与工件",
   execution: "执行与调度",
-  security: "安全与会话"
+  security: "安全与会话",
+  organization: "组织与编制",
+  retention: "数据保留",
 };
-const DOMAIN_ORDER = ["artifact", "execution", "security"];
+
+const DOMAIN_BLURBS: Record<string, string> = {
+  artifact: "工件与附件的大小上限、上传/下载链接有效期等边界。",
+  execution: "Runtime 心跳超时、系统工作区与僵尸任务收敛等执行面参数。",
+  security: "登录会话与 Runtime 会话有效期。",
+  organization: "团队编制上限与宪法字符预算等组织边界。",
+  retention: "各流水与事件的保留天数；到期由保留作业清理。",
+  __other__: "未归入已知领域的注册表项。",
+};
+
+const DOMAIN_ORDER = ["artifact", "execution", "security", "organization", "retention"];
 const FALLBACK_DOMAIN = "__other__";
-const CHANNELS_TAB = "__channels__";
+
+const CHANNEL_SECTIONS = new Set<ChannelSection>(["access", "tokens"]);
 
 function domainLabel(domain: string): string {
   return DOMAIN_LABELS[domain] ?? "其他";
 }
 
+function domainBlurb(domain: string): string {
+  return DOMAIN_BLURBS[domain] ?? DOMAIN_BLURBS[FALLBACK_DOMAIN];
+}
+
+function parseHash(hash: string): { primary: PrimaryTab; domain?: string; channelSection?: ChannelSection } {
+  const raw = hash.replace(/^#/, "").trim();
+  if (!raw || raw === "channels") {
+    return { primary: "channels", channelSection: "access" };
+  }
+  if (raw.startsWith("channels/")) {
+    const section = raw.slice("channels/".length) as ChannelSection;
+    return {
+      primary: "channels",
+      channelSection: CHANNEL_SECTIONS.has(section) ? section : "access",
+    };
+  }
+  if (raw === "params") {
+    return { primary: "params" };
+  }
+  if (raw.startsWith("params/")) {
+    return { primary: "params", domain: raw.slice("params/".length) || undefined };
+  }
+  // 兼容旧 domain 直链（若有）
+  if (DOMAIN_LABELS[raw] || raw === FALLBACK_DOMAIN) {
+    return { primary: "params", domain: raw };
+  }
+  return { primary: "channels", channelSection: "access" };
+}
+
+function hashFor(primary: PrimaryTab, opts?: { domain?: string; channelSection?: ChannelSection }): string {
+  if (primary === "channels") {
+    const section = opts?.channelSection ?? "access";
+    return section === "access" ? "#channels" : `#channels/${section}`;
+  }
+  if (opts?.domain) return `#params/${opts.domain}`;
+  return "#params";
+}
+
 export function SystemConfigPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
   const queryClient = useQueryClient();
-  const [activeDomain, setActiveDomain] = useState<string | null>(CHANNELS_TAB);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const parsed = useMemo(() => parseHash(location.hash), [location.hash]);
+  const [primary, setPrimary] = useState<PrimaryTab>(() => parsed.primary);
+  const [channelSection, setChannelSection] = useState<ChannelSection>(
+    () => parsed.channelSection ?? "access",
+  );
+  const [activeDomain, setActiveDomain] = useState<string | null>(parsed.domain ?? null);
+  const [onlyOverridden, setOnlyOverridden] = useState(false);
   const [editing, setEditing] = useState<SystemConfigItem | null>(null);
   const [pendingReset, setPendingReset] = useState<SystemConfigItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const next = parseHash(location.hash);
+    setPrimary(next.primary);
+    if (next.channelSection) setChannelSection(next.channelSection);
+    if (next.domain) setActiveDomain(next.domain);
+  }, [location.hash]);
+
   const configs = useQuery({
     queryKey: ["system-configs"],
-    queryFn: () => listSystemConfigs({ baseUrl: apiBaseUrl })
-});
+    queryFn: () => listSystemConfigs({ baseUrl: apiBaseUrl }),
+  });
 
   const resetMutation = useMutation({
     mutationFn: (key: string) => resetSystemConfig({ baseUrl: apiBaseUrl }, key),
@@ -73,8 +144,8 @@ export function SystemConfigPage() {
             ? error.message
             : "恢复默认失败",
       );
-    }
-});
+    },
+  });
 
   const items = useMemo(() => configs.data?.items ?? [], [configs.data]);
 
@@ -87,23 +158,65 @@ export function SystemConfigPage() {
     return ordered;
   }, [items]);
 
-  const tabs = useMemo(() => [CHANNELS_TAB, ...domains], [domains]);
-  const currentDomain = activeDomain && tabs.includes(activeDomain) ? activeDomain : tabs[0] ?? null;
-  const rows = useMemo(
+  const currentDomain =
+    activeDomain && domains.includes(activeDomain) ? activeDomain : (domains[0] ?? null);
+
+  const rows = useMemo(() => {
+    if (!currentDomain) return [];
+    const filtered = items.filter((item) =>
+      currentDomain === FALLBACK_DOMAIN
+        ? !DOMAIN_LABELS[item.domain]
+        : item.domain === currentDomain,
+    );
+    return onlyOverridden ? filtered.filter((item) => item.is_overridden) : filtered;
+  }, [items, currentDomain, onlyOverridden]);
+
+  const overriddenCount = useMemo(
     () =>
-      currentDomain === CHANNELS_TAB
-        ? []
-        : items.filter((item) =>
-            currentDomain === FALLBACK_DOMAIN
+      currentDomain
+        ? items.filter((item) =>
+            (currentDomain === FALLBACK_DOMAIN
               ? !DOMAIN_LABELS[item.domain]
-              : item.domain === currentDomain,
-          ),
+              : item.domain === currentDomain) && item.is_overridden,
+          ).length
+        : 0,
     [items, currentDomain],
   );
 
   const isInitialLoading = configs.isPending && items.length === 0;
   const isBlockingError = configs.isError && items.length === 0;
-  const showChannels = currentDomain === CHANNELS_TAB;
+
+  const goPrimary = (next: PrimaryTab) => {
+    setPrimary(next);
+    const hash =
+      next === "channels"
+        ? hashFor("channels", { channelSection })
+        : hashFor("params", { domain: currentDomain ?? undefined });
+    void navigate({ to: "/system-config", hash: hash.replace(/^#/, ""), replace: true });
+  };
+
+  const goChannelSection = (section: ChannelSection) => {
+    setChannelSection(section);
+    void navigate({
+      to: "/system-config",
+      hash: hashFor("channels", { channelSection: section }).replace(/^#/, ""),
+      replace: true,
+    });
+  };
+
+  const goDomain = (domain: string) => {
+    setActiveDomain(domain);
+    void navigate({
+      to: "/system-config",
+      hash: hashFor("params", { domain }).replace(/^#/, ""),
+      replace: true,
+    });
+  };
+
+  const subtitle =
+    primary === "channels"
+      ? "外部 IM 通道的健康、接入与服务凭据"
+      : "服务端注册表参数；默认值可覆盖，改动全部留审计";
 
   return (
     <>
@@ -111,78 +224,142 @@ export function SystemConfigPage() {
         icon={<Settings2 />}
         iconTone="brand"
         title="系统配置"
-        subtitle="平台运行态参数与外部消息通道：默认值由服务端注册表定义，通道凭据保存时做连通自检，改动全部留审计"
+        subtitle={subtitle}
       />
       <Main className="min-w-0 overflow-x-hidden">
-        <div className="flex min-w-0 flex-col gap-6">
-          <PageTabs>
-            <PageTabList>
-              {tabs.map((domain) => (
-                <PageTab
-                  key={domain}
-                  active={domain === currentDomain}
-                  onClick={() => setActiveDomain(domain)}
+        <SoftTabs
+          className="flex w-full min-w-0 flex-col gap-4"
+          onValueChange={(value) => goPrimary(value as PrimaryTab)}
+          value={primary}
+        >
+          <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-0.5">
+            <SoftTabsList aria-label="系统配置分区">
+              <SoftTabsTrigger value="channels">消息通道</SoftTabsTrigger>
+              <SoftTabsTrigger value="params">平台参数</SoftTabsTrigger>
+            </SoftTabsList>
+          </div>
+
+          <SoftTabsContent value="channels" className="min-w-0">
+            <MessageChannelsPanel
+              section={channelSection}
+              onSectionChange={goChannelSection}
+            />
+          </SoftTabsContent>
+
+          <SoftTabsContent value="params" className="min-w-0">
+            <div className="flex min-w-0 flex-col gap-4">
+              {actionError ? (
+                <Callout tone="danger" title="操作失败" description={actionError} />
+              ) : null}
+
+              {domains.length > 0 ? (
+                <SoftTabs
+                  className="flex w-full min-w-0 flex-col gap-3"
+                  onValueChange={goDomain}
+                  value={currentDomain ?? domains[0]}
                 >
-                  {domain === CHANNELS_TAB
-                    ? "消息通道"
-                    : domain === FALLBACK_DOMAIN
-                      ? "其他"
-                      : domainLabel(domain)}
-                </PageTab>
-              ))}
-            </PageTabList>
-          </PageTabs>
+                  <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-0.5">
+                    <SoftTabsList aria-label="平台参数领域">
+                      {domains.map((domain) => (
+                        <SoftTabsTrigger key={domain} value={domain}>
+                          {domainLabel(domain)}
+                        </SoftTabsTrigger>
+                      ))}
+                    </SoftTabsList>
+                  </div>
 
-          {actionError && !showChannels ? (
-            <Callout tone="danger" title="操作失败" description={actionError} />
-          ) : null}
+                  {domains.map((domain) => (
+                    <SoftTabsContent key={domain} value={domain} className="min-w-0">
+                      <WorkSurface className="min-w-0">
+                        <div className="mb-0 flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
+                          <div className="min-w-0">
+                            <h2 className="text-sm font-semibold text-ink">{domainLabel(domain)}</h2>
+                            <p className="mt-0.5 text-xs text-ink-2">{domainBlurb(domain)}</p>
+                          </div>
+                          <label className="flex cursor-pointer items-center gap-2 text-xs text-ink-2">
+                            <input
+                              checked={onlyOverridden}
+                              className="size-3.5 accent-[var(--brand)]"
+                              onChange={(event) => setOnlyOverridden(event.target.checked)}
+                              type="checkbox"
+                            />
+                            仅看已修改
+                            {overriddenCount > 0 ? (
+                              <span className="tabular-nums text-ink-3">({overriddenCount})</span>
+                            ) : null}
+                          </label>
+                        </div>
 
-          {showChannels ? (
-            <MessageChannelsPanel />
-          ) : (
-            <WorkSurface className="min-w-0">
-              {isInitialLoading ? (
+                        {isInitialLoading ? (
+                          <div className="p-4">
+                            <LoadingState label="加载系统配置…" />
+                          </div>
+                        ) : isBlockingError ? (
+                          <div className="p-4">
+                            <ErrorState
+                              title="加载失败"
+                              description="无法加载系统配置，请确认管理员权限"
+                            />
+                          </div>
+                        ) : rows.length === 0 ? (
+                          <div className="p-4">
+                            <EmptyState
+                              icon={<Settings2 />}
+                              title={onlyOverridden ? "没有已修改项" : "暂无配置项"}
+                              description={
+                                onlyOverridden
+                                  ? "当前领域下全部使用默认值。"
+                                  : "服务端注册表中还没有该领域的配置项。"
+                              }
+                            />
+                          </div>
+                        ) : (
+                          <DataTable>
+                            <thead>
+                              <tr>
+                                <Th>配置项</Th>
+                                <Th className="w-32">生效值</Th>
+                                <Th className="w-28">默认值</Th>
+                                <Th className="w-40">状态</Th>
+                                <Th className="w-28" aria-label="操作" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((item) => (
+                                <SystemConfigRow
+                                  key={item.key}
+                                  item={item}
+                                  onEdit={() => {
+                                    setActionError(null);
+                                    setEditing(item);
+                                  }}
+                                  onReset={() => {
+                                    setActionError(null);
+                                    setPendingReset(item);
+                                  }}
+                                />
+                              ))}
+                            </tbody>
+                          </DataTable>
+                        )}
+                      </WorkSurface>
+                    </SoftTabsContent>
+                  ))}
+                </SoftTabs>
+              ) : isInitialLoading ? (
                 <LoadingState label="加载系统配置…" />
               ) : isBlockingError ? (
                 <ErrorState title="加载失败" description="无法加载系统配置，请确认管理员权限" />
-              ) : rows.length === 0 ? (
+              ) : (
                 <EmptyState
                   icon={<Settings2 />}
                   title="暂无配置项"
-                  description="服务端注册表中还没有该领域的配置项。"
+                  description="服务端注册表中还没有任何配置项。"
                 />
-              ) : (
-                <DataTable>
-                  <thead>
-                    <tr>
-                      <Th>配置项</Th>
-                      <Th className="w-36">生效值</Th>
-                      <Th className="w-32">默认值</Th>
-                      <Th className="w-44">状态</Th>
-                      <Th className="w-28" aria-label="操作" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((item) => (
-                      <SystemConfigRow
-                        key={item.key}
-                        item={item}
-                        onEdit={() => {
-                          setActionError(null);
-                          setEditing(item);
-                        }}
-                        onReset={() => {
-                          setActionError(null);
-                          setPendingReset(item);
-                        }}
-                      />
-                    ))}
-                  </tbody>
-                </DataTable>
               )}
-            </WorkSurface>
-          )}
-        </div>
+            </div>
+          </SoftTabsContent>
+        </SoftTabs>
       </Main>
 
       <EditSystemConfigDialog
@@ -209,8 +386,8 @@ export function SystemConfigPage() {
         handleConfirm={() => {
           if (pendingReset) {
             resetMutation.mutate(pendingReset.key, {
-              onSettled: () => setPendingReset(null)
-});
+              onSettled: () => setPendingReset(null),
+            });
           }
         }}
       />
@@ -221,32 +398,35 @@ export function SystemConfigPage() {
 function SystemConfigRow({
   item,
   onEdit,
-  onReset
+  onReset,
 }: {
   item: SystemConfigItem;
   onEdit: () => void;
   onReset: () => void;
 }) {
+  const highDanger = isHighDangerConfig(item);
   return (
-    <Tr>
-      <Td>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="font-medium">{item.label}</span>
-          <span className="truncate font-mono text-xs text-muted-foreground">{item.key}</span>
-          {isHighDangerConfig(item) ? (
-            <span className="text-xs font-medium text-destructive">高危 · 不宜改动 · 改后不迁存量</span>
+    <Tr className={highDanger ? "relative" : undefined}>
+      <Td className="relative">
+        {highDanger ? (
+          <span
+            aria-hidden
+            className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-danger"
+          />
+        ) : null}
+        <div className={`flex min-w-0 flex-col gap-0.5 ${highDanger ? "pl-2" : ""}`}>
+          <span className="font-medium text-ink">{item.label}</span>
+          <span className="truncate font-mono text-xs text-ink-3">{item.key}</span>
+          {highDanger ? (
+            <span className="text-xs font-medium text-danger">高危 · 不宜改动 · 改后不迁存量</span>
           ) : null}
-          <span className="line-clamp-2 max-w-[36rem] text-xs text-muted-foreground">
+          <span className="line-clamp-1 max-w-[36rem] text-xs text-ink-2" title={item.description}>
             {item.description}
           </span>
         </div>
       </Td>
-      <Td className="font-medium tabular-nums">
-        {displayEffectiveValue(item)}
-      </Td>
-      <Td className="tabular-nums text-muted-foreground">
-        {displayDefaultValue(item)}
-      </Td>
+      <Td className="font-medium tabular-nums text-ink">{displayEffectiveValue(item)}</Td>
+      <Td className="tabular-nums text-ink-2">{displayDefaultValue(item)}</Td>
       <Td>
         <div className="flex min-w-0 flex-col gap-1">
           <StatusPill tone={item.is_overridden ? "info" : "mute"}>
@@ -254,7 +434,7 @@ function SystemConfigRow({
           </StatusPill>
           {item.is_overridden && item.updated_at ? (
             <span
-              className="text-xs text-muted-foreground tabular-nums"
+              className="text-xs tabular-nums text-ink-3"
               title={new Date(item.updated_at).toLocaleString()}
             >
               {item.updated_by_name ? `${item.updated_by_name} · ` : ""}
@@ -264,18 +444,15 @@ function SystemConfigRow({
         </div>
       </Td>
       <Td>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" aria-label={`修改 ${item.label}`} onClick={onEdit}>
-            <Pencil />
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="sm" type="button" variant="ghost" onClick={onEdit}>
+            <Pencil data-icon="inline-start" />
+            修改
           </Button>
           {item.is_overridden ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={`恢复 ${item.label} 默认值`}
-              onClick={onReset}
-            >
-              <RotateCcw />
+            <Button size="sm" type="button" variant="ghost" onClick={onReset}>
+              <RotateCcw data-icon="inline-start" />
+              恢复
             </Button>
           ) : null}
         </div>

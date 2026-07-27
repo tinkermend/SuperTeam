@@ -56,6 +56,7 @@ import { Route as AuthenticatedEmployeesEmployeeIdRouteImport } from './routes/_
 import { Route as AuthenticatedLogsRuntimeIndexRouteImport } from './routes/_authenticated/logs/runtime/index'
 import { Route as AuthenticatedLogsOperationIndexRouteImport } from './routes/_authenticated/logs/operation/index'
 import { Route as AuthenticatedLogsLoginIndexRouteImport } from './routes/_authenticated/logs/login/index'
+import { Route as AuthenticatedLogsDeliveryIndexRouteImport } from './routes/_authenticated/logs/delivery/index'
 import { Route as AuthenticatedEmployeesTemplatesIndexRouteImport } from './routes/_authenticated/employees/templates/index'
 import { Route as AuthenticatedTeamsTeamIdConfigRouteImport } from './routes/_authenticated/teams/$teamId/config'
 import { Route as AuthenticatedProjectsProjectIdConfigRouteImport } from './routes/_authenticated/projects/$projectId/config'
@@ -324,6 +325,12 @@ const AuthenticatedLogsLoginIndexRoute =
     path: '/login/',
     getParentRoute: () => AuthenticatedLogsRouteRoute,
   } as any)
+const AuthenticatedLogsDeliveryIndexRoute =
+  AuthenticatedLogsDeliveryIndexRouteImport.update({
+    id: '/delivery/',
+    path: '/delivery/',
+    getParentRoute: () => AuthenticatedLogsRouteRoute,
+  } as any)
 const AuthenticatedEmployeesTemplatesIndexRoute =
   AuthenticatedEmployeesTemplatesIndexRouteImport.update({
     id: '/employees/templates/',
@@ -404,6 +411,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
   '/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
+  '/logs/delivery/': typeof AuthenticatedLogsDeliveryIndexRoute
   '/logs/login/': typeof AuthenticatedLogsLoginIndexRoute
   '/logs/operation/': typeof AuthenticatedLogsOperationIndexRoute
   '/logs/runtime/': typeof AuthenticatedLogsRuntimeIndexRoute
@@ -456,6 +464,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
   '/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/employees/templates': typeof AuthenticatedEmployeesTemplatesIndexRoute
+  '/logs/delivery': typeof AuthenticatedLogsDeliveryIndexRoute
   '/logs/login': typeof AuthenticatedLogsLoginIndexRoute
   '/logs/operation': typeof AuthenticatedLogsOperationIndexRoute
   '/logs/runtime': typeof AuthenticatedLogsRuntimeIndexRoute
@@ -511,6 +520,7 @@ export interface FileRoutesById {
   '/_authenticated/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
   '/_authenticated/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/_authenticated/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
+  '/_authenticated/logs/delivery/': typeof AuthenticatedLogsDeliveryIndexRoute
   '/_authenticated/logs/login/': typeof AuthenticatedLogsLoginIndexRoute
   '/_authenticated/logs/operation/': typeof AuthenticatedLogsOperationIndexRoute
   '/_authenticated/logs/runtime/': typeof AuthenticatedLogsRuntimeIndexRoute
@@ -566,6 +576,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/config'
     | '/teams/$teamId/config'
     | '/employees/templates/'
+    | '/logs/delivery/'
     | '/logs/login/'
     | '/logs/operation/'
     | '/logs/runtime/'
@@ -618,6 +629,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/config'
     | '/teams/$teamId/config'
     | '/employees/templates'
+    | '/logs/delivery'
     | '/logs/login'
     | '/logs/operation'
     | '/logs/runtime'
@@ -672,6 +684,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects/$projectId/config'
     | '/_authenticated/teams/$teamId/config'
     | '/_authenticated/employees/templates/'
+    | '/_authenticated/logs/delivery/'
     | '/_authenticated/logs/login/'
     | '/_authenticated/logs/operation/'
     | '/_authenticated/logs/runtime/'
@@ -1019,6 +1032,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLogsLoginIndexRouteImport
       parentRoute: typeof AuthenticatedLogsRouteRoute
     }
+    '/_authenticated/logs/delivery/': {
+      id: '/_authenticated/logs/delivery/'
+      path: '/delivery'
+      fullPath: '/logs/delivery/'
+      preLoaderRoute: typeof AuthenticatedLogsDeliveryIndexRouteImport
+      parentRoute: typeof AuthenticatedLogsRouteRoute
+    }
     '/_authenticated/employees/templates/': {
       id: '/_authenticated/employees/templates/'
       path: '/employees/templates'
@@ -1059,6 +1079,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedLogsRouteRouteChildren {
   AuthenticatedLogsIndexRoute: typeof AuthenticatedLogsIndexRoute
+  AuthenticatedLogsDeliveryIndexRoute: typeof AuthenticatedLogsDeliveryIndexRoute
   AuthenticatedLogsLoginIndexRoute: typeof AuthenticatedLogsLoginIndexRoute
   AuthenticatedLogsOperationIndexRoute: typeof AuthenticatedLogsOperationIndexRoute
   AuthenticatedLogsRuntimeIndexRoute: typeof AuthenticatedLogsRuntimeIndexRoute
@@ -1067,6 +1088,7 @@ interface AuthenticatedLogsRouteRouteChildren {
 const AuthenticatedLogsRouteRouteChildren: AuthenticatedLogsRouteRouteChildren =
   {
     AuthenticatedLogsIndexRoute: AuthenticatedLogsIndexRoute,
+    AuthenticatedLogsDeliveryIndexRoute: AuthenticatedLogsDeliveryIndexRoute,
     AuthenticatedLogsLoginIndexRoute: AuthenticatedLogsLoginIndexRoute,
     AuthenticatedLogsOperationIndexRoute: AuthenticatedLogsOperationIndexRoute,
     AuthenticatedLogsRuntimeIndexRoute: AuthenticatedLogsRuntimeIndexRoute,

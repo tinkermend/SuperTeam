@@ -304,7 +304,9 @@ function SignatureCard({ className, children, ...props }: ComponentProps<"div">)
   );
 }
 
-/** 脆数据面容器：把密集表格装进柔和白卡（软壳装脆数据）。 */
+/** 脆数据面容器：把密集表格装进柔和白卡（软壳装脆数据）。
+ * overflow-hidden 裁出圆角；表体贴边时由 DataTable 底/侧安全区避免末行文字被圆弧吃掉。
+ * 卡内表头/工具条请自带水平内边距（日志面惯例 px-5；配置面至少 px-4）。 */
 function WorkSurface({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
@@ -318,7 +320,10 @@ function WorkSurface({ className, ...props }: ComponentProps<"div">) {
 /** 密集表格：实底高对比，sticky 表头，tabular 数字，危险/预警行左 accent bar。 */
 function DataTable({ className, ...props }: ComponentProps<"table">) {
   return (
-    <div className="overflow-auto">
+    <div
+      data-slot="data-table-scroll"
+      className="overflow-auto pb-[max(0.75rem,calc(var(--radius-card)-0.625rem))]"
+    >
       <table
         data-slot="data-table"
         className={cn("w-full border-separate border-spacing-0 text-[13px]", className)}
@@ -359,7 +364,7 @@ function Tr({
     <tr
       data-tone={tone}
       className={cn(
-        "transition-colors duration-200 [&:hover>td]:bg-card-inner [&:last-child>td]:border-b-0",
+        "transition-colors duration-200 [&:hover>td]:bg-card-inner [&:last-child>td]:border-b-0 [&:last-child>td]:pb-3",
         tone === "danger" &&
           "[&>td]:bg-danger-soft [&>td:first-child]:shadow-[inset_3px_0_0_var(--danger)]",
         tone === "warn" &&

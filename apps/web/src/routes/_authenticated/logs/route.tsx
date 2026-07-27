@@ -12,6 +12,7 @@ const tabItems = [
   { label: "登录日志", to: "/logs/login", value: "login" },
   { label: "操作日志", to: "/logs/operation", value: "operation" },
   { label: "平台事件", to: "/logs/runtime", value: "runtime" },
+  { label: "消息投递", to: "/logs/delivery", value: "delivery" },
 ] as const;
 
 function LogsLayout() {
@@ -24,7 +25,7 @@ function LogsLayout() {
         icon={<ScrollText />}
         iconTone="mute"
         title="日志管理"
-        subtitle="登录审计、操作追溯与平台事件"
+        subtitle="登录审计、操作追溯、平台事件与消息投递"
       />
       <Main width="canvas" className="min-w-0 overflow-x-hidden">
         <div className="flex w-full flex-col gap-4 text-ink">
