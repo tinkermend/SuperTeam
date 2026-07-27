@@ -18,10 +18,13 @@ import {
   SoftTabsContent,
   SoftTabsList,
   SoftTabsTrigger,
+  CopyableMono,
+  RelativeTime,
 } from "@/components/superteam";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
+import { Switch } from "@/components/ui/switch";
 import { ApiRequestError } from "@/lib/api/client";
 import {
   listSystemConfigs,
@@ -30,6 +33,7 @@ import {
   type SystemConfigItem,
 } from "@/lib/api/system-config";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { cn } from "@/lib/utils";
 import { EditSystemConfigDialog } from "./edit-dialog";
 import { MessageChannelsPanel, type ChannelSection } from "./message-channels-panel";
 import { displayDefaultValue, displayEffectiveValue } from "./units";
@@ -183,6 +187,16 @@ export function SystemConfigPage() {
     [items, currentDomain],
   );
 
+  const overriddenCountByDomain = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      if (!item.is_overridden) continue;
+      const domain = DOMAIN_LABELS[item.domain] ? item.domain : FALLBACK_DOMAIN;
+      counts.set(domain, (counts.get(domain) ?? 0) + 1);
+    }
+    return counts;
+  }, [items]);
+
   const isInitialLoading = configs.isPending && items.length === 0;
   const isBlockingError = configs.isError && items.length === 0;
 
@@ -260,33 +274,39 @@ export function SystemConfigPage() {
                 >
                   <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-0.5">
                     <SoftTabsList aria-label="平台参数领域">
-                      {domains.map((domain) => (
-                        <SoftTabsTrigger key={domain} value={domain}>
-                          {domainLabel(domain)}
-                        </SoftTabsTrigger>
-                      ))}
+                      {domains.map((domain) => {
+                        const count = overriddenCountByDomain.get(domain) ?? 0;
+                        return (
+                          <SoftTabsTrigger key={domain} value={domain}>
+                            {domainLabel(domain)}
+                            {count > 0 ? (
+                              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-brand-soft px-1.5 text-[11px] font-semibold tabular-nums text-brand-deep">
+                                {count}
+                              </span>
+                            ) : null}
+                          </SoftTabsTrigger>
+                        );
+                      })}
                     </SoftTabsList>
                   </div>
 
                   {domains.map((domain) => (
                     <SoftTabsContent key={domain} value={domain} className="min-w-0">
                       <WorkSurface className="min-w-0">
-                        <div className="mb-0 flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
-                          <div className="min-w-0">
-                            <h2 className="text-sm font-semibold text-ink">{domainLabel(domain)}</h2>
-                            <p className="mt-0.5 text-xs text-ink-2">{domainBlurb(domain)}</p>
-                          </div>
-                          <label className="flex cursor-pointer items-center gap-2 text-xs text-ink-2">
-                            <input
+                        <div className="mb-0 flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
+                          <p className="min-w-0 text-xs leading-5 text-ink-2">{domainBlurb(domain)}</p>
+                          <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs text-ink-2">
+                            <Switch
                               checked={onlyOverridden}
-                              className="size-3.5 accent-[var(--brand)]"
-                              onChange={(event) => setOnlyOverridden(event.target.checked)}
-                              type="checkbox"
+                              onCheckedChange={setOnlyOverridden}
+                              aria-label="仅看已修改"
                             />
-                            仅看已修改
-                            {overriddenCount > 0 ? (
-                              <span className="tabular-nums text-ink-3">({overriddenCount})</span>
-                            ) : null}
+                            <span>
+                              仅看已修改
+                              {overriddenCount > 0 ? (
+                                <span className="ms-1 tabular-nums text-ink-3">({overriddenCount})</span>
+                              ) : null}
+                            </span>
                           </label>
                         </div>
 
@@ -318,10 +338,8 @@ export function SystemConfigPage() {
                             <thead>
                               <tr>
                                 <Th>配置项</Th>
-                                <Th className="w-32">生效值</Th>
-                                <Th className="w-28">默认值</Th>
-                                <Th className="w-40">状态</Th>
-                                <Th className="w-28" aria-label="操作" />
+                                <Th className="w-44">当前值</Th>
+                                <Th className="w-24" aria-label="操作" />
                               </tr>
                             </thead>
                             <tbody>
@@ -405,54 +423,86 @@ function SystemConfigRow({
   onReset: () => void;
 }) {
   const highDanger = isHighDangerConfig(item);
+  const overridden = item.is_overridden;
+
   return (
-    <Tr className={highDanger ? "relative" : undefined}>
-      <Td className="relative">
-        {highDanger ? (
-          <span
-            aria-hidden
-            className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-danger"
-          />
-        ) : null}
-        <div className={`flex min-w-0 flex-col gap-0.5 ${highDanger ? "pl-2" : ""}`}>
-          <span className="font-medium text-ink">{item.label}</span>
-          <span className="truncate font-mono text-xs text-ink-3">{item.key}</span>
-          {highDanger ? (
-            <span className="text-xs font-medium text-danger">高危 · 不宜改动 · 改后不迁存量</span>
-          ) : null}
-          <span className="line-clamp-1 max-w-[36rem] text-xs text-ink-2" title={item.description}>
+    <Tr
+      tone={highDanger ? "danger" : undefined}
+      className={cn(
+        "group/row",
+        !highDanger && overridden && "[&>td:first-child]:shadow-[inset_3px_0_0_var(--brand)]",
+      )}
+    >
+      <Td>
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="font-medium text-ink">{item.label}</span>
+            {highDanger ? (
+              <span className="text-[11px] font-medium text-danger">高危 · 不宜改动</span>
+            ) : null}
+          </div>
+          <CopyableMono className="max-w-[min(100%,28rem)]" value={item.key} />
+          <span className="line-clamp-1 max-w-[36rem] text-xs leading-5 text-ink-3" title={item.description}>
             {item.description}
           </span>
         </div>
       </Td>
-      <Td className="font-medium tabular-nums text-ink">{displayEffectiveValue(item)}</Td>
-      <Td className="tabular-nums text-ink-2">{displayDefaultValue(item)}</Td>
       <Td>
         <div className="flex min-w-0 flex-col gap-1">
-          <StatusPill tone={item.is_overridden ? "info" : "mute"}>
-            {item.is_overridden ? "已修改" : "默认"}
-          </StatusPill>
-          {item.is_overridden && item.updated_at ? (
+          <div className="flex flex-wrap items-center gap-2">
             <span
-              className="text-xs tabular-nums text-ink-3"
-              title={new Date(item.updated_at).toLocaleString()}
+              className={cn(
+                "tabular-nums text-ink",
+                overridden ? "text-sm font-semibold" : "font-medium",
+              )}
             >
-              {item.updated_by_name ? `${item.updated_by_name} · ` : ""}
-              {new Date(item.updated_at).toLocaleDateString()}
+              {displayEffectiveValue(item)}
             </span>
+            {overridden ? <StatusPill tone="info">已覆盖</StatusPill> : null}
+          </div>
+          {overridden ? (
+            <div className="flex min-w-0 flex-col gap-0.5 text-xs text-ink-3">
+              <span className="tabular-nums">默认 {displayDefaultValue(item)}</span>
+              {item.updated_at ? (
+                <span className="truncate">
+                  {item.updated_by_name ? `${item.updated_by_name} · ` : ""}
+                  <RelativeTime value={item.updated_at} />
+                </span>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </Td>
-      <Td>
-        <div className="flex flex-wrap items-center gap-1">
-          <Button size="sm" type="button" variant="ghost" onClick={onEdit}>
-            <Pencil data-icon="inline-start" />
-            修改
+      <Td className="text-end">
+        <div
+          className={cn(
+            "flex flex-wrap items-center justify-end gap-0.5 transition-opacity",
+            // 覆盖行满显；默认行低透明常显，hover/焦点时满显，避免触控与键盘找不到入口
+            overridden
+              ? "opacity-100"
+              : "opacity-45 group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+          )}
+        >
+          <Button
+            aria-label={`修改 ${item.label}`}
+            className="size-8"
+            onClick={onEdit}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <Pencil className="size-3.5" />
           </Button>
-          {item.is_overridden ? (
-            <Button size="sm" type="button" variant="ghost" onClick={onReset}>
-              <RotateCcw data-icon="inline-start" />
-              恢复
+          {overridden ? (
+            <Button
+              aria-label={`恢复 ${item.label} 为默认值`}
+              className="size-8"
+              onClick={onReset}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <RotateCcw className="size-3.5" />
             </Button>
           ) : null}
         </div>
