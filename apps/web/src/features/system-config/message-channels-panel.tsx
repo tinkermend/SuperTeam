@@ -94,8 +94,10 @@ function healthTone(status: FeishuChannelHealthStatus): Tone {
   switch (status) {
     case "healthy":
       return "ok";
-    case "stale":
+    case "degraded":
       return "warn";
+    case "stale":
+      return "danger";
     case "missing":
       return "danger";
     default:
@@ -107,6 +109,8 @@ function healthLabel(status: FeishuChannelHealthStatus): string {
   switch (status) {
     case "healthy":
       return "健康";
+    case "degraded":
+      return "偏旧";
     case "stale":
       return "心跳超时";
     case "missing":
@@ -264,10 +268,20 @@ export function MessageChannelsPanel({
       return { tone: "mute", label: "检测中", detail: "读取 connector 心跳…" };
     }
     const app = health.apps.find((item) => item.app_id === config.app_id || item.config_id === config.id);
-    if (health.status === "healthy") {
+    if (health.status === "healthy" || health.status === "degraded") {
       const ws = app?.ws_status ?? "unknown";
       const wsLabel =
         ws === "connected" ? "长连接正常" : ws === "reconnecting" ? "长连接重连中" : `长连接 ${ws}`;
+      if (health.status === "degraded") {
+        return {
+          tone: "warn",
+          label: "偏旧",
+          detail:
+            health.age_seconds != null
+              ? `心跳 ${health.age_seconds}s 前 · ${wsLabel}`
+              : wsLabel,
+        };
+      }
       return { tone: "ok", label: "健康", detail: wsLabel };
     }
     if (health.status === "stale") {
@@ -313,7 +327,7 @@ export function MessageChannelsPanel({
 
       <SoftCard
         className={`min-w-0 p-3 ${
-          health?.status === "stale" || health?.status === "missing"
+          health?.status === "stale" || health?.status === "missing" || health?.status === "degraded"
             ? "border border-warn/40 bg-warn/5"
             : ""
         }`}

@@ -99,13 +99,14 @@ type CredentialSealer interface {
 }
 
 type Service struct {
-	repo         Repository
-	sealer       CredentialSealer
-	client       APIClient
-	userLister   UserLister
-	oauthStates  *oauthStateStore
-	publicOrigin string
-	webOrigin    string
+	repo           Repository
+	sealer         CredentialSealer
+	client         APIClient
+	userLister     UserLister
+	oauthStates    *oauthStateStore
+	publicOrigin   string
+	webOrigin      string
+	heartbeatStore heartbeatStore // Redis 探活权威；未注入则健康摘要为 missing
 }
 
 func NewService(repo Repository, sealer CredentialSealer) *Service {

@@ -797,6 +797,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	serviceTokenHandler := serviceauth.NewHTTPHandler(serviceAuthCore)
 	feishuService := feishu.NewService(feishu.NewPgRepository(q), credentialSealer)
 	feishuService.SetClient(feishu.NewClient(os.Getenv("FEISHU_API_BASE_URL")))
+	if stores.Redis != nil {
+		feishuService.SetHeartbeatStore(feishu.NewRedisHeartbeatStore(stores.Redis))
+	}
 	feishuService.SetUserLister(feishuUserListerAdapter{auth: authService})
 	feishuPublicOrigin := os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN")
 	if feishuPublicOrigin == "" {

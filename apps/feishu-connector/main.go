@@ -106,12 +106,23 @@ func runHeartbeat(ctx context.Context, cp *cpclient.Client, mu *sync.Mutex, gate
 				}
 			}
 		}
-		if err := cp.Heartbeat(ctx, cpclient.HeartbeatRequest{
-			Version:          connectorVersion,
-			LastOutboxPollAt: lastPoll,
-			Apps:             apps,
-		}); err != nil && ctx.Err() == nil {
-			log.Printf("[connector] heartbeat: %v", err)
+		// 短重试：CP/网络偶发抖动时别干等下一个 30s tick，避免无谓 stale。
+		var err error
+		for attempt := 1; attempt <= 3; attempt++ {
+			err = cp.Heartbeat(ctx, cpclient.HeartbeatRequest{
+				Version:          connectorVersion,
+				LastOutboxPollAt: lastPoll,
+				Apps:             apps,
+			})
+			if err == nil || ctx.Err() != nil {
+				break
+			}
+			log.Printf("[connector] heartbeat attempt %d/3: %v", attempt, err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
 		}
 	}
 	send()

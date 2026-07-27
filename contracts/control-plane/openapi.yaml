@@ -5743,7 +5743,7 @@ components:
           type: string
         status:
           type: string
-          enum: [healthy, stale, missing]
+          enum: [healthy, degraded, stale, missing]
         last_heartbeat_at:
           type: string
           format: date-time

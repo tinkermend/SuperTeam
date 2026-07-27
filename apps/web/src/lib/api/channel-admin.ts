@@ -44,7 +44,7 @@ export type IssuedServiceToken = {
   token: string;
 };
 
-export type FeishuChannelHealthStatus = "healthy" | "stale" | "missing";
+export type FeishuChannelHealthStatus = "healthy" | "degraded" | "stale" | "missing";
 
 export type FeishuChannelAppStatus = {
   app_id: string;

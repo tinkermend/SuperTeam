@@ -4,20 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-
-	"github.com/superteam/control-plane/internal/storage/queries"
+	"github.com/redis/go-redis/v9"
 )
 
-// ConnectorHeartbeatTimeout 是 Console/看门狗判定通道失联的默认阈值。
-// connector 默认 30s 上报一次,取 90s 允许偶发抖动。
+// ConnectorHeartbeatTimeout：Console/看门狗判定 stale 的年龄阈值。
+// connector 默认 30s 上报；90s ≈ 允许漏 2 次仍算存活抖动。
 const ConnectorHeartbeatTimeout = 90 * time.Second
 
+// ConnectorHeartbeatDegradedAfter：仍有心跳但偏旧的降级提示（不写收件箱告警）。
+const ConnectorHeartbeatDegradedAfter = 60 * time.Second
+
+// ConnectorHeartbeatRedisTTL：探活 payload 在 Redis 的保留时间（权威在 last_heartbeat_at 年龄，
+// TTL 仅防止永久脏键；略大于 timeout 以便 stale 时仍能读到末次快照）。
+const ConnectorHeartbeatRedisTTL = 3 * time.Minute
+
 const DefaultConnectorServiceName = "feishu-connector"
+
+const feishuHeartbeatKeyPrefix = "superteam:feishu:connector:hb:"
 
 type ConnectorAppStatus struct {
 	AppID         string     `json:"app_id"`
@@ -33,8 +41,6 @@ type ConnectorHeartbeat struct {
 	LastHeartbeatAt  time.Time
 	LastOutboxPollAt *time.Time
 	Apps             []ConnectorAppStatus
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
 }
 
 type UpsertConnectorHeartbeatInput struct {
@@ -45,133 +51,175 @@ type UpsertConnectorHeartbeatInput struct {
 	Apps             []ConnectorAppStatus
 }
 
-func (r *PgRepository) UpsertConnectorHeartbeat(ctx context.Context, input UpsertConnectorHeartbeatInput) (ConnectorHeartbeat, error) {
-	serviceName := input.ServiceName
+// heartbeatStore 是探活权威存储（生产 = Redis TTL key）。
+type heartbeatStore interface {
+	Put(ctx context.Context, input UpsertConnectorHeartbeatInput) (ConnectorHeartbeat, error)
+	Get(ctx context.Context, tenantID uuid.UUID, serviceName string) (ConnectorHeartbeat, error)
+}
+
+// recipientDirectory 告警收件人（仍走 PG 成员表）。
+type recipientDirectory interface {
+	ListActiveTenantOwnersAndAdmins(ctx context.Context, tenantID uuid.UUID) ([]uuid.UUID, error)
+}
+
+type redisHeartbeatPayload struct {
+	TenantID         string               `json:"tenant_id"`
+	ServiceName      string               `json:"service_name"`
+	Version          string               `json:"version"`
+	LastHeartbeatAt  time.Time            `json:"last_heartbeat_at"`
+	LastOutboxPollAt *time.Time           `json:"last_outbox_poll_at,omitempty"`
+	Apps             []ConnectorAppStatus `json:"apps"`
+}
+
+// RedisHeartbeatStore：connector 探活唯一权威（SET + TTL）。
+type RedisHeartbeatStore struct {
+	rdb *redis.Client
+	ttl time.Duration
+}
+
+func NewRedisHeartbeatStore(rdb *redis.Client) *RedisHeartbeatStore {
+	return &RedisHeartbeatStore{rdb: rdb, ttl: ConnectorHeartbeatRedisTTL}
+}
+
+func feishuHeartbeatKey(tenantID uuid.UUID, serviceName string) string {
 	if serviceName == "" {
 		serviceName = DefaultConnectorServiceName
 	}
-	snapshot, err := json.Marshal(input.Apps)
+	return feishuHeartbeatKeyPrefix + tenantID.String() + ":" + serviceName
+}
+
+func (s *RedisHeartbeatStore) Put(ctx context.Context, input UpsertConnectorHeartbeatInput) (ConnectorHeartbeat, error) {
+	if s == nil || s.rdb == nil {
+		return ConnectorHeartbeat{}, fmt.Errorf("feishu heartbeat store: redis not configured")
+	}
+	if input.TenantID == uuid.Nil {
+		return ConnectorHeartbeat{}, ErrInvalidInput
+	}
+	serviceName := strings.TrimSpace(input.ServiceName)
+	if serviceName == "" {
+		serviceName = DefaultConnectorServiceName
+	}
+	now := time.Now().UTC()
+	apps := input.Apps
+	if apps == nil {
+		apps = []ConnectorAppStatus{}
+	}
+	payload := redisHeartbeatPayload{
+		TenantID:         input.TenantID.String(),
+		ServiceName:      serviceName,
+		Version:          input.Version,
+		LastHeartbeatAt:  now,
+		LastOutboxPollAt: input.LastOutboxPollAt,
+		Apps:             apps,
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return ConnectorHeartbeat{}, err
 	}
-	var pollAt pgtype.Timestamptz
-	if input.LastOutboxPollAt != nil {
-		pollAt = pgtype.Timestamptz{Time: input.LastOutboxPollAt.UTC(), Valid: true}
+	ttl := s.ttl
+	if ttl <= 0 {
+		ttl = ConnectorHeartbeatRedisTTL
 	}
-	row, err := r.q.UpsertFeishuConnectorHeartbeat(ctx, queries.UpsertFeishuConnectorHeartbeatParams{
+	if err := s.rdb.Set(ctx, feishuHeartbeatKey(input.TenantID, serviceName), raw, ttl).Err(); err != nil {
+		return ConnectorHeartbeat{}, err
+	}
+	return ConnectorHeartbeat{
 		TenantID:         input.TenantID,
 		ServiceName:      serviceName,
 		Version:          input.Version,
-		LastHeartbeatAt:  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
-		LastOutboxPollAt: pollAt,
-		AppsSnapshot:     snapshot,
-	})
-	if err != nil {
-		return ConnectorHeartbeat{}, err
-	}
-	return connectorHeartbeatFromRow(row), nil
+		LastHeartbeatAt:  now,
+		LastOutboxPollAt: input.LastOutboxPollAt,
+		Apps:             apps,
+	}, nil
 }
 
-func (r *PgRepository) GetConnectorHeartbeat(ctx context.Context, tenantID uuid.UUID, serviceName string) (ConnectorHeartbeat, error) {
+func (s *RedisHeartbeatStore) Get(ctx context.Context, tenantID uuid.UUID, serviceName string) (ConnectorHeartbeat, error) {
+	if s == nil || s.rdb == nil {
+		return ConnectorHeartbeat{}, fmt.Errorf("feishu heartbeat store: redis not configured")
+	}
+	if tenantID == uuid.Nil {
+		return ConnectorHeartbeat{}, ErrInvalidInput
+	}
 	if serviceName == "" {
 		serviceName = DefaultConnectorServiceName
 	}
-	row, err := r.q.GetFeishuConnectorHeartbeat(ctx, queries.GetFeishuConnectorHeartbeatParams{
-		TenantID:    tenantID,
-		ServiceName: serviceName,
-	})
+	raw, err := s.rdb.Get(ctx, feishuHeartbeatKey(tenantID, serviceName)).Bytes()
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, redis.Nil) {
 			return ConnectorHeartbeat{}, ErrAppConfigNotFound
 		}
 		return ConnectorHeartbeat{}, err
 	}
-	return connectorHeartbeatFromRow(row), nil
-}
-
-func (r *PgRepository) ListConnectorHeartbeats(ctx context.Context, tenantID uuid.UUID) ([]ConnectorHeartbeat, error) {
-	rows, err := r.q.ListFeishuConnectorHeartbeats(ctx, tenantID)
-	if err != nil {
-		return nil, err
+	var payload redisHeartbeatPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ConnectorHeartbeat{}, err
 	}
-	out := make([]ConnectorHeartbeat, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, connectorHeartbeatFromRow(row))
+	apps := payload.Apps
+	if apps == nil {
+		apps = []ConnectorAppStatus{}
 	}
-	return out, nil
-}
-
-func (r *PgRepository) ListStaleConnectorHeartbeats(ctx context.Context, staleBefore time.Time) ([]ConnectorHeartbeat, error) {
-	rows, err := r.q.ListStaleFeishuConnectorHeartbeats(ctx, pgtype.Timestamptz{Time: staleBefore.UTC(), Valid: true})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ConnectorHeartbeat, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, connectorHeartbeatFromRow(row))
-	}
-	return out, nil
-}
-
-func (r *PgRepository) ListActiveTenantOwnersAndAdmins(ctx context.Context, tenantID uuid.UUID) ([]uuid.UUID, error) {
-	return r.q.ListActiveTenantOwnersAndAdmins(ctx, tenantID)
-}
-
-func connectorHeartbeatFromRow(row queries.FeishuConnectorHeartbeat) ConnectorHeartbeat {
-	hb := ConnectorHeartbeat{
-		TenantID:        row.TenantID,
-		ServiceName:     row.ServiceName,
-		Version:         row.Version,
-		LastHeartbeatAt: row.LastHeartbeatAt.Time,
-		CreatedAt:       row.CreatedAt.Time,
-		UpdatedAt:       row.UpdatedAt.Time,
-		Apps:            []ConnectorAppStatus{},
-	}
-	if row.LastOutboxPollAt.Valid {
-		t := row.LastOutboxPollAt.Time
-		hb.LastOutboxPollAt = &t
-	}
-	if len(row.AppsSnapshot) > 0 {
-		var apps []ConnectorAppStatus
-		if err := json.Unmarshal(row.AppsSnapshot, &apps); err == nil {
-			hb.Apps = apps
-		}
-	}
-	return hb
+	return ConnectorHeartbeat{
+		TenantID:         tenantID,
+		ServiceName:      payload.ServiceName,
+		Version:          payload.Version,
+		LastHeartbeatAt:  payload.LastHeartbeatAt.UTC(),
+		LastOutboxPollAt: payload.LastOutboxPollAt,
+		Apps:             apps,
+	}, nil
 }
 
 // ChannelHealth 是 Console 健康摘要。
 type ChannelHealth struct {
-	ServiceName      string                `json:"service_name"`
-	Version          string                `json:"version,omitempty"`
-	Status           string                `json:"status"` // healthy | stale | missing
-	LastHeartbeatAt  *time.Time            `json:"last_heartbeat_at,omitempty"`
-	LastOutboxPollAt *time.Time            `json:"last_outbox_poll_at,omitempty"`
-	AgeSeconds       *int64                `json:"age_seconds,omitempty"`
-	Apps             []ConnectorAppStatus  `json:"apps"`
-	TimeoutSeconds   int64                 `json:"timeout_seconds"`
+	ServiceName      string               `json:"service_name"`
+	Version          string               `json:"version,omitempty"`
+	Status           string               `json:"status"` // healthy | degraded | stale | missing
+	LastHeartbeatAt  *time.Time           `json:"last_heartbeat_at,omitempty"`
+	LastOutboxPollAt *time.Time           `json:"last_outbox_poll_at,omitempty"`
+	AgeSeconds       *int64               `json:"age_seconds,omitempty"`
+	Apps             []ConnectorAppStatus `json:"apps"`
+	TimeoutSeconds   int64                `json:"timeout_seconds"`
+}
+
+func (s *Service) SetHeartbeatStore(store heartbeatStore) {
+	s.heartbeatStore = store
 }
 
 func (s *Service) RecordConnectorHeartbeat(ctx context.Context, input UpsertConnectorHeartbeatInput) (ConnectorHeartbeat, error) {
 	if input.TenantID == uuid.Nil {
 		return ConnectorHeartbeat{}, ErrInvalidInput
 	}
-	return s.repoHeartbeat().UpsertConnectorHeartbeat(ctx, input)
+	store := s.heartbeatStore
+	if store == nil {
+		return ConnectorHeartbeat{}, fmt.Errorf("feishu connector heartbeat store not configured")
+	}
+	return store.Put(ctx, input)
 }
 
 func (s *Service) ListChannelAlertRecipients(ctx context.Context, tenantID uuid.UUID) ([]uuid.UUID, error) {
 	if tenantID == uuid.Nil {
 		return nil, ErrInvalidInput
 	}
-	return s.repoHeartbeat().ListActiveTenantOwnersAndAdmins(ctx, tenantID)
+	if dir, ok := s.repo.(recipientDirectory); ok {
+		return dir.ListActiveTenantOwnersAndAdmins(ctx, tenantID)
+	}
+	return nil, nil
 }
 
 func (s *Service) GetChannelHealth(ctx context.Context, tenantID uuid.UUID) (ChannelHealth, error) {
 	if tenantID == uuid.Nil {
 		return ChannelHealth{}, ErrInvalidInput
 	}
-	hb, err := s.repoHeartbeat().GetConnectorHeartbeat(ctx, tenantID, DefaultConnectorServiceName)
 	timeout := ConnectorHeartbeatTimeout
+	store := s.heartbeatStore
+	if store == nil {
+		return ChannelHealth{
+			ServiceName:    DefaultConnectorServiceName,
+			Status:         "missing",
+			Apps:           []ConnectorAppStatus{},
+			TimeoutSeconds: int64(timeout.Seconds()),
+		}, nil
+	}
+	hb, err := store.Get(ctx, tenantID, DefaultConnectorServiceName)
 	if err != nil {
 		if errors.Is(err, ErrAppConfigNotFound) {
 			return ChannelHealth{
@@ -184,9 +232,15 @@ func (s *Service) GetChannelHealth(ctx context.Context, tenantID uuid.UUID) (Cha
 		return ChannelHealth{}, err
 	}
 	age := time.Since(hb.LastHeartbeatAt)
+	if age < 0 {
+		age = 0
+	}
 	status := "healthy"
-	if age > timeout {
+	switch {
+	case age > timeout:
 		status = "stale"
+	case age > ConnectorHeartbeatDegradedAfter:
+		status = "degraded"
 	}
 	ageSec := int64(age.Seconds())
 	return ChannelHealth{
@@ -227,56 +281,20 @@ func (s *Service) RequeueFailedOutbox(ctx context.Context, tenantID, id uuid.UUI
 	return s.repoOutbox().RequeueOutbox(ctx, tenantID, id)
 }
 
-// repoHeartbeat/repoOutbox 把 PgRepository 方法面暴露给 Service(生产 repo 是 *PgRepository)。
-type heartbeatRepo interface {
-	UpsertConnectorHeartbeat(ctx context.Context, input UpsertConnectorHeartbeatInput) (ConnectorHeartbeat, error)
-	GetConnectorHeartbeat(ctx context.Context, tenantID uuid.UUID, serviceName string) (ConnectorHeartbeat, error)
-	ListConnectorHeartbeats(ctx context.Context, tenantID uuid.UUID) ([]ConnectorHeartbeat, error)
-	ListStaleConnectorHeartbeats(ctx context.Context, staleBefore time.Time) ([]ConnectorHeartbeat, error)
-	ListActiveTenantOwnersAndAdmins(ctx context.Context, tenantID uuid.UUID) ([]uuid.UUID, error)
-}
-
 type outboxOpsRepo interface {
 	ListOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32) ([]OutboxItem, error)
 	CountOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string) (int64, error)
 	RequeueOutbox(ctx context.Context, tenantID, id uuid.UUID) (OutboxItem, error)
 }
 
-func (s *Service) repoHeartbeat() heartbeatRepo {
-	if r, ok := s.repo.(heartbeatRepo); ok {
-		return r
-	}
-	// production always wires *PgRepository; tests that don't need heartbeat can ignore.
-	return noopHeartbeatRepo{}
-}
-
 func (s *Service) repoOutbox() outboxOpsRepo {
 	if r, ok := s.repo.(outboxOpsRepo); ok {
 		return r
 	}
-	// Outbox ops live on *PgRepository which is also the OutboxRepository in production.
 	if r, ok := any(s.repo).(outboxOpsRepo); ok {
 		return r
 	}
 	return noopOutboxRepo{}
-}
-
-type noopHeartbeatRepo struct{}
-
-func (noopHeartbeatRepo) UpsertConnectorHeartbeat(context.Context, UpsertConnectorHeartbeatInput) (ConnectorHeartbeat, error) {
-	return ConnectorHeartbeat{}, ErrInvalidInput
-}
-func (noopHeartbeatRepo) GetConnectorHeartbeat(context.Context, uuid.UUID, string) (ConnectorHeartbeat, error) {
-	return ConnectorHeartbeat{}, ErrAppConfigNotFound
-}
-func (noopHeartbeatRepo) ListConnectorHeartbeats(context.Context, uuid.UUID) ([]ConnectorHeartbeat, error) {
-	return nil, nil
-}
-func (noopHeartbeatRepo) ListStaleConnectorHeartbeats(context.Context, time.Time) ([]ConnectorHeartbeat, error) {
-	return nil, nil
-}
-func (noopHeartbeatRepo) ListActiveTenantOwnersAndAdmins(context.Context, uuid.UUID) ([]uuid.UUID, error) {
-	return nil, nil
 }
 
 type noopOutboxRepo struct{}

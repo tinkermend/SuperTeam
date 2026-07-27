@@ -195,3 +195,9 @@ func textOrNull(value *string) pgtype.Text {
 	}
 	return pgtype.Text{String: *value, Valid: true}
 }
+
+// ListActiveTenantOwnersAndAdmins 通道失联告警收件人（租户级 owner/admin）。
+func (r *PgRepository) ListActiveTenantOwnersAndAdmins(ctx context.Context, tenantID uuid.UUID) ([]uuid.UUID, error) {
+	return r.q.ListActiveTenantOwnersAndAdmins(ctx, tenantID)
+}
+

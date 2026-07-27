@@ -50,7 +50,8 @@ func sweepFeishuChannelHealth(ctx context.Context, feishuService *feishu.Service
 	}
 	sourceID := connectorSourceID(health.ServiceName)
 	switch health.Status {
-	case "healthy":
+	case "healthy", "degraded":
+		// degraded = 仍有心跳，只是偏旧；收件箱告警只对真正失联（stale/missing）。
 		return inboxService.ResolveOpenItemsBySource(ctx, tenantID, inbox.SourceTypeChannelAlert, sourceID)
 	case "stale", "missing":
 		return openChannelDownItems(ctx, feishuService, inboxService, tenantID, health, sourceID)
