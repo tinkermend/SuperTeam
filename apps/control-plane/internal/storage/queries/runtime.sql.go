@@ -12,6 +12,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ApplyRuntimeNodeHeartbeat = `-- name: ApplyRuntimeNodeHeartbeat :one
+UPDATE runtime_nodes
+SET last_heartbeat_at = $1::timestamptz,
+    current_load = $2,
+    status = 'online',
+    disabled_at = NULL,
+    updated_at = NOW()
+WHERE node_id = $3::varchar
+  AND archived_at IS NULL
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
+`
+
+type ApplyRuntimeNodeHeartbeatParams struct {
+	LastHeartbeatAt pgtype.Timestamptz `json:"last_heartbeat_at"`
+	CurrentLoad     int32              `json:"current_load"`
+	NodeID          string             `json:"node_id"`
+}
+
+// ApplyRuntimeNodeHeartbeat folds the hot heartbeat path into one row write:
+// last_seen + reported load + force-online. Callers that only need a pure
+// last_seen bump (enrollment reconnect) still use UpdateRuntimeNodeHeartbeat.
+func (q *Queries) ApplyRuntimeNodeHeartbeat(ctx context.Context, arg ApplyRuntimeNodeHeartbeatParams) (RuntimeNode, error) {
+	row := q.db.QueryRow(ctx, ApplyRuntimeNodeHeartbeat, arg.LastHeartbeatAt, arg.CurrentLoad, arg.NodeID)
+	var i RuntimeNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.NodeID,
+		&i.Name,
+		&i.SupportedProviders,
+		&i.MaxSlots,
+		&i.CurrentLoad,
+		&i.Status,
+		&i.Metadata,
+		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CountOnlineLegacyLimitRuntimeNodesForTenant = `-- name: CountOnlineLegacyLimitRuntimeNodesForTenant :one
 SELECT COUNT(*)::bigint
 FROM runtime_nodes

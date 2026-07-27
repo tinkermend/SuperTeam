@@ -74,6 +74,10 @@ func (m *mockSchedulerRepository) UpdateHeartbeat(ctx context.Context, params Up
 	return NodeRecord{}, nil
 }
 
+func (m *mockSchedulerRepository) ApplyHeartbeat(ctx context.Context, params ApplyHeartbeatParams) (NodeRecord, error) {
+	return NodeRecord{}, nil
+}
+
 func (m *mockSchedulerRepository) UpdateLoad(ctx context.Context, params UpdateLoadParams) (NodeRecord, error) {
 	if m.updateLoad != nil {
 		return m.updateLoad(ctx, params)

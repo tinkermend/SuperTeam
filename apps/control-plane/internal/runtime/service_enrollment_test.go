@@ -559,6 +559,19 @@ func (f *enrollmentFake) UpdateHeartbeat(_ context.Context, params UpdateHeartbe
 	return record, nil
 }
 
+func (f *enrollmentFake) ApplyHeartbeat(_ context.Context, params ApplyHeartbeatParams) (NodeRecord, error) {
+	key := f.nodeKey(platform.DefaultTenantID, params.NodeID)
+	record, ok := f.nodes[key]
+	if !ok {
+		return NodeRecord{}, errors.New("not found")
+	}
+	record.LastHeartbeatAt = params.LastHeartbeatAt
+	record.CurrentLoad = params.CurrentLoad
+	record.Status = string(NodeStatusOnline)
+	f.nodes[key] = record
+	return record, nil
+}
+
 func (f *enrollmentFake) UpdateLoad(_ context.Context, params UpdateLoadParams) (NodeRecord, error) {
 	key := f.nodeKey(platform.DefaultTenantID, params.NodeID)
 	record := f.nodes[key]

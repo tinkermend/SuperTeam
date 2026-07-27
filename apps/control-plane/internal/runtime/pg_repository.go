@@ -18,6 +18,23 @@ func NewPgRepository(q *queries.Queries) Repository {
 	return &PgRepository{q: q}
 }
 
+func nodeRecordFromQueries(node queries.RuntimeNode) NodeRecord {
+	return NodeRecord{
+		ID:                 node.ID,
+		TenantID:           node.TenantID,
+		NodeID:             node.NodeID,
+		Name:               node.Name,
+		SupportedProviders: node.SupportedProviders,
+		MaxSlots:           node.MaxSlots,
+		CurrentLoad:        node.CurrentLoad,
+		Status:             node.Status,
+		Metadata:           node.Metadata,
+		LastHeartbeatAt:    node.LastHeartbeatAt,
+		CreatedAt:          node.CreatedAt,
+		UpdatedAt:          node.UpdatedAt,
+	}
+}
+
 func (r *PgRepository) CreateNode(ctx context.Context, params CreateNodeParams) (NodeRecord, error) {
 	node, err := r.q.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             params.NodeID,
@@ -182,20 +199,19 @@ func (r *PgRepository) UpdateHeartbeat(ctx context.Context, params UpdateHeartbe
 	if err != nil {
 		return NodeRecord{}, err
 	}
-	return NodeRecord{
-		ID:                 node.ID,
-		TenantID:           node.TenantID,
-		NodeID:             node.NodeID,
-		Name:               node.Name,
-		SupportedProviders: node.SupportedProviders,
-		MaxSlots:           node.MaxSlots,
-		CurrentLoad:        node.CurrentLoad,
-		Status:             node.Status,
-		Metadata:           node.Metadata,
-		LastHeartbeatAt:    node.LastHeartbeatAt,
-		CreatedAt:          node.CreatedAt,
-		UpdatedAt:          node.UpdatedAt,
-	}, nil
+	return nodeRecordFromQueries(node), nil
+}
+
+func (r *PgRepository) ApplyHeartbeat(ctx context.Context, params ApplyHeartbeatParams) (NodeRecord, error) {
+	node, err := r.q.ApplyRuntimeNodeHeartbeat(ctx, queries.ApplyRuntimeNodeHeartbeatParams{
+		NodeID:          params.NodeID,
+		LastHeartbeatAt: params.LastHeartbeatAt,
+		CurrentLoad:     params.CurrentLoad,
+	})
+	if err != nil {
+		return NodeRecord{}, err
+	}
+	return nodeRecordFromQueries(node), nil
 }
 
 func (r *PgRepository) PatchNodeMetadata(ctx context.Context, params PatchNodeMetadataParams) (NodeRecord, error) {

@@ -74,6 +74,11 @@ func (m *MockRepository) UpdateHeartbeat(ctx context.Context, params UpdateHeart
 	return args.Get(0).(NodeRecord), args.Error(1)
 }
 
+func (m *MockRepository) ApplyHeartbeat(ctx context.Context, params ApplyHeartbeatParams) (NodeRecord, error) {
+	args := m.Called(ctx, params)
+	return args.Get(0).(NodeRecord), args.Error(1)
+}
+
 func (m *MockRepository) UpdateLoad(ctx context.Context, params UpdateLoadParams) (NodeRecord, error) {
 	args := m.Called(ctx, params)
 	return args.Get(0).(NodeRecord), args.Error(1)
@@ -282,8 +287,7 @@ func TestUpdateHeartbeat(t *testing.T) {
 			UpdatedAt:          timestamptzFromTime(time.Now()),
 		}
 
-		repo.On("UpdateHeartbeat", ctx, mock.AnythingOfType("UpdateHeartbeatParams")).Return(record, nil)
-		repo.On("UpdateLoad", ctx, mock.AnythingOfType("UpdateLoadParams")).Return(record, nil)
+		repo.On("ApplyHeartbeat", ctx, mock.AnythingOfType("ApplyHeartbeatParams")).Return(record, nil)
 
 		resp, err := service.UpdateHeartbeat(ctx, req)
 		assert.NoError(t, err)
@@ -322,8 +326,7 @@ func TestUpdateHeartbeat(t *testing.T) {
 			UpdatedAt:          timestamptzFromTime(time.Now()),
 		}
 
-		repo.On("UpdateHeartbeat", ctx, mock.AnythingOfType("UpdateHeartbeatParams")).Return(record, nil)
-		repo.On("UpdateLoad", ctx, mock.AnythingOfType("UpdateLoadParams")).Return(record, nil)
+		repo.On("ApplyHeartbeat", ctx, mock.AnythingOfType("ApplyHeartbeatParams")).Return(record, nil)
 
 		resp, err := service.UpdateHeartbeat(ctx, req)
 		require.NoError(t, err)

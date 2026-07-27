@@ -79,6 +79,20 @@ WHERE node_id = $1
   AND archived_at IS NULL
 RETURNING *;
 
+-- ApplyRuntimeNodeHeartbeat folds the hot heartbeat path into one row write:
+-- last_seen + reported load + force-online. Callers that only need a pure
+-- last_seen bump (enrollment reconnect) still use UpdateRuntimeNodeHeartbeat.
+-- name: ApplyRuntimeNodeHeartbeat :one
+UPDATE runtime_nodes
+SET last_heartbeat_at = sqlc.arg('last_heartbeat_at')::timestamptz,
+    current_load = sqlc.arg('current_load'),
+    status = 'online',
+    disabled_at = NULL,
+    updated_at = NOW()
+WHERE node_id = sqlc.arg('node_id')::varchar
+  AND archived_at IS NULL
+RETURNING *;
+
 -- PatchRuntimeNodeMetadata merges a JSON object into node metadata (jsonb ||).
 -- Used by heartbeat to persist capability self-reports (e.g.
 -- supports_platform_limits) only when the value changes.

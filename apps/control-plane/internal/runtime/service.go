@@ -819,9 +819,10 @@ func (s *Service) RegisterNode(ctx context.Context, req RegisterNodeRequest) (*N
 	return s.recordToNode(ctx, record)
 }
 
-// UpdateHeartbeat updates the heartbeat and load of a node
+// UpdateHeartbeat updates the heartbeat and load of a node.
+// 热路径合并为单次 ApplyHeartbeat(last_seen + load + online);metadata 能力自报
+// 仍仅在值变化时另写一次。权威继续在 PG,不引入第二真相源。
 func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatRequest) (*HeartbeatResponse, error) {
-	// Validate request
 	if req.NodeID == "" {
 		return nil, errors.New("node_id is required")
 	}
@@ -829,22 +830,13 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatReques
 		return nil, errors.New("current_load must be non-negative")
 	}
 
-	// Update heartbeat
-	record, err := s.repository.UpdateHeartbeat(ctx, UpdateHeartbeatParams{
+	record, err := s.repository.ApplyHeartbeat(ctx, ApplyHeartbeatParams{
 		NodeID:          req.NodeID,
 		LastHeartbeatAt: timestamptzFromTime(time.Now()),
+		CurrentLoad:     req.CurrentLoad,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to update heartbeat: %w", err)
-	}
-
-	// Update load
-	record, err = s.repository.UpdateLoad(ctx, UpdateLoadParams{
-		NodeID:      req.NodeID,
-		CurrentLoad: req.CurrentLoad,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update load: %w", err)
+		return nil, fmt.Errorf("failed to apply heartbeat: %w", err)
 	}
 
 	// 能力自报落节点 metadata(版本偏斜护栏依据),只在值变化时写一次,
@@ -863,30 +855,9 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, req UpdateHeartbeatReques
 		}
 	}
 
-	// Determine status based on heartbeat
 	node, err := s.recordToNode(ctx, record)
 	if err != nil {
 		return nil, err
-	}
-
-	// Update status if needed
-	expectedStatus := NodeStatusOnline
-	if !node.IsOnlineAt(s.heartbeatTimeout(ctx, req.TenantID)) {
-		expectedStatus = NodeStatusOffline
-	}
-
-	if node.Status != expectedStatus {
-		record, err = s.repository.UpdateStatus(ctx, UpdateStatusParams{
-			NodeID: req.NodeID,
-			Status: string(expectedStatus),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to update status: %w", err)
-		}
-		node, err = s.recordToNode(ctx, record)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	requiredTools, err := s.requiredTools(ctx, tenantOrDefault(req.TenantID), req.NodeID)

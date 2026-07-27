@@ -103,14 +103,23 @@ type Service struct {
 	sealer         CredentialSealer
 	client         APIClient
 	userLister     UserLister
-	oauthStates    *oauthStateStore
+	oauthStates    oauthStateStore
 	publicOrigin   string
 	webOrigin      string
 	heartbeatStore heartbeatStore // Redis 探活权威；未注入则健康摘要为 missing
 }
 
 func NewService(repo Repository, sealer CredentialSealer) *Service {
-	return &Service{repo: repo, sealer: sealer, oauthStates: newOAuthStateStore()}
+	// 默认内存 store 仅供单测;生产在 app 装配层注入 Redis。
+	return &Service{repo: repo, sealer: sealer, oauthStates: newMemoryOAuthStateStore()}
+}
+
+// SetOAuthStateStore 注入 OAuth state 存储(生产 = Redis one-shot)。
+func (s *Service) SetOAuthStateStore(store oauthStateStore) {
+	if store == nil {
+		return
+	}
+	s.oauthStates = store
 }
 
 // UpsertAppConfig 加密写入(或轮换)租户飞书应用配置,并做连通性自检。

@@ -188,53 +188,72 @@ type oauthState struct {
 	UserID      uuid.UUID
 	AppConfigID uuid.UUID
 	ReturnTo    string
-	ExpiresAt   time.Time
 }
 
-type oauthStateStore struct {
+// oauthStateStore 是 OAuth state 的 one-shot 存储。生产用 Redis(多实例/
+// 滚动发布安全);未注入时回落进程内存(单测默认)。
+type oauthStateStore interface {
+	Put(ctx context.Context, state string, value oauthState, ttl time.Duration) error
+	Take(ctx context.Context, state string) (oauthState, bool, error)
+}
+
+type memoryOAuthStateStore struct {
 	mu     sync.Mutex
-	states map[string]oauthState
+	states map[string]memoryOAuthState
 }
 
-func newOAuthStateStore() *oauthStateStore {
-	return &oauthStateStore{states: map[string]oauthState{}}
+type memoryOAuthState struct {
+	oauthState
+	ExpiresAt time.Time
 }
 
-func (s *oauthStateStore) put(state string, value oauthState) {
+func newMemoryOAuthStateStore() *memoryOAuthStateStore {
+	return &memoryOAuthStateStore{states: map[string]memoryOAuthState{}}
+}
+
+func (s *memoryOAuthStateStore) Put(_ context.Context, state string, value oauthState, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := time.Now()
 	for key, existing := range s.states {
-		if time.Now().After(existing.ExpiresAt) {
+		if now.After(existing.ExpiresAt) {
 			delete(s.states, key)
 		}
 	}
-	s.states[state] = value
+	if ttl <= 0 {
+		ttl = oauthStateTTL
+	}
+	s.states[state] = memoryOAuthState{oauthState: value, ExpiresAt: now.Add(ttl)}
+	return nil
 }
 
-func (s *oauthStateStore) take(state string) (oauthState, bool) {
+func (s *memoryOAuthStateStore) Take(_ context.Context, state string) (oauthState, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	value, ok := s.states[state]
 	if !ok {
-		return oauthState{}, false
+		return oauthState{}, false, nil
 	}
 	delete(s.states, state)
 	if time.Now().After(value.ExpiresAt) {
-		return oauthState{}, false
+		return oauthState{}, false, nil
 	}
-	return value, true
+	return value.oauthState, true, nil
 }
 
 const oauthStateTTL = 10 * time.Minute
 
 // StartOAuth 生成一次性 state 并返回飞书授权页地址。appConfigID 为空时取租户
-// 首个 active 配置。state 在内存存续(单副本假设,P1 已知约束)。
+// 首个 active 配置。state 经 oauthStateStore 存续(生产 = Redis TTL one-shot)。
 func (s *Service) StartOAuth(ctx context.Context, tenantID, userID, appConfigID uuid.UUID, returnTo string) (string, error) {
 	if s.client == nil {
 		return "", ErrClientRequired
 	}
 	if s.publicOrigin == "" {
 		return "", errors.New("oauth public origin is not configured")
+	}
+	if s.oauthStates == nil {
+		return "", errors.New("oauth state store is not configured")
 	}
 	if appConfigID == uuid.Nil {
 		configs, err := s.repo.ListActiveAppConfigs(ctx, tenantID)
@@ -254,13 +273,14 @@ func (s *Service) StartOAuth(ctx context.Context, tenantID, userID, appConfigID 
 		return "", err
 	}
 	state := hex.EncodeToString(raw)
-	s.oauthStates.put(state, oauthState{
+	if err := s.oauthStates.Put(ctx, state, oauthState{
 		TenantID:    tenantID,
 		UserID:      userID,
 		AppConfigID: appConfigID,
 		ReturnTo:    s.sanitizeReturnTo(returnTo),
-		ExpiresAt:   time.Now().Add(oauthStateTTL),
-	})
+	}, oauthStateTTL); err != nil {
+		return "", err
+	}
 
 	cfg, err := s.repo.GetAppConfig(ctx, tenantID, appConfigID)
 	if err != nil {
@@ -277,7 +297,13 @@ func (s *Service) CompleteOAuth(ctx context.Context, code, state string) (string
 	if s.sealer == nil {
 		return "", ErrSealerRequired
 	}
-	value, ok := s.oauthStates.take(strings.TrimSpace(state))
+	if s.oauthStates == nil {
+		return "", ErrOAuthStateInvalid
+	}
+	value, ok, err := s.oauthStates.Take(ctx, strings.TrimSpace(state))
+	if err != nil {
+		return "", err
+	}
 	if !ok || strings.TrimSpace(code) == "" {
 		return "", ErrOAuthStateInvalid
 	}

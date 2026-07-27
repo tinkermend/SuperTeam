@@ -19,6 +19,10 @@ type Querier interface {
 	ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
+	// ApplyRuntimeNodeHeartbeat folds the hot heartbeat path into one row write:
+	// last_seen + reported load + force-online. Callers that only need a pure
+	// last_seen bump (enrollment reconnect) still use UpdateRuntimeNodeHeartbeat.
+	ApplyRuntimeNodeHeartbeat(ctx context.Context, arg ApplyRuntimeNodeHeartbeatParams) (RuntimeNode, error)
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
 	ArchiveDigitalEmployeeConfigRevisionsForDelete(ctx context.Context, arg ArchiveDigitalEmployeeConfigRevisionsForDeleteParams) ([]uuid.UUID, error)

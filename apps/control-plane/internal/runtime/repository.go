@@ -17,6 +17,8 @@ type Repository interface {
 	ListNodes(ctx context.Context, params ListNodesParams) ([]NodeRecord, error)
 	ListOnlineNodes(ctx context.Context, heartbeatThreshold pgtype.Timestamptz) ([]NodeRecord, error)
 	UpdateHeartbeat(ctx context.Context, params UpdateHeartbeatParams) (NodeRecord, error)
+	// ApplyHeartbeat 合并 last_seen + load + online 为单次行写(心跳热路径)。
+	ApplyHeartbeat(ctx context.Context, params ApplyHeartbeatParams) (NodeRecord, error)
 	UpdateLoad(ctx context.Context, params UpdateLoadParams) (NodeRecord, error)
 	// TryAcquireNodeSlot atomically reserves one execution slot on a node.
 	// Returns pgx.ErrNoRows (wrap with errors.Is(err, pgx.ErrNoRows)) when the
@@ -116,6 +118,13 @@ type ListRuntimeNodesForTenantParams struct {
 type UpdateHeartbeatParams struct {
 	NodeID          string
 	LastHeartbeatAt pgtype.Timestamptz
+}
+
+// ApplyHeartbeatParams 是心跳热路径的合并写参数。
+type ApplyHeartbeatParams struct {
+	NodeID          string
+	LastHeartbeatAt pgtype.Timestamptz
+	CurrentLoad     int32
 }
 
 // UpdateLoadParams represents parameters for updating load
