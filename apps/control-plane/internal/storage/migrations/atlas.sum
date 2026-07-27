@@ -1,4 +1,4 @@
-h1:kpq/S/+lJLmulUYtZYDSbVXPzpqAOZCvazvbpR8KeI4=
+h1:N4rvbvx0l1IREmc9UdGDj+l6dRwUXQS5pJ0XZsm1RLE=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -113,3 +113,4 @@ h1:kpq/S/+lJLmulUYtZYDSbVXPzpqAOZCvazvbpR8KeI4=
 20260726170000_task_runs_project_affiliation.sql h1:mBY1NMtbR1S7jnMkE2in8fKWBSbUSGYbJE9+iilvBV8=
 20260726170001_auth_users_mobile.sql h1:wMVpOvQbNKG1KzNRJZ7/Bn4oJjScyaysFj3GmF2qaPk=
 20260727021805_feishu_connector_heartbeat_and_outbox_ops.sql h1:h97L5zzaWPD2QcLntNuyHEaF+C9prokaiuP/mHc5DlE=
+20260727061632_drop_feishu_connector_heartbeats.sql h1:d2LaE35QjbsY1z+XiR4CKiJM/9IX4eMRyxjGdYhg/BA=

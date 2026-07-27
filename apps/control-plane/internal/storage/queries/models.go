@@ -635,19 +635,6 @@ type FeishuAppConfig struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 飞书 connector 进程心跳快照(每 tenant+service_name 一行);Console 健康摘要与断连看门狗读取
-type FeishuConnectorHeartbeat struct {
-	TenantID         uuid.UUID          `json:"tenant_id"`
-	ServiceName      string             `json:"service_name"`
-	Version          string             `json:"version"`
-	LastHeartbeatAt  pgtype.Timestamptz `json:"last_heartbeat_at"`
-	LastOutboxPollAt pgtype.Timestamptz `json:"last_outbox_poll_at"`
-	// 每 app 连接态数组:[{app_id,config_id,ws_status,last_ws_event_at?}]
-	AppsSnapshot []byte             `json:"apps_snapshot"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 飞书出站消息队列(与业务写同事务入队,投影不阻塞业务;connector 轮询+ack)
 type FeishuOutbox struct {
 	// outbox 行ID

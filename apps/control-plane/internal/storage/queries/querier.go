@@ -283,7 +283,6 @@ type Querier interface {
 	GetEmployeeTemplateByID(ctx context.Context, arg GetEmployeeTemplateByIDParams) (DigitalEmployeeTemplate, error)
 	GetEmployeeTemplateByType(ctx context.Context, arg GetEmployeeTemplateByTypeParams) (DigitalEmployeeTemplate, error)
 	GetFeishuAppConfig(ctx context.Context, arg GetFeishuAppConfigParams) (FeishuAppConfig, error)
-	GetFeishuConnectorHeartbeat(ctx context.Context, arg GetFeishuConnectorHeartbeatParams) (FeishuConnectorHeartbeat, error)
 	GetFeishuIdentityByOpenID(ctx context.Context, arg GetFeishuIdentityByOpenIDParams) (UserFeishuIdentity, error)
 	GetFeishuIdentityByUser(ctx context.Context, arg GetFeishuIdentityByUserParams) (UserFeishuIdentity, error)
 	GetInboxItem(ctx context.Context, arg GetInboxItemParams) (InboxItem, error)
@@ -485,7 +484,6 @@ type Querier interface {
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	// 管理面列表:含 active/unverified/disabled。
 	ListFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error)
-	ListFeishuConnectorHeartbeats(ctx context.Context, tenantID uuid.UUID) ([]FeishuConnectorHeartbeat, error)
 	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
 	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
 	ListFeishuOutboxByStatuses(ctx context.Context, arg ListFeishuOutboxByStatusesParams) ([]FeishuOutbox, error)
@@ -576,7 +574,6 @@ type Querier interface {
 	ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]AuthServiceToken, error)
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
-	ListStaleFeishuConnectorHeartbeats(ctx context.Context, staleBefore pgtype.Timestamptz) ([]FeishuConnectorHeartbeat, error)
 	// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
 	ListStalePendingDeleteTeams(ctx context.Context, staleBefore pgtype.Timestamptz) ([]TenantTeam, error)
 	// 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
@@ -787,7 +784,6 @@ type Querier interface {
 	UpdateUserContact(ctx context.Context, arg UpdateUserContactParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertFeishuAppConfig(ctx context.Context, arg UpsertFeishuAppConfigParams) (FeishuAppConfig, error)
-	UpsertFeishuConnectorHeartbeat(ctx context.Context, arg UpsertFeishuConnectorHeartbeatParams) (FeishuConnectorHeartbeat, error)
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, arg UpsertProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)
