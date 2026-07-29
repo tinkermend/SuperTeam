@@ -71,7 +71,7 @@ export function ProjectEvidencePanel({
             <div className="min-w-0">
               <h3 className="font-semibold text-ink">证据链</h3>
               <p className="truncate text-xs text-ink-2">
-                当前项目可追踪证据引用
+                证据引用与核验元数据（核验≠项目进度）
               </p>
             </div>
           </div>
@@ -124,7 +124,7 @@ export function ProjectEvidencePanel({
               <Th className="min-w-[180px]">标题</Th>
               <Th>类型</Th>
               <Th className="min-w-[200px]">来源</Th>
-              <Th>状态</Th>
+              <Th>核验</Th>
               <Th className="w-[132px] text-right">操作</Th>
             </tr>
           </thead>

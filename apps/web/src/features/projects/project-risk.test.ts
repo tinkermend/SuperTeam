@@ -6,8 +6,10 @@ import type {
   ProjectTask,
 } from "@/lib/api/projects";
 import {
+  buildAttentionBreakdown,
   buildRiskCounts,
   deriveProjectRiskSummary,
+  formatAttentionHeadline,
   matchesProjectRiskFilter,
   resolveProjectOwnerLabel,
   sortProjectsByRisk,
@@ -170,7 +172,7 @@ describe("project risk model", () => {
     expect(summary.reasons.map((reason) => reason.type)).toContain("human_decision");
   });
 
-  it("marks pending review tasks as human decisions without approval flag", () => {
+  it("marks pending review tasks as waiting-human without open decision cards", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [],
       evidence: [],
@@ -185,18 +187,18 @@ describe("project risk model", () => {
 
     expect(summary.level).toBe("danger");
     expect(summary.requiresHuman).toBe(true);
-    expect(summary.primaryReason?.type).toBe("human_decision");
+    expect(summary.primaryReason?.type).toBe("waiting_human");
     expect(summary.reasons).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           source: "tasks",
-          type: "human_decision",
+          type: "waiting_human",
         }),
       ]),
     );
   });
 
-  it("keeps the approval flag as a human decision while the task is still open", () => {
+  it("keeps the approval flag as waiting-human while the task is still open", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [],
       evidence: [],
@@ -210,7 +212,7 @@ describe("project risk model", () => {
     });
 
     expect(summary.requiresHuman).toBe(true);
-    expect(summary.reasons.map((reason) => reason.type)).toContain("human_decision");
+    expect(summary.reasons.map((reason) => reason.type)).toContain("waiting_human");
   });
 
   it("stops reporting a human decision once the approval task is completed", () => {
@@ -452,6 +454,7 @@ describe("project risk model", () => {
       evidence_required: 1,
       execution_failed: 1,
       human_decision: 1,
+      waiting_human: 0,
     });
     expect(queue.filter((item) => matchesProjectRiskFilter(summaries[item.id], "blocked")).map((item) => item.id)).toEqual([
       "human",
@@ -462,4 +465,83 @@ describe("project risk model", () => {
       "evidence",
     ]);
   });
+
+  it("does not treat cancelled tasks as execution-failed pending work", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      project: project("project-cancelled"),
+      tasks: [task("project-cancelled", { status: "cancelled" })],
+    });
+
+    expect(summary.reasons.map((reason) => reason.type)).not.toContain("execution_failed");
+    expect(summary.level).toBe("none");
+  });
+
+  it("splits actionable attention from evidence signals instead of one pending total", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [decision("project-mix")],
+      evidence: [
+        evidence("project-mix", { id: "e1", verification_status: "submitted" }),
+        evidence("project-mix", { id: "e2", verification_status: "rejected" }),
+      ],
+      project: project("project-mix"),
+      tasks: [
+        task("project-mix", { id: "t-wait", status: "waiting_human", title: "等人任务" }),
+        task("project-mix", { id: "t-fail", status: "failed", title: "失败任务" }),
+      ],
+    });
+
+    const breakdown = buildAttentionBreakdown(summary);
+    expect(breakdown.decisions).toBe(1);
+    expect(breakdown.waitingHuman).toBe(1);
+    expect(breakdown.executionFailed).toBe(1);
+    expect(breakdown.evidence).toBe(2);
+    expect(breakdown.actionableTotal).toBe(3);
+    expect(breakdown.signalTotal).toBe(2);
+    expect(breakdown.allTotal).toBe(5);
+
+    const headline = formatAttentionHeadline(summary);
+    expect(headline.hasActionable).toBe(true);
+    expect(headline.primary).toContain("1 待决");
+    expect(headline.primary).toContain("1 等人");
+    expect(headline.primary).toContain("1 失败");
+    expect(headline.detail).toContain("2 证据待核");
+    expect(headline.primary).not.toContain("项待处理");
+  });
+
+  it("labels evidence-only projects as verification signals, not pending work items", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [evidence("project-ev-only", { verification_status: "submitted" })],
+      project: project("project-ev-only"),
+      tasks: [],
+    });
+    const headline = formatAttentionHeadline(summary);
+    expect(headline.hasActionable).toBe(false);
+    expect(headline.primary).toBe("1 条证据待核");
+    expect(buildAttentionBreakdown(summary).actionableTotal).toBe(0);
+  });
+
+
+  it("suppresses evidence and task noise for archived projects", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [decision("archived-1", { status_snapshot: "pending" })],
+      evidence: [
+        evidence("archived-1", { verification_status: "submitted" }),
+        evidence("archived-1", { id: "e2", verification_status: "rejected" }),
+      ],
+      project: project("archived-1", { status: "archived" }),
+      tasks: [task("archived-1", { status: "waiting_human" })],
+    });
+
+    expect(summary.level).toBe("none");
+    expect(summary.reasons).toEqual([]);
+    expect(summary.requiresHuman).toBe(false);
+    expect(formatAttentionHeadline(summary)).toEqual({
+      primary: "无待办",
+      hasActionable: false,
+    });
+  });
+
 });

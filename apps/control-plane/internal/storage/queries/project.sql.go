@@ -1756,7 +1756,8 @@ INSERT INTO project_tasks (
     input_requirements,
     handoff_contract,
     planner_metadata,
-    plan_iteration
+    plan_iteration,
+    max_attempts
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -1781,7 +1782,8 @@ INSERT INTO project_tasks (
     COALESCE($21::jsonb, '{}'::jsonb),
     COALESCE($22::jsonb, '{}'::jsonb),
     COALESCE($23::jsonb, '{}'::jsonb),
-    COALESCE($24::integer, 0)
+    COALESCE($24::integer, 0),
+    $25::integer
 ) RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_event_id, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id, plan_iteration, dismissed_at, dismissed_by
 `
 
@@ -1810,6 +1812,7 @@ type CreateProjectTaskParams struct {
 	HandoffContract           []byte        `json:"handoff_contract"`
 	PlannerMetadata           []byte        `json:"planner_metadata"`
 	PlanIteration             pgtype.Int4   `json:"plan_iteration"`
+	MaxAttempts               int32         `json:"max_attempts"`
 }
 
 func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskParams) (ProjectTask, error) {
@@ -1838,6 +1841,7 @@ func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskPa
 		arg.HandoffContract,
 		arg.PlannerMetadata,
 		arg.PlanIteration,
+		arg.MaxAttempts,
 	)
 	var i ProjectTask
 	err := row.Scan(

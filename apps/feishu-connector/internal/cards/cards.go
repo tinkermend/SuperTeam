@@ -365,7 +365,18 @@ func decisionContextElements(kind string, context map[string]any, payload map[st
 				if title == "" {
 					continue
 				}
-				lines = append(lines, "• "+clamp(title, 100))
+				line := "• " + clamp(title, 100)
+				// 需求清单含全部终态需求(完成/失败/取消),必须逐条标状态,
+				// 否则被取消的需求在卡上与已完成的无法区分。
+				label, _ := demand["status_label"].(string)
+				if label == "" {
+					status, _ := demand["status"].(string)
+					label = demandStatusLabel(status)
+				}
+				if label != "" {
+					line += " · " + label
+				}
+				lines = append(lines, line)
 			}
 			if len(lines) > 0 {
 				sections = append(sections, listSection("需求清单", lines, 8))
@@ -457,7 +468,7 @@ func AcceptanceProgressCard(payload map[string]any, verdicts map[string]string, 
 	elements = append(elements, decisionHeadElements(payload)...)
 	elements = append(elements, acceptanceSignElements(payload, verdicts, interactive, decisionID, projectID)...)
 	elements = append(elements, map[string]any{"tag": "action", "actions": []map[string]any{
-		linkButton("在 Console 查看完整证据", strings.TrimRight(webOrigin, "/") + "/inbox"),
+		linkButton("在 Console 查看完整证据", strings.TrimRight(webOrigin, "/")+"/inbox"),
 	}})
 	return card(header(headerTitle, template), elements...)
 }
@@ -486,7 +497,7 @@ func DecisionResolvedCard(payload map[string]any, webOrigin string) string {
 	elements := []map[string]any{mdBlock(result)}
 	elements = append(elements, decisionBodyElements(payload)...)
 	elements = append(elements, map[string]any{"tag": "action", "actions": []map[string]any{
-		linkButton("在 Console 查看", strings.TrimRight(webOrigin, "/") + "/inbox"),
+		linkButton("在 Console 查看", strings.TrimRight(webOrigin, "/")+"/inbox"),
 	}})
 	return card(header("已处理:"+clamp(title, 80), "grey"), elements...)
 }
@@ -577,6 +588,19 @@ func statusLabel(status string) string {
 		return "已补员重规划"
 	case "exempted":
 		return "豁免"
+	default:
+		return status
+	}
+}
+
+func demandStatusLabel(status string) string {
+	switch status {
+	case "completed":
+		return "已完成"
+	case "failed":
+		return "失败"
+	case "cancelled":
+		return "已取消"
 	default:
 		return status
 	}

@@ -650,7 +650,8 @@ INSERT INTO project_tasks (
     input_requirements,
     handoff_contract,
     planner_metadata,
-    plan_iteration
+    plan_iteration,
+    max_attempts
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_id')::uuid,
@@ -675,7 +676,8 @@ INSERT INTO project_tasks (
     COALESCE(sqlc.narg('input_requirements')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.narg('handoff_contract')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.narg('planner_metadata')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.narg('plan_iteration')::integer, 0)
+    COALESCE(sqlc.narg('plan_iteration')::integer, 0),
+    sqlc.arg('max_attempts')::integer
 ) RETURNING *;
 
 -- name: GetLatestProjectEventSequence :one

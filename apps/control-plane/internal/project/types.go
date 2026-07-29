@@ -1133,6 +1133,9 @@ type DecomposeAcceptedPlanRevisionRequest struct {
 	PlanFingerprint        string
 	DecompositionClaimKey  string
 	Tasks                  []ProjectTaskGraphCreateTask
+	// DefaultMaxAttempts stamps created tasks when they omit MaxAttempts.
+	// Zero falls back to registry default (systemconfig project_task.default_max_attempts).
+	DefaultMaxAttempts int32
 }
 
 type DecomposeAcceptedPlanRevisionResult struct {

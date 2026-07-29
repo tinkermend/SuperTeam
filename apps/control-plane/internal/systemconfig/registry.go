@@ -31,6 +31,7 @@ const (
 	KeyRuntimeWorkspaceBaseDir            = "runtime.workspace_base_dir"
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
+	KeyProjectTaskDefaultMaxAttempts       = "project_task.default_max_attempts"
 	KeyEmployeeMaxPerTeam                 = "employee.max_per_team"
 	KeyTeamConstitutionMaxChars           = "team.constitution_max_chars"
 	KeyRetentionRuntimeEventsDays         = "retention.runtime_events_days"
@@ -202,6 +203,18 @@ var registry = []Definition{
 		DefaultValue: 15 * 60,
 		MinValue:     2 * 60,
 		MaxValue:     6 * 3600,
+	},
+	{
+		Key:    KeyProjectTaskDefaultMaxAttempts,
+		Domain: DomainExecution,
+		Label:  "项目任务默认最大尝试次数",
+		Description: "创建项目任务时若未显式指定 max_attempts,则写入该默认值。" +
+			"仅对可重试的瞬时失败(执行器/runtime/超时)与派发失败恢复生效:attempt_count 达到上限后停为 waiting_human 等人处理,不再自动重试。" +
+			"任务级 max_attempts 可覆盖本默认;下界 1 表示首次失败即等人,上界 5 防止无界烧预算。历史 NULL 行在失败恢复时同样按本配置解析。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 3,
+		MinValue:     1,
+		MaxValue:     5,
 	},
 	{
 		Key:    KeyEmployeeMaxPerTeam,

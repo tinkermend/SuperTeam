@@ -98,10 +98,15 @@ export function ProjectTaskDetailDialog({
   const result = activeGraph?.execution_summaries.find(
     (item) => item.project_task_id === task.id,
   );
-  const pendingDecisions = decisionRequests.filter(
-    (item) =>
-      item.project_task_id === task.id && item.status_snapshot === "pending",
-  );
+  const openDecisionStatuses = new Set(["pending", "waiting", "requested", "open"]);
+  const pendingDecisions = decisionRequests.filter((item) => {
+    if (item.project_task_id !== task.id) return false;
+    return openDecisionStatuses.has((item.status_snapshot ?? "").trim().toLowerCase());
+  });
+  const isWaitingHuman =
+    (task.status ?? "").trim().toLowerCase() === "waiting_human" ||
+    isAwaitingHumanApproval(task);
+  const orphanHumanWait = isWaitingHuman && pendingDecisions.length === 0;
   const employeeName = task.assigned_digital_employee_id
     ? (activeGraph?.employees.find(
         (item) => item.digital_employee_id === task.assigned_digital_employee_id,
@@ -361,7 +366,38 @@ export function ProjectTaskDetailDialog({
                 <ArrowUpRight className="size-3.5" />
               </Link>
             </div>
-            {pendingDecisions.length === 0 ? (
+            {orphanHumanWait ? (
+              <div
+                className="rounded-[10px] bg-warn/10 px-3 py-2.5 shadow-[inset_2px_0_0_var(--warn)]"
+                data-testid="task-detail-orphan-human-wait"
+              >
+                <p className="text-[12.5px] font-semibold leading-5 text-ink">
+                  任务停在「等待人工」，但没有关联的待决决策卡
+                </p>
+                <p className="mt-1 text-[12px] leading-5 text-ink-2">
+                  常见原因：派发闸门阻塞、决策已处理但任务未释放、或等待请求未挂到本任务。
+                  {hasBlocker ? ` 当前编排阻塞：${blockerText}。` : " 可在编排区与执行轨迹核对原因。"}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Link
+                    className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
+                    params={{ projectId }}
+                    search={{ tab: "trace", task: task.id }}
+                    to="/projects/$projectId"
+                  >
+                    查看执行轨迹
+                    <ArrowUpRight className="size-3.5" />
+                  </Link>
+                  <Link
+                    className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
+                    to="/inbox"
+                  >
+                    去收件箱核对
+                    <ArrowUpRight className="size-3.5" />
+                  </Link>
+                </div>
+              </div>
+            ) : pendingDecisions.length === 0 ? (
               <p className="text-[12.5px] text-ink-3">暂无待决事项</p>
             ) : (
               <ul className="space-y-2">

@@ -360,6 +360,9 @@ type CreateProjectTaskRequest struct {
 	PlannerMetadata           map[string]any
 	BlockedByTaskIDs          []uuid.UUID
 	PlanIteration             int32
+	// MaxAttempts is the per-task auto-retry budget. Nil/<=0 at create time is
+	// replaced by platform default (system config / registry default 3).
+	MaxAttempts *int32
 }
 
 type RecordProjectTaskResultRequest struct {
@@ -408,6 +411,8 @@ type CreateProjectTaskGraphRequest struct {
 	CoordinationJobID uuid.UUID
 	RouteDecisionID   uuid.UUID
 	Tasks             []ProjectTaskGraphCreateTask
+	// DefaultMaxAttempts is applied to each graph task without MaxAttempts.
+	DefaultMaxAttempts int32
 }
 
 type ProjectTaskGraphCreateTask struct {
@@ -425,6 +430,7 @@ type ProjectTaskGraphCreateTask struct {
 	HandoffContract           map[string]any
 	PlannerMetadata           map[string]any
 	BlockedByKeys             []string
+	MaxAttempts               *int32
 }
 
 type CreateProjectTaskGraphResult struct {
@@ -542,6 +548,10 @@ type RecoverProjectTaskAttemptFailureWritebackRequest struct {
 	RetryLeaseToken       string
 	RetryIdempotencyKey   string
 	RetryNotBefore        *time.Time
+	// Decision is required when TaskTargetStatus is waiting_human: created and
+	// linked to project_tasks.waiting_request_id in the same transaction so the
+	// task cannot park without an actionable card (sister-F1 / a144f12d class).
+	Decision *CreateDecisionRequestRequest
 }
 
 type WaitHumanProjectTaskAttemptWritebackRequest struct {

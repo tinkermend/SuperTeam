@@ -2144,6 +2144,10 @@ func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *quer
 	if err != nil {
 		return ProjectTask{}, err
 	}
+	// Persist a concrete max_attempts so failure recovery never falls back to the
+	// historical silent default of 1. Callers may pass platform default via
+	// MaxAttempts; otherwise registry/systemconfig default (3) is used.
+	maxAttempts := EffectiveProjectTaskMaxAttempts(req.MaxAttempts, 0)
 	row, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
 		TenantID:                  req.TenantID,
 		ProjectID:                 req.ProjectID,
@@ -2169,6 +2173,7 @@ func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *quer
 		HandoffContract:           handoffContract,
 		PlannerMetadata:           plannerMetadata,
 		PlanIteration:             int4Ptr(&req.PlanIteration),
+		MaxAttempts:               maxAttempts,
 	})
 	if err != nil {
 		return ProjectTask{}, err
@@ -2225,6 +2230,13 @@ func (r *PgRepository) createProjectTaskGraphWithQueries(ctx context.Context, q 
 		}
 		employeeID := planned.AssignedDigitalEmployeeID
 		taskKind := planned.TaskKind
+		taskMaxAttempts := planned.MaxAttempts
+		if taskMaxAttempts == nil || *taskMaxAttempts <= 0 {
+			if req.DefaultMaxAttempts > 0 {
+				v := ClampProjectTaskMaxAttempts(req.DefaultMaxAttempts)
+				taskMaxAttempts = &v
+			}
+		}
 		task, err := r.createProjectTaskWithQueries(ctx, q, CreateProjectTaskRequest{
 			TenantID:                  req.TenantID,
 			ProjectID:                 req.ProjectID,
@@ -2246,6 +2258,7 @@ func (r *PgRepository) createProjectTaskGraphWithQueries(ctx context.Context, q 
 			InputRequirements:         planned.InputRequirements,
 			HandoffContract:           planned.HandoffContract,
 			PlannerMetadata:           planned.PlannerMetadata,
+			MaxAttempts:               taskMaxAttempts,
 		})
 		if err != nil {
 			return projectTaskGraphWriteResult{}, err
@@ -2466,12 +2479,13 @@ func validateDecomposeAcceptedPlanRevisionRequest(req DecomposeAcceptedPlanRevis
 
 func graphRequestFromAcceptedPlanRevisionRequest(req DecomposeAcceptedPlanRevisionRequest) CreateProjectTaskGraphRequest {
 	return CreateProjectTaskGraphRequest{
-		TenantID:          req.TenantID,
-		ProjectID:         req.ProjectID,
-		DemandID:          req.DemandID,
-		CoordinationJobID: req.CoordinationJobID,
-		RouteDecisionID:   req.RouteDecisionID,
-		Tasks:             req.Tasks,
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		DemandID:           req.DemandID,
+		CoordinationJobID:  req.CoordinationJobID,
+		RouteDecisionID:    req.RouteDecisionID,
+		Tasks:              req.Tasks,
+		DefaultMaxAttempts: req.DefaultMaxAttempts,
 	}
 }
 
@@ -4675,11 +4689,27 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 		}
 
 		var task ProjectTask
+		var decision DecisionRequest
 		switch req.TaskTargetStatus {
 		case ProjectTaskStatusQueued:
 			task, err = r.scheduleProjectTaskRetryWithQueries(ctx, q, req, &event.ID)
 		case ProjectTaskStatusWaitingHuman:
-			task, err = r.moveProjectTaskToWaitingHumanWithQueries(ctx, q, req, &event.ID)
+			if req.Decision == nil {
+				return ProjectTaskWritebackResult{}, fmt.Errorf("waiting_human recovery requires decision payload: %w", ErrInvalidProject)
+			}
+			decisionReq := *req.Decision
+			decisionReq.CreatedEventID = &event.ID
+			if decisionReq.ProjectTaskID == nil {
+				decisionReq.ProjectTaskID = &req.Task.ID
+			}
+			if decisionReq.StatusSnapshot == "" {
+				decisionReq.StatusSnapshot = "pending"
+			}
+			decision, err = r.createDecisionRequestWithQueries(ctx, q, decisionReq)
+			if err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
+			task, err = r.moveProjectTaskToWaitingHumanWithQueries(ctx, q, req, &event.ID, &decision.ID)
 		case ProjectTaskStatusFailed, ProjectTaskStatusCancelled:
 			task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.Failure.TenantID, req.Failure.ProjectTaskID, req.TaskTargetStatus, &event.ID, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
 			if err == nil && task.DemandID != nil {
@@ -4691,7 +4721,7 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
-		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+		return ProjectTaskWritebackResult{Task: task, Event: event, Decision: decision}, nil
 	})
 }
 
@@ -5091,10 +5121,10 @@ func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, 
 	return taskFromRecord(row)
 }
 
-func (r *PgRepository) moveProjectTaskToWaitingHumanWithQueries(ctx context.Context, q *queries.Queries, req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+func (r *PgRepository) moveProjectTaskToWaitingHumanWithQueries(ctx context.Context, q *queries.Queries, req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID, waitingRequestID *uuid.UUID) (ProjectTask, error) {
 	row, err := q.MoveProjectTaskToWaitingHuman(ctx, queries.MoveProjectTaskToWaitingHumanParams{
 		WaitingReason:    req.WaitingReason,
-		WaitingRequestID: uuid.NullUUID{},
+		WaitingRequestID: nullUUID(waitingRequestID),
 		LatestEventID:    nullUUID(eventID),
 		TenantID:         req.Task.TenantID,
 		ID:               req.Task.ID,

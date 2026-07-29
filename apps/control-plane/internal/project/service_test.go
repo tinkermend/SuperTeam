@@ -3574,6 +3574,10 @@ func TestFailProjectTaskAttemptWaitingHumanEmitsHumanTask(t *testing.T) {
 	require.Len(t, repo.decisionRequests, 1, "waiting_human must create a decision request (sister-F1)")
 	require.Equal(t, "project_task_approval", repo.decisionRequests[0].DecisionType)
 	require.Equal(t, fixture.taskID, *repo.decisionRequests[0].ProjectTaskID)
+	require.NotNil(t, task.WaitingRequestID, "waiting_request_id must link the decision (a144f12d class)")
+	require.Equal(t, repo.decisionRequests[0].ID, *task.WaitingRequestID)
+	require.NotNil(t, repo.tasks[0].WaitingRequestID)
+	require.Equal(t, repo.decisionRequests[0].ID, *repo.tasks[0].WaitingRequestID)
 	require.Len(t, inbox.upserts, 1, "the decision must be projected to the inbox")
 	require.Equal(t, repo.decisionRequests[0].ID, inbox.upserts[0].ID)
 }
@@ -3613,7 +3617,7 @@ func TestProjectTaskDispatchRecoveryActionSchedulesRetryForRetryableFailure(t *t
 		},
 	}
 
-	action := projectTaskDispatchRecoveryAction(task, event, 1)
+	action := projectTaskDispatchRecoveryAction(task, event, 1, 0)
 
 	require.Equal(t, ProjectTaskRecoveryActionRetryScheduled, action.Action)
 	require.Equal(t, FailureFamilyTransientRuntime, action.FailureFamily)
@@ -3636,7 +3640,7 @@ func TestProjectTaskDispatchRecoveryActionMovesNonRetryableFailureToWaitingHuman
 		},
 	}
 
-	action := projectTaskDispatchRecoveryAction(task, event, 1)
+	action := projectTaskDispatchRecoveryAction(task, event, 1, 0)
 
 	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, action.Action)
 	require.Equal(t, FailureFamilyInvalidContract, action.FailureFamily)
@@ -3659,7 +3663,7 @@ func TestProjectTaskDispatchRecoveryActionMovesRetryExhaustionToWaitingHuman(t *
 		},
 	}
 
-	action := projectTaskDispatchRecoveryAction(task, event, 3)
+	action := projectTaskDispatchRecoveryAction(task, event, 3, 0)
 
 	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, action.Action)
 	require.Equal(t, FailureFamilyTransientRuntime, action.FailureFamily)
@@ -12698,6 +12702,7 @@ func (r *memoryRepository) RejectPlanRevision(ctx context.Context, req RejectPla
 }
 
 func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
+	maxAttempts := EffectiveProjectTaskMaxAttempts(req.MaxAttempts, 0)
 	task := ProjectTask{
 		ID:                        uuid.New(),
 		TenantID:                  req.TenantID,
@@ -12709,6 +12714,7 @@ func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProj
 		AssignedDigitalEmployeeID: req.AssignedDigitalEmployeeID,
 		RiskLevel:                 strPtrOrNil(req.RiskLevel),
 		RequiresHumanApproval:     req.RequiresHumanApproval,
+		MaxAttempts:               &maxAttempts,
 		CreatedAt:                 time.Now().UTC(),
 		UpdatedAt:                 time.Now().UTC(),
 	}
@@ -14286,12 +14292,29 @@ func (r *memoryRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context
 		}
 		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
 	case ProjectTaskStatusWaitingHuman:
-		task, err := r.moveProjectTaskToWaitingHuman(req, &event.ID)
+		if req.Decision == nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, fmt.Errorf("waiting_human recovery requires decision payload: %w", ErrInvalidProject)
+		}
+		decisionReq := *req.Decision
+		decisionReq.CreatedEventID = &event.ID
+		if decisionReq.ProjectTaskID == nil {
+			decisionReq.ProjectTaskID = &req.Task.ID
+		}
+		if decisionReq.StatusSnapshot == "" {
+			decisionReq.StatusSnapshot = "pending"
+		}
+		decision, err := r.CreateDecisionRequest(ctx, decisionReq)
 		if err != nil {
 			r.restoreWritebackSnapshot(snapshot)
 			return ProjectTaskWritebackResult{}, err
 		}
-		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+		task, err := r.moveProjectTaskToWaitingHuman(req, &event.ID, &decision.ID)
+		if err != nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event, Decision: decision}, nil
 	case ProjectTaskStatusFailed, ProjectTaskStatusCancelled:
 		task, err := r.UpdateProjectTaskStatus(ctx, req.Failure.TenantID, req.Failure.ProjectTaskID, req.TaskTargetStatus, &event.ID, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
 		if err != nil {
@@ -14517,7 +14540,7 @@ func (r *memoryRepository) scheduleProjectTaskRetry(req RecoverProjectTaskAttemp
 	return ProjectTask{}, ErrProjectNotFound
 }
 
-func (r *memoryRepository) moveProjectTaskToWaitingHuman(req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+func (r *memoryRepository) moveProjectTaskToWaitingHuman(req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID, waitingRequestID *uuid.UUID) (ProjectTask, error) {
 	for index, task := range r.tasks {
 		if task.TenantID != req.Failure.TenantID || task.ID != req.Failure.ProjectTaskID {
 			continue
@@ -14529,7 +14552,7 @@ func (r *memoryRepository) moveProjectTaskToWaitingHuman(req RecoverProjectTaskA
 		now := time.Now().UTC()
 		task.Status = ProjectTaskStatusWaitingHuman
 		task.WaitingReason = &waitingReason
-		task.WaitingRequestID = nil
+		task.WaitingRequestID = waitingRequestID
 		task.StatusChangedAt = now
 		task.UpdatedAt = now
 		r.tasks[index] = task

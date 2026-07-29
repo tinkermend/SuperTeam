@@ -64,6 +64,29 @@ func TestDispatchAndDownstreamReleaseCardsHaveApproveReject(t *testing.T) {
 	}
 }
 
+func TestClosureConfirmDemandListCarriesStatus(t *testing.T) {
+	closure := DecisionCard(map[string]any{
+		"kind":          "closure_confirm",
+		"decision_type": "project_acceptance",
+		"title":         "结项确认 · 支付网关",
+		"project_name":  "支付网关",
+		"context": map[string]any{
+			"demands": []any{
+				map[string]any{"title": "接入渠道对账", "status": "completed", "status_label": "已完成"},
+				map[string]any{"title": "遗留 E2E 夹具需求", "status": "cancelled", "status_label": "已取消"},
+				// 老卡片快照没有 status_label,必须由 status 兜底。
+				map[string]any{"title": "旧快照需求", "status": "failed"},
+			},
+		},
+	}, "dec-c", "proj-1", "http://web.local:3000")
+	mustValid(t, closure)
+	for _, want := range []string{"接入渠道对账 · 已完成", "遗留 E2E 夹具需求 · 已取消", "旧快照需求 · 失败"} {
+		if !strings.Contains(closure, want) {
+			t.Fatalf("closure card missing %q:\n%s", want, closure)
+		}
+	}
+}
+
 func TestClosureConfirmAndPlanningFailedCards(t *testing.T) {
 	closure := DecisionCard(map[string]any{
 		"kind":          "closure_confirm",

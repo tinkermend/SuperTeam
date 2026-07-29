@@ -296,6 +296,8 @@ export function InboxProgressBar({ progress }: { progress: InboxProgress | null 
 export type InboxDemandRef = {
   id?: string;
   title: string;
+  /** 终态需求含 completed / failed / cancelled，展示处必须区分,不得一律当已完成。 */
+  status?: string;
   taskTitles: string[];
 };
 
@@ -322,9 +324,24 @@ export function readDemandRefs(item: InboxItem): InboxDemandRef[] {
           }
         }
       }
-      refs.push({ id, title, taskTitles });
+      const status =
+        typeof record.status === "string" && record.status.trim()
+          ? record.status.trim()
+          : undefined;
+      refs.push({ id, title, status, taskTitles });
     }
-    if (refs.length > 0) return refs;
+    if (refs.length > 0) {
+      // 服务端 primary_demand_id 是"闭合本项目的那条需求"的唯一口径(结项卡上必为
+      // 已完成需求);refs[0] 是 headline 与 refs 消费点的默认取值,必须与它一致,
+      // 否则标题会挂到刚被取消的需求上。
+      const primaryId = readContextText(context, ["primary_demand_id"]);
+      const primaryIndex = primaryId ? refs.findIndex((ref) => ref.id === primaryId) : -1;
+      if (primaryIndex > 0) {
+        const [primary] = refs.splice(primaryIndex, 1);
+        refs.unshift(primary);
+      }
+      return refs;
+    }
   }
 
   const demandId =

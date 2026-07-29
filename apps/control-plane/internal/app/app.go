@@ -614,7 +614,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			projectTaskRunStarterAdapter{runService: runService},
 		).WithTeamBoundaryGatekeeper(teamBoundaryGatekeeperAdapter{employees: employeeRepository}).
 			WithDigitalEmployeePlanningProfiles(planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)).
-			WithPreDispatchGateReaders(gateAdapter, gateAdapter)
+			WithPreDispatchGateReaders(gateAdapter, gateAdapter).
+			WithMaxAttemptsDefault(func(ctx context.Context, tenantID uuid.UUID) int32 {
+				return int32(systemConfigService.Int64(ctx, tenantID, systemconfig.KeyProjectTaskDefaultMaxAttempts))
+			})
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		// Wire the adversarial-review judge client (same OpenAI-compatible seam as
 		// the route planner) and the judge model id, so RunAdversarialReview /

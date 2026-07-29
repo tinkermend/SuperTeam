@@ -384,6 +384,45 @@ describe("InboxView", () => {
     expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
   });
 
+  it("tags terminal demand status and leads with the server primary demand on closure cards", async () => {
+    const completedDemandId = "6cfc23eb-aaaa-2222-3333-444444444444";
+    const cancelledDemandId = "6cfc23eb-bbbb-2222-3333-444444444444";
+    const closureItem = makeInboxItem({
+      context: {
+        decision_type: "project_acceptance",
+        // 服务端按 updated_at 倒序,刚被取消的需求排在前面。
+        demands: [
+          { id: cancelledDemandId, status: "cancelled", title: "遗留 E2E 夹具需求" },
+          {
+            id: completedDemandId,
+            status: "completed",
+            task_titles: ["分析 CPU 使用率及高占用进程"],
+            title: "分析 CPU 使用率"
+},
+        ],
+        kind: "closure_confirm",
+        primary_demand_id: completedDemandId,
+        project_name: "测试项目"
+},
+      item_type: "project_decision",
+      source_approval_request_id: undefined,
+      source_project_name: "测试项目",
+      source_task_id: undefined,
+      source_type: "project_decision_request",
+      title: "结项确认 · 测试项目"
+});
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: closureItem }));
+
+    await expect.element(screen.getByText("结项确认 · 测试项目")).toBeVisible();
+    // headline 取 primary(已完成)需求,而不是列表首位的已取消需求。
+    await expect.element(screen.getByText(/分析 CPU 使用率 等 2 项/).first()).toBeVisible();
+    expect(screen.getByText(/遗留 E2E 夹具需求 等 2 项/).query()).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：结项确认 · 测试项目" }));
+    await expect.element(screen.getByText("关联需求 · 分析 CPU 使用率（已完成）")).toBeVisible();
+    await expect.element(screen.getByText("关联需求 · 遗留 E2E 夹具需求（已取消）")).toBeVisible();
+  });
+
   it("lists demand and task refs before project for project_acceptance cards", async () => {
     const demandId = "6cfc23eb-1111-2222-3333-444444444444";
     const acceptanceItem = makeInboxItem({

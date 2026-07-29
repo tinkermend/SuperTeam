@@ -74,6 +74,10 @@ func (s *Service) SetScenarioTemplateResolver(resolver ScenarioTemplateResolver)
 	s.scenarioTemplates = resolver
 }
 
+func (s *Service) platformDefaultMaxAttempts(ctx context.Context, tenantID uuid.UUID) int32 {
+	return ResolvePlatformDefaultMaxAttempts(ctx, s.systemConfig, tenantID)
+}
+
 const (
 	projectTaskAttemptStartReadinessAttempts = 25
 	projectTaskAttemptStartReadinessBackoff  = 200 * time.Millisecond
@@ -5097,8 +5101,8 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 	if err != nil {
 		return nil, err
 	}
-	action := projectTaskFailureAction(task, req.FailureFamily, req.Retryable)
-	result, err := writebackRepository.RecoverProjectTaskAttemptFailureWriteback(ctx, RecoverProjectTaskAttemptFailureWritebackRequest{
+	action := projectTaskFailureAction(task, req.FailureFamily, req.Retryable, s.platformDefaultMaxAttempts(ctx, req.TenantID))
+	writebackReq := RecoverProjectTaskAttemptFailureWritebackRequest{
 		Task:                  task,
 		Attempt:               attempt,
 		Failure:               req,
@@ -5108,24 +5112,17 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 		RetryAttemptID:        uuid.New(),
 		RetryLeaseToken:       "retry-" + uuid.NewString(),
 		RetryIdempotencyKey:   projectTaskRetryIdempotencyKey(task, req.IdempotencyKey),
-	})
-	if err != nil {
-		return nil, err
 	}
-	// Sister-F1 (handoff §6): a failed attempt whose failure family parks the
-	// task waiting_human still needs a durable, human-actionable card. Before
-	// this fix the method returned here with no decision request and no inbox
-	// projection — the task blocked silently forever (no card to click, no
-	// coordinator signal, fixture project_tasks.id=a144f12d). Mirror
-	// WaitHumanProjectTaskAttempt / recoverProjectTaskAttempt: create the
-	// decision request keyed to the failure's wait reason and project it.
-	if result.Task.Status == ProjectTaskStatusWaitingHuman {
+	// Sister-F1 (handoff §6 / a144f12d): parking waiting_human without a linked
+	// decision left tasks silently blocked. Decision is created+linked inside
+	// the failure writeback transaction; service only projects inbox.
+	if action == ProjectTaskStatusWaitingHuman {
 		projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
 		if err != nil {
 			return nil, err
 		}
 		reason := humanWaitReasonForFailureFamily(req.FailureFamily)
-		decision, err := s.repository.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		writebackReq.Decision = &CreateDecisionRequestRequest{
 			TenantID:          req.TenantID,
 			ProjectID:         task.ProjectID,
 			CoordinationJobID: task.CoordinationJobID,
@@ -5136,13 +5133,18 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 			SummarySnapshot:   humanReadableFailureSummary(req.FailureFamily, req.FailureSummary),
 			RiskLevelSnapshot: stringValue(task.RiskLevel),
 			StatusSnapshot:    "pending",
-			CreatedEventID:    &result.Event.ID,
-		})
-		if err != nil {
-			return nil, err
+		}
+	}
+	result, err := writebackRepository.RecoverProjectTaskAttemptFailureWriteback(ctx, writebackReq)
+	if err != nil {
+		return nil, err
+	}
+	if result.Task.Status == ProjectTaskStatusWaitingHuman {
+		if result.Decision.ID == uuid.Nil {
+			return nil, fmt.Errorf("waiting_human writeback missing decision: %w", ErrInvalidProject)
 		}
 		if s.inbox != nil {
-			if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
 				return nil, err
 			}
 		}
@@ -5566,7 +5568,7 @@ func isTerminalProjectTaskStatus(status string) bool {
 	}
 }
 
-func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable *bool) string {
+func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable *bool, platformDefaultMaxAttempts int32) string {
 	if retryable != nil && !*retryable {
 		if failureFamily == FailureFamilyBusinessCancelled || failureFamily == FailureFamilyPlanInvalid || failureFamily == FailureFamilyRequirementChanged {
 			return ProjectTaskStatusCancelled
@@ -5575,10 +5577,7 @@ func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable 
 	}
 	switch failureFamily {
 	case FailureFamilyTransientRuntime, FailureFamilyTransientProvider, FailureFamilyTimeout:
-		maxAttempts := int32(1)
-		if task.MaxAttempts != nil {
-			maxAttempts = *task.MaxAttempts
-		}
+		maxAttempts := EffectiveProjectTaskMaxAttempts(task.MaxAttempts, platformDefaultMaxAttempts)
 		if task.AttemptCount < maxAttempts {
 			return ProjectTaskStatusQueued
 		}
@@ -5634,7 +5633,7 @@ func (s *Service) RecoverProjectTaskDispatchFailure(ctx context.Context, req Rec
 	if err != nil {
 		return nil, err
 	}
-	action := projectTaskDispatchRecoveryAction(task, event, dispatchFailureCount)
+	action := projectTaskDispatchRecoveryAction(task, event, dispatchFailureCount, s.platformDefaultMaxAttempts(ctx, req.TenantID))
 	result, err := repository.RecoverProjectTaskDispatchFailure(ctx, RecoverProjectTaskDispatchFailureWritebackRequest{
 		TenantID:       req.TenantID,
 		ProjectID:      req.ProjectID,
@@ -5917,8 +5916,8 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 	// once max_attempts is reached.
 	retryAt := now.Add(defaultDispatchRecoveryBackoff)
 	retryable := true
-	action := projectTaskFailureAction(task, recoveryFailureFamilyForAction(req.FailureFamily), &retryable)
-	result, err := writebackRepository.RecoverProjectTaskAttemptFailureWriteback(ctx, RecoverProjectTaskAttemptFailureWritebackRequest{
+	action := projectTaskFailureAction(task, recoveryFailureFamilyForAction(req.FailureFamily), &retryable, s.platformDefaultMaxAttempts(ctx, req.TenantID))
+	writebackReq := RecoverProjectTaskAttemptFailureWritebackRequest{
 		Task:                  task,
 		Attempt:               attempt,
 		Failure:               FailProjectTaskAttemptRequest{ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{TenantID: req.TenantID, AttemptID: req.AttemptID, ProjectTaskID: req.ProjectTaskID, RuntimeNodeID: uuidValue(attempt.RuntimeNodeID), LeaseToken: attempt.LeaseToken, IdempotencyKey: "recovery-" + req.AttemptID.String()}, FailureSummary: req.Summary, FailureFamily: recoveryFailureFamilyForAction(req.FailureFamily), Retryable: &retryable},
@@ -5929,19 +5928,13 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 		RetryLeaseToken:       "retry-" + uuid.NewString(),
 		RetryIdempotencyKey:   projectTaskRetryIdempotencyKey(task, "recovery-"+req.AttemptID.String()),
 		RetryNotBefore:        &retryAt,
-	})
-	if err != nil {
-		return nil, err
 	}
-	// The attempt-failure writeback does not create a decision request; a
-	// recovery that parks the task waiting-human still needs a durable human
-	// next action, so create and project one here.
-	if result.Task.Status == ProjectTaskStatusWaitingHuman {
+	if action == ProjectTaskStatusWaitingHuman {
 		projectRecord, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
 		if err != nil {
 			return nil, err
 		}
-		decision, err := s.repository.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		writebackReq.Decision = &CreateDecisionRequestRequest{
 			TenantID:          req.TenantID,
 			ProjectID:         req.ProjectID,
 			ProjectTaskID:     &req.ProjectTaskID,
@@ -5951,13 +5944,18 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 			SummarySnapshot:   req.Summary,
 			RiskLevelSnapshot: stringValue(task.RiskLevel),
 			StatusSnapshot:    "pending",
-			CreatedEventID:    &result.Event.ID,
-		})
-		if err != nil {
-			return nil, err
+		}
+	}
+	result, err := writebackRepository.RecoverProjectTaskAttemptFailureWriteback(ctx, writebackReq)
+	if err != nil {
+		return nil, err
+	}
+	if result.Task.Status == ProjectTaskStatusWaitingHuman {
+		if result.Decision.ID == uuid.Nil {
+			return nil, fmt.Errorf("waiting_human recovery writeback missing decision: %w", ErrInvalidProject)
 		}
 		if s.inbox != nil {
-			if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
 				return nil, err
 			}
 		}
@@ -5986,7 +5984,7 @@ func uuidValue(value *uuid.UUID) uuid.UUID {
 	return *value
 }
 
-func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount int64) ProjectTaskRecoveryAction {
+func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount int64, platformDefaultMaxAttempts int32) ProjectTaskRecoveryAction {
 	retryable := boolPayload(event.Payload, "retryable", true)
 	failureFamily := dispatchRecoveryFailureFamily(event, retryable)
 	waitingReason := humanWaitReasonForFailureFamily(failureFamily)
@@ -6002,7 +6000,7 @@ func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dis
 			WaitingReason: waitingReason,
 		}
 	}
-	if projectTaskDispatchRetryAvailable(task, dispatchFailureCount) {
+	if projectTaskDispatchRetryAvailable(task, dispatchFailureCount, platformDefaultMaxAttempts) {
 		retryAt := time.Now().UTC().Add(defaultDispatchRecoveryBackoff)
 		return ProjectTaskRecoveryAction{
 			Action:         ProjectTaskRecoveryActionRetryScheduled,
@@ -6081,11 +6079,8 @@ func stringPayload(payload map[string]any, key string) string {
 // recorded dispatch_failed events. attempt_count cannot be used here: it only
 // increments when an attempt is queued, so it stays 0 for pure dispatch
 // failures and would allow unlimited dispatch retries.
-func projectTaskDispatchRetryAvailable(task ProjectTask, dispatchFailureCount int64) bool {
-	maxAttempts := int64(1)
-	if task.MaxAttempts != nil {
-		maxAttempts = int64(*task.MaxAttempts)
-	}
+func projectTaskDispatchRetryAvailable(task ProjectTask, dispatchFailureCount int64, platformDefaultMaxAttempts int32) bool {
+	maxAttempts := int64(EffectiveProjectTaskMaxAttempts(task.MaxAttempts, platformDefaultMaxAttempts))
 	return dispatchFailureCount < maxAttempts
 }
 

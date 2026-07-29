@@ -42,6 +42,7 @@ import type {
   InboxStatus,
   InboxViewMode
 } from "@/lib/api/inbox";
+import { demandStatusLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import type { InboxStreamConnection } from "../inbox-stream-status";
 import { formatInboxActionLabel } from "./action-format";
@@ -671,7 +672,10 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
     refs.push({
       key: `demand-${demand.id ?? demand.title}`,
       icon: <Layers className="size-4 shrink-0 text-ink-3" />,
-      label: `关联需求 · ${demand.title}`,
+      // 结项卡会带上已取消/失败的终态需求,不标状态会与已完成的混为一谈。
+      label: demand.status
+        ? `关联需求 · ${demand.title}（${demandStatusLabel(demand.status)}）`
+        : `关联需求 · ${demand.title}`,
       meta: demand.id ? "demand_id ↗" : "demand",
       href: demand.id ? `/workflows/${encodeURIComponent(demand.id)}` : undefined
 });

@@ -20,7 +20,7 @@ import {
   type Tone
 } from "@/components/superteam";
 import type { ProjectArtifactRef, ProjectReportRef } from "@/lib/api/projects";
-import { statusLabel } from "@/lib/status-labels";
+import { retentionStatusLabel } from "@/lib/status-labels";
 import {
   ArtifactPreviewSheet,
   artifactContentHref,
@@ -69,7 +69,7 @@ export function ProjectArtifactReportPanel({
           <div className="min-w-0">
             <h3 className="font-semibold text-ink">工件报告</h3>
             <p className="truncate text-xs text-ink-2">
-              执行输出、工件保留状态与报告对象引用
+              执行输出与报告引用；保留列为存储治理，不是业务进度
             </p>
           </div>
         </div>
@@ -108,7 +108,7 @@ export function ProjectArtifactReportPanel({
             <tr>
               <Th className="min-w-[180px]">标题</Th>
               <Th>类型</Th>
-              <Th>保留状态</Th>
+              <Th>保留策略</Th>
               <Th className="min-w-[220px]">Object Ref</Th>
               <Th>内容</Th>
             </tr>
@@ -131,7 +131,7 @@ export function ProjectArtifactReportPanel({
                   <Td className="text-ink-2">{artifact.artifact_type}</Td>
                   <Td>
                     <StatusPill tone={retentionTone(artifact.retention_status)}>
-                      {statusLabel(artifact.retention_status)}
+                      {retentionStatusLabel(artifact.retention_status)}
                     </StatusPill>
                   </Td>
                   <Td className="max-w-[280px]">
@@ -252,7 +252,7 @@ function OutputFilesSection({
             <Th className="min-w-[200px]">文件</Th>
             <Th>格式</Th>
             <Th>大小</Th>
-            <Th>保留状态</Th>
+            <Th>保留策略</Th>
             <Th>内容</Th>
           </tr>
         </thead>
@@ -279,7 +279,7 @@ function OutputFilesSection({
               </Td>
               <Td>
                 <StatusPill tone={retentionTone(artifact.retention_status)}>
-                  {statusLabel(artifact.retention_status)}
+                  {retentionStatusLabel(artifact.retention_status)}
                 </StatusPill>
               </Td>
               <Td>

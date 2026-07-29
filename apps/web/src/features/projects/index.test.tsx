@@ -1521,7 +1521,7 @@ describe("ProjectsView", () => {
     ).toBeNull();
     // Project-first columns surface owner name, risk label and current handler.
     await expect.element(screen.getByText("负责人甲")).toBeInTheDocument();
-    await expect.element(screen.getByText("等待人工决策").first()).toBeInTheDocument();
+    await expect.element(screen.getByText("待决决策").first()).toBeInTheDocument();
     await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
     await expect.element(screen.getByText("运维检索员工")).toBeInTheDocument();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
@@ -1626,7 +1626,7 @@ describe("ProjectsView", () => {
     );
     expect(headers).toEqual([
       "项目",
-      "待处理",
+      "待办拆分",
       "当前处理者",
       "最近活动",
       "操作",
@@ -2699,7 +2699,7 @@ describe("ProjectsView", () => {
     const pendingRowsText = pendingQueue.querySelector("tbody")?.textContent ?? "";
     expect(pendingQueue.textContent).toContain("正在识别风险");
     expect(pendingRowsText).toContain("识别中");
-    expect(pendingRowsText).not.toContain("等待人工决策");
+    expect(pendingRowsText).not.toContain("待决决策");
     expect(pendingRowsText).not.toContain("执行失败");
 
     project2RiskGate.resolve();
@@ -2708,7 +2708,7 @@ describe("ProjectsView", () => {
       const settledQueue = screen.getByTestId("project-risk-queue").element();
       const settledRowsText = settledQueue.querySelector("tbody")?.textContent ?? "";
       expect(settledRowsText).toContain("执行失败");
-      expect(settledRowsText).toContain("等待人工决策");
+      expect(settledRowsText).toContain("待决决策");
       expect(settledQueue.textContent).not.toContain("正在识别风险");
     });
   });
@@ -2840,7 +2840,7 @@ describe("ProjectsView", () => {
     await expect
       .element(screen.getByTestId("project-risk-queue").getByText("生产巡检整改"))
       .toBeVisible();
-    await expect.element(screen.getByText("风险待确认")).toBeVisible();
+    await expect.element(screen.getByText("风险待确认").first()).toBeVisible();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
     expect(queueText).toContain("进入项目");
   });

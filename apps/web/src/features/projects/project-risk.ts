@@ -13,6 +13,7 @@ export type ProjectRiskLevel = "none" | "info" | "warn" | "danger";
 
 export type ProjectRiskReasonType =
   | "human_decision"
+  | "waiting_human"
   | "execution_failed"
   | "evidence_required"
   | "sla_waiting"
@@ -81,15 +82,17 @@ export const PROJECT_RISK_FILTERS: Array<{
 }> = [
   { value: "all", label: "全部项目" },
   { value: "blocked", label: "存在风险" },
-  { value: "human_decision", label: "人工决策" },
+  { value: "human_decision", label: "待决决策" },
+  { value: "waiting_human", label: "等人任务" },
   { value: "execution_failed", label: "执行失败" },
   { value: "runtime_or_coordination", label: "协调异常" },
-  { value: "evidence_required", label: "证据待补" },
+  { value: "evidence_required", label: "证据待核" },
   { value: "sla_waiting", label: "等待超时" },
 ];
 
 const activeDecisionStatuses = new Set(["pending", "waiting", "requested", "open"]);
-const failedTaskStatuses = new Set(["failed", "error", "blocked", "cancelled"]);
+// cancelled 是终态清理结果，不是「执行失败待处理」；勿并入失败袋虚增待办。
+const failedTaskStatuses = new Set(["failed", "error", "blocked"]);
 const waitingHumanTaskStatuses = new Set([
   "waiting_human",
   "pending_human",
@@ -117,7 +120,8 @@ const levelRank: Record<ProjectRiskLevel, number> = {
 };
 
 const reasonPriority: Record<ProjectRiskReasonType, number> = {
-  human_decision: 5,
+  human_decision: 6,
+  waiting_human: 5,
   execution_failed: 4,
   runtime_or_coordination: 3,
   evidence_required: 2,
@@ -125,12 +129,21 @@ const reasonPriority: Record<ProjectRiskReasonType, number> = {
 };
 
 const reasonLabels: Record<ProjectRiskReasonType, string> = {
-  human_decision: "等待人工决策",
+  human_decision: "待决决策",
+  waiting_human: "任务等待人工",
   execution_failed: "执行失败",
   runtime_or_coordination: "协调异常",
-  evidence_required: "证据待补",
+  evidence_required: "证据待核",
   sla_waiting: "等待超时",
 };
+
+/** 需要负责人立刻行动的 reason（不含证据核验元数据、不含 SLA 附注）。 */
+const ACTIONABLE_REASON_TYPES = new Set<ProjectRiskReasonType>([
+  "human_decision",
+  "waiting_human",
+  "execution_failed",
+  "runtime_or_coordination",
+]);
 
 const taskStatusPriority: Record<string, number> = {
   running: 100,
@@ -158,6 +171,26 @@ export function deriveProjectRiskSummary(
 ): ProjectRiskSummary {
   const reasons: ProjectRiskReason[] = [];
   const { project } = input;
+
+  // 已归档项目不再用证据核验/历史等人态刷注意力队列；归档本身即闭环。
+  if (normalize(project.status) === "archived" || project.archived_at) {
+    const members = input.members ?? [];
+    const principalNames = input.principalNamesById;
+    return {
+      projectId: project.id,
+      project,
+      level: "none",
+      state: options.state ?? "ready",
+      owner: selectProjectOwner(project, members, principalNames),
+      currentHandler: undefined,
+      currentTask: undefined,
+      reasons: [],
+      primaryReason: undefined,
+      requiresHuman: false,
+      waitingSince: undefined,
+      updatedAt: project.updated_at,
+    };
+  }
 
   for (const decision of input.decisions ?? []) {
     if (!activeDecisionStatuses.has(normalize(decision.status_snapshot))) {
@@ -193,14 +226,16 @@ export function deriveProjectRiskSummary(
       continue;
     }
     if (isAwaitingHumanApproval(projectTask) || waitingHumanTaskStatuses.has(status)) {
+      // 任务停泊「等人」≠ 已有 open decision 卡；单独分桶，避免与决策待办混成「N 项待处理」。
       reasons.push({
-        id: `task:${projectTask.id}:human_decision`,
-        type: "human_decision",
+        id: `task:${projectTask.id}:waiting_human`,
+        type: "waiting_human",
         level: "danger",
         source: "tasks",
         title: projectTask.title,
         detail: projectTask.status,
         sourceId: projectTask.id,
+        waitingSince: projectTask.updated_at ?? projectTask.created_at,
       });
     }
   }
@@ -271,7 +306,9 @@ export function deriveProjectRiskSummary(
     currentTask,
     reasons,
     primaryReason,
-    requiresHuman: reasons.some((reason) => reason.type === "human_decision"),
+    requiresHuman: reasons.some(
+      (reason) => reason.type === "human_decision" || reason.type === "waiting_human",
+    ),
     waitingSince: earliestWaitingSince(reasons),
     updatedAt: project.updated_at,
   };
@@ -299,6 +336,7 @@ export function buildRiskCounts(
     all: summaries.length,
     blocked: 0,
     human_decision: 0,
+    waiting_human: 0,
     execution_failed: 0,
     runtime_or_coordination: 0,
     evidence_required: 0,
@@ -439,6 +477,118 @@ export function projectRiskLevelLabel(summary: ProjectRiskSummary): string {
     return reasonLabels[summary.primaryReason.type];
   }
   return "暂无阻塞";
+}
+
+export type ProjectAttentionBreakdown = {
+  decisions: number;
+  waitingHuman: number;
+  executionFailed: number;
+  coordination: number;
+  evidence: number;
+  sla: number;
+  /** 决策/等人/失败/协调 — 应对齐项目内可下钻的行动项 */
+  actionableTotal: number;
+  /** 证据核验 + SLA 等信号，默认不叫「待处理」 */
+  signalTotal: number;
+  allTotal: number;
+};
+
+export function buildAttentionBreakdown(
+  summary: Pick<ProjectRiskSummary, "reasons">,
+): ProjectAttentionBreakdown {
+  const breakdown: ProjectAttentionBreakdown = {
+    decisions: 0,
+    waitingHuman: 0,
+    executionFailed: 0,
+    coordination: 0,
+    evidence: 0,
+    sla: 0,
+    actionableTotal: 0,
+    signalTotal: 0,
+    allTotal: summary.reasons.length,
+  };
+
+  for (const reason of summary.reasons) {
+    switch (reason.type) {
+      case "human_decision":
+        breakdown.decisions += 1;
+        break;
+      case "waiting_human":
+        breakdown.waitingHuman += 1;
+        break;
+      case "execution_failed":
+        breakdown.executionFailed += 1;
+        break;
+      case "runtime_or_coordination":
+        breakdown.coordination += 1;
+        break;
+      case "evidence_required":
+        breakdown.evidence += 1;
+        break;
+      case "sla_waiting":
+        breakdown.sla += 1;
+        break;
+      default:
+        break;
+    }
+    if (ACTIONABLE_REASON_TYPES.has(reason.type)) {
+      breakdown.actionableTotal += 1;
+    } else {
+      breakdown.signalTotal += 1;
+    }
+  }
+
+  return breakdown;
+}
+
+/**
+ * 队列/右栏主文案：禁止再用 reasons.length 显示「N 项待处理」。
+ * 可行动项按桶拼接；仅有证据/SLA 时用中性措辞。
+ */
+export function formatAttentionHeadline(
+  summary: Pick<ProjectRiskSummary, "reasons" | "state">,
+): { primary: string; detail?: string; hasActionable: boolean } {
+  if (summary.state === "pending") {
+    return { primary: "识别中", hasActionable: false };
+  }
+  if (summary.state === "error") {
+    return { primary: "风险待确认", hasActionable: false };
+  }
+
+  const b = buildAttentionBreakdown(summary);
+  const parts: string[] = [];
+  if (b.decisions > 0) parts.push(`${b.decisions} 待决`);
+  if (b.waitingHuman > 0) parts.push(`${b.waitingHuman} 等人`);
+  if (b.executionFailed > 0) parts.push(`${b.executionFailed} 失败`);
+  if (b.coordination > 0) parts.push(`${b.coordination} 协调异常`);
+
+  if (parts.length > 0) {
+    const detailParts: string[] = [];
+    if (b.evidence > 0) detailParts.push(`${b.evidence} 证据待核`);
+    if (b.sla > 0) detailParts.push("等待超时");
+    return {
+      primary: parts.join(" · "),
+      detail: detailParts.length > 0 ? detailParts.join(" · ") : undefined,
+      hasActionable: true,
+    };
+  }
+
+  if (b.evidence > 0 || b.sla > 0) {
+    const soft: string[] = [];
+    if (b.evidence > 0) soft.push(`${b.evidence} 条证据待核`);
+    if (b.sla > 0) soft.push("等待超时");
+    return { primary: soft.join(" · "), hasActionable: false };
+  }
+
+  return { primary: "无待办", hasActionable: false };
+}
+
+export function projectRiskReasonLabel(type: ProjectRiskReasonType): string {
+  return reasonLabels[type];
+}
+
+export function isActionableRiskReason(type: ProjectRiskReasonType): boolean {
+  return ACTIONABLE_REASON_TYPES.has(type);
 }
 
 function normalize(value?: string): string {

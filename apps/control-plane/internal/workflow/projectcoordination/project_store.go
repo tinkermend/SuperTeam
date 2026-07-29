@@ -30,11 +30,13 @@ type ProjectStore struct {
 	employeeReader    GateEmployeeRuntimeReader
 	capabilityReader  GateCapabilityReader
 	nodeResolver      GateProjectTaskNodeResolver
+	// maxAttemptsDefault resolves tenant platform default for project_tasks.max_attempts.
+	// nil falls back to systemconfig registry default (3).
+	maxAttemptsDefault func(ctx context.Context, tenantID uuid.UUID) int32
 }
 
 type clockFunc func() time.Time
 
-const defaultRevisionMaxAttempts int32 = 3
 
 // defaultMaxPlanIterations bounds graph extension rounds (upstream supplement
 // tasks appended to resolve a blocked task's missing inputs) when
@@ -109,6 +111,20 @@ func (s *ProjectStore) WithScenarioTemplateSource(source ScenarioTemplateSource)
 func (s *ProjectStore) WithDigitalEmployeePlanningProfiles(source DigitalEmployeePlanningProfileSource) *ProjectStore {
 	s.profileSource = source
 	return s
+}
+
+// WithMaxAttemptsDefault attaches the platform default max_attempts resolver
+// (typically systemconfig project_task.default_max_attempts).
+func (s *ProjectStore) WithMaxAttemptsDefault(fn func(ctx context.Context, tenantID uuid.UUID) int32) *ProjectStore {
+	s.maxAttemptsDefault = fn
+	return s
+}
+
+func (s *ProjectStore) platformDefaultMaxAttempts(ctx context.Context, tenantID uuid.UUID) int32 {
+	if s != nil && s.maxAttemptsDefault != nil {
+		return project.ClampProjectTaskMaxAttempts(s.maxAttemptsDefault(ctx, tenantID))
+	}
+	return project.DefaultProjectTaskMaxAttempts()
 }
 
 // runtimeReadyEmployeeIDs returns the set of project-runtime-ready digital-employee
@@ -796,6 +812,7 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 		PlanFingerprint:        input.PlanFingerprint,
 		DecompositionClaimKey:  input.PlanRevisionID.String(),
 		Tasks:                  graphTasks,
+		DefaultMaxAttempts:     s.platformDefaultMaxAttempts(ctx, input.TenantID),
 	})
 	if err != nil {
 		return nil, err
@@ -1071,6 +1088,7 @@ func (s *ProjectStore) buildRevisionTask(ctx context.Context, tenantID, projectI
 		HandoffContract:        cloneAnyMap(source.HandoffContract),
 		PlannerMetadata:        revisionPlannerMetadata(source, sourceResultID),
 		BlockedByTaskIDs:       append([]uuid.UUID(nil), source.BlockedByTaskIDs...),
+		MaxAttempts:            maxAttemptsPtr(project.EffectiveProjectTaskMaxAttempts(source.MaxAttempts, s.platformDefaultMaxAttempts(ctx, tenantID))),
 	})
 	if err != nil {
 		return uuid.Nil, err
@@ -1300,6 +1318,7 @@ func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input 
 			HandoffContract:           cloneAnyMap(owner.HandoffContract),
 			PlannerMetadata:           revisionPlannerMetadataForSupplement(owner, input.SourceTaskID, input.MissingInputs),
 			PlanIteration:             planIteration,
+			MaxAttempts:               maxAttemptsPtr(s.platformDefaultMaxAttempts(ctx, input.TenantID)),
 		})
 		if err != nil {
 			return CreateUpstreamSupplementResult{}, err
@@ -2024,6 +2043,7 @@ func (s *ProjectStore) createRecoveryReplacementTask(ctx context.Context, input 
 			InputRequirements:         cloneAnyMap(source.InputRequirements),
 			HandoffContract:           cloneAnyMap(source.HandoffContract),
 			PlannerMetadata:           recoveryPlannerMetadata(source, decision.ID, action),
+			MaxAttempts:               maxAttemptsPtr(project.EffectiveProjectTaskMaxAttempts(source.MaxAttempts, s.platformDefaultMaxAttempts(ctx, input.TenantID))),
 		})
 		if err != nil {
 			existing, ok, findErr := s.findExistingRecoveryReplacement(ctx, input.TenantID, input.ProjectID, source, action, replacementKey)
@@ -4826,7 +4846,7 @@ func revisionMaxAttempts(task project.ProjectTask) int32 {
 	if task.MaxAttempts != nil && *task.MaxAttempts > 0 {
 		return *task.MaxAttempts
 	}
-	return defaultRevisionMaxAttempts
+	return project.DefaultProjectTaskMaxAttempts()
 }
 
 func int32FromAny(value any) (int32, bool) {
@@ -4973,4 +4993,10 @@ func iterationExhaustedContext(input RequestProjectTaskIterationExhaustedReviewI
 
 func isRoutableDigitalProjectRole(role project.ProjectRole) bool {
 	return role == project.ProjectRoleExecutor || role == project.ProjectRoleReviewer
+}
+
+
+func maxAttemptsPtr(value int32) *int32 {
+	v := project.ClampProjectTaskMaxAttempts(value)
+	return &v
 }

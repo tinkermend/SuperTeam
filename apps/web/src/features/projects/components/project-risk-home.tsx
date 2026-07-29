@@ -37,12 +37,16 @@ import type {
 } from "@/lib/api/projects";
 import { projectStatusLabel } from "@/lib/status-labels";
 import {
+  buildAttentionBreakdown,
   buildRiskCounts,
   emptyProjectRiskSummary,
+  formatAttentionHeadline,
+  isActionableRiskReason,
   matchesProjectRiskFilter,
   PROJECT_RISK_FILTERS,
   projectRiskLevelLabel,
   projectRiskLevelTone,
+  projectRiskReasonLabel,
   resolveProjectOwnerLabel,
   sortProjectsByRisk,
   type ProjectPortfolioCounts,
@@ -301,7 +305,7 @@ export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
           <thead>
             <tr>
               <Th className="px-3 py-2">项目</Th>
-              <Th className="px-3 py-2">待处理</Th>
+              <Th className="px-3 py-2">待办拆分</Th>
               <Th className="px-3 py-2">当前处理者</Th>
               <Th className="px-3 py-2">最近活动</Th>
               <Th className="px-3 py-2 text-right">操作</Th>
@@ -363,7 +367,7 @@ function ProjectRiskQueueRow({
   workflow?: WorkflowInstanceSummary;
 }) {
   const summary = riskSummary ?? emptyProjectRiskSummary(project);
-  const pendingCount = summary.reasons.length;
+  const attention = formatAttentionHeadline(summary);
   const ownerLabel = resolveProjectOwnerLabel(
     project,
     summary.owner,
@@ -429,11 +433,24 @@ function ProjectRiskQueueRow({
           className="flex min-w-0 flex-col items-start gap-1"
           data-testid="project-queue-pending"
         >
-          <StatusPill tone={projectRiskLevelTone(summary.level)}>
-            {projectRiskLevelLabel(summary)}
-          </StatusPill>
-          <span className="block min-w-0 max-w-full text-[12px] text-ink-3">
-            {pendingCount > 0 ? `${pendingCount} 项待处理` : "无待处理项"}
+          {summary.level === "none" ? (
+            <StatusPill tone="mute">暂无阻塞</StatusPill>
+          ) : (
+            <StatusPill tone={projectRiskLevelTone(summary.level)}>
+              {projectRiskLevelLabel(summary)}
+            </StatusPill>
+          )}
+          <span
+            className="block min-w-0 max-w-full text-[12px] text-ink-3"
+            data-testid="project-queue-attention-headline"
+            title={attention.detail ? `${attention.primary}；${attention.detail}` : attention.primary}
+          >
+            {attention.primary}
+            {attention.detail ? (
+              <span className="mt-0.5 block truncate text-[11px] text-ink-3/80">
+                {attention.detail}
+              </span>
+            ) : null}
           </span>
         </div>
       </Td>
@@ -476,9 +493,10 @@ const REASON_META: Record<
   { icon: typeof UserCheck; tab: string; action: string }
 > = {
   human_decision: { icon: UserCheck, tab: "approval", action: "处理决策" },
+  waiting_human: { icon: UserCheck, tab: "tasks", action: "查看等人任务" },
   execution_failed: { icon: AlertTriangle, tab: "tasks", action: "查看失败任务" },
   runtime_or_coordination: { icon: PlayCircle, tab: "overview", action: "查看协调状态" },
-  evidence_required: { icon: FileWarning, tab: "acceptance", action: "补充证据" },
+  evidence_required: { icon: FileWarning, tab: "assets", action: "查看证据核验" },
   sla_waiting: { icon: Clock3, tab: "overview", action: "查看等待原因" }
 };
 
@@ -501,6 +519,10 @@ export function ProjectTriagePanel({
 }) {
   const resolvedSummary = summary ?? emptyProjectRiskSummary(project);
   const reasons = resolvedSummary.reasons;
+  const actionableReasons = reasons.filter((reason) => isActionableRiskReason(reason.type));
+  const signalReasons = reasons.filter((reason) => !isActionableRiskReason(reason.type));
+  const attention = formatAttentionHeadline(resolvedSummary);
+  const breakdown = buildAttentionBreakdown(resolvedSummary);
   const ownerLabel = resolveProjectOwnerLabel(
     project,
     resolvedSummary.owner,
@@ -552,25 +574,33 @@ export function ProjectTriagePanel({
         </div>
       </div>
 
-      <div className="min-w-0 rounded-[10px] bg-card-soft/60 p-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
-          待办 {reasons.length > 0 ? `· ${reasons.length}` : ""}
+      <div className="min-w-0 rounded-[10px] bg-card-soft/60 p-3" data-testid="project-triage-attention">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+            待办拆分
+            {breakdown.actionableTotal > 0 ? ` · ${breakdown.actionableTotal}` : ""}
+          </div>
+          <span className="min-w-0 max-w-[60%] text-right text-[11px] leading-4 text-ink-3">
+            {attention.primary}
+          </span>
         </div>
-        {reasons.length === 0 ? (
+        {actionableReasons.length === 0 ? (
           <p className="mt-1.5 text-[12px] leading-5 text-ink-2">
-            该项目当前没有需要人工介入的阻塞。{" "}
+            当前没有可下钻的决策/等人/失败/协调项。{" "}
             <Link
               className="text-brand underline underline-offset-2 hover:opacity-75"
               params={{ projectId: project.id }}
               to="/projects/$projectId"
             >
               进入项目
-            </Link>{" "}
-            可查看任务、证据与验收进度。
+            </Link>
+            {signalReasons.length > 0
+              ? "；下方证据/超时仅为信号，不计入待办。"
+              : " 可查看任务与验收进度。"}
           </p>
         ) : (
           <ul className="mt-2 flex flex-col gap-2">
-            {reasons.map((reason) => (
+            {actionableReasons.map((reason) => (
               <ProjectTriageReasonRow
                 key={reason.id}
                 projectId={project.id}
@@ -579,6 +609,25 @@ export function ProjectTriagePanel({
             ))}
           </ul>
         )}
+        {signalReasons.length > 0 ? (
+          <div className="mt-3 border-t border-line/70 pt-2.5">
+            <div className="text-[11px] font-semibold text-ink-3">
+              其它信号 · {signalReasons.length}
+            </div>
+            <p className="mt-1 text-[11px] leading-4 text-ink-3">
+              证据核验与等待超时不计入「待办」；进入资产/概览查看。
+            </p>
+            <ul className="mt-2 flex flex-col gap-2">
+              {signalReasons.map((reason) => (
+                <ProjectTriageReasonRow
+                  key={reason.id}
+                  projectId={project.id}
+                  reason={reason}
+                />
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       </aside>
@@ -597,7 +646,9 @@ function ProjectTriageReasonRow({
   const focus =
     reason.type === "human_decision" && reason.source === "decisions"
       ? reason.sourceId
-      : undefined;
+      : reason.type === "waiting_human" || reason.type === "execution_failed"
+        ? reason.sourceId
+        : undefined;
 
   return (
     <li className="flex min-w-0 items-start gap-2 rounded-[8px] bg-card px-2.5 py-2">
@@ -605,6 +656,9 @@ function ProjectTriageReasonRow({
         <Icon />
       </IconTile>
       <div className="min-w-0 flex-1">
+        <p className="text-[10.5px] font-bold text-ink-3">
+          {projectRiskReasonLabel(reason.type)}
+        </p>
         <p
           className="min-w-0 line-clamp-2 break-words text-[12px] font-semibold leading-5 text-ink"
           title={reason.title}
@@ -620,7 +674,15 @@ function ProjectTriageReasonRow({
       <Button asChild className="shrink-0" size="sm" variant="outline">
         <Link
           params={{ projectId }}
-          search={focus ? { focus, tab: meta.tab } : { tab: meta.tab }}
+          search={
+            reason.type === "waiting_human" || reason.type === "execution_failed"
+              ? reason.sourceId
+                ? { tab: meta.tab, task: reason.sourceId }
+                : { tab: meta.tab }
+              : focus
+                ? { focus, tab: meta.tab }
+                : { tab: meta.tab }
+          }
           to="/projects/$projectId"
         >
           {meta.action}

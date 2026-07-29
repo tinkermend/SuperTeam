@@ -119,7 +119,24 @@ export function dispatchGateStatusLabel(status: DispatchGateStatus): string {
 }
 
 export function evidenceStatusLabel(status: ProjectEvidenceVerificationStatus): string {
-  return statusLabel(status);
+  // 核验元数据，不是项目/任务业务进度态；文案加「核验」前缀避免与待办状态混淆。
+  return labelWithOverrides(status, {
+    linked: "核验·已关联",
+    rejected: "核验·未通过",
+    submitted: "核验·待确认",
+    verified: "核验·已通过",
+  });
+}
+
+/** 工件保留策略元数据，禁止复用全局「待处理」以免与业务待办混淆。 */
+export function retentionStatusLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    deleted: "已删除",
+    expired: "已过期",
+    pending: "保留未决",
+    retained: "长期保留",
+    retention_pending: "保留未决",
+  });
 }
 
 export function acceptanceStatusLabel(status: ProjectAcceptanceStatus): string {
