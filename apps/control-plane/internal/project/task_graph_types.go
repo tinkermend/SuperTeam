@@ -26,6 +26,17 @@ type ProjectTaskGraph struct {
 	StageSummaries     []ProjectTaskGraphStageSummary
 	BlockingFacts      []ProjectTaskGraphBlockingFact
 	HandoffAssessments []ProjectTaskGraphHandoffAssessment
+	DispatchGates      []ProjectTaskGraphDispatchGate
+}
+
+// ProjectTaskGraphDispatchGate 是每个任务**当前**的派发闸门裁决（最新一条闸门结果）。
+// 消费方判"是否仍被闸住"必须看这里，不要去数 project_events 的闸门事件——闸门事件
+// 按 (任务, 事件类型) 至多发一次，任务二次卡人工不会有新事件，按事件推断会漏报。
+type ProjectTaskGraphDispatchGate struct {
+	ProjectTaskID     uuid.UUID
+	Status            string
+	CheckedAt         time.Time
+	DecisionRequestID *uuid.UUID
 }
 
 // ProjectTaskGraphHandoffAssessmentStatus 是交接 verdict 的汇总口径

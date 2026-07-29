@@ -2928,6 +2928,10 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 		return graph, err
 	}
 	graph.HandoffAssessments = buildProjectTaskGraphHandoffAssessments(tasks, latestContracts)
+	graph.DispatchGates, err = r.projectTaskGraphDispatchGates(ctx, req.TenantID, req.ProjectID, taskIDs)
+	if err != nil {
+		return graph, err
+	}
 	graph.StageSummaries = buildProjectTaskGraphStageSummaries(graph.Nodes)
 	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, jobIDs, taskIDs, decisionRequestIDs(graph.DecisionRequests))
 	if err != nil {
@@ -3043,6 +3047,32 @@ func (r *PgRepository) projectTaskGraphRuns(ctx context.Context, tenantID uuid.U
 	return projectTaskGraphRunsFromRows(tasks, rows)
 }
 
+// projectTaskGraphDispatchGates 取每个任务当前的派发闸门裁决（最新一条闸门结果），
+// 一次批量查询，不按任务发 N 次。消费方据此判断"是否仍被闸住"。
+func (r *PgRepository) projectTaskGraphDispatchGates(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectTaskGraphDispatchGate, error) {
+	if len(taskIDs) == 0 {
+		return []ProjectTaskGraphDispatchGate{}, nil
+	}
+	rows, err := r.q.ListProjectTaskLatestDispatchGates(ctx, queries.ListProjectTaskLatestDispatchGatesParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskIds: taskIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	gates := make([]ProjectTaskGraphDispatchGate, 0, len(rows))
+	for _, row := range rows {
+		gates = append(gates, ProjectTaskGraphDispatchGate{
+			ProjectTaskID:     row.ProjectTaskID,
+			Status:            row.Status,
+			CheckedAt:         row.CheckedAt.Time,
+			DecisionRequestID: ptrUUID(row.DecisionRequestID),
+		})
+	}
+	return gates, nil
+}
+
 // projectTaskGraphLatestResultContracts 取每个任务最新一条已记录任务结果的
 // 契约(交接 verdict 的声明交付物数据源,spec 2026-07-27 §5 P2-V)。只对
 // LatestTaskResultID 非空的任务发已有的 ListProjectTaskResults 查询(created_at
@@ -3101,6 +3131,7 @@ func emptyProjectTaskGraph() ProjectTaskGraph {
 		DecisionRequests:   []DecisionRequest{},
 		BlockingFacts:      []ProjectTaskGraphBlockingFact{},
 		HandoffAssessments: []ProjectTaskGraphHandoffAssessment{},
+		DispatchGates:      []ProjectTaskGraphDispatchGate{},
 	}
 }
 

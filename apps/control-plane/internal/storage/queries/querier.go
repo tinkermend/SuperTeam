@@ -551,6 +551,12 @@ type Querier interface {
 	ListProjectTaskGraphEvents(ctx context.Context, arg ListProjectTaskGraphEventsParams) ([]ProjectEvent, error)
 	ListProjectTaskGraphNodeTimings(ctx context.Context, arg ListProjectTaskGraphNodeTimingsParams) ([]ListProjectTaskGraphNodeTimingsRow, error)
 	ListProjectTaskGraphReplayEvents(ctx context.Context, arg ListProjectTaskGraphReplayEventsParams) ([]ProjectEvent, error)
+	// 每个任务只取**最新一条**闸门结果：闸门结果按 (task, idempotency_key=分派原因+尝试序号)
+	// 唯一，重试重新评估会新增一行，因此最新一行就是当前闸门裁决。
+	// 注意：不能改用 project_events 的闸门事件来判断"当前是否被闸住"——闸门事件按
+	// (任务, 事件类型) 至多发一次（见 predispatch_gate.go 的 ProjectTaskEventExists
+	// 去重），任务二次卡人工时不会有新事件，按事件推断会永远看不到第二次阻塞。
+	ListProjectTaskLatestDispatchGates(ctx context.Context, arg ListProjectTaskLatestDispatchGatesParams) ([]ProjectTaskDispatchGateResult, error)
 	ListProjectTaskResults(ctx context.Context, arg ListProjectTaskResultsParams) ([]ProjectTaskResult, error)
 	ListProjectTasks(ctx context.Context, arg ListProjectTasksParams) ([]ProjectTask, error)
 	ListProjectTasksByAcceptedPlanRevision(ctx context.Context, arg ListProjectTasksByAcceptedPlanRevisionParams) ([]ProjectTask, error)

@@ -1737,6 +1737,33 @@ func (e ProjectTaskAttestationStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectTaskGraphDispatchGateStatus.
+const (
+	ProjectTaskGraphDispatchGateStatusBlocked        ProjectTaskGraphDispatchGateStatus = "blocked"
+	ProjectTaskGraphDispatchGateStatusPassed         ProjectTaskGraphDispatchGateStatus = "passed"
+	ProjectTaskGraphDispatchGateStatusReplanRequired ProjectTaskGraphDispatchGateStatus = "replan_required"
+	ProjectTaskGraphDispatchGateStatusRetryLater     ProjectTaskGraphDispatchGateStatus = "retry_later"
+	ProjectTaskGraphDispatchGateStatusWaitingHuman   ProjectTaskGraphDispatchGateStatus = "waiting_human"
+)
+
+// Valid indicates whether the value is a known member of the ProjectTaskGraphDispatchGateStatus enum.
+func (e ProjectTaskGraphDispatchGateStatus) Valid() bool {
+	switch e {
+	case ProjectTaskGraphDispatchGateStatusBlocked:
+		return true
+	case ProjectTaskGraphDispatchGateStatusPassed:
+		return true
+	case ProjectTaskGraphDispatchGateStatusReplanRequired:
+		return true
+	case ProjectTaskGraphDispatchGateStatusRetryLater:
+		return true
+	case ProjectTaskGraphDispatchGateStatusWaitingHuman:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectTaskGraphHandoffAssessmentStatus.
 const (
 	ProjectTaskGraphHandoffAssessmentStatusFulfilled   ProjectTaskGraphHandoffAssessmentStatus = "fulfilled"
@@ -2507,19 +2534,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
-	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
-	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
+	Cancelled ListInboxItemsParamsStatus = "cancelled"
+	Open      ListInboxItemsParamsStatus = "open"
+	Resolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case ListInboxItemsParamsStatusCancelled:
+	case Cancelled:
 		return true
-	case ListInboxItemsParamsStatusOpen:
+	case Open:
 		return true
-	case ListInboxItemsParamsStatusResolved:
+	case Resolved:
 		return true
 	default:
 		return false
@@ -5354,11 +5381,14 @@ type ProjectTaskAttestationStatus string
 
 // ProjectTaskGraph defines model for ProjectTaskGraph.
 type ProjectTaskGraph struct {
-	BlockingFacts      []ProjectTaskGraphBlockingFact `json:"blocking_facts"`
-	DecisionRequests   []ProjectDecisionRequest       `json:"decision_requests"`
-	Edges              []ProjectTaskGraphEdge         `json:"edges"`
-	Employees          []ProjectTaskGraphEmployee     `json:"employees"`
-	ExecutionSummaries []ProjectExecutionSummary      `json:"execution_summaries"`
+	BlockingFacts    []ProjectTaskGraphBlockingFact `json:"blocking_facts"`
+	DecisionRequests []ProjectDecisionRequest       `json:"decision_requests"`
+
+	// DispatchGates 每个任务**当前**的派发闸门裁决（最新一条闸门结果，纯读投影）。 判断"任务是否仍被闸住"必须用它：闸门事件（project_task.dispatch_gate.*） 按 (任务, 事件类型) 至多发一次，任务二次卡人工不会有新事件， 按事件推断会漏报。
+	DispatchGates      *[]ProjectTaskGraphDispatchGate `json:"dispatch_gates,omitempty"`
+	Edges              []ProjectTaskGraphEdge          `json:"edges"`
+	Employees          []ProjectTaskGraphEmployee      `json:"employees"`
+	ExecutionSummaries []ProjectExecutionSummary       `json:"execution_summaries"`
 
 	// HandoffAssessments 结构化交接 verdict（纯读投影，spec 2026-07-27 §5 P2-V）：按 project_task_id 对每个声明交付物核对 delivered/missing。无声明 数据时 status 必须为 unknown，消费方不得据此编造符合性判定。
 	HandoffAssessments *[]ProjectTaskGraphHandoffAssessment `json:"handoff_assessments,omitempty"`
@@ -5390,6 +5420,19 @@ type ProjectTaskGraphBlockingFactGap struct {
 	RequiredCapabilities []string `json:"required_capabilities"`
 	Roles                []string `json:"roles"`
 }
+
+// ProjectTaskGraphDispatchGate defines model for ProjectTaskGraphDispatchGate.
+type ProjectTaskGraphDispatchGate struct {
+	CheckedAt         time.Time           `json:"checked_at"`
+	DecisionRequestId *openapi_types.UUID `json:"decision_request_id,omitempty"`
+	ProjectTaskId     openapi_types.UUID  `json:"project_task_id"`
+
+	// Status passed 表示已放行；其余取值均代表当前仍被闸住。
+	Status ProjectTaskGraphDispatchGateStatus `json:"status"`
+}
+
+// ProjectTaskGraphDispatchGateStatus passed 表示已放行；其余取值均代表当前仍被闸住。
+type ProjectTaskGraphDispatchGateStatus string
 
 // ProjectTaskGraphEdge defines model for ProjectTaskGraphEdge.
 type ProjectTaskGraphEdge struct {

@@ -2204,6 +2204,19 @@ ORDER BY created_at DESC
 LIMIT sqlc.arg('limit')::integer
 OFFSET sqlc.arg('offset')::integer;
 
+-- name: ListProjectTaskLatestDispatchGates :many
+-- 每个任务只取**最新一条**闸门结果：闸门结果按 (task, idempotency_key=分派原因+尝试序号)
+-- 唯一，重试重新评估会新增一行，因此最新一行就是当前闸门裁决。
+-- 注意：不能改用 project_events 的闸门事件来判断"当前是否被闸住"——闸门事件按
+-- (任务, 事件类型) 至多发一次（见 predispatch_gate.go 的 ProjectTaskEventExists
+-- 去重），任务二次卡人工时不会有新事件，按事件推断会永远看不到第二次阻塞。
+SELECT DISTINCT ON (project_task_id) *
+FROM project_task_dispatch_gate_results
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+ORDER BY project_task_id, created_at DESC, id DESC;
+
 -- name: LinkProjectTaskDispatchGateAttempt :one
 UPDATE project_task_dispatch_gate_results
 SET attempt_id = sqlc.arg('attempt_id')::uuid,

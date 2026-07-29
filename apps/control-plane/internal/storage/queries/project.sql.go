@@ -5985,6 +5985,69 @@ func (q *Queries) ListProjectTaskGraphReplayEvents(ctx context.Context, arg List
 	return items, nil
 }
 
+const ListProjectTaskLatestDispatchGates = `-- name: ListProjectTaskLatestDispatchGates :many
+SELECT DISTINCT ON (project_task_id) id, tenant_id, project_id, project_task_id, accepted_plan_revision_id, planned_task_key, selected_employee_id, attempt_no, dispatch_reason, idempotency_key, dispatch_token, status, checked_at, checks, blockers, human_action_request, retry_after, attempt_id, decision_request_id, created_event_id, created_at, updated_at
+FROM project_task_dispatch_gate_results
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND project_task_id = ANY($3::uuid[])
+ORDER BY project_task_id, created_at DESC, id DESC
+`
+
+type ListProjectTaskLatestDispatchGatesParams struct {
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectID      uuid.UUID   `json:"project_id"`
+	ProjectTaskIds []uuid.UUID `json:"project_task_ids"`
+}
+
+// 每个任务只取**最新一条**闸门结果：闸门结果按 (task, idempotency_key=分派原因+尝试序号)
+// 唯一，重试重新评估会新增一行，因此最新一行就是当前闸门裁决。
+// 注意：不能改用 project_events 的闸门事件来判断"当前是否被闸住"——闸门事件按
+// (任务, 事件类型) 至多发一次（见 predispatch_gate.go 的 ProjectTaskEventExists
+// 去重），任务二次卡人工时不会有新事件，按事件推断会永远看不到第二次阻塞。
+func (q *Queries) ListProjectTaskLatestDispatchGates(ctx context.Context, arg ListProjectTaskLatestDispatchGatesParams) ([]ProjectTaskDispatchGateResult, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskLatestDispatchGates, arg.TenantID, arg.ProjectID, arg.ProjectTaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTaskDispatchGateResult{}
+	for rows.Next() {
+		var i ProjectTaskDispatchGateResult
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.AcceptedPlanRevisionID,
+			&i.PlannedTaskKey,
+			&i.SelectedEmployeeID,
+			&i.AttemptNo,
+			&i.DispatchReason,
+			&i.IdempotencyKey,
+			&i.DispatchToken,
+			&i.Status,
+			&i.CheckedAt,
+			&i.Checks,
+			&i.Blockers,
+			&i.HumanActionRequest,
+			&i.RetryAfter,
+			&i.AttemptID,
+			&i.DecisionRequestID,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectTaskResults = `-- name: ListProjectTaskResults :many
 SELECT id, tenant_id, project_id, project_task_id, attempt_id, execution_summary_id, result_status, validation_status, decision, contract_payload, validation_errors, validation_warnings, idempotency_key, human_review_request, replan_request, revision_request, created_event_id, decision_request_id, revision_task_id, created_at, updated_at FROM project_task_results
 WHERE tenant_id = $1::uuid

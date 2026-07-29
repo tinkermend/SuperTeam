@@ -19,8 +19,8 @@ import {
   getProjectDemandLaunchDetail,
   resolveProjectDecision,
   type ProjectDemand,
-  type ProjectEvent,
-  type ProjectTaskGraph
+  type ProjectTaskGraph,
+  type ProjectTaskGraphDispatchGate
 } from "@/lib/api/projects";
 import { decisionStatusLabel, demandStatusLabel } from "@/lib/status-labels";
 import { formatRelativeTime } from "@/lib/format-time";
@@ -45,8 +45,6 @@ type ProjectDemandsSectionProps = {
   detailTaskId?: string;
   /** 测试注入用（SSE 活动流）；生产默认用带凭据的原生 EventSource。 */
   eventSourceFactory?: (url: string) => EventSource;
-  /** 项目事件（父页已拉取）；用于派发闸阻塞横幅（原流程编排详情职责迁入）。 */
-  events?: ProjectEvent[];
   /** 按 demand 拉执行图；queryKey 与页面预载同族（project-task-graph）复用缓存。 */
   fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
   onClearTask?: () => void;
@@ -75,7 +73,6 @@ export function ProjectDemandsSection({
   demands,
   detailTaskId,
   eventSourceFactory,
-  events,
   fetchTaskGraph,
   onClearTask,
   onOpenTask,
@@ -211,7 +208,7 @@ export function ProjectDemandsSection({
             </>
           ) : null}
           <DemandDispatchBlockerBanner
-            event={currentDemandDispatchBlocker(events, graph, selectedDemand.id)}
+            gate={currentDemandDispatchBlocker(graph)}
           />
           <SoftCard className="p-4" data-testid="demand-status-header">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -497,9 +494,9 @@ function gapConstraintLabel(constraintKind: string): string {
   return constraintKind || "结构性约束";
 }
 
-function DemandDispatchBlockerBanner({ event }: { event: ProjectEvent | undefined }) {
-  if (!event) return null;
-  const label = demandDispatchBlockerLabel(event.event_type);
+function DemandDispatchBlockerBanner({ gate }: { gate: ProjectTaskGraphDispatchGate | undefined }) {
+  if (!gate) return null;
+  const label = demandDispatchBlockerLabel(gate.status);
 
   return (
     <SoftCard className="border-warn/25 bg-warn/5 p-4" data-testid="demand-dispatch-blocker">
@@ -509,7 +506,7 @@ function DemandDispatchBlockerBanner({ event }: { event: ProjectEvent | undefine
           <p className="mt-1 text-ink-2">{label.summary}</p>
         </div>
         <StatusPill className="shrink-0 self-start" tone={label.tone}>
-          {event.event_type}
+          {dispatchGateStatusLabel(gate.status)}
         </StatusPill>
       </div>
     </SoftCard>
@@ -519,102 +516,57 @@ function DemandDispatchBlockerBanner({ event }: { event: ProjectEvent | undefine
 /**
  * 挑出当前**仍然成立**的派发闸门 blocker。
  *
- * 闸门事件是历史流水：一条 `dispatch_gate.waiting_human` 之后往往跟着
- * `dispatch_gate.checked` / `project_task.dispatched` 把它解除。因此只按事件类型
- * 优先级取一条会让已放行、甚至已完成的需求永久挂着"等待负责人确认"横幅。
- * 判据改为两条同时成立：
- * 1. 该载体（任务，或无任务 id 时退到需求）**最新**一条闸门生命周期事件仍是 blocker；
- * 2. 对应任务未到终态（终态任务不可能还在等派发）。
+ * 数据源必须是闸门结果记录（`graph.dispatch_gates`，服务端每任务只给最新一条），
+ * 不能用 `project_events` 的闸门事件推断：闸门事件按 (任务, 事件类型) 至多发一次
+ * （predispatch_gate.go 的 ProjectTaskEventExists 去重），任务重试后二次卡人工不会
+ * 再产生 waiting_human 事件，按事件流推断会永远看不到第二次阻塞（漏报）。
+ * 闸门结果则按 (任务, 分派原因+尝试序号) 唯一，重评估必新增一行，最新一行即当前裁决。
  *
- * 注意：events 是分页窗口，若窗口截断到只剩 blocker 而丢了其解除事件，判据 2 兜底。
+ * 判据两条同时成立：
+ * 1. 该任务最新闸门裁决不是 passed；
+ * 2. 该任务未到终态（终态任务不可能还在等派发；闸门记录不会因任务收尾而回写）。
  */
 function currentDemandDispatchBlocker(
-  events: ProjectEvent[] | undefined,
   graph: ProjectTaskGraph | undefined,
-  selectedDemandId: string | undefined,
-): ProjectEvent | undefined {
+): ProjectTaskGraphDispatchGate | undefined {
   const nodesById = new Map(graph?.nodes.map((node) => [node.id, node]) ?? []);
-  // 每个载体只保留 sequence_number 最大的一条闸门生命周期事件。
-  const latestByCarrier = new Map<string, { event: ProjectEvent; taskId?: string }>();
+  const blocking = (graph?.dispatch_gates ?? []).filter((gate) => {
+    if (gate.status === "passed") return false;
+    const task = nodesById.get(gate.project_task_id);
+    if (!task) return false;
+    return !isTerminalTaskStatus(task.status);
+  });
 
-  for (const event of events ?? []) {
-    const isBlocker = isDemandDispatchBlockerEvent(event.event_type);
-    if (!isBlocker && !isDispatchGateResolvingEvent(event.event_type)) continue;
-
-    const taskId =
-      typeof event.payload.project_task_id === "string"
-        ? event.payload.project_task_id
-        : typeof event.payload.task_id === "string"
-          ? event.payload.task_id
-          : undefined;
-    const eventDemandId =
-      typeof event.payload.demand_id === "string" ? event.payload.demand_id : undefined;
-
-    // 任务在当前需求图内 → 按任务归集；否则退到需求级归集（保持原有匹配面）。
-    const matchesDemand = Boolean(eventDemandId && eventDemandId === selectedDemandId);
-    const carrierKey =
-      taskId && nodesById.has(taskId)
-        ? `task:${taskId}`
-        : matchesDemand
-          ? `demand:${eventDemandId}`
-          : undefined;
-    if (!carrierKey) continue;
-
-    const previous = latestByCarrier.get(carrierKey);
-    if (!previous || previous.event.sequence_number < event.sequence_number) {
-      latestByCarrier.set(carrierKey, {
-        event,
-        taskId: taskId && nodesById.has(taskId) ? taskId : undefined,
-      });
-    }
-  }
-
-  const stillBlocking: ProjectEvent[] = [];
-  for (const { event, taskId } of latestByCarrier.values()) {
-    if (!isDemandDispatchBlockerEvent(event.event_type)) continue;
-    if (taskId && isTerminalTaskStatus(nodesById.get(taskId)?.status)) continue;
-    stillBlocking.push(event);
-  }
-
-  return stillBlocking.sort(
-    (a, b) =>
-      demandDispatchBlockerPriority(a.event_type) -
-      demandDispatchBlockerPriority(b.event_type),
+  return blocking.sort(
+    (a, b) => demandDispatchBlockerPriority(a.status) - demandDispatchBlockerPriority(b.status),
   )[0];
 }
 
-/** 把 blocker 解除的闸门事件：闸门放行、以及已真正派发出去。 */
-function isDispatchGateResolvingEvent(eventType: ProjectEvent["event_type"]) {
-  return (
-    eventType === "project_task.dispatch_gate.checked" ||
-    eventType === "project_task.dispatched"
-  );
-}
-
-function isDemandDispatchBlockerEvent(eventType: ProjectEvent["event_type"]) {
-  return (
-    eventType === "project_task.dispatch_gate.replan_required" ||
-    eventType === "project_task.dispatch_gate.blocked" ||
-    eventType === "project_task.dispatch_gate.retry_later" ||
-    eventType === "project_task.dispatch_gate.waiting_human" ||
-    eventType === "project_task.dispatch_blocked"
-  );
-}
-
-function demandDispatchBlockerPriority(eventType: ProjectEvent["event_type"]) {
-  if (eventType === "project_task.dispatch_gate.replan_required") return 0;
-  if (eventType === "project_task.dispatch_gate.blocked") return 1;
-  if (eventType === "project_task.dispatch_gate.waiting_human") return 2;
-  if (eventType === "project_task.dispatch_gate.retry_later") return 3;
+function demandDispatchBlockerPriority(status: string) {
+  if (status === "replan_required") return 0;
+  if (status === "blocked") return 1;
+  if (status === "waiting_human") return 2;
+  if (status === "retry_later") return 3;
   return 4;
 }
 
-function demandDispatchBlockerLabel(eventType: ProjectEvent["event_type"]): {
+function dispatchGateStatusLabel(status: string): string {
+  return DISPATCH_GATE_STATUS_LABELS[status] ?? status;
+}
+
+const DISPATCH_GATE_STATUS_LABELS: Record<string, string> = {
+  blocked: "执行条件未满足",
+  replan_required: "需要重新编排",
+  retry_later: "稍后重试",
+  waiting_human: "等待人工确认"
+};
+
+function demandDispatchBlockerLabel(status: string): {
   summary: string;
   title: string;
   tone: "danger" | "warn";
 } {
-  if (eventType === "project_task.dispatch_gate.replan_required") {
+  if (status === "replan_required") {
     return {
       summary: "当前计划不再满足执行条件，需要重新编排后继续。",
       title: "计划需要调整",
@@ -622,7 +574,7 @@ function demandDispatchBlockerLabel(eventType: ProjectEvent["event_type"]): {
 };
   }
 
-  if (eventType === "project_task.dispatch_gate.waiting_human") {
+  if (status === "waiting_human") {
     return {
       summary: "当前执行需要负责人确认后继续。",
       title: "等待负责人确认",
@@ -630,7 +582,7 @@ function demandDispatchBlockerLabel(eventType: ProjectEvent["event_type"]): {
 };
   }
 
-  if (eventType === "project_task.dispatch_gate.retry_later") {
+  if (status === "retry_later") {
     return {
       summary: "运行条件暂不可用，系统会稍后重试。",
       title: "稍后重试执行",

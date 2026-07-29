@@ -2926,6 +2926,9 @@ func normalizeProjectTaskGraph(graph *ProjectTaskGraph) {
 	if graph.HandoffAssessments == nil {
 		graph.HandoffAssessments = []ProjectTaskGraphHandoffAssessment{}
 	}
+	if graph.DispatchGates == nil {
+		graph.DispatchGates = []ProjectTaskGraphDispatchGate{}
+	}
 }
 
 func buildProjectTaskGraphStageSummaries(nodes []ProjectTaskGraphNode) []ProjectTaskGraphStageSummary {
@@ -7991,10 +7994,17 @@ func projectTaskContextUpdateDeliveryMode(task ProjectTask, updateKind string) s
 }
 
 func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, now time.Time) {
-	switch task.Status {
-	case ProjectTaskStatusCompleted, ProjectTaskStatusFailed, ProjectTaskStatusCancelled:
+	// 终态判据统一走 isTerminalProjectTaskStatus（原地另写一份 case 会漏掉
+	// done/success 这两种读模型里出现过的拼法）。
+	if isTerminalProjectTaskStatus(task.Status) {
 		item.Liveness = ProjectTaskLivenessTerminal
 		item.NextAction = "no-op terminal"
+		// waiting_request_id 是粘性列：任务进终态时 UpdateProjectTaskStatus 不清它
+		// （四条"回活跃"的查询才清），于是终态任务会带着上一次等待的决策 id 出网，
+		// 投影出 is_terminal=true 却又"在等某个决策"的自相矛盾状态。读侧按状态收敛，
+		// 消费方无需各自再补状态守卫。写侧清列另有跟进（需先把结项摘要对该列的
+		// 依赖拆掉，否则会丢人类决策溯源）。
+		item.WaitingRequestID = nil
 		return
 	}
 	if task.RetryNotBefore != nil && task.RetryNotBefore.After(now) {

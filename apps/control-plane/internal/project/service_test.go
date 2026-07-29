@@ -1046,6 +1046,70 @@ func TestProjectTaskLivenessProjectionExplainsNextAction(t *testing.T) {
 	require.Equal(t, HumanWaitReasonMissingContext, items[0].Reason)
 }
 
+// waiting_reason / waiting_request_id 是粘性列，任务进终态时写侧不清（见
+// UpdateProjectTaskStatus）。读侧必须按状态收敛，否则会投影出 is_terminal=true
+// 却又带着"在等某个决策"的自相矛盾状态。
+func TestProjectTaskLivenessDropsStickyWaitingPointerOnTerminalTasks(t *testing.T) {
+	for _, status := range []string{
+		ProjectTaskStatusCompleted,
+		ProjectTaskStatusFailed,
+		ProjectTaskStatusCancelled,
+		"done",
+		"success",
+	} {
+		t.Run(status, func(t *testing.T) {
+			repo := newMemoryRepository()
+			service, err := NewService(repo)
+			require.NoError(t, err)
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			waitingReason := HumanWaitReasonAcceptanceRequired
+			waitingRequestID := uuid.New()
+			repo.tasks = append(repo.tasks, ProjectTask{
+				ID:               uuid.New(),
+				TenantID:         tenantID,
+				ProjectID:        projectID,
+				Status:           status,
+				WaitingReason:    &waitingReason,
+				WaitingRequestID: &waitingRequestID,
+			})
+
+			items, err := service.ListProjectTaskLiveness(context.Background(), tenantID, projectID)
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			require.Equal(t, ProjectTaskLivenessTerminal, items[0].Liveness)
+			require.Nil(t, items[0].WaitingRequestID, "终态任务不得再带等待中的决策 id")
+			require.Empty(t, items[0].Reason, "终态任务不得再带等待原因")
+		})
+	}
+}
+
+// 反向钉住：仍在等人的任务必须照常带出决策 id，别把守卫做成一刀切。
+func TestProjectTaskLivenessKeepsWaitingPointerWhileWaitingHuman(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	waitingReason := HumanWaitReasonAcceptanceRequired
+	waitingRequestID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Status:           ProjectTaskStatusWaitingHuman,
+		WaitingReason:    &waitingReason,
+		WaitingRequestID: &waitingRequestID,
+	})
+
+	items, err := service.ListProjectTaskLiveness(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, ProjectTaskLivenessWaitingHuman, items[0].Liveness)
+	require.NotNil(t, items[0].WaitingRequestID)
+	require.Equal(t, waitingRequestID, *items[0].WaitingRequestID)
+}
+
 func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

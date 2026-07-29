@@ -624,7 +624,6 @@ export function ProjectOperationalDetail({
               apiOptions={apiOptions}
               demands={demands}
               detailTaskId={detailTaskId}
-              events={events}
               fetchTaskGraph={fetchTaskGraph}
               onClearTask={() => setDetailTaskId(undefined)}
               onOpenTask={setDetailTaskId}

@@ -8049,6 +8049,40 @@ components:
             数据时 status 必须为 unknown，消费方不得据此编造符合性判定。
           items:
             $ref: "#/components/schemas/ProjectTaskGraphHandoffAssessment"
+        dispatch_gates:
+          type: array
+          description: >-
+            每个任务**当前**的派发闸门裁决（最新一条闸门结果，纯读投影）。
+            判断"任务是否仍被闸住"必须用它：闸门事件（project_task.dispatch_gate.*）
+            按 (任务, 事件类型) 至多发一次，任务二次卡人工不会有新事件，
+            按事件推断会漏报。
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphDispatchGate"
+    ProjectTaskGraphDispatchGate:
+      type: object
+      required:
+        - project_task_id
+        - status
+        - checked_at
+      properties:
+        project_task_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          description: passed 表示已放行；其余取值均代表当前仍被闸住。
+          enum:
+            - passed
+            - waiting_human
+            - blocked
+            - retry_later
+            - replan_required
+        checked_at:
+          type: string
+          format: date-time
+        decision_request_id:
+          type: string
+          format: uuid
     ProjectTaskGraphHandoffAssessment:
       type: object
       required:

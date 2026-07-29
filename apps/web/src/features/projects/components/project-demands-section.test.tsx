@@ -3,7 +3,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { ProjectDemandsSection } from "./project-demands-section";
-import type { ProjectDemand, ProjectEvent, ProjectTaskGraph } from "@/lib/api/projects";
+import type {
+  DispatchGateStatus,
+  ProjectDemand,
+  ProjectEvent,
+  ProjectTaskGraph
+} from "@/lib/api/projects";
 
 vi.mock("@tanstack/react-router", () => {
   type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
@@ -98,7 +103,20 @@ function graphFor(demandId: string, taskTitle: string): ProjectTaskGraph {
 };
 }
 
-/** 派发闸门流水事件：sequence_number 决定同一任务上"最新一条"是谁。 */
+/** 带一条闸门裁决的执行图：闸门记录是"当前是否被闸住"的权威源。 */
+function graphWithGate(demandId: string, status: DispatchGateStatus): ProjectTaskGraph {
+  const graph = graphFor(demandId, "整理材料任务");
+  graph.dispatch_gates = [
+    {
+      checked_at: "2026-07-25T08:00:00Z",
+      project_task_id: graph.nodes[0].id,
+      status
+},
+  ];
+  return graph;
+}
+
+/** 派发闸门流水事件：仅用于回归"按事件推断会漏报"的场景。 */
 function gateEvent(
   eventType: ProjectEvent["event_type"],
   sequenceNumber: number,
@@ -239,22 +257,26 @@ describe("ProjectDemandsSection", () => {
     await expect.element(screen.getByText("本需求未声明验收判据")).toBeVisible();
   });
 
-  it("shows the dispatch blocker banner while the gate is still holding the task", async () => {
+  it("shows the dispatch blocker banner while the latest gate verdict still holds the task", async () => {
     const screen = await renderSection({
-      events: [gateEvent("project_task.dispatch_gate.waiting_human", 36)],
+      fetchTaskGraph: vi
+        .fn()
+        .mockImplementation((demandId: string) =>
+          Promise.resolve(graphWithGate(demandId, "waiting_human")),
+        ),
     });
 
     await expect.element(screen.getByTestId("demand-dispatch-blocker")).toBeVisible();
     await expect.element(screen.getByText("等待负责人确认")).toBeVisible();
   });
 
-  it("drops the blocker banner once a later gate event released the same task", async () => {
+  it("drops the blocker banner once the latest gate verdict passed", async () => {
     const screen = await renderSection({
-      events: [
-        gateEvent("project_task.dispatch_gate.waiting_human", 36),
-        gateEvent("project_task.dispatch_gate.checked", 40),
-        gateEvent("project_task.dispatched", 41),
-      ],
+      fetchTaskGraph: vi
+        .fn()
+        .mockImplementation((demandId: string) =>
+          Promise.resolve(graphWithGate(demandId, "passed")),
+        ),
     });
 
     await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
@@ -262,18 +284,36 @@ describe("ProjectDemandsSection", () => {
   });
 
   it("drops the blocker banner when the gated task already reached a terminal status", async () => {
-    const terminalGraph = (demandId: string) => {
-      const graph = graphFor(demandId, "整理材料任务");
-      graph.nodes[0].status = "completed";
-      return Promise.resolve(graph);
-    };
     const screen = await renderSection({
-      events: [gateEvent("project_task.dispatch_gate.waiting_human", 36)],
-      fetchTaskGraph: vi.fn().mockImplementation(terminalGraph),
+      fetchTaskGraph: vi.fn().mockImplementation((demandId: string) => {
+        const graph = graphWithGate(demandId, "waiting_human");
+        graph.nodes[0].status = "completed";
+        return Promise.resolve(graph);
+      }),
     });
 
     await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
     expect(screen.container.querySelector("[data-testid=demand-dispatch-blocker]")).toBeNull();
+  });
+
+  // 回归：闸门事件按 (任务, 事件类型) 至多发一次，任务重试后二次卡人工不会再产生
+  // waiting_human 事件——事件流里最后一条永远是 dispatched。按事件推断会漏报，
+  // 按闸门记录判断才能重新亮起横幅。
+  it("still raises the banner when the task is gated again after a dispatched event", async () => {
+    const screen = await renderSection({
+      fetchTaskGraph: vi.fn().mockImplementation((demandId: string) => {
+        const graph = graphWithGate(demandId, "waiting_human");
+        graph.recent_events = [
+          gateEvent("project_task.dispatch_gate.waiting_human", 36),
+          gateEvent("project_task.dispatch_gate.checked", 40),
+          gateEvent("project_task.dispatched", 41),
+        ];
+        return Promise.resolve(graph);
+      }),
+    });
+
+    await expect.element(screen.getByTestId("demand-dispatch-blocker")).toBeVisible();
+    await expect.element(screen.getByText("等待负责人确认")).toBeVisible();
   });
 
   it("selects the demand from the ?demand= deep link and fetches its graph", async () => {

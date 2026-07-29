@@ -362,6 +362,20 @@ export type ProjectTaskGraph = {
   stage_summaries?: ProjectTaskGraphStageSummary[];
   blocking_facts: ProjectTaskGraphBlockingFact[];
   handoff_assessments?: ProjectTaskGraphHandoffAssessment[];
+  /** 每个任务当前的派发闸门裁决（服务端每任务只给最新一条）。 */
+  dispatch_gates?: ProjectTaskGraphDispatchGate[];
+};
+
+/**
+ * 任务当前的派发闸门裁决。判"是否仍被闸住"只能用它：闸门事件
+ * （project_task.dispatch_gate.*）按 (任务, 事件类型) 至多发一次，任务重试后
+ * 二次卡人工不会再有新事件，按事件流推断会漏报。
+ */
+export type ProjectTaskGraphDispatchGate = {
+  project_task_id: string;
+  status: DispatchGateStatus;
+  checked_at: string;
+  decision_request_id?: string;
 };
 
 export type ProjectRuntimePlacementStatus =

@@ -2457,6 +2457,16 @@ type projectTaskGraphResponse struct {
 	StageSummaries     []projectTaskGraphStageSummaryResponse      `json:"stage_summaries,omitempty"`
 	BlockingFacts      []projectTaskGraphBlockingFactResponse      `json:"blocking_facts"`
 	HandoffAssessments []projectTaskGraphHandoffAssessmentResponse `json:"handoff_assessments,omitempty"`
+	DispatchGates      []projectTaskGraphDispatchGateResponse       `json:"dispatch_gates"`
+}
+
+// projectTaskGraphDispatchGateResponse 是每个任务当前的派发闸门裁决。判"是否仍被
+// 闸住"用它，别去数闸门事件（按任务+类型至多发一次，二次阻塞不会有新事件）。
+type projectTaskGraphDispatchGateResponse struct {
+	ProjectTaskID     string  `json:"project_task_id"`
+	Status            string  `json:"status"`
+	CheckedAt         string  `json:"checked_at"`
+	DecisionRequestID *string `json:"decision_request_id,omitempty"`
 }
 
 type projectTaskGraphHandoffAssessmentResponse struct {
@@ -3296,7 +3306,21 @@ func taskGraphResponseFromDomain(graph ProjectTaskGraph) projectTaskGraphRespons
 		StageSummaries:     taskGraphStageSummaryResponses(graph.StageSummaries),
 		BlockingFacts:      taskGraphBlockingFactResponses(graph.BlockingFacts),
 		HandoffAssessments: taskGraphHandoffAssessmentResponses(graph.HandoffAssessments),
+		DispatchGates:      taskGraphDispatchGateResponses(graph.DispatchGates),
 	}
+}
+
+func taskGraphDispatchGateResponses(items []ProjectTaskGraphDispatchGate) []projectTaskGraphDispatchGateResponse {
+	responses := make([]projectTaskGraphDispatchGateResponse, 0, len(items))
+	for _, item := range items {
+		responses = append(responses, projectTaskGraphDispatchGateResponse{
+			ProjectTaskID:     item.ProjectTaskID.String(),
+			Status:            item.Status,
+			CheckedAt:         item.CheckedAt.UTC().Format(time.RFC3339),
+			DecisionRequestID: stringPtr(item.DecisionRequestID),
+		})
+	}
+	return responses
 }
 
 func taskGraphHandoffAssessmentResponses(items []ProjectTaskGraphHandoffAssessment) []projectTaskGraphHandoffAssessmentResponse {
