@@ -192,9 +192,19 @@ export function deriveProjectRiskSummary(
     };
   }
 
+  // Task ids already covered by an open decision card. sister-F1 parks
+  // waiting_human with a linked pending decision; counting both would show
+  // "1 待决 · 1 等人" for one human action. waiting_human is reserved for
+  // true orphans (no open decision on that task).
+  const taskIdsWithOpenDecision = new Set<string>();
+
   for (const decision of input.decisions ?? []) {
     if (!activeDecisionStatuses.has(normalize(decision.status_snapshot))) {
       continue;
+    }
+    const linkedTaskId = decision.project_task_id?.trim();
+    if (linkedTaskId) {
+      taskIdsWithOpenDecision.add(linkedTaskId);
     }
     reasons.push({
       id: `decision:${decision.id}`,
@@ -226,7 +236,10 @@ export function deriveProjectRiskSummary(
       continue;
     }
     if (isAwaitingHumanApproval(projectTask) || waitingHumanTaskStatuses.has(status)) {
-      // 任务停泊「等人」≠ 已有 open decision 卡；单独分桶，避免与决策待办混成「N 项待处理」。
+      if (taskIdsWithOpenDecision.has(projectTask.id)) {
+        continue;
+      }
+      // 无 open decision 的等人/待审任务：orphan 或尚未建卡的闸门等待。
       reasons.push({
         id: `task:${projectTask.id}:waiting_human`,
         type: "waiting_human",

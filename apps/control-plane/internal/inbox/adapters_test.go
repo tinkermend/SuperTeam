@@ -997,3 +997,47 @@ func TestStatusFromDecisionSnapshotResolutionVerbs(t *testing.T) {
 		}
 	}
 }
+
+// TestUpsertTaskHumanWaitDecisionOmitsNeedsMoreEvidence pins sister-F1 wait
+// cards to approved/rejected only — 要求补证 would settle the inbox while the
+// coordinator leaves the task waiting_human forever.
+func TestUpsertTaskHumanWaitDecisionOmitsNeedsMoreEvidence(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewDecisionProjectorAdapter(service)
+	createdAt := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	summary := "执行器启动或运行失败"
+	for _, decisionType := range []string{"project_task_clarification", "project_task_recovery", "project_task_runtime_recovery"} {
+		decision := project.DecisionRequest{
+			ID:                uuid.New(),
+			TenantID:          uuid.New(),
+			ProjectID:         uuid.New(),
+			ApprovalRequestID: uuid.New(),
+			TargetUserID:      uuid.New(),
+			DecisionType:      decisionType,
+			TitleSnapshot:     "生成中文简报",
+			SummarySnapshot:   &summary,
+			StatusSnapshot:    "pending",
+			CreatedAt:         createdAt,
+			UpdatedAt:         createdAt,
+		}
+		if err := adapter.UpsertProjectDecisionRequest(context.Background(), decision); err != nil {
+			t.Fatalf("upsert %s: %v", decisionType, err)
+		}
+		itemID := repo.itemsBySource[sourceKey(decision.TenantID, SourceTypeProjectDecisionRequest, decision.ID)]
+		item, err := repo.GetItem(context.Background(), decision.TenantID, itemID)
+		if err != nil {
+			t.Fatalf("get projected item: %v", err)
+		}
+		keys := make([]string, 0, len(item.Actions))
+		for _, action := range item.Actions {
+			keys = append(keys, action.Key)
+		}
+		if len(keys) != 2 || keys[0] != "approved" || keys[1] != "rejected" {
+			t.Fatalf("%s actions=%#v, want [approved rejected]", decisionType, keys)
+		}
+	}
+}

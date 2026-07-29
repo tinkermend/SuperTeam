@@ -33,9 +33,9 @@ type SourceActionRequest struct {
 }
 
 type Service struct {
-	repository   Repository
-	approvals    ApprovalActionResolver
-	decisions    ProjectDecisionActionResolver
+	repository Repository
+	approvals  ApprovalActionResolver
+	decisions  ProjectDecisionActionResolver
 }
 
 func NewService(repository Repository) (*Service, error) {
@@ -479,7 +479,9 @@ func DecisionActions(decisionType string) []Action {
 	//   - demand_acceptance: 同意/驳回 → project.ResolveDecision's demand_acceptance
 	//     branch (SignAllPendingDemandCriteria / first-pending-unsatisfied), spec §5.1;
 	//   - planning_gap: 已补员/豁免/关闭 → coordinator handlePlanningGapDecision;
-	//   - task_failure_recovery: 重试/取消下游 → coordinator applyFailureRecoveryDecision.
+	//   - task_failure_recovery: 重试/取消下游 → coordinator applyFailureRecoveryDecision;
+	//   - project_task_clarification/recovery/runtime_recovery/... wait family:
+	//     同意/驳回 only → coordinator applyTaskHumanWaitRelease (no 要求补证).
 	return decisionActionsFromRegistry(registeredActionsForDecision(decisionType))
 }
 

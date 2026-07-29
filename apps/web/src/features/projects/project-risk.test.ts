@@ -478,6 +478,67 @@ describe("project risk model", () => {
     expect(summary.level).toBe("none");
   });
 
+  it("does not double-count waiting_human when the task already has an open decision", () => {
+    const taskId = "task-linked-wait";
+    const summary = deriveProjectRiskSummary({
+      decisions: [
+        decision("project-linked", {
+          id: "dec-1",
+          project_task_id: taskId,
+          status_snapshot: "pending",
+          title_snapshot: "执行器失败等人",
+        }),
+      ],
+      evidence: [],
+      project: project("project-linked"),
+      tasks: [
+        task("project-linked", {
+          id: taskId,
+          status: "waiting_human",
+          title: "生成中文简报",
+        }),
+      ],
+    });
+
+    expect(summary.reasons.map((reason) => reason.type)).toEqual(["human_decision"]);
+    expect(summary.reasons).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "waiting_human" })]),
+    );
+    const breakdown = buildAttentionBreakdown(summary);
+    expect(breakdown.decisions).toBe(1);
+    expect(breakdown.waitingHuman).toBe(0);
+    expect(breakdown.actionableTotal).toBe(1);
+    expect(formatAttentionHeadline(summary).primary).toBe("1 待决");
+  });
+
+  it("keeps orphan waiting_human when no open decision is linked to the task", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [
+        decision("project-orphan", {
+          // decision belongs to another task / no task link
+          project_task_id: "other-task",
+          status_snapshot: "pending",
+        }),
+      ],
+      evidence: [],
+      project: project("project-orphan"),
+      tasks: [
+        task("project-orphan", {
+          id: "orphan-wait",
+          status: "waiting_human",
+          title: "无人卡等人任务",
+        }),
+      ],
+    });
+
+    expect(summary.reasons.map((reason) => reason.type).sort()).toEqual([
+      "human_decision",
+      "waiting_human",
+    ]);
+    expect(formatAttentionHeadline(summary).primary).toContain("1 待决");
+    expect(formatAttentionHeadline(summary).primary).toContain("1 等人");
+  });
+
   it("splits actionable attention from evidence signals instead of one pending total", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [decision("project-mix")],

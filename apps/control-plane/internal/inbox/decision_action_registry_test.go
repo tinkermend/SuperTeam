@@ -75,3 +75,49 @@ func TestGenericDecisionActionsMatchDefaultActions(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskHumanWaitFamilyOmitsNeedsMoreEvidence(t *testing.T) {
+	// Wait-family cards are released only by approved/rejected. Emitting
+	// needs_more_evidence would settle the inbox while the coordinator no-ops
+	// and the task stays waiting_human (sister-F1 stranding path).
+	kinds := []string{
+		"project_task_clarification",
+		"project_task_recovery",
+		"project_task_runtime_recovery",
+		"project_task_missing_context",
+		"project_task_permission",
+		"project_task_plan_invalid",
+		"project_task_budget_approval",
+		"project_task_human_wait",
+	}
+	for _, kind := range kinds {
+		got := DecisionActions(kind)
+		if len(got) != 2 {
+			t.Fatalf("DecisionActions(%q) returned %d actions, want 2 (approved/rejected)", kind, len(got))
+		}
+		if got[0].Key != "approved" || got[1].Key != "rejected" {
+			t.Fatalf("DecisionActions(%q)=%#v, want approved then rejected", kind, got)
+		}
+		for _, action := range got {
+			if action.Key == "needs_more_evidence" {
+				t.Fatalf("DecisionActions(%q) must not emit needs_more_evidence", kind)
+			}
+		}
+		// Registry entries must point at the wait-release handler, not generic.
+		entries := registeredActionsForDecision(kind)
+		for _, entry := range entries {
+			if entry.handler != handlerTaskHumanWaitRelease {
+				t.Fatalf("%s action %q handler=%q, want %q", kind, entry.action.Key, entry.handler, handlerTaskHumanWaitRelease)
+			}
+		}
+	}
+}
+
+func TestProjectTaskApprovalKeepsGenericEvidenceAction(t *testing.T) {
+	// Gate risk approvals still use the generic vocabulary; do not fold
+	// project_task_approval into the wait-family closed set.
+	got := DecisionActions("project_task_approval")
+	if len(got) != 3 || got[2].Key != "needs_more_evidence" {
+		t.Fatalf("project_task_approval should keep generic 3-action set, got %#v", got)
+	}
+}

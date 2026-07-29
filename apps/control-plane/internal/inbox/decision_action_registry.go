@@ -32,6 +32,12 @@ const (
 	// handlerFailureRecoveryDecision: projectcoordination.applyFailureRecoveryDecision
 	// (retry re-dispatches; cancel_downstream cancels dependents).
 	handlerFailureRecoveryDecision = "projectcoordination.applyFailureRecoveryDecision"
+	// handlerTaskHumanWaitRelease: projectcoordination.applyTaskHumanWaitRelease
+	// (approved → re-dispatch; rejected/cancelled → mark failed). Wait-family
+	// cards must NOT expose needs_more_evidence: ResolveDecision would settle
+	// the inbox card while the coordinator no-ops and the task stays
+	// waiting_human forever (sister-F1 stranding path).
+	handlerTaskHumanWaitRelease = "projectcoordination.applyTaskHumanWaitRelease"
 	// handlerResolveDecisionGeneric: project.Service.ResolveDecision generic path —
 	// approved / rejected / needs_more_evidence for plan_review, project_acceptance,
 	// project_task_* gates etc., dispatched by decision type inside the coordinator.
@@ -47,6 +53,7 @@ var implementedDecisionHandlers = map[string]struct{}{
 	handlerPlanningGapDecision:     {},
 	handlerPlanningFailedDecision:  {},
 	handlerFailureRecoveryDecision: {},
+	handlerTaskHumanWaitRelease:    {},
 	handlerResolveDecisionGeneric:  {},
 }
 
@@ -86,6 +93,28 @@ var decisionActionRegistry = map[string][]registeredDecisionAction{
 		{action: Action{Key: "retry", Label: "重试任务", Tone: "positive", Metadata: map[string]any{"decision": "retry"}}, handler: handlerFailureRecoveryDecision},
 		{action: Action{Key: "cancel_downstream", Label: "取消下游", Tone: "destructive", RequiresComment: true, Metadata: map[string]any{"decision": "cancel_downstream"}}, handler: handlerFailureRecoveryDecision},
 	},
+	// Task human-wait family (projectcoordination.applyTaskHumanWaitRelease):
+	// only approved/rejected. needs_more_evidence would settle the card while
+	// the coordinator no-ops and the task remains waiting_human. Keep in sync
+	// with ApplyPreDispatchGateDecision's wait-type switch (excluding
+	// project_task_approval, which still uses the generic set for gate risk
+	// review where 要求补证 is meaningful).
+	"project_task_clarification":    taskHumanWaitDecisionActions,
+	"project_task_recovery":         taskHumanWaitDecisionActions,
+	"project_task_runtime_recovery": taskHumanWaitDecisionActions,
+	"project_task_missing_context":  taskHumanWaitDecisionActions,
+	"project_task_permission":       taskHumanWaitDecisionActions,
+	"project_task_plan_invalid":     taskHumanWaitDecisionActions,
+	"project_task_budget_approval":  taskHumanWaitDecisionActions,
+	"project_task_human_wait":       taskHumanWaitDecisionActions,
+}
+
+// taskHumanWaitDecisionActions is the closed vocabulary for task wait cards
+// released by applyTaskHumanWaitRelease (approved → re-dispatch; rejected → fail).
+// Shared by every wait-family decision_type entry above so the set cannot drift.
+var taskHumanWaitDecisionActions = []registeredDecisionAction{
+	{action: Action{Key: "approved", Label: "同意", Tone: "positive", Metadata: map[string]any{"decision": "approved"}}, handler: handlerTaskHumanWaitRelease},
+	{action: Action{Key: "rejected", Label: "驳回", Tone: "destructive", RequiresComment: true, Metadata: map[string]any{"decision": "rejected"}}, handler: handlerTaskHumanWaitRelease},
 }
 
 // genericDecisionActions is the generic project-decision vocabulary (the same set

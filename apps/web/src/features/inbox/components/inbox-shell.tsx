@@ -565,7 +565,7 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
               dot={<Clock className="size-3" />}
               dotClassName="bg-brand-soft text-brand"
               title="等待人类决策"
-              description="选择同意、驳回或要求补证后将推动流程进入下一节点。"
+              description={waitingDecisionDescription(item)}
               timestamp="进行中"
             />
           ) : (
@@ -957,7 +957,26 @@ function QuickLink({
 }
 
 // ---------------------------------------------------------------------------
+function waitingDecisionDescription(item: InboxItem): string {
+  const labels = (Array.isArray(item.actions) ? item.actions : [])
+    .map((action) => formatInboxActionLabel(action).trim())
+    .filter(Boolean);
+  if (labels.length === 0) {
+    return "完成决策后将推动流程进入下一节点。";
+  }
+  if (labels.length === 1) {
+    return `选择「${labels[0]}」后将推动流程进入下一节点。`;
+  }
+  if (labels.length === 2) {
+    return `选择「${labels[0]}」或「${labels[1]}」后将推动流程进入下一节点。`;
+  }
+  const head = labels.slice(0, -1).map((label) => `「${label}」`).join("、");
+  const tail = labels[labels.length - 1];
+  return `选择${head}或「${tail}」后将推动流程进入下一节点。`;
+}
+
 // 空状态详情面板
+
 // ---------------------------------------------------------------------------
 
 function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
@@ -988,7 +1007,7 @@ function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
       <section className="px-5 py-4">
         <h3 className="text-[13px] font-extrabold text-ink">选择事项后可执行</h3>
         <div className="mt-3 grid gap-2 text-[13px] text-ink-2">
-          {["查看完整详情", "查看过程记录", "查看关联引用", "同意 / 驳回 / 要求补证", "跳转到关联流程或项目"].map((label) => (
+          {["查看完整详情", "查看过程记录", "查看关联引用", "按事项可用动作处理", "跳转到关联流程或项目"].map((label) => (
             <div className="flex items-center gap-2" key={label}>
               <CheckCircle2 className="size-4 text-ok" />
               <span>{label}</span>
