@@ -5394,18 +5394,41 @@ func (s *Service) restoreProjectTaskHumanWaitState(ctx context.Context, task Pro
 			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore previous latest task result: %w", err))
 		}
 	}
-	if _, err := s.repository.UpdateProjectTaskStatus(ctx, task.TenantID, task.ID, ProjectTaskStatusWaitingHuman, nil, []string{ProjectTaskStatusCompleted}); err != nil {
+	// 补偿动作必须还原**写回清掉的每一样东西**：终态写回会把 waiting_reason /
+	// waiting_request_id 置空，只还原 status 会让重试撞上 approve 守卫
+	// （waiting_reason 必须是 acceptance_required）而永久 409。task 是写回前的
+	// 内存快照，指针原值还在它身上。
+	restoreErr := error(nil)
+	resolutionRepository, repoErr := s.projectTaskHumanWaitResolutionRepository()
+	if repoErr != nil {
+		restoreErr = repoErr
+	} else {
+		_, restoreErr = resolutionRepository.RestoreProjectTaskHumanWait(
+			ctx, task.TenantID, task.ID, task.WaitingReason, task.WaitingRequestID,
+		)
+	}
+	if restoreErr != nil {
 		current, getErr := s.repository.GetProjectTask(ctx, task.TenantID, task.ID)
-		if getErr == nil && current.Status == ProjectTaskStatusWaitingHuman {
+		// 只有"已经退回 waiting_human **且**等待指针也已还原"才算别人抢先补偿成功；
+		// 光看 status 会把"退回了但指针为空"（重试必然 409）当成功放过去。
+		if getErr == nil && current.Status == ProjectTaskStatusWaitingHuman &&
+			sameOptionalString(current.WaitingReason, task.WaitingReason) {
 			return errors.Join(rollbackErrors...)
 		}
 		if getErr != nil {
-			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore project task waiting status: %w; get project task after rollback failure: %v", err, getErr))
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore project task waiting status: %w; get project task after rollback failure: %v", restoreErr, getErr))
 		} else {
-			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore project task waiting status: %w", err))
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("restore project task waiting status: %w", restoreErr))
 		}
 	}
 	return errors.Join(rollbackErrors...)
+}
+
+func sameOptionalString(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (s *Service) findProjectTaskResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTaskResult, bool, error) {

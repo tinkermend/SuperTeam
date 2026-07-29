@@ -1596,6 +1596,44 @@ func TestResolveProjectTaskHumanWaitAcceptanceDecisionLinkFailureLeavesTaskWaiti
 	latest := requireProjectTaskResultByID(t, results, *task.LatestTaskResultID)
 	require.Equal(t, TaskResultDecisionWaitingHumanReview, latest.Decision)
 	require.False(t, ProjectTaskResultAcceptedForDependencyUnlock(latest))
+	// 补偿动作必须让任务**可重试**：终态写回会清空等待指针，只还原 status 的话
+	// waiting_reason 为空，approve 守卫会让人类永远点不动"验收通过"。
+	require.NotNil(t, task.WaitingReason, "回滚后必须还原 waiting_reason，否则重试永久 409")
+	require.Equal(t, HumanWaitReasonAcceptanceRequired, *task.WaitingReason)
+	require.NotNil(t, task.WaitingRequestID, "回滚后必须还原 waiting_request_id")
+}
+
+// 承接上一条：故障排除后人类再点一次"验收通过"必须真的能过。
+// 这是 code review 揪出的回归——终态写回清空等待指针后，补偿动作只还原 status，
+// 重试会被 approve 守卫永久挡成 ErrProjectConflict，任务卡死在 waiting_human。
+func TestResolveProjectTaskHumanWaitRetrySucceedsAfterDecisionLinkFailureRollback(t *testing.T) {
+	repo := newProjectTaskResultMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture, _, _, _, _ := completeProjectTaskAttemptIntoHumanReviewResult(t, service, repo, "human-review-retry-after-rollback")
+	linkErr := errors.New("decision link unavailable")
+	repo.linkProjectTaskResultDecisionRequestErr = linkErr
+
+	request := ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionApprove,
+		ResponseSummary: "验收通过",
+	}
+
+	_, err = service.ResolveProjectTaskHumanWait(context.Background(), request)
+	require.ErrorIs(t, err, linkErr)
+
+	// 故障恢复后重试。
+	repo.linkProjectTaskResultDecisionRequestErr = nil
+	task, err := service.ResolveProjectTaskHumanWait(context.Background(), request)
+
+	require.NoError(t, err, "回滚后重试必须能成功，而不是被 approve 守卫永久拒绝")
+	require.Equal(t, ProjectTaskStatusCompleted, task.Status)
+	require.Equal(t, 1, coordinator.completedSignals)
 }
 
 func TestResolveProjectTaskHumanWaitAcceptanceLatestLinkFailureStillRestoresTaskWaiting(t *testing.T) {
@@ -13142,10 +13180,35 @@ func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID
 				return ProjectTask{}, ErrProjectNotFound
 			}
 			task.Status = status
+			// 与真实 UpdateProjectTaskStatus 同口径：进终态清空等待指针。
+			// 夹具不照做，就复现不出"补偿动作没还原指针 → 重试永久 409"。
+			if isTerminalProjectTaskStatus(status) {
+				task.WaitingReason = nil
+				task.WaitingRequestID = nil
+			}
 			task.UpdatedAt = time.Now().UTC()
 			r.tasks[index] = task
 			return task, nil
 		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+// 与真实 RestoreProjectTaskHumanWait 同口径：退回 waiting_human 并还原等待指针。
+func (r *memoryRepository) RestoreProjectTaskHumanWait(ctx context.Context, tenantID, projectTaskID uuid.UUID, waitingReason *string, waitingRequestID *uuid.UUID) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.ID != projectTaskID || task.TenantID != tenantID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusCompleted {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		task.Status = ProjectTaskStatusWaitingHuman
+		task.WaitingReason = waitingReason
+		task.WaitingRequestID = waitingRequestID
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[index] = task
+		return task, nil
 	}
 	return ProjectTask{}, ErrProjectNotFound
 }

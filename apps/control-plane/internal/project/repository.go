@@ -237,6 +237,9 @@ type ProviderEventExecutionLedgerRepository interface {
 
 type ProjectTaskHumanWaitResolutionRepository interface {
 	ResolveProjectTaskHumanWaitWriteback(ctx context.Context, req ResolveProjectTaskHumanWaitWritebackRequest) (ProjectTaskWritebackResult, error)
+	// RestoreProjectTaskHumanWait 是上面那次写回的补偿动作，必须把终态写回清掉的
+	// 等待指针一并还原，否则重试会永久卡在 approve 守卫上。
+	RestoreProjectTaskHumanWait(ctx context.Context, tenantID, projectTaskID uuid.UUID, waitingReason *string, waitingRequestID *uuid.UUID) (ProjectTask, error)
 }
 
 type AppendProjectEventRequest struct {

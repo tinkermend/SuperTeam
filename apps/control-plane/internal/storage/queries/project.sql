@@ -576,11 +576,11 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 SELECT
     COUNT(*)::integer AS total_tasks,
     COUNT(*) FILTER (
-        WHERE status NOT IN ('completed', 'failed', 'cancelled')
+        WHERE status NOT IN ('completed', 'done', 'success', 'failed', 'cancelled')
     )::integer AS active_tasks,
     COUNT(*) FILTER (WHERE status = 'running')::integer AS running_tasks,
     COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS pending_human_tasks,
-    COUNT(*) FILTER (WHERE status = 'completed')::integer AS completed_tasks,
+    COUNT(*) FILTER (WHERE status IN ('completed', 'done', 'success'))::integer AS completed_tasks,
     COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_tasks,
     COUNT(*) FILTER (WHERE status = 'cancelled')::integer AS cancelled_tasks
 FROM project_tasks
@@ -1704,6 +1704,23 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
   AND status = 'waiting_human';
 
+-- name: RestoreProjectTaskHumanWait :one
+-- 人类验收写回的**补偿动作**：把任务从 completed 退回 waiting_human，并把
+-- UpdateProjectTaskStatus 终态分支清掉的等待指针一并还原。
+-- 必须还原指针，否则 ResolveProjectTaskHumanWait 的 approve 守卫
+-- （waiting_reason 必须是 acceptance_required）会让重试永久 409：验收写回提交后、
+-- 记录任务结果那几步（非同事务）若失败，任务会退回 waiting_human 但指针已空，
+-- 人类再也点不动"验收通过"。补偿动作必须还原它清掉的每一样东西。
+UPDATE project_tasks
+SET status = 'waiting_human',
+    waiting_reason = sqlc.narg('waiting_reason')::varchar,
+    waiting_request_id = sqlc.narg('waiting_request_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'completed'
+RETURNING *;
+
 -- name: UpdateProjectTaskStatus :one
 -- 进终态时一并清掉等待指针：waiting_reason / waiting_request_id 只描述"当前在等什么"，
 -- 四条"回活跃"的查询（QueueProjectTask / ScheduleProjectTaskRetry /
@@ -1719,12 +1736,12 @@ SET status = sqlc.arg('status')::varchar,
         ELSE terminal_event_id
     END,
     waiting_reason = CASE
-        WHEN sqlc.arg('status')::varchar IN ('completed', 'failed', 'cancelled')
+        WHEN sqlc.arg('status')::varchar IN ('completed', 'done', 'success', 'failed', 'cancelled')
         THEN NULL
         ELSE waiting_reason
     END,
     waiting_request_id = CASE
-        WHEN sqlc.arg('status')::varchar IN ('completed', 'failed', 'cancelled')
+        WHEN sqlc.arg('status')::varchar IN ('completed', 'done', 'success', 'failed', 'cancelled')
         THEN NULL
         ELSE waiting_request_id
     END,

@@ -43,6 +43,8 @@ type Querier interface {
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
 	// Soft-delete cascade: cancel any task that could still light employee overview
 	// blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
+	// 与 UpdateProjectTaskStatus 的终态分支同口径：进终态即清等待指针，
+	// 否则被级联取消的任务会永久带着上一次等待的决策 id。
 	CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	// 兜底:软删时 UnbindTeamDigitalEmployees 已清存活员工;这里连已删员工的历史引用一并清。
@@ -690,6 +692,13 @@ type Querier interface {
 	ResolveProjectDecisionRequest(ctx context.Context, arg ResolveProjectDecisionRequestParams) (ProjectDecisionRequest, error)
 	RestorePendingDeleteTeam(ctx context.Context, arg RestorePendingDeleteTeamParams) (TenantTeam, error)
 	RestoreProjectTaskAfterDispatchStartFailure(ctx context.Context, arg RestoreProjectTaskAfterDispatchStartFailureParams) (ProjectTask, error)
+	// 人类验收写回的**补偿动作**：把任务从 completed 退回 waiting_human，并把
+	// UpdateProjectTaskStatus 终态分支清掉的等待指针一并还原。
+	// 必须还原指针，否则 ResolveProjectTaskHumanWait 的 approve 守卫
+	// （waiting_reason 必须是 acceptance_required）会让重试永久 409：验收写回提交后、
+	// 记录任务结果那几步（非同事务）若失败，任务会退回 waiting_human 但指针已空，
+	// 人类再也点不动"验收通过"。补偿动作必须还原它清掉的每一样东西。
+	RestoreProjectTaskHumanWait(ctx context.Context, arg RestoreProjectTaskHumanWaitParams) (ProjectTask, error)
 	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
 	RevokeRuntimeSession(ctx context.Context, arg RevokeRuntimeSessionParams) (RuntimeSession, error)

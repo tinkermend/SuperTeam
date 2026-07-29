@@ -3396,6 +3396,24 @@ func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, pr
 	return r.updateProjectTaskStatusWithQueries(ctx, r.q, tenantID, projectTaskID, status, eventID, currentStatuses)
 }
 
+// RestoreProjectTaskHumanWait 是验收写回失败时的补偿动作：退回 waiting_human 并还原
+// 等待指针（终态写回会把它们清空，只还原状态会让重试永久卡在 approve 守卫上）。
+func (r *PgRepository) RestoreProjectTaskHumanWait(ctx context.Context, tenantID, projectTaskID uuid.UUID, waitingReason *string, waitingRequestID *uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.RestoreProjectTaskHumanWait(ctx, queries.RestoreProjectTaskHumanWaitParams{
+		TenantID:         tenantID,
+		ID:               projectTaskID,
+		WaitingReason:    textPtr(waitingReason),
+		WaitingRequestID: nullUUID(waitingRequestID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
+}
+
 func (r *PgRepository) BindProjectTaskRun(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error) {
 	row, err := r.q.BindProjectTaskRun(ctx, queries.BindProjectTaskRunParams{
 		TenantID:             req.TenantID,

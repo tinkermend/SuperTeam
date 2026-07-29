@@ -572,7 +572,10 @@ func (q *Queries) CancelProjectDecisionRequestsForDelete(ctx context.Context, ar
 
 const CancelProjectTasksForDelete = `-- name: CancelProjectTasksForDelete :many
 UPDATE project_tasks
-SET status = 'cancelled', updated_at = NOW()
+SET status = 'cancelled',
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND status NOT IN ('completed', 'cancelled', 'done', 'success')
@@ -586,6 +589,8 @@ type CancelProjectTasksForDeleteParams struct {
 
 // Soft-delete cascade: cancel any task that could still light employee overview
 // blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
+// 与 UpdateProjectTaskStatus 的终态分支同口径：进终态即清等待指针，
+// 否则被级联取消的任务会永久带着上一次等待的决策 id。
 func (q *Queries) CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, CancelProjectTasksForDelete, arg.TenantID, arg.ProjectID)
 	if err != nil {
@@ -3947,11 +3952,11 @@ const GetProjectTaskStatusCounts = `-- name: GetProjectTaskStatusCounts :one
 SELECT
     COUNT(*)::integer AS total_tasks,
     COUNT(*) FILTER (
-        WHERE status NOT IN ('completed', 'failed', 'cancelled')
+        WHERE status NOT IN ('completed', 'done', 'success', 'failed', 'cancelled')
     )::integer AS active_tasks,
     COUNT(*) FILTER (WHERE status = 'running')::integer AS running_tasks,
     COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS pending_human_tasks,
-    COUNT(*) FILTER (WHERE status = 'completed')::integer AS completed_tasks,
+    COUNT(*) FILTER (WHERE status IN ('completed', 'done', 'success'))::integer AS completed_tasks,
     COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_tasks,
     COUNT(*) FILTER (WHERE status = 'cancelled')::integer AS cancelled_tasks
 FROM project_tasks
@@ -8454,6 +8459,84 @@ func (q *Queries) RestoreProjectTaskAfterDispatchStartFailure(ctx context.Contex
 	return i, err
 }
 
+const RestoreProjectTaskHumanWait = `-- name: RestoreProjectTaskHumanWait :one
+UPDATE project_tasks
+SET status = 'waiting_human',
+    waiting_reason = $1::varchar,
+    waiting_request_id = $2::uuid,
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND id = $4::uuid
+  AND status = 'completed'
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_event_id, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id, plan_iteration, dismissed_at, dismissed_by
+`
+
+type RestoreProjectTaskHumanWaitParams struct {
+	WaitingReason    pgtype.Text   `json:"waiting_reason"`
+	WaitingRequestID uuid.NullUUID `json:"waiting_request_id"`
+	TenantID         uuid.UUID     `json:"tenant_id"`
+	ID               uuid.UUID     `json:"id"`
+}
+
+// 人类验收写回的**补偿动作**：把任务从 completed 退回 waiting_human，并把
+// UpdateProjectTaskStatus 终态分支清掉的等待指针一并还原。
+// 必须还原指针，否则 ResolveProjectTaskHumanWait 的 approve 守卫
+// （waiting_reason 必须是 acceptance_required）会让重试永久 409：验收写回提交后、
+// 记录任务结果那几步（非同事务）若失败，任务会退回 waiting_human 但指针已空，
+// 人类再也点不动"验收通过"。补偿动作必须还原它清掉的每一样东西。
+func (q *Queries) RestoreProjectTaskHumanWait(ctx context.Context, arg RestoreProjectTaskHumanWaitParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, RestoreProjectTaskHumanWait,
+		arg.WaitingReason,
+		arg.WaitingRequestID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalEventID,
+		&i.StatusChangedAt,
+		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
+		&i.PlanIteration,
+		&i.DismissedAt,
+		&i.DismissedBy,
+	)
+	return i, err
+}
+
 const RewireProjectTaskDependencies = `-- name: RewireProjectTaskDependencies :many
 WITH affected AS (
     SELECT id, tenant_id, project_id, coordination_job_id, dependent_task_id
@@ -9438,12 +9521,12 @@ SET status = $1::varchar,
         ELSE terminal_event_id
     END,
     waiting_reason = CASE
-        WHEN $1::varchar IN ('completed', 'failed', 'cancelled')
+        WHEN $1::varchar IN ('completed', 'done', 'success', 'failed', 'cancelled')
         THEN NULL
         ELSE waiting_reason
     END,
     waiting_request_id = CASE
-        WHEN $1::varchar IN ('completed', 'failed', 'cancelled')
+        WHEN $1::varchar IN ('completed', 'done', 'success', 'failed', 'cancelled')
         THEN NULL
         ELSE waiting_request_id
     END,
