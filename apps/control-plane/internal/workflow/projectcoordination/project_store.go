@@ -2565,13 +2565,21 @@ func (s *ProjectStore) ensureFinalDemandSummary(ctx context.Context, demand proj
 	if err != nil {
 		return err
 	}
+	decisionsByTask, err := s.demandSummaryDecisionsByTask(ctx, demand, tasks)
+	if err != nil {
+		return err
+	}
 	taskFacts := make([]demandSummaryTaskFact, 0, len(tasks))
 	for _, task := range tasks {
 		latestResult, err := s.latestTaskResult(ctx, task)
 		if err != nil {
 			return err
 		}
-		taskFacts = append(taskFacts, demandSummaryTaskFact{Task: task, LatestResult: latestResult})
+		taskFacts = append(taskFacts, demandSummaryTaskFact{
+			Task:             task,
+			LatestResult:     latestResult,
+			DecisionRequests: decisionsByTask[task.ID],
+		})
 	}
 	payload, conclusion := buildFinalDemandSummaryPayload(demand, taskFacts)
 	summary, err := s.repository.CreateProjectDemandSummary(ctx, project.CreateProjectDemandSummaryRequest{
@@ -2647,9 +2655,50 @@ func (s *ProjectStore) latestTaskResult(ctx context.Context, task project.Projec
 	}
 }
 
+// demandSummaryDecisionScanPerTask 是按任务估算的决策请求扫描配额。单条任务上的
+// 人类决策请求是个位数（风险审批 / 验收 / 等待处理各至多几条），20 已很宽裕；
+// 整体再设上限避免超大需求把一次查询拉爆。
+const (
+	demandSummaryDecisionScanPerTask int32 = 20
+	demandSummaryDecisionScanCap     int32 = 1000
+)
+
+// demandSummaryDecisionsByTask 一次性取回该需求全部任务的人类决策请求并按任务归集。
+// 权威源是 project_decision_requests；不按任务发 N 次查询。
+func (s *ProjectStore) demandSummaryDecisionsByTask(ctx context.Context, demand project.ProjectDemand, tasks []project.ProjectTask) (map[uuid.UUID][]project.DecisionRequest, error) {
+	grouped := map[uuid.UUID][]project.DecisionRequest{}
+	if len(tasks) == 0 {
+		return grouped, nil
+	}
+	taskIDs := make([]uuid.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		taskIDs = append(taskIDs, task.ID)
+	}
+	limit := int32(len(taskIDs)) * demandSummaryDecisionScanPerTask
+	if limit > demandSummaryDecisionScanCap {
+		limit = demandSummaryDecisionScanCap
+	}
+	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, demand.TenantID, demand.ProjectID, []uuid.UUID{}, taskIDs, limit)
+	if err != nil {
+		return nil, err
+	}
+	for _, decision := range decisions {
+		if decision.ProjectTaskID == nil || *decision.ProjectTaskID == uuid.Nil {
+			continue
+		}
+		grouped[*decision.ProjectTaskID] = append(grouped[*decision.ProjectTaskID], decision)
+	}
+	return grouped, nil
+}
+
 type demandSummaryTaskFact struct {
 	Task         project.ProjectTask
 	LatestResult *project.ProjectTaskResult
+	// DecisionRequests 是该任务的人类决策请求（权威表 project_decision_requests）。
+	// 结项摘要的 human_decision_refs 取自这里，**不再**读 task.WaitingRequestID——
+	// 那是粘性列（进终态时写侧不清、回活跃时被清空），既会漏（清过的决策不再出现）
+	// 也让"清理粘性列"这件事被摘要绑架。
+	DecisionRequests []project.DecisionRequest
 }
 
 func buildFinalDemandSummaryPayload(demand project.ProjectDemand, taskFacts []demandSummaryTaskFact) (map[string]any, string) {
@@ -2674,16 +2723,24 @@ func buildFinalDemandSummaryPayload(demand project.ProjectDemand, taskFacts []de
 		} else {
 			unfinishedTasks = append(unfinishedTasks, taskPayload)
 		}
-		if fact.Task.WaitingRequestID != nil && *fact.Task.WaitingRequestID != uuid.Nil {
-			addDecisionRef(&humanDecisionRefs, seenDecisionRefs, *fact.Task.WaitingRequestID, fact.Task.ID, "task_waiting_request")
+		// 结果关联的决策先登记：它的来源标签更具体，去重时先到者留名。
+		if fact.LatestResult != nil {
+			result := *fact.LatestResult
+			if result.DecisionRequestID != nil && *result.DecisionRequestID != uuid.Nil {
+				addDecisionRef(&humanDecisionRefs, seenDecisionRefs, *result.DecisionRequestID, fact.Task.ID, "task_result_decision")
+			}
+		}
+		// 该任务其余人类决策请求取自权威表，不再读粘性的 task.WaitingRequestID。
+		for _, decision := range fact.DecisionRequests {
+			if decision.ID == uuid.Nil {
+				continue
+			}
+			addDecisionRef(&humanDecisionRefs, seenDecisionRefs, decision.ID, fact.Task.ID, "task_decision")
 		}
 		if fact.LatestResult == nil {
 			continue
 		}
 		result := *fact.LatestResult
-		if result.DecisionRequestID != nil && *result.DecisionRequestID != uuid.Nil {
-			addDecisionRef(&humanDecisionRefs, seenDecisionRefs, *result.DecisionRequestID, fact.Task.ID, "task_result_decision")
-		}
 		for _, ref := range result.Contract.EvidenceRefs {
 			evidenceRefs = append(evidenceRefs, taskResultRefPayload(ref, fact.Task.ID))
 		}

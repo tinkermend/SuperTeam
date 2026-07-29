@@ -1705,6 +1705,11 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status = 'waiting_human';
 
 -- name: UpdateProjectTaskStatus :one
+-- 进终态时一并清掉等待指针：waiting_reason / waiting_request_id 只描述"当前在等什么"，
+-- 四条"回活跃"的查询（QueueProjectTask / ScheduleProjectTaskRetry /
+-- ScheduleProjectTaskDispatchRetry / ReleaseProjectTaskWaitingHumanForRedispatch）
+-- 都会清它们，唯独终态这条不清，会让已完成/已取消的任务永久带着上一次等待的决策 id。
+-- 人类决策溯源不依赖该列：结项摘要与执行上下文包都从 project_decision_requests 取。
 UPDATE project_tasks
 SET status = sqlc.arg('status')::varchar,
     latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
@@ -1712,6 +1717,16 @@ SET status = sqlc.arg('status')::varchar,
         WHEN sqlc.arg('status')::varchar IN ('completed', 'failed', 'cancelled')
         THEN COALESCE(sqlc.narg('latest_event_id')::uuid, terminal_event_id)
         ELSE terminal_event_id
+    END,
+    waiting_reason = CASE
+        WHEN sqlc.arg('status')::varchar IN ('completed', 'failed', 'cancelled')
+        THEN NULL
+        ELSE waiting_reason
+    END,
+    waiting_request_id = CASE
+        WHEN sqlc.arg('status')::varchar IN ('completed', 'failed', 'cancelled')
+        THEN NULL
+        ELSE waiting_request_id
     END,
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -2384,8 +2399,13 @@ RETURNING id;
 -- name: CancelProjectTasksForDelete :many
 -- Soft-delete cascade: cancel any task that could still light employee overview
 -- blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
+-- 与 UpdateProjectTaskStatus 的终态分支同口径：进终态即清等待指针，
+-- 否则被级联取消的任务会永久带着上一次等待的决策 id。
 UPDATE project_tasks
-SET status = 'cancelled', updated_at = NOW()
+SET status = 'cancelled',
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND status NOT IN ('completed', 'cancelled', 'done', 'success')

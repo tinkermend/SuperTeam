@@ -2939,6 +2939,17 @@ func TestProjectStoreRequestProjectAcceptanceReviewSummarizesFailedAndCancelledD
 		},
 	}
 	repo.tasks[1].WaitingRequestID = &waitingRequestID
+	// 结项摘要的 human_decision_refs 取自权威表 project_decision_requests，不再读
+	// 任务上的粘性 waiting_request_id；生产里这个指针必然指向一条真实决策请求，
+	// 夹具也必须如实建出来。
+	repo.decisionRequests = append(repo.decisionRequests, project.DecisionRequest{
+		ID:             waitingRequestID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  &blockedTaskID,
+		DecisionType:   "project_task_approval",
+		StatusSnapshot: "pending",
+	})
 	failedResult := projectStoreTaskResult(tenantID, projectID, failedTaskID, project.TaskResultDecisionFailedRecovery, "failed")
 	failedResult.Contract = project.TaskResultContract{
 		Status:  project.TaskResultStatusFailed,
@@ -2977,6 +2988,65 @@ func TestProjectStoreRequestProjectAcceptanceReviewSummarizesFailedAndCancelledD
 	require.Equal(t, string(project.ProjectDemandStatusCancelled), cancelledSummary.Status)
 	requirePayloadListContains(t, cancelledSummary.SummaryPayload, "unfinished_tasks", "task_id", cancelledTaskID.String())
 	require.Contains(t, cancelledSummary.Conclusion, "cancelled")
+}
+
+// 结项摘要的人类决策溯源必须来自权威表，而不是任务上的粘性 waiting_request_id：
+// 后者在任务回活跃时被清空、进终态时又不清，用它当唯一载体既会漏也会挡住清列。
+// 这条钉住"任务上没有 waiting_request_id，但该任务确有决策请求"时溯源仍完整。
+func TestProjectStoreDemandSummaryDecisionRefsComeFromDecisionTableNotStickyPointer(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	approvalID := uuid.New()
+	acceptanceID := uuid.New()
+
+	task := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, taskID, project.ProjectTaskStatusCancelled)
+	require.Nil(t, task.WaitingRequestID, "本用例前提：任务上没有粘性等待指针")
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Status:           project.ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		},
+		demands: []project.ProjectDemand{
+			{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "取消需求", Status: project.ProjectDemandStatusCancelled},
+		},
+		tasks: []project.ProjectTask{task},
+		decisionRequests: []project.DecisionRequest{
+			{
+				ID:             approvalID,
+				TenantID:       tenantID,
+				ProjectID:      projectID,
+				ProjectTaskID:  &taskID,
+				DecisionType:   "project_task_approval",
+				StatusSnapshot: "approved",
+			},
+			{
+				ID:             acceptanceID,
+				TenantID:       tenantID,
+				ProjectID:      projectID,
+				ProjectTaskID:  &taskID,
+				DecisionType:   "project_task_acceptance",
+				StatusSnapshot: "approved",
+			},
+		},
+	}
+	store := NewProjectStoreWithApprovals(repo, &projectStoreApprovalCreator{})
+
+	_, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
+		TenantID: tenantID, ProjectID: projectID,
+	})
+	require.NoError(t, err)
+
+	summary := requireProjectStoreDemandSummary(t, repo.demandSummaries, demandID)
+	requirePayloadListContains(t, summary.SummaryPayload, "human_decision_refs", "decision_request_id", approvalID.String())
+	requirePayloadListContains(t, summary.SummaryPayload, "human_decision_refs", "decision_request_id", acceptanceID.String())
 }
 
 func TestProjectStoreRequestProjectAcceptanceReviewRollsBackStatusWhenApprovalCreationFails(t *testing.T) {

@@ -773,6 +773,11 @@ type Querier interface {
 	UpdateProjectDemandStatus(ctx context.Context, arg UpdateProjectDemandStatusParams) (ProjectDemand, error)
 	UpdateProjectEvidenceVerificationStatus(ctx context.Context, arg UpdateProjectEvidenceVerificationStatusParams) (ProjectEvidenceRef, error)
 	UpdateProjectTaskAttemptBudgetHeartbeat(ctx context.Context, arg UpdateProjectTaskAttemptBudgetHeartbeatParams) (ProjectTaskAttempt, error)
+	// 进终态时一并清掉等待指针：waiting_reason / waiting_request_id 只描述"当前在等什么"，
+	// 四条"回活跃"的查询（QueueProjectTask / ScheduleProjectTaskRetry /
+	// ScheduleProjectTaskDispatchRetry / ReleaseProjectTaskWaitingHumanForRedispatch）
+	// 都会清它们，唯独终态这条不清，会让已完成/已取消的任务永久带着上一次等待的决策 id。
+	// 人类决策溯源不依赖该列：结项摘要与执行上下文包都从 project_decision_requests 取。
 	UpdateProjectTaskStatus(ctx context.Context, arg UpdateProjectTaskStatusParams) (ProjectTask, error)
 	UpdateProviderSessionStatus(ctx context.Context, arg UpdateProviderSessionStatusParams) (ProviderSession, error)
 	UpdateRuntimeCommandReceiptStatus(ctx context.Context, arg UpdateRuntimeCommandReceiptStatusParams) (RuntimeCommandReceipt, error)

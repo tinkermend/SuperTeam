@@ -9437,6 +9437,16 @@ SET status = $1::varchar,
         THEN COALESCE($2::uuid, terminal_event_id)
         ELSE terminal_event_id
     END,
+    waiting_reason = CASE
+        WHEN $1::varchar IN ('completed', 'failed', 'cancelled')
+        THEN NULL
+        ELSE waiting_reason
+    END,
+    waiting_request_id = CASE
+        WHEN $1::varchar IN ('completed', 'failed', 'cancelled')
+        THEN NULL
+        ELSE waiting_request_id
+    END,
     updated_at = NOW()
 WHERE tenant_id = $3::uuid
   AND id = $4::uuid
@@ -9452,6 +9462,11 @@ type UpdateProjectTaskStatusParams struct {
 	CurrentStatuses []string      `json:"current_statuses"`
 }
 
+// 进终态时一并清掉等待指针：waiting_reason / waiting_request_id 只描述"当前在等什么"，
+// 四条"回活跃"的查询（QueueProjectTask / ScheduleProjectTaskRetry /
+// ScheduleProjectTaskDispatchRetry / ReleaseProjectTaskWaitingHumanForRedispatch）
+// 都会清它们，唯独终态这条不清，会让已完成/已取消的任务永久带着上一次等待的决策 id。
+// 人类决策溯源不依赖该列：结项摘要与执行上下文包都从 project_decision_requests 取。
 func (q *Queries) UpdateProjectTaskStatus(ctx context.Context, arg UpdateProjectTaskStatusParams) (ProjectTask, error) {
 	row := q.db.QueryRow(ctx, UpdateProjectTaskStatus,
 		arg.Status,
