@@ -14625,6 +14625,63 @@ func (r *memoryRepository) ListTransferRequests(ctx context.Context, tenantID, p
 	return filtered, nil
 }
 
+
+func (r *memoryRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+	out := make([]ProjectTask, 0)
+	for _, task := range r.tasks {
+		if task.Status != ProjectTaskStatusWaitingHuman || task.DismissedAt != nil {
+			continue
+		}
+		linkedOpen := false
+		if task.WaitingRequestID != nil {
+			for _, d := range r.decisionRequests {
+				if d.ID == *task.WaitingRequestID && d.StatusSnapshot == "pending" {
+					linkedOpen = true
+					break
+				}
+			}
+		}
+		if linkedOpen {
+			continue
+		}
+		// include if pointer missing/stale (even if another open exists — repair will bind)
+		out = append(out, task)
+		if limit > 0 && int32(len(out)) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) GetOpenProjectDecisionRequestByTask(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (DecisionRequest, error) {
+	for i := len(r.decisionRequests) - 1; i >= 0; i-- {
+		d := r.decisionRequests[i]
+		if d.TenantID == tenantID && d.ProjectID == projectID && d.ProjectTaskID != nil && *d.ProjectTaskID == projectTaskID && d.StatusSnapshot == "pending" {
+			return d, nil
+		}
+	}
+	return DecisionRequest{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) BindProjectTaskWaitingRequest(ctx context.Context, tenantID, projectTaskID, decisionRequestID uuid.UUID, waitingReason *string, eventID *uuid.UUID) (ProjectTask, error) {
+	for i, task := range r.tasks {
+		if task.TenantID != tenantID || task.ID != projectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusWaitingHuman {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		task.WaitingRequestID = &decisionRequestID
+		if waitingReason != nil {
+			task.WaitingReason = waitingReason
+		}
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[i] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error) {
 	decision := DecisionRequest{
 		ID:                uuid.New(),

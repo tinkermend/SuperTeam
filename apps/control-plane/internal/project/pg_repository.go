@@ -4811,6 +4811,50 @@ func (r *PgRepository) ListStuckOrphanProjectTasks(ctx context.Context, staleBef
 	return tasks, nil
 }
 
+func (r *PgRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.q.ListOrphanWaitingHumanProjectTasks(ctx, limit)
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	return tasksFromRecords(rows)
+}
+
+func (r *PgRepository) GetOpenProjectDecisionRequestByTask(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetOpenProjectDecisionRequestByTask(ctx, queries.GetOpenProjectDecisionRequestByTaskParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: projectTaskID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
+		return DecisionRequest{}, projectRepositoryError(err)
+	}
+	return decisionRequestFromRecord(row)
+}
+
+func (r *PgRepository) BindProjectTaskWaitingRequest(ctx context.Context, tenantID, projectTaskID, decisionRequestID uuid.UUID, waitingReason *string, eventID *uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.BindProjectTaskWaitingRequest(ctx, queries.BindProjectTaskWaitingRequestParams{
+		WaitingRequestID: decisionRequestID,
+		WaitingReason:    textPtr(waitingReason),
+		LatestEventID:    nullUUID(eventID),
+		TenantID:         tenantID,
+		ID:               projectTaskID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
+}
+
+
 // ListTenantsWithRecoverableProjectTaskAttempts returns the distinct tenants that
 // currently have a queued-but-unstarted or lease-expired running attempt, so the
 // reconciler can drive the per-tenant attempt sweeps only where there is work.

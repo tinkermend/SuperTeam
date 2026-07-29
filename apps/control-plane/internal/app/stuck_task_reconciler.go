@@ -15,7 +15,9 @@ import (
 //  1. 孤儿任务:running/in_progress 但无活跃 attempt(无 attempt、无 run),滞留超过
 //     可配阈值 task.stuck_running_timeout。协调线程从未派发成功、协调线程死亡或异常
 //     数据直插都会落到这里。SweepStuckOrphanProjectTasks 置 failed + 发失败信号收敛。
-//  2. attempt 卡死:queued attempt 派发未确认、running attempt 租约过期被死亡 runtime
+//  2. waiting_human orphan:任务停在 waiting_human 但 waiting_request_id 空/失效且
+//     无可行动 open decision。SweepOrphanWaitingHumanProjectTasks 补绑或补建决策卡。
+//  3. attempt 卡死:queued attempt 派发未确认、running attempt 租约过期被死亡 runtime
 //     抛弃(遗留缺陷#1:runtime 写回丢失致任务永久 running)。既有的 per-tenant sweep
 //     方法此前无任何调度者;这里逐租户驱动它们做有界重试/转人工。
 //
@@ -39,6 +41,9 @@ func startStuckTaskReconciler(ctx context.Context, projectService *project.Servi
 		staleBefore := now.Add(-timeout)
 		if _, err := projectService.SweepStuckOrphanProjectTasks(ctx, staleBefore, stuckTaskReapBatchLimit); err != nil && ctx.Err() == nil {
 			slog.Warn("stuck task reconciler: orphan sweep failed", "error", err)
+		}
+		if _, err := projectService.SweepOrphanWaitingHumanProjectTasks(ctx, stuckTaskReapBatchLimit); err != nil && ctx.Err() == nil {
+			slog.Warn("stuck task reconciler: waiting_human orphan repair failed", "error", err)
 		}
 		if _, err := projectService.SweepStuckProjectTaskAttemptsAllTenants(ctx, now); err != nil && ctx.Err() == nil {
 			slog.Warn("stuck task reconciler: attempt recovery sweep failed", "error", err)

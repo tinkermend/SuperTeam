@@ -238,6 +238,10 @@ export type ProjectTask = {
   planned_task_key?: string;
   task_kind?: string;
   stage_index?: number;
+  /** 已消耗的执行尝试次数 */
+  attempt_count?: number;
+  /** 瞬时失败自动重试预算；缺省时前端按平台默认 3 展示 */
+  max_attempts?: number;
   expected_outputs?: unknown[];
   input_requirements?: Record<string, unknown>;
   handoff_contract?: Record<string, unknown>;

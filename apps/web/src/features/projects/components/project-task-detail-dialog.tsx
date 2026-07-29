@@ -107,6 +107,12 @@ export function ProjectTaskDetailDialog({
     (task.status ?? "").trim().toLowerCase() === "waiting_human" ||
     isAwaitingHumanApproval(task);
   const orphanHumanWait = isWaitingHuman && pendingDecisions.length === 0;
+  const attemptCount = Math.max(0, Number(task.attempt_count ?? 0));
+  const maxAttempts =
+    typeof task.max_attempts === "number" && task.max_attempts > 0
+      ? task.max_attempts
+      : 3;
+  const attemptsExhausted = attemptCount >= maxAttempts;
   const employeeName = task.assigned_digital_employee_id
     ? (activeGraph?.employees.find(
         (item) => item.digital_employee_id === task.assigned_digital_employee_id,
@@ -182,7 +188,7 @@ export function ProjectTaskDetailDialog({
             <p className="text-[13px] leading-6 text-ink-2">{task.summary}</p>
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             <div className="rounded-[10px] bg-card-soft px-3 py-2.5">
               <div className="text-[10.5px] font-bold text-ink-3">负责员工</div>
               {task.assigned_digital_employee_id && employeeName ? (
@@ -198,6 +204,20 @@ export function ProjectTaskDetailDialog({
               ) : (
                 <div className="mt-1 text-[13px] text-ink-3">未分配</div>
               )}
+            </div>
+            <div
+              className="rounded-[10px] bg-card-soft px-3 py-2.5"
+              data-testid="task-detail-attempts"
+            >
+              <div className="text-[10.5px] font-bold text-ink-3">执行尝试</div>
+              <div className="mt-1 text-[13px] font-bold tabular-nums text-ink">
+                {attemptCount} / {maxAttempts}
+              </div>
+              <p className="mt-0.5 text-[11px] leading-4 text-ink-3">
+                {attemptsExhausted
+                  ? "已用尽自动重试预算，瞬时失败将等人处理"
+                  : "瞬时失败可在预算内自动重试"}
+              </p>
             </div>
             <div className="rounded-[10px] bg-card-soft px-3 py-2.5">
               <div className="text-[10.5px] font-bold text-ink-3">时间</div>

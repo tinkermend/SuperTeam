@@ -5730,6 +5730,17 @@ type StuckOrphanProjectTaskLister interface {
 	ListStuckOrphanProjectTasks(ctx context.Context, staleBefore time.Time, limit int32) ([]ProjectTask, error)
 }
 
+// OrphanWaitingHumanProjectTaskRepairer lists and repairs waiting_human tasks
+// that lack an actionable open decision card (or an unlinked open card).
+type OrphanWaitingHumanProjectTaskRepairer interface {
+	ListOrphanWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error)
+	GetOpenProjectDecisionRequestByTask(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (DecisionRequest, error)
+	BindProjectTaskWaitingRequest(ctx context.Context, tenantID, projectTaskID, decisionRequestID uuid.UUID, waitingReason *string, eventID *uuid.UUID) (ProjectTask, error)
+	CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error)
+	AppendProjectEvent(ctx context.Context, req AppendProjectEventRequest) (ProjectEvent, error)
+	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
+}
+
 // SweepStuckOrphanProjectTasks reaps project tasks stuck in running/in_progress
 // with no active attempt older than staleBefore, across all tenants. Each reap
 // writes the task to failed (system actor) and signals the coordinator, which —
@@ -5809,6 +5820,113 @@ func (s *Service) reapStuckOrphanProjectTask(ctx context.Context, task ProjectTa
 		FailedEventID:  result.Event.ID,
 		WorkflowID:     projectRecord.CoordinationWorkflowID,
 	})
+}
+
+const orphanWaitingHumanRepairSummary = "系统补建等待人工决策卡：任务停在 waiting_human 但无可行动决策（orphan waiting_human reconciler）"
+
+// SweepOrphanWaitingHumanProjectTasks repairs waiting_human tasks with missing
+// or stale waiting_request_id links. Prefer re-binding an existing open decision
+// on the task; otherwise create a clarification/recovery card and bind it.
+func (s *Service) SweepOrphanWaitingHumanProjectTasks(ctx context.Context, limit int32) (int, error) {
+	repairer, ok := s.repository.(OrphanWaitingHumanProjectTaskRepairer)
+	if !ok {
+		return 0, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	tasks, err := repairer.ListOrphanWaitingHumanProjectTasks(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+	repaired := 0
+	for _, task := range tasks {
+		if err := s.repairOrphanWaitingHumanProjectTask(ctx, repairer, task); err != nil {
+			if errors.Is(err, ErrProjectNotFound) || errors.Is(err, ErrProjectConflict) {
+				continue
+			}
+			slog.Default().Warn("orphan waiting_human reconciler: repair failed", "project_task_id", task.ID, "error", err)
+			continue
+		}
+		repaired++
+	}
+	if repaired > 0 {
+		slog.Default().Info("orphan waiting_human reconciler: repaired tasks", "count", repaired)
+	}
+	return repaired, nil
+}
+
+func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask) error {
+	if task.Status != ProjectTaskStatusWaitingHuman {
+		return nil
+	}
+	// Prefer an existing open decision already scoped to this task.
+	if existing, err := repairer.GetOpenProjectDecisionRequestByTask(ctx, task.TenantID, task.ProjectID, task.ID); err == nil {
+		if task.WaitingRequestID != nil && *task.WaitingRequestID == existing.ID {
+			return nil
+		}
+		_, err := repairer.BindProjectTaskWaitingRequest(ctx, task.TenantID, task.ID, existing.ID, task.WaitingReason, nil)
+		return err
+	} else if !errors.Is(err, ErrProjectNotFound) {
+		return err
+	}
+
+	projectRecord, err := repairer.GetProject(ctx, task.TenantID, task.ProjectID)
+	if err != nil {
+		return err
+	}
+	reason := HumanWaitReasonClarification
+	if task.WaitingReason != nil && strings.TrimSpace(*task.WaitingReason) != "" {
+		reason = strings.TrimSpace(*task.WaitingReason)
+	}
+	summary := orphanWaitingHumanRepairSummary
+	if task.WaitingReason != nil && strings.TrimSpace(*task.WaitingReason) != "" {
+		summary = summary + "；waiting_reason=" + strings.TrimSpace(*task.WaitingReason)
+	}
+	event, err := repairer.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     task.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventDecisionRequested,
+		ActorType:    "system",
+		ActorID:      "orphan-waiting-human-reconciler",
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "补建等待人工决策卡",
+		Payload: map[string]any{
+			"project_task_id": task.ID.String(),
+			"repair":          "orphan_waiting_human",
+			"waiting_reason":  reason,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	decision, err := repairer.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          task.TenantID,
+		ProjectID:         task.ProjectID,
+		ApprovalRequestID: uuid.Nil,
+		CoordinationJobID: task.CoordinationJobID,
+		ProjectTaskID:     &task.ID,
+		TargetUserID:      projectRecord.HumanOwnerUserID,
+		DecisionType:      projectTaskHumanWaitDecisionType(reason),
+		TitleSnapshot:     task.Title,
+		SummarySnapshot:   summary,
+		RiskLevelSnapshot: stringValue(task.RiskLevel),
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := repairer.BindProjectTaskWaitingRequest(ctx, task.TenantID, task.ID, decision.ID, &reason, &event.ID); err != nil {
+		return err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RecoverableProjectTaskAttemptTenantLister is the optional repository capability

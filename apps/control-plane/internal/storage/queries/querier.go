@@ -34,6 +34,8 @@ type Querier interface {
 	BindDigitalEmployeeToTeam(ctx context.Context, arg BindDigitalEmployeeToTeamParams) (uuid.UUID, error)
 	BindProjectTaskAttemptRun(ctx context.Context, arg BindProjectTaskAttemptRunParams) (ProjectTaskAttempt, error)
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
+	// 给已处于 waiting_human 的任务补挂/改挂 waiting_request_id（不改 status）。
+	BindProjectTaskWaitingRequest(ctx context.Context, arg BindProjectTaskWaitingRequestParams) (ProjectTask, error)
 	BindQueuedProjectTaskRun(ctx context.Context, arg BindQueuedProjectTaskRunParams) (ProjectTask, error)
 	CancelApprovalRequestsForProjectDelete(ctx context.Context, arg CancelApprovalRequestsForProjectDeleteParams) ([]uuid.UUID, error)
 	// 取消项目挂接的 open 收件箱（source_project_id 显式关联）。
@@ -307,6 +309,7 @@ type Querier interface {
 	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
 	GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDefinitionParams) (McpServer, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeConfigRevisionNumberParams) (int32, error)
+	GetOpenProjectDecisionRequestByTask(ctx context.Context, arg GetOpenProjectDecisionRequestByTaskParams) (ProjectDecisionRequest, error)
 	GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, arg GetPendingDemandAcceptanceDecisionByPlanRevisionParams) (ProjectDecisionRequest, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
 	GetProjectArtifactRef(ctx context.Context, arg GetProjectArtifactRefParams) (ProjectArtifactRef, error)
@@ -510,6 +513,9 @@ type Querier interface {
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOpenFGAMembers(ctx context.Context) ([]ListOpenFGAMembersRow, error)
 	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]ListOpenFGAProjectTeamScopesRow, error)
+	// waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
+	// 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
+	ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error)
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)

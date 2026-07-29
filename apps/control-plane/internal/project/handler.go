@@ -2436,6 +2436,8 @@ type projectTaskResponse struct {
 	PlannedTaskKey            *string        `json:"planned_task_key,omitempty"`
 	TaskKind                  *string        `json:"task_kind,omitempty"`
 	StageIndex                *int32         `json:"stage_index,omitempty"`
+	AttemptCount              int32          `json:"attempt_count"`
+	MaxAttempts               *int32         `json:"max_attempts,omitempty"`
 	ExpectedOutputs           []any          `json:"expected_outputs"`
 	InputRequirements         map[string]any `json:"input_requirements"`
 	HandoffContract           map[string]any `json:"handoff_contract"`
@@ -2522,6 +2524,8 @@ type projectTaskGraphNodeResponse struct {
 	PlannedTaskKey            *string                                 `json:"planned_task_key,omitempty"`
 	TaskKind                  *string                                 `json:"task_kind,omitempty"`
 	StageIndex                *int32                                  `json:"stage_index,omitempty"`
+	AttemptCount              int32                                   `json:"attempt_count"`
+	MaxAttempts               *int32                                  `json:"max_attempts,omitempty"`
 	ExpectedOutputs           []any                                   `json:"expected_outputs"`
 	InputRequirements         map[string]any                          `json:"input_requirements"`
 	HandoffContract           map[string]any                          `json:"handoff_contract"`
@@ -3282,6 +3286,8 @@ func taskResponseFromDomain(task ProjectTask) projectTaskResponse {
 		PlannedTaskKey:            task.PlannedTaskKey,
 		TaskKind:                  task.TaskKind,
 		StageIndex:                task.StageIndex,
+		AttemptCount:              task.AttemptCount,
+		MaxAttempts:               task.MaxAttempts,
 		ExpectedOutputs:           sliceOrEmpty(task.ExpectedOutputs),
 		InputRequirements:         mapOrEmpty(task.InputRequirements),
 		HandoffContract:           mapOrEmpty(task.HandoffContract),
@@ -3449,6 +3455,8 @@ func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraph
 		PlannedTaskKey:            task.PlannedTaskKey,
 		TaskKind:                  task.TaskKind,
 		StageIndex:                task.StageIndex,
+		AttemptCount:              task.AttemptCount,
+		MaxAttempts:               task.MaxAttempts,
 		ExpectedOutputs:           sliceOrEmpty(task.ExpectedOutputs),
 		InputRequirements:         mapOrEmpty(task.InputRequirements),
 		HandoffContract:           mapOrEmpty(task.HandoffContract),

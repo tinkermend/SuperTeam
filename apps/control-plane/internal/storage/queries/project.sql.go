@@ -416,6 +416,81 @@ func (q *Queries) BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRun
 	return i, err
 }
 
+const BindProjectTaskWaitingRequest = `-- name: BindProjectTaskWaitingRequest :one
+UPDATE project_tasks
+SET waiting_request_id = $1::uuid,
+    waiting_reason = COALESCE($2::varchar, waiting_reason),
+    latest_event_id = COALESCE($3::uuid, latest_event_id),
+    updated_at = NOW()
+WHERE tenant_id = $4::uuid
+  AND id = $5::uuid
+  AND status = 'waiting_human'
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_event_id, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id, plan_iteration, dismissed_at, dismissed_by
+`
+
+type BindProjectTaskWaitingRequestParams struct {
+	WaitingRequestID uuid.UUID     `json:"waiting_request_id"`
+	WaitingReason    pgtype.Text   `json:"waiting_reason"`
+	LatestEventID    uuid.NullUUID `json:"latest_event_id"`
+	TenantID         uuid.UUID     `json:"tenant_id"`
+	ID               uuid.UUID     `json:"id"`
+}
+
+// 给已处于 waiting_human 的任务补挂/改挂 waiting_request_id（不改 status）。
+func (q *Queries) BindProjectTaskWaitingRequest(ctx context.Context, arg BindProjectTaskWaitingRequestParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, BindProjectTaskWaitingRequest,
+		arg.WaitingRequestID,
+		arg.WaitingReason,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalEventID,
+		&i.StatusChangedAt,
+		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
+		&i.PlanIteration,
+		&i.DismissedAt,
+		&i.DismissedBy,
+	)
+	return i, err
+}
+
 const BindQueuedProjectTaskRun = `-- name: BindQueuedProjectTaskRun :one
 UPDATE project_tasks
 SET runtime_task_id = $1::uuid,
@@ -2902,6 +2977,51 @@ func (q *Queries) GetLatestProjectEventSequence(ctx context.Context, arg GetLate
 	return max_sequence, err
 }
 
+const GetOpenProjectDecisionRequestByTask = `-- name: GetOpenProjectDecisionRequestByTask :one
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id
+FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND project_task_id = $3::uuid
+  AND lower(status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetOpenProjectDecisionRequestByTaskParams struct {
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectID     uuid.UUID `json:"project_id"`
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+}
+
+func (q *Queries) GetOpenProjectDecisionRequestByTask(ctx context.Context, arg GetOpenProjectDecisionRequestByTaskParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, GetOpenProjectDecisionRequestByTask, arg.TenantID, arg.ProjectID, arg.ProjectTaskID)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+		&i.DispatchGateResultID,
+		&i.ProjectTaskResultID,
+		&i.PlanRevisionID,
+	)
+	return i, err
+}
+
 const GetPendingDemandAcceptanceDecisionByPlanRevision = `-- name: GetPendingDemandAcceptanceDecisionByPlanRevision :one
 SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
 WHERE tenant_id = $1::uuid
@@ -4795,6 +4915,88 @@ func (q *Queries) ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg
 			&i.LogBytes,
 			&i.LogSha256,
 			&i.LogCompressed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListOrphanWaitingHumanProjectTasks = `-- name: ListOrphanWaitingHumanProjectTasks :many
+SELECT t.id, t.tenant_id, t.project_id, t.demand_id, t.title, t.summary, t.status, t.assigned_digital_employee_id, t.runtime_task_id, t.digital_employee_run_id, t.risk_level, t.requires_human_approval, t.latest_event_id, t.created_at, t.updated_at, t.coordination_job_id, t.route_decision_id, t.planned_task_key, t.task_kind, t.stage_index, t.expected_outputs, t.input_requirements, t.handoff_contract, t.planner_metadata, t.current_attempt_id, t.accepted_plan_revision_id, t.decomposition_claim_key, t.attempt_count, t.max_attempts, t.retry_not_before, t.waiting_reason, t.waiting_request_id, t.terminal_event_id, t.status_changed_at, t.latest_dispatch_gate_result_id, t.revision_of_task_id, t.latest_task_result_id, t.plan_iteration, t.dismissed_at, t.dismissed_by
+FROM project_tasks t
+WHERE t.status = 'waiting_human'
+  AND t.dismissed_at IS NULL
+  AND (
+    t.waiting_request_id IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM project_decision_requests d
+      WHERE d.tenant_id = t.tenant_id
+        AND d.id = t.waiting_request_id
+        AND lower(d.status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
+    )
+  )
+ORDER BY t.updated_at ASC
+LIMIT $1::integer
+`
+
+// waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
+// 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
+func (q *Queries) ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListOrphanWaitingHumanProjectTasks, batchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.PlannedTaskKey,
+			&i.TaskKind,
+			&i.StageIndex,
+			&i.ExpectedOutputs,
+			&i.InputRequirements,
+			&i.HandoffContract,
+			&i.PlannerMetadata,
+			&i.CurrentAttemptID,
+			&i.AcceptedPlanRevisionID,
+			&i.DecompositionClaimKey,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.RetryNotBefore,
+			&i.WaitingReason,
+			&i.WaitingRequestID,
+			&i.TerminalEventID,
+			&i.StatusChangedAt,
+			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
+			&i.PlanIteration,
+			&i.DismissedAt,
+			&i.DismissedBy,
 		); err != nil {
 			return nil, err
 		}

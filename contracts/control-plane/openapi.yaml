@@ -7967,6 +7967,14 @@ components:
         stage_index:
           type: integer
           format: int32
+        attempt_count:
+          type: integer
+          format: int32
+          description: Number of execution attempts already consumed for this task
+        max_attempts:
+          type: integer
+          format: int32
+          description: Auto-retry budget for transient failures; platform default applies when omitted historically
         expected_outputs:
           type: array
           items: {}

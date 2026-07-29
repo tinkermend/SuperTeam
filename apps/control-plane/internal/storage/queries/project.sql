@@ -1600,6 +1600,48 @@ WHERE status IN ('running', 'in_progress')
 ORDER BY updated_at ASC
 LIMIT sqlc.arg('batch_limit')::integer;
 
+-- name: ListOrphanWaitingHumanProjectTasks :many
+-- waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
+-- 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
+SELECT t.*
+FROM project_tasks t
+WHERE t.status = 'waiting_human'
+  AND t.dismissed_at IS NULL
+  AND (
+    t.waiting_request_id IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM project_decision_requests d
+      WHERE d.tenant_id = t.tenant_id
+        AND d.id = t.waiting_request_id
+        AND lower(d.status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
+    )
+  )
+ORDER BY t.updated_at ASC
+LIMIT sqlc.arg('batch_limit')::integer;
+
+-- name: GetOpenProjectDecisionRequestByTask :one
+SELECT *
+FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND lower(status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: BindProjectTaskWaitingRequest :one
+-- 给已处于 waiting_human 的任务补挂/改挂 waiting_request_id（不改 status）。
+UPDATE project_tasks
+SET waiting_request_id = sqlc.arg('waiting_request_id')::uuid,
+    waiting_reason = COALESCE(sqlc.narg('waiting_reason')::varchar, waiting_reason),
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'waiting_human'
+RETURNING *;
+
 -- name: ListTenantsWithRecoverableProjectTaskAttempts :many
 -- 跨租户列出"存在可恢复卡死 attempt"的租户,供看门狗逐租户调用 per-tenant 的
 -- SweepStaleQueuedProjectTaskAttempts / SweepExpiredRunningProjectTaskAttempts。
