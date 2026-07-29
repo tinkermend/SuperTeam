@@ -710,6 +710,25 @@ func (r *PgRepository) listProjectTasks(ctx context.Context, tenantID, projectID
 	return tasksFromRecords(rows)
 }
 
+func (r *PgRepository) GetProjectTaskStatusCounts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectTaskSummary, error) {
+	row, err := r.q.GetProjectTaskStatusCounts(ctx, queries.GetProjectTaskStatusCountsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return ProjectTaskSummary{}, err
+	}
+	return ProjectTaskSummary{
+		ActiveTasks:       int(row.ActiveTasks),
+		PendingHumanTasks: int(row.PendingHumanTasks),
+		CompletedTasks:    int(row.CompletedTasks),
+		FailedTasks:       int(row.FailedTasks),
+		RunningTasks:      int(row.RunningTasks),
+		CancelledTasks:    int(row.CancelledTasks),
+		TotalTasks:        int(row.TotalTasks),
+	}, nil
+}
+
 func (r *PgRepository) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error) {
 	row, err := r.q.DismissProjectTask(ctx, queries.DismissProjectTaskParams{
 		TenantID:    tenantID,

@@ -786,6 +786,54 @@ func (e FeishuAppConfigStatus) Valid() bool {
 	}
 }
 
+// Defines values for FeishuChannelAppStatusWsStatus.
+const (
+	FeishuChannelAppStatusWsStatusConnected    FeishuChannelAppStatusWsStatus = "connected"
+	FeishuChannelAppStatusWsStatusReconnecting FeishuChannelAppStatusWsStatus = "reconnecting"
+	FeishuChannelAppStatusWsStatusStopped      FeishuChannelAppStatusWsStatus = "stopped"
+	FeishuChannelAppStatusWsStatusUnknown      FeishuChannelAppStatusWsStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the FeishuChannelAppStatusWsStatus enum.
+func (e FeishuChannelAppStatusWsStatus) Valid() bool {
+	switch e {
+	case FeishuChannelAppStatusWsStatusConnected:
+		return true
+	case FeishuChannelAppStatusWsStatusReconnecting:
+		return true
+	case FeishuChannelAppStatusWsStatusStopped:
+		return true
+	case FeishuChannelAppStatusWsStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeishuChannelHealthStatus.
+const (
+	FeishuChannelHealthStatusDegraded FeishuChannelHealthStatus = "degraded"
+	FeishuChannelHealthStatusHealthy  FeishuChannelHealthStatus = "healthy"
+	FeishuChannelHealthStatusMissing  FeishuChannelHealthStatus = "missing"
+	FeishuChannelHealthStatusStale    FeishuChannelHealthStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the FeishuChannelHealthStatus enum.
+func (e FeishuChannelHealthStatus) Valid() bool {
+	switch e {
+	case FeishuChannelHealthStatusDegraded:
+		return true
+	case FeishuChannelHealthStatusHealthy:
+		return true
+	case FeishuChannelHealthStatusMissing:
+		return true
+	case FeishuChannelHealthStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FeishuIdentityBoundVia.
 const (
 	ContactSync FeishuIdentityBoundVia = "contact_sync"
@@ -921,6 +969,7 @@ func (e HumanTaskLayer) Valid() bool {
 // Defines values for InboxItemItemType.
 const (
 	InboxItemItemTypeApproval          InboxItemItemType = "approval"
+	InboxItemItemTypeChannelAlert      InboxItemItemType = "channel_alert"
 	InboxItemItemTypeProjectDecision   InboxItemItemType = "project_decision"
 	InboxItemItemTypeTeamPendingDelete InboxItemItemType = "team_pending_delete"
 )
@@ -929,6 +978,8 @@ const (
 func (e InboxItemItemType) Valid() bool {
 	switch e {
 	case InboxItemItemTypeApproval:
+		return true
+	case InboxItemItemTypeChannelAlert:
 		return true
 	case InboxItemItemTypeProjectDecision:
 		return true
@@ -963,6 +1014,7 @@ func (e InboxItemLayer) Valid() bool {
 // Defines values for InboxItemSourceType.
 const (
 	InboxItemSourceTypeApprovalRequest        InboxItemSourceType = "approval_request"
+	InboxItemSourceTypeFeishuChannel          InboxItemSourceType = "feishu_channel"
 	InboxItemSourceTypeProjectDecisionRequest InboxItemSourceType = "project_decision_request"
 	InboxItemSourceTypeTeamPendingDelete      InboxItemSourceType = "team_pending_delete"
 )
@@ -971,6 +1023,8 @@ const (
 func (e InboxItemSourceType) Valid() bool {
 	switch e {
 	case InboxItemSourceTypeApprovalRequest:
+		return true
+	case InboxItemSourceTypeFeishuChannel:
 		return true
 	case InboxItemSourceTypeProjectDecisionRequest:
 		return true
@@ -2475,6 +2529,7 @@ func (e ListInboxItemsParamsStatus) Valid() bool {
 // Defines values for ListInboxItemsParamsItemType.
 const (
 	Approval          ListInboxItemsParamsItemType = "approval"
+	ChannelAlert      ListInboxItemsParamsItemType = "channel_alert"
 	ProjectDecision   ListInboxItemsParamsItemType = "project_decision"
 	TeamPendingDelete ListInboxItemsParamsItemType = "team_pending_delete"
 )
@@ -2483,6 +2538,8 @@ const (
 func (e ListInboxItemsParamsItemType) Valid() bool {
 	switch e {
 	case Approval:
+		return true
+	case ChannelAlert:
 		return true
 	case ProjectDecision:
 		return true
@@ -2786,6 +2843,21 @@ type ConnectorBootstrapResponse struct {
 		ConfigId  openapi_types.UUID `json:"config_id"`
 		TenantId  openapi_types.UUID `json:"tenant_id"`
 	} `json:"configs"`
+}
+
+// ConnectorHeartbeatApp defines model for ConnectorHeartbeatApp.
+type ConnectorHeartbeatApp struct {
+	AppId         string     `json:"app_id"`
+	ConfigId      *string    `json:"config_id,omitempty"`
+	LastWsEventAt *time.Time `json:"last_ws_event_at,omitempty"`
+	WsStatus      string     `json:"ws_status"`
+}
+
+// ConnectorHeartbeatRequest defines model for ConnectorHeartbeatRequest.
+type ConnectorHeartbeatRequest struct {
+	Apps             *[]ConnectorHeartbeatApp `json:"apps,omitempty"`
+	LastOutboxPollAt *time.Time               `json:"last_outbox_poll_at,omitempty"`
+	Version          *string                  `json:"version,omitempty"`
 }
 
 // ConnectorProjectListResponse defines model for ConnectorProjectListResponse.
@@ -3990,6 +4062,32 @@ type FeishuAppConfigListResponse struct {
 	Configs []FeishuAppConfig `json:"configs"`
 }
 
+// FeishuChannelAppStatus defines model for FeishuChannelAppStatus.
+type FeishuChannelAppStatus struct {
+	AppId         string                         `json:"app_id"`
+	ConfigId      *string                        `json:"config_id,omitempty"`
+	LastWsEventAt *time.Time                     `json:"last_ws_event_at,omitempty"`
+	WsStatus      FeishuChannelAppStatusWsStatus `json:"ws_status"`
+}
+
+// FeishuChannelAppStatusWsStatus defines model for FeishuChannelAppStatus.WsStatus.
+type FeishuChannelAppStatusWsStatus string
+
+// FeishuChannelHealth defines model for FeishuChannelHealth.
+type FeishuChannelHealth struct {
+	AgeSeconds       *int64                    `json:"age_seconds,omitempty"`
+	Apps             []FeishuChannelAppStatus  `json:"apps"`
+	LastHeartbeatAt  *time.Time                `json:"last_heartbeat_at,omitempty"`
+	LastOutboxPollAt *time.Time                `json:"last_outbox_poll_at,omitempty"`
+	ServiceName      string                    `json:"service_name"`
+	Status           FeishuChannelHealthStatus `json:"status"`
+	TimeoutSeconds   int64                     `json:"timeout_seconds"`
+	Version          *string                   `json:"version,omitempty"`
+}
+
+// FeishuChannelHealthStatus defines model for FeishuChannelHealth.Status.
+type FeishuChannelHealthStatus string
+
 // FeishuConnectivityProbe defines model for FeishuConnectivityProbe.
 type FeishuConnectivityProbe struct {
 	Code *int `json:"code,omitempty"`
@@ -4034,6 +4132,28 @@ type FeishuIdentityBoundVia string
 // FeishuIdentityListResponse defines model for FeishuIdentityListResponse.
 type FeishuIdentityListResponse struct {
 	Identities []FeishuIdentity `json:"identities"`
+}
+
+// FeishuOperationalOutboxItem defines model for FeishuOperationalOutboxItem.
+type FeishuOperationalOutboxItem struct {
+	Attempts        int                 `json:"attempts"`
+	CreatedAt       time.Time           `json:"created_at"`
+	Id              openapi_types.UUID  `json:"id"`
+	Kind            string              `json:"kind"`
+	LastError       *string             `json:"last_error,omitempty"`
+	ProjectId       *openapi_types.UUID `json:"project_id,omitempty"`
+	RecipientOpenId string              `json:"recipient_open_id"`
+	RecipientUserId openapi_types.UUID  `json:"recipient_user_id"`
+	ResourceId      openapi_types.UUID  `json:"resource_id"`
+	ResourceType    string              `json:"resource_type"`
+	Status          string              `json:"status"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+}
+
+// FeishuOperationalOutboxListResponse defines model for FeishuOperationalOutboxListResponse.
+type FeishuOperationalOutboxListResponse struct {
+	Items []FeishuOperationalOutboxItem `json:"items"`
+	Total int64                         `json:"total"`
 }
 
 // FeishuOutboxAckRequest defines model for FeishuOutboxAckRequest.
@@ -4971,6 +5091,7 @@ type ProjectMemberInput struct {
 
 // ProjectOverview defines model for ProjectOverview.
 type ProjectOverview struct {
+	// ActiveTasks 名不副实的历史字段：这里是**未按状态过滤**的任务列表，且只有最近更新的 前 20 条（改名属待偿债务）。要计数请用 task_summary，不要取本数组长度。
 	ActiveTasks          []ProjectTask               `json:"active_tasks"`
 	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
 	DigitalEmployeePool  []ProjectMember             `json:"digital_employee_pool"`
@@ -4978,7 +5099,9 @@ type ProjectOverview struct {
 	Project              Project                     `json:"project"`
 	RecentEvents         []ProjectEvent              `json:"recent_events"`
 	StatusSummary        ProjectStatusSummary        `json:"status_summary"`
-	TaskSummary          ProjectTaskSummary          `json:"task_summary"`
+
+	// TaskSummary 项目**全量**任务计数（排除 dismissed）。注意与 ProjectOverview.active_tasks 区分：后者是分页任务列表，本对象才是权威计数。 total_tasks = active_tasks + completed_tasks + failed_tasks + cancelled_tasks。
+	TaskSummary ProjectTaskSummary `json:"task_summary"`
 }
 
 // ProjectPlanRevision defines model for ProjectPlanRevision.
@@ -5400,12 +5523,20 @@ type ProjectTaskLivenessNextAction struct {
 	Source string `json:"source"`
 }
 
-// ProjectTaskSummary defines model for ProjectTaskSummary.
+// ProjectTaskSummary 项目**全量**任务计数（排除 dismissed）。注意与 ProjectOverview.active_tasks 区分：后者是分页任务列表，本对象才是权威计数。 total_tasks = active_tasks + completed_tasks + failed_tasks + cancelled_tasks。
 type ProjectTaskSummary struct {
-	ActiveTasks       int32 `json:"active_tasks"`
-	CompletedTasks    int32 `json:"completed_tasks"`
-	FailedTasks       int32 `json:"failed_tasks"`
+	// ActiveTasks 非终态任务数（不含 completed/failed/cancelled）。
+	ActiveTasks    int32 `json:"active_tasks"`
+	CancelledTasks int32 `json:"cancelled_tasks"`
+	CompletedTasks int32 `json:"completed_tasks"`
+	FailedTasks    int32 `json:"failed_tasks"`
+
+	// PendingHumanTasks waiting_human 任务数（属 active_tasks 子集）。
 	PendingHumanTasks int32 `json:"pending_human_tasks"`
+
+	// RunningTasks running 任务数（属 active_tasks 子集）。
+	RunningTasks int32 `json:"running_tasks"`
+	TotalTasks   int32 `json:"total_tasks"`
 }
 
 // ProjectTransferRequest defines model for ProjectTransferRequest.
@@ -6683,6 +6814,13 @@ type TaskId = openapi_types.UUID
 // TeamId defines model for TeamId.
 type TeamId = openapi_types.UUID
 
+// ListFeishuOperationalOutboxParams defines parameters for ListFeishuOperationalOutbox.
+type ListFeishuOperationalOutboxParams struct {
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int    `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // GetArtifactContentParams defines parameters for GetArtifactContent.
 type GetArtifactContentParams struct {
 	// Format 默认 302 重定向到 presigned URL;format=json 时改为 200 返回 presigned URL 本体,供浏览器两步取回(避免 fetch 跨域重定向的 Origin taint 迫使对象存储 CORS 放行 null origin)。
@@ -7203,6 +7341,9 @@ type ConnectorSubmitDemandJSONRequestBody = ConnectorSubmitDemandRequest
 
 // ConnectorSignDemandCriterionJSONRequestBody defines body for ConnectorSignDemandCriterion for application/json ContentType.
 type ConnectorSignDemandCriterionJSONRequestBody = ConnectorSignDemandCriterionRequest
+
+// ConnectorHeartbeatJSONRequestBody defines body for ConnectorHeartbeat for application/json ContentType.
+type ConnectorHeartbeatJSONRequestBody = ConnectorHeartbeatRequest
 
 // ConnectorAckOutboxJSONRequestBody defines body for ConnectorAckOutbox for application/json ContentType.
 type ConnectorAckOutboxJSONRequestBody = FeishuOutboxAckRequest
@@ -8087,12 +8228,21 @@ type ServerInterface interface {
 	// Enable/disable a Feishu app config channel
 	// (PATCH /api/v1/admin/feishu/app-configs/{configId}/status)
 	SetFeishuAppConfigStatus(w http.ResponseWriter, r *http.Request, configId openapi_types.UUID)
+	// Connector heartbeat health summary for the message-channel console
+	// (GET /api/v1/admin/feishu/channel-health)
+	GetFeishuChannelHealth(w http.ResponseWriter, r *http.Request)
 	// Batch-bind Feishu identities by looking up user emails in the Feishu directory
 	// (POST /api/v1/admin/feishu/contact-sync)
 	FeishuContactSync(w http.ResponseWriter, r *http.Request)
 	// List all Feishu identity bindings for the tenant
 	// (GET /api/v1/admin/feishu/identities)
 	ListFeishuIdentities(w http.ResponseWriter, r *http.Request)
+	// List failed/skipped_unbound outbox rows for operators
+	// (GET /api/v1/admin/feishu/outbox)
+	ListFeishuOperationalOutbox(w http.ResponseWriter, r *http.Request, params ListFeishuOperationalOutboxParams)
+	// Reset a failed outbox row to pending for connector redelivery
+	// (POST /api/v1/admin/feishu/outbox/{outboxId}/requeue)
+	RequeueFeishuOutbox(w http.ResponseWriter, r *http.Request, outboxId openapi_types.UUID)
 	// List tenant service tokens (no plaintext or hash)
 	// (GET /api/v1/admin/service-tokens)
 	ListServiceTokens(w http.ResponseWriter, r *http.Request)
@@ -8153,6 +8303,9 @@ type ServerInterface interface {
 	// Sign one acceptance criterion on behalf of the bound user (in-card sign-off); returns progress, criterion verdicts and a refreshed decision card snapshot
 	// (POST /api/v1/connector/demands/{demandId}/criteria/sign)
 	ConnectorSignDemandCriterion(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
+	// Feishu connector process heartbeat (ServiceAuth)
+	// (POST /api/v1/connector/heartbeat)
+	ConnectorHeartbeat(w http.ResponseWriter, r *http.Request)
 	// Resolve a Feishu open_id to its bound platform user
 	// (GET /api/v1/connector/identity)
 	ConnectorResolveIdentity(w http.ResponseWriter, r *http.Request, params ConnectorResolveIdentityParams)
@@ -8795,6 +8948,12 @@ func (_ Unimplemented) SetFeishuAppConfigStatus(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Connector heartbeat health summary for the message-channel console
+// (GET /api/v1/admin/feishu/channel-health)
+func (_ Unimplemented) GetFeishuChannelHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Batch-bind Feishu identities by looking up user emails in the Feishu directory
 // (POST /api/v1/admin/feishu/contact-sync)
 func (_ Unimplemented) FeishuContactSync(w http.ResponseWriter, r *http.Request) {
@@ -8804,6 +8963,18 @@ func (_ Unimplemented) FeishuContactSync(w http.ResponseWriter, r *http.Request)
 // List all Feishu identity bindings for the tenant
 // (GET /api/v1/admin/feishu/identities)
 func (_ Unimplemented) ListFeishuIdentities(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List failed/skipped_unbound outbox rows for operators
+// (GET /api/v1/admin/feishu/outbox)
+func (_ Unimplemented) ListFeishuOperationalOutbox(w http.ResponseWriter, r *http.Request, params ListFeishuOperationalOutboxParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reset a failed outbox row to pending for connector redelivery
+// (POST /api/v1/admin/feishu/outbox/{outboxId}/requeue)
+func (_ Unimplemented) RequeueFeishuOutbox(w http.ResponseWriter, r *http.Request, outboxId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8924,6 +9095,12 @@ func (_ Unimplemented) ConnectorSubmitDemand(w http.ResponseWriter, r *http.Requ
 // Sign one acceptance criterion on behalf of the bound user (in-card sign-off); returns progress, criterion verdicts and a refreshed decision card snapshot
 // (POST /api/v1/connector/demands/{demandId}/criteria/sign)
 func (_ Unimplemented) ConnectorSignDemandCriterion(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Feishu connector process heartbeat (ServiceAuth)
+// (POST /api/v1/connector/heartbeat)
+func (_ Unimplemented) ConnectorHeartbeat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10228,6 +10405,20 @@ func (siw *ServerInterfaceWrapper) SetFeishuAppConfigStatus(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// GetFeishuChannelHealth operation middleware
+func (siw *ServerInterfaceWrapper) GetFeishuChannelHealth(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFeishuChannelHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // FeishuContactSync operation middleware
 func (siw *ServerInterfaceWrapper) FeishuContactSync(w http.ResponseWriter, r *http.Request) {
 
@@ -10247,6 +10438,91 @@ func (siw *ServerInterfaceWrapper) ListFeishuIdentities(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListFeishuIdentities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFeishuOperationalOutbox operation middleware
+func (siw *ServerInterfaceWrapper) ListFeishuOperationalOutbox(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFeishuOperationalOutboxParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFeishuOperationalOutbox(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequeueFeishuOutbox operation middleware
+func (siw *ServerInterfaceWrapper) RequeueFeishuOutbox(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "outboxId" -------------
+	var outboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "outboxId", chi.URLParam(r, "outboxId"), &outboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outboxId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequeueFeishuOutbox(w, r, outboxId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10884,6 +11160,20 @@ func (siw *ServerInterfaceWrapper) ConnectorSignDemandCriterion(w http.ResponseW
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ConnectorSignDemandCriterion(w, r, demandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectorHeartbeat operation middleware
+func (siw *ServerInterfaceWrapper) ConnectorHeartbeat(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectorHeartbeat(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18242,10 +18532,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/api/v1/admin/feishu/app-configs/{configId}/status", wrapper.SetFeishuAppConfigStatus)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/feishu/channel-health", wrapper.GetFeishuChannelHealth)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/feishu/contact-sync", wrapper.FeishuContactSync)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/admin/feishu/identities", wrapper.ListFeishuIdentities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/feishu/outbox", wrapper.ListFeishuOperationalOutbox)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/feishu/outbox/{outboxId}/requeue", wrapper.RequeueFeishuOutbox)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/admin/service-tokens", wrapper.ListServiceTokens)
@@ -18306,6 +18605,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/connector/demands/{demandId}/criteria/sign", wrapper.ConnectorSignDemandCriterion)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/connector/heartbeat", wrapper.ConnectorHeartbeat)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/connector/identity", wrapper.ConnectorResolveIdentity)

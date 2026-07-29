@@ -19,6 +19,7 @@ import type {
   ProjectTaskGraph
 } from "@/lib/api/projects";
 import { riskLevelLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
+import { isAwaitingHumanApproval } from "@/lib/task-status";
 import { formatDateTime, formatRelativeTime, formatRunDuration } from "@/lib/format-time";
 import {
   formatBlocker,
@@ -163,7 +164,7 @@ export function ProjectTaskDetailDialog({
                     {riskLevelLabel(task.risk_level)}
                   </span>
                 ) : null}
-                {task.requires_human_approval ? (
+                {isAwaitingHumanApproval(task) ? (
                   <span className="rounded-md bg-card-soft px-1.5 py-0.5 text-[11px] font-semibold text-ink-2">
                     需人工审批
                   </span>

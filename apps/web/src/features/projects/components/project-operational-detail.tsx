@@ -73,6 +73,7 @@ import type {
   ProjectTask,
   ProjectTaskGraph,
   ProjectTaskGraphBlockingFact,
+  ProjectTaskSummary,
   ProjectTransferRequest,
   WorkspaceReadyStatus
 } from "@/lib/api/projects";
@@ -279,9 +280,14 @@ export function ProjectOperationalDetail({
   const pendingOwnerDecisions = decisionRequests.filter(
     (decision) => decision.status_snapshot === "pending",
   );
-  const activeTasks = (overview?.active_tasks?.length ? overview.active_tasks : tasks).filter(
-    (task) => !task.dismissed_at,
-  );
+  // `overview.active_tasks` 名不副实：是未过滤且只有 20 条的任务页，取其长度会让
+  // 全部完成的项目显示"执行中 N"。计数一律走服务端全表聚合 `task_summary`；
+  // overview 尚未到达时才按同一判据在已加载任务上兜底（同样受 20 条页限制，
+  // 只作为首屏空窗兜底，不作为权威）。
+  const activeTaskCount =
+    overview?.task_summary
+      ? overview.task_summary.running_tasks + overview.task_summary.pending_human_tasks
+      : countRunningTasks(tasks);
   const latestPlanReviewDecision = decisionRequests.find(
     (decision) =>
       decision.decision_type === "plan_review" &&
@@ -353,7 +359,7 @@ export function ProjectOperationalDetail({
                 />
                 <span aria-hidden className="text-ink-3">·</span>
                 <HeroFactLink
-                  label={`执行中 ${activeTasks.length}`}
+                  label={`执行中 ${activeTaskCount}`}
                   targetId="project-overview-execution"
                 />
                 {latestDemand ? (
@@ -476,6 +482,7 @@ export function ProjectOperationalDetail({
             latestPlanRevision={latestPlanRevision}
             principalNamesById={principalNamesById}
             servicePool={servicePool}
+            taskSummary={overview?.task_summary}
             tasks={tasks}
           />
 
@@ -696,6 +703,7 @@ function ProjectStagePipeline({
   latestPlanRevision,
   principalNamesById,
   servicePool,
+  taskSummary,
   tasks
 }: {
   acceptance?: ProjectAcceptanceRecord;
@@ -705,6 +713,8 @@ function ProjectStagePipeline({
   latestPlanRevision?: ProjectPlanRevision;
   principalNamesById?: ReadonlyMap<string, string>;
   servicePool: ProjectMember[];
+  /** 服务端全表聚合计数；缺省（overview 未到达）时按已加载任务兜底。 */
+  taskSummary?: ProjectTaskSummary;
   tasks: ProjectTask[];
 }) {
   const [planOpen, setPlanOpen] = useState(false);
@@ -713,16 +723,23 @@ function ProjectStagePipeline({
   const failedDemandCount = demands.filter((d) => d.status === "failed").length;
 
   const visibleTasks = tasks.filter((task) => !task.dismissed_at);
-  const failedTaskCount = visibleTasks.filter((t) => t.status === "failed").length;
-  const runningTaskCount = visibleTasks.filter(
-    (t) => t.status === "running" || t.status === "waiting_human",
-  ).length;
-  const queuedTaskCount = visibleTasks.filter(
-    (t) => t.status === "planned" || t.status === "queued",
-  ).length;
-  const completedTaskCount = visibleTasks.filter(
-    (t) => t.status === "completed",
-  ).length;
+  const totalTaskCount = taskSummary?.total_tasks ?? visibleTasks.length;
+  const failedTaskCount =
+    taskSummary?.failed_tasks ?? visibleTasks.filter((t) => t.status === "failed").length;
+  const runningTaskCount = taskSummary
+    ? taskSummary.running_tasks + taskSummary.pending_human_tasks
+    : countRunningTasks(tasks);
+  // 「待启动」= 非终态里既没在跑也不在等人的部分（planned/queued/blocked/assigned…）。
+  // 用 active 减去两个已知子集推导，避免为一个粗粒度状态灯再加契约字段。
+  const queuedTaskCount = taskSummary
+    ? Math.max(
+        taskSummary.active_tasks - taskSummary.running_tasks - taskSummary.pending_human_tasks,
+        0,
+      )
+    : visibleTasks.filter((t) => t.status === "planned" || t.status === "queued").length;
+  const completedTaskCount =
+    taskSummary?.completed_tasks ??
+    visibleTasks.filter((t) => t.status === "completed").length;
   const executionStatus =
     failedTaskCount > 0
       ? "failed"
@@ -730,7 +747,7 @@ function ProjectStagePipeline({
         ? "running"
         : queuedTaskCount > 0
           ? "queued"
-          : completedTaskCount > 0 && completedTaskCount === visibleTasks.length
+          : completedTaskCount > 0 && completedTaskCount === totalTaskCount
             ? "completed"
             : undefined;
 
@@ -809,8 +826,8 @@ function ProjectStagePipeline({
               }
               label="3 · 执行"
               meta={
-                visibleTasks.length > 0
-                  ? `执行中 ${runningTaskCount} · 共 ${visibleTasks.length} 项`
+                totalTaskCount > 0
+                  ? `执行中 ${runningTaskCount} · 共 ${totalTaskCount} 项`
                   : "尚无执行任务"
               }
               pillLabel={executionStatus ? taskStatusLabel(executionStatus) : "暂无任务"}
@@ -1421,6 +1438,18 @@ function FactTile({
       <p className="mt-2 truncate text-sm font-semibold text-ink">{value}</p>
     </div>
   );
+}
+
+/**
+ * overview 未到达时的「执行中」兜底计数。受任务列表分页（20 条）限制，只作首屏
+ * 空窗兜底；权威计数一律取 `task_summary`（服务端全表聚合）。
+ */
+function countRunningTasks(tasks: ProjectTask[]): number {
+  return tasks.filter(
+    (task) =>
+      !task.dismissed_at &&
+      (task.status === "running" || task.status === "waiting_human"),
+  ).length;
 }
 
 function HeroFactLink({

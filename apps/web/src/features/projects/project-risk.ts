@@ -7,6 +7,7 @@ import type {
   ProjectPrincipalType,
   ProjectTask,
 } from "@/lib/api/projects";
+import { isAwaitingHumanApproval } from "@/lib/task-status";
 
 export type ProjectRiskLevel = "none" | "info" | "warn" | "danger";
 
@@ -191,10 +192,7 @@ export function deriveProjectRiskSummary(
       });
       continue;
     }
-    if (
-      projectTask.requires_human_approval ||
-      waitingHumanTaskStatuses.has(status)
-    ) {
+    if (isAwaitingHumanApproval(projectTask) || waitingHumanTaskStatuses.has(status)) {
       reasons.push({
         id: `task:${projectTask.id}:human_decision`,
         type: "human_decision",
@@ -610,7 +608,7 @@ function isHumanHandledTask(task: ProjectTask | undefined): boolean {
   }
   const status = normalize(task.status);
   return (
-    task.requires_human_approval ||
+    isAwaitingHumanApproval(task) ||
     status === "waiting_human" ||
     status === "pending_human" ||
     status === "pending_review" ||

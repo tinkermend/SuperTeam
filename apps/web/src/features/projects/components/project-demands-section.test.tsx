@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { ProjectDemandsSection } from "./project-demands-section";
-import type { ProjectDemand, ProjectTaskGraph } from "@/lib/api/projects";
+import type { ProjectDemand, ProjectEvent, ProjectTaskGraph } from "@/lib/api/projects";
 
 vi.mock("@tanstack/react-router", () => {
   type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
@@ -96,6 +96,25 @@ function graphFor(demandId: string, taskTitle: string): ProjectTaskGraph {
     recent_events: [],
     runs: []
 };
+}
+
+/** 派发闸门流水事件：sequence_number 决定同一任务上"最新一条"是谁。 */
+function gateEvent(
+  eventType: ProjectEvent["event_type"],
+  sequenceNumber: number,
+  taskId = "task-demand-latest",
+): ProjectEvent {
+  return {
+    actor_id: "coordinator-1",
+    actor_type: "workflow",
+    created_at: "2026-07-25T08:00:00Z",
+    event_type: eventType,
+    id: `event-${sequenceNumber}`,
+    payload: { project_task_id: taskId },
+    project_id: "project-1",
+    sequence_number: sequenceNumber,
+    tenant_id: "tenant-1",
+  };
 }
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -218,6 +237,43 @@ describe("ProjectDemandsSection", () => {
 
     // 验收血缘面板（迁移后的 DemandCriteriaPanel）就地渲染。
     await expect.element(screen.getByText("本需求未声明验收判据")).toBeVisible();
+  });
+
+  it("shows the dispatch blocker banner while the gate is still holding the task", async () => {
+    const screen = await renderSection({
+      events: [gateEvent("project_task.dispatch_gate.waiting_human", 36)],
+    });
+
+    await expect.element(screen.getByTestId("demand-dispatch-blocker")).toBeVisible();
+    await expect.element(screen.getByText("等待负责人确认")).toBeVisible();
+  });
+
+  it("drops the blocker banner once a later gate event released the same task", async () => {
+    const screen = await renderSection({
+      events: [
+        gateEvent("project_task.dispatch_gate.waiting_human", 36),
+        gateEvent("project_task.dispatch_gate.checked", 40),
+        gateEvent("project_task.dispatched", 41),
+      ],
+    });
+
+    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
+    expect(screen.container.querySelector("[data-testid=demand-dispatch-blocker]")).toBeNull();
+  });
+
+  it("drops the blocker banner when the gated task already reached a terminal status", async () => {
+    const terminalGraph = (demandId: string) => {
+      const graph = graphFor(demandId, "整理材料任务");
+      graph.nodes[0].status = "completed";
+      return Promise.resolve(graph);
+    };
+    const screen = await renderSection({
+      events: [gateEvent("project_task.dispatch_gate.waiting_human", 36)],
+      fetchTaskGraph: vi.fn().mockImplementation(terminalGraph),
+    });
+
+    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
+    expect(screen.container.querySelector("[data-testid=demand-dispatch-blocker]")).toBeNull();
   });
 
   it("selects the demand from the ?demand= deep link and fetches its graph", async () => {

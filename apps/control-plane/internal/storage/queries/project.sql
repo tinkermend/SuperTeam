@@ -566,6 +566,28 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY updated_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: GetProjectTaskStatusCounts :one
+-- 项目概览任务计数：必须走全表聚合，不能在 ListProjectTasks 的分页片上循环统计
+-- （原实现在"最近更新的 20 条"上数数，任务超过 20 条即漏计，且窗口随更新漂移会让
+-- 计数非单调抖动）。分桶口径与 ListProjectRunSummaries 保持一致；dismissed 任务
+-- 与 ListProjectTasks 默认窗口同样排除，两者数字才对得上。
+-- active 口径 = 非终态，终态集与 project.sql 各处 F5 判据同源（cancelled 属终态，
+-- 旧实现把它算进 active 是错的）。
+SELECT
+    COUNT(*)::integer AS total_tasks,
+    COUNT(*) FILTER (
+        WHERE status NOT IN ('completed', 'failed', 'cancelled')
+    )::integer AS active_tasks,
+    COUNT(*) FILTER (WHERE status = 'running')::integer AS running_tasks,
+    COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS pending_human_tasks,
+    COUNT(*) FILTER (WHERE status = 'completed')::integer AS completed_tasks,
+    COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_tasks,
+    COUNT(*) FILTER (WHERE status = 'cancelled')::integer AS cancelled_tasks
+FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND dismissed_at IS NULL;
+
 -- name: ListDemandLaunchProjectTasks :many
 SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid

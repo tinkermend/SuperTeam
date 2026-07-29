@@ -24,6 +24,7 @@ import {
 } from "@/lib/api/projects";
 import { decisionStatusLabel, demandStatusLabel } from "@/lib/status-labels";
 import { formatRelativeTime } from "@/lib/format-time";
+import { isTerminalTaskStatus } from "@/lib/task-status";
 import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
 import { useProjectActivityInvalidate } from "../hooks/use-project-activity-invalidate";
 import { DemandCriteriaPanel } from "./demand-criteria-panel";
@@ -515,14 +516,31 @@ function DemandDispatchBlockerBanner({ event }: { event: ProjectEvent | undefine
   );
 }
 
+/**
+ * 挑出当前**仍然成立**的派发闸门 blocker。
+ *
+ * 闸门事件是历史流水：一条 `dispatch_gate.waiting_human` 之后往往跟着
+ * `dispatch_gate.checked` / `project_task.dispatched` 把它解除。因此只按事件类型
+ * 优先级取一条会让已放行、甚至已完成的需求永久挂着"等待负责人确认"横幅。
+ * 判据改为两条同时成立：
+ * 1. 该载体（任务，或无任务 id 时退到需求）**最新**一条闸门生命周期事件仍是 blocker；
+ * 2. 对应任务未到终态（终态任务不可能还在等派发）。
+ *
+ * 注意：events 是分页窗口，若窗口截断到只剩 blocker 而丢了其解除事件，判据 2 兜底。
+ */
 function currentDemandDispatchBlocker(
   events: ProjectEvent[] | undefined,
   graph: ProjectTaskGraph | undefined,
   selectedDemandId: string | undefined,
 ): ProjectEvent | undefined {
-  const taskIds = new Set(graph?.nodes.map((node) => node.id) ?? []);
-  const matchingEvents = events?.filter((event) => {
-    if (!isDemandDispatchBlockerEvent(event.event_type)) return false;
+  const nodesById = new Map(graph?.nodes.map((node) => [node.id, node]) ?? []);
+  // 每个载体只保留 sequence_number 最大的一条闸门生命周期事件。
+  const latestByCarrier = new Map<string, { event: ProjectEvent; taskId?: string }>();
+
+  for (const event of events ?? []) {
+    const isBlocker = isDemandDispatchBlockerEvent(event.event_type);
+    if (!isBlocker && !isDispatchGateResolvingEvent(event.event_type)) continue;
+
     const taskId =
       typeof event.payload.project_task_id === "string"
         ? event.payload.project_task_id
@@ -531,14 +549,46 @@ function currentDemandDispatchBlocker(
           : undefined;
     const eventDemandId =
       typeof event.payload.demand_id === "string" ? event.payload.demand_id : undefined;
-    if (taskId && taskIds.has(taskId)) return true;
-    return Boolean(eventDemandId && eventDemandId === selectedDemandId);
-  });
-  return matchingEvents?.sort(
+
+    // 任务在当前需求图内 → 按任务归集；否则退到需求级归集（保持原有匹配面）。
+    const matchesDemand = Boolean(eventDemandId && eventDemandId === selectedDemandId);
+    const carrierKey =
+      taskId && nodesById.has(taskId)
+        ? `task:${taskId}`
+        : matchesDemand
+          ? `demand:${eventDemandId}`
+          : undefined;
+    if (!carrierKey) continue;
+
+    const previous = latestByCarrier.get(carrierKey);
+    if (!previous || previous.event.sequence_number < event.sequence_number) {
+      latestByCarrier.set(carrierKey, {
+        event,
+        taskId: taskId && nodesById.has(taskId) ? taskId : undefined,
+      });
+    }
+  }
+
+  const stillBlocking: ProjectEvent[] = [];
+  for (const { event, taskId } of latestByCarrier.values()) {
+    if (!isDemandDispatchBlockerEvent(event.event_type)) continue;
+    if (taskId && isTerminalTaskStatus(nodesById.get(taskId)?.status)) continue;
+    stillBlocking.push(event);
+  }
+
+  return stillBlocking.sort(
     (a, b) =>
       demandDispatchBlockerPriority(a.event_type) -
       demandDispatchBlockerPriority(b.event_type),
   )[0];
+}
+
+/** 把 blocker 解除的闸门事件：闸门放行、以及已真正派发出去。 */
+function isDispatchGateResolvingEvent(eventType: ProjectEvent["event_type"]) {
+  return (
+    eventType === "project_task.dispatch_gate.checked" ||
+    eventType === "project_task.dispatched"
+  );
 }
 
 function isDemandDispatchBlockerEvent(eventType: ProjectEvent["event_type"]) {

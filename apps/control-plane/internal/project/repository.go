@@ -30,6 +30,9 @@ type Repository interface {
 	SetProjectHumanOwners(ctx context.Context, tenantID, projectID uuid.UUID, ownerIDs []uuid.UUID) error
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
+	// GetProjectTaskStatusCounts 是概览计数的权威来源：全表聚合，不受
+	// ListProjectTasks 分页窗口影响。勿改回在任务页上循环统计。
+	GetProjectTaskStatusCounts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectTaskSummary, error)
 	DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error)
 	AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error)
 	GetProjectEvent(ctx context.Context, tenantID, projectID, eventID uuid.UUID) (ProjectEvent, error)

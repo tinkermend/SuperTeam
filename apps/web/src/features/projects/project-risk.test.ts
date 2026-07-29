@@ -196,6 +196,40 @@ describe("project risk model", () => {
     );
   });
 
+  it("keeps the approval flag as a human decision while the task is still open", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      project: project("project-open-approval"),
+      tasks: [
+        task("project-open-approval", {
+          requires_human_approval: true,
+          status: "running",
+        }),
+      ],
+    });
+
+    expect(summary.requiresHuman).toBe(true);
+    expect(summary.reasons.map((reason) => reason.type)).toContain("human_decision");
+  });
+
+  it("stops reporting a human decision once the approval task is completed", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      project: project("project-done-approval"),
+      tasks: [
+        task("project-done-approval", {
+          requires_human_approval: true,
+          status: "completed",
+        }),
+      ],
+    });
+
+    expect(summary.requiresHuman).toBe(false);
+    expect(summary.reasons.map((reason) => reason.type)).not.toContain("human_decision");
+  });
+
   it("marks failed tasks as execution failure danger", () => {
     const summary = deriveProjectRiskSummary({
       decisions: [],

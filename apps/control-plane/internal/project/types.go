@@ -1935,16 +1935,26 @@ type ListProjectRunSummariesRequest struct {
 	Limit    int32
 }
 
+// ProjectStatusSummary/ProjectTaskSummary 直接被 projectOverviewResponse 内嵌序列化，
+// 缺 json tag 会让 API 出 Go 字段名（CurrentPhase/ActiveTasks…），与
+// contracts/control-plane/openapi.yaml 声明的 snake_case 不符——前端按契约取
+// snake_case 键，读到的全是 undefined。tag 是契约的一部分，勿删。
 type ProjectStatusSummary struct {
-	CurrentPhase string
-	IsArchived   bool
+	CurrentPhase string `json:"current_phase"`
+	IsArchived   bool   `json:"is_archived"`
 }
 
+// ProjectTaskSummary 是项目概览的**全项目**任务计数（不是 ActiveTasks 那 20 条页
+// 的统计）。口径见 GetProjectTaskStatusCounts：排除 dismissed；ActiveTasks 为非终态
+// （不含 cancelled）；TotalTasks = Active + Completed + Failed + Cancelled。
 type ProjectTaskSummary struct {
-	ActiveTasks       int
-	PendingHumanTasks int
-	CompletedTasks    int
-	FailedTasks       int
+	ActiveTasks       int `json:"active_tasks"`
+	PendingHumanTasks int `json:"pending_human_tasks"`
+	CompletedTasks    int `json:"completed_tasks"`
+	FailedTasks       int `json:"failed_tasks"`
+	RunningTasks      int `json:"running_tasks"`
+	CancelledTasks    int `json:"cancelled_tasks"`
+	TotalTasks        int `json:"total_tasks"`
 }
 
 type ProjectCoordinationWorkflow struct {

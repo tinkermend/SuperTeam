@@ -456,6 +456,25 @@ describe("flow graph adapter", () => {
     expect(result.edges).toEqual([]);
   });
 
+  it("keeps the human-approval flag only while the task is still open", () => {
+    const graph = makeGraph();
+    graph.nodes[1].status = "assigned";
+    expect(taskData(buildFlowGraphElements(graph), "task:task-run").requiresHumanApproval).toBe(
+      true,
+    );
+  });
+
+  it("drops the sticky human-approval flag once the task reaches a terminal status", () => {
+    for (const terminal of ["completed", "done", "success", "cancelled", "failed"]) {
+      const graph = makeGraph();
+      graph.nodes[1].status = terminal;
+      graph.decision_requests = [];
+      expect(
+        taskData(buildFlowGraphElements(graph), "task:task-run").requiresHumanApproval,
+      ).toBe(false);
+    }
+  });
+
   it("round-trips task ids through node ids and rejects non-task node ids", () => {
     expect(taskIdFromNodeId(taskNodeId("task-1"))).toBe("task-1");
     expect(taskIdFromNodeId(stageLabelNodeId(2))).toBeUndefined();

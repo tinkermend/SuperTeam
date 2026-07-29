@@ -8,6 +8,7 @@ import type {
   ProjectTaskGraphRun,
 } from "@/lib/api/projects";
 import { taskStatusLabel } from "@/lib/status-labels";
+import { isAwaitingHumanApproval } from "@/lib/task-status";
 
 const ATTACHMENT_OFFSET_Y = 116;
 
@@ -63,6 +64,7 @@ export type WorkflowTaskNodeData = {
   employeeRole: string | undefined;
   expectedOutputs: unknown[];
   hasPendingDecision: boolean;
+  /** **仍在**等待人工审批（粘性列已与终态判据合成，见 `@/lib/task-status`）。 */
   requiresHumanApproval: boolean;
   riskLevel: string | undefined;
   runStatus: string | undefined;
@@ -414,7 +416,7 @@ function buildDynamicTaskLayoutNodes(
             employeeRole: employee?.employee_role,
             expectedOutputs: task.expected_outputs,
             hasPendingDecision: pendingDecisionsByTaskId.has(task.id),
-            requiresHumanApproval: task.requires_human_approval,
+            requiresHumanApproval: isAwaitingHumanApproval(task),
             riskLevel: task.risk_level,
             runStatus: runsByTaskId.get(task.id)?.status,
             runStartedAt: runsByTaskId.get(task.id)?.started_at ?? task.started_at,

@@ -109,9 +109,12 @@ const overview: ProjectOverview = {
   status_summary: { current_phase: "running", is_archived: false },
   task_summary: {
     active_tasks: 1,
+    cancelled_tasks: 0,
     completed_tasks: 0,
     failed_tasks: 0,
-    pending_human_tasks: 0
+    pending_human_tasks: 0,
+    running_tasks: 1,
+    total_tasks: 1
 }
 };
 
@@ -283,6 +286,9 @@ describe("ProjectOperationalDetail", () => {
   it("renders the stage pipeline with deep links and per-stage status", async () => {
     const screen = await renderDetail({ planRevisions });
 
+    // 头部事实条的「执行中」与执行格同判据（运行中/等待人工），不是任务总数。
+    await expect.element(screen.getByRole("button", { name: "执行中 1" })).toBeVisible();
+
     const pipeline = screen.getByTestId("project-stage-pipeline");
     await expect.element(pipeline).toBeVisible();
 
@@ -328,6 +334,20 @@ describe("ProjectOperationalDetail", () => {
 };
     const screen = await renderDetail({
       demands: [{ ...demands[0], status: "failed" }],
+      // 计数以服务端聚合为权威，夹具的任务列表与 task_summary 必须自洽。
+      overview: {
+        ...overview,
+        active_tasks: [failedTask],
+        task_summary: {
+          active_tasks: 0,
+          cancelled_tasks: 0,
+          completed_tasks: 0,
+          failed_tasks: 1,
+          pending_human_tasks: 0,
+          running_tasks: 0,
+          total_tasks: 1
+}
+},
       tasks: [failedTask]
 });
 
@@ -396,6 +416,55 @@ describe("ProjectOperationalDetail", () => {
     await expect
       .element(screen.getByTestId("demand-list-item-demand-1"))
       .toHaveAttribute("href", "/projects/project-1?demand=demand-1&tab=demands");
+  });
+
+  it("reports zero running tasks in the hero facts once every task is completed", async () => {
+    // 服务端 overview.active_tasks 是**未过滤**的任务列表：全部完成时仍返回这些任务，
+    // 头部不得把列表长度当成"执行中"。
+    const completedTasks = [
+      { ...(overview.active_tasks![0] as ProjectTask), status: "completed" },
+    ];
+    const screen = await renderDetail({
+      overview: {
+        ...overview,
+        active_tasks: completedTasks,
+        task_summary: {
+          active_tasks: 0,
+          cancelled_tasks: 0,
+          completed_tasks: 1,
+          failed_tasks: 0,
+          pending_human_tasks: 0,
+          running_tasks: 0,
+          total_tasks: 1,
+        },
+      },
+      tasks: completedTasks,
+    });
+
+    await expect.element(screen.getByRole("button", { name: "执行中 0" })).toBeVisible();
+  });
+
+  it("counts from the server task summary, not the paginated task page", async () => {
+    // 任务列表是 limit 20 的页，计数必须来自服务端全表聚合，否则任务超过 20 条即漏计。
+    const screen = await renderDetail({
+      overview: {
+        ...overview,
+        task_summary: {
+          active_tasks: 9,
+          cancelled_tasks: 3,
+          completed_tasks: 30,
+          failed_tasks: 2,
+          pending_human_tasks: 4,
+          running_tasks: 5,
+          total_tasks: 44,
+        },
+      },
+    });
+
+    // 执行中 = running + waiting_human = 9，来自聚合而非已加载的 1 条任务。
+    await expect.element(screen.getByRole("button", { name: "执行中 9" })).toBeVisible();
+    const executionCell = screen.getByTestId("pipeline-stage-execution");
+    await expect.element(executionCell.getByText("执行中 9 · 共 44 项")).toBeVisible();
   });
 
   it("shows week pulse calendar with centered empty copy when project has no activity", async () => {

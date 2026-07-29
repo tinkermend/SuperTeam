@@ -7619,6 +7619,12 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 	if err != nil {
 		return nil, err
 	}
+	// 计数走全表聚合。旧实现在上面这 20 条任务页上循环统计，任务超过 20 条即漏计，
+	// 且页是 updated_at DESC 排序、随更新漂移，计数会非单调抖动。
+	taskSummary, err := s.repository.GetProjectTaskStatusCounts(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
 
 	overview := ProjectOverview{
 		Project: project,
@@ -7626,6 +7632,7 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 			CurrentPhase: string(project.Status),
 			IsArchived:   project.Status == ProjectStatusArchived || project.ArchivedAt != nil,
 		},
+		TaskSummary:  taskSummary,
 		ActiveTasks:  tasks,
 		RecentEvents: events,
 		CoordinationWorkflow: ProjectCoordinationWorkflow{
@@ -7639,19 +7646,6 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 			overview.HumanRoles = append(overview.HumanRoles, member)
 		case PrincipalTypeDigitalEmployee:
 			overview.DigitalEmployeePool = append(overview.DigitalEmployeePool, member)
-		}
-	}
-	for _, task := range tasks {
-		switch task.Status {
-		case "completed":
-			overview.TaskSummary.CompletedTasks++
-		case "failed":
-			overview.TaskSummary.FailedTasks++
-		case "waiting_human":
-			overview.TaskSummary.PendingHumanTasks++
-			overview.TaskSummary.ActiveTasks++
-		default:
-			overview.TaskSummary.ActiveTasks++
 		}
 	}
 	return &overview, nil

@@ -3943,6 +3943,59 @@ func (q *Queries) GetProjectTaskSessionLineage(ctx context.Context, arg GetProje
 	return i, err
 }
 
+const GetProjectTaskStatusCounts = `-- name: GetProjectTaskStatusCounts :one
+SELECT
+    COUNT(*)::integer AS total_tasks,
+    COUNT(*) FILTER (
+        WHERE status NOT IN ('completed', 'failed', 'cancelled')
+    )::integer AS active_tasks,
+    COUNT(*) FILTER (WHERE status = 'running')::integer AS running_tasks,
+    COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS pending_human_tasks,
+    COUNT(*) FILTER (WHERE status = 'completed')::integer AS completed_tasks,
+    COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_tasks,
+    COUNT(*) FILTER (WHERE status = 'cancelled')::integer AS cancelled_tasks
+FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND dismissed_at IS NULL
+`
+
+type GetProjectTaskStatusCountsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type GetProjectTaskStatusCountsRow struct {
+	TotalTasks        int32 `json:"total_tasks"`
+	ActiveTasks       int32 `json:"active_tasks"`
+	RunningTasks      int32 `json:"running_tasks"`
+	PendingHumanTasks int32 `json:"pending_human_tasks"`
+	CompletedTasks    int32 `json:"completed_tasks"`
+	FailedTasks       int32 `json:"failed_tasks"`
+	CancelledTasks    int32 `json:"cancelled_tasks"`
+}
+
+// 项目概览任务计数：必须走全表聚合，不能在 ListProjectTasks 的分页片上循环统计
+// （原实现在"最近更新的 20 条"上数数，任务超过 20 条即漏计，且窗口随更新漂移会让
+// 计数非单调抖动）。分桶口径与 ListProjectRunSummaries 保持一致；dismissed 任务
+// 与 ListProjectTasks 默认窗口同样排除，两者数字才对得上。
+// active 口径 = 非终态，终态集与 project.sql 各处 F5 判据同源（cancelled 属终态，
+// 旧实现把它算进 active 是错的）。
+func (q *Queries) GetProjectTaskStatusCounts(ctx context.Context, arg GetProjectTaskStatusCountsParams) (GetProjectTaskStatusCountsRow, error) {
+	row := q.db.QueryRow(ctx, GetProjectTaskStatusCounts, arg.TenantID, arg.ProjectID)
+	var i GetProjectTaskStatusCountsRow
+	err := row.Scan(
+		&i.TotalTasks,
+		&i.ActiveTasks,
+		&i.RunningTasks,
+		&i.PendingHumanTasks,
+		&i.CompletedTasks,
+		&i.FailedTasks,
+		&i.CancelledTasks,
+	)
+	return i, err
+}
+
 const LinkDecisionRequestProjectTaskResult = `-- name: LinkDecisionRequestProjectTaskResult :one
 UPDATE project_decision_requests
 SET project_task_result_id = $1::uuid,

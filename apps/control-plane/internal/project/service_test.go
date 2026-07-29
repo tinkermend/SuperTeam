@@ -11056,6 +11056,58 @@ func TestListPaginationIsNormalized(t *testing.T) {
 	}
 }
 
+// 概览计数必须来自全表聚合，不能受 ListProjectTasks 的 20 条分页窗口影响；
+// 且 cancelled 属终态，不算 active。
+func TestGetOverviewTaskSummaryCountsBeyondTaskPage(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "demo-project",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: uuid.New(),
+	}
+
+	// 25 条任务 > 概览任务页的 20 条上限。
+	statuses := []string{}
+	for i := 0; i < 18; i++ {
+		statuses = append(statuses, "completed")
+	}
+	statuses = append(statuses, "running", "running", "waiting_human", "planned", "failed", "cancelled", "cancelled")
+	for i, status := range statuses {
+		repo.tasks = append(repo.tasks, ProjectTask{
+			ID:        uuid.New(),
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     fmt.Sprintf("task-%d", i),
+			Status:    status,
+		})
+	}
+
+	overview, err := service.GetOverview(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+
+	require.Len(t, overview.ActiveTasks, 20, "任务列表仍是 20 条的页")
+	require.Equal(t, 25, overview.TaskSummary.TotalTasks)
+	require.Equal(t, 18, overview.TaskSummary.CompletedTasks)
+	require.Equal(t, 1, overview.TaskSummary.FailedTasks)
+	require.Equal(t, 2, overview.TaskSummary.CancelledTasks)
+	require.Equal(t, 2, overview.TaskSummary.RunningTasks)
+	require.Equal(t, 1, overview.TaskSummary.PendingHumanTasks)
+	// active = running(2) + waiting_human(1) + planned(1)，cancelled 不计入。
+	require.Equal(t, 4, overview.TaskSummary.ActiveTasks)
+	require.Equal(t,
+		overview.TaskSummary.TotalTasks,
+		overview.TaskSummary.ActiveTasks+overview.TaskSummary.CompletedTasks+
+			overview.TaskSummary.FailedTasks+overview.TaskSummary.CancelledTasks,
+	)
+}
+
 func TestDeleteProjectBlockedByActiveTask(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -12098,6 +12150,35 @@ func (r *memoryRepository) ListProjectTasks(ctx context.Context, tenantID, proje
 		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 	})
 	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+// 与真实查询同口径：全量聚合、排除 dismissed、cancelled 属终态不计入 active。
+// 刻意不复用 ListProjectTasks，否则会把"计数受分页窗口影响"的缺陷复制进夹具。
+func (r *memoryRepository) GetProjectTaskStatusCounts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectTaskSummary, error) {
+	summary := ProjectTaskSummary{}
+	for _, task := range r.tasks {
+		if task.TenantID != tenantID || task.ProjectID != projectID || task.DismissedAt != nil {
+			continue
+		}
+		summary.TotalTasks++
+		switch task.Status {
+		case "completed":
+			summary.CompletedTasks++
+		case "failed":
+			summary.FailedTasks++
+		case "cancelled":
+			summary.CancelledTasks++
+		case "waiting_human":
+			summary.PendingHumanTasks++
+			summary.ActiveTasks++
+		case "running":
+			summary.RunningTasks++
+			summary.ActiveTasks++
+		default:
+			summary.ActiveTasks++
+		}
+	}
+	return summary, nil
 }
 
 func (r *memoryRepository) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error) {

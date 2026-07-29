@@ -13,6 +13,7 @@ import type {
 } from "@/lib/api/projects";
 import { riskLevelLabel, taskStatusLabel } from "@/lib/status-labels";
 import { taskStatusTone } from "@/features/flow-graph/inspector-primitives";
+import { isAwaitingHumanApproval } from "@/lib/task-status";
 
 /**
  * PlanTaskGraph renders a coordination plan as a stage-grouped task list with
@@ -123,7 +124,7 @@ export function PlanTaskGraph({
                           {`风险：${riskLevelLabel(node.risk_level)}`}
                         </StatusPill>
                       ) : null}
-                      {node.requires_human_approval ? (
+                      {isAwaitingHumanApproval(node) ? (
                         <StatusPill tone="warn">
                           <ShieldCheck className="size-3.5" />
                           需审批

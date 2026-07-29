@@ -493,11 +493,19 @@ export type ProjectStatusSummary = {
   is_archived: boolean;
 };
 
+/**
+ * 项目**全量**任务计数（服务端 SQL 聚合，排除 dismissed）。
+ * 不要用 `ProjectOverview.active_tasks`（分页任务列表）的长度当计数。
+ * total_tasks = active_tasks + completed_tasks + failed_tasks + cancelled_tasks。
+ */
 export type ProjectTaskSummary = {
   active_tasks: number;
   pending_human_tasks: number;
   completed_tasks: number;
   failed_tasks: number;
+  running_tasks: number;
+  cancelled_tasks: number;
+  total_tasks: number;
 };
 
 export type ProjectCoordinationWorkflow = {
@@ -511,6 +519,7 @@ export type ProjectOverview = {
   digital_employee_pool: ProjectMember[];
   status_summary: ProjectStatusSummary;
   task_summary: ProjectTaskSummary;
+  /** 名不副实：未按状态过滤的任务列表，且只有最近更新的前 20 条。计数用 task_summary。 */
   active_tasks: ProjectTask[];
   recent_events: ProjectEvent[];
   coordination_workflow: ProjectCoordinationWorkflow;
