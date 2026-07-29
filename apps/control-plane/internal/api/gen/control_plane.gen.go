@@ -5118,8 +5118,6 @@ type ProjectMemberInput struct {
 
 // ProjectOverview defines model for ProjectOverview.
 type ProjectOverview struct {
-	// ActiveTasks 名不副实的历史字段：这里是**未按状态过滤**的任务列表，且只有最近更新的 前 20 条（改名属待偿债务）。要计数请用 task_summary，不要取本数组长度。
-	ActiveTasks          []ProjectTask               `json:"active_tasks"`
 	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
 	DigitalEmployeePool  []ProjectMember             `json:"digital_employee_pool"`
 	HumanRoles           []ProjectMember             `json:"human_roles"`

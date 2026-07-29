@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 
 const root = process.cwd();
 
+const CONTROL_PLANE_OPENAPI = "contracts/control-plane/openapi.yaml";
+const CONTROL_PLANE_GENERATED_GO = "apps/control-plane/internal/api/gen/control_plane.gen.go";
+
 const requiredOpenApiOperations = new Set([
   "GET /health",
   "GET /api/v1/tasks",
@@ -172,7 +175,7 @@ function joinPaths(prefix, literal) {
 }
 
 function readOpenApiOperations() {
-  const openapi = readText("contracts/control-plane/openapi.yaml");
+  const openapi = readText(CONTROL_PLANE_OPENAPI);
   const operations = new Set();
   let currentPath = null;
 
@@ -301,6 +304,80 @@ function assertSetContainsAll(label, actual, expected) {
   }
 }
 
+/**
+ * components.schemas 下声明的 schema 名（顶层两级缩进的 `Name:`）。
+ */
+function readOpenApiSchemaNames() {
+  const lines = readText(CONTROL_PLANE_OPENAPI).split("\n");
+  const names = new Set();
+  let inComponents = false;
+  let inSchemas = false;
+  for (const line of lines) {
+    if (/^components:\s*$/.test(line)) {
+      inComponents = true;
+      inSchemas = false;
+      continue;
+    }
+    if (inComponents && /^\S/.test(line)) {
+      // 离开 components 顶层块。
+      inComponents = false;
+      inSchemas = false;
+      continue;
+    }
+    if (!inComponents) continue;
+    if (/^ {2}schemas:\s*$/.test(line)) {
+      inSchemas = true;
+      continue;
+    }
+    if (inSchemas && /^ {2}\S/.test(line)) {
+      // components 下的另一个小节（parameters/responses/...）。
+      inSchemas = false;
+      continue;
+    }
+    if (!inSchemas) continue;
+    const match = /^ {4}([A-Za-z][A-Za-z0-9_]*):\s*$/.exec(line);
+    if (match) names.add(match[1]);
+  }
+  return names;
+}
+
+/** 生成物里已声明的 Go 类型名。 */
+function readGeneratedGoTypeNames() {
+  const names = new Set();
+  for (const line of readText(CONTROL_PLANE_GENERATED_GO).split("\n")) {
+    const match = /^type ([A-Za-z][A-Za-z0-9_]*)\b/.exec(line);
+    if (match) names.add(match[1]);
+  }
+  return names;
+}
+
+/**
+ * 生成物新鲜度：契约里每个 schema 都必须能在生成物里找到同名 Go 类型。
+ *
+ * 立此门禁的由来：56b39666 / 6a531a86 改了 openapi.yaml 却没跑生成器，
+ * control_plane.gen.go 落后约 290 行（缺 FeishuChannelAppStatus / channel_alert 等），
+ * 而本守卫当时只比对路由与客户端路径，整段漂移一路绿灯提交。
+ *
+ * 边界（不要误以为它等价于重跑生成器）：只覆盖"新增 schema 未重新生成"这一类漂移；
+ * 既有 schema 内部字段/枚举值的改动检测不到。彻底的做法是重跑 oapi-codegen 后
+ * diff，但那会让本守卫依赖 Go 工具链——按需要再升级。
+ */
+function assertGeneratedGoIsFresh() {
+  const schemaNames = readOpenApiSchemaNames();
+  if (schemaNames.size === 0) {
+    throw new Error("failed to parse components.schemas from control-plane openapi.yaml");
+  }
+  const goTypes = readGeneratedGoTypeNames();
+  const missing = [...schemaNames].filter((name) => !goTypes.has(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `generated Go is stale vs contract (run \`corepack pnpm generate:control-plane\`).\n` +
+        `${CONTROL_PLANE_GENERATED_GO} is missing types for these schemas:\n` +
+        missing.map((name) => `- ${name}`).join("\n"),
+    );
+  }
+}
+
 const openApiOperations = readOpenApiOperations();
 const goRouteOperations = readGoRouteOperations();
 const openApiPaths = readOpenApiPaths();
@@ -313,5 +390,6 @@ assertSetContainsAll("Rust Control Plane client", rustClientPaths, requiredRustC
 assertSetContainsAll("TypeScript api-client", tsClientPaths, requiredTypeScriptClientPaths);
 assertSetContainsAll("Rust Control Plane client", openApiPaths, rustClientPaths);
 assertSetContainsAll("TypeScript api-client", openApiPaths, tsClientPaths);
+assertGeneratedGoIsFresh();
 
 console.log("foundation contract guard passed");

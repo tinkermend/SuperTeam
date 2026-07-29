@@ -1936,7 +1936,7 @@ type ListProjectRunSummariesRequest struct {
 }
 
 // ProjectStatusSummary/ProjectTaskSummary 直接被 projectOverviewResponse 内嵌序列化，
-// 缺 json tag 会让 API 出 Go 字段名（CurrentPhase/ActiveTasks…），与
+// 缺 json tag 会让 API 出 Go 字段名（CurrentPhase/CompletedTasks…），与
 // contracts/control-plane/openapi.yaml 声明的 snake_case 不符——前端按契约取
 // snake_case 键，读到的全是 undefined。tag 是契约的一部分，勿删。
 type ProjectStatusSummary struct {
@@ -1944,9 +1944,11 @@ type ProjectStatusSummary struct {
 	IsArchived   bool   `json:"is_archived"`
 }
 
-// ProjectTaskSummary 是项目概览的**全项目**任务计数（不是 ActiveTasks 那 20 条页
-// 的统计）。口径见 GetProjectTaskStatusCounts：排除 dismissed；ActiveTasks 为非终态
-// （不含 cancelled）；TotalTasks = Active + Completed + Failed + Cancelled。
+// ProjectTaskSummary 是项目概览的**全项目**任务计数。口径见
+// GetProjectTaskStatusCounts：排除 dismissed；ActiveTasks 为非终态（不含 cancelled）；
+// TotalTasks = Active + Completed + Failed + Cancelled。
+// 概览不再返回任务列表（原 active_tasks 字段名不副实且与 ListProjectTasks 完全重复，
+// 已退役）；需要任务明细走 GET /projects/{id}/tasks。
 type ProjectTaskSummary struct {
 	ActiveTasks       int `json:"active_tasks"`
 	PendingHumanTasks int `json:"pending_human_tasks"`
@@ -1968,7 +1970,6 @@ type ProjectOverview struct {
 	DigitalEmployeePool  []ProjectMember
 	StatusSummary        ProjectStatusSummary
 	TaskSummary          ProjectTaskSummary
-	ActiveTasks          []ProjectTask
 	RecentEvents         []ProjectEvent
 	CoordinationWorkflow ProjectCoordinationWorkflow
 }

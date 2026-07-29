@@ -9802,7 +9802,6 @@ components:
         - digital_employee_pool
         - status_summary
         - task_summary
-        - active_tasks
         - recent_events
         - coordination_workflow
       properties:
@@ -9820,13 +9819,6 @@ components:
           $ref: "#/components/schemas/ProjectStatusSummary"
         task_summary:
           $ref: "#/components/schemas/ProjectTaskSummary"
-        active_tasks:
-          type: array
-          description: >-
-            名不副实的历史字段：这里是**未按状态过滤**的任务列表，且只有最近更新的
-            前 20 条（改名属待偿债务）。要计数请用 task_summary，不要取本数组长度。
-          items:
-            $ref: "#/components/schemas/ProjectTask"
         recent_events:
           type: array
           items:

@@ -527,16 +527,6 @@ function createProjectFetcher(
 
     if (url.pathname === "/api/v1/projects/project-1/overview" && method === "GET") {
       return jsonResponse({
-        active_tasks: [
-          {
-            id: "task-1",
-            project_id: "project-1",
-            requires_human_approval: true,
-            status: "running",
-            tenant_id: "tenant-1",
-            title: "整理接入证据"
-},
-        ],
         coordination_workflow: {
           status: "registered",
           workflow_id: "project-coordinator:project-1"
@@ -611,10 +601,13 @@ function createProjectFetcher(
         ],
         status_summary: { current_phase: "running", is_archived: false },
         task_summary: {
-          active_tasks: 1,
+          active_tasks: 2,
+          cancelled_tasks: 0,
           completed_tasks: 0,
           failed_tasks: 0,
-          pending_human_tasks: 1
+          pending_human_tasks: 1,
+          running_tasks: 1,
+          total_tasks: 2
 }
 });
     }
@@ -696,7 +689,6 @@ function createProjectFetcher(
         await options.project2OverviewGate;
       }
       return jsonResponse({
-        active_tasks: [],
         coordination_workflow: {
           status: "registered",
           workflow_id: `project-coordinator:${id}`
@@ -708,9 +700,12 @@ function createProjectFetcher(
         status_summary: { current_phase: "running", is_archived: false },
         task_summary: {
           active_tasks: 0,
+          cancelled_tasks: 0,
           completed_tasks: 0,
           failed_tasks: 0,
-          pending_human_tasks: 0
+          pending_human_tasks: 0,
+          running_tasks: 0,
+          total_tasks: 0
 }
 });
     }
@@ -837,6 +832,8 @@ function createProjectFetcher(
     if (url.pathname.endsWith("/tasks") && method === "GET") {
       const projectId = url.pathname.split("/")[4];
       if (projectId === "project-1") {
+        // 真实后端里概览与本端点是同一条 ListProjectTasks 查询，概览字段退役后
+        // 任务明细只有这一个来源，两条任务都必须在这里给全。
         return jsonResponse([
           {
             assigned_digital_employee_id: "de-1",
@@ -847,6 +844,14 @@ function createProjectFetcher(
             task_kind: "human_review",
             tenant_id: "tenant-1",
             title: "人工: 负责人确认"
+},
+          {
+            id: "task-2",
+            project_id: "project-1",
+            requires_human_approval: true,
+            status: "running",
+            tenant_id: "tenant-1",
+            title: "整理接入证据"
 },
         ]);
       }

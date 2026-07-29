@@ -533,8 +533,6 @@ export type ProjectOverview = {
   digital_employee_pool: ProjectMember[];
   status_summary: ProjectStatusSummary;
   task_summary: ProjectTaskSummary;
-  /** 名不副实：未按状态过滤的任务列表，且只有最近更新的前 20 条。计数用 task_summary。 */
-  active_tasks: ProjectTask[];
   recent_events: ProjectEvent[];
   coordination_workflow: ProjectCoordinationWorkflow;
 };

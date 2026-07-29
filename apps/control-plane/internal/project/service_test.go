@@ -11112,11 +11112,16 @@ func TestListPaginationIsNormalized(t *testing.T) {
 	if repo.lastDemandsLimit != 100 || repo.lastDemandsOffset != 0 {
 		t.Fatalf("expected demands pagination 100/0, got %d/%d", repo.lastDemandsLimit, repo.lastDemandsOffset)
 	}
+	// 概览已不再拉任务页（active_tasks 字段退役，计数走聚合），只剩事件分页需要钉住。
+	repo.lastTasksLimit = -1
 	if _, err := service.GetOverview(context.Background(), tenantID, projectID); err != nil {
 		t.Fatalf("get overview: %v", err)
 	}
-	if repo.lastTasksLimit != 20 || repo.lastTasksOffset != 0 || repo.lastEventsLimit != 20 || repo.lastEventsOffset != 0 {
-		t.Fatalf("expected overview pagination 20/0, got tasks %d/%d events %d/%d", repo.lastTasksLimit, repo.lastTasksOffset, repo.lastEventsLimit, repo.lastEventsOffset)
+	if repo.lastEventsLimit != 20 || repo.lastEventsOffset != 0 {
+		t.Fatalf("expected overview events pagination 20/0, got %d/%d", repo.lastEventsLimit, repo.lastEventsOffset)
+	}
+	if repo.lastTasksLimit != -1 {
+		t.Fatalf("overview 不应再查询任务页，却调用了 ListProjectTasks(limit=%d)", repo.lastTasksLimit)
 	}
 }
 
@@ -11156,7 +11161,6 @@ func TestGetOverviewTaskSummaryCountsBeyondTaskPage(t *testing.T) {
 	overview, err := service.GetOverview(context.Background(), tenantID, projectID)
 	require.NoError(t, err)
 
-	require.Len(t, overview.ActiveTasks, 20, "任务列表仍是 20 条的页")
 	require.Equal(t, 25, overview.TaskSummary.TotalTasks)
 	require.Equal(t, 18, overview.TaskSummary.CompletedTasks)
 	require.Equal(t, 1, overview.TaskSummary.FailedTasks)

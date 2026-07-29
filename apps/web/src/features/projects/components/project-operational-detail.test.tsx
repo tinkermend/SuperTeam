@@ -70,19 +70,21 @@ function member(overrides: Partial<ProjectMember>): ProjectMember {
 };
 }
 
-const overview: ProjectOverview = {
-  active_tasks: [
-    {
-      assigned_digital_employee_id: "employee-1",
-      id: "task-1",
-      project_id: "project-1",
-      requires_human_approval: false,
-      status: "running",
-      summary: "整理客户接入证据",
-      tenant_id: "tenant-1",
-      title: "整理接入证据"
+// 概览不再返回任务列表（active_tasks 已退役）；任务明细由 tasks prop 单独注入。
+const overviewTasks: ProjectTask[] = [
+  {
+    assigned_digital_employee_id: "employee-1",
+    id: "task-1",
+    project_id: "project-1",
+    requires_human_approval: false,
+    status: "running",
+    summary: "整理客户接入证据",
+    tenant_id: "tenant-1",
+    title: "整理接入证据"
 },
-  ],
+];
+
+const overview: ProjectOverview = {
   coordination_workflow: {
     status: "registered",
     workflow_id: "project-coordinator:project-1"
@@ -227,7 +229,7 @@ function detailElement(
       reports={[]}
       routeDecisions={[]}
       runtimePlacementPanel={<div>Runtime placement</div>}
-      tasks={overview.active_tasks as ProjectTask[]}
+      tasks={overviewTasks}
       transferRequests={[]}
       {...props}
     />
@@ -337,7 +339,6 @@ describe("ProjectOperationalDetail", () => {
       // 计数以服务端聚合为权威，夹具的任务列表与 task_summary 必须自洽。
       overview: {
         ...overview,
-        active_tasks: [failedTask],
         task_summary: {
           active_tasks: 0,
           cancelled_tasks: 0,
@@ -419,15 +420,13 @@ describe("ProjectOperationalDetail", () => {
   });
 
   it("reports zero running tasks in the hero facts once every task is completed", async () => {
-    // 服务端 overview.active_tasks 是**未过滤**的任务列表：全部完成时仍返回这些任务，
-    // 头部不得把列表长度当成"执行中"。
-    const completedTasks = [
-      { ...(overview.active_tasks![0] as ProjectTask), status: "completed" },
+    // 计数只认服务端聚合：即便任务列表里还摆着任务，全部完成时头部也必须显示 0。
+    const completedTasks: ProjectTask[] = [
+      { ...overviewTasks[0], status: "completed" },
     ];
     const screen = await renderDetail({
       overview: {
         ...overview,
-        active_tasks: completedTasks,
         task_summary: {
           active_tasks: 0,
           cancelled_tasks: 0,
@@ -470,7 +469,6 @@ describe("ProjectOperationalDetail", () => {
   it("shows week pulse calendar with centered empty copy when project has no activity", async () => {
     const emptyOverview: ProjectOverview = {
       ...overview,
-      active_tasks: [],
       digital_employee_pool: [],
       recent_events: []
 };
@@ -515,7 +513,6 @@ describe("ProjectOperationalDetail", () => {
     const screen = await renderDetail({
       decisionRequests: [taskDecision],
       onResolveDecision,
-      overview: { ...overview, active_tasks: [weekTask] },
       tasks: [weekTask]
 });
 
@@ -610,7 +607,6 @@ describe("ProjectOperationalDetail", () => {
     const fetchTaskGraph = vi.fn().mockResolvedValue(lazyGraph);
     const screen = await renderDetail({
       fetchTaskGraph,
-      overview: { ...overview, active_tasks: [historicalTask] },
       tasks: [historicalTask]
 });
 
@@ -732,7 +728,7 @@ describe("ProjectOperationalDetail", () => {
       execution_summaries: [],
       nodes: [
         {
-          ...(overview.active_tasks![0] as ProjectTask),
+          ...overviewTasks[0],
           expected_outputs: [],
           handoff_contract: {},
           input_requirements: {},
@@ -760,7 +756,7 @@ describe("ProjectOperationalDetail", () => {
 
   it("shows the owning demand column with deep link and fallbacks in the tasks tab", async () => {
     const demandTask: ProjectTask = {
-      ...(overview.active_tasks![0] as ProjectTask),
+      ...overviewTasks[0],
       demand_id: "demand-1"
 };
     const unknownDemandTask: ProjectTask = {

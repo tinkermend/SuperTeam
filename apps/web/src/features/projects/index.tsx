@@ -525,7 +525,6 @@ export function ProjectsView({
   }, [runtimeNodesQuery.data, runtimeReadinessQuery.data?.runtime_node_id]);
 
   const dispatchGateTask = selectDispatchGateTask({
-    activeTasks: overviewQuery.data?.active_tasks ?? [],
     fallbackTasks: tasksQuery.data ?? [],
     graphTasks: taskGraphQuery.data?.nodes ?? [],
     projectId: effectiveProjectId
@@ -1394,12 +1393,10 @@ function isProjectOperationalTab(value: string | undefined): boolean {
 }
 
 function selectDispatchGateTask({
-  activeTasks,
   fallbackTasks,
   graphTasks,
   projectId
 }: {
-  activeTasks: ProjectTask[];
   fallbackTasks: ProjectTask[];
   graphTasks: ProjectTask[];
   projectId?: string;
@@ -1407,7 +1404,7 @@ function selectDispatchGateTask({
   if (!projectId) {
     return undefined;
   }
-  const candidates = [activeTasks, fallbackTasks, graphTasks]
+  const candidates = [fallbackTasks, graphTasks]
     .flat()
     .filter((task) => task.project_id === projectId);
   return (

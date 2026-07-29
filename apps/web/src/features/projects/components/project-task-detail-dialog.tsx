@@ -71,9 +71,7 @@ export function ProjectTaskDetailDialog({
 }: ProjectTaskDetailDialogProps) {
   const preloadedNode = taskGraph?.nodes.find((node) => node.id === taskId);
   const task =
-    preloadedNode ??
-    tasks.find((item) => item.id === taskId) ??
-    overview?.active_tasks?.find((item) => item.id === taskId);
+    preloadedNode ?? tasks.find((item) => item.id === taskId);
   const open = Boolean(taskId && task);
   const lazyDemandId = !preloadedNode ? task?.demand_id : undefined;
   const lazyGraphQuery = useQuery({

@@ -90,10 +90,9 @@ export function ProjectOpsHome({
   tasks
 }: ProjectOpsHomeProps) {
   const pool = overview?.digital_employee_pool ?? [];
-  const sourceTasks = overview?.active_tasks?.length
-    ? [...overview.active_tasks, ...tasks]
-    : tasks;
-  const dedupedTasks = dedupeTasks(sourceTasks);
+  // 概览曾额外返回一份与 tasks 完全重复的任务页（active_tasks，已退役），
+  // 这里的合并只是当年的对冲，现在单一来源即可；dedupe 保留以防上游重复。
+  const dedupedTasks = dedupeTasks(tasks);
   const sourceEvents = overview?.recent_events?.length
     ? overview.recent_events
     : events;

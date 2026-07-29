@@ -3067,7 +3067,6 @@ type projectOverviewResponse struct {
 	DigitalEmployeePool  []projectMemberResponse     `json:"digital_employee_pool"`
 	StatusSummary        ProjectStatusSummary        `json:"status_summary"`
 	TaskSummary          ProjectTaskSummary          `json:"task_summary"`
-	ActiveTasks          []projectTaskResponse       `json:"active_tasks"`
 	RecentEvents         []projectEventResponse      `json:"recent_events"`
 	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
 }
@@ -4151,7 +4150,6 @@ func overviewResponseFromDomain(overview *ProjectOverview) projectOverviewRespon
 		DigitalEmployeePool:  memberResponses(overview.DigitalEmployeePool),
 		StatusSummary:        overview.StatusSummary,
 		TaskSummary:          overview.TaskSummary,
-		ActiveTasks:          taskResponses(overview.ActiveTasks),
 		RecentEvents:         eventResponses(overview.RecentEvents),
 		CoordinationWorkflow: overview.CoordinationWorkflow,
 	}

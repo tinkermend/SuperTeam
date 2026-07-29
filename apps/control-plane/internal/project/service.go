@@ -7614,16 +7614,12 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 		return nil, err
 	}
 	limit, offset := normalizePagination(20, 0)
-	tasks, err := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, limit, offset)
-	if err != nil {
-		return nil, err
-	}
 	events, err := s.repository.ListProjectEvents(ctx, tenantID, projectID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
-	// 计数走全表聚合。旧实现在上面这 20 条任务页上循环统计，任务超过 20 条即漏计，
-	// 且页是 updated_at DESC 排序、随更新漂移，计数会非单调抖动。
+	// 计数走全表聚合，不再顺带拉一页任务：概览曾返回 active_tasks（未过滤的 20 条任务
+	// 页，与 ListProjectTasks 完全重复且名不副实），字段已退役，这次查询也随之省掉。
 	taskSummary, err := s.repository.GetProjectTaskStatusCounts(ctx, tenantID, projectID)
 	if err != nil {
 		return nil, err
@@ -7636,7 +7632,6 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 			IsArchived:   project.Status == ProjectStatusArchived || project.ArchivedAt != nil,
 		},
 		TaskSummary:  taskSummary,
-		ActiveTasks:  tasks,
 		RecentEvents: events,
 		CoordinationWorkflow: ProjectCoordinationWorkflow{
 			WorkflowID: project.CoordinationWorkflowID,
