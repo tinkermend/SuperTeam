@@ -483,6 +483,17 @@ export type ProjectEvent = {
   resource_id?: string;
   summary?: string;
   payload: Record<string, unknown>;
+  /**
+   * 服务端渲染的用户可读叙事（唯一词表源 internal/project/event_narrative.go）。
+   * 显示一律用 narrative.title；`event_type` 只作技术判别，不得当文案。
+   * 老响应可能缺该字段（旧服务/缓存），调用方需自备中文兜底。
+   */
+  narrative?: {
+    kind: string;
+    title: string;
+    severity?: DemandDossierSeverity;
+    noise?: boolean;
+  };
   created_at: string;
 };
 
@@ -560,6 +571,144 @@ export type ProjectDemandLaunchDetail = {
   execution_summaries: ProjectExecutionSummary[];
   decision_requests: ProjectDecisionRequest[];
   recent_events: ProjectEvent[];
+};
+
+/**
+ * 一单卷宗（spec 2026-07-29 R2）。中栏时间线是协调**叙事**（按关键节点归纳、
+ * 噪音事件不入），不是完整审计流水；右轨按有效剧本的 produces kind 分槽给交付
+ * 事实。只读模型，无写字段。
+ */
+export type DemandDossierTimelineKind =
+  | "demand_submitted"
+  | "coordination_started"
+  | "plan_ready"
+  | "plan_accepted"
+  | "plan_rejected"
+  | "plan_change_requested"
+  | "task_created"
+  | "task_dispatched"
+  | "task_waiting_human"
+  | "task_completed"
+  | "task_failed"
+  | "task_cancelled"
+  | "result_recorded"
+  | "result_accepted"
+  | "result_rejected"
+  | "decision_opened"
+  | "decision_resolved"
+  | "dispatch_blocked"
+  | "staffing_gap"
+  | "coordination_blocked"
+  | "other";
+
+export type DemandDossierSeverity = "info" | "success" | "warn" | "danger" | "mute";
+
+export type DemandDossierTimelineItem = {
+  id: string;
+  occurred_at: string;
+  kind: DemandDossierTimelineKind;
+  /** 服务端已渲染的中文主文案；前端不得再解析原始 event_type。 */
+  title: string;
+  summary?: string;
+  severity?: DemandDossierSeverity;
+  actor_display_name?: string;
+  entity?: {
+    type: "task" | "decision" | "demand" | "job" | "event";
+    id: string;
+    name?: string;
+  };
+  open_target?: {
+    type: "task_detail" | "decision" | "none";
+    task_id?: string;
+    decision_id?: string;
+  };
+};
+
+export type DemandDossierRailItemState = "delivered" | "missing" | "unknown" | "info";
+
+export type DemandDossierRailItem = {
+  id: string;
+  title: string;
+  summary?: string;
+  state: DemandDossierRailItemState;
+  ref?: string;
+  project_task_id?: string;
+  project_task_name?: string;
+};
+
+export type DemandDossierRailSlot = {
+  kind: string;
+  title: string;
+  items: DemandDossierRailItem[];
+};
+
+export type DemandDossierPendingAction = {
+  id: string;
+  kind: string;
+  title: string;
+  status: string;
+  created_at?: string;
+  href?: {
+    type: "inbox" | "project_demand" | "decision";
+    decision_id?: string;
+    demand_id?: string;
+    project_id?: string;
+  };
+};
+
+export type DemandDossierHandoffAssessment = {
+  project_task_id: string;
+  project_task_name?: string;
+  status: "fulfilled" | "partial" | "unfulfilled" | "unknown";
+  deliverables: ProjectTaskGraphHandoffDeliverable[];
+};
+
+export type ProjectDemandDossier = {
+  demand: ProjectDemand;
+  project: {
+    id: string;
+    name: string;
+    status?: string;
+    scenario_template_key?: string | null;
+  };
+  effective_playbook: {
+    template_key?: string | null;
+    source: "demand" | "project" | "none";
+    name?: string;
+    produce_kinds: string[];
+  };
+  /** 密度判定的原料，不是结论——密度由前端决定并允许用户切换。 */
+  signals: {
+    has_open_decisions: boolean;
+    active_task_count: number;
+    demand_terminal: boolean;
+  };
+  pending_actions: DemandDossierPendingAction[];
+  timeline: {
+    items: DemandDossierTimelineItem[];
+    truncated: boolean;
+  };
+  rail: {
+    slots: DemandDossierRailSlot[];
+  };
+  handoff_summary: {
+    fulfilled: number;
+    partial: number;
+    unfulfilled: number;
+    unknown: number;
+    assessments: DemandDossierHandoffAssessment[];
+  };
+  acceptance?: {
+    demand_status?: string;
+    criteria_total?: number;
+    pending_human_judgment?: number;
+  };
+  sibling_pending?: {
+    demand_id: string;
+    open_decisions: number;
+    demand_title?: string;
+    demand_status?: string;
+  }[];
 };
 
 export type ProjectRouteDecision = {
@@ -1474,6 +1623,22 @@ export function getProjectDemandLaunchDetail(
     options,
     `/api/v1/project-demands/${encodeURIComponent(demandId)}/launch-detail`,
     "project demand launch detail",
+  );
+}
+
+export function getProjectDemandDossier(
+  options: ApiClientOptions,
+  demandId: string,
+  params?: { timelineLimit?: number; siblingPending?: boolean },
+): Promise<ProjectDemandDossier> {
+  const query = new URLSearchParams();
+  if (params?.timelineLimit) query.set("timeline_limit", String(params.timelineLimit));
+  if (params?.siblingPending) query.set("sibling_pending", "true");
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return getJson<ProjectDemandDossier>(
+    options,
+    `/api/v1/project-demands/${encodeURIComponent(demandId)}/dossier${suffix}`,
+    "project demand dossier",
   );
 }
 

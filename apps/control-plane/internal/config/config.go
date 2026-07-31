@@ -18,7 +18,16 @@ type SecurityConfig struct {
 	CredentialEncryptionKey string `yaml:"credentialEncryptionKey"`
 }
 
+// Environment 决定安全默认值的松紧。dev 会为本地 Web 注入 localhost CORS 来源,
+// prod 一律不注入——开发便利不该编进生产二进制。
+const (
+	EnvironmentDev  = "dev"
+	EnvironmentProd = "prod"
+)
+
 type Config struct {
+	// Environment 是 dev 或 prod;缺省 dev,由 CONTROL_PLANE_ENV 覆盖。
+	Environment string            `yaml:"environment"`
 	HTTP        HTTPConfig        `yaml:"http"`
 	Postgres    PostgresConfig    `yaml:"postgres"`
 	Redis       RedisConfig       `yaml:"redis"`
@@ -33,6 +42,46 @@ type Config struct {
 
 type HTTPConfig struct {
 	Addr string `yaml:"addr"`
+	// AllowedOrigins 是允许携带凭据跨源调用本服务的浏览器来源(scheme://host:port
+	// 全匹配)。Console 与 Control Plane 默认不同端口即不同源,所以这是一条长期
+	// 承重的安全边界,不是本地开发的脚手架。
+	//
+	// 注意:它与"前端有几个实例"无关——十个副本挂在同一域名后面仍然只有一个
+	// 来源。需要多来源的是多环境、多租户自定义域名、预览部署子域这类场景。
+	//
+	// 显式配置后**不再**注入任何 localhost 默认值:dev 默认只在本项为空时兜底,
+	// 否则生产二进制会永久放行 localhost,任何能诱导用户本地起服务的页面都能
+	// 带着会话 cookie 打生产 API。
+	AllowedOrigins []string `yaml:"allowedOrigins"`
+}
+
+// devDefaultAllowedOrigins 是 dev 环境下未显式配置时的兜底来源。端口须与
+// apps/web/vite.config.ts 的 DEV_SERVER_PORT 一致;保留 localhost 是因为 Web
+// 入口会把 localhost 跳到 127.0.0.1,跳转落地前的首个请求仍需放行。
+func devDefaultAllowedOrigins() []string {
+	return []string{"http://127.0.0.1:3100", "http://localhost:3100"}
+}
+
+// ResolvedAllowedOrigins 返回最终生效的 CORS 来源:显式配置优先,dev 环境为空
+// 时回落本地默认,prod 为空时返回空(由 validate 提前拦成启动失败)。
+func (cfg Config) ResolvedAllowedOrigins() []string {
+	origins := make([]string, 0, len(cfg.HTTP.AllowedOrigins))
+	for _, origin := range cfg.HTTP.AllowedOrigins {
+		if trimmed := strings.TrimSpace(origin); trimmed != "" {
+			origins = append(origins, trimmed)
+		}
+	}
+	if len(origins) > 0 {
+		return origins
+	}
+	if cfg.IsDev() {
+		return devDefaultAllowedOrigins()
+	}
+	return nil
+}
+
+func (cfg Config) IsDev() bool {
+	return !strings.EqualFold(strings.TrimSpace(cfg.Environment), EnvironmentProd)
 }
 
 // PostgresConfig carries the connection string plus explicit pool sizing.
@@ -141,6 +190,7 @@ func LoadFromFile(path string) (Config, error) {
 
 func defaultConfig() Config {
 	return Config{
+		Environment: EnvironmentDev,
 		HTTP: HTTPConfig{
 			Addr: ":8080",
 		},
@@ -181,7 +231,11 @@ func defaultConfig() Config {
 }
 
 func applyEnv(cfg Config) Config {
+	cfg.Environment = envOrDefault("CONTROL_PLANE_ENV", cfg.Environment)
 	cfg.HTTP.Addr = envOrDefault("CONTROL_PLANE_ADDR", cfg.HTTP.Addr)
+	if value, ok := os.LookupEnv("CONTROL_PLANE_CORS_ALLOWED_ORIGINS"); ok {
+		cfg.HTTP.AllowedOrigins = splitAndTrim(value)
+	}
 	cfg.Postgres.URL = envOrDefault("DATABASE_URL", cfg.Postgres.URL)
 	cfg.Postgres.MaxConns = envInt32OrDefault("DATABASE_MAX_CONNS", cfg.Postgres.MaxConns)
 	cfg.Postgres.MinConns = envInt32OrDefault("DATABASE_MIN_CONNS", cfg.Postgres.MinConns)
@@ -236,6 +290,16 @@ func applyEnv(cfg Config) Config {
 }
 
 func (cfg Config) validate() error {
+	switch strings.ToLower(strings.TrimSpace(cfg.Environment)) {
+	case "", EnvironmentDev, EnvironmentProd:
+	default:
+		return errors.New("CONTROL_PLANE_ENV must be one of dev, prod")
+	}
+	// 生产必须显式声明允许的浏览器来源。留空时启动即失败,而不是让用户在浏览器
+	// 里撞一个 CORS 报错再反推到这里。
+	if !cfg.IsDev() && len(cfg.ResolvedAllowedOrigins()) == 0 {
+		return errors.New("http.allowedOrigins (or CONTROL_PLANE_CORS_ALLOWED_ORIGINS) is required when CONTROL_PLANE_ENV=prod")
+	}
 	if cfg.Authz.Engine == "" {
 		cfg.Authz.Engine = "db"
 	}
@@ -340,4 +404,16 @@ func envDurationOrDefault(key string, fallback time.Duration) time.Duration {
 func parseBool(value string) bool {
 	parsed, err := strconv.ParseBool(value)
 	return err == nil && parsed
+}
+
+// splitAndTrim 按逗号切分并去空白,用于 env 里的列表型配置。
+func splitAndTrim(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

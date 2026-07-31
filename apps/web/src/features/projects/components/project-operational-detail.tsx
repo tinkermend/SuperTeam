@@ -131,6 +131,9 @@ type ProjectOperationalDetailProps = {
   focusDecisionId?: string;
   /** ?demand= 深链：需求流程区选中的需求 id；缺省默认最新需求。 */
   initialDemandId?: string;
+  /** 一单卷宗中栏视图（?view=）与切换回调；由页面写回 URL。 */
+  demandView?: "timeline" | "graph";
+  onDemandViewChange?: (view: "timeline" | "graph") => void;
   initialTab?: ProjectDetailSection | string;
   isArchived?: boolean;
   onArchiveProject: () => void;
@@ -197,6 +200,8 @@ export function ProjectOperationalDetail({
   fetchTaskGraph,
   focusDecisionId,
   initialDemandId,
+  demandView,
+  onDemandViewChange,
   initialTab = "workbench",
   isArchived,
   onArchiveProject,
@@ -627,8 +632,10 @@ export function ProjectOperationalDetail({
               fetchTaskGraph={fetchTaskGraph}
               onClearTask={() => setDetailTaskId(undefined)}
               onOpenTask={setDetailTaskId}
+              onViewChange={onDemandViewChange}
               projectId={project.id}
               selectedDemandId={initialDemandId}
+              view={demandView}
             />
           ) : null}
         </SoftTabsContent>

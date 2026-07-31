@@ -380,20 +380,33 @@ describe("ProjectOperationalDetail", () => {
   });
 
   it("opens the demands section from ?tab=demands with the demand switcher", async () => {
-    // 需求流程区直连血缘/待决 API：给最小 stub 响应即可。
+    // 需求处所直连卷宗/血缘 API：给最小 stub 响应即可。
     const fetcher: typeof fetch = async (input: RequestInfo | URL) => {
       const url = String(input);
-      const payload = url.includes("/launch-detail")
+      const payload = url.includes("/dossier")
         ? {
-            coordination_jobs: [],
-            decision_requests: [],
-            demand: { id: "demand-1" },
-            execution_summaries: [],
-            project: { id: "project-1" },
-            project_tasks: [],
-            recent_events: [],
-            reviewer: null,
-            route_decisions: []
+            demand: {
+              id: "demand-1",
+              status: "submitted",
+              title: "补充上线验收说明"
+},
+            effective_playbook: { produce_kinds: [], source: "none" },
+            handoff_summary: {
+              assessments: [],
+              fulfilled: 0,
+              partial: 0,
+              unfulfilled: 0,
+              unknown: 0
+},
+            pending_actions: [],
+            project: { id: "project-1", name: "项目一" },
+            rail: { slots: [] },
+            signals: {
+              active_task_count: 0,
+              demand_terminal: false,
+              has_open_decisions: false
+},
+            timeline: { items: [], truncated: false }
 }
         : { criteria: [], demand_status: "submitted" };
       return new Response(JSON.stringify(payload), {
@@ -411,7 +424,7 @@ describe("ProjectOperationalDetail", () => {
       .element(screen.getByRole("tab", { name: "需求流程", selected: true }))
       .toBeVisible();
     await expect.element(screen.getByTestId("project-demands-section")).toBeVisible();
-    const header = screen.getByTestId("demand-status-header");
+    const header = screen.getByTestId("demand-dossier-header");
     await expect.element(header.getByText("补充上线验收说明")).toBeVisible();
     await expect.element(header.getByText("待计划")).toBeVisible();
     await expect

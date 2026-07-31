@@ -1897,6 +1897,27 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND object_ref LIKE 'artifacts/%'
 ORDER BY created_at ASC;
 
+-- name: ListProjectEvidenceRefsByTaskIDs :many
+-- 一单卷宗右轨(spec 2026-07-29 R2 §5.3-5):按任务批量取证据,走
+-- idx_project_evidence_refs_tenant_task。刻意不带 limit/offset——按项目分页
+-- 再在内存里过滤会被分页截断,把"证据齐全"渲染成"交付缺失"(假阴性比不显示更坏)。
+SELECT * FROM project_evidence_refs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+ORDER BY created_at DESC;
+
+-- name: ListProjectArtifactRefsByTaskIDs :many
+-- 同上,取本单任务的全部工件引用,走 idx_project_artifact_refs_tenant_task。
+-- 刻意不套用 ListProjectDeclaredArtifactsByTaskIDs 的 declared + artifacts/
+-- 前缀过滤:那是验收深链"可点击才下发"的口径;右轨要回答的是"这一单产出了
+-- 什么",漏掉兜底附件与外部引用同样构成假阴性。
+SELECT * FROM project_artifact_refs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+ORDER BY created_at DESC;
+
 -- name: ListProjectTaskGraphNodeTimings :many
 SELECT
   pta.project_task_id AS project_task_id,

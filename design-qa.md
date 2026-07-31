@@ -4,7 +4,7 @@
 
 **Implementation Checklist**
 - Source visual truth path: `/var/folders/_s/2zwng6xn03g1rj6v60h9r75h0000gn/T/codex-clipboard-5f0e08ae-d76b-4c18-88f8-fd76604ecc1e.png`
-- Implementation target: `http://127.0.0.1:3000/run-overview`
+- Implementation target: `http://127.0.0.1:3100/run-overview`
 - Browser: Chrome plugin against the running local Web service.
 - Auth state: signed in to the local development stack as `admin`.
 - Real API path: Web rendered `GET /api/v1/digital-employees/overview?limit=100` and `GET /api/v1/teams?status=active&limit=100` data from the running Control Plane on `127.0.0.1:8081`.

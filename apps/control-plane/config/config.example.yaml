@@ -1,5 +1,22 @@
+# dev | prod。prod 会关闭一切本地开发默认值（如 localhost CORS 来源），
+# 且要求显式配置 http.allowedOrigins，否则启动即失败。
+# 也可用 CONTROL_PLANE_ENV 覆盖。
+environment: dev
+
 http:
   addr: ":8080"
+  # 允许携带凭据跨源调用本服务的浏览器来源（scheme://host:port 全匹配）。
+  # 这不是"前端有几个实例"——十个副本挂同一域名仍只有一个来源；需要多来源的是
+  # 多环境、多租户自定义域名、预览部署子域。
+  #
+  # 留空且 environment=dev 时回落本地 Web 默认（127.0.0.1:3100 / localhost:3100，
+  # 端口须与 apps/web/vite.config.ts 的 DEV_SERVER_PORT 一致）。
+  # 一旦在此显式列出，就**不再**注入任何 localhost 默认值。
+  # 也可用 CONTROL_PLANE_CORS_ALLOWED_ORIGINS（逗号分隔）覆盖。
+  #
+  # 将来 Console 与本服务走同一反代（同源）时，跨源不再发生，此项可留空。
+  allowedOrigins: []
+  #  - "https://console.example.com"
 
 postgres:
   url: "postgres://superteam:xxxx@115.190.247.9:35432/superteam?sslmode=disable"

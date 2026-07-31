@@ -703,32 +703,55 @@ function dedupeTasks(tasks: ProjectTask[]): ProjectTask[] {
   return [...map.values()];
 }
 
+/**
+ * 项目事件 → 用户可读文案。
+ *
+ * 文案来自服务端的 `event.narrative`（唯一词表源 internal/project/event_narrative.go），
+ * 与一单卷宗时间线**共用同一张表**。此前这里是 8 分支 switch + default 直接
+ * `return { title: event.event_type }`，于是
+ * "project_task.dispatch_gate.replan_required" 这类英文蛇形串会直接出现在页面上
+ * ——而事件类型有约 60 个，8 分支覆盖不到的都会漏。
+ *
+ * kind 归类给"执行/审批"这类分组标签用；服务端未回 narrative（旧服务或缓存响应）
+ * 时回落通用中文，**任何情况下都不把 event_type 原串当文案**。
+ */
 function opsEventTitle(event: ProjectEvent): {
   kind?: string;
   summary?: string;
   title: string;
 } {
-  switch (event.event_type) {
-    case "project_task.created":
-      return { kind: "执行", title: "任务创建", summary: event.summary };
-    case "project_task.dispatched":
-      return { kind: "执行", title: "任务开始", summary: event.summary };
-    case "project_task.completed":
-      return { kind: "执行", title: "任务完成", summary: event.summary };
-    case "project_task.failed":
-      return { kind: "执行", title: "任务失败", summary: event.summary };
-    case "decision.requested":
-      return { kind: "审批", title: "审批创建", summary: event.summary };
-    case "decision.submitted":
-      return { kind: "审批", title: "审批已处理", summary: event.summary };
-    case "project.acceptance.submitted":
-      return { kind: "审批", title: "验收已提交", summary: event.summary };
-    case "transfer.requested":
-      return { kind: "审批", title: "转派请求", summary: event.summary };
+  const narrative = event.narrative;
+  return {
+    kind: narrative ? opsEventKindLabel(narrative.kind) : undefined,
+    summary: event.summary,
+    title: narrative?.title?.trim() || "协调更新"
+};
+}
+
+/** 时间线 kind → 项目工作台的粗分组标签（执行 / 审批 / 阻塞）。 */
+function opsEventKindLabel(kind: string): string | undefined {
+  switch (kind) {
+    case "task_created":
+    case "task_dispatched":
+    case "task_completed":
+    case "task_failed":
+    case "task_cancelled":
+    case "task_waiting_human":
+    case "result_recorded":
+      return "执行";
+    case "decision_opened":
+    case "decision_resolved":
+    case "result_accepted":
+    case "result_rejected":
+    case "plan_accepted":
+    case "plan_rejected":
+    case "plan_change_requested":
+      return "审批";
+    case "dispatch_blocked":
+    case "coordination_blocked":
+    case "staffing_gap":
+      return "阻塞";
     default:
-      if (event.event_type.startsWith("project_task.")) {
-        return { kind: "执行", title: "任务事件", summary: event.summary };
-      }
-      return { title: event.event_type, summary: event.summary };
+      return undefined;
   }
 }

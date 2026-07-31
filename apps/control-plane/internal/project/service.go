@@ -62,6 +62,10 @@ func (s *Service) SetAutomationProjectCascade(cascade AutomationProjectCascade) 
 // resolver skips validation (tests and callers without the registry wired).
 type ScenarioTemplateResolver interface {
 	ResolveScenarioTemplate(ctx context.Context, tenantID uuid.UUID, key string) (ScenarioTemplateBinding, error)
+	// ResolveScenarioTemplateProduceKinds 返回模板骨架 produces_defaults 的
+	// kind 去重保序序列,供一单卷宗右轨定槽位顺序(spec 2026-07-29 R2 §5.3-2)。
+	// spec 解析属于 scenariotemplate 包的职责,project 包不得复制一份。
+	ResolveScenarioTemplateProduceKinds(ctx context.Context, tenantID uuid.UUID, key string) ([]string, error)
 }
 
 type ScenarioTemplateBinding struct {
@@ -2343,7 +2347,25 @@ func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uu
 	return s.repository.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
 }
 
-func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
+// demandLaunchFacts 是一条需求的只读事实底座:demand/project 本体 + 协调 job、
+// 路由决策、任务、执行摘要、决策请求与事件。launch-detail 与 dossier
+// (GetDemandDossier) 必须同调本方法取数——两处各自拉一遍会长出第二份 demand
+// 聚合语义并随时间漂移(spec 2026-07-29 R2 §5.3-1)。
+type demandLaunchFacts struct {
+	Demand             ProjectDemand
+	Project            Project
+	CoordinationJobs   []CoordinationJob
+	RouteDecisions     []RouteDecision
+	ProjectTasks       []ProjectTask
+	TaskIDs            []uuid.UUID
+	ExecutionSummaries []ExecutionSummary
+	DecisionRequests   []DecisionRequest
+	Events             []ProjectEvent
+}
+
+// loadDemandLaunchFacts 取一条需求的只读事实底座。eventLimit 由调用方决定:
+// launch-detail 只要最近若干条,dossier 要够归一后仍填满时间线的量。
+func (s *Service) loadDemandLaunchFacts(ctx context.Context, tenantID, demandID uuid.UUID, eventLimit int32) (*demandLaunchFacts, error) {
 	if tenantID == uuid.Nil || demandID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
@@ -2376,20 +2398,40 @@ func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID 
 	if err != nil {
 		return nil, err
 	}
-	events, err := s.repository.ListDemandLaunchEvents(ctx, tenantID, demand.ProjectID, demand.ID, demand.CreatedEventID, taskIDs, decisionRequestIDs(decisions), 50)
+	events, err := s.repository.ListDemandLaunchEvents(ctx, tenantID, demand.ProjectID, demand.ID, demand.CreatedEventID, taskIDs, decisionRequestIDs(decisions), eventLimit)
+	if err != nil {
+		return nil, err
+	}
+	return &demandLaunchFacts{
+		Demand:             demand,
+		Project:            project,
+		CoordinationJobs:   jobs,
+		RouteDecisions:     routes,
+		ProjectTasks:       tasks,
+		TaskIDs:            taskIDs,
+		ExecutionSummaries: summaries,
+		DecisionRequests:   decisions,
+		Events:             events,
+	}, nil
+}
+
+const demandLaunchDetailEventLimit int32 = 50
+
+func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
+	facts, err := s.loadDemandLaunchFacts(ctx, tenantID, demandID, demandLaunchDetailEventLimit)
 	if err != nil {
 		return nil, err
 	}
 	return &DemandLaunchDetail{
-		Demand:             demand,
-		Project:            project,
-		Reviewer:           demand.ReviewerPreference,
-		CoordinationJobs:   jobs,
-		RouteDecisions:     routes,
-		ProjectTasks:       tasks,
-		ExecutionSummaries: summaries,
-		DecisionRequests:   decisions,
-		RecentEvents:       events,
+		Demand:             facts.Demand,
+		Project:            facts.Project,
+		Reviewer:           facts.Demand.ReviewerPreference,
+		CoordinationJobs:   facts.CoordinationJobs,
+		RouteDecisions:     facts.RouteDecisions,
+		ProjectTasks:       facts.ProjectTasks,
+		ExecutionSummaries: facts.ExecutionSummaries,
+		DecisionRequests:   facts.DecisionRequests,
+		RecentEvents:       facts.Events,
 	}, nil
 }
 

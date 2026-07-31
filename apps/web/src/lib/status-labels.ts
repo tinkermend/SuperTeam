@@ -451,3 +451,82 @@ export function constitutionCategoryLabel(category: string | undefined): string 
   }
   return CONSTITUTION_CATEGORY_LABELS[category] ?? category;
 }
+
+// 一单卷宗（spec 2026-07-29 R2）。时间线 kind 的中文由服务端在 title 上给全，
+// 这里只覆盖前端自己要显示 kind 的地方（分组/筛选/无障碍标签）与右轨槽名、
+// 密度名。服务端已有同名词表（internal/project/event_narrative.go、
+// DossierRailKindLabel）——两边必须一起改，别只改一头。
+const DOSSIER_TIMELINE_KIND_LABELS: Record<string, string> = {
+  coordination_blocked: "协调受阻",
+  coordination_started: "协调开始",
+  decision_opened: "待人工决策",
+  decision_resolved: "决策已处理",
+  demand_submitted: "需求已提交",
+  dispatch_blocked: "派发受阻",
+  other: "协调更新",
+  plan_accepted: "计划已确认",
+  plan_change_requested: "要求变更",
+  plan_ready: "计划已生成",
+  plan_rejected: "计划被驳回",
+  result_accepted: "结果已采纳",
+  result_recorded: "结果已记录",
+  result_rejected: "结果被驳回",
+  staffing_gap: "选角缺口",
+  task_cancelled: "任务取消",
+  task_completed: "任务完成",
+  task_created: "任务创建",
+  task_dispatched: "任务开始",
+  task_failed: "任务失败",
+  task_waiting_human: "等待人工",
+};
+
+export function dossierTimelineKindLabel(kind: string | undefined): string {
+  if (!kind) {
+    return "协调更新";
+  }
+  return DOSSIER_TIMELINE_KIND_LABELS[kind] ?? "协调更新";
+}
+
+// 右轨槽名。未知 kind 回落「交付物」——技术键不得当标题吐给用户。
+const DOSSIER_RAIL_KIND_LABELS: Record<string, string> = {
+  artifact_ref: "工件",
+  branch_ref: "分支",
+  conclusion: "结论",
+  decision_record: "决策记录",
+  evidence_ref: "证据",
+  git_commit: "提交",
+  report_ref: "报告",
+};
+
+export function dossierRailKindLabel(kind: string | undefined): string {
+  if (!kind) {
+    return "交付物";
+  }
+  return DOSSIER_RAIL_KIND_LABELS[kind] ?? "交付物";
+}
+
+const DOSSIER_RAIL_ITEM_STATE_LABELS: Record<string, string> = {
+  delivered: "已交付",
+  info: "参考",
+  missing: "未交付",
+  unknown: "暂无声明",
+};
+
+export function dossierRailItemStateLabel(state: string | undefined): string {
+  if (!state) {
+    return "暂无声明";
+  }
+  return DOSSIER_RAIL_ITEM_STATE_LABELS[state] ?? "暂无声明";
+}
+
+const DOSSIER_DENSITY_LABELS: Record<string, string> = {
+  drive: "驱动",
+  inspect: "巡检",
+};
+
+export function dossierDensityLabel(density: string | undefined): string {
+  if (!density) {
+    return "驱动";
+  }
+  return DOSSIER_DENSITY_LABELS[density] ?? "驱动";
+}

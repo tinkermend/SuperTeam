@@ -811,7 +811,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	feishuWebOrigin := os.Getenv("CONTROL_PLANE_WEB_ORIGIN")
 	if feishuWebOrigin == "" {
-		feishuWebOrigin = "http://127.0.0.1:3000"
+		feishuWebOrigin = "http://127.0.0.1:3100"
 	}
 	feishuService.SetOAuthOrigins(feishuPublicOrigin, feishuWebOrigin)
 	feishuConnectorHandler := feishu.NewConnectorHTTPHandler(feishuService)
@@ -825,6 +825,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
+	server.SetAllowedOrigins(cfg.ResolvedAllowedOrigins())
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
 	server.SetEmployeeHandler(employeeHandler)
@@ -996,6 +997,10 @@ func (a scenarioTemplateResolverAdapter) ResolveScenarioTemplate(ctx context.Con
 		return project.ScenarioTemplateBinding{}, err
 	}
 	return project.ScenarioTemplateBinding{Key: template.Key, Name: template.Name, Status: template.Status}, nil
+}
+
+func (a scenarioTemplateResolverAdapter) ResolveScenarioTemplateProduceKinds(ctx context.Context, tenantID uuid.UUID, key string) ([]string, error) {
+	return a.service.ProduceKinds(ctx, tenantID, key)
 }
 
 type scenarioTemplateSourceAdapter struct {

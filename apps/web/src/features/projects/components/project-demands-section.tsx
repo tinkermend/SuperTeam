@@ -1,13 +1,15 @@
 import { lazy, Suspense, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, ClipboardList, FileText, Inbox } from "lucide-react";
+import { ClipboardList, FileText } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   Button,
   EmptyState,
+  ErrorState,
   IconTile,
   LoadingState,
+  MasterDetailLayout,
   notifyError,
   notifySuccess,
   SoftCard,
@@ -16,18 +18,32 @@ import {
 import { cn } from "@/lib/utils";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
-  getProjectDemandLaunchDetail,
+  getProjectDemandDossier,
   resolveProjectDecision,
   type ProjectDemand,
+  type ProjectDemandDossier,
   type ProjectTaskGraph,
   type ProjectTaskGraphDispatchGate
 } from "@/lib/api/projects";
-import { decisionStatusLabel, demandStatusLabel } from "@/lib/status-labels";
+import { demandStatusLabel } from "@/lib/status-labels";
 import { formatRelativeTime } from "@/lib/format-time";
 import { isTerminalTaskStatus } from "@/lib/task-status";
 import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
 import { useProjectActivityInvalidate } from "../hooks/use-project-activity-invalidate";
 import { DemandCriteriaPanel } from "./demand-criteria-panel";
+import {
+  readStoredDossierDensity,
+  resolveDossierDensity,
+  writeStoredDossierDensity,
+  type DossierDensity
+} from "./demand-dossier-density";
+import {
+  DemandDossierHeader,
+  demandStatusTone,
+  type DemandDossierView
+} from "./demand-dossier-header";
+import { DemandDossierRail } from "./demand-dossier-rail";
+import { DemandDossierTimeline } from "./demand-dossier-timeline";
 import { StaffGapDialog } from "./staff-gap-dialog";
 
 // 与工作台执行图同一权威画布（@xyflow/react 重依赖，懒加载同一 chunk）。
@@ -52,20 +68,41 @@ type ProjectDemandsSectionProps = {
   projectId: string;
   /** ?demand= 深链选中的需求；缺省回退最新需求。 */
   selectedDemandId?: string;
+  /** ?view= 中栏视图；缺省时间线（叙事优先，图为副视图）。 */
+  view?: DemandDossierView;
+  onViewChange?: (view: DemandDossierView) => void;
 };
 
-function demandStatusTone(status: string) {
-  if (status === "completed") return "ok" as const;
-  if (status === "failed" || status === "cancelled") return "danger" as const;
-  if (status === "acceptance_pending") return "warn" as const;
-  if (status === "executing" || status === "planned") return "info" as const;
-  return "mute" as const;
+/**
+ * 卷宗内已补名的任务显示名字典，供验收面板展示"哪个任务满足了判据"。
+ * 服务端已在读路径补名，这里只是把两处已有的名字归并，不做逐行请求。
+ */
+function dossierTaskNames(dossier: ProjectDemandDossier): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const assessment of dossier.handoff_summary.assessments) {
+    if (assessment.project_task_name) {
+      names.set(assessment.project_task_id, assessment.project_task_name);
+    }
+  }
+  for (const slot of dossier.rail.slots) {
+    for (const item of slot.items) {
+      if (item.project_task_id && item.project_task_name) {
+        names.set(item.project_task_id, item.project_task_name);
+      }
+    }
+  }
+  return names;
 }
 
 /**
- * 项目详情「需求流程」区（IA Phase 2 P2a-1）：左侧需求切换器 + 右侧选中需求的
- * 状态头 / 权威流程图 / 验收血缘 / 待决面板。选中态由 ?demand= 查询参数持久化，
- * 无参数默认最新需求；切换用 Link 改 URL，数据经 keepPreviousData 不闪空。
+ * 项目详情「这一单」处所（spec 2026-07-29 R2 一单卷宗）。
+ *
+ * 左：本项目需求列表（带待你处理角标）；中：协调时间线为主叙事、权威流程图可切；
+ * 右：按剧本 produces kind 分槽的交付事实轨 + 交付判定 + 验收摘要。
+ *
+ * 数据来自 demand 级只读聚合 `getProjectDemandDossier`——时间线归一、补名、
+ * 剧本解析都在服务端做完，前端不解析原始 event_type、不拼多接口。
+ * 图视图继续独立拉 task-graph（与页面预载共享缓存 key）。
  */
 export function ProjectDemandsSection({
   apiBaseUrl,
@@ -77,7 +114,9 @@ export function ProjectDemandsSection({
   onClearTask,
   onOpenTask,
   projectId,
-  selectedDemandId
+  selectedDemandId,
+  view = "timeline",
+  onViewChange
 }: ProjectDemandsSectionProps) {
   const selectedDemand =
     demands.find((demand) => demand.id === selectedDemandId) ?? demands[0];
@@ -92,45 +131,82 @@ export function ProjectDemandsSection({
     projectId
 });
 
+  const dossierQuery = useQuery({
+    enabled: Boolean(selectedDemand),
+    placeholderData: keepPreviousData,
+    queryFn: () =>
+      getProjectDemandDossier(apiOptions, selectedDemand!.id, { siblingPending: true }),
+    queryKey: ["demand-dossier", apiBaseUrl, selectedDemand?.id],
+    // 兜底轮询只在 drive 密度下开：卷宗是重聚合（launch facts + 交接判定 +
+    // 证据/工件 + 补名），巡检态还每 30s 重拉一遍纯属浪费。秒级活性由 SSE
+    // invalidate 承担，这里只兜 SSE 不可用的情况。
+    refetchInterval: (query) => {
+      const signals = query.state.data?.signals;
+      return resolveDossierDensity(signals, undefined) === "drive" ? 30_000 : false;
+    }
+});
+  // 只认"确实是当前这一单"的响应（切单期间 keepPreviousData 会留着上一单的数据）。
+  // 对缺字段的响应做保底填充：卷宗是只读读模型，半截 payload 不该把整页打崩。
+  const dossier = useMemo(() => {
+    const data = dossierQuery.data;
+    if (!data?.demand?.id || data.demand.id !== selectedDemand?.id) {
+      return undefined;
+    }
+    return {
+      ...data,
+      handoff_summary: data.handoff_summary ?? {
+        assessments: [],
+        fulfilled: 0,
+        partial: 0,
+        unfulfilled: 0,
+        unknown: 0
+},
+      pending_actions: data.pending_actions ?? [],
+      rail: data.rail ?? { slots: [] },
+      timeline: data.timeline ?? { items: [], truncated: false }
+};
+  }, [dossierQuery.data, selectedDemand?.id]);
+
+  const [densityOverride, setDensityOverride] = useState<DossierDensity | undefined>(() =>
+    readStoredDossierDensity(typeof window === "undefined" ? undefined : window.localStorage),
+  );
+  const density = resolveDossierDensity(dossier?.signals, densityOverride);
+  const handleDensityChange = (next: DossierDensity) => {
+    setDensityOverride(next);
+    writeStoredDossierDensity(
+      typeof window === "undefined" ? undefined : window.localStorage,
+      next,
+    );
+  };
+
+  // 图数据保持常拉（与改版前一致）：除图视图外，派发闸横幅、阻塞横幅与规划缺口
+  // 面板都读 graph.blocking_facts / dispatch_gates。改成"仅图视图才拉"会让默认
+  // 时间线视图下这些告警静默消失——省一次请求换掉一条告警不是优化。
   const graphQuery = useQuery({
     enabled: Boolean(selectedDemand && fetchTaskGraph),
     placeholderData: keepPreviousData,
     queryFn: () => fetchTaskGraph!(selectedDemand!.id),
     // 与页面预载/任务弹层同 key 族：最新需求直接命中缓存。
     queryKey: ["project-task-graph", projectId, selectedDemand?.id],
-    // 保底轮询 30s（spec §5 P2-E）：秒级活性由 SSE invalidate 承担；SSE 不可用
-    // （连接失败/环境降级）时 EventSource 自动重连 + 本轮询兜底。刻意不探测
-    // 流健康后回升 5s——双通道并存会放大请求洪峰，且 30s 兜底已保证最终一致。
     refetchInterval: 30_000
 });
   const graph = graphQuery.data;
 
-  // 需求维度的待决事项：launch detail 由服务端按 demand 收敛（协调 job + 任务双路），
-  // 覆盖 plan_review 等没有 project_task_id 的需求级决策。key 与流程编排详情共享缓存。
-  const launchDetailQuery = useQuery({
-    enabled: Boolean(selectedDemand),
-    placeholderData: keepPreviousData,
-    queryFn: () => getProjectDemandLaunchDetail(apiOptions, selectedDemand!.id),
-    queryKey: ["workflow-detail", apiBaseUrl, selectedDemand?.id]
-});
-  const launchDetail =
-    launchDetailQuery.data?.demand.id === selectedDemand?.id
-      ? launchDetailQuery.data
-      : undefined;
-  const pendingDecisions = (launchDetail?.decision_requests ?? []).filter(
-    (decision) => decision.status_snapshot === "pending",
-  );
+  const pendingByDemand = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const sibling of dossier?.sibling_pending ?? []) {
+      map.set(sibling.demand_id, sibling.open_decisions);
+    }
+    return map;
+  }, [dossier]);
 
-  const taskNamesById = useMemo(
-    () => new Map((graph?.nodes ?? []).map((node) => [node.id, node.title])),
-    [graph],
-  );
+  const [acceptanceOpen, setAcceptanceOpen] = useState(false);
 
   if (demands.length === 0) {
     return (
       <SoftCard className="p-8">
         <EmptyState
-          description="向项目提交需求后，这里按需求查看权威流程图、验收血缘与待决事项。"
+          description="向项目提交需求后，这里按需求查看协调时间线、交付事实与待你处理事项。"
           icon={<FileText />}
           title="暂无需求"
         />
@@ -151,6 +227,7 @@ export function ProjectDemandsSection({
         <nav aria-label="需求列表" className="max-h-[520px] divide-y divide-line overflow-y-auto">
           {demands.map((demand) => {
             const isSelected = demand.id === selectedDemand?.id;
+            const pendingCount = pendingByDemand.get(demand.id) ?? 0;
             return (
               <Link
                 aria-current={isSelected ? "true" : undefined}
@@ -164,14 +241,25 @@ export function ProjectDemandsSection({
                 search={{ demand: demand.id, tab: "demands" }}
                 to="/projects/$projectId"
               >
-                <p
-                  className={cn(
-                    "truncate text-[13px] font-semibold",
-                    isSelected ? "text-brand-deep" : "text-ink",
-                  )}
-                >
-                  {demand.title}
-                </p>
+                <div className="flex items-start justify-between gap-2">
+                  <p
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[13px] font-semibold",
+                      isSelected ? "text-brand-deep" : "text-ink",
+                    )}
+                  >
+                    {demand.title}
+                  </p>
+                  {pendingCount > 0 ? (
+                    <span
+                      aria-label={`待你处理 ${pendingCount} 项`}
+                      className="shrink-0 rounded-full bg-warn-soft px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-warn-text"
+                      data-testid={`demand-list-pending-${demand.id}`}
+                    >
+                      {pendingCount}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   <StatusPill tone={demandStatusTone(demand.status)}>
                     {demandStatusLabel(demand.status)}
@@ -196,7 +284,8 @@ export function ProjectDemandsSection({
         <div className="grid min-w-0 gap-4">
           {/* coordination.blocked 横幅 + 缺口面板只在需求终态 failed 时渲染（原流程编排详情
               的语义原样迁入）：reopen 重规划后 demand 会先回非终态，旧 blocking_facts 未必
-              已随重规划清掉，此时继续渲染红色阻塞条会误导负责人。demand.status 是权威来源。 */}
+              已随重规划清掉，此时继续渲染红色阻塞条会误导负责人。demand.status 是权威来源。
+              这两块读 task-graph，故在图视图外也需要图数据时按需拉取。 */}
           {selectedDemand.status === "failed" ? (
             <>
               <DemandBlockingBanner graph={graph} />
@@ -207,138 +296,98 @@ export function ProjectDemandsSection({
               />
             </>
           ) : null}
-          <DemandDispatchBlockerBanner
-            gate={currentDemandDispatchBlocker(graph)}
-          />
-          <SoftCard className="p-4" data-testid="demand-status-header">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="min-w-0 truncate text-base font-semibold text-ink">
-                    {selectedDemand.title}
-                  </h3>
-                  <StatusPill tone={demandStatusTone(selectedDemand.status)}>
-                    {demandStatusLabel(selectedDemand.status)}
-                  </StatusPill>
-                </div>
-                {selectedDemand.content &&
-                selectedDemand.content !== selectedDemand.title ? (
-                  <p className="mt-1.5 line-clamp-3 text-[13px] leading-6 text-ink-2">
-                    {selectedDemand.content}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </SoftCard>
+          <DemandDispatchBlockerBanner gate={currentDemandDispatchBlocker(graph)} />
 
-          <section className="grid gap-2" data-testid="demand-flow-graph-section">
-            <div className="flex items-center gap-2 px-1">
-              <ClipboardList className="size-4 text-ink-2" />
-              <h3 className="text-sm font-semibold tracking-normal">权威流程图</h3>
-            </div>
-            {graph && graph.nodes.length > 0 ? (
-              <Suspense fallback={<LoadingState />}>
-                {/* key 按需求重挂画布：切需求即终止上一需求可能在进行的回放会话。 */}
-                <FlowGraphCanvas
-                  key={selectedDemand.id}
-                  graph={graph}
-                  live
-                  onNodeOpen={(nodeId) => {
-                    const taskId = taskIdFromNodeId(nodeId);
-                    if (taskId) onOpenTask(taskId);
-                  }}
-                  onSelectedNodeChange={(nodeId) => {
-                    if (!nodeId) onClearTask?.();
-                  }}
-                  selectedNodeId={detailTaskId ? taskNodeId(detailTaskId) : undefined}
-                />
-              </Suspense>
-            ) : graphQuery.isFetching || graphQuery.isLoading ? (
-              <LoadingState label="正在加载执行图…" />
-            ) : (
-              <SoftCard className="p-6">
-                <EmptyState
-                  description={
-                    graphQuery.isError
-                      ? "执行图加载失败，可稍后重试。"
-                      : "该需求还没有生成执行任务图（可能仍在规划中）。"
+          {dossierQuery.isError ? (
+            <SoftCard className="p-6" data-testid="demand-dossier-error">
+              <ErrorState
+                description="一单卷宗加载失败，可稍后重试。"
+                onRetry={() => void dossierQuery.refetch()}
+                title="卷宗加载失败"
+              />
+            </SoftCard>
+          ) : !dossier ? (
+            <LoadingState label="正在加载这一单…" />
+          ) : (
+            <MasterDetailLayout
+              detail={
+                <DemandDossierRail
+                  acceptance={dossier.acceptance}
+                  acceptanceDetail={
+                    <DemandCriteriaPanel
+                      apiBaseUrl={apiBaseUrl}
+                      apiOptions={apiOptions}
+                      demandId={selectedDemand.id}
+                      taskNamesById={dossierTaskNames(dossier)}
+                    />
                   }
-                  title="暂无执行图"
+                  acceptanceOpen={acceptanceOpen}
+                  handoffSummary={dossier.handoff_summary}
+                  onAcceptanceToggle={() => setAcceptanceOpen((value) => !value)}
+                  slots={dossier.rail.slots}
                 />
-              </SoftCard>
-            )}
-          </section>
-
-          <DemandCriteriaPanel
-            apiBaseUrl={apiBaseUrl}
-            apiOptions={apiOptions}
-            demandId={selectedDemand.id}
-            taskNamesById={taskNamesById}
-          />
-
-          <SoftCard className="p-4" data-testid="demand-pending-decisions">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Inbox className="size-4 text-ink-2" />
-                <h3 className="text-sm font-semibold text-ink">
-                  {pendingDecisions.length > 0
-                    ? `待决事项 · ${pendingDecisions.length}`
-                    : "待决事项"}
-                </h3>
-              </div>
-              <Link
-                aria-label="前往收件箱处理待决事项"
-                className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
-                to="/inbox"
-              >
-                收件箱
-                <ArrowUpRight className="size-3.5" />
-              </Link>
-            </div>
-            {pendingDecisions.length === 0 ? (
-              <p className="mt-2 text-[12.5px] text-ink-3">
-                {launchDetail
-                  ? "该需求当前没有待决事项"
-                  : launchDetailQuery.isError
-                    ? "待决事项加载失败，可稍后重试"
-                    : "正在加载待决事项…"}
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {pendingDecisions.map((decision) => (
-                  <li
-                    className="rounded-[10px] bg-card-soft px-3 py-2.5 shadow-[inset_2px_0_0_var(--warn)]"
-                    data-testid={`demand-pending-decision-${decision.id}`}
-                    key={decision.id}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <p className="min-w-0 text-[12.5px] font-bold leading-5 text-ink">
-                        {decision.title_snapshot}
-                      </p>
-                      <StatusPill tone="warn">
-                        {decisionStatusLabel(decision.status_snapshot)}
-                      </StatusPill>
-                    </div>
-                    {decision.summary_snapshot &&
-                    decision.summary_snapshot !== decision.title_snapshot ? (
-                      <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-4 text-ink-2">
-                        {decision.summary_snapshot}
-                      </p>
-                    ) : null}
-                    {decision.created_at ? (
-                      <time
-                        className="mt-1 block text-[11px] tabular-nums text-ink-3"
-                        dateTime={decision.created_at}
-                        title={decision.created_at}
-                      >
-                        {formatRelativeTime(decision.created_at)}
-                      </time>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SoftCard>
+              }
+              master={
+                <div className="grid min-w-0 gap-4">
+                  <DemandDossierHeader
+                    density={density}
+                    dossier={dossier}
+                    onDensityChange={handleDensityChange}
+                    onViewChange={onViewChange ?? (() => undefined)}
+                    view={view}
+                  />
+                  {view === "graph" ? (
+                    <section className="grid gap-2" data-testid="demand-flow-graph-section">
+                      <div className="flex items-center gap-2 px-1">
+                        <ClipboardList className="size-4 text-ink-2" />
+                        <h3 className="text-sm font-semibold tracking-normal">权威流程图</h3>
+                      </div>
+                      {graph && graph.nodes.length > 0 ? (
+                        <Suspense fallback={<LoadingState />}>
+                          {/* key 按需求重挂画布：切需求即终止上一需求可能在进行的回放会话。 */}
+                          <FlowGraphCanvas
+                            key={selectedDemand.id}
+                            graph={graph}
+                            live
+                            onNodeOpen={(nodeId) => {
+                              const taskId = taskIdFromNodeId(nodeId);
+                              if (taskId) onOpenTask(taskId);
+                            }}
+                            onSelectedNodeChange={(nodeId) => {
+                              if (!nodeId) onClearTask?.();
+                            }}
+                            selectedNodeId={detailTaskId ? taskNodeId(detailTaskId) : undefined}
+                          />
+                        </Suspense>
+                      ) : graphQuery.isFetching || graphQuery.isLoading ? (
+                        <LoadingState label="正在加载执行图…" />
+                      ) : (
+                        <SoftCard className="p-6">
+                          <EmptyState
+                            description={
+                              graphQuery.isError
+                                ? "执行图加载失败，可稍后重试。"
+                                : "该需求还没有生成执行任务图（可能仍在规划中）。"
+                            }
+                            title="暂无执行图"
+                          />
+                        </SoftCard>
+                      )}
+                    </section>
+                  ) : (
+                    <DemandDossierTimeline
+                      density={density}
+                      onOpenTask={onOpenTask}
+                      projectId={projectId}
+                      timeline={dossier.timeline}
+                    />
+                  )}
+                </div>
+              }
+              narrowDetail="stack"
+              rail="md"
+            />
+          )}
         </div>
       ) : null}
     </div>

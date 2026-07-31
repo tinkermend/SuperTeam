@@ -109,6 +109,12 @@ type Repository interface {
 	ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error)
 	ListExecutionSummariesByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ExecutionSummary, error)
 	ListDeclaredArtifactsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectArtifactRef, error)
+	// 一单卷宗右轨的按任务批量取数(spec 2026-07-29 R2 §5.3)。不分页:按项目
+	// 分页再内存过滤会静默截断,把交付事实渲染成缺失。
+	ListEvidenceRefsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectEvidenceRef, error)
+	ListArtifactRefsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectArtifactRef, error)
+	// ListLatestTaskResultContractsByTasks 供卷宗只算交接判定、不建全图。
+	ListLatestTaskResultContractsByTasks(ctx context.Context, tenantID, projectID uuid.UUID, tasks []ProjectTask) (map[uuid.UUID]*TaskResultContract, error)
 	CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error)
 	ListProjectExecutionLedgerEvents(ctx context.Context, req GetExecutionTraceRequest) ([]ExecutionLedgerEvent, error)
 	ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskAttempt, error)

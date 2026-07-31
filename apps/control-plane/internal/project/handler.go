@@ -42,6 +42,7 @@ type HandlerService interface {
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error)
+	GetDemandDossier(ctx context.Context, req GetDemandDossierRequest) (*DemandDossier, error)
 	ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandAcceptanceCriteriaDetail, error)
 	SignDemandCriterionVerdict(ctx context.Context, req SignDemandCriterionVerdictRequest) (*SignDemandCriterionVerdictResult, error)
 	CloseDemand(ctx context.Context, req CloseDemandRequest) (*ProjectDemand, error)
@@ -831,6 +832,39 @@ func (h *HTTPHandler) GetDemandLaunchDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, demandLaunchDetailResponseFromDomain(*detail))
+}
+
+// GetDemandDossier 是一单卷宗的只读读模型(spec 2026-07-29 R2)。鉴权与
+// launch-detail 同级(ActionProjectDemandRead),不新开授权关系也不放宽。
+func (h *HTTPHandler) GetDemandDossier(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDemandRead)
+	if !ok {
+		return
+	}
+	demandID, err := uuid.Parse(chi.URLParam(r, "demandId"))
+	if err != nil {
+		writeHandlerError(w, ErrInvalidProject)
+		return
+	}
+	timelineLimit, ok := int32QueryParam(w, r, "timeline_limit")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	dossier, err := service.GetDemandDossier(r.Context(), GetDemandDossierRequest{
+		TenantID:       tenantID,
+		DemandID:       demandID,
+		TimelineLimit:  timelineLimit,
+		SiblingPending: strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("sibling_pending")), "true"),
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, demandDossierResponseFromDomain(*dossier))
 }
 
 func (h *HTTPHandler) ListDemandAcceptanceCriteria(w http.ResponseWriter, r *http.Request) {
@@ -2028,8 +2062,8 @@ type resolveDecisionBody struct {
 }
 
 type demandCriterionTaskSummaryResponse struct {
-	TaskID       string                                `json:"task_id"`
-	Summary      string                                `json:"summary"`
+	TaskID       string                               `json:"task_id"`
+	Summary      string                               `json:"summary"`
 	Deliverables []demandCriterionDeliverableResponse `json:"deliverables"`
 }
 
@@ -2459,7 +2493,7 @@ type projectTaskGraphResponse struct {
 	StageSummaries     []projectTaskGraphStageSummaryResponse      `json:"stage_summaries,omitempty"`
 	BlockingFacts      []projectTaskGraphBlockingFactResponse      `json:"blocking_facts"`
 	HandoffAssessments []projectTaskGraphHandoffAssessmentResponse `json:"handoff_assessments,omitempty"`
-	DispatchGates      []projectTaskGraphDispatchGateResponse       `json:"dispatch_gates"`
+	DispatchGates      []projectTaskGraphDispatchGateResponse      `json:"dispatch_gates"`
 }
 
 // projectTaskGraphDispatchGateResponse 是每个任务当前的派发闸门裁决。判"是否仍被
@@ -2833,7 +2867,18 @@ type projectEventResponse struct {
 	ResourceID     *string          `json:"resource_id,omitempty"`
 	Summary        *string          `json:"summary,omitempty"`
 	Payload        map[string]any   `json:"payload"`
-	CreatedAt      string           `json:"created_at"`
+	// Narrative 是服务端渲染的用户可读叙事,词表见 event_narrative.go。放在读
+	// 路径上是为了让需求卷宗与项目级事件流共用同一份文案——前端各自维护一张
+	// 表必然漂移,而漏键的症状就是把英文 event_type 直接显示给用户。
+	Narrative projectEventNarrativeResponse `json:"narrative"`
+	CreatedAt string                        `json:"created_at"`
+}
+
+type projectEventNarrativeResponse struct {
+	Kind     string `json:"kind"`
+	Title    string `json:"title"`
+	Severity string `json:"severity,omitempty"`
+	Noise    bool   `json:"noise,omitempty"`
 }
 
 type projectDemandResponse struct {
@@ -2865,6 +2910,134 @@ type demandLaunchDetailResponse struct {
 	ExecutionSummaries []executionSummaryResponse  `json:"execution_summaries"`
 	DecisionRequests   []decisionRequestResponse   `json:"decision_requests"`
 	RecentEvents       []projectEventResponse      `json:"recent_events"`
+}
+
+// 一单卷宗读模型(spec 2026-07-29 R2 §5.2)。刻意不含任何写字段:卷宗是只读
+// 处所,决策仍走收件箱与既有就地卡。
+type demandDossierResponse struct {
+	Demand            projectDemandResponse            `json:"demand"`
+	Project           demandDossierProjectResponse     `json:"project"`
+	EffectivePlaybook demandDossierPlaybookResponse    `json:"effective_playbook"`
+	Signals           demandDossierSignalsResponse     `json:"signals"`
+	PendingActions    []demandDossierPendingActionRes  `json:"pending_actions"`
+	Timeline          demandDossierTimelineResponse    `json:"timeline"`
+	Rail              demandDossierRailResponse        `json:"rail"`
+	HandoffSummary    demandDossierHandoffSummaryRes   `json:"handoff_summary"`
+	Acceptance        *demandDossierAcceptanceResponse `json:"acceptance,omitempty"`
+	SiblingPending    []demandDossierSiblingPendingRes `json:"sibling_pending,omitempty"`
+}
+
+type demandDossierProjectResponse struct {
+	ID                  string  `json:"id"`
+	Name                string  `json:"name"`
+	Status              string  `json:"status"`
+	ScenarioTemplateKey *string `json:"scenario_template_key"`
+}
+
+type demandDossierPlaybookResponse struct {
+	TemplateKey  *string  `json:"template_key"`
+	Source       string   `json:"source"`
+	Name         string   `json:"name"`
+	ProduceKinds []string `json:"produce_kinds"`
+}
+
+type demandDossierSignalsResponse struct {
+	HasOpenDecisions bool `json:"has_open_decisions"`
+	ActiveTaskCount  int  `json:"active_task_count"`
+	DemandTerminal   bool `json:"demand_terminal"`
+}
+
+type demandDossierPendingActionRes struct {
+	ID        string                  `json:"id"`
+	Kind      string                  `json:"kind"`
+	Title     string                  `json:"title"`
+	Status    string                  `json:"status"`
+	CreatedAt string                  `json:"created_at"`
+	Href      demandDossierHrefRespon `json:"href"`
+}
+
+type demandDossierHrefRespon struct {
+	Type       string  `json:"type"`
+	DecisionID *string `json:"decision_id,omitempty"`
+	DemandID   *string `json:"demand_id,omitempty"`
+	ProjectID  *string `json:"project_id,omitempty"`
+}
+
+type demandDossierTimelineResponse struct {
+	Items     []demandDossierTimelineItemRes `json:"items"`
+	Truncated bool                           `json:"truncated"`
+}
+
+type demandDossierTimelineItemRes struct {
+	ID               string                          `json:"id"`
+	OccurredAt       string                          `json:"occurred_at"`
+	Kind             string                          `json:"kind"`
+	Title            string                          `json:"title"`
+	Summary          string                          `json:"summary,omitempty"`
+	Severity         string                          `json:"severity,omitempty"`
+	ActorDisplayName string                          `json:"actor_display_name,omitempty"`
+	Entity           *demandDossierTimelineEntityRes `json:"entity,omitempty"`
+	OpenTarget       *demandDossierTimelineTargetRes `json:"open_target,omitempty"`
+}
+
+type demandDossierTimelineEntityRes struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+type demandDossierTimelineTargetRes struct {
+	Type       string  `json:"type"`
+	TaskID     *string `json:"task_id,omitempty"`
+	DecisionID *string `json:"decision_id,omitempty"`
+}
+
+type demandDossierRailResponse struct {
+	Slots []demandDossierRailSlotRes `json:"slots"`
+}
+
+type demandDossierRailSlotRes struct {
+	Kind  string                     `json:"kind"`
+	Title string                     `json:"title"`
+	Items []demandDossierRailItemRes `json:"items"`
+}
+
+type demandDossierRailItemRes struct {
+	ID              string  `json:"id"`
+	Title           string  `json:"title"`
+	Summary         string  `json:"summary,omitempty"`
+	State           string  `json:"state"`
+	Ref             string  `json:"ref,omitempty"`
+	ProjectTaskID   *string `json:"project_task_id,omitempty"`
+	ProjectTaskName string  `json:"project_task_name,omitempty"`
+}
+
+type demandDossierHandoffSummaryRes struct {
+	Fulfilled   int                                 `json:"fulfilled"`
+	Partial     int                                 `json:"partial"`
+	Unfulfilled int                                 `json:"unfulfilled"`
+	Unknown     int                                 `json:"unknown"`
+	Assessments []demandDossierHandoffAssessmentRes `json:"assessments"`
+}
+
+type demandDossierHandoffAssessmentRes struct {
+	ProjectTaskID   string                                       `json:"project_task_id"`
+	ProjectTaskName string                                       `json:"project_task_name,omitempty"`
+	Status          string                                       `json:"status"`
+	Deliverables    []projectTaskGraphHandoffDeliverableResponse `json:"deliverables"`
+}
+
+type demandDossierAcceptanceResponse struct {
+	DemandStatus         string `json:"demand_status"`
+	CriteriaTotal        int    `json:"criteria_total"`
+	PendingHumanJudgment int    `json:"pending_human_judgment"`
+}
+
+type demandDossierSiblingPendingRes struct {
+	DemandID      string `json:"demand_id"`
+	OpenDecisions int    `json:"open_decisions"`
+	DemandTitle   string `json:"demand_title,omitempty"`
+	DemandStatus  string `json:"demand_status,omitempty"`
 }
 
 type reviewerPreferenceResponse struct {
@@ -3871,7 +4044,17 @@ func eventResponseFromDomain(event ProjectEvent) projectEventResponse {
 		ResourceID:     event.ResourceID,
 		Summary:        event.Summary,
 		Payload:        mapOrEmpty(event.Payload),
+		Narrative:      projectEventNarrativeResponseFromDomain(NarrateProjectEventType(event.EventType)),
 		CreatedAt:      timeValue(event.CreatedAt),
+	}
+}
+
+func projectEventNarrativeResponseFromDomain(narrative ProjectEventNarrative) projectEventNarrativeResponse {
+	return projectEventNarrativeResponse{
+		Kind:     narrative.Kind,
+		Title:    narrative.Title,
+		Severity: narrative.Severity,
+		Noise:    narrative.Noise,
 	}
 }
 
@@ -3916,6 +4099,149 @@ func demandLaunchDetailResponseFromDomain(detail DemandLaunchDetail) demandLaunc
 		DecisionRequests:   decisionRequestResponses(detail.DecisionRequests),
 		RecentEvents:       eventResponses(detail.RecentEvents),
 	}
+}
+
+func demandDossierResponseFromDomain(dossier DemandDossier) demandDossierResponse {
+	response := demandDossierResponse{
+		Demand: demandResponseFromDomain(dossier.Demand),
+		Project: demandDossierProjectResponse{
+			ID:                  dossier.Project.ID.String(),
+			Name:                dossier.Project.Name,
+			Status:              string(dossier.Project.Status),
+			ScenarioTemplateKey: dossier.Project.ScenarioTemplateKey,
+		},
+		EffectivePlaybook: demandDossierPlaybookResponse{
+			TemplateKey:  dossier.EffectivePlaybook.TemplateKey,
+			Source:       dossier.EffectivePlaybook.Source,
+			Name:         dossier.EffectivePlaybook.Name,
+			ProduceKinds: sliceOrEmptyStrings(dossier.EffectivePlaybook.ProduceKinds),
+		},
+		Signals: demandDossierSignalsResponse{
+			HasOpenDecisions: dossier.Signals.HasOpenDecisions,
+			ActiveTaskCount:  dossier.Signals.ActiveTaskCount,
+			DemandTerminal:   dossier.Signals.DemandTerminal,
+		},
+		PendingActions: make([]demandDossierPendingActionRes, 0, len(dossier.PendingActions)),
+		Timeline: demandDossierTimelineResponse{
+			Items:     make([]demandDossierTimelineItemRes, 0, len(dossier.Timeline.Items)),
+			Truncated: dossier.Timeline.Truncated,
+		},
+		Rail: demandDossierRailResponse{Slots: make([]demandDossierRailSlotRes, 0, len(dossier.Rail))},
+		HandoffSummary: demandDossierHandoffSummaryRes{
+			Fulfilled:   dossier.HandoffSummary.Fulfilled,
+			Partial:     dossier.HandoffSummary.Partial,
+			Unfulfilled: dossier.HandoffSummary.Unfulfilled,
+			Unknown:     dossier.HandoffSummary.Unknown,
+			Assessments: make([]demandDossierHandoffAssessmentRes, 0, len(dossier.HandoffSummary.Assessments)),
+		},
+		Acceptance: &demandDossierAcceptanceResponse{
+			DemandStatus:         dossier.Acceptance.DemandStatus,
+			CriteriaTotal:        dossier.Acceptance.CriteriaTotal,
+			PendingHumanJudgment: dossier.Acceptance.PendingHumanJudgment,
+		},
+	}
+
+	for _, action := range dossier.PendingActions {
+		response.PendingActions = append(response.PendingActions, demandDossierPendingActionRes{
+			ID:        action.ID.String(),
+			Kind:      action.Kind,
+			Title:     action.Title,
+			Status:    action.Status,
+			CreatedAt: timeValue(action.CreatedAt),
+			Href: demandDossierHrefRespon{
+				Type:       action.Href.Type,
+				DecisionID: stringPtr(action.Href.DecisionID),
+				DemandID:   stringPtr(action.Href.DemandID),
+				ProjectID:  stringPtr(action.Href.ProjectID),
+			},
+		})
+	}
+
+	for _, item := range dossier.Timeline.Items {
+		mapped := demandDossierTimelineItemRes{
+			ID:               item.ID,
+			OccurredAt:       timeValue(item.OccurredAt),
+			Kind:             item.Kind,
+			Title:            item.Title,
+			Summary:          item.Summary,
+			Severity:         item.Severity,
+			ActorDisplayName: item.ActorDisplayName,
+		}
+		if item.Entity != nil {
+			mapped.Entity = &demandDossierTimelineEntityRes{
+				Type: item.Entity.Type,
+				ID:   item.Entity.ID,
+				Name: item.Entity.Name,
+			}
+		}
+		if item.OpenTarget != nil {
+			mapped.OpenTarget = &demandDossierTimelineTargetRes{
+				Type:       item.OpenTarget.Type,
+				TaskID:     stringPtr(item.OpenTarget.TaskID),
+				DecisionID: stringPtr(item.OpenTarget.DecisionID),
+			}
+		}
+		response.Timeline.Items = append(response.Timeline.Items, mapped)
+	}
+
+	for _, slot := range dossier.Rail {
+		items := make([]demandDossierRailItemRes, 0, len(slot.Items))
+		for _, item := range slot.Items {
+			items = append(items, demandDossierRailItemRes{
+				ID:              item.ID,
+				Title:           item.Title,
+				Summary:         item.Summary,
+				State:           item.State,
+				Ref:             item.Ref,
+				ProjectTaskID:   stringPtr(item.ProjectTaskID),
+				ProjectTaskName: item.ProjectTaskName,
+			})
+		}
+		response.Rail.Slots = append(response.Rail.Slots, demandDossierRailSlotRes{
+			Kind:  slot.Kind,
+			Title: slot.Title,
+			Items: items,
+		})
+	}
+
+	for _, assessment := range dossier.HandoffSummary.Assessments {
+		deliverables := make([]projectTaskGraphHandoffDeliverableResponse, 0, len(assessment.Deliverables))
+		for _, deliverable := range assessment.Deliverables {
+			deliverables = append(deliverables, projectTaskGraphHandoffDeliverableResponse{
+				Name:    deliverable.Name,
+				Kind:    deliverable.Kind,
+				Verdict: deliverable.Verdict,
+				Ref:     deliverable.Ref,
+				Summary: deliverable.Summary,
+			})
+		}
+		response.HandoffSummary.Assessments = append(response.HandoffSummary.Assessments, demandDossierHandoffAssessmentRes{
+			ProjectTaskID:   assessment.ProjectTaskID.String(),
+			ProjectTaskName: assessment.ProjectTaskName,
+			Status:          assessment.Status,
+			Deliverables:    deliverables,
+		})
+	}
+
+	if dossier.SiblingPending != nil {
+		response.SiblingPending = make([]demandDossierSiblingPendingRes, 0, len(dossier.SiblingPending))
+		for _, sibling := range dossier.SiblingPending {
+			response.SiblingPending = append(response.SiblingPending, demandDossierSiblingPendingRes{
+				DemandID:      sibling.DemandID.String(),
+				OpenDecisions: sibling.OpenDecisions,
+				DemandTitle:   sibling.DemandTitle,
+				DemandStatus:  sibling.DemandStatus,
+			})
+		}
+	}
+	return response
+}
+
+func sliceOrEmptyStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 func reviewerPreferenceResponseFromDomain(preference *ReviewerPreference) *reviewerPreferenceResponse {

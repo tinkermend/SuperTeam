@@ -5008,6 +5008,64 @@ func (q *Queries) ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchL
 	return items, nil
 }
 
+const ListProjectArtifactRefsByTaskIDs = `-- name: ListProjectArtifactRefsByTaskIDs :many
+SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at, attempt_id, digital_employee_id FROM project_artifact_refs
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND project_task_id = ANY($3::uuid[])
+ORDER BY created_at DESC
+`
+
+type ListProjectArtifactRefsByTaskIDsParams struct {
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectID      uuid.UUID   `json:"project_id"`
+	ProjectTaskIds []uuid.UUID `json:"project_task_ids"`
+}
+
+// 同上,取本单任务的全部工件引用,走 idx_project_artifact_refs_tenant_task。
+// 刻意不套用 ListProjectDeclaredArtifactsByTaskIDs 的 declared + artifacts/
+// 前缀过滤:那是验收深链"可点击才下发"的口径;右轨要回答的是"这一单产出了
+// 什么",漏掉兜底附件与外部引用同样构成假阴性。
+func (q *Queries) ListProjectArtifactRefsByTaskIDs(ctx context.Context, arg ListProjectArtifactRefsByTaskIDsParams) ([]ProjectArtifactRef, error) {
+	rows, err := q.db.Query(ctx, ListProjectArtifactRefsByTaskIDs, arg.TenantID, arg.ProjectID, arg.ProjectTaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectArtifactRef{}
+	for rows.Next() {
+		var i ProjectArtifactRef
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.ArtifactID,
+			&i.ArtifactType,
+			&i.Title,
+			&i.ObjectRef,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.Checksum,
+			&i.RetentionStatus,
+			&i.RetentionHoldID,
+			&i.Metadata,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AttemptID,
+			&i.DigitalEmployeeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectCoordinationJobs = `-- name: ListProjectCoordinationJobs :many
 SELECT id, tenant_id, project_id, workflow_id, trigger_event_id, job_type, status, input_snapshot_ref, output_event_ids, started_at, finished_at, created_at FROM project_coordination_jobs
 WHERE tenant_id = $1::uuid
@@ -5389,6 +5447,63 @@ func (q *Queries) ListProjectEvents(ctx context.Context, arg ListProjectEventsPa
 			&i.Summary,
 			&i.Payload,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectEvidenceRefsByTaskIDs = `-- name: ListProjectEvidenceRefsByTaskIDs :many
+SELECT id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at, updated_at FROM project_evidence_refs
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND project_task_id = ANY($3::uuid[])
+ORDER BY created_at DESC
+`
+
+type ListProjectEvidenceRefsByTaskIDsParams struct {
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectID      uuid.UUID   `json:"project_id"`
+	ProjectTaskIds []uuid.UUID `json:"project_task_ids"`
+}
+
+// 一单卷宗右轨(spec 2026-07-29 R2 §5.3-5):按任务批量取证据,走
+// idx_project_evidence_refs_tenant_task。刻意不带 limit/offset——按项目分页
+// 再在内存里过滤会被分页截断,把"证据齐全"渲染成"交付缺失"(假阴性比不显示更坏)。
+func (q *Queries) ListProjectEvidenceRefsByTaskIDs(ctx context.Context, arg ListProjectEvidenceRefsByTaskIDsParams) ([]ProjectEvidenceRef, error) {
+	rows, err := q.db.Query(ctx, ListProjectEvidenceRefsByTaskIDs, arg.TenantID, arg.ProjectID, arg.ProjectTaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectEvidenceRef{}
+	for rows.Next() {
+		var i ProjectEvidenceRef
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.RouteDecisionID,
+			&i.ExecutionSummaryID,
+			&i.EvidenceType,
+			&i.Title,
+			&i.Summary,
+			&i.SourceType,
+			&i.SourceRef,
+			&i.ArtifactRefID,
+			&i.SubmittedByType,
+			&i.SubmittedByID,
+			&i.VerificationStatus,
+			&i.Metadata,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

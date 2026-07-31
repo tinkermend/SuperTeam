@@ -341,6 +341,53 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected launch detail tenant/demand from route, got tenant=%s demand=%s", service.launchDetailTenantID, service.launchDetailDemandID)
 	}
 
+	dossierDemandID := uuid.New()
+	dossierReq := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+dossierDemandID.String()+"/dossier?timeline_limit=25&sibling_pending=true", nil)
+	dossierReq.AddCookie(cookie)
+	dossierResp := httptest.NewRecorder()
+	server.ServeHTTP(dossierResp, dossierReq)
+	if dossierResp.Code != http.StatusOK {
+		t.Fatalf("expected demand dossier to succeed, got %d: %s", dossierResp.Code, dossierResp.Body.String())
+	}
+	if service.dossierRequest.TenantID != expectedTenantID || service.dossierRequest.DemandID != dossierDemandID {
+		t.Fatalf("expected dossier tenant/demand from route, got %#v", service.dossierRequest)
+	}
+	if service.dossierRequest.TimelineLimit != 25 || !service.dossierRequest.SiblingPending {
+		t.Fatalf("expected dossier query options to reach service, got %#v", service.dossierRequest)
+	}
+	var dossierBody struct {
+		Timeline struct {
+			Items []struct {
+				Title string `json:"title"`
+				Kind  string `json:"kind"`
+			} `json:"items"`
+		} `json:"timeline"`
+		Rail struct {
+			Slots []struct {
+				Kind  string `json:"kind"`
+				Title string `json:"title"`
+			} `json:"slots"`
+		} `json:"rail"`
+		EffectivePlaybook struct {
+			Source string `json:"source"`
+		} `json:"effective_playbook"`
+	}
+	if err := json.Unmarshal(dossierResp.Body.Bytes(), &dossierBody); err != nil {
+		t.Fatalf("decode dossier body: %v", err)
+	}
+	if len(dossierBody.Timeline.Items) != 1 || dossierBody.Timeline.Items[0].Kind != "task_dispatched" {
+		t.Fatalf("expected timeline item in dossier payload, got %#v", dossierBody.Timeline.Items)
+	}
+	if strings.ContainsAny(dossierBody.Timeline.Items[0].Title, "._") {
+		t.Fatalf("dossier timeline title leaked a raw event_type: %q", dossierBody.Timeline.Items[0].Title)
+	}
+	if len(dossierBody.Rail.Slots) != 1 || dossierBody.Rail.Slots[0].Title != "证据" {
+		t.Fatalf("expected chinese rail slot title, got %#v", dossierBody.Rail.Slots)
+	}
+	if dossierBody.EffectivePlaybook.Source != "none" {
+		t.Fatalf("expected playbook source passthrough, got %q", dossierBody.EffectivePlaybook.Source)
+	}
+
 	routeDecisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/route-decisions?limit=7", nil)
 	routeDecisionReq.AddCookie(cookie)
 	routeDecisionResp := httptest.NewRecorder()
@@ -1345,6 +1392,7 @@ type routeProjectService struct {
 	configRevisionID                  uuid.UUID
 	launchDetailTenantID              uuid.UUID
 	launchDetailDemandID              uuid.UUID
+	dossierRequest                    project.GetDemandDossierRequest
 	taskLiveness                      []project.ProjectTaskLiveness
 	taskLivenessTenantID              uuid.UUID
 	taskLivenessProjectID             uuid.UUID
@@ -1636,6 +1684,40 @@ func (s *routeProjectService) ListCoordinationJobs(ctx context.Context, tenantID
 
 func (s *routeProjectService) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.DecisionRequest, error) {
 	return nil, nil
+}
+
+func (s *routeProjectService) GetDemandDossier(ctx context.Context, req project.GetDemandDossierRequest) (*project.DemandDossier, error) {
+	s.dossierRequest = req
+	projectID := s.ensureProjectID()
+	taskID := uuid.New()
+	return &project.DemandDossier{
+		Demand:  project.ProjectDemand{ID: req.DemandID, TenantID: req.TenantID, ProjectID: projectID, SubmittedByUserID: uuid.New(), Title: "补充验收证据", SourceType: project.DemandSourceManual, Status: project.ProjectDemandStatusExecuting},
+		Project: routeProject(req.TenantID, projectID, uuid.New()),
+		EffectivePlaybook: project.DemandDossierPlaybook{
+			Source:       project.DossierPlaybookSourceNone,
+			ProduceKinds: []string{},
+		},
+		Signals: project.DemandDossierSignals{ActiveTaskCount: 1},
+		Timeline: project.DemandDossierTimeline{Items: []project.DemandDossierTimelineItem{{
+			ID:         uuid.New().String(),
+			OccurredAt: time.Now().UTC(),
+			Kind:       project.TimelineKindTaskDispatched,
+			Title:      "任务开始 · 补充验收证据",
+			Severity:   project.NarrativeSeverityInfo,
+		}}},
+		Rail: []project.DemandDossierRailSlot{{
+			Kind:  project.DossierRailKindEvidenceRef,
+			Title: "证据",
+			Items: []project.DemandDossierRailItem{{
+				ID:              "evidence:1",
+				Title:           "回归测试记录",
+				State:           project.DossierRailItemStateDelivered,
+				ProjectTaskID:   &taskID,
+				ProjectTaskName: "补充验收证据",
+			}},
+		}},
+		HandoffSummary: project.DemandDossierHandoffSummary{Unknown: 1},
+	}, nil
 }
 
 func (s *routeProjectService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*project.DemandLaunchDetail, error) {

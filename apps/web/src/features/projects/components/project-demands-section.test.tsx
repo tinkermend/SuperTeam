@@ -142,36 +142,60 @@ function jsonResponse(payload: unknown, status = 200): Response {
 });
 }
 
-/** 直连 API 的最小 stub：血缘为空、launch detail 携带一条 pending 决策。 */
-function stubFetcher(pendingDecisionTitle = "确认执行风险"): typeof fetch {
+/** 卷宗 stub：服务端已归一的时间线 + 右轨 + 一条待你处理。 */
+function dossierFor(demandId: string, overrides: Record<string, unknown> = {}) {
+  const source = demands.find((item) => item.id === demandId) ?? demands[0];
+  return {
+    acceptance: { criteria_total: 0, demand_status: source.status, pending_human_judgment: 0 },
+    demand: source,
+    effective_playbook: { name: "", produce_kinds: [], source: "none", template_key: null },
+    handoff_summary: {
+      assessments: [],
+      fulfilled: 0,
+      partial: 0,
+      unfulfilled: 0,
+      unknown: 0
+},
+    pending_actions: [
+      {
+        created_at: "2026-07-25T08:00:00Z",
+        href: { demand_id: demandId, project_id: "project-1", type: "inbox" },
+        id: `decision-${demandId}`,
+        kind: "risk_review",
+        status: "pending",
+        title: "确认执行风险"
+},
+    ],
+    project: { id: "project-1", name: "项目一", status: "running" },
+    rail: { slots: [] },
+    sibling_pending: [
+      { demand_id: "demand-latest", open_decisions: 1 },
+      { demand_id: "demand-old", open_decisions: 0 },
+    ],
+    signals: { active_task_count: 1, demand_terminal: false, has_open_decisions: true },
+    timeline: {
+      items: [
+        {
+          id: "event-1",
+          kind: "task_dispatched",
+          occurred_at: "2026-07-25T08:00:00Z",
+          severity: "info",
+          title: "任务开始 · 整理材料任务"
+},
+      ],
+      truncated: false
+},
+    ...overrides
+};
+}
+
+/** 直连 API 的最小 stub：血缘为空、卷宗携带一条待你处理。 */
+function stubFetcher(dossierOverrides: Record<string, unknown> = {}): typeof fetch {
   return async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes("/launch-detail")) {
-      const demandId = /project-demands\/([^/]+)\/launch-detail/.exec(url)?.[1] ?? "";
-      return jsonResponse({
-        coordination_jobs: [],
-        decision_requests: [
-          {
-            approval_request_id: "approval-1",
-            created_at: "2026-07-25T08:00:00Z",
-            decision_type: "risk_review",
-            id: `decision-${demandId}`,
-            project_id: "project-1",
-            status_snapshot: "pending",
-            summary_snapshot: "需要负责人确认",
-            target_user_id: "human-owner-1",
-            tenant_id: "tenant-1",
-            title_snapshot: pendingDecisionTitle
-},
-        ],
-        demand: { id: demandId },
-        execution_summaries: [],
-        project: { id: "project-1" },
-        project_tasks: [],
-        recent_events: [],
-        reviewer: null,
-        route_decisions: []
-});
+    if (url.includes("/dossier")) {
+      const demandId = /project-demands\/([^/?]+)\/dossier/.exec(url)?.[1] ?? "";
+      return jsonResponse(dossierFor(demandId, dossierOverrides));
     }
     if (url.includes("/acceptance-criteria")) {
       return jsonResponse({ criteria: [], demand_status: "executing" });
@@ -239,22 +263,151 @@ describe("ProjectDemandsSection", () => {
       .element();
     expect(oldItemElement.querySelector("time")).toBeNull();
 
-    // 右侧状态头默认最新需求，权威图按该需求拉取。
-    const header = screen.getByTestId("demand-status-header");
+    // 左轨待你处理角标：来自卷宗 sibling_pending，需求级决策也算得进。
+    await expect
+      .element(screen.getByTestId("demand-list-pending-demand-latest"))
+      .toHaveTextContent("1");
+    expect(
+      screen.container.querySelector("[data-testid=demand-list-pending-demand-old]"),
+    ).toBeNull();
+
+    // 中栏单头默认最新需求。
+    const header = screen.getByTestId("demand-dossier-header");
     await expect.element(header.getByText("整理验收材料")).toBeVisible();
     await expect.element(header.getByText("待验收")).toBeVisible();
     await expect.element(header.getByText("为验收整理接入材料")).toBeVisible();
     expect(fetchTaskGraph).toHaveBeenCalledWith("demand-latest");
-    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
 
-    // 该需求的待决面板：pending 卡片 + 收件箱深链，不新造交互。
+    // 默认视图 = 时间线（叙事优先），图不渲染。
+    await expect.element(screen.getByTestId("demand-dossier-timeline")).toBeVisible();
+    expect(screen.container.querySelector("[data-testid=flow-graph-canvas]")).toBeNull();
+    await expect.element(screen.getByText("任务开始 · 整理材料任务")).toBeVisible();
+
+    // 诚实边界：时间线自证是叙事而非完整审计流水，并给执行轨迹出口。
+    await expect
+      .element(screen.getByText("协调叙事视图，按关键节点归纳；完整执行事件见", { exact: false }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "执行轨迹" }))
+      .toHaveAttribute("href", "/projects/project-1?tab=trace");
+
+    // 待你处理：摘要 + 收件箱深链，不在卷宗内新造审批交互。
+    await expect.element(screen.getByTestId("demand-dossier-pending")).toBeVisible();
     await expect.element(screen.getByText("确认执行风险")).toBeVisible();
     await expect
-      .element(screen.getByRole("link", { name: "前往收件箱处理待决事项" }))
+      .element(screen.getByRole("link", { name: "去收件箱处理待你处理事项" }))
       .toHaveAttribute("href", "/inbox");
 
-    // 验收血缘面板（迁移后的 DemandCriteriaPanel）就地渲染。
-    await expect.element(screen.getByText("本需求未声明验收判据")).toBeVisible();
+    // 右轨：无交付事实时给诚实空态，而不是空白或假槽位。
+    await expect.element(screen.getByTestId("demand-dossier-rail")).toBeVisible();
+    await expect.element(screen.getByText("本单尚未形成可展示的交付事实")).toBeVisible();
+
+    // 非目标护栏：卷宗里不得出现任何形态的「继续此任务」。
+    expect(screen.container.textContent).not.toContain("继续此任务");
+  });
+
+  it("renders the flow graph only in the graph view", async () => {
+    const screen = await renderSection({ view: "graph" });
+
+    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
+    expect(screen.container.querySelector("[data-testid=demand-dossier-timeline]")).toBeNull();
+  });
+
+  it("collapses the timeline in inspect density and expands on demand", async () => {
+    const manyItems = Array.from({ length: 6 }, (_, index) => ({
+      id: `event-${index}`,
+      kind: "task_completed",
+      occurred_at: "2026-07-25T08:00:00Z",
+      severity: "success",
+      title: `任务完成 · 任务${index}`
+}));
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: stubFetcher({
+          pending_actions: [],
+          signals: { active_task_count: 0, demand_terminal: true, has_open_decisions: false },
+          timeline: { items: manyItems, truncated: false }
+})
+},
+    });
+
+    // 终态且无待办 → 巡检态：只露最近 3 条。
+    await expect.element(screen.getByText("任务完成 · 任务0")).toBeVisible();
+    expect(screen.container.textContent).not.toContain("任务完成 · 任务5");
+
+    await screen.getByTestId("demand-dossier-timeline-expand").click();
+    await expect.element(screen.getByText("任务完成 · 任务5")).toBeVisible();
+  });
+
+  it("keeps unknown handoff verdicts out of the failure reading", async () => {
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: stubFetcher({
+          handoff_summary: {
+            assessments: [
+              {
+                deliverables: [],
+                project_task_id: "task-1",
+                project_task_name: "整理材料任务",
+                status: "unknown"
+},
+            ],
+            fulfilled: 0,
+            partial: 0,
+            unfulfilled: 0,
+            unknown: 1
+}
+})
+},
+    });
+
+    await expect.element(screen.getByTestId("demand-dossier-handoff-summary")).toBeVisible();
+    await expect.element(screen.getByText("暂无声明 1")).toBeVisible();
+    await expect
+      .element(screen.getByText("「暂无声明」表示该任务没有结构化交付声明，无法判定，并不代表未完成。"))
+      .toBeVisible();
+  });
+
+  it("orders rail slots by the effective playbook produce kinds", async () => {
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: stubFetcher({
+          effective_playbook: {
+            name: "软件交付",
+            produce_kinds: ["branch_ref", "conclusion"],
+            source: "project",
+            template_key: "software_delivery"
+},
+          rail: {
+            slots: [
+              { items: [], kind: "branch_ref", title: "分支" },
+              {
+                items: [
+                  {
+                    id: "summary:1",
+                    project_task_name: "整理材料任务",
+                    state: "info",
+                    summary: "已整理完毕",
+                    title: "整理材料任务"
+},
+                ],
+                kind: "conclusion",
+                title: "结论"
+},
+            ]
+}
+})
+},
+    });
+
+    await expect.element(screen.getByTestId("demand-dossier-slot-branch_ref")).toBeVisible();
+    await expect.element(screen.getByTestId("demand-dossier-slot-conclusion")).toBeVisible();
+    await expect.element(screen.getByText("已整理完毕")).toBeVisible();
+    // 剧本名进单头，用户能看见"这一单按哪套剧本走"。
+    await expect.element(screen.getByText("剧本 · 软件交付")).toBeVisible();
   });
 
   it("shows the dispatch blocker banner while the latest gate verdict still holds the task", async () => {
@@ -279,7 +432,7 @@ describe("ProjectDemandsSection", () => {
         ),
     });
 
-    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
+    await expect.element(screen.getByTestId("demand-dossier-timeline")).toBeVisible();
     expect(screen.container.querySelector("[data-testid=demand-dispatch-blocker]")).toBeNull();
   });
 
@@ -292,7 +445,7 @@ describe("ProjectDemandsSection", () => {
       }),
     });
 
-    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
+    await expect.element(screen.getByTestId("demand-dossier-timeline")).toBeVisible();
     expect(screen.container.querySelector("[data-testid=demand-dispatch-blocker]")).toBeNull();
   });
 
@@ -327,7 +480,7 @@ describe("ProjectDemandsSection", () => {
       selectedDemandId: "demand-old"
 });
 
-    const header = screen.getByTestId("demand-status-header");
+    const header = screen.getByTestId("demand-dossier-header");
     await expect.element(header.getByText("历史巡检需求")).toBeVisible();
     await expect.element(header.getByText("历史需求内容")).toBeVisible();
     await expect
@@ -351,7 +504,7 @@ describe("ProjectDemandsSection", () => {
         .mockImplementation((demandId: string) =>
           Promise.resolve(graphFor(demandId, "整理材料任务")),
         );
-      const screen = await renderSection({ fetchTaskGraph });
+      const screen = await renderSection({ fetchTaskGraph, view: "graph" });
 
       // 活图模式只在需求流程区开启（spec 2026-07-27 §2）。
       await expect
@@ -391,7 +544,7 @@ describe("ProjectDemandsSection", () => {
       },
       fetchTaskGraph
 });
-    await expect.element(screen.getByTestId("flow-graph-canvas")).toBeInTheDocument();
+    await expect.element(screen.getByTestId("demand-dossier-timeline")).toBeVisible();
     expect(streamUrls).toEqual([
       "http://cp.test/api/v1/digital-employees/activity/stream",
     ]);
@@ -411,5 +564,50 @@ describe("ProjectDemandsSection", () => {
     await expect
       .poll(() => fetchTaskGraph.mock.calls.length)
       .toBeGreaterThan(callsBefore);
+  });
+
+  // 真实 E2E 揪出的漏网：活动 SSE 只 invalidate 了图与 launch-detail，卷宗自己
+  // 停在旧值，只能等 30s 兜底轮询才追上。卷宗是这一处所的主读模型，必须在列。
+  it("refetches the dossier when the activity SSE pushes an event of this project", async () => {
+    const listeners: Record<string, Array<(event: { data: string }) => void>> = {};
+    const fakeSource = {
+      addEventListener: (type: string, listener: (event: { data: string }) => void) => {
+        (listeners[type] ??= []).push(listener);
+      },
+      close: () => undefined,
+      removeEventListener: () => undefined
+} as unknown as EventSource;
+    const dossierUrls: string[] = [];
+    const fetcher: typeof fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/dossier")) {
+        dossierUrls.push(url);
+        const demandId = /project-demands\/([^/?]+)\/dossier/.exec(url)?.[1] ?? "";
+        return jsonResponse(dossierFor(demandId));
+      }
+      if (url.includes("/acceptance-criteria")) {
+        return jsonResponse({ criteria: [], demand_status: "executing" });
+      }
+      return jsonResponse({ detail: "not found" }, 404);
+    };
+    const screen = await renderSection({
+      apiOptions: { baseUrl: "http://cp.test", fetcher },
+      eventSourceFactory: () => fakeSource
+});
+
+    await expect.element(screen.getByTestId("demand-dossier-timeline")).toBeVisible();
+    const callsBefore = dossierUrls.length;
+
+    // 非本项目事件被过滤：不触发重取。
+    for (const listener of listeners["activity"] ?? []) {
+      listener({ data: JSON.stringify({ event_id: "evt-x", project_id: "project-2" }) });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(dossierUrls.length).toBe(callsBefore);
+
+    for (const listener of listeners["activity"] ?? []) {
+      listener({ data: JSON.stringify({ event_id: "evt-1", project_id: "project-1" }) });
+    }
+    await expect.poll(() => dossierUrls.length).toBeGreaterThan(callsBefore);
   });
 });

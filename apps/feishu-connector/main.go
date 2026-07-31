@@ -30,7 +30,7 @@ func main() {
 	if token == "" {
 		log.Fatal("FEISHU_CONNECTOR_TOKEN is required (issue via POST /api/v1/admin/service-tokens)")
 	}
-	webOrigin := envOr("CONTROL_PLANE_WEB_ORIGIN", "http://127.0.0.1:3000")
+	webOrigin := envOr("CONTROL_PLANE_WEB_ORIGIN", "http://127.0.0.1:3100")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

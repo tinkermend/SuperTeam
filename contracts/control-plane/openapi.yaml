@@ -1501,6 +1501,48 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/project-demands/{demandId}/dossier:
+    get:
+      operationId: getProjectDemandDossier
+      summary: Get the read-only dossier of one demand (timeline narrative + delivery facts rail)
+      description: >
+        一单卷宗只读聚合(spec 2026-07-29 R2)。中栏时间线是协调**叙事**——按关键节点
+        归纳、噪音事件不入,不是完整审计流水(完整执行事件见执行轨迹);右轨按有效剧本的
+        produces kind 分槽给交付事实。无写字段。
+      parameters:
+        - name: demandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: timeline_limit
+          in: query
+          required: false
+          description: 归一**之后**的时间线条数上限(不是原始事件条数),默认 60,上限 200。
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 60
+        - name: sibling_pending
+          in: query
+          required: false
+          description: 为 true 时附带同项目各需求的待办计数(左轨角标)。默认关闭以免每次切单都算。
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Demand dossier read model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDemandDossier"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/project-demands/{demandId}/acceptance-criteria:
     get:
       operationId: listDemandAcceptanceCriteria
@@ -7043,6 +7085,27 @@ components:
         payload:
           type: object
           additionalProperties: true
+        narrative:
+          type: object
+          description: >
+            服务端渲染的用户可读叙事（唯一词表来源 internal/project/event_narrative.go）。
+            前端一律显示 narrative.title，不得把 event_type 原串当文案——历史上项目
+            工作台的 default 分支就是这么把英文蛇形串漏给用户的。
+          required:
+            - kind
+            - title
+          properties:
+            kind:
+              type: string
+              description: 与一单卷宗时间线同一 kind 词汇，便于两处分组口径一致。
+            title:
+              type: string
+            severity:
+              type: string
+              enum: [info, success, warn, danger, mute]
+            noise:
+              type: boolean
+              description: 低信息量事件（心跳/闸门成功检查/纯信号转发），呈现层可折叠。
         created_at:
           type: string
           format: date-time
@@ -8623,6 +8686,294 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectEvent"
+    ProjectDemandDossier:
+      type: object
+      description: >
+        一单卷宗读模型。刻意不含写字段与"继续此任务"入口:接续能力属后续版本,
+        放 disabled 占位只会变成点不动的承诺按钮。
+      required:
+        - demand
+        - project
+        - effective_playbook
+        - signals
+        - pending_actions
+        - timeline
+        - rail
+        - handoff_summary
+      properties:
+        demand:
+          $ref: "#/components/schemas/ProjectDemand"
+        project:
+          type: object
+          required:
+            - id
+            - name
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            status:
+              type: string
+            scenario_template_key:
+              type: string
+              nullable: true
+        effective_playbook:
+          type: object
+          description: 有效剧本:需求覆盖项目;都没绑或解析失败则 source=none,右轨只按实际产物推导。
+          required:
+            - template_key
+            - source
+            - produce_kinds
+          properties:
+            template_key:
+              type: string
+              nullable: true
+            source:
+              type: string
+              enum: [demand, project, none]
+            name:
+              type: string
+            produce_kinds:
+              type: array
+              description: 骨架 produces_defaults 的 kind,去重保序;决定右轨槽位次序。
+              items:
+                type: string
+        signals:
+          type: object
+          description: >
+            密度判定的原料,不是结论。密度是用户偏好,由前端决定并允许用户切换——
+            服务端硬判密度必然要回头再补"用户覆盖"。
+          required:
+            - has_open_decisions
+            - active_task_count
+            - demand_terminal
+          properties:
+            has_open_decisions:
+              type: boolean
+            active_task_count:
+              type: integer
+            demand_terminal:
+              type: boolean
+        pending_actions:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - kind
+              - title
+              - status
+            properties:
+              id:
+                type: string
+                format: uuid
+              kind:
+                type: string
+                description: decision_type 原值
+              title:
+                type: string
+              status:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+              href:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [inbox, project_demand, decision]
+                  decision_id:
+                    type: string
+                    format: uuid
+                  demand_id:
+                    type: string
+                    format: uuid
+                  project_id:
+                    type: string
+                    format: uuid
+        timeline:
+          type: object
+          required:
+            - items
+            - truncated
+          properties:
+            truncated:
+              type: boolean
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProjectDemandDossierTimelineItem"
+        rail:
+          type: object
+          required:
+            - slots
+          properties:
+            slots:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProjectDemandDossierRailSlot"
+        handoff_summary:
+          type: object
+          description: unknown 表示"暂无声明,无法判定",不得渲染为失败。
+          required:
+            - fulfilled
+            - partial
+            - unfulfilled
+            - unknown
+            - assessments
+          properties:
+            fulfilled:
+              type: integer
+            partial:
+              type: integer
+            unfulfilled:
+              type: integer
+            unknown:
+              type: integer
+            assessments:
+              type: array
+              items:
+                allOf:
+                  - $ref: "#/components/schemas/ProjectTaskGraphHandoffAssessment"
+                  - type: object
+                    properties:
+                      project_task_name:
+                        type: string
+        acceptance:
+          type: object
+          description: 瘦摘要;判据明细仍由 acceptance-criteria 端点提供。
+          properties:
+            demand_status:
+              type: string
+            criteria_total:
+              type: integer
+            pending_human_judgment:
+              type: integer
+        sibling_pending:
+          type: array
+          description: 仅 sibling_pending=true 时返回;同项目各需求的待办计数(左轨角标)。
+          items:
+            type: object
+            properties:
+              demand_id:
+                type: string
+                format: uuid
+              open_decisions:
+                type: integer
+              demand_title:
+                type: string
+              demand_status:
+                type: string
+    ProjectDemandDossierTimelineItem:
+      type: object
+      required:
+        - id
+        - occurred_at
+        - kind
+        - title
+      properties:
+        id:
+          type: string
+          description: 幂等键:事件 id,或实体状态回填的 "synthetic:{kind}:{entity_id}"。
+        occurred_at:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          enum:
+            - demand_submitted
+            - coordination_started
+            - plan_ready
+            - plan_accepted
+            - plan_rejected
+            - plan_change_requested
+            - task_created
+            - task_dispatched
+            - task_waiting_human
+            - task_completed
+            - task_failed
+            - task_cancelled
+            - result_recorded
+            - result_accepted
+            - result_rejected
+            - decision_opened
+            - decision_resolved
+            - dispatch_blocked
+            - staffing_gap
+            - coordination_blocked
+            - other
+        title:
+          type: string
+          description: 已渲染的中文主文案;前端不得再解析原始 event_type。
+        summary:
+          type: string
+        severity:
+          type: string
+          enum: [info, success, warn, danger, mute]
+        actor_display_name:
+          type: string
+        entity:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [task, decision, demand, job, event]
+            id:
+              type: string
+            name:
+              type: string
+        open_target:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [task_detail, decision, none]
+            task_id:
+              type: string
+              format: uuid
+            decision_id:
+              type: string
+              format: uuid
+    ProjectDemandDossierRailSlot:
+      type: object
+      required:
+        - kind
+        - title
+        - items
+      properties:
+        kind:
+          type: string
+          description: 剧本 produces kind 或实际产物 kind;未知 kind 的中文标题回落「交付物」。
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - title
+              - state
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              summary:
+                type: string
+              state:
+                type: string
+                enum: [delivered, missing, unknown, info]
+              ref:
+                type: string
+              project_task_id:
+                type: string
+                format: uuid
+              project_task_name:
+                type: string
     ProjectEvidenceRef:
       type: object
       required:

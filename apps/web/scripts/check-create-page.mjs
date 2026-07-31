@@ -27,7 +27,7 @@ await context.addCookies([
 const page = await context.newPage();
 const result = { url: null, selectMode: {}, configureMode: {}, runtimeStep: {} };
 
-await page.goto('http://127.0.0.1:3000/employees/new', { waitUntil: 'networkidle' });
+await page.goto('http://127.0.0.1:3100/employees/new', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1200);
 result.url = page.url();
 const bodyText = (await page.textContent('body')) || '';

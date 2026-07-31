@@ -53,6 +53,33 @@ func (s *Service) GetByKey(ctx context.Context, tenantID uuid.UUID, key string) 
 	return s.repository.GetScenarioTemplateByKey(ctx, tenantID, key)
 }
 
+// ProduceKinds 返回模板活跃 spec 的骨架产出 kind 序列,去重保序(骨架顺序即
+// 呈现顺序)。一单卷宗右轨用它定槽位次序;解析逻辑留在本包,调用方不得自行
+// 解析 spec map。模板不存在或 spec 不可解析时返回错误,由调用方决定降级。
+func (s *Service) ProduceKinds(ctx context.Context, tenantID uuid.UUID, key string) ([]string, error) {
+	template, err := s.GetByKey(ctx, tenantID, key)
+	if err != nil {
+		return nil, err
+	}
+	spec, err := ParseSpec(template.Spec)
+	if err != nil {
+		return nil, err
+	}
+	kinds := make([]string, 0, len(spec.Skeleton))
+	seen := map[string]bool{}
+	for _, step := range spec.Skeleton {
+		for _, produce := range step.ProducesDefaults {
+			kind := strings.TrimSpace(produce.Kind)
+			if kind == "" || seen[kind] {
+				continue
+			}
+			seen[kind] = true
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds, nil
+}
+
 // CreateScenarioTemplateRequest builds a template's v1: main row + version
 // row 1, mirrored.
 type CreateScenarioTemplateRequest struct {

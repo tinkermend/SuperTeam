@@ -87,6 +87,8 @@ describe("useProjectActivityInvalidate", () => {
       queryKey: ["project-task-graph", "project-1"],
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["workflow-detail"] });
+    // 一单卷宗是需求处所的主读模型，漏掉它会让时间线/待你处理停在旧值。
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["demand-dossier"] });
   });
 
   it("ignores events of other projects, missing project_id and malformed payloads", async () => {
@@ -104,21 +106,26 @@ describe("useProjectActivityInvalidate", () => {
     try {
       const { invalidateSpy, stream } = await renderHook();
 
+      // 一次 invalidate 会刷新这一处所的全部读模型（卷宗 / 图 / launch-detail），
+      // 断言按"刷了几轮"算，避免加一个 key 就要改一串数字。
+      const KEYS_PER_INVALIDATE = 3;
+      const rounds = () => invalidateSpy.mock.calls.length / KEYS_PER_INVALIDATE;
+
       // 窗口内三连事件：首个立即刷，其余合并成窗口末一次（不丢最后一拍）。
       stream.emitActivity({ event_id: "evt-1", project_id: "project-1" });
-      expect(invalidateSpy).toHaveBeenCalledTimes(2);
+      expect(rounds()).toBe(1);
 
       stream.emitActivity({ event_id: "evt-2", project_id: "project-1" });
       stream.emitActivity({ event_id: "evt-3", project_id: "project-1" });
-      expect(invalidateSpy).toHaveBeenCalledTimes(2);
+      expect(rounds()).toBe(1);
 
       await vi.advanceTimersByTimeAsync(1_100);
-      expect(invalidateSpy).toHaveBeenCalledTimes(4);
+      expect(rounds()).toBe(2);
 
       // 距上次 invalidate 再过一个完整窗口后，新事件恢复立即刷。
       await vi.advanceTimersByTimeAsync(1_000);
       stream.emitActivity({ event_id: "evt-4", project_id: "project-1" });
-      expect(invalidateSpy).toHaveBeenCalledTimes(6);
+      expect(rounds()).toBe(3);
     } finally {
       vi.useRealTimers();
     }

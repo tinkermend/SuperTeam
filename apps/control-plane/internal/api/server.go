@@ -29,7 +29,11 @@ import (
 )
 
 type Server struct {
-	router                         *chi.Mux
+	router *chi.Mux
+	// allowedOrigins 是 CORS 白名单,由 app 层从配置注入(见
+	// config.Config.ResolvedAllowedOrigins)。留空即不放行任何跨源来源——安全
+	// 默认值应当是"拒绝",放行必须来自显式配置。
+	allowedOrigins                 []string
 	taskHandler                    *handlers.TaskHandler
 	runtimeHandler                 *handlers.RuntimeHandler
 	runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
@@ -261,6 +265,14 @@ func (s *Server) SetFeishuOAuthHandler(handler *feishu.OAuthHTTPHandler) {
 	s.registerRoutes()
 }
 
+// SetAllowedOrigins 注入 CORS 白名单并重挂路由。app 层构造 Server 后必须调用,
+// 否则跨源请求一律被拒(这是刻意的:忘配置的症状是"跨源全被拒",而不是"生产
+// 悄悄放行了 localhost")。
+func (s *Server) SetAllowedOrigins(origins []string) {
+	s.allowedOrigins = origins
+	s.registerRoutes()
+}
+
 func (s *Server) SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler) {
 	s.runtimeCommandWritebackHandler = runtimeCommandWritebackHandler
 	s.registerRoutes()
@@ -270,7 +282,7 @@ func (s *Server) registerRoutes() {
 	s.router = chi.NewRouter()
 	s.router.Use(middleware.Recovery())
 	s.router.Use(middleware.Logger())
-	s.router.Use(middleware.CORS())
+	s.router.Use(middleware.CORS(s.allowedOrigins))
 
 	s.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeHealthResponse(w)
@@ -414,6 +426,7 @@ func (s *Server) registerRoutes() {
 				r.Post("/projects/{projectId}/demands", s.projectHandler.SubmitDemand)
 				r.Get("/projects/{projectId}/demands", s.projectHandler.ListProjectDemands)
 				r.Get("/project-demands/{demandId}/launch-detail", s.projectHandler.GetDemandLaunchDetail)
+				r.Get("/project-demands/{demandId}/dossier", s.projectHandler.GetDemandDossier)
 				r.Get("/project-demands/{demandId}/acceptance-criteria", s.projectHandler.ListDemandAcceptanceCriteria)
 				r.Post("/project-demands/{demandId}/criterion-verdicts", s.projectHandler.SignDemandCriterionVerdict)
 				r.Post("/project-demands/{demandId}/close", s.projectHandler.CloseDemand)

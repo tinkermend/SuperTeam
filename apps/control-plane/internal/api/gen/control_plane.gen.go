@@ -1130,19 +1130,19 @@ func (e InstallSkillResponseTargetScope) Valid() bool {
 
 // Defines values for MCPAuthStrategy.
 const (
-	BearerEnv  MCPAuthStrategy = "bearer_env"
-	HeadersEnv MCPAuthStrategy = "headers_env"
-	None       MCPAuthStrategy = "none"
+	MCPAuthStrategyBearerEnv  MCPAuthStrategy = "bearer_env"
+	MCPAuthStrategyHeadersEnv MCPAuthStrategy = "headers_env"
+	MCPAuthStrategyNone       MCPAuthStrategy = "none"
 )
 
 // Valid indicates whether the value is a known member of the MCPAuthStrategy enum.
 func (e MCPAuthStrategy) Valid() bool {
 	switch e {
-	case BearerEnv:
+	case MCPAuthStrategyBearerEnv:
 		return true
-	case HeadersEnv:
+	case MCPAuthStrategyHeadersEnv:
 		return true
-	case None:
+	case MCPAuthStrategyNone:
 		return true
 	default:
 		return false
@@ -1344,6 +1344,246 @@ func (e ProjectDeleteBlockerType) Valid() bool {
 	}
 }
 
+// Defines values for ProjectDemandDossierEffectivePlaybookSource.
+const (
+	ProjectDemandDossierEffectivePlaybookSourceDemand  ProjectDemandDossierEffectivePlaybookSource = "demand"
+	ProjectDemandDossierEffectivePlaybookSourceNone    ProjectDemandDossierEffectivePlaybookSource = "none"
+	ProjectDemandDossierEffectivePlaybookSourceProject ProjectDemandDossierEffectivePlaybookSource = "project"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierEffectivePlaybookSource enum.
+func (e ProjectDemandDossierEffectivePlaybookSource) Valid() bool {
+	switch e {
+	case ProjectDemandDossierEffectivePlaybookSourceDemand:
+		return true
+	case ProjectDemandDossierEffectivePlaybookSourceNone:
+		return true
+	case ProjectDemandDossierEffectivePlaybookSourceProject:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandDossierHandoffSummaryAssessmentsStatus.
+const (
+	ProjectDemandDossierHandoffSummaryAssessmentsStatusFulfilled   ProjectDemandDossierHandoffSummaryAssessmentsStatus = "fulfilled"
+	ProjectDemandDossierHandoffSummaryAssessmentsStatusPartial     ProjectDemandDossierHandoffSummaryAssessmentsStatus = "partial"
+	ProjectDemandDossierHandoffSummaryAssessmentsStatusUnfulfilled ProjectDemandDossierHandoffSummaryAssessmentsStatus = "unfulfilled"
+	ProjectDemandDossierHandoffSummaryAssessmentsStatusUnknown     ProjectDemandDossierHandoffSummaryAssessmentsStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierHandoffSummaryAssessmentsStatus enum.
+func (e ProjectDemandDossierHandoffSummaryAssessmentsStatus) Valid() bool {
+	switch e {
+	case ProjectDemandDossierHandoffSummaryAssessmentsStatusFulfilled:
+		return true
+	case ProjectDemandDossierHandoffSummaryAssessmentsStatusPartial:
+		return true
+	case ProjectDemandDossierHandoffSummaryAssessmentsStatusUnfulfilled:
+		return true
+	case ProjectDemandDossierHandoffSummaryAssessmentsStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandDossierPendingActionsHrefType.
+const (
+	ProjectDemandDossierPendingActionsHrefTypeDecision      ProjectDemandDossierPendingActionsHrefType = "decision"
+	ProjectDemandDossierPendingActionsHrefTypeInbox         ProjectDemandDossierPendingActionsHrefType = "inbox"
+	ProjectDemandDossierPendingActionsHrefTypeProjectDemand ProjectDemandDossierPendingActionsHrefType = "project_demand"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierPendingActionsHrefType enum.
+func (e ProjectDemandDossierPendingActionsHrefType) Valid() bool {
+	switch e {
+	case ProjectDemandDossierPendingActionsHrefTypeDecision:
+		return true
+	case ProjectDemandDossierPendingActionsHrefTypeInbox:
+		return true
+	case ProjectDemandDossierPendingActionsHrefTypeProjectDemand:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandDossierRailSlotItemsState.
+const (
+	ProjectDemandDossierRailSlotItemsStateDelivered ProjectDemandDossierRailSlotItemsState = "delivered"
+	ProjectDemandDossierRailSlotItemsStateInfo      ProjectDemandDossierRailSlotItemsState = "info"
+	ProjectDemandDossierRailSlotItemsStateMissing   ProjectDemandDossierRailSlotItemsState = "missing"
+	ProjectDemandDossierRailSlotItemsStateUnknown   ProjectDemandDossierRailSlotItemsState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierRailSlotItemsState enum.
+func (e ProjectDemandDossierRailSlotItemsState) Valid() bool {
+	switch e {
+	case ProjectDemandDossierRailSlotItemsStateDelivered:
+		return true
+	case ProjectDemandDossierRailSlotItemsStateInfo:
+		return true
+	case ProjectDemandDossierRailSlotItemsStateMissing:
+		return true
+	case ProjectDemandDossierRailSlotItemsStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandDossierTimelineItemEntityType.
+const (
+	ProjectDemandDossierTimelineItemEntityTypeDecision ProjectDemandDossierTimelineItemEntityType = "decision"
+	ProjectDemandDossierTimelineItemEntityTypeDemand   ProjectDemandDossierTimelineItemEntityType = "demand"
+	ProjectDemandDossierTimelineItemEntityTypeEvent    ProjectDemandDossierTimelineItemEntityType = "event"
+	ProjectDemandDossierTimelineItemEntityTypeJob      ProjectDemandDossierTimelineItemEntityType = "job"
+	ProjectDemandDossierTimelineItemEntityTypeTask     ProjectDemandDossierTimelineItemEntityType = "task"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierTimelineItemEntityType enum.
+func (e ProjectDemandDossierTimelineItemEntityType) Valid() bool {
+	switch e {
+	case ProjectDemandDossierTimelineItemEntityTypeDecision:
+		return true
+	case ProjectDemandDossierTimelineItemEntityTypeDemand:
+		return true
+	case ProjectDemandDossierTimelineItemEntityTypeEvent:
+		return true
+	case ProjectDemandDossierTimelineItemEntityTypeJob:
+		return true
+	case ProjectDemandDossierTimelineItemEntityTypeTask:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandDossierTimelineItemKind.
+const (
+	ProjectDemandDossierTimelineItemKindCoordinationBlocked ProjectDemandDossierTimelineItemKind = "coordination_blocked"
+	ProjectDemandDossierTimelineItemKindCoordinationStarted ProjectDemandDossierTimelineItemKind = "coordination_started"
+	ProjectDemandDossierTimelineItemKindDecisionOpened      ProjectDemandDossierTimelineItemKind = "decision_opened"
+	ProjectDemandDossierTimelineItemKindDecisionResolved    ProjectDemandDossierTimelineItemKind = "decision_resolved"
+	ProjectDemandDossierTimelineItemKindDemandSubmitted     ProjectDemandDossierTimelineItemKind = "demand_submitted"
+	ProjectDemandDossierTimelineItemKindDispatchBlocked     ProjectDemandDossierTimelineItemKind = "dispatch_blocked"
+	ProjectDemandDossierTimelineItemKindOther               ProjectDemandDossierTimelineItemKind = "other"
+	ProjectDemandDossierTimelineItemKindPlanAccepted        ProjectDemandDossierTimelineItemKind = "plan_accepted"
+	ProjectDemandDossierTimelineItemKindPlanChangeRequested ProjectDemandDossierTimelineItemKind = "plan_change_requested"
+	ProjectDemandDossierTimelineItemKindPlanReady           ProjectDemandDossierTimelineItemKind = "plan_ready"
+	ProjectDemandDossierTimelineItemKindPlanRejected        ProjectDemandDossierTimelineItemKind = "plan_rejected"
+	ProjectDemandDossierTimelineItemKindResultAccepted      ProjectDemandDossierTimelineItemKind = "result_accepted"
+	ProjectDemandDossierTimelineItemKindResultRecorded      ProjectDemandDossierTimelineItemKind = "result_recorded"
+	ProjectDemandDossierTimelineItemKindResultRejected      ProjectDemandDossierTimelineItemKind = "result_rejected"
+	ProjectDemandDossierTimelineItemKindStaffingGap         ProjectDemandDossierTimelineItemKind = "staffing_gap"
+	ProjectDemandDossierTimelineItemKindTaskCancelled       ProjectDemandDossierTimelineItemKind = "task_cancelled"
+	ProjectDemandDossierTimelineItemKindTaskCompleted       ProjectDemandDossierTimelineItemKind = "task_completed"
+	ProjectDemandDossierTimelineItemKindTaskCreated         ProjectDemandDossierTimelineItemKind = "task_created"
+	ProjectDemandDossierTimelineItemKindTaskDispatched      ProjectDemandDossierTimelineItemKind = "task_dispatched"
+	ProjectDemandDossierTimelineItemKindTaskFailed          ProjectDemandDossierTimelineItemKind = "task_failed"
+	ProjectDemandDossierTimelineItemKindTaskWaitingHuman    ProjectDemandDossierTimelineItemKind = "task_waiting_human"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierTimelineItemKind enum.
+func (e ProjectDemandDossierTimelineItemKind) Valid() bool {
+	switch e {
+	case ProjectDemandDossierTimelineItemKindCoordinationBlocked:
+		return true
+	case ProjectDemandDossierTimelineItemKindCoordinationStarted:
+		return true
+	case ProjectDemandDossierTimelineItemKindDecisionOpened:
+		return true
+	case ProjectDemandDossierTimelineItemKindDecisionResolved:
+		return true
+	case ProjectDemandDossierTimelineItemKindDemandSubmitted:
+		return true
+	case ProjectDemandDossierTimelineItemKindDispatchBlocked:
+		return true
+	case ProjectDemandDossierTimelineItemKindOther:
+		return true
+	case ProjectDemandDossierTimelineItemKindPlanAccepted:
+		return true
+	case ProjectDemandDossierTimelineItemKindPlanChangeRequested:
+		return true
+	case ProjectDemandDossierTimelineItemKindPlanReady:
+		return true
+	case ProjectDemandDossierTimelineItemKindPlanRejected:
+		return true
+	case ProjectDemandDossierTimelineItemKindResultAccepted:
+		return true
+	case ProjectDemandDossierTimelineItemKindResultRecorded:
+		return true
+	case ProjectDemandDossierTimelineItemKindResultRejected:
+		return true
+	case ProjectDemandDossierTimelineItemKindStaffingGap:
+		return true
+	case ProjectDemandDossierTimelineItemKindTaskCancelled:
+		return true
+	case ProjectDemandDossierTimelineItemKindTaskCompleted:
+		return true
+	case ProjectDemandDossierTimelineItemKindTaskCreated:
+		return true
+	case ProjectDemandDossierTimelineItemKindTaskDispatched:
+		return true
+	case ProjectDemandDossierTimelineItemKindTaskFailed:
+		return true
+	case ProjectDemandDossierTimelineItemKindTaskWaitingHuman:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandDossierTimelineItemOpenTargetType.
+const (
+	Decision   ProjectDemandDossierTimelineItemOpenTargetType = "decision"
+	None       ProjectDemandDossierTimelineItemOpenTargetType = "none"
+	TaskDetail ProjectDemandDossierTimelineItemOpenTargetType = "task_detail"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierTimelineItemOpenTargetType enum.
+func (e ProjectDemandDossierTimelineItemOpenTargetType) Valid() bool {
+	switch e {
+	case Decision:
+		return true
+	case None:
+		return true
+	case TaskDetail:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandDossierTimelineItemSeverity.
+const (
+	ProjectDemandDossierTimelineItemSeverityDanger  ProjectDemandDossierTimelineItemSeverity = "danger"
+	ProjectDemandDossierTimelineItemSeverityInfo    ProjectDemandDossierTimelineItemSeverity = "info"
+	ProjectDemandDossierTimelineItemSeverityMute    ProjectDemandDossierTimelineItemSeverity = "mute"
+	ProjectDemandDossierTimelineItemSeveritySuccess ProjectDemandDossierTimelineItemSeverity = "success"
+	ProjectDemandDossierTimelineItemSeverityWarn    ProjectDemandDossierTimelineItemSeverity = "warn"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierTimelineItemSeverity enum.
+func (e ProjectDemandDossierTimelineItemSeverity) Valid() bool {
+	switch e {
+	case ProjectDemandDossierTimelineItemSeverityDanger:
+		return true
+	case ProjectDemandDossierTimelineItemSeverityInfo:
+		return true
+	case ProjectDemandDossierTimelineItemSeverityMute:
+		return true
+	case ProjectDemandDossierTimelineItemSeveritySuccess:
+		return true
+	case ProjectDemandDossierTimelineItemSeverityWarn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectDemandSourceType.
 const (
 	Automation ProjectDemandSourceType = "automation"
@@ -1418,100 +1658,100 @@ func (e ProjectDemandStatus) Valid() bool {
 
 // Defines values for ProjectEventType.
 const (
-	CoordinationBlocked                   ProjectEventType = "coordination.blocked"
-	CoordinationJobCreated                ProjectEventType = "coordination_job.created"
-	DecisionRequested                     ProjectEventType = "decision.requested"
-	DecisionSubmitted                     ProjectEventType = "decision.submitted"
-	DemandSubmitted                       ProjectEventType = "demand.submitted"
-	ProjectAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
-	ProjectArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
-	ProjectArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
-	ProjectArchived                       ProjectEventType = "project.archived"
-	ProjectArtifactLinked                 ProjectEventType = "project.artifact.linked"
-	ProjectBudgetRecorded                 ProjectEventType = "project.budget.recorded"
-	ProjectConfigChanged                  ProjectEventType = "project.config.changed"
-	ProjectCreated                        ProjectEventType = "project.created"
-	ProjectEvidenceLinked                 ProjectEventType = "project.evidence.linked"
-	ProjectEvidenceVerified               ProjectEventType = "project.evidence.verified"
-	ProjectReportLinked                   ProjectEventType = "project.report.linked"
-	ProjectTaskCompleted                  ProjectEventType = "project_task.completed"
-	ProjectTaskCreated                    ProjectEventType = "project_task.created"
-	ProjectTaskDispatchBlocked            ProjectEventType = "project_task.dispatch_blocked"
-	ProjectTaskDispatchGateBlocked        ProjectEventType = "project_task.dispatch_gate.blocked"
-	ProjectTaskDispatchGateChecked        ProjectEventType = "project_task.dispatch_gate.checked"
-	ProjectTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
-	ProjectTaskDispatchGateRetryLater     ProjectEventType = "project_task.dispatch_gate.retry_later"
-	ProjectTaskDispatchGateWaitingHuman   ProjectEventType = "project_task.dispatch_gate.waiting_human"
-	ProjectTaskDispatched                 ProjectEventType = "project_task.dispatched"
-	ProjectTaskFailed                     ProjectEventType = "project_task.failed"
-	RouteDecisionCreated                  ProjectEventType = "route_decision.created"
-	TransferRequested                     ProjectEventType = "transfer.requested"
-	WorkflowCoordinationFailed            ProjectEventType = "workflow.coordination_failed"
-	WorkflowSignaled                      ProjectEventType = "workflow.signaled"
+	ProjectEventTypeCoordinationBlocked                   ProjectEventType = "coordination.blocked"
+	ProjectEventTypeCoordinationJobCreated                ProjectEventType = "coordination_job.created"
+	ProjectEventTypeDecisionRequested                     ProjectEventType = "decision.requested"
+	ProjectEventTypeDecisionSubmitted                     ProjectEventType = "decision.submitted"
+	ProjectEventTypeDemandSubmitted                       ProjectEventType = "demand.submitted"
+	ProjectEventTypeProjectAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
+	ProjectEventTypeProjectArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
+	ProjectEventTypeProjectArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
+	ProjectEventTypeProjectArchived                       ProjectEventType = "project.archived"
+	ProjectEventTypeProjectArtifactLinked                 ProjectEventType = "project.artifact.linked"
+	ProjectEventTypeProjectBudgetRecorded                 ProjectEventType = "project.budget.recorded"
+	ProjectEventTypeProjectConfigChanged                  ProjectEventType = "project.config.changed"
+	ProjectEventTypeProjectCreated                        ProjectEventType = "project.created"
+	ProjectEventTypeProjectEvidenceLinked                 ProjectEventType = "project.evidence.linked"
+	ProjectEventTypeProjectEvidenceVerified               ProjectEventType = "project.evidence.verified"
+	ProjectEventTypeProjectReportLinked                   ProjectEventType = "project.report.linked"
+	ProjectEventTypeProjectTaskCompleted                  ProjectEventType = "project_task.completed"
+	ProjectEventTypeProjectTaskCreated                    ProjectEventType = "project_task.created"
+	ProjectEventTypeProjectTaskDispatchBlocked            ProjectEventType = "project_task.dispatch_blocked"
+	ProjectEventTypeProjectTaskDispatchGateBlocked        ProjectEventType = "project_task.dispatch_gate.blocked"
+	ProjectEventTypeProjectTaskDispatchGateChecked        ProjectEventType = "project_task.dispatch_gate.checked"
+	ProjectEventTypeProjectTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
+	ProjectEventTypeProjectTaskDispatchGateRetryLater     ProjectEventType = "project_task.dispatch_gate.retry_later"
+	ProjectEventTypeProjectTaskDispatchGateWaitingHuman   ProjectEventType = "project_task.dispatch_gate.waiting_human"
+	ProjectEventTypeProjectTaskDispatched                 ProjectEventType = "project_task.dispatched"
+	ProjectEventTypeProjectTaskFailed                     ProjectEventType = "project_task.failed"
+	ProjectEventTypeRouteDecisionCreated                  ProjectEventType = "route_decision.created"
+	ProjectEventTypeTransferRequested                     ProjectEventType = "transfer.requested"
+	ProjectEventTypeWorkflowCoordinationFailed            ProjectEventType = "workflow.coordination_failed"
+	ProjectEventTypeWorkflowSignaled                      ProjectEventType = "workflow.signaled"
 )
 
 // Valid indicates whether the value is a known member of the ProjectEventType enum.
 func (e ProjectEventType) Valid() bool {
 	switch e {
-	case CoordinationBlocked:
+	case ProjectEventTypeCoordinationBlocked:
 		return true
-	case CoordinationJobCreated:
+	case ProjectEventTypeCoordinationJobCreated:
 		return true
-	case DecisionRequested:
+	case ProjectEventTypeDecisionRequested:
 		return true
-	case DecisionSubmitted:
+	case ProjectEventTypeDecisionSubmitted:
 		return true
-	case DemandSubmitted:
+	case ProjectEventTypeDemandSubmitted:
 		return true
-	case ProjectAcceptanceSubmitted:
+	case ProjectEventTypeProjectAcceptanceSubmitted:
 		return true
-	case ProjectArchiveRetentionPending:
+	case ProjectEventTypeProjectArchiveRetentionPending:
 		return true
-	case ProjectArchiveSnapshotCreated:
+	case ProjectEventTypeProjectArchiveSnapshotCreated:
 		return true
-	case ProjectArchived:
+	case ProjectEventTypeProjectArchived:
 		return true
-	case ProjectArtifactLinked:
+	case ProjectEventTypeProjectArtifactLinked:
 		return true
-	case ProjectBudgetRecorded:
+	case ProjectEventTypeProjectBudgetRecorded:
 		return true
-	case ProjectConfigChanged:
+	case ProjectEventTypeProjectConfigChanged:
 		return true
-	case ProjectCreated:
+	case ProjectEventTypeProjectCreated:
 		return true
-	case ProjectEvidenceLinked:
+	case ProjectEventTypeProjectEvidenceLinked:
 		return true
-	case ProjectEvidenceVerified:
+	case ProjectEventTypeProjectEvidenceVerified:
 		return true
-	case ProjectReportLinked:
+	case ProjectEventTypeProjectReportLinked:
 		return true
-	case ProjectTaskCompleted:
+	case ProjectEventTypeProjectTaskCompleted:
 		return true
-	case ProjectTaskCreated:
+	case ProjectEventTypeProjectTaskCreated:
 		return true
-	case ProjectTaskDispatchBlocked:
+	case ProjectEventTypeProjectTaskDispatchBlocked:
 		return true
-	case ProjectTaskDispatchGateBlocked:
+	case ProjectEventTypeProjectTaskDispatchGateBlocked:
 		return true
-	case ProjectTaskDispatchGateChecked:
+	case ProjectEventTypeProjectTaskDispatchGateChecked:
 		return true
-	case ProjectTaskDispatchGateReplanRequired:
+	case ProjectEventTypeProjectTaskDispatchGateReplanRequired:
 		return true
-	case ProjectTaskDispatchGateRetryLater:
+	case ProjectEventTypeProjectTaskDispatchGateRetryLater:
 		return true
-	case ProjectTaskDispatchGateWaitingHuman:
+	case ProjectEventTypeProjectTaskDispatchGateWaitingHuman:
 		return true
-	case ProjectTaskDispatched:
+	case ProjectEventTypeProjectTaskDispatched:
 		return true
-	case ProjectTaskFailed:
+	case ProjectEventTypeProjectTaskFailed:
 		return true
-	case RouteDecisionCreated:
+	case ProjectEventTypeRouteDecisionCreated:
 		return true
-	case TransferRequested:
+	case ProjectEventTypeTransferRequested:
 		return true
-	case WorkflowCoordinationFailed:
+	case ProjectEventTypeWorkflowCoordinationFailed:
 		return true
-	case WorkflowSignaled:
+	case ProjectEventTypeWorkflowSignaled:
 		return true
 	default:
 		return false
@@ -1926,6 +2166,33 @@ func (e RuntimeEnrollmentStatus) Valid() bool {
 	case RuntimeEnrollmentStatusRejected:
 		return true
 	case RuntimeEnrollmentStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeEventNarrativeSeverity.
+const (
+	RuntimeEventNarrativeSeverityDanger  RuntimeEventNarrativeSeverity = "danger"
+	RuntimeEventNarrativeSeverityInfo    RuntimeEventNarrativeSeverity = "info"
+	RuntimeEventNarrativeSeverityMute    RuntimeEventNarrativeSeverity = "mute"
+	RuntimeEventNarrativeSeveritySuccess RuntimeEventNarrativeSeverity = "success"
+	RuntimeEventNarrativeSeverityWarn    RuntimeEventNarrativeSeverity = "warn"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeEventNarrativeSeverity enum.
+func (e RuntimeEventNarrativeSeverity) Valid() bool {
+	switch e {
+	case RuntimeEventNarrativeSeverityDanger:
+		return true
+	case RuntimeEventNarrativeSeverityInfo:
+		return true
+	case RuntimeEventNarrativeSeverityMute:
+		return true
+	case RuntimeEventNarrativeSeveritySuccess:
+		return true
+	case RuntimeEventNarrativeSeverityWarn:
 		return true
 	default:
 		return false
@@ -2534,19 +2801,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	Cancelled ListInboxItemsParamsStatus = "cancelled"
-	Open      ListInboxItemsParamsStatus = "open"
-	Resolved  ListInboxItemsParamsStatus = "resolved"
+	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
+	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
+	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case ListInboxItemsParamsStatusCancelled:
 		return true
-	case Open:
+	case ListInboxItemsParamsStatusOpen:
 		return true
-	case Resolved:
+	case ListInboxItemsParamsStatusResolved:
 		return true
 	default:
 		return false
@@ -2597,25 +2864,25 @@ func (e ListPermissionApprovalsParamsView) Valid() bool {
 
 // Defines values for ListPermissionApprovalsParamsStatus.
 const (
-	ListPermissionApprovalsParamsStatusApproved          ListPermissionApprovalsParamsStatus = "approved"
-	ListPermissionApprovalsParamsStatusCancelled         ListPermissionApprovalsParamsStatus = "cancelled"
-	ListPermissionApprovalsParamsStatusNeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
-	ListPermissionApprovalsParamsStatusPending           ListPermissionApprovalsParamsStatus = "pending"
-	ListPermissionApprovalsParamsStatusRejected          ListPermissionApprovalsParamsStatus = "rejected"
+	Approved          ListPermissionApprovalsParamsStatus = "approved"
+	Cancelled         ListPermissionApprovalsParamsStatus = "cancelled"
+	NeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
+	Pending           ListPermissionApprovalsParamsStatus = "pending"
+	Rejected          ListPermissionApprovalsParamsStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the ListPermissionApprovalsParamsStatus enum.
 func (e ListPermissionApprovalsParamsStatus) Valid() bool {
 	switch e {
-	case ListPermissionApprovalsParamsStatusApproved:
+	case Approved:
 		return true
-	case ListPermissionApprovalsParamsStatusCancelled:
+	case Cancelled:
 		return true
-	case ListPermissionApprovalsParamsStatusNeedsMoreEvidence:
+	case NeedsMoreEvidence:
 		return true
-	case ListPermissionApprovalsParamsStatusPending:
+	case Pending:
 		return true
-	case ListPermissionApprovalsParamsStatusRejected:
+	case Rejected:
 		return true
 	default:
 		return false
@@ -4951,6 +5218,150 @@ type ProjectDemand struct {
 	UpdatedAt           time.Time               `json:"updated_at"`
 }
 
+// ProjectDemandDossier 一单卷宗读模型。刻意不含写字段与"继续此任务"入口:接续能力属后续版本, 放 disabled 占位只会变成点不动的承诺按钮。
+type ProjectDemandDossier struct {
+	// Acceptance 瘦摘要;判据明细仍由 acceptance-criteria 端点提供。
+	Acceptance *struct {
+		CriteriaTotal        *int    `json:"criteria_total,omitempty"`
+		DemandStatus         *string `json:"demand_status,omitempty"`
+		PendingHumanJudgment *int    `json:"pending_human_judgment,omitempty"`
+	} `json:"acceptance,omitempty"`
+	Demand ProjectDemand `json:"demand"`
+
+	// EffectivePlaybook 有效剧本:需求覆盖项目;都没绑或解析失败则 source=none,右轨只按实际产物推导。
+	EffectivePlaybook struct {
+		Name *string `json:"name,omitempty"`
+
+		// ProduceKinds 骨架 produces_defaults 的 kind,去重保序;决定右轨槽位次序。
+		ProduceKinds []string                                    `json:"produce_kinds"`
+		Source       ProjectDemandDossierEffectivePlaybookSource `json:"source"`
+		TemplateKey  *string                                     `json:"template_key"`
+	} `json:"effective_playbook"`
+
+	// HandoffSummary unknown 表示"暂无声明,无法判定",不得渲染为失败。
+	HandoffSummary struct {
+		Assessments []struct {
+			Deliverables    []ProjectTaskGraphHandoffDeliverable                `json:"deliverables"`
+			ProjectTaskId   openapi_types.UUID                                  `json:"project_task_id"`
+			ProjectTaskName *string                                             `json:"project_task_name,omitempty"`
+			Status          ProjectDemandDossierHandoffSummaryAssessmentsStatus `json:"status"`
+		} `json:"assessments"`
+		Fulfilled   int `json:"fulfilled"`
+		Partial     int `json:"partial"`
+		Unfulfilled int `json:"unfulfilled"`
+		Unknown     int `json:"unknown"`
+	} `json:"handoff_summary"`
+	PendingActions []struct {
+		CreatedAt *time.Time `json:"created_at,omitempty"`
+		Href      *struct {
+			DecisionId *openapi_types.UUID                         `json:"decision_id,omitempty"`
+			DemandId   *openapi_types.UUID                         `json:"demand_id,omitempty"`
+			ProjectId  *openapi_types.UUID                         `json:"project_id,omitempty"`
+			Type       *ProjectDemandDossierPendingActionsHrefType `json:"type,omitempty"`
+		} `json:"href,omitempty"`
+		Id openapi_types.UUID `json:"id"`
+
+		// Kind decision_type 原值
+		Kind   string `json:"kind"`
+		Status string `json:"status"`
+		Title  string `json:"title"`
+	} `json:"pending_actions"`
+	Project struct {
+		Id                  openapi_types.UUID `json:"id"`
+		Name                string             `json:"name"`
+		ScenarioTemplateKey *string            `json:"scenario_template_key,omitempty"`
+		Status              *string            `json:"status,omitempty"`
+	} `json:"project"`
+	Rail struct {
+		Slots []ProjectDemandDossierRailSlot `json:"slots"`
+	} `json:"rail"`
+
+	// SiblingPending 仅 sibling_pending=true 时返回;同项目各需求的待办计数(左轨角标)。
+	SiblingPending *[]struct {
+		DemandId      *openapi_types.UUID `json:"demand_id,omitempty"`
+		DemandStatus  *string             `json:"demand_status,omitempty"`
+		DemandTitle   *string             `json:"demand_title,omitempty"`
+		OpenDecisions *int                `json:"open_decisions,omitempty"`
+	} `json:"sibling_pending,omitempty"`
+
+	// Signals 密度判定的原料,不是结论。密度是用户偏好,由前端决定并允许用户切换—— 服务端硬判密度必然要回头再补"用户覆盖"。
+	Signals struct {
+		ActiveTaskCount  int  `json:"active_task_count"`
+		DemandTerminal   bool `json:"demand_terminal"`
+		HasOpenDecisions bool `json:"has_open_decisions"`
+	} `json:"signals"`
+	Timeline struct {
+		Items     []ProjectDemandDossierTimelineItem `json:"items"`
+		Truncated bool                               `json:"truncated"`
+	} `json:"timeline"`
+}
+
+// ProjectDemandDossierEffectivePlaybookSource defines model for ProjectDemandDossier.EffectivePlaybook.Source.
+type ProjectDemandDossierEffectivePlaybookSource string
+
+// ProjectDemandDossierHandoffSummaryAssessmentsStatus defines model for ProjectDemandDossier.HandoffSummary.Assessments.Status.
+type ProjectDemandDossierHandoffSummaryAssessmentsStatus string
+
+// ProjectDemandDossierPendingActionsHrefType defines model for ProjectDemandDossier.PendingActions.Href.Type.
+type ProjectDemandDossierPendingActionsHrefType string
+
+// ProjectDemandDossierRailSlot defines model for ProjectDemandDossierRailSlot.
+type ProjectDemandDossierRailSlot struct {
+	Items []struct {
+		Id              string                                 `json:"id"`
+		ProjectTaskId   *openapi_types.UUID                    `json:"project_task_id,omitempty"`
+		ProjectTaskName *string                                `json:"project_task_name,omitempty"`
+		Ref             *string                                `json:"ref,omitempty"`
+		State           ProjectDemandDossierRailSlotItemsState `json:"state"`
+		Summary         *string                                `json:"summary,omitempty"`
+		Title           string                                 `json:"title"`
+	} `json:"items"`
+
+	// Kind 剧本 produces kind 或实际产物 kind;未知 kind 的中文标题回落「交付物」。
+	Kind  string `json:"kind"`
+	Title string `json:"title"`
+}
+
+// ProjectDemandDossierRailSlotItemsState defines model for ProjectDemandDossierRailSlot.Items.State.
+type ProjectDemandDossierRailSlotItemsState string
+
+// ProjectDemandDossierTimelineItem defines model for ProjectDemandDossierTimelineItem.
+type ProjectDemandDossierTimelineItem struct {
+	ActorDisplayName *string `json:"actor_display_name,omitempty"`
+	Entity           *struct {
+		Id   *string                                     `json:"id,omitempty"`
+		Name *string                                     `json:"name,omitempty"`
+		Type *ProjectDemandDossierTimelineItemEntityType `json:"type,omitempty"`
+	} `json:"entity,omitempty"`
+
+	// Id 幂等键:事件 id,或实体状态回填的 "synthetic:{kind}:{entity_id}"。
+	Id         string                               `json:"id"`
+	Kind       ProjectDemandDossierTimelineItemKind `json:"kind"`
+	OccurredAt time.Time                            `json:"occurred_at"`
+	OpenTarget *struct {
+		DecisionId *openapi_types.UUID                             `json:"decision_id,omitempty"`
+		TaskId     *openapi_types.UUID                             `json:"task_id,omitempty"`
+		Type       *ProjectDemandDossierTimelineItemOpenTargetType `json:"type,omitempty"`
+	} `json:"open_target,omitempty"`
+	Severity *ProjectDemandDossierTimelineItemSeverity `json:"severity,omitempty"`
+	Summary  *string                                   `json:"summary,omitempty"`
+
+	// Title 已渲染的中文主文案;前端不得再解析原始 event_type。
+	Title string `json:"title"`
+}
+
+// ProjectDemandDossierTimelineItemEntityType defines model for ProjectDemandDossierTimelineItem.Entity.Type.
+type ProjectDemandDossierTimelineItemEntityType string
+
+// ProjectDemandDossierTimelineItemKind defines model for ProjectDemandDossierTimelineItem.Kind.
+type ProjectDemandDossierTimelineItemKind string
+
+// ProjectDemandDossierTimelineItemOpenTargetType defines model for ProjectDemandDossierTimelineItem.OpenTarget.Type.
+type ProjectDemandDossierTimelineItemOpenTargetType string
+
+// ProjectDemandDossierTimelineItemSeverity defines model for ProjectDemandDossierTimelineItem.Severity.
+type ProjectDemandDossierTimelineItemSeverity string
+
 // ProjectDemandLaunchDetail defines model for ProjectDemandLaunchDetail.
 type ProjectDemandLaunchDetail struct {
 	CoordinationJobs   []ProjectCoordinationJob  `json:"coordination_jobs"`
@@ -5279,19 +5690,25 @@ type ProjectStatusSummary struct {
 // ProjectTask defines model for ProjectTask.
 type ProjectTask struct {
 	AssignedDigitalEmployeeId *openapi_types.UUID `json:"assigned_digital_employee_id,omitempty"`
-	CoordinationJobId         *openapi_types.UUID `json:"coordination_job_id,omitempty"`
-	CreatedAt                 time.Time           `json:"created_at"`
-	DemandId                  *openapi_types.UUID `json:"demand_id,omitempty"`
+
+	// AttemptCount Number of execution attempts already consumed for this task
+	AttemptCount      *int32              `json:"attempt_count,omitempty"`
+	CoordinationJobId *openapi_types.UUID `json:"coordination_job_id,omitempty"`
+	CreatedAt         time.Time           `json:"created_at"`
+	DemandId          *openapi_types.UUID `json:"demand_id,omitempty"`
 
 	// DismissedAt When a human soft-dismissed this terminal task from active views
 	DismissedAt *time.Time `json:"dismissed_at,omitempty"`
 
 	// DismissedBy User who soft-dismissed this task
-	DismissedBy           *openapi_types.UUID     `json:"dismissed_by,omitempty"`
-	ExpectedOutputs       *[]interface{}          `json:"expected_outputs,omitempty"`
-	HandoffContract       *map[string]interface{} `json:"handoff_contract,omitempty"`
-	Id                    openapi_types.UUID      `json:"id"`
-	InputRequirements     *map[string]interface{} `json:"input_requirements,omitempty"`
+	DismissedBy       *openapi_types.UUID     `json:"dismissed_by,omitempty"`
+	ExpectedOutputs   *[]interface{}          `json:"expected_outputs,omitempty"`
+	HandoffContract   *map[string]interface{} `json:"handoff_contract,omitempty"`
+	Id                openapi_types.UUID      `json:"id"`
+	InputRequirements *map[string]interface{} `json:"input_requirements,omitempty"`
+
+	// MaxAttempts Auto-retry budget for transient failures; platform default applies when omitted historically
+	MaxAttempts           *int32                  `json:"max_attempts,omitempty"`
 	PlannedTaskKey        *string                 `json:"planned_task_key,omitempty"`
 	PlannerMetadata       *map[string]interface{} `json:"planner_metadata,omitempty"`
 	ProjectId             openapi_types.UUID      `json:"project_id"`
@@ -5916,21 +6333,35 @@ type RuntimeEnrollmentStatus string
 
 // RuntimeEvent defines model for RuntimeEvent.
 type RuntimeEvent struct {
-	CorrelationId   *string                 `json:"correlation_id,omitempty"`
-	CorrelationType *string                 `json:"correlation_type,omitempty"`
-	CreatedAt       time.Time               `json:"created_at"`
-	Description     *string                 `json:"description,omitempty"`
-	EventType       RuntimeEventType        `json:"event_type"`
-	Id              openapi_types.UUID      `json:"id"`
-	NodeId          *string                 `json:"node_id,omitempty"`
-	Payload         *map[string]interface{} `json:"payload,omitempty"`
-	ProviderType    *string                 `json:"provider_type,omitempty"`
-	RuntimeNodeId   *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
-	Severity        RuntimeEventSeverity    `json:"severity"`
-	Source          RuntimeEventSource      `json:"source"`
-	TenantId        openapi_types.UUID      `json:"tenant_id"`
-	Title           string                  `json:"title"`
+	CorrelationId   *string            `json:"correlation_id,omitempty"`
+	CorrelationType *string            `json:"correlation_type,omitempty"`
+	CreatedAt       time.Time          `json:"created_at"`
+	Description     *string            `json:"description,omitempty"`
+	EventType       RuntimeEventType   `json:"event_type"`
+	Id              openapi_types.UUID `json:"id"`
+
+	// Narrative 服务端渲染的用户可读叙事（唯一词表来源 internal/project/event_narrative.go）。 前端一律显示 narrative.title，不得把 event_type 原串当文案——历史上项目 工作台的 default 分支就是这么把英文蛇形串漏给用户的。
+	Narrative *struct {
+		// Kind 与一单卷宗时间线同一 kind 词汇，便于两处分组口径一致。
+		Kind string `json:"kind"`
+
+		// Noise 低信息量事件（心跳/闸门成功检查/纯信号转发），呈现层可折叠。
+		Noise    *bool                          `json:"noise,omitempty"`
+		Severity *RuntimeEventNarrativeSeverity `json:"severity,omitempty"`
+		Title    string                         `json:"title"`
+	} `json:"narrative,omitempty"`
+	NodeId        *string                 `json:"node_id,omitempty"`
+	Payload       *map[string]interface{} `json:"payload,omitempty"`
+	ProviderType  *string                 `json:"provider_type,omitempty"`
+	RuntimeNodeId *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
+	Severity      RuntimeEventSeverity    `json:"severity"`
+	Source        RuntimeEventSource      `json:"source"`
+	TenantId      openapi_types.UUID      `json:"tenant_id"`
+	Title         string                  `json:"title"`
 }
+
+// RuntimeEventNarrativeSeverity defines model for RuntimeEvent.Narrative.Severity.
+type RuntimeEventNarrativeSeverity string
 
 // RuntimeEventList defines model for RuntimeEventList.
 type RuntimeEventList struct {
@@ -7044,6 +7475,15 @@ type ListPermissionApprovalsParamsView string
 
 // ListPermissionApprovalsParamsStatus defines parameters for ListPermissionApprovals.
 type ListPermissionApprovalsParamsStatus string
+
+// GetProjectDemandDossierParams defines parameters for GetProjectDemandDossier.
+type GetProjectDemandDossierParams struct {
+	// TimelineLimit 归一**之后**的时间线条数上限(不是原始事件条数),默认 60,上限 200。
+	TimelineLimit *int `form:"timeline_limit,omitempty" json:"timeline_limit,omitempty"`
+
+	// SiblingPending 为 true 时附带同项目各需求的待办计数(左轨角标)。默认关闭以免每次切单都算。
+	SiblingPending *bool `form:"sibling_pending,omitempty" json:"sibling_pending,omitempty"`
+}
 
 // ListProjectsParams defines parameters for ListProjects.
 type ListProjectsParams struct {
@@ -8521,6 +8961,9 @@ type ServerInterface interface {
 	// Sign a human verdict against a demand's blocking human_judgment acceptance criterion
 	// (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
 	SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
+	// Get the read-only dossier of one demand (timeline narrative + delivery facts rail)
+	// (GET /api/v1/project-demands/{demandId}/dossier)
+	GetProjectDemandDossier(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID, params GetProjectDemandDossierParams)
 	// Get project demand launch detail
 	// (GET /api/v1/project-demands/{demandId}/launch-detail)
 	GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -9490,6 +9933,12 @@ func (_ Unimplemented) CloseProjectDemand(w http.ResponseWriter, r *http.Request
 // Sign a human verdict against a demand's blocking human_judgment acceptance criterion
 // (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
 func (_ Unimplemented) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get the read-only dossier of one demand (timeline narrative + delivery facts rail)
+// (GET /api/v1/project-demands/{demandId}/dossier)
+func (_ Unimplemented) GetProjectDemandDossier(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID, params GetProjectDemandDossierParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -13273,6 +13722,61 @@ func (siw *ServerInterfaceWrapper) SignDemandCriterionVerdict(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SignDemandCriterionVerdict(w, r, demandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectDemandDossier operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectDemandDossier(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "demandId" -------------
+	var demandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "demandId", chi.URLParam(r, "demandId"), &demandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demandId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProjectDemandDossierParams
+
+	// ------------- Optional query parameter "timeline_limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "timeline_limit", r.URL.Query(), &params.TimelineLimit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "timeline_limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timeline_limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sibling_pending" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sibling_pending", r.URL.Query(), &params.SiblingPending, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sibling_pending"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sibling_pending", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectDemandDossier(w, r, demandId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18823,6 +19327,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/project-demands/{demandId}/criterion-verdicts", wrapper.SignDemandCriterionVerdict)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/dossier", wrapper.GetProjectDemandDossier)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/launch-detail", wrapper.GetProjectDemandLaunchDetail)

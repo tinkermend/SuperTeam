@@ -12680,7 +12680,17 @@ func (r *memoryRepository) GetPlanRevision(ctx context.Context, tenantID, projec
 }
 
 func (r *memoryRepository) ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error) {
-	return []PlanRevision{}, nil
+	result := make([]PlanRevision, 0, len(r.planRevisions))
+	for _, revision := range r.planRevisions {
+		if revision.TenantID != req.TenantID || revision.ProjectID != req.ProjectID {
+			continue
+		}
+		if req.DemandID != nil && revision.DemandID != *req.DemandID {
+			continue
+		}
+		result = append(result, revision)
+	}
+	return paginateTestSlice(result, req.Limit, req.Offset), nil
 }
 
 func (r *memoryRepository) ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error) {
@@ -13444,6 +13454,56 @@ func (r *memoryRepository) ListDeclaredArtifactsByTaskIDs(ctx context.Context, t
 		}
 	}
 	return filtered, nil
+}
+
+func (r *memoryRepository) ListEvidenceRefsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectEvidenceRef, error) {
+	taskIDSet := make(map[uuid.UUID]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskIDSet[taskID] = struct{}{}
+	}
+	filtered := make([]ProjectEvidenceRef, 0, len(r.evidenceRefs))
+	for _, ref := range r.evidenceRefs {
+		if ref.TenantID != tenantID || ref.ProjectID != projectID || ref.ProjectTaskID == nil {
+			continue
+		}
+		if _, ok := taskIDSet[*ref.ProjectTaskID]; ok {
+			filtered = append(filtered, ref)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) ListArtifactRefsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectArtifactRef, error) {
+	taskIDSet := make(map[uuid.UUID]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskIDSet[taskID] = struct{}{}
+	}
+	filtered := make([]ProjectArtifactRef, 0, len(r.artifactRefs))
+	for _, ref := range r.artifactRefs {
+		if ref.TenantID != tenantID || ref.ProjectID != projectID || ref.ProjectTaskID == nil {
+			continue
+		}
+		if _, ok := taskIDSet[*ref.ProjectTaskID]; ok {
+			filtered = append(filtered, ref)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) ListLatestTaskResultContractsByTasks(ctx context.Context, tenantID, projectID uuid.UUID, tasks []ProjectTask) (map[uuid.UUID]*TaskResultContract, error) {
+	contracts := map[uuid.UUID]*TaskResultContract{}
+	for _, task := range tasks {
+		for index := len(r.projectTaskResults) - 1; index >= 0; index-- {
+			result := r.projectTaskResults[index]
+			if result.TenantID != tenantID || result.ProjectID != projectID || result.ProjectTaskID != task.ID {
+				continue
+			}
+			contract := result.Contract
+			contracts[task.ID] = &contract
+			break
+		}
+	}
+	return contracts, nil
 }
 
 func (r *memoryRepository) CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error) {
@@ -15524,7 +15584,9 @@ func projectEventTypes(events []ProjectEvent) []ProjectEventType {
 }
 
 type stubScenarioTemplateResolver struct {
-	bindings map[string]ScenarioTemplateBinding
+	bindings     map[string]ScenarioTemplateBinding
+	produceKinds map[string][]string
+	kindsErr     error
 }
 
 func (r stubScenarioTemplateResolver) ResolveScenarioTemplate(_ context.Context, _ uuid.UUID, key string) (ScenarioTemplateBinding, error) {
@@ -15533,6 +15595,17 @@ func (r stubScenarioTemplateResolver) ResolveScenarioTemplate(_ context.Context,
 		return ScenarioTemplateBinding{}, errors.New("scenario template not found")
 	}
 	return binding, nil
+}
+
+func (r stubScenarioTemplateResolver) ResolveScenarioTemplateProduceKinds(_ context.Context, _ uuid.UUID, key string) ([]string, error) {
+	if r.kindsErr != nil {
+		return nil, r.kindsErr
+	}
+	kinds, ok := r.produceKinds[key]
+	if !ok {
+		return nil, errors.New("scenario template not found")
+	}
+	return kinds, nil
 }
 
 func TestCreateProjectScenarioTemplateBinding(t *testing.T) {

@@ -2334,6 +2334,8 @@ type handlerTestService struct {
 	launchDetailDemandID              uuid.UUID
 	launchDetailProjectID             uuid.UUID
 	launchDetailErr                   error
+	dossierRequest                    GetDemandDossierRequest
+	dossierErr                        error
 	signCriterionVerdictReq           SignDemandCriterionVerdictRequest
 	signCriterionVerdictResult        *SignDemandCriterionVerdictResult
 	signCriterionVerdictErr           error
@@ -2600,6 +2602,23 @@ func (s *handlerTestService) ListDemandAcceptanceCriteriaDetail(ctx context.Cont
 		return s.acceptanceCriteriaResult, nil
 	}
 	return &DemandAcceptanceCriteriaDetail{DemandID: demandID, DemandStatus: ProjectDemandStatusAcceptancePending}, nil
+}
+
+func (s *handlerTestService) GetDemandDossier(ctx context.Context, req GetDemandDossierRequest) (*DemandDossier, error) {
+	s.dossierRequest = req
+	if s.dossierErr != nil {
+		return nil, s.dossierErr
+	}
+	projectID := s.launchDetailProjectID
+	if projectID == uuid.Nil {
+		projectID = uuid.New()
+	}
+	return &DemandDossier{
+		Demand:            ProjectDemand{ID: req.DemandID, TenantID: req.TenantID, ProjectID: projectID, Title: "一单"},
+		Project:           testProject(req.TenantID, projectID, uuid.New()),
+		EffectivePlaybook: DemandDossierPlaybook{Source: DossierPlaybookSourceNone, ProduceKinds: []string{}},
+		Timeline:          DemandDossierTimeline{Items: []DemandDossierTimelineItem{}},
+	}, nil
 }
 
 func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {

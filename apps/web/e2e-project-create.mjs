@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 
   try {
     console.log('Navigating to login page...');
-    await page.goto('http://127.0.0.1:3000/login', { waitUntil: 'networkidle' });
+    await page.goto('http://127.0.0.1:3100/login', { waitUntil: 'networkidle' });
 
     console.log('Logging in...');
     await page.locator('input[name="username"]').fill('admin');
@@ -17,7 +17,7 @@ import { chromium } from 'playwright';
     console.log('Logged in successfully!');
 
     console.log('Navigating to projects page...');
-    await page.goto('http://127.0.0.1:3000/projects', { waitUntil: 'networkidle' });
+    await page.goto('http://127.0.0.1:3100/projects', { waitUntil: 'networkidle' });
 
     console.log('Clicking create project button...');
     await page.getByRole('button', { name: /新建项目/i }).click();
@@ -61,7 +61,7 @@ import { chromium } from 'playwright';
     console.log('✅ Creation finished, modal closed.');
 
     console.log('Navigating to /task-launches to verify selector...');
-    await page.goto('http://127.0.0.1:3000/task-launches', { waitUntil: 'networkidle' });
+    await page.goto('http://127.0.0.1:3100/task-launches', { waitUntil: 'networkidle' });
     
     console.log('Opening project selector...');
     await page.getByRole('combobox').first().click();

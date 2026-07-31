@@ -677,7 +677,14 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
         ? `关联需求 · ${demand.title}（${demandStatusLabel(demand.status)}）`
         : `关联需求 · ${demand.title}`,
       meta: demand.id ? "demand_id ↗" : "demand",
-      href: demand.id ? `/workflows/${encodeURIComponent(demand.id)}` : undefined
+      // 一单卷宗的 canonical 落点是项目详情需求处所。收件箱事项自带
+      // source_project_id 时直接指过去，省掉 /workflows/{id} 那一跳
+      // （该跳仍保留：飞书历史卡片与不带项目身份的旧数据还靠它兜底）。
+      href: demand.id
+        ? item.source_project_id
+          ? `/projects/${encodeURIComponent(item.source_project_id)}?demand=${encodeURIComponent(demand.id)}&tab=demands`
+          : `/workflows/${encodeURIComponent(demand.id)}`
+        : undefined
 });
     for (const taskTitle of demand.taskTitles) {
       if (seenTaskTitles.has(taskTitle)) continue;

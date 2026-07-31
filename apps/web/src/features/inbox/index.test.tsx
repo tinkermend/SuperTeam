@@ -460,13 +460,39 @@ describe("InboxView", () => {
       .element(screen.getByText("关联任务 · 分析服务器中的Claude Code配置合理性"))
       .toBeVisible();
     await expect.element(screen.getByText("关联项目 · 测试项目")).toBeVisible();
+    // 一单卷宗 canonical 落点：事项自带 source_project_id 时直接指项目详情需求处所，
+    // 不再多绕 /workflows/{id} 那一跳。
     await expect
       .element(screen.getByRole("link", { name: /关联需求 · 帮我分析 Claude Code/ }))
-      .toHaveAttribute("href", `/workflows/${demandId}`);
+      .toHaveAttribute("href", `/projects/project-1?demand=${demandId}&tab=demands`);
     await expect
       .element(screen.getByText("帮我分析 Claude Code（任务：分析服务器中的Claude Code配置合理性）", { exact: true }))
       .toBeVisible();
     await expect.element(screen.getByText("项目 · 测试项目", { exact: true })).toBeVisible();
+  });
+
+  // 兜底不能丢：旧数据/飞书历史卡片没有项目身份时仍走 /workflows/{id} 重定向壳。
+  it("falls back to the /workflows redirect when the item carries no project id", async () => {
+    const demandId = "6cfc23eb-5555-6666-7777-888888888888";
+    const item = makeInboxItem({
+      context: {
+        decision_type: "project_acceptance",
+        demands: [{ id: demandId, status: "completed", task_titles: [], title: "无项目身份需求" }],
+        primary_demand_id: demandId
+},
+      item_type: "project_decision",
+      source_approval_request_id: undefined,
+      source_project_id: undefined,
+      source_task_id: undefined,
+      source_type: "project_decision_request",
+      title: "验收 · 无项目身份需求"
+});
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: item }));
+
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：验收 · 无项目身份需求" }));
+    await expect
+      .element(screen.getByRole("link", { name: /关联需求 · 无项目身份需求/ }))
+      .toHaveAttribute("href", `/workflows/${demandId}`);
   });
 
   it("requests open inbox items by default", async () => {

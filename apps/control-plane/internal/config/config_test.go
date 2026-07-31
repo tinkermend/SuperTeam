@@ -406,3 +406,77 @@ func writeTempConfig(t *testing.T, body string) string {
 
 	return writeConfigFile(t, body)
 }
+
+// dev 环境下未显式配置 → 回落本地 Web 默认来源。
+func TestResolvedAllowedOriginsFallsBackInDev(t *testing.T) {
+	cfg := Config{Environment: EnvironmentDev}
+	got := cfg.ResolvedAllowedOrigins()
+	if len(got) != 2 || got[0] != "http://127.0.0.1:3100" || got[1] != "http://localhost:3100" {
+		t.Fatalf("dev 未配置时应回落本地默认,得到 %#v", got)
+	}
+}
+
+// 显式配置后**不再**叠加 localhost:开发便利不得渗进任何显式声明的部署。
+func TestResolvedAllowedOriginsDoesNotAppendLocalhostWhenConfigured(t *testing.T) {
+	cfg := Config{
+		Environment: EnvironmentDev,
+		HTTP:        HTTPConfig{AllowedOrigins: []string{"https://console.example.com"}},
+	}
+	got := cfg.ResolvedAllowedOrigins()
+	if len(got) != 1 || got[0] != "https://console.example.com" {
+		t.Fatalf("显式配置后不得注入任何默认来源,得到 %#v", got)
+	}
+}
+
+// prod 未配置 → 不回落任何来源(并由 validate 拦成启动失败)。
+func TestResolvedAllowedOriginsHasNoProdFallback(t *testing.T) {
+	cfg := Config{Environment: EnvironmentProd}
+	if got := cfg.ResolvedAllowedOrigins(); len(got) != 0 {
+		t.Fatalf("prod 不得有任何默认来源,得到 %#v", got)
+	}
+}
+
+// prod 漏配 allowedOrigins 必须启动即失败,而不是让用户在浏览器里撞 CORS 错误
+// 再反推到这里。
+func TestValidateRejectsProdWithoutAllowedOrigins(t *testing.T) {
+	t.Setenv("CONTROL_PLANE_ENV", "prod")
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_KEYS", "k1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaao=")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", "k1")
+
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("prod 未配置 allowedOrigins 时必须启动失败")
+	}
+
+	t.Setenv("CONTROL_PLANE_CORS_ALLOWED_ORIGINS", "https://console.example.com")
+	cfg, err := LoadFromEnv()
+	if err != nil {
+		t.Fatalf("配置齐全后应加载成功: %v", err)
+	}
+	if got := cfg.ResolvedAllowedOrigins(); len(got) != 1 || got[0] != "https://console.example.com" {
+		t.Fatalf("prod 来源应取显式配置,得到 %#v", got)
+	}
+}
+
+func TestValidateRejectsUnknownEnvironment(t *testing.T) {
+	t.Setenv("CONTROL_PLANE_ENV", "staging")
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_KEYS", "k1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaao=")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", "k1")
+
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("未知 environment 必须被拒绝")
+	}
+}

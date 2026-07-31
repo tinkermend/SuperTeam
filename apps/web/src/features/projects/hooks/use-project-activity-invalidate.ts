@@ -17,7 +17,7 @@ export type ProjectActivityInvalidateOptions = {
 /**
  * SSE 驱动的需求流程图刷新（spec 2026-07-27 §5 P2-E）：复用既有跨员工活动流
  * `/api/v1/digital-employees/activity/stream`（run-overview 消费先例），事件带
- * 本项目 project_id 时 invalidate 图与 launch-detail 查询，让 30s 保底轮询之外
+ * 本项目 project_id 时 invalidate 卷宗、图与 launch-detail 查询，让 30s 保底轮询之外
  * 的状态变化秒级到达。流断开由 EventSource 自动重连；节流为 leading+trailing
  * （窗口内首事件立即刷、其余合并成窗口末一次），不丢最后一拍。
  */
@@ -47,6 +47,9 @@ export function useProjectActivityInvalidate({
       lastInvalidateMs = Date.now();
       void queryClient.invalidateQueries({ queryKey: ["project-task-graph", projectId] });
       void queryClient.invalidateQueries({ queryKey: ["workflow-detail"] });
+      // 一单卷宗是需求处所的主读模型；漏掉它会让时间线/待你处理停在旧值,
+      // 只能靠 30s 兜底轮询才追上（真实 E2E 揪出）。
+      void queryClient.invalidateQueries({ queryKey: ["demand-dossier"] });
     };
     const onActivity = (event: MessageEvent) => {
       let item: { project_id?: string } | undefined;

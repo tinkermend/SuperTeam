@@ -3093,14 +3093,21 @@ func (r *PgRepository) projectTaskGraphDispatchGates(ctx context.Context, tenant
 // 降序取 1 条,即 LinkProjectTaskLatestResult 指向的最新结果);从未记录结果的
 // 任务不发查询,verdict 侧落 unknown。
 func (r *PgRepository) projectTaskGraphLatestResultContracts(ctx context.Context, req GetProjectTaskGraphRequest, tasks []ProjectTask) (map[uuid.UUID]*TaskResultContract, error) {
+	return r.ListLatestTaskResultContractsByTasks(ctx, req.TenantID, req.ProjectID, tasks)
+}
+
+// ListLatestTaskResultContractsByTasks 取每个任务最新一次结果契约。task-graph
+// 与一单卷宗共用:卷宗只需要交接判定(buildProjectTaskGraphHandoffAssessments
+// 的第二个入参),没有理由为此建整张图再把 nodes 丢掉。
+func (r *PgRepository) ListLatestTaskResultContractsByTasks(ctx context.Context, tenantID, projectID uuid.UUID, tasks []ProjectTask) (map[uuid.UUID]*TaskResultContract, error) {
 	contracts := map[uuid.UUID]*TaskResultContract{}
 	for _, task := range tasks {
 		if task.LatestTaskResultID == nil {
 			continue
 		}
 		results, err := r.ListProjectTaskResults(ctx, ListProjectTaskResultsRequest{
-			TenantID:      req.TenantID,
-			ProjectID:     req.ProjectID,
+			TenantID:      tenantID,
+			ProjectID:     projectID,
 			ProjectTaskID: task.ID,
 			Limit:         1,
 		})
@@ -3903,6 +3910,45 @@ func (r *PgRepository) ListDeclaredArtifactsByTaskIDs(ctx context.Context, tenan
 		return []ProjectArtifactRef{}, nil
 	}
 	rows, err := r.q.ListProjectDeclaredArtifactsByTaskIDs(ctx, queries.ListProjectDeclaredArtifactsByTaskIDsParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskIds: taskIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return artifactRefsFromRecords(rows)
+}
+
+// ListEvidenceRefsByTaskIDs batches a demand's evidence for the dossier rail
+// (spec 2026-07-29 R2 §5.3-5). Deliberately unpaginated: filtering a
+// project-wide page in memory silently truncates and renders "evidence is
+// complete" as "delivery missing".
+func (r *PgRepository) ListEvidenceRefsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectEvidenceRef, error) {
+	if len(taskIDs) == 0 {
+		return []ProjectEvidenceRef{}, nil
+	}
+	rows, err := r.q.ListProjectEvidenceRefsByTaskIDs(ctx, queries.ListProjectEvidenceRefsByTaskIDsParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskIds: taskIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return evidenceRefsFromRecords(rows)
+}
+
+// ListArtifactRefsByTaskIDs batches a demand's artifacts for the dossier rail.
+// Unlike ListDeclaredArtifactsByTaskIDs (acceptance deep-link: only clickable
+// declared deliverables) this returns every artifact of the tasks — the rail
+// answers "what did this demand produce", so dropping fallback attachments or
+// external refs would be the same false negative.
+func (r *PgRepository) ListArtifactRefsByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectArtifactRef, error) {
+	if len(taskIDs) == 0 {
+		return []ProjectArtifactRef{}, nil
+	}
+	rows, err := r.q.ListProjectArtifactRefsByTaskIDs(ctx, queries.ListProjectArtifactRefsByTaskIDsParams{
 		TenantID:       tenantID,
 		ProjectID:      projectID,
 		ProjectTaskIds: taskIDs,

@@ -269,6 +269,8 @@ export function ProjectsView({
     tab?: string;
     /** 执行轨迹面板按任务过滤（?tab=trace&task=<id>）。 */
     task?: string;
+    /** 一单卷宗中栏视图（?tab=demands&demand=<id>&view=timeline|graph）。 */
+    view?: string;
   };
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
@@ -1141,7 +1143,20 @@ export function ProjectsView({
 })
                     }
                     focusDecisionId={search.focus}
+                    demandView={search.view === "graph" ? "graph" : "timeline"}
                     initialDemandId={search.demand}
+                    onDemandViewChange={(view) => {
+                      // 视图进 URL：刷新不丢、深链能直接指到图。
+                      void navigate({
+                        params: { projectId: effectiveProjectId as string },
+                        search: (prev: Record<string, unknown>) => ({
+                          ...prev,
+                          tab: "demands",
+                          view: view === "graph" ? "graph" : undefined
+                        }),
+                        to: "/projects/$projectId"
+                      });
+                    }}
                     initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
                     traceTaskId={search.task}
                     isArchived={isArchived}
