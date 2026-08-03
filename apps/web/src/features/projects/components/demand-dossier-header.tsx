@@ -19,7 +19,27 @@ export function demandStatusTone(status: string) {
 }
 
 /**
- * 一单卷宗单头：身份 + 有效剧本 + 待你处理 + 视图/密度切换。
+ * 本单收口的展示文案。收口是「这一单走多深」的唯一结构化表达，只显示剧本名
+ * 等于只说了按哪套打法、没说打到哪一步。
+ *
+ * 待确认的计划必须标「拟」：把还没人点头的承诺显示成既成事实，正是这套治理
+ * 要防的事。标签缺失时退回技术键——不编中文，也不吞掉收口。
+ */
+export function demandDossierExitText(playbook: {
+  exit_deliverable?: string;
+  exit_label?: string;
+  exit_pending?: boolean;
+}) {
+  const deliverable = playbook.exit_deliverable?.trim();
+  if (!deliverable) return null;
+  const label = playbook.exit_label?.trim() || deliverable;
+  return playbook.exit_pending
+    ? { text: `拟收口 · ${label}`, title: `计划待确认，收口尚未生效：${label}` }
+    : { text: `收口 · ${label}`, title: `本单收口：${label}` };
+}
+
+/**
+ * 一单卷宗单头：身份 + 有效剧本 + 本单收口 + 待你处理 + 视图/密度切换。
  *
  * 刻意**不放**「继续此任务」——同单接续能力属后续版本；放一颗禁用按钮不是留
  * 挂点，是留一颗点不动的承诺按钮。挂点留在契约与组件边界上。
@@ -42,6 +62,7 @@ export function DemandDossierHeader({
   const showPlaybook =
     dossier.effective_playbook.source !== "none" && Boolean(playbookName);
   const pending = dossier.pending_actions ?? [];
+  const exit = demandDossierExitText(dossier.effective_playbook);
 
   return (
     <SoftCard className="p-4" data-testid="demand-dossier-header">
@@ -57,6 +78,15 @@ export function DemandDossierHeader({
             {showPlaybook ? (
               <span className="rounded-full bg-card-soft px-2 py-0.5 text-[11.5px] text-ink-2">
                 剧本 · {playbookName}
+              </span>
+            ) : null}
+            {exit ? (
+              <span
+                className="rounded-full bg-card-soft px-2 py-0.5 text-[11.5px] text-ink-2"
+                data-testid="demand-dossier-exit"
+                title={exit.title}
+              >
+                {exit.text}
               </span>
             ) : null}
           </div>

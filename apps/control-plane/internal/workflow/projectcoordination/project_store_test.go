@@ -775,7 +775,9 @@ func (g fakeTeamBoundaryGatekeeper) ResolveEmployeeTeams(_ context.Context, _ uu
 	return out, nil
 }
 
-func TestLoadSnapshotAppliesTeamBoundaryGate(t *testing.T) {
+// TestLoadSnapshotKeepsCrossTeamProjectMembers: 项目成员即可入执行池；
+// 员工所属团队可与 project.team_id 不同。仅无团队归属的候岗员工被踢出。
+func TestLoadSnapshotKeepsCrossTeamProjectMembers(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
@@ -808,22 +810,16 @@ func TestLoadSnapshotAppliesTeamBoundaryGate(t *testing.T) {
 		got[member.PrincipalID] = true
 	}
 	if !got[ownEmp] {
-		t.Fatalf("own-team employee must be eligible: %#v", snapshot.DigitalEmployeePool)
+		t.Fatalf("same-team employee must be eligible: %#v", snapshot.DigitalEmployeePool)
 	}
-	if got[foreignEmp] {
-		t.Fatalf("foreign-team employee must be gated out (借调机制已下线): %#v", snapshot.DigitalEmployeePool)
+	if !got[foreignEmp] {
+		t.Fatalf("cross-team project member must stay in executor pool: %#v", snapshot.DigitalEmployeePool)
 	}
 	if got[noTeamEmp] {
 		t.Fatalf("teamless employee must be gated out by the participation gate: %#v", snapshot.DigitalEmployeePool)
 	}
-	skipEvents := 0
-	for _, event := range repo.events {
-		if event.EventType == project.ProjectEventLendingEmployeeSkipped {
-			skipEvents++
-		}
-	}
-	if skipEvents != 1 {
-		t.Fatalf("expected one boundary-skip event, got %d", skipEvents)
+	if events := eventsByType(repo.events, project.ProjectEventLendingEmployeeSkipped); len(events) != 0 {
+		t.Fatalf("must not emit foreign-team skip events: %#v", events)
 	}
 	teamlessEvents := eventsByType(repo.events, project.ProjectEventTeamlessEmployeeSkipped)
 	if len(teamlessEvents) != 1 {
@@ -834,7 +830,7 @@ func TestLoadSnapshotAppliesTeamBoundaryGate(t *testing.T) {
 	}
 }
 
-func TestLoadSnapshotTeamBoundaryGateFailsOpenWhenProjectHasNoTeam(t *testing.T) {
+func TestLoadSnapshotDoesNotFilterByProjectTeamWhenProjectHasNoTeam(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
@@ -858,10 +854,10 @@ func TestLoadSnapshotTeamBoundaryGateFailsOpenWhenProjectHasNoTeam(t *testing.T)
 		t.Fatalf("load snapshot: %v", err)
 	}
 	if len(snapshot.DigitalEmployeePool) != 1 || snapshot.DigitalEmployeePool[0].PrincipalID != employeeID {
-		t.Fatalf("project without own team must not boundary-gate executors: %#v", snapshot.DigitalEmployeePool)
+		t.Fatalf("employee with a team must be eligible regardless of project.team_id: %#v", snapshot.DigitalEmployeePool)
 	}
 	if events := eventsByType(repo.events, project.ProjectEventLendingEmployeeSkipped); len(events) != 0 {
-		t.Fatalf("project without own team must not record boundary skips: %#v", events)
+		t.Fatalf("must not record foreign-team skips: %#v", events)
 	}
 }
 

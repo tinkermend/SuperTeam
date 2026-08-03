@@ -625,7 +625,7 @@ ProjectDemandDossierRailSlot:
 2. 左轨角标：P0 做（`sibling_pending=true`）；剧本短名不做
 3. acceptance：dossier 带计数，点开再拉明细
 4. §5.5 走 A 还是 B：实施会话按改动面择一，PR 注明
-5. chat 模式 demand：同进处所；时间线 kind 通用；不强制剧本槽
+5. ~~chat 模式 demand：同进处所~~ **已作废**（2026-08-01）：chat 不产生 demand（`CoordinationMode` 只有 plan/loop，chat 是 `employee` 域的 `task_run`），故不进卷宗。见基线 §4.4 / §5。
 
 ---
 

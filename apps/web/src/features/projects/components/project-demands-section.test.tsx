@@ -410,6 +410,49 @@ describe("ProjectDemandsSection", () => {
     await expect.element(screen.getByText("剧本 · 软件交付")).toBeVisible();
   });
 
+  it("shows the pinned exit in the header so scope is visible, not just the playbook", async () => {
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: stubFetcher({
+          effective_playbook: {
+            exit_deliverable: "review_verdict",
+            exit_label: "审查通过并合入",
+            exit_pending: false,
+            name: "软件交付",
+            produce_kinds: ["conclusion"],
+            source: "project",
+            template_key: "software_delivery"
+},
+})
+},
+    });
+
+    await expect.element(screen.getByTestId("demand-dossier-exit")).toBeVisible();
+    await expect.element(screen.getByText("收口 · 审查通过并合入")).toBeVisible();
+  });
+
+  it("marks an unconfirmed plan's exit as proposed instead of stating it as fact", async () => {
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: stubFetcher({
+          effective_playbook: {
+            exit_deliverable: "release_record",
+            exit_label: "发布上线",
+            exit_pending: true,
+            name: "软件交付",
+            produce_kinds: ["conclusion"],
+            source: "project",
+            template_key: "software_delivery"
+},
+})
+},
+    });
+
+    await expect.element(screen.getByText("拟收口 · 发布上线")).toBeVisible();
+  });
+
   it("shows the dispatch blocker banner while the latest gate verdict still holds the task", async () => {
     const screen = await renderSection({
       fetchTaskGraph: vi

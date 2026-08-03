@@ -603,6 +603,58 @@ func (q *Queries) ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFe
 	return items, nil
 }
 
+const ListPendingOrSentCardUpdatesByResource = `-- name: ListPendingOrSentCardUpdatesByResource :many
+SELECT id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at FROM feishu_outbox
+WHERE tenant_id = $1::uuid
+  AND resource_type = $2::varchar
+  AND resource_id = $3::uuid
+  AND kind = 'card_update'
+  AND status IN ('pending', 'sent')
+`
+
+type ListPendingOrSentCardUpdatesByResourceParams struct {
+	TenantID     uuid.UUID `json:"tenant_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   uuid.UUID `json:"resource_id"`
+}
+
+// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
+func (q *Queries) ListPendingOrSentCardUpdatesByResource(ctx context.Context, arg ListPendingOrSentCardUpdatesByResourceParams) ([]FeishuOutbox, error) {
+	rows, err := q.db.Query(ctx, ListPendingOrSentCardUpdatesByResource, arg.TenantID, arg.ResourceType, arg.ResourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeishuOutbox{}
+	for rows.Next() {
+		var i FeishuOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.Kind,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.RecipientUserID,
+			&i.RecipientOpenID,
+			&i.Payload,
+			&i.Status,
+			&i.Attempts,
+			&i.LastError,
+			&i.FeishuMessageID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectsForHumanMember = `-- name: ListProjectsForHumanMember :many
 SELECT p.id, p.name
 FROM projects p
@@ -669,6 +721,8 @@ type ListSentFeishuOutboxByResourceParams struct {
 	ResourceID   uuid.UUID `json:"resource_id"`
 }
 
+// 已投递的决策卡(含 message_id)。resolve/ack 竞态恢复后 supersede→sent 的行
+// 也会落在这里,供 card_update 入队。
 func (q *Queries) ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error) {
 	rows, err := q.db.Query(ctx, ListSentFeishuOutboxByResource, arg.TenantID, arg.ResourceType, arg.ResourceID)
 	if err != nil {
@@ -797,7 +851,7 @@ SET status = 'sent',
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-  AND status = 'pending'
+  AND status IN ('pending', 'superseded')
 RETURNING id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at
 `
 
@@ -807,6 +861,9 @@ type MarkFeishuOutboxSentParams struct {
 	ID              uuid.UUID   `json:"id"`
 }
 
+// pending:正常投递回执;superseded:resolve 与 ack 竞态——卡已发出但尚未回填
+// message_id 时决策已 resolve 把行标了 superseded。接受两种状态并强制 status=sent,
+// 回填 feishu_message_id,便于后续 card_update 按 message_id 收敛终态卡。
 func (q *Queries) MarkFeishuOutboxSent(ctx context.Context, arg MarkFeishuOutboxSentParams) (FeishuOutbox, error) {
 	row := q.db.QueryRow(ctx, MarkFeishuOutboxSent, arg.FeishuMessageID, arg.TenantID, arg.ID)
 	var i FeishuOutbox
@@ -899,6 +956,26 @@ func (q *Queries) RevokeServiceToken(ctx context.Context, arg RevokeServiceToken
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const SetFeishuOutboxLastError = `-- name: SetFeishuOutboxLastError :exec
+UPDATE feishu_outbox
+SET last_error = $1::text,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+`
+
+type SetFeishuOutboxLastErrorParams struct {
+	LastError string    `json:"last_error"`
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+// 可观测留痕(如 sent 却缺 message_id),不改 status,避免影响消费状态机。
+func (q *Queries) SetFeishuOutboxLastError(ctx context.Context, arg SetFeishuOutboxLastErrorParams) error {
+	_, err := q.db.Exec(ctx, SetFeishuOutboxLastError, arg.LastError, arg.TenantID, arg.ID)
+	return err
 }
 
 const SupersedePendingFeishuOutboxByResource = `-- name: SupersedePendingFeishuOutboxByResource :exec

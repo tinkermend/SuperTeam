@@ -518,6 +518,8 @@ type Querier interface {
 	ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error)
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
+	// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
+	ListPendingOrSentCardUpdatesByResource(ctx context.Context, arg ListPendingOrSentCardUpdatesByResourceParams) ([]FeishuOutbox, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	// Permission-center read path: reads the approval domain directly (never via the
 	// inbox projection). view=mine → target_user_id = actor; view=team → target_user_id NULL.
@@ -603,6 +605,8 @@ type Querier interface {
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListScenarioTemplateVersions(ctx context.Context, arg ListScenarioTemplateVersionsParams) ([]ScenarioTemplateVersion, error)
 	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
+	// 已投递的决策卡(含 message_id)。resolve/ack 竞态恢复后 supersede→sent 的行
+	// 也会落在这里,供 card_update 入队。
 	ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error)
 	// 管理面列表:含 active/revoked,不回显 token_hash。
 	ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]AuthServiceToken, error)
@@ -661,6 +665,9 @@ type Querier interface {
 	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error)
 	MarkFeishuOutboxFailed(ctx context.Context, arg MarkFeishuOutboxFailedParams) (FeishuOutbox, error)
+	// pending:正常投递回执;superseded:resolve 与 ack 竞态——卡已发出但尚未回填
+	// message_id 时决策已 resolve 把行标了 superseded。接受两种状态并强制 status=sent,
+	// 回填 feishu_message_id,便于后续 card_update 按 message_id 收敛终态卡。
 	MarkFeishuOutboxSent(ctx context.Context, arg MarkFeishuOutboxSentParams) (FeishuOutbox, error)
 	MarkProjectPlanRevisionDecomposed(ctx context.Context, arg MarkProjectPlanRevisionDecomposedParams) (ProjectPlanRevision, error)
 	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
@@ -726,6 +733,8 @@ type Querier interface {
 	SetAutomationRuleEnabled(ctx context.Context, arg SetAutomationRuleEnabledParams) (AutomationRule, error)
 	SetAutomationRuleScheduleID(ctx context.Context, arg SetAutomationRuleScheduleIDParams) (AutomationRule, error)
 	SetEmployeeTemplateStatus(ctx context.Context, arg SetEmployeeTemplateStatusParams) (DigitalEmployeeTemplate, error)
+	// 可观测留痕(如 sent 却缺 message_id),不改 status,避免影响消费状态机。
+	SetFeishuOutboxLastError(ctx context.Context, arg SetFeishuOutboxLastErrorParams) error
 	// 提额/设限/清限(P1-A):直接置列而非 COALESCE——列本身可空(NULL=不限),
 	// 需要能显式清回不限,不能用 COALESCE 区分"不改"与"设为不限"。
 	SetProjectBudgetTokenLimit(ctx context.Context, arg SetProjectBudgetTokenLimitParams) (Project, error)

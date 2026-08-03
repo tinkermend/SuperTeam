@@ -5230,7 +5230,15 @@ type ProjectDemandDossier struct {
 
 	// EffectivePlaybook 有效剧本:需求覆盖项目;都没绑或解析失败则 source=none,右轨只按实际产物推导。
 	EffectivePlaybook struct {
-		Name *string `json:"name,omitempty"`
+		// ExitDeliverable 本单收口:这一单走到哪一步。取自计划修订载荷的 exit_deliverable, 空串表示尚未规划或该计划无声明出口。
+		ExitDeliverable *string `json:"exit_deliverable,omitempty"`
+
+		// ExitLabel 收口的中文标签,取自成案时快照进计划载荷的 available_exits (因此是当时承诺的口径,不随模板改版漂移)。可能为空,展示侧自行兜底。
+		ExitLabel *string `json:"exit_label,omitempty"`
+
+		// ExitPending true 表示收口来自尚未确认的计划修订,面向用户须标注"拟", 不得显示成既成事实。
+		ExitPending *bool   `json:"exit_pending,omitempty"`
+		Name        *string `json:"name,omitempty"`
 
 		// ProduceKinds 骨架 produces_defaults 的 kind,去重保序;决定右轨槽位次序。
 		ProduceKinds []string                                    `json:"produce_kinds"`

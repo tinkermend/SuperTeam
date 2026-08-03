@@ -3,6 +3,7 @@ package inbox
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,6 +280,66 @@ func TestDecisionProjectorAdapterUsesInboxContextAndDemandDeepLink(t *testing.T)
 	progress, _ := item.ContextPayload["progress"].(map[string]any)
 	if progress == nil || progress["step"] != 4 {
 		t.Fatalf("expected progress step=4 for closure_confirm, got %#v", item.ContextPayload["progress"])
+	}
+	if label, _ := progress["label"].(string); label == "" || !strings.Contains(label, "待你") {
+		t.Fatalf("open closure_confirm progress must contain 待你, got %#v", progress)
+	}
+}
+
+func TestDecisionProjectorAdapterResolvedDropsDaiNiAndKeepsResolution(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewDecisionProjectorAdapter(service)
+	now := time.Now().UTC()
+	decision := project.DecisionRequest{
+		ID:             uuid.New(),
+		TenantID:       uuid.New(),
+		ProjectID:      uuid.New(),
+		TargetUserID:   uuid.New(),
+		DecisionType:   "plan_review",
+		TitleSnapshot:  "确认项目计划版本",
+		StatusSnapshot: "approved",
+		ResolvedAt:     &now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		InboxContext: map[string]any{
+			"resolution": map[string]any{
+				"decision":         "approved",
+				"decision_label":   "批准",
+				"resolved_by_name": "开发管理员",
+				"channel":          "feishu",
+				"channel_label":    "飞书",
+			},
+		},
+	}
+	if err := adapter.ResolveProjectDecisionRequest(context.Background(), decision); err != nil {
+		t.Fatalf("resolve project: %v", err)
+	}
+	itemID := repo.itemsBySource[sourceKey(decision.TenantID, SourceTypeProjectDecisionRequest, decision.ID)]
+	item, err := repo.GetItem(context.Background(), decision.TenantID, itemID)
+	if err != nil {
+		t.Fatalf("get item: %v", err)
+	}
+	if item.Status != StatusResolved {
+		t.Fatalf("status=%s", item.Status)
+	}
+	if len(item.Actions) != 0 {
+		t.Fatalf("resolved item must have empty actions, got %#v", item.Actions)
+	}
+	progress, _ := item.ContextPayload["progress"].(map[string]any)
+	label, _ := progress["label"].(string)
+	if strings.Contains(label, "待你") {
+		t.Fatalf("resolved progress must not contain 待你: %q", label)
+	}
+	if !strings.Contains(label, "已过") {
+		t.Fatalf("resolved progress should mark gate as 已过: %q", label)
+	}
+	res, _ := item.ContextPayload["resolution"].(map[string]any)
+	if res["channel_label"] != "飞书" || res["decision_label"] != "批准" {
+		t.Fatalf("expected resolution snapshot preserved, got %#v", res)
 	}
 }
 
@@ -964,6 +1025,10 @@ func (r *projectActionRepository) ResolveDecisionRequest(_ context.Context, req 
 	now := time.Now().UTC()
 	resolved.ResolvedAt = &now
 	return resolved, nil
+}
+
+func (r *projectActionRepository) EnsureDecisionCardsTerminal(context.Context, project.DecisionRequest, uuid.UUID, string) error {
+	return nil
 }
 
 // TestStatusFromDecisionSnapshotResolutionVerbs pins the inverted mapping: the

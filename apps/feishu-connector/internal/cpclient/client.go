@@ -28,7 +28,8 @@ func New(baseURL, token string) *Client {
 		baseURL:     strings.TrimRight(baseURL, "/"),
 		token:       token,
 		serviceName: "feishu-connector",
-		httpClient:  &http.Client{Timeout: 15 * time.Second},
+		// 覆盖 outbox 长轮询 wait_ms(默认 2s)+网络余量;普通请求仍远短于该上限。
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -135,11 +136,21 @@ type OutboxItem struct {
 	Attempts        int32          `json:"attempts"`
 }
 
+// ListOutbox 拉取 pending outbox。waitMs>0 时控制平面长轮询:空队列挂起到有写入或超时。
 func (c *Client) ListOutbox(ctx context.Context, limit int) ([]OutboxItem, error) {
+	return c.ListOutboxWait(ctx, limit, 0)
+}
+
+// ListOutboxWait 同 ListOutbox,waitMs 传给控制平面 wait_ms(0 表示立即返回)。
+func (c *Client) ListOutboxWait(ctx context.Context, limit, waitMs int) ([]OutboxItem, error) {
 	var out struct {
 		Items []OutboxItem `json:"items"`
 	}
 	path := fmt.Sprintf("/api/v1/connector/outbox?limit=%d", limit)
+	if waitMs > 0 {
+		path = fmt.Sprintf("%s&wait_ms=%d", path, waitMs)
+	}
+	// 长轮询时 HTTP client 超时需覆盖 wait_ms;do 使用 ctx,由调用方控制。
 	if err := c.do(ctx, http.MethodGet, path, nil, nil, &out); err != nil {
 		return nil, err
 	}

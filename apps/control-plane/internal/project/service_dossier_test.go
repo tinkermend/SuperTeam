@@ -666,6 +666,126 @@ func TestDemandDossierPlaybookKeepsBindingWhenKindsFail(t *testing.T) {
 	}
 }
 
+func (f *dossierFixture) addPlanRevision(number int32, status string, payload map[string]any) PlanRevision {
+	revision := PlanRevision{
+		ID:             uuid.New(),
+		TenantID:       f.tenantID,
+		ProjectID:      f.projectID,
+		DemandID:       f.demand.ID,
+		RevisionNumber: number,
+		Status:         status,
+		Payload:        payload,
+	}
+	f.repo.planRevisions = append(f.repo.planRevisions, revision)
+	return revision
+}
+
+func exitPayload(deliverable string) map[string]any {
+	return map[string]any{
+		"exit_deliverable": deliverable,
+		"available_exits": []any{
+			map[string]any{"deliverable": "branch_ref", "label": "交付分支(不合入)"},
+			map[string]any{"deliverable": "review_verdict", "label": "审查通过并合入"},
+			map[string]any{"deliverable": "release_record", "label": "发布上线"},
+		},
+	}
+}
+
+// 本单收口取**生效**修订,不是最新一版:被驳回后重规划的历史版本不该盖过已确认口径。
+func TestDemandDossierExitComesFromEffectiveRevision(t *testing.T) {
+	f := newDossierFixture(t)
+	f.addPlanRevision(1, PlanRevisionStatusAccepted, exitPayload("review_verdict"))
+	f.addPlanRevision(2, PlanRevisionStatusRejected, exitPayload("release_record"))
+
+	playbook := f.get(t).EffectivePlaybook
+
+	if playbook.ExitDeliverable != "review_verdict" {
+		t.Fatalf("收口应取生效修订,得到 %q", playbook.ExitDeliverable)
+	}
+	if playbook.ExitLabel != "审查通过并合入" {
+		t.Fatalf("收口标签应取载荷快照,得到 %q", playbook.ExitLabel)
+	}
+	if playbook.ExitPending {
+		t.Fatal("已确认的收口不得标为待确认")
+	}
+}
+
+// 还没有生效修订时退到最新一版并标 pending——停在"等计划确认"恰恰是人最需要
+// 看见"这一单打算走多深"的时刻,留白等于在最该说话时闭嘴。
+func TestDemandDossierExitFallsBackToLatestAndFlagsPending(t *testing.T) {
+	f := newDossierFixture(t)
+	f.addPlanRevision(1, PlanRevisionStatusSuperseded, exitPayload("branch_ref"))
+	f.addPlanRevision(2, PlanRevisionStatusPendingReview, exitPayload("release_record"))
+
+	playbook := f.get(t).EffectivePlaybook
+
+	if playbook.ExitDeliverable != "release_record" {
+		t.Fatalf("无生效修订应退到最新一版,得到 %q", playbook.ExitDeliverable)
+	}
+	if playbook.ExitLabel != "发布上线" {
+		t.Fatalf("收口标签错误: %q", playbook.ExitLabel)
+	}
+	if !playbook.ExitPending {
+		t.Fatal("待确认计划的收口必须标 pending,否则会把承诺显示成事实")
+	}
+}
+
+// 模板被删导致剧本降级 none 时,本单当初收口到哪仍是既成事实,不该跟着消失。
+func TestDemandDossierExitSurvivesPlaybookDegradation(t *testing.T) {
+	f := newDossierFixture(t)
+	templateKey := "missing_playbook"
+	f.repo.projects[f.projectID] = Project{
+		ID: f.projectID, TenantID: f.tenantID, Name: "客服工单闭环", Status: ProjectStatusRunning,
+		HumanOwnerUserID: f.ownerID, ScenarioTemplateKey: &templateKey,
+	}
+	f.service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{
+		bindings:     map[string]ScenarioTemplateBinding{},
+		produceKinds: map[string][]string{},
+	})
+	f.addPlanRevision(1, PlanRevisionStatusDecomposed, exitPayload("branch_ref"))
+
+	playbook := f.get(t).EffectivePlaybook
+
+	if playbook.Source != DossierPlaybookSourceNone {
+		t.Fatalf("剧本应降级 none,得到 %q", playbook.Source)
+	}
+	if playbook.ExitDeliverable != "branch_ref" || playbook.ExitLabel != "交付分支(不合入)" {
+		t.Fatalf("剧本降级不得抹掉本单收口: %q / %q", playbook.ExitDeliverable, playbook.ExitLabel)
+	}
+}
+
+// 未规划的需求、以及无出口声明的计划(generic 剧本/无模板)都留空,不编造收口。
+func TestDemandDossierExitEmptyWhenUndeclared(t *testing.T) {
+	f := newDossierFixture(t)
+	if got := f.get(t).EffectivePlaybook.ExitDeliverable; got != "" {
+		t.Fatalf("未规划的需求不应有收口,得到 %q", got)
+	}
+
+	f.addPlanRevision(1, PlanRevisionStatusAccepted, map[string]any{"summary": "无出口声明"})
+	playbook := f.get(t).EffectivePlaybook
+	if playbook.ExitDeliverable != "" || playbook.ExitPending {
+		t.Fatalf("无出口声明应留空: %q / pending=%v", playbook.ExitDeliverable, playbook.ExitPending)
+	}
+}
+
+// available_exits 缺该项时保留技术键、标签留空,由展示侧兜底,不 panic 也不吞掉收口。
+func TestDemandDossierExitKeepsKeyWhenLabelMissing(t *testing.T) {
+	f := newDossierFixture(t)
+	f.addPlanRevision(1, PlanRevisionStatusAccepted, map[string]any{
+		"exit_deliverable": "root_cause",
+		"available_exits":  []any{map[string]any{"deliverable": "fix_record", "label": "实施修复"}},
+	})
+
+	playbook := f.get(t).EffectivePlaybook
+
+	if playbook.ExitDeliverable != "root_cause" {
+		t.Fatalf("收口键应保留,得到 %q", playbook.ExitDeliverable)
+	}
+	if playbook.ExitLabel != "" {
+		t.Fatalf("无匹配标签时应留空,得到 %q", playbook.ExitLabel)
+	}
+}
+
 // 无剧本且无产物 → 空槽 + 空时间线不 panic;这是 automation 单的合法形态。
 func TestDemandDossierEmptyDemandIsHonestNotBroken(t *testing.T) {
 	f := newDossierFixture(t)

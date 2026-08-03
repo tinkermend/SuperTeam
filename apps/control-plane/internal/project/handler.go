@@ -915,6 +915,7 @@ func (h *HTTPHandler) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.
 		Verdict:          body.Verdict,
 		Reason:           body.Reason,
 		AlsoCloseProject: body.AlsoCloseProject,
+		Channel:          "console",
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1100,6 +1101,7 @@ func (h *HTTPHandler) ResolveDecision(w http.ResponseWriter, r *http.Request) {
 		Comment:               body.Comment,
 		Payload:               body.Payload,
 		TargetExitDeliverable: body.TargetExitDeliverable,
+		Channel:               "console",
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1929,7 +1931,7 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTeamlessProjectMember):
 		http.Error(w, "数字员工必须先归属团队才能加入项目："+strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrTeamlessProjectMember.Error()+":")), http.StatusBadRequest)
-	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectName), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrProjectRequiresHumanOwner), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
+	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectName), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrProjectRequiresHumanOwner), errors.Is(err, ErrProjectRequiresDigitalEmployee), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProjectNameConflict), errors.Is(err, ErrProjectWorkspaceNotReady), errors.Is(err, ErrProjectWorkspaceProvision), errors.Is(err, ErrProjectWorkspaceUnavailable):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -2935,10 +2937,13 @@ type demandDossierProjectResponse struct {
 }
 
 type demandDossierPlaybookResponse struct {
-	TemplateKey  *string  `json:"template_key"`
-	Source       string   `json:"source"`
-	Name         string   `json:"name"`
-	ProduceKinds []string `json:"produce_kinds"`
+	TemplateKey     *string  `json:"template_key"`
+	Source          string   `json:"source"`
+	Name            string   `json:"name"`
+	ProduceKinds    []string `json:"produce_kinds"`
+	ExitDeliverable string   `json:"exit_deliverable"`
+	ExitLabel       string   `json:"exit_label"`
+	ExitPending     bool     `json:"exit_pending"`
 }
 
 type demandDossierSignalsResponse struct {
@@ -4111,10 +4116,13 @@ func demandDossierResponseFromDomain(dossier DemandDossier) demandDossierRespons
 			ScenarioTemplateKey: dossier.Project.ScenarioTemplateKey,
 		},
 		EffectivePlaybook: demandDossierPlaybookResponse{
-			TemplateKey:  dossier.EffectivePlaybook.TemplateKey,
-			Source:       dossier.EffectivePlaybook.Source,
-			Name:         dossier.EffectivePlaybook.Name,
-			ProduceKinds: sliceOrEmptyStrings(dossier.EffectivePlaybook.ProduceKinds),
+			TemplateKey:     dossier.EffectivePlaybook.TemplateKey,
+			Source:          dossier.EffectivePlaybook.Source,
+			Name:            dossier.EffectivePlaybook.Name,
+			ProduceKinds:    sliceOrEmptyStrings(dossier.EffectivePlaybook.ProduceKinds),
+			ExitDeliverable: dossier.EffectivePlaybook.ExitDeliverable,
+			ExitLabel:       dossier.EffectivePlaybook.ExitLabel,
+			ExitPending:     dossier.EffectivePlaybook.ExitPending,
 		},
 		Signals: demandDossierSignalsResponse{
 			HasOpenDecisions: dossier.Signals.HasOpenDecisions,

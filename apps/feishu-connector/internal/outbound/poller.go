@@ -16,6 +16,8 @@ import (
 // ControlPlane 轮询与回执所需的控制平面动作。
 type ControlPlane interface {
 	ListOutbox(ctx context.Context, limit int) ([]cpclient.OutboxItem, error)
+	// ListOutboxWait 空队列时在 CP 侧挂起 waitMs,有 pending 或超时后返回。
+	ListOutboxWait(ctx context.Context, limit, waitMs int) ([]cpclient.OutboxItem, error)
 	AckOutbox(ctx context.Context, id, result, feishuMessageID, errText string) error
 }
 
@@ -25,22 +27,38 @@ type Messenger interface {
 	UpdateCard(ctx context.Context, messageID, cardJSON string) error
 }
 
+// defaultLongPollWaitMs:空队列在 CP 挂起的上限。NOTIFY 到达会提前返回。
+const defaultLongPollWaitMs = 2000
+
+// errorBackoff:ListOutbox 失败时短暂退避,避免 tight-loop 打满日志/CP。
+const errorBackoff = 2 * time.Second
+
 type Poller struct {
-	cp           ControlPlane
-	messenger    Messenger
-	webOrigin    string
-	interval     time.Duration
-	mu           sync.Mutex
-	lastPollAt   time.Time
-	lastPollErr  error
+	cp          ControlPlane
+	messenger   Messenger
+	webOrigin   string
+	waitMs      int
+	mu          sync.Mutex
+	lastPollAt  time.Time
+	lastPollErr error
 }
 
 func NewPoller(cp ControlPlane, messenger Messenger, webOrigin string) *Poller {
-	return &Poller{cp: cp, messenger: messenger, webOrigin: webOrigin, interval: 2 * time.Second}
+	return &Poller{cp: cp, messenger: messenger, webOrigin: webOrigin, waitMs: defaultLongPollWaitMs}
 }
 
-// SetInterval 测试用。
-func (p *Poller) SetInterval(interval time.Duration) { p.interval = interval }
+// SetWaitMs 测试/调优:长轮询 wait_ms;0 表示不 wait(立即返回)。
+func (p *Poller) SetWaitMs(waitMs int) { p.waitMs = waitMs }
+
+// SetInterval 兼容旧测试名:将 interval 映射为 wait_ms(秒级→毫秒)。
+// Deprecated: 优先 SetWaitMs。
+func (p *Poller) SetInterval(interval time.Duration) {
+	if interval <= 0 {
+		p.waitMs = 0
+		return
+	}
+	p.waitMs = int(interval / time.Millisecond)
+}
 
 // LastPollAt 供心跳上报最近一次 outbox 轮询时刻。
 func (p *Poller) LastPollAt() *time.Time {
@@ -53,27 +71,39 @@ func (p *Poller) LastPollAt() *time.Time {
 	return &t
 }
 
+// Run 持续长轮询:有 pending 立即投递;空队列在 CP wait 直到 NOTIFY 或超时。
+// 不再用固定 2s ticker——card_update 延迟由「写库→NOTIFY→返回」主导。
 func (p *Poller) Run(ctx context.Context) {
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		case <-ticker.C:
-			p.drainOnce(ctx)
 		}
+		p.drainOnce(ctx)
 	}
 }
 
 func (p *Poller) drainOnce(ctx context.Context) {
-	items, err := p.cp.ListOutbox(ctx, 20)
+	waitMs := p.waitMs
+	var items []cpclient.OutboxItem
+	var err error
+	if waitMs > 0 {
+		items, err = p.cp.ListOutboxWait(ctx, 20, waitMs)
+	} else {
+		items, err = p.cp.ListOutbox(ctx, 20)
+	}
 	p.mu.Lock()
 	p.lastPollAt = time.Now().UTC()
 	p.lastPollErr = err
 	p.mu.Unlock()
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		log.Printf("[outbound] list outbox: %v", err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(errorBackoff):
+		}
 		return
 	}
 	for _, item := range items {

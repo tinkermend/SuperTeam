@@ -203,13 +203,26 @@ function createConfigFetcher(
   revisions: ProjectConfigRevision[] = makeConfigRevisions(),
 ) {
   let requestCount = 0;
-  const latestConfig = () => configs[Math.min(requestCount, configs.length - 1)];
+  // 成员 PUT 后写回最新 config 快照，避免 invalidate 再 GET 时冲掉 UI 已落库的成员改动。
+  let memberState: ProjectConfig["members"] | undefined;
+  const latestConfig = () => {
+    const base = configs[Math.min(requestCount, configs.length - 1)];
+    if (!memberState) return base;
+    return {
+      ...base,
+      digital_employee_pool: memberState.filter(
+        (member) => member.principal_type === "digital_employee",
+      ),
+      human_roles: memberState.filter((member) => member.principal_type === "human_user"),
+      members: memberState
+    };
+  };
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
 
     if (url.pathname === "/api/v1/projects/project-1/config" && method === "GET") {
-      const config = configs[Math.min(requestCount, configs.length - 1)];
+      const config = latestConfig();
       requestCount += 1;
       return jsonResponse(config);
     }
@@ -217,10 +230,75 @@ function createConfigFetcher(
       return jsonResponse(latestConfig().project);
     }
     if (url.pathname === "/api/v1/projects/project-1/members" && method === "PUT") {
-      return jsonResponse(latestConfig().members);
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        members?: Array<{
+          display_name_snapshot?: string;
+          principal_id: string;
+          principal_type: string;
+          project_role: string;
+          settings?: Record<string, unknown>;
+        }>;
+      };
+      const members = (body.members ?? []).map((member, index) => ({
+        display_name_snapshot: member.display_name_snapshot,
+        id: `member-put-${index + 1}`,
+        principal_id: member.principal_id,
+        principal_type: member.principal_type,
+        project_id: "project-1",
+        project_role: member.project_role,
+        settings: member.settings ?? {},
+        status: "active",
+        tenant_id: "tenant-1"
+      })) as ProjectConfig["members"];
+      memberState = members;
+      return jsonResponse(members);
     }
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
-      return jsonResponse([]);
+      return jsonResponse([
+        {
+          description: "已在项目池中",
+          employee_type: "standard_executor",
+          id: "de-1",
+          name: "验收执行员工",
+          owner_user_id: "human-owner-1",
+          permission_policy: {},
+          provider_type: "claude-code",
+          risk_level: "medium",
+          role: "executor",
+          status: "active",
+          team_id: "team-1",
+          team_name: "交付一队",
+          tenant_id: "tenant-1"
+        },
+        {
+          description: "可加入项目",
+          employee_type: "standard_reviewer",
+          id: "de-candidate",
+          name: "可添加审查员",
+          owner_user_id: "human-owner-1",
+          permission_policy: {},
+          provider_type: "claude-code",
+          risk_level: "low",
+          role: "reviewer",
+          status: "active",
+          team_id: "team-1",
+          team_name: "交付一队",
+          tenant_id: "tenant-1"
+        },
+        {
+          description: "无团队不能加入",
+          employee_type: "standard_executor",
+          id: "de-teamless",
+          name: "无团队员工",
+          owner_user_id: "human-owner-1",
+          permission_policy: {},
+          provider_type: "claude-code",
+          risk_level: "low",
+          role: "executor",
+          status: "active",
+          tenant_id: "tenant-1"
+        }
+      ]);
     }
     if (url.pathname === "/api/auth/users" && method === "GET") {
       return jsonResponse({ items: [] });
@@ -561,10 +639,121 @@ describe("ProjectConfigView", () => {
       .toBeInTheDocument();
     await expect.element(screen.getByText("负责人甲").first()).toBeInTheDocument();
     await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "添加数字员工" }))
+      .toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "任务历史" }));
 
     expect(screen.container.querySelector('[data-slot="data-table"]')).toBeTruthy();
     await expect.element(screen.getByText("整理历史任务")).toBeInTheDocument();
+  });
+
+  it("adds a digital employee from the picker dialog", async () => {
+    const fetcher = createConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加数字员工" }));
+
+    await expect
+      .element(screen.getByRole("heading", { name: "添加数字员工" }))
+      .toBeInTheDocument();
+    // 候选列表是 dialog portal 内的可切换行；已在池中 / 无团队的员工不得作为候选。
+    await expect
+      .element(screen.getByRole("button", { name: /可添加审查员/ }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: /无团队员工/ }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /可添加审查员/ }));
+    await userEvent.click(screen.getByRole("button", { name: "加入项目" }));
+
+    await vi.waitFor(() => {
+      const putCall = fetchCalls(fetcher).find(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/members") &&
+          init?.method === "PUT"
+        );
+      });
+      expect(putCall).toBeTruthy();
+      expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
+        members: expect.arrayContaining([
+          expect.objectContaining({
+            principal_id: "human-owner-1",
+            principal_type: "human_user",
+            project_role: "owner"
+          }),
+          expect.objectContaining({
+            principal_id: "de-1",
+            principal_type: "digital_employee",
+            project_role: "executor"
+          }),
+          expect.objectContaining({
+            display_name_snapshot: "可添加审查员",
+            principal_id: "de-candidate",
+            principal_type: "digital_employee",
+            project_role: "executor"
+          })
+        ])
+      });
+    });
+
+    await expect
+      .element(screen.getByRole("button", { name: "移除 可添加审查员" }))
+      .toBeInTheDocument();
+  });
+
+  it("removes a digital employee from the members panel", async () => {
+    const fetcher = createConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "移除 验收执行员工" }),
+    );
+
+    await vi.waitFor(() => {
+      const putCall = fetchCalls(fetcher).find(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/members") &&
+          init?.method === "PUT"
+        );
+      });
+      expect(putCall).toBeTruthy();
+      expect(JSON.parse(String(putCall?.[1]?.body))).toEqual({
+        members: [
+          {
+            display_name_snapshot: "负责人甲",
+            principal_id: "human-owner-1",
+            principal_type: "human_user",
+            project_role: "owner",
+            settings: {}
+          }
+        ]
+      });
+    });
+
+    // toast 可能仍含员工名，以移除按钮与空态为准。
+    await expect
+      .element(screen.getByRole("button", { name: "移除 验收执行员工" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByText("暂无数字员工，点击右上角从目录加入项目执行池"))
+      .toBeInTheDocument();
+  });
+
+  it("disables digital employee management for archived projects", async () => {
+    const fetcher = createConfigFetcher("archived");
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await expect
+      .element(screen.getByRole("button", { name: "添加数字员工" }))
+      .toBeDisabled();
+    await expect
+      .element(screen.getByRole("button", { name: "移除 验收执行员工" }))
+      .toBeDisabled();
   });
 });

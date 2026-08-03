@@ -127,13 +127,27 @@ func TestDecisionResolvedCardKeepsOriginalDetail(t *testing.T) {
 		"employee_names": map[string]any{"emp-1": "后端-小李"},
 	}, "http://web.local:3000")
 	mustValid(t, cardJSON)
-	for _, want := range []string{"共 3 个任务", "支付网关", "改造登录限流", "后端-小李", "张三", "按计划推进", "批准"} {
+	for _, want := range []string{"共 3 个任务", "支付网关", "改造登录限流", "后端-小李", "张三", "按计划推进", "批准", "平台收件箱或其它通道"} {
 		if !strings.Contains(cardJSON, want) {
 			t.Fatalf("resolved card lost original detail %q:\n%s", want, cardJSON)
 		}
 	}
 	if strings.Contains(cardJSON, "resolve_decision") {
 		t.Fatalf("resolved card must not keep action buttons:\n%s", cardJSON)
+	}
+}
+
+func TestDecisionResolvedCardMarksSelfFeishuAction(t *testing.T) {
+	cardJSON := DecisionResolvedCard(map[string]any{
+		"title":             "计划评审",
+		"resolved_status":   "approved",
+		"resolved_by_self":  true,
+	}, "http://web.local:3000")
+	if !strings.Contains(cardJSON, "你在飞书处理的") {
+		t.Fatalf("self-resolved card should mention Feishu channel:\n%s", cardJSON)
+	}
+	if strings.Contains(cardJSON, "平台收件箱") {
+		t.Fatalf("self-resolved card must not claim Console channel:\n%s", cardJSON)
 	}
 }
 

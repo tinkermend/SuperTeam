@@ -1,4 +1,4 @@
-h1:j065LHXwKqyr1Ory50kWuWLtJvGgRaTRQRSHLunbCBw=
+h1:pzYk6o3Mo/gWq61DvM83//oXSZpnx7BSMwh9Pi+q2Os=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -115,3 +115,4 @@ h1:j065LHXwKqyr1Ory50kWuWLtJvGgRaTRQRSHLunbCBw=
 20260727021805_feishu_connector_heartbeat_and_outbox_ops.sql h1:h97L5zzaWPD2QcLntNuyHEaF+C9prokaiuP/mHc5DlE=
 20260727061632_drop_feishu_connector_heartbeats.sql h1:d2LaE35QjbsY1z+XiR4CKiJM/9IX4eMRyxjGdYhg/BA=
 20260729071624_clear_terminal_task_waiting_pointer.sql h1:8bPSm8cV6CmpivkjPfNMA+XdDb4AIo4li2CnKiivErI=
+20260803160000_feishu_outbox_change_notify.sql h1:Bunzv7HxEVnmjBywZ/YAehPSOJXWQ6nnCopjDnEvvb4=

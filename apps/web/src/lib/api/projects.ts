@@ -676,6 +676,12 @@ export type ProjectDemandDossier = {
     source: "demand" | "project" | "none";
     name?: string;
     produce_kinds: string[];
+    /** 本单收口：这一单走到哪一步。空串表示未规划或该计划无出口声明。 */
+    exit_deliverable?: string;
+    /** 收口中文标签（成案时快照，不随模板改版漂移）；可能为空。 */
+    exit_label?: string;
+    /** true = 收口来自尚未确认的计划，展示须标「拟」。 */
+    exit_pending?: boolean;
   };
   /** 密度判定的原料，不是结论——密度由前端决定并允许用户切换。 */
   signals: {

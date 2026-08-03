@@ -131,6 +131,9 @@ type Repository interface {
 	// caller).
 	GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.Context, tenantID, projectID, planRevisionID uuid.UUID) (DecisionRequest, error)
 	ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error)
+	// EnsureDecisionCardsTerminal 幂等收敛飞书决策卡终态(card_update 入队)。
+	// resolve 与 outbox ack 竞态恢复共用;决策仍 pending 时 no-op。
+	EnsureDecisionCardsTerminal(ctx context.Context, decision DecisionRequest, resolvedBy uuid.UUID, comment string) error
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]DecisionRequest, error)
 	ListDemandLaunchEvents(ctx context.Context, tenantID, projectID, demandID uuid.UUID, createdEventID *uuid.UUID, projectTaskIDs, decisionRequestIDs []uuid.UUID, limit int32) ([]ProjectEvent, error)

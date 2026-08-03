@@ -18,6 +18,10 @@ func (f *fakeCP) ListOutbox(_ context.Context, _ int) ([]cpclient.OutboxItem, er
 	return f.items, nil
 }
 
+func (f *fakeCP) ListOutboxWait(ctx context.Context, limit, waitMs int) ([]cpclient.OutboxItem, error) {
+	return f.ListOutbox(ctx, limit)
+}
+
 func (f *fakeCP) AckOutbox(_ context.Context, id, result, feishuMessageID, errText string) error {
 	f.acks = append(f.acks, id+":"+result+":"+feishuMessageID)
 	return nil

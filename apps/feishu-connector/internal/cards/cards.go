@@ -481,9 +481,10 @@ func DecisionResolvedCard(payload map[string]any, webOrigin string) string {
 
 	result := "**处理结果**:" + statusLabel(status)
 	if self, _ := payload["resolved_by_self"].(bool); self {
-		result += "(你处理的)"
+		result += "（你在飞书处理的）"
 	} else if name, _ := payload["resolved_by_name"].(string); name != "" {
-		result += "\n**处理人**:" + name
+		// Console / 其它通道 resolve 后 card_update 带处理人,标明非本卡点击。
+		result += "\n**处理人**:" + name + "（平台收件箱或其它通道）"
 	}
 	if comment, _ := payload["resolution_comment"].(string); comment != "" {
 		result += "\n**说明**:" + clamp(comment, 300)

@@ -78,6 +78,17 @@ type DemandDossierPlaybook struct {
 	Source       string
 	Name         string
 	ProduceKinds []string
+	// ExitDeliverable/ExitLabel 是**本单收口**:这一单打算走多深。基线 §4.2 把
+	// 收口定为剧本内概念(不存在跨剧本的全局"深度"),而它又是"范围可感知"的
+	// 核心信息——只显示剧本名等于只说了"按哪套打法",没说"打到哪一步"。
+	//
+	// 取数不碰模板:成案时 available_exits 已把模板 exits 的 label 快照进计划
+	// 载荷,因此这里读到的是**当时承诺的**口径,不会被模板事后改版改写。
+	ExitDeliverable string
+	ExitLabel       string
+	// ExitPending 表示这个收口来自尚未确认的计划修订(还在等人确认)。此时
+	// 面向用户必须标注"拟",不能把待确认的承诺显示成既成事实。
+	ExitPending bool
 }
 
 // DemandDossierSignals 是密度判定的**原料**,不是结论。密度是用户偏好,由前端
@@ -196,6 +207,7 @@ func (s *Service) GetDemandDossier(ctx context.Context, req GetDemandDossierRequ
 
 	names := s.resolveDemandDossierNames(ctx, facts)
 	playbook := s.resolveDemandDossierPlaybook(ctx, facts)
+	s.resolveDemandDossierExit(ctx, facts, &playbook)
 
 	contracts, err := s.repository.ListLatestTaskResultContractsByTasks(ctx, req.TenantID, facts.Project.ID, facts.ProjectTasks)
 	if err != nil {
@@ -339,6 +351,81 @@ func (s *Service) resolveDemandDossierPlaybook(ctx context.Context, facts *deman
 	}
 	playbook.ProduceKinds = dedupeStringsPreservingOrder(kinds)
 	return playbook
+}
+
+// resolveDemandDossierExit 填充本单收口。**独立于剧本解析成败**:模板被删或
+// spec 不可解析时剧本降级 none,但这一单当初收口到哪是已成事实,不该跟着消失。
+//
+// 取生效计划修订(accepted/decomposing/decomposed)的收口;还没有生效修订时退到
+// 最新一版并标 ExitPending——需求停在"等计划确认"恰恰是人最需要看见"这一单
+// 打算走多深"的时刻,那时把收口留白等于在最该说话时闭嘴。
+//
+// 这里多打一次 ListPlanRevisionsForDemand(验收摘要那条路径内部也会取一次)。
+// 按需求主键的小表读、有索引,换掉的是往剧本服务再要一次模板解析;若之后要
+// 收敛,应把修订列表提到 GetDemandDossier 里一次取齐后向下传,而不是把收口
+// 改回按模板现值渲染(那会让历史单显示改版后的口径)。
+func (s *Service) resolveDemandDossierExit(ctx context.Context, facts *demandLaunchFacts, playbook *DemandDossierPlaybook) {
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, facts.Project.TenantID, facts.Project.ID, facts.Demand.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "一单卷宗收口读取失败,单头不显示收口",
+			"demand_id", facts.Demand.ID, "error", err)
+		return
+	}
+	revision, pending := currentOrLatestPlanRevision(revisions)
+	if revision == nil {
+		return
+	}
+	deliverable, label := planRevisionExit(revision.Payload)
+	if deliverable == "" {
+		return
+	}
+	playbook.ExitDeliverable = deliverable
+	playbook.ExitLabel = label
+	playbook.ExitPending = pending
+}
+
+// currentOrLatestPlanRevision 返回生效修订;没有生效修订时返回版本号最大的一版
+// 并置 pending=true。空列表返回 nil(未规划的需求没有收口可言)。
+func currentOrLatestPlanRevision(revisions []PlanRevision) (*PlanRevision, bool) {
+	effectiveID := CurrentEffectivePlanRevisionID(revisions)
+	var latest *PlanRevision
+	for i := range revisions {
+		if effectiveID != uuid.Nil && revisions[i].ID == effectiveID {
+			return &revisions[i], false
+		}
+		if latest == nil || revisions[i].RevisionNumber > latest.RevisionNumber {
+			latest = &revisions[i]
+		}
+	}
+	if latest == nil {
+		return nil, false
+	}
+	return latest, true
+}
+
+// planRevisionExit 取计划载荷的 exit_deliverable 及其在 available_exits 里的
+// 中文 label(见 projectcoordination.PlanRevisionPayload / PlanExitOption)。
+// 载荷里没有匹配项时 label 留空,由展示侧决定是否回退显示技术键。
+func planRevisionExit(payload map[string]any) (string, string) {
+	deliverable, _ := payload["exit_deliverable"].(string)
+	deliverable = strings.TrimSpace(deliverable)
+	if deliverable == "" {
+		return "", ""
+	}
+	raw, _ := payload["available_exits"].([]any)
+	for _, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := entry["deliverable"].(string)
+		if strings.TrimSpace(key) != deliverable {
+			continue
+		}
+		label, _ := entry["label"].(string)
+		return deliverable, strings.TrimSpace(label)
+	}
+	return deliverable, ""
 }
 
 func buildDemandDossierSignals(facts *demandLaunchFacts) DemandDossierSignals {

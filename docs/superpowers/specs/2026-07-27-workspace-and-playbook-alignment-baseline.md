@@ -119,7 +119,9 @@
 1. **模板不绑具体员工、不绑固定团队**。绑的是抽象角色与能力要求。
 2. **收口（exit）从属于剧本**，不存在跨剧本的全局「深度」枚举。先定问题类型，才谈走多深。
 3. **接续继承，不重选**。同单接续禁止走新开向导、禁止重选剧本；必须保血缘并尽力 resume 原会话。
-4. **chat 不强制剧本**；chat 转任务时才进入受控协作。
+   - **接续 = 新 demand + 血缘链**（2026-08-01 拍板）。原 demand 的生命周期状态**永不回退**——`ProjectDemandStatusCanAdvance` 的单调性是承重不变量，验收闸与终态通知都建立在「终态只到达一次」之上。
+   - 因此**「一单」的用户身份是血缘链，不是单个 demand 行**：卷宗的左轨、URL 与叙事必须按链聚合，否则每接续一次就多出一个「单」。
+4. **chat 不强制剧本**；chat 转任务时才进入受控协作。**chat 不产生 demand，因而不进卷宗**（2026-08-01 拍板）——chat 是 `employee` 域的 `task_run`，处所只覆盖受控协作。
 5. **不新建第五个观察面**。处所是对项目详情需求视图的升级，不是新页面、不新增菜单、不复活已退役的独立需求页。
 6. **缺员必须显式处理**，不得静默降级为「找个人凑合派」。
 7. **无人值守路径（automation 触发）永不因治理配置缺失而失败**；校验前移到有人在场的时刻（规则保存）。
@@ -141,6 +143,8 @@
 | 逐行 diff review 工具 | 人已无法逐行审查 AI 产出；真正有用的是**范围感知**（改了哪 3 个文件、增删多少），两者不是一回事 |
 | 首轮规划新建出口 pin 通路 | 触及 Temporal workflow 输入、需改现有断言、有 replay 风险；改在计划确认时选出口可完全复用现成链路 |
 | 把批准物一等模型塞进第一批实施 | 范围爆炸；先立处所与接续，为批准物留接缝 |
+| 接续 = 在原 demand 上追加任务 | demand 状态单调不可回退（completed/failed 同为最高 rank），要支持就得同时放开单调不变量、让收敛闸二次触发 `acceptance_pending`、把终态通知改成按「终态代次」幂等——三处承重改动换一个可用新 demand 表达的语义。且追加工作会落在**已消费过的验收闸之后**，等于产出永不过闸 |
+| 让 chat 落 demand（新增 `coordination_mode=chat`）以便进卷宗 | 协调线程要额外处理一类不产生 plan 的 demand，收敛闸/验收/status recompute 全线判空；现网存量 chat run 无法回填。chat 的受控化出口已经存在且更正确：**chat 转任务** |
 
 ---
 
@@ -178,6 +182,9 @@
 - **已知缺陷**：人工 recovery 路径 `createRecoveryReplacementTask` 新建任务时不写血缘根，导致人主动重试反而丢 session。
 - resume 不可用时现网 fail-fast 无降级（chat 的降级只在 Web 前端）。
 - runtime 已实现 `send_input` 命令，但控制平面从不下发。
+- **demand 状态单调**：`ProjectDemandStatusCanAdvance`（`project/types.go`）按 rank 只升不降，`advanceProjectDemandStatusWithQueries`（`pg_repository.go`）不满足即静默 `return nil`；`completed/failed/cancelled` 同为最高 rank。收敛闸 `gatedCompletionStatusWithQueries` 与 `enqueueDemandResultNoticeWithQueries` 都建立在此之上。→ §4.3 的接续结论由此而来。
+- **chat 无 demand**：`CoordinationMode` 只有 `plan`/`loop`（`isAutonomousCoordinationMode` 的注释 "chat once it lands" 是未落地的设想）；chat 是 `employee` 域 `task_run(run_kind=chat)`，挂 `task_id`/`project_id`，无 demand 关联。→ §4.4 的排除结论由此而来。
+- **人类决策路由已从 DB 重建，不依赖 workflow 内存**：`route-human-decision-from-store` 版本之后走 `handleHumanDecisionSubmittedFromStore`（`workflow.go`），按 `decision_type` 分发；continue-as-new 丢失内存 map 不再影响新执行。**#2 的 Temporal 风险因此低于原估**：接续可复用「写 DB + 发 signal + workflow 从 store 解析」的既有模式，不改 workflow 输入、无 replay 风险。往既有 demand 图追加任务的机制也已存在（`revisionTaskCreator` / `upstreamSupplementTaskCreator` / `reworkFromAdversarialCreator`）。
 
 **变更采集**
 
@@ -219,7 +226,7 @@
 |---|---|---|---|
 | 0 | 本文 | 为什么与不变量 | 所有 spec 的共同前提 |
 | 1 | 一单卷宗 → [`2026-07-29-demand-workbench-design.md`](./2026-07-29-demand-workbench-design.md)（**已实施** 2026-07-31，R2 范围） | 项目详情需求视图升级为处所；中栏时间线为主/图为辅；右轨按剧本 kind；密度前端可切；统一深链；**新增** demand 只读 dossier API | **容器先行**：接续、变更、治理动作都挂它；CP 只读聚合 + Web，无写路径/无迁移 |
-| 2 | 同单接续 | 「继续此任务」入口；血缘不变量；recovery 丢血缘修复；session 丢失降级 | 用户最痛；挂在 #1 的容器上。**待勘察**：人发起的接续是否需要给 coordinator 发 signal，若触及 Temporal 需在 spec 内评估 |
+| 2 | 同单接续 → [`2026-08-01-demand-continuation-design.md`](./2026-08-01-demand-continuation-design.md)（**立项未实施**） | 「继续这一单」入口；**接续 = 新 demand + 血缘链**（§4.3）；**派发期按员工逐代上溯取回各自会话根**；卷宗按链折叠；recovery 丢血缘修复；resume 降级 | 用户最痛；挂在 #1 的容器上。原「待勘察」已收敛：决策路由已从 store 重建（§6），接续走既有 signal 模式即可，不改 workflow 输入、不改 planner |
 | 3 | 变更范围可见 | base 记录 + commit 后 diff + numstat 文件清单；attestation git 字段回填；右轨渲染器接真数据 | 只填充 #1 的一个渲染器；对运维场景无关，可独立后置 |
 | 4 | 轻发起与剧本归属 | 中枢轻发起；剧本/收口/编制缺口在计划确认卡一屏定；Prompt 模板降权改名；来源字段补齐后收敛项目对话框；项目允许剧本集 | 主要是**简化与收敛**而非新建能力；依赖 #1 已存在（发起完落到哪） |
 
@@ -229,4 +236,4 @@
 
 ## 9. 一句话基线
 
-> **每一单都要有处所；处所的壳是通用的、右轨由剧本决定、密度由驻留需求决定；剧本定义怎么协作而非谁来干；接续继承而不重选；治理长在处所里，不挡在入口前。**
+> **每一次受控协作都要有处所；处所的壳是通用的、右轨由剧本决定、密度由驻留需求决定；剧本定义怎么协作而非谁来干；接续继承而不重选（新 demand 接血缘链，原单终态不回退）；治理长在处所里，不挡在入口前。**

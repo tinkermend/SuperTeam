@@ -521,6 +521,35 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
           <dd className="min-w-0 font-semibold text-ink">{formatSourceType(item)}</dd>
           <dt className="font-semibold text-ink-3">更新时间</dt>
           <dd className="min-w-0 font-semibold text-ink">{formatDateTime(item.last_activity_at)}</dd>
+          {item.status !== "open" ? (
+            <>
+              <dt className="font-semibold text-ink-3">处理结果</dt>
+              <dd className="min-w-0 font-semibold text-ink">{resolvedTimelineTitle(item)}</dd>
+              {(() => {
+                const res = readResolution(item);
+                if (!res) return null;
+                const who = (res.resolved_by_name ?? "").trim();
+                const channel = (res.channel_label ?? "").trim();
+                if (!who && !channel) return null;
+                return (
+                  <>
+                    {who ? (
+                      <>
+                        <dt className="font-semibold text-ink-3">处理人</dt>
+                        <dd className="min-w-0 font-semibold text-ink">{who}</dd>
+                      </>
+                    ) : null}
+                    {channel ? (
+                      <>
+                        <dt className="font-semibold text-ink-3">处理通道</dt>
+                        <dd className="min-w-0 font-semibold text-ink">{channel}</dd>
+                      </>
+                    ) : null}
+                  </>
+                );
+              })()}
+            </>
+          ) : null}
           {item.source_task_id ? (
             <>
               <dt className="font-semibold text-ink-3">关联任务</dt>
@@ -572,12 +601,8 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
             <TimelineItem
               dot={<CheckCircle2 className="size-3" />}
               dotClassName="bg-ok-soft text-ok"
-              title={item.status === "resolved" ? "已处理" : "已取消"}
-              description={
-                item.status === "resolved"
-                  ? "决策已提交，流程已推进到下一节点。"
-                  : "事项已取消，无需再处理。"
-              }
+              title={resolvedTimelineTitle(item)}
+              description={resolvedTimelineDescription(item)}
               timestamp={item.resolved_at ? `${formatDateTime(item.resolved_at)} · resolved_at` : "—"}
             />
           )}
@@ -838,7 +863,7 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
           {item.status !== "open" ? (
             <p className="text-[13px] font-semibold text-ink-2">
               {item.status === "resolved"
-                ? `该事项已处理${item.resolved_at ? `（${formatDateTime(item.resolved_at)}）` : ""}，动作已失效。`
+                ? resolvedActionDisabledMessage(item)
                 : "该事项已取消，无需处理。"}
             </p>
           ) : view === "mine" && actions.length > 0 ? (
@@ -980,6 +1005,71 @@ function waitingDecisionDescription(item: InboxItem): string {
   const head = labels.slice(0, -1).map((label) => `「${label}」`).join("、");
   const tail = labels[labels.length - 1];
   return `选择${head}或「${tail}」后将推动流程进入下一节点。`;
+}
+
+/** 终态 snapshot：resolve 时写入 context.resolution（who / channel / verb / comment）。 */
+type InboxResolutionSnapshot = {
+  decision?: string;
+  decision_label?: string;
+  resolved_by_user_id?: string;
+  resolved_by_name?: string;
+  channel?: string;
+  channel_label?: string;
+  comment?: string;
+};
+
+function readResolution(item: InboxItem): InboxResolutionSnapshot | null {
+  const raw = item.context?.resolution;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  return raw as InboxResolutionSnapshot;
+}
+
+function resolutionVerbPhrase(res: InboxResolutionSnapshot | null, status: InboxItem["status"]): string {
+  if (status === "cancelled") {
+    return "已取消";
+  }
+  const label = (res?.decision_label ?? "").trim();
+  if (!label) {
+    return "已处理";
+  }
+  // decision_label 多为「批准」「驳回」等动词词干；已含「已」时不再叠前缀。
+  return label.startsWith("已") ? label : `已${label}`;
+}
+
+/** 过程记录终态节点标题：如「已批准」「已驳回」「已取消」。 */
+export function resolvedTimelineTitle(item: InboxItem): string {
+  return resolutionVerbPhrase(readResolution(item), item.status);
+}
+
+/** 过程记录终态说明：谁 · 经何通道 · 做了什么（可选备注）。 */
+export function resolvedTimelineDescription(item: InboxItem): string {
+  if (item.status === "cancelled") {
+    return "该事项已取消，无需再处理。";
+  }
+  const res = readResolution(item);
+  if (!res) {
+    return "该事项已完成处理，无需再操作。";
+  }
+  const who = (res.resolved_by_name ?? "").trim() || "项目成员";
+  const channel = (res.channel_label ?? "").trim() || "Console";
+  const verb = resolutionVerbPhrase(res, item.status);
+  const comment = (res.comment ?? "").trim();
+  const base = `${who} 经 ${channel} ${verb}。`;
+  return comment ? `${base} 备注：${comment}` : base;
+}
+
+/** 右侧动作面板终态禁用文案：谁经哪通道处理过。 */
+export function resolvedActionDisabledMessage(item: InboxItem): string {
+  const res = readResolution(item);
+  if (!res) {
+    return "该事项已处理完毕，无需再操作。";
+  }
+  const who = (res.resolved_by_name ?? "").trim() || "项目成员";
+  const channel = (res.channel_label ?? "").trim() || "Console";
+  const verb = resolutionVerbPhrase(res, item.status);
+  return `已由 ${who} 经 ${channel} ${verb}，无需再操作。`;
 }
 
 // 空状态详情面板

@@ -22,6 +22,10 @@ var (
 	ErrInvalidProjectMember        = errors.New("invalid project member")
 	// ErrProjectRequiresHumanOwner:项目必须至少保留一个 owner 角色的人类负责人成员。
 	ErrProjectRequiresHumanOwner = errors.New("project requires at least one human owner")
+	// ErrProjectRequiresDigitalEmployee:提交需求前项目必须已有至少一名 active 数字员工成员。
+	// 空池时不得进入规划(否则规划器会胡填员工 ID / 产出无法校验的路由,再开 planning_failed 卡)。
+	// 文案直接中文:handler 400 原样下发。
+	ErrProjectRequiresDigitalEmployee = errors.New("项目至少包含一个数字员工")
 	// ErrTeamlessProjectMember means a digital_employee member has no team
 	// affiliation. Team affiliation is a precondition for project
 	// participation; teamless (lobby) employees must be bound to a team first.
@@ -1580,6 +1584,9 @@ type SignDemandCriterionVerdictRequest struct {
 	Verdict          string
 	Reason           string
 	AlsoCloseProject bool // §5.3「通过并结项」: when true and project is ready, archive instead of opening closure_confirm
+	// Channel is the human-facing surface for inbox terminal snapshot when
+	// sign-off closes the acceptance decision: feishu | console_inbox | console.
+	Channel string
 }
 
 // SignDemandCriterionVerdictResult reports the demand's status after a
@@ -1777,6 +1784,9 @@ type ResolveDecisionRequest struct {
 	// only meaningful when Decision is request_changes. It pins the replan's
 	// exit via CoordinationSnapshot.PinnedExitDeliverable.
 	TargetExitDeliverable string
+	// Channel is the human-facing resolution surface for inbox terminal
+	// snapshot: feishu | console_inbox | console. Empty defaults to console.
+	Channel string
 }
 
 type CompleteProjectTaskRequest struct {

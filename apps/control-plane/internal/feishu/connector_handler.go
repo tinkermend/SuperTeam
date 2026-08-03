@@ -1,8 +1,10 @@
 package feishu
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,9 +18,18 @@ import (
 
 // ConnectorHTTPHandler 服务 /api/v1/connector/* 路由组(仅 ServiceAuth 可达)。
 type ConnectorHTTPHandler struct {
-	service  *Service
-	outbox   OutboxRepository
-	projects ProjectGateway
+	service       *Service
+	outbox        OutboxRepository
+	projects      ProjectGateway
+	decisionCards DecisionCardTerminalizer
+	outboxWake    *OutboxChangeNotifier
+}
+
+// DecisionCardTerminalizer 决策卡终态收敛(card_update 入队)。
+// 由 project 域实现;outbox ack 在「resolve 与发卡 ack 竞态」后补收敛。
+// 任何错误不得失败 ack——飞书投影永不阻塞投递回执。
+type DecisionCardTerminalizer interface {
+	EnsureDecisionCardsTerminal(ctx context.Context, tenantID, projectID, decisionID uuid.UUID) error
 }
 
 func NewConnectorHTTPHandler(service *Service) *ConnectorHTTPHandler {
@@ -28,6 +39,16 @@ func NewConnectorHTTPHandler(service *Service) *ConnectorHTTPHandler {
 // SetOutboxRepository 注入 outbox 读写(拆开注入以便路由测试用假实现)。
 func (h *ConnectorHTTPHandler) SetOutboxRepository(repo OutboxRepository) {
 	h.outbox = repo
+}
+
+// SetDecisionCardTerminalizer 注入决策卡终态收敛钩子(竞态恢复)。
+func (h *ConnectorHTTPHandler) SetDecisionCardTerminalizer(terminalizer DecisionCardTerminalizer) {
+	h.decisionCards = terminalizer
+}
+
+// SetOutboxChangeNotifier 注入 outbox 长轮询唤醒(PR-2);nil 时 ListOutbox 不 wait。
+func (h *ConnectorHTTPHandler) SetOutboxChangeNotifier(notifier *OutboxChangeNotifier) {
+	h.outboxWake = notifier
 }
 
 type bootstrapConfigResponse struct {
@@ -173,7 +194,9 @@ type outboxItemResponse struct {
 	CreatedAt       string         `json:"created_at"`
 }
 
-// ListOutbox 返回待投递消息(pending),connector 轮询消费。
+// ListOutbox 返回待投递消息(pending),connector 轮询/长轮询消费。
+// wait_ms>0 且当前无 pending 时:挂起直到 feishu_outbox_changed NOTIFY 或超时,
+// 再查一次——把 card_update 延迟从固定 2s 轮询压到近实时(connector 不连库)。
 func (h *ConnectorHTTPHandler) ListOutbox(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == uuid.Nil {
@@ -189,10 +212,31 @@ func (h *ConnectorHTTPHandler) ListOutbox(w http.ResponseWriter, r *http.Request
 		}
 		limit = int32(parsed)
 	}
+	waitMs := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("wait_ms")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 || parsed > 10000 {
+			http.Error(w, "wait_ms must be 0-10000", http.StatusBadRequest)
+			return
+		}
+		waitMs = parsed
+	}
 	items, err := h.outbox.ListPendingOutbox(r.Context(), tenantID, limit)
 	if err != nil {
 		writeFeishuError(w, err)
 		return
+	}
+	if len(items) == 0 && waitMs > 0 && h.outboxWake != nil {
+		h.outboxWake.Wait(r.Context(), tenantID, time.Duration(waitMs)*time.Millisecond)
+		if r.Context().Err() != nil {
+			// 客户端断开:不再写 body。
+			return
+		}
+		items, err = h.outbox.ListPendingOutbox(r.Context(), tenantID, limit)
+		if err != nil {
+			writeFeishuError(w, err)
+			return
+		}
 	}
 	out := make([]outboxItemResponse, 0, len(items))
 	for _, item := range items {
@@ -256,6 +300,18 @@ func (h *ConnectorHTTPHandler) AckOutbox(w http.ResponseWriter, r *http.Request)
 		}
 		writeFeishuError(w, err)
 		return
+	}
+	// 竞态恢复:decision_card 在 resolve 之后才 ack 成功时,MarkSent 已把
+	// superseded→sent 并回填 message_id;此处 best-effort 补入 card_update,
+	// 把飞书活卡收敛为终态。失败只记日志,绝不 fail ack。
+	if req.Result == "sent" && item.Kind == "decision_card" && item.ResourceType == "decision_request" && h.decisionCards != nil {
+		projectID := uuid.Nil
+		if item.ProjectID != nil {
+			projectID = *item.ProjectID
+		}
+		if ensureErr := h.decisionCards.EnsureDecisionCardsTerminal(r.Context(), tenantID, projectID, item.ResourceID); ensureErr != nil {
+			log.Printf("[feishu] ensure decision card terminal after ack %s: %v", item.ID, ensureErr)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": item.Status})
 }

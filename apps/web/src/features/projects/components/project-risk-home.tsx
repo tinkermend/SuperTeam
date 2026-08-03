@@ -41,6 +41,7 @@ import {
   buildRiskCounts,
   emptyProjectRiskSummary,
   formatAttentionHeadline,
+  formatProjectQueueHandlerLabel,
   isActionableRiskReason,
   matchesProjectRiskFilter,
   PROJECT_RISK_FILTERS,
@@ -373,7 +374,6 @@ function ProjectRiskQueueRow({
     summary.owner,
     principalNamesById,
   );
-  const handler = summary.currentHandler?.label;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
     if (event.target !== event.currentTarget) {
@@ -418,7 +418,10 @@ function ProjectRiskQueueRow({
             </span>
             <span className="mt-1 flex min-w-0 max-w-full items-center gap-1 truncate text-[12px] text-ink-3">
               <UserRound aria-hidden className="size-3 shrink-0" />
-              <span className="truncate">{ownerLabel}</span>
+              {/* 负责人名也会出现在处理者列（等待审核态带名字），断言必须能锚定到本列。 */}
+              <span className="truncate" data-testid="project-queue-owner">
+                {ownerLabel}
+              </span>
             </span>
             <span className="mt-1.5 flex flex-wrap items-center gap-1">
               <StatusPill tone={projectStatusTone(project.status)}>
@@ -459,7 +462,7 @@ function ProjectRiskQueueRow({
           className="block min-w-0 max-h-10 max-w-full line-clamp-2 break-words text-[12px] font-semibold leading-5 text-ink"
           data-testid="project-queue-current-handler"
         >
-          {project.status === "archived" ? "已归档" : handler ?? "待调度"}
+          {formatProjectQueueHandlerLabel(summary, project)}
         </span>
       </Td>
       <Td className="whitespace-nowrap px-3 py-2">

@@ -60,6 +60,10 @@ pub struct RunSpec {
     /// 落库(key `capability_convergence`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skill_convergence: Option<crate::skills_convergence::SkillConvergenceReport>,
+    /// 工作区检出的基线 ref(派发下发的 base_ref,不是从 git 反推)。随
+    /// attestation 落 `git_base_ref`:没有它,HEAD 与 diff 都缺一个参照系。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_base_ref: Option<String>,
     pub prompt: String,
     pub session_id: Option<String>,
     pub continue_session: bool,
@@ -388,6 +392,7 @@ mod tests {
             capability_manifest_version: None,
             provider_auth_mode: "host".to_string(),
             mcp_config_path: None,
+            workspace_base_ref: None,
             skill_conflicts: Vec::new(),
             skill_convergence: None,
             prompt: "test".to_string(),
@@ -419,6 +424,7 @@ mod tests {
             capability_manifest_version: None,
             provider_auth_mode: "host".to_string(),
             mcp_config_path: None,
+            workspace_base_ref: None,
             skill_conflicts: Vec::new(),
             skill_convergence: None,
             prompt: "test".to_string(),

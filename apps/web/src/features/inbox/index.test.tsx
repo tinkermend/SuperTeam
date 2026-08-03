@@ -322,6 +322,53 @@ describe("InboxView", () => {
     expect(screen.getByText(/进行中/).query()).toBeNull();
   });
 
+  // 终态 snapshot：过程记录与动作面板展示 who / channel / verb，且无「待你」进度。
+  it("renders resolution snapshot (who / channel / verb) on terminal items", async () => {
+    const resolvedItem = makeInboxItem({
+      status: "resolved",
+      resolved_at: "2026-08-03T05:05:00Z",
+      actions: [],
+      progress: {
+        step: 1,
+        total: 4,
+        label: "计划确认 已过（已批准） → 执行 待开始 → 验收 未开始 → 结项 未开始"
+      },
+      context: {
+        project_name: "客户接入项目",
+        source_title: "准入审批",
+        progress: {
+          step: 1,
+          total: 4,
+          label: "计划确认 已过（已批准） → 执行 待开始 → 验收 未开始 → 结项 未开始"
+        },
+        resolution: {
+          decision: "approved",
+          decision_label: "批准",
+          resolved_by_name: "开发管理员",
+          channel: "feishu",
+          channel_label: "飞书",
+          comment: "联调通过"
+        }
+      }
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: resolvedItem }));
+
+    await userEvent.click(screen.getByText("需要确认客户侧 Runtime 节点接入证据。"));
+    await expect.element(screen.getByRole("heading", { name: "确认客户 Runtime 接入" })).toBeVisible();
+
+    await expect.element(screen.getByText("已批准").first()).toBeVisible();
+    await expect.element(screen.getByText("开发管理员").first()).toBeVisible();
+    await expect.element(screen.getByText("飞书").first()).toBeVisible();
+    await expect
+      .element(screen.getByText("开发管理员 经 飞书 已批准。 备注：联调通过", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("已由 开发管理员 经 飞书 已批准，无需再操作。", { exact: true }))
+      .toBeVisible();
+    expect(screen.getByText(/待你/).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "同意" }).query()).toBeNull();
+  });
+
   it("opens item details when clicking the pending item row body", async () => {
     const screen = await renderInboxView();
 

@@ -49,6 +49,8 @@ struct CommandWorkspace {
     mcp_config_path: Option<PathBuf>,
     skill_conflicts: Vec<String>,
     skill_convergence: Option<crate::skills_convergence::SkillConvergenceReport>,
+    /// 工作区检出的基线 ref（派发下发；非 git 仓工作区为 None）。
+    workspace_base_ref: Option<String>,
     /// Codex/OpenCode 会话 overlay 环境（不指向员工 auth home）。
     provider_overlay_env: std::collections::BTreeMap<String, String>,
 }
@@ -362,6 +364,7 @@ impl RuntimeCommandExecutor {
             mcp_config_path: command_workspace.mcp_config_path,
             skill_conflicts: command_workspace.skill_conflicts,
             skill_convergence: command_workspace.skill_convergence,
+            workspace_base_ref: command_workspace.workspace_base_ref,
             prompt,
             session_id: session_id.clone(),
             continue_session: matches!(
@@ -1213,6 +1216,7 @@ impl RuntimeCommandExecutor {
             mcp_config_path: session.mcp_config_path,
             skill_conflicts: session.skill_conflicts,
             skill_convergence: Some(skill_convergence),
+            workspace_base_ref: resolved.base_ref,
             provider_overlay_env: session.provider_overlay_env,
         })
     }
@@ -1537,6 +1541,9 @@ impl RuntimeCommandWritebackSink {
         duration_ms: Option<i64>,
     ) {
         if let Some(project_task) = &self.project_task {
+            // git 事实按次采集,不缓存:provider_start 记的是基线 HEAD,
+            // provider_terminal 记的是收工时的 HEAD 与变更摘要,两次本就该不同。
+            let git = crate::artifacts::collect_workspace_git_facts(&spec.workspace_path).await;
             let body = project_task_attestation_writeback(
                 project_task,
                 &self.command_id,
@@ -1545,6 +1552,7 @@ impl RuntimeCommandWritebackSink {
                 status,
                 provider_session_id,
                 duration_ms,
+                &git,
             );
             if let Err(error) = self.client.create_project_task_attestation(&body).await {
                 eprintln!(
@@ -2251,6 +2259,7 @@ fn project_task_attestation_writeback(
     status: &str,
     provider_session_id: Option<&str>,
     duration_ms: Option<i64>,
+    git: &crate::artifacts::WorkspaceGitFacts,
 ) -> ProjectTaskAttestationWriteback {
     let mut metadata = serde_json::Map::new();
     metadata.insert(
@@ -2329,10 +2338,10 @@ fn project_task_attestation_writeback(
         stderr_sha256: None,
         artifact_refs: Vec::new(),
         artifact_hashes: serde_json::Value::Object(serde_json::Map::new()),
-        git_branch: None,
-        git_base_ref: None,
-        git_head_sha: None,
-        git_diff_sha256: None,
+        git_branch: git.branch.clone(),
+        git_base_ref: spec.workspace_base_ref.clone(),
+        git_head_sha: git.head_sha.clone(),
+        git_diff_sha256: git.diff_sha256.clone(),
         metadata: serde_json::Value::Object(metadata),
         idempotency_key: project_task_attempt_idempotency_key(
             &context.attempt_id,
@@ -4290,6 +4299,7 @@ mod tests {
                 "/workspace/project/.superteam/mcp/claude.json",
             )),
             skill_conflicts: vec!["beta".to_string()],
+            workspace_base_ref: Some("main".to_string()),
             skill_convergence: Some(crate::skills_convergence::SkillConvergenceReport {
                 materialized: vec!["alpha".to_string()],
                 reused: vec!["gamma".to_string()],
@@ -4305,6 +4315,11 @@ mod tests {
             command_context: None,
         };
 
+        let git = crate::artifacts::WorkspaceGitFacts {
+            branch: Some("feat/x".to_string()),
+            head_sha: Some("a".repeat(40)),
+            diff_sha256: Some("b".repeat(64)),
+        };
         let body = project_task_attestation_writeback(
             &context,
             "cmd-project-task",
@@ -4313,6 +4328,7 @@ mod tests {
             "succeeded",
             Some("provider-session-1"),
             None,
+            &git,
         );
 
         assert_eq!(body.project_id, "44444444-4444-4444-8444-444444444444");
@@ -4328,6 +4344,15 @@ mod tests {
             Some("provider-session-1")
         );
         assert_eq!(body.command_argv, vec!["claude-code"]);
+        // git 四列此前一直硬编码 None,变更范围因此完全不可见;base_ref 取派发
+        // 下发值,其余三项取采集结果。
+        assert_eq!(body.git_branch.as_deref(), Some("feat/x"));
+        assert_eq!(body.git_base_ref.as_deref(), Some("main"));
+        assert_eq!(body.git_head_sha.as_deref(), Some("a".repeat(40).as_str()));
+        assert_eq!(
+            body.git_diff_sha256.as_deref(),
+            Some("b".repeat(64).as_str())
+        );
         assert_eq!(
             body.metadata["workspace_ref"],
             serde_json::Value::String(

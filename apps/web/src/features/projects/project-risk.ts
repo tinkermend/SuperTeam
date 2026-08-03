@@ -7,7 +7,7 @@ import type {
   ProjectPrincipalType,
   ProjectTask,
 } from "@/lib/api/projects";
-import { isAwaitingHumanApproval } from "@/lib/task-status";
+import { isAwaitingHumanApproval, isTerminalTaskStatus } from "@/lib/task-status";
 
 export type ProjectRiskLevel = "none" | "info" | "warn" | "danger";
 
@@ -34,13 +34,23 @@ export type ProjectRiskReason = {
 
 export type ProjectRiskSummaryState = "ready" | "pending" | "error";
 
+/** 队列「当前处理者」列的球权语义，不是任务上粘着的历史 assignee。 */
+export type ProjectQueueHandlerMode =
+  | "executor" // 数字员工执行中
+  | "waiting_review" // 等人审核/放行/决策
+  | "pending_dispatch" // 有在办任务但尚未落到执行者
+  | "idle"; // 无在办
+
 export type ProjectRiskSummary = {
   projectId: string;
   project: Project;
   level: ProjectRiskLevel;
   state: ProjectRiskSummaryState;
   owner?: ProjectTaskHandler;
+  /** 球权方：waiting_review 时为人类负责人；executor 时为数字员工。 */
   currentHandler?: ProjectTaskHandler;
+  /** 队列「当前处理者」展示模式。 */
+  currentHandlerMode?: ProjectQueueHandlerMode;
   currentTask?: ProjectTask;
   reasons: ProjectRiskReason[];
   primaryReason?: ProjectRiskReason;
@@ -183,6 +193,7 @@ export function deriveProjectRiskSummary(
       state: options.state ?? "ready",
       owner: selectProjectOwner(project, members, principalNames),
       currentHandler: undefined,
+      currentHandlerMode: "idle",
       currentTask: undefined,
       reasons: [],
       primaryReason: undefined,
@@ -298,14 +309,17 @@ export function deriveProjectRiskSummary(
 
   const primaryReason = pickPrimaryReason(reasons);
   const level = primaryReason?.level ?? "none";
-  const currentTask = selectCurrentTask(input.tasks ?? []);
   const members = input.members ?? [];
   const principalNames = input.principalNamesById;
-  const currentHandler = selectCurrentHandler(
+  const requiresHuman = reasons.some(
+    (reason) => reason.type === "human_decision" || reason.type === "waiting_human",
+  );
+  const ball = resolveCurrentBall(
     project,
-    currentTask,
+    input.tasks ?? [],
     members,
     principalNames,
+    requiresHuman,
   );
   const owner = selectProjectOwner(project, members, principalNames);
 
@@ -315,13 +329,12 @@ export function deriveProjectRiskSummary(
     level,
     state: options.state ?? "ready",
     owner,
-    currentHandler,
-    currentTask,
+    currentHandler: ball.handler,
+    currentHandlerMode: ball.mode,
+    currentTask: ball.task,
     reasons,
     primaryReason,
-    requiresHuman: reasons.some(
-      (reason) => reason.type === "human_decision" || reason.type === "waiting_human",
-    ),
+    requiresHuman,
     waitingSince: earliestWaitingSince(reasons),
     updatedAt: project.updated_at,
   };
@@ -675,7 +688,12 @@ function pickPrimaryReason(
 }
 
 function selectCurrentTask(tasks: ProjectTask[]): ProjectTask | undefined {
-  return [...tasks].sort((left, right) => {
+  // 只从非终态任务里选「在办」：completed/cancelled 上的历史 assignee 不是当前处理者。
+  const active = tasks.filter((task) => !isTerminalTaskStatus(task.status));
+  if (active.length === 0) {
+    return undefined;
+  }
+  return [...active].sort((left, right) => {
     const leftPriority = taskStatusPriority[normalize(left.status)] ?? 40;
     const rightPriority = taskStatusPriority[normalize(right.status)] ?? 40;
     return (
@@ -685,28 +703,82 @@ function selectCurrentTask(tasks: ProjectTask[]): ProjectTask | undefined {
   })[0];
 }
 
-function selectCurrentHandler(
+/**
+ * 解析队列「当前处理者」球权：
+ * - 等人/待审/有 open 人类决策 → waiting_review（负责人，不是执行 DE）
+ * - 在办且已指派 DE → executor
+ * - 在办未指派 → pending_dispatch（待调度）
+ * - 无在办 → idle（无在办）
+ */
+function resolveCurrentBall(
   project: Project,
-  task: ProjectTask | undefined,
+  tasks: ProjectTask[],
   members: ProjectMember[],
-  principalNames?: ReadonlyMap<string, string>,
-): ProjectTaskHandler | undefined {
-  const assignedDigitalEmployeeId = task?.assigned_digital_employee_id?.trim();
-  if (assignedDigitalEmployeeId) {
-    return buildTaskHandler(
-      assignedDigitalEmployeeId,
-      "digital_employee",
-      members,
-      principalNames,
-    );
-  }
+  principalNames: ReadonlyMap<string, string> | undefined,
+  hasOpenHumanWork: boolean,
+): {
+  task?: ProjectTask;
+  handler?: ProjectTaskHandler;
+  mode: ProjectQueueHandlerMode;
+} {
+  const task = selectCurrentTask(tasks);
+  const owner = selectProjectOwner(project, members, principalNames);
 
-  const humanOwnerId = project.human_owner_user_id?.trim();
-  if (humanOwnerId && isHumanHandledTask(task)) {
-    return buildTaskHandler(humanOwnerId, "human_user", members, principalNames);
+  if (task && isHumanHandledTask(task)) {
+    return { task, handler: owner, mode: "waiting_review" };
   }
+  // 项目级待决（结项/计划等）无任务球权时，仍视为等待人类审核。
+  if (!task && hasOpenHumanWork) {
+    return { task: undefined, handler: owner, mode: "waiting_review" };
+  }
+  if (task) {
+    const assignedDigitalEmployeeId = task.assigned_digital_employee_id?.trim();
+    if (assignedDigitalEmployeeId) {
+      return {
+        task,
+        handler: buildTaskHandler(
+          assignedDigitalEmployeeId,
+          "digital_employee",
+          members,
+          principalNames,
+        ),
+        mode: "executor",
+      };
+    }
+    return { task, handler: undefined, mode: "pending_dispatch" };
+  }
+  return { task: undefined, handler: undefined, mode: "idle" };
+}
 
-  return undefined;
+/** 队列「当前处理者」列文案。归档只由状态 pill 表达，本列不再写「已归档」。 */
+export function formatProjectQueueHandlerLabel(
+  summary: Pick<
+    ProjectRiskSummary,
+    "currentHandler" | "currentHandlerMode" | "owner" | "project"
+  >,
+  project: Project = summary.project,
+): string {
+  if (normalize(project.status) === "archived" || project.archived_at) {
+    return "—";
+  }
+  const mode = summary.currentHandlerMode ?? "idle";
+  if (mode === "waiting_review") {
+    const name =
+      summary.currentHandler?.label?.trim() ||
+      summary.owner?.label?.trim() ||
+      resolveProjectOwnerLabel(project, summary.owner);
+    if (name && name !== "未设置") {
+      return `等待审核 · ${name}`;
+    }
+    return "等待审核";
+  }
+  if (mode === "executor") {
+    return summary.currentHandler?.label?.trim() || "执行中";
+  }
+  if (mode === "pending_dispatch") {
+    return "待调度";
+  }
+  return "无在办";
 }
 
 function selectProjectOwner(

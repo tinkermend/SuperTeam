@@ -2167,6 +2167,11 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if project.Status == ProjectStatusArchived || project.ArchivedAt != nil {
 		return nil, ErrProjectArchived
 	}
+	// 硬门禁:无 active 数字员工不得提交需求、不得启动规划。
+	// 协调侧 no_plannable_digital_employee 是事后兜底;产品期望在发起时就失败。
+	if err := s.ensureProjectHasDigitalEmployee(ctx, req.TenantID, req.ProjectID); err != nil {
+		return nil, err
+	}
 	preference, reviewerSourceRefs, err := s.resolveDemandReviewer(ctx, req, project)
 	if err != nil {
 		return nil, err
@@ -2255,6 +2260,33 @@ func (s *Service) CloseDemand(ctx context.Context, req CloseDemandRequest) (*Pro
 		return nil, err
 	}
 	return &updated, nil
+}
+
+// ensureProjectHasDigitalEmployee rejects demand submission when the project
+// has no active digital_employee member. Planning requires an executor pool;
+// empty pools previously produced planning_failed cards with misleading
+// "输出无法解析" after the model filled placeholder employee IDs.
+func (s *Service) ensureProjectHasDigitalEmployee(ctx context.Context, tenantID, projectID uuid.UUID) error {
+	members, err := s.repository.ListProjectMembers(ctx, tenantID, projectID)
+	if err != nil {
+		return err
+	}
+	if !projectHasActiveDigitalEmployee(members) {
+		return ErrProjectRequiresDigitalEmployee
+	}
+	return nil
+}
+
+// projectHasActiveDigitalEmployee reports whether any active digital_employee
+// member is on the project (role-agnostic at submit gate: presence is enough
+// to attempt planning; coordinator still applies team/boundary filters later).
+func projectHasActiveDigitalEmployee(members []ProjectMember) bool {
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeDigitalEmployee && member.Status == "active" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) resolveDemandReviewer(ctx context.Context, req SubmitProjectDemandRequest, project Project) (*ReviewerPreference, map[string]any, error) {
@@ -6521,11 +6553,15 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 			// card that missed the resolution projection (e.g. a historical
 			// zombie left open by an unmapped resolution verb) converges to
 			// resolved on the retry instead of failing "projection not applied".
+			s.attachDecisionResolution(ctx, &decision, req)
 			if s.inbox != nil {
 				if err := s.inbox.ResolveProjectDecisionRequest(ctx, decision); err != nil {
 					return nil, err
 				}
 			}
+			// Self-heal 飞书投影:首次 card_update 丢/竞态漏网时,幂等重试再入队。
+			// best-effort——投影失败不挡业务幂等返回(飞书永不阻塞 Console)。
+			_ = s.repository.EnsureDecisionCardsTerminal(ctx, decision, req.DecidedByUserID, req.Comment)
 			return &decision, nil
 		}
 		return nil, ErrInvalidProject
@@ -6579,6 +6615,7 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	if err != nil {
 		return nil, err
 	}
+	s.attachDecisionResolution(ctx, &resolved, req)
 	if s.inbox != nil {
 		if err := s.inbox.ResolveProjectDecisionRequest(ctx, resolved); err != nil {
 			return nil, err
@@ -6608,6 +6645,106 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	return &resolved, nil
+}
+
+// attachDecisionResolution stamps inbox terminal-state snapshot fields onto
+// decision.InboxContext before ResolveProjectDecisionRequest: who / channel /
+// verb / comment. Progress is re-derived in the inbox adapter without「待你」.
+func (s *Service) attachDecisionResolution(ctx context.Context, decision *DecisionRequest, req ResolveDecisionRequest) {
+	if decision == nil {
+		return
+	}
+	if decision.InboxContext == nil {
+		decision.InboxContext = map[string]any{}
+	}
+	channel := strings.TrimSpace(req.Channel)
+	if channel == "" {
+		channel = "console"
+	}
+	name := s.resolverDisplayName(ctx, req.TenantID, req.ProjectID, req.DecidedByUserID)
+	decision.InboxContext["resolution"] = map[string]any{
+		"decision":            req.Decision,
+		"decision_label":      decisionVerbLabel(req.Decision),
+		"resolved_by_user_id": req.DecidedByUserID.String(),
+		"resolved_by_name":    name,
+		"channel":             channel,
+		"channel_label":       resolutionChannelLabel(channel),
+		"comment":             strings.TrimSpace(req.Comment),
+	}
+}
+
+func (s *Service) resolverDisplayName(ctx context.Context, tenantID, projectID, userID uuid.UUID) string {
+	if userID == uuid.Nil || s.repository == nil {
+		return "项目成员"
+	}
+	// Best-effort name; projection must not fail resolve on lookup errors.
+	members, err := s.repository.ListProjectMembers(ctx, tenantID, projectID)
+	if err == nil {
+		for _, member := range members {
+			if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == userID {
+				if member.DisplayNameSnapshot != nil {
+					if n := strings.TrimSpace(*member.DisplayNameSnapshot); n != "" {
+						return n
+					}
+				}
+				break
+			}
+		}
+	}
+	// Fallback: short id so the UI never shows an empty actor.
+	id := userID.String()
+	if len(id) >= 8 {
+		return "用户 " + id[:8]
+	}
+	return "项目成员"
+}
+
+func decisionVerbLabel(decision string) string {
+	switch strings.TrimSpace(decision) {
+	case "approved":
+		return "批准"
+	case "rejected":
+		return "驳回"
+	case "needs_more_evidence":
+		return "要求补证"
+	case "request_changes":
+		return "打回重规划"
+	case "retry":
+		return "重试"
+	case "cancel_downstream":
+		return "取消下游"
+	case "reassign":
+		return "改派"
+	case "restaffed":
+		return "已补员重规划"
+	case "exempted":
+		return "豁免约束"
+	case "retry_planning":
+		return "重新规划"
+	case "close_demand":
+		return "关闭需求"
+	default:
+		if decision == "" {
+			return "已处理"
+		}
+		return decision
+	}
+}
+
+func resolutionChannelLabel(channel string) string {
+	switch strings.TrimSpace(channel) {
+	case "feishu":
+		return "飞书"
+	case "console_inbox":
+		return "Console 收件箱"
+	case "console":
+		return "Console"
+	default:
+		if channel == "" {
+			return "Console"
+		}
+		return channel
+	}
 }
 
 // createPlanningGapExemption persists the DemandConstraintExemption for a
@@ -6955,11 +7092,11 @@ func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req Resol
 	}
 	switch req.Decision {
 	case "approved":
-		if _, err := s.SignAllPendingDemandCriteria(ctx, req.TenantID, demandID, req.DecidedByUserID, req.Comment); err != nil {
+		if _, err := s.SignAllPendingDemandCriteria(ctx, req.TenantID, demandID, req.DecidedByUserID, req.Comment, req.Channel); err != nil {
 			return nil, err
 		}
 	case "rejected":
-		if _, err := s.signFirstPendingDemandCriterionUnsatisfied(ctx, req.TenantID, demandID, req.DecidedByUserID, req.Comment); err != nil {
+		if _, err := s.signFirstPendingDemandCriterionUnsatisfied(ctx, req.TenantID, demandID, req.DecidedByUserID, req.Comment, req.Channel); err != nil {
 			return nil, err
 		}
 	default:
@@ -6969,6 +7106,9 @@ func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req Resol
 	if err != nil {
 		return nil, err
 	}
+	// Sign kernel already stamped resolution via req.Channel; re-attach for
+	// callers that only got back the reloaded decision without the in-memory map.
+	s.attachDecisionResolution(ctx, &resolved, req)
 	return &resolved, nil
 }
 
@@ -6981,7 +7121,7 @@ func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req Resol
 // human-signable methods (human_judgment / adversarial_review / review_gate) are
 // touched; automated_test criteria are never human-signed. Any single failure
 // aborts (no silent half-sign — reconcile can self-heal, but the API must报错).
-func (s *Service) SignAllPendingDemandCriteria(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason string) (*SignDemandCriterionVerdictResult, error) {
+func (s *Service) SignAllPendingDemandCriteria(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason, channel string) (*SignDemandCriterionVerdictResult, error) {
 	signable, err := s.pendingHumanSignableCriteria(ctx, tenantID, demandID)
 	if err != nil {
 		return nil, err
@@ -6998,6 +7138,7 @@ func (s *Service) SignAllPendingDemandCriteria(ctx context.Context, tenantID, de
 			CriterionID: criterionID,
 			Verdict:     demandCriterionVerdictSatisfied,
 			Reason:      reason,
+			Channel:     channel,
 		})
 		if err != nil {
 			return nil, err
@@ -7011,7 +7152,7 @@ func (s *Service) SignAllPendingDemandCriteria(ctx context.Context, tenantID, de
 // pending human-signable blocking criterion unsatisfied — a single unsatisfied
 // blocking verdict fails the whole demand via convergeDemandSignOff, so there is
 // no need to touch the rest.
-func (s *Service) signFirstPendingDemandCriterionUnsatisfied(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason string) (*SignDemandCriterionVerdictResult, error) {
+func (s *Service) signFirstPendingDemandCriterionUnsatisfied(ctx context.Context, tenantID, demandID, actorUserID uuid.UUID, reason, channel string) (*SignDemandCriterionVerdictResult, error) {
 	signable, err := s.pendingHumanSignableCriteria(ctx, tenantID, demandID)
 	if err != nil {
 		return nil, err
@@ -7026,6 +7167,7 @@ func (s *Service) signFirstPendingDemandCriterionUnsatisfied(ctx context.Context
 		CriterionID: signable[0],
 		Verdict:     demandCriterionVerdictUnsatisfied,
 		Reason:      reason,
+		Channel:     channel,
 	})
 }
 
@@ -7091,7 +7233,7 @@ func (s *Service) convergeDemandSignOff(ctx context.Context, req SignDemandCrite
 		if err := s.repository.AdvanceProjectDemandStatus(ctx, req.TenantID, demand.ProjectID, req.DemandID, ProjectDemandStatusFailed); err != nil {
 			return nil, err
 		}
-		if err := s.resolveDemandAcceptanceDecisionIfPending(ctx, req.TenantID, demand.ProjectID, req.DemandID, revisionID, "rejected", req.ActorUserID, req.Reason, criterion); err != nil {
+		if err := s.resolveDemandAcceptanceDecisionIfPending(ctx, req.TenantID, demand.ProjectID, req.DemandID, revisionID, "rejected", req.ActorUserID, req.Reason, req.Channel, criterion); err != nil {
 			return nil, err
 		}
 		targetStatus = ProjectDemandStatusFailed
@@ -7105,7 +7247,7 @@ func (s *Service) convergeDemandSignOff(ctx context.Context, req SignDemandCrite
 		}
 		targetStatus = updatedDemand.Status
 		if targetStatus == ProjectDemandStatusCompleted {
-			if err := s.resolveDemandAcceptanceDecisionIfPending(ctx, req.TenantID, demand.ProjectID, req.DemandID, revisionID, "approved", req.ActorUserID, req.Reason, nil); err != nil {
+			if err := s.resolveDemandAcceptanceDecisionIfPending(ctx, req.TenantID, demand.ProjectID, req.DemandID, revisionID, "approved", req.ActorUserID, req.Reason, req.Channel, nil); err != nil {
 				return nil, err
 			}
 		}
@@ -7147,7 +7289,7 @@ func (s *Service) reconcileTerminalDemandSignOff(ctx context.Context, req SignDe
 		} else if !eligible {
 			return nil, ErrProjectDecisionForbidden
 		}
-		if err := s.resolveDemandAcceptanceDecisionIfPending(ctx, req.TenantID, demand.ProjectID, req.DemandID, revisionID, resolution, req.ActorUserID, req.Reason, rejectedCriterion); err != nil {
+		if err := s.resolveDemandAcceptanceDecisionIfPending(ctx, req.TenantID, demand.ProjectID, req.DemandID, revisionID, resolution, req.ActorUserID, req.Reason, req.Channel, rejectedCriterion); err != nil {
 			return nil, err
 		}
 	case errors.Is(err, ErrProjectNotFound):
@@ -7260,7 +7402,7 @@ func (s *Service) tryCloseProjectFromDemandSignOff(ctx context.Context, tenantID
 // benign: a duplicate audit event (append then crash before resolve) or a rare
 // stranded-pending approval (resolve decision then crash before approval), never
 // a stuck demand/project.
-func (s *Service) resolveDemandAcceptanceDecisionIfPending(ctx context.Context, tenantID, projectID, demandID, revisionID uuid.UUID, resolution string, actorID uuid.UUID, reason string, rejectedCriterion *DemandAcceptanceCriterion) error {
+func (s *Service) resolveDemandAcceptanceDecisionIfPending(ctx context.Context, tenantID, projectID, demandID, revisionID uuid.UUID, resolution string, actorID uuid.UUID, reason, channel string, rejectedCriterion *DemandAcceptanceCriterion) error {
 	decision, err := s.repository.GetPendingDemandAcceptanceDecisionByPlanRevision(ctx, tenantID, projectID, revisionID)
 	if errors.Is(err, ErrProjectNotFound) {
 		return nil // already resolved — converged
@@ -7314,6 +7456,14 @@ func (s *Service) resolveDemandAcceptanceDecisionIfPending(ctx context.Context, 
 	if err != nil {
 		return err
 	}
+	s.attachDecisionResolution(ctx, &resolved, ResolveDecisionRequest{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		DecidedByUserID: actorID,
+		Decision:        resolution,
+		Comment:         reason,
+		Channel:         channel,
+	})
 	if s.inbox != nil {
 		if err := s.inbox.ResolveProjectDecisionRequest(ctx, resolved); err != nil {
 			return err

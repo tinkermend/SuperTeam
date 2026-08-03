@@ -90,8 +90,10 @@ func (s *ProjectStore) WithProjectTaskNodeResolver(resolver GateProjectTaskNodeR
 	return s
 }
 
-// WithTeamBoundaryGatekeeper attaches the team-boundary gate used to exclude digital
-// employees from foreign teams out of the project's executor pool.
+// WithTeamBoundaryGatekeeper attaches a team-assignment resolver used only for the
+// teamless participation gate (员工必须归属某团队)。**不再**按 project.team_id 过滤
+// 项目成员：项目是运行载体，数字员工入项目后即可规划/执行，与其所属团队无关。
+// （历史「跨团队借调下线 → 外团队一律踢出池」与产品语义冲突，已废止。）
 func (s *ProjectStore) WithTeamBoundaryGatekeeper(gatekeeper TeamBoundaryGatekeeper) *ProjectStore {
 	s.teamBoundary = gatekeeper
 	return s
@@ -175,42 +177,12 @@ func (s *ProjectStore) planningProfileRecords(ctx context.Context, tenantID, pro
 	return records
 }
 
-// teamBoundaryEligibleEmployeeIDs applies the team-boundary gate to candidate
-// digital-employee IDs. It returns the set of eligible IDs and a map of skipped
-// employee -> the foreign team they belong to. A nil eligible set means "do not
-// filter" (no gatekeeper or no candidates) so behavior stays backward-compatible.
-// ownTeamID is the project's own team (may be nil).
-func (s *ProjectStore) teamBoundaryEligibleEmployeeIDs(ownTeamID *uuid.UUID, employeeTeams map[uuid.UUID]uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, map[uuid.UUID]uuid.UUID) {
-	if s.teamBoundary == nil || ownTeamID == nil || employeeTeams == nil || len(employeeIDs) == 0 {
-		return nil, nil
-	}
-	eligible := make(map[uuid.UUID]bool, len(employeeIDs))
-	skipped := make(map[uuid.UUID]uuid.UUID)
-	for _, id := range employeeIDs {
-		team, hasTeam := employeeTeams[id]
-		switch {
-		case !hasTeam || team == uuid.Nil:
-			// Teamless employees never reach this gate: the participation
-			// gate ahead of it already skipped them.
-			eligible[id] = true
-		case team == *ownTeamID:
-			// Project's own team → eligible.
-			eligible[id] = true
-		default:
-			// Foreign team → gated out of the executor pool (借调机制已下线).
-			skipped[id] = team
-		}
-	}
-	return eligible, skipped
-}
-
 // candidateTeamAssignments resolves the candidates' owning teams for the
-// team-affiliation participation gate. Resolution order: the team-boundary
-// gatekeeper's resolver when wired, else the project repository's
-// MemberTeamAssignmentResolver. The second return is false when no source is
-// available or the lookup failed — the gate then fails open so a transient
-// error never strands planning; the authoritative gate remains the
-// member-write validation in the project service.
+// teamless participation gate. Resolution order: the team resolver when wired,
+// else the project repository's MemberTeamAssignmentResolver. The second return
+// is false when no source is available or the lookup failed — the gate then
+// fails open so a transient error never strands planning; the authoritative
+// gate remains the member-write validation in the project service.
 func (s *ProjectStore) candidateTeamAssignments(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, bool) {
 	if len(employeeIDs) == 0 {
 		return map[uuid.UUID]uuid.UUID{}, true
@@ -261,29 +233,6 @@ func (s *ProjectStore) recordTeamlessSkips(ctx context.Context, tenantID, projec
 	}
 }
 
-// recordTeamBoundarySkips emits a best-effort coordination event for each digital
-// employee excluded from the pool for belonging to a foreign team. Failures are
-// ignored so observability writes never block planning.
-func (s *ProjectStore) recordTeamBoundarySkips(ctx context.Context, tenantID, projectID, demandID uuid.UUID, skipped map[uuid.UUID]uuid.UUID) {
-	if s.repository == nil || len(skipped) == 0 {
-		return
-	}
-	for employeeID, teamID := range skipped {
-		_, _ = s.repository.AppendProjectEvent(ctx, coordinatorEvent(
-			tenantID,
-			projectID,
-			project.ProjectEventLendingEmployeeSkipped,
-			"project_coordinator",
-			"数字员工属于其他团队，被排除出可执行池（跨团队借调机制已下线）",
-			map[string]any{
-				"digital_employee_id": employeeID.String(),
-				"team_id":             teamID.String(),
-				"demand_id":           demandID.String(),
-			},
-		))
-	}
-}
-
 func NewProjectStore(repository project.Repository) *ProjectStore {
 	return NewProjectStoreWithApprovals(repository, nil)
 }
@@ -306,10 +255,9 @@ type DigitalEmployeePlanningProfileSource interface {
 	PlanningProfileRecords(ctx context.Context, tenantID, projectID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error)
 }
 
-// TeamBoundaryGatekeeper enforces the project's team boundary when the coordinator
-// builds its executor pool: a digital employee whose owning team differs from the
-// project's own team is excluded (团队借调机制已下线，跨团队员工一律不可用)；
-// employees with no team, or in the project's own team, are never gated here.
+// TeamBoundaryGatekeeper resolves digital-employee → owning team for the
+// teamless participation gate only. Name is historical (曾误用为「外团队踢出池」)；
+// 现仅提供团队归属查询，不参与项目成员执行资格裁决。
 type TeamBoundaryGatekeeper interface {
 	// ResolveEmployeeTeams maps the given digital-employee IDs to their owning team.
 	// Employees with no owning team are omitted from the result.
@@ -372,17 +320,12 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		}
 	}
 	s.recordTeamlessSkips(ctx, input.TenantID, input.ProjectID, input.DemandID, teamlessSkipped)
-	// Team-boundary gate: employees from a foreign team are excluded from the executor
-	// pool (跨团队借调机制已下线)，excluded ones recorded as skipped (best-effort audit event).
-	boundaryEligible, boundarySkipped := s.teamBoundaryEligibleEmployeeIDs(projectRecord.TeamID, employeeTeams, candidateIDs)
-	s.recordTeamBoundarySkips(ctx, input.TenantID, input.ProjectID, input.DemandID, boundarySkipped)
+	// 执行池 = 项目成员中 active 数字员工 − 未归属团队者。
+	// 不按 project.team_id 过滤：跨团队员工只要已加入项目即可规划/执行。
 	eligibleCandidates := make([]project.ProjectMember, 0, len(candidates))
 	eligibleCandidateIDs := make([]uuid.UUID, 0, len(candidates))
 	for _, member := range candidates {
 		if teamlessSkipped[member.PrincipalID] {
-			continue
-		}
-		if boundaryEligible != nil && !boundaryEligible[member.PrincipalID] {
 			continue
 		}
 		eligibleCandidates = append(eligibleCandidates, member)

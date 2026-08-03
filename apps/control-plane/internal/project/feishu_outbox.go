@@ -208,6 +208,10 @@ func (r *PgRepository) enqueueDecisionCardOutboxWithQueries(ctx context.Context,
 // supersedeDecisionOutboxWithQueries 决策 resolve 后:pending 卡片作废,已发送的
 // 卡片按 feishu_message_id 入队更新。card_update payload 以原卡快照为底合并终态
 // 信息——终态卡必须保留原始详情,飞书端不回控制台也能看清"批的是什么"。
+//
+// 幂等:可在 resolve 与 outbox ack 竞态恢复路径重复调用;已存在 pending/sent
+// card_update 的 message_id 不再重复入队。sent 却缺 message_id 的行写 last_error
+// 留痕,禁止静默跳过。
 func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q *queries.Queries, decision DecisionRequest, resolvedBy uuid.UUID, comment string) error {
 	if err := q.SupersedePendingFeishuOutboxByResource(ctx, queries.SupersedePendingFeishuOutboxByResourceParams{
 		TenantID:     decision.TenantID,
@@ -224,33 +228,34 @@ func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q
 	if err != nil {
 		return err
 	}
+	existingUpdates, err := q.ListPendingOrSentCardUpdatesByResource(ctx, queries.ListPendingOrSentCardUpdatesByResourceParams{
+		TenantID:     decision.TenantID,
+		ResourceType: feishuOutboxResourceDecision,
+		ResourceID:   decision.ID,
+	})
+	if err != nil {
+		return err
+	}
+	alreadyQueued := cardUpdateMessageIDs(existingUpdates)
 	resolvedByName := r.lookupUserNameWithQueries(ctx, q, resolvedBy)
 	for _, row := range sentRows {
 		if !row.FeishuMessageID.Valid || row.FeishuMessageID.String == "" {
+			// 可观测:sent 却无 message_id,无法 Patch 原卡——写 last_error 留痕。
+			_ = q.SetFeishuOutboxLastError(ctx, queries.SetFeishuOutboxLastErrorParams{
+				TenantID:  decision.TenantID,
+				ID:        row.ID,
+				LastError: "missing_feishu_message_id_on_resolve",
+			})
+			continue
+		}
+		messageID := row.FeishuMessageID.String
+		if _, exists := alreadyQueued[messageID]; exists {
 			continue
 		}
 		payload := map[string]any{}
 		// 原卡快照 best-effort 打底;历史行 payload 损坏时仍能发出薄终态卡。
 		_ = json.Unmarshal(row.Payload, &payload)
-		payload["decision_type"] = decision.DecisionType
-		if kind, _ := humantask.KindAndLayer(decision.DecisionType); kind != "" {
-			payload["kind"] = kind
-		}
-		payload["title"] = decision.TitleSnapshot
-		payload["resolved_status"] = decision.StatusSnapshot
-		payload["feishu_message_id"] = row.FeishuMessageID.String
-		if resolvedByName != "" {
-			payload["resolved_by_name"] = resolvedByName
-		}
-		if resolvedBy != uuid.Nil {
-			payload["resolved_by_user_id"] = resolvedBy.String()
-		}
-		if comment != "" {
-			payload["resolution_comment"] = comment
-		}
-		if decision.ResolvedAt != nil {
-			payload["resolved_at"] = decision.ResolvedAt.Format(time.RFC3339)
-		}
+		mergeDecisionResolvedPayload(payload, decision, messageID, resolvedBy, resolvedByName, comment)
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			return err
@@ -267,8 +272,69 @@ func (r *PgRepository) supersedeDecisionOutboxWithQueries(ctx context.Context, q
 		}); err != nil {
 			return err
 		}
+		alreadyQueued[messageID] = struct{}{}
 	}
 	return nil
+}
+
+// EnsureDecisionCardsTerminal 是 supersede 的导出入口:resolve 幂等重试与
+// outbox ack 竞态恢复共用。决策仍为 pending 时 no-op。
+func (r *PgRepository) EnsureDecisionCardsTerminal(ctx context.Context, decision DecisionRequest, resolvedBy uuid.UUID, comment string) error {
+	if r == nil || r.q == nil {
+		return nil
+	}
+	if isPendingDecisionStatus(decision.StatusSnapshot) {
+		return nil
+	}
+	return r.supersedeDecisionOutboxWithQueries(ctx, r.q, decision, resolvedBy, comment)
+}
+
+// mergeDecisionResolvedPayload 把终态信息写入卡片 payload(原卡快照为底)。
+func mergeDecisionResolvedPayload(payload map[string]any, decision DecisionRequest, messageID string, resolvedBy uuid.UUID, resolvedByName, comment string) {
+	if payload == nil {
+		return
+	}
+	payload["decision_type"] = decision.DecisionType
+	if kind, _ := humantask.KindAndLayer(decision.DecisionType); kind != "" {
+		payload["kind"] = kind
+	}
+	payload["title"] = decision.TitleSnapshot
+	payload["resolved_status"] = decision.StatusSnapshot
+	payload["feishu_message_id"] = messageID
+	if resolvedByName != "" {
+		payload["resolved_by_name"] = resolvedByName
+	}
+	if resolvedBy != uuid.Nil {
+		payload["resolved_by_user_id"] = resolvedBy.String()
+	}
+	if comment != "" {
+		payload["resolution_comment"] = comment
+	}
+	if decision.ResolvedAt != nil {
+		payload["resolved_at"] = decision.ResolvedAt.Format(time.RFC3339)
+	}
+}
+
+// cardUpdateMessageIDs 从已有 card_update 行提取目标 message_id(列优先,payload 兜底)。
+func cardUpdateMessageIDs(rows []queries.FeishuOutbox) map[string]struct{} {
+	out := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if row.FeishuMessageID.Valid && row.FeishuMessageID.String != "" {
+			out[row.FeishuMessageID.String] = struct{}{}
+			continue
+		}
+		if len(row.Payload) == 0 {
+			continue
+		}
+		var payload map[string]any
+		if json.Unmarshal(row.Payload, &payload) != nil {
+			continue
+		}
+		if mid, _ := payload["feishu_message_id"].(string); mid != "" {
+			out[mid] = struct{}{}
+		}
+	}
+	return out
 }
 
 // latestTaskResultSummaryWithQueries 取任务最终 result 契约里的结论文本(summary)。

@@ -74,6 +74,8 @@ type Container struct {
 	Poller               *runtimepkg.Poller
 	Retention            *retention.Service
 	InboxChangeNotifier  *inbox.ChangeNotifier
+	// FeishuOutboxNotifier wakes connector long-poll ListOutbox on pending inserts.
+	FeishuOutboxNotifier *feishu.OutboxChangeNotifier
 	// CoordinationWorker serves the whole Temporal task queue: project
 	// coordination plus automation, which registers onto it rather than running a
 	// second worker on the same queue.
@@ -261,8 +263,8 @@ func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, r
 }
 
 // teamBoundaryGatekeeperAdapter implements projectcoordination.TeamBoundaryGatekeeper:
-// it resolves each digital employee's owning team so the coordinator can exclude
-// employees from foreign teams（借调机制已下线）.
+// resolves each digital employee's owning team for the teamless participation gate only
+// (员工必须归属某团队；跨团队项目成员不再被踢出执行池).
 type teamBoundaryGatekeeperAdapter struct {
 	employees employee.Repository
 }
@@ -816,11 +818,17 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	feishuService.SetOAuthOrigins(feishuPublicOrigin, feishuWebOrigin)
 	feishuConnectorHandler := feishu.NewConnectorHTTPHandler(feishuService)
 	feishuConnectorHandler.SetOutboxRepository(feishu.NewPgRepository(q))
-	feishuConnectorHandler.SetProjectGateway(feishuProjectGatewayAdapter{
+	feishuProjectGateway := feishuProjectGatewayAdapter{
 		q:        q,
 		projects: projectService,
 		repo:     projectRepository,
-	})
+	}
+	feishuConnectorHandler.SetProjectGateway(feishuProjectGateway)
+	// outbox ack 竞态恢复:发卡 ack 晚于 resolve 时补 card_update。
+	feishuConnectorHandler.SetDecisionCardTerminalizer(feishuProjectGateway)
+	// outbox 长轮询唤醒:pending 入队 → NOTIFY → ListOutbox wait 返回(PR-2)。
+	feishuOutboxNotifier := feishu.NewOutboxChangeNotifier(stores.Postgres)
+	feishuConnectorHandler.SetOutboxChangeNotifier(feishuOutboxNotifier)
 	feishuAdminHandler := feishu.NewAdminHTTPHandler(feishuService)
 	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
@@ -869,6 +877,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		Poller:                         poller,
 		Retention:                      retentionService,
 		InboxChangeNotifier:            inboxChangeNotifier,
+		FeishuOutboxNotifier:           feishuOutboxNotifier,
 		CoordinationWorker:             coordinationWorker,
 		TemporalClientClose:            temporalClientClose,
 		TaskHandler:                    taskHandler,
@@ -951,6 +960,9 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 	}
 	if container.InboxChangeNotifier != nil {
 		go container.InboxChangeNotifier.Start(ctx)
+	}
+	if container.FeishuOutboxNotifier != nil {
+		go container.FeishuOutboxNotifier.Start(ctx)
 	}
 	if container.Retention != nil {
 		// 数据保留作业(P1-B):append-only 表此前无任何清理通道。作业自带 advisory lock
@@ -1100,6 +1112,7 @@ func (a feishuProjectGatewayAdapter) ResolveDecision(ctx context.Context, tenant
 		DecidedByUserID:   userID,
 		Decision:          decision,
 		Comment:           comment,
+		Channel:           "feishu",
 	})
 	if err == nil {
 		return false, nil
@@ -1128,6 +1141,7 @@ func (a feishuProjectGatewayAdapter) SignDemandCriterion(ctx context.Context, re
 		CriterionID: req.CriterionID,
 		Verdict:     req.Verdict,
 		Reason:      req.Reason,
+		Channel:     "feishu",
 	})
 	if err != nil {
 		switch {
@@ -1184,6 +1198,22 @@ func (a feishuProjectGatewayAdapter) DecisionCardSnapshot(ctx context.Context, t
 		}
 	}
 	return payload, nil
+}
+
+// EnsureDecisionCardsTerminal 实现 feishu.DecisionCardTerminalizer:
+// outbox ack 在 resolve 之后才回填 message_id 时,补入 card_update 收敛飞书活卡。
+func (a feishuProjectGatewayAdapter) EnsureDecisionCardsTerminal(ctx context.Context, tenantID, projectID, decisionID uuid.UUID) error {
+	if a.repo == nil || decisionID == uuid.Nil {
+		return nil
+	}
+	if projectID == uuid.Nil {
+		return nil
+	}
+	decision, err := a.repo.GetDecisionRequest(ctx, tenantID, projectID, decisionID)
+	if err != nil {
+		return err
+	}
+	return a.repo.EnsureDecisionCardsTerminal(ctx, decision, uuid.Nil, "")
 }
 
 type automationUserDeactivatedHook struct {

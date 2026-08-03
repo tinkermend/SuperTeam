@@ -140,8 +140,10 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 	if strings.TrimSpace(decision.DecisionType) != "" {
 		contextPayload["decision_type"] = decision.DecisionType
 	}
+	status := statusFromDecisionSnapshot(decision.StatusSnapshot)
 	// P1.6 (§4.1): additive why / evidence / progress on the HumanTask read model.
-	stampHumanTaskReadModel(contextPayload, kind, stringValue(decision.SummarySnapshot))
+	// 终态 progress 禁止「待你」——按 status + resolution 动词重写闭环文案。
+	stampHumanTaskReadModel(contextPayload, kind, stringValue(decision.SummarySnapshot), status, decision.StatusSnapshot)
 	// F3(§5.4.3): primary_surface 是唯一权威落点,服务端算一次。前端不得再各自推导深链
 	// (删除 web 的 reviewHref / resolveWorkflowInstanceHref / resolveWorkflowTemplateHref),
 	// 只读这里下发的 primary_surface,避免"同一待办在不同入口跳不同页"。
@@ -150,6 +152,11 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 		"route":           surface,
 		"anchor":          decision.ID.String(),
 		"primary_surface": surface,
+	}
+	actions := DecisionActions(decision.DecisionType)
+	if status != StatusOpen {
+		// 终态卡不展示可操作按钮(前端仍以 status 为主;服务端清空避免误导)。
+		actions = nil
 	}
 	_, err := a.service.UpsertItem(ctx, UpsertItemRequest{
 		TenantID:                decision.TenantID,
@@ -164,8 +171,8 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 		Title:                   decision.TitleSnapshot,
 		Summary:                 stringValue(decision.SummarySnapshot),
 		RiskLevel:               stringValue(decision.RiskLevelSnapshot),
-		Status:                  statusFromDecisionSnapshot(decision.StatusSnapshot),
-		Actions:                 DecisionActions(decision.DecisionType),
+		Status:                  status,
+		Actions:                 actions,
 		ContextPayload:          contextPayload,
 		DeepLink:                deepLink,
 		ResolvedAt:              decision.ResolvedAt,
@@ -209,7 +216,8 @@ func primarySurfaceForDecision(decision project.DecisionRequest, contextPayload 
 // stampHumanTaskReadModel fills additive HumanTask fields (§4.1): why (one Chinese
 // sentence), evidence (criteria/demand excerpts already on the card context), and
 // progress {step,total,label} for the closed-loop bar (§6.1).
-func stampHumanTaskReadModel(contextPayload map[string]any, kind, summary string) {
+// status/open decision verb: open 用「待你」;resolved 用「已过」并禁止「待你」。
+func stampHumanTaskReadModel(contextPayload map[string]any, kind, summary string, status Status, decisionVerb string) {
 	if contextPayload == nil {
 		return
 	}
@@ -219,7 +227,13 @@ func stampHumanTaskReadModel(contextPayload map[string]any, kind, summary string
 	if evidence := humanTaskEvidence(contextPayload); evidence != nil {
 		contextPayload["evidence"] = evidence
 	}
-	if progress := humanTaskProgress(kind); progress != nil {
+	var progress map[string]any
+	if status == StatusResolved || status == StatusCancelled {
+		progress = humanTaskProgressTerminal(kind, status, decisionVerb)
+	} else {
+		progress = humanTaskProgress(kind)
+	}
+	if progress != nil {
 		contextPayload["progress"] = progress
 	}
 }
@@ -280,6 +294,45 @@ func humanTaskProgress(kind string) map[string]any {
 	}
 }
 
+// humanTaskProgressTerminal is the resolved/cancelled progress label: same step
+// position, but never 「待你」. Optional decisionVerb appends e.g. 「已批准」.
+func humanTaskProgressTerminal(kind string, status Status, decisionVerb string) map[string]any {
+	suffix := ""
+	if status == StatusCancelled {
+		suffix = "（已取消）"
+	} else if v := strings.TrimSpace(decisionVerb); v != "" && v != "pending" {
+		// decisionVerb is the raw snapshot (approved/rejected/…); keep short.
+		switch v {
+		case "approved":
+			suffix = "（已批准）"
+		case "rejected":
+			suffix = "（已驳回）"
+		case "request_changes":
+			suffix = "（已打回）"
+		case "retry_planning", "restaffed":
+			suffix = "（已重开规划）"
+		case "close_demand":
+			suffix = "（已关闭需求）"
+		default:
+			suffix = "（已处理）"
+		}
+	}
+	switch kind {
+	case "plan_review":
+		return map[string]any{"step": 1, "total": 4, "label": "计划确认 已过" + suffix + " → 执行 待开始 → 验收 未开始 → 结项 未开始"}
+	case "dispatch_release":
+		return map[string]any{"step": 2, "total": 4, "label": "计划 已过 → 执行放行 已过" + suffix + " → 验收 未开始 → 结项 未开始"}
+	case "downstream_release":
+		return map[string]any{"step": 2, "total": 4, "label": "计划 已过 → 下游放行 已过" + suffix + " → 验收 未开始 → 结项 未开始"}
+	case "acceptance_sign":
+		return map[string]any{"step": 3, "total": 4, "label": "任务完成 → 验收签署 已过" + suffix + " → 结项 未开始"}
+	case "closure_confirm":
+		return map[string]any{"step": 4, "total": 4, "label": "任务完成 → 验收签署 已过 → 结项确认 已过" + suffix}
+	default:
+		return nil
+	}
+}
+
 type ApprovalActionAdapter struct {
 	service *approval.Service
 }
@@ -326,6 +379,7 @@ func (a *ProjectDecisionActionAdapter) ResolveProjectDecisionAction(ctx context.
 		Decision:          req.Action,
 		Comment:           req.Comment,
 		Payload:           req.Payload,
+		Channel:           "console_inbox",
 	})
 	if err != nil {
 		return SourceActionResult{}, normalizeSourceActionError(err)

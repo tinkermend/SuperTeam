@@ -731,6 +731,63 @@ fn truncate_keep_head(bytes: Vec<u8>, limit: usize) -> (Vec<u8>, bool) {
     (bytes[..limit].to_vec(), true)
 }
 
+/// 工作区的 git 事实,供 attestation 落库(表与契约的四列此前一直硬编码 None,
+/// 变更范围因此完全不可见)。
+///
+/// `diff_sha256` 摘的是 **raw** `git diff HEAD` 字节,不是 diff 工件的字节:
+/// 工件在入库前经过脱敏与截断,其 sha256 已随工件自己存了一份;attestation
+/// 要的是"工作区当时真实改了什么"的独立指纹,能被同状态下重跑 git 复算。
+///
+/// 采集失败一律降级为 None:attestation 是执行证据,不该因为 git 不可用而丢。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkspaceGitFacts {
+    pub branch: Option<String>,
+    pub head_sha: Option<String>,
+    pub diff_sha256: Option<String>,
+}
+
+pub async fn collect_workspace_git_facts(workspace: &Path) -> WorkspaceGitFacts {
+    let branch = git_capture(workspace, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .await
+        // detached HEAD 下 --abbrev-ref 回吐字面量 "HEAD",那不是分支名。
+        .filter(|value| value != "HEAD");
+    let head_sha = git_capture(workspace, &["rev-parse", "HEAD"]).await;
+    let diff_sha256 = match git_diff_head(workspace).await {
+        Ok(Some(diff)) => Some(hex(&Sha256::digest(&diff))),
+        Ok(None) => None,
+        Err(error) => {
+            eprintln!("git facts: diff failed in {workspace:?}: {error}");
+            None
+        }
+    };
+    WorkspaceGitFacts {
+        branch,
+        head_sha,
+        diff_sha256,
+    }
+}
+
+/// 跑一条只读 git 命令并取 trim 后的 stdout;非零退出、非仓库、空输出都返回
+/// None(调用方按"这项事实拿不到"处理,不区分原因)。
+async fn git_capture(workspace: &Path, args: &[&str]) -> Option<String> {
+    let output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(workspace)
+        .args(args)
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 /// Uncommitted tracked changes in the attempt worktree; None when clean or
 /// not a git worktree.
 async fn git_diff_head(workspace: &Path) -> Result<Option<Vec<u8>>> {
@@ -765,6 +822,65 @@ mod tests {
 
     fn no_env() -> BTreeMap<String, String> {
         BTreeMap::new()
+    }
+
+    /// main 分支 + 一个基线提交;`init_repo` 只做 init/config,这里要的是有
+    /// HEAD、有确定分支名的仓库。
+    async fn init_repo_with_commit(dir: &Path) {
+        git(dir, &["init", "-q", "-b", "main"]).await;
+        git(dir, &["config", "user.email", "test@example.com"]).await;
+        git(dir, &["config", "user.name", "test"]).await;
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        git(dir, &["add", "a.txt"]).await;
+        git(dir, &["commit", "-qm", "init"]).await;
+    }
+
+    #[tokio::test]
+    async fn git_facts_report_branch_head_and_dirty_diff() {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo_with_commit(dir.path()).await;
+
+        let clean = collect_workspace_git_facts(dir.path()).await;
+        assert_eq!(clean.branch.as_deref(), Some("main"));
+        assert_eq!(clean.head_sha.as_ref().map(|sha| sha.len()), Some(40));
+        // 工作区干净 → 无 diff 摘要,而不是空串摘要。
+        assert_eq!(clean.diff_sha256, None);
+
+        std::fs::write(dir.path().join("a.txt"), "two\n").unwrap();
+        let dirty = collect_workspace_git_facts(dir.path()).await;
+        assert_eq!(dirty.head_sha, clean.head_sha, "改工作区不该动 HEAD");
+        let diff_sha = dirty.diff_sha256.expect("dirty worktree must hash a diff");
+        assert_eq!(diff_sha.len(), 64);
+
+        // 摘的是 raw diff 字节:同状态下重跑必须复算出同一指纹。
+        let again = collect_workspace_git_facts(dir.path()).await;
+        assert_eq!(again.diff_sha256.as_deref(), Some(diff_sha.as_str()));
+    }
+
+    #[tokio::test]
+    async fn git_facts_degrade_to_none_outside_a_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        // 非 git 工作区(workspace_mode=none)不是错误:attestation 仍要落库。
+        assert_eq!(
+            collect_workspace_git_facts(dir.path()).await,
+            WorkspaceGitFacts::default()
+        );
+    }
+
+    #[tokio::test]
+    async fn git_facts_omit_branch_when_head_is_detached() {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo_with_commit(dir.path()).await;
+        let head = collect_workspace_git_facts(dir.path())
+            .await
+            .head_sha
+            .unwrap();
+        git(dir.path(), &["checkout", "-q", "--detach", &head]).await;
+
+        let facts = collect_workspace_git_facts(dir.path()).await;
+        // detached 下 --abbrev-ref 回吐字面量 "HEAD",那不是分支名,不许落库。
+        assert_eq!(facts.branch, None);
+        assert_eq!(facts.head_sha.as_deref(), Some(head.as_str()));
     }
 
     #[tokio::test]

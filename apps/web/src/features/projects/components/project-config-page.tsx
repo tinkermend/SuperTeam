@@ -13,6 +13,9 @@ import {
   ClipboardList,
   ExternalLink,
   GitBranch,
+  Plus,
+  Search,
+  Trash2,
   UserRound
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -29,6 +32,13 @@ import {
   IconTile,
   ObjectRef,
   SoftCard,
+  SoftDialog,
+  SoftDialogBody,
+  SoftDialogContent,
+  SoftDialogDescription,
+  SoftDialogFooter,
+  SoftDialogHeader,
+  SoftDialogTitle,
   StatusPill,
   Button,
   EmptyState,
@@ -42,9 +52,11 @@ import {
   SoftTabsList,
   SoftTabsTrigger,
   SoftTabsContent,
-
-  Callout
+  Callout,
+  notifyError,
+  notifySuccess
 } from "@/components/superteam";
+import { cn } from "@/lib/utils";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
 import { listUsers } from "@/lib/api/auth";
@@ -311,6 +323,7 @@ export function ProjectConfigView({
       replaceProjectMembers(apiOptions, projectId, members),
     onSuccess: async (members) => {
       setMembersDirty(false);
+      setMemberError("");
       queryClient.setQueryData<ProjectConfig>(
         ["project-config", projectId],
         (current) =>
@@ -324,18 +337,24 @@ export function ProjectConfigView({
                   (member) => member.principal_type === "human_user",
                 ),
                 members
-}
+              }
             : current,
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["project-config", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
       ]);
+    },
+    onError: (mutationError: unknown) => {
+      setMemberError(
+        mutationError instanceof Error ? mutationError.message : "成员更新失败",
+      );
     }
-});
+  });
   const isConfigSaving = updateMutation.isPending;
   const isMembersSaving = replaceMembersMutation.isPending;
   const configFieldsDisabled = isArchived || isConfigSaving;
+  const membersManageDisabled = isArchived || isMembersSaving;
 
   function saveConfig() {
     if (isArchived) return;
@@ -357,6 +376,51 @@ export function ProjectConfigView({
     } catch (saveError) {
       setMemberError(saveError instanceof Error ? saveError.message : "成员 JSON 无效");
     }
+  }
+
+  function currentMemberInputs(): ProjectMemberInput[] {
+    return (config?.members ?? []).map(toMemberInput);
+  }
+
+  async function addDigitalEmployees(employees: DigitalEmployee[]) {
+    if (isArchived || employees.length === 0 || !config) return;
+    const existingIds = new Set(config.members.map((member) => member.principal_id));
+    const additions: ProjectMemberInput[] = employees
+      .filter((employee) => !existingIds.has(employee.id))
+      .map((employee) => ({
+        display_name_snapshot: employee.name,
+        principal_id: employee.id,
+        principal_type: "digital_employee",
+        project_role: "executor",
+        settings: {}
+      }));
+    if (additions.length === 0) {
+      notifyError("所选数字员工已在项目成员池中");
+      return;
+    }
+    setMemberError("");
+    await replaceMembersMutation.mutateAsync([...currentMemberInputs(), ...additions]);
+    notifySuccess(
+      additions.length === 1
+        ? `已添加数字员工「${additions[0].display_name_snapshot ?? additions[0].principal_id}」`
+        : `已添加 ${additions.length} 名数字员工`,
+    );
+  }
+
+  async function removeDigitalEmployee(principalId: string) {
+    if (isArchived || !config) return;
+    const next = currentMemberInputs().filter(
+      (member) => member.principal_id !== principalId,
+    );
+    if (next.length === currentMemberInputs().length) return;
+    const removedName =
+      config.members.find((member) => member.principal_id === principalId)
+        ?.display_name_snapshot ||
+      employeeById.get(principalId)?.name ||
+      principalId;
+    setMemberError("");
+    await replaceMembersMutation.mutateAsync(next);
+    notifySuccess(`已从项目移除「${removedName}」`);
   }
 
   function updateDraft(update: (current: ConfigDraft) => ConfigDraft) {
@@ -537,11 +601,17 @@ export function ProjectConfigView({
             <SoftTabsContent value="members">
               <div className="grid gap-4">
                 <MembersHumanizedPanel
+                  availableEmployees={employeesQuery.data ?? []}
                   digitalMembers={config.digital_employee_pool}
+                  disabled={membersManageDisabled}
                   employeeById={employeeById}
+                  error={memberError || replaceMembersMutation.error?.message}
                   humanMembers={config.human_roles}
+                  isSaving={isMembersSaving}
                   ownerUserIDs={ownerIDs}
                   resolveName={resolvePrincipalName}
+                  onAddDigitalEmployees={addDigitalEmployees}
+                  onRemoveDigitalEmployee={removeDigitalEmployee}
                 />
                 <Collapsible className="grid gap-3">
                   <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-[14px] border border-line bg-card px-5 py-3 text-left shadow-card">
@@ -901,19 +971,47 @@ function MemberJsonPanel({
   );
 }
 
+function toMemberInput(member: ProjectMember): ProjectMemberInput {
+  return {
+    display_name_snapshot: member.display_name_snapshot,
+    principal_id: member.principal_id,
+    principal_type: member.principal_type,
+    project_role: member.project_role,
+    settings: member.settings
+  };
+}
+
 function MembersHumanizedPanel({
+  availableEmployees,
   digitalMembers,
+  disabled,
   employeeById,
+  error,
   humanMembers,
+  isSaving,
   ownerUserIDs,
-  resolveName
+  resolveName,
+  onAddDigitalEmployees,
+  onRemoveDigitalEmployee
 }: {
+  availableEmployees: DigitalEmployee[];
   digitalMembers: ProjectMember[];
+  disabled?: boolean;
   employeeById: Map<string, DigitalEmployee>;
+  error?: string;
   humanMembers: ProjectMember[];
+  isSaving?: boolean;
   ownerUserIDs: string[];
   resolveName: (id: string | undefined | null) => string | undefined;
+  onAddDigitalEmployees: (employees: DigitalEmployee[]) => Promise<void>;
+  onRemoveDigitalEmployee: (principalId: string) => Promise<void>;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const memberIds = useMemo(
+    () => new Set(digitalMembers.map((member) => member.principal_id)),
+    [digitalMembers],
+  );
+
   return (
     <div className="grid gap-4">
       <MemberGroup
@@ -932,31 +1030,61 @@ function MembersHumanizedPanel({
         ))}
       </MemberGroup>
       <MemberGroup
+        action={
+          <Button
+            disabled={disabled}
+            size="sm"
+            type="button"
+            onClick={() => setPickerOpen(true)}
+          >
+            <Plus data-icon="inline-start" />
+            添加数字员工
+          </Button>
+        }
         count={digitalMembers.length}
-        emptyLabel="暂无数字员工"
+        emptyLabel="暂无数字员工，点击右上角从目录加入项目执行池"
         icon={<Bot />}
         title="数字员工"
       >
         {digitalMembers.map((member) => (
           <ConfigMemberRow
             key={member.id}
+            disabled={disabled}
             employee={employeeById.get(member.principal_id)}
             member={member}
             resolvedName={resolveName(member.principal_id)}
+            onRemove={() => {
+              void onRemoveDigitalEmployee(member.principal_id);
+            }}
           />
         ))}
       </MemberGroup>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <AddDigitalEmployeesDialog
+        availableEmployees={availableEmployees}
+        error={error}
+        existingMemberIds={memberIds}
+        isSaving={isSaving}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onConfirm={async (employees) => {
+          await onAddDigitalEmployees(employees);
+          setPickerOpen(false);
+        }}
+      />
     </div>
   );
 }
 
 function MemberGroup({
+  action,
   children,
   count,
   emptyLabel,
   icon,
   title
 }: {
+  action?: ReactNode;
   children: ReactNode;
   count: number;
   emptyLabel: string;
@@ -970,7 +1098,10 @@ function MemberGroup({
           <span className="text-brand [&_svg]:size-4">{icon}</span>
           <h3 className="font-semibold text-ink">{title}</h3>
         </div>
-        <StatusPill tone="mute">{count} 个</StatusPill>
+        <div className="flex items-center gap-2">
+          <StatusPill tone="mute">{count} 个</StatusPill>
+          {action}
+        </div>
       </div>
       {count === 0 ? (
         <EmptyState title={emptyLabel} />
@@ -982,15 +1113,19 @@ function MemberGroup({
 }
 
 function ConfigMemberRow({
+  disabled,
   employee,
   isOwner,
   member,
-  resolvedName
+  resolvedName,
+  onRemove
 }: {
+  disabled?: boolean;
   employee?: DigitalEmployee;
   isOwner?: boolean;
   member: ProjectMember;
   resolvedName?: string;
+  onRemove?: () => void;
 }) {
   const isDigital = member.principal_type === "digital_employee";
   const name =
@@ -1003,7 +1138,7 @@ function ConfigMemberRow({
           asset={employeeAvatarAsset({
             id: member.principal_id,
             metadata: employee?.metadata
-})}
+          })}
           name={name || member.principal_id}
           size="sm"
         />
@@ -1044,7 +1179,205 @@ function ConfigMemberRow({
           ) : null}
         </div>
       </div>
+      {onRemove ? (
+        <Button
+          aria-label={`移除 ${name || member.principal_id}`}
+          disabled={disabled}
+          size="icon"
+          type="button"
+          variant="ghost"
+          onClick={onRemove}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      ) : null}
     </div>
+  );
+}
+
+function AddDigitalEmployeesDialog({
+  availableEmployees,
+  error,
+  existingMemberIds,
+  isSaving,
+  open,
+  onConfirm,
+  onOpenChange
+}: {
+  availableEmployees: DigitalEmployee[];
+  error?: string;
+  existingMemberIds: Set<string>;
+  isSaving?: boolean;
+  open: boolean;
+  onConfirm: (employees: DigitalEmployee[]) => Promise<void> | void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setSelectedIds(new Set());
+      setSubmitting(false);
+    }
+  }, [open]);
+
+  const candidates = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return availableEmployees
+      .filter((employee) => {
+        // 后端门禁：无团队归属的数字员工不能写入项目成员。
+        if (!employee.team_id?.trim()) return false;
+        if (existingMemberIds.has(employee.id)) return false;
+        if (!normalized) return true;
+        return `${employee.name} ${employee.role} ${employee.team_name ?? ""}`
+          .toLowerCase()
+          .includes(normalized);
+      })
+      .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+  }, [availableEmployees, existingMemberIds, query]);
+
+  const selectedEmployees = useMemo(
+    () => candidates.filter((employee) => selectedIds.has(employee.id)),
+    [candidates, selectedIds],
+  );
+
+  function toggle(employeeId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+      } else {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <SoftDialog open={open} onOpenChange={onOpenChange}>
+      <SoftDialogContent size="lg">
+        <SoftDialogHeader icon={<Bot aria-hidden />}>
+          <SoftDialogTitle>添加数字员工</SoftDialogTitle>
+          <SoftDialogDescription>
+            从租户数字员工目录中选取可调度执行者，加入本项目执行池。仅展示已归属团队的员工。
+          </SoftDialogDescription>
+        </SoftDialogHeader>
+        <SoftDialogBody className="grid gap-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" />
+            <Input
+              aria-label="搜索数字员工"
+              className="pl-9"
+              placeholder="搜索名称、角色或团队"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          {candidates.length === 0 ? (
+            <div className="grid gap-3 rounded-[12px] border border-line bg-card-soft p-4">
+              <p className="text-sm text-ink-2">
+                {availableEmployees.length === 0
+                  ? "租户下还没有数字员工。"
+                  : existingMemberIds.size > 0 &&
+                      availableEmployees.every(
+                        (employee) =>
+                          !employee.team_id?.trim() || existingMemberIds.has(employee.id),
+                      )
+                    ? "没有更多可添加的数字员工（已在池中或无团队归属）。"
+                    : "没有匹配的数字员工。"}
+              </p>
+              <div>
+                <Button asChild size="sm" type="button" variant="outline">
+                  <Link to="/employees/new">去创建数字员工</Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-[12px] border border-line">
+              <div className="grid grid-cols-[2.5rem_minmax(10rem,1fr)_1fr_6rem] border-b border-line bg-card-soft px-3 py-2 text-xs font-semibold text-ink-2">
+                <span />
+                <span>数字员工</span>
+                <span>团队 / 角色</span>
+                <span>状态</span>
+              </div>
+              <div className="max-h-[min(40vh,20rem)] divide-y divide-line overflow-y-auto">
+                {candidates.map((employee) => {
+                  const selected = selectedIds.has(employee.id);
+                  return (
+                    <div
+                      aria-pressed={selected}
+                      className="grid w-full cursor-pointer grid-cols-[2.5rem_minmax(10rem,1fr)_1fr_6rem] items-center px-3 py-3 text-left hover:bg-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/20"
+                      key={employee.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggle(employee.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          toggle(employee.id);
+                        }
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "grid size-5 place-items-center rounded-md border",
+                          selected
+                            ? "border-brand bg-brand-soft text-ok"
+                            : "border-line-strong bg-card text-ink-3",
+                        )}
+                      >
+                        {selected ? <Check className="size-3.5" /> : null}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-ink">{employee.name}</p>
+                        <p className="truncate text-xs text-ink-3">{employee.employee_type}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm text-ink">
+                          {employee.team_name?.trim() || "已归属团队"}
+                        </p>
+                        <p className="truncate text-xs text-ink-3">{employee.role}</p>
+                      </div>
+                      <StatusPill tone={employee.status === "active" ? "ok" : "warn"}>
+                        {employee.status === "active" ? "可调度" : "待配置"}
+                      </StatusPill>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        </SoftDialogBody>
+        <SoftDialogFooter left={selectedIds.size > 0 ? `已选 ${selectedIds.size} 名` : "可多选"}>
+          <Button
+            disabled={submitting || isSaving}
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            取消
+          </Button>
+          <Button
+            disabled={submitting || isSaving || selectedEmployees.length === 0}
+            type="button"
+            onClick={() => {
+              setSubmitting(true);
+              void Promise.resolve(onConfirm(selectedEmployees)).finally(() => {
+                setSubmitting(false);
+              });
+            }}
+          >
+            {submitting || isSaving ? "加入中…" : "加入项目"}
+          </Button>
+        </SoftDialogFooter>
+      </SoftDialogContent>
+    </SoftDialog>
   );
 }
 

@@ -5176,6 +5176,7 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 		HumanOwnerUserID: ownerID,
 	}
 	seedHumanOwnerMember(repo, repo.projects[projectID].TenantID, projectID, ownerID)
+	seedDigitalExecutorMember(repo, repo.projects[projectID].TenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          repo.projects[projectID].TenantID,
@@ -5218,6 +5219,7 @@ func TestSubmitDemandRejectsUnknownScenarioTemplateKey(t *testing.T) {
 			HumanOwnerUserID: ownerID,
 		}
 		seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+		seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 		service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{bindings: map[string]ScenarioTemplateBinding{
 			"ops_analysis": {Key: "ops_analysis", Name: "运维分析", Status: "active"},
 			"retired":      {Key: "retired", Name: "退役", Status: "disabled"},
@@ -5315,6 +5317,7 @@ func TestSubmitDemandCoordinationMode(t *testing.T) {
 			CoordinationStatus:     "registered",
 		}
 		seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+		seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 		return repo, coordinator, service, tenantID, projectID
 	}
 
@@ -5384,6 +5387,7 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 		HumanOwnerUserID: ownerID,
 	}
 	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 	service, err := NewService(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -5898,6 +5902,8 @@ func TestSubmitDemandPersistsPrimaryOwnerFallbackWhenReviewerOmitted(t *testing.
 		t.Fatalf("new service: %v", err)
 	}
 
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
+
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
 		Title: "审查 PR", Content: "统计 PR 并分派审查",
@@ -5949,6 +5955,8 @@ func TestSubmitDemandPersistsExplicitReviewerSelectionReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
+
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
@@ -6002,6 +6010,8 @@ func TestSubmitDemandRejectsInvalidReviewerSelectionReason(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
+
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
 		Title: "审查 PR", ReviewerUserID: &reviewerID,
@@ -6040,6 +6050,8 @@ func TestSubmitDemandDiscardsSpoofedReviewerSourceRefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
+
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
@@ -6085,6 +6097,8 @@ func TestSubmitDemandFallsBackToHumanOwnerWhenNoReviewer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
+
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
@@ -6157,6 +6171,10 @@ func TestSubmitDemandRequiresActiveHumanOwnerMemberForFallback(t *testing.T) {
 				member.ProjectID = projectID
 				member.PrincipalID = ownerID
 				repo.members[projectID] = append(repo.members[projectID], member)
+			}
+			// 通过数字员工门禁,才能验证负责人回落逻辑。
+			if !projectHasActiveDigitalEmployee(repo.members[projectID]) {
+				seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 			}
 			service, err := NewService(repo)
 			if err != nil {
@@ -6260,6 +6278,8 @@ func TestSubmitDemandFallsBackToPrimaryOwnerWhenMultipleReviewersExist(t *testin
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
+
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
@@ -6745,6 +6765,7 @@ func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 		CoordinationStatus:     "registered",
 	}
 	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -6790,6 +6811,7 @@ func TestSubmitDemandRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 		CoordinationStatus:     "registered",
 	}
 	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -6813,10 +6835,11 @@ func TestSubmitDemandRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 	}
 }
 
-func TestSubmitDemandProjectsWorkflowCoordinationFailedReason(t *testing.T) {
-	// Failed coordinator signal projection is owned by project service appendWorkflowSignalEvent.
+// TestSubmitDemandRejectsWithoutDigitalEmployee: 空数字员工池不得提交需求、
+// 不得启动规划——在入口硬失败,避免规划器胡填员工 ID 后再开 planning_failed 卡。
+func TestSubmitDemandRejectsWithoutDigitalEmployee(t *testing.T) {
 	repo := newMemoryRepository()
-	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("digital_employee_pool is empty for project")}
+	coordinator := &fakeCoordinatorSignalClient{}
 	service, err := NewServiceWithCoordinator(repo, coordinator)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -6827,12 +6850,13 @@ func TestSubmitDemandProjectsWorkflowCoordinationFailedReason(t *testing.T) {
 	repo.projects[projectID] = Project{
 		ID:                     projectID,
 		TenantID:               tenantID,
-		Name:                   "customer-runtime-acceptance",
+		Name:                   "empty-pool-project",
 		Status:                 ProjectStatusRunning,
 		HumanOwnerUserID:       ownerID,
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
+	// 仅人类负责人,不挂数字员工——门禁应拦截。
 	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
@@ -6842,18 +6866,77 @@ func TestSubmitDemandProjectsWorkflowCoordinationFailedReason(t *testing.T) {
 		Title:             "验证 Runtime 连接",
 		Content:           "检查心跳和命令回写",
 	})
-	if err == nil {
-		t.Fatal("expected signal error")
+	if !errors.Is(err, ErrProjectRequiresDigitalEmployee) {
+		t.Fatalf("expected ErrProjectRequiresDigitalEmployee, got %v", err)
 	}
-	if countProjectEvents(repo.eventTypes, ProjectEventWorkflowSignaled) != 1 {
-		t.Fatalf("expected original workflow signal failure event, got %#v", repo.eventTypes)
+	if err.Error() != "项目至少包含一个数字员工" {
+		t.Fatalf("expected Chinese message, got %q", err.Error())
 	}
-	projected := lastProjectEventOfType(t, repo.events, ProjectEventWorkflowCoordinationFailed)
-	if projected.Payload["signal_name"] != "DemandSubmitted" || projected.Payload["reason_code"] != "no_plannable_digital_employee" {
-		t.Fatalf("unexpected coordination failure payload: %#v", projected.Payload)
+	// 不得写 demand / 不得 signal coordinator。
+	if len(repo.demands) != 0 {
+		t.Fatalf("expected no demand created, got %d", len(repo.demands))
 	}
-	if projected.Payload["recommended_action"] != "assign_digital_employee" || projected.Payload["demand_id"] == "" {
-		t.Fatalf("expected recommended action and preserved demand id: %#v", projected.Payload)
+	if coordinator.demandSignals != 0 {
+		t.Fatalf("expected no DemandSubmitted signal, got %d", coordinator.demandSignals)
+	}
+	// 也不得落 demand.submitted 事件(门禁在事件之前)。
+	if countProjectEvents(repo.eventTypes, ProjectEventDemandSubmitted) != 0 {
+		t.Fatalf("expected no demand.submitted event, got %#v", repo.eventTypes)
+	}
+}
+
+func TestSubmitDemandAcceptsWithActiveDigitalEmployee(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "staffed-project",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "有员工时应能提交",
+		Content:           "内容",
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+	if demand == nil || demand.ID == uuid.Nil {
+		t.Fatal("expected demand")
+	}
+	if coordinator.demandSignals != 1 {
+		t.Fatalf("expected DemandSubmitted signal, got %d", coordinator.demandSignals)
+	}
+}
+
+func TestProjectHasActiveDigitalEmployeeIgnoresInactiveAndHumans(t *testing.T) {
+	members := []ProjectMember{
+		{PrincipalType: PrincipalTypeHumanUser, Status: "active"},
+		{PrincipalType: PrincipalTypeDigitalEmployee, Status: "removed"},
+		{PrincipalType: PrincipalTypeDigitalEmployee, Status: "inactive"},
+	}
+	if projectHasActiveDigitalEmployee(members) {
+		t.Fatal("expected false for no active digital employee")
+	}
+	members = append(members, ProjectMember{PrincipalType: PrincipalTypeDigitalEmployee, Status: "active"})
+	if !projectHasActiveDigitalEmployee(members) {
+		t.Fatal("expected true with one active digital employee")
 	}
 }
 
@@ -6877,6 +6960,7 @@ func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
 		CoordinationStatus:     "registered",
 	}
 	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -7437,6 +7521,7 @@ func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
 		CoordinationStatus:     "registered",
 	}
 	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -8110,6 +8195,59 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	}
 	if coordinator.lastDecision.Payload["source"] != "console" {
 		t.Fatalf("expected decision signal payload to be preserved, got %#v", coordinator.lastDecision.Payload)
+	}
+}
+
+// TestResolveDecisionIdempotentSelfHealsFeishuCards: 同 decision 再次 resolve
+// 时必须再调 EnsureDecisionCardsTerminal,用于补上首次竞态漏掉的 card_update。
+func TestResolveDecisionIdempotentSelfHealsFeishuCards(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID: projectID, TenantID: tenantID, Name: "demo", Goal: "g",
+		Status: ProjectStatusRunning, HumanOwnerUserID: actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	now := time.Now().UTC()
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID: decisionID, TenantID: tenantID, ProjectID: projectID,
+		TargetUserID: actorID, DecisionType: "route_review",
+		TitleSnapshot: "需要负责人确认", StatusSnapshot: "approved",
+		ResolvedAt: &now,
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionID,
+		DecidedByUserID: actorID, Decision: "approved", Comment: "再点一次",
+	})
+	if err != nil {
+		t.Fatalf("idempotent resolve: %v", err)
+	}
+	if resolved.StatusSnapshot != "approved" {
+		t.Fatalf("status=%s", resolved.StatusSnapshot)
+	}
+	if len(repo.ensureDecisionCardsTerminalCalls) != 1 {
+		t.Fatalf("expected EnsureDecisionCardsTerminal once, got %d", len(repo.ensureDecisionCardsTerminalCalls))
+	}
+	call := repo.ensureDecisionCardsTerminalCalls[0]
+	if call.Decision.ID != decisionID || call.ResolvedBy != actorID || call.Comment != "再点一次" {
+		t.Fatalf("unexpected ensure call %#v", call)
+	}
+	// 幂等路径不得再 signal coordinator / resolve approval。
+	if coordinator.decisionSignals != 0 {
+		t.Fatalf("idempotent path must not re-signal, got %d", coordinator.decisionSignals)
+	}
+	if approvals.calls != 0 {
+		t.Fatalf("idempotent path must not re-resolve approval, got %d", approvals.calls)
 	}
 }
 
@@ -11461,6 +11599,13 @@ type memoryRepository struct {
 	deleteCascadeResult           ProjectDeleteCascadeResult
 	deleteAuditEvents             []ProjectDeleteAuditEventParams
 	deleteAuditEventErr           error
+	ensureDecisionCardsTerminalCalls []ensureDecisionCardsTerminalCall
+}
+
+type ensureDecisionCardsTerminalCall struct {
+	Decision   DecisionRequest
+	ResolvedBy uuid.UUID
+	Comment    string
 }
 
 func (r *memoryRepository) CreateDemandConstraintExemption(ctx context.Context, req CreateDemandConstraintExemptionRequest) error {
@@ -11932,6 +12077,23 @@ func seedHumanOwnerMember(repo *memoryRepository, tenantID, projectID, ownerID u
 		PrincipalType: PrincipalTypeHumanUser,
 		PrincipalID:   ownerID,
 		ProjectRole:   ProjectRoleOwner,
+		Status:        "active",
+	})
+}
+
+// seedDigitalExecutorMember adds an active digital employee executor so
+// SubmitDemand's hard gate (project requires ≥1 digital employee) passes.
+func seedDigitalExecutorMember(repo *memoryRepository, tenantID, projectID, employeeID uuid.UUID) {
+	if employeeID == uuid.Nil {
+		employeeID = uuid.New()
+	}
+	repo.members[projectID] = append(repo.members[projectID], ProjectMember{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		PrincipalType: PrincipalTypeDigitalEmployee,
+		PrincipalID:   employeeID,
+		ProjectRole:   ProjectRoleExecutor,
 		Status:        "active",
 	})
 }
@@ -14851,6 +15013,17 @@ func (r *memoryRepository) ResolveDecisionRequest(ctx context.Context, req Resol
 		}
 	}
 	return DecisionRequest{}, ErrProjectNotFound
+}
+
+// EnsureDecisionCardsTerminal is a no-op in the in-memory repo (no feishu outbox).
+// Call count is tracked so self-heal tests can assert the idempotent path fires.
+func (r *memoryRepository) EnsureDecisionCardsTerminal(_ context.Context, decision DecisionRequest, resolvedBy uuid.UUID, comment string) error {
+	r.ensureDecisionCardsTerminalCalls = append(r.ensureDecisionCardsTerminalCalls, ensureDecisionCardsTerminalCall{
+		Decision:   decision,
+		ResolvedBy: resolvedBy,
+		Comment:    comment,
+	})
+	return nil
 }
 
 func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {

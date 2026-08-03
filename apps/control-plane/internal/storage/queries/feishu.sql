@@ -153,6 +153,9 @@ ORDER BY created_at ASC
 LIMIT sqlc.arg('limit');
 
 -- name: MarkFeishuOutboxSent :one
+-- pending:正常投递回执;superseded:resolve 与 ack 竞态——卡已发出但尚未回填
+-- message_id 时决策已 resolve 把行标了 superseded。接受两种状态并强制 status=sent,
+-- 回填 feishu_message_id,便于后续 card_update 按 message_id 收敛终态卡。
 UPDATE feishu_outbox
 SET status = 'sent',
     attempts = attempts + 1,
@@ -161,7 +164,7 @@ SET status = 'sent',
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
-  AND status = 'pending'
+  AND status IN ('pending', 'superseded')
 RETURNING *;
 
 -- name: MarkFeishuOutboxFailed :one
@@ -184,12 +187,31 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status = 'pending';
 
 -- name: ListSentFeishuOutboxByResource :many
+-- 已投递的决策卡(含 message_id)。resolve/ack 竞态恢复后 supersede→sent 的行
+-- 也会落在这里,供 card_update 入队。
 SELECT * FROM feishu_outbox
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND resource_type = sqlc.arg('resource_type')::varchar
   AND resource_id = sqlc.arg('resource_id')::uuid
   AND status = 'sent'
   AND kind = 'decision_card';
+
+-- name: ListPendingOrSentCardUpdatesByResource :many
+-- 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
+SELECT * FROM feishu_outbox
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND resource_type = sqlc.arg('resource_type')::varchar
+  AND resource_id = sqlc.arg('resource_id')::uuid
+  AND kind = 'card_update'
+  AND status IN ('pending', 'sent');
+
+-- name: SetFeishuOutboxLastError :exec
+-- 可观测留痕(如 sent 却缺 message_id),不改 status,避免影响消费状态机。
+UPDATE feishu_outbox
+SET last_error = sqlc.arg('last_error')::text,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
 
 -- name: ListFeishuOutboxByStatuses :many
 SELECT * FROM feishu_outbox

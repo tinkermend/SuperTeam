@@ -1520,11 +1520,19 @@ describe("ProjectsView", () => {
       screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
     ).toBeNull();
     // Project-first columns surface owner name, risk label and current handler.
-    await expect.element(screen.getByText("负责人甲")).toBeInTheDocument();
+    // 负责人名按列断言：等待审核态的处理者列也会带上负责人名，纯文本匹配会命中两处。
+    expect(
+      screen.container.querySelector('[data-testid="project-queue-owner"]')?.textContent,
+    ).toBe("负责人甲");
     await expect.element(screen.getByText("待决决策").first()).toBeInTheDocument();
-    await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
-    await expect.element(screen.getByText("运维检索员工")).toBeInTheDocument();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
+    // 处理者列表达「球权」，不是任务上粘着的 assignee（见 project-risk.test.ts 的
+    // formatProjectQueueHandlerLabel 用例）：project-1 停在人工确认 → 球在负责人；
+    // project-2 只剩失败的历史任务 → 无在办。已完成/停摆的执行 DE 不占该列。
+    expect(queueText).toContain("等待审核 · 负责人甲");
+    expect(queueText).toContain("无在办");
+    expect(queueText).not.toContain("验收执行员工");
+    expect(queueText).not.toContain("运维检索员工");
     // Raw workflow/task detail no longer clutters the row; it moves to project detail.
     expect(queueText).not.toContain("需要负责人确认");
     expect(queueText).not.toContain("数据源: 日志检索");
@@ -2562,7 +2570,7 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("shows 已归档 instead of 待调度 for archived projects in the queue handler column", async () => {
+  it("shows em dash instead of 已归档/待调度 for archived projects in the queue handler column", async () => {
     const fetcher = createProjectFetcher({ includeArchivedProject: true });
     const screen = await renderProjects(fetcher);
 
@@ -2585,7 +2593,8 @@ describe("ProjectsView", () => {
       const handlerCell = archivedRow?.querySelector(
         '[data-testid="project-queue-current-handler"]',
       );
-      expect(handlerCell?.textContent).toBe("已归档");
+      // 归档状态由项目 pill 表达；处理者列不再复写「已归档」。
+      expect(handlerCell?.textContent).toBe("—");
     });
   });
 

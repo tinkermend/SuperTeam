@@ -10,6 +10,7 @@ import {
   buildRiskCounts,
   deriveProjectRiskSummary,
   formatAttentionHeadline,
+  formatProjectQueueHandlerLabel,
   matchesProjectRiskFilter,
   resolveProjectOwnerLabel,
   sortProjectsByRisk,
@@ -156,6 +157,93 @@ describe("project risk model", () => {
     });
 
     expect(summary.currentHandler?.label).toBe("de-unknown-9");
+  });
+
+
+  it("shows waiting-review for human-wait tasks even when a digital employee is still assigned", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      principalNamesById: new Map([
+        [ownerId, "开发管理员"],
+        ["de-worker-1", "开发-小王"],
+      ]),
+      project: project("project-wait"),
+      tasks: [
+        task("project-wait", {
+          assigned_digital_employee_id: "de-worker-1",
+          status: "waiting_human",
+          title: "生成中文简报",
+        }),
+      ],
+    });
+
+    expect(summary.currentHandlerMode).toBe("waiting_review");
+    expect(summary.currentHandler?.principalType).toBe("human_user");
+    expect(summary.currentHandler?.id).toBe(ownerId);
+    // Must NOT show the digital employee who already finished / parked.
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("等待审核 · 开发管理员");
+  });
+
+  it("shows executor digital employee only while the task is actively running", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      principalNamesById: new Map([["de-reporter-1", "报告员小王"]]),
+      project: project("project-run"),
+      tasks: [
+        task("project-run", {
+          assigned_digital_employee_id: "de-reporter-1",
+          status: "running",
+        }),
+      ],
+    });
+    expect(summary.currentHandlerMode).toBe("executor");
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("报告员小王");
+  });
+
+  it("does not treat completed-task assignees as the current handler", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      principalNamesById: new Map([["de-old", "历史执行人"]]),
+      project: project("project-done-only"),
+      tasks: [
+        task("project-done-only", {
+          assigned_digital_employee_id: "de-old",
+          status: "completed",
+        }),
+      ],
+    });
+    expect(summary.currentHandlerMode).toBe("idle");
+    expect(summary.currentHandler).toBeUndefined();
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("无在办");
+  });
+
+  it("uses pending_dispatch when an active task has no assignee", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      project: project("project-planned"),
+      tasks: [task("project-planned", { status: "planned" })],
+    });
+    expect(summary.currentHandlerMode).toBe("pending_dispatch");
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("待调度");
+  });
+
+  it("shows em dash for archived projects in the handler column", () => {
+    const summary = deriveProjectRiskSummary({
+      decisions: [],
+      evidence: [],
+      project: project("project-arch", { status: "archived" }),
+      tasks: [
+        task("project-arch", {
+          assigned_digital_employee_id: "de-1",
+          status: "waiting_human",
+        }),
+      ],
+    });
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("—");
   });
 
   it("marks pending human decisions as danger and requiring human action", () => {

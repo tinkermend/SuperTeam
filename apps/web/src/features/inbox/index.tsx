@@ -16,10 +16,12 @@ import {
   type InboxViewMode
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { notifySuccess } from "@/components/superteam";
 import {
   DEFAULT_INBOX_LIST_FILTERS,
   inboxItemsQueryKey
 } from "./inbox-query";
+import { inboxActionSuccessFeedback } from "./inbox-action-feedback";
 import { inboxListRefetchInterval } from "./inbox-stream-status";
 import { InboxActionDialog } from "./components/inbox-action-dialog";
 import {
@@ -127,8 +129,9 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     mutationFn: ({
       itemId,
       input
-}: {
+    }: {
       itemId: string;
+      itemType?: string;
       input: ExecuteInboxActionInput;
     }) => executeInboxAction(apiOptions, itemId, input),
     onMutate: ({ itemId }) => {
@@ -138,11 +141,15 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
         return next;
       });
     },
-    onSuccess: (_data, { itemId }) => {
+    onSuccess: (_data, { itemId, itemType }) => {
       // 只关掉本次提交对应的弹窗;用户已切到别的事项时不打断。
       setSelectedAction((current) => (current && current.item.id === itemId ? null : current));
       void queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-badge"] });
+      const feedback = inboxActionSuccessFeedback(itemType);
+      notifySuccess(feedback.message, {
+        description: feedback.description
+      });
     },
     onError: (error, { itemId }) => {
       // 弹窗仍停在该事项时错误由弹窗内联展示;否则升级到页面横幅。
@@ -158,7 +165,7 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
         return next;
       });
     }
-});
+  });
 
   return (
     <>
@@ -208,8 +215,9 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
 
           return actionMutation.mutateAsync({
             input,
-            itemId: current.item.id
-});
+            itemId: current.item.id,
+            itemType: current.item.item_type
+          });
         }}
         open={Boolean(selectedAction)}
         pending={selectedAction ? pendingItemIds.has(selectedAction.item.id) : false}
